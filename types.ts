@@ -43,7 +43,19 @@ export enum MaterialRequestFulfillmentMode {
 
 export type MaterialRequestOrigin = 'wms' | 'project';
 
-export type WarehouseType = 'GENERAL' | 'SITE' | 'OFFICE'; // Tổng | Công trường | Văn phòng
+export type WarehouseType = string;
+
+export interface WarehouseTypeConfig {
+  code: WarehouseType;
+  name: string;
+  description?: string;
+  color?: string;
+  isSystem?: boolean;
+  isActive?: boolean;
+  sortOrder?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
 
 export interface User {
   id: string;

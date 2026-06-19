@@ -2,7 +2,7 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { supabase, isSupabaseConfigured, isTransientSupabaseError } from '../lib/supabase';
 import {
-  InventoryItem, Transaction, User, Warehouse, Supplier,
+  InventoryItem, Transaction, User, Warehouse, WarehouseTypeConfig, Supplier,
   Role, TransactionStatus, TransactionType, MaterialRequest,
   RequestStatus, AuditLog, GlobalActivity, ActivityType, MaterialRequestFulfillmentMode,
   ItemCategory, ItemUnit, Employee, MaterialLossNorm, AuditSession,
@@ -14,7 +14,7 @@ import {
   HrmShiftType, HrmEmployeeShift
 } from '../types';
 import {
-  MOCK_USERS, MOCK_WAREHOUSES, MOCK_ITEMS,
+  MOCK_USERS, MOCK_WAREHOUSES, MOCK_WAREHOUSE_TYPES, MOCK_ITEMS,
   MOCK_SUPPLIERS, MOCK_TRANSACTIONS
 } from '../constants';
 import { auditService } from '../lib/auditService';
@@ -101,8 +101,8 @@ const BASE_REALTIME_TABLES = ['app_settings'] as const;
 
 const REALTIME_TABLES_BY_MODULE: Partial<Record<AppModule, string[]>> = {
   admin: ['app_settings', 'users'],
-  'wms-core': ['items', 'warehouses', 'requests'],
-  wms: ['items', 'transactions', 'warehouses', 'requests', 'suppliers', 'activities', 'categories', 'units'],
+  'wms-core': ['items', 'warehouses', 'warehouse_types', 'requests'],
+  wms: ['items', 'transactions', 'warehouses', 'warehouse_types', 'requests', 'suppliers', 'activities', 'categories', 'units'],
   hrm: ['employees', 'org_units'],
 };
 
@@ -120,6 +120,7 @@ interface AppContextType {
   removeUser: (userId: string) => Promise<void>;
   items: InventoryItem[];
   warehouses: Warehouse[];
+  warehouseTypes: WarehouseTypeConfig[];
   suppliers: Supplier[];
   transactions: Transaction[];
   requests: MaterialRequest[];
@@ -174,6 +175,9 @@ interface AppContextType {
   addWarehouse: (warehouse: Warehouse) => void;
   updateWarehouse: (warehouse: Warehouse) => void;
   removeWarehouse: (warehouseId: string) => void;
+  addWarehouseType: (warehouseType: WarehouseTypeConfig) => Promise<void>;
+  updateWarehouseType: (warehouseType: WarehouseTypeConfig) => Promise<void>;
+  removeWarehouseType: (code: string) => Promise<void>;
   addRequest: (request: MaterialRequest) => Promise<boolean>;
   updateRequestStatus: (id: string, status: RequestStatus, note?: string, approvedItems?: { lineId?: string, itemId: string, qty: number }[], sourceWarehouseId?: string, overrideReason?: string, actionOverride?: string) => Promise<boolean>;
   removeRequest: (id: string) => Promise<void>;
@@ -313,6 +317,36 @@ const mapTransactionFromDb = (t: any): Transaction => ({
   pendingItems: t.pending_items,
 });
 
+const mapWarehouseFromDb = (w: any): Warehouse => ({
+  ...w,
+  isArchived: w.is_archived ?? w.isArchived,
+});
+
+const mapWarehouseTypeFromDb = (row: any): WarehouseTypeConfig => ({
+  code: row.code,
+  name: row.name,
+  description: row.description ?? undefined,
+  color: row.color ?? undefined,
+  isSystem: row.is_system ?? row.isSystem ?? false,
+  isActive: row.is_active ?? row.isActive ?? true,
+  sortOrder: row.sort_order ?? row.sortOrder ?? 100,
+  createdAt: row.created_at ?? row.createdAt,
+  updatedAt: row.updated_at ?? row.updatedAt,
+});
+
+const normalizeWarehouseTypeCode = (code: string) =>
+  code.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '');
+
+const warehouseTypeToDbPayload = (data: WarehouseTypeConfig) => ({
+  code: normalizeWarehouseTypeCode(data.code),
+  name: data.name.trim(),
+  description: data.description?.trim() || null,
+  color: data.color || 'slate',
+  is_system: data.isSystem ?? false,
+  is_active: data.isActive ?? true,
+  sort_order: data.sortOrder ?? 100,
+});
+
 const mapAssetLocationStockFromDb = (l: any): AssetLocationStock => ({
   ...l,
   assetId: l.asset_id,
@@ -377,6 +411,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [appSettings, setAppSettings] = useState<AppSettings>({ name: 'Vioo', logo: '' });
   const [items, setItems] = useState<InventoryItem[]>(() => isSupabaseConfigured ? [] : MOCK_ITEMS);
   const [warehouses, setWarehouses] = useState<Warehouse[]>(() => isSupabaseConfigured ? [] : MOCK_WAREHOUSES);
+  const [warehouseTypes, setWarehouseTypes] = useState<WarehouseTypeConfig[]>(() => isSupabaseConfigured ? [] : MOCK_WAREHOUSE_TYPES);
   const [suppliers, setSuppliers] = useState<Supplier[]>(() => isSupabaseConfigured ? [] : MOCK_SUPPLIERS);
   const [transactions, setTransactions] = useState<Transaction[]>(() => isSupabaseConfigured ? [] : MOCK_TRANSACTIONS);
   const [requests, setRequests] = useState<MaterialRequest[]>([]);
@@ -674,8 +709,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // ── Warehouses ──
     const unsubWh = realtimeService.on('warehouses', (event) => {
       if (event.eventType === 'INSERT' || event.eventType === 'UPDATE') {
-        const w = event.newRecord;
-        const mapped = { ...w, isArchived: w.is_archived };
+        const mapped = mapWarehouseFromDb(event.newRecord);
         setWarehouses(prev => {
           const exists = prev.find(wh => wh.id === mapped.id);
           if (exists) return prev.map(wh => wh.id === mapped.id ? mapped : wh);
@@ -683,6 +717,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         });
       } else if (event.eventType === 'DELETE') {
         setWarehouses(prev => prev.filter(wh => wh.id !== event.oldRecord.id));
+      }
+    });
+
+    // ── Warehouse Types ──
+    const unsubWhTypes = realtimeService.on('warehouse_types', (event) => {
+      if (event.eventType === 'INSERT' || event.eventType === 'UPDATE') {
+        const mapped = mapWarehouseTypeFromDb(event.newRecord);
+        setWarehouseTypes(prev => {
+          const exists = prev.find(type => type.code === mapped.code);
+          const next = exists ? prev.map(type => type.code === mapped.code ? mapped : type) : [...prev, mapped];
+          return next.sort((a, b) => (a.sortOrder ?? 100) - (b.sortOrder ?? 100) || a.name.localeCompare(b.name));
+        });
+      } else if (event.eventType === 'DELETE') {
+        setWarehouseTypes(prev => prev.filter(type => type.code !== event.oldRecord.code));
       }
     });
 
@@ -821,7 +869,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => {
       unsubStatus();
       unsubWildcard();
-      unsubItems(); unsubTx(); unsubWh(); unsubSup(); unsubReq();
+      unsubItems(); unsubTx(); unsubWh(); unsubWhTypes(); unsubSup(); unsubReq();
       unsubAct(); unsubUsers(); unsubEmp(); unsubCat(); unsubUnits();
       unsubSettings(); unsubOrg();
       realtimeTablesRef.current.clear();
@@ -909,13 +957,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       loadedModulesRef.current.delete(module);
       try {
       const loadWmsCoreData = async () => {
-        const [itemsData, whData, reqData] = await Promise.all([
+        const [itemsData, whData, whTypeData, reqData] = await Promise.all([
           fetchAllInventoryItemRows(),
           fetchTableHelper('warehouses'),
+          fetchTableHelper('warehouse_types', supabase.from('warehouse_types').select('*').order('sort_order', { ascending: true }).order('name', { ascending: true })),
           fetchTableHelper('requests', supabase.from('requests').select('*').order('created_date', { ascending: false })),
         ]);
         setItems(requireModuleData(module, 'items', itemsData).map(mapInventoryItemFromDb));
-        setWarehouses(requireModuleData(module, 'warehouses', whData).map((w: any) => ({ ...w, isArchived: w.is_archived })));
+        setWarehouses(requireModuleData(module, 'warehouses', whData).map(mapWarehouseFromDb));
+        setWarehouseTypes(requireModuleData(module, 'warehouse_types', whTypeData).map(mapWarehouseTypeFromDb));
         setRequests(requireModuleData(module, 'requests', reqData).map(mapMaterialRequestFromDb));
       };
 
@@ -947,9 +997,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } else if (module === 'wms-core') {
         await loadWmsCoreData();
       } else if (module === 'wms') {
-        const [itemsData, whData, supData, txData, reqData, actPage, catData, unitData, lossNormsData, auditSessionsData] = await Promise.all([
+        const [itemsData, whData, whTypeData, supData, txData, reqData, actPage, catData, unitData, lossNormsData, auditSessionsData] = await Promise.all([
           fetchAllInventoryItemRows(),
           fetchTableHelper('warehouses'),
+          fetchTableHelper('warehouse_types', supabase.from('warehouse_types').select('*').order('sort_order', { ascending: true }).order('name', { ascending: true })),
           fetchTableHelper('suppliers'),
           fetchTableHelper('transactions', supabase.from('transactions').select('*').order('date', { ascending: false })),
           fetchTableHelper('requests', supabase.from('requests').select('*').order('created_date', { ascending: false })),
@@ -963,7 +1014,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           fetchTableHelper('audit_sessions', supabase.from('audit_sessions').select('*').order('date', { ascending: false })),
         ]);
         setItems(requireModuleData(module, 'items', itemsData).map(mapInventoryItemFromDb));
-        setWarehouses(requireModuleData(module, 'warehouses', whData).map((w: any) => ({ ...w, isArchived: w.is_archived })));
+        setWarehouses(requireModuleData(module, 'warehouses', whData).map(mapWarehouseFromDb));
+        setWarehouseTypes(requireModuleData(module, 'warehouse_types', whTypeData).map(mapWarehouseTypeFromDb));
         if (supData) setSuppliers(supData.map((s: any) => ({ ...s, contactPerson: s.contact_person })));
         setTransactions(requireModuleData(module, 'transactions', txData).map(mapTransactionFromDb));
         setRequests(requireModuleData(module, 'requests', reqData).map(mapMaterialRequestFromDb));
@@ -1237,6 +1289,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         payload = {
           id: data.id, name: data.name, address: data.address, type: data.type, is_archived: data.isArchived
         };
+      } else if (table === 'warehouse_types') {
+        payload = warehouseTypeToDbPayload(data);
       } else if (table === 'suppliers') {
         payload = {
           id: data.id, name: data.name, contact_person: data.contactPerson, phone: data.phone, debt: data.debt
@@ -2072,6 +2126,73 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       logActivity('SYSTEM', 'Xóa kho bãi', `Đã xóa hoàn toàn kho: ${warehouse.name}`, 'DANGER');
       auditService.log({ tableName: 'warehouses', recordId: id, action: 'DELETE', oldData: warehouse as any, userId: user.id, userName: user.name || user.username });
     }
+  };
+
+  const addWarehouseType = async (warehouseType: WarehouseTypeConfig) => {
+    const normalizedCode = normalizeWarehouseTypeCode(warehouseType.code);
+    if (!normalizedCode) throw new Error('Mã loại kho không hợp lệ.');
+    if (!warehouseType.name.trim()) throw new Error('Tên loại kho không được để trống.');
+    if (warehouseTypes.some(type => type.code === normalizedCode)) {
+      throw new Error(`Mã loại kho "${normalizedCode}" đã tồn tại.`);
+    }
+
+    const nextType: WarehouseTypeConfig = {
+      ...warehouseType,
+      code: normalizedCode,
+      name: warehouseType.name.trim(),
+      description: warehouseType.description?.trim() || undefined,
+      color: warehouseType.color || 'slate',
+      isSystem: warehouseType.isSystem ?? false,
+      isActive: warehouseType.isActive ?? true,
+      sortOrder: warehouseType.sortOrder ?? (warehouseTypes.length + 1) * 10,
+    };
+
+    await syncToSupabase('warehouse_types', nextType, true);
+    setWarehouseTypes(prev => [...prev, nextType].sort((a, b) => (a.sortOrder ?? 100) - (b.sortOrder ?? 100) || a.name.localeCompare(b.name)));
+    logActivity('SYSTEM', 'Thêm loại kho', `Đã thêm loại kho: ${nextType.name}`, 'SUCCESS');
+    auditService.log({ tableName: 'warehouse_types', recordId: nextType.code, action: 'INSERT', newData: nextType as any, userId: user.id, userName: user.name || user.username });
+  };
+
+  const updateWarehouseType = async (warehouseType: WarehouseTypeConfig) => {
+    const normalizedCode = normalizeWarehouseTypeCode(warehouseType.code);
+    if (!normalizedCode) throw new Error('Mã loại kho không hợp lệ.');
+    if (!warehouseType.name.trim()) throw new Error('Tên loại kho không được để trống.');
+
+    const oldType = warehouseTypes.find(type => type.code === normalizedCode);
+    const nextType: WarehouseTypeConfig = {
+      ...warehouseType,
+      code: normalizedCode,
+      name: warehouseType.name.trim(),
+      description: warehouseType.description?.trim() || undefined,
+      color: warehouseType.color || oldType?.color || 'slate',
+      isSystem: oldType?.isSystem ?? warehouseType.isSystem ?? false,
+      isActive: warehouseType.isActive ?? oldType?.isActive ?? true,
+      sortOrder: warehouseType.sortOrder ?? oldType?.sortOrder ?? 100,
+    };
+
+    await syncToSupabase('warehouse_types', nextType, true);
+    setWarehouseTypes(prev => prev.map(type => type.code === normalizedCode ? nextType : type)
+      .sort((a, b) => (a.sortOrder ?? 100) - (b.sortOrder ?? 100) || a.name.localeCompare(b.name)));
+    logActivity('SYSTEM', 'Cập nhật loại kho', `Đã cập nhật loại kho: ${nextType.name}`, 'INFO');
+    auditService.log({ tableName: 'warehouse_types', recordId: normalizedCode, action: 'UPDATE', oldData: oldType as any, newData: nextType as any, userId: user.id, userName: user.name || user.username });
+  };
+
+  const removeWarehouseType = async (code: string) => {
+    const normalizedCode = normalizeWarehouseTypeCode(code);
+    const warehouseType = warehouseTypes.find(type => type.code === normalizedCode);
+    if (!warehouseType) return;
+    if (warehouseType.isSystem) throw new Error('Loại kho hệ thống không thể xoá để tránh lệch logic nghiệp vụ.');
+    if (warehouses.some(warehouse => warehouse.type === normalizedCode)) {
+      throw new Error('Không thể xoá loại kho đang được kho bãi sử dụng.');
+    }
+
+    if (isSupabaseConfigured) {
+      const { error } = await supabase.from('warehouse_types').delete().eq('code', normalizedCode);
+      if (error) throw error;
+    }
+    setWarehouseTypes(prev => prev.filter(type => type.code !== normalizedCode));
+    logActivity('SYSTEM', 'Xóa loại kho', `Đã xóa loại kho: ${warehouseType.name}`, 'DANGER');
+    auditService.log({ tableName: 'warehouse_types', recordId: normalizedCode, action: 'DELETE', oldData: warehouseType as any, userId: user.id, userName: user.name || user.username });
   };
 
   const getMaterialRequestApproverIds = (request: MaterialRequest) => {
@@ -3283,7 +3404,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   return (
     <AppContext.Provider value={{
-      user, users, appSettings, theme, setUser, switchUser, addUser, updateUser, removeUser, items, warehouses, suppliers, transactions, requests, activities,
+      user, users, appSettings, theme, setUser, switchUser, addUser, updateUser, removeUser, items, warehouses, warehouseTypes, suppliers, transactions, requests, activities,
       categories, units, employees,
       hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules, hrmConstructionSites, constructionSites: hrmConstructionSites,
       shiftTypes, employeeShifts,
@@ -3293,6 +3414,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       addHrmItem, updateHrmItem, removeHrmItem,
       orgUnits, addOrgUnit, updateOrgUnit, removeOrgUnit,
       addItem, addItems, updateItem, removeItem, addTransaction, updateTransactionStatus, clearTransactionHistory, addWarehouse, updateWarehouse, removeWarehouse,
+      addWarehouseType, updateWarehouseType, removeWarehouseType,
       addRequest, updateRequestStatus, removeRequest, logActivity, addCategory, updateCategory, removeCategory, addUnit, updateUnit, removeUnit,
       addSupplier, updateSupplier, removeSupplier, addEmployee, updateEmployee, replaceEmployeeLocal, removeEmployee, updateAppSettings, approvePartialTransaction, clearAllData,
       lossNorms, addLossNorm, updateLossNorm, removeLossNorm,

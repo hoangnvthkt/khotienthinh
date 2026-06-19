@@ -1,7 +1,7 @@
 
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { useApp } from '../context/AppContext';
-import { Warehouse, WarehouseType, Supplier, ItemCategory, ItemUnit, LossReason, LOSS_REASON_LABELS, MaterialLossNorm, InventoryItem } from '../types';
+import { Warehouse, WarehouseType, WarehouseTypeConfig, Supplier, ItemCategory, ItemUnit, LossReason, LOSS_REASON_LABELS, MaterialLossNorm, InventoryItem } from '../types';
 import {
   Building, MapPin, Plus, X, Save, Settings as SettingsIcon, Users,
   HardHat, Briefcase, Tag, Ruler, Trash2, Edit2,
@@ -71,10 +71,28 @@ const invertConversionFactor = (value: unknown) => {
   return Number.isFinite(factor) && factor > 0 ? roundConversionFactor(1 / factor) : 0;
 };
 const formatConversionInput = (value: number) => value > 0 ? String(value) : '';
+const normalizeWarehouseTypeCodeInput = (value: string) =>
+  value.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '');
+
+type WarehouseTypeForm = {
+  code: string;
+  name: string;
+  description: string;
+  color: string;
+  isActive: boolean;
+};
+
+const emptyWarehouseTypeForm = (): WarehouseTypeForm => ({
+  code: '',
+  name: '',
+  description: '',
+  color: 'slate',
+  isActive: true,
+});
 
 const Settings: React.FC = () => {
   const {
-    warehouses, addWarehouse, updateWarehouse, removeWarehouse, categories, units, suppliers,
+    warehouses, warehouseTypes, addWarehouse, updateWarehouse, removeWarehouse, addWarehouseType, updateWarehouseType, removeWarehouseType, categories, units, suppliers,
     addCategory, updateCategory, removeCategory,
     addUnit, updateUnit, removeUnit,
     addSupplier, updateSupplier, removeSupplier,
@@ -145,6 +163,17 @@ const Settings: React.FC = () => {
   const [newWhName, setNewWhName] = useState('');
   const [newWhAddress, setNewWhAddress] = useState('');
   const [newWhType, setNewWhType] = useState<WarehouseType>('SITE');
+  const [editingWarehouseType, setEditingWarehouseType] = useState<WarehouseTypeConfig | null>(null);
+  const [warehouseTypeForm, setWarehouseTypeForm] = useState<WarehouseTypeForm>(emptyWarehouseTypeForm);
+
+  const activeWarehouseTypes = useMemo(
+    () => warehouseTypes.filter(type => type.isActive !== false),
+    [warehouseTypes]
+  );
+  const defaultWarehouseType = useMemo(
+    () => activeWarehouseTypes.find(type => type.code === 'SITE')?.code || activeWarehouseTypes[0]?.code || warehouseTypes[0]?.code || 'SITE',
+    [activeWarehouseTypes, warehouseTypes]
+  );
 
   // Master data state management
   const [activeMasterSection, setActiveMasterSection] = useState<'items' | 'categories' | 'units' | 'suppliers' | null>(null);
@@ -184,6 +213,12 @@ const Settings: React.FC = () => {
     setAppName(appSettings.name);
     setAppLogo(appSettings.logo);
   }, [appSettings]);
+
+  useEffect(() => {
+    if (editingWarehouse || warehouseTypes.length === 0) return;
+    const selectedTypeIsAvailable = warehouseTypes.some(type => type.code === newWhType && type.isActive !== false);
+    if (!selectedTypeIsAvailable) setNewWhType(defaultWarehouseType);
+  }, [defaultWarehouseType, editingWarehouse, newWhType, warehouseTypes]);
 
   // General Handlers
   const handleSaveGeneral = (e: React.FormEvent) => {
@@ -225,6 +260,7 @@ const Settings: React.FC = () => {
   const handleAddWarehouse = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newWhName.trim() || !newWhAddress.trim()) return;
+    const warehouseTypeToSave = newWhType || defaultWarehouseType;
 
     if (editingWarehouse) {
       triggerAction(
@@ -237,7 +273,7 @@ const Settings: React.FC = () => {
             ...editingWarehouse,
             name: newWhName,
             address: newWhAddress,
-            type: newWhType
+            type: warehouseTypeToSave
           });
           setEditingWarehouse(null);
           setNewWhName(''); setNewWhAddress(''); setIsWhModalOpen(false);
@@ -248,7 +284,7 @@ const Settings: React.FC = () => {
         id: `wh-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
         name: newWhName,
         address: newWhAddress,
-        type: newWhType
+        type: warehouseTypeToSave
       });
       setNewWhName(''); setNewWhAddress(''); setIsWhModalOpen(false);
     }
@@ -269,6 +305,82 @@ const Settings: React.FC = () => {
       'danger',
       'Xác nhận xoá',
       () => removeWarehouse(wh.id)
+    );
+  };
+
+  const handleWarehouseTypeFormChange = (patch: Partial<WarehouseTypeForm>) => {
+    setWarehouseTypeForm(prev => ({ ...prev, ...patch }));
+  };
+
+  const resetWarehouseTypeForm = () => {
+    setEditingWarehouseType(null);
+    setWarehouseTypeForm(emptyWarehouseTypeForm());
+  };
+
+  const handleSaveWarehouseType = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const code = editingWarehouseType?.code || normalizeWarehouseTypeCodeInput(warehouseTypeForm.code);
+    if (!code || !warehouseTypeForm.name.trim()) {
+      toast.warning('Thiếu thông tin', 'Vui lòng nhập mã và tên loại kho.');
+      return;
+    }
+
+    const payload: WarehouseTypeConfig = {
+      code,
+      name: warehouseTypeForm.name.trim(),
+      description: warehouseTypeForm.description.trim() || undefined,
+      color: warehouseTypeForm.color,
+      isActive: warehouseTypeForm.isActive,
+      isSystem: editingWarehouseType?.isSystem ?? false,
+      sortOrder: editingWarehouseType?.sortOrder ?? (warehouseTypes.length + 1) * 10,
+    };
+
+    try {
+      if (editingWarehouseType) {
+        await updateWarehouseType(payload);
+        toast.success('Đã cập nhật loại kho');
+      } else {
+        await addWarehouseType(payload);
+        toast.success('Đã thêm loại kho');
+      }
+      resetWarehouseTypeForm();
+    } catch (error: any) {
+      logApiError('settings.warehouseType', error);
+      toast.error('Không thể lưu loại kho', getApiErrorMessage(error, 'Không thể lưu loại kho.'));
+    }
+  };
+
+  const handleEditWarehouseType = (warehouseType: WarehouseTypeConfig) => {
+    setEditingWarehouseType(warehouseType);
+    setWarehouseTypeForm({
+      code: warehouseType.code,
+      name: warehouseType.name,
+      description: warehouseType.description || '',
+      color: warehouseType.color || 'slate',
+      isActive: warehouseType.isActive !== false,
+    });
+  };
+
+  const handleDeleteWarehouseType = (warehouseType: WarehouseTypeConfig) => {
+    const usageCount = warehouses.filter(warehouse => warehouse.type === warehouseType.code).length;
+    const message = warehouseType.isSystem
+      ? `Loại kho "${warehouseType.name}" là loại hệ thống nên không nên xoá. Anh có thể đổi tên, mô tả hoặc tắt trạng thái hoạt động nếu không muốn dùng để tạo kho mới.`
+      : usageCount > 0
+        ? `Loại kho "${warehouseType.name}" đang được ${usageCount} kho sử dụng nên chưa thể xoá. Hãy đổi loại cho các kho đó trước.`
+        : `Bạn chắc chắn muốn xoá loại kho "${warehouseType.name}"? Các kho mới sẽ không còn thấy lựa chọn này.`;
+
+    triggerAction(
+      'Xoá loại kho',
+      message,
+      warehouseType.isSystem || usageCount > 0 ? 'warning' : 'danger',
+      warehouseType.isSystem || usageCount > 0 ? 'Đã hiểu' : 'Xoá loại kho',
+      async () => {
+        if (warehouseType.isSystem || usageCount > 0) return;
+        await removeWarehouseType(warehouseType.code);
+        toast.success('Đã xoá loại kho');
+        if (editingWarehouseType?.code === warehouseType.code) resetWarehouseTypeForm();
+      },
+      !(warehouseType.isSystem || usageCount > 0)
     );
   };
 
@@ -924,6 +1036,8 @@ const Settings: React.FC = () => {
           {activeSettingsTab === 'warehouses' && (
             <SettingsWarehouses
               warehouses={warehouses}
+              warehouseTypes={warehouseTypes}
+              defaultWarehouseType={defaultWarehouseType}
               isWhModalOpen={isWhModalOpen} setIsWhModalOpen={setIsWhModalOpen}
               editingWarehouse={editingWarehouse} setEditingWarehouse={setEditingWarehouse}
               newWhName={newWhName} setNewWhName={setNewWhName}
@@ -932,6 +1046,13 @@ const Settings: React.FC = () => {
               handleAddWarehouse={handleAddWarehouse}
               handleEditWarehouse={handleEditWarehouse}
               handleDeleteWarehouse={handleDeleteWarehouse}
+              editingWarehouseType={editingWarehouseType}
+              warehouseTypeForm={warehouseTypeForm}
+              handleWarehouseTypeFormChange={handleWarehouseTypeFormChange}
+              handleSaveWarehouseType={handleSaveWarehouseType}
+              handleEditWarehouseType={handleEditWarehouseType}
+              handleDeleteWarehouseType={handleDeleteWarehouseType}
+              resetWarehouseTypeForm={resetWarehouseTypeForm}
             />
           )}
 
