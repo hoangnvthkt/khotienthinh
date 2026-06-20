@@ -3,11 +3,12 @@ import {
   MaterialRequest,
   MaterialRequestFulfillmentBatch,
   MaterialRequestFulfillmentMode,
-  MaterialRequestLineFulfillmentSummary,
   MaterialRequestFulfillmentSourceType,
   MaterialRequestFulfillmentSummary,
+  MaterialRequestLineNeedClosure,
   InventoryItem,
   PurchaseOrder,
+  PurchaseOrderDeliveryGroup,
   PurchaseOrderItem,
   PurchaseOrderRequestLineLink,
   RequestItem,
@@ -28,6 +29,8 @@ import {
 
 const BATCH_TABLE = 'material_request_fulfillment_batches';
 const LINE_TABLE = 'material_request_fulfillment_lines';
+const NEED_CLOSURE_TABLE = 'material_request_line_need_closures';
+const DELIVERY_GROUP_TABLE = 'purchase_order_delivery_groups';
 
 const toSnake = (s: string) => s.replace(/[A-Z]/g, l => `_${l.toLowerCase()}`);
 const toCamel = (s: string) => s.replace(/_([a-z])/g, (_, l) => l.toUpperCase());
@@ -45,6 +48,12 @@ const fromDb = (obj: any) => mapKeys(obj, toCamel);
 
 const isMissingFulfillmentTable = (error: any): boolean =>
   error?.code === '42P01' || String(error?.message || '').includes(BATCH_TABLE) || String(error?.message || '').includes(LINE_TABLE);
+
+const isMissingNeedClosureTable = (error: any): boolean =>
+  error?.code === '42P01' || String(error?.message || '').includes(NEED_CLOSURE_TABLE);
+
+const isMissingDeliveryGroupTable = (error: any): boolean =>
+  error?.code === '42P01' || String(error?.message || '').includes(DELIVERY_GROUP_TABLE);
 
 const newId = () => globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
@@ -114,9 +123,6 @@ export const getCommittedQty = (line: RequestItem): number => {
   return Number(line.requestQty || 0);
 };
 
-const lineName = (line: RequestItem): string =>
-  line.itemNameSnapshot || line.materialBudgetItemName || line.itemId;
-
 const normalizeBatch = (batch: any, lines: any[]): MaterialRequestFulfillmentBatch => ({
   ...fromDb(batch),
   fulfillmentMode: (batch.fulfillment_mode || MaterialRequestFulfillmentMode.RECEIVE_TO_STOCK) as MaterialRequestFulfillmentMode,
@@ -157,13 +163,9 @@ const syncPurchaseOrderReceiptFromBatch = async (
       const inventory = inventoryById.get(item.itemId);
       const receivedNow = poLineStockToPurchaseQty(item, stockReceivedNow, inventory);
       if (receivedNow <= 0) return item;
-      const orderedQty = Number(item.qty || 0);
       const currentReceivedQty = Number(item.receivedQty || 0);
-      const remainingQty = Math.max(orderedQty - currentReceivedQty, 0);
-      const acceptedQty = Math.min(receivedNow, remainingQty);
-      if (acceptedQty <= 0) return item;
       hasReceipt = true;
-      return { ...item, receivedQty: currentReceivedQty + acceptedQty };
+      return { ...item, receivedQty: currentReceivedQty + receivedNow };
     });
 
     if (!hasReceipt) continue;
@@ -193,6 +195,9 @@ export interface IssueFulfillmentLineInput {
   varianceReason?: string;
   poId?: string | null;
   poLineId?: string | null;
+  purchaseOrderRequestLineId?: string | null;
+  deliveryUnit?: string | null;
+  deliveryUnitPrice?: number;
 }
 
 export interface IssueFulfillmentBatchInput {
@@ -255,6 +260,13 @@ export interface RecordPoReceiptInput {
 export interface EnsurePoDeliveryBatchesInput {
   po: PurchaseOrder;
   actorUserId: string;
+  lineOverrides?: Array<{
+    purchaseOrderLineId: string;
+    materialRequestId: string;
+    requestLineId: string;
+    issuedQty: number;
+    deliveryUnitPrice?: number;
+  }>;
 }
 
 export interface PreparePoReceiptForQualityReviewInput {
@@ -290,6 +302,16 @@ export interface SyncFulfillmentReceiptForTransactionInput {
   actorUserId: string;
 }
 
+export interface CloseMaterialRequestLineNeedInput {
+  request: MaterialRequest;
+  requestLineId: string;
+  requestLine: RequestItem;
+  closedQty: number;
+  actualReceivedQtySnapshot?: number;
+  reason: string;
+  actorUserId: string;
+}
+
 const emptySummary = (request: MaterialRequest): MaterialRequestFulfillmentSummary => {
   const lineSummaries = (request.items || []).map((line, index) => {
     const requestedQty = Number(line.requestQty || 0);
@@ -304,6 +326,8 @@ const emptySummary = (request: MaterialRequest): MaterialRequestFulfillmentSumma
       orderedQty,
       issuedQty: 0,
       receivedQty: 0,
+      closedNeedQty: 0,
+      openNeedQty: committedQty,
       remainingToIssue: committedQty,
       remainingToReceive: committedQty,
     };
@@ -314,6 +338,8 @@ const emptySummary = (request: MaterialRequest): MaterialRequestFulfillmentSumma
     orderedQty: sum.orderedQty + line.orderedQty,
     issuedQty: sum.issuedQty + line.issuedQty,
     receivedQty: sum.receivedQty + line.receivedQty,
+    closedNeedQty: sum.closedNeedQty + Number(line.closedNeedQty || 0),
+    openNeedQty: sum.openNeedQty + Number(line.openNeedQty || 0),
     remainingToIssue: sum.remainingToIssue + line.remainingToIssue,
     remainingToReceive: sum.remainingToReceive + line.remainingToReceive,
   }), {
@@ -322,6 +348,8 @@ const emptySummary = (request: MaterialRequest): MaterialRequestFulfillmentSumma
     orderedQty: 0,
     issuedQty: 0,
     receivedQty: 0,
+    closedNeedQty: 0,
+    openNeedQty: 0,
     remainingToIssue: 0,
     remainingToReceive: 0,
   });
@@ -334,9 +362,16 @@ const INACTIVE_FULFILLMENT_BATCH_STATUSES = new Set(['cancelled', 'draft', 'retu
 const summarizeRequestWithBatches = (
   request: MaterialRequest,
   batches: MaterialRequestFulfillmentBatch[] = [],
+  needClosures: MaterialRequestLineNeedClosure[] = [],
 ): MaterialRequestFulfillmentSummary => {
   const summary = emptySummary(request);
   const lineMap = new Map(summary.lineSummaries.map(line => [line.requestLineId, line]));
+  const closedByLine = needClosures
+    .filter(closure => (closure.status || 'active') === 'active')
+    .reduce<Map<string, number>>((map, closure) => {
+      map.set(closure.requestLineId, (map.get(closure.requestLineId) || 0) + Number(closure.closedQty || 0));
+      return map;
+    }, new Map());
 
   batches
     .filter(batch => !INACTIVE_FULFILLMENT_BATCH_STATUSES.has(batch.status))
@@ -358,8 +393,12 @@ const summarizeRequestWithBatches = (
 
   summary.lineSummaries.forEach(line => {
     const allocatedQty = Number((line as any).allocatedQty || 0);
-    line.remainingToIssue = Math.max(0, line.committedQty - allocatedQty);
-    line.remainingToReceive = Math.max(0, line.committedQty - line.receivedQty);
+    const closedNeedQty = closedByLine.get(line.requestLineId) || 0;
+    const openNeedQty = Math.max(0, line.committedQty - line.receivedQty - closedNeedQty);
+    line.closedNeedQty = closedNeedQty;
+    line.openNeedQty = openNeedQty;
+    line.remainingToIssue = Math.max(0, openNeedQty - Math.max(0, allocatedQty - line.receivedQty));
+    line.remainingToReceive = openNeedQty;
     delete (line as any).allocatedQty;
   });
 
@@ -369,6 +408,8 @@ const summarizeRequestWithBatches = (
     orderedQty: sum.orderedQty + line.orderedQty,
     issuedQty: sum.issuedQty + line.issuedQty,
     receivedQty: sum.receivedQty + line.receivedQty,
+    closedNeedQty: sum.closedNeedQty + Number(line.closedNeedQty || 0),
+    openNeedQty: sum.openNeedQty + Number(line.openNeedQty || 0),
     remainingToIssue: sum.remainingToIssue + line.remainingToIssue,
     remainingToReceive: sum.remainingToReceive + line.remainingToReceive,
   }), {
@@ -377,11 +418,48 @@ const summarizeRequestWithBatches = (
     orderedQty: 0,
     issuedQty: 0,
     receivedQty: 0,
+    closedNeedQty: 0,
+    openNeedQty: 0,
     remainingToIssue: 0,
     remainingToReceive: 0,
   });
 
   return { ...summary, ...totals };
+};
+
+const listNeedClosuresByRequestIds = async (requestIds: string[]): Promise<MaterialRequestLineNeedClosure[]> => {
+  const ids = Array.from(new Set(requestIds.filter(Boolean)));
+  if (ids.length === 0) return [];
+  const { data, error } = await supabase
+    .from(NEED_CLOSURE_TABLE)
+    .select('*')
+    .in('material_request_id', ids)
+    .eq('status', 'active');
+  if (error) {
+    if (isMissingNeedClosureTable(error)) return [];
+    throw error;
+  }
+  return (data || []).map(fromDb) as MaterialRequestLineNeedClosure[];
+};
+
+const syncDeliveryGroupStatus = async (deliveryGroupId?: string | null) => {
+  if (!deliveryGroupId) return;
+  const { data, error } = await supabase
+    .from(BATCH_TABLE)
+    .select('status')
+    .eq('po_delivery_group_id', deliveryGroupId);
+  if (error) {
+    if (isMissingDeliveryGroupTable(error) || isMissingFulfillmentTable(error)) return;
+    throw error;
+  }
+  const rows = data || [];
+  if (rows.length === 0) return;
+  const allClosed = rows.every(row => ['received', 'returned', 'cancelled'].includes(row.status));
+  const { error: updateError } = await supabase
+    .from(DELIVERY_GROUP_TABLE)
+    .update({ status: allClosed ? 'received' : 'issued' })
+    .eq('id', deliveryGroupId);
+  if (updateError && !isMissingDeliveryGroupTable(updateError)) throw updateError;
 };
 
 export const materialRequestFulfillmentService = {
@@ -600,11 +678,16 @@ export const materialRequestFulfillmentService = {
       map[requestId] = [...(map[requestId] || []), normalizeBatch(batch, linesByBatch.get(batch.id) || [])];
       return map;
     }, {});
+    const needClosures = await listNeedClosuresByRequestIds(requestIds);
+    const needClosuresByRequest = needClosures.reduce<Record<string, MaterialRequestLineNeedClosure[]>>((map, closure) => {
+      map[closure.materialRequestId] = [...(map[closure.materialRequestId] || []), closure];
+      return map;
+    }, {});
 
     const summariesByRequestId = requestIds.reduce<Record<string, MaterialRequestFulfillmentSummary>>((acc, requestId) => {
       const request = requestMap.get(requestId);
       if (!request) return acc;
-      acc[requestId] = summarizeRequestWithBatches(request, activeBatchesByRequest[requestId] || []);
+      acc[requestId] = summarizeRequestWithBatches(request, activeBatchesByRequest[requestId] || [], needClosuresByRequest[requestId] || []);
       return acc;
     }, {});
 
@@ -613,6 +696,57 @@ export const materialRequestFulfillmentService = {
       batchCountsByRequestId,
       activeBatchCountsByRequestId,
     };
+  },
+
+  async listNeedClosuresByRequests(materialRequestIds: string[]): Promise<MaterialRequestLineNeedClosure[]> {
+    return listNeedClosuresByRequestIds(materialRequestIds);
+  },
+
+  async listDeliveryGroupsByPurchaseOrder(purchaseOrderId: string): Promise<PurchaseOrderDeliveryGroup[]> {
+    if (!purchaseOrderId) return [];
+    const { data, error } = await supabase
+      .from(DELIVERY_GROUP_TABLE)
+      .select('*')
+      .eq('purchase_order_id', purchaseOrderId)
+      .order('planned_date', { ascending: true })
+      .order('created_at', { ascending: true });
+    if (error) {
+      if (isMissingDeliveryGroupTable(error)) return [];
+      throw error;
+    }
+    return (data || []).map(fromDb) as PurchaseOrderDeliveryGroup[];
+  },
+
+  async closeLineNeed(input: CloseMaterialRequestLineNeedInput): Promise<MaterialRequestLineNeedClosure> {
+    const reason = input.reason.trim();
+    const closedQty = Number(input.closedQty || 0);
+    if (!reason) throw new Error('Cần nhập lý do xác nhận đủ nhu cầu.');
+    if (closedQty <= 0) throw new Error('Không còn khối lượng cần đóng.');
+
+    const payload: MaterialRequestLineNeedClosure = {
+      id: newId(),
+      projectId: input.request.projectId || null,
+      constructionSiteId: input.request.constructionSiteId || null,
+      materialRequestId: input.request.id,
+      requestLineId: input.requestLineId,
+      itemId: input.requestLine.itemId,
+      workBoqItemId: input.requestLine.workBoqItemId || null,
+      materialBudgetItemId: input.requestLine.materialBudgetItemId || null,
+      closedQty,
+      actualReceivedQtySnapshot: Number(input.actualReceivedQtySnapshot || 0),
+      reason,
+      status: 'active',
+      closedBy: input.actorUserId,
+      closedAt: new Date().toISOString(),
+    };
+
+    const { data, error } = await supabase
+      .from(NEED_CLOSURE_TABLE)
+      .insert(toDb(payload))
+      .select('*')
+      .single();
+    if (error) throw error;
+    return fromDb(data) as MaterialRequestLineNeedClosure;
   },
 
   summarizeRequest(request: MaterialRequest, batches: MaterialRequestFulfillmentBatch[] = []): MaterialRequestFulfillmentSummary {
@@ -624,7 +758,8 @@ export const materialRequestFulfillmentService = {
       return request.status;
     }
     const summary = this.summarizeRequest(request, batches);
-    if (summary.committedQty > 0 && summary.receivedQty >= summary.committedQty) return RequestStatus.COMPLETED;
+    const openNeedQty = Number(summary.openNeedQty ?? Math.max(0, summary.committedQty - summary.receivedQty));
+    if (summary.committedQty > 0 && openNeedQty <= 0) return RequestStatus.COMPLETED;
     if (summary.issuedQty > 0 || summary.receivedQty > 0) return RequestStatus.IN_TRANSIT;
     return RequestStatus.APPROVED;
   },
@@ -636,25 +771,14 @@ export const materialRequestFulfillmentService = {
     if (validLines.length === 0) throw new Error('Chưa có dòng vật tư nào có số lượng cấp.');
     if (!input.sourceWarehouseId) throw new Error('Chưa chọn kho nguồn để cấp vật tư.');
 
-    const existingBatches = await this.listByRequest(input.request.id);
-    const currentSummary = this.summarizeRequest(input.request, existingBatches);
-    const currentByLine = new Map<string, MaterialRequestLineFulfillmentSummary>(currentSummary.lineSummaries.map(line => [line.requestLineId, line]));
     const requestLineMap = new Map<string, RequestItem>((input.request.items || []).map((line, index) => [getRequestLineId(input.request, line, index), line]));
 
     validLines.forEach(line => {
       const requestLine = requestLineMap.get(line.requestLineId);
       if (!requestLine) throw new Error('Không tìm thấy dòng yêu cầu cần cấp.');
-      const current = currentByLine.get(line.requestLineId);
-      const requestQty = Number(current?.requestedQty || requestLine.requestQty || 0);
-      const remainingToIssue = Number(current?.remainingToIssue ?? requestQty);
-      if (line.issuedQty > remainingToIssue) {
-        throw new Error(`Số lượng cấp lũy kế của "${lineName(requestLine)}" vượt số lượng công trường đề xuất. Vui lòng tạo đề xuất bổ sung nếu cần cấp thêm.`);
-      }
-      if (line.issuedQty !== remainingToIssue && !line.varianceReason?.trim()) {
-        throw new Error(`Dòng "${lineName(requestLine)}" cấp lệch phần còn lại phải nhập lý do.`);
-      }
     });
 
+    const existingBatches = await this.listByRequest(input.request.id);
     const batchId = newId();
     const transactionId = `tx-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const isDirectConsumption = input.request.fulfillmentMode === MaterialRequestFulfillmentMode.DIRECT_CONSUMPTION;
@@ -715,11 +839,14 @@ export const materialRequestFulfillmentService = {
         workBoqItemId: requestLine.workBoqItemId || null,
         poId: line.poId || null,
         poLineId: line.poLineId || null,
+        purchaseOrderRequestLineId: line.purchaseOrderRequestLineId || null,
         requestedQtySnapshot: Number(requestLine.requestQty || 0),
         committedQtySnapshot: getCommittedQty(requestLine),
         issuedQty: line.issuedQty,
         receivedQty: 0,
         unit: requestLine.unitSnapshot || null,
+        deliveryUnit: line.deliveryUnit || requestLine.unitSnapshot || null,
+        deliveryUnitPrice: Number(line.deliveryUnitPrice || 0),
         varianceReason: line.varianceReason || null,
       };
     });
@@ -829,7 +956,7 @@ export const materialRequestFulfillmentService = {
         batchNo: `${requestCode}-PO-${input.po.poNumber}-${input.transactionId.slice(-5)}`,
         batchDate: now,
         sourceWarehouseId: null,
-        targetWarehouseId: input.po.targetWarehouseId || null,
+        targetWarehouseId: requestLinks[0]?.targetWarehouseId || input.po.targetWarehouseId || null,
         fulfillmentMode: MaterialRequestFulfillmentMode.RECEIVE_TO_STOCK,
         sourceType: 'po_receipt',
         status: 'received',
@@ -858,11 +985,14 @@ export const materialRequestFulfillmentService = {
           workBoqItemId: link.workBoqItemId || poItem?.workBoqItemId || null,
           poId: input.po.id,
           poLineId: link.purchaseOrderLineId,
+          purchaseOrderRequestLineId: link.id || null,
           requestedQtySnapshot: Number(link.requestedQty || poItem?.qty || 0),
           committedQtySnapshot: Number(link.requestedQty || poItem?.qty || 0),
           issuedQty: receivedQty,
           receivedQty,
           unit: getPoLineStockUnit(poItem || ({} as PurchaseOrderItem), inventory) || link.unit || poItem?.unit || null,
+          deliveryUnit: getPoLineStockUnit(poItem || ({} as PurchaseOrderItem), inventory) || link.unit || poItem?.unit || null,
+          deliveryUnitPrice: poItem ? getPoLineStockUnitPrice(poItem, inventory) : Number(inventory?.priceIn || 0),
           varianceReason: null,
           note: `Nhập thực nhận ${poNumber}${poSourceSuffix}`,
         };
@@ -893,7 +1023,6 @@ export const materialRequestFulfillmentService = {
     input: PreparePoReceiptForQualityReviewInput,
   ): Promise<PreparePoReceiptForQualityReviewResult> {
     if (!input.po.id) throw new Error('Không xác định được PO cần nhận hàng.');
-    if (!input.po.targetWarehouseId) throw new Error('PO chưa có kho nhận.');
 
     const { data: linkRows, error: linkError } = await supabase
       .from('purchase_order_request_lines')
@@ -931,10 +1060,10 @@ export const materialRequestFulfillmentService = {
       throw new Error('PO không còn đợt giao đang chờ duyệt SL/CL.');
     }
 
-    const wrongWarehouseBatch = activeBatches.find(batch =>
+    const wrongWarehouseBatch = input.po.targetWarehouseId ? activeBatches.find(batch =>
       batch.target_warehouse_id
       && batch.target_warehouse_id !== input.po.targetWarehouseId
-    );
+    ) : null;
     if (wrongWarehouseBatch) {
       throw new Error('Kho nhận của PO không khớp kho nhận trên đợt giao đang mở.');
     }
@@ -990,20 +1119,24 @@ export const materialRequestFulfillmentService = {
       (batchOrder.get(left.batch_id) || 0) - (batchOrder.get(right.batch_id) || 0)
     );
     const allocationByFulfillmentLineId = new Map<string, number>();
-    const unallocatedByPoLine = new Map(receiptByPoLine);
-
-    sortedLines.forEach(line => {
+    const linesByPoLine = sortedLines.reduce<Map<string, any[]>>((map, line) => {
       const poLineId = line.po_line_id || line.item_id;
-      const remaining = unallocatedByPoLine.get(poLineId) || 0;
-      const allocated = Math.min(remaining, Number(line.issued_qty || 0));
-      allocationByFulfillmentLineId.set(line.id, allocated);
-      unallocatedByPoLine.set(poLineId, Math.max(remaining - allocated, 0));
-    });
+      map.set(poLineId, [...(map.get(poLineId) || []), line]);
+      return map;
+    }, new Map());
 
-    const unallocated = Array.from(unallocatedByPoLine.entries()).find(([, quantity]) => quantity > 1e-9);
-    if (unallocated) {
-      throw new Error('Số lượng thực nhận vượt số lượng của đợt giao đang mở. Vui lòng kiểm tra lại đợt giao hoặc tạo đợt bổ sung.');
-    }
+    receiptByPoLine.forEach((quantity, poLineId) => {
+      const lines = linesByPoLine.get(poLineId) || [];
+      if (lines.length === 0) return;
+      let remaining = quantity;
+      lines.forEach((line, index) => {
+        const isLast = index === lines.length - 1;
+        const plannedQty = Number(line.issued_qty || 0);
+        const allocated = isLast ? remaining : Math.min(remaining, plannedQty);
+        allocationByFulfillmentLineId.set(line.id, allocated);
+        remaining = Math.max(remaining - allocated, 0);
+      });
+    });
 
     for (const transaction of pendingTransactions) {
       const transactionBatch = pendingBatches.find(batch => batch.transaction_id === transaction.id);
@@ -1018,9 +1151,6 @@ export const materialRequestFulfillmentService = {
         if (!fulfillmentLine) return item;
 
         const quantity = allocationByFulfillmentLineId.get(fulfillmentLine.id) || 0;
-        if (quantity <= 0) {
-          throw new Error('Mỗi dòng trong đợt giao phải có số lượng thực nhận lớn hơn 0. Nếu NCC chưa giao dòng này, hãy tách thành đợt giao khác.');
-        }
         const poLineId = fulfillmentLine.po_line_id || fulfillmentLine.item_id;
         const poItem = poItemByLineId.get(poLineId);
         const inventory = inventoryById.get(item.itemId || poItem?.itemId || fulfillmentLine.item_id);
@@ -1053,15 +1183,13 @@ export const materialRequestFulfillmentService = {
 
   async ensurePoDeliveryBatches(input: EnsurePoDeliveryBatchesInput): Promise<string[]> {
     if (!input.po.id) return [];
-    if (!input.po.targetWarehouseId) {
-      throw new Error('PO chưa có kho nhận nên không thể tạo phiếu chờ nhập kho.');
-    }
     const poSourceSuffix = input.po.vendorName ? ` - ${input.po.vendorName}` : '';
     const poNumber = formatPoNumber(input.po.poNumber);
 
+    const hasExplicitDeliveryLines = (input.lineOverrides || []).some(line => Number(line.issuedQty || 0) > 0);
     const { data: existingLineRows, error: existingLineError } = await supabase
       .from(LINE_TABLE)
-      .select('batch_id, material_request_id')
+      .select('batch_id, material_request_id, request_line_id, po_line_id, purchase_order_request_line_id, issued_qty, received_qty')
       .eq('po_id', input.po.id);
     if (existingLineError) {
       if (isMissingFulfillmentTable(existingLineError)) return [];
@@ -1076,7 +1204,7 @@ export const materialRequestFulfillmentService = {
         .in('id', existingBatchIds);
       if (existingBatchError) throw existingBatchError;
       const activeBatches = (existingBatches || []).filter(batch => batch.status === 'issued');
-      if (activeBatches.length > 0) {
+      if (activeBatches.length > 0 && !hasExplicitDeliveryLines) {
         return Array.from(new Set(activeBatches.map(batch => batch.material_request_id).filter(Boolean)));
       }
     }
@@ -1089,6 +1217,14 @@ export const materialRequestFulfillmentService = {
 
     const links = (linkRows || []).map(fromDb) as PurchaseOrderRequestLineLink[];
     if (links.length === 0) return [];
+    const overrideByKey = new Map((input.lineOverrides || []).map(line => [
+      `${line.materialRequestId}:${line.requestLineId}:${line.purchaseOrderLineId}`,
+      line,
+    ]));
+    const defaultTargetWarehouseId = input.po.targetWarehouseId || null;
+    if (!defaultTargetWarehouseId && !links.some(link => !!link.targetWarehouseId)) {
+      throw new Error('PO chưa có kho nhận nên không thể tạo phiếu chờ nhập kho.');
+    }
 
     const poItemByLineId = new Map((input.po.items || []).map(item => [item.lineId || item.itemId, item]));
     const inventoryById = await loadInventoryForPo(input.po);
@@ -1111,19 +1247,54 @@ export const materialRequestFulfillmentService = {
 
     const now = new Date().toISOString();
     const affectedRequestIds: string[] = [];
+    let deliveryGroupId: string | null = null;
+    try {
+      const { count, error: countError } = await supabase
+        .from(DELIVERY_GROUP_TABLE)
+        .select('id', { count: 'exact', head: true })
+        .eq('purchase_order_id', input.po.id);
+      if (countError) throw countError;
+      deliveryGroupId = newId();
+      const deliveryNo = `${input.po.poNumber || input.po.id}-DOT-${Number(count || 0) + 1}`;
+      const { error: groupError } = await supabase
+        .from(DELIVERY_GROUP_TABLE)
+        .insert(toDb({
+          id: deliveryGroupId,
+          projectId: input.po.projectId || links[0]?.projectId || null,
+          purchaseOrderId: input.po.id,
+          deliveryNo,
+          plannedDate: now,
+          status: 'issued',
+          note: `${poNumber}${poSourceSuffix} đang giao`,
+          createdBy: input.actorUserId,
+        }));
+      if (groupError) throw groupError;
+    } catch (error) {
+      if (!isMissingDeliveryGroupTable(error)) throw error;
+      deliveryGroupId = null;
+    }
 
     for (const [materialRequestId, requestLinks] of linksByRequest.entries()) {
       const batchId = newId();
       const transactionId = `tx-po-delivery-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
       const requestCode = requestLinks[0]?.materialRequestCode || materialRequestId;
+      const targetWarehouseId = requestLinks[0]?.targetWarehouseId || defaultTargetWarehouseId;
+      if (!targetWarehouseId) {
+        throw new Error(`Phiếu ${requestCode} chưa có kho nhận nên không thể tạo đợt giao.`);
+      }
       const linePayloads = requestLinks.map(link => {
         const poItem = poItemByLineId.get(link.purchaseOrderLineId);
         const inventory = inventoryById.get(link.itemId || poItem?.itemId || '');
         const remainingPurchaseQty = remainingByPoLine.get(link.purchaseOrderLineId) || 0;
         const remainingStockQty = poItem ? poLinePurchaseToStockQty(poItem, remainingPurchaseQty, inventory) : remainingPurchaseQty;
         const linkedStockQty = Number(link.orderedQty || (poItem ? poLinePurchaseToStockQty(poItem, Number(poItem.qty || 0), inventory) : 0));
-        const deliveryQty = Math.min(remainingStockQty, linkedStockQty || remainingStockQty);
+        const override = overrideByKey.get(`${materialRequestId}:${link.requestLineId}:${link.purchaseOrderLineId}`);
+        if (hasExplicitDeliveryLines && !override) return null;
+        const deliveryQty = override ? Number(override.issuedQty || 0) : Math.min(remainingStockQty, linkedStockQty || remainingStockQty);
         const stockUnit = poItem ? getPoLineStockUnit(poItem, inventory) : inventory?.unit || link.unit || null;
+        const deliveryUnitPrice = override?.deliveryUnitPrice != null
+          ? Number(override.deliveryUnitPrice || 0)
+          : poItem ? getPoLineStockUnitPrice(poItem, inventory) : Number(inventory?.priceIn || 0);
         return {
           id: newId(),
           batchId,
@@ -1134,15 +1305,18 @@ export const materialRequestFulfillmentService = {
           workBoqItemId: link.workBoqItemId || poItem?.workBoqItemId || null,
           poId: input.po.id,
           poLineId: link.purchaseOrderLineId,
+          purchaseOrderRequestLineId: link.id || null,
           requestedQtySnapshot: Number(link.requestedQty || linkedStockQty || deliveryQty || 0),
           committedQtySnapshot: Number(link.requestedQty || linkedStockQty || deliveryQty || 0),
           issuedQty: deliveryQty,
           receivedQty: 0,
           unit: stockUnit,
+          deliveryUnit: stockUnit,
+          deliveryUnitPrice,
           varianceReason: null,
           note: `Chờ nhận hàng từ ${poNumber}${poSourceSuffix}`,
         };
-      }).filter(line => line.issuedQty > 0);
+      }).filter((line): line is NonNullable<typeof line> => !!line && line.issuedQty > 0);
 
       if (linePayloads.length === 0) continue;
 
@@ -1159,7 +1333,7 @@ export const materialRequestFulfillmentService = {
             fulfillmentBatchId: batchId,
           });
         }),
-        targetWarehouseId: input.po.targetWarehouseId,
+        targetWarehouseId,
         requesterId: input.actorUserId,
         approverId: input.actorUserId,
         status: TransactionStatus.PENDING,
@@ -1175,7 +1349,8 @@ export const materialRequestFulfillmentService = {
         batchNo: `${requestCode}-PO-${input.po.poNumber}`,
         batchDate: now,
         sourceWarehouseId: null,
-        targetWarehouseId: input.po.targetWarehouseId,
+        targetWarehouseId,
+        poDeliveryGroupId: deliveryGroupId,
         fulfillmentMode: MaterialRequestFulfillmentMode.RECEIVE_TO_STOCK,
         sourceType: 'po_receipt',
         status: 'issued',
@@ -1222,6 +1397,7 @@ export const materialRequestFulfillmentService = {
       } catch (error) {
         if (batchCreated) await supabase.from(BATCH_TABLE).delete().eq('id', batchId);
         if (transactionCreated) await supabase.from('transactions').delete().eq('id', transactionId);
+        if (deliveryGroupId) await supabase.from(DELIVERY_GROUP_TABLE).delete().eq('id', deliveryGroupId);
         throw error;
       }
     }
@@ -1323,33 +1499,12 @@ export const materialRequestFulfillmentService = {
       const received = receivedByLineId.get(line.id);
       if (!received) throw new Error('Thiếu dữ liệu nhận hàng cho một dòng trong đợt cấp.');
       if (received.receivedQty < 0) throw new Error('Số lượng nhận không được âm.');
-      if (received.receivedQty !== Number(line.issuedQty || 0) && !received.varianceReason.trim()) {
-        throw new Error('Dòng nhận lệch số lượng xuất phải nhập lý do.');
-      }
     });
-
-    const existingBatches = await this.listByRequest(input.request.id);
-    const requestLineMap = new Map<string, RequestItem>((input.request.items || []).map((line, index) => [getRequestLineId(input.request, line, index), line]));
-    const receivedByRequestLine = new Map<string, number>();
-    existingBatches
-      .filter(batch => batch.id !== input.batch.id && (batch.status === 'received' || batch.status === 'variance_pending'))
-      .forEach(batch => {
-        batch.lines.forEach(line => {
-          receivedByRequestLine.set(line.requestLineId, (receivedByRequestLine.get(line.requestLineId) || 0) + Number(line.receivedQty || 0));
-        });
-      });
 
     let hasVariance = false;
     input.batch.lines.forEach(line => {
       const received = receivedByLineId.get(line.id)!;
       if (received.receivedQty !== Number(line.issuedQty || 0)) hasVariance = true;
-      const requestLine = requestLineMap.get(line.requestLineId);
-      const requestQty = Number(requestLine?.requestQty || line.requestedQtySnapshot || 0);
-      const nextReceived = (receivedByRequestLine.get(line.requestLineId) || 0) + received.receivedQty;
-      if (nextReceived > requestQty) {
-        throw new Error(`Số lượng nhận lũy kế của "${requestLine ? lineName(requestLine) : line.itemId}" vượt số lượng công trường đề xuất. Vui lòng tạo đề xuất bổ sung nếu cần nhận thêm.`);
-      }
-      receivedByRequestLine.set(line.requestLineId, nextReceived);
     });
 
     const now = new Date().toISOString();
@@ -1428,6 +1583,7 @@ export const materialRequestFulfillmentService = {
     if (lineError) throw lineError;
 
     await syncPurchaseOrderReceiptFromBatch(input.batch, receivedByLineId);
+    await syncDeliveryGroupStatus(input.batch.poDeliveryGroupId);
 
     return normalizeBatch(batchRow, lineRows || []);
   },
@@ -1477,6 +1633,8 @@ export const materialRequestFulfillmentService = {
       .order('created_at', { ascending: true });
     if (lineError) throw lineError;
 
+    await syncDeliveryGroupStatus(input.batch.poDeliveryGroupId);
+
     return normalizeBatch(batchRow, lineRows || []);
   },
 
@@ -1506,6 +1664,8 @@ export const materialRequestFulfillmentService = {
       .eq('batch_id', input.batch.id)
       .order('created_at', { ascending: true });
     if (lineError) throw lineError;
+
+    await syncDeliveryGroupStatus(input.batch.poDeliveryGroupId);
 
     return normalizeBatch(batchRow, lineRows || []);
   },
@@ -1561,6 +1721,8 @@ export const materialRequestFulfillmentService = {
       .eq('batch_id', input.batch.id)
       .order('created_at', { ascending: true });
     if (lineError) throw lineError;
+
+    await syncDeliveryGroupStatus(input.batch.poDeliveryGroupId);
 
     return normalizeBatch(batchRow, lineRows || []);
   },

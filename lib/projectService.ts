@@ -3,6 +3,7 @@ import {
     ProjectTask, DailyLog, AcceptanceRecord,
     MaterialBudgetItem, ProjectMaterialRequest, ProjectVendor,
     PurchaseOrder, PaymentSchedule, ProjectBaseline, ProjectWorkBoqItem, PurchaseOrderRequestLineLink,
+    PurchaseOrderRemovalResult,
     PaymentDossierStatus, PaymentQualityStatus, PaymentScheduleMilestoneType
 } from '../types';
 import { auditService } from './auditService';
@@ -890,6 +891,13 @@ const listAllPurchaseOrderRequestLineLinks = async (
 };
 
 export const poService = {
+    async nextNumber(): Promise<string> {
+        const { data, error } = await supabase.rpc('next_purchase_order_number_v2');
+        if (error) throw error;
+        const poNumber = String(data || '').trim();
+        if (!poNumber) throw new Error('Hệ thống chưa cấp được số PO mới.');
+        return poNumber;
+    },
     async list(projectIdOrSiteId: string, constructionSiteId?: string | null): Promise<PurchaseOrder[]> {
         return listAllPurchaseOrders(projectIdOrSiteId, constructionSiteId);
     },
@@ -929,6 +937,16 @@ export const poService = {
         cursor?: string | null;
     } = {}): Promise<ListPage<PurchaseOrder>> {
         return listStockPurchaseOrdersPage(input);
+    },
+    async listByIds(ids: string[]): Promise<PurchaseOrder[]> {
+        const uniqueIds = Array.from(new Set(ids.filter(Boolean)));
+        if (uniqueIds.length === 0) return [];
+        const { data, error } = await supabase
+            .from('purchase_orders')
+            .select('*')
+            .in('id', uniqueIds);
+        if (error) throw error;
+        return (data || []).map(fromDb) as PurchaseOrder[];
     },
     async listRequestLineLinks(projectIdOrSiteId: string, constructionSiteId?: string | null): Promise<PurchaseOrderRequestLineLink[]> {
         return listAllPurchaseOrderRequestLineLinks(projectIdOrSiteId, constructionSiteId);
@@ -983,22 +1001,17 @@ export const poService = {
         if (error) throw error;
 
         const po = fromDb(data) as PurchaseOrder;
-        if (['cancelled', 'closed', 'returned', 'delivered'].includes(po.status)) {
-            throw new Error('PO đã huỷ/đóng/hoàn hàng/hoàn thành, không thể nhập kho.');
+        if (['cancelled', 'closed', 'returned'].includes(po.status)) {
+            throw new Error('PO đã huỷ/đóng/hoàn hàng, không thể nhập kho.');
         }
         const receiptMap = new Map(receiptLines.map(line => [line.lineId || line.itemId, Number(line.quantity) || 0]));
         let hasReceipt = false;
 
         const nextItems = po.items.map(item => {
             const receiveQty = receiptMap.get(item.lineId || item.itemId) || 0;
-            const orderedQty = Number(item.qty) || 0;
             const receivedQty = Number(item.receivedQty) || 0;
-            const remainingQty = Math.max(orderedQty - receivedQty, 0);
 
             if (receiveQty <= 0) return item;
-            if (receiveQty > remainingQty) {
-                throw new Error(`Số lượng nhận của ${item.sku || item.name} vượt phần còn lại.`);
-            }
 
             hasReceipt = true;
             return { ...item, receivedQty: receivedQty + receiveQty };
@@ -1018,55 +1031,15 @@ export const poService = {
         await this.upsert(updated);
         return updated;
     },
-    async remove(id: string): Promise<void> {
-        const { data: current, error: readError } = await supabase
-            .from('purchase_orders')
-            .select('*')
-            .eq('id', id)
+    async remove(id: string): Promise<PurchaseOrderRemovalResult> {
+        const { data, error } = await supabase
+            .rpc('remove_purchase_order_v1', { p_po_id: id })
             .single();
-        if (readError) throw readError;
-        const po = fromDb(current) as PurchaseOrder & { everSubmitted?: boolean };
-        const cleanupState = await getPoReceiptCleanupState(po);
-        const receivedTransactionIds = po.receivedTransactionIds || [];
-        const receivedQty = (po.items || []).reduce((sum, item) => sum + Number(item.receivedQty || 0), 0);
-        const noReceipt = receivedQty <= 0 && receivedTransactionIds.length === 0 && !cleanupState.hasReceivedBatchQty;
-        const status = String(po.status || '').toLowerCase();
-        const stockReturned = !cleanupState.hasActiveBatches
-            && !cleanupState.hasUnfinishedTransactions
-            && !cleanupState.hasMissingReturnTransaction;
-        if (cleanupState.hasActiveBatches) {
-            throw new Error('PO còn đợt nhận/cấp từ đề xuất chưa hoàn trả, không thể xoá. Vui lòng hoàn kho đủ trước.');
-        }
-        if (cleanupState.hasUnfinishedTransactions) {
-            throw new Error('PO còn phiếu kho chưa hoàn tất hoặc chưa huỷ, không thể xoá.');
-        }
-        if (cleanupState.hasMissingReturnTransaction) {
-            throw new Error('PO đã phát sinh nhập kho nhưng chưa có phiếu hoàn kho completed đầy đủ, không thể xoá.');
-        }
-        if (cleanupState.hasInsufficientReturnQty) {
-            throw new Error('PO đã phát sinh nhập kho nhưng số lượng hoàn kho chưa đủ, không thể xoá.');
-        }
-        const canHardDelete =
-            (status === 'draft' && !po.everSubmitted && noReceipt) ||
-            ((status === 'returned' || status === 'cancelled') && (noReceipt || (cleanupState.hasReceivedBatchQty && stockReturned))) ||
-            (['partial', 'delivered', 'closed'].includes(status) && cleanupState.hasReceivedBatchQty && stockReturned);
-        if (!canHardDelete) {
-            throw new Error('Chỉ xoá PO nháp chưa gửi duyệt, hoặc PO đã hoàn kho đủ/không còn giao dịch kho dang dở.');
-        }
-        const { error: linkError } = await supabase
-            .from('purchase_order_request_lines')
-            .delete()
-            .eq('purchase_order_id', id);
-        if (linkError && linkError.code !== '42P01') throw linkError;
-        const { data: deletedRows, error } = await supabase
-            .from('purchase_orders')
-            .delete()
-            .eq('id', id)
-            .select('id');
         if (error) throw error;
-        if (!deletedRows || deletedRows.length === 0) {
-            throw new Error('Không xoá được PO trên Supabase. Vui lòng kiểm tra quyền xoá hoặc trạng thái PO.');
+        if (!data) {
+            throw new Error('Không xoá/lưu trữ được PO trên Supabase. Vui lòng kiểm tra quyền xoá hoặc trạng thái PO.');
         }
+        return fromDb(data) as PurchaseOrderRemovalResult;
     },
 };
 

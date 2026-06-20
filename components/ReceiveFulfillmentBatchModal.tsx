@@ -53,7 +53,7 @@ const ReceiveFulfillmentBatchModal: React.FC<ReceiveFulfillmentBatchModalProps> 
   const hasInvalidQty = batch.lines.some(line => {
     const draft = receiveLines.find(item => item.lineId === line.id);
     const qty = parseQuantityInput(draft?.qty || 0);
-    return qty < 0 || qty > Number(line.issuedQty || 0);
+    return qty < 0;
   });
 
   const getWarehouseName = (id?: string | null) => {
@@ -70,11 +70,10 @@ const ReceiveFulfillmentBatchModal: React.FC<ReceiveFulfillmentBatchModalProps> 
     setReceiveLines(prev => prev.map(line => line.lineId === lineId ? { ...line, ...patch } : line));
   };
 
-  const updateReceiveQuantity = (lineId: string, rawValue: string, maxQty: number) => {
+  const updateReceiveQuantity = (lineId: string, rawValue: string) => {
     setReceiveLines(prev => prev.map(line => line.lineId === lineId ? {
       ...line,
       qty: sanitizeQuantityInput(rawValue, {
-        max: maxQty,
         previousValue: line.qty,
       }),
     } : line));
@@ -83,7 +82,7 @@ const ReceiveFulfillmentBatchModal: React.FC<ReceiveFulfillmentBatchModalProps> 
   const handleConfirm = async () => {
     if (!canSubmit || saving) return;
     if (hasInvalidQty) {
-      toast.warning('Kiểm tra số lượng', 'Số thực nhận không được âm hoặc vượt số lượng đã xuất.');
+      toast.warning('Kiểm tra số lượng', 'Số thực nhận không được âm.');
       return;
     }
 
@@ -101,7 +100,11 @@ const ReceiveFulfillmentBatchModal: React.FC<ReceiveFulfillmentBatchModalProps> 
         })),
       });
       const freshBatches = await materialRequestFulfillmentService.listByRequest(request.id);
-      const nextStatus = materialRequestFulfillmentService.nextRequestStatus(request, freshBatches);
+      const summaries = await materialRequestFulfillmentService.listSummariesByRequests([request]);
+      const summary = summaries.summariesByRequestId[request.id];
+      const nextStatus = summary && Number(summary.openNeedQty ?? summary.remainingToReceive ?? 0) <= 0
+        ? RequestStatus.COMPLETED
+        : materialRequestFulfillmentService.nextRequestStatus(request, freshBatches);
       await updateRequestStatus(
         request.id,
         nextStatus,
@@ -163,7 +166,9 @@ const ReceiveFulfillmentBatchModal: React.FC<ReceiveFulfillmentBatchModalProps> 
                 <tr>
                   <th className="p-4">Vật tư</th>
                   <th className="p-4 text-right w-28">Đã xuất</th>
+                  <th className="p-4 text-right w-28">Giá đợt</th>
                   <th className="p-4 text-center w-44">Thực nhận</th>
+                  <th className="p-4 text-right w-32">Thành tiền</th>
                   <th className="p-4">Lý do lệch</th>
                 </tr>
               </thead>
@@ -171,27 +176,31 @@ const ReceiveFulfillmentBatchModal: React.FC<ReceiveFulfillmentBatchModalProps> 
                 {batch.lines.map(line => {
                   const draft = receiveLines.find(item => item.lineId === line.id);
                   const qty = parseQuantityInput(draft?.qty || 0);
-                  const invalid = qty < 0 || qty > Number(line.issuedQty || 0);
+                  const invalid = qty < 0;
+                  const unitPrice = Number(line.deliveryUnitPrice || 0);
+                  const amount = (Number.isFinite(qty) ? qty : 0) * unitPrice;
                   return (
                     <tr key={line.id}>
                       <td className="p-4 font-black text-sm text-slate-800">{getLineName(line.requestLineId, line.itemId)}</td>
                       <td className="p-4 text-right font-black text-indigo-600 whitespace-nowrap">{Number(line.issuedQty || 0).toLocaleString('vi-VN')} {line.unit || ''}</td>
+                      <td className="p-4 text-right font-bold text-slate-600 whitespace-nowrap">{unitPrice > 0 ? `${unitPrice.toLocaleString('vi-VN')} đ` : '—'}</td>
                       <td className="p-4">
                         <input
                           type="text"
                           inputMode="decimal"
                           disabled={!canSubmit || saving}
                           value={draft?.qty || '0'}
-                          onChange={event => updateReceiveQuantity(line.id, event.target.value, Number(line.issuedQty || 0))}
+                          onChange={event => updateReceiveQuantity(line.id, event.target.value)}
                           className={`w-full px-3 py-2 rounded-xl border text-center font-black outline-none focus:ring-2 ${invalid ? 'border-red-300 bg-red-50 text-red-600 focus:ring-red-200' : 'border-slate-200 focus:ring-emerald-200'}`}
                         />
                       </td>
+                      <td className="p-4 text-right font-black text-emerald-700 whitespace-nowrap">{unitPrice > 0 ? `${amount.toLocaleString('vi-VN')} đ` : '—'}</td>
                       <td className="p-4">
                         <input
                           disabled={!canSubmit || saving}
                           value={draft?.reason || ''}
                           onChange={event => updateReceiveLine(line.id, { reason: event.target.value })}
-                          placeholder="Bắt buộc nếu nhận lệch"
+                          placeholder="Lý do nếu cần"
                           className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-200 disabled:bg-slate-50"
                         />
                       </td>

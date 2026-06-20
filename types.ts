@@ -1680,7 +1680,7 @@ export interface ProjectMaterialRequest extends ProjectSubmissionFields {
 
 // ==================== CUNG ỨNG ====================
 export type POStatus = 'draft' | 'sent' | 'confirmed' | 'in_transit' | 'partial' | 'delivered' | 'closed' | 'returned' | 'cancelled';
-export type PurchaseOrderSourceMode = 'from_request' | 'proactive_project' | 'proactive_stock';
+export type PurchaseOrderSourceMode = 'from_request' | 'proactive_project' | 'proactive_stock' | 'company_consolidated';
 
 export interface ProjectVendor {
   id: string;
@@ -1723,6 +1723,12 @@ export interface PurchaseOrder extends ProjectSubmissionFields {
   deliveryNote?: string;     // Ghi chú giao hàng
   note?: string;
   createdAt: string;
+}
+
+export interface PurchaseOrderRemovalResult {
+  action: 'deleted' | 'archived';
+  id: string;
+  poNumber: string;
 }
 
 export interface PurchaseOrderItem {
@@ -1815,6 +1821,9 @@ export interface PurchaseOrderRequestLineLink {
   id?: string;
   projectId?: string | null;
   constructionSiteId?: string | null;
+  sourceConstructionSiteId?: string | null;
+  targetWarehouseId?: string | null;
+  allocationStatus?: 'open' | 'need_closed' | 'cancelled';
   purchaseOrderId: string;
   purchaseOrderLineId: string;
   materialRequestId: string;
@@ -1825,9 +1834,78 @@ export interface PurchaseOrderRequestLineLink {
   materialBudgetItemId?: string | null;
   requestedQty: number;
   orderedQty: number;
+  requestedQtySnapshot?: number;
+  orderedStockQtySnapshot?: number;
+  actualReceivedQtySnapshot?: number;
   unit?: string | null;
   note?: string | null;
   createdAt?: string;
+}
+
+export interface PurchaseOrderDeliveryGroup {
+  id: string;
+  projectId?: string | null;
+  purchaseOrderId: string;
+  deliveryNo: string;
+  plannedDate: string;
+  status: 'draft' | 'issued' | 'received' | 'closed' | 'cancelled';
+  note?: string | null;
+  createdBy?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface CompanyProcurementDemandLine {
+  key: string;
+  request: MaterialRequest;
+  requestLine: RequestItem;
+  requestLineId: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  targetWarehouseId?: string | null;
+  itemId: string;
+  itemName: string;
+  sku?: string | null;
+  unit?: string | null;
+  supplierId?: string | null;
+  requestedQty: number;
+  orderedQty: number;
+  actualReceivedQty: number;
+  closedNeedQty: number;
+  openNeedQty: number;
+  remainingQty: number;
+  boqQty?: number | null;
+  neededDate?: string | null;
+}
+
+export interface CompanyProcurementCreateLine {
+  demandKey: string;
+  vendorId: string;
+  vendorName?: string | null;
+  orderStockQty: number;
+  stockUnitPrice: number;
+  neededDate?: string | null;
+  note?: string | null;
+}
+
+export interface CompanyProcurementCreateInput {
+  lines: CompanyProcurementCreateLine[];
+  orderDate?: string;
+  expectedDeliveryDate?: string | null;
+  note?: string | null;
+  actorUserId?: string | null;
+}
+
+export interface CompanyProcurementCreateResult {
+  procurementGroupId: string;
+  procurementGroupNo: string;
+  purchaseOrders: PurchaseOrder[];
+}
+
+export interface CompanyProcurementDeliveryGroupDetail {
+  group: PurchaseOrderDeliveryGroup;
+  purchaseOrder?: PurchaseOrder | null;
+  batches: MaterialRequestFulfillmentBatch[];
 }
 
 export type OrgUnitType = 'company' | 'department' | 'construction_site' | 'factory' | 'custom';
@@ -2380,11 +2458,14 @@ export interface MaterialRequestFulfillmentLine {
   workBoqItemId?: string | null;
   poId?: string | null;
   poLineId?: string | null;
+  purchaseOrderRequestLineId?: string | null;
   requestedQtySnapshot: number;
   committedQtySnapshot: number;
   issuedQty: number;
   receivedQty: number;
   unit?: string | null;
+  deliveryUnit?: string | null;
+  deliveryUnitPrice?: number;
   varianceReason?: string | null;
   note?: string | null;
   createdAt?: string;
@@ -2400,6 +2481,7 @@ export interface MaterialRequestFulfillmentBatch {
   batchDate: string;
   sourceWarehouseId?: string | null;
   targetWarehouseId?: string | null;
+  poDeliveryGroupId?: string | null;
   fulfillmentMode: MaterialRequestFulfillmentMode;
   sourceType: MaterialRequestFulfillmentSourceType;
   status: MaterialRequestFulfillmentBatchStatus;
@@ -2427,6 +2509,8 @@ export interface MaterialRequestLineFulfillmentSummary {
   orderedQty: number;
   issuedQty: number;
   receivedQty: number;
+  closedNeedQty?: number;
+  openNeedQty?: number;
   remainingToIssue: number;
   remainingToReceive: number;
 }
@@ -2438,9 +2522,33 @@ export interface MaterialRequestFulfillmentSummary {
   orderedQty: number;
   issuedQty: number;
   receivedQty: number;
+  closedNeedQty?: number;
+  openNeedQty?: number;
   remainingToIssue: number;
   remainingToReceive: number;
   lineSummaries: MaterialRequestLineFulfillmentSummary[];
+}
+
+export interface MaterialRequestLineNeedClosure {
+  id?: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  materialRequestId: string;
+  requestLineId: string;
+  itemId: string;
+  workBoqItemId?: string | null;
+  materialBudgetItemId?: string | null;
+  closedQty: number;
+  actualReceivedQtySnapshot: number;
+  reason: string;
+  status?: 'active' | 'cancelled';
+  closedBy?: string | null;
+  closedAt?: string;
+  cancelledBy?: string | null;
+  cancelledAt?: string | null;
+  cancelReason?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface MaterialRequest extends ProjectSubmissionFields {

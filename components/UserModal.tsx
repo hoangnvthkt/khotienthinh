@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, User as UserIcon, Mail, Phone, Shield, Building, Save, Package, Briefcase, GitBranch, BarChart3, Landmark, Loader2, Crown, Inbox, LayoutDashboard, MapPin, Users, Calendar, Clock, CalendarOff, DollarSign, FileSignature, FolderOpen, History, ArrowLeftRight, ClipboardCheck, FileSpreadsheet, FileText, Workflow, Layers, Repeat, Wrench, IdCard, CreditCard, Calculator, Bot, Copy, ClipboardPaste } from 'lucide-react';
+import { X, User as UserIcon, Mail, Phone, Shield, Building, Save, Package, Briefcase, GitBranch, BarChart3, Landmark, Loader2, Crown, Inbox, LayoutDashboard, MapPin, Users, Calendar, Clock, CalendarOff, DollarSign, FileSignature, FolderOpen, History, ArrowLeftRight, ClipboardCheck, FileSpreadsheet, FileText, Workflow, Layers, Repeat, Wrench, IdCard, CreditCard, Calculator, Bot, Copy, ClipboardPaste, ShoppingCart } from 'lucide-react';
 import { Role, User, Warehouse } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { useToast } from '../context/ToastContext';
@@ -85,6 +85,9 @@ const SUB_MODULE_CONFIG: Record<string, { to: string; label: string; icon: any }
     { to: '/da', icon: BarChart3, label: 'Tổng quan DA' },
     { to: '/da/portfolio', icon: Layers, label: 'Đa dự án' },
     ...PROJECT_TAB_SUB_MODULES,
+  ],
+  PROCUREMENT: [
+    { to: '/procurement', icon: ShoppingCart, label: 'Mua hàng công ty' },
   ],
   TS: [
     { to: '/ts/dashboard', icon: LayoutDashboard, label: 'Dashboard TS' },
@@ -174,6 +177,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
     { key: 'HRM', label: 'NS - Nhân sự', icon: Briefcase, color: 'text-teal-600 bg-teal-50 border-teal-200 dark:bg-teal-900/30 dark:border-teal-700' },
     { key: 'WF', label: 'QT - Quy trình', icon: GitBranch, color: 'text-violet-600 bg-violet-50 border-violet-200 dark:bg-violet-900/30 dark:border-violet-700' },
     { key: 'DA', label: 'DA - Dự án', icon: BarChart3, color: 'text-orange-600 bg-orange-50 border-orange-200 dark:bg-orange-900/30 dark:border-orange-700' },
+    { key: 'PROCUREMENT', label: 'MH - Mua hàng', icon: ShoppingCart, color: 'text-emerald-600 bg-emerald-50 border-emerald-200 dark:bg-emerald-900/30 dark:border-emerald-700' },
     { key: 'TS', label: 'TS - Tài sản', icon: Landmark, color: 'text-rose-600 bg-rose-50 border-rose-200 dark:bg-rose-900/30 dark:border-rose-700' },
     { key: 'RQ', label: 'RQ - Yêu cầu', icon: Inbox, color: 'text-cyan-600 bg-cyan-50 border-cyan-200 dark:bg-cyan-900/30 dark:border-cyan-700' },
     { key: 'EX', label: 'CP - Chi phí', icon: BarChart3, color: 'text-indigo-600 bg-indigo-50 border-indigo-200 dark:bg-indigo-900/30 dark:border-indigo-700' },
