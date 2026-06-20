@@ -610,8 +610,8 @@ const TenderBoqAnalyzer: React.FC = () => {
         ))}
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[360px_minmax(0,1fr)]">
-        <div className="space-y-4">
+      <div className="grid gap-5 xl:grid-cols-[360px_minmax(0,1fr)] w-full min-w-0">
+        <div className="space-y-4 min-w-0">
           <section className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
             <div className="mb-3 flex items-center justify-between">
               <h2 className="flex items-center gap-2 text-sm font-black"><Upload size={16} /> Upload BOQ CĐT</h2>
@@ -736,7 +736,7 @@ const TenderBoqAnalyzer: React.FC = () => {
           </section>
         </div>
 
-        <div className="space-y-4">
+        <div className="space-y-4 min-w-0">
           {preview && selectedSheetPreview && (
             <section className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
               <div className="mb-3 flex items-center justify-between">
@@ -746,18 +746,26 @@ const TenderBoqAnalyzer: React.FC = () => {
               <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
                 <table className="min-w-full divide-y divide-slate-200 text-left dark:divide-slate-800">
                   <thead className="bg-slate-50 dark:bg-slate-950">
-                    <tr>{['Row', 'Mã', 'Nội dung', 'ĐVT', 'KL', 'Thành tiền', 'Loại'].map(head => <th key={head} className="px-3 py-2 text-[10px] font-black uppercase text-slate-400">{head}</th>)}</tr>
+                    <tr>
+                      <th className="w-12 px-3 py-2 text-center text-[10px] font-black uppercase text-slate-400">Row</th>
+                      <th className="w-28 px-3 py-2 text-left text-[10px] font-black uppercase text-slate-400">Mã</th>
+                      <th className="min-w-[280px] px-3 py-2 text-left text-[10px] font-black uppercase text-slate-400">Nội dung</th>
+                      <th className="w-16 px-3 py-2 text-center text-[10px] font-black uppercase text-slate-400">ĐVT</th>
+                      <th className="w-24 px-3 py-2 text-right text-[10px] font-black uppercase text-slate-400">KL</th>
+                      <th className="w-32 px-3 py-2 text-right text-[10px] font-black uppercase text-slate-400">Thành tiền</th>
+                      <th className="w-28 px-3 py-2 text-center text-[10px] font-black uppercase text-slate-400">Loại</th>
+                    </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                     {paginatedPreviewLines.map(line => (
                       <tr key={`${line.sheetName}-${line.rowNumber}`}>
-                        <td className={CELL}>{line.rowNumber}</td>
-                        <td className={CELL}>{line.itemCode || line.lineNo || '-'}</td>
-                        <td className={`${CELL} min-w-[280px] font-bold text-slate-800 dark:text-slate-100`}>{line.name || line.description}</td>
-                        <td className={CELL}>{line.unit || '-'}</td>
-                        <td className={CELL}>{line.quantity || '-'}</td>
-                        <td className={CELL}>{line.ownerAmount ? money(line.ownerAmount) : '-'}</td>
-                        <td className={CELL}>{line.lineType}</td>
+                        <td className="w-12 px-3 py-2 text-center align-middle text-xs text-slate-600 dark:text-slate-300">{line.rowNumber}</td>
+                        <td className="w-28 px-3 py-2 text-left align-middle text-xs text-slate-600 dark:text-slate-300">{line.itemCode || line.lineNo || '-'}</td>
+                        <td className="min-w-[280px] px-3 py-2 text-left align-middle text-xs font-bold text-slate-800 dark:text-slate-100 break-words whitespace-normal">{line.name || line.description}</td>
+                        <td className="w-16 px-3 py-2 text-center align-middle text-xs text-slate-600 dark:text-slate-300">{line.unit || '-'}</td>
+                        <td className="w-24 px-3 py-2 text-right align-middle text-xs text-slate-600 dark:text-slate-300 font-medium">{line.quantity || '-'}</td>
+                        <td className="w-32 px-3 py-2 text-right align-middle text-xs text-slate-600 dark:text-slate-300 font-bold">{line.ownerAmount ? money(line.ownerAmount) : '-'}</td>
+                        <td className="w-28 px-3 py-2 text-center align-middle text-xs text-slate-600 dark:text-slate-300">{line.lineType}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -822,14 +830,18 @@ const TenderBoqAnalyzer: React.FC = () => {
                   <table className="min-w-full divide-y divide-slate-200 text-left dark:divide-slate-800">
                     <thead className="bg-slate-50 dark:bg-slate-950">
                       <tr>
-                        <th className="px-3 py-2">
+                        <th className="w-10 px-3 py-2 text-center">
                           <button type="button" onClick={toggleCurrentPageSelection} className="text-slate-400 hover:text-fuchsia-600" title="Chọn/bỏ chọn trang hiện tại">
                             {isCurrentPageSelected ? <CheckSquare size={16} /> : <Square size={16} />}
                           </button>
                         </th>
-                        {['Row', 'Dòng BOQ CĐT', 'ĐVT', 'KL', 'Mapping', 'Giá chào', 'Item nội bộ'].map(head => (
-                          <th key={head} className="px-3 py-2 text-[10px] font-black uppercase text-slate-400">{head}</th>
-                        ))}
+                        <th className="w-12 px-3 py-2 text-center text-[10px] font-black uppercase text-slate-400">Row</th>
+                        <th className="min-w-[320px] px-3 py-2 text-left text-[10px] font-black uppercase text-slate-400">Dòng BOQ CĐT</th>
+                        <th className="w-16 px-3 py-2 text-center text-[10px] font-black uppercase text-slate-400">ĐVT</th>
+                        <th className="w-24 px-3 py-2 text-right text-[10px] font-black uppercase text-slate-400">KL</th>
+                        <th className="w-32 px-3 py-2 text-center text-[10px] font-black uppercase text-slate-400">Mapping</th>
+                        <th className="w-36 px-3 py-2 text-right text-[10px] font-black uppercase text-slate-400">Giá chào</th>
+                        <th className="min-w-[260px] px-3 py-2 text-left text-[10px] font-black uppercase text-slate-400">Item nội bộ</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -839,28 +851,28 @@ const TenderBoqAnalyzer: React.FC = () => {
                         const quoteAmount = pricingByLineId.get(line.id) || 0;
                         return (
                           <tr key={line.id}>
-                            <td className={CELL}>
+                            <td className="w-10 px-3 py-2 text-center align-middle">
                               <button type="button" onClick={() => toggleSelectedLine(line.id)} className="text-slate-400 hover:text-fuchsia-600">
                                 {selectedLineIds.includes(line.id) ? <CheckSquare size={16} /> : <Square size={16} />}
                               </button>
                             </td>
-                            <td className={CELL}>{line.rowNumber}</td>
-                            <td className={`${CELL} min-w-[320px]`}>
+                            <td className="w-12 px-3 py-2 text-center align-middle text-xs text-slate-650 dark:text-slate-350">{line.rowNumber}</td>
+                            <td className="min-w-[320px] px-3 py-2 text-left align-middle text-xs text-slate-600 dark:text-slate-300 break-words whitespace-normal">
                               <div className="font-black text-slate-800 dark:text-slate-100">{lineTitle(line)}</div>
                               <div className="mt-0.5 text-[10px] font-bold text-slate-400">{line.lineType}</div>
                             </td>
-                            <td className={CELL}>{line.unit || '-'}</td>
-                            <td className={CELL}>{line.quantity || '-'}</td>
-                            <td className={CELL}>
+                            <td className="w-16 px-3 py-2 text-center align-middle text-xs text-slate-650 dark:text-slate-350">{line.unit || '-'}</td>
+                            <td className="w-24 px-3 py-2 text-right align-middle text-xs text-slate-650 dark:text-slate-350 font-medium">{line.quantity || '-'}</td>
+                            <td className="w-32 px-3 py-2 text-center align-middle text-xs text-slate-650 dark:text-slate-350">
                               <MappingBadge mapping={mapping} links={links} />
                             </td>
-                            <td className={CELL}>{quoteAmount ? money(quoteAmount) : '-'}</td>
-                            <td className={`${CELL} min-w-[260px]`}>
+                            <td className="w-36 px-3 py-2 text-right align-middle text-xs text-slate-600 dark:text-slate-300 font-bold">{quoteAmount ? money(quoteAmount) : '-'}</td>
+                            <td className="min-w-[260px] px-3 py-2 text-left align-middle text-xs text-slate-600 dark:text-slate-300">
                               <div className="space-y-2">
                                 {links.length > 0 ? (
                                   <div className="space-y-1">
                                     {links.slice(0, 3).map(link => (
-                                      <div key={link.id} className="truncate rounded-lg bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300" title={getLinkLabel(link)}>
+                                      <div key={link.id} className="max-w-[240px] truncate rounded-lg bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300" title={getLinkLabel(link)}>
                                         {getLinkLabel(link)}
                                       </div>
                                     ))}
@@ -1026,8 +1038,8 @@ const MappingDrawer: React.FC<{
           </button>
         </div>
 
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
-          <div className="space-y-3">
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px] w-full min-w-0">
+          <div className="space-y-3 min-w-0">
             <div className="rounded-2xl border border-slate-200 p-3 dark:border-slate-800">
               <div className="mb-2 text-[10px] font-black uppercase text-slate-400">Dòng CĐT đang map</div>
               <div className="max-h-32 space-y-1 overflow-y-auto">
@@ -1073,7 +1085,7 @@ const MappingDrawer: React.FC<{
             </div>
           </div>
 
-          <div className="space-y-3">
+          <div className="space-y-3 min-w-0">
             <div className="rounded-2xl border border-slate-200 p-3 dark:border-slate-800">
               <div className="flex items-center justify-between gap-2">
                 <div className="text-[10px] font-black uppercase text-slate-400">Item đã chọn</div>

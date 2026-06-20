@@ -102,6 +102,7 @@ const AiAssistant: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [showDrawer, setShowDrawer] = useState(false);
   const [expandedSql, setExpandedSql] = useState<string | null>(null);
+  const [feedbackDraft, setFeedbackDraft] = useState<{ message: AiMessage; reason: string; correction: string; approvedAnswer: string } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -144,7 +145,14 @@ const AiAssistant: React.FC = () => {
       .eq('conversation_id', convId)
       .order('created_at', { ascending: true });
     if (data) setMessages(data.map(m => ({
-      id: m.id, role: m.role, content: m.content, sqlQuery: m.sql_query, mode: m.mode, sources: m.sources, createdAt: m.created_at,
+      id: m.id,
+      role: m.role,
+      content: m.content,
+      sqlQuery: m.sql_query,
+      mode: m.mode,
+      sources: m.sources,
+      createdAt: m.created_at,
+      feedback: m.feedback_rating || undefined,
     })));
   };
 
@@ -171,7 +179,19 @@ const AiAssistant: React.FC = () => {
     loadConversations();
   };
 
-  const sendFeedback = async (msg: AiMessage, rating: 1 | -1) => {
+  const getQuestionForMessage = (msg: AiMessage) => {
+    const idx = messages.findIndex(m => m.id === msg.id);
+    for (let i = idx - 1; i >= 0; i -= 1) {
+      if (messages[i]?.role === 'user') return messages[i].content;
+    }
+    return messages.find(m => m.role === 'user' && m.createdAt < msg.createdAt)?.content;
+  };
+
+  const sendFeedback = async (
+    msg: AiMessage,
+    rating: 1 | -1,
+    detail?: { reason?: string; correctionText?: string; approvedAnswer?: string },
+  ) => {
     setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, feedback: rating } : m));
     try {
       await fetch(`${SUPABASE_URL}/functions/v1/ai-assistant`, {
@@ -183,7 +203,11 @@ const AiAssistant: React.FC = () => {
           conversationId: activeConvId,
           userId: user.id,
           rating,
-          question: messages.find(m => m.role === 'user' && m.createdAt < msg.createdAt)?.content,
+          reason: detail?.reason,
+          correctionText: detail?.correctionText,
+          approvedAnswer: detail?.approvedAnswer,
+          feedbackType: detail?.approvedAnswer ? 'approved_answer' : detail?.correctionText ? 'correction' : 'rating',
+          question: getQuestionForMessage(msg),
           answer: msg.content,
           sqlQuery: msg.sqlQuery,
         }),
@@ -191,6 +215,16 @@ const AiAssistant: React.FC = () => {
     } catch (err) {
       console.error('Feedback error:', err);
     }
+  };
+
+  const submitNegativeFeedback = async () => {
+    if (!feedbackDraft) return;
+    await sendFeedback(feedbackDraft.message, -1, {
+      reason: feedbackDraft.reason.trim() || undefined,
+      correctionText: feedbackDraft.correction.trim() || undefined,
+      approvedAnswer: feedbackDraft.approvedAnswer.trim() || undefined,
+    });
+    setFeedbackDraft(null);
   };
 
   const sendMessage = async (text?: string) => {
@@ -224,6 +258,9 @@ const AiAssistant: React.FC = () => {
       const data = await resp.json();
 
       if (data.error) {
+        if (data.userMessageId) {
+          setMessages(prev => prev.map(m => m.id === userMsg.id ? { ...m, id: data.userMessageId } : m));
+        }
         setMessages(prev => [...prev, {
           id: `err-${Date.now()}`,
           role: 'assistant',
@@ -236,8 +273,12 @@ const AiAssistant: React.FC = () => {
           loadConversations();
         }
 
-        setMessages(prev => [...prev, {
-          id: `ai-${Date.now()}`,
+        setMessages(prev => {
+          const next = data.userMessageId
+            ? prev.map(m => m.id === userMsg.id ? { ...m, id: data.userMessageId } : m)
+            : prev;
+          return [...next, {
+          id: data.assistantMessageId || `ai-${Date.now()}`,
           role: 'assistant',
           content: data.answer,
           sqlQuery: data.sqlQuery,
@@ -247,7 +288,8 @@ const AiAssistant: React.FC = () => {
           hasMemory: data.hasMemory,
           fromCache: data.fromCache,
           createdAt: new Date().toISOString(),
-        }]);
+          }];
+        });
       }
     } catch (err: any) {
       setMessages(prev => [...prev, {
@@ -667,9 +709,9 @@ const AiAssistant: React.FC = () => {
                         <ThumbsUp size={12} />
                       </button>
                       <button
-                        onClick={() => sendFeedback(msg, -1)}
+                        onClick={() => setFeedbackDraft({ message: msg, reason: '', correction: '', approvedAnswer: '' })}
                         className={`p-1 rounded-lg transition-all ${msg.feedback === -1 ? 'bg-red-100 dark:bg-red-900/40 text-red-600' : 'text-slate-300 dark:text-slate-600 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20'}`}
-                        title="Câu trả lời chưa tốt"
+                        title="Góp ý câu trả lời"
                       >
                         <ThumbsDown size={12} />
                       </button>
@@ -759,6 +801,70 @@ const AiAssistant: React.FC = () => {
           </p>
         </div>
       </div>
+
+      {feedbackDraft && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-2xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-black text-slate-800 dark:text-white">Góp ý câu trả lời</h3>
+                <p className="text-[11px] text-slate-400 mt-0.5">Góp ý sẽ vào hàng chờ AI Learning để admin duyệt.</p>
+              </div>
+              <button
+                onClick={() => setFeedbackDraft(null)}
+                className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="p-5 space-y-3">
+              <div>
+                <label className="text-[11px] font-black uppercase tracking-wider text-slate-400">Lý do</label>
+                <input
+                  value={feedbackDraft.reason}
+                  onChange={e => setFeedbackDraft(prev => prev ? { ...prev, reason: e.target.value } : prev)}
+                  className="mt-1 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm outline-none focus:border-red-400"
+                  placeholder="Sai số liệu, thiếu ngữ cảnh, trả lời dài..."
+                />
+              </div>
+              <div>
+                <label className="text-[11px] font-black uppercase tracking-wider text-slate-400">Correction</label>
+                <textarea
+                  value={feedbackDraft.correction}
+                  onChange={e => setFeedbackDraft(prev => prev ? { ...prev, correction: e.target.value } : prev)}
+                  rows={3}
+                  className="mt-1 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm outline-none resize-none focus:border-red-400"
+                  placeholder="Nội dung cần sửa hoặc quy tắc cần nhớ..."
+                />
+              </div>
+              <div>
+                <label className="text-[11px] font-black uppercase tracking-wider text-slate-400">Câu trả lời đề xuất</label>
+                <textarea
+                  value={feedbackDraft.approvedAnswer}
+                  onChange={e => setFeedbackDraft(prev => prev ? { ...prev, approvedAnswer: e.target.value } : prev)}
+                  rows={4}
+                  className="mt-1 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm outline-none resize-none focus:border-red-400"
+                  placeholder="Nếu có câu trả lời đúng hơn, nhập tại đây."
+                />
+              </div>
+            </div>
+            <div className="px-5 py-4 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-2">
+              <button
+                onClick={() => setFeedbackDraft(null)}
+                className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-black text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800"
+              >
+                Hủy
+              </button>
+              <button
+                onClick={submitNegativeFeedback}
+                className="px-4 py-2 rounded-xl bg-red-500 text-white text-xs font-black hover:bg-red-600 shadow-lg shadow-red-500/20"
+              >
+                Gửi góp ý
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* CSS Animations */}
       <style>{`

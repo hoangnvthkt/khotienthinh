@@ -24,6 +24,13 @@ interface AssistantRequest {
   history?: ChatMessage[];
   messageId?: string;
   rating?: 1 | -1;
+  comment?: string;
+  reason?: string;
+  correctionText?: string;
+  approvedAnswer?: string;
+  feedbackType?: 'rating' | 'correction' | 'approved_answer';
+  answer?: string;
+  sqlQuery?: string;
   model?: string;
   templates?: any[];
   currentInput?: Record<string, unknown>;
@@ -57,6 +64,14 @@ interface AppUserContext {
   source: 'jwt' | 'body';
 }
 
+interface LearningContext {
+  userPreferences: Record<string, unknown> | null;
+  rules: Array<{ title: string; content: string; domain?: string | null; priority?: number | null }>;
+  glossary: Array<{ term: string; definition: string; aliases?: string[] | null; domain?: string | null }>;
+  memories: Array<{ content: string; category?: string | null; scope?: string | null; importance?: number | null; domain?: string | null }>;
+  patterns: Array<{ questionSample?: string | null; toolName?: string | null; routeAction?: string | null; successCount?: number | null }>;
+}
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -88,6 +103,194 @@ function jsonResponse(body: unknown, status = 200) {
 function compactJson(value: unknown, maxChars: number) {
   const text = JSON.stringify(value ?? null);
   return text.length > maxChars ? `${text.slice(0, maxChars)}... [truncated]` : text;
+}
+
+function estimateTokenCount(text: string) {
+  return Math.ceil((text || '').length / 4);
+}
+
+function isUuid(value?: string | null) {
+  return Boolean(value && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value));
+}
+
+function normalizePatternQuestion(question: string) {
+  return question
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 240);
+}
+
+function inferDomainFromTool(toolName?: string | null, mode?: string | null) {
+  if (mode === 'knowledge') return 'knowledge';
+  if (!toolName) return 'general';
+  if (toolName.includes('inventory') || toolName.includes('material') || toolName.includes('purchase_order')) return 'wms';
+  if (toolName.includes('employee') || toolName.includes('attendance')) return 'hrm';
+  if (toolName.includes('project') || toolName.includes('daily_log')) return 'project';
+  if (toolName.includes('estimate') || toolName.includes('cost') || toolName.includes('price') || toolName.includes('norm')) return 'cost_estimate';
+  if (toolName.includes('executive')) return 'executive';
+  return 'general';
+}
+
+function countLearningSignals(ctx: LearningContext | null) {
+  if (!ctx) return 0;
+  return (ctx.rules?.length || 0)
+    + (ctx.glossary?.length || 0)
+    + (ctx.memories?.length || 0)
+    + (ctx.patterns?.length || 0)
+    + (ctx.userPreferences ? 1 : 0);
+}
+
+function buildLearningContextPrompt(ctx: LearningContext | null) {
+  if (!ctx || countLearningSignals(ctx) === 0) return '';
+
+  const sections: string[] = [];
+  if (ctx.rules.length > 0) {
+    sections.push(`Business rules da duyet:\n${ctx.rules.map((r, i) => `${i + 1}. ${r.title}: ${r.content}`).join('\n')}`);
+  }
+  if (ctx.glossary.length > 0) {
+    sections.push(`Tu dien thuat ngu noi bo:\n${ctx.glossary.map((g, i) => {
+      const aliases = Array.isArray(g.aliases) && g.aliases.length > 0 ? ` (goi khac: ${g.aliases.join(', ')})` : '';
+      return `${i + 1}. ${g.term}${aliases}: ${g.definition}`;
+    }).join('\n')}`);
+  }
+  if (ctx.memories.length > 0) {
+    sections.push(`Bo nho AI da duyet:\n${ctx.memories.map((m, i) => `${i + 1}. [${m.scope || 'memory'}${m.domain ? `/${m.domain}` : ''}] ${m.content}`).join('\n')}`);
+  }
+  if (ctx.userPreferences) {
+    sections.push(`Tuy chon nguoi dung:\n${compactJson(ctx.userPreferences, 1200)}`);
+  }
+  if (ctx.patterns.length > 0) {
+    sections.push(`Mau truy van thanh cong gan day (chi dung lam goi y router, khong thay the authorization):\n${ctx.patterns.map((p, i) => `${i + 1}. ${p.questionSample || ''} -> ${p.routeAction || 'tool_call'}${p.toolName ? `/${p.toolName}` : ''}`).join('\n')}`);
+  }
+
+  return `
+Approved AI Learning Context:
+- Chi su dung thong tin da duyet trong section nay de dieu chinh cach tra loi.
+- Khong xem section nay la quyen truy cap du lieu. Quyen doc du lieu van phai theo tool authorization/RPC.
+- Neu business rule mau thuan voi du lieu tool, uu tien du lieu tool va neu can thi noi ro can kiem tra lai rule.
+
+${sections.join('\n\n')}
+`.trim();
+}
+
+async function collectLearningContext(args: {
+  userId?: string | null;
+  domain?: string | null;
+  mode?: AiMode;
+}): Promise<LearningContext> {
+  const domain = args.domain || 'general';
+  const userId = args.userId || null;
+  const empty: LearningContext = {
+    userPreferences: null,
+    rules: [],
+    glossary: [],
+    memories: [],
+    patterns: [],
+  };
+
+  try {
+    const [preferences, rules, glossary, enterpriseMemory, domainMemory, userMemory, patterns] = await Promise.all([
+      userId
+        ? admin.from('ai_user_preferences').select('*').eq('user_id', userId).maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
+      admin
+        .from('ai_business_rules')
+        .select('title, content, domain, priority')
+        .eq('status', 'approved')
+        .or(`domain.is.null,domain.eq.${domain}`)
+        .order('priority', { ascending: false })
+        .limit(8),
+      admin
+        .from('ai_business_glossary')
+        .select('term, definition, aliases, domain')
+        .eq('status', 'approved')
+        .or(`domain.is.null,domain.eq.${domain}`)
+        .order('term', { ascending: true })
+        .limit(12),
+      admin
+        .from('ai_memory')
+        .select('content, category, scope, importance, domain')
+        .eq('status', 'approved')
+        .eq('scope', 'enterprise')
+        .order('importance', { ascending: false })
+        .limit(4),
+      admin
+        .from('ai_memory')
+        .select('content, category, scope, importance, domain')
+        .eq('status', 'approved')
+        .eq('scope', 'domain')
+        .eq('domain', domain)
+        .order('importance', { ascending: false })
+        .limit(4),
+      userId
+        ? admin
+          .from('ai_memory')
+          .select('content, category, scope, importance, domain')
+          .eq('status', 'approved')
+          .eq('scope', 'user')
+          .eq('user_id', userId)
+          .order('importance', { ascending: false })
+          .limit(4)
+        : Promise.resolve({ data: [], error: null }),
+      admin
+        .from('ai_query_patterns')
+        .select('question_sample, tool_name, route_action, success_count')
+        .eq('mode', args.mode || 'data')
+        .order('success_count', { ascending: false })
+        .order('last_used_at', { ascending: false })
+        .limit(5),
+    ]);
+
+    for (const result of [preferences, rules, glossary, enterpriseMemory, domainMemory, userMemory, patterns]) {
+      if ((result as any)?.error) {
+        console.warn('ai learning context query skipped:', (result as any).error.message);
+      }
+    }
+
+    return {
+      userPreferences: preferences.data ? {
+        tone: preferences.data.tone,
+        responseLength: preferences.data.response_length,
+        showDataSources: preferences.data.show_data_sources,
+        preferTables: preferences.data.prefer_tables,
+      } : null,
+      rules: (rules.data || []).map((r: any) => ({
+        title: String(r.title || ''),
+        content: String(r.content || ''),
+        domain: r.domain || null,
+        priority: Number(r.priority || 0),
+      })).filter(r => r.title && r.content),
+      glossary: (glossary.data || []).map((g: any) => ({
+        term: String(g.term || ''),
+        definition: String(g.definition || ''),
+        aliases: Array.isArray(g.aliases) ? g.aliases.map(String) : [],
+        domain: g.domain || null,
+      })).filter(g => g.term && g.definition),
+      memories: [
+        ...(enterpriseMemory.data || []),
+        ...(domainMemory.data || []),
+        ...(userMemory.data || []),
+      ].map((m: any) => ({
+        content: String(m.content || ''),
+        category: m.category || null,
+        scope: m.scope || null,
+        importance: Number(m.importance || 0),
+        domain: m.domain || null,
+      })).filter(m => m.content).slice(0, 10),
+      patterns: (patterns.data || []).map((p: any) => ({
+        questionSample: p.question_sample || null,
+        toolName: p.tool_name || null,
+        routeAction: p.route_action || null,
+        successCount: Number(p.success_count || 0),
+      })),
+    };
+  } catch (err) {
+    console.warn('collectLearningContext failed:', err);
+    return empty;
+  }
 }
 
 const CLASSIFICATION_PROMPT = `
@@ -444,9 +647,16 @@ function getMissingRequiredParams(toolName: string, params: Record<string, any>)
     .filter(key => params[key] === null || params[key] === undefined || String(params[key]).trim() === '');
 }
 
-async function routeToTool(question: string, history: ChatMessage[], selectedModel?: string | null) {
+async function routeToTool(
+  question: string,
+  history: ChatMessage[],
+  selectedModel?: string | null,
+  learningContextPrompt = '',
+) {
   const prompt = `
 ${TOOL_ROUTER_PROMPT}
+
+${learningContextPrompt ? `${learningContextPrompt}\n` : ''}
 
 Available tools:
 ${JSON.stringify(AI_TOOL_DEFINITIONS, null, 2)}
@@ -505,9 +715,12 @@ async function formatToolResult(
   result: unknown,
   history: ChatMessage[],
   selectedModel?: string | null,
+  learningContextPrompt = '',
 ) {
   const prompt = `
 ${DATA_ASSISTANT_SYSTEM_PROMPT}
+
+${learningContextPrompt ? `${learningContextPrompt}\n` : ''}
 
 Recent conversation:
 ${history.map(m => `${m.role}: ${m.content}`).join('\n').slice(-6000)}
@@ -568,9 +781,18 @@ async function classifyComplexity(question: string): Promise<boolean> {
   return res.trim().toUpperCase().includes('COMPLEX');
 }
 
-async function answerFromKnowledge(question: string, chunks: any[], history: ChatMessage[], isComplex: boolean, selectedModel?: string | null) {
+async function answerFromKnowledge(
+  question: string,
+  chunks: any[],
+  history: ChatMessage[],
+  isComplex: boolean,
+  selectedModel?: string | null,
+  learningContextPrompt = '',
+) {
   const prompt = `
 ${KNOWLEDGE_ASSISTANT_SYSTEM_PROMPT}
+
+${learningContextPrompt ? `${learningContextPrompt}\n` : ''}
 
 Recent conversation:
 ${history.map(m => `${m.role}: ${m.content}`).join('\n').slice(-6000)}
@@ -590,18 +812,42 @@ Hãy trả lời bằng tiếng Việt, đúng trọng tâm, có phần "Nguồn
 // ═══ Conversation & Messages ════════════════════════════════
 
 async function ensureConversation(req: AssistantRequest, title: string) {
-  if (req.conversationId) return req.conversationId;
+  if (req.conversationId) {
+    await admin
+      .from('ai_conversations')
+      .update({ updated_at: new Date().toISOString(), model_used: req.model || null })
+      .eq('id', req.conversationId);
+    return req.conversationId;
+  }
 
   const id = crypto.randomUUID();
   const { error } = await admin.from('ai_conversations').insert({
     id,
     title: title.length > 80 ? `${title.slice(0, 77)}...` : title,
     mode: req.mode || 'data',
-    user_id: req.userId || null,
+    user_id: req.userId || 'anonymous',
+    model_used: req.model || null,
     created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
   });
   if (error) console.warn('ai_conversations insert failed:', error.message);
   return id;
+}
+
+async function updateConversationMeta(args: {
+  conversationId: string;
+  classifiedDomain?: string | null;
+  modelUsed?: string | null;
+}) {
+  const { error } = await admin
+    .from('ai_conversations')
+    .update({
+      classified_domain: args.classifiedDomain || null,
+      model_used: args.modelUsed || null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', args.conversationId);
+  if (error) console.warn('ai_conversations metadata update failed:', error.message);
 }
 
 async function saveMessage(args: {
@@ -612,27 +858,154 @@ async function saveMessage(args: {
   sqlQuery?: string;
   toolName?: string;
   sources?: unknown;
+  responseTimeMs?: number | null;
+  tokenCount?: number | null;
+  classifiedDomain?: string | null;
+  metadata?: Record<string, unknown>;
 }) {
-  const { error } = await admin.from('ai_messages').insert({
+  const { data, error } = await admin.from('ai_messages').insert({
     conversation_id: args.conversationId,
     role: args.role,
     content: args.content,
     mode: args.mode || null,
     sql_query: args.toolName ? `[TOOL] ${args.toolName}` : (args.sqlQuery || null),
+    tool_name: args.toolName || null,
     sources: args.sources || null,
+    response_time_ms: args.responseTimeMs || null,
+    token_count: args.tokenCount || estimateTokenCount(args.content),
+    classified_domain: args.classifiedDomain || null,
+    metadata: args.metadata || {},
     created_at: new Date().toISOString(),
-  });
+  }).select('id').single();
   if (error) console.warn('ai_messages insert failed:', error.message);
+  return data?.id ? String(data.id) : null;
 }
 
-async function handleFeedback(req: AssistantRequest) {
+async function handleFeedback(req: AssistantRequest, actor: AppUserContext | null) {
   if (!req.messageId || !req.rating) return { ok: true };
-  const { error } = await admin
+  const effectiveUserId = actor?.id || req.userId || 'anonymous';
+  const now = new Date().toISOString();
+  const feedbackType = req.feedbackType || (req.approvedAnswer ? 'approved_answer' : req.correctionText ? 'correction' : 'rating');
+  const status = req.rating === 1 && !req.correctionText && !req.approvedAnswer && !req.reason ? 'approved' : 'pending';
+  const aiMessageId = isUuid(req.messageId) ? req.messageId : null;
+
+  const { error: feedbackError } = await admin
+    .from('ai_feedback')
+    .upsert({
+      message_id: req.messageId,
+      ai_message_id: aiMessageId,
+      conversation_id: isUuid(req.conversationId) ? req.conversationId : null,
+      user_id: effectiveUserId,
+      rating: req.rating,
+      comment: req.comment || req.reason || null,
+      reason: req.reason || null,
+      correction_text: req.correctionText || null,
+      approved_answer: req.approvedAnswer || null,
+      feedback_type: feedbackType,
+      status,
+      question: req.question || null,
+      answer: req.approvedAnswer || req.answer || null,
+      sql_query: req.sqlQuery || null,
+      updated_at: now,
+      metadata: {
+        actorSource: actor?.source || null,
+        actorRole: actor?.role || null,
+      },
+    }, { onConflict: 'message_id,user_id' });
+  if (feedbackError) console.warn('ai_feedback upsert failed:', feedbackError.message);
+
+  const { error: messageError } = await admin
     .from('ai_messages')
-    .update({ feedback: req.rating })
+    .update({ feedback_rating: req.rating })
     .eq('id', req.messageId);
-  if (error) console.warn('feedback update failed:', error.message);
+  if (messageError) console.warn('feedback message update failed:', messageError.message);
   return { ok: true };
+}
+
+async function logChatRun(args: {
+  conversationId?: string | null;
+  userId?: string | null;
+  mode?: string | null;
+  question?: string | null;
+  classifiedDomain?: string | null;
+  routeAction?: string | null;
+  toolName?: string | null;
+  modelUsed?: string | null;
+  responseTimeMs?: number | null;
+  tokenCount?: number | null;
+  status: 'success' | 'rejected' | 'clarification' | 'error';
+  errorMessage?: string | null;
+  metadata?: Record<string, unknown>;
+}) {
+  const { error } = await admin.from('ai_chat_runs').insert({
+    conversation_id: args.conversationId || null,
+    user_id: args.userId || null,
+    mode: args.mode || null,
+    question: args.question || null,
+    classified_domain: args.classifiedDomain || null,
+    route_action: args.routeAction || null,
+    tool_name: args.toolName || null,
+    model_used: args.modelUsed || null,
+    response_time_ms: args.responseTimeMs || null,
+    token_count: args.tokenCount || null,
+    status: args.status,
+    error_message: args.errorMessage || null,
+    metadata: args.metadata || {},
+  });
+  if (error) console.warn('ai_chat_runs insert failed:', error.message);
+}
+
+async function recordQueryPattern(args: {
+  question: string;
+  mode: AiMode;
+  domain?: string | null;
+  routeAction?: string | null;
+  toolName?: string | null;
+  answer?: string | null;
+}) {
+  const normalized = normalizePatternQuestion(args.question);
+  if (!normalized || !args.toolName) return;
+
+  try {
+    const existing = await admin
+      .from('ai_query_patterns')
+      .select('id, success_count')
+      .eq('normalized_question', normalized)
+      .eq('tool_name', args.toolName)
+      .eq('mode', args.mode)
+      .maybeSingle();
+
+    if (existing.data?.id) {
+      await admin
+        .from('ai_query_patterns')
+        .update({
+          question_sample: args.question.slice(0, 500),
+          classified_domain: args.domain || null,
+          route_action: args.routeAction || 'tool_call',
+          answer_summary: args.answer ? args.answer.slice(0, 600) : null,
+          success_count: Number(existing.data.success_count || 0) + 1,
+          last_used_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', existing.data.id);
+      return;
+    }
+
+    await admin.from('ai_query_patterns').insert({
+      normalized_question: normalized,
+      question_sample: args.question.slice(0, 500),
+      mode: args.mode,
+      classified_domain: args.domain || null,
+      route_action: args.routeAction || 'tool_call',
+      tool_name: args.toolName,
+      answer_summary: args.answer ? args.answer.slice(0, 600) : null,
+      success_count: 1,
+      failure_count: 0,
+      last_used_at: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.warn('recordQueryPattern failed:', err);
+  }
 }
 
 function normalizeEstimateSuggestionPayload(raw: any, req: AssistantRequest) {
@@ -1273,13 +1646,29 @@ Deno.serve(async (request: Request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   if (request.method !== 'POST') return jsonResponse({ error: 'Method not allowed' }, 405);
 
+  const startedAt = performance.now();
+  let req: AssistantRequest | null = null;
+  let activeConversationId: string | null = null;
+  let activeUserId: string | null = null;
+  let activeMode: AiMode | null = null;
+  let activeQuestion: string | null = null;
+  let activeModel: string | null = null;
+  let activeDomain: string | null = null;
+  let activeRouteAction: string | null = null;
+  let activeToolName: string | null = null;
+  let activeUserMessageId: string | null = null;
+  let activeAssistantMessageId: string | null = null;
+
   try {
     if (!supabaseUrl || !serviceRoleKey) {
       return jsonResponse({ error: 'Missing Supabase function secrets.' }, 500);
     }
 
-    const req = await request.json() as AssistantRequest;
-    if (req.action === 'feedback') return jsonResponse(await handleFeedback(req));
+    req = await request.json() as AssistantRequest;
+    if (req.action === 'feedback') {
+      const actor = await resolveActor(request, req.userId);
+      return jsonResponse(await handleFeedback(req, actor));
+    }
     if (req.action === 'estimate_suggestion') {
       const actor = await resolveActor(request, req.userId);
       return handleEstimateSuggestion(req, actor);
@@ -1313,12 +1702,60 @@ Deno.serve(async (request: Request) => {
     const selectedModel = req.model || null;
     const actor = await resolveActor(request, req.userId);
     const effectiveUserId = actor?.id || req.userId || null;
+    activeUserId = effectiveUserId;
+    activeMode = mode;
+    activeQuestion = question;
+    activeModel = selectedModel || (mode === 'knowledge' ? GEMINI_FAST_MODEL : GEMINI_FAST_MODEL);
+
+    const finishChat = async (
+      body: Record<string, unknown>,
+      status = 200,
+      run: Partial<{
+        status: 'success' | 'rejected' | 'clarification' | 'error';
+        routeAction: string | null;
+        toolName: string | null;
+        classifiedDomain: string | null;
+        errorMessage: string | null;
+        tokenCount: number | null;
+        metadata: Record<string, unknown>;
+      }> = {},
+    ) => {
+      const responseTimeMs = Math.round(performance.now() - startedAt);
+      const tokenCount = run.tokenCount ?? (typeof body.answer === 'string' ? estimateTokenCount(String(body.answer)) : null);
+      await logChatRun({
+        conversationId: activeConversationId,
+        userId: activeUserId,
+        mode: activeMode,
+        question: activeQuestion,
+        classifiedDomain: run.classifiedDomain ?? activeDomain,
+        routeAction: run.routeAction ?? activeRouteAction,
+        toolName: run.toolName ?? activeToolName,
+        modelUsed: activeModel,
+        responseTimeMs,
+        tokenCount,
+        status: run.status || 'success',
+        errorMessage: run.errorMessage || null,
+        metadata: {
+          ...(run.metadata || {}),
+          userMessageId: activeUserMessageId,
+          assistantMessageId: activeAssistantMessageId,
+        },
+      });
+      return jsonResponse({
+        ...body,
+        userMessageId: activeUserMessageId,
+        assistantMessageId: activeAssistantMessageId,
+      }, status);
+    };
 
     // ── Off-topic classification ──
     const relation = await classifyQuestionRelation(question, history, selectedModel);
     if (!relation.isRelated) {
       const conversationId = await ensureConversation({ ...req, userId: effectiveUserId || undefined, mode }, question);
-      await saveMessage({ conversationId, role: 'user', content: question, mode });
+      activeConversationId = conversationId;
+      activeDomain = 'general';
+      activeRouteAction = 'rejection';
+      activeUserMessageId = await saveMessage({ conversationId, role: 'user', content: question, mode, classifiedDomain: activeDomain });
 
       const friendlyRejection = relation.friendlyRejection || 'Xin chào! Em là Trợ lý AI của Kho Tiến Thịnh. Em chỉ có thể hỗ trợ giải đáp các thông tin liên quan đến dữ liệu phần mềm ERP (tồn kho, nhân sự, dự án, tài chính) hoặc tài liệu quy trình trong công ty. Anh/chị vui lòng hỏi đúng chủ đề nhé!';
       const rejectionSuggestions = relation.suggestions || [
@@ -1327,19 +1764,31 @@ Deno.serve(async (request: Request) => {
         'Quy trình xin nghỉ phép?',
       ];
 
-      await saveMessage({ conversationId, role: 'assistant', content: friendlyRejection, mode: 'general' });
+      activeAssistantMessageId = await saveMessage({ conversationId, role: 'assistant', content: friendlyRejection, mode: 'general', classifiedDomain: activeDomain });
+      await updateConversationMeta({ conversationId, classifiedDomain: activeDomain, modelUsed: activeModel });
 
-      return jsonResponse({
+      return finishChat({
         conversationId,
         answer: friendlyRejection,
         mode: 'general',
         suggestions: rejectionSuggestions,
         hasMemory: false,
-      });
+      }, 200, { status: 'rejected', routeAction: 'rejection', classifiedDomain: activeDomain });
     }
 
     const conversationId = await ensureConversation({ ...req, userId: effectiveUserId || undefined, mode }, question);
-    await saveMessage({ conversationId, role: 'user', content: question, mode });
+    activeConversationId = conversationId;
+    activeDomain = mode === 'knowledge' ? 'knowledge' : 'general';
+    const initialLearningContext = await collectLearningContext({ userId: effectiveUserId, domain: activeDomain, mode });
+    let learningContextPrompt = buildLearningContextPrompt(initialLearningContext);
+    activeUserMessageId = await saveMessage({
+      conversationId,
+      role: 'user',
+      content: question,
+      mode,
+      classifiedDomain: activeDomain,
+      metadata: { learningSignals: countLearningSignals(initialLearningContext) },
+    });
 
     // ── Knowledge Mode ──
     if (mode === 'knowledge') {
@@ -1347,7 +1796,7 @@ Deno.serve(async (request: Request) => {
       const isComplex = await classifyComplexity(question);
       
       const rawAnswer = chunks.length > 0
-        ? await answerFromKnowledge(question, chunks, history, isComplex, selectedModel)
+        ? await answerFromKnowledge(question, chunks, history, isComplex, selectedModel, learningContextPrompt)
         : 'Em chưa tìm thấy tài liệu nội bộ phù hợp trong Kho Kiến Thức. Anh có thể upload/sync thêm tài liệu hoặc hỏi cụ thể hơn theo tên tài liệu, quy trình, phòng ban.\n\nGợi ý câu hỏi:\n1. Quy trình xin nghỉ phép theo nội quy công ty?\n2. Quy định bảo mật thông tin nội bộ là gì?\n3. Tiêu chuẩn an toàn lao động trên công trường?';
 
       const { cleanAnswer, suggestions } = extractSuggestionsAndCleanAnswer(rawAnswer);
@@ -1358,8 +1807,17 @@ Deno.serve(async (request: Request) => {
         similarity: c.rank || 0,
       }));
 
-      await saveMessage({ conversationId, role: 'assistant', content: cleanAnswer, mode: 'rag', sources });
-      return jsonResponse({
+      activeAssistantMessageId = await saveMessage({
+        conversationId,
+        role: 'assistant',
+        content: cleanAnswer,
+        mode: 'rag',
+        sources,
+        classifiedDomain: activeDomain,
+        metadata: { learningSignals: countLearningSignals(initialLearningContext), chunks: chunks.length },
+      });
+      await updateConversationMeta({ conversationId, classifiedDomain: activeDomain, modelUsed: activeModel });
+      return finishChat({
         conversationId,
         answer: cleanAnswer,
         mode: 'rag',
@@ -1369,30 +1827,47 @@ Deno.serve(async (request: Request) => {
           'Quy định bảo mật thông tin nội bộ là gì?',
           'Tiêu chuẩn an toàn lao động trên công trường?',
         ],
-        hasMemory: chunks.length > 0,
+        hasMemory: chunks.length > 0 || countLearningSignals(initialLearningContext) > 0,
       });
     }
 
     // ── Data Mode — Agentic Tool-calling ──
     let route: any = null;
     try {
-      route = await routeToTool(question, history, selectedModel);
+      route = await routeToTool(question, history, selectedModel, learningContextPrompt);
+      activeRouteAction = route.action || null;
+      activeToolName = route.toolName || null;
     } catch (routeErr) {
       console.error('ai-assistant routing failed:', routeErr);
-      return jsonResponse({ error: `Routing failed: ${(routeErr as Error).message}` }, 500);
+      return finishChat({ error: `Routing failed: ${(routeErr as Error).message}` }, 500, {
+        status: 'error',
+        routeAction: 'routing',
+        errorMessage: (routeErr as Error).message,
+      });
     }
+    activeDomain = inferDomainFromTool(route.toolName, mode);
+    const domainLearningContext = await collectLearningContext({ userId: effectiveUserId, domain: activeDomain, mode });
+    learningContextPrompt = buildLearningContextPrompt(domainLearningContext);
 
     // Handle rejection or clarification
     if (route.action === 'rejection' || route.action === 'clarification') {
       const msg = route.message || 'Em cần thêm thông tin để trả lời câu hỏi này.';
-      await saveMessage({ conversationId, role: 'assistant', content: msg, mode: 'sql' });
-      return jsonResponse({
+      activeAssistantMessageId = await saveMessage({
+        conversationId,
+        role: 'assistant',
+        content: msg,
+        mode: 'sql',
+        classifiedDomain: activeDomain,
+        metadata: { routeReason: route.reason || null, learningSignals: countLearningSignals(domainLearningContext) },
+      });
+      await updateConversationMeta({ conversationId, classifiedDomain: activeDomain, modelUsed: activeModel });
+      return finishChat({
         conversationId,
         answer: msg,
         mode: 'sql',
         suggestions: route.suggestions,
-        hasMemory: false,
-      });
+        hasMemory: countLearningSignals(domainLearningContext) > 0,
+      }, 200, { status: route.action === 'rejection' ? 'rejected' : 'clarification' });
     }
 
     // Handle tool_call
@@ -1400,8 +1875,17 @@ Deno.serve(async (request: Request) => {
       const missingParams = getMissingRequiredParams(route.toolName, route.parameters);
       if (missingParams.length > 0) {
         const msg = `Em cần thêm thông tin để tra cứu chính xác: ${missingParams.join(', ')}. Anh/chị cho em biết từ khóa hoặc mã hạng mục/vật tư cụ thể nhé.`;
-        await saveMessage({ conversationId, role: 'assistant', content: msg, mode: 'sql' });
-        return jsonResponse({
+        activeAssistantMessageId = await saveMessage({
+          conversationId,
+          role: 'assistant',
+          content: msg,
+          mode: 'sql',
+          toolName: route.toolName,
+          classifiedDomain: activeDomain,
+          metadata: { missingParams, learningSignals: countLearningSignals(domainLearningContext) },
+        });
+        await updateConversationMeta({ conversationId, classifiedDomain: activeDomain, modelUsed: activeModel });
+        return finishChat({
           conversationId,
           answer: msg,
           mode: 'sql',
@@ -1410,21 +1894,30 @@ Deno.serve(async (request: Request) => {
             'Tra định mức bê tông móng',
             'Tra template dự toán nhà xưởng',
           ],
-          hasMemory: false,
-        });
+          hasMemory: countLearningSignals(domainLearningContext) > 0,
+        }, 200, { status: 'clarification', toolName: route.toolName });
       }
 
       const toolAuthorization = authorizeTool(route.toolName, actor);
       if (!toolAuthorization.allowed) {
         const msg = toolAuthorization.message || 'Tài khoản hiện tại chưa đủ quyền để AI tra cứu dữ liệu này.';
-        await saveMessage({ conversationId, role: 'assistant', content: msg, mode: 'sql' });
-        return jsonResponse({
+        activeAssistantMessageId = await saveMessage({
+          conversationId,
+          role: 'assistant',
+          content: msg,
+          mode: 'sql',
+          toolName: route.toolName,
+          classifiedDomain: activeDomain,
+          metadata: { authorizationDenied: true, learningSignals: countLearningSignals(domainLearningContext) },
+        });
+        await updateConversationMeta({ conversationId, classifiedDomain: activeDomain, modelUsed: activeModel });
+        return finishChat({
           conversationId,
           answer: msg,
           mode: 'sql',
           suggestions: toolAuthorization.suggestions || route.suggestions,
-          hasMemory: false,
-        });
+          hasMemory: countLearningSignals(domainLearningContext) > 0,
+        }, 200, { status: 'rejected', toolName: route.toolName });
       }
 
       let toolResult: any = null;
@@ -1442,13 +1935,17 @@ Deno.serve(async (request: Request) => {
         toolResult = await callToolRpc(route.toolName, route.parameters);
       } catch (rpcErr) {
         console.error(`ai-assistant RPC ${route.toolName} failed:`, rpcErr);
-        return jsonResponse({
+        return finishChat({
           error: `Tool "${route.toolName}" execution failed: ${(rpcErr as Error).message}`,
           debug: { route },
-        }, 500);
+        }, 500, {
+          status: 'error',
+          toolName: route.toolName,
+          errorMessage: (rpcErr as Error).message,
+        });
       }
 
-      const rawAnswer = await formatToolResult(question, route.toolName, toolResult, history, selectedModel);
+      const rawAnswer = await formatToolResult(question, route.toolName, toolResult, history, selectedModel, learningContextPrompt);
       const { cleanAnswer, suggestions } = extractSuggestionsAndCleanAnswer(rawAnswer);
 
       const toolSource = TOOL_SOURCES[route.toolName]
@@ -1457,34 +1954,66 @@ Deno.serve(async (request: Request) => {
 
       const finalSuggestions = suggestions.length > 0 ? suggestions : (route.suggestions || []);
 
-      await saveMessage({
+      activeAssistantMessageId = await saveMessage({
         conversationId,
         role: 'assistant',
         content: cleanAnswer,
         mode: 'sql',
         toolName: route.toolName,
         sources: toolSource,
+        classifiedDomain: activeDomain,
+        metadata: {
+          routeReason: route.reason || null,
+          learningSignals: countLearningSignals(domainLearningContext),
+        },
+      });
+      await updateConversationMeta({ conversationId, classifiedDomain: activeDomain, modelUsed: activeModel });
+      await recordQueryPattern({
+        question,
+        mode,
+        domain: activeDomain,
+        routeAction: route.action,
+        toolName: route.toolName,
+        answer: cleanAnswer,
       });
 
-      return jsonResponse({
+      return finishChat({
         conversationId,
         answer: cleanAnswer,
         toolName: route.toolName,
         mode: 'sql',
         suggestions: finalSuggestions,
         sources: toolSource,
-        hasMemory: false,
+        hasMemory: countLearningSignals(domainLearningContext) > 0,
       });
     }
 
     // Fallback — no valid action
-    return jsonResponse({
+    return finishChat({
       error: 'AI Router returned an unrecognized action.',
       debug: { route },
-    }, 500);
+    }, 500, { status: 'error', errorMessage: 'AI Router returned an unrecognized action.' });
 
   } catch (err) {
     console.error('ai-assistant error:', err);
+    await logChatRun({
+      conversationId: activeConversationId,
+      userId: activeUserId,
+      mode: activeMode,
+      question: activeQuestion,
+      classifiedDomain: activeDomain,
+      routeAction: activeRouteAction,
+      toolName: activeToolName,
+      modelUsed: activeModel,
+      responseTimeMs: Math.round(performance.now() - startedAt),
+      tokenCount: null,
+      status: 'error',
+      errorMessage: err instanceof Error ? err.message : 'AI assistant failed.',
+      metadata: {
+        userMessageId: activeUserMessageId,
+        assistantMessageId: activeAssistantMessageId,
+      },
+    });
     return jsonResponse({
       error: err instanceof Error ? err.message : 'AI assistant failed.',
     }, 500);

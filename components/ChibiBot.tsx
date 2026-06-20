@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
-import { X, Send, Loader2, ChevronDown, Bot, Sparkles, Trash2 } from 'lucide-react';
+import { X, Send, Loader2, ChevronDown, Bot, Sparkles, Trash2, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { escapeHtml } from '../lib/safeHtml';
 
 // ══════════════════════════════════════════
@@ -28,6 +28,7 @@ interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   createdAt: string;
+  feedback?: 1 | -1;
 }
 
 type BotState = 'idle' | 'wave' | 'talk' | 'sleep' | 'excited' | 'peek';
@@ -293,6 +294,7 @@ const ChibiBot: React.FC<ChibiBotProps> = ({ userName, userId }) => {
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
   const [chatConvId, setChatConvId] = useState<string | null>(() => loadConvId(userId));
+  const [aiPrefs, setAiPrefs] = useState({ tone: 'balanced', responseLength: 'normal' });
 
   // Resizable popup
   const [popupSize, setPopupSize] = useState(() => loadPopupSize());
@@ -327,6 +329,37 @@ const ChibiBot: React.FC<ChibiBotProps> = ({ userName, userId }) => {
   useEffect(() => {
     saveConvId(userId, chatConvId);
   }, [chatConvId, userId]);
+
+  useEffect(() => {
+    if (!userId) return;
+    let cancelled = false;
+    supabase
+      .from('ai_user_preferences')
+      .select('tone, response_length')
+      .eq('user_id', userId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!cancelled && data) {
+          setAiPrefs({
+            tone: data.tone || 'balanced',
+            responseLength: data.response_length || 'normal',
+          });
+        }
+      });
+    return () => { cancelled = true; };
+  }, [userId]);
+
+  const saveAiPreference = useCallback(async (patch: Partial<typeof aiPrefs>) => {
+    if (!userId) return;
+    const next = { ...aiPrefs, ...patch };
+    setAiPrefs(next);
+    await supabase.from('ai_user_preferences').upsert({
+      user_id: userId,
+      tone: next.tone,
+      response_length: next.responseLength,
+      updated_at: new Date().toISOString(),
+    });
+  }, [aiPrefs, userId]);
 
   // Auto scroll chat
   useEffect(() => {
@@ -539,6 +572,39 @@ const ChibiBot: React.FC<ChibiBotProps> = ({ userName, userId }) => {
     localStorage.removeItem(getConvIdStorageKey(userId));
   }, [userId]);
 
+  const sendChatFeedback = useCallback(async (msg: ChatMessage, rating: 1 | -1) => {
+    const msgIndex = chatMessages.findIndex(m => m.id === msg.id);
+    let question = '';
+    for (let i = msgIndex - 1; i >= 0; i -= 1) {
+      if (chatMessages[i]?.role === 'user') {
+        question = chatMessages[i].content;
+        break;
+      }
+    }
+    const reason = rating === -1 ? window.prompt('Góp ý ngắn cho câu trả lời này:') || '' : '';
+    setChatMessages(prev => prev.map(m => m.id === msg.id ? { ...m, feedback: rating } : m));
+    try {
+      await fetch(`${SUPABASE_URL}/functions/v1/ai-assistant`, {
+        method: 'POST',
+        headers: await buildFunctionHeaders(),
+        body: JSON.stringify({
+          action: 'feedback',
+          messageId: msg.id,
+          conversationId: chatConvId,
+          userId,
+          rating,
+          reason: reason.trim() || undefined,
+          correctionText: rating === -1 ? reason.trim() || undefined : undefined,
+          feedbackType: rating === -1 ? 'correction' : 'rating',
+          question,
+          answer: msg.content,
+        }),
+      });
+    } catch (err) {
+      console.error('ChibiBot feedback error:', err);
+    }
+  }, [buildFunctionHeaders, chatConvId, chatMessages, userId]);
+
   // ─── Send chat message to AI ────────────────
   const sendChatMessage = useCallback(async () => {
     const question = chatInput.trim();
@@ -574,12 +640,17 @@ const ChibiBot: React.FC<ChibiBotProps> = ({ userName, userId }) => {
         setChatConvId(data.conversationId);
       }
 
-      setChatMessages(prev => [...prev, {
-        id: `a-${Date.now()}`,
+      setChatMessages(prev => {
+        const next = data.userMessageId
+          ? prev.map(m => m.id === userMsg.id ? { ...m, id: data.userMessageId } : m)
+          : prev;
+        return [...next, {
+        id: data.assistantMessageId || `a-${Date.now()}`,
         role: 'assistant',
         content: data.error ? `⚠️ ${data.error}` : data.answer,
         createdAt: new Date().toISOString(),
-      }]);
+        }];
+      });
     } catch (err: any) {
       setChatMessages(prev => [...prev, {
         id: `e-${Date.now()}`,
@@ -653,6 +724,29 @@ const ChibiBot: React.FC<ChibiBotProps> = ({ userName, userId }) => {
                 Online · Powered by Gemini
               </p>
             </div>
+            <div className="hidden sm:flex items-center gap-1">
+              <select
+                value={aiPrefs.tone}
+                onChange={e => saveAiPreference({ tone: e.target.value })}
+                className="h-8 rounded-lg bg-white/15 px-2 text-[10px] font-bold text-white outline-none hover:bg-white/20"
+                title="Giọng trả lời"
+              >
+                <option className="text-slate-700" value="balanced">Cân bằng</option>
+                <option className="text-slate-700" value="concise">Ngắn gọn</option>
+                <option className="text-slate-700" value="friendly">Thân thiện</option>
+                <option className="text-slate-700" value="executive">Quản trị</option>
+              </select>
+              <select
+                value={aiPrefs.responseLength}
+                onChange={e => saveAiPreference({ responseLength: e.target.value })}
+                className="h-8 rounded-lg bg-white/15 px-2 text-[10px] font-bold text-white outline-none hover:bg-white/20"
+                title="Độ dài trả lời"
+              >
+                <option className="text-slate-700" value="short">Ngắn</option>
+                <option className="text-slate-700" value="normal">Vừa</option>
+                <option className="text-slate-700" value="detailed">Chi tiết</option>
+              </select>
+            </div>
             {chatMessages.length > 0 && (
               <button
                 onClick={clearChat}
@@ -701,18 +795,38 @@ const ChibiBot: React.FC<ChibiBotProps> = ({ userName, userId }) => {
                     <Bot size={13} className="text-white" />
                   </div>
                 )}
-                <div className={`max-w-[85%] px-3 py-2 text-[13px] leading-relaxed rounded-2xl ${
-                  msg.role === 'user'
-                    ? 'bg-gradient-to-br from-indigo-500 to-violet-600 text-white rounded-br-md'
-                    : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-bl-md border border-slate-100 dark:border-slate-700 shadow-sm'
-                }`}>
-                  {msg.role === 'assistant' ? (
-                    <div
-                      className="chibi-md-content"
-                      dangerouslySetInnerHTML={{ __html: formatMarkdown(msg.content) }}
-                    />
-                  ) : (
-                    msg.content
+                <div className="max-w-[85%]">
+                  <div className={`px-3 py-2 text-[13px] leading-relaxed rounded-2xl ${
+                    msg.role === 'user'
+                      ? 'bg-gradient-to-br from-indigo-500 to-violet-600 text-white rounded-br-md'
+                      : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-bl-md border border-slate-100 dark:border-slate-700 shadow-sm'
+                  }`}>
+                    {msg.role === 'assistant' ? (
+                      <div
+                        className="chibi-md-content"
+                        dangerouslySetInnerHTML={{ __html: formatMarkdown(msg.content) }}
+                      />
+                    ) : (
+                      msg.content
+                    )}
+                  </div>
+                  {msg.role === 'assistant' && (
+                    <div className="mt-1 flex items-center gap-1">
+                      <button
+                        onClick={() => sendChatFeedback(msg, 1)}
+                        className={`p-1 rounded-lg transition ${msg.feedback === 1 ? 'bg-emerald-100 text-emerald-600' : 'text-slate-300 hover:bg-emerald-50 hover:text-emerald-500'}`}
+                        title="Câu trả lời tốt"
+                      >
+                        <ThumbsUp size={11} />
+                      </button>
+                      <button
+                        onClick={() => sendChatFeedback(msg, -1)}
+                        className={`p-1 rounded-lg transition ${msg.feedback === -1 ? 'bg-red-100 text-red-600' : 'text-slate-300 hover:bg-red-50 hover:text-red-500'}`}
+                        title="Góp ý câu trả lời"
+                      >
+                        <ThumbsDown size={11} />
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>

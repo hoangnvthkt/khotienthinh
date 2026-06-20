@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, User as UserIcon, Mail, Phone, Shield, Building, Save, Package, Briefcase, GitBranch, BarChart3, Landmark, Loader2, Crown, Inbox, LayoutDashboard, MapPin, Users, Calendar, Clock, CalendarOff, DollarSign, FileSignature, FolderOpen, History, ArrowLeftRight, ClipboardCheck, FileSpreadsheet, FileText, Workflow, Layers, Repeat, Wrench, IdCard, CreditCard, Calculator, Bot, Copy, ClipboardPaste, Settings as SettingsIcon } from 'lucide-react';
+import { X, User as UserIcon, Mail, Phone, Shield, Building, Save, Package, Briefcase, GitBranch, BarChart3, Landmark, Loader2, Crown, Inbox, LayoutDashboard, MapPin, Users, Calendar, Clock, CalendarOff, DollarSign, FileSignature, FolderOpen, History, ArrowLeftRight, ClipboardCheck, FileSpreadsheet, FileText, Workflow, Layers, Repeat, Wrench, IdCard, CreditCard, Calculator, Bot, BrainCircuit, Copy, ClipboardPaste, Settings as SettingsIcon } from 'lucide-react';
 import { Role, User, Warehouse } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { useToast } from '../context/ToastContext';
@@ -67,6 +67,7 @@ const SETTINGS_FEATURE_ICONS: Record<(typeof SETTINGS_FEATURES)[number]['id'], a
   'hrm-master-data': Briefcase,
   users: Users,
   'chibi-bot': Bot,
+  'ai-learning': BrainCircuit,
   maintenance: Wrench,
 };
 
