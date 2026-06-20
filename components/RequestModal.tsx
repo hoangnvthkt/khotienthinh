@@ -38,7 +38,7 @@ import { useConfirm } from '../context/ConfirmContext';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
 import { projectSubmissionService } from '../lib/projectSubmissionService';
 import { projectWorkflowService } from '../lib/projectWorkflowService';
-import { getMaterialRequestWorkflowPatch } from '../lib/materialRequestService';
+import { getMaterialRequestWorkflowPatch, materialRequestService } from '../lib/materialRequestService';
 import { materialRequestFulfillmentService, getCommittedQty, getRequestLineId } from '../lib/materialRequestFulfillmentService';
 import { buildFulfillmentBatchReceiveUrl } from '../lib/fulfillmentBatchQr';
 import { formatReservationSourceList } from '../lib/inventoryStockGuard';
@@ -1048,17 +1048,26 @@ const RequestModal: React.FC<RequestModalProps> = ({
         }
     };
 
-    const buildDraftRequestFromForm = (): MaterialRequest => {
+    const allocateMaterialRequestCode = async (): Promise<string> => {
+        if (request?.code) return request.code;
+        return materialRequestService.nextCode();
+    };
+
+    const buildDraftRequestFromForm = (issuedCode?: string): MaterialRequest => {
         const now = new Date().toISOString();
         const isExistingDraft = !!request && request.status === RequestStatus.DRAFT;
         const workflowPatch = isProjectRequest
             ? getMaterialRequestWorkflowPatch(request?.workflowStep === 'returned_to_creator' ? 'returned_to_creator' : 'draft', user.id)
             : {};
         const sequentialSnapshots = buildSequentialLineBudgetSnapshots(reqItems, request?.id);
+        const requestCode = request?.code || issuedCode;
+        if (!requestCode) {
+            throw new Error('Hệ thống chưa cấp được mã phiếu MR mới.');
+        }
         return {
             ...(request || {}),
             id: request?.id || `mr-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-            code: request?.code || `MR-${new Date().getFullYear()}-${Math.floor(Math.random() * 10000)}`,
+            code: requestCode,
             title: requestTitle.trim() || request?.title || 'Đề xuất vật tư',
             projectId: effectiveProjectId,
             constructionSiteId: effectiveConstructionSiteId,
@@ -1170,7 +1179,14 @@ const RequestModal: React.FC<RequestModalProps> = ({
         if (!isValid) return;
 
         const isExistingDraft = !!request && request.status === RequestStatus.DRAFT;
-        const newRequest = buildDraftRequestFromForm();
+        let newRequest: MaterialRequest;
+        try {
+            newRequest = buildDraftRequestFromForm(await allocateMaterialRequestCode());
+        } catch (err: any) {
+            logApiError('requestModal.allocateMaterialRequestCode', err);
+            toast.error('Không thể cấp mã phiếu', getApiErrorMessage(err, 'Không lấy được mã MR mới từ hệ thống.'));
+            return;
+        }
 
         const ok = await confirm({
             title: isExistingDraft ? 'Lưu phiếu nháp' : 'Tạo đề xuất nháp',
@@ -1195,7 +1211,12 @@ const RequestModal: React.FC<RequestModalProps> = ({
         if (isSaving || !request || request.status !== RequestStatus.DRAFT) return;
         const isValid = await validateDraftForm();
         if (!isValid) return;
-        setSubmittingProjectRequest(buildDraftRequestFromForm());
+        try {
+            setSubmittingProjectRequest(buildDraftRequestFromForm(await allocateMaterialRequestCode()));
+        } catch (err: any) {
+            logApiError('requestModal.allocateSubmitDraftCode', err);
+            toast.error('Không thể cấp mã phiếu', getApiErrorMessage(err, 'Không lấy được mã MR mới từ hệ thống.'));
+        }
     };
 
     const handleProjectWorkflowPanelAction = async (context: ProjectWorkflowActionContext) => {
@@ -1209,7 +1230,14 @@ const RequestModal: React.FC<RequestModalProps> = ({
         const isValid = await validateDraftForm();
         if (!isValid) return;
 
-        const draftToSave = buildDraftRequestFromForm();
+        let draftToSave: MaterialRequest;
+        try {
+            draftToSave = buildDraftRequestFromForm(await allocateMaterialRequestCode());
+        } catch (err: any) {
+            logApiError('requestModal.allocateResubmitCode', err);
+            toast.error('Không thể cấp mã phiếu', getApiErrorMessage(err, 'Không lấy được mã MR mới từ hệ thống.'));
+            return;
+        }
         setIsSaving(true);
         try {
             const saved = await addRequest(draftToSave);
@@ -1558,17 +1586,10 @@ const RequestModal: React.FC<RequestModalProps> = ({
 
         const draft = receiveLines.find(line => line.lineId === batchLine.id);
         const quantity = Number(draft?.qty || 0);
-        const originalQty = Number(item.quantity || 0);
         const reason = draft?.reason?.trim() || '';
 
-        if (!Number.isFinite(quantity) || quantity <= 0) {
-            throw new Error(`Dòng ${index + 1}: Số lượng duyệt phải lớn hơn 0.`);
-        }
-        if (quantity > originalQty) {
-            throw new Error(`Dòng ${index + 1}: Số lượng duyệt không được lớn hơn số lượng đã xuất.`);
-        }
-        if (quantity !== originalQty && !reason) {
-            throw new Error(`Dòng ${index + 1}: Nhập lý do khi duyệt lệch số lượng xuất.`);
+        if (!Number.isFinite(quantity) || quantity < 0) {
+            throw new Error(`Dòng ${index + 1}: Số lượng duyệt không được âm.`);
         }
 
         return { index, quantity, reason };
@@ -1674,7 +1695,11 @@ const RequestModal: React.FC<RequestModalProps> = ({
                 })),
             });
             const freshBatches = await refreshFulfillmentBatches(request.id);
-            const nextStatus = materialRequestFulfillmentService.nextRequestStatus(request, freshBatches);
+            const summaries = await materialRequestFulfillmentService.listSummariesByRequests([request]);
+            const summary = summaries.summariesByRequestId[request.id];
+            const nextStatus = summary && Number(summary.openNeedQty ?? summary.remainingToReceive ?? 0) <= 0
+                ? RequestStatus.COMPLETED
+                : materialRequestFulfillmentService.nextRequestStatus(request, freshBatches);
             await updateRequestStatus(request.id, nextStatus, 'Xác nhận nhận đợt cấp vật tư', undefined, sourceWarehouseId || request.sourceWarehouseId, overrideReason.trim() || undefined, 'FULFILLMENT_RECEIVED');
             await refreshFulfillmentWmsRecords(freshBatches, { transactionIds: [savedBatch.transactionId] });
             toast.success(
@@ -3344,7 +3369,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                         <input
                                                             value={line.reason}
                                                             onChange={event => updateIssueLine(line.requestLineId, { reason: event.target.value })}
-                                                            placeholder="Bắt buộc nếu cấp lệch phần còn lại"
+                                                            placeholder="Lý do nếu cần"
                                                             className="w-full rounded-lg border border-border bg-card text-foreground px-2 py-1 outline-none focus:ring-2 focus:ring-indigo-300"
                                                         />
                                                     </td>
@@ -3438,17 +3463,23 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                             <th className="p-3 text-left">Vật tư</th>
                                             <th className="p-3 text-right">Xuất</th>
                                             <th className="p-3 text-right">Thực nhận</th>
+                                            <th className="p-3 text-right">Giá đợt</th>
+                                            <th className="p-3 text-right">Thành tiền</th>
                                             <th className="p-3 text-left">Lý do lệch</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-border">
                                         {selectedFulfillmentBatch.lines.map(line => {
                                             const requestLine = request.items.find((item, index) => getRequestLineId(request, item, index) === line.requestLineId);
+                                            const unitPrice = Number(line.deliveryUnitPrice || 0);
+                                            const amountQty = Number(line.receivedQty || line.issuedQty || 0);
                                             return (
                                                 <tr key={line.id}>
                                                     <td className="p-3 font-bold text-foreground">{requestLine ? getLineName(requestLine) : line.itemId}</td>
                                                     <td className="p-3 text-right font-black text-indigo-600">{Number(line.issuedQty || 0).toLocaleString('vi-VN')}</td>
                                                     <td className="p-3 text-right font-black text-cyan-600">{Number(line.receivedQty || 0).toLocaleString('vi-VN')}</td>
+                                                    <td className="p-3 text-right font-bold text-muted-foreground">{unitPrice > 0 ? `${unitPrice.toLocaleString('vi-VN')} đ` : '-'}</td>
+                                                    <td className="p-3 text-right font-black text-emerald-600">{unitPrice > 0 ? `${(amountQty * unitPrice).toLocaleString('vi-VN')} đ` : '-'}</td>
                                                     <td className="p-3 text-slate-400">{line.varianceReason || '-'}</td>
                                                 </tr>
                                             );
@@ -3667,9 +3698,11 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                         <tr>
                                             <th className="p-3 text-left">Vật tư</th>
                                             <th className="p-3 text-right">Đã xuất</th>
+                                            <th className="p-3 text-right">Giá đợt</th>
                                             <th className="p-3 text-right">
                                                 {receivePanelMode === 'quality_review' ? 'SL duyệt' : 'Thực nhận'}
                                             </th>
+                                            <th className="p-3 text-right">Thành tiền</th>
                                             <th className="p-3 text-left">Lý do lệch</th>
                                         </tr>
                                     </thead>
@@ -3677,10 +3710,13 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                         {receivingBatch.lines.map(line => {
                                             const requestLine = request.items.find((item, index) => getRequestLineId(request, item, index) === line.requestLineId);
                                             const draft = receiveLines.find(item => item.lineId === line.id);
+                                            const draftQty = Number(draft?.qty || 0);
+                                            const unitPrice = Number(line.deliveryUnitPrice || 0);
                                             return (
                                                 <tr key={line.id}>
                                                     <td className="p-3 font-bold text-foreground">{requestLine ? getLineName(requestLine) : line.itemId}</td>
                                                     <td className="p-3 text-right font-bold text-indigo-600">{Number(line.issuedQty || 0).toLocaleString('vi-VN')}</td>
+                                                    <td className="p-3 text-right font-bold text-muted-foreground">{unitPrice > 0 ? `${unitPrice.toLocaleString('vi-VN')} đ` : '-'}</td>
                                                     <td className="p-3 text-right">
                                                         <input
                                                             type="number"
@@ -3694,11 +3730,12 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                             }`}
                                                         />
                                                     </td>
+                                                    <td className="p-3 text-right font-black text-emerald-600">{unitPrice > 0 ? `${(draftQty * unitPrice).toLocaleString('vi-VN')} đ` : '-'}</td>
                                                     <td className="p-3">
                                                         <input
                                                             value={draft?.reason || ''}
                                                             onChange={event => updateReceiveLine(line.id, { reason: event.target.value })}
-                                                            placeholder={receivePanelMode === 'quality_review' ? 'Bắt buộc nếu duyệt lệch số xuất' : 'Bắt buộc nếu nhận lệch số duyệt'}
+                                                            placeholder="Lý do nếu cần"
                                                             className={`w-full rounded-lg border border-border bg-card text-foreground px-2 py-1 outline-none focus:ring-2 ${
                                                                 receivePanelMode === 'quality_review' ? 'focus:ring-amber-300' : 'focus:ring-emerald-300'
                                                             }`}

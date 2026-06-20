@@ -49,6 +49,9 @@ export const ROUTE_TO_MODULE: Record<string, string> = {
   '/da/portfolio':  'DA',
   ...Object.fromEntries(PROJECT_TAB_PERMISSIONS.map(tab => [tab.route, 'DA'])),
 
+  // ── MUA HÀNG CẤP CÔNG TY ─────────────────────────────
+  '/procurement': 'PROCUREMENT',
+
   // ── TÀI SẢN ──────────────────────────────────────────
   '/ts/dashboard':   'TS',
   '/ts/catalog':     'TS',

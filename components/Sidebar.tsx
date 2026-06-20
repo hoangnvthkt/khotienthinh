@@ -8,7 +8,7 @@ import {
   MessageSquarePlus,
   Landmark, Repeat, Wrench, ChevronsLeft, ChevronsRight, AppWindow, ArrowLeft, Inbox, Layers, HardDrive,
   Calendar, CalendarOff, DollarSign, FileSignature, MapPin, Bot, FolderOpen, GripVertical, BookOpen, Clock,
-  IdCard, Award, Trophy, Globe, Building2, HardHat, Handshake, Settings2, Calculator
+  IdCard, Award, Trophy, Globe, Building2, HardHat, Handshake, Settings2, Calculator, ShoppingCart
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import NotificationCenter from './NotificationCenter';
@@ -33,6 +33,7 @@ const MODULE_CONFIG = [
   { key: 'HRM' as const, icon: Briefcase, label: 'Nhân sự', shortLabel: 'NS', gradient: 'from-teal-500 to-cyan-600', shadow: 'shadow-teal-500/30', color: 'text-teal-600 dark:text-teal-400', bg: 'bg-teal-50 dark:bg-teal-900/30', border: 'border-teal-200 dark:border-teal-700', route: '/hrm/employees' },
   { key: 'WF' as const, icon: GitBranch, label: 'Quy trình', shortLabel: 'QT', gradient: 'from-violet-500 to-purple-600', shadow: 'shadow-violet-500/30', color: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-50 dark:bg-violet-900/30', border: 'border-violet-200 dark:border-violet-700', route: '/wf' },
   { key: 'DA' as const, icon: BarChart3, label: 'Dự án', shortLabel: 'DA', gradient: 'from-orange-500 to-amber-500', shadow: 'shadow-orange-500/30', color: 'text-orange-600 dark:text-orange-400', bg: 'bg-orange-50 dark:bg-orange-900/30', border: 'border-orange-200 dark:border-orange-700', route: '/da' },
+  { key: 'PROCUREMENT' as const, icon: ShoppingCart, label: 'Mua hàng', shortLabel: 'MH', gradient: 'from-emerald-500 to-teal-600', shadow: 'shadow-emerald-500/30', color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-900/30', border: 'border-emerald-200 dark:border-emerald-700', route: '/procurement' },
   { key: 'TS' as const, icon: Landmark, label: 'Tài sản', shortLabel: 'TS', gradient: 'from-rose-500 to-pink-600', shadow: 'shadow-rose-500/30', color: 'text-rose-600 dark:text-rose-400', bg: 'bg-rose-50 dark:bg-rose-900/30', border: 'border-rose-200 dark:border-rose-700', route: '/ts/dashboard' },
   { key: 'RQ' as const, icon: Inbox, label: 'Yêu cầu', shortLabel: 'RQ', gradient: 'from-cyan-500 to-blue-600', shadow: 'shadow-cyan-500/30', color: 'text-cyan-600 dark:text-cyan-400', bg: 'bg-cyan-50 dark:bg-cyan-900/30', border: 'border-cyan-200 dark:border-cyan-700', route: '/rq' },
   { key: 'EX' as const, icon: BarChart3, label: 'Chi phí', shortLabel: 'CP', gradient: 'from-indigo-500 to-blue-600', shadow: 'shadow-indigo-500/30', color: 'text-indigo-600 dark:text-indigo-400', bg: 'bg-indigo-50 dark:bg-indigo-900/30', border: 'border-indigo-200 dark:border-indigo-700', route: '/expense' },
@@ -62,6 +63,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
     if (p.startsWith('/hrm')) return 'HRM';
     if (p.startsWith('/wf')) return 'WF';
     if (p.startsWith('/da')) return 'DA';
+    if (p.startsWith('/procurement')) return 'PROCUREMENT';
     if (p.startsWith('/ts')) return 'TS';
     if (p.startsWith('/rq')) return 'RQ';
     if (p.startsWith('/expense')) return 'EX';
@@ -221,6 +223,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
     DA: [
       { to: '/da', icon: BarChart3, label: 'Tổng quan DA' },
       { to: '/da/portfolio', icon: Layers, label: 'Đa dự án' },
+    ],
+    PROCUREMENT: [
+      { to: '/procurement', icon: ShoppingCart, label: 'Mua hàng công ty' },
     ],
     TS: [
       { to: '/ts/dashboard', icon: LayoutDashboard, label: 'Dashboard TS' },

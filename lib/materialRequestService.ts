@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { isSupabaseConfigured, supabase } from './supabase';
 import {
   MaterialRequest,
   MaterialRequestEvent,
@@ -244,6 +244,17 @@ export const mapMaterialRequestFromDb = (row: any): MaterialRequest => ({
 });
 
 export const materialRequestService = {
+  async nextCode(): Promise<string> {
+    if (!isSupabaseConfigured) {
+      return `MR-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`;
+    }
+    const { data, error } = await supabase.rpc('next_material_request_code_v1');
+    if (error) throw error;
+    const code = String(data || '').trim();
+    if (!code) throw new Error('Hệ thống chưa cấp được số MR mới.');
+    return code;
+  },
+
   async getById(id: string): Promise<MaterialRequest | null> {
     if (!id) return null;
     const { data, error } = await supabase

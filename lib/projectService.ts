@@ -4,8 +4,7 @@ import {
     MaterialBudgetItem, ProjectMaterialRequest, ProjectVendor,
     PurchaseOrder, PaymentSchedule, ProjectBaseline, ProjectWorkBoqItem, PurchaseOrderRequestLineLink,
     PaymentDossierStatus, PaymentQualityStatus, PaymentScheduleMilestoneType, PurchaseOrderRemovalResult,
-    PurchaseOrderDeliveryBatch,
-    PurchaseOrderDeliveryLine
+    PurchaseOrderDeliveryBatch, PurchaseOrderDeliveryLine
 } from '../types';
 import { auditService } from './auditService';
 import { dailyLogDetailService } from './dailyLogDetailService';
@@ -856,14 +855,11 @@ const listAllPurchaseOrderRequestLineLinks = async (
 
 export const poService = {
     async nextNumber(projectIdOrSiteId?: string | null, constructionSiteId?: string | null): Promise<string> {
-        const { data, error } = await supabase
-            .rpc('next_purchase_order_number_v1', {
-                p_project_id: projectIdOrSiteId || null,
-                p_construction_site_id: constructionSiteId || null,
-                p_prefix: 'PO',
-            });
+        const { data, error } = await supabase.rpc('next_purchase_order_number_v2');
         if (error) throw error;
-        return String(data || 'PO-001');
+        const poNumber = String(data || '').trim();
+        if (!poNumber) throw new Error('Hệ thống chưa cấp được số PO mới.');
+        return poNumber;
     },
     async list(projectIdOrSiteId: string, constructionSiteId?: string | null): Promise<PurchaseOrder[]> {
         return listAllPurchaseOrders(projectIdOrSiteId, constructionSiteId);
@@ -904,6 +900,16 @@ export const poService = {
         cursor?: string | null;
     } = {}): Promise<ListPage<PurchaseOrder>> {
         return listStockPurchaseOrdersPage(input);
+    },
+    async listByIds(ids: string[]): Promise<PurchaseOrder[]> {
+        const uniqueIds = Array.from(new Set(ids.filter(Boolean)));
+        if (uniqueIds.length === 0) return [];
+        const { data, error } = await supabase
+            .from('purchase_orders')
+            .select('*')
+            .in('id', uniqueIds);
+        if (error) throw error;
+        return (data || []).map(fromDb) as PurchaseOrder[];
     },
     async listRequestLineLinks(projectIdOrSiteId: string, constructionSiteId?: string | null): Promise<PurchaseOrderRequestLineLink[]> {
         return listAllPurchaseOrderRequestLineLinks(projectIdOrSiteId, constructionSiteId);
@@ -958,22 +964,17 @@ export const poService = {
         if (error) throw error;
 
         const po = fromDb(data) as PurchaseOrder;
-        if (['cancelled', 'closed', 'returned', 'delivered'].includes(po.status)) {
-            throw new Error('PO đã huỷ/đóng/hoàn hàng/hoàn thành, không thể nhập kho.');
+        if (['cancelled', 'closed', 'returned'].includes(po.status)) {
+            throw new Error('PO đã huỷ/đóng/hoàn hàng, không thể nhập kho.');
         }
         const receiptMap = new Map(receiptLines.map(line => [line.lineId || line.itemId, Number(line.quantity) || 0]));
         let hasReceipt = false;
 
         const nextItems = po.items.map(item => {
             const receiveQty = receiptMap.get(item.lineId || item.itemId) || 0;
-            const orderedQty = Number(item.qty) || 0;
             const receivedQty = Number(item.receivedQty) || 0;
-            const remainingQty = Math.max(orderedQty - receivedQty, 0);
 
             if (receiveQty <= 0) return item;
-            if (receiveQty > remainingQty) {
-                throw new Error(`Số lượng nhận của ${item.sku || item.name} vượt phần còn lại.`);
-            }
 
             hasReceipt = true;
             return { ...item, receivedQty: receivedQty + receiveQty };

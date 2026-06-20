@@ -35,6 +35,7 @@ const Reports = React.lazy(() => import('./pages/Reports'));
 const MisaExport = React.lazy(() => import('./pages/MisaExport'));
 const ProjectDashboard = React.lazy(() => import('./pages/ProjectDashboard'));
 const PortfolioDashboard = React.lazy(() => import('./pages/PortfolioDashboard'));
+const CompanyProcurement = React.lazy(() => import('./pages/procurement/CompanyProcurement'));
 const MyProfile = React.lazy(() => import('./pages/MyProfile'));
 const EmployeeDashboard = React.lazy(() => import('./pages/EmployeeDashboard'));
 const NotFound = React.lazy(() => import('./pages/NotFound'));
@@ -293,6 +294,7 @@ const AppRoutes: React.FC = () => {
           <Route path="hrm/ranking" element={<EmployeeRanking />} />
           <Route path="da" element={<ProjectDashboard />} />
           <Route path="da/portfolio" element={<PortfolioDashboard />} />
+          <Route path="procurement" element={<CompanyProcurement />} />
           <Route path="chat" element={isChatEnabled ? <Chat /> : <Navigate to="/" replace />} />
           <Route path="storage" element={<DataStorage />} />
           <Route path="ai" element={<AiAssistant />} />
@@ -385,6 +387,16 @@ const AppDataWarmup: React.FC = () => {
         loadModuleData('admin'),
         loadModuleData('hrm'),
       ]).catch(err => console.warn('Project lazy load failed:', err));
+      return;
+    }
+
+    if (pathname.startsWith('/procurement')) {
+      setActiveRealtimeModules(['wms-core', 'admin', 'hrm']);
+      Promise.all([
+        loadModuleData('wms-core'),
+        loadModuleData('admin'),
+        loadModuleData('hrm'),
+      ]).catch(err => console.warn('Procurement lazy load failed:', err));
       return;
     }
 
