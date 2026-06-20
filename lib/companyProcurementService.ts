@@ -238,7 +238,6 @@ const buildPoLinkFromDemand = (
   demand: CompanyProcurementDemandLine,
   lineInput: CompanyProcurementCreateLine,
 ): PurchaseOrderRequestLineLink => ({
-  id: newId('po-req-link'),
   projectId: demand.projectId || null,
   constructionSiteId: demand.constructionSiteId || null,
   sourceConstructionSiteId: demand.constructionSiteId || null,
