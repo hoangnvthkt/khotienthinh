@@ -2893,7 +2893,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setter((prev: any[]) => [...prev, item]);
     if (isSupabaseConfigured) {
       const { error } = await supabase.from(table).insert(toDbItem(table, item));
-      if (error) console.error(`Error adding to ${table}:`, error);
+      if (error) {
+        console.error(`Error adding to ${table}:`, error);
+        throw error;
+      }
     }
   };
 
@@ -2903,7 +2906,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setter((prev: any[]) => prev.map((i: any) => i.id === item.id ? item : i));
     if (isSupabaseConfigured) {
       const { error } = await supabase.from(table).update(toDbItem(table, item)).eq('id', item.id);
-      if (error) console.error(`Error updating ${table}:`, error);
+      if (error) {
+        console.error(`Error updating ${table}:`, error);
+        throw error;
+      }
     }
   };
 
@@ -2913,7 +2919,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setter((prev: any[]) => prev.filter((i: any) => i.id !== id));
     if (isSupabaseConfigured) {
       const { error } = await supabase.from(table).delete().eq('id', id);
-      if (error) console.error(`Error deleting from ${table}:`, error);
+      if (error) {
+        console.error(`Error deleting from ${table}:`, error);
+        throw error;
+      }
     }
   };
 
