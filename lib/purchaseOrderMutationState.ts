@@ -8,9 +8,18 @@ import {
 import { isAdmin } from './wmsPermissions';
 
 const PENDING_FULFILLMENT_STATUSES = new Set(['issued', 'variance_pending']);
-const REJECTED_FULFILLMENT_STATUSES = new Set(['returned', 'cancelled']);
 const LOCKED_SCHEDULE_STATUSES = new Set(['wms_pending']);
 const FAILED_SCHEDULE_STATUSES = new Set(['cancelled']);
+
+const hasAnyReceivedQty = (batch: MaterialRequestFulfillmentBatch): boolean =>
+  (batch.lines || []).some(line => Number(line.receivedQty || 0) > 0);
+
+const isFailedBeforeReceiptFulfillment = (batch: MaterialRequestFulfillmentBatch): boolean => {
+  const status = String(batch.status || '').toLowerCase();
+  if (status === 'cancelled') return !hasAnyReceivedQty(batch);
+  if (status === 'returned') return !hasAnyReceivedQty(batch);
+  return false;
+};
 
 export const getPurchaseOrderCreatorId = (po?: PurchaseOrder | null): string | null => {
   if (!po) return null;
@@ -56,14 +65,13 @@ export const summarizePurchaseOrderWork = (
     PENDING_FULFILLMENT_STATUSES.has(String(batch.status || '').toLowerCase())
   );
   const hasReceivedFulfillment = relevantFulfillmentBatches.some(batch =>
-    batch.status === 'received' || batch.lines.some(line => Number(line.receivedQty || 0) > 0)
+    batch.status === 'received' || hasAnyReceivedQty(batch)
   );
   const hasRejectedFulfillment = relevantFulfillmentBatches.some(batch =>
-    REJECTED_FULFILLMENT_STATUSES.has(String(batch.status || '').toLowerCase())
+    isFailedBeforeReceiptFulfillment(batch)
   );
   const hasFailedFulfillment = relevantFulfillmentBatches.some(batch =>
-    REJECTED_FULFILLMENT_STATUSES.has(String(batch.status || '').toLowerCase())
-    && batch.lines.every(line => Number(line.receivedQty || 0) <= 0)
+    isFailedBeforeReceiptFulfillment(batch)
   );
   const hasLockedSchedule = scheduleBatches.some(batch =>
     LOCKED_SCHEDULE_STATUSES.has(String(batch.status || '').toLowerCase())

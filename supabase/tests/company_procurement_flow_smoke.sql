@@ -641,24 +641,22 @@ begin
     'CANCELLED'::public.transaction_status,
     v_admin_id
   );
-  update public.material_request_fulfillment_batches
-  set status = 'returned', reason = 'Tu choi hang truoc khi nhap kho'
-  where id = v_pending_batch;
-  update public.purchase_order_delivery_groups
-  set status = 'received'
-  where id = v_pending_group;
   update public.purchase_orders
-  set status = 'returned', delivery_note = 'Hoan toan bo truoc khi nhap kho'
+  set status = 'cancelled', delivery_note = 'Huy truoc khi nhap kho'
   where id = v_po_return_before;
 
   if pg_temp.smoke_stock(v_item_id, v_warehouse_id) <> v_stock_before
      or pg_temp.smoke_gross_received(v_request_return_before, v_line_return_before) <> 0
      or pg_temp.smoke_active_ordered(v_request_return_before, v_line_return_before) <> 0
      or pg_temp.smoke_remaining_need(v_request_return_before, v_line_return_before, 100) <> 100
-     or (select tx.status::text from public.transactions tx where tx.id = v_pending_tx) <> 'CANCELLED' then
-    raise exception 'Return-before-receipt assertions failed.';
+     or (select tx.status::text from public.transactions tx where tx.id = v_pending_tx) <> 'CANCELLED'
+     or (select batch.status from public.material_request_fulfillment_batches batch where batch.id = v_pending_batch) <> 'cancelled'
+     or (select delivery_group.status from public.purchase_order_delivery_groups delivery_group where delivery_group.id = v_pending_group) <> 'cancelled'
+     or (select request.status::text from public.requests request where request.id = v_request_return_before) <> 'APPROVED'
+     or (select request.workflow_step from public.requests request where request.id = v_request_return_before) <> 'batch_planning' then
+    raise exception 'Cancel-before-receipt assertions failed.';
   end if;
-  raise notice 'PASS 5/7: return before receipt cancels the pending import, keeps stock unchanged, and reopens demand';
+  raise notice 'PASS 5/7: cancel before receipt cancels the pending import, keeps stock unchanged, and reopens demand';
 
   -- Two rejected delivery batches with no receipt keep the PO in-transit but allow safe deletion.
   v_stock_before := pg_temp.smoke_stock(v_item_id, v_warehouse_id);
@@ -781,8 +779,10 @@ begin
 
   if pg_temp.smoke_stock(v_item_id, v_warehouse_id) <> v_stock_before
      or (select po.status from public.purchase_orders po where po.id = v_po_rejected_delete) <> 'in_transit'
-     or (select batch.status from public.material_request_fulfillment_batches batch where batch.id = v_pending_batch) <> 'returned'
+     or (select batch.status from public.material_request_fulfillment_batches batch where batch.id = v_pending_batch) <> 'cancelled'
      or (select delivery.status from public.purchase_order_delivery_batches delivery where delivery.id = v_delivery_batch) <> 'cancelled'
+     or (select request.status::text from public.requests request where request.id = v_request_rejected_delete) <> 'APPROVED'
+     or (select request.workflow_step from public.requests request where request.id = v_request_rejected_delete) <> 'batch_planning'
      or exists (
        select 1
        from public.material_request_fulfillment_lines line

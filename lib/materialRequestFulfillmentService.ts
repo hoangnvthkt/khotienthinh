@@ -1702,7 +1702,7 @@ export const materialRequestFulfillmentService = {
     return Array.from(new Set(affectedRequestIds));
   },
 
-  async markPoReceiptBatchesReturned(poId: string, reason?: string): Promise<string[]> {
+  async cancelPoReceiptBatchesBeforeReceipt(poId: string, reason?: string): Promise<string[]> {
     if (!poId) return [];
 
     const { data: lineRows, error: lineError } = await supabase
@@ -1721,15 +1721,20 @@ export const materialRequestFulfillmentService = {
     const { error: batchError } = await supabase
       .from(BATCH_TABLE)
       .update({
-        status: 'returned',
-        cancel_reason: reason || 'PO đã trả lại/hoàn hàng',
-        reason: reason || 'PO đã trả lại/hoàn hàng',
+        status: 'cancelled',
+        cancel_reason: reason || 'PO đã huỷ/từ chối trước khi nhập kho',
+        reason: reason || 'PO đã huỷ/từ chối trước khi nhập kho',
       })
       .in('id', batchIds)
-      .eq('source_type', 'po_receipt');
+      .eq('source_type', 'po_receipt')
+      .in('status', ['issued', 'variance_pending', 'returned']);
     if (batchError) throw batchError;
 
     return requestIds;
+  },
+
+  async markPoReceiptBatchesReturned(poId: string, reason?: string): Promise<string[]> {
+    return this.cancelPoReceiptBatchesBeforeReceipt(poId, reason);
   },
 
   async updateTransactionReceiptQuantities(input: UpdateTransactionReceiptQuantitiesInput): Promise<void> {
@@ -1914,8 +1919,8 @@ export const materialRequestFulfillmentService = {
     const { data: batchRow, error: batchError } = await supabase
       .from(BATCH_TABLE)
       .update({
-        status: 'returned',
-        cancel_reason: input.reason || 'Công trường trả lại/hoàn hàng đợt cấp đang vận chuyển',
+        status: 'cancelled',
+        cancel_reason: input.reason || 'Công trường từ chối/huỷ đợt cấp trước khi nhập kho',
         reason: input.reason || input.batch.reason || null,
       })
       .eq('id', input.batch.id)

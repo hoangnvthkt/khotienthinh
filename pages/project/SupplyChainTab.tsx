@@ -1624,21 +1624,8 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 toast.info('Tạo phiếu trả NCC', 'PO đã phát sinh nhập kho nên hoàn trả sẽ đi qua phiếu SR và WMS duyệt xuất kho.');
                 return;
             }
-            if (po.status !== 'in_transit') {
-                toast.warning('Không thể hoàn hàng', 'Chỉ PO đang giao chưa phát sinh nhập kho mới được đánh dấu trả lại trực tiếp.');
-                return;
-            }
-            if (po.status === 'in_transit' && (receivedQty > 0 || (po.receivedTransactionIds || []).length > 0)) {
-                toast.warning('Không thể hoàn hàng', 'PO đã phát sinh nhập kho. Vui lòng hoàn hàng từ trạng thái Đã đóng để hệ thống trừ tồn kho.');
-                return;
-            }
-            const ok = await confirm({
-                targetName: po.poNumber,
-                title: 'Trả lại / hoàn hàng PO',
-                confirmText: 'Xác nhận hoàn hàng',
-                warningText: 'PO chưa phát sinh nhập kho nên chỉ chuyển trạng thái Hoàn hàng, không tạo giao dịch kho.',
-            });
-            if (!ok) return;
+            toast.warning('Chưa thể hoàn NCC', 'PO chưa phát sinh nhập kho nên không ghi nhận Hoàn NCC. Hãy huỷ PO hoặc xoá các đợt giao bị từ chối trước nhập.');
+            return;
         }
         let partialCloseReason = '';
         if (status === 'delivered' && po.status === 'partial') {
@@ -1711,26 +1698,6 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                             request.sourceWarehouseId,
                             request.overrideReason,
                             'FULFILLMENT_ISSUED',
-                        );
-                    }
-                }
-            }
-            if (status === 'returned' && po.status === 'in_transit') {
-                const affectedRequestIds = await materialRequestFulfillmentService.markPoReceiptBatchesReturned(po.id, `PO ${po.poNumber} đã trả lại/hoàn hàng`);
-                for (const requestId of affectedRequestIds) {
-                    const request = scopedMaterialRequests.find(item => item.id === requestId);
-                    if (!request) continue;
-                    const batches = await materialRequestFulfillmentService.listByRequest(requestId);
-                    const nextStatus = materialRequestFulfillmentService.nextRequestStatus(request, batches);
-                    if (nextStatus !== request.status) {
-                        await updateRequestStatus(
-                            request.id,
-                            nextStatus,
-                            `Đồng bộ hoàn hàng PO ${po.poNumber}`,
-                            undefined,
-                            request.sourceWarehouseId,
-                            request.overrideReason,
-                            'FULFILLMENT_RECEIVED',
                         );
                     }
                 }
@@ -2648,7 +2615,10 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 const lines = groupBatches.flatMap(batch => batch.lines);
                 const targetWarehouseIds = Array.from(new Set(groupBatches.map(batch => batch.targetWarehouseId).filter(Boolean)));
                 const allReceived = groupBatches.every(batch => batch.status === 'received');
-                const allRejected = groupBatches.every(batch => ['cancelled', 'returned'].includes(batch.status));
+                const allRejected = groupBatches.every(batch =>
+                    ['cancelled', 'returned'].includes(batch.status)
+                    && batch.lines.every(line => Number(line.receivedQty || 0) <= 0)
+                );
                 return {
                     key,
                     label: meta?.deliveryNo || groupBatches[0]?.batchNo || `${po.poNumber}-DOT-${index + 1}`,
@@ -3723,11 +3693,6 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                                     {canManageTab && canCreateDeliveryDraft && (
                                                                         <button onClick={() => openPoDeliveryDraft(po)} className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm border-0 cursor-pointer transition-all hover:-translate-y-0.5 active:translate-y-0">
                                                                             <Truck size={13} /> {deliveryDraftButtonLabel}
-                                                                        </button>
-                                                                    )}
-                                                                    {canRunRestrictedPoActions && po.status === 'in_transit' && (
-                                                                        <button onClick={() => updatePoStatus(po.id, 'returned')} className="px-4 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 border-solid font-bold text-xs flex items-center gap-1.5 cursor-pointer transition-all">
-                                                                            <RefreshCcw size={13} /> Trả lại / hoàn hàng
                                                                         </button>
                                                                     )}
                                                                     {canManageTab && po.status === 'partial' && receiptStats.remainingQty > 0 && (

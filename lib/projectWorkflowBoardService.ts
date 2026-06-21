@@ -128,7 +128,7 @@ const cardFromDetail = (detail: MaterialRequestDetailResult): MaterialRequestWor
       .map(id => ({ id })),
     fulfillmentSummary: {
       batchCount: detail.fulfillmentBatches.length,
-      activeBatchCount: detail.fulfillmentBatches.filter(batch => !['draft', 'cancelled'].includes(batch.status)).length,
+      activeBatchCount: detail.fulfillmentBatches.filter(batch => !['draft', 'cancelled', 'returned'].includes(batch.status)).length,
       committedQty: summary.committedQty,
       issuedQty: summary.issuedQty,
       receivedQty: summary.receivedQty,

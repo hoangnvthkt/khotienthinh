@@ -61,6 +61,17 @@ const fulfillmentBatch = (status: MaterialRequestFulfillmentBatch['status']): Ma
   }],
 });
 
+const fulfillmentBatchWithReceipt = (
+  status: MaterialRequestFulfillmentBatch['status'],
+  receivedQty = 25,
+): MaterialRequestFulfillmentBatch => ({
+  ...fulfillmentBatch(status),
+  lines: [{
+    ...fulfillmentBatch(status).lines[0],
+    receivedQty,
+  }],
+});
+
 const deliveryBatch = (status: PurchaseOrderDeliveryBatch['status']): PurchaseOrderDeliveryBatch => ({
   id: `delivery-${status}`,
   purchaseOrderId: 'po-1',
@@ -78,19 +89,37 @@ describe('purchaseOrderMutationState', () => {
     expect(canUserMutatePurchaseOrder(item, user('other-1'))).toBe(false);
   });
 
-  it('marks rejected in-transit PO before receipt and blocks parent removal until failed delivery is deleted', () => {
+  it('marks cancelled/legacy-returned in-transit PO before receipt and blocks parent removal until failed delivery is deleted', () => {
     const item = po();
     const summary = summarizePurchaseOrderWork(item, [
-      fulfillmentBatch('returned'),
       fulfillmentBatch('cancelled'),
+      fulfillmentBatch('returned'),
     ]);
 
     expect(summary.isRejectedBeforeReceipt).toBe(true);
     expect(summary.hasPendingWork).toBe(false);
     expect(summary.hasFailedDeliveryWork).toBe(true);
     expect(getPurchaseOrderRemovalBlockReason(item, user('creator-1'), [
-      fulfillmentBatch('returned'),
+      fulfillmentBatch('cancelled'),
     ])).toContain('đợt giao bị từ chối');
+  });
+
+  it('does not treat returned batches with receipt as rejected before receipt', () => {
+    const item = po({
+      items: [{
+        ...po().items[0],
+        receivedQty: 25,
+        returnedQty: 25,
+      }],
+      receivedTransactionIds: ['tx-1'],
+    });
+    const summary = summarizePurchaseOrderWork(item, [
+      fulfillmentBatchWithReceipt('returned'),
+    ]);
+
+    expect(summary.hasRejectedFulfillment).toBe(false);
+    expect(summary.hasFailedDeliveryWork).toBe(false);
+    expect(summary.isRejectedBeforeReceipt).toBe(false);
   });
 
   it('treats cancelled schedule as failed work without marking it pending', () => {
