@@ -196,7 +196,6 @@ const CompanyProcurement: React.FC = () => {
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
   const [draftByKey, setDraftByKey] = useState<Record<string, DraftLine>>({});
   const [query, setQuery] = useState('');
-  const [projectFilter, setProjectFilter] = useState('');
   const [warehouseFilter, setWarehouseFilter] = useState('');
   const [selectedPoForDelivery, setSelectedPoForDelivery] = useState<PurchaseOrder | null>(null);
   const [deliveryDraftLines, setDeliveryDraftLines] = useState<DeliveryDraftLine[]>([]);
@@ -243,16 +242,15 @@ const CompanyProcurement: React.FC = () => {
   const filteredDemandRows = useMemo(() => {
     const lower = query.trim().toLowerCase();
     return demandRows.filter(row => {
-      if (projectFilter && row.projectId !== projectFilter) return false;
       if (warehouseFilter && row.targetWarehouseId !== warehouseFilter) return false;
       if (!lower) return true;
       return buildDemandSearch(row, getProjectName(row.projectId), getWarehouseName(row.targetWarehouseId)).includes(lower);
     });
-  }, [demandRows, getProjectName, getWarehouseName, projectFilter, query, warehouseFilter]);
+  }, [demandRows, getProjectName, getWarehouseName, query, warehouseFilter]);
 
   const selectedRows = useMemo(() =>
     selectedKeys.map(key => demandRows.find(row => row.key === key)).filter((row): row is CompanyProcurementDemandLine => !!row),
-  [demandRows, selectedKeys]);
+    [demandRows, selectedKeys]);
 
   const selectedSummary = useMemo(() => selectedRows.reduce((acc, row) => ({
     qty: acc.qty + row.remainingQty,
@@ -491,11 +489,10 @@ const CompanyProcurement: React.FC = () => {
                   key={tab.key}
                   type="button"
                   onClick={() => setActiveTab(tab.key)}
-                  className={`inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-black transition ${
-                    active
-                      ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
-                      : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300'
-                  }`}
+                  className={`inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-black transition ${active
+                    ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
+                    : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300'
+                    }`}
                 >
                   <Icon size={16} />
                   {tab.label}
@@ -526,10 +523,6 @@ const CompanyProcurement: React.FC = () => {
                       className="w-full rounded-md border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm font-semibold outline-none focus:border-emerald-300 dark:border-slate-700 dark:bg-slate-950"
                     />
                   </div>
-                  <select value={projectFilter} onChange={event => setProjectFilter(event.target.value)} className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-bold dark:border-slate-700 dark:bg-slate-950">
-                    <option value="">Tất cả dự án</option>
-                    {projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}
-                  </select>
                   <select value={warehouseFilter} onChange={event => setWarehouseFilter(event.target.value)} className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-bold dark:border-slate-700 dark:bg-slate-950">
                     <option value="">Tất cả kho</option>
                     {warehouses.map(warehouse => <option key={warehouse.id} value={warehouse.id}>{warehouse.name}</option>)}
@@ -553,29 +546,41 @@ const CompanyProcurement: React.FC = () => {
 
                 <div className="overflow-hidden rounded-md border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
                   <div className="overflow-x-auto">
-                    <table className="min-w-[1220px] w-full text-left text-sm">
+                    <table className="min-w-[1550px] w-full text-left text-sm table-fixed">
                       <thead className="bg-slate-100 text-xs uppercase text-slate-500 dark:bg-slate-800 dark:text-slate-400">
                         <tr>
-                          <th className="w-12 px-3 py-3"></th>
-                          <th className="px-3 py-3">Nhu cầu</th>
-                          <th className="px-3 py-3">Nguồn</th>
-                          <th className="px-3 py-3 text-right">BOQ</th>
-                          <th className="px-3 py-3 text-right">Đề xuất</th>
-                          <th className="px-3 py-3 text-right">PO mở</th>
-                          <th className="px-3 py-3 text-right">Thực nhận</th>
-                          <th className="px-3 py-3 text-right">Còn cần</th>
-                          <th className="px-3 py-3">NCC</th>
-                          <th className="px-3 py-3 text-right">SL đặt</th>
-                          <th className="px-3 py-3 text-right">Đơn giá</th>
+                          <th className="w-10 px-2 py-3"></th>
+                          <th className="w-64 px-2 py-3">Nhu cầu</th>
+                          <th className="w-60 px-2 py-3">Nguồn</th>
+                          <th className="w-24 px-2 py-3 text-right">BOQ</th>
+                          <th className="w-28 px-2 py-3 text-right">Đề xuất</th>
+                          <th className="w-24 px-2 py-3 text-right">PO mở</th>
+                          <th className="w-24 px-2 py-3 text-right">Thực nhận</th>
+                          <th className="w-24 px-2 py-3 text-right">Còn cần</th>
+
+
+                          <th className="w-32 px-2 py-3 text-right">SL đặt</th>
+                          <th className="w-36 px-2 py-3 text-right">Đơn giá</th>
+                          <th className="w-40 px-2 py-3 text-right">Thành tiền</th>
+                          <th className="w-60 px-2 py-3">NCC</th>
+
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                         {filteredDemandRows.map(row => {
                           const selected = selectedKeys.includes(row.key);
                           const draft = draftByKey[row.key];
+                          const price = selected
+                            ? Number(draft?.stockUnitPrice || 0)
+                            : Number(itemById.get(row.itemId)?.priceIn || 0);
+                          const qty = selected
+                            ? Number(draft?.orderStockQty || 0)
+                            : Number(row.remainingQty || 0);
+                          const lineAmount = qty * price;
+
                           return (
                             <tr key={row.key} className={selected ? 'bg-emerald-50/60 dark:bg-emerald-950/20' : ''}>
-                              <td className="px-3 py-3">
+                              <td className="w-10 px-2 py-3">
                                 <button
                                   type="button"
                                   onClick={() => toggleRow(row)}
@@ -584,21 +589,49 @@ const CompanyProcurement: React.FC = () => {
                                   <Check size={14} />
                                 </button>
                               </td>
-                              <td className="px-3 py-3">
-                                <div className="font-black text-slate-900 dark:text-slate-100">{row.itemName}</div>
+                              <td className="w-64 px-2 py-3">
+                                <div className="font-black text-slate-900 dark:text-slate-100 break-words">{row.itemName}</div>
                                 <div className="mt-1 font-mono text-xs font-bold text-indigo-600">{row.request.code}</div>
-                                {row.requestLine.overBudgetReason && <div className="mt-1 max-w-xl rounded bg-orange-50 px-2 py-1 text-xs font-bold text-orange-700 dark:bg-orange-950/30 dark:text-orange-300">{row.requestLine.overBudgetReason}</div>}
+                                {row.requestLine.overBudgetReason && (
+                                  <div className="mt-1 max-w-[240px] rounded bg-orange-50 px-2 py-1 text-xs font-bold text-orange-700 dark:bg-orange-950/30 dark:text-orange-300 break-words">
+                                    {row.requestLine.overBudgetReason}
+                                  </div>
+                                )}
                               </td>
-                              <td className="px-3 py-3">
-                                <div className="font-bold text-slate-700 dark:text-slate-200">{getProjectName(row.projectId)}</div>
-                                <div className="text-xs font-semibold text-slate-500">{getSiteName(row.constructionSiteId)} • {getWarehouseName(row.targetWarehouseId)}</div>
+                              <td className="w-60 px-2 py-3">
+                                <div className="font-bold text-slate-700 dark:text-slate-200 break-words">{getProjectName(row.projectId)}</div>
+                                {/* <div className="text-xs font-semibold text-slate-500 break-words">
+                                  {getSiteName(row.constructionSiteId)} • {getWarehouseName(row.targetWarehouseId)}
+                                </div> */}
                               </td>
-                              <td className="px-3 py-3 text-right font-bold">{row.boqQty == null ? '—' : formatQty(Number(row.boqQty))}</td>
-                              <td className="px-3 py-3 text-right font-bold">{formatQty(row.requestedQty)} {row.unit}</td>
-                              <td className="px-3 py-3 text-right font-bold text-blue-700">{formatQty(row.orderedQty)}</td>
-                              <td className="px-3 py-3 text-right font-bold text-emerald-700">{formatQty(row.actualReceivedQty)}</td>
-                              <td className="px-3 py-3 text-right font-black text-amber-700">{formatQty(row.remainingQty)}</td>
-                              <td className="px-3 py-3">
+                              <td className="w-24 px-2 py-3 text-right font-bold">{row.boqQty == null ? '—' : formatQty(Number(row.boqQty))}</td>
+                              <td className="w-28 px-2 py-3 text-right font-bold">{formatQty(row.requestedQty)} {row.unit}</td>
+                              <td className="w-24 px-2 py-3 text-right font-bold text-blue-700">{formatQty(row.orderedQty)}</td>
+                              <td className="w-24 px-2 py-3 text-right font-bold text-emerald-700">{formatQty(row.actualReceivedQty)}</td>
+                              <td className="w-24 px-2 py-3 text-right font-black text-amber-700">{formatQty(row.remainingQty)}</td>
+
+                              <td className="w-32 px-2 py-3 text-right">
+                                {selected ? (
+                                  <input
+                                    value={draft?.orderStockQty || ''}
+                                    onChange={event => updateDraftLine(row.key, { orderStockQty: event.target.value })}
+                                    className="w-full max-w-[110px] rounded-md border border-slate-200 bg-white px-2 py-1.5 text-right text-xs font-bold dark:border-slate-700 dark:bg-slate-950"
+                                  />
+                                ) : formatQty(row.remainingQty)}
+                              </td>
+                              <td className="w-36 px-2 py-3 text-right">
+                                {selected ? (
+                                  <input
+                                    value={draft?.stockUnitPrice || ''}
+                                    onChange={event => updateDraftLine(row.key, { stockUnitPrice: event.target.value })}
+                                    className="w-full max-w-[120px] rounded-md border border-slate-200 bg-white px-2 py-1.5 text-right text-xs font-bold dark:border-slate-700 dark:bg-slate-950"
+                                  />
+                                ) : formatMoney(itemById.get(row.itemId)?.priceIn || 0)}
+                              </td>
+                              <td className="w-40 px-2 py-3 text-right font-black text-slate-900 dark:text-slate-100">
+                                {formatMoney(lineAmount)}
+                              </td>
+                              <td className="w-60 px-2 py-3">
                                 {selected ? (
                                   <select
                                     value={draft?.vendorId || ''}
@@ -606,32 +639,14 @@ const CompanyProcurement: React.FC = () => {
                                       const partner = partnerById.get(event.target.value);
                                       updateDraftLine(row.key, { vendorId: event.target.value, vendorName: partner?.name || '' });
                                     }}
-                                    className="w-56 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs font-bold dark:border-slate-700 dark:bg-slate-950"
+                                    className="w-full max-w-[220px] rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs font-bold dark:border-slate-700 dark:bg-slate-950"
                                   >
                                     <option value="">Chọn NCC</option>
                                     {partners.map(partner => <option key={partner.id} value={partner.id}>{partner.name}</option>)}
                                   </select>
                                 ) : (
-                                  <span className="text-xs font-bold text-slate-500">{row.supplierId ? partnerById.get(row.supplierId)?.name || row.supplierId : '—'}</span>
+                                  <span className="text-xs font-bold text-slate-500 break-words">{row.supplierId ? partnerById.get(row.supplierId)?.name || row.supplierId : '—'}</span>
                                 )}
-                              </td>
-                              <td className="px-3 py-3 text-right">
-                                {selected ? (
-                                  <input
-                                    value={draft?.orderStockQty || ''}
-                                    onChange={event => updateDraftLine(row.key, { orderStockQty: event.target.value })}
-                                    className="w-28 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-right text-xs font-bold dark:border-slate-700 dark:bg-slate-950"
-                                  />
-                                ) : formatQty(row.remainingQty)}
-                              </td>
-                              <td className="px-3 py-3 text-right">
-                                {selected ? (
-                                  <input
-                                    value={draft?.stockUnitPrice || ''}
-                                    onChange={event => updateDraftLine(row.key, { stockUnitPrice: event.target.value })}
-                                    className="w-28 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-right text-xs font-bold dark:border-slate-700 dark:bg-slate-950"
-                                  />
-                                ) : formatMoney(itemById.get(row.itemId)?.priceIn || 0)}
                               </td>
                             </tr>
                           );

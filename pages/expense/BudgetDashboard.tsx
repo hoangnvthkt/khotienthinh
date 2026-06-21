@@ -221,21 +221,27 @@ const BudgetDashboard: React.FC = () => {
     setEditingCell({ catId, month, type: 'planned' });
   };
 
-  const saveEdit = () => {
+  const saveEdit = async () => {
     if (!editingCell) return;
     const { catId, month } = editingCell;
     const numVal = Number(cellValue) || 0;
     const existing = getEntry(catId, month);
-    if (existing) {
-      updateHrmItem('budget_entries', { ...existing, planned: numVal });
-    } else {
-      addHrmItem('budget_entries', {
-        id: crypto.randomUUID(),
-        categoryId: catId,
-        month, year: selectedYear,
-        planned: numVal,
-        actual: 0,
-      });
+    try {
+      if (existing) {
+        await updateHrmItem('budget_entries', { ...existing, planned: numVal });
+      } else {
+        await addHrmItem('budget_entries', {
+          id: crypto.randomUUID(),
+          categoryId: catId,
+          month, year: selectedYear,
+          planned: numVal,
+          actual: 0,
+        });
+      }
+      toast.success('Đã lưu chỉ tiêu', 'Cập nhật chỉ tiêu ngân sách thành công.');
+    } catch (err: any) {
+      console.error(err);
+      toast.error('Lỗi lưu chỉ tiêu', err.message || 'Không thể cập nhật chỉ tiêu ngân sách. Vui lòng kiểm tra quyền hạn.');
     }
     setEditingCell(null);
   };
@@ -244,18 +250,24 @@ const BudgetDashboard: React.FC = () => {
 
   // ==================== EXPENSE RECORD CRUD ====================
 
-  const handleAddExpense = () => {
+  const handleAddExpense = async () => {
     if (!expCatId || !expAmount || !expDate) return;
-    addHrmItem('expense_records', {
-      id: crypto.randomUUID(),
-      categoryId: expCatId,
-      amount: Number(expAmount) || 0,
-      date: expDate,
-      description: expDesc,
-      createdBy: user?.name || '',
-    });
-    setExpAmount(''); setExpDesc('');
-    setShowExpenseForm(false);
+    try {
+      await addHrmItem('expense_records', {
+        id: crypto.randomUUID(),
+        categoryId: expCatId,
+        amount: Number(expAmount) || 0,
+        date: expDate,
+        description: expDesc,
+        createdBy: user?.name || '',
+      });
+      toast.success('Thêm phiếu chi thành công', 'Phiếu chi mới đã được ghi nhận.');
+      setExpAmount(''); setExpDesc('');
+      setShowExpenseForm(false);
+    } catch (err: any) {
+      console.error(err);
+      toast.error('Lỗi thêm phiếu chi', err.message || 'Không thể ghi nhận chi phí. Vui lòng kiểm tra quyền hạn.');
+    }
   };
 
   const handleDeleteExpense = async (id: string) => {
@@ -268,34 +280,47 @@ const BudgetDashboard: React.FC = () => {
       intent: 'danger',
     });
     if (!ok) return;
-    removeHrmItem('expense_records', id);
+    try {
+      await removeHrmItem('expense_records', id);
+      toast.success('Xóa phiếu chi thành công', 'Đã xóa phiếu chi khỏi hệ thống.');
+    } catch (err: any) {
+      console.error(err);
+      toast.error('Lỗi xóa phiếu chi', err.message || 'Không thể xóa phiếu chi. Vui lòng kiểm tra quyền hạn.');
+    }
   };
 
   // ==================== CATEGORY CRUD ====================
 
-  const handleSaveCategory = () => {
+  const handleSaveCategory = async () => {
     if (!formName || !formCode) return;
-    if (editingCatId) {
-      const old = yearCategories.find(c => c.id === editingCatId);
-      if (old) {
-        updateHrmItem('budget_categories', {
-          ...old, name: formName, code: formCode,
-          parentId: formParentId || null, source: formSource,
+    try {
+      if (editingCatId) {
+        const old = yearCategories.find(c => c.id === editingCatId);
+        if (old) {
+          await updateHrmItem('budget_categories', {
+            ...old, name: formName, code: formCode,
+            parentId: formParentId || null, source: formSource,
+          });
+        }
+        setEditingCatId(null);
+        toast.success('Cập nhật mục ngân sách thành công', 'Mục ngân sách đã được cập nhật.');
+      } else {
+        const maxOrder = yearCategories.reduce((m, c) => Math.max(m, c.order), 0);
+        await addHrmItem('budget_categories', {
+          id: crypto.randomUUID(),
+          name: formName, code: formCode,
+          parentId: formParentId || null,
+          year: selectedYear, order: maxOrder + 1,
+          source: formSource,
         });
+        toast.success('Thêm mục ngân sách thành công', 'Mục ngân sách mới đã được tạo.');
       }
-      setEditingCatId(null);
-    } else {
-      const maxOrder = yearCategories.reduce((m, c) => Math.max(m, c.order), 0);
-      addHrmItem('budget_categories', {
-        id: crypto.randomUUID(),
-        name: formName, code: formCode,
-        parentId: formParentId || null,
-        year: selectedYear, order: maxOrder + 1,
-        source: formSource,
-      });
+      setFormName(''); setFormCode(''); setFormParentId(''); setFormSource('manual');
+      setShowAddModal(false);
+    } catch (err: any) {
+      console.error(err);
+      toast.error('Lỗi lưu mục ngân sách', err.message || 'Không thể lưu mục ngân sách. Vui lòng kiểm tra quyền hạn.');
     }
-    setFormName(''); setFormCode(''); setFormParentId(''); setFormSource('manual');
-    setShowAddModal(false);
   };
 
   const handleDeleteCategory = async (cat: BudgetCategory) => {
@@ -307,7 +332,13 @@ const BudgetDashboard: React.FC = () => {
       intent: 'danger',
     });
     if (!ok) return;
-    removeHrmItem('budget_categories', cat.id);
+    try {
+      await removeHrmItem('budget_categories', cat.id);
+      toast.success('Xóa mục ngân sách thành công', 'Đã xóa mục ngân sách.');
+    } catch (err: any) {
+      console.error(err);
+      toast.error('Lỗi xóa mục ngân sách', err.message || 'Không thể xóa mục ngân sách. Vui lòng kiểm tra quyền hạn.');
+    }
   };
 
   const handleEditCategory = (cat: BudgetCategory) => {
