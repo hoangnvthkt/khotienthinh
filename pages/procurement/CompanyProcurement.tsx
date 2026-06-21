@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  Ban,
   BarChart3,
   Check,
   ClipboardList,
@@ -10,11 +11,13 @@ import {
   RefreshCw,
   Search,
   ShoppingCart,
+  Trash2,
   Truck,
   X,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
+import { useConfirm } from '../../context/ConfirmContext';
 import { companyProcurementService } from '../../lib/companyProcurementService';
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
 import { partnerService } from '../../lib/partnerService';
@@ -22,6 +25,13 @@ import { projectMasterService } from '../../lib/projectMasterService';
 import { poService } from '../../lib/projectService';
 import { materialRequestFulfillmentService } from '../../lib/materialRequestFulfillmentService';
 import { getPoLineStockUnitPrice } from '../../lib/materialUnitConversion';
+import SupplierCombobox from '../../components/SupplierCombobox';
+import {
+  canUserMutatePurchaseOrder,
+  getPurchaseOrderRemovalBlockReason,
+  purchaseOrderHasStockImpact,
+  summarizePurchaseOrderWork,
+} from '../../lib/purchaseOrderMutationState';
 import {
   BusinessPartner,
   CompanyProcurementCreateLine,
@@ -185,9 +195,11 @@ const buildDeliveryPrintHtml = (detail: CompanyProcurementDeliveryGroupDetail, g
 const CompanyProcurement: React.FC = () => {
   const { items, warehouses, constructionSites, user, updateRequestStatus } = useApp();
   const toast = useToast();
+  const confirm = useConfirm();
   const [activeTab, setActiveTab] = useState<TabKey>('demand');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [deletingDeliveryGroupId, setDeletingDeliveryGroupId] = useState<string | null>(null);
   const [demandRows, setDemandRows] = useState<CompanyProcurementDemandLine[]>([]);
   const [companyPos, setCompanyPos] = useState<PurchaseOrder[]>([]);
   const [deliveryGroups, setDeliveryGroups] = useState<CompanyProcurementDeliveryGroupDetail[]>([]);
@@ -206,6 +218,11 @@ const CompanyProcurement: React.FC = () => {
   const warehouseById = useMemo(() => new Map(warehouses.map(warehouse => [warehouse.id, warehouse])), [warehouses]);
   const siteById = useMemo(() => new Map(constructionSites.map(site => [site.id, site])), [constructionSites]);
   const partnerById = useMemo(() => new Map(partners.map(partner => [partner.id, partner])), [partners]);
+  const deliveryGroupsByPoId = useMemo(() => deliveryGroups.reduce<Record<string, CompanyProcurementDeliveryGroupDetail[]>>((acc, detail) => {
+    const poId = detail.group.purchaseOrderId;
+    acc[poId] = [...(acc[poId] || []), detail];
+    return acc;
+  }, {}), [deliveryGroups]);
 
   const getProjectName = useCallback((id?: string | null) => projectById.get(id || '')?.name || '—', [projectById]);
   const getWarehouseName = useCallback((id?: string | null) => warehouseById.get(id || '')?.name || '—', [warehouseById]);
@@ -425,6 +442,74 @@ const CompanyProcurement: React.FC = () => {
     }
   };
 
+  const handleRemovePo = async (po: PurchaseOrder) => {
+    const details = deliveryGroupsByPoId[po.id] || [];
+    const fulfillmentBatches = details.flatMap(detail => detail.batches);
+    const blockReason = getPurchaseOrderRemovalBlockReason(po, user, fulfillmentBatches);
+    if (blockReason) {
+      toast.warning('Chưa thể xoá/lưu trữ PO', blockReason);
+      return;
+    }
+
+    const hasStockImpact = purchaseOrderHasStockImpact(po);
+    const ok = await confirm({
+      targetName: po.poNumber,
+      title: hasStockImpact ? 'Lưu trữ PO công ty' : 'Xoá PO công ty',
+      confirmText: hasStockImpact ? 'Lưu trữ' : 'Xoá PO',
+      warningText: hasStockImpact
+        ? 'PO đã phát sinh nhập kho/hoàn kho nên chỉ được lưu trữ sau khi đối soát đủ.'
+        : 'PO chưa phát sinh nhập kho và không còn giao dịch chờ xử lý nên có thể xoá.',
+      intent: hasStockImpact ? 'warning' : 'danger',
+      countdownSeconds: hasStockImpact ? 1 : 2,
+    });
+    if (!ok) return;
+
+    setSaving(true);
+    try {
+      const result = await poService.remove(po.id);
+      toast.success(result.action === 'deleted' ? 'Đã xoá PO' : 'Đã lưu trữ PO');
+      await refresh();
+    } catch (err: any) {
+      logApiError('companyProcurement.removePo', err);
+      toast.error('Không xoá/lưu trữ được PO', getApiErrorMessage(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRemoveDeliveryGroup = async (detail: CompanyProcurementDeliveryGroupDetail) => {
+    const po = detail.purchaseOrder;
+    if (!po) {
+      toast.warning('Thiếu dữ liệu PO', 'Không xác định được PO của đợt giao này.');
+      return;
+    }
+    if (!canUserMutatePurchaseOrder(po, user)) {
+      toast.warning('Không có quyền xoá đợt giao', 'Chỉ Admin hoặc người tạo PO được xoá đợt giao này.');
+      return;
+    }
+    const ok = await confirm({
+      targetName: detail.group.deliveryNo,
+      title: 'Xoá đợt giao bị từ chối',
+      confirmText: 'Xoá đợt giao',
+      warningText: 'Chỉ xoá được khi đợt giao chưa nhập kho, không có ledger kho và các phiếu SL/CL liên quan đã bị từ chối/huỷ.',
+      intent: 'danger',
+      countdownSeconds: 2,
+    });
+    if (!ok) return;
+
+    setDeletingDeliveryGroupId(detail.group.id);
+    try {
+      await materialRequestFulfillmentService.removeFailedPoDeliveryGroup(detail.group.id);
+      toast.success('Đã xoá đợt giao bị từ chối');
+      await refresh();
+    } catch (err: any) {
+      logApiError('companyProcurement.removeDeliveryGroup', err);
+      toast.error('Không xoá được đợt giao', getApiErrorMessage(err));
+    } finally {
+      setDeletingDeliveryGroupId(null);
+    }
+  };
+
   const printDeliveryGroup = async (detail: CompanyProcurementDeliveryGroupDetail) => {
     try {
       const fullDetail = detail.batches.length > 0 ? detail : await companyProcurementService.getDeliveryGroupDetail(detail.group.id);
@@ -633,17 +718,15 @@ const CompanyProcurement: React.FC = () => {
                               </td>
                               <td className="w-60 px-2 py-3">
                                 {selected ? (
-                                  <select
+                                  <SupplierCombobox
                                     value={draft?.vendorId || ''}
-                                    onChange={event => {
-                                      const partner = partnerById.get(event.target.value);
-                                      updateDraftLine(row.key, { vendorId: event.target.value, vendorName: partner?.name || '' });
+                                    suppliers={partners}
+                                    onChange={partner => {
+                                      updateDraftLine(row.key, { vendorId: partner?.id || '', vendorName: partner?.name || '' });
                                     }}
-                                    className="w-full max-w-[220px] rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs font-bold dark:border-slate-700 dark:bg-slate-950"
-                                  >
-                                    <option value="">Chọn NCC</option>
-                                    {partners.map(partner => <option key={partner.id} value={partner.id}>{partner.name}</option>)}
-                                  </select>
+                                    placeholder="Gõ tìm NCC..."
+                                    inputClassName="rounded-md py-1.5 text-xs"
+                                  />
                                 ) : (
                                   <span className="text-xs font-bold text-slate-500 break-words">{row.supplierId ? partnerById.get(row.supplierId)?.name || row.supplierId : '—'}</span>
                                 )}
@@ -674,34 +757,66 @@ const CompanyProcurement: React.FC = () => {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                      {companyPos.map(po => (
-                        <tr key={po.id}>
-                          <td className="px-4 py-4">
-                            <div className="font-mono text-base font-black text-slate-900 dark:text-slate-100">{po.poNumber}</div>
-                            <div className="text-xs font-semibold text-slate-500">{formatDate(po.orderDate)}</div>
-                          </td>
-                          <td className="px-4 py-4">
-                            <div className="font-bold text-slate-800 dark:text-slate-100">{po.vendorName || po.vendorId}</div>
-                            <div className="font-mono text-xs font-bold text-purple-600">{po.procurementGroupNo || '—'}</div>
-                          </td>
-                          <td className="px-4 py-4 text-right font-bold">{po.items.length}</td>
-                          <td className="px-4 py-4 text-right font-bold text-emerald-700">{formatQty(sumPoReceivedStockQty(po))}</td>
-                          <td className="px-4 py-4 text-right font-black">{formatMoney(po.totalAmount)}</td>
-                          <td className="px-4 py-4">
-                            <span className="rounded bg-blue-50 px-2 py-1 text-xs font-black text-blue-700 dark:bg-blue-950/30 dark:text-blue-300">{poStatusLabel[po.status] || po.status}</span>
-                          </td>
-                          <td className="px-4 py-4 text-right">
-                            <button
-                              type="button"
-                              onClick={() => openDeliveryModal(po)}
-                              className="inline-flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300"
-                            >
-                              <Truck size={14} />
-                              Tạo đợt giao
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
+                      {companyPos.map(po => {
+                        const details = deliveryGroupsByPoId[po.id] || [];
+                        const fulfillmentBatches = details.flatMap(detail => detail.batches);
+                        const workSummary = summarizePurchaseOrderWork(po, fulfillmentBatches);
+                        const removalBlockReason = getPurchaseOrderRemovalBlockReason(po, user, fulfillmentBatches);
+                        const hasStockImpact = purchaseOrderHasStockImpact(po);
+                        const canMutate = canUserMutatePurchaseOrder(po, user);
+                        const removeTitle = removalBlockReason || (hasStockImpact ? 'Lưu trữ PO' : 'Xoá PO');
+                        return (
+                          <tr key={po.id}>
+                            <td className="px-4 py-4">
+                              <div className="font-mono text-base font-black text-slate-900 dark:text-slate-100">{po.poNumber}</div>
+                              <div className="text-xs font-semibold text-slate-500">{formatDate(po.orderDate)}</div>
+                            </td>
+                            <td className="px-4 py-4">
+                              <div className="font-bold text-slate-800 dark:text-slate-100">{po.vendorName || po.vendorId}</div>
+                              <div className="font-mono text-xs font-bold text-purple-600">{po.procurementGroupNo || '—'}</div>
+                            </td>
+                            <td className="px-4 py-4 text-right font-bold">{po.items.length}</td>
+                            <td className="px-4 py-4 text-right font-bold text-emerald-700">{formatQty(sumPoReceivedStockQty(po))}</td>
+                            <td className="px-4 py-4 text-right font-black">{formatMoney(po.totalAmount)}</td>
+                            <td className="px-4 py-4">
+                              <div className="flex flex-wrap gap-1.5">
+                                <span className="rounded bg-blue-50 px-2 py-1 text-xs font-black text-blue-700 dark:bg-blue-950/30 dark:text-blue-300">{poStatusLabel[po.status] || po.status}</span>
+                                {workSummary.isRejectedBeforeReceipt && (
+                                  <span className="inline-flex items-center gap-1 rounded bg-rose-50 px-2 py-1 text-xs font-black text-rose-700 dark:bg-rose-950/30 dark:text-rose-300">
+                                    <Ban size={12} /> Từ chối
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-4 py-4">
+                              <div className="flex justify-end gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => openDeliveryModal(po)}
+                                  disabled={workSummary.hasPendingWork}
+                                  title={workSummary.hasPendingWork ? 'PO đang có đợt giao chờ xử lý.' : 'Tạo đợt giao'}
+                                  className="inline-flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300"
+                                >
+                                  <Truck size={14} />
+                                  Tạo đợt giao
+                                </button>
+                                {canMutate && (
+                                  <button
+                                    type="button"
+                                    onClick={() => !removalBlockReason && handleRemovePo(po)}
+                                    disabled={saving || !!removalBlockReason}
+                                    title={removeTitle}
+                                    className="inline-flex items-center gap-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-black text-rose-700 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-300"
+                                  >
+                                    <Trash2 size={14} />
+                                    {hasStockImpact ? 'Lưu trữ' : 'Xoá'}
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -713,6 +828,13 @@ const CompanyProcurement: React.FC = () => {
                 {deliveryGroups.map(detail => {
                   const po = detail.purchaseOrder;
                   const total = detail.batches.flatMap(batch => batch.lines).reduce((sum, line) => sum + Number(line.issuedQty || 0) * Number(line.deliveryUnitPrice || 0), 0);
+                  const isRejectedGroup = detail.group.status === 'cancelled'
+                    || (detail.batches.length > 0 && detail.batches.every(batch =>
+                      ['returned', 'cancelled'].includes(batch.status)
+                      && batch.lines.every(line => Number(line.receivedQty || 0) <= 0)
+                    ));
+                  const canRemoveGroup = !!po && canUserMutatePurchaseOrder(po, user) && isRejectedGroup;
+                  const isDeletingGroup = deletingDeliveryGroupId === detail.group.id;
                   return (
                     <div key={detail.group.id} className="rounded-md border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
                       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -720,6 +842,11 @@ const CompanyProcurement: React.FC = () => {
                           <div className="flex items-center gap-2">
                             <FileText className="h-5 w-5 text-indigo-600" />
                             <span className="font-mono text-lg font-black text-indigo-700 dark:text-indigo-300">{detail.group.deliveryNo}</span>
+                            {isRejectedGroup && (
+                              <span className="inline-flex items-center gap-1 rounded bg-rose-50 px-2 py-1 text-xs font-black text-rose-700 dark:bg-rose-950/30 dark:text-rose-300">
+                                <Ban size={12} /> Từ chối
+                              </span>
+                            )}
                           </div>
                           <div className="mt-1 text-sm font-bold text-slate-700 dark:text-slate-200">{po?.poNumber || detail.group.purchaseOrderId} • {po?.vendorName || po?.vendorId || '—'} • {formatDate(detail.group.plannedDate)}</div>
                         </button>
@@ -736,6 +863,17 @@ const CompanyProcurement: React.FC = () => {
                             <Printer size={16} />
                             In đợt
                           </button>
+                          {canRemoveGroup && (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveDeliveryGroup(detail)}
+                              disabled={isDeletingGroup}
+                              className="inline-flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-black text-red-700 hover:bg-red-100 disabled:opacity-60 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300"
+                            >
+                              {isDeletingGroup ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                              Xoá đợt
+                            </button>
+                          )}
                         </div>
                       </div>
                       <div className="mt-3 grid gap-2">

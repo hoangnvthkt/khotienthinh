@@ -65,6 +65,12 @@ import { purchaseOrderSupplierReturnService } from '../../lib/purchaseOrderSuppl
 import PurchaseOrderSupplierReturnDialog from '../../components/project/PurchaseOrderSupplierReturnDialog';
 import { useReservedStock } from '../../hooks/useReservedStock';
 import {
+    canUserMutatePurchaseOrder,
+    getPurchaseOrderRemovalBlockReason,
+    purchaseOrderHasStockImpact,
+    summarizePurchaseOrderWork,
+} from '../../lib/purchaseOrderMutationState';
+import {
     buildPoUnitSnapshot,
     getPoLinePurchaseUnit,
     getPoLineStockUnit,
@@ -318,6 +324,12 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         return false;
     };
 
+    const ensureCanMutatePoDocument = (po: PurchaseOrder, action: string) => {
+        if (canUserMutatePurchaseOrder(po, user)) return true;
+        toast.warning('Không có quyền thao tác PO', `Chỉ Admin hoặc người tạo PO được ${action}.`);
+        return false;
+    };
+
     useEffect(() => {
         loadModuleData('wms-core');
     }, [loadModuleData]);
@@ -396,6 +408,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     const [supplierReturnPo, setSupplierReturnPo] = useState<PurchaseOrder | null>(null);
     const [poDeliveryBatchesByPo, setPoDeliveryBatchesByPo] = useState<Record<string, PurchaseOrderDeliveryBatch[]>>({});
     const [creatingDeliveryBatchId, setCreatingDeliveryBatchId] = useState<string | null>(null);
+    const [deletingDeliveryKey, setDeletingDeliveryKey] = useState<string | null>(null);
     const [deliveryDraftPo, setDeliveryDraftPo] = useState<PurchaseOrder | null>(null);
     const [deliveryDraftLines, setDeliveryDraftLines] = useState<PoDeliveryDraftLine[]>([]);
     const [savingDeliveryDraft, setSavingDeliveryDraft] = useState(false);
@@ -488,6 +501,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         purchaseOrderId: string,
         item: PurchaseOrderItem,
         plannedQty: number,
+        deliveryUnitPrice?: number,
         existingId?: string,
     ) => {
         const inventory = inventoryItems.find(inv => inv.id === item.itemId);
@@ -499,6 +513,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             itemId: item.itemId,
             plannedQty: Number(plannedQty || 0),
             unit: getPoLinePurchaseUnit(item, inventory) || item.unit || null,
+            deliveryUnitPrice: Number(deliveryUnitPrice ?? getPoLineStockUnitPrice(item, inventory) ?? 0),
             stockPlannedQty: poLinePurchaseToStockQty(item, Number(plannedQty || 0), inventory),
             stockUnit: getPoLineStockUnit(item, inventory) || null,
         };
@@ -549,6 +564,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                         po.id,
                         item,
                         plannedQty,
+                        existing?.deliveryUnitPrice,
                         existing?.purchaseOrderId === po.id ? existing.id : undefined,
                     );
                 })
@@ -566,18 +582,6 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 lines,
             };
         }).filter(batch => batch.lines.length > 0);
-
-        activeItems.forEach(item => {
-            const lineKey = item.lineId || item.itemId;
-            const scheduledQty = normalized.reduce((sum, batch) => {
-                const line = batch.lines.find(row => row.purchaseOrderLineId === lineKey);
-                return sum + Number(line?.plannedQty || 0);
-            }, 0);
-            const orderedQty = Number(item.qty || 0);
-            if (Math.abs(scheduledQty - orderedQty) > 0.000001) {
-                throw new Error(`${item.sku || item.name}: lịch giao ${scheduledQty.toLocaleString('vi-VN')}/${orderedQty.toLocaleString('vi-VN')} ${item.unit || ''}. Tổng lịch giao phải bằng số lượng PO.`);
-            }
-        });
 
         return normalized;
     };
@@ -658,6 +662,30 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                         stockUnit: getPoLineStockUnit(sourceItem, inventory) || line.stockUnit || null,
                     };
                 }),
+            };
+        }));
+    };
+    const updatePoDeliveryLinePrice = (batchId: string, purchaseOrderLineId: string, deliveryUnitPrice: number) => {
+        setPDeliveryBatches(prev => prev.map(batch => {
+            if (batch.id !== batchId) return batch;
+            const existingLine = batch.lines.find(line => line.purchaseOrderLineId === purchaseOrderLineId);
+            if (!existingLine) {
+                const sourceItem = pItems.map(item => normalizePoItem(item, inventoryItems))
+                    .find(item => (item.lineId || item.itemId) === purchaseOrderLineId);
+                if (!sourceItem) return batch;
+                return {
+                    ...batch,
+                    lines: [
+                        ...batch.lines,
+                        makePoDeliveryLineDraft(batch.id, editingPo?.id || '', sourceItem, 0, deliveryUnitPrice),
+                    ],
+                };
+            }
+            return {
+                ...batch,
+                lines: batch.lines.map(line => line.purchaseOrderLineId === purchaseOrderLineId
+                    ? { ...line, deliveryUnitPrice: Number(deliveryUnitPrice || 0) }
+                    : line),
             };
         }));
     };
@@ -974,7 +1002,28 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     };
 
     const openEditPo = async (po: PurchaseOrder) => {
-        if (!ensureCanManage('sửa đơn hàng')) return;
+        if (!ensureCanMutatePoDocument(po, 'sửa đơn hàng')) return;
+        if (po.sourceMode === 'company_consolidated') {
+            toast.info('PO công ty', 'PO gộp cần được sửa tại màn Mua hàng công ty để không mất liên kết nhiều dự án.');
+            return;
+        }
+        const loadedDeliveryGroups = await loadPoDeliveryPrintGroups(po, true);
+        const fulfillmentBatches = loadedDeliveryGroups.flatMap(group => group.batches);
+        const blockReason = getPurchaseOrderRemovalBlockReason(
+            po,
+            user,
+            fulfillmentBatches,
+            poDeliveryBatchesByPo[po.id] || [],
+            supplierReturnsByPo[po.id] || [],
+        );
+        if (blockReason) {
+            toast.warning('Chưa thể sửa PO', blockReason);
+            return;
+        }
+        if (purchaseOrderHasStockImpact(po, supplierReturnsByPo[po.id] || [])) {
+            toast.warning('Không thể sửa PO', 'PO đã phát sinh nhập kho/hoàn kho nên cần giữ nguyên để đối soát.');
+            return;
+        }
         await loadPoBoqMetaData().catch(error => console.warn('Failed to load PO BOQ metadata:', error));
         const normalizedItems = po.items.map(i => normalizePoItem({
             ...i,
@@ -1272,16 +1321,16 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                         'FULFILLMENT_ISSUED',
                     );
                 }
-	            }
-	            await loadSupplyData();
-	            setPoDeliveryPrintGroupsByPoId(prev => {
-	                const next = { ...prev };
-	                delete next[deliveryDraftPo.id];
-	                return next;
-	            });
-	            poDeliveryPrintAutoLoadRef.current.delete(deliveryDraftPo.id);
-	            setDeliveryDraftPo(null);
-	            setDeliveryDraftLines([]);
+            }
+            await loadSupplyData();
+            setPoDeliveryPrintGroupsByPoId(prev => {
+                const next = { ...prev };
+                delete next[deliveryDraftPo.id];
+                return next;
+            });
+            poDeliveryPrintAutoLoadRef.current.delete(deliveryDraftPo.id);
+            setDeliveryDraftPo(null);
+            setDeliveryDraftLines([]);
             toast.success('Đã tạo đợt giao', 'Đợt giao đã được tách theo công trường/kho nhận và chờ xác nhận thực nhận.');
         } catch (error: any) {
             logApiError('supplyChain.submitPoDeliveryDraft', error);
@@ -1431,6 +1480,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                         totalAmount: 0,
                         orderDate: pDate,
                         status: 'draft',
+                        createdById: user?.id || null,
                         createdAt: new Date().toISOString(),
                     } as PurchaseOrder),
                     vendorId,
@@ -1517,6 +1567,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                         qrToken: createPoQrToken(),
                         receivedTransactionIds: [],
                         note: pNote || undefined,
+                        createdById: user?.id || null,
                         createdAt: new Date().toISOString(),
                     };
                     await poService.upsert(poItem);
@@ -1759,6 +1810,58 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         }
     };
 
+    const handleRemoveFailedDeliveryBatch = async (po: PurchaseOrder, deliveryBatch: PurchaseOrderDeliveryBatch) => {
+        if (!ensureCanMutatePoDocument(po, 'xoá đợt giao thất bại')) return;
+        const ok = await confirm({
+            targetName: `${po.poNumber} - Đợt ${deliveryBatch.deliveryNo}`,
+            title: 'Xoá đợt giao bị từ chối',
+            confirmText: 'Xoá đợt giao',
+            warningText: 'Chỉ xoá được khi đợt giao chưa nhập kho, không có ledger kho và các phiếu SL/CL liên quan đã bị từ chối/huỷ.',
+            intent: 'danger',
+            countdownSeconds: 2,
+        });
+        if (!ok) return;
+
+        setDeletingDeliveryKey(`batch:${deliveryBatch.id}`);
+        try {
+            await poDeliveryScheduleService.removeFailedBatch(deliveryBatch.id);
+            const schedules = await poDeliveryScheduleService.listByPurchaseOrderIds([po.id]);
+            setPoDeliveryBatchesByPo(prev => ({ ...prev, [po.id]: schedules[po.id] || [] }));
+            await loadPoDeliveryPrintGroups(po, true);
+            toast.success('Đã xoá đợt giao bị từ chối');
+        } catch (error: any) {
+            logApiError('supplyChain.removeFailedDeliveryBatch', error);
+            toast.error('Không xoá được đợt giao', getApiErrorMessage(error));
+        } finally {
+            setDeletingDeliveryKey(null);
+        }
+    };
+
+    const handleRemoveFailedDeliveryGroup = async (po: PurchaseOrder, group: PoDeliveryPrintGroup) => {
+        if (!ensureCanMutatePoDocument(po, 'xoá đợt giao thất bại')) return;
+        const ok = await confirm({
+            targetName: `${po.poNumber} - ${group.label}`,
+            title: 'Xoá đợt giao bị từ chối',
+            confirmText: 'Xoá đợt giao',
+            warningText: 'Chỉ xoá được khi đợt giao chưa nhập kho, không có ledger kho và các phiếu SL/CL liên quan đã bị từ chối/huỷ.',
+            intent: 'danger',
+            countdownSeconds: 2,
+        });
+        if (!ok) return;
+
+        setDeletingDeliveryKey(`group:${group.key}`);
+        try {
+            await materialRequestFulfillmentService.removeFailedPoDeliveryGroup(group.key);
+            await loadPoDeliveryPrintGroups(po, true);
+            toast.success('Đã xoá đợt giao bị từ chối');
+        } catch (error: any) {
+            logApiError('supplyChain.removeFailedDeliveryGroup', error);
+            toast.error('Không xoá được đợt giao', getApiErrorMessage(error));
+        } finally {
+            setDeletingDeliveryKey(null);
+        }
+    };
+
     const handleDeleteVendor = async (v: ProjectVendor) => {
         if (!ensureCanManage('xoá nhà cung cấp')) return;
         const ok = await confirm({ targetName: v.name, title: 'Xoá nhà cung cấp', warningText: 'Các đơn hàng liên quan cũng sẽ bị ảnh hưởng.' });
@@ -1773,7 +1876,20 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     };
 
     const handleDeletePo = async (po: PurchaseOrder) => {
-        if (!ensureCanManage('xoá đơn hàng')) return;
+        if (!ensureCanMutatePoDocument(po, 'xoá/lưu trữ đơn hàng')) return;
+        const loadedDeliveryGroups = await loadPoDeliveryPrintGroups(po, true);
+        const fulfillmentBatches = loadedDeliveryGroups.flatMap(group => group.batches);
+        const blockReason = getPurchaseOrderRemovalBlockReason(
+            po,
+            user,
+            fulfillmentBatches,
+            poDeliveryBatchesByPo[po.id] || [],
+            supplierReturnsByPo[po.id] || [],
+        );
+        if (blockReason) {
+            toast.warning('Chưa thể xoá/lưu trữ PO', blockReason);
+            return;
+        }
         const hasStockImpact = hasPoStockImpactHint(po, supplierReturnsByPo[po.id] || []);
         const ok = await confirm({
             targetName: po.poNumber,
@@ -2470,7 +2586,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     const getDeliveryPrintGroupStatusLabel = (status?: string | null) => {
         if (status === 'received') return 'Đã nhận';
         if (status === 'closed') return 'Đã đóng';
-        if (status === 'cancelled') return 'Đã huỷ';
+        if (status === 'cancelled') return 'Từ chối';
         if (status === 'draft') return 'Nháp';
         return 'Đang giao';
     };
@@ -2532,12 +2648,12 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 const lines = groupBatches.flatMap(batch => batch.lines);
                 const targetWarehouseIds = Array.from(new Set(groupBatches.map(batch => batch.targetWarehouseId).filter(Boolean)));
                 const allReceived = groupBatches.every(batch => batch.status === 'received');
-                const anyCancelled = groupBatches.every(batch => batch.status === 'cancelled');
+                const allRejected = groupBatches.every(batch => ['cancelled', 'returned'].includes(batch.status));
                 return {
                     key,
                     label: meta?.deliveryNo || groupBatches[0]?.batchNo || `${po.poNumber}-DOT-${index + 1}`,
                     plannedDate: meta?.plannedDate || groupBatches[0]?.batchDate || null,
-                    status: meta?.status || (anyCancelled ? 'cancelled' : allReceived ? 'received' : 'issued'),
+                    status: allRejected ? 'cancelled' : meta?.status || (allReceived ? 'received' : 'issued'),
                     note: meta?.note || groupBatches.map(batch => batch.note).filter(Boolean).join(' | ') || null,
                     targetWarehouseId: targetWarehouseIds.length === 1 ? targetWarehouseIds[0] : null,
                     batches: groupBatches,
@@ -2974,7 +3090,6 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                 const isPrintMenuOpen = poPrintMenuId === po.id || (!!groupPrintMenuKey && poPrintMenuId === groupPrintMenuKey);
                                 const supplierReturns = supplierReturnsByPo[po.id] || [];
                                 const deliveryBatches = poDeliveryBatchesByPo[po.id] || [];
-                                const removalTitle = hasPoStockImpactHint(po, supplierReturns) ? 'Lưu trữ PO' : 'Xoá PO';
                                 const totalReceivedQty = po.items.reduce((sum, item) => sum + Number(item.receivedQty || 0), 0);
                                 const completedReturnQty = Math.max(
                                     po.items.reduce((sum, item) => sum + Number(item.returnedQty || 0), 0),
@@ -2991,6 +3106,15 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                 const canCreateDeliveryDraft = !isCompanyConsolidatedPo && PO_DELIVERY_DRAFT_STATUSES.has(po.status) && receiptStats.remainingQty > 0;
                                 const deliveryDraftButtonLabel = po.status === 'confirmed' ? 'Tạo đợt giao' : 'Tạo giao đợt tiếp';
                                 const deliveryPrintGroups = poDeliveryPrintGroupsByPoId[po.id] || [];
+                                const fulfillmentBatchesForPo = deliveryPrintGroups.flatMap(group => group.batches);
+                                const poWorkSummary = summarizePurchaseOrderWork(po, fulfillmentBatchesForPo, deliveryBatches);
+                                const poRemovalBlockReason = getPurchaseOrderRemovalBlockReason(po, user, fulfillmentBatchesForPo, deliveryBatches, supplierReturns);
+                                const canMutatePoDocument = canUserMutatePurchaseOrder(po, user);
+                                const poHasStockImpact = hasPoStockImpactHint(po, supplierReturns);
+                                const editBlockReason = isCompanyConsolidatedPo
+                                    ? 'PO công ty cần sửa tại màn Mua hàng công ty.'
+                                    : poRemovalBlockReason || (poHasStockImpact ? 'PO đã phát sinh nhập kho/hoàn kho nên không thể sửa.' : null);
+                                const removalTitle = poRemovalBlockReason || (poHasStockImpact ? 'Lưu trữ PO' : 'Xoá PO');
                                 const isLoadingDeliveryPrintGroups = loadingPoDeliveryPrintPoId === po.id;
                                 return (
                                     <div key={po.id} className={isPrintMenuOpen ? 'relative z-50' : 'relative z-0'}>
@@ -3007,6 +3131,11 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                             <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold border ${stCfg.bg} ${stCfg.color}`}>
                                                                 {stCfg.icon} {stCfg.label}
                                                             </span>
+                                                            {poWorkSummary.isRejectedBeforeReceipt && (
+                                                                <span className="inline-flex items-center gap-0.5 rounded border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[9px] font-bold text-rose-700">
+                                                                    <Ban size={11} /> Từ chối
+                                                                </span>
+                                                            )}
                                                             <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold border ${sourceCfg.color}`}>
                                                                 {sourceCfg.label}
                                                             </span>
@@ -3087,12 +3216,20 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                             </div>
                                                         )}
                                                     </div>
-                                                    {canManageTab && !isCompanyConsolidatedPo && (
+                                                    {canMutatePoDocument && (
                                                         <div className="flex gap-0.5 opacity-0 group-hover:opacity-100">
-                                                            <button onClick={e => { e.stopPropagation(); openEditPo(po); }} className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-blue-500"><Edit2 size={11} /></button>
-                                                            <button onClick={async e => { e.stopPropagation(); handleDeletePo(po); }}
+                                                            <button
+                                                                onClick={e => { e.stopPropagation(); if (!editBlockReason) openEditPo(po); }}
+                                                                disabled={!!editBlockReason}
+                                                                title={editBlockReason || 'Sửa PO'}
+                                                                className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-blue-500 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-slate-300"
+                                                            >
+                                                                <Edit2 size={11} />
+                                                            </button>
+                                                            <button onClick={async e => { e.stopPropagation(); if (!poRemovalBlockReason) handleDeletePo(po); }}
+                                                                disabled={!!poRemovalBlockReason}
                                                                 title={removalTitle}
-                                                                className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-red-500"><Trash2 size={11} /></button>
+                                                                className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-slate-300"><Trash2 size={11} /></button>
                                                         </div>
                                                     )}
                                                     {isExpanded ? <ChevronUp size={14} className="text-slate-400" /> : <ChevronDown size={14} className="text-slate-400" />}
@@ -3116,6 +3253,16 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                             : group.batches.length > 1 ? 'Nhiều kho nhận' : warehouses.find(warehouse => warehouse.id === group.batches[0]?.targetWarehouseId)?.name || group.batches[0]?.targetWarehouseId || '—';
                                                         const deliveryGroupFullKey = `${po.id}:${group.key}`;
                                                         const isDeliveryGroupExpanded = expandedDeliveryGroupKey === deliveryGroupFullKey;
+                                                        const legacyDeliveryGroupId = group.batches.find(batch => batch.poDeliveryGroupId)?.poDeliveryGroupId || null;
+                                                        const deliveryGroupId = legacyDeliveryGroupId || group.key;
+                                                        const isFailedDeliveryGroup = !!legacyDeliveryGroupId
+                                                            && group.status === 'cancelled'
+                                                            && group.batches.length > 0
+                                                            && group.batches.every(batch =>
+                                                                ['returned', 'cancelled'].includes(batch.status)
+                                                                && batch.lines.every(line => Number(line.receivedQty || 0) <= 0)
+                                                            );
+                                                        const isDeletingGroup = deletingDeliveryKey === `group:${deliveryGroupId}`;
                                                         return (
                                                             <React.Fragment key={group.key}>
                                                                 <div className={`flex flex-col gap-2 rounded-lg border bg-white px-3 py-2 shadow-sm sm:flex-row sm:items-center sm:justify-between ${isDeliveryGroupExpanded ? 'border-indigo-200 ring-1 ring-indigo-100' : 'border-white'}`}>
@@ -3162,6 +3309,17 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                                             {printingPoId === printApprovalKey ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />}
                                                                             Đề nghị duyệt
                                                                         </button>
+                                                                        {canMutatePoDocument && isFailedDeliveryGroup && (
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => handleRemoveFailedDeliveryGroup(po, { ...group, key: deliveryGroupId })}
+                                                                                disabled={isDeletingGroup}
+                                                                                className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 text-[10px] font-black text-red-700 hover:bg-red-100 disabled:opacity-50"
+                                                                            >
+                                                                                {isDeletingGroup ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                                                                                Xoá đợt
+                                                                            </button>
+                                                                        )}
                                                                     </div>
                                                                 </div>
                                                                 {isDeliveryGroupExpanded && (
@@ -3403,11 +3561,11 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                                     </tr>
                                                                 </tfoot>
                                                             </table>
-	                                                        </div>
+                                                        </div>
 
-	                                                        {/* Notes block */}
-	                                                        {po.note && (
-	                                                            <div className="p-3.5 bg-amber-50/30 dark:bg-amber-950/10 border border-amber-100 dark:border-amber-900/40 rounded-xl text-xs text-amber-800 dark:text-amber-300 whitespace-pre-wrap leading-relaxed">
+                                                        {/* Notes block */}
+                                                        {po.note && (
+                                                            <div className="p-3.5 bg-amber-50/30 dark:bg-amber-950/10 border border-amber-100 dark:border-amber-900/40 rounded-xl text-xs text-amber-800 dark:text-amber-300 whitespace-pre-wrap leading-relaxed">
                                                                 <strong className="block mb-1">📝 GHI CHÚ ĐƠN HÀNG:</strong>
                                                                 {po.note}
                                                             </div>
@@ -3426,17 +3584,18 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                                         const statusLabel = batch.status === 'received'
                                                                             ? 'Đã nhận'
                                                                             : batch.status === 'wms_pending'
-                                                                                ? 'Chờ WMS'
+                                                                                ? 'Chờ kho duyệt'
                                                                                 : batch.status === 'cancelled'
-                                                                                    ? 'Đã huỷ'
+                                                                                    ? 'Từ chối'
                                                                                     : 'Kế hoạch';
                                                                         const statusClass = batch.status === 'received'
                                                                             ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
                                                                             : batch.status === 'wms_pending'
                                                                                 ? 'bg-amber-50 text-amber-700 border-amber-100'
                                                                                 : batch.status === 'cancelled'
-                                                                                    ? 'bg-slate-100 text-slate-500 border-slate-200'
+                                                                                    ? 'bg-rose-50 text-rose-700 border-rose-100'
                                                                                     : 'bg-blue-50 text-blue-700 border-blue-100';
+                                                                        const isDeletingBatch = deletingDeliveryKey === `batch:${batch.id}`;
                                                                         return (
                                                                             <div key={batch.id} className="rounded-xl border border-slate-200 bg-white p-3">
                                                                                 <div className="flex items-start justify-between gap-3">
@@ -3469,6 +3628,17 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                                                     >
                                                                                         {creatingDeliveryBatchId === batch.id ? <Loader2 size={13} className="animate-spin" /> : <QrCode size={13} />}
                                                                                         Tạo phiếu nhận WMS/QR
+                                                                                    </button>
+                                                                                )}
+                                                                                {canMutatePoDocument && batch.status === 'cancelled' && (
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        onClick={() => handleRemoveFailedDeliveryBatch(po, batch)}
+                                                                                        disabled={isDeletingBatch}
+                                                                                        className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-black text-red-700 hover:bg-red-100 disabled:opacity-60"
+                                                                                    >
+                                                                                        {isDeletingBatch ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                                                                                        Xoá đợt bị từ chối
                                                                                     </button>
                                                                                 )}
                                                                             </div>
@@ -4406,6 +4576,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                                 <th className="px-2 py-2 text-center">ĐVT</th>
                                                                 <th className="px-2 py-2 text-right">SL PO</th>
                                                                 <th className="px-2 py-2 text-right">SL đợt này</th>
+                                                                <th className="px-2 py-2 text-right">Giá đợt</th>
                                                                 <th className="px-2 py-2 text-right">Còn lại</th>
                                                             </tr>
                                                         </thead>
@@ -4413,6 +4584,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                             {activeItems.map(item => {
                                                                 const lineKey = item.lineId || item.itemId;
                                                                 const currentLine = batch.lines.find(line => line.purchaseOrderLineId === lineKey);
+                                                                const deliveryInventory = inventoryItems.find(inv => inv.id === item.itemId);
                                                                 const remainingQty = getPoDeliveryRemainingQty(displayBatches, lineKey, Number(item.qty || 0), batchIndex);
                                                                 const remainingTone = remainingQty < -0.000001
                                                                     ? 'text-red-600'
@@ -4435,6 +4607,16 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                                                 value={currentLine?.plannedQty || ''}
                                                                                 onChange={e => updatePoDeliveryLineQty(batch.id, lineKey, Number(e.target.value) || 0)}
                                                                                 className="w-28 rounded-lg border border-slate-200 px-2 py-1.5 text-right text-xs font-bold"
+                                                                            />
+                                                                        </td>
+                                                                        <td className="px-2 py-2 text-right">
+                                                                            <input
+                                                                                type="number"
+                                                                                min={0}
+                                                                                step="any"
+                                                                                value={currentLine?.deliveryUnitPrice ?? getPoLineStockUnitPrice(item, deliveryInventory) ?? ''}
+                                                                                onChange={e => updatePoDeliveryLinePrice(batch.id, lineKey, Number(e.target.value) || 0)}
+                                                                                className="w-32 rounded-lg border border-slate-200 px-2 py-1.5 text-right text-xs font-bold text-emerald-700"
                                                                             />
                                                                         </td>
                                                                         <td className={`px-2 py-2 text-right font-black ${remainingTone}`}>

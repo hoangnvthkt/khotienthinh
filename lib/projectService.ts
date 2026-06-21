@@ -3,7 +3,7 @@ import {
     ProjectTask, DailyLog, AcceptanceRecord,
     MaterialBudgetItem, ProjectMaterialRequest, ProjectVendor,
     PurchaseOrder, PaymentSchedule, ProjectBaseline, ProjectWorkBoqItem, PurchaseOrderRequestLineLink,
-    PaymentDossierStatus, PaymentQualityStatus, PaymentScheduleMilestoneType, PurchaseOrderRemovalResult,
+    PaymentDossierStatus, PaymentQualityStatus, PaymentScheduleMilestoneType, PurchaseOrderDeliveryRemovalResult, PurchaseOrderRemovalResult,
     PurchaseOrderDeliveryBatch, PurchaseOrderDeliveryLine
 } from '../types';
 import { auditService } from './auditService';
@@ -610,6 +610,7 @@ const poDeliveryLineToDb = (line: PurchaseOrderDeliveryLine): any => {
         itemId: line.itemId,
         plannedQty: Number(line.plannedQty || 0),
         unit: line.unit || null,
+        deliveryUnitPrice: Number(line.deliveryUnitPrice || 0),
         stockPlannedQty: Number(line.stockPlannedQty || 0),
         stockUnit: line.stockUnit || null,
     });
@@ -626,6 +627,7 @@ const poDeliveryBatchFromRows = (batch: any, lineRows: any[]): PurchaseOrderDeli
     lines: lineRows.map(row => ({
         ...(fromDb(row) as PurchaseOrderDeliveryLine),
         plannedQty: Number(row.planned_qty || 0),
+        deliveryUnitPrice: Number(row.delivery_unit_price || 0),
         stockPlannedQty: Number(row.stock_planned_qty || 0),
     })),
 });
@@ -1097,6 +1099,15 @@ export const poDeliveryScheduleService = {
             .from('purchase_order_delivery_lines')
             .insert(linePayloads);
         if (lineError) throw lineError;
+    },
+
+    async removeFailedBatch(id: string): Promise<PurchaseOrderDeliveryRemovalResult> {
+        const { data, error } = await supabase
+            .rpc('remove_purchase_order_delivery_batch_v1', { p_delivery_batch_id: id })
+            .single();
+        if (error) throw error;
+        if (!data) throw new Error('Không xoá được đợt giao. Vui lòng kiểm tra quyền hoặc trạng thái đợt giao.');
+        return fromDb(data) as PurchaseOrderDeliveryRemovalResult;
     },
 };
 

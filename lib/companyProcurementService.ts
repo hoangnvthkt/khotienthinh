@@ -342,6 +342,7 @@ export const companyProcurementService = {
           `PO công ty ${procurementGroupNo}`,
           input.note || null,
         ].filter(Boolean).join('\n'),
+        createdById: input.actorUserId || null,
         createdAt: now,
       };
 

@@ -1739,12 +1739,20 @@ export interface PurchaseOrder extends ProjectSubmissionFields {
   archivedAt?: string | null;
   archivedBy?: string | null;
   archiveReason?: string | null;
+  createdById?: string | null;
   createdAt: string;
 }
 
 export interface PurchaseOrderRemovalResult {
   action: 'deleted' | 'archived';
   id: string;
+  poNumber: string;
+}
+
+export interface PurchaseOrderDeliveryRemovalResult {
+  action: 'deleted';
+  id: string;
+  purchaseOrderId: string;
   poNumber: string;
 }
 
@@ -1758,6 +1766,7 @@ export interface PurchaseOrderDeliveryLine {
   itemId: string;
   plannedQty: number;
   unit?: string | null;
+  deliveryUnitPrice?: number;
   stockPlannedQty?: number;
   stockUnit?: string | null;
   createdAt?: string;

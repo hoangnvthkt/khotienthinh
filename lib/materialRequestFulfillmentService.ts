@@ -9,6 +9,7 @@ import {
   InventoryItem,
   PurchaseOrder,
   PurchaseOrderDeliveryBatch,
+  PurchaseOrderDeliveryRemovalResult,
   PurchaseOrderDeliveryGroup,
   PurchaseOrderItem,
   PurchaseOrderRequestLineLink,
@@ -26,6 +27,7 @@ import {
   hasPurchaseUnitConversion,
   poLinePurchaseToStockQty,
   poLineStockToPurchaseQty,
+  stockUnitPriceToPurchaseUnitPrice,
 } from './materialUnitConversion';
 
 const BATCH_TABLE = 'material_request_fulfillment_batches';
@@ -763,6 +765,15 @@ export const materialRequestFulfillmentService = {
       throw error;
     }
     return (data || []).map(fromDb) as PurchaseOrderDeliveryGroup[];
+  },
+
+  async removeFailedPoDeliveryGroup(groupId: string): Promise<PurchaseOrderDeliveryRemovalResult> {
+    const { data, error } = await supabase
+      .rpc('remove_purchase_order_delivery_group_v1', { p_delivery_group_id: groupId })
+      .single();
+    if (error) throw error;
+    if (!data) throw new Error('Không xoá được đợt giao. Vui lòng kiểm tra quyền hoặc trạng thái đợt giao.');
+    return fromDb(data) as PurchaseOrderDeliveryRemovalResult;
   },
 
   async closeLineNeed(input: CloseMaterialRequestLineNeedInput): Promise<MaterialRequestLineNeedClosure> {
@@ -1510,6 +1521,7 @@ export const materialRequestFulfillmentService = {
     const allocatedLinks: Array<{
       link: PurchaseOrderRequestLineLink;
       poItem: PurchaseOrderItem;
+      deliveryLine: PurchaseOrderDeliveryBatch['lines'][number];
       deliveryLineId: string;
       deliveryStockQty: number;
     }> = [];
@@ -1533,6 +1545,7 @@ export const materialRequestFulfillmentService = {
         allocatedLinks.push({
           link,
           poItem,
+          deliveryLine,
           deliveryLineId: deliveryLine.id,
           deliveryStockQty,
         });
@@ -1560,6 +1573,7 @@ export const materialRequestFulfillmentService = {
       const linePayloads = requestLinks.map(item => {
         const inventory = inventoryById.get(item.poItem.itemId);
         const stockUnit = getPoLineStockUnit(item.poItem, inventory) || item.link.unit || null;
+        const deliveryUnitPrice = Number(item.deliveryLine.deliveryUnitPrice ?? getPoLineStockUnitPrice(item.poItem, inventory) ?? 0);
         return {
           id: newId(),
           batchId,
@@ -1576,6 +1590,8 @@ export const materialRequestFulfillmentService = {
           issuedQty: item.deliveryStockQty,
           receivedQty: 0,
           unit: stockUnit,
+          deliveryUnit: stockUnit,
+          deliveryUnitPrice,
           varianceReason: null,
           note: `Đợt ${deliveryBatch.deliveryNo} chờ nhận hàng từ ${poNumber}${poSourceSuffix}`,
         };
@@ -1591,6 +1607,14 @@ export const materialRequestFulfillmentService = {
           const poItem = poItemByLineId.get(line.poLineId);
           const inventory = inventoryById.get(line.itemId || poItem?.itemId || '');
           return buildPoReceiptTransactionItem(poItem, line.issuedQty, inventory, {
+            price: Number(line.deliveryUnitPrice || 0),
+            accountingPrice: poItem
+              ? stockUnitPriceToPurchaseUnitPrice(Number(line.deliveryUnitPrice || 0), {
+                unit: getPoLineStockUnit(poItem, inventory),
+                purchaseUnit: getPoLinePurchaseUnit(poItem, inventory),
+                purchaseConversionFactor: poItem.purchaseConversionFactor ?? inventory?.purchaseConversionFactor ?? 1,
+              })
+              : Number(line.deliveryUnitPrice || 0),
             materialRequestId,
             requestLineId: line.requestLineId,
             fulfillmentBatchId: batchId,

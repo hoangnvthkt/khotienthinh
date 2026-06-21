@@ -42,6 +42,7 @@ import { getMaterialRequestWorkflowPatch, materialRequestService } from '../lib/
 import { materialRequestFulfillmentService, getCommittedQty, getRequestLineId } from '../lib/materialRequestFulfillmentService';
 import { buildFulfillmentBatchReceiveUrl } from '../lib/fulfillmentBatchQr';
 import { formatReservationSourceList } from '../lib/inventoryStockGuard';
+import { getMaterialIssueDraftQty } from '../lib/materialRequestIssueDraft';
 import { BoqSummaryStrip } from './erp';
 
 const ScannerModal = React.lazy(() => import('./ScannerModal'));
@@ -1453,19 +1454,28 @@ const RequestModal: React.FC<RequestModalProps> = ({
 
     const openIssuePanel = () => {
         if (!request || !fulfillmentSummary) return;
+        const effectiveSourceWarehouseId = sourceWarehouseId || request.sourceWarehouseId || '';
         const drafts = request.items
             .map((line, index) => {
                 const requestLineId = getRequestLineId(request, line, index);
                 const lineSummary = fulfillmentLineSummaryMap.get(requestLineId);
                 const remaining = lineSummary?.remainingToIssue ?? getCommittedQty(line);
                 return {
-                    requestLineId,
-                    itemId: line.itemId,
-                    qty: remaining > 0 ? String(remaining) : '0',
-                    reason: '',
+                    remaining,
+                    draft: {
+                        requestLineId,
+                        itemId: line.itemId,
+                        qty: String(getMaterialIssueDraftQty(
+                            'stock',
+                            remaining,
+                            getOnHandStock(line.itemId, effectiveSourceWarehouseId),
+                        )),
+                        reason: '',
+                    },
                 };
             })
-            .filter(line => Number(line.qty || 0) > 0);
+            .filter(line => line.remaining > 0)
+            .map(line => line.draft);
         if (drafts.length === 0) {
             toast.info('Đã cấp đủ', 'Không còn dòng vật tư nào cần tạo đợt cấp.');
             return;
@@ -1474,6 +1484,28 @@ const RequestModal: React.FC<RequestModalProps> = ({
         setIssueSourceType('stock');
         setIssueNote('');
         setIsIssuePanelOpen(true);
+    };
+
+    const handleIssueSourceTypeChange = (nextSourceType: MaterialRequestFulfillmentSourceType) => {
+        setIssueSourceType(nextSourceType);
+        if (!request) return;
+        const effectiveSourceWarehouseId = sourceWarehouseId || request.sourceWarehouseId || '';
+        setIssueLines(previous => previous.map(draft => {
+            const requestLineIndex = request.items.findIndex((line, index) =>
+                getRequestLineId(request, line, index) === draft.requestLineId
+            );
+            const requestLine = requestLineIndex >= 0 ? request.items[requestLineIndex] : undefined;
+            const remaining = fulfillmentLineSummaryMap.get(draft.requestLineId)?.remainingToIssue
+                ?? (requestLine ? getCommittedQty(requestLine) : 0);
+            return {
+                ...draft,
+                qty: String(getMaterialIssueDraftQty(
+                    nextSourceType,
+                    remaining,
+                    getOnHandStock(draft.itemId, effectiveSourceWarehouseId),
+                )),
+            };
+        }));
     };
 
     useEffect(() => {
@@ -3316,7 +3348,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                     <label className="text-[10px] uppercase font-black text-muted-foreground block mb-1">Nguồn hàng</label>
                                     <select
                                         value={issueSourceType}
-                                        onChange={event => setIssueSourceType(event.target.value as MaterialRequestFulfillmentSourceType)}
+                                        onChange={event => handleIssueSourceTypeChange(event.target.value as MaterialRequestFulfillmentSourceType)}
                                         className="w-full px-3 py-2 rounded-xl border border-border bg-card text-foreground text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-300"
                                     >
                                         <option value="stock">Tồn kho</option>
