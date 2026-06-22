@@ -1,6 +1,6 @@
 
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
-import { supabase, supabaseAnonKey, supabaseUrl, isSupabaseConfigured, isTransientSupabaseError } from '../lib/supabase';
+import { supabase, isSupabaseConfigured, isTransientSupabaseError } from '../lib/supabase';
 import {
   InventoryItem, Transaction, User, Warehouse, WarehouseTypeConfig, Supplier,
   Role, TransactionStatus, TransactionType, MaterialRequest,
@@ -2875,7 +2875,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (table === 'hrm_attendance') {
       const photoOrNull = (value: unknown) => {
         if (typeof value !== 'string' || !value.trim()) return null;
-        return value.startsWith('data:') ? null : value;
+        return value.startsWith('data:') || value.startsWith('blob:') ? null : value;
       };
       const finiteOrNull = (value: unknown) => {
         const numberValue = Number(value);
@@ -2934,73 +2934,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return item;
   };
 
-  const saveHrmAttendanceToSupabase = async (item: AttendanceRecord): Promise<AttendanceRecord> => {
-    const payload = toDbItem('hrm_attendance', item);
-
-    // Try upsert on primary key `id` — avoids PGRST102 caused by quoted camelCase
-    // column name `"employeeId"` in on_conflict param (PostgREST v12+ restriction).
-    let data: any = null;
-    let error: any = null;
-    try {
-      const result = await supabase
-        .from('hrm_attendance')
-        .upsert(payload, { onConflict: 'id' })
-        .select('*')
-        .maybeSingle();
-      data = result.data;
-      error = result.error;
-    } catch (err) {
-      error = err;
-    }
-
-    if (error) {
-      // Fallback: use raw fetch with correct quoted column in Prefer header
-      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-      if (sessionError) throw sessionError;
-      const accessToken = sessionData.session?.access_token;
-      if (!accessToken) throw error;
-
-      const response = await fetch(`${supabaseUrl}/rest/v1/hrm_attendance?on_conflict=id&select=*`, {
-        method: 'POST',
-        headers: {
-          apikey: supabaseAnonKey,
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-          Prefer: 'resolution=merge-duplicates,return=representation',
-        },
-        body: JSON.stringify(payload),
-      });
-      const text = await response.text();
-      let parsed: any = null;
-      if (text) {
-        try {
-          parsed = JSON.parse(text);
-        } catch {
-          throw new Error(`Supabase trả về phản hồi không phải JSON (${response.status}): ${text.slice(0, 160)}`);
-        }
-      }
-      if (!response.ok) throw parsed || new Error(`Supabase REST lỗi ${response.status}`);
-      const row = Array.isArray(parsed) ? parsed[0] : parsed;
-      if (!row) throw new Error('Supabase không xác nhận đã lưu chấm công.');
-      return row as AttendanceRecord;
-    }
-    if (!data) throw new Error('Supabase không xác nhận đã lưu chấm công.');
-    return data as AttendanceRecord;
-  };
-
   const addHrmItem = async (table: string, item: any) => {
     const setter = hrmSetterMap[table];
     if (!setter) return;
-    if (table === 'hrm_attendance' && isSupabaseConfigured) {
-      const savedItem = await saveHrmAttendanceToSupabase(item as AttendanceRecord);
-      setter((prev: any[]) => {
-        const exists = prev.some((i: any) => i.id === savedItem.id || (i.employeeId === savedItem.employeeId && i.date === savedItem.date));
-        return exists
-          ? prev.map((i: any) => (i.id === savedItem.id || (i.employeeId === savedItem.employeeId && i.date === savedItem.date)) ? savedItem : i)
-          : [...prev, savedItem];
-      });
-      return;
-    }
     setter((prev: any[]) => [...prev, item]);
     if (isSupabaseConfigured) {
       const { error } = await supabase.from(table).insert(toDbItem(table, item));
@@ -3014,16 +2950,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const updateHrmItem = async (table: string, item: any) => {
     const setter = hrmSetterMap[table];
     if (!setter) return;
-    if (table === 'hrm_attendance' && isSupabaseConfigured) {
-      const savedItem = await saveHrmAttendanceToSupabase(item as AttendanceRecord);
-      setter((prev: any[]) => {
-        const exists = prev.some((i: any) => i.id === savedItem.id || (i.employeeId === savedItem.employeeId && i.date === savedItem.date));
-        return exists
-          ? prev.map((i: any) => (i.id === savedItem.id || (i.employeeId === savedItem.employeeId && i.date === savedItem.date)) ? savedItem : i)
-          : [...prev, savedItem];
-      });
-      return;
-    }
     setter((prev: any[]) => prev.map((i: any) => i.id === item.id ? item : i));
     if (isSupabaseConfigured) {
       const { error } = await supabase.from(table).update(toDbItem(table, item)).eq('id', item.id);

@@ -1,726 +1,561 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  AlertTriangle,
+  Camera,
+  CameraOff,
+  CheckCircle,
+  Clock,
+  Crosshair,
+  LogIn,
+  LogOut,
+  MapPin,
+  Navigation,
+  RefreshCw,
+  ShieldCheck,
+} from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { useModuleData } from '../../hooks/useModuleData';
-import { useTheme } from '../../context/ThemeContext';
 import { useCelebration } from '../../components/Celebration';
-import {
-  MapPin, Camera, CameraOff, Clock, CheckCircle, LogIn, LogOut,
-  AlertTriangle, Navigation, RefreshCw, Building2, HardHat, Flame, Trophy, Star, Zap
-} from 'lucide-react';
-import { AttendanceStatus, AttendanceRecord } from '../../types';
-import { xpService } from '../../lib/xpService';
-import { supabase, isSupabaseConfigured } from '../../lib/supabase';
+import { AttendanceRecord } from '../../types';
 import { getApiErrorMessage } from '../../lib/apiError';
+import { checkInService, CameraCheckInLocation } from '../../lib/checkInService';
+import { xpService } from '../../lib/xpService';
 
-// ── T5: Upload selfie lên Supabase Storage (thay thế base64 trong DB) ──────
-// Fallback: nếu upload lỗi → trả về base64 gốc để check-in vẫn hoạt động
-const uploadSelfieToStorage = async (
-  base64: string,
-  employeeId: string,
-  type: 'checkin' | 'checkout' = 'checkin'
-): Promise<string | null> => {
-  if (!isSupabaseConfigured || !base64.startsWith('data:')) return base64;
-  try {
-    const res = await fetch(base64);
-    const blob = await res.blob();
-    const today = new Date().toISOString().split('T')[0];
-    const fileName = `${employeeId}/${today}_${type}_${Date.now()}.jpg`;
-    const { data, error } = await supabase.storage
-      .from('checkin-photos')
-      .upload(fileName, blob, { upsert: true, contentType: 'image/jpeg' });
-    if (error) {
-      console.warn('Selfie upload warning (check-in without photo):', error.message);
-      return null;
-    }
-    const { data: { publicUrl } } = supabase.storage.from('checkin-photos').getPublicUrl(data.path);
-    return publicUrl;
-  } catch (err) {
-    console.warn('Selfie upload failed (check-in without photo):', err);
-    return null;
-  }
+type LocationOption = CameraCheckInLocation & {
+  label: string;
+  sourceLabel: string;
 };
 
-const formatAttendanceSyncError = (error: unknown): string => {
+const todayLocal = () => {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+};
+
+const timeLocal = () => {
+  const now = new Date();
+  return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+};
+
+const haversineDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
+  const radius = 6371000;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLng / 2) ** 2;
+  return Math.round(radius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+};
+
+const finiteOrNull = (value: unknown): number | null => {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : null;
+};
+
+const formatSyncError = (error: unknown): string => {
   const friendly = getApiErrorMessage(error, '');
   if (friendly) return friendly;
-
   if (error && typeof error === 'object') {
     const err = error as Record<string, unknown>;
-    const detail = [err.message, err.details, err.hint, err.code, err.status, err.name]
+    const detail = [err.message, err.details, err.hint, err.code, err.status]
       .filter(Boolean)
       .map(String)
       .join(' | ');
     if (detail) return detail;
   }
-
-  if (typeof error === 'string' && error.trim()) return error.trim();
-  return 'Không rõ nguyên nhân. Vui lòng mở lại trang hoặc đăng nhập lại rồi thử lần nữa.';
+  return typeof error === 'string' && error.trim()
+    ? error.trim()
+    : 'Không rõ nguyên nhân. Vui lòng đăng nhập lại rồi thử lại.';
 };
 
-
-// Haversine formula — khoảng cách 2 toạ độ (mét)
-const haversineDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
-  const R = 6371000; // m
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLng = (lng2 - lng1) * Math.PI / 180;
-  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-};
-
-// ── Streak Calculator ──
-const calculateStreak = (records: AttendanceRecord[], employeeId: string): { currentStreak: number; longestStreak: number; totalDays: number; isMilestone: boolean } => {
-  // Get unique check-in dates for this employee, sorted descending
+const calculateStreak = (records: AttendanceRecord[], employeeId: string) => {
   const dates = records
-    .filter(r => r.employeeId === employeeId && r.status === 'present' && r.checkIn)
-    .map(r => r.date)
-    .filter((v, i, arr) => arr.indexOf(v) === i)
-    .sort((a, b) => b.localeCompare(a)); // newest first
+    .filter(record => record.employeeId === employeeId && record.status === 'present' && record.checkIn)
+    .map(record => record.date)
+    .filter((date, index, arr) => arr.indexOf(date) === index)
+    .sort((a, b) => b.localeCompare(a));
 
-  if (dates.length === 0) return { currentStreak: 0, longestStreak: 0, totalDays: 0, isMilestone: false };
+  if (dates.length === 0) return { currentStreak: 0, totalDays: 0 };
 
-  const totalDays = dates.length;
-
-  // Calculate current streak (consecutive days from today backwards)
-  const today = new Date();
-  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-  
-  let currentStreak = 0;
-  let checkDate = new Date(today);
-  
-  // Start from today or yesterday
-  const hasTodayRecord = dates.includes(todayStr);
-  if (!hasTodayRecord) {
-    // Check if yesterday had a record
-    checkDate.setDate(checkDate.getDate() - 1);
-  }
+  let streak = 0;
+  const cursor = new Date();
+  const today = todayLocal();
+  if (!dates.includes(today)) cursor.setDate(cursor.getDate() - 1);
 
   while (true) {
-    const dateStr = `${checkDate.getFullYear()}-${String(checkDate.getMonth() + 1).padStart(2, '0')}-${String(checkDate.getDate()).padStart(2, '0')}`;
-    // Skip weekends (Sat=6, Sun=0)
-    const day = checkDate.getDay();
+    const day = cursor.getDay();
     if (day === 0 || day === 6) {
-      checkDate.setDate(checkDate.getDate() - 1);
+      cursor.setDate(cursor.getDate() - 1);
       continue;
     }
-    if (dates.includes(dateStr)) {
-      currentStreak++;
-      checkDate.setDate(checkDate.getDate() - 1);
-    } else {
-      break;
-    }
+
+    const date = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}-${String(cursor.getDate()).padStart(2, '0')}`;
+    if (!dates.includes(date)) break;
+    streak += 1;
+    cursor.setDate(cursor.getDate() - 1);
   }
 
-  // If we just checked in today, add it to the streak
-  if (hasTodayRecord && currentStreak === 0) currentStreak = 1;
-
-  // Calculate longest streak
-  let longestStreak = 0;
-  let tempStreak = 0;
-  const sortedAsc = [...dates].sort();
-  for (let i = 0; i < sortedAsc.length; i++) {
-    if (i === 0) { tempStreak = 1; }
-    else {
-      const prev = new Date(sortedAsc[i - 1]);
-      const curr = new Date(sortedAsc[i]);
-      const diffDays = Math.round((curr.getTime() - prev.getTime()) / (1000 * 60 * 60 * 24));
-      // Account for weekends (gap of 3 = Friday to Monday)
-      if (diffDays === 1 || diffDays === 3) tempStreak++;
-      else tempStreak = 1;
-    }
-    longestStreak = Math.max(longestStreak, tempStreak);
-  }
-
-  const MILESTONES = [3, 5, 7, 10, 14, 21, 30, 50, 60, 90, 100];
-  const isMilestone = MILESTONES.includes(currentStreak);
-
-  return { currentStreak, longestStreak, totalDays, isMilestone };
-};
-
-// ── Streak Badge Component ──
-const StreakBadge: React.FC<{ streak: number; longestStreak: number; totalDays: number; isMilestone: boolean }> = ({ streak, longestStreak, totalDays, isMilestone }) => {
-  if (streak === 0 && totalDays === 0) return null;
-
-  const getStreakTier = (s: number): { label: string; color: string; gradient: string; icon: React.ReactNode; emoji: string } => {
-    if (s >= 30) return { label: 'Huyền thoại', color: 'text-yellow-500', gradient: 'from-yellow-500 via-amber-500 to-orange-500', icon: <Trophy size={20} />, emoji: '👑' };
-    if (s >= 14) return { label: 'Siêu sao', color: 'text-purple-500', gradient: 'from-purple-500 via-pink-500 to-rose-500', icon: <Star size={20} />, emoji: '⭐' };
-    if (s >= 7)  return { label: 'Xuất sắc', color: 'text-orange-500', gradient: 'from-orange-500 to-red-500', icon: <Flame size={20} />, emoji: '🔥' };
-    if (s >= 3)  return { label: 'Tốt lắm!', color: 'text-emerald-500', gradient: 'from-emerald-500 to-teal-500', icon: <Zap size={20} />, emoji: '⚡' };
-    return { label: 'Bắt đầu', color: 'text-blue-500', gradient: 'from-blue-500 to-cyan-500', icon: <CheckCircle size={20} />, emoji: '✅' };
-  };
-
-  const tier = getStreakTier(streak);
-  const nextMilestones = [3, 5, 7, 10, 14, 21, 30, 50].filter(m => m > streak);
-  const nextMilestone = nextMilestones[0];
-  const progress = nextMilestone ? (streak / nextMilestone) * 100 : 100;
-
-  return (
-    <div className="glass-card rounded-2xl overflow-hidden">
-      {/* Streak Header */}
-      <div className={`relative bg-gradient-to-r ${tier.gradient} p-4 text-white`}>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center"
-              style={{ animation: streak >= 7 ? 'streakPulse 2s ease-in-out infinite' : undefined }}>
-              {tier.icon}
-            </div>
-            <div>
-              <p className="text-xs font-bold opacity-80 uppercase tracking-wider">Chuỗi Check-in</p>
-              <div className="flex items-baseline gap-2">
-                <span className="text-3xl font-black">{streak}</span>
-                <span className="text-sm font-bold opacity-80">ngày</span>
-                <span className="text-lg">{tier.emoji}</span>
-              </div>
-            </div>
-          </div>
-          <div className="text-right">
-            <p className="text-xs font-bold opacity-70">{tier.label}</p>
-            {isMilestone && (
-              <span className="inline-block px-2 py-0.5 bg-white/25 rounded-full text-[10px] font-black mt-1"
-                style={{ animation: 'celebrationBounce 0.6s ease-out' }}>
-                🎉 MILESTONE!
-              </span>
-            )}
-          </div>
-        </div>
-
-        {/* Progress to next milestone */}
-        {nextMilestone && (
-          <div className="mt-3">
-            <div className="flex justify-between text-[10px] font-bold opacity-70 mb-1">
-              <span>Tiến trình → {nextMilestone} ngày</span>
-              <span>{streak}/{nextMilestone}</span>
-            </div>
-            <div className="h-2 bg-white/20 rounded-full overflow-hidden">
-              <div className="h-full bg-white/60 rounded-full transition-all duration-700"
-                style={{ width: `${Math.min(progress, 100)}%` }} />
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Stats */}
-      <div className="grid grid-cols-3 gap-px bg-slate-100 dark:bg-slate-700">
-        <div className="bg-white dark:bg-slate-800 px-3 py-3 text-center">
-          <p className="text-lg font-black text-slate-800 dark:text-white">{streak}</p>
-          <p className="text-[9px] font-bold text-slate-400 uppercase">Hiện tại</p>
-        </div>
-        <div className="bg-white dark:bg-slate-800 px-3 py-3 text-center">
-          <p className="text-lg font-black text-amber-500">{longestStreak}</p>
-          <p className="text-[9px] font-bold text-slate-400 uppercase">Kỷ lục</p>
-        </div>
-        <div className="bg-white dark:bg-slate-800 px-3 py-3 text-center">
-          <p className="text-lg font-black text-blue-500">{totalDays}</p>
-          <p className="text-[9px] font-bold text-slate-400 uppercase">Tổng ngày</p>
-        </div>
-      </div>
-
-      <style>{`
-        @keyframes streakPulse {
-          0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255,255,255,0.4); }
-          50% { transform: scale(1.05); box-shadow: 0 0 20px 5px rgba(255,255,255,0.2); }
-        }
-      `}</style>
-    </div>
-  );
+  return { currentStreak: Math.max(streak, dates.includes(today) ? 1 : 0), totalDays: dates.length };
 };
 
 const CheckIn: React.FC = () => {
-  const { user, employees, attendanceRecords, hrmConstructionSites, hrmOffices, addHrmItem, updateHrmItem } = useApp();
+  const {
+    user,
+    employees,
+    attendanceRecords,
+    hrmConstructionSites,
+    hrmOffices,
+    loadModuleData,
+  } = useApp();
   useModuleData('hrm');
-  const { theme } = useTheme();
-  const { celebrate, showToast: celebrationToast } = useCelebration();
+  const { celebrate, showToast } = useCelebration();
 
-  // Find current employee
-  const currentEmployee = useMemo(() => employees.find(e => e.userId === user.id), [employees, user.id]);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
-  // Location selection
-  type LocationOption = { id: string; name: string; type: 'construction_site' | 'office'; lat?: number; lng?: number; radius: number };
-  const locationOptions = useMemo<LocationOption[]>(() => {
-    const sites: LocationOption[] = hrmConstructionSites.map(s => ({
-      id: s.id, name: `🏗️ ${s.name}`, type: 'construction_site', lat: s.latitude, lng: s.longitude, radius: s.checkInRadius || 200,
+  const [cameraReady, setCameraReady] = useState(false);
+  const [cameraError, setCameraError] = useState('');
+  const [gpsLat, setGpsLat] = useState<number | null>(null);
+  const [gpsLng, setGpsLng] = useState<number | null>(null);
+  const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null);
+  const [gpsLoading, setGpsLoading] = useState(false);
+  const [gpsError, setGpsError] = useState('');
+  const [selectedLocationId, setSelectedLocationId] = useState('');
+  const [processing, setProcessing] = useState<CameraCheckInLocation['type'] | 'check_in' | 'check_out' | null>(null);
+  const [lastAction, setLastAction] = useState<string | null>(null);
+  const [lastSavedRecord, setLastSavedRecord] = useState<AttendanceRecord | null>(null);
+  const [currentTime, setCurrentTime] = useState(new Date());
+
+  const currentEmployee = useMemo(() => {
+    return employees.find(employee => (
+      employee.userId === user.id ||
+      employee.email?.toLowerCase() === user.email?.toLowerCase()
+    ));
+  }, [employees, user.email, user.id]);
+
+  const workDate = useMemo(todayLocal, []);
+  const todayRecord = useMemo(() => {
+    if (!currentEmployee) return null;
+    return attendanceRecords.find(record => record.employeeId === currentEmployee.id && record.date === workDate) || null;
+  }, [attendanceRecords, currentEmployee, workDate]);
+  const effectiveTodayRecord = lastSavedRecord?.date === workDate ? lastSavedRecord : todayRecord;
+
+  const baseLocations = useMemo<LocationOption[]>(() => {
+    const sites = hrmConstructionSites.map<LocationOption>(site => ({
+      id: site.id,
+      name: site.name,
+      label: site.name,
+      sourceLabel: 'Cong truong',
+      type: 'construction_site',
+      lat: finiteOrNull(site.latitude),
+      lng: finiteOrNull(site.longitude),
+      radius: Number(site.checkInRadius || 200),
+      distanceM: null,
+      inRange: null,
     }));
-    const offices: LocationOption[] = hrmOffices.map(o => ({
-      id: o.id, name: `🏢 ${o.name}`, type: 'office', lat: o.latitude, lng: o.longitude, radius: o.checkInRadius || 100,
+
+    const offices = hrmOffices.map<LocationOption>(office => ({
+      id: office.id,
+      name: office.name,
+      label: office.name,
+      sourceLabel: 'Van phong',
+      type: 'office',
+      lat: finiteOrNull(office.latitude),
+      lng: finiteOrNull(office.longitude),
+      radius: Number(office.checkInRadius || 100),
+      distanceM: null,
+      inRange: null,
     }));
+
     return [...sites, ...offices];
   }, [hrmConstructionSites, hrmOffices]);
 
-  const [selectedLocationId, setSelectedLocationId] = useState('');
-  const selectedLocation = useMemo(() => locationOptions.find(l => l.id === selectedLocationId), [locationOptions, selectedLocationId]);
+  const locations = useMemo<LocationOption[]>(() => {
+    return baseLocations
+      .map(location => {
+        const hasGps = gpsLat !== null && gpsLng !== null;
+        const hasLocationGps = location.lat !== null && location.lng !== null;
+        const distanceM = hasGps && hasLocationGps
+          ? haversineDistance(gpsLat, gpsLng, location.lat as number, location.lng as number)
+          : null;
+        return {
+          ...location,
+          distanceM,
+          inRange: distanceM === null ? null : distanceM <= location.radius,
+        };
+      })
+      .sort((a, b) => {
+        if (a.distanceM === null && b.distanceM === null) return a.name.localeCompare(b.name);
+        if (a.distanceM === null) return 1;
+        if (b.distanceM === null) return -1;
+        return a.distanceM - b.distanceM;
+      });
+  }, [baseLocations, gpsLat, gpsLng]);
 
-  // Camera
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [cameraActive, setCameraActive] = useState(false);
-  const [cameraError, setCameraError] = useState('');
-  const streamRef = useRef<MediaStream | null>(null);
+  const nearestLocation = locations.find(location => location.distanceM !== null) || null;
+  const selectedLocation = locations.find(location => location.id === selectedLocationId) || nearestLocation;
+  const streak = useMemo(() => (
+    currentEmployee ? calculateStreak(attendanceRecords, currentEmployee.id) : { currentStreak: 0, totalDays: 0 }
+  ), [attendanceRecords, currentEmployee]);
 
-  // GPS
-  const [gpsLat, setGpsLat] = useState<number | null>(null);
-  const [gpsLng, setGpsLng] = useState<number | null>(null);
-  const [gpsError, setGpsError] = useState('');
-  const [gpsLoading, setGpsLoading] = useState(false);
+  const todayAllRecords = useMemo(() => attendanceRecords
+    .filter(record => record.date === workDate)
+    .sort((a, b) => (a.checkIn || '').localeCompare(b.checkIn || '')),
+    [attendanceRecords, workDate]);
 
-  // Status
-  const [processing, setProcessing] = useState(false);
-  const [lastAction, setLastAction] = useState<string | null>(null);
+  useEffect(() => {
+    if (!selectedLocationId && nearestLocation) setSelectedLocationId(nearestLocation.id);
+  }, [nearestLocation, selectedLocationId]);
 
-  // Today's records for current employee
-  const today = useMemo(() => {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  useEffect(() => {
+    const timer = window.setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => window.clearInterval(timer);
   }, []);
-  const todayRecord = useMemo(() => {
-    if (!currentEmployee) return null;
-    return attendanceRecords.find(r => r.employeeId === currentEmployee.id && r.date === today);
-  }, [attendanceRecords, currentEmployee, today]);
 
-  const todayAllRecords = useMemo(() => {
-    return attendanceRecords.filter(r => r.date === today)
-      .sort((a, b) => (a.checkIn || '').localeCompare(b.checkIn || ''));
-  }, [attendanceRecords, today]);
+  const stopCamera = useCallback(() => {
+    streamRef.current?.getTracks().forEach(track => track.stop());
+    streamRef.current = null;
+    setCameraReady(false);
+  }, []);
 
-  // Distance to selected location
-  const distance = useMemo(() => {
-    if (!selectedLocation?.lat || !selectedLocation?.lng || gpsLat === null || gpsLng === null) return null;
-    return Math.round(haversineDistance(gpsLat, gpsLng, selectedLocation.lat, selectedLocation.lng));
-  }, [selectedLocation, gpsLat, gpsLng]);
-
-  const isInRange = distance !== null && selectedLocation ? distance <= selectedLocation.radius : null;
-
-  // Start camera
-  const startCamera = async () => {
+  const startCamera = useCallback(async () => {
     try {
       setCameraError('');
+      stopCamera();
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: { ideal: 480 }, height: { ideal: 640 } },
+        video: { facingMode: 'user', width: { ideal: 720 }, height: { ideal: 960 } },
+        audio: false,
       });
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         await videoRef.current.play();
       }
-      setCameraActive(true);
-    } catch (err: any) {
-      setCameraError(err.name === 'NotAllowedError' ? 'Vui lòng cho phép truy cập camera' : 'Không thể mở camera');
+      setCameraReady(true);
+    } catch (error: any) {
+      setCameraReady(false);
+      setCameraError(error?.name === 'NotAllowedError'
+        ? 'Vui lòng cho phép truy cập camera.'
+        : 'Không mở được camera trên thiết bị này.');
     }
-  };
+  }, [stopCamera]);
 
-  const stopCamera = () => {
-    streamRef.current?.getTracks().forEach(t => t.stop());
-    streamRef.current = null;
-    setCameraActive(false);
-  };
-
-  // Get GPS
-  const getGPS = useCallback(() => {
+  const refreshGps = useCallback(() => {
+    if (!navigator.geolocation) {
+      setGpsError('Trình duyệt không hỗ trợ GPS.');
+      return;
+    }
     setGpsLoading(true);
     setGpsError('');
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setGpsLat(pos.coords.latitude);
-        setGpsLng(pos.coords.longitude);
+      (position) => {
+        setGpsLat(position.coords.latitude);
+        setGpsLng(position.coords.longitude);
+        setGpsAccuracy(Number.isFinite(position.coords.accuracy) ? Math.round(position.coords.accuracy) : null);
         setGpsLoading(false);
       },
-      (err) => {
-        setGpsError(err.code === 1 ? 'Vui lòng cho phép truy cập vị trí' : 'Không thể lấy vị trí GPS');
+      (error) => {
         setGpsLoading(false);
+        setGpsError(error.code === 1 ? 'Vui lòng cho phép truy cập vị trí GPS.' : 'Không lấy được vị trí GPS.');
       },
-      { enableHighAccuracy: true, timeout: 10000 }
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 15000 },
     );
   }, []);
 
-  // Auto-start camera + GPS
   useEffect(() => {
     startCamera();
-    getGPS();
+    refreshGps();
     return () => stopCamera();
-  }, []);
+  }, [refreshGps, startCamera, stopCamera]);
 
-  // Capture selfie as base64
-  const capturePhoto = (): string | null => {
-    if (!videoRef.current || !canvasRef.current) return null;
+  const capturePhotoBlob = useCallback(async (): Promise<Blob> => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
-    canvas.width = video.videoWidth || 480;
-    canvas.height = video.videoHeight || 640;
+    if (!video || !canvas || !cameraReady) throw new Error('Camera chưa sẵn sàng.');
+
+    const width = video.videoWidth || 720;
+    const height = video.videoHeight || 960;
+    canvas.width = width;
+    canvas.height = height;
     const ctx = canvas.getContext('2d');
-    if (!ctx) return null;
-    // Mirror selfie
-    ctx.translate(canvas.width, 0);
-    ctx.scale(-1, 1);
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    // Add timestamp overlay
+    if (!ctx) throw new Error('Khong tao duoc anh check-in.');
+
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.fillStyle = 'rgba(0,0,0,0.5)';
-    ctx.fillRect(0, canvas.height - 50, canvas.width, 50);
+    ctx.clearRect(0, 0, width, height);
+    ctx.translate(width, 0);
+    ctx.scale(-1, 1);
+    ctx.drawImage(video, 0, 0, width, height);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.72)';
+    ctx.fillRect(0, height - 72, width, 72);
     ctx.fillStyle = '#fff';
-    ctx.font = 'bold 14px sans-serif';
-    const now = new Date();
-    ctx.fillText(`${now.toLocaleDateString('vi-VN')} ${now.toLocaleTimeString('vi-VN')}`, 10, canvas.height - 30);
-    if (selectedLocation) ctx.fillText(`📍 ${selectedLocation.name}`, 10, canvas.height - 10);
-    return canvas.toDataURL('image/jpeg', 0.35); // Lower quality to reduce payload size for Supabase
+    ctx.font = '600 18px sans-serif';
+    ctx.fillText(new Date().toLocaleString('vi-VN'), 18, height - 42);
+    if (selectedLocation) ctx.fillText(selectedLocation.name, 18, height - 16);
+
+    const blob = await new Promise<Blob | null>(resolve => {
+      canvas.toBlob(resolve, 'image/jpeg', 0.72);
+    });
+    if (!blob?.size) throw new Error('Anh check-in rong.');
+    return blob;
+  }, [cameraReady, selectedLocation]);
+
+  const assertReady = (action: 'check_in' | 'check_out') => {
+    if (!currentEmployee) throw new Error('Tài khoản chưa liên kết hồ sơ nhân sự.');
+    if (!selectedLocation) throw new Error('Chưa xác định được Công trường/Văn phòng gần nhất.');
+    if (selectedLocation.lat === null || selectedLocation.lng === null) throw new Error('Địa điểm này chưa có tọa độ GPS.');
+    if (gpsLat === null || gpsLng === null) throw new Error('Chưa lấy được GPS của thiết bị.');
+    if (!cameraReady) throw new Error('Camera chưa sẵn sàng.');
+    if (action === 'check_out' && !effectiveTodayRecord?.checkIn) throw new Error('Chưa có check-in để check-out.');
   };
 
-  // ── Streak Calculation ──
-  const streakData = useMemo(() => {
-    if (!currentEmployee) return { currentStreak: 0, longestStreak: 0, totalDays: 0, isMilestone: false };
-    return calculateStreak(attendanceRecords, currentEmployee.id);
-  }, [attendanceRecords, currentEmployee]);
+  const submitAttendance = async (action: 'check_in' | 'check_out') => {
+    setProcessing(action);
+    setLastAction(null);
+    try {
+      assertReady(action);
+      const imageBlob = await capturePhotoBlob();
+      const saved = await checkInService.submit({
+        action,
+        employeeId: currentEmployee!.id,
+        workDate,
+        eventTime: timeLocal(),
+        lat: gpsLat,
+        lng: gpsLng,
+        location: selectedLocation!,
+        imageBlob,
+      });
 
-  // Check-in
-  const handleCheckIn = async () => {
-    if (!currentEmployee || !selectedLocation) return;
-    setProcessing(true);
-    if (isSupabaseConfigured) {
-      const { data: authData, error: authError } = await supabase.auth.getUser();
-      if (authError || !authData.user) {
-        setLastAction(`⚠️ Phiên đăng nhập Supabase không hợp lệ. Vui lòng đăng xuất, đăng nhập lại rồi check-in lại.`);
-        setProcessing(false);
-        return;
-      }
-    }
-    const rawPhoto = capturePhoto();
-    // T5: Upload selfie lên Storage; nếu lỗi thì vẫn lưu chấm công không kèm ảnh.
-    const photo = rawPhoto ? await uploadSelfieToStorage(rawPhoto, currentEmployee.id, 'checkin') : null;
-    const now = new Date();
-    const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      setLastSavedRecord(saved);
+      await loadModuleData('hrm', true);
 
-    let success = false;
-    if (todayRecord) {
-      // Already have record — update check-in
-      try {
-        await updateHrmItem('hrm_attendance', {
-          ...todayRecord,
-          checkIn: todayRecord.checkIn || timeStr,
-          status: 'present' as AttendanceStatus,
-          checkInPhoto: photo || todayRecord.checkInPhoto,
-          checkInLat: gpsLat ?? todayRecord.checkInLat,
-          checkInLng: gpsLng ?? todayRecord.checkInLng,
-          constructionSiteId: selectedLocation.type === 'construction_site' ? selectedLocation.id : todayRecord.constructionSiteId,
-          locationName: selectedLocation.name.replace(/^[🏗️🏢]\s*/, ''),
-          locationType: selectedLocation.type,
-          isOutOfRange: isInRange === false,
-        });
-        success = true;
-      } catch (err) {
-        console.error('HRM check-in sync failed:', err);
-        setLastAction(`⚠️ Chưa lưu được check-in lên Supabase: ${formatAttendanceSyncError(err)}`);
-      }
-    } else {
-      try {
-        await addHrmItem('hrm_attendance', {
-          id: crypto.randomUUID(),
-          employeeId: currentEmployee.id,
-          date: today,
-          status: 'present' as AttendanceStatus,
-          checkIn: timeStr,
-          checkInPhoto: photo || undefined,
-          checkInLat: gpsLat ?? undefined,
-          checkInLng: gpsLng ?? undefined,
-          constructionSiteId: selectedLocation.type === 'construction_site' ? selectedLocation.id : undefined,
-          locationName: selectedLocation.name.replace(/^[🏗️🏢]\s*/, ''),
-          locationType: selectedLocation.type,
-          isOutOfRange: isInRange === false,
-          createdAt: new Date().toISOString(),
-        } as AttendanceRecord);
-        success = true;
-      } catch (err) {
-        console.error('HRM check-in sync failed:', err);
-        setLastAction(`⚠️ Chưa lưu được check-in lên Supabase: ${formatAttendanceSyncError(err)}`);
-      }
-    }
-
-    if (success) {
-      setLastAction(`✅ Check-in lúc ${timeStr}`);
-      // 🎮 XP: Award for daily check-in
-      if (currentEmployee?.id) xpService.awardXP(currentEmployee.id, 'daily_checkin').catch(() => {});
-      const newStreak = streakData.currentStreak + (todayRecord ? 0 : 1);
-      const MILESTONES = [3, 5, 7, 10, 14, 21, 30, 50, 60, 90, 100];
-      const hitMilestone = MILESTONES.includes(newStreak);
-
-      if (hitMilestone) {
-        celebrate({
-          variant: newStreak >= 30 ? 'milestone' : 'streak',
-          title: `🔥 Chuỗi ${newStreak} ngày liên tiếp!`,
-          subtitle: newStreak >= 30 ? '👑 Bạn là Huyền thoại!' : newStreak >= 7 ? '⭐ Xuất sắc! Tiếp tục nhé!' : '⚡ Tốt lắm! Giữ vững nhé!',
-          confetti: true,
-          duration: 3000,
-        });
-      } else if (newStreak >= 2) {
-        celebrationToast({
-          type: 'success',
-          title: `🔥 Chuỗi ${newStreak} ngày!`,
-          message: `Check-in thành công lúc ${timeStr}`,
-        });
-      } else {
+      if (action === 'check_in') {
+        setLastAction(`Da check-in luc ${saved.checkIn || timeLocal()}`);
+        xpService.awardXP(currentEmployee!.id, 'daily_checkin').catch(() => { });
         celebrate({
           variant: 'checkin',
-          title: '📍 Check-in Thành Công!',
-          subtitle: `${timeStr} • ${selectedLocation.name.replace(/^[🏗️🏢]\s*/, '')}`,
+          title: 'Check-in thanh cong',
+          subtitle: selectedLocation!.name,
           confetti: false,
-          duration: 1800,
+          duration: 1600,
         });
-      }
-    }
-
-    setProcessing(false);
-  };
-
-  // Check-out
-  const handleCheckOut = async () => {
-    if (!currentEmployee || !todayRecord) return;
-    setProcessing(true);
-    if (isSupabaseConfigured) {
-      const { data: authData, error: authError } = await supabase.auth.getUser();
-      if (authError || !authData.user) {
-        setLastAction(`⚠️ Phiên đăng nhập Supabase không hợp lệ. Vui lòng đăng xuất, đăng nhập lại rồi check-out lại.`);
-        setProcessing(false);
-        return;
-      }
-    }
-    const rawPhoto = capturePhoto();
-    // T5: Upload checkout selfie lên Storage
-    const photo = rawPhoto ? await uploadSelfieToStorage(rawPhoto, currentEmployee.id, 'checkout') : null;
-    const now = new Date();
-    const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-
-    try {
-      await updateHrmItem('hrm_attendance', {
-        ...todayRecord,
-        checkOut: timeStr,
-        checkOutPhoto: photo || undefined,
-        checkOutLat: gpsLat ?? undefined,
-        checkOutLng: gpsLng ?? undefined,
-      });
-      setLastAction(`✅ Check-out lúc ${timeStr}`);
-
-      if (todayRecord.checkIn) {
-        const [inH, inM] = todayRecord.checkIn.split(':').map(Number);
-        const [outH, outM] = timeStr.split(':').map(Number);
-        const totalMinutes = (outH * 60 + outM) - (inH * 60 + inM);
-        const hours = Math.floor(totalMinutes / 60);
-        const mins = totalMinutes % 60;
-        celebrationToast({
+      } else {
+        setLastAction(`Da check-out luc ${saved.checkOut || timeLocal()}`);
+        showToast({
           type: 'success',
-          title: '✅ Check-out Thành Công!',
-          message: `Hôm nay: ${hours}h${mins > 0 ? ` ${mins}p` : ''} làm việc. Nghỉ ngơi nhé! 🌙`,
+          title: 'Check-out thanh cong',
+          message: selectedLocation!.name,
         });
       }
-    } catch (err) {
-      console.error('HRM check-out sync failed:', err);
-      setLastAction(`⚠️ Chưa lưu được check-out lên Supabase: ${formatAttendanceSyncError(err)}`);
+    } catch (error) {
+      console.error('Camera check-in failed:', error);
+      setLastAction(`Chua luu duoc cham cong: ${formatSyncError(error)}`);
+    } finally {
+      setProcessing(null);
     }
-
-    setProcessing(false);
   };
-
-
-  // Format current time
-  const [currentTime, setCurrentTime] = useState(new Date());
-  useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-    return () => clearInterval(timer);
-  }, []);
 
   if (!currentEmployee) {
     return (
-      <div className="flex flex-col items-center justify-center py-20">
-        <AlertTriangle size={48} className="text-amber-400 mb-4" />
-        <h2 className="text-lg font-black text-slate-700 dark:text-slate-300">Không tìm thấy hồ sơ nhân sự</h2>
-        <p className="text-sm text-slate-500 mt-2">Tài khoản của bạn chưa được liên kết với hồ sơ nhân viên.</p>
-        <p className="text-xs text-slate-400 mt-1">Liên hệ quản trị viên để cập nhật.</p>
+      <div className="max-w-lg mx-auto py-16 text-center">
+        <AlertTriangle size={44} className="mx-auto mb-4 text-amber-500" />
+        <h2 className="text-lg font-black text-slate-800 dark:text-white">Chưa có hồ sơ nhân sự</h2>
+        <p className="mt-2 text-sm text-slate-500">Tài khoản này chưa được liên kết với nhân viên.</p>
       </div>
     );
   }
 
   return (
     <div className="max-w-lg mx-auto space-y-4">
-      {/* Header */}
-      <div className="text-center">
-        <h1 className="text-2xl font-black text-slate-800 dark:text-white tracking-tight flex items-center justify-center gap-2">
-          <MapPin className="text-blue-500" size={24} /> Check-in
-        </h1>
-        <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">{currentEmployee.fullName} • {currentEmployee.employeeCode}</p>
-        <div className="text-3xl font-black text-slate-800 dark:text-white mt-2 font-mono tracking-wider">
-          {currentTime.toLocaleTimeString('vi-VN')}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-black text-slate-900 dark:text-white flex items-center gap-2">
+            <MapPin size={22} className="text-emerald-500" />
+            Check-in
+          </h1>
+          <p className="text-xs font-bold text-slate-500 mt-1">{currentEmployee.fullName} - {currentEmployee.employeeCode}</p>
         </div>
-        <p className="text-xs text-slate-400">{currentTime.toLocaleDateString('vi-VN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+        <div className="text-right">
+          <div className="text-lg font-black font-mono text-slate-900 dark:text-white">{currentTime.toLocaleTimeString('vi-VN')}</div>
+          <div className="text-[10px] font-bold text-slate-400">{workDate}</div>
+        </div>
       </div>
 
-      {/* 🔥 Streak Badge */}
-      <StreakBadge 
-        streak={streakData.currentStreak} 
-        longestStreak={streakData.longestStreak}
-        totalDays={streakData.totalDays}
-        isMilestone={streakData.isMilestone}
-      />
-
-      {/* Location Selector */}
-      <div className="glass-card p-4 rounded-2xl">
-        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 block">📍 Chọn địa điểm</label>
-        <select value={selectedLocationId} onChange={e => setSelectedLocationId(e.target.value)}
-          className="w-full px-4 py-3 text-sm font-bold border-2 border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 outline-none focus:border-blue-400 transition">
-          <option value="">— Chọn Công trường / Văn phòng —</option>
-          {locationOptions.length === 0 && <option disabled>Chưa có địa điểm (thêm trong Dữ liệu gốc)</option>}
-          {locationOptions.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-        </select>
+      <div className="grid grid-cols-3 gap-2">
+        <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3">
+          <Clock size={15} className="text-blue-500 mb-1" />
+          <p className="text-[10px] font-bold text-slate-400">Ngày công</p>
+          <p className="text-lg font-black text-slate-900 dark:text-white">{streak.totalDays}</p>
+        </div>
+        <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3">
+          <ShieldCheck size={15} className="text-emerald-500 mb-1" />
+          <p className="text-[10px] font-bold text-slate-400">Chuỗi</p>
+          <p className="text-lg font-black text-slate-900 dark:text-white">{streak.currentStreak}</p>
+        </div>
+        <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3">
+          <Navigation size={15} className="text-amber-500 mb-1" />
+          <p className="text-[10px] font-bold text-slate-400">GPS</p>
+          <p className="text-lg font-black text-slate-900 dark:text-white">{gpsAccuracy ? `${gpsAccuracy}m` : '-'}</p>
+        </div>
       </div>
 
-      {/* Camera */}
-      <div className="glass-card rounded-2xl overflow-hidden">
-        <div className="relative aspect-[3/4] bg-slate-900 flex items-center justify-center">
-          <video ref={videoRef} autoPlay playsInline muted
-            className={`w-full h-full object-cover ${cameraActive ? '' : 'hidden'}`}
-            style={{ transform: 'scaleX(-1)' }} />
+      <div className="rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-950">
+        <div className="relative aspect-[3/4] flex items-center justify-center">
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            muted
+            className={`w-full h-full object-cover ${cameraReady ? '' : 'hidden'}`}
+            style={{ transform: 'scaleX(-1)' }}
+          />
           <canvas ref={canvasRef} className="hidden" />
-          {!cameraActive && (
-            <div className="text-center">
+          {!cameraReady && (
+            <div className="px-6 text-center">
               {cameraError ? (
                 <>
-                  <CameraOff size={40} className="mx-auto text-red-400 mb-2" />
-                  <p className="text-sm text-red-400 font-bold">{cameraError}</p>
-                  <button onClick={startCamera} className="mt-3 px-4 py-2 bg-blue-500 text-white rounded-xl text-xs font-black">Thử lại</button>
+                  <CameraOff size={42} className="mx-auto mb-3 text-rose-400" />
+                  <p className="text-sm font-bold text-rose-300">{cameraError}</p>
+                  <button onClick={startCamera} className="mt-4 inline-flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-xs font-black text-slate-900">
+                    <RefreshCw size={14} />
+                    Mở lại camera
+                  </button>
                 </>
               ) : (
                 <>
-                  <Camera size={40} className="mx-auto text-slate-500 mb-2" />
-                  <p className="text-sm text-slate-500">Đang mở camera...</p>
+                  <Camera size={42} className="mx-auto mb-3 text-slate-500" />
+                  <p className="text-sm font-bold text-slate-400">Đang mở camera...</p>
                 </>
               )}
             </div>
           )}
-          {/* GPS Status Overlay */}
-          {cameraActive && (
-            <div className="absolute top-3 left-3 right-3 flex justify-between">
-              <div className={`px-3 py-1.5 rounded-xl text-[10px] font-black backdrop-blur-md ${
-                gpsLat !== null ? 'bg-emerald-500/80 text-white' : gpsLoading ? 'bg-amber-500/80 text-white' : 'bg-red-500/80 text-white'
-              }`}>
-                <Navigation size={10} className="inline mr-1" />
-                {gpsLat !== null ? `GPS ✓` : gpsLoading ? 'Đang lấy GPS...' : 'GPS lỗi'}
+          <div className="absolute left-3 right-3 top-3 flex items-center justify-between gap-2">
+            <div className={`rounded-lg px-2.5 py-1 text-[10px] font-black backdrop-blur ${gpsLat !== null ? 'bg-emerald-500/85 text-white' : 'bg-amber-500/85 text-white'}`}>
+              {gpsLat !== null ? 'GPS sẵn sàng' : gpsLoading ? 'Đang lấy GPS' : 'Chưa có GPS'}
+            </div>
+            {selectedLocation?.distanceM !== null && selectedLocation && (
+              <div className={`rounded-lg px-2.5 py-1 text-[10px] font-black backdrop-blur ${selectedLocation.inRange ? 'bg-emerald-500/85 text-white' : 'bg-amber-500/85 text-white'}`}>
+                {selectedLocation.distanceM}m / {selectedLocation.radius}m
               </div>
-              {distance !== null && selectedLocation && (
-                <div className={`px-3 py-1.5 rounded-xl text-[10px] font-black backdrop-blur-md ${
-                  isInRange ? 'bg-emerald-500/80 text-white' : 'bg-amber-500/80 text-white'
-                }`}>
-                  📍 {distance}m {isInRange ? '✅' : '⚠️'}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* GPS & Distance Info */}
-      {selectedLocation && (
-        <div className={`p-4 rounded-2xl border-2 ${
-          isInRange === true ? 'border-emerald-300 bg-emerald-50 dark:bg-emerald-950/20 dark:border-emerald-700' :
-          isInRange === false ? 'border-amber-300 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-700' :
-          'border-slate-200 bg-slate-50 dark:bg-slate-800 dark:border-slate-700'
-        }`}>
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs font-black text-slate-500 uppercase">Vị trí</p>
-              {distance !== null ? (
-                <p className={`text-sm font-black ${isInRange ? 'text-emerald-600' : 'text-amber-600'}`}>
-                  {isInRange ? '✅ Trong phạm vi' : `⚠️ Ngoài phạm vi (${distance}m / ${selectedLocation.radius}m)`}
-                </p>
-              ) : (
-                <p className="text-sm text-slate-400 font-bold">
-                  {!selectedLocation.lat ? '⚠️ Chưa cài toạ độ GPS cho địa điểm' : 'Đang lấy vị trí...'}
-                </p>
-              )}
-            </div>
-            <button onClick={getGPS} disabled={gpsLoading}
-              className="p-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 transition">
-              <RefreshCw size={16} className={`text-slate-500 ${gpsLoading ? 'animate-spin' : ''}`} />
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Action Buttons */}
-      <div className="grid grid-cols-2 gap-3">
-        <button onClick={handleCheckIn}
-          disabled={processing || !selectedLocationId || !cameraActive}
-          className="py-4 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-2xl text-sm font-black hover:from-emerald-600 hover:to-teal-600 transition disabled:opacity-40 disabled:cursor-not-allowed flex flex-col items-center gap-1.5 shadow-lg shadow-emerald-500/20">
-          <LogIn size={24} />
-          <span>CHECK-IN</span>
-          {todayRecord?.checkIn && <span className="text-[10px] opacity-70">Đã vào: {todayRecord.checkIn}</span>}
-        </button>
-        <button onClick={handleCheckOut}
-          disabled={processing || !todayRecord?.checkIn || !!todayRecord?.checkOut || !cameraActive}
-          className="py-4 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-2xl text-sm font-black hover:from-orange-600 hover:to-red-600 transition disabled:opacity-40 disabled:cursor-not-allowed flex flex-col items-center gap-1.5 shadow-lg shadow-orange-500/20">
-          <LogOut size={24} />
-          <span>CHECK-OUT</span>
-          {todayRecord?.checkOut && <span className="text-[10px] opacity-70">Đã ra: {todayRecord.checkOut}</span>}
-        </button>
-      </div>
-
-      {/* Success message */}
-      {lastAction && (
-        <div className="bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800 rounded-2xl p-4 text-center animate-pulse">
-          <CheckCircle size={24} className="text-emerald-500 mx-auto mb-1" />
-          <p className="text-sm font-black text-emerald-700 dark:text-emerald-400">{lastAction}</p>
-        </div>
-      )}
-
-      {/* Today's Status */}
-      {todayRecord && (
-        <div className="glass-card p-4 rounded-2xl">
-          <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">Hôm nay</p>
-          <div className="flex items-center gap-4">
-            {todayRecord.checkInPhoto && (
-              <img src={todayRecord.checkInPhoto} alt="Check-in" className="w-12 h-12 rounded-xl object-cover border-2 border-emerald-300" />
             )}
-            <div className="flex-1">
-              <div className="flex items-center gap-3 text-sm">
-                <div>
-                  <span className="text-slate-400 font-bold text-xs">Vào: </span>
-                  <span className="font-black text-emerald-600">{todayRecord.checkIn || '-'}</span>
-                </div>
-                <div>
-                  <span className="text-slate-400 font-bold text-xs">Ra: </span>
-                  <span className="font-black text-orange-600">{todayRecord.checkOut || '-'}</span>
-                </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-[10px] font-black uppercase text-slate-400">Địa điểm theo GPS</p>
+            <p className="text-sm font-black text-slate-800 dark:text-white">
+              {selectedLocation ? selectedLocation.name : 'Chưa có địa điểm phù hợp'}
+            </p>
+            {selectedLocation && (
+              <p className="text-[11px] font-bold text-slate-500">
+                {selectedLocation.sourceLabel}
+                {selectedLocation.distanceM !== null ? ` - ${selectedLocation.distanceM}m` : ''}
+                {selectedLocation.inRange === false ? ' - ngoài phạm vi' : ''}
+              </p>
+            )}
+          </div>
+          <button
+            onClick={refreshGps}
+            disabled={gpsLoading}
+            className="h-10 w-10 inline-flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800"
+            title="Lay lai GPS"
+          >
+            <Crosshair size={17} className={gpsLoading ? 'animate-spin text-amber-500' : 'text-slate-500'} />
+          </button>
+        </div>
+
+        {locations.length > 1 && (
+          <select
+            value={selectedLocation?.id || ''}
+            onChange={event => setSelectedLocationId(event.target.value)}
+            className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-xs font-bold outline-none focus:ring-2 focus:ring-emerald-500"
+          >
+            {locations.map(location => (
+              <option key={location.id} value={location.id}>
+                {location.sourceLabel} - {location.name}
+                {location.distanceM !== null ? ` (${location.distanceM}m)` : ' (chua co GPS)'}
+              </option>
+            ))}
+          </select>
+        )}
+
+        {gpsError && <p className="text-xs font-bold text-rose-500">{gpsError}</p>}
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <button
+          onClick={() => submitAttendance('check_in')}
+          disabled={Boolean(processing) || !cameraReady || !selectedLocation || gpsLat === null}
+          className="min-h-[84px] rounded-2xl bg-emerald-600 px-3 py-4 text-white shadow-lg shadow-emerald-600/20 disabled:opacity-40 disabled:shadow-none"
+        >
+          {processing === 'check_in' ? <RefreshCw size={24} className="mx-auto mb-1 animate-spin" /> : <LogIn size={24} className="mx-auto mb-1" />}
+          <span className="block text-sm font-black">CHECK-IN</span>
+          {effectiveTodayRecord?.checkIn && <span className="text-[10px] font-bold opacity-80">Đã vào {effectiveTodayRecord.checkIn}</span>}
+        </button>
+
+        <button
+          onClick={() => submitAttendance('check_out')}
+          disabled={Boolean(processing) || !cameraReady || !selectedLocation || !effectiveTodayRecord?.checkIn || Boolean(effectiveTodayRecord?.checkOut)}
+          className="min-h-[84px] rounded-2xl bg-orange-600 px-3 py-4 text-white shadow-lg shadow-orange-600/20 disabled:opacity-40 disabled:shadow-none"
+        >
+          {processing === 'check_out' ? <RefreshCw size={24} className="mx-auto mb-1 animate-spin" /> : <LogOut size={24} className="mx-auto mb-1" />}
+          <span className="block text-sm font-black">CHECK-OUT</span>
+          {effectiveTodayRecord?.checkOut && <span className="text-[10px] font-bold opacity-80">Đã ra {effectiveTodayRecord.checkOut}</span>}
+        </button>
+      </div>
+
+      {lastAction && (
+        <div className={`rounded-2xl border p-4 text-center ${lastAction.startsWith('Da ')
+          ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300'
+          : 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-800 dark:bg-rose-950/30 dark:text-rose-300'
+          }`}>
+          {lastAction.startsWith('Đã ') ? <CheckCircle size={22} className="mx-auto mb-1" /> : <AlertTriangle size={22} className="mx-auto mb-1" />}
+          <p className="text-sm font-black">{lastAction}</p>
+        </div>
+      )}
+
+      {effectiveTodayRecord && (
+        <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4">
+          <p className="mb-3 text-[10px] font-black uppercase text-slate-400">Chấm công hôm nay</p>
+          <div className="flex items-center gap-3">
+            {effectiveTodayRecord.checkInPhoto ? (
+              <img src={effectiveTodayRecord.checkInPhoto} alt="Check-in" className="h-14 w-14 rounded-xl object-cover" />
+            ) : (
+              <div className="h-14 w-14 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
+                <Camera size={22} className="text-slate-400" />
               </div>
-              {todayRecord.locationName && (
-                <p className="text-[10px] text-slate-400 mt-1">
-                  📍 {todayRecord.locationName}
-                  {todayRecord.isOutOfRange && <span className="text-amber-500 ml-1">⚠️ Ngoài phạm vi</span>}
-                </p>
-              )}
+            )}
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-4 text-sm">
+                <span className="font-black text-emerald-600">Vào {effectiveTodayRecord.checkIn || '-'}</span>
+                <span className="font-black text-orange-600">Ra {effectiveTodayRecord.checkOut || '-'}</span>
+              </div>
+              <p className="mt-1 truncate text-xs font-bold text-slate-500">{effectiveTodayRecord.locationName || selectedLocation?.name || '-'}</p>
             </div>
           </div>
         </div>
       )}
 
-      {/* Today's all check-ins (for admin view) */}
       {todayAllRecords.length > 0 && (
-        <div className="glass-card p-4 rounded-2xl">
-          <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">
-            Tất cả check-in hôm nay ({todayAllRecords.length})
-          </p>
-          <div className="space-y-2 max-h-48 overflow-y-auto">
-            {todayAllRecords.map(r => {
-              const emp = employees.find(e => e.id === r.employeeId);
+        <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4">
+          <p className="mb-2 text-[10px] font-black uppercase text-slate-400">Danh sách hôm nay ({todayAllRecords.length})</p>
+          <div className="max-h-48 space-y-2 overflow-y-auto">
+            {todayAllRecords.map(record => {
+              const employee = employees.find(item => item.id === record.employeeId);
               return (
-                <div key={r.id} className="flex items-center gap-3 py-1.5 border-b border-slate-100 dark:border-slate-800 last:border-0">
-                  {r.checkInPhoto ? (
-                    <img src={r.checkInPhoto} alt="" className="w-8 h-8 rounded-lg object-cover shrink-0" />
-                  ) : (
-                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-teal-400 to-cyan-500 flex items-center justify-center text-white text-[10px] font-black shrink-0">
-                      {emp?.fullName?.charAt(0) || '?'}
-                    </div>
-                  )}
+                <div key={record.id} className="flex items-center gap-2 border-b border-slate-100 py-2 last:border-0 dark:border-slate-800">
+                  <div className="h-8 w-8 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-[10px] font-black text-slate-500">
+                    {employee?.fullName?.slice(0, 1) || '?'}
+                  </div>
                   <div className="min-w-0 flex-1">
-                    <div className="text-[11px] font-black text-slate-700 dark:text-slate-300 truncate">{emp?.fullName || 'N/A'}</div>
-                    <div className="text-[9px] text-slate-400">
-                      {r.checkIn && <span className="text-emerald-500 font-bold">Vào {r.checkIn}</span>}
-                      {r.checkOut && <span className="text-orange-500 font-bold ml-2">Ra {r.checkOut}</span>}
-                      {r.locationName && <span className="ml-1">• {r.locationName}</span>}
-                      {r.isOutOfRange && <span className="text-amber-500 ml-1">⚠️</span>}
-                    </div>
+                    <p className="truncate text-xs font-black text-slate-700 dark:text-slate-200">{employee?.fullName || 'Nhân viên'}</p>
+                    <p className="text-[10px] font-bold text-slate-400">
+                      {record.checkIn ? `Vào ${record.checkIn}` : 'Chưa vào'}
+                      {record.checkOut ? ` - Ra ${record.checkOut}` : ''}
+                    </p>
                   </div>
                 </div>
               );

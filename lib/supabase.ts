@@ -98,9 +98,19 @@ const shouldRetryResponse = (response: Response): boolean => {
     return TRANSIENT_STATUS_CODES.has(response.status);
 };
 
+const canRetryRequest = (input: FetchInput, init?: FetchInit): boolean => {
+    const method = getRequestMethod(input, init);
+    return method === 'GET' || method === 'HEAD' || method === 'OPTIONS';
+};
+
 const fetchWithRetry = async (input: FetchInput, init?: FetchInit): Promise<Response> => {
     let lastError: unknown = null;
     const url = getRequestUrl(input);
+    const retryableRequest = canRetryRequest(input, init);
+
+    if (!retryableRequest) {
+        return fetchWithTimeout(input, init);
+    }
 
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
         try {

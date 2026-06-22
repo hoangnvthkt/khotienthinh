@@ -3849,7 +3849,7 @@ export interface AttendanceRecord {
   constructionSiteId?: string;
   note?: string;
   // Selfie + GPS check-in
-  checkInPhoto?: string;    // base64 hoặc URL ảnh selfie
+  checkInPhoto?: string;    // Storage path hoặc URL ảnh selfie
   checkOutPhoto?: string;
   checkInLat?: number;
   checkInLng?: number;
