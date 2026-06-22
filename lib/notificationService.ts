@@ -16,6 +16,11 @@ export interface AppNotification {
   sourceType?: string;
   sourceId?: string;
   constructionSiteId?: string;
+  priority?: 'low' | 'normal' | 'high' | 'urgent';
+  pushEnabled?: boolean;
+  actionUrl?: string;
+  entityType?: string;
+  entityId?: string;
   metadata: Record<string, any>;
   createdAt: string;
   expiresAt?: string;
@@ -49,6 +54,11 @@ const toCamel = (row: any): AppNotification => ({
   sourceType: row.source_type,
   sourceId: row.source_id,
   constructionSiteId: row.construction_site_id,
+  priority: row.priority,
+  pushEnabled: row.push_enabled,
+  actionUrl: row.action_url,
+  entityType: row.entity_type,
+  entityId: row.entity_id,
   metadata: row.metadata || {},
   createdAt: row.created_at,
   expiresAt: row.expires_at,
@@ -115,6 +125,12 @@ function markAlertCheckDone(): void {
   localStorage.setItem(ALERT_CHECK_KEY, Date.now().toString());
 }
 
+const getDefaultPriority = (severity?: AppNotification['severity']): AppNotification['priority'] => {
+  if (severity === 'critical') return 'urgent';
+  if (severity === 'warning') return 'high';
+  return 'normal';
+};
+
 // ── Helper: create notification (standalone function, no `this`) ──
 async function createNotification(n: Omit<AppNotification, 'id' | 'isRead' | 'isDismissed' | 'createdAt'>): Promise<void> {
   const { error } = await supabase.from('notifications').insert({
@@ -129,6 +145,11 @@ async function createNotification(n: Omit<AppNotification, 'id' | 'isRead' | 'is
     source_type: n.sourceType || null,
     source_id: n.sourceId || null,
     construction_site_id: n.constructionSiteId || null,
+    priority: n.priority || getDefaultPriority(n.severity),
+    push_enabled: n.pushEnabled ?? true,
+    action_url: n.actionUrl || n.link || null,
+    entity_type: n.entityType || n.sourceType || null,
+    entity_id: n.entityId || null,
     metadata: n.metadata || {},
     expires_at: n.expiresAt || null,
   });
@@ -148,6 +169,11 @@ interface NotifyProjectUsersInput {
   sourceType?: string;
   sourceId?: string;
   constructionSiteId?: string;
+  priority?: AppNotification['priority'];
+  pushEnabled?: boolean;
+  actionUrl?: string;
+  entityType?: string;
+  entityId?: string;
   metadata?: Record<string, any>;
   expiresAt?: string;
 }
@@ -170,6 +196,11 @@ async function notifyProjectUsers(input: NotifyProjectUsersInput): Promise<strin
       sourceType: input.sourceType,
       sourceId: input.sourceId,
       constructionSiteId: input.constructionSiteId,
+      priority: input.priority,
+      pushEnabled: input.pushEnabled,
+      actionUrl: input.actionUrl,
+      entityType: input.entityType,
+      entityId: input.entityId,
       metadata: input.metadata || {},
       expiresAt: input.expiresAt,
     });

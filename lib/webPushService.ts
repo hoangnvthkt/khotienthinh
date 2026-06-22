@@ -2,6 +2,11 @@ import { supabase } from './supabase';
 
 const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY || '';
 
+type PushCapability = {
+  supported: boolean;
+  reason?: 'missing_vapid_key' | 'unsupported_browser' | 'insecure_context' | 'ios_requires_standalone';
+};
+
 const urlBase64ToUint8Array = (base64String: string) => {
   const padding = '='.repeat((4 - base64String.length % 4) % 4);
   const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
@@ -18,21 +23,127 @@ const getSubscriptionKeys = (subscription: PushSubscription) => {
   };
 };
 
+const hasWindow = () => typeof window !== 'undefined' && typeof navigator !== 'undefined';
+
+const isLocalhost = () => hasWindow() && ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
+
+const isSecurePushContext = () => hasWindow() && (window.isSecureContext || isLocalhost());
+
+const getUserAgent = () => hasWindow() ? navigator.userAgent : '';
+
+const getNow = () => new Date().toISOString();
+
 export const webPushService = {
-  isSupported() {
+  isIOS() {
+    if (!hasWindow()) return false;
+    const ua = getUserAgent();
+    const iOSDevice = /iPad|iPhone|iPod/.test(ua);
+    const iPadOSDesktopMode = navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
+    return iOSDevice || iPadOSDesktopMode;
+  },
+
+  isStandalonePWA() {
+    if (!hasWindow()) return false;
     return Boolean(
-      VAPID_PUBLIC_KEY &&
-      typeof window !== 'undefined' &&
-      'serviceWorker' in navigator &&
-      'PushManager' in window &&
-      'Notification' in window
+      window.matchMedia?.('(display-mode: standalone)').matches ||
+      (navigator as any).standalone === true
     );
   },
 
-  async ensureSubscription(userId?: string) {
-    if (!userId || !this.isSupported() || Notification.permission !== 'granted') return false;
+  getDeviceType(): 'desktop' | 'mobile' | 'tablet' {
+    if (!hasWindow()) return 'desktop';
+    const ua = getUserAgent();
+    if (/iPad|Tablet|PlayBook|Silk/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) {
+      return 'tablet';
+    }
+    if (/Mobi|Android|iPhone|iPod/i.test(ua)) return 'mobile';
+    return 'desktop';
+  },
 
-    const registration = await navigator.serviceWorker.ready;
+  getPlatform(): string {
+    if (!hasWindow()) return 'unknown';
+    const ua = getUserAgent();
+    if (this.isIOS()) return 'ios';
+    if (/Android/i.test(ua)) return 'android';
+    if (/Win/i.test(navigator.platform)) return 'windows';
+    if (/Mac/i.test(navigator.platform)) return 'macos';
+    if (/Linux/i.test(navigator.platform)) return 'linux';
+    return 'unknown';
+  },
+
+  getCapability(): PushCapability {
+    if (!VAPID_PUBLIC_KEY) return { supported: false, reason: 'missing_vapid_key' };
+    if (!hasWindow() || !('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
+      return { supported: false, reason: 'unsupported_browser' };
+    }
+    if (!isSecurePushContext()) return { supported: false, reason: 'insecure_context' };
+    if (this.isIOS() && !this.isStandalonePWA()) {
+      return { supported: false, reason: 'ios_requires_standalone' };
+    }
+    return { supported: true };
+  },
+
+  isPushSupported() {
+    return this.getCapability().supported;
+  },
+
+  isSupported() {
+    return this.isPushSupported();
+  },
+
+  getNotificationPermission(): NotificationPermission {
+    if (!hasWindow() || !('Notification' in window)) return 'denied';
+    return Notification.permission;
+  },
+
+  async requestNotificationPermission(): Promise<NotificationPermission> {
+    if (!hasWindow() || !('Notification' in window)) return 'denied';
+    return Notification.requestPermission();
+  },
+
+  async registerServiceWorker(): Promise<ServiceWorkerRegistration | null> {
+    if (!hasWindow() || !('serviceWorker' in navigator)) return null;
+    const existing = await navigator.serviceWorker.getRegistration('/');
+    if (existing) return existing;
+    return navigator.serviceWorker.register('/sw.js');
+  },
+
+  async getCurrentSubscription(): Promise<PushSubscription | null> {
+    if (!this.isPushSupported()) return null;
+    const registration = await this.registerServiceWorker();
+    if (!registration) return null;
+    return registration.pushManager.getSubscription();
+  },
+
+  async syncSubscriptionToSupabase(userId: string, subscription: PushSubscription): Promise<void> {
+    const keys = getSubscriptionKeys(subscription);
+    if (!keys.p256dh || !keys.auth) throw new Error('Push subscription keys are missing.');
+
+    const now = getNow();
+    const { error } = await supabase.from('web_push_subscriptions').upsert({
+      user_id: userId,
+      endpoint: keys.endpoint,
+      p256dh: keys.p256dh,
+      auth: keys.auth,
+      user_agent: navigator.userAgent,
+      platform: this.getPlatform(),
+      device_type: this.getDeviceType(),
+      is_active: true,
+      updated_at: now,
+      last_seen_at: now,
+      last_used_at: now,
+    }, { onConflict: 'endpoint' });
+
+    if (error) throw error;
+  },
+
+  async subscribeUserToPush(userId?: string): Promise<boolean> {
+    if (!userId || !this.isPushSupported()) return false;
+    if (this.getNotificationPermission() !== 'granted') return false;
+
+    const registration = await this.registerServiceWorker();
+    if (!registration) return false;
+
     let subscription = await registration.pushManager.getSubscription();
     if (!subscription) {
       subscription = await registration.pushManager.subscribe({
@@ -41,20 +152,48 @@ export const webPushService = {
       });
     }
 
-    const keys = getSubscriptionKeys(subscription);
-    if (!keys.p256dh || !keys.auth) return false;
-
-    const { error } = await supabase.from('web_push_subscriptions').upsert({
-      user_id: userId,
-      endpoint: keys.endpoint,
-      p256dh: keys.p256dh,
-      auth: keys.auth,
-      user_agent: navigator.userAgent,
-      updated_at: new Date().toISOString(),
-      last_seen_at: new Date().toISOString(),
-    }, { onConflict: 'endpoint' });
-
-    if (error) throw error;
+    await this.syncSubscriptionToSupabase(userId, subscription);
     return true;
+  },
+
+  async unsubscribeUserFromPush(userId?: string): Promise<boolean> {
+    if (!userId || !hasWindow() || !('serviceWorker' in navigator)) return false;
+    const subscription = await this.getCurrentSubscription();
+    if (!subscription) return false;
+
+    const now = getNow();
+    const { error } = await supabase
+      .from('web_push_subscriptions')
+      .update({ is_active: false, updated_at: now, last_used_at: now })
+      .eq('user_id', userId)
+      .eq('endpoint', subscription.endpoint);
+    if (error) throw error;
+
+    await subscription.unsubscribe();
+    return true;
+  },
+
+  async disablePushForThisDevice(userId?: string): Promise<boolean> {
+    return this.unsubscribeUserFromPush(userId);
+  },
+
+  async isEnabledForThisDevice(userId?: string): Promise<boolean> {
+    if (!userId) return false;
+    const subscription = await this.getCurrentSubscription();
+    if (!subscription) return false;
+
+    const { data, error } = await supabase
+      .from('web_push_subscriptions')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('endpoint', subscription.endpoint)
+      .eq('is_active', true)
+      .maybeSingle();
+    if (error) throw error;
+    return Boolean(data);
+  },
+
+  async ensureSubscription(userId?: string) {
+    return this.subscribeUserToPush(userId);
   },
 };

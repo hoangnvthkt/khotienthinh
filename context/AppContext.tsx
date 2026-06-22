@@ -21,6 +21,7 @@ import { auditService } from '../lib/auditService';
 import { activityService } from '../lib/activityService';
 import { realtimeService, RealtimeStatus } from '../lib/realtimeService';
 import { notificationService } from '../lib/notificationService';
+import { userActivityService } from '../lib/userActivityService';
 import { logApiError } from '../lib/apiError';
 import { projectSubmissionService } from '../lib/projectSubmissionService';
 import { getDefaultMaterialRequestWorkflowStep, getMaterialRequestWorkflowPatch, mapMaterialRequestFromDb, materialRequestService } from '../lib/materialRequestService';
@@ -902,6 +903,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => subscription.unsubscribe();
   }, [resetModuleLoadCache]);
 
+  useEffect(() => {
+    if (!isSupabaseConfigured || !user?.id) return;
+
+    let heartbeatCount = 0;
+    const sendHeartbeat = (recordEvent = false) => {
+      userActivityService.heartbeat(user.id, undefined, recordEvent)
+        .catch(err => console.warn('User session telemetry heartbeat failed:', err));
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') sendHeartbeat(false);
+    };
+
+    sendHeartbeat(true);
+    const intervalId = window.setInterval(() => {
+      heartbeatCount += 1;
+      sendHeartbeat(heartbeatCount % 5 === 0);
+    }, 60_000);
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('focus', handleVisibility);
+
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('focus', handleVisibility);
+    };
+  }, [user?.id]);
+
   // ==================== LAZY MODULE DATA LOADING ====================
   const fetchTableHelper = async (table: string, query: any = supabase.from(table).select('*')) => {
     try {
@@ -1532,6 +1560,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         localStorage.setItem('vioo_user', JSON.stringify(userForStorage));
         localStorage.removeItem('vioo_explicit_logout_at');
         resetModuleLoadCache();
+        userActivityService.startSession(mappedUser).catch(err => {
+          console.warn('User session telemetry start failed:', err);
+        });
         trace.endStep('map user + localStorage');
         success = true;
         return mappedUser;
@@ -1556,10 +1587,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const logout = () => {
+    const logoutUserId = user?.id;
     localStorage.setItem('vioo_explicit_logout_at', String(Date.now()));
     localStorage.removeItem('vioo_user');
     resetModuleLoadCache();
-    supabase.auth.signOut().catch(err => console.warn('Supabase signOut failed:', err));
+    const signOut = () => supabase.auth.signOut().catch(err => console.warn('Supabase signOut failed:', err));
+    if (isSupabaseConfigured && logoutUserId) {
+      userActivityService.endSession(logoutUserId, 'logout')
+        .catch(err => console.warn('User session telemetry end failed:', err))
+        .finally(signOut);
+    } else {
+      signOut();
+    }
     // We don't set user to null because the app expects a user object. 
     // We'll handle redirection in App.tsx
   };

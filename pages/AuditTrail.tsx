@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import {
   History, Search, Filter, ChevronDown, ChevronRight,
@@ -59,6 +60,8 @@ const timeAgo = (date: string): string => {
 
 const AuditTrail: React.FC = () => {
   const { user } = useApp();
+  const [searchParams] = useSearchParams();
+  const filterUserId = searchParams.get('userId') || '';
   const [entries, setEntries] = useState<AuditEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -79,6 +82,7 @@ const AuditTrail: React.FC = () => {
       module: filterModule || undefined,
       action: filterAction || undefined,
       tableName: filterTable || undefined,
+      userId: filterUserId || undefined,
       from: dateFrom || undefined,
       to: dateTo ? dateTo + 'T23:59:59Z' : undefined,
       limit: 200,
@@ -87,7 +91,7 @@ const AuditTrail: React.FC = () => {
     setLoading(false);
   };
 
-  useEffect(() => { loadData(); }, [filterModule, filterAction, filterTable, dateFrom, dateTo]);
+  useEffect(() => { loadData(); }, [filterModule, filterAction, filterTable, filterUserId, dateFrom, dateTo]);
 
   const filteredEntries = useMemo(() => {
     if (!searchTerm) return entries;

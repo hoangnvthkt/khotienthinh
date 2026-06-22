@@ -1,9 +1,10 @@
 import React from 'react';
 import { User } from '../../types';
-import { Loader2, Upload, Save, AlertCircle } from 'lucide-react';
+import { Bell, BellOff, CheckCircle2, Loader2, Upload, Save, AlertCircle } from 'lucide-react';
 import { isSupabaseConfigured, supabase } from '../../lib/supabase';
 import { useToast } from '../../context/ToastContext';
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
+import { webPushService } from '../../lib/webPushService';
 
 interface SettingsAccountProps {
   currentUser: User;
@@ -22,6 +23,96 @@ const SettingsAccount: React.FC<SettingsAccountProps> = ({
   const [passError, setPassError] = React.useState('');
   const [passSuccess, setPassSuccess] = React.useState('');
   const [savingPassword, setSavingPassword] = React.useState(false);
+  const [pushPermission, setPushPermission] = React.useState<NotificationPermission>(() => webPushService.getNotificationPermission());
+  const [pushCapability, setPushCapability] = React.useState(() => webPushService.getCapability());
+  const [pushEnabled, setPushEnabled] = React.useState(false);
+  const [pushBusy, setPushBusy] = React.useState(false);
+  const [pushMessage, setPushMessage] = React.useState('');
+  const isIOS = webPushService.isIOS();
+  const isStandalonePWA = webPushService.isStandalonePWA();
+
+  const refreshPushState = React.useCallback(async () => {
+    setPushCapability(webPushService.getCapability());
+    setPushPermission(webPushService.getNotificationPermission());
+    try {
+      setPushEnabled(await webPushService.isEnabledForThisDevice(currentUser.id));
+    } catch {
+      setPushEnabled(false);
+    }
+  }, [currentUser.id]);
+
+  React.useEffect(() => {
+    void refreshPushState();
+  }, [refreshPushState]);
+
+  const getPushStatusText = () => {
+    if (pushEnabled) return 'Đang bật trên thiết bị này';
+    if (pushPermission === 'denied') return 'Đang bị chặn bởi trình duyệt';
+    if (!pushCapability.supported) {
+      if (pushCapability.reason === 'ios_requires_standalone') return 'iPhone/iPad cần mở từ màn hình chính';
+      if (pushCapability.reason === 'missing_vapid_key') return 'Chưa cấu hình VAPID public key';
+      if (pushCapability.reason === 'insecure_context') return 'Cần HTTPS hoặc localhost';
+      return 'Trình duyệt chưa hỗ trợ Web Push';
+    }
+    if (pushPermission === 'granted') return 'Sẵn sàng bật';
+    return 'Chưa bật';
+  };
+
+  const handleEnablePush = async () => {
+    setPushBusy(true);
+    setPushMessage('');
+    try {
+      if (!webPushService.isPushSupported()) {
+        await refreshPushState();
+        setPushMessage('Thiết bị hoặc trình duyệt hiện tại chưa sẵn sàng nhận Web Push.');
+        return;
+      }
+
+      const permission = webPushService.getNotificationPermission() === 'granted'
+        ? 'granted'
+        : await webPushService.requestNotificationPermission();
+      setPushPermission(permission);
+
+      if (permission !== 'granted') {
+        setPushMessage(permission === 'denied'
+          ? 'Trình duyệt đang chặn thông báo. Vui lòng bật lại trong cài đặt site/browser.'
+          : 'Anh chưa cấp quyền thông báo cho thiết bị này.');
+        return;
+      }
+
+      const enabled = await webPushService.subscribeUserToPush(currentUser.id);
+      setPushEnabled(enabled);
+      setPushMessage(enabled ? 'Đã bật thông báo trên thiết bị này.' : 'Không thể tạo subscription cho thiết bị này.');
+      if (enabled) toast.success('Đã bật thông báo thiết bị');
+    } catch (err: any) {
+      logApiError('settingsAccount.enableWebPush', err);
+      const message = getApiErrorMessage(err, 'Không thể bật thông báo trên thiết bị này.');
+      setPushMessage(message);
+      toast.error('Không thể bật thông báo', message);
+    } finally {
+      setPushBusy(false);
+      void refreshPushState();
+    }
+  };
+
+  const handleDisablePush = async () => {
+    setPushBusy(true);
+    setPushMessage('');
+    try {
+      await webPushService.disablePushForThisDevice(currentUser.id);
+      setPushEnabled(false);
+      setPushMessage('Đã tắt thông báo trên thiết bị này.');
+      toast.success('Đã tắt thông báo thiết bị');
+    } catch (err: any) {
+      logApiError('settingsAccount.disableWebPush', err);
+      const message = getApiErrorMessage(err, 'Không thể tắt thông báo trên thiết bị này.');
+      setPushMessage(message);
+      toast.error('Không thể tắt thông báo', message);
+    } finally {
+      setPushBusy(false);
+      void refreshPushState();
+    }
+  };
 
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -155,6 +246,53 @@ const SettingsAccount: React.FC<SettingsAccountProps> = ({
             {savingPassword ? 'Đang cập nhật...' : 'Cập nhật mật khẩu'}
           </button>
         </form>
+
+        <div className="pt-8 border-t border-slate-100">
+          <h3 className="text-sm font-bold text-slate-800 mb-2">Thông báo trên thiết bị</h3>
+          <p className="text-xs text-slate-500 mb-4">Nhận thông báo quan trọng ngay cả khi không mở ERP trên màn hình.</p>
+          <div className="max-w-2xl rounded-2xl border border-slate-100 bg-slate-50/70 p-4">
+            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+              <div className="flex items-start gap-3">
+                <div className={`mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${pushEnabled ? 'bg-emerald-100 text-emerald-600' : 'bg-white text-slate-500 border border-slate-200'}`}>
+                  {pushEnabled ? <CheckCircle2 size={18} /> : <Bell size={18} />}
+                </div>
+                <div>
+                  <p className="text-sm font-black text-slate-800">{getPushStatusText()}</p>
+                  <p className="mt-1 text-[11px] font-medium text-slate-500">
+                    {webPushService.getPlatform()} · {webPushService.getDeviceType()} · quyền: {pushPermission}
+                  </p>
+                  {pushPermission === 'denied' && (
+                    <p className="mt-2 text-[11px] font-semibold text-amber-600">Thông báo đang bị chặn. Hãy mở cài đặt trình duyệt/site và cho phép Notifications.</p>
+                  )}
+                  {isIOS && !isStandalonePWA && (
+                    <p className="mt-2 text-[11px] font-semibold text-blue-600">Trên iPhone/iPad, hãy mở app bằng icon ngoài màn hình chính. Nếu chưa có, bấm Share rồi chọn Add to Home Screen.</p>
+                  )}
+                  {pushMessage && <p className="mt-2 text-[11px] font-semibold text-slate-600">{pushMessage}</p>}
+                </div>
+              </div>
+              <div className="flex shrink-0 gap-2">
+                <button
+                  type="button"
+                  onClick={handleEnablePush}
+                  disabled={pushBusy || pushEnabled || !pushCapability.supported || pushPermission === 'denied'}
+                  className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {pushBusy ? <Loader2 size={14} className="mr-2 animate-spin" /> : <Bell size={14} className="mr-2" />}
+                  Bật thông báo
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDisablePush}
+                  disabled={pushBusy || !pushEnabled}
+                  className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <BellOff size={14} className="mr-2" />
+                  Tắt thiết bị này
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
 
         <div className="pt-8 border-t border-slate-100">
           <h3 className="text-sm font-bold text-slate-800 mb-2">Đăng xuất</h3>

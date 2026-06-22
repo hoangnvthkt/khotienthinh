@@ -8,7 +8,7 @@ import {
   MessageSquarePlus,
   Landmark, Repeat, Wrench, ChevronsLeft, ChevronsRight, AppWindow, ArrowLeft, Inbox, Layers, HardDrive,
   Calendar, CalendarOff, DollarSign, FileSignature, MapPin, Bot, FolderOpen, GripVertical, BookOpen, Clock,
-  IdCard, Award, Trophy, Globe, Building2, HardHat, Handshake, Settings2, Calculator, ShoppingCart
+  IdCard, Award, Trophy, Globe, Building2, HardHat, Handshake, Settings2, Calculator, ShoppingCart, Activity
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import NotificationCenter from './NotificationCenter';
@@ -450,6 +450,16 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
                     </NavLink>
                   )}
 
+                  {user.role === Role.ADMIN && (
+                    <NavLink to="/admin/activity" onClick={toggle}
+                      className={({ isActive }) => `flex items-center px-4 py-2.5 rounded-xl transition-all group ${isActive
+                        ? 'bg-gradient-to-r from-cyan-500 to-blue-500 text-white shadow-lg shadow-cyan-500/20 border border-white/20'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/40 dark:hover:bg-slate-800/50'}`}>
+                      <Activity className="w-5 h-5 mr-3 transition-transform group-hover:scale-110" />
+                      <span className="font-bold text-sm">Hoạt động hệ thống</span>
+                    </NavLink>
+                  )}
+
                   <NavLink to="/feedback" onClick={toggle}
                     className={({ isActive }) => `flex items-center px-4 py-2.5 rounded-xl transition-all group ${isActive
                       ? 'bg-gradient-to-r from-blue-500 to-cyan-500 text-white shadow-lg shadow-blue-500/20 border border-white/20'
@@ -510,6 +520,15 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
                           {totalUnread > 9 ? '9+' : totalUnread}
                         </span>
                       )}
+                    </NavLink>
+                  )}
+                  {user.role === Role.ADMIN && (
+                    <NavLink to="/admin/activity" onClick={toggle}
+                      className={({ isActive }) => `flex items-center px-4 py-2.5 rounded-xl transition-all group ${isActive
+                        ? 'bg-gradient-to-r from-cyan-500 to-blue-500 text-white shadow-lg shadow-cyan-500/20 border border-white/20'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/40 dark:hover:bg-slate-800/50'}`}>
+                      <Activity className="w-5 h-5 mr-3 transition-transform group-hover:scale-110" />
+                      <span className="font-bold text-sm">Hoạt động hệ thống</span>
                     </NavLink>
                   )}
                   <NavLink to="/feedback" onClick={toggle}
@@ -578,6 +597,16 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/40 dark:hover:bg-slate-800/50'}`}>
                   <History className={`w-5 h-5 ${collapsed ? '' : 'mr-3'} transition-transform group-hover:scale-110`} />
                   {!collapsed && <span className="font-bold text-sm">Nhật ký thay đổi</span>}
+                </NavLink>
+              )}
+
+              {user.role === Role.ADMIN && (
+                <NavLink to="/admin/activity" title={collapsed ? 'Hoạt động hệ thống' : undefined}
+                  className={({ isActive }) => `flex items-center ${collapsed ? 'justify-center' : ''} ${collapsed ? 'px-2' : 'px-4'} py-2.5 rounded-xl transition-all group ${isActive
+                    ? 'bg-gradient-to-r from-cyan-500 to-blue-500 text-white shadow-lg shadow-cyan-500/20 border border-white/20'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/40 dark:hover:bg-slate-800/50'}`}>
+                  <Activity className={`w-5 h-5 ${collapsed ? '' : 'mr-3'} transition-transform group-hover:scale-110`} />
+                  {!collapsed && <span className="font-bold text-sm">Hoạt động hệ thống</span>}
                 </NavLink>
               )}
 
@@ -776,6 +805,15 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
                         {totalUnread > 9 ? '9+' : totalUnread}
                       </span>
                     )}
+                  </NavLink>
+                )}
+                {user.role === Role.ADMIN && (
+                  <NavLink to="/admin/activity" title={collapsed ? 'Hoạt động hệ thống' : undefined}
+                    className={({ isActive }) => `flex items-center ${collapsed ? 'justify-center' : ''} ${collapsed ? 'px-2' : 'px-4'} py-2.5 rounded-xl transition-all group ${isActive
+                      ? 'bg-gradient-to-r from-cyan-500 to-blue-500 text-white shadow-lg shadow-cyan-500/20 border border-white/20'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/40 dark:hover:bg-slate-800/50'}`}>
+                    <Activity className={`w-5 h-5 ${collapsed ? '' : 'mr-3'} transition-transform group-hover:scale-110`} />
+                    {!collapsed && <span className="font-bold text-sm">Hoạt động hệ thống</span>}
                   </NavLink>
                 )}
               </div>
