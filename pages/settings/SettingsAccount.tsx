@@ -1,10 +1,11 @@
 import React from 'react';
 import { User } from '../../types';
-import { Bell, BellOff, CheckCircle2, Loader2, Upload, Save, AlertCircle } from 'lucide-react';
+import { Bell, BellOff, CheckCircle2, Loader2, Upload, Save, AlertCircle, RefreshCw } from 'lucide-react';
 import { isSupabaseConfigured, supabase } from '../../lib/supabase';
 import { useToast } from '../../context/ToastContext';
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
 import { webPushService } from '../../lib/webPushService';
+import { pwaService, PWAStatus } from '../../lib/pwaService';
 
 interface SettingsAccountProps {
   currentUser: User;
@@ -28,6 +29,8 @@ const SettingsAccount: React.FC<SettingsAccountProps> = ({
   const [pushEnabled, setPushEnabled] = React.useState(false);
   const [pushBusy, setPushBusy] = React.useState(false);
   const [pushMessage, setPushMessage] = React.useState('');
+  const [pwaStatus, setPwaStatus] = React.useState<PWAStatus | null>(null);
+  const [pwaBusy, setPwaBusy] = React.useState(false);
   const isIOS = webPushService.isIOS();
   const isStandalonePWA = webPushService.isStandalonePWA();
 
@@ -44,6 +47,26 @@ const SettingsAccount: React.FC<SettingsAccountProps> = ({
   React.useEffect(() => {
     void refreshPushState();
   }, [refreshPushState]);
+
+  const refreshPwaStatus = React.useCallback(async () => {
+    setPwaBusy(true);
+    try {
+      setPwaStatus(await pwaService.getStatus());
+    } finally {
+      setPwaBusy(false);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    void refreshPwaStatus();
+    const refreshOnUpdate = () => void refreshPwaStatus();
+    window.addEventListener('appinstalled', refreshOnUpdate);
+    window.addEventListener('vioo:pwa-update-available', refreshOnUpdate);
+    return () => {
+      window.removeEventListener('appinstalled', refreshOnUpdate);
+      window.removeEventListener('vioo:pwa-update-available', refreshOnUpdate);
+    };
+  }, [refreshPwaStatus]);
 
   const getPushStatusText = () => {
     if (pushEnabled) return 'Đang bật trên thiết bị này';
@@ -246,6 +269,54 @@ const SettingsAccount: React.FC<SettingsAccountProps> = ({
             {savingPassword ? 'Đang cập nhật...' : 'Cập nhật mật khẩu'}
           </button>
         </form>
+
+        <div className="pt-8 border-t border-slate-100">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-bold text-slate-800">Ứng dụng PWA</h3>
+              <p className="text-xs text-slate-500">Trạng thái cài đặt, service worker và chế độ mở app trên thiết bị này.</p>
+            </div>
+            <button
+              type="button"
+              onClick={refreshPwaStatus}
+              disabled={pwaBusy}
+              className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
+            >
+              <RefreshCw size={14} className={`mr-2 ${pwaBusy ? 'animate-spin' : ''}`} />
+              Kiểm tra
+            </button>
+          </div>
+          <div className="max-w-2xl rounded-2xl border border-slate-100 bg-slate-50/70 p-4">
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="rounded-xl bg-white p-3 border border-slate-100">
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Chế độ mở</p>
+                <p className="mt-1 text-sm font-black text-slate-800">{pwaStatus ? pwaService.getInstallModeLabel(pwaStatus) : 'Đang kiểm tra'}</p>
+              </div>
+              <div className="rounded-xl bg-white p-3 border border-slate-100">
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Service worker</p>
+                <p className="mt-1 text-sm font-black text-slate-800">{pwaStatus ? pwaService.getServiceWorkerLabel(pwaStatus) : 'Đang kiểm tra'}</p>
+              </div>
+              <div className="rounded-xl bg-white p-3 border border-slate-100">
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Thiết bị</p>
+                <p className="mt-1 text-sm font-black text-slate-800">{pwaStatus ? `${pwaStatus.platform} · ${pwaStatus.deviceType}` : 'Đang kiểm tra'}</p>
+              </div>
+              <div className="rounded-xl bg-white p-3 border border-slate-100">
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Bảo mật</p>
+                <p className="mt-1 text-sm font-black text-slate-800">{pwaStatus?.isSecureContext ? 'HTTPS/secure context' : 'Cần HTTPS hoặc localhost'}</p>
+              </div>
+            </div>
+            {!pwaStatus?.isStandalone && (
+              <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50 p-3 text-[11px] font-semibold text-blue-700">
+                Nếu trình duyệt đang hiện nút Open in app trên thanh địa chỉ, Vioo đã được cài như PWA trên profile này. Bấm nút đó để mở dạng ứng dụng riêng, không kèm thanh địa chỉ browser.
+              </div>
+            )}
+            {pwaStatus?.isIOS && !pwaStatus.isStandalone && (
+              <div className="mt-3 rounded-xl border border-amber-100 bg-amber-50 p-3 text-[11px] font-semibold text-amber-700">
+                Trên iPhone/iPad, hãy dùng Share rồi Add to Home Screen trước khi bật Web Push.
+              </div>
+            )}
+          </div>
+        </div>
 
         <div className="pt-8 border-t border-slate-100">
           <h3 className="text-sm font-bold text-slate-800 mb-2">Thông báo trên thiết bị</h3>

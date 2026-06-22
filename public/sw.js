@@ -1,5 +1,5 @@
-// Vioo Service Worker v5 — PWA shell + Web Push notifications
-const CACHE_NAME = 'vioo-v5';
+// Vioo Service Worker v6 — PWA shell + Web Push notifications
+const CACHE_NAME = 'vioo-v6';
 const OFFLINE_URL = '/offline.html';
 
 const PRECACHE_URLS = [
@@ -8,6 +8,7 @@ const PRECACHE_URLS = [
   '/manifest.json',
   '/icons/icon-72.png',
   '/icons/icon-192.png',
+  '/icons/icon-512.png',
 ];
 
 self.addEventListener('install', (event) => {
@@ -15,7 +16,6 @@ self.addEventListener('install', (event) => {
     caches
       .open(CACHE_NAME)
       .then((cache) => Promise.allSettled(PRECACHE_URLS.map((url) => cache.add(url))))
-      .then(() => self.skipWaiting())
   );
 });
 
@@ -30,6 +30,13 @@ self.addEventListener('activate', (event) => {
 
 const shouldCacheResponse = (response) => response && response.ok && response.type !== 'opaque';
 
+const isStaticAsset = (url) =>
+  url.pathname === '/' ||
+  url.pathname === '/index.html' ||
+  url.pathname === '/manifest.json' ||
+  url.pathname === OFFLINE_URL ||
+  url.pathname.match(/\.(css|js|png|jpg|jpeg|svg|gif|webp|woff2?|ttf|ico)$/);
+
 const cacheResponse = async (request, response) => {
   if (!shouldCacheResponse(response)) return;
   const cache = await caches.open(CACHE_NAME);
@@ -41,23 +48,19 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(event.request.url);
   if (!['http:', 'https:'].includes(url.protocol)) return;
-
+  if (url.origin !== self.location.origin) return;
   if (url.hostname.includes('supabase')) return;
-  if (url.hostname.includes('esm.sh') || url.hostname.includes('cdn.')) return;
 
   if (event.request.mode === 'navigate') {
     event.respondWith(
       fetch(event.request)
-        .then((response) => {
-          cacheResponse(event.request, response);
-          return response;
-        })
-        .catch(() => caches.match(event.request).then((cached) => cached || caches.match(OFFLINE_URL)))
+        .then((response) => response)
+        .catch(() => caches.match('/').then((cached) => cached || caches.match(OFFLINE_URL)))
     );
     return;
   }
 
-  if (url.pathname.match(/\.(css|js|png|jpg|jpeg|svg|gif|webp|woff2?|ttf|ico)$/)) {
+  if (isStaticAsset(url)) {
     event.respondWith(
       caches.match(event.request).then((cached) => {
         if (cached) return cached;
@@ -69,15 +72,12 @@ self.addEventListener('fetch', (event) => {
     );
     return;
   }
+});
 
-  event.respondWith(
-    fetch(event.request)
-      .then((response) => {
-        cacheResponse(event.request, response);
-        return response;
-      })
-      .catch(() => caches.match(event.request))
-  );
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
 
 self.addEventListener('push', (event) => {
