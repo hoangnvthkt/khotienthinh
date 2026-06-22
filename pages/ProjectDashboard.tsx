@@ -694,7 +694,7 @@ const ProjectDashboard: React.FC = () => {
     const selectedFinance = useMemo(() =>
         selectedProject
             ? projectFinances.find(pf => pf.projectId === selectedProject.id) ||
-                (effectiveSiteId ? projectFinances.find(pf => pf.constructionSiteId === effectiveSiteId) || null : null)
+            (effectiveSiteId ? projectFinances.find(pf => pf.constructionSiteId === effectiveSiteId) || null : null)
             : effectiveSiteId ? projectFinances.find(pf => pf.constructionSiteId === effectiveSiteId) || null : null,
         [effectiveSiteId, projectFinances, selectedProject]
     );
@@ -2270,11 +2270,10 @@ const ProjectDashboard: React.FC = () => {
                                 <button
                                     type="button"
                                     onClick={() => setActiveSelectPopover(isGroupPopoverOpen ? null : { field: label, type: 'group' })}
-                                    className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-bold transition-all shadow-sm ${
-                                        isGroupPopoverOpen
+                                    className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-bold transition-all shadow-sm ${isGroupPopoverOpen
                                             ? 'bg-cyan-600 text-white border-cyan-600'
                                             : 'bg-cyan-50 text-cyan-600 hover:bg-cyan-100 border-cyan-150'
-                                    }`}
+                                        }`}
                                 >
                                     <Users size={13} />
                                     <span>Chọn nhóm...</span>
@@ -2302,11 +2301,10 @@ const ProjectDashboard: React.FC = () => {
                                 <button
                                     type="button"
                                     onClick={() => setActiveSelectPopover(isUserPopoverOpen ? null : { field: label, type: 'user' })}
-                                    className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-bold transition-all shadow-sm ${
-                                        isUserPopoverOpen
+                                    className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-bold transition-all shadow-sm ${isUserPopoverOpen
                                             ? 'bg-slate-700 text-white border-slate-700 dark:bg-slate-600 dark:border-slate-600'
                                             : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border-slate-200 dark:bg-slate-700 dark:text-slate-200 dark:border-slate-600'
-                                    }`}
+                                        }`}
                                 >
                                     {icon}
                                     <span>Chọn thành viên...</span>
@@ -2956,7 +2954,7 @@ const ProjectDashboard: React.FC = () => {
         return (
             <div className="space-y-6">
                 {/* Header Banner */}
-	                <div className="bg-gradient-to-r from-orange-500 to-amber-500 rounded-2xl p-4 px-5 text-white shadow-md">
+                <div className="bg-gradient-to-r from-orange-500 to-amber-500 rounded-2xl p-4 px-5 text-white shadow-md">
                     <div className="flex items-center justify-between flex-wrap gap-3">
                         <div className="flex items-center gap-3">
                             <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center shrink-0"><HardHat size={18} /></div>
@@ -3022,43 +3020,42 @@ const ProjectDashboard: React.FC = () => {
                     <div className="mt-3 h-1.5 bg-white/20 rounded-full overflow-hidden">
                         <div className="h-full bg-white rounded-full transition-all duration-700" style={{ width: `${displayProgress}%` }} />
                     </div>
-	                </div>
+                </div>
 
-	                {attentionItems.length > 0 && (
-	                    <section className="rounded-2xl border border-orange-100 bg-orange-50/60 p-4 dark:border-orange-900/40 dark:bg-orange-950/20">
-	                        <div className="mb-3 flex items-center justify-between gap-3">
-	                            <div>
-	                                <h3 className="text-sm font-black text-slate-800 dark:text-white">Cần chú ý</h3>
-	                                <p className="mt-0.5 text-[11px] font-bold text-slate-500 dark:text-slate-400">Các tín hiệu vận hành được suy ra từ dữ liệu hiện có của dự án.</p>
-	                            </div>
-	                            <StatusBadge status="warning" label={`${attentionItems.length} cảnh báo`} tone="attention" />
-	                        </div>
-	                        <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-	                            {attentionItems.map(item => (
-	                                <button
-	                                    key={item.id}
-	                                    type="button"
-	                                    onClick={() => goToProjectTab(item.tab)}
-	                                    className="rounded-lg border border-white/70 bg-white p-3 text-left shadow-sm transition hover:border-orange-200 hover:shadow-md dark:border-slate-700 dark:bg-slate-900"
-	                                >
-	                                    <StatusBadge status={item.id} label={item.tone === 'danger' ? 'Rủi ro cao' : 'Cần kiểm tra'} tone={item.tone} />
-	                                    <div className="mt-2 text-sm font-black text-slate-800 dark:text-white">{item.title}</div>
-	                                    <p className="mt-1 text-[11px] font-bold leading-5 text-slate-500 dark:text-slate-400">{item.message}</p>
-	                                </button>
-	                            ))}
-	                        </div>
-	                    </section>
-	                )}
+                {attentionItems.length > 0 && (
+                    <section className="rounded-2xl border border-orange-100 bg-orange-50/60 p-4 dark:border-orange-900/40 dark:bg-orange-950/20">
+                        <div className="mb-3 flex items-center justify-between gap-3">
+                            <div>
+                                <h3 className="text-sm font-black text-slate-800 dark:text-white">Cần chú ý</h3>
+                                <p className="mt-0.5 text-[11px] font-bold text-slate-500 dark:text-slate-400">Các tín hiệu vận hành được suy ra từ dữ liệu hiện có của dự án.</p>
+                            </div>
+                            <StatusBadge status="warning" label={`${attentionItems.length} cảnh báo`} tone="attention" />
+                        </div>
+                        <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+                            {attentionItems.map(item => (
+                                <button
+                                    key={item.id}
+                                    type="button"
+                                    onClick={() => goToProjectTab(item.tab)}
+                                    className="rounded-lg border border-white/70 bg-white p-3 text-left shadow-sm transition hover:border-orange-200 hover:shadow-md dark:border-slate-700 dark:bg-slate-900"
+                                >
+                                    <StatusBadge status={item.id} label={item.tone === 'danger' ? 'Rủi ro cao' : 'Cần kiểm tra'} tone={item.tone} />
+                                    <div className="mt-2 text-sm font-black text-slate-800 dark:text-white">{item.title}</div>
+                                    <p className="mt-1 text-[11px] font-bold leading-5 text-slate-500 dark:text-slate-400">{item.message}</p>
+                                </button>
+                            ))}
+                        </div>
+                    </section>
+                )}
 
-	                {/* Overview Sub-tabs */}
+                {/* Overview Sub-tabs */}
                 <div className="flex gap-1 bg-white dark:bg-slate-800 rounded-2xl p-1.5 border border-slate-100 dark:border-slate-700/50 shadow-sm overflow-x-auto [&::-webkit-scrollbar]:hidden">
                     {visibleOverviewTabs.map(tab => (
                         <button key={tab.key} onClick={() => goToProjectTab(tab.key)}
-                            className={`shrink-0 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
-                                overviewTab === tab.key 
-                                    ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-lg shadow-orange-500/25' 
+                            className={`shrink-0 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${overviewTab === tab.key
+                                    ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-lg shadow-orange-500/25'
                                     : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50'
-                            }`}>
+                                }`}>
                             <span>{tab.icon}</span> {tab.label}
                         </button>
                     ))}
@@ -3097,14 +3094,14 @@ const ProjectDashboard: React.FC = () => {
                         <GanttTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} canManageTab={canManageProjectTab('gantt')} />
                     ) : overviewTab === 'weekly_progress' ? (
                         <WeeklyProgressTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} canManageTab={canManageProjectTab('weekly_progress')} />
-	                    ) : overviewTab === 'dailylog' ? (
-	                        <DailyLogTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} canManageTab={canManageProjectTab('dailylog')} />
-	                    ) : overviewTab === 'payment' ? (
-	                        hasSiteLink ? (
-	                            <PaymentWorkbenchTab constructionSiteId={effectiveSiteId!} projectId={selectedProject.id} canManageTab={canManageProjectTab('payment')} />
-	                        ) : renderSiteRequired('Nghiệm thu & Thanh toán')
-	                    ) : overviewTab === 'subcontract' ? (
-	                        <SubcontractTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} canManageTab={canManageProjectTab('subcontract')} />
+                    ) : overviewTab === 'dailylog' ? (
+                        <DailyLogTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} canManageTab={canManageProjectTab('dailylog')} />
+                    ) : overviewTab === 'payment' ? (
+                        hasSiteLink ? (
+                            <PaymentWorkbenchTab constructionSiteId={effectiveSiteId!} projectId={selectedProject.id} canManageTab={canManageProjectTab('payment')} />
+                        ) : renderSiteRequired('Nghiệm thu & Thanh toán')
+                    ) : overviewTab === 'subcontract' ? (
+                        <SubcontractTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} canManageTab={canManageProjectTab('subcontract')} />
                     ) : overviewTab === 'quality' ? (
                         <QualityTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} canManageTab={canManageProjectTab('quality')} />
                     ) : overviewTab === 'safety' ? (
@@ -3128,207 +3125,207 @@ const ProjectDashboard: React.FC = () => {
                     ) : overviewTab === 'documents' ? (
                         <DocumentsTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} uploadedBy={user?.name} canManageTab={canManageProjectTab('documents')} />
                     ) : (
-                <>
-                {/* KPI Cards — AUTO-AGGREGATED */}
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                    <div onClick={() => goToProjectTab('contract')} className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-100 dark:border-slate-700 shadow-sm hover:shadow-lg hover:scale-[1.02] transition-all cursor-pointer group">
-                        <div className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5 group-hover:text-indigo-500 transition-colors"><FileText size={12} /> Giá trị HĐ</div>
-                        <div className="text-xl font-black text-slate-800 dark:text-white">{fmt(contractValue)}</div>
-                        <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">{fmtFull(contractValue)}</div>
-                    </div>
-                    <div onClick={() => goToProjectTab('budget')} className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-100 dark:border-slate-700 shadow-sm hover:shadow-lg hover:scale-[1.02] transition-all cursor-pointer group">
-                        <div className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5 group-hover:text-orange-500 transition-colors"><DollarSign size={12} /> Chi phí thực tế</div>
-                        <div className="text-xl font-black text-slate-800 dark:text-white">{fmt(aggForRender.totalExpense)}</div>
-                        <div className={`text-[10px] mt-1 font-bold flex items-center gap-1 ${budgetUsed > 100 ? 'text-red-500' : 'text-emerald-500'}`}>
-                            {budgetUsed > 100 ? <ArrowUpRight size={10} /> : <ArrowDownRight size={10} />} {budgetUsed.toFixed(1)}% ngân sách
-                        </div>
-                    </div>
-                    <div onClick={() => goToProjectTab('cashflow')} className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-100 dark:border-slate-700 shadow-sm hover:shadow-lg hover:scale-[1.02] transition-all cursor-pointer group">
-                        <div className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5 group-hover:text-emerald-500 transition-colors"><TrendingUp size={12} /> Biên tạm tính</div>
-                        <div className={`text-xl font-black ${estimatedMargin >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500'}`}>{fmt(estimatedMargin)}</div>
-                        <div className={`text-[10px] mt-1 font-bold ${estimatedMarginPct >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
-                            {estimatedMarginPct >= 0 ? '+' : ''}{estimatedMarginPct.toFixed(1)}%
-                        </div>
-                    </div>
-                    <div onClick={() => goToProjectTab('cashflow')} className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-100 dark:border-slate-700 shadow-sm hover:shadow-lg hover:scale-[1.02] transition-all cursor-pointer group">
-                        <div className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5 group-hover:text-cyan-500 transition-colors"><Target size={12} /> Thu / Chờ thu</div>
-                        <div className="text-xl font-black text-emerald-600 dark:text-emerald-400">{fmt(aggForRender.revenueReceived)}</div>
-                        <div className="text-[10px] text-amber-500 font-bold mt-1">Chờ: {fmt(aggForRender.revenuePending)}</div>
-                    </div>
-                </div>
-
-                {/* Budget Chart + Cash Flow */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    {/* Budget vs Actual */}
-                    <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 border border-slate-100 dark:border-slate-700 shadow-sm">
-                        <h3 className="text-sm font-black text-slate-700 dark:text-slate-200 mb-4 flex items-center gap-2"><BarChart3 size={16} className="text-orange-500" /> Dự toán vs Thực tế (tự động)</h3>
-                        <div className="space-y-4">
-                            {BUDGET_CATS.map(cat => {
-                                const budget = (financeForRender as any)?.[`budget${cat.key}`] || 0;
-                                const actual = (aggForRender as any)[cat.aggKey] || 0;
-                                const diff = actual - budget;
-                                return (
-                                    <div key={cat.key}
-                                        onClick={() => { setTxFilter(txFilter === cat.filterKey ? 'all' : cat.filterKey); document.getElementById('tx-list-section')?.scrollIntoView({ behavior: 'smooth' }); }}
-                                        className={`cursor-pointer rounded-xl p-2 -mx-2 transition-all hover:bg-slate-50 dark:hover:bg-slate-700/30 ${txFilter === cat.filterKey ? 'ring-2 ring-offset-1 dark:ring-offset-slate-800 bg-slate-50 dark:bg-slate-700 scale-[1.02]' : ''}`}
-                                        style={txFilter === cat.filterKey ? { '--tw-ring-color': cat.color } as any : {}}
-                                    >
-                                        <div className="flex items-center justify-between mb-1.5">
-                                            <div className="flex items-center gap-2"><span className="text-lg">{cat.icon}</span><span className="text-sm font-bold text-slate-700 dark:text-slate-200">{cat.label}</span>{txFilter === cat.filterKey && <span className="text-[9px] px-1.5 py-0.5 rounded-full font-bold text-white" style={{ backgroundColor: cat.color }}>Đang lọc</span>}</div>
-                                            <div className="flex items-center gap-3 text-xs">
-                                                <span className="text-slate-400">DT: <span className="font-bold text-slate-600 dark:text-slate-300">{fmt(budget)}</span></span>
-                                                <span className="text-slate-400">TT: <span className={`font-bold ${diff > 0 ? 'text-red-500' : 'text-emerald-600 dark:text-emerald-400'}`}>{fmt(actual)}</span></span>
-                                                {diff !== 0 && <span className={`font-bold px-1.5 py-0.5 rounded ${diff > 0 ? 'bg-red-50 dark:bg-red-950/30 text-red-500' : 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400'}`}>{diff > 0 ? '+' : ''}{fmt(diff)}</span>}
-                                            </div>
-                                        </div>
-                                        <div className="relative h-5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
-                                            <div className="absolute inset-y-0 left-0 rounded-full opacity-30 transition-all duration-700" style={{ width: `${maxVal > 0 ? (budget / maxVal) * 100 : 0}%`, backgroundColor: cat.color }} />
-                                            <div className="absolute inset-y-0 left-0 rounded-full transition-all duration-700" style={{ width: `${maxVal > 0 ? (actual / maxVal) * 100 : 0}%`, backgroundColor: cat.color }} />
-                                        </div>
+                        <>
+                            {/* KPI Cards — AUTO-AGGREGATED */}
+                            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                                <div onClick={() => goToProjectTab('contract')} className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-100 dark:border-slate-700 shadow-sm hover:shadow-lg hover:scale-[1.02] transition-all cursor-pointer group">
+                                    <div className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5 group-hover:text-indigo-500 transition-colors"><FileText size={12} /> Giá trị HĐ</div>
+                                    <div className="text-xl font-black text-slate-800 dark:text-white">{fmt(contractValue)}</div>
+                                    <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">{fmtFull(contractValue)}</div>
+                                </div>
+                                <div onClick={() => goToProjectTab('budget')} className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-100 dark:border-slate-700 shadow-sm hover:shadow-lg hover:scale-[1.02] transition-all cursor-pointer group">
+                                    <div className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5 group-hover:text-orange-500 transition-colors"><DollarSign size={12} /> Chi phí thực tế</div>
+                                    <div className="text-xl font-black text-slate-800 dark:text-white">{fmt(aggForRender.totalExpense)}</div>
+                                    <div className={`text-[10px] mt-1 font-bold flex items-center gap-1 ${budgetUsed > 100 ? 'text-red-500' : 'text-emerald-500'}`}>
+                                        {budgetUsed > 100 ? <ArrowUpRight size={10} /> : <ArrowDownRight size={10} />} {budgetUsed.toFixed(1)}% ngân sách
                                     </div>
-                                );
-                            })}
-                            <div className="flex items-center gap-6 pt-2 border-t border-slate-100 dark:border-slate-700 text-xs text-slate-400 dark:text-slate-500">
-                                <div className="flex items-center gap-1"><div className="w-3 h-3 rounded bg-slate-300 dark:bg-slate-600 opacity-40" /> Dự toán</div>
-                                <div className="flex items-center gap-1"><div className="w-3 h-3 rounded bg-slate-500 dark:bg-slate-400" /> Thực tế (từ giao dịch)</div>
+                                </div>
+                                <div onClick={() => goToProjectTab('cashflow')} className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-100 dark:border-slate-700 shadow-sm hover:shadow-lg hover:scale-[1.02] transition-all cursor-pointer group">
+                                    <div className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5 group-hover:text-emerald-500 transition-colors"><TrendingUp size={12} /> Biên tạm tính</div>
+                                    <div className={`text-xl font-black ${estimatedMargin >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500'}`}>{fmt(estimatedMargin)}</div>
+                                    <div className={`text-[10px] mt-1 font-bold ${estimatedMarginPct >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                                        {estimatedMarginPct >= 0 ? '+' : ''}{estimatedMarginPct.toFixed(1)}%
+                                    </div>
+                                </div>
+                                <div onClick={() => goToProjectTab('cashflow')} className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-100 dark:border-slate-700 shadow-sm hover:shadow-lg hover:scale-[1.02] transition-all cursor-pointer group">
+                                    <div className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5 group-hover:text-cyan-500 transition-colors"><Target size={12} /> Thu / Chờ thu</div>
+                                    <div className="text-xl font-black text-emerald-600 dark:text-emerald-400">{fmt(aggForRender.revenueReceived)}</div>
+                                    <div className="text-[10px] text-amber-500 font-bold mt-1">Chờ: {fmt(aggForRender.revenuePending)}</div>
+                                </div>
                             </div>
-                        </div>
-                    </div>
 
-                    {/* Cash Flow */}
-                    <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 border border-slate-100 dark:border-slate-700 shadow-sm">
-                        <h3 className="text-sm font-black text-slate-700 dark:text-slate-200 mb-4 flex items-center gap-2"><DollarSign size={16} className="text-emerald-500" /> Dòng tiền</h3>
-                        <div className="space-y-2.5">
-                            <div className="flex justify-between items-center p-3 bg-blue-50 dark:bg-blue-950/40 rounded-xl border border-blue-100 dark:border-blue-800/40 text-blue-700 dark:text-blue-400">
-                                <span className="text-sm font-bold">Giá trị HĐ (A)</span>
-                                <span className="text-sm font-black">{fmtFull(contractValue)}</span>
-                            </div>
-                            <div className="flex justify-between items-center p-3 bg-emerald-50 dark:bg-emerald-950/40 rounded-xl border border-emerald-100 dark:border-emerald-800/40 text-emerald-700 dark:text-emerald-400">
-                                <span className="text-sm font-bold">Đã thanh toán</span>
-                                <span className="text-sm font-black">+ {fmtFull(aggForRender.revenueReceived)}</span>
-                            </div>
-                            <div className="flex justify-between items-center p-3 bg-amber-50 dark:bg-amber-950/40 rounded-xl border border-amber-100 dark:border-amber-800/40 text-amber-700 dark:text-amber-400">
-                                <span className="text-sm font-bold">Chờ nghiệm thu</span>
-                                <span className="text-sm font-black">{fmtFull(aggForRender.revenuePending)}</span>
-                            </div>
-                            <div className="border-t-2 border-dashed border-slate-200 dark:border-slate-700 my-1" />
-                            <div className="flex justify-between items-center p-3 bg-slate-50 dark:bg-slate-700 rounded-xl border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-300">
-                                <span className="text-sm font-bold">Tổng ngân sách (DT)</span>
-                                <span className="text-sm font-black">{fmtFull(totalBudget)}</span>
-                            </div>
-                            <div className="flex justify-between items-center p-3 bg-orange-50 dark:bg-orange-950/40 rounded-xl border border-orange-200 dark:border-orange-800/40 text-orange-700 dark:text-orange-400">
-                                <span className="text-sm font-bold">Tổng chi thực tế ({aggForRender.txCount} GD)</span>
-                                <span className="text-sm font-black">- {fmtFull(aggForRender.totalExpense)}</span>
-                            </div>
-                            <div className={`flex justify-between items-center p-4 rounded-xl border-2 ${estimatedMargin >= 0 ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-300 dark:border-emerald-800' : 'bg-red-50 dark:bg-red-950/30 border-red-300 dark:border-red-800'}`}>
-                                <span className={`text-sm font-black uppercase ${estimatedMargin >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-700 dark:text-red-400'}`}>{estimatedMargin >= 0 ? 'Biên doanh thu - chi' : 'Âm theo chi hiện tại'}</span>
-                                <span className={`text-lg font-black ${estimatedMargin >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-700 dark:text-red-400'}`}>{estimatedMargin >= 0 ? '+' : ''}{fmtFull(estimatedMargin)}</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Transaction List */}
-                <div id="tx-list-section" className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700/60 shadow-sm overflow-hidden">
-                    <div className="p-4 border-b border-slate-100 dark:border-slate-700/50 bg-slate-50/50 dark:bg-slate-800/50 flex items-center justify-between flex-wrap gap-2">
-                        <h3 className="text-sm font-black text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-2">
-                            <List size={16} /> Danh sách giao dịch ({siteTxs.length})
-                        </h3>
-                        <div className="flex items-center gap-2">
-                            <select value={txFilter} onChange={e => setTxFilter(e.target.value as any)}
-                                className="text-xs font-bold text-slate-600 dark:text-slate-300 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 focus:ring-2 focus:ring-orange-500 outline-none">
-                                <option value="all">Tất cả</option>
-                                {Object.entries(CATEGORY_CONFIG).map(([k, v]) => <option key={k} value={k}>{v.icon} {v.label}</option>)}
-                            </select>
-                        </div>
-                    </div>
-
-                    {siteTxs.length === 0 ? (
-                        <div className="p-12 text-center">
-                            <DollarSign size={36} className="mx-auto mb-2 text-slate-200 dark:text-slate-700" />
-                            <p className="text-sm font-bold text-slate-400 dark:text-slate-500">Chưa có giao dịch nào</p>
-                            <p className="text-xs text-slate-300 dark:text-slate-600 mt-1">Nhấn "Thêm giao dịch" hoặc "Import Excel" để bắt đầu</p>
-                        </div>
-                    ) : (
-                        <div className="divide-y divide-slate-50 dark:divide-slate-700/40">
-                            {siteTxs.map(tx => {
-                                const catCfg = CATEGORY_CONFIG[tx.category];
-                                const typeCfg = TX_TYPE_CONFIG[tx.type];
-                                const srcCfg = SOURCE_CONFIG[tx.source];
-                                const hasAttachments = tx.attachments && tx.attachments.length > 0;
-                                return (
-                                    <div key={tx.id} className="flex items-center justify-between px-4 py-3 hover:bg-slate-50/50 dark:hover:bg-slate-700/30 transition-colors group">
-                                        <div className="flex items-center gap-3 flex-1 min-w-0">
-                                            <span className="text-lg">{catCfg?.icon || '📄'}</span>
-                                            <div className="min-w-0">
-                                                <div className="text-sm font-bold text-slate-800 dark:text-slate-200 truncate flex items-center gap-1.5">
-                                                    {tx.description || '—'}
-                                                    {hasAttachments && (
-                                                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-violet-50 dark:bg-violet-950/30 text-violet-500 dark:text-violet-400 text-[10px] font-bold shrink-0">
-                                                            <Paperclip size={9} /> {tx.attachments!.length}
-                                                        </span>
-                                                    )}
-                                                </div>
-                                                <div className="flex items-center gap-2 text-[10px] flex-wrap">
-                                                    <span className={`font-bold px-1.5 py-0.5 rounded ${typeCfg?.color}`}>{typeCfg?.label}</span>
-                                                    <span className="text-slate-400 dark:text-slate-500">{catCfg?.label}</span>
-                                                    <span className="text-slate-300 dark:text-slate-600">•</span>
-                                                    <span className="text-slate-400 dark:text-slate-500">{tx.date}</span>
-                                                    <span className="text-slate-300 dark:text-slate-600">•</span>
-                                                    <span className="text-slate-400 dark:text-slate-500">{srcCfg?.icon} {srcCfg?.label}</span>
-                                                </div>
-                                                {hasAttachments && (
-                                                    <div className="flex gap-1.5 mt-1.5">
-                                                        {tx.attachments!.map((att, ai) => (
-                                                            <button key={ai} onClick={() => setPreviewUrl(att.url)} className="group/att relative">
-                                                                {(att.fileType || '').startsWith('image/') ? (
-                                                                    <img src={att.url} className="w-10 h-10 object-cover rounded-lg border border-slate-200 dark:border-slate-700 hover:border-blue-400 hover:shadow-md transition-all" />
-                                                                ) : (
-                                                                    <div className="w-10 h-10 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 flex flex-col items-center justify-center hover:border-blue-400 transition-all">
-                                                                        <FileText size={12} className="text-slate-400 dark:text-slate-500" />
-                                                                        <span className="text-[7px] text-slate-400 dark:text-slate-500">{att.name.split('.').pop()?.toUpperCase()}</span>
-                                                                    </div>
-                                                                )}
-                                                                <div className="absolute inset-0 rounded-lg bg-black/0 group-hover/att:bg-black/20 flex items-center justify-center transition-all">
-                                                                    <Eye size={12} className="text-white opacity-0 group-hover/att:opacity-100 transition-opacity" />
-                                                                </div>
-                                                            </button>
-                                                        ))}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                            <span className={`text-sm font-black ${txAmountClass(tx)}`}>
-                                                {fmtSignedTxAmount(tx)}
-                                            </span>
-                                            {canManageCashflowTab && (
-                                                <>
-                                                    <button onClick={() => openEditTx(tx)}
-                                                        className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 dark:text-slate-600 hover:text-blue-500 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-slate-750 transition-all opacity-0 group-hover:opacity-100">
-                                                        <Edit2 size={13} />
-                                                    </button>
-                                                    {deleteTxConfirmId === tx.id ? (
-                                                        <div className="flex items-center gap-1">
-                                                            <button onClick={() => handleDeleteTx(tx.id)} className="px-2 py-1 rounded-lg bg-red-500 text-white text-[10px] font-black">Xoá</button>
-                                                            <button onClick={() => setDeleteTxConfirmId(null)} className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300 text-[10px] font-black">Huỷ</button>
+                            {/* Budget Chart + Cash Flow */}
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                {/* Budget vs Actual */}
+                                <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 border border-slate-100 dark:border-slate-700 shadow-sm">
+                                    <h3 className="text-sm font-black text-slate-700 dark:text-slate-200 mb-4 flex items-center gap-2"><BarChart3 size={16} className="text-orange-500" /> Dự toán vs Thực tế (tự động)</h3>
+                                    <div className="space-y-4">
+                                        {BUDGET_CATS.map(cat => {
+                                            const budget = (financeForRender as any)?.[`budget${cat.key}`] || 0;
+                                            const actual = (aggForRender as any)[cat.aggKey] || 0;
+                                            const diff = actual - budget;
+                                            return (
+                                                <div key={cat.key}
+                                                    onClick={() => { setTxFilter(txFilter === cat.filterKey ? 'all' : cat.filterKey); document.getElementById('tx-list-section')?.scrollIntoView({ behavior: 'smooth' }); }}
+                                                    className={`cursor-pointer rounded-xl p-2 -mx-2 transition-all hover:bg-slate-50 dark:hover:bg-slate-700/30 ${txFilter === cat.filterKey ? 'ring-2 ring-offset-1 dark:ring-offset-slate-800 bg-slate-50 dark:bg-slate-700 scale-[1.02]' : ''}`}
+                                                    style={txFilter === cat.filterKey ? { '--tw-ring-color': cat.color } as any : {}}
+                                                >
+                                                    <div className="flex items-center justify-between mb-1.5">
+                                                        <div className="flex items-center gap-2"><span className="text-lg">{cat.icon}</span><span className="text-sm font-bold text-slate-700 dark:text-slate-200">{cat.label}</span>{txFilter === cat.filterKey && <span className="text-[9px] px-1.5 py-0.5 rounded-full font-bold text-white" style={{ backgroundColor: cat.color }}>Đang lọc</span>}</div>
+                                                        <div className="flex items-center gap-3 text-xs">
+                                                            <span className="text-slate-400">DT: <span className="font-bold text-slate-600 dark:text-slate-300">{fmt(budget)}</span></span>
+                                                            <span className="text-slate-400">TT: <span className={`font-bold ${diff > 0 ? 'text-red-500' : 'text-emerald-600 dark:text-emerald-400'}`}>{fmt(actual)}</span></span>
+                                                            {diff !== 0 && <span className={`font-bold px-1.5 py-0.5 rounded ${diff > 0 ? 'bg-red-50 dark:bg-red-950/30 text-red-500' : 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400'}`}>{diff > 0 ? '+' : ''}{fmt(diff)}</span>}
                                                         </div>
-                                                    ) : (
-                                                        <button onClick={() => setDeleteTxConfirmId(tx.id)}
-                                                            className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 dark:text-slate-600 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-slate-750 transition-all opacity-0 group-hover:opacity-100">
-                                                            <Trash2 size={14} />
-                                                        </button>
-                                                    )}
-                                                </>
-                                            )}
+                                                    </div>
+                                                    <div className="relative h-5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+                                                        <div className="absolute inset-y-0 left-0 rounded-full opacity-30 transition-all duration-700" style={{ width: `${maxVal > 0 ? (budget / maxVal) * 100 : 0}%`, backgroundColor: cat.color }} />
+                                                        <div className="absolute inset-y-0 left-0 rounded-full transition-all duration-700" style={{ width: `${maxVal > 0 ? (actual / maxVal) * 100 : 0}%`, backgroundColor: cat.color }} />
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                        <div className="flex items-center gap-6 pt-2 border-t border-slate-100 dark:border-slate-700 text-xs text-slate-400 dark:text-slate-500">
+                                            <div className="flex items-center gap-1"><div className="w-3 h-3 rounded bg-slate-300 dark:bg-slate-600 opacity-40" /> Dự toán</div>
+                                            <div className="flex items-center gap-1"><div className="w-3 h-3 rounded bg-slate-500 dark:bg-slate-400" /> Thực tế (từ giao dịch)</div>
                                         </div>
                                     </div>
-                                );
-                            })}
-                        </div>
-                    )}
-                </div>
-                </>
+                                </div>
+
+                                {/* Cash Flow */}
+                                <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 border border-slate-100 dark:border-slate-700 shadow-sm">
+                                    <h3 className="text-sm font-black text-slate-700 dark:text-slate-200 mb-4 flex items-center gap-2"><DollarSign size={16} className="text-emerald-500" /> Dòng tiền</h3>
+                                    <div className="space-y-2.5">
+                                        <div className="flex justify-between items-center p-3 bg-blue-50 dark:bg-blue-950/40 rounded-xl border border-blue-100 dark:border-blue-800/40 text-blue-700 dark:text-blue-400">
+                                            <span className="text-sm font-bold">Giá trị HĐ (A)</span>
+                                            <span className="text-sm font-black">{fmtFull(contractValue)}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center p-3 bg-emerald-50 dark:bg-emerald-950/40 rounded-xl border border-emerald-100 dark:border-emerald-800/40 text-emerald-700 dark:text-emerald-400">
+                                            <span className="text-sm font-bold">Đã thanh toán</span>
+                                            <span className="text-sm font-black">+ {fmtFull(aggForRender.revenueReceived)}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center p-3 bg-amber-50 dark:bg-amber-950/40 rounded-xl border border-amber-100 dark:border-amber-800/40 text-amber-700 dark:text-amber-400">
+                                            <span className="text-sm font-bold">Chờ nghiệm thu</span>
+                                            <span className="text-sm font-black">{fmtFull(aggForRender.revenuePending)}</span>
+                                        </div>
+                                        <div className="border-t-2 border-dashed border-slate-200 dark:border-slate-700 my-1" />
+                                        <div className="flex justify-between items-center p-3 bg-slate-50 dark:bg-slate-700 rounded-xl border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-300">
+                                            <span className="text-sm font-bold">Tổng ngân sách (Dự Toán)</span>
+                                            <span className="text-sm font-black">{fmtFull(totalBudget)}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center p-3 bg-orange-50 dark:bg-orange-950/40 rounded-xl border border-orange-200 dark:border-orange-800/40 text-orange-700 dark:text-orange-400">
+                                            <span className="text-sm font-bold">Tổng chi thực tế ({aggForRender.txCount} Giao Dịch)</span>
+                                            <span className="text-sm font-black">- {fmtFull(aggForRender.totalExpense)}</span>
+                                        </div>
+                                        <div className={`flex justify-between items-center p-4 rounded-xl border-2 ${estimatedMargin >= 0 ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-300 dark:border-emerald-800' : 'bg-red-50 dark:bg-red-950/30 border-red-300 dark:border-red-800'}`}>
+                                            <span className={`text-sm font-black uppercase ${estimatedMargin >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-700 dark:text-red-400'}`}>{estimatedMargin >= 0 ? 'Biên doanh thu - chi' : 'Âm theo chi hiện tại'}</span>
+                                            <span className={`text-lg font-black ${estimatedMargin >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-700 dark:text-red-400'}`}>{estimatedMargin >= 0 ? '+' : ''}{fmtFull(estimatedMargin)}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Transaction List */}
+                            <div id="tx-list-section" className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700/60 shadow-sm overflow-hidden">
+                                <div className="p-4 border-b border-slate-100 dark:border-slate-700/50 bg-slate-50/50 dark:bg-slate-800/50 flex items-center justify-between flex-wrap gap-2">
+                                    <h3 className="text-sm font-black text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                                        <List size={16} /> Danh sách giao dịch ({siteTxs.length})
+                                    </h3>
+                                    <div className="flex items-center gap-2">
+                                        <select value={txFilter} onChange={e => setTxFilter(e.target.value as any)}
+                                            className="text-xs font-bold text-slate-600 dark:text-slate-300 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 focus:ring-2 focus:ring-orange-500 outline-none">
+                                            <option value="all">Tất cả</option>
+                                            {Object.entries(CATEGORY_CONFIG).map(([k, v]) => <option key={k} value={k}>{v.icon} {v.label}</option>)}
+                                        </select>
+                                    </div>
+                                </div>
+
+                                {siteTxs.length === 0 ? (
+                                    <div className="p-12 text-center">
+                                        <DollarSign size={36} className="mx-auto mb-2 text-slate-200 dark:text-slate-700" />
+                                        <p className="text-sm font-bold text-slate-400 dark:text-slate-500">Chưa có giao dịch nào</p>
+                                        <p className="text-xs text-slate-300 dark:text-slate-600 mt-1">Nhấn "Thêm giao dịch" hoặc "Import Excel" để bắt đầu</p>
+                                    </div>
+                                ) : (
+                                    <div className="divide-y divide-slate-50 dark:divide-slate-700/40">
+                                        {siteTxs.map(tx => {
+                                            const catCfg = CATEGORY_CONFIG[tx.category];
+                                            const typeCfg = TX_TYPE_CONFIG[tx.type];
+                                            const srcCfg = SOURCE_CONFIG[tx.source];
+                                            const hasAttachments = tx.attachments && tx.attachments.length > 0;
+                                            return (
+                                                <div key={tx.id} className="flex items-center justify-between px-4 py-3 hover:bg-slate-50/50 dark:hover:bg-slate-700/30 transition-colors group">
+                                                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                                                        <span className="text-lg">{catCfg?.icon || '📄'}</span>
+                                                        <div className="min-w-0">
+                                                            <div className="text-sm font-bold text-slate-800 dark:text-slate-200 truncate flex items-center gap-1.5">
+                                                                {tx.description || '—'}
+                                                                {hasAttachments && (
+                                                                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-violet-50 dark:bg-violet-950/30 text-violet-500 dark:text-violet-400 text-[10px] font-bold shrink-0">
+                                                                        <Paperclip size={9} /> {tx.attachments!.length}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            <div className="flex items-center gap-2 text-[10px] flex-wrap">
+                                                                <span className={`font-bold px-1.5 py-0.5 rounded ${typeCfg?.color}`}>{typeCfg?.label}</span>
+                                                                <span className="text-slate-400 dark:text-slate-500">{catCfg?.label}</span>
+                                                                <span className="text-slate-300 dark:text-slate-600">•</span>
+                                                                <span className="text-slate-400 dark:text-slate-500">{tx.date}</span>
+                                                                <span className="text-slate-300 dark:text-slate-600">•</span>
+                                                                <span className="text-slate-400 dark:text-slate-500">{srcCfg?.icon} {srcCfg?.label}</span>
+                                                            </div>
+                                                            {hasAttachments && (
+                                                                <div className="flex gap-1.5 mt-1.5">
+                                                                    {tx.attachments!.map((att, ai) => (
+                                                                        <button key={ai} onClick={() => setPreviewUrl(att.url)} className="group/att relative">
+                                                                            {(att.fileType || '').startsWith('image/') ? (
+                                                                                <img src={att.url} className="w-10 h-10 object-cover rounded-lg border border-slate-200 dark:border-slate-700 hover:border-blue-400 hover:shadow-md transition-all" />
+                                                                            ) : (
+                                                                                <div className="w-10 h-10 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 flex flex-col items-center justify-center hover:border-blue-400 transition-all">
+                                                                                    <FileText size={12} className="text-slate-400 dark:text-slate-500" />
+                                                                                    <span className="text-[7px] text-slate-400 dark:text-slate-500">{att.name.split('.').pop()?.toUpperCase()}</span>
+                                                                                </div>
+                                                                            )}
+                                                                            <div className="absolute inset-0 rounded-lg bg-black/0 group-hover/att:bg-black/20 flex items-center justify-center transition-all">
+                                                                                <Eye size={12} className="text-white opacity-0 group-hover/att:opacity-100 transition-opacity" />
+                                                                            </div>
+                                                                        </button>
+                                                                    ))}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className={`text-sm font-black ${txAmountClass(tx)}`}>
+                                                            {fmtSignedTxAmount(tx)}
+                                                        </span>
+                                                        {canManageCashflowTab && (
+                                                            <>
+                                                                <button onClick={() => openEditTx(tx)}
+                                                                    className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 dark:text-slate-600 hover:text-blue-500 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-slate-750 transition-all opacity-0 group-hover:opacity-100">
+                                                                    <Edit2 size={13} />
+                                                                </button>
+                                                                {deleteTxConfirmId === tx.id ? (
+                                                                    <div className="flex items-center gap-1">
+                                                                        <button onClick={() => handleDeleteTx(tx.id)} className="px-2 py-1 rounded-lg bg-red-500 text-white text-[10px] font-black">Xoá</button>
+                                                                        <button onClick={() => setDeleteTxConfirmId(null)} className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300 text-[10px] font-black">Huỷ</button>
+                                                                    </div>
+                                                                ) : (
+                                                                    <button onClick={() => setDeleteTxConfirmId(tx.id)}
+                                                                        className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 dark:text-slate-600 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-slate-750 transition-all opacity-0 group-hover:opacity-100">
+                                                                        <Trash2 size={14} />
+                                                                    </button>
+                                                                )}
+                                                            </>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+                        </>
                     )}
                 </Suspense>
             </div>
@@ -3618,11 +3615,10 @@ const ProjectDashboard: React.FC = () => {
                                         {canManageProjects && !project.isHidden && (
                                             <button
                                                 onClick={() => handleToggleProjectPin(project)}
-                                                className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
-                                                    project.isPinned
+                                                className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${project.isPinned
                                                         ? 'text-amber-600 bg-amber-50 border border-amber-100 hover:bg-amber-100'
                                                         : 'text-slate-400 hover:text-amber-600 hover:bg-amber-50'
-                                                }`}
+                                                    }`}
                                                 title={project.isPinned ? 'Bỏ ghim dự án' : 'Ghim dự án'}
                                                 aria-label={project.isPinned ? 'Bỏ ghim dự án' : 'Ghim dự án'}
                                             >

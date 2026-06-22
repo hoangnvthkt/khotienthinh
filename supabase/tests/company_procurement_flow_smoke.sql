@@ -364,6 +364,7 @@ declare
   v_pending_tx text;
   v_pending_batch uuid;
   v_pending_group uuid;
+  v_pending_line uuid;
   v_delivery_batch uuid;
   v_delivery_line uuid;
   v_stock_before numeric;
@@ -630,11 +631,34 @@ begin
   insert into public.material_request_fulfillment_lines(
     batch_id, material_request_id, request_line_id, item_id,
     po_id, po_line_id, requested_qty_snapshot,
-    committed_qty_snapshot, issued_qty, received_qty, unit
+    committed_qty_snapshot, issued_qty, received_qty, unit,
+    delivery_unit, delivery_unit_price
   ) values (
     v_pending_batch, v_request_return_before, v_line_return_before, v_item_id,
-    v_po_return_before, v_po_line_return_before, 100, 100, 100, 0, v_unit
+    v_po_return_before, v_po_line_return_before, 100, 100, 100, 0, v_unit,
+    v_unit, 85000
+  )
+  returning id into v_pending_line;
+
+  perform public.update_purchase_order_delivery_group_v1(
+    v_pending_group,
+    current_date + 2,
+    'Smoke edited delivery',
+    jsonb_build_array(jsonb_build_object(
+      'id', v_pending_line,
+      'issuedQty', 75,
+      'deliveryUnitPrice', 91000
+    ))
   );
+
+  if (select delivery_group.planned_date::date from public.purchase_order_delivery_groups delivery_group where delivery_group.id = v_pending_group) <> current_date + 2
+     or (select delivery_group.note from public.purchase_order_delivery_groups delivery_group where delivery_group.id = v_pending_group) <> 'Smoke edited delivery'
+     or (select line.issued_qty from public.material_request_fulfillment_lines line where line.id = v_pending_line) <> 75
+     or (select line.delivery_unit_price from public.material_request_fulfillment_lines line where line.id = v_pending_line) <> 91000
+     or (select (tx.items -> 0 ->> 'quantity')::numeric from public.transactions tx where tx.id = v_pending_tx) <> 75
+     or (select (tx.items -> 0 ->> 'price')::numeric from public.transactions tx where tx.id = v_pending_tx) <> 91000 then
+    raise exception 'Editable delivery group assertions failed.';
+  end if;
 
   perform public.process_transaction_status(
     v_pending_tx,
@@ -656,7 +680,7 @@ begin
      or (select request.workflow_step from public.requests request where request.id = v_request_return_before) <> 'batch_planning' then
     raise exception 'Cancel-before-receipt assertions failed.';
   end if;
-  raise notice 'PASS 5/7: cancel before receipt cancels the pending import, keeps stock unchanged, and reopens demand';
+  raise notice 'PASS 5/7: pending delivery edits stay synchronized with WMS, then cancellation keeps stock unchanged and reopens demand';
 
   -- Two rejected delivery batches with no receipt keep the PO in-transit but allow safe deletion.
   v_stock_before := pg_temp.smoke_stock(v_item_id, v_warehouse_id);

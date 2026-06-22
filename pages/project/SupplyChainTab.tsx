@@ -3513,7 +3513,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                                                         </td>
                                                                                     );
                                                                                 })}
-                                                                                <td className="py-3.5 px-3 text-right text-slate-700 dark:text-slate-300 font-bold">{item.qty.toLocaleString()}</td>
+                                                                                <td className="py-3.5 px-3 text-right text-slate-700 dark:text-slate-400 font-bold">{item.qty.toLocaleString()}</td>
                                                                                 <td className="py-3.5 px-3 text-right text-emerald-600 dark:text-emerald-400 font-black">{(item.receivedQty || 0).toLocaleString()}</td>
                                                                                 <td className="py-3.5 px-3 text-right text-rose-600 dark:text-rose-400 font-black">{lineCompletedReturnQty.toLocaleString()}</td>
                                                                                 <td className="py-3.5 px-3 text-right text-amber-600 dark:text-amber-400 font-black">{linePendingReturnQty.toLocaleString()}</td>
@@ -4543,6 +4543,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                                 <th className="px-2 py-2 text-right">SL đợt này</th>
                                                                 <th className="px-2 py-2 text-right">Giá đợt</th>
                                                                 <th className="px-2 py-2 text-right">Còn lại</th>
+                                                                <th className="px-2 py-2 text-right">Thành tiền</th>
                                                             </tr>
                                                         </thead>
                                                         <tbody className="divide-y divide-slate-100">
@@ -4586,6 +4587,10 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                                         </td>
                                                                         <td className={`px-2 py-2 text-right font-black ${remainingTone}`}>
                                                                             {remainingQty < -0.000001 ? `Vượt ${fmtQty(Math.abs(remainingQty))}` : fmtQty(remainingQty)}
+                                                                        </td>
+                                                                        {/* thành tiền */}
+                                                                        <td className="px-2 py-2 text-right font-bold text-blue-600 " >
+                                                                            {fmtQty(Number(currentLine?.deliveryUnitPrice ?? 0) * Number(currentLine?.plannedQty ?? 0))}
                                                                         </td>
                                                                     </tr>
                                                                 );

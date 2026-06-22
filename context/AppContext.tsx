@@ -139,9 +139,9 @@ interface AppContextType {
   constructionSites: HrmConstructionSite[];
   shiftTypes: HrmShiftType[];
   employeeShifts: HrmEmployeeShift[];
-  addHrmItem: (table: string, item: any) => void;
-  updateHrmItem: (table: string, item: any) => void;
-  removeHrmItem: (table: string, id: string) => void;
+  addHrmItem: (table: string, item: any) => Promise<void>;
+  updateHrmItem: (table: string, item: any) => Promise<void>;
+  removeHrmItem: (table: string, id: string) => Promise<void>;
   // HRM 5A — Chấm công & Lương
   attendanceRecords: AttendanceRecord[];
   leaveRequests: LeaveRequest[];
@@ -2881,6 +2881,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const numberValue = Number(value);
         return Number.isFinite(numberValue) ? numberValue : null;
       };
+      const jsonArrayOrEmpty = (value: unknown) => Array.isArray(value) ? value : [];
+      const eventCount = Number.isFinite(Number(item.eventCount))
+        ? Math.max(0, Math.min(6, Number(item.eventCount)))
+        : jsonArrayOrEmpty(item.events).length;
 
       return {
         id: item.id,
@@ -2901,6 +2905,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         locationName: item.locationName || null,
         locationType: item.locationType || null,
         isOutOfRange: Boolean(item.isOutOfRange),
+        events: jsonArrayOrEmpty(item.events),
+        eventCount: Math.max(0, Math.min(6, eventCount)),
+        approvalStatus: item.approvalStatus || 'approved',
+        approvedBy: item.approvedBy || null,
+        approvedAt: item.approvedAt || null,
+        submittedToUserId: item.submittedToUserId || null,
         createdAt: item.createdAt || new Date().toISOString(),
       };
     }

@@ -1,23 +1,23 @@
 import React, { useState, useMemo, useCallback, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useModuleData } from '../../hooks/useModuleData';
-import { useTheme } from '../../context/ThemeContext';
 import {
   Calendar, ChevronLeft, ChevronRight, Clock, Users, Download,
   CheckCircle, XCircle, Sun, Coffee, Plane, Filter, Search,
   Upload, FileSpreadsheet, Loader2, CheckCircle2, AlertTriangle, Trash2, Star, Plus,
-  MapPin, Eye, Save, X, Edit3
+  MapPin, Eye, Save, X, Edit3, Camera
 } from 'lucide-react';
 import {
   AttendanceStatus, AttendanceRecord,
   ATTENDANCE_STATUS_LABELS, ATTENDANCE_STATUS_COLORS,
-  Role, HrmHoliday,
   AttendanceProposal, AttendanceProposalStatus,
   PROPOSAL_STATUS_LABELS, PROPOSAL_STATUS_COLORS
 } from '../../types';
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 import { usePermission } from '../../hooks/usePermission';
 import { loadXlsx } from '../../lib/loadXlsx';
+import { attendanceProposalService } from '../../lib/attendanceProposalService';
+import { getApiErrorMessage } from '../../lib/apiError';
 
 const STATUS_CYCLE: AttendanceStatus[] = ['present', 'absent', 'half_day', 'leave', 'holiday', 'business_trip'];
 
@@ -25,13 +25,31 @@ const STATUS_SHORT: Record<AttendanceStatus, string> = {
   present: '✓', late: 'M', absent: '✗', half_day: '½', leave: 'P', holiday: 'L', business_trip: 'CT',
 };
 
+const getAttendancePhotos = (record: AttendanceRecord) => {
+  const photos = [
+    ...(Array.isArray(record.events) ? record.events : []).map(event => ({
+      url: event.image_url,
+      action: event.action,
+      time: event.time,
+    })),
+    { url: record.checkInPhoto, action: 'check_in', time: record.checkIn },
+    { url: record.checkOutPhoto, action: 'check_out', time: record.checkOut },
+  ];
+
+  const seen = new Set<string>();
+  return photos.flatMap(photo => {
+    const url = typeof photo.url === 'string' ? photo.url.trim() : '';
+    if (!url || seen.has(url)) return [];
+    seen.add(url);
+    return [{ ...photo, url }];
+  });
+};
+
 const Attendance: React.FC = () => {
-  const { employees, attendanceRecords, hrmConstructionSites, hrmOffices, hrmWorkSchedules, holidays, attendanceProposals, addHrmItem, updateHrmItem, removeHrmItem, user, users, shiftTypes, employeeShifts } = useApp();
+  const { employees, attendanceRecords, hrmConstructionSites, hrmOffices, hrmWorkSchedules, holidays, attendanceProposals, addHrmItem, updateHrmItem, removeHrmItem, user, users, shiftTypes, employeeShifts, loadModuleData } = useApp();
   useModuleData('hrm');
-  const { theme } = useTheme();
-  const isDark = theme === 'dark';
-  const { canManage, isAdmin } = usePermission();
-  const canCRUD = canManage('/hrm/attendance');
+  const { isAdmin } = usePermission();
+  const canEditAttendance = isAdmin;
 
   const activeEmployees = useMemo(() => employees.filter(e => e.status === 'Đang làm việc'), [employees]);
 
@@ -162,6 +180,7 @@ const Attendance: React.FC = () => {
   const getDateKey = (day: number) => `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 
   const handleCellClick = useCallback((employeeId: string, day: number) => {
+    if (!canEditAttendance) return;
     const dateStr = getDateKey(day);
     const key = `${employeeId}_${dateStr}`;
     const existing = recordMap.get(key);
@@ -179,7 +198,7 @@ const Attendance: React.FC = () => {
         createdAt: new Date().toISOString(),
       });
     }
-  }, [recordMap, addHrmItem, updateHrmItem, currentYear, currentMonth]);
+  }, [canEditAttendance, recordMap, addHrmItem, updateHrmItem, currentYear, currentMonth]);
 
   // Open detail panel
   const handleOpenDetail = useCallback((employeeId: string, day: number) => {
@@ -196,6 +215,7 @@ const Attendance: React.FC = () => {
 
   // Save edited attendance with confirmation
   const handleSaveEdit = useCallback(() => {
+    if (!canEditAttendance) return;
     if (!detailCell) return;
     const dateStr = getDateKey(detailCell.day);
     const key = `${detailCell.employeeId}_${dateStr}`;
@@ -222,7 +242,7 @@ const Attendance: React.FC = () => {
     setShowSaveConfirm(false);
     setEditMode(false);
     // Keep detail panel open to see updated data
-  }, [detailCell, editCheckIn, editCheckOut, editNote, recordMap, updateHrmItem, addHrmItem, currentYear, currentMonth]);
+  }, [canEditAttendance, detailCell, editCheckIn, editCheckOut, editNote, recordMap, updateHrmItem, addHrmItem, currentYear, currentMonth]);
 
   // Determine cell color for past days (shift-aware with grace period)
   // 🟢 green = đúng giờ (within grace period)
@@ -277,14 +297,14 @@ const Attendance: React.FC = () => {
   // Admin: right-click để xóa ngày công
   const handleCellDelete = useCallback((e: React.MouseEvent, employeeId: string, day: number) => {
     e.preventDefault();
-    if (!canCRUD) return;
+    if (!canEditAttendance) return;
     const dateStr = getDateKey(day);
     const key = `${employeeId}_${dateStr}`;
     const existing = recordMap.get(key);
     if (existing) {
       removeHrmItem('hrm_attendance', existing.id);
     }
-  }, [canCRUD, recordMap, removeHrmItem, currentYear, currentMonth]);
+  }, [canEditAttendance, recordMap, removeHrmItem, currentYear, currentMonth]);
 
   // Stats per employee
   const getStats = useCallback((employeeId: string) => {
@@ -355,6 +375,7 @@ const Attendance: React.FC = () => {
 
   // Quick fill: mark all empty cells of today as 'present'
   const quickFillToday = () => {
+    if (!canEditAttendance) return;
     const today = new Date();
     if (today.getMonth() + 1 !== currentMonth || today.getFullYear() !== currentYear) return;
     const dateStr = getDateKey(today.getDate());
@@ -536,6 +557,7 @@ const Attendance: React.FC = () => {
   };
 
   const handleBulkImport = async () => {
+    if (!canEditAttendance) return;
     setImporting(true);
     const validRows = importRows.filter((_, idx) => !importErrors[idx]);
     let imported = 0;
@@ -574,20 +596,48 @@ const Attendance: React.FC = () => {
 
   // ==================== ĐỀ XUẤT CHẤM CÔNG ====================
 
-  const currentEmployee = useMemo(() => employees.find(e => e.userId === user.id), [employees, user.id]);
+  const currentEmployee = useMemo(() => employees.find(e => (
+    e.userId === user.id ||
+    e.email?.toLowerCase() === user.email?.toLowerCase()
+  )), [employees, user.email, user.id]);
 
   // Location options for proposal form
   const locationOptions = useMemo(() => {
-    const sites = hrmConstructionSites.map(s => ({ id: s.id, name: `🏗️ ${s.name}`, type: 'construction_site' as const }));
-    const offices = hrmOffices.map(o => ({ id: o.id, name: `🏢 ${o.name}`, type: 'office' as const }));
+    const sites = hrmConstructionSites.map(s => ({
+      id: s.id,
+      name: `🏗️ ${s.name}`,
+      plainName: s.name,
+      type: 'construction_site' as const,
+      managerId: s.managerId || '',
+      managerName: users.find(u => u.id === s.managerId)?.name || '',
+    }));
+    const offices = hrmOffices.map(o => ({
+      id: o.id,
+      name: `🏢 ${o.name}`,
+      plainName: o.name,
+      type: 'office' as const,
+      managerId: o.managerId || '',
+      managerName: users.find(u => u.id === o.managerId)?.name || '',
+    }));
     return [...sites, ...offices];
-  }, [hrmConstructionSites, hrmOffices]);
+  }, [hrmConstructionSites, hrmOffices, users]);
+  const selectedProposalLocation = useMemo(() => (
+    locationOptions.find(location => location.id === pLocationId && location.type === pLocationType) || null
+  ), [locationOptions, pLocationId, pLocationType]);
+  const proposalTargetOptions = useMemo(() => {
+    if (isAdmin) return activeEmployees;
+    return currentEmployee ? [currentEmployee] : [];
+  }, [activeEmployees, currentEmployee, isAdmin]);
+  const defaultProposalLocation = useMemo(() => {
+    if (!currentEmployee) return null;
+    if (currentEmployee.constructionSiteId) return { id: currentEmployee.constructionSiteId, type: 'construction_site' as const };
+    if (currentEmployee.officeId) return { id: currentEmployee.officeId, type: 'office' as const };
+    return null;
+  }, [currentEmployee]);
 
   // Manager check: is current user a manager of any site/office?
   const managedSiteIds = useMemo(() => hrmConstructionSites.filter(s => s.managerId === user.id).map(s => s.id), [hrmConstructionSites, user.id]);
   const managedOfficeIds = useMemo(() => hrmOffices.filter(o => o.managerId === user.id).map(o => o.id), [hrmOffices, user.id]);
-  const isManager = isAdmin || managedSiteIds.length > 0 || managedOfficeIds.length > 0;
-
   // Filter proposals: admin sees all, managers see proposals for their sites/offices, others see their own
   const filteredProposals = useMemo(() => {
     if (isAdmin) return attendanceProposals;
@@ -610,12 +660,24 @@ const Attendance: React.FC = () => {
     setPCheckOut('');
     setPStatus('present');
     setPReason('');
-    setPLocationId('');
-    setPLocationType('construction_site');
+    setPLocationId(defaultProposalLocation?.id || '');
+    setPLocationType(defaultProposalLocation?.type || 'construction_site');
   };
 
-  const handleCreateProposal = () => {
+  const handleCreateProposal = async () => {
     if (!currentEmployee || !pTargetEmployeeId || !pDate || !pReason) return;
+    if (!isAdmin && pTargetEmployeeId !== currentEmployee.id) {
+      alert('Nhân viên chỉ được tự đề xuất chấm công cho chính mình.');
+      return;
+    }
+    if (!pLocationId || !selectedProposalLocation) {
+      alert('Vui lòng chọn Công trường/Văn phòng để hệ thống chuyển đúng người quản lý duyệt.');
+      return;
+    }
+    if (!isAdmin && !selectedProposalLocation.managerId) {
+      alert('Địa điểm này chưa có người quản lý duyệt chấm công. Vui lòng báo quản trị cập nhật manager.');
+      return;
+    }
     const proposal: AttendanceProposal = {
       id: crypto.randomUUID(),
       proposerEmployeeId: currentEmployee.id,
@@ -627,71 +689,39 @@ const Attendance: React.FC = () => {
       reason: pReason,
       locationId: pLocationId || undefined,
       locationType: pLocationId ? pLocationType : undefined,
+      locationName: selectedProposalLocation?.plainName,
+      submittedToUserId: selectedProposalLocation?.managerId || undefined,
+      submittedToName: selectedProposalLocation?.managerName || undefined,
       proposalStatus: 'pending',
       createdAt: new Date().toISOString(),
     };
-    addHrmItem('hrm_attendance_proposals', proposal);
-    resetProposalForm();
-  };
-
-  const handleApprove = (proposal: AttendanceProposal) => {
-    const updated: AttendanceProposal = {
-      ...proposal,
-      proposalStatus: 'approved',
-      approvedBy: user.id,
-      approvedAt: new Date().toISOString(),
-    };
-    updateHrmItem('hrm_attendance_proposals', updated);
-
-    // Create/update attendance record
-    const key = `${proposal.targetEmployeeId}_${proposal.date}`;
-    const existing = recordMap.get(key);
-    const locationName = proposal.locationId ? (
-      proposal.locationType === 'construction_site'
-        ? hrmConstructionSites.find(s => s.id === proposal.locationId)?.name
-        : hrmOffices.find(o => o.id === proposal.locationId)?.name
-    ) : undefined;
-
-    if (existing) {
-      updateHrmItem('hrm_attendance', {
-        ...existing,
-        status: proposal.status,
-        checkIn: proposal.checkIn || existing.checkIn,
-        checkOut: proposal.checkOut || existing.checkOut,
-        constructionSiteId: proposal.locationType === 'construction_site' ? proposal.locationId : existing.constructionSiteId,
-        locationName: locationName || existing.locationName,
-        locationType: proposal.locationType || existing.locationType,
-        note: `Bù công (đề xuất bởi ${employees.find(e => e.id === proposal.proposerEmployeeId)?.fullName || 'N/A'})`,
-      });
-    } else {
-      addHrmItem('hrm_attendance', {
-        id: crypto.randomUUID(),
-        employeeId: proposal.targetEmployeeId,
-        date: proposal.date,
-        status: proposal.status,
-        checkIn: proposal.checkIn || undefined,
-        checkOut: proposal.checkOut || undefined,
-        constructionSiteId: proposal.locationType === 'construction_site' ? proposal.locationId : undefined,
-        locationName,
-        locationType: proposal.locationType,
-        note: `Bù công (đề xuất bởi ${employees.find(e => e.id === proposal.proposerEmployeeId)?.fullName || 'N/A'})`,
-        createdAt: new Date().toISOString(),
-      } as AttendanceRecord);
+    try {
+      await addHrmItem('hrm_attendance_proposals', proposal);
+      resetProposalForm();
+    } catch (error) {
+      await loadModuleData('hrm', true);
+      alert(getApiErrorMessage(error, 'Không gửi được đề xuất chấm công.'));
     }
   };
 
-  const handleReject = (proposalId: string) => {
-    const proposal = attendanceProposals.find(p => p.id === proposalId);
-    if (!proposal) return;
-    updateHrmItem('hrm_attendance_proposals', {
-      ...proposal,
-      proposalStatus: 'rejected',
-      approvedBy: user.id,
-      approvedAt: new Date().toISOString(),
-      rejectionReason: rejectReason || 'Từ chối',
-    });
-    setRejectId(null);
-    setRejectReason('');
+  const handleApprove = async (proposal: AttendanceProposal) => {
+    try {
+      await attendanceProposalService.review(proposal.id, 'approved');
+      await loadModuleData('hrm', true);
+    } catch (error) {
+      alert(getApiErrorMessage(error, 'Không duyệt được đề xuất chấm công.'));
+    }
+  };
+
+  const handleReject = async (proposalId: string) => {
+    try {
+      await attendanceProposalService.review(proposalId, 'rejected', rejectReason || 'Từ chối');
+      await loadModuleData('hrm', true);
+      setRejectId(null);
+      setRejectReason('');
+    } catch (error) {
+      alert(getApiErrorMessage(error, 'Không từ chối được đề xuất chấm công.'));
+    }
   };
 
   const canApprove = (proposal: AttendanceProposal): boolean => {
@@ -714,7 +744,7 @@ const Attendance: React.FC = () => {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          {canCRUD && (
+          {canEditAttendance && (
             <>
               <button onClick={quickFillToday} className="px-3 py-2 bg-emerald-500 text-white rounded-xl text-xs font-black hover:bg-emerald-600 transition flex items-center gap-1.5">
                 <CheckCircle size={14} /> Chấm hôm nay
@@ -1103,7 +1133,7 @@ const Attendance: React.FC = () => {
                       <span className="text-xs font-black text-foreground">{h.name}</span>
                       <span className="text-[10px] text-slate-400 ml-2">{new Date(h.date).toLocaleDateString('vi-VN', { weekday: 'short', day: '2-digit', month: '2-digit' })}</span>
                     </div>
-                    {canCRUD && (
+                    {canEditAttendance && (
                       <button onClick={() => removeHrmItem('hrm_holidays', h.id)} className="p-1 rounded text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition">
                         <Trash2 size={14} />
                       </button>
@@ -1194,6 +1224,9 @@ const Attendance: React.FC = () => {
                             {p.checkIn && <span className="text-emerald-600 font-bold">Vào: {p.checkIn}</span>}
                             {p.checkOut && <span className="text-orange-600 font-bold">Ra: {p.checkOut}</span>}
                             {loc && <span>📍 {loc}</span>}
+                            {(p.submittedToName || p.submittedToUserId) && (
+                              <span>Duyệt: {p.submittedToName || users.find(u => u.id === p.submittedToUserId)?.name || 'N/A'}</span>
+                            )}
                           </div>
                           <p className="text-[11px] text-muted-foreground mt-1 italic">💬 {p.reason}</p>
                           {p.proposalStatus === 'rejected' && p.rejectionReason && (
@@ -1268,7 +1301,7 @@ const Attendance: React.FC = () => {
                 <select value={pTargetEmployeeId} onChange={e => setPTargetEmployeeId(e.target.value)}
                   className="w-full px-4 py-2.5 text-sm border border-border rounded-xl bg-card text-foreground outline-none focus:ring-2 focus:ring-violet-300">
                   <option value="" className="bg-card text-foreground">— Chọn nhân viên —</option>
-                  {activeEmployees.map(e => (
+                  {proposalTargetOptions.map(e => (
                     <option key={e.id} value={e.id} className="bg-card text-foreground">{e.fullName} ({e.employeeCode}){e.id === currentEmployee?.id ? ' ← Tôi' : ''}</option>
                   ))}
                 </select>
@@ -1318,6 +1351,11 @@ const Attendance: React.FC = () => {
                     <option key={l.id} value={`${l.type}:${l.id}`} className="bg-card text-foreground">{l.name}</option>
                   ))}
                 </select>
+                {selectedProposalLocation && (
+                  <p className="mt-1 text-[10px] font-bold text-muted-foreground">
+                    Người duyệt: {selectedProposalLocation.managerName || 'Chưa gán quản lý địa điểm'}
+                  </p>
+                )}
               </div>
               {/* Reason */}
               <div>
@@ -1348,6 +1386,7 @@ const Attendance: React.FC = () => {
         const emp = employees.find(e => e.id === detailCell.employeeId);
         const dayInfo = dayHeaders.find(d => d.dayNum === detailCell.day);
         const indicator = getCellIndicator(rec, detailCell.day, detailCell.employeeId);
+        const attendancePhotos = rec ? getAttendancePhotos(rec) : [];
 
         // Location info
         let locationDisplay = rec?.locationName || '';
@@ -1468,7 +1507,7 @@ const Attendance: React.FC = () => {
                       )}
                     </div>
 
-                    {/* Note */}
+                    {/* Note editor / attendance photos */}
                     {editMode ? (
                       <div>
                         <span className="text-[10px] font-bold text-slate-400 uppercase">Ghi chú:</span>
@@ -1477,12 +1516,39 @@ const Attendance: React.FC = () => {
                           className="w-full mt-1 px-3 py-2 text-sm border border-border rounded-xl bg-card text-foreground outline-none focus:ring-2 focus:ring-violet-300 resize-none"
                           placeholder="Ghi chú..." />
                       </div>
-                    ) : rec.note ? (
-                      <div className="bg-muted rounded-xl p-3">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase">Ghi chú</span>
-                        <p className="text-xs text-foreground mt-1">{rec.note}</p>
+                    ) : attendancePhotos.length > 0 ? (
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-400 uppercase">Ảnh chấm công</span>
+                        <div className="mt-2 grid grid-cols-3 gap-2">
+                          {attendancePhotos.map((photo, index) => (
+                            <a
+                              key={`${photo.url}_${index}`}
+                              href={photo.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="group relative aspect-square overflow-hidden rounded-lg bg-muted"
+                              title={`${photo.action === 'check_out' ? 'Check-out' : 'Check-in'} ${photo.time || ''}`.trim()}
+                            >
+                              <img
+                                src={photo.url}
+                                alt={`${photo.action === 'check_out' ? 'Ảnh check-out' : 'Ảnh check-in'} ${photo.time || ''}`.trim()}
+                                loading="lazy"
+                                className="h-full w-full object-cover transition-transform group-hover:scale-105"
+                              />
+                              {photo.time && (
+                                <span className="absolute bottom-1 left-1 rounded bg-black/65 px-1.5 py-0.5 text-[9px] font-bold text-white">
+                                  {photo.action === 'check_out' ? 'Ra' : 'Vào'} {photo.time}
+                                </span>
+                              )}
+                            </a>
+                          ))}
+                        </div>
                       </div>
-                    ) : null}
+                    ) : (
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <Camera size={14} /> Chưa có ảnh chấm công
+                      </div>
+                    )}
 
                     {/* Out of range warning */}
                     {rec.isOutOfRange && (
@@ -1504,12 +1570,16 @@ const Attendance: React.FC = () => {
               {/* Footer — Admin actions */}
               <div className="border-t border-border px-6 py-4 flex items-center justify-between gap-2">
                 {/* Left: cycle status */}
-                <button
-                  onClick={() => handleCellClick(detailCell.employeeId, detailCell.day)}
-                  className="px-3 py-2 text-xs font-black text-muted-foreground hover:text-violet-600 hover:bg-violet-500/10 rounded-xl transition flex items-center gap-1.5"
-                >
-                  <CheckCircle2 size={14} /> Chuyển trạng thái
-                </button>
+                {canEditAttendance ? (
+                  <button
+                    onClick={() => handleCellClick(detailCell.employeeId, detailCell.day)}
+                    className="px-3 py-2 text-xs font-black text-muted-foreground hover:text-violet-600 hover:bg-violet-500/10 rounded-xl transition flex items-center gap-1.5"
+                  >
+                    <CheckCircle2 size={14} /> Chuyển trạng thái
+                  </button>
+                ) : (
+                  <span className="text-[10px] font-bold text-muted-foreground">Chỉ xem</span>
+                )}
 
                 {/* Right: admin edit */}
                 {isAdmin && (
