@@ -53,6 +53,17 @@ const normalizeBatch = (batch: any, lines: any[]): MaterialRequestFulfillmentBat
   lines: lines.map(fromDb),
 }) as MaterialRequestFulfillmentBatch;
 
+export interface UpdateCompanyDeliveryGroupInput {
+  deliveryGroupId: string;
+  plannedDate: string;
+  note?: string | null;
+  lines: Array<{
+    id: string;
+    issuedQty: number;
+    deliveryUnitPrice: number;
+  }>;
+}
+
 const loadInventoryByIds = async (ids: string[]): Promise<Map<string, InventoryItem>> => {
   const uniqueIds = Array.from(new Set(ids.filter(Boolean)));
   if (uniqueIds.length === 0) return new Map();
@@ -451,6 +462,16 @@ export const companyProcurementService = {
       purchaseOrder: poRow ? mapPurchaseOrder(poRow) : null,
       batches: batches.map(batch => normalizeBatch(batch, linesByBatch.get(batch.id) || [])),
     };
+  },
+
+  async updateDeliveryGroup(input: UpdateCompanyDeliveryGroupInput): Promise<void> {
+    const { error } = await supabase.rpc('update_purchase_order_delivery_group_v1', {
+      p_delivery_group_id: input.deliveryGroupId,
+      p_planned_date: input.plannedDate,
+      p_note: input.note || null,
+      p_lines: input.lines,
+    });
+    if (error) throw error;
   },
 };
 

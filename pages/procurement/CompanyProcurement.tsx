@@ -4,11 +4,15 @@ import {
   BarChart3,
   Check,
   ClipboardList,
+  Eye,
+  EyeOff,
   FileText,
   Loader2,
   PackageCheck,
+  Pencil,
   Printer,
   RefreshCw,
+  Save,
   Search,
   ShoppingCart,
   Trash2,
@@ -63,6 +67,15 @@ type DeliveryDraftLine = {
   unit?: string | null;
 };
 
+type DeliveryEditDraft = {
+  plannedDate: string;
+  note: string;
+  lines: Record<string, {
+    issuedQty: string;
+    deliveryUnitPrice: string;
+  }>;
+};
+
 const formatQty = (value: number) =>
   Number(value || 0).toLocaleString('vi-VN', { maximumFractionDigits: 3 });
 
@@ -75,6 +88,32 @@ const formatDate = (value?: string | null) => {
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleDateString('vi-VN');
 };
+
+const toDateInputValue = (value?: string | null) => {
+  const date = value ? new Date(value) : new Date();
+  if (Number.isNaN(date.getTime())) return '';
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const isRejectedDeliveryGroup = (detail: CompanyProcurementDeliveryGroupDetail) =>
+  detail.group.status === 'cancelled'
+  || (detail.batches.length > 0 && detail.batches.every(batch =>
+    ['returned', 'cancelled'].includes(batch.status)
+    && batch.lines.every(line => Number(line.receivedQty || 0) <= 0)
+  ));
+
+const isEditableDeliveryGroup = (detail: CompanyProcurementDeliveryGroupDetail) =>
+  ['draft', 'issued'].includes(detail.group.status)
+  && detail.batches.every(batch =>
+    ['draft', 'issued'].includes(batch.status)
+    && batch.lines.every(line => Number(line.receivedQty || 0) <= 0)
+  );
+
+const isRemovableDeliveryGroup = (detail: CompanyProcurementDeliveryGroupDetail) =>
+  detail.batches.length === 0 || isRejectedDeliveryGroup(detail);
 
 const poStatusLabel: Record<string, string> = {
   draft: 'Nháp',
@@ -200,6 +239,10 @@ const CompanyProcurement: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [deletingDeliveryGroupId, setDeletingDeliveryGroupId] = useState<string | null>(null);
+  const [savingDeliveryGroupId, setSavingDeliveryGroupId] = useState<string | null>(null);
+  const [editingDeliveryGroupId, setEditingDeliveryGroupId] = useState<string | null>(null);
+  const [expandedDeliveryGroupIds, setExpandedDeliveryGroupIds] = useState<string[]>([]);
+  const [deliveryEditDraft, setDeliveryEditDraft] = useState<DeliveryEditDraft | null>(null);
   const [demandRows, setDemandRows] = useState<CompanyProcurementDemandLine[]>([]);
   const [companyPos, setCompanyPos] = useState<PurchaseOrder[]>([]);
   const [deliveryGroups, setDeliveryGroups] = useState<CompanyProcurementDeliveryGroupDetail[]>([]);
@@ -477,6 +520,97 @@ const CompanyProcurement: React.FC = () => {
     }
   };
 
+  const toggleDeliveryGroupView = (groupId: string) => {
+    setExpandedDeliveryGroupIds(prev => prev.includes(groupId)
+      ? prev.filter(id => id !== groupId)
+      : [...prev, groupId]);
+  };
+
+  const startEditingDeliveryGroup = (detail: CompanyProcurementDeliveryGroupDetail) => {
+    const po = detail.purchaseOrder;
+    if (!po || !canUserMutatePurchaseOrder(po, user)) {
+      toast.warning('Không có quyền sửa đợt giao', 'Chỉ Admin hoặc người tạo PO được sửa đợt giao này.');
+      return;
+    }
+    if (!isEditableDeliveryGroup(detail)) {
+      toast.warning('Chưa thể sửa đợt giao', 'Chỉ sửa được khi đợt chưa nhập kho, chưa bị từ chối và phiếu kho chưa được xử lý.');
+      return;
+    }
+
+    const lines = detail.batches.flatMap(batch => batch.lines);
+    setDeliveryEditDraft({
+      plannedDate: toDateInputValue(detail.group.plannedDate),
+      note: detail.group.note || '',
+      lines: Object.fromEntries(lines.map(line => [line.id, {
+        issuedQty: String(Number(line.issuedQty || 0)),
+        deliveryUnitPrice: String(Number(line.deliveryUnitPrice || 0)),
+      }])),
+    });
+    setEditingDeliveryGroupId(detail.group.id);
+    setExpandedDeliveryGroupIds(prev => prev.includes(detail.group.id) ? prev : [...prev, detail.group.id]);
+  };
+
+  const cancelEditingDeliveryGroup = () => {
+    setEditingDeliveryGroupId(null);
+    setDeliveryEditDraft(null);
+  };
+
+  const updateDeliveryEditLine = (
+    lineId: string,
+    patch: Partial<DeliveryEditDraft['lines'][string]>,
+  ) => {
+    setDeliveryEditDraft(prev => prev ? {
+      ...prev,
+      lines: {
+        ...prev.lines,
+        [lineId]: {
+          ...(prev.lines[lineId] || { issuedQty: '0', deliveryUnitPrice: '0' }),
+          ...patch,
+        },
+      },
+    } : prev);
+  };
+
+  const handleSaveDeliveryGroup = async (detail: CompanyProcurementDeliveryGroupDetail) => {
+    if (!deliveryEditDraft || editingDeliveryGroupId !== detail.group.id || savingDeliveryGroupId) return;
+    if (!deliveryEditDraft.plannedDate) {
+      toast.warning('Thiếu ngày giao', 'Vui lòng chọn ngày giao dự kiến.');
+      return;
+    }
+
+    const lines = detail.batches.flatMap(batch => batch.lines).map(line => ({
+      id: line.id,
+      issuedQty: Number(deliveryEditDraft.lines[line.id]?.issuedQty || 0),
+      deliveryUnitPrice: Number(deliveryEditDraft.lines[line.id]?.deliveryUnitPrice || 0),
+    }));
+    if (lines.some(line => !Number.isFinite(line.issuedQty) || line.issuedQty <= 0)) {
+      toast.warning('Số lượng chưa hợp lệ', 'Số lượng của mỗi dòng phải lớn hơn 0.');
+      return;
+    }
+    if (lines.some(line => !Number.isFinite(line.deliveryUnitPrice) || line.deliveryUnitPrice < 0)) {
+      toast.warning('Đơn giá chưa hợp lệ', 'Đơn giá của mỗi dòng không được âm.');
+      return;
+    }
+
+    setSavingDeliveryGroupId(detail.group.id);
+    try {
+      await companyProcurementService.updateDeliveryGroup({
+        deliveryGroupId: detail.group.id,
+        plannedDate: deliveryEditDraft.plannedDate,
+        note: deliveryEditDraft.note,
+        lines,
+      });
+      toast.success('Đã lưu đợt giao', `${detail.group.deliveryNo} đã được cập nhật.`);
+      cancelEditingDeliveryGroup();
+      await refresh();
+    } catch (err: any) {
+      logApiError('companyProcurement.updateDeliveryGroup', err);
+      toast.error('Không lưu được đợt giao', getApiErrorMessage(err));
+    } finally {
+      setSavingDeliveryGroupId(null);
+    }
+  };
+
   const handleRemoveDeliveryGroup = async (detail: CompanyProcurementDeliveryGroupDetail) => {
     const po = detail.purchaseOrder;
     if (!po) {
@@ -485,6 +619,10 @@ const CompanyProcurement: React.FC = () => {
     }
     if (!canUserMutatePurchaseOrder(po, user)) {
       toast.warning('Không có quyền xoá đợt giao', 'Chỉ Admin hoặc người tạo PO được xoá đợt giao này.');
+      return;
+    }
+    if (!isRemovableDeliveryGroup(detail)) {
+      toast.warning('Chưa thể xoá đợt giao', 'Đợt giao còn phiếu kho chờ xử lý. Hãy để thủ kho huỷ/từ chối phiếu trước khi xoá đợt.');
       return;
     }
     const ok = await confirm({
@@ -827,18 +965,24 @@ const CompanyProcurement: React.FC = () => {
               <div className="grid gap-3">
                 {deliveryGroups.map(detail => {
                   const po = detail.purchaseOrder;
-                  const total = detail.batches.flatMap(batch => batch.lines).reduce((sum, line) => sum + Number(line.issuedQty || 0) * Number(line.deliveryUnitPrice || 0), 0);
-                  const isRejectedGroup = detail.group.status === 'cancelled'
-                    || (detail.batches.length > 0 && detail.batches.every(batch =>
-                      ['returned', 'cancelled'].includes(batch.status)
-                      && batch.lines.every(line => Number(line.receivedQty || 0) <= 0)
-                    ));
-                  const canRemoveGroup = !!po && canUserMutatePurchaseOrder(po, user) && isRejectedGroup;
+                  const detailLines = detail.batches.flatMap(batch => batch.lines.map(line => ({ batch, line })));
+                  const isEditingGroup = editingDeliveryGroupId === detail.group.id && !!deliveryEditDraft;
+                  const isExpandedGroup = isEditingGroup || expandedDeliveryGroupIds.includes(detail.group.id);
+                  const total = detailLines.reduce((sum, { line }) => {
+                    const editLine = isEditingGroup ? deliveryEditDraft.lines[line.id] : null;
+                    const issuedQty = Number(editLine?.issuedQty ?? line.issuedQty ?? 0);
+                    const unitPrice = Number(editLine?.deliveryUnitPrice ?? line.deliveryUnitPrice ?? 0);
+                    return sum + issuedQty * unitPrice;
+                  }, 0);
+                  const isRejectedGroup = isRejectedDeliveryGroup(detail);
+                  const canMutateGroup = !!po && canUserMutatePurchaseOrder(po, user);
+                  const canEditGroup = canMutateGroup && isEditableDeliveryGroup(detail);
                   const isDeletingGroup = deletingDeliveryGroupId === detail.group.id;
+                  const isSavingGroup = savingDeliveryGroupId === detail.group.id;
                   return (
                     <div key={detail.group.id} className="rounded-md border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
                       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                        <button type="button" onClick={() => printDeliveryGroup(detail)} className="text-left">
+                        <div className="text-left">
                           <div className="flex items-center gap-2">
                             <FileText className="h-5 w-5 text-indigo-600" />
                             <span className="font-mono text-lg font-black text-indigo-700 dark:text-indigo-300">{detail.group.deliveryNo}</span>
@@ -849,12 +993,57 @@ const CompanyProcurement: React.FC = () => {
                             )}
                           </div>
                           <div className="mt-1 text-sm font-bold text-slate-700 dark:text-slate-200">{po?.poNumber || detail.group.purchaseOrderId} • {po?.vendorName || po?.vendorId || '—'} • {formatDate(detail.group.plannedDate)}</div>
-                        </button>
-                        <div className="flex items-center gap-2">
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
                           <div className="rounded-md bg-slate-100 px-3 py-2 text-right dark:bg-slate-800">
                             <div className="text-xs font-bold uppercase text-slate-500">Thành tiền đợt</div>
                             <div className="font-black text-slate-900 dark:text-slate-100">{formatMoney(total)}</div>
                           </div>
+                          <button
+                            type="button"
+                            onClick={() => toggleDeliveryGroupView(detail.group.id)}
+                            className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-black text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
+                          >
+                            {isExpandedGroup ? <EyeOff size={16} /> : <Eye size={16} />}
+                            {isExpandedGroup ? 'Thu gọn' : 'Xem'}
+                          </button>
+                          {isEditingGroup ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleSaveDeliveryGroup(detail)}
+                                disabled={isSavingGroup}
+                                className="inline-flex items-center gap-2 rounded-md bg-emerald-600 px-3 py-2 text-sm font-black text-white hover:bg-emerald-700 disabled:opacity-60"
+                              >
+                                {isSavingGroup ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                                Lưu
+                              </button>
+                              <button
+                                type="button"
+                                onClick={cancelEditingDeliveryGroup}
+                                disabled={isSavingGroup}
+                                className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-black text-slate-700 hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
+                              >
+                                <X size={16} />
+                                Huỷ
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => startEditingDeliveryGroup(detail)}
+                              disabled={!canEditGroup}
+                              title={!canMutateGroup
+                                ? 'Chỉ Admin hoặc người tạo PO được sửa.'
+                                : !canEditGroup
+                                  ? 'Đợt đã được xử lý, nhập kho hoặc từ chối nên không thể sửa.'
+                                  : 'Sửa đợt giao'}
+                              className="inline-flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-black text-amber-700 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300"
+                            >
+                              <Pencil size={16} />
+                              Sửa
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={() => printDeliveryGroup(detail)}
@@ -863,32 +1052,112 @@ const CompanyProcurement: React.FC = () => {
                             <Printer size={16} />
                             In đợt
                           </button>
-                          {canRemoveGroup && (
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveDeliveryGroup(detail)}
-                              disabled={isDeletingGroup}
-                              className="inline-flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-black text-red-700 hover:bg-red-100 disabled:opacity-60 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300"
-                            >
-                              {isDeletingGroup ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
-                              Xoá đợt
-                            </button>
-                          )}
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveDeliveryGroup(detail)}
+                            disabled={!canMutateGroup || isDeletingGroup || isSavingGroup}
+                            title={!canMutateGroup
+                              ? 'Chỉ Admin hoặc người tạo PO được xoá.'
+                              : isRemovableDeliveryGroup(detail)
+                                ? 'Xoá đợt giao'
+                                : 'Cần huỷ/từ chối phiếu kho trước khi xoá đợt.'}
+                            className="inline-flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-black text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300"
+                          >
+                            {isDeletingGroup ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                            Xoá
+                          </button>
                         </div>
                       </div>
-                      <div className="mt-3 grid gap-2">
-                        {detail.batches.flatMap(batch => batch.lines.map(line => (
-                          <div key={line.id} className="grid grid-cols-1 gap-2 rounded-md border border-slate-100 px-3 py-2 text-sm dark:border-slate-800 md:grid-cols-[1fr_140px_140px_160px]">
-                            <div>
-                              <div className="font-bold text-slate-800 dark:text-slate-100">{batch.batchNo}</div>
-                              <div className="text-xs font-semibold text-slate-500">{getWarehouseName(batch.targetWarehouseId)}</div>
+                      {isExpandedGroup && (
+                        <div className="mt-4 border-t border-slate-100 pt-4 dark:border-slate-800">
+                          {isEditingGroup ? (
+                            <div className="mb-3 grid gap-3 md:grid-cols-[220px_minmax(0,1fr)]">
+                              <label className="grid gap-1 text-xs font-black uppercase text-slate-500">
+                                Ngày giao dự kiến
+                                <input
+                                  type="date"
+                                  value={deliveryEditDraft.plannedDate}
+                                  onChange={event => setDeliveryEditDraft(prev => prev ? { ...prev, plannedDate: event.target.value } : prev)}
+                                  className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm font-bold text-slate-800 outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                                />
+                              </label>
+                              <label className="grid gap-1 text-xs font-black uppercase text-slate-500">
+                                Ghi chú
+                                <input
+                                  type="text"
+                                  value={deliveryEditDraft.note}
+                                  onChange={event => setDeliveryEditDraft(prev => prev ? { ...prev, note: event.target.value } : prev)}
+                                  className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm font-bold normal-case text-slate-800 outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                                  placeholder="Ghi chú cho đợt giao"
+                                />
+                              </label>
                             </div>
-                            <div className="font-bold">{formatQty(Number(line.issuedQty || 0))} {line.deliveryUnit || line.unit}</div>
-                            <div className="font-bold">{formatMoney(Number(line.deliveryUnitPrice || 0))}</div>
-                            <div className="text-right font-black">{formatMoney(Number(line.issuedQty || 0) * Number(line.deliveryUnitPrice || 0))}</div>
+                          ) : detail.group.note ? (
+                            <div className="mb-3 rounded-md bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-600 dark:bg-slate-950 dark:text-slate-300">
+                              {detail.group.note}
+                            </div>
+                          ) : null}
+                          <div className="grid gap-2">
+                            {detailLines.map(({ batch, line }) => {
+                              const editLine = isEditingGroup ? deliveryEditDraft.lines[line.id] : null;
+                              const issuedQty = Number(editLine?.issuedQty ?? line.issuedQty ?? 0);
+                              const unitPrice = Number(editLine?.deliveryUnitPrice ?? line.deliveryUnitPrice ?? 0);
+                              return (
+                                <div key={line.id} className="grid grid-cols-1 gap-3 rounded-md border border-slate-100 px-3 py-3 text-sm dark:border-slate-800 md:grid-cols-[minmax(0,1fr)_160px_160px_160px] md:items-end">
+                                  <div>
+                                    <div className="font-black text-slate-800 dark:text-slate-100">{itemById.get(line.itemId)?.name || line.itemId}</div>
+                                    <div className="mt-1 text-xs font-semibold text-slate-500">{batch.batchNo} • {getWarehouseName(batch.targetWarehouseId)}</div>
+                                  </div>
+                                  {isEditingGroup ? (
+                                    <>
+                                      <label className="grid gap-1 text-xs font-black uppercase text-slate-500">
+                                        Số lượng
+                                        <div className="flex h-10 items-center overflow-hidden rounded-md border border-slate-200 bg-white focus-within:border-indigo-500 dark:border-slate-700 dark:bg-slate-950">
+                                          <input
+                                            type="number"
+                                            min="0.001"
+                                            step="0.001"
+                                            value={editLine?.issuedQty || ''}
+                                            onChange={event => updateDeliveryEditLine(line.id, { issuedQty: event.target.value })}
+                                            className="min-w-0 flex-1 bg-transparent px-3 text-right text-sm font-bold text-slate-800 outline-none dark:text-slate-100"
+                                          />
+                                          <span className="pr-3 text-xs font-bold normal-case text-slate-500">{line.deliveryUnit || line.unit}</span>
+                                        </div>
+                                      </label>
+                                      <label className="grid gap-1 text-xs font-black uppercase text-slate-500">
+                                        Đơn giá
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          step="1"
+                                          value={editLine?.deliveryUnitPrice || ''}
+                                          onChange={event => updateDeliveryEditLine(line.id, { deliveryUnitPrice: event.target.value })}
+                                          className="h-10 rounded-md border border-slate-200 bg-white px-3 text-right text-sm font-bold text-slate-800 outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                                        />
+                                      </label>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <div>
+                                        <div className="text-xs font-black uppercase text-slate-400">Số lượng</div>
+                                        <div className="mt-1 font-bold">{formatQty(issuedQty)} {line.deliveryUnit || line.unit}</div>
+                                      </div>
+                                      <div>
+                                        <div className="text-xs font-black uppercase text-slate-400">Đơn giá</div>
+                                        <div className="mt-1 font-bold">{formatMoney(unitPrice)}</div>
+                                      </div>
+                                    </>
+                                  )}
+                                  <div className="md:text-right">
+                                    <div className="text-xs font-black uppercase text-slate-400">Thành tiền</div>
+                                    <div className="mt-1 font-black">{formatMoney(issuedQty * unitPrice)}</div>
+                                  </div>
+                                </div>
+                              );
+                            })}
                           </div>
-                        )))}
-                      </div>
+                        </div>
+                      )}
                     </div>
                   );
                 })}

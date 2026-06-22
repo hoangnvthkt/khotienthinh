@@ -139,6 +139,13 @@ const CheckIn: React.FC = () => {
     return attendanceRecords.find(record => record.employeeId === currentEmployee.id && record.date === workDate) || null;
   }, [attendanceRecords, currentEmployee, workDate]);
   const effectiveTodayRecord = lastSavedRecord?.date === workDate ? lastSavedRecord : todayRecord;
+  const currentEventCount = useMemo(() => {
+    if (!effectiveTodayRecord) return 0;
+    if (Number.isFinite(Number(effectiveTodayRecord.eventCount))) return Number(effectiveTodayRecord.eventCount);
+    if (Array.isArray(effectiveTodayRecord.events)) return effectiveTodayRecord.events.length;
+    return [effectiveTodayRecord.checkIn, effectiveTodayRecord.checkOut].filter(Boolean).length;
+  }, [effectiveTodayRecord]);
+  const eventLimitReached = currentEventCount >= 6;
 
   const baseLocations = useMemo<LocationOption[]>(() => {
     const sites = hrmConstructionSites.map<LocationOption>(site => ({
@@ -306,6 +313,7 @@ const CheckIn: React.FC = () => {
     if (selectedLocation.lat === null || selectedLocation.lng === null) throw new Error('Địa điểm này chưa có tọa độ GPS.');
     if (gpsLat === null || gpsLng === null) throw new Error('Chưa lấy được GPS của thiết bị.');
     if (!cameraReady) throw new Error('Camera chưa sẵn sàng.');
+    if (eventLimitReached) throw new Error('Hệ thống chỉ ghi nhận tối đa 6 lần chấm công trong ngày.');
     if (action === 'check_out' && !effectiveTodayRecord?.checkIn) throw new Error('Chưa có check-in để check-out.');
   };
 
@@ -330,7 +338,7 @@ const CheckIn: React.FC = () => {
       await loadModuleData('hrm', true);
 
       if (action === 'check_in') {
-        setLastAction(`Da check-in luc ${saved.checkIn || timeLocal()}`);
+        setLastAction(`Da check-in luc ${timeLocal()} (${saved.eventCount || currentEventCount + 1}/6)`);
         xpService.awardXP(currentEmployee!.id, 'daily_checkin').catch(() => { });
         celebrate({
           variant: 'checkin',
@@ -340,7 +348,7 @@ const CheckIn: React.FC = () => {
           duration: 1600,
         });
       } else {
-        setLastAction(`Da check-out luc ${saved.checkOut || timeLocal()}`);
+        setLastAction(`Da check-out luc ${timeLocal()} (${saved.eventCount || currentEventCount + 1}/6)`);
         showToast({
           type: 'success',
           title: 'Check-out thanh cong',
@@ -394,8 +402,8 @@ const CheckIn: React.FC = () => {
         </div>
         <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3">
           <Navigation size={15} className="text-amber-500 mb-1" />
-          <p className="text-[10px] font-bold text-slate-400">GPS</p>
-          <p className="text-lg font-black text-slate-900 dark:text-white">{gpsAccuracy ? `${gpsAccuracy}m` : '-'}</p>
+          <p className="text-[10px] font-bold text-slate-400">Lần ghi</p>
+          <p className="text-lg font-black text-slate-900 dark:text-white">{currentEventCount}/6</p>
         </div>
       </div>
 
@@ -488,7 +496,7 @@ const CheckIn: React.FC = () => {
       <div className="grid grid-cols-2 gap-3">
         <button
           onClick={() => submitAttendance('check_in')}
-          disabled={Boolean(processing) || !cameraReady || !selectedLocation || gpsLat === null}
+          disabled={Boolean(processing) || !cameraReady || !selectedLocation || gpsLat === null || eventLimitReached}
           className="min-h-[84px] rounded-2xl bg-emerald-600 px-3 py-4 text-white shadow-lg shadow-emerald-600/20 disabled:opacity-40 disabled:shadow-none"
         >
           {processing === 'check_in' ? <RefreshCw size={24} className="mx-auto mb-1 animate-spin" /> : <LogIn size={24} className="mx-auto mb-1" />}
@@ -498,7 +506,7 @@ const CheckIn: React.FC = () => {
 
         <button
           onClick={() => submitAttendance('check_out')}
-          disabled={Boolean(processing) || !cameraReady || !selectedLocation || !effectiveTodayRecord?.checkIn || Boolean(effectiveTodayRecord?.checkOut)}
+          disabled={Boolean(processing) || !cameraReady || !selectedLocation || !effectiveTodayRecord?.checkIn || eventLimitReached}
           className="min-h-[84px] rounded-2xl bg-orange-600 px-3 py-4 text-white shadow-lg shadow-orange-600/20 disabled:opacity-40 disabled:shadow-none"
         >
           {processing === 'check_out' ? <RefreshCw size={24} className="mx-auto mb-1 animate-spin" /> : <LogOut size={24} className="mx-auto mb-1" />}
@@ -512,14 +520,19 @@ const CheckIn: React.FC = () => {
           ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300'
           : 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-800 dark:bg-rose-950/30 dark:text-rose-300'
           }`}>
-          {lastAction.startsWith('Đã ') ? <CheckCircle size={22} className="mx-auto mb-1" /> : <AlertTriangle size={22} className="mx-auto mb-1" />}
+          {lastAction.startsWith('Da ') ? <CheckCircle size={22} className="mx-auto mb-1" /> : <AlertTriangle size={22} className="mx-auto mb-1" />}
           <p className="text-sm font-black">{lastAction}</p>
         </div>
       )}
 
       {effectiveTodayRecord && (
         <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4">
-          <p className="mb-3 text-[10px] font-black uppercase text-slate-400">Chấm công hôm nay</p>
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <p className="text-[10px] font-black uppercase text-slate-400">Chấm công hôm nay</p>
+            <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${eventLimitReached ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-300'}`}>
+              {currentEventCount}/6 lần
+            </span>
+          </div>
           <div className="flex items-center gap-3">
             {effectiveTodayRecord.checkInPhoto ? (
               <img src={effectiveTodayRecord.checkInPhoto} alt="Check-in" className="h-14 w-14 rounded-xl object-cover" />
@@ -536,6 +549,23 @@ const CheckIn: React.FC = () => {
               <p className="mt-1 truncate text-xs font-bold text-slate-500">{effectiveTodayRecord.locationName || selectedLocation?.name || '-'}</p>
             </div>
           </div>
+          {Array.isArray(effectiveTodayRecord.events) && effectiveTodayRecord.events.length > 0 && (
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              {effectiveTodayRecord.events.map((event, index) => (
+                <div key={`${event.action}_${event.time}_${index}`} className="rounded-lg bg-slate-50 px-3 py-2 text-xs dark:bg-slate-800">
+                  <p className={`font-black ${event.action === 'check_out' ? 'text-orange-600' : 'text-emerald-600'}`}>
+                    {event.action === 'check_out' ? 'Ra' : 'Vào'} {event.time || '--:--'}
+                  </p>
+                  <p className="mt-0.5 truncate text-[10px] font-bold text-slate-400">{event.location_name || effectiveTodayRecord.locationName || '-'}</p>
+                </div>
+              ))}
+            </div>
+          )}
+          {eventLimitReached && (
+            <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs font-bold text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
+              Hôm nay đã đủ 6 lần ghi nhận. Bảng công vẫn tính theo giờ vào sớm nhất và giờ ra muộn nhất.
+            </p>
+          )}
         </div>
       )}
 

@@ -41,6 +41,8 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId, enabled
     const [browserPermission, setBrowserPermission] = useState<NotificationPermission>(
         typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'denied'
     );
+    const [webPushEnabled, setWebPushEnabled] = useState(false);
+    const webPushEnabledRef = useRef(false);
     const bellRef = useRef<HTMLButtonElement>(null);
     const panelRef = useRef<HTMLDivElement>(null);
     const [panelPos, setPanelPos] = useState({ top: 0, left: 0 });
@@ -94,11 +96,11 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId, enabled
             });
             if (!n.isRead) setUnreadCount(c => Math.min(100, c + 1));
 
-            // Browser Push Notification — show when tab not focused
-            if ('Notification' in window && !document.hasFocus() && Notification.permission === 'granted') {
+            // Fallback browser notification when Web Push is not enabled on this device.
+            if ('Notification' in window && !document.hasFocus() && Notification.permission === 'granted' && !webPushEnabledRef.current) {
                 const browserNotif = new Notification(n.title, {
                     body: n.message,
-                    icon: '/vite.svg',
+                    icon: '/icons/icon-192.png',
                     tag: n.id, // dedup
                     silent: n.severity !== 'critical',
                 });
@@ -139,9 +141,27 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId, enabled
         if (!isActive) return;
         if ('Notification' in window) setBrowserPermission(Notification.permission);
         if (userId && webPushService.isSupported() && Notification.permission === 'granted') {
-            webPushService.ensureSubscription(userId).catch(err => console.error('Web push subscription error:', err));
+            webPushService.ensureSubscription(userId)
+                .then(enabled => {
+                    setWebPushEnabled(enabled);
+                    webPushEnabledRef.current = enabled;
+                })
+                .catch(err => console.error('Web push subscription error:', err));
         }
     }, [isActive, userId]);
+
+    useEffect(() => {
+        if (!isActive || !userId) return;
+        webPushService.isEnabledForThisDevice(userId)
+            .then(enabled => {
+                setWebPushEnabled(enabled);
+                webPushEnabledRef.current = enabled;
+            })
+            .catch(() => {
+                setWebPushEnabled(false);
+                webPushEnabledRef.current = false;
+            });
+    }, [isActive, userId, browserPermission]);
 
     // Auto-check alerts on mount + every 15 minutes
     useEffect(() => {
@@ -242,10 +262,15 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId, enabled
 
     const handleRequestBrowserPermission = async () => {
         if (!('Notification' in window)) return;
-        const permission = await Notification.requestPermission();
+        const permission = await webPushService.requestNotificationPermission();
         setBrowserPermission(permission);
         if (permission === 'granted') {
-            webPushService.ensureSubscription(userId).catch(err => console.error('Web push subscription error:', err));
+            webPushService.subscribeUserToPush(userId)
+                .then(enabled => {
+                    setWebPushEnabled(enabled);
+                    webPushEnabledRef.current = enabled;
+                })
+                .catch(err => console.error('Web push subscription error:', err));
         }
     };
 

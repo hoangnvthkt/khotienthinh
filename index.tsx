@@ -2,6 +2,16 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 
+type PwaUpdateEventDetail = {
+  registration: ServiceWorkerRegistration;
+};
+
+declare global {
+  interface WindowEventMap {
+    'vioo:pwa-update-available': CustomEvent<PwaUpdateEventDetail>;
+  }
+}
+
 const normalizeHashRouterUrl = () => {
   if (typeof window === 'undefined') return;
 
@@ -85,10 +95,48 @@ const unregisterDevServiceWorkers = async () => {
   }
 };
 
+const notifyPwaUpdateAvailable = (registration: ServiceWorkerRegistration) => {
+  window.dispatchEvent(new CustomEvent<PwaUpdateEventDetail>('vioo:pwa-update-available', {
+    detail: { registration },
+  }));
+};
+
+const registerProductionServiceWorker = async () => {
+  const registration = await navigator.serviceWorker.register('/sw.js');
+
+  if (registration.waiting && navigator.serviceWorker.controller) {
+    notifyPwaUpdateAvailable(registration);
+  }
+
+  registration.addEventListener('updatefound', () => {
+    const installingWorker = registration.installing;
+    if (!installingWorker) return;
+
+    installingWorker.addEventListener('statechange', () => {
+      if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
+        notifyPwaUpdateAvailable(registration);
+      }
+    });
+  });
+
+  let refreshing = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (refreshing) return;
+    refreshing = true;
+    window.location.reload();
+  });
+
+  window.setInterval(() => {
+    registration.update().catch(err => {
+      console.warn('Service worker update check failed:', err);
+    });
+  }, 60 * 60 * 1000);
+};
+
 if ('serviceWorker' in navigator) {
   if (import.meta.env.PROD) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('/sw.js').catch(err => {
+      registerProductionServiceWorker().catch(err => {
         console.warn('Service worker registration failed:', err);
       });
     });

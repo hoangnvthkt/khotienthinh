@@ -3858,7 +3858,30 @@ export interface AttendanceRecord {
   locationName?: string;    // Tên CT/VP (cache)
   locationType?: 'construction_site' | 'office';
   isOutOfRange?: boolean;   // NV ngoài phạm vi khi check-in
+  events?: AttendanceEvent[];
+  eventCount?: number;
+  approvalStatus?: 'pending' | 'approved' | 'rejected';
+  approvedBy?: string | null;
+  approvedAt?: string | null;
+  submittedToUserId?: string | null;
   createdAt?: string;
+}
+
+export interface AttendanceEvent {
+  action: 'check_in' | 'check_out' | string;
+  time: string;
+  source?: 'camera' | 'legacy' | 'proposal' | string;
+  recorded_at?: string;
+  lat?: number | null;
+  lng?: number | null;
+  location_type?: 'construction_site' | 'office' | string | null;
+  location_id?: string | null;
+  location_name?: string | null;
+  distance_m?: number | null;
+  in_range?: boolean | null;
+  is_out_of_range?: boolean | null;
+  image_url?: string | null;
+  device_info?: Record<string, unknown>;
 }
 
 // ===== ĐỀ XUẤT CHẤM CÔNG =====
@@ -3888,6 +3911,9 @@ export interface AttendanceProposal {
   reason: string;               // Lý do đề xuất
   locationId?: string;          // ID Công trường / Văn phòng
   locationType?: 'construction_site' | 'office';
+  locationName?: string;
+  submittedToUserId?: string;
+  submittedToName?: string;
   proposalStatus: AttendanceProposalStatus;
   approvedBy?: string;          // User ID người duyệt
   approvedAt?: string;

@@ -99,6 +99,7 @@ export const ROUTE_TO_MODULE: Record<string, string> = {
   '/ai/executive': 'AI',
   '/ai/reports': 'AI',
   '/audit-trail': 'AUDIT_TRAIL',
+  '/admin/activity': 'SETTINGS',
   '/analytics': 'ANALYTICS',
   '/custom-dashboard': 'CUSTOM_DASHBOARD',
   '/org-map': 'HRM',

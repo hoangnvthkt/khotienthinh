@@ -251,6 +251,10 @@ const Home: React.FC = () => {
   }, [refreshRequestData, refreshWorkflowData]);
 
   useEffect(() => {
+    loadModuleData('admin').catch(error => console.warn('Home admin load failed:', error));
+  }, [loadModuleData]);
+
+  useEffect(() => {
     if (shouldLoadWms) loadModuleData('wms-core').catch(error => console.warn('Home WMS core load failed:', error));
   }, [loadModuleData, shouldLoadWms]);
 
