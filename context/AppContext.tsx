@@ -1,6 +1,6 @@
 
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
-import { supabase, isSupabaseConfigured, isTransientSupabaseError } from '../lib/supabase';
+import { supabase, supabaseAnonKey, supabaseUrl, isSupabaseConfigured, isTransientSupabaseError } from '../lib/supabase';
 import {
   InventoryItem, Transaction, User, Warehouse, WarehouseTypeConfig, Supplier,
   Role, TransactionStatus, TransactionType, MaterialRequest,
@@ -103,7 +103,7 @@ const REALTIME_TABLES_BY_MODULE: Partial<Record<AppModule, string[]>> = {
   admin: ['app_settings', 'users'],
   'wms-core': ['items', 'warehouses', 'warehouse_types', 'requests'],
   wms: ['items', 'transactions', 'warehouses', 'warehouse_types', 'requests', 'suppliers', 'activities', 'categories', 'units'],
-  hrm: ['employees', 'org_units'],
+  hrm: ['employees', 'org_units', 'hrm_attendance'],
 };
 
 interface AppContextType {
@@ -814,6 +814,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     });
 
+    // ── HRM Attendance ──
+    const unsubAttendance = realtimeService.on('hrm_attendance', (event) => {
+      if (event.eventType === 'INSERT' || event.eventType === 'UPDATE') {
+        const record = event.newRecord as AttendanceRecord;
+        setAttendanceRecords(prev => {
+          const exists = prev.some(r => r.id === record.id || (r.employeeId === record.employeeId && r.date === record.date));
+          return exists
+            ? prev.map(r => (r.id === record.id || (r.employeeId === record.employeeId && r.date === record.date)) ? record : r)
+            : [...prev, record];
+        });
+      } else if (event.eventType === 'DELETE') {
+        setAttendanceRecords(prev => prev.filter(r => r.id !== event.oldRecord.id));
+      }
+    });
+
     // ── Categories ──
     const unsubCat = realtimeService.on('categories', (event) => {
       if (event.eventType === 'INSERT' || event.eventType === 'UPDATE') {
@@ -870,7 +885,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       unsubStatus();
       unsubWildcard();
       unsubItems(); unsubTx(); unsubWh(); unsubWhTypes(); unsubSup(); unsubReq();
-      unsubAct(); unsubUsers(); unsubEmp(); unsubCat(); unsubUnits();
+      unsubAct(); unsubUsers(); unsubEmp(); unsubAttendance(); unsubCat(); unsubUnits();
       unsubSettings(); unsubOrg();
       realtimeTablesRef.current.clear();
       realtimeService.disconnect();
@@ -2857,6 +2872,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Convert camelCase → snake_case for specific tables
   const toDbItem = (table: string, item: any): any => {
+    if (table === 'hrm_attendance') {
+      const photoOrNull = (value: unknown) => {
+        if (typeof value !== 'string' || !value.trim()) return null;
+        return value.startsWith('data:') ? null : value;
+      };
+      const finiteOrNull = (value: unknown) => {
+        const numberValue = Number(value);
+        return Number.isFinite(numberValue) ? numberValue : null;
+      };
+
+      return {
+        id: item.id,
+        employeeId: item.employeeId,
+        date: item.date,
+        status: item.status || 'present',
+        checkIn: item.checkIn || null,
+        checkOut: item.checkOut || null,
+        overtimeHours: Number.isFinite(Number(item.overtimeHours)) ? Number(item.overtimeHours) : 0,
+        constructionSiteId: item.constructionSiteId || null,
+        note: item.note || null,
+        checkInPhoto: photoOrNull(item.checkInPhoto),
+        checkOutPhoto: photoOrNull(item.checkOutPhoto),
+        checkInLat: finiteOrNull(item.checkInLat),
+        checkInLng: finiteOrNull(item.checkInLng),
+        checkOutLat: finiteOrNull(item.checkOutLat),
+        checkOutLng: finiteOrNull(item.checkOutLng),
+        locationName: item.locationName || null,
+        locationType: item.locationType || null,
+        isOutOfRange: Boolean(item.isOutOfRange),
+        createdAt: item.createdAt || new Date().toISOString(),
+      };
+    }
     if (table === 'hrm_work_schedules') {
       return {
         id: item.id, name: item.name, description: item.description,
@@ -2887,9 +2934,73 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return item;
   };
 
+  const saveHrmAttendanceToSupabase = async (item: AttendanceRecord): Promise<AttendanceRecord> => {
+    const payload = toDbItem('hrm_attendance', item);
+
+    // Try upsert on primary key `id` — avoids PGRST102 caused by quoted camelCase
+    // column name `"employeeId"` in on_conflict param (PostgREST v12+ restriction).
+    let data: any = null;
+    let error: any = null;
+    try {
+      const result = await supabase
+        .from('hrm_attendance')
+        .upsert(payload, { onConflict: 'id' })
+        .select('*')
+        .maybeSingle();
+      data = result.data;
+      error = result.error;
+    } catch (err) {
+      error = err;
+    }
+
+    if (error) {
+      // Fallback: use raw fetch with correct quoted column in Prefer header
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError) throw sessionError;
+      const accessToken = sessionData.session?.access_token;
+      if (!accessToken) throw error;
+
+      const response = await fetch(`${supabaseUrl}/rest/v1/hrm_attendance?on_conflict=id&select=*`, {
+        method: 'POST',
+        headers: {
+          apikey: supabaseAnonKey,
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          Prefer: 'resolution=merge-duplicates,return=representation',
+        },
+        body: JSON.stringify(payload),
+      });
+      const text = await response.text();
+      let parsed: any = null;
+      if (text) {
+        try {
+          parsed = JSON.parse(text);
+        } catch {
+          throw new Error(`Supabase trả về phản hồi không phải JSON (${response.status}): ${text.slice(0, 160)}`);
+        }
+      }
+      if (!response.ok) throw parsed || new Error(`Supabase REST lỗi ${response.status}`);
+      const row = Array.isArray(parsed) ? parsed[0] : parsed;
+      if (!row) throw new Error('Supabase không xác nhận đã lưu chấm công.');
+      return row as AttendanceRecord;
+    }
+    if (!data) throw new Error('Supabase không xác nhận đã lưu chấm công.');
+    return data as AttendanceRecord;
+  };
+
   const addHrmItem = async (table: string, item: any) => {
     const setter = hrmSetterMap[table];
     if (!setter) return;
+    if (table === 'hrm_attendance' && isSupabaseConfigured) {
+      const savedItem = await saveHrmAttendanceToSupabase(item as AttendanceRecord);
+      setter((prev: any[]) => {
+        const exists = prev.some((i: any) => i.id === savedItem.id || (i.employeeId === savedItem.employeeId && i.date === savedItem.date));
+        return exists
+          ? prev.map((i: any) => (i.id === savedItem.id || (i.employeeId === savedItem.employeeId && i.date === savedItem.date)) ? savedItem : i)
+          : [...prev, savedItem];
+      });
+      return;
+    }
     setter((prev: any[]) => [...prev, item]);
     if (isSupabaseConfigured) {
       const { error } = await supabase.from(table).insert(toDbItem(table, item));
@@ -2903,6 +3014,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const updateHrmItem = async (table: string, item: any) => {
     const setter = hrmSetterMap[table];
     if (!setter) return;
+    if (table === 'hrm_attendance' && isSupabaseConfigured) {
+      const savedItem = await saveHrmAttendanceToSupabase(item as AttendanceRecord);
+      setter((prev: any[]) => {
+        const exists = prev.some((i: any) => i.id === savedItem.id || (i.employeeId === savedItem.employeeId && i.date === savedItem.date));
+        return exists
+          ? prev.map((i: any) => (i.id === savedItem.id || (i.employeeId === savedItem.employeeId && i.date === savedItem.date)) ? savedItem : i)
+          : [...prev, savedItem];
+      });
+      return;
+    }
     setter((prev: any[]) => prev.map((i: any) => i.id === item.id ? item : i));
     if (isSupabaseConfigured) {
       const { error } = await supabase.from(table).update(toDbItem(table, item)).eq('id', item.id);

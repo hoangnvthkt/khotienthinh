@@ -1,5 +1,5 @@
-// Vioo Service Worker v2 — Enhanced cache strategy + push notifications
-const CACHE_NAME = 'vioo-v2';
+// Vioo Service Worker v3 — Enhanced cache strategy + push notifications
+const CACHE_NAME = 'vioo-v3';
 const OFFLINE_URL = '/offline.html';
 
 // Assets to pre-cache

@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+export const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
+export const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 const REQUEST_TIMEOUT_MS = 15000;
 const REFRESH_LOCK_TIMEOUT_MS = REQUEST_TIMEOUT_MS + 2500;
 const MAX_ATTEMPTS = 3;

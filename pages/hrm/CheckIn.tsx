@@ -10,6 +10,7 @@ import {
 import { AttendanceStatus, AttendanceRecord } from '../../types';
 import { xpService } from '../../lib/xpService';
 import { supabase, isSupabaseConfigured } from '../../lib/supabase';
+import { getApiErrorMessage } from '../../lib/apiError';
 
 // ── T5: Upload selfie lên Supabase Storage (thay thế base64 trong DB) ──────
 // Fallback: nếu upload lỗi → trả về base64 gốc để check-in vẫn hoạt động
@@ -17,7 +18,7 @@ const uploadSelfieToStorage = async (
   base64: string,
   employeeId: string,
   type: 'checkin' | 'checkout' = 'checkin'
-): Promise<string> => {
+): Promise<string | null> => {
   if (!isSupabaseConfigured || !base64.startsWith('data:')) return base64;
   try {
     const res = await fetch(base64);
@@ -28,15 +29,32 @@ const uploadSelfieToStorage = async (
       .from('checkin-photos')
       .upload(fileName, blob, { upsert: true, contentType: 'image/jpeg' });
     if (error) {
-      console.warn('Selfie upload warning (fallback to base64):', error.message);
-      return base64; // fallback
+      console.warn('Selfie upload warning (check-in without photo):', error.message);
+      return null;
     }
     const { data: { publicUrl } } = supabase.storage.from('checkin-photos').getPublicUrl(data.path);
     return publicUrl;
   } catch (err) {
-    console.warn('Selfie upload failed (fallback to base64):', err);
-    return base64; // fallback
+    console.warn('Selfie upload failed (check-in without photo):', err);
+    return null;
   }
+};
+
+const formatAttendanceSyncError = (error: unknown): string => {
+  const friendly = getApiErrorMessage(error, '');
+  if (friendly) return friendly;
+
+  if (error && typeof error === 'object') {
+    const err = error as Record<string, unknown>;
+    const detail = [err.message, err.details, err.hint, err.code, err.status, err.name]
+      .filter(Boolean)
+      .map(String)
+      .join(' | ');
+    if (detail) return detail;
+  }
+
+  if (typeof error === 'string' && error.trim()) return error.trim();
+  return 'Không rõ nguyên nhân. Vui lòng mở lại trang hoặc đăng nhập lại rồi thử lần nữa.';
 };
 
 
@@ -354,8 +372,16 @@ const CheckIn: React.FC = () => {
   const handleCheckIn = async () => {
     if (!currentEmployee || !selectedLocation) return;
     setProcessing(true);
+    if (isSupabaseConfigured) {
+      const { data: authData, error: authError } = await supabase.auth.getUser();
+      if (authError || !authData.user) {
+        setLastAction(`⚠️ Phiên đăng nhập Supabase không hợp lệ. Vui lòng đăng xuất, đăng nhập lại rồi check-in lại.`);
+        setProcessing(false);
+        return;
+      }
+    }
     const rawPhoto = capturePhoto();
-    // T5: Upload selfie lên Storage, fallback base64 nếu lỗi
+    // T5: Upload selfie lên Storage; nếu lỗi thì vẫn lưu chấm công không kèm ảnh.
     const photo = rawPhoto ? await uploadSelfieToStorage(rawPhoto, currentEmployee.id, 'checkin') : null;
     const now = new Date();
     const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
@@ -378,7 +404,8 @@ const CheckIn: React.FC = () => {
         });
         success = true;
       } catch (err) {
-        setLastAction(`⚠️ Check-in cục bộ OK, nhưng lỗi đồng bộ Supabase`);
+        console.error('HRM check-in sync failed:', err);
+        setLastAction(`⚠️ Chưa lưu được check-in lên Supabase: ${formatAttendanceSyncError(err)}`);
       }
     } else {
       try {
@@ -399,7 +426,8 @@ const CheckIn: React.FC = () => {
         } as AttendanceRecord);
         success = true;
       } catch (err) {
-        setLastAction(`⚠️ Check-in cục bộ OK, nhưng lỗi đồng bộ Supabase`);
+        console.error('HRM check-in sync failed:', err);
+        setLastAction(`⚠️ Chưa lưu được check-in lên Supabase: ${formatAttendanceSyncError(err)}`);
       }
     }
 
@@ -443,6 +471,14 @@ const CheckIn: React.FC = () => {
   const handleCheckOut = async () => {
     if (!currentEmployee || !todayRecord) return;
     setProcessing(true);
+    if (isSupabaseConfigured) {
+      const { data: authData, error: authError } = await supabase.auth.getUser();
+      if (authError || !authData.user) {
+        setLastAction(`⚠️ Phiên đăng nhập Supabase không hợp lệ. Vui lòng đăng xuất, đăng nhập lại rồi check-out lại.`);
+        setProcessing(false);
+        return;
+      }
+    }
     const rawPhoto = capturePhoto();
     // T5: Upload checkout selfie lên Storage
     const photo = rawPhoto ? await uploadSelfieToStorage(rawPhoto, currentEmployee.id, 'checkout') : null;
@@ -472,7 +508,8 @@ const CheckIn: React.FC = () => {
         });
       }
     } catch (err) {
-      setLastAction(`⚠️ Check-out cục bộ OK, nhưng lỗi đồng bộ`);
+      console.error('HRM check-out sync failed:', err);
+      setLastAction(`⚠️ Chưa lưu được check-out lên Supabase: ${formatAttendanceSyncError(err)}`);
     }
 
     setProcessing(false);
