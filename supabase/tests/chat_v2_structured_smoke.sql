@@ -1,13 +1,14 @@
 begin;
 
-insert into public.users (id, name, email, role, is_active)
+insert into public.users (id, name, email, username, role, is_active)
 values
-  ('11111111-1111-4111-8111-111111111111', 'Chat Actor', 'chat.actor@example.test', 'EMPLOYEE', true),
-  ('22222222-2222-4222-8222-222222222222', 'Chat Peer', 'chat.peer@example.test', 'EMPLOYEE', true),
-  ('33333333-3333-4333-8333-333333333333', 'Chat Outsider', 'chat.outsider@example.test', 'EMPLOYEE', true)
+  ('11111111-1111-4111-8111-111111111111', 'Chat Actor', 'chat.actor@example.test', 'chat_actor_smoke', 'EMPLOYEE', true),
+  ('22222222-2222-4222-8222-222222222222', 'Chat Peer', 'chat.peer@example.test', 'chat_peer_smoke', 'EMPLOYEE', true),
+  ('33333333-3333-4333-8333-333333333333', 'Chat Outsider', 'chat.outsider@example.test', 'chat_outsider_smoke', 'EMPLOYEE', true)
 on conflict (id) do update
 set name = excluded.name,
     email = excluded.email,
+    username = excluded.username,
     role = excluded.role,
     is_active = excluded.is_active;
 
