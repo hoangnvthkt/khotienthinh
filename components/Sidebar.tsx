@@ -16,10 +16,11 @@ import { XPProgressBar } from './XPProgress';
 import { useTheme } from '../context/ThemeContext';
 import { RealtimeBadge } from './OfflineIndicator';
 import { useChat } from '../context/ChatContext';
+import { useChatV2UnreadCount } from '../hooks/useChatV2';
 import { Role, TransactionStatus, RequestStatus } from '../types';
 import { canApproveMaterialRequest, canApproveWmsTransaction, canExportMaterialRequest, canReceiveMaterialRequest, canReceiveWmsTransaction, isWarehouseKeeper } from '../lib/wmsPermissions';
 import { hasProjectTabPermissionRoute } from '../lib/projectTabPermissions';
-import { isChatEnabled } from '../lib/featureFlags';
+import { isChatEnabled, isChatV2Enabled } from '../lib/featureFlags';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -56,6 +57,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
   const { user, logout, warehouses, transactions, requests, appSettings, items, realtimeStatus, lastRealtimeEvent, connectionError } = useApp();
   const { isDark, toggleTheme } = useTheme();
   const { totalUnread } = useChat();
+  const chatV2Unread = useChatV2UnreadCount(isChatEnabled && isChatV2Enabled ? user?.id : undefined);
+  const chatUnread = isChatV2Enabled ? chatV2Unread : totalUnread;
 
   // Detect if we're inside a module from URL
   const detectAppFromUrl = (): AppKey | null => {
@@ -442,9 +445,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
                         <MessageCircle className="w-5 h-5 mr-3 transition-transform group-hover:scale-110" />
                         <span className="font-bold text-sm">Tin nhắn</span>
                       </div>
-                      {totalUnread > 0 && (
+                      {chatUnread > 0 && (
                         <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[10px] font-black text-white shadow-sm ring-2 bg-red-500 ring-slate-900 animate-pulse">
-                          {totalUnread > 9 ? '9+' : totalUnread}
+                          {chatUnread > 9 ? '9+' : chatUnread}
                         </span>
                       )}
                     </NavLink>
@@ -515,9 +518,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
                         <MessageCircle className="w-5 h-5 mr-3 transition-transform group-hover:scale-110" />
                         <span className="font-bold text-sm">Tin nhắn</span>
                       </div>
-                      {totalUnread > 0 && (
+                      {chatUnread > 0 && (
                         <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[10px] font-black text-white shadow-sm ring-2 bg-red-500 ring-slate-900 animate-pulse">
-                          {totalUnread > 9 ? '9+' : totalUnread}
+                          {chatUnread > 9 ? '9+' : chatUnread}
                         </span>
                       )}
                     </NavLink>
@@ -648,15 +651,15 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
                   <div className="flex items-center relative">
                     <MessageCircle className={`w-5 h-5 ${collapsed ? '' : 'mr-3'} transition-transform group-hover:scale-110`} />
                     {!collapsed && <span className="font-bold text-sm">Tin nhắn</span>}
-                    {collapsed && totalUnread > 0 && (
+                    {collapsed && chatUnread > 0 && (
                       <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 text-white text-[8px] font-black rounded-full flex items-center justify-center ring-1 ring-white/20 animate-pulse">
-                        {totalUnread > 9 ? '9+' : totalUnread}
+                        {chatUnread > 9 ? '9+' : chatUnread}
                       </span>
                     )}
                   </div>
-                  {!collapsed && totalUnread > 0 && (
+                  {!collapsed && chatUnread > 0 && (
                     <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[10px] font-black text-white shadow-sm ring-2 bg-red-500 ring-slate-900 animate-pulse">
-                      {totalUnread > 9 ? '9+' : totalUnread}
+                      {chatUnread > 9 ? '9+' : chatUnread}
                     </span>
                   )}
                 </NavLink>
@@ -794,15 +797,15 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
                     <div className="flex items-center relative">
                       <MessageCircle className={`w-5 h-5 ${collapsed ? '' : 'mr-3'} transition-transform group-hover:scale-110`} />
                       {!collapsed && <span className="font-bold text-sm">Tin nhắn</span>}
-                      {collapsed && totalUnread > 0 && (
+                      {collapsed && chatUnread > 0 && (
                         <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 text-white text-[8px] font-black rounded-full flex items-center justify-center ring-1 ring-white/20 animate-pulse">
-                          {totalUnread > 9 ? '9+' : totalUnread}
+                          {chatUnread > 9 ? '9+' : chatUnread}
                         </span>
                       )}
                     </div>
-                    {!collapsed && totalUnread > 0 && (
+                    {!collapsed && chatUnread > 0 && (
                       <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[10px] font-black text-white shadow-sm ring-2 bg-red-500 ring-slate-900 animate-pulse">
-                        {totalUnread > 9 ? '9+' : totalUnread}
+                        {chatUnread > 9 ? '9+' : chatUnread}
                       </span>
                     )}
                   </NavLink>

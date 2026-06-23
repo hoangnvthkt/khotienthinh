@@ -108,6 +108,7 @@ export const NOTIFICATION_CATEGORIES = {
   contract: { label: 'Hợp đồng', icon: '📝', color: 'text-violet-600 bg-violet-50' },
   hrm: { label: 'Nhân sự', icon: '👤', color: 'text-indigo-600 bg-indigo-50' },
   feedback: { label: 'Góp ý', icon: '💬', color: 'text-blue-600 bg-blue-50' },
+  chat: { label: 'Tin nhắn', icon: '💬', color: 'text-emerald-600 bg-emerald-50' },
   system: { label: 'Hệ thống', icon: '⚙️', color: 'text-slate-600 bg-slate-50' },
 } as const;
 

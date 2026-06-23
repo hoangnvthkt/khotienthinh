@@ -2,7 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { useApp } from './AppContext';
 import { ChatChannelKind, ChatConversation, ChatMember, ChatMessage, ChatWorkspace, ChatWorkspaceMember } from '../types';
-import { isChatEnabled } from '../lib/featureFlags';
+import { isChatEnabled, isChatV2Enabled } from '../lib/featureFlags';
 
 interface ChatContextType {
     workspaces: ChatWorkspace[];
@@ -1293,7 +1293,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }, [insertSystemMessage, user?.id]);
 
     const loadChatData = useCallback(async (force = false) => {
-        if (!isChatEnabled) return;
+        if (!isChatEnabled || isChatV2Enabled) return;
         if (!isSupabaseConfigured || !user?.id) return;
         if (!force && chatLoadedRef.current) return;
         if (chatLoadingRef.current) return chatLoadingRef.current;
@@ -1316,7 +1316,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }, [loadConversations, loadPinnedMessages, loadWorkspaces, user?.id]);
 
     useEffect(() => {
-        if (!isChatEnabled) return;
+        if (!isChatEnabled || isChatV2Enabled) return;
         if (!isSupabaseConfigured || !user?.id) return;
 
         const channelName = `chat-realtime-${user.id}`;

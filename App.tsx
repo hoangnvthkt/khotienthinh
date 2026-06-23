@@ -18,7 +18,7 @@ import { supabase, isSupabaseConfigured } from './lib/supabase';
 import { ROUTE_TO_MODULE } from './constants/routes';
 import { getProjectAllowedSubModuleRedirect, hasProjectTabPermissionRoute } from './lib/projectTabPermissions';
 import { createPerformanceTrace } from './lib/performanceTrace';
-import { isChatEnabled } from './lib/featureFlags';
+import { isChatEnabled, isChatV2Enabled } from './lib/featureFlags';
 import { hasAnySettingsManagementFeature } from './lib/settingsPermissions';
 
 // Lazy load all page components for code splitting
@@ -65,6 +65,7 @@ const WorkflowDashboard = React.lazy(() => import('./pages/wf/WorkflowDashboard'
 
 // Chat
 const Chat = React.lazy(() => import('./pages/Chat'));
+const ChatV2 = React.lazy(() => import('./pages/ChatV2'));
 
 // Data Storage
 const DataStorage = React.lazy(() => import('./pages/DataStorage'));
@@ -296,7 +297,7 @@ const AppRoutes: React.FC = () => {
           <Route path="da" element={<ProjectDashboard />} />
           <Route path="da/portfolio" element={<PortfolioDashboard />} />
           <Route path="procurement" element={<CompanyProcurement />} />
-          <Route path="chat" element={isChatEnabled ? <Chat /> : <Navigate to="/" replace />} />
+          <Route path="chat" element={isChatEnabled ? (isChatV2Enabled ? <ChatV2 /> : <Chat />) : <Navigate to="/" replace />} />
           <Route path="storage" element={<DataStorage />} />
           <Route path="ai" element={<AiAssistant />} />
           <Route path="ai/executive" element={<ExecutiveAI />} />
@@ -490,7 +491,7 @@ const AppDataWarmup: React.FC = () => {
   }, [pathname, refreshRequestData]);
 
   useEffect(() => {
-    if (isChatEnabled && pathname === '/chat') {
+    if (isChatEnabled && !isChatV2Enabled && pathname === '/chat') {
       loadChatData().catch(err => console.warn('Chat warmup failed:', err));
     }
   }, [pathname, loadChatData]);
