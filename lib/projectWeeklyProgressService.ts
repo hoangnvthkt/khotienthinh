@@ -30,11 +30,16 @@ export const getProjectScopeKey = (projectId?: string | null, constructionSiteId
   projectId && constructionSiteId ? `${projectId}_${constructionSiteId}` : (projectId || constructionSiteId || '');
 
 export const getWeekStart = (date: Date | string = new Date()): string => {
-  const d = typeof date === 'string' ? new Date(`${date}T00:00:00`) : new Date(date);
+  const d = typeof date === 'string'
+    ? new Date(`${date.slice(0, 10)}T00:00:00`)
+    : new Date(date.getTime());
   const day = d.getDay();
   const diff = d.getDate() - day + (day === 0 ? -6 : 1);
   d.setDate(diff);
-  return d.toISOString().slice(0, 10);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const r = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${r}`;
 };
 
 export const getISOWeekLabel = (date: Date | string = new Date()): string => {

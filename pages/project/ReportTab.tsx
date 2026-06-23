@@ -1,22 +1,37 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
-    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
-    PieChart, Pie, Cell, AreaChart, Area, LineChart, Line, RadarChart, Radar,
-    PolarGrid, PolarAngleAxis, PolarRadiusAxis, ComposedChart, ReferenceLine
-} from 'recharts';
-import {
-    BarChart3, PieChart as PieChartIcon, TrendingUp, TrendingDown, FileText, Download,
-    DollarSign, Users, Package, Truck, CheckCircle2, AlertTriangle,
-    Calendar, Activity, RotateCcw, ShieldCheck
+    Activity,
+    AlertTriangle,
+    BarChart3,
+    Calendar,
+    CheckCircle2,
+    ChevronDown,
+    ChevronRight,
+    ChevronsDown,
+    ChevronsUp,
+    Circle,
+    Clipboard,
+    Clock,
+    Copy,
+    Download,
+    FileText,
+    Filter,
+    Search,
+    TrendingDown,
+    TrendingUp,
+    XCircle,
 } from 'lucide-react';
 import { loadXlsx } from '../../lib/loadXlsx';
-import { ProjectContract, AcceptanceRecord, MaterialBudgetItem, ProjectMaterialRequest, ProjectVendor, PurchaseOrder, ProjectTask, DailyLog } from '../../types';
-import { acceptanceService, boqService, matRequestService, vendorService, poService, taskService, dailyLogService } from '../../lib/projectService';
-import { customerContractService, subcontractorContractService } from '../../lib/hdService';
-import { calculateProjectProgress } from '../../lib/projectScheduleRules';
-import { projectFinancialService, ProjectFinancialKPIs } from '../../lib/projectFinancialService';
-import { paymentScheduleWorkbenchService } from '../../lib/paymentScheduleWorkbenchService';
+import { DailyLog, ProjectTask, ProjectTaskCompletionRequest } from '../../types';
+import { dailyLogService, taskService } from '../../lib/projectService';
+import { taskCompletionRequestService } from '../../lib/projectTaskCompletionService';
+import {
+    calculateProjectProgress,
+    clampProgress,
+    deriveProjectTaskProgress,
+    getLeafProjectTasks,
+} from '../../lib/projectScheduleRules';
 import DailyLogSummaryReport from '../../components/project/DailyLogSummaryReport';
 
 interface ReportTabProps {
@@ -26,57 +41,316 @@ interface ReportTabProps {
     totalSpent?: number;
 }
 
-const fmt = (n: number) => {
-    if (n >= 1e9) return (n / 1e9).toFixed(2) + ' tỷ';
-    if (n >= 1e6) return (n / 1e6).toFixed(1) + ' tr';
-    if (n >= 1e3) return (n / 1e3).toFixed(0) + 'k';
-    return n.toLocaleString('vi-VN');
+type ReportView = 'overview' | 'dailylog';
+type StatusFilter = 'all' | 'active' | 'late' | 'completed' | 'not_started';
+type ScheduleStatus = 'completed' | 'ahead' | 'on_track' | 'late' | 'not_started' | 'not_due';
+
+interface DelayInfo {
+    days: number;
+    reasons: string[];
+}
+
+interface ScheduleReportRow {
+    task: ProjectTask;
+    level: number;
+    hasChildren: boolean;
+    isLeaf: boolean;
+    plannedDays: number;
+    plannedPercent: number;
+    actualProgress: number;
+    progressDelta: number;
+    actualStart?: string;
+    actualEnd?: string;
+    forecastEnd: string;
+    endBasisLabel: string;
+    dayDelta: number;
+    startDelta: number;
+    status: ScheduleStatus;
+    note: string;
+    delayDays: number;
+}
+
+const DAY_MS = 86400000;
+
+const toIsoDate = (date: Date): string => {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
 };
 
-const COLORS = ['#818cf8', '#f472b6', '#34d399', '#fbbf24', '#60a5fa', '#f87171', '#a78bfa', '#fb923c', '#38bdf8', '#4ade80'];
-const GRADIENT_PAIRS = [
-    ['#818cf8', '#6366f1'], ['#f472b6', '#ec4899'], ['#34d399', '#10b981'],
-    ['#fbbf24', '#f59e0b'], ['#60a5fa', '#3b82f6'], ['#f87171', '#ef4444'],
-];
+const parseIsoDate = (iso?: string | null): Date | null => {
+    if (!iso) return null;
+    const [y, m, d] = iso.split('-').map(Number);
+    if (!y || !m || !d) return null;
+    return new Date(y, m - 1, d);
+};
 
-const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, projectId, contractValue = 0, totalSpent = 0 }) => {
+const diffDays = (from: string, to: string): number => {
+    const a = parseIsoDate(from);
+    const b = parseIsoDate(to);
+    if (!a || !b) return 0;
+    return Math.round((b.getTime() - a.getTime()) / DAY_MS);
+};
+
+const addDays = (iso: string, amount: number): string => {
+    const date = parseIsoDate(iso);
+    if (!date) return iso;
+    date.setDate(date.getDate() + amount);
+    return toIsoDate(date);
+};
+
+const inclusiveDays = (start?: string, end?: string): number => {
+    if (!start || !end) return 0;
+    return Math.max(1, diffDays(start, end) + 1);
+};
+
+const fmtDate = (iso?: string | null): string => {
+    const date = parseIsoDate(iso);
+    if (!date) return '-';
+    return date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+};
+
+const fmtPercent = (value: number): string => `${Math.round(value)}%`;
+
+const formatProgressDelta = (delta: number): string => {
+    const rounded = Math.round(delta);
+    if (rounded > 0) return `Nhanh ${rounded} điểm %`;
+    if (rounded < 0) return `Chậm ${Math.abs(rounded)} điểm %`;
+    return 'Đúng tiến độ';
+};
+
+const formatDayDelta = (days: number): string => {
+    if (days > 0) return `Chậm ${days} ngày`;
+    if (days < 0) return `Nhanh ${Math.abs(days)} ngày`;
+    return 'Đúng kế hoạch';
+};
+
+const compareWbsCodes = (a = '', b = ''): number => {
+    if (!a && !b) return 0;
+    if (!a) return 1;
+    if (!b) return -1;
+    const partsA = a.split('.').map(Number);
+    const partsB = b.split('.').map(Number);
+    const max = Math.max(partsA.length, partsB.length);
+
+    for (let i = 0; i < max; i++) {
+        const va = partsA[i] ?? 0;
+        const vb = partsB[i] ?? 0;
+        if (!Number.isFinite(va) || !Number.isFinite(vb)) return a.localeCompare(b, 'vi');
+        if (va !== vb) return va - vb;
+    }
+
+    return a.localeCompare(b, 'vi');
+};
+
+const normalizeText = (value: string): string =>
+    value
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/đ/g, 'd')
+        .replace(/Đ/g, 'D')
+        .toLowerCase();
+
+const getPlannedPercent = (task: ProjectTask, todayIso: string): number => {
+    if (!task.startDate || !task.endDate || todayIso < task.startDate) return 0;
+    if (todayIso >= task.endDate) return 100;
+    const total = inclusiveDays(task.startDate, task.endDate);
+    const elapsed = inclusiveDays(task.startDate, todayIso);
+    return total > 0 ? Math.min(100, Math.max(0, Math.round((elapsed / total) * 100))) : 0;
+};
+
+const getForecastEnd = (
+    task: ProjectTask,
+    todayIso: string,
+    actualStart?: string,
+    actualEnd?: string,
+): string => {
+    const progress = clampProgress(task.progress);
+    const plannedDays = inclusiveDays(task.startDate, task.endDate) || Math.max(1, Number(task.duration || 1));
+
+    if (progress >= 100) return actualEnd || todayIso;
+    if (progress > 0) {
+        const start = actualStart || (task.startDate && task.startDate <= todayIso ? task.startDate : todayIso);
+        const elapsed = Math.max(1, inclusiveDays(start, todayIso));
+        const estimatedTotal = Math.max(1, Math.ceil((elapsed * 100) / progress));
+        const forecast = addDays(start, estimatedTotal - 1);
+        return forecast < todayIso ? todayIso : forecast;
+    }
+
+    if (task.startDate && todayIso > task.startDate) return addDays(todayIso, plannedDays - 1);
+    return task.endDate || todayIso;
+};
+
+const deriveActualDates = (task: ProjectTask, dailyLogs: DailyLog[]) => {
+    let start = task.actualStartDate;
+    let end = task.actualEndDate;
+
+    if (!start || !end) {
+        const linkedLogs = dailyLogs.filter(log => {
+            const verified = log.status === 'verified' || log.verified;
+            if (!verified) return false;
+            const hasDelayLink = (log.delayTasks || []).some(delay => delay.taskId === task.id);
+            const hasVolumeLink = (log.volumes || []).some(volume => volume.taskId === task.id);
+            const hasLaborLink = (log.laborDetails || []).some(labor => labor.taskId === task.id);
+            const hasMachineLink = (log.machines || []).some(machine => machine.taskId === task.id);
+            return hasDelayLink || hasVolumeLink || hasLaborLink || hasMachineLink;
+        });
+
+        if (linkedLogs.length > 0) {
+            const dates = linkedLogs.map(log => log.date).sort();
+            if (!start) start = dates[0];
+            if (!end && (task.progress >= 100 || task.gateStatus === 'approved')) end = dates[dates.length - 1];
+        }
+    }
+
+    if (!end && task.gateStatus === 'approved' && task.gateApprovedAt) {
+        end = task.gateApprovedAt.split('T')[0];
+    }
+
+    return { actualStart: start, actualEnd: end };
+};
+
+const getScheduleStatus = (row: {
+    task: ProjectTask;
+    plannedPercent: number;
+    actualProgress: number;
+    dayDelta: number;
+    todayIso: string;
+}): ScheduleStatus => {
+    if (row.actualProgress >= 100) return 'completed';
+    if (row.task.startDate && row.todayIso < row.task.startDate) return 'not_due';
+    if (row.actualProgress <= 0) return 'not_started';
+    if (row.dayDelta > 0 || row.actualProgress + 5 < row.plannedPercent) return 'late';
+    if (row.dayDelta < 0 || row.actualProgress > row.plannedPercent + 5) return 'ahead';
+    return 'on_track';
+};
+
+const getStatusLabel = (status: ScheduleStatus): string => {
+    switch (status) {
+        case 'completed': return 'Hoàn thành';
+        case 'ahead': return 'Đang nhanh';
+        case 'on_track': return 'Đúng kế hoạch';
+        case 'late': return 'Đang chậm';
+        case 'not_started': return 'Chưa bắt đầu';
+        case 'not_due': return 'Chưa tới KH';
+        default: return 'Không rõ';
+    }
+};
+
+const getStatusClass = (status: ScheduleStatus): string => {
+    switch (status) {
+        case 'completed': return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+        case 'ahead': return 'border-cyan-200 bg-cyan-50 text-cyan-700';
+        case 'on_track': return 'border-slate-200 bg-slate-50 text-slate-700';
+        case 'late': return 'border-red-200 bg-red-50 text-red-700';
+        case 'not_started': return 'border-amber-200 bg-amber-50 text-amber-700';
+        case 'not_due': return 'border-slate-200 bg-white text-slate-500';
+        default: return 'border-slate-200 bg-slate-50 text-slate-600';
+    }
+};
+
+const getStatusIcon = (status: ScheduleStatus) => {
+    switch (status) {
+        case 'completed': return CheckCircle2;
+        case 'ahead': return TrendingUp;
+        case 'on_track': return Clock;
+        case 'late': return AlertTriangle;
+        case 'not_started': return XCircle;
+        case 'not_due': return Circle;
+        default: return Circle;
+    }
+};
+
+const buildLevelMap = (tasks: ProjectTask[]) => {
+    const byId = new Map(tasks.map(task => [task.id, task]));
+    const cache = new Map<string, number>();
+
+    const getLevel = (task: ProjectTask): number => {
+        if (cache.has(task.id)) return cache.get(task.id)!;
+        if (!task.parentId || !byId.has(task.parentId)) {
+            cache.set(task.id, 0);
+            return 0;
+        }
+        const parent = byId.get(task.parentId)!;
+        const level = Math.min(6, getLevel(parent) + 1);
+        cache.set(task.id, level);
+        return level;
+    };
+
+    tasks.forEach(getLevel);
+    return cache;
+};
+
+const buildDelayMap = (dailyLogs: DailyLog[]): Map<string, DelayInfo> => {
+    const map = new Map<string, DelayInfo>();
+
+    dailyLogs.forEach(log => {
+        (log.delayTasks || []).forEach(delay => {
+            if (!delay.taskId) return;
+            const current = map.get(delay.taskId) || { days: 0, reasons: [] };
+            const reason = delay.reason?.trim();
+            map.set(delay.taskId, {
+                days: current.days + Number(delay.delayDays || 0),
+                reasons: reason && !current.reasons.includes(reason)
+                    ? [...current.reasons, reason]
+                    : current.reasons,
+            });
+        });
+    });
+
+    return map;
+};
+
+const MetricTile: React.FC<{
+    label: string;
+    value: string | number;
+    sub?: string;
+    icon: React.ElementType;
+    tone?: 'slate' | 'emerald' | 'amber' | 'red' | 'cyan';
+}> = ({ label, value, sub, icon: Icon, tone = 'slate' }) => {
+    const tones = {
+        slate: 'border-slate-200 bg-white text-slate-700',
+        emerald: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+        amber: 'border-amber-200 bg-amber-50 text-amber-700',
+        red: 'border-red-200 bg-red-50 text-red-700',
+        cyan: 'border-cyan-200 bg-cyan-50 text-cyan-700',
+    };
+
+    return (
+        <div className={`rounded-lg border p-4 shadow-sm ${tones[tone]}`}>
+            <div className="mb-3 flex items-center justify-between gap-3">
+                <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">{label}</p>
+                <Icon size={18} className="shrink-0" />
+            </div>
+            <div className="text-2xl font-black leading-none text-slate-900 dark:text-white">{value}</div>
+            {sub && <div className="mt-2 text-[11px] font-bold leading-4 text-slate-500">{sub}</div>}
+        </div>
+    );
+};
+
+const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, projectId }) => {
     const location = useLocation();
     const navigate = useNavigate();
-    const [selectedChart, setSelectedChart] = useState<string | null>(null);
     const queryReportView = useMemo(() => new URLSearchParams(location.search).get('reportView'), [location.search]);
-    const [activeReportView, setActiveReportView] = useState<'overview' | 'dailylog'>(
-        queryReportView === 'dailylog' ? 'dailylog' : 'overview'
+    const [activeReportView, setActiveReportView] = useState<ReportView>(
+        queryReportView === 'dailylog' ? 'dailylog' : 'overview',
     );
-
-    // Load all data from Supabase
-    const [contracts, setContracts] = useState<ProjectContract[]>([]);
-    const [acceptances, setAcceptances] = useState<AcceptanceRecord[]>([]);
-    const [boqItems, setBoqItems] = useState<MaterialBudgetItem[]>([]);
-    const [matRequests, setMatRequests] = useState<ProjectMaterialRequest[]>([]);
-    const [vendors, setVendors] = useState<ProjectVendor[]>([]);
-    const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
     const [tasks, setTasks] = useState<ProjectTask[]>([]);
     const [dailyLogs, setDailyLogs] = useState<DailyLog[]>([]);
-    const [financialKPIs, setFinancialKPIs] = useState<ProjectFinancialKPIs | null>(null);
-    const [paymentScheduleSummary, setPaymentScheduleSummary] = useState({
-        customerContractValue: 0,
-        totalReceivable: 0,
-        totalPayable: 0,
-        upcomingCount: 0,
-        overdueCount: 0,
-        paidAmount: 0,
-        pendingAmount: 0,
-        paidCount: 0,
-        totalCount: 0,
-    });
-    const [kpisLoading, setKpisLoading] = useState(true);
+    const [completionRequests, setCompletionRequests] = useState<ProjectTaskCompletionRequest[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [searchTerm, setSearchTerm] = useState('');
+    const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+    const [briefingCopied, setBriefingCopied] = useState(false);
+    const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
     const projectScopeId = projectId || constructionSiteId;
 
     useEffect(() => {
         setActiveReportView(queryReportView === 'dailylog' ? 'dailylog' : 'overview');
     }, [queryReportView]);
 
-    const changeReportView = (view: 'overview' | 'dailylog') => {
+    const changeReportView = (view: ReportView) => {
         setActiveReportView(view);
 
         const params = new URLSearchParams(location.search);
@@ -95,327 +369,527 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
     };
 
     useEffect(() => {
-        // Fetch new contract models and map to generic ProjectContract shape for reporting
+        let cancelled = false;
+        setLoading(true);
+
         Promise.all([
-            customerContractService.listBySite(projectScopeId, constructionSiteId),
-            subcontractorContractService.listBySite(projectScopeId, constructionSiteId)
-        ]).then(([customers, subs]) => {
-            const mainContracts: ProjectContract[] = customers.map(c => ({
-                id: c.id,
-                constructionSiteId: c.constructionSiteId || constructionSiteId,
-                contractNumber: c.code,
-                type: 'main',
-                partyName: c.customerName,
-                value: c.value,
-                signDate: c.signedDate || '',
-                startDate: c.effectiveDate || '',
-                endDate: c.endDate || '',
-                status: c.status as any,
-                createdAt: c.createdAt
-            }));
-            const subContracts: ProjectContract[] = subs.map(c => ({
-                id: c.id,
-                constructionSiteId: c.constructionSiteId || constructionSiteId,
-                contractNumber: c.code,
-                type: 'subcontract',
-                partyName: c.subcontractorName,
-                value: c.value,
-                signDate: c.signedDate || '',
-                startDate: c.effectiveDate || '',
-                endDate: c.completionDate || '',
-                status: c.status as any,
-                createdAt: c.createdAt
-            }));
-            setContracts([...mainContracts, ...subContracts]);
-        }).catch(console.error);
-
-        acceptanceService.list(projectScopeId, constructionSiteId).then(setAcceptances).catch(console.error);
-        boqService.list(projectScopeId, constructionSiteId).then(setBoqItems).catch(console.error);
-        matRequestService.list(projectScopeId, constructionSiteId).then(setMatRequests).catch(console.error);
-        vendorService.list(projectScopeId, constructionSiteId).then(setVendors).catch(console.error);
-        poService.list(projectScopeId, constructionSiteId).then(setPurchaseOrders).catch(console.error);
-        taskService.list(projectScopeId, constructionSiteId).then(setTasks).catch(console.error);
-        dailyLogService.list(projectScopeId, constructionSiteId).then(setDailyLogs).catch(console.error);
-        setKpisLoading(true);
-        projectFinancialService.getKPIs(constructionSiteId, [], projectId)
-            .then(setFinancialKPIs)
+            taskService.list(projectScopeId, constructionSiteId),
+            dailyLogService.list(projectScopeId, constructionSiteId),
+            taskCompletionRequestService.list(projectScopeId, constructionSiteId),
+        ])
+            .then(([taskRows, logRows, completionRows]) => {
+                if (cancelled) return;
+                setTasks(taskRows);
+                setDailyLogs(logRows);
+                setCompletionRequests(completionRows);
+            })
             .catch(console.error)
-            .finally(() => setKpisLoading(false));
-        paymentScheduleWorkbenchService.getWorkbench({ projectId, constructionSiteId, contractType: 'all' })
-            .then(result => setPaymentScheduleSummary(result.summary))
-            .catch(console.error);
-    }, [constructionSiteId, projectId, projectScopeId]);
+            .finally(() => {
+                if (!cancelled) setLoading(false);
+            });
 
-    // ==================== COMPUTED DATA (PHASE 4) ====================
-    const allDelays = useMemo(() => {
-        return dailyLogs.flatMap(log =>
-            (log.delayTasks || []).map((dt: any) => ({
-                ...dt,
-                logDate: log.date,
-            }))
-        );
-    }, [dailyLogs]);
-
-    const riskMatrix = useMemo(() => {
-        const byTask: Record<string, { taskName: string; totalDays: number; categories: string[] }> = {};
-        allDelays.forEach(d => {
-            if (!byTask[d.taskId]) byTask[d.taskId] = { taskName: d.taskName, totalDays: 0, categories: [] };
-            byTask[d.taskId].totalDays += d.delayDays;
-            if (!byTask[d.taskId].categories.includes(d.category)) byTask[d.taskId].categories.push(d.category);
-        });
-        return Object.values(byTask).sort((a, b) => b.totalDays - a.totalDays);
-    }, [allDelays]);
-
-    const delayByCategory = useMemo(() => {
-        const map: Record<string, number> = {};
-        allDelays.forEach(d => { map[d.category] = (map[d.category] || 0) + d.delayDays; });
-        const labels: Record<string, string> = {
-            weather: '🌧️ Thời tiết', material: '📦 Vật tư',
-            labor: '👷 Nhân công', drawing: '📐 Bản vẽ', other: '📋 Khác'
+        return () => {
+            cancelled = true;
         };
-        return Object.entries(map).map(([k, v]) => ({ name: labels[k] || k, days: v }));
-    }, [allDelays]);
+    }, [constructionSiteId, projectScopeId]);
 
-    // ==================== COMPUTED DATA ====================
+    const todayIso = useMemo(() => toIsoDate(new Date()), []);
 
-    // 1. Budget Overview (Waterfall-style)
-    const budgetWaterfall = useMemo(() => {
-        const mainContracts = contracts.filter(c => c.type === 'main');
-        const subContracts = contracts.filter(c => c.type === 'subcontract');
-        const mainValue = mainContracts.reduce((s, c) => s + c.value, 0);
-        const subValue = subContracts.reduce((s, c) => s + c.value, 0);
-        const matBudget = boqItems.reduce((s, b) => s + (b.budgetTotal || 0), 0);
-        const matActual = boqItems.reduce((s, b) => s + (b.actualTotal || 0), 0);
-        const poValue = purchaseOrders.reduce((s, p) => s + p.totalAmount, 0);
-        const accepted = acceptances.reduce((s, a) => s + a.approvedValue, 0);
-        const budgetVarianceVal = (financialKPIs?.budgetTotal || contractValue || mainValue) - totalSpent;
+    const derivedTasks = useMemo(
+        () => deriveProjectTaskProgress(tasks, completionRequests, dailyLogs, todayIso),
+        [completionRequests, dailyLogs, tasks, todayIso],
+    );
+
+    const rawTaskById = useMemo(() => new Map(tasks.map(task => [task.id, task])), [tasks]);
+
+    const scheduleReport = useMemo(() => {
+        const childCount = new Map<string, number>();
+        derivedTasks.forEach(task => {
+            if (!task.parentId) return;
+            childCount.set(task.parentId, (childCount.get(task.parentId) || 0) + 1);
+        });
+
+        const levelMap = buildLevelMap(derivedTasks);
+        const delayMap = buildDelayMap(dailyLogs);
+        const leafIds = new Set(getLeafProjectTasks(derivedTasks).map(task => task.id));
+
+        const rows: ScheduleReportRow[] = [...derivedTasks]
+            .sort((a, b) => compareWbsCodes(a.wbsCode, b.wbsCode) || (a.order || 0) - (b.order || 0) || a.name.localeCompare(b.name, 'vi'))
+            .map(task => {
+                const sourceTask = rawTaskById.get(task.id) || task;
+                const { actualStart, actualEnd } = deriveActualDates(
+                    {
+                        ...sourceTask,
+                        progress: task.progress,
+                        gateStatus: task.gateStatus,
+                        gateApprovedAt: task.gateApprovedAt || sourceTask.gateApprovedAt,
+                    },
+                    dailyLogs,
+                );
+                const plannedDays = inclusiveDays(task.startDate, task.endDate) || Math.max(1, Number(task.duration || 1));
+                const plannedPercent = getPlannedPercent(task, todayIso);
+                const actualProgress = clampProgress(task.progress);
+                const forecastEnd = getForecastEnd(task, todayIso, actualStart, actualEnd);
+                const dayDelta = task.endDate ? diffDays(task.endDate, actualProgress >= 100 ? (actualEnd || forecastEnd) : forecastEnd) : 0;
+                const startDelta = actualStart && task.startDate ? diffDays(task.startDate, actualStart) : 0;
+                const status = getScheduleStatus({
+                    task,
+                    plannedPercent,
+                    actualProgress,
+                    dayDelta,
+                    todayIso,
+                });
+                const delayInfo = delayMap.get(task.id);
+                const note = [
+                    task.delayReason,
+                    delayInfo?.reasons.slice(0, 2).join('; '),
+                    task.notes,
+                    dayDelta > 0 && !task.delayReason && !delayInfo?.reasons.length ? 'Cần cập nhật nguyên nhân chậm' : '',
+                ].filter(Boolean)[0] || '-';
+
+                return {
+                    task,
+                    level: levelMap.get(task.id) || 0,
+                    hasChildren: (childCount.get(task.id) || 0) > 0,
+                    isLeaf: leafIds.has(task.id),
+                    plannedDays,
+                    plannedPercent,
+                    actualProgress,
+                    progressDelta: actualProgress - plannedPercent,
+                    actualStart,
+                    actualEnd,
+                    forecastEnd,
+                    endBasisLabel: actualProgress >= 100 ? 'Kết thúc TT' : 'Dự kiến TT',
+                    dayDelta,
+                    startDelta,
+                    status,
+                    note,
+                    delayDays: delayInfo?.days || 0,
+                };
+            });
+
+        const leafRows = rows.filter(row => row.isLeaf);
+        const rowsForProject = leafRows.length > 0 ? leafRows : rows;
+        const projectStart = rows.length > 0
+            ? rows.reduce((min, row) => row.task.startDate && (!min || row.task.startDate < min) ? row.task.startDate : min, '')
+            : '';
+        const projectEnd = rows.length > 0
+            ? rows.reduce((max, row) => row.task.endDate && (!max || row.task.endDate > max) ? row.task.endDate : max, '')
+            : '';
+        const forecastProjectEnd = rowsForProject.length > 0
+            ? rowsForProject.reduce((max, row) => row.forecastEnd && (!max || row.forecastEnd > max) ? row.forecastEnd : max, '')
+            : '';
+        const projectDayDelta = projectEnd && forecastProjectEnd ? diffDays(projectEnd, forecastProjectEnd) : 0;
+        const totalPlannedWeight = rowsForProject.reduce((sum, row) => sum + row.plannedDays, 0);
+        const plannedProgress = totalPlannedWeight > 0
+            ? Math.round(rowsForProject.reduce((sum, row) => sum + row.plannedPercent * row.plannedDays, 0) / totalPlannedWeight)
+            : 0;
+        const progressSummary = calculateProjectProgress(derivedTasks);
+        const topLevelRows = rows.filter(row => !row.task.parentId);
+        const completedRows = rowsForProject.filter(row => row.actualProgress >= 100);
+        const activeRows = rowsForProject.filter(row => row.actualProgress > 0 && row.actualProgress < 100);
+        const touchedRows = rowsForProject.filter(row => row.actualProgress > 0 || row.actualStart || row.actualEnd);
+        const lateRows = rowsForProject.filter(row => row.status === 'late' || row.dayDelta > 0);
+        const notStartedRows = rowsForProject.filter(row => row.actualProgress <= 0 && row.status !== 'not_due');
+
+        return {
+            rows,
+            rowsForProject,
+            topLevelRows,
+            completedRows,
+            activeRows,
+            touchedRows,
+            lateRows,
+            notStartedRows,
+            projectStart,
+            projectEnd,
+            projectDuration: inclusiveDays(projectStart, projectEnd),
+            forecastProjectEnd,
+            projectDayDelta,
+            plannedProgress,
+            actualProgress: progressSummary.progressPercent,
+            progressSummary,
+        };
+    }, [dailyLogs, derivedTasks, rawTaskById, todayIso]);
+
+    const toggleCollapse = (taskId: string) => {
+        setCollapsedIds(prev => {
+            const next = new Set(prev);
+            if (next.has(taskId)) {
+                next.delete(taskId);
+            } else {
+                next.add(taskId);
+            }
+            return next;
+        });
+    };
+
+    const expandAll = () => {
+        setCollapsedIds(new Set());
+    };
+
+    const collapseAll = () => {
+        const parentIds = scheduleReport.rows
+            .filter(r => r.hasChildren)
+            .map(r => r.task.id);
+        setCollapsedIds(new Set(parentIds));
+    };
+
+    const briefingText = useMemo(() => {
+        if (scheduleReport.rows.length === 0) {
+            return `Báo cáo Sếp, hiện dự án chưa có dữ liệu tiến độ để tổng hợp đến ngày ${fmtDate(todayIso)}.`;
+        }
+
+        const itemNames = scheduleReport.topLevelRows.length > 0
+            ? scheduleReport.topLevelRows.slice(0, 6).map(row => {
+                const range = row.task.startDate && row.task.endDate ? ` (${fmtDate(row.task.startDate)} - ${fmtDate(row.task.endDate)})` : '';
+                return `${row.task.name}${range}`;
+            })
+            : scheduleReport.rowsForProject.slice(0, 6).map(row => row.task.name);
+        const touchedNames = scheduleReport.touchedRows.length > 0
+            ? scheduleReport.touchedRows.slice(0, 6).map(row => `${row.task.name} đạt ${fmtPercent(row.actualProgress)}`)
+            : ['chưa có hạng mục nào ghi nhận thực hiện'];
+        const lateNames = scheduleReport.lateRows.slice(0, 4).map(row => `${row.task.name} ${formatDayDelta(row.dayDelta).toLowerCase()}`);
+        const progressDelta = scheduleReport.actualProgress - scheduleReport.plannedProgress;
 
         return [
-            { name: 'Giá trị HĐ', value: financialKPIs?.revisedContractValue || contractValue || mainValue, fill: '#818cf8' },
-            { name: 'Thầu phụ', value: subValue, fill: '#f472b6' },
-            { name: 'Vật tư DT', value: matBudget, fill: '#60a5fa' },
-            { name: 'Vật tư TT', value: matActual, fill: matActual > matBudget ? '#ef4444' : '#34d399' },
-            { name: 'PO', value: poValue, fill: '#fbbf24' },
-            { name: 'Nghiệm thu', value: accepted, fill: '#a78bfa' },
-            { name: 'Chi phí TT', value: totalSpent, fill: '#f87171' },
-            { name: 'Ch.lệch NS', value: budgetVarianceVal, fill: budgetVarianceVal >= 0 ? '#34d399' : '#ef4444' },
-        ];
-    }, [contracts, boqItems, purchaseOrders, acceptances, contractValue, totalSpent, financialKPIs]);
+            `Báo cáo Sếp, theo kế hoạch, tiến độ dự án bắt đầu từ ngày ${fmtDate(scheduleReport.projectStart)} tới ngày ${fmtDate(scheduleReport.projectEnd)} (${scheduleReport.projectDuration} ngày).`,
+            `Đến ngày ${fmtDate(todayIso)}, kế hoạch phải đạt khoảng ${fmtPercent(scheduleReport.plannedProgress)}, thực tế đang đạt ${fmtPercent(scheduleReport.actualProgress)}, ${formatProgressDelta(progressDelta).toLowerCase()}.`,
+            `Dự án bao gồm các hạng mục chính: ${itemNames.join('; ')}.`,
+            `Các hạng mục đã và đang thực hiện gồm: ${touchedNames.join('; ')}.`,
+            `Dự báo mốc kết thúc theo nhịp hiện tại là ${fmtDate(scheduleReport.forecastProjectEnd)}, ${formatDayDelta(scheduleReport.projectDayDelta).toLowerCase()} so với kế hoạch.`,
+            lateNames.length > 0 ? `Các điểm cần báo cáo thêm: ${lateNames.join('; ')}.` : 'Hiện chưa ghi nhận hạng mục lá nào chậm theo dữ liệu tiến độ hiện tại.',
+        ].join('\n');
+    }, [scheduleReport, todayIso]);
 
-    // 2. Contract Distribution (Pie)
-    const contractPie = useMemo(() => {
-        const main = contracts.filter(c => c.type === 'main').reduce((s, c) => s + c.value, 0);
-        const sub = contracts.filter(c => c.type === 'subcontract').reduce((s, c) => s + c.value, 0);
-        if (main === 0 && sub === 0) return [];
-        return [
-            { name: 'HĐ Chính', value: main, fill: '#818cf8' },
-            { name: 'Thầu phụ', value: sub, fill: '#f472b6' },
-        ];
-    }, [contracts]);
+    const filteredRows = useMemo(() => {
+        const query = normalizeText(searchTerm.trim());
 
-    // 3. Material Waste (Horizontal Bar)
-    const wasteData = useMemo(() => {
-        return boqItems.map(b => ({
-            name: b.itemName.length > 12 ? b.itemName.slice(0, 12) + '…' : b.itemName,
-            'Dự toán': b.budgetQty,
-            'Thực tế': b.actualQty,
-            waste: b.wastePercent || 0,
-            isOver: (b.wastePercent || 0) > b.wasteThreshold,
-        }));
-    }, [boqItems]);
-
-    // 4. Task Progress (Radar)
-    const taskRadar = useMemo(() => {
-        if (tasks.length === 0) return [];
-        const byStatus = {
-            'Hoàn thành': tasks.filter(t => t.progress >= 100).length,
-            'Đang làm': tasks.filter(t => t.progress > 0 && t.progress < 100).length,
-            'Chưa bắt đầu': tasks.filter(t => t.progress === 0).length,
-            'Milestone': tasks.filter(t => t.isMilestone).length,
-        };
-        return Object.entries(byStatus).map(([key, value]) => ({ subject: key, A: value, fullMark: tasks.length }));
-    }, [tasks]);
-
-    // 5. PO Status (Donut)
-    const poStatusPie = useMemo(() => {
-        if (purchaseOrders.length === 0) return [];
-        const byStatus: Record<string, number> = {};
-        purchaseOrders.forEach(p => { byStatus[p.status] = (byStatus[p.status] || 0) + 1; });
-        const labels: Record<string, string> = { draft: 'Nháp', sent: 'Đã gửi', confirmed: 'Đã duyệt', in_transit: 'Đang giao', partial: 'Giao 1 phần', delivered: 'Đã giao', closed: 'Đã đóng', returned: 'Hoàn hàng', cancelled: 'Huỷ' };
-        const colors: Record<string, string> = { draft: '#94a3b8', sent: '#fbbf24', confirmed: '#10b981', in_transit: '#6366f1', partial: '#fb923c', delivered: '#34d399', closed: '#64748b', returned: '#f43f5e', cancelled: '#ef4444' };
-        return Object.entries(byStatus).map(([k, v]) => ({ name: labels[k] || k, value: v, fill: colors[k] || '#818cf8' }));
-    }, [purchaseOrders]);
-
-    // 6. Acceptance Progress (S-Curve style)
-    const acceptanceSCurve = useMemo(() => {
-        if (acceptances.length === 0) return [];
-        const sorted = [...acceptances].sort((a, b) => a.periodNumber - b.periodNumber);
-        let cumValue = 0;
-        let cumPaid = 0;
-        return sorted.map(a => {
-            cumValue += a.approvedValue;
-            if (a.status === 'paid') cumPaid += (a.payableAmount || a.approvedValue);
-            return {
-                name: `Đợt ${a.periodNumber}`,
-                'Luỹ kế NT': cumValue,
-                'Luỹ kế TT': cumPaid,
-            };
+        return scheduleReport.rows.filter(row => {
+            if (statusFilter === 'active' && !(row.actualProgress > 0 && row.actualProgress < 100)) return false;
+            if (statusFilter === 'late' && !(row.status === 'late' || row.dayDelta > 0)) return false;
+            if (statusFilter === 'completed' && row.actualProgress < 100) return false;
+            if (statusFilter === 'not_started' && !(row.actualProgress <= 0 && row.status !== 'not_due')) return false;
+            if (!query) return true;
+            return normalizeText(`${row.task.wbsCode || ''} ${row.task.name} ${row.task.assignee || ''} ${row.note}`).includes(query);
         });
-    }, [acceptances]);
+    }, [scheduleReport.rows, searchTerm, statusFilter]);
 
-    // 7. Weather Distribution from Daily Logs (Pie)
-    const weatherPie = useMemo(() => {
-        if (dailyLogs.length === 0) return [];
-        const byWeather: Record<string, number> = {};
-        dailyLogs.forEach(l => { byWeather[l.weather] = (byWeather[l.weather] || 0) + 1; });
-        const labels: Record<string, string> = { sunny: '☀️ Nắng', cloudy: '⛅ Mây', rainy: '🌧️ Mưa', storm: '⛈️ Bão' };
-        const colors: Record<string, string> = { sunny: '#fbbf24', cloudy: '#94a3b8', rainy: '#60a5fa', storm: '#6366f1' };
-        return Object.entries(byWeather).map(([k, v]) => ({ name: labels[k] || k, value: v, fill: colors[k] || '#818cf8' }));
-    }, [dailyLogs]);
-
-    // 8. Worker trend from Daily Logs (Area)
-    const workerTrend = useMemo(() => {
-        if (dailyLogs.length === 0) return [];
-        return [...dailyLogs]
-            .sort((a, b) => a.date.localeCompare(b.date))
-            .slice(-30) // Last 30 logs
-            .map(l => ({
-                name: new Date(l.date).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' }),
-                'Công nhân': l.workerCount,
-            }));
-    }, [dailyLogs]);
-
-    // 9. Vendor Rating (Horizontal Bar)
-    const vendorRatingData = useMemo(() => {
-        return vendors.map(v => ({
-            name: v.name.length > 15 ? v.name.slice(0, 15) + '…' : v.name,
-            rating: v.rating,
-            orders: purchaseOrders.filter(p => p.vendorId === v.id).length,
-        }));
-    }, [vendors, purchaseOrders]);
-
-    // 10. Material category breakdown (Pie)
-    const matCategoryPie = useMemo(() => {
-        if (boqItems.length === 0) return [];
-        const byCategory: Record<string, number> = {};
-        boqItems.forEach(b => { byCategory[b.category] = (byCategory[b.category] || 0) + (b.budgetTotal || 0); });
-        return Object.entries(byCategory)
-            .sort((a, b) => b[1] - a[1])
-            .map(([k, v], i) => ({ name: k, value: v, fill: COLORS[i % COLORS.length] }));
-    }, [boqItems]);
-
-    // Overall KPIs
-    const kpis = useMemo(() => {
-        const progressSummary = calculateProjectProgress(tasks);
-        const avgProgress = progressSummary.progressPercent;
-        const totalAccepted = acceptances.reduce((s, a) => s + a.approvedValue, 0);
-        const totalPaid = acceptances.filter(a => a.status === 'paid').reduce((s, a) => s + (a.payableAmount || a.approvedValue), 0);
-        const totalPO = purchaseOrders.reduce((s, p) => s + p.totalAmount, 0);
-        const totalMatBudget = boqItems.reduce((s, b) => s + (b.budgetTotal || 0), 0);
-        const totalMatActual = boqItems.reduce((s, b) => s + (b.actualTotal || 0), 0);
-        const wasteOverCount = boqItems.filter(b => (b.wastePercent || 0) > b.wasteThreshold).length;
-        const rainyDays = dailyLogs.filter(l => l.weather === 'rainy' || l.weather === 'storm').length;
-        return { avgProgress, progressSummary, totalAccepted, totalPaid, totalPO, totalMatBudget, totalMatActual, wasteOverCount, rainyDays };
-    }, [tasks, acceptances, purchaseOrders, boqItems, dailyLogs]);
-
-    const healthScore = useMemo(() => {
-        const progress = kpis.avgProgress;
-        const photoCompliance = dailyLogs.length > 0
-            ? (dailyLogs.filter(l => l.photos && l.photos.length > 0).length / dailyLogs.length) * 100
-            : 100;
-        const gpsCompliance = dailyLogs.length > 0
-            ? (dailyLogs.filter(l => l.gpsLat).length / dailyLogs.length) * 100
-            : 100;
-        const totalDelayDays = allDelays.reduce((s, d) => s + d.delayDays, 0);
-        const delayScore = Math.max(0, 100 - totalDelayDays * 3);
-
-        const score = Math.round(progress * 0.4 + photoCompliance * 0.2 + gpsCompliance * 0.2 + delayScore * 0.2);
-        return { score, progress, photoCompliance, gpsCompliance, delayScore, totalDelayDays };
-    }, [kpis.avgProgress, dailyLogs, allDelays]);
-
-    const fieldComplianceByWeek = useMemo(() => {
-        const weeks: Record<string, { total: number; withGps: number; withPhoto: number }> = {};
-        dailyLogs.forEach(log => {
-            const d = new Date(log.date);
-            const weekKey = `T${Math.ceil(d.getDate() / 7)}/T${d.getMonth() + 1}`;
-            if (!weeks[weekKey]) weeks[weekKey] = { total: 0, withGps: 0, withPhoto: 0 };
-            weeks[weekKey].total++;
-            if (log.gpsLat) weeks[weekKey].withGps++;
-            if (log.photos && log.photos.length > 0) weeks[weekKey].withPhoto++;
+    const displayedRows = useMemo(() => {
+        return filteredRows.filter(row => {
+            if (searchTerm.trim() || statusFilter !== 'all') return true;
+            let parentId = row.task.parentId;
+            while (parentId) {
+                if (collapsedIds.has(parentId)) return false;
+                const parent = rawTaskById.get(parentId);
+                parentId = parent?.parentId;
+            }
+            return true;
         });
-        return Object.entries(weeks).map(([week, v]) => ({
-            week,
-            'GPS %': Math.round((v.withGps / v.total) * 100),
-            'Ảnh %': Math.round((v.withPhoto / v.total) * 100),
-        }));
-    }, [dailyLogs]);
+    }, [filteredRows, collapsedIds, rawTaskById, searchTerm, statusFilter]);
+
+    const statusFilters: { key: StatusFilter; label: string; count: number }[] = [
+        { key: 'all', label: 'Tất cả', count: scheduleReport.rows.length },
+        { key: 'active', label: 'Đang làm', count: scheduleReport.activeRows.length },
+        { key: 'late', label: 'Chậm', count: scheduleReport.lateRows.length },
+        { key: 'completed', label: 'Hoàn thành', count: scheduleReport.completedRows.length },
+        { key: 'not_started', label: 'Chưa BĐ', count: scheduleReport.notStartedRows.length },
+    ];
+
+    const copyBriefing = async () => {
+        try {
+            await navigator.clipboard.writeText(briefingText);
+            setBriefingCopied(true);
+            window.setTimeout(() => setBriefingCopied(false), 1600);
+        } catch (error) {
+            console.error(error);
+        }
+    };
 
     const exportToExcel = async () => {
         const XLSX = await loadXlsx();
-        const data = [
-            ['Báo cáo Dự án', new Date().toLocaleDateString('vi-VN')],
+        const summaryRows = [
+            ['Báo cáo tiến độ dự án', fmtDate(todayIso)],
+            ['Bắt đầu KH', fmtDate(scheduleReport.projectStart)],
+            ['Kết thúc KH', fmtDate(scheduleReport.projectEnd)],
+            ['Thời lượng KH', `${scheduleReport.projectDuration} ngày`],
+            ['% KH đến hôm nay', fmtPercent(scheduleReport.plannedProgress)],
+            ['% Thực tế', fmtPercent(scheduleReport.actualProgress)],
+            ['Dự kiến kết thúc', fmtDate(scheduleReport.forecastProjectEnd)],
+            ['Lệch ngày dự án', formatDayDelta(scheduleReport.projectDayDelta)],
             [],
-            ['HEALTH SCORE', healthScore.score + '/100'],
-            ['Tiến độ trung bình', kpis.avgProgress + '%'],
-            ['Tuân thủ ảnh', healthScore.photoCompliance.toFixed(0) + '%'],
-            ['Tuân thủ GPS', healthScore.gpsCompliance.toFixed(0) + '%'],
-            ['Tổng ngày trễ', healthScore.totalDelayDays],
-            ['Tổng phải thu theo kế hoạch', paymentScheduleSummary.totalReceivable],
-            ['Tổng phải trả theo kế hoạch', paymentScheduleSummary.totalPayable],
-            ['Sắp tới hạn', paymentScheduleSummary.upcomingCount],
-            ['Quá hạn', paymentScheduleSummary.overdueCount],
+            ['Câu trả lời nhanh'],
+            ...briefingText.split('\n').map(line => [line]),
             [],
-            ['MA TRẬN RỦI RO'],
-            ['Hạng mục', 'Tổng ngày trễ', 'Nguyên nhân', 'Mức độ'],
-            ...riskMatrix.map(r => [
-                r.taskName,
-                r.totalDays,
-                r.categories.join(', '),
-                r.totalDays > 7 ? 'Cao' : r.totalDays > 3 ? 'Trung bình' : 'Thấp'
+            [
+                'Mã WBS',
+                'Hạng mục',
+                'Bắt đầu KH',
+                'Kết thúc KH',
+                'Số ngày KH',
+                '% KH hôm nay',
+                'Bắt đầu TT',
+                'Kết thúc/Dự kiến TT',
+                '% TT',
+                'Lệch tiến độ',
+                'Lệch ngày',
+                'Trạng thái',
+                'Ghi chú',
+            ],
+            ...scheduleReport.rows.map(row => [
+                row.task.wbsCode || '',
+                row.task.name,
+                fmtDate(row.task.startDate),
+                fmtDate(row.task.endDate),
+                row.plannedDays,
+                fmtPercent(row.plannedPercent),
+                row.actualStart ? fmtDate(row.actualStart) : '',
+                fmtDate(row.actualProgress >= 100 ? (row.actualEnd || row.forecastEnd) : row.forecastEnd),
+                fmtPercent(row.actualProgress),
+                formatProgressDelta(row.progressDelta),
+                formatDayDelta(row.dayDelta),
+                getStatusLabel(row.status),
+                row.note === '-' ? '' : row.note,
             ]),
         ];
-        const ws = XLSX.utils.aoa_to_sheet(data);
+
+        const ws = XLSX.utils.aoa_to_sheet(summaryRows);
         const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, 'Bao_cao');
-        XLSX.writeFile(wb, `Bao_cao_Du_an_${new Date().getTime()}.xlsx`);
+        XLSX.utils.book_append_sheet(wb, ws, 'Tien_do');
+        XLSX.writeFile(wb, `Bao_cao_tien_do_${Date.now()}.xlsx`);
     };
 
-    // Chart card component
-    const ChartCard: React.FC<{ title: string; icon: React.ReactNode; color: string; children: React.ReactNode; span?: number }> =
-        ({ title, icon, color, children, span = 1 }) => (
-            <div className={`bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700/60 shadow-sm overflow-hidden ${span === 2 ? 'col-span-2' : ''}`}
-                onClick={() => setSelectedChart(selectedChart === title ? null : title)}>
-                <div className={`px-5 py-3 border-b border-slate-50 flex items-center gap-2`}>
-                    <div className={`w-7 h-7 rounded-lg ${color} flex items-center justify-center text-white`}>{icon}</div>
-                    <span className="text-xs font-black text-slate-700">{title}</span>
+    const renderVisualBriefing = () => {
+        if (loading) {
+            return (
+                <div className="flex items-center justify-center py-8 text-sm font-bold text-slate-400">
+                    Đang tổng hợp dữ liệu tiến độ...
                 </div>
-                <div className="p-4">{children}</div>
+            );
+        }
+        
+        if (scheduleReport.rows.length === 0) {
+            return (
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm font-semibold leading-7 text-slate-500 dark:border-slate-700 dark:bg-slate-900">
+                    Báo cáo Sếp, hiện dự án chưa có dữ liệu tiến độ để tổng hợp đến ngày {fmtDate(todayIso)}.
+                </div>
+            );
+        }
+
+        const topLevelRows = scheduleReport.topLevelRows.slice(0, 6);
+        const touchedRows = scheduleReport.touchedRows.slice(0, 6);
+        const lateRows = scheduleReport.lateRows.slice(0, 4);
+
+        return (
+            <div className="grid grid-cols-1 gap-6 text-sm lg:grid-cols-2">
+                {/* Cột Trái: Tổng quan & Dự báo */}
+                <div className="space-y-5">
+                    {/* Phần 1: Tổng quan tiến độ */}
+                    <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700/50 dark:bg-slate-900/50 shadow-sm">
+                        <div className="mb-3.5 flex items-center gap-2 text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                            <Activity size={14} className="text-blue-500" />
+                            Tổng quan tiến độ dự án
+                        </div>
+                        <div className="space-y-3.5 font-semibold leading-relaxed text-slate-600 dark:text-slate-300">
+                            <p>
+                                Báo cáo Sếp, theo kế hoạch, tiến độ dự án bắt đầu từ ngày{' '}
+                                <span className="font-extrabold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 px-1.5 py-0.5 rounded border border-blue-100 dark:border-blue-900/30">
+                                    {fmtDate(scheduleReport.projectStart)}
+                                </span>{' '}
+                                tới ngày{' '}
+                                <span className="font-extrabold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 px-1.5 py-0.5 rounded border border-blue-100 dark:border-blue-900/30">
+                                    {fmtDate(scheduleReport.projectEnd)}
+                                </span>{' '}
+                                (<span className="font-extrabold text-slate-900 dark:text-slate-100">{scheduleReport.projectDuration} ngày</span>).
+                            </p>
+                            <p>
+                                Đến ngày{' '}
+                                <span className="font-extrabold text-slate-800 dark:text-slate-200">
+                                    {fmtDate(todayIso)}
+                                </span>
+                                , kế hoạch phải đạt khoảng{' '}
+                                <span className="font-extrabold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 px-1.5 py-0.5 rounded border border-indigo-100 dark:border-indigo-900/30">
+                                    {fmtPercent(scheduleReport.plannedProgress)}
+                                </span>
+                                , thực tế đang đạt{' '}
+                                <span className="font-extrabold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-1.5 py-0.5 rounded border border-emerald-100 dark:border-emerald-900/30">
+                                    {fmtPercent(scheduleReport.actualProgress)}
+                                </span>
+                                ,{' '}
+                                <span className={`font-extrabold ${
+                                    progressDelta < -5 
+                                        ? 'text-red-650 text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 border-red-100 dark:border-red-900/30' 
+                                        : progressDelta > 5 
+                                            ? 'text-cyan-600 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-950/40 border-cyan-100 dark:border-cyan-900/30' 
+                                            : 'text-slate-650 text-slate-650/80 dark:text-slate-400 bg-slate-100 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700/50'
+                                } px-1.5 py-0.5 rounded border`}>
+                                    {formatProgressDelta(progressDelta).toLowerCase()}
+                                </span>.
+                            </p>
+                        </div>
+                    </div>
+
+                    {/* Phần 4: Dự báo kết thúc */}
+                    <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700/50 dark:bg-slate-900/50 shadow-sm">
+                        <div className="mb-3.5 flex items-center gap-2 text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                            <Clock size={14} className="text-indigo-500" />
+                            Dự báo kết thúc dự án
+                        </div>
+                        <div className="font-semibold leading-relaxed text-slate-600 dark:text-slate-300">
+                            Dự báo mốc kết thúc theo nhịp hiện tại là{' '}
+                            <span className="font-extrabold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 px-1.5 py-0.5 rounded border border-indigo-100 dark:border-indigo-900/30">
+                                {fmtDate(scheduleReport.forecastProjectEnd)}
+                            </span>
+                            ,{' '}
+                            <span className={`font-extrabold ${
+                                scheduleReport.projectDayDelta > 0 
+                                    ? 'text-red-650 text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 border-red-100 dark:border-red-900/30' 
+                                    : scheduleReport.projectDayDelta < 0 
+                                        ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border-emerald-100 dark:border-emerald-900/30' 
+                                        : 'text-slate-650 text-slate-650/80 dark:text-slate-400 bg-slate-100 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700/50'
+                            } px-1.5 py-0.5 rounded border`}>
+                                {formatDayDelta(scheduleReport.projectDayDelta).toLowerCase()}
+                            </span>{' '}
+                            so với kế hoạch.
+                        </div>
+                    </div>
+                </div>
+
+                {/* Cột Phải: Các Hạng mục */}
+                <div className="space-y-5">
+                    {/* Phần 2: Hạng mục chính (Mỗi hạng mục 1 dòng) */}
+                    <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700/50 dark:bg-slate-900/50 shadow-sm">
+                        <div className="mb-3 flex items-center gap-2 text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                            <Clipboard size={14} className="text-slate-500" />
+                            Dự án bao gồm các hạng mục chính
+                        </div>
+                        <div className="space-y-2.5">
+                            {topLevelRows.length > 0 ? (
+                                topLevelRows.map((row, idx) => (
+                                    <div key={idx} className="flex items-start gap-2.5 text-[13px] font-semibold text-slate-700 dark:text-slate-300">
+                                        <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400" />
+                                        <div className="min-w-0">
+                                            <span className="font-extrabold text-slate-900 dark:text-white">
+                                                {row.task.name}
+                                            </span>
+                                            {row.task.startDate && row.task.endDate && (
+                                                <span className="text-[12px] text-slate-500 dark:text-slate-400">
+                                                    {' '}(từ <span className="font-bold text-blue-600 dark:text-blue-400">{fmtDate(row.task.startDate)}</span> đến <span className="font-bold text-blue-600 dark:text-blue-400">{fmtDate(row.task.endDate)}</span>)
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))
+                            ) : (
+                                scheduleReport.rowsForProject.slice(0, 6).map((row, idx) => (
+                                    <div key={idx} className="flex items-start gap-2.5 text-[13px] font-semibold text-slate-700 dark:text-slate-300">
+                                        <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400" />
+                                        <span className="font-extrabold text-slate-900 dark:text-white">
+                                            {row.task.name}
+                                        </span>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Phần 3: Hạng mục đã và đang thực hiện */}
+                    <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700/50 dark:bg-slate-900/50 shadow-sm">
+                        <div className="mb-3 flex items-center gap-2 text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                            <CheckCircle2 size={14} className="text-emerald-500" />
+                            Các hạng mục đã và đang thực hiện gồm
+                        </div>
+                        <div className="space-y-2.5">
+                            {touchedRows.length > 0 ? (
+                                touchedRows.map((row, idx) => (
+                                    <div key={idx} className="flex items-center justify-between gap-3 text-[13px] font-semibold text-slate-700 dark:text-slate-300">
+                                        <div className="flex items-center gap-2.5 min-w-0">
+                                            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400" />
+                                            <span className="font-extrabold text-slate-900 dark:text-white truncate">
+                                                {row.task.name}
+                                            </span>
+                                        </div>
+                                        <span className={`font-extrabold text-xs shrink-0 ${
+                                            row.actualProgress >= 100 
+                                                ? 'text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 border-emerald-100 dark:border-emerald-800/30' 
+                                                : 'text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 border-amber-100 dark:border-amber-800/30'
+                                        } px-2 py-0.5 rounded border shadow-sm`}>
+                                            đạt {fmtPercent(row.actualProgress)}
+                                        </span>
+                                    </div>
+                                ))
+                            ) : (
+                                <div className="text-[13px] italic text-slate-400 pl-4">
+                                    Chưa có hạng mục nào ghi nhận thực hiện.
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Phần 5: Các điểm cần báo cáo thêm */}
+                    <div className={`rounded-xl border p-5 shadow-sm ${
+                        lateRows.length > 0 
+                            ? 'border-red-200 bg-red-50/20 dark:border-red-900/30 dark:bg-red-950/10' 
+                            : 'border-emerald-200 bg-emerald-50/20 dark:border-emerald-900/30 dark:bg-emerald-950/10'
+                    }`}>
+                        <div className={`mb-3 flex items-center gap-2 text-xs font-black uppercase tracking-wider ${
+                            lateRows.length > 0 ? 'text-red-650 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'
+                        }`}>
+                            <AlertTriangle size={14} />
+                            Các điểm cần báo cáo thêm
+                        </div>
+                        <div className="space-y-2.5">
+                            {lateRows.length > 0 ? (
+                                lateRows.map((row, idx) => (
+                                    <div key={idx} className="flex items-center justify-between gap-3 text-[13px] font-semibold text-slate-700 dark:text-slate-300">
+                                        <div className="flex items-center gap-2.5 min-w-0">
+                                            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-red-400" />
+                                            <span className="font-extrabold text-slate-900 dark:text-white truncate">
+                                                {row.task.name}
+                                            </span>
+                                        </div>
+                                        <span className="font-extrabold text-xs shrink-0 text-red-650 dark:text-red-400 bg-red-50 dark:bg-red-950/30 border border-red-100 dark:border-red-900/30 px-2 py-0.5 rounded shadow-sm">
+                                            {formatDayDelta(row.dayDelta).toLowerCase()}
+                                        </span>
+                                    </div>
+                                ))
+                            ) : (
+                                <div className="text-[13px] font-medium text-emerald-700 dark:text-emerald-400 pl-4">
+                                    Hiện chưa ghi nhận hạng mục lá nào chậm theo dữ liệu tiến độ hiện tại.
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
             </div>
         );
+    };
 
-    const EmptyChart = ({ text }: { text: string }) => (
-        <div className="h-[200px] flex items-center justify-center text-xs text-slate-300 font-bold">{text}</div>
-    );
+    const progressDelta = scheduleReport.actualProgress - scheduleReport.plannedProgress;
+    const projectDeltaTone = scheduleReport.projectDayDelta > 0 ? 'red' : scheduleReport.projectDayDelta < 0 ? 'emerald' : 'slate';
+    const progressDeltaTone = progressDelta < -5 ? 'red' : progressDelta > 5 ? 'cyan' : 'slate';
 
     return (
-        <div className="space-y-6">
-            <div className="flex flex-col gap-3 rounded-2xl border border-slate-100 bg-white p-2 shadow-sm dark:border-slate-700/60 dark:bg-slate-800 sm:flex-row sm:items-center sm:justify-between">
+        <div className="space-y-5">
+            <div className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-2 shadow-sm dark:border-slate-700/60 dark:bg-slate-800 sm:flex-row sm:items-center sm:justify-between">
                 <div className="px-3 py-2">
                     <div className="text-sm font-black text-slate-800 dark:text-white">Báo cáo dự án</div>
-                    <div className="text-xs font-bold text-slate-400">Tổng hợp điều hành và báo cáo nhật ký công trường</div>
+                    <div className="text-xs font-bold text-slate-500 dark:text-slate-400">Tiến độ kế hoạch/thực tế và nhật ký công trường</div>
                 </div>
-                <div className="flex rounded-xl bg-slate-100 p-1 dark:bg-slate-900">
+                <div className="flex rounded-lg bg-slate-100 p-1 dark:bg-slate-900">
                     <button
+                        type="button"
                         onClick={() => changeReportView('overview')}
-                        className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-black transition-colors ${
-                            activeReportView === 'overview' ? 'bg-white text-indigo-700 shadow-sm dark:bg-slate-800' : 'text-slate-500 hover:text-slate-700'
+                        className={`flex items-center gap-1.5 rounded-md px-3 py-2 text-xs font-black transition-colors ${
+                            activeReportView === 'overview' ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-white' : 'text-slate-500 hover:text-slate-700'
                         }`}
                     >
-                        <BarChart3 size={14} /> Tổng hợp dự án
+                        <BarChart3 size={14} /> Tiến độ dự án
                     </button>
                     <button
+                        type="button"
                         onClick={() => changeReportView('dailylog')}
-                        className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-black transition-colors ${
+                        className={`flex items-center gap-1.5 rounded-md px-3 py-2 text-xs font-black transition-colors ${
                             activeReportView === 'dailylog' ? 'bg-white text-teal-700 shadow-sm dark:bg-slate-800' : 'text-slate-500 hover:text-slate-700'
                         }`}
                     >
@@ -431,455 +905,250 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
                     constructionSiteId={constructionSiteId}
                 />
             ) : (
-                <>
-            {/* T1: 4 Financial KPIs Banner */}
-            {!kpisLoading && financialKPIs && (
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                    {[
-                        {
-                            label: 'Chênh lệch ngân sách',
-                            value: financialKPIs.budgetVariance,
-                            pct: financialKPIs.budgetVariancePercent,
-                            sub: `NS: ${fmt(financialKPIs.budgetTotal)} · TT: ${fmt(financialKPIs.actualCost)}`,
-                            icon: financialKPIs.budgetVariance >= 0 ? <TrendingUp size={15} className="text-emerald-600" /> : <TrendingDown size={15} className="text-red-600" />,
-                            positive: financialKPIs.budgetVariance >= 0,
-                            bg: financialKPIs.budgetVariance >= 0 ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200',
-                            textColor: financialKPIs.budgetVariance >= 0 ? 'text-emerald-700' : 'text-red-700',
-                            pctColor: financialKPIs.budgetVariance >= 0 ? 'text-emerald-600' : 'text-red-600',
-                        },
-                        {
-                            label: 'Biên lợi nhuận HĐ',
-                            value: financialKPIs.contractMargin,
-                            pct: financialKPIs.contractMarginPercent,
-                            sub: `HĐ điều chỉnh: ${fmt(financialKPIs.revisedContractValue)}`,
-                            icon: <DollarSign size={15} className={financialKPIs.contractMargin >= 0 ? 'text-violet-600' : 'text-red-600'} />,
-                            positive: financialKPIs.contractMargin >= 0,
-                            bg: financialKPIs.contractMargin >= 0 ? 'bg-violet-50 border-violet-200' : 'bg-red-50 border-red-200',
-                            textColor: financialKPIs.contractMargin >= 0 ? 'text-violet-700' : 'text-red-700',
-                            pctColor: financialKPIs.contractMargin >= 0 ? 'text-violet-600' : 'text-red-600',
-                        },
-                        {
-                            label: 'Doanh thu xác nhận',
-                            value: financialKPIs.totalCertifiedRevenue,
-                            pct: financialKPIs.certificationPercent,
-                            sub: `Đã TT: ${fmt(financialKPIs.totalPaidRevenue)} · Giữ: ${fmt(financialKPIs.totalRetentionHeld)}`,
-                            icon: <ShieldCheck size={15} className="text-blue-600" />,
-                            positive: true,
-                            bg: 'bg-blue-50 border-blue-200',
-                            textColor: 'text-blue-700',
-                            pctColor: 'text-blue-600',
-                        },
-                        {
-                            label: 'Vị thế tiền mặt',
-                            value: financialKPIs.cashPosition,
-                            pct: financialKPIs.cashPositionPercent,
-                            sub: `Thu: ${fmt(financialKPIs.cashIn)} · Chi: ${fmt(financialKPIs.cashOut)}`,
-                            icon: <RotateCcw size={15} className={financialKPIs.cashPosition >= 0 ? 'text-indigo-600' : 'text-orange-600'} />,
-                            positive: financialKPIs.cashPosition >= 0,
-                            bg: financialKPIs.cashPosition >= 0 ? 'bg-indigo-50 border-indigo-200' : 'bg-orange-50 border-orange-200',
-                            textColor: financialKPIs.cashPosition >= 0 ? 'text-indigo-700' : 'text-orange-700',
-                            pctColor: financialKPIs.cashPosition >= 0 ? 'text-indigo-600' : 'text-orange-600',
-                        },
-                    ].map((kpi, i) => (
-                        <div key={i} className={`rounded-2xl border p-4 ${kpi.bg}`}>
-                            <div className="flex items-center justify-between mb-2">
-                                <div className="w-8 h-8 rounded-xl bg-white/70 shadow-sm flex items-center justify-center">
-                                    {kpi.icon}
+                <div className="space-y-5">
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                        <MetricTile
+                            label="Kế hoạch gốc"
+                            value={scheduleReport.projectDuration ? `${scheduleReport.projectDuration} ngày` : '-'}
+                            sub={`${fmtDate(scheduleReport.projectStart)} - ${fmtDate(scheduleReport.projectEnd)}`}
+                            icon={Calendar}
+                        />
+                        <MetricTile
+                            label="Đến hôm nay"
+                            value={`${fmtPercent(scheduleReport.plannedProgress)} / ${fmtPercent(scheduleReport.actualProgress)}`}
+                            sub={`KH / Thực tế, ${formatProgressDelta(progressDelta).toLowerCase()}`}
+                            icon={Activity}
+                            tone={progressDeltaTone}
+                        />
+                        <MetricTile
+                            label="Dự báo kết thúc"
+                            value={fmtDate(scheduleReport.forecastProjectEnd)}
+                            sub={formatDayDelta(scheduleReport.projectDayDelta)}
+                            icon={scheduleReport.projectDayDelta > 0 ? TrendingDown : TrendingUp}
+                            tone={projectDeltaTone}
+                        />
+                        <MetricTile
+                            label="Hạng mục cần lưu ý"
+                            value={scheduleReport.lateRows.length}
+                            sub={`${scheduleReport.activeRows.length} đang làm, ${scheduleReport.completedRows.length} hoàn thành`}
+                            icon={AlertTriangle}
+                            tone={scheduleReport.lateRows.length > 0 ? 'red' : 'emerald'}
+                        />
+                    </div>
+
+                    <section className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-700/60 dark:bg-slate-800">
+                        <div className="flex flex-col gap-3 border-b border-slate-100 p-4 dark:border-slate-700/60 sm:flex-row sm:items-start sm:justify-between">
+                            <div>
+                                <div className="flex items-center gap-2 text-sm font-black text-slate-800 dark:text-white">
+                                    <Clipboard size={16} className="text-slate-500" />
+                                    Câu trả lời nhanh cho TGĐ
                                 </div>
-                                <span className={`text-xs font-black ${kpi.pctColor}`}>
-                                    {kpi.pct > 0 ? '+' : ''}{kpi.pct}%
-                                </span>
+                                <p className="mt-1 text-xs font-bold text-slate-500">Tự động tổng hợp theo dữ liệu tiến độ đến ngày {fmtDate(todayIso)}.</p>
                             </div>
-                            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">{kpi.label}</p>
-                            <p className={`text-lg font-black leading-tight ${kpi.textColor}`}>
-                                {kpi.value > 0 ? '+' : ''}{fmt(kpi.value)}
-                            </p>
-                            <p className="text-[10px] text-slate-400 mt-0.5">{kpi.sub}</p>
-                        </div>
-                    ))}
-                </div>
-            )}
-            {/* Health Score Banner */}
-            <div className="bg-gradient-to-r from-slate-800 to-slate-900 rounded-2xl p-5 shadow-lg overflow-hidden relative">
-                <div className="absolute top-0 right-0 p-8 opacity-10">
-                    <Activity size={100} className={healthScore.score > 75 ? 'text-emerald-400' : healthScore.score > 50 ? 'text-amber-400' : 'text-red-400'} />
-                </div>
-                <div className="relative z-10">
-                    <div className="flex items-center gap-3 mb-4">
-                        <div className={`w-12 h-12 rounded-full flex items-center justify-center font-black text-xl text-white ${healthScore.score > 75 ? 'bg-emerald-500' : healthScore.score > 50 ? 'bg-amber-500' : 'bg-red-500'}`}>
-                            {healthScore.score}
-                        </div>
-                        <div>
-                            <h3 className="text-lg font-black text-white">Sức khỏe Dự án</h3>
-                            <div className="text-xs font-medium text-slate-400">
-                                {healthScore.score > 75 ? 'Tình trạng rất tốt, giữ vững phong độ!' : healthScore.score > 50 ? 'Cần chú ý một số rủi ro tiềm ẩn.' : 'Báo động đỏ! Cần can thiệp ngay.'}
+                            <div className="flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={copyBriefing}
+                                    className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-700 transition-colors hover:bg-slate-50"
+                                >
+                                    <Copy size={14} /> {briefingCopied ? 'Đã copy' : 'Copy'}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={exportToExcel}
+                                    className="inline-flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-700 transition-colors hover:bg-emerald-100"
+                                >
+                                    <Download size={14} /> Xuất Excel
+                                </button>
                             </div>
                         </div>
-                    </div>
-                    
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        <div className="bg-slate-800/50 rounded-xl p-3 border border-slate-700">
-                            <div className="text-[10px] text-slate-400 font-bold uppercase mb-1 flex items-center gap-1"><Activity size={12}/> Tiến độ</div>
-                            <div className="text-sm font-black text-white">{kpis.avgProgress}%</div>
+                        <div className="p-4">
+                            {renderVisualBriefing()}
                         </div>
-                        <div className="bg-slate-800/50 rounded-xl p-3 border border-slate-700">
-                            <div className="text-[10px] text-slate-400 font-bold uppercase mb-1 flex items-center gap-1"><CheckCircle2 size={12}/> Ảnh Hiện Trường</div>
-                            <div className="text-sm font-black text-white">{healthScore.photoCompliance.toFixed(0)}%</div>
-                        </div>
-                        <div className="bg-slate-800/50 rounded-xl p-3 border border-slate-700">
-                            <div className="text-[10px] text-slate-400 font-bold uppercase mb-1 flex items-center gap-1"><CheckCircle2 size={12}/> Tọa Độ GPS</div>
-                            <div className="text-sm font-black text-white">{healthScore.gpsCompliance.toFixed(0)}%</div>
-                        </div>
-                        <div className="bg-slate-800/50 rounded-xl p-3 border border-slate-700">
-                            <div className="text-[10px] text-slate-400 font-bold uppercase mb-1 flex items-center gap-1"><AlertTriangle size={12}/> Trễ Tiến Độ</div>
-                            <div className="text-sm font-black text-white">{healthScore.totalDelayDays} ngày</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
+                    </section>
 
-            {/* Summary KPI Row */}
-            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
-                {[
-                    { label: 'Tiến độ', value: `${kpis.avgProgress}%`, icon: <Activity size={10} />, color: 'text-indigo-600' },
-                    { label: 'Hợp đồng', value: contracts.length, icon: <FileText size={10} />, color: 'text-blue-600' },
-                    { label: 'Nghiệm thu', value: fmt(kpis.totalAccepted) + ' đ', icon: <CheckCircle2 size={10} />, color: 'text-emerald-600' },
-                    { label: 'Đã TT', value: fmt(kpis.totalPaid) + ' đ', icon: <DollarSign size={10} />, color: 'text-violet-600' },
-                    { label: 'PO', value: purchaseOrders.length, icon: <Truck size={10} />, color: 'text-cyan-600' },
-                    { label: 'NCC', value: vendors.length, icon: <Users size={10} />, color: 'text-orange-600' },
-                    { label: 'Vượt HH', value: kpis.wasteOverCount, icon: <AlertTriangle size={10} />, color: kpis.wasteOverCount > 0 ? 'text-red-600' : 'text-emerald-600' },
-                    { label: 'Ngày mưa', value: kpis.rainyDays, icon: <Calendar size={10} />, color: 'text-sky-600' },
-                ].map((k, i) => (
-                    <div key={i} className="bg-white dark:bg-slate-800 rounded-xl p-3 border border-slate-100 dark:border-slate-700/60 shadow-sm text-center">
-                        <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1 flex items-center justify-center gap-0.5">{k.icon} {k.label}</div>
-                        <div className={`text-sm font-black ${k.color}`}>{k.value}</div>
-                    </div>
-                ))}
-            </div>
-
-            {/* Charts Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-
-                {/* 1. Budget Waterfall */}
-                <ChartCard title="Tổng quan Ngân sách" icon={<BarChart3 size={14} />} color="bg-gradient-to-br from-indigo-500 to-purple-500" span={2}>
-                    {budgetWaterfall.length > 0 ? (
-                        <ResponsiveContainer width="100%" height={280}>
-                            <BarChart data={budgetWaterfall} barSize={40}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                                <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#94a3b8' }} />
-                                <YAxis tick={{ fontSize: 9, fill: '#94a3b8' }} tickFormatter={v => fmt(v)} />
-                                <Tooltip formatter={(v: number) => fmt(v) + ' đ'} contentStyle={{ borderRadius: 12, border: '1px solid #e2e8f0', fontSize: 11 }} />
-                                <Bar dataKey="value" radius={[6, 6, 0, 0]} isAnimationActive={false}>
-                                    {budgetWaterfall.map((entry, idx) => (
-                                        <Cell key={idx} fill={entry.fill} />
+                    <section className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-700/60 dark:bg-slate-800">
+                        <div className="flex flex-col gap-3 border-b border-slate-100 p-4 dark:border-slate-700/60 xl:flex-row xl:items-center xl:justify-between">
+                            <div>
+                                <div className="flex items-center gap-2 text-sm font-black text-slate-800 dark:text-white">
+                                    <FileText size={16} className="text-slate-500" />
+                                    Bảng kế hoạch và thực tế
+                                </div>
+                                <p className="mt-1 text-xs font-bold text-slate-500">So sánh ngày kế hoạch, ngày thực tế, % kế hoạch đến hôm nay và dự báo lệch ngày.</p>
+                            </div>
+                            <div className="flex flex-col gap-2 md:flex-row md:items-center">
+                                <div className="flex items-center gap-1 overflow-x-auto rounded-lg border border-slate-200 bg-slate-50 p-1">
+                                    <Filter size={13} className="ml-2 shrink-0 text-slate-400" />
+                                    {statusFilters.map(filter => (
+                                        <button
+                                            key={filter.key}
+                                            type="button"
+                                            onClick={() => setStatusFilter(filter.key)}
+                                            className={`shrink-0 rounded-md px-2.5 py-1.5 text-[11px] font-black transition-colors ${
+                                                statusFilter === filter.key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                                            }`}
+                                        >
+                                            {filter.label} <span className="text-slate-400">{filter.count}</span>
+                                        </button>
                                     ))}
-                                </Bar>
-                            </BarChart>
-                        </ResponsiveContainer>
-                    ) : <EmptyChart text="Chưa có dữ liệu ngân sách" />}
-                </ChartCard>
+                                </div>
+                                <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1">
+                                    <button
+                                        type="button"
+                                        onClick={expandAll}
+                                        className="shrink-0 flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[11px] font-black text-slate-600 hover:text-slate-900 transition-colors hover:bg-white"
+                                    >
+                                        <ChevronsDown size={13} className="text-slate-400" />
+                                        Mở rộng hết
+                                    </button>
+                                    <div className="w-px h-3 bg-slate-200 dark:bg-slate-700" />
+                                    <button
+                                        type="button"
+                                        onClick={collapseAll}
+                                        className="shrink-0 flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[11px] font-black text-slate-600 hover:text-slate-900 transition-colors hover:bg-white"
+                                    >
+                                        <ChevronsUp size={13} className="text-slate-400" />
+                                        Thu gọn hết
+                                    </button>
+                                </div>
+                                <label className="flex min-w-[240px] items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-500">
+                                    <Search size={14} className="shrink-0 text-slate-400" />
+                                    <input
+                                        value={searchTerm}
+                                        onChange={event => setSearchTerm(event.target.value)}
+                                        placeholder="Tìm hạng mục, WBS, phụ trách..."
+                                        className="w-full bg-transparent text-xs font-bold text-slate-700 outline-none placeholder:text-slate-400"
+                                    />
+                                </label>
+                            </div>
+                        </div>
 
-                {/* 2. Contract Distribution (Pie) */}
-                <ChartCard title="Phân bổ Hợp đồng" icon={<PieChartIcon size={14} />} color="bg-gradient-to-br from-pink-500 to-rose-500">
-                    {contractPie.length > 0 ? (
-                        <ResponsiveContainer width="100%" height={220}>
-                            <PieChart>
-                                <Pie data={contractPie} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={4}
-                                    dataKey="value" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                                    labelLine={{ strokeWidth: 1 }} isAnimationActive={false}>
-                                    {contractPie.map((entry, idx) => <Cell key={idx} fill={entry.fill} />)}
-                                </Pie>
-                                <Tooltip formatter={(v: number) => fmt(v) + ' đ'} contentStyle={{ borderRadius: 12, fontSize: 11 }} />
-                            </PieChart>
-                        </ResponsiveContainer>
-                    ) : <EmptyChart text="Chưa có hợp đồng" />}
-                </ChartCard>
-
-                {/* 3. Task Progress (Radar) */}
-                <ChartCard title="Phân bổ Tiến độ" icon={<Activity size={14} />} color="bg-gradient-to-br from-emerald-500 to-teal-500">
-                    {taskRadar.length > 0 ? (
-                        <ResponsiveContainer width="100%" height={220}>
-                            <RadarChart cx="50%" cy="50%" outerRadius={70} data={taskRadar}>
-                                <PolarGrid stroke="#e2e8f0" />
-                                <PolarAngleAxis dataKey="subject" tick={{ fontSize: 10, fill: '#64748b' }} />
-                                <PolarRadiusAxis tick={{ fontSize: 9 }} />
-                                <Radar name="Số lượng" dataKey="A" stroke="#10b981" fill="#10b981" fillOpacity={0.3} isAnimationActive={false} />
-                            </RadarChart>
-                        </ResponsiveContainer>
-                    ) : <EmptyChart text="Chưa có hạng mục" />}
-                </ChartCard>
-
-                {/* 4. S-Curve: Acceptance cumulative */}
-                <ChartCard title="S-Curve Nghiệm thu" icon={<TrendingUp size={14} />} color="bg-gradient-to-br from-violet-500 to-purple-500" span={2}>
-                    {acceptanceSCurve.length > 0 ? (
-                        <ResponsiveContainer width="100%" height={250}>
-                            <AreaChart data={acceptanceSCurve}>
-                                <defs>
-                                    <linearGradient id="colorNT" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%" stopColor="#818cf8" stopOpacity={0.3} />
-                                        <stop offset="95%" stopColor="#818cf8" stopOpacity={0} />
-                                    </linearGradient>
-                                    <linearGradient id="colorTT" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%" stopColor="#a78bfa" stopOpacity={0.3} />
-                                        <stop offset="95%" stopColor="#a78bfa" stopOpacity={0} />
-                                    </linearGradient>
-                                </defs>
-                                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                                <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#94a3b8' }} />
-                                <YAxis tick={{ fontSize: 9, fill: '#94a3b8' }} tickFormatter={v => fmt(v)} />
-                                <Tooltip formatter={(v: number) => fmt(v) + ' đ'} contentStyle={{ borderRadius: 12, fontSize: 11 }} />
-                                <Legend wrapperStyle={{ fontSize: 10 }} />
-                                <Area type="monotone" dataKey="Luỹ kế NT" stroke="#818cf8" fill="url(#colorNT)" strokeWidth={2} isAnimationActive={false} />
-                                <Area type="monotone" dataKey="Luỹ kế TT" stroke="#a78bfa" fill="url(#colorTT)" strokeWidth={2} isAnimationActive={false} />
-                            </AreaChart>
-                        </ResponsiveContainer>
-                    ) : <EmptyChart text="Chưa có biên bản nghiệm thu" />}
-                </ChartCard>
-
-                {/* 5. Material Waste (Bar) */}
-                <ChartCard title="Hao hụt Vật tư" icon={<Package size={14} />} color="bg-gradient-to-br from-amber-500 to-orange-500">
-                    {wasteData.length > 0 ? (
-                        <ResponsiveContainer width="100%" height={220}>
-                            <BarChart data={wasteData} barGap={2}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                                <XAxis dataKey="name" tick={{ fontSize: 9, fill: '#94a3b8' }} />
-                                <YAxis tick={{ fontSize: 9, fill: '#94a3b8' }} />
-                                <Tooltip contentStyle={{ borderRadius: 12, fontSize: 11 }} />
-                                <Legend wrapperStyle={{ fontSize: 10 }} />
-                                <Bar dataKey="Dự toán" fill="#818cf8" radius={[3, 3, 0, 0]} isAnimationActive={false} />
-                                <Bar dataKey="Thực tế" radius={[3, 3, 0, 0]} isAnimationActive={false}>
-                                    {wasteData.map((e, i) => <Cell key={i} fill={e.isOver ? '#ef4444' : '#34d399'} />)}
-                                </Bar>
-                            </BarChart>
-                        </ResponsiveContainer>
-                    ) : <EmptyChart text="Chưa có dữ liệu BOQ" />}
-                </ChartCard>
-
-                {/* 6. Material Category (Pie) */}
-                <ChartCard title="Chi phí VT theo Nhóm" icon={<PieChartIcon size={14} />} color="bg-gradient-to-br from-cyan-500 to-blue-500">
-                    {matCategoryPie.length > 0 ? (
-                        <ResponsiveContainer width="100%" height={220}>
-                            <PieChart>
-                                <Pie data={matCategoryPie} cx="50%" cy="50%" outerRadius={75} paddingAngle={2}
-                                    dataKey="value" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                                    labelLine={{ strokeWidth: 1 }} isAnimationActive={false}>
-                                    {matCategoryPie.map((entry, idx) => <Cell key={idx} fill={entry.fill} />)}
-                                </Pie>
-                                <Tooltip formatter={(v: number) => fmt(v) + ' đ'} contentStyle={{ borderRadius: 12, fontSize: 11 }} />
-                            </PieChart>
-                        </ResponsiveContainer>
-                    ) : <EmptyChart text="Chưa có dữ liệu BOQ" />}
-                </ChartCard>
-
-                {/* 7. PO Status (Donut) */}
-                <ChartCard title="Trạng thái Đơn hàng" icon={<Truck size={14} />} color="bg-gradient-to-br from-teal-500 to-emerald-500">
-                    {poStatusPie.length > 0 ? (
-                        <ResponsiveContainer width="100%" height={220}>
-                            <PieChart>
-                                <Pie data={poStatusPie} cx="50%" cy="50%" innerRadius={45} outerRadius={75} paddingAngle={3}
-                                    dataKey="value" label={({ name, value }) => `${name}: ${value}`}
-                                    labelLine={{ strokeWidth: 1 }} isAnimationActive={false}>
-                                    {poStatusPie.map((entry, idx) => <Cell key={idx} fill={entry.fill} />)}
-                                </Pie>
-                                <Tooltip contentStyle={{ borderRadius: 12, fontSize: 11 }} />
-                            </PieChart>
-                        </ResponsiveContainer>
-                    ) : <EmptyChart text="Chưa có đơn hàng" />}
-                </ChartCard>
-
-                {/* 8. Weather Distribution (Pie) */}
-                <ChartCard title="Thời tiết Công trường" icon={<Calendar size={14} />} color="bg-gradient-to-br from-sky-500 to-blue-500">
-                    {weatherPie.length > 0 ? (
-                        <ResponsiveContainer width="100%" height={220}>
-                            <PieChart>
-                                <Pie data={weatherPie} cx="50%" cy="50%" outerRadius={75} paddingAngle={3}
-                                    dataKey="value" label={({ name, value }) => `${name}: ${value}`}
-                                    labelLine={{ strokeWidth: 1 }} isAnimationActive={false}>
-                                    {weatherPie.map((entry, idx) => <Cell key={idx} fill={entry.fill} />)}
-                                </Pie>
-                                <Tooltip contentStyle={{ borderRadius: 12, fontSize: 11 }} />
-                            </PieChart>
-                        </ResponsiveContainer>
-                    ) : <EmptyChart text="Chưa có nhật ký" />}
-                </ChartCard>
-
-                {/* 9. Worker Trend (Area) */}
-                <ChartCard title="Nhân công theo ngày" icon={<Users size={14} />} color="bg-gradient-to-br from-orange-500 to-red-500" span={2}>
-                    {workerTrend.length > 0 ? (
-                        <ResponsiveContainer width="100%" height={220}>
-                            <AreaChart data={workerTrend}>
-                                <defs>
-                                    <linearGradient id="colorWorker" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%" stopColor="#f97316" stopOpacity={0.3} />
-                                        <stop offset="95%" stopColor="#f97316" stopOpacity={0} />
-                                    </linearGradient>
-                                </defs>
-                                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                                <XAxis dataKey="name" tick={{ fontSize: 9, fill: '#94a3b8' }} />
-                                <YAxis tick={{ fontSize: 9, fill: '#94a3b8' }} />
-                                <Tooltip contentStyle={{ borderRadius: 12, fontSize: 11 }} />
-                                <Area type="monotone" dataKey="Công nhân" stroke="#f97316" fill="url(#colorWorker)" strokeWidth={2} dot={{ r: 2 }} isAnimationActive={false} />
-                            </AreaChart>
-                        </ResponsiveContainer>
-                    ) : <EmptyChart text="Chưa có nhật ký công trường" />}
-                </ChartCard>
-
-                {/* 10. Vendor Rating (Horizontal Bar) */}
-                <ChartCard title="Đánh giá NCC" icon={<Users size={14} />} color="bg-gradient-to-br from-rose-500 to-pink-500">
-                    {vendorRatingData.length > 0 ? (
-                        <ResponsiveContainer width="100%" height={220}>
-                            <ComposedChart layout="vertical" data={vendorRatingData}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                                <XAxis type="number" domain={[0, 5]} tick={{ fontSize: 9, fill: '#94a3b8' }} />
-                                <YAxis dataKey="name" type="category" width={100} tick={{ fontSize: 9, fill: '#64748b' }} />
-                                <Tooltip contentStyle={{ borderRadius: 12, fontSize: 11 }} />
-                                <Bar dataKey="rating" barSize={16} radius={[0, 4, 4, 0]} isAnimationActive={false}>
-                                    {vendorRatingData.map((e, i) => (
-                                        <Cell key={i} fill={e.rating >= 4 ? '#34d399' : e.rating >= 3 ? '#fbbf24' : '#f87171'} />
-                                    ))}
-                                </Bar>
-                            </ComposedChart>
-                        </ResponsiveContainer>
-                    ) : <EmptyChart text="Chưa có NCC" />}
-                </ChartCard>
-
-                {/* 11. Overall Cost Breakdown (Composed: Bar + Line) */}
-                <ChartCard title="Chi phí Tổng hợp" icon={<DollarSign size={14} />} color="bg-gradient-to-br from-fuchsia-500 to-purple-500">
-                    {(contractValue > 0 || totalSpent > 0) ? (
-                        <ResponsiveContainer width="100%" height={220}>
-                            <ComposedChart data={[
-                                { name: 'HĐ', 'Giá trị': contractValue, fill: '#818cf8' },
-                                { name: 'Chi phí', 'Giá trị': totalSpent, fill: '#f87171' },
-                                { name: 'Lợi nhuận', 'Giá trị': contractValue - totalSpent, fill: (contractValue - totalSpent) >= 0 ? '#34d399' : '#ef4444' },
-                            ]}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                                <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#94a3b8' }} />
-                                <YAxis tick={{ fontSize: 9, fill: '#94a3b8' }} tickFormatter={v => fmt(v)} />
-                                <Tooltip formatter={(v: number) => fmt(v) + ' đ'} contentStyle={{ borderRadius: 12, fontSize: 11 }} />
-                                <Bar dataKey="Giá trị" barSize={50} radius={[6, 6, 0, 0]} isAnimationActive={false}>
-                                    {[0,1,2].map(i => <Cell key={i} fill={['#818cf8', '#f87171', (contractValue - totalSpent) >= 0 ? '#34d399' : '#ef4444'][i]} />)}
-                                </Bar>
-                            </ComposedChart>
-                        </ResponsiveContainer>
-                    ) : <EmptyChart text="Chưa có dữ liệu tài chính" />}
-                </ChartCard>
-
-                {/* 12. Risk Matrix Table */}
-                <ChartCard title="Ma trận Rủi ro Hạng mục" icon={<AlertTriangle size={14} />} color="bg-gradient-to-br from-red-500 to-rose-500" span={2}>
-                    {riskMatrix.length > 0 ? (
-                        <div className="overflow-x-auto max-h-[220px]">
-                            <table className="w-full text-xs">
-                                <thead className="bg-slate-50 sticky top-0">
-                                    <tr className="text-[10px] font-bold text-slate-400 uppercase">
-                                        <th className="text-left px-3 py-2">Hạng mục</th>
-                                        <th className="text-right px-3 py-2">Tổng trễ</th>
-                                        <th className="text-left px-3 py-2">Nguyên nhân</th>
-                                        <th className="text-center px-3 py-2">Mức độ</th>
+                        <div className="overflow-x-auto">
+                            <table className="w-full min-w-[1120px] text-xs">
+                                <thead className="bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
+                                    <tr>
+                                        <th className="px-4 py-3 text-left font-black">Hạng mục</th>
+                                        <th className="px-3 py-3 text-center font-black">KH bắt đầu</th>
+                                        <th className="px-3 py-3 text-center font-black">KH kết thúc</th>
+                                        <th className="px-3 py-3 text-right font-black">% KH</th>
+                                        <th className="px-3 py-3 text-center font-black">TT bắt đầu</th>
+                                        <th className="px-3 py-3 text-center font-black">TT/Dự kiến</th>
+                                        <th className="px-3 py-3 text-right font-black">% TT</th>
+                                        <th className="px-3 py-3 text-right font-black">Lệch ngày</th>
+                                        <th className="px-3 py-3 text-center font-black">Trạng thái</th>
+                                        <th className="px-4 py-3 text-left font-black">Ghi chú</th>
                                     </tr>
                                 </thead>
-                                <tbody className="divide-y divide-slate-100 dark:divide-slate-700/40">
-                                    {riskMatrix.map((r, i) => (
-                                        <tr key={i} className="hover:bg-slate-50/50">
-                                            <td className="px-3 py-2 font-bold text-slate-700">{r.taskName}</td>
-                                            <td className="px-3 py-2 text-right font-bold text-red-600">{r.totalDays} ngày</td>
-                                            <td className="px-3 py-2 text-slate-600">{r.categories.join(', ')}</td>
-                                            <td className="px-3 py-2 text-center">
-                                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${r.totalDays > 7 ? 'bg-red-50 text-red-600 border border-red-200' : r.totalDays > 3 ? 'bg-amber-50 text-amber-600 border border-amber-200' : 'bg-emerald-50 text-emerald-600 border border-emerald-200'}`}>
-                                                    {r.totalDays > 7 ? '🔴 Cao' : r.totalDays > 3 ? '🟡 Trung bình' : '🟢 Thấp'}
-                                                </span>
+                                <tbody className="divide-y divide-slate-100 dark:divide-slate-700/50">
+                                    {loading ? (
+                                        <tr>
+                                            <td colSpan={10} className="px-4 py-10 text-center text-sm font-bold text-slate-400">
+                                                Đang tải dữ liệu tiến độ...
                                             </td>
                                         </tr>
-                                    ))}
+                                    ) : displayedRows.length === 0 ? (
+                                        <tr>
+                                            <td colSpan={10} className="px-4 py-10 text-center text-sm font-bold text-slate-400">
+                                                Chưa có hạng mục phù hợp với bộ lọc.
+                                            </td>
+                                        </tr>
+                                    ) : displayedRows.map(row => {
+                                        const StatusIcon = getStatusIcon(row.status);
+                                        const isLate = row.dayDelta > 0 || row.status === 'late';
+                                        const isAhead = row.dayDelta < 0 || row.status === 'ahead';
+                                        const isParent = row.hasChildren;
+
+                                        return (
+                                            <tr 
+                                                key={row.task.id} 
+                                                className={`hover:bg-slate-50/70 dark:hover:bg-slate-900/40 ${
+                                                    isParent ? 'bg-slate-50/40 dark:bg-slate-800/10' : ''
+                                                }`}
+                                            >
+                                                <td className="px-4 py-3 align-top">
+                                                    <div className="flex min-w-0 items-start gap-1" style={{ paddingLeft: row.level * 16 }}>
+                                                        {row.hasChildren ? (
+                                                            <button
+                                                                type="button"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    toggleCollapse(row.task.id);
+                                                                }}
+                                                                className="mt-0.5 p-0.5 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 shrink-0 flex items-center justify-center"
+                                                                title={collapsedIds.has(row.task.id) ? 'Mở rộng' : 'Thu gọn'}
+                                                            >
+                                                                {collapsedIds.has(row.task.id) ? (
+                                                                    <ChevronRight size={14} />
+                                                                ) : (
+                                                                    <ChevronDown size={14} />
+                                                                )}
+                                                            </button>
+                                                        ) : (
+                                                            <div className="w-5 h-5 shrink-0" />
+                                                        )}
+                                                        <span className="mt-0.5 w-12 shrink-0 text-[11px] font-black text-slate-400">{row.task.wbsCode || '-'}</span>
+                                                        <div className="min-w-0">
+                                                            <div className={`leading-5 ${
+                                                                isParent 
+                                                                    ? 'text-[13px] font-black text-slate-900 dark:text-white' 
+                                                                    : 'text-[12px] font-semibold text-slate-700 dark:text-slate-200'
+                                                            }`}>
+                                                                {row.task.name}
+                                                            </div>
+                                                            <div className="mt-0.5 text-[11px] font-bold text-slate-400">
+                                                                {row.plannedDays} ngày KH{row.task.assignee ? ` · ${row.task.assignee}` : ''}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                                <td className="px-3 py-3 text-center align-top font-bold text-slate-600">{fmtDate(row.task.startDate)}</td>
+                                                <td className="px-3 py-3 text-center align-top font-bold text-slate-600">{fmtDate(row.task.endDate)}</td>
+                                                <td className="px-3 py-3 text-right align-top">
+                                                    <span className="font-black text-slate-700">{fmtPercent(row.plannedPercent)}</span>
+                                                </td>
+                                                <td className="px-3 py-3 text-center align-top font-bold text-slate-600">
+                                                    {row.actualStart ? fmtDate(row.actualStart) : row.actualProgress > 0 ? 'Chưa nhập' : '-'}
+                                                </td>
+                                                <td className="px-3 py-3 text-center align-top">
+                                                    <div className="font-bold text-slate-700">{fmtDate(row.actualProgress >= 100 ? (row.actualEnd || row.forecastEnd) : row.forecastEnd)}</div>
+                                                    <div className="mt-0.5 text-[10px] font-bold text-slate-400">{row.endBasisLabel}</div>
+                                                </td>
+                                                <td className="px-3 py-3 text-right align-top">
+                                                    <div className="font-black text-slate-900">{fmtPercent(row.actualProgress)}</div>
+                                                    <div className={`mt-0.5 text-[10px] font-bold ${row.progressDelta < -5 ? 'text-red-600' : row.progressDelta > 5 ? 'text-cyan-700' : 'text-slate-400'}`}>
+                                                        {row.progressDelta > 0 ? '+' : ''}{Math.round(row.progressDelta)} điểm %
+                                                    </div>
+                                                </td>
+                                                <td className="px-3 py-3 text-right align-top">
+                                                    <span className={`font-black ${isLate ? 'text-red-600' : isAhead ? 'text-cyan-700' : 'text-slate-700'}`}>
+                                                        {formatDayDelta(row.dayDelta)}
+                                                    </span>
+                                                    {row.startDelta > 0 && (
+                                                        <div className="mt-0.5 text-[10px] font-bold text-amber-600">BĐ chậm {row.startDelta} ngày</div>
+                                                    )}
+                                                </td>
+                                                <td className="px-3 py-3 text-center align-top">
+                                                    <span className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-black ${getStatusClass(row.status)}`}>
+                                                        <StatusIcon size={12} />
+                                                        {getStatusLabel(row.status)}
+                                                    </span>
+                                                </td>
+                                                <td className="max-w-[260px] px-4 py-3 align-top">
+                                                    <div className="line-clamp-2 font-semibold leading-5 text-slate-600" title={row.note === '-' ? '' : row.note}>
+                                                        {row.note}
+                                                    </div>
+                                                    {row.delayDays > 0 && (
+                                                        <div className="mt-1 text-[10px] font-black text-red-600">Nhật ký ghi nhận trễ {row.delayDays} ngày</div>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
                                 </tbody>
                             </table>
                         </div>
-                    ) : (
-                        <div className="h-[200px] flex flex-col items-center justify-center text-xs text-emerald-500 font-bold">
-                            <CheckCircle2 size={32} className="mb-2 opacity-50" />
-                            Chưa ghi nhận trễ tiến độ 🎉
-                        </div>
-                    )}
-                </ChartCard>
-
-                {/* 13. Delay by Category */}
-                <ChartCard title="Nguyên nhân Trễ" icon={<BarChart3 size={14} />} color="bg-gradient-to-br from-rose-500 to-pink-500">
-                    {delayByCategory.length > 0 ? (
-                        <ResponsiveContainer width="100%" height={220}>
-                            <BarChart data={delayByCategory} layout="vertical" margin={{ left: 30 }}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                                <XAxis type="number" tick={{ fontSize: 9, fill: '#94a3b8' }} />
-                                <YAxis type="category" dataKey="name" tick={{ fontSize: 9, fill: '#64748b' }} width={80} />
-                                <Tooltip contentStyle={{ borderRadius: 12, fontSize: 11 }} formatter={(v: number) => v + ' ngày'} />
-                                <Bar dataKey="days" radius={[0, 4, 4, 0]} barSize={20} isAnimationActive={false}>
-                                    {delayByCategory.map((e, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                                </Bar>
-                            </BarChart>
-                        </ResponsiveContainer>
-                    ) : <EmptyChart text="Không có dữ liệu trễ" />}
-                </ChartCard>
-
-                {/* 14. Field Compliance Line Chart */}
-                <ChartCard title="Tuân thủ Hiện trường (GPS & Ảnh)" icon={<CheckCircle2 size={14} />} color="bg-gradient-to-br from-blue-500 to-indigo-500">
-                    {fieldComplianceByWeek.length > 0 ? (
-                        <ResponsiveContainer width="100%" height={220}>
-                            <LineChart data={fieldComplianceByWeek}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                                <XAxis dataKey="week" tick={{ fontSize: 9, fill: '#94a3b8' }} />
-                                <YAxis domain={[0, 100]} tick={{ fontSize: 9, fill: '#94a3b8' }} tickFormatter={v => v + '%'} />
-                                <Tooltip contentStyle={{ borderRadius: 12, fontSize: 11 }} formatter={(v: number) => v + '%'} />
-                                <Legend wrapperStyle={{ fontSize: 10 }} />
-                                <Line type="monotone" dataKey="GPS %" stroke="#818cf8" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} isAnimationActive={false} />
-                                <Line type="monotone" dataKey="Ảnh %" stroke="#34d399" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} isAnimationActive={false} />
-                                <ReferenceLine y={80} stroke="#ef4444" strokeDasharray="3 3" label={{ position: 'insideTopLeft', value: 'Ngưỡng 80%', fill: '#ef4444', fontSize: 10 }} />
-                            </LineChart>
-                        </ResponsiveContainer>
-                    ) : <EmptyChart text="Chưa có nhật ký" />}
-                </ChartCard>
-            </div>
-
-            {/* Summary Table */}
-            <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700/60 shadow-sm overflow-hidden">
-                <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
-                    <h3 className="text-xs font-black text-slate-700 flex items-center gap-2"><FileText size={14} className="text-indigo-500" /> Bảng tổng hợp dự án</h3>
-                    <button onClick={exportToExcel} className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 rounded-lg text-xs font-bold transition-colors border border-emerald-200">
-                        <Download size={14} /> Xuất báo cáo
-                    </button>
+                    </section>
                 </div>
-                <div className="overflow-x-auto">
-                    <table className="w-full text-xs">
-                        <thead className="bg-slate-50/80">
-                            <tr className="text-[10px] font-bold text-slate-400 uppercase">
-                                <th className="text-left px-4 py-3">Hạng mục</th>
-                                <th className="text-right px-4 py-3">Số lượng</th>
-                                <th className="text-right px-4 py-3">Giá trị</th>
-                                <th className="text-center px-4 py-3">Trạng thái</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-50 dark:divide-slate-700/40">
-                            {[
-                                { name: 'Hợp đồng chính', count: contracts.filter(c => c.type === 'main').length, value: contracts.filter(c => c.type === 'main').reduce((s, c) => s + c.value, 0), status: '📋' },
-                                { name: 'Hợp đồng thầu phụ', count: contracts.filter(c => c.type === 'subcontract').length, value: contracts.filter(c => c.type === 'subcontract').reduce((s, c) => s + c.value, 0), status: '🏗️' },
-	                                { name: 'Nghiệm thu', count: acceptances.length, value: kpis.totalAccepted, status: acceptances.filter(a => a.status === 'paid').length === acceptances.length && acceptances.length > 0 ? '✅' : '⏳' },
-	                                { name: 'Kế hoạch TT', count: paymentScheduleSummary.totalCount, value: paymentScheduleSummary.totalReceivable - paymentScheduleSummary.totalPayable, status: paymentScheduleSummary.overdueCount > 0 ? '⚠️' : paymentScheduleSummary.upcomingCount > 0 ? '⏳' : '✅' },
-	                                { name: 'Vật tư (DT)', count: boqItems.length, value: kpis.totalMatBudget, status: '📦' },
-                                { name: 'Vật tư (TT)', count: boqItems.length, value: kpis.totalMatActual, status: kpis.totalMatActual > kpis.totalMatBudget ? '⚠️' : '✅' },
-                                { name: 'Đơn hàng (PO)', count: purchaseOrders.length, value: kpis.totalPO, status: '🚛' },
-                                { name: 'Nhà cung cấp', count: vendors.length, value: 0, status: '🏢' },
-                                { name: 'Hạng mục (Task)', count: tasks.length, value: 0, status: `${kpis.avgProgress}%` },
-                                { name: 'Nhật ký', count: dailyLogs.length, value: 0, status: '📝' },
-                            ].map((row, i) => (
-                                <tr key={i} className="hover:bg-slate-50/50">
-                                    <td className="px-4 py-2.5 font-bold text-slate-700">{row.name}</td>
-                                    <td className="px-4 py-2.5 text-right text-slate-600">{row.count}</td>
-                                    <td className="px-4 py-2.5 text-right font-bold text-slate-700">{row.value > 0 ? fmt(row.value) + ' đ' : '—'}</td>
-                                    <td className="px-4 py-2.5 text-center">{row.status}</td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-                </>
             )}
         </div>
     );
