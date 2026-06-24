@@ -54,34 +54,22 @@ const ALL_ACTIONS: ActionDef[] = [
   { id: 'search', label: 'Tìm kiếm nhanh', iconName: 'Search', color: 'bg-slate-600', shadow: 'shadow-slate-600/30', isSpecial: true },
   { id: 'new-transaction', label: 'Tạo phiếu kho', iconName: 'ArrowLeftRight', color: 'bg-blue-500', shadow: 'shadow-blue-500/30', route: '/operations' },
   { id: 'new-request', label: 'Tạo yêu cầu vật tư', iconName: 'ClipboardCheck', color: 'bg-amber-500', shadow: 'shadow-amber-500/30', route: '/requests' },
-  { id: 'material-code-request', label: 'Đề xuất mã vật tư', iconName: 'ClipboardList', color: 'bg-yellow-600', shadow: 'shadow-yellow-600/30', route: '/material-code-requests' },
   { id: 'project-material-request', label: 'Đề xuất vật tư DA', iconName: 'ClipboardCheck', color: 'bg-orange-500', shadow: 'shadow-orange-500/30', route: '/da/tabs/material/request' },
   { id: 'project-po', label: 'Đơn hàng PO', iconName: 'ShoppingCart', color: 'bg-cyan-600', shadow: 'shadow-cyan-600/30', route: '/da/tabs/material/po' },
   { id: 'material-planning', label: 'Kế hoạch vật tư', iconName: 'Calendar', color: 'bg-indigo-600', shadow: 'shadow-indigo-600/30', route: '/da/tabs/material/planning' },
   { id: 'material-boq', label: 'BOQ vật tư', iconName: 'FileText', color: 'bg-sky-600', shadow: 'shadow-sky-600/30', route: '/da/tabs/material/boq' },
   { id: 'new-workflow', label: 'Tạo quy trình mới', iconName: 'Briefcase', color: 'bg-violet-500', shadow: 'shadow-violet-500/30', route: '/wf' },
-  { id: 'inventory', label: 'Tồn kho', iconName: 'Package', color: 'bg-green-500', shadow: 'shadow-green-500/30', route: '/inventory' },
-  { id: 'dashboard', label: 'Dashboard Kho', iconName: 'BarChart3', color: 'bg-indigo-500', shadow: 'shadow-indigo-500/30', route: '/dashboard' },
-  { id: 'reports', label: 'Báo cáo kho', iconName: 'BarChart3', color: 'bg-fuchsia-600', shadow: 'shadow-fuchsia-600/30', route: '/reports' },
-  { id: 'audit-trail', label: 'Nhật ký thay đổi', iconName: 'ShieldCheck', color: 'bg-slate-700', shadow: 'shadow-slate-700/30', route: '/audit-trail' },
   { id: 'new-employee', label: 'Thêm nhân viên', iconName: 'Users', color: 'bg-teal-500', shadow: 'shadow-teal-500/30', route: '/hrm/employees' },
   { id: 'attendance', label: 'Chấm công', iconName: 'Calendar', color: 'bg-cyan-500', shadow: 'shadow-cyan-500/30', route: '/hrm/attendance' },
   { id: 'leave', label: 'Nghỉ phép', iconName: 'CalendarOff', color: 'bg-pink-500', shadow: 'shadow-pink-500/30', route: '/hrm/leave' },
-  { id: 'payroll', label: 'Bảng lương', iconName: 'DollarSign', color: 'bg-emerald-500', shadow: 'shadow-emerald-500/30', route: '/hrm/payroll' },
   { id: 'asset', label: 'Tài sản', iconName: 'Landmark', color: 'bg-rose-500', shadow: 'shadow-rose-500/30', route: '/ts/dashboard' },
   { id: 'project', label: 'Dự án', iconName: 'GitBranch', color: 'bg-orange-500', shadow: 'shadow-orange-500/30', route: '/da' },
   { id: 'project-contract', label: 'Hợp đồng dự án', iconName: 'FileText', color: 'bg-blue-700', shadow: 'shadow-blue-700/30', route: '/da/tabs/contract' },
   { id: 'expense', label: 'Chi phí', iconName: 'BarChart3', color: 'bg-red-500', shadow: 'shadow-red-500/30', route: '/expense' },
   { id: 'contract', label: 'Hợp đồng LĐ', iconName: 'FileText', color: 'bg-sky-500', shadow: 'shadow-sky-500/30', route: '/hrm/contracts' },
-  { id: 'hd-overview', label: 'Quản lý hợp đồng', iconName: 'Building2', color: 'bg-blue-600', shadow: 'shadow-blue-600/30', route: '/hd/overview' },
-  { id: 'cost-library', label: 'Thư viện đơn giá', iconName: 'Landmark', color: 'bg-lime-700', shadow: 'shadow-lime-700/30', route: '/hd/cost-library' },
-  { id: 'suppliers', label: 'Đối tác/NCC', iconName: 'Truck', color: 'bg-emerald-700', shadow: 'shadow-emerald-700/30', route: '/hd/partners' },
   { id: 'rq-dashboard', label: 'Yêu cầu nội bộ', iconName: 'Inbox', color: 'bg-lime-600', shadow: 'shadow-lime-600/30', route: '/rq' },
-  { id: 'tender-ai', label: 'Tender AI', iconName: 'Bot', color: 'bg-purple-600', shadow: 'shadow-purple-600/30', route: '/tender-ai/boq' },
-  { id: 'ai-assistant', label: 'AI Assistant', iconName: 'Bot', color: 'bg-violet-700', shadow: 'shadow-violet-700/30', route: '/ai' },
   { id: 'feedback', label: 'Gửi góp ý', iconName: 'MessageSquarePlus', color: 'bg-blue-600', shadow: 'shadow-blue-600/30', route: '/feedback' },
-  { id: 'storage', label: 'Kho dữ liệu', iconName: 'Database', color: 'bg-slate-500', shadow: 'shadow-slate-500/30', route: '/storage' },
-  { id: 'settings', label: 'Cài đặt', iconName: 'Settings', color: 'bg-gray-500', shadow: 'shadow-gray-500/30', route: '/settings' },
+  { id: 'checkin', label: 'Check-in', iconName: 'MapPin', color: 'bg-green-500', shadow: 'shadow-green-500/30', route: '/checkin' },
 ];
 
 const DEFAULT_ENABLED = ['search', 'new-transaction', 'new-employee', 'new-request', 'new-workflow', 'payroll'];
@@ -236,14 +224,14 @@ const QuickActionFab: React.FC = () => {
                         disabled={idx === 0}
                         className="text-slate-300 hover:text-slate-500 disabled:opacity-20 transition"
                       >
-                        <svg width="10" height="6" viewBox="0 0 10 6"><path d="M1 5L5 1L9 5" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round"/></svg>
+                        <svg width="10" height="6" viewBox="0 0 10 6"><path d="M1 5L5 1L9 5" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" /></svg>
                       </button>
                       <button
                         onClick={() => moveAction(id, 'down')}
                         disabled={idx === enabledIds.length - 1}
                         className="text-slate-300 hover:text-slate-500 disabled:opacity-20 transition"
                       >
-                        <svg width="10" height="6" viewBox="0 0 10 6"><path d="M1 1L5 5L9 1" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round"/></svg>
+                        <svg width="10" height="6" viewBox="0 0 10 6"><path d="M1 1L5 5L9 1" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" /></svg>
                       </button>
                     </div>
                     {/* Icon + Label */}
@@ -338,13 +326,11 @@ const QuickActionFab: React.FC = () => {
             setIsOpen(prev => !prev);
           }
         }}
-        className={`flex items-center justify-center text-white shadow-xl transition-all duration-300 hover:scale-110 active:scale-95 ${
-          isAiPage ? 'w-10 h-10 rounded-xl' : 'w-11 h-11 lg:w-14 lg:h-14 rounded-2xl'
-        } ${
-          isOpen || showSettings
+        className={`flex items-center justify-center text-white shadow-xl transition-all duration-300 hover:scale-110 active:scale-95 ${isAiPage ? 'w-10 h-10 rounded-xl' : 'w-11 h-11 lg:w-14 lg:h-14 rounded-2xl'
+          } ${isOpen || showSettings
             ? 'bg-slate-800 dark:bg-slate-700 rotate-45 shadow-slate-800/40 opacity-100'
             : 'bg-indigo-500 hover:bg-indigo-600 shadow-indigo-500/40 opacity-70 lg:opacity-100'
-        }`}
+          }`}
         title="Hành động nhanh"
       >
         <Plus size={isAiPage ? 18 : 22} strokeWidth={2.5} className="transition-transform duration-300 lg:!w-6 lg:!h-6" />
