@@ -21,6 +21,7 @@ import { Role, TransactionStatus, RequestStatus } from '../types';
 import { canApproveMaterialRequest, canApproveWmsTransaction, canExportMaterialRequest, canReceiveMaterialRequest, canReceiveWmsTransaction, isWarehouseKeeper } from '../lib/wmsPermissions';
 import { hasProjectTabPermissionRoute } from '../lib/projectTabPermissions';
 import { isChatEnabled, isChatV2Enabled } from '../lib/featureFlags';
+import { canAccessRoute } from '../lib/routeAccess';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -57,7 +58,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
   const { user, logout, warehouses, transactions, requests, appSettings, items, realtimeStatus, lastRealtimeEvent, connectionError } = useApp();
   const { isDark, toggleTheme } = useTheme();
   const { totalUnread } = useChat();
-  const chatV2Unread = useChatV2UnreadCount(isChatEnabled && isChatV2Enabled ? user?.id : undefined);
+  const canUseChat = isChatEnabled && canAccessRoute(user, '/chat');
+  const chatV2Unread = useChatV2UnreadCount(canUseChat && isChatV2Enabled ? user?.id : undefined);
   const chatUnread = isChatV2Enabled ? chatV2Unread : totalUnread;
 
   // Detect if we're inside a module from URL
@@ -436,7 +438,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
                     <span className="font-bold text-sm">Cài đặt</span>
                   </NavLink>
 
-                  {isChatEnabled && (
+                  {canUseChat && (
                     <NavLink to="/chat" onClick={toggle}
                       className={({ isActive }) => `flex items-center justify-between px-4 py-2.5 rounded-xl transition-all group ${isActive
                         ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg shadow-indigo-500/20 border border-white/20'
@@ -509,7 +511,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
                     <Settings className="w-5 h-5 mr-3 transition-transform group-hover:scale-110" />
                     <span className="font-bold text-sm">Cài đặt</span>
                   </NavLink>
-                  {isChatEnabled && (
+                  {canUseChat && (
                     <NavLink to="/chat" onClick={toggle}
                       className={({ isActive }) => `flex items-center justify-between px-4 py-2.5 rounded-xl transition-all group ${isActive
                         ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg shadow-indigo-500/20 border border-white/20'
@@ -643,7 +645,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
               </NavLink>
 
               {/* Tin nhắn */}
-              {isChatEnabled && (
+              {canUseChat && (
                 <NavLink to="/chat" title={collapsed ? 'Tin nhắn' : undefined}
                   className={({ isActive }) => `flex items-center ${collapsed ? 'justify-center' : 'justify-between'} ${collapsed ? 'px-2' : 'px-4'} py-2.5 rounded-xl transition-all group ${isActive
                     ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg shadow-indigo-500/20 border border-white/20'
@@ -789,7 +791,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
                   <Settings className={`w-5 h-5 ${collapsed ? '' : 'mr-3'} transition-transform group-hover:scale-110`} />
                   {!collapsed && <span className="font-bold text-sm">Cài đặt</span>}
                 </NavLink>
-                {isChatEnabled && (
+                {canUseChat && (
                   <NavLink to="/chat" title={collapsed ? 'Tin nhắn' : undefined}
                     className={({ isActive }) => `flex items-center ${collapsed ? 'justify-center' : 'justify-between'} ${collapsed ? 'px-2' : 'px-4'} py-2.5 rounded-xl transition-all group ${isActive
                       ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg shadow-indigo-500/20 border border-white/20'

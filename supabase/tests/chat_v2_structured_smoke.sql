@@ -1,16 +1,18 @@
 begin;
 
-insert into public.users (id, name, email, username, role, is_active)
+insert into public.users (id, name, email, username, role, is_active, allowed_modules)
 values
-  ('11111111-1111-4111-8111-111111111111', 'Chat Actor', 'chat.actor@example.test', 'chat_actor_smoke', 'EMPLOYEE', true),
-  ('22222222-2222-4222-8222-222222222222', 'Chat Peer', 'chat.peer@example.test', 'chat_peer_smoke', 'EMPLOYEE', true),
-  ('33333333-3333-4333-8333-333333333333', 'Chat Outsider', 'chat.outsider@example.test', 'chat_outsider_smoke', 'EMPLOYEE', true)
+  ('11111111-1111-4111-8111-111111111111', 'Chat Actor', 'chat.actor@example.test', 'chat_actor_smoke', 'EMPLOYEE', true, array['CHAT']),
+  ('22222222-2222-4222-8222-222222222222', 'Chat Peer', 'chat.peer@example.test', 'chat_peer_smoke', 'EMPLOYEE', true, array['CHAT']),
+  ('33333333-3333-4333-8333-333333333333', 'Chat Outsider', 'chat.outsider@example.test', 'chat_outsider_smoke', 'EMPLOYEE', true, array['CHAT']),
+  ('44444444-4444-4444-8444-444444444444', 'Chat Disabled', 'chat.disabled@example.test', 'chat_disabled_smoke', 'EMPLOYEE', true, array['HRM'])
 on conflict (id) do update
 set name = excluded.name,
     email = excluded.email,
     username = excluded.username,
     role = excluded.role,
-    is_active = excluded.is_active;
+    is_active = excluded.is_active,
+    allowed_modules = excluded.allowed_modules;
 
 set local role authenticated;
 set local request.jwt.claim.sub = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -23,7 +25,8 @@ values ('aaaaaaaa-0000-4000-8000-000000000001', 'group', 'Structured smoke', '11
 insert into public.chat_v2_participants (conversation_id, user_id, role, last_read_at)
 values
   ('aaaaaaaa-0000-4000-8000-000000000001', '11111111-1111-4111-8111-111111111111', 'owner', now()),
-  ('aaaaaaaa-0000-4000-8000-000000000001', '22222222-2222-4222-8222-222222222222', 'member', null);
+  ('aaaaaaaa-0000-4000-8000-000000000001', '22222222-2222-4222-8222-222222222222', 'member', null),
+  ('aaaaaaaa-0000-4000-8000-000000000001', '44444444-4444-4444-8444-444444444444', 'member', null);
 
 insert into public.chat_v2_messages (id, conversation_id, sender_id, kind, body, metadata)
 values
@@ -101,5 +104,13 @@ select 'outsider_cannot_read_structured' as check_name,
   (select count(*) from public.chat_v2_poll_votes where conversation_id = 'aaaaaaaa-0000-4000-8000-000000000001') as visible_poll_votes,
   (select count(*) from public.chat_v2_checklist_items where conversation_id = 'aaaaaaaa-0000-4000-8000-000000000001') as visible_checklist_items,
   (select count(*) from public.chat_v2_quick_confirm_responses where conversation_id = 'aaaaaaaa-0000-4000-8000-000000000001') as visible_confirmations;
+
+set local request.jwt.claim.email = 'chat.disabled@example.test';
+set local request.jwt.claims = '{"sub":"dddddddd-dddd-4ddd-8ddd-dddddddddddd","email":"chat.disabled@example.test","role":"authenticated"}';
+
+select 'disabled_user_cannot_read_chat' as check_name,
+  (select count(*) from public.chat_v2_conversations where id = 'aaaaaaaa-0000-4000-8000-000000000001') as visible_conversations,
+  (select count(*) from public.chat_v2_messages where conversation_id = 'aaaaaaaa-0000-4000-8000-000000000001') as visible_messages,
+  (select count(*) from public.chat_v2_poll_votes where conversation_id = 'aaaaaaaa-0000-4000-8000-000000000001') as visible_poll_votes;
 
 rollback;

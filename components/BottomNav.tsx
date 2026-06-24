@@ -12,6 +12,7 @@ import { useApp } from '../context/AppContext';
 import { Role } from '../types';
 import { xpService, UserXP, LEVELS } from '../lib/xpService';
 import { isChatEnabled } from '../lib/featureFlags';
+import { canAccessRoute } from '../lib/routeAccess';
 
 // === Master catalog of all available taskbar items ===
 interface NavItem {
@@ -54,22 +55,29 @@ const BASE_NAV_ITEMS: NavItem[] = [
 ];
 
 const ALL_NAV_ITEMS: NavItem[] = BASE_NAV_ITEMS.filter(item => isChatEnabled || item.key !== 'CHAT');
-const DEFAULT_KEYS = isChatEnabled ? ['HOME', 'WMS', 'HRM', 'DA', 'CHAT'] : ['HOME', 'WMS', 'HRM', 'DA', 'RQ'];
+const DEFAULT_KEYS_WITH_CHAT = ['HOME', 'WMS', 'HRM', 'DA', 'CHAT'];
+const DEFAULT_KEYS_WITHOUT_CHAT = ['HOME', 'WMS', 'HRM', 'DA', 'RQ'];
 const STORAGE_KEY = 'vioo_btm_nav';
 const STORAGE_VERSION_KEY = 'vioo_btm_nav_version';
 const CHAT_NAV_VERSION = 'chat-v1';
 const MAX_ITEMS = 5;
 
-const normalizeNavKeys = (keys: string[]) => {
-  const allowedKeys = new Set(ALL_NAV_ITEMS.map(item => item.key));
+const normalizeNavKeys = (keys: string[], items: NavItem[], defaultKeys: string[]) => {
+  const allowedKeys = new Set(items.map(item => item.key));
   const normalized = keys.filter(key => allowedKeys.has(key)).slice(0, MAX_ITEMS);
-  return normalized.length >= 2 ? normalized : DEFAULT_KEYS;
+  return normalized.length >= 2 ? normalized : defaultKeys;
 };
 
 const BottomNav: React.FC = () => {
   const { user } = useApp();
   const location = useLocation();
   const navigate = useNavigate();
+  const canUseChat = isChatEnabled && canAccessRoute(user, '/chat');
+  const availableNavItems = useMemo(
+    () => ALL_NAV_ITEMS.filter(item => item.key !== 'CHAT' || canUseChat),
+    [canUseChat],
+  );
+  const defaultKeys = canUseChat ? DEFAULT_KEYS_WITH_CHAT : DEFAULT_KEYS_WITHOUT_CHAT;
 
   // XP state
   const [xpProfile, setXpProfile] = useState<UserXP | null>(null);
@@ -83,14 +91,14 @@ const BottomNav: React.FC = () => {
   const [enabledKeys, setEnabledKeys] = useState<string[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
-      return saved ? normalizeNavKeys(JSON.parse(saved)) : DEFAULT_KEYS;
-    } catch { return DEFAULT_KEYS; }
+      return saved ? normalizeNavKeys(JSON.parse(saved), availableNavItems, defaultKeys) : defaultKeys;
+    } catch { return defaultKeys; }
   });
 
   useEffect(() => {
     try {
-      if (!isChatEnabled) {
-        setEnabledKeys(prev => normalizeNavKeys(prev));
+      if (!canUseChat) {
+        setEnabledKeys(prev => normalizeNavKeys(prev, availableNavItems, defaultKeys));
         return;
       }
       if (localStorage.getItem(STORAGE_VERSION_KEY) === CHAT_NAV_VERSION) return;
@@ -103,7 +111,7 @@ const BottomNav: React.FC = () => {
     } catch {
       // localStorage can be unavailable in restricted browser contexts.
     }
-  }, []);
+  }, [availableNavItems, canUseChat]);
 
   const [showEditor, setShowEditor] = useState(false);
   const [dragIdx, setDragIdx] = useState<number | null>(null);
@@ -120,9 +128,9 @@ const BottomNav: React.FC = () => {
   // Build visible nav items
   const visibleItems = useMemo(() => {
     return enabledKeys
-      .map(key => ALL_NAV_ITEMS.find(n => n.key === key))
+      .map(key => availableNavItems.find(n => n.key === key))
       .filter(Boolean) as NavItem[];
-  }, [enabledKeys]);
+  }, [availableNavItems, enabledKeys]);
 
   // Check active state
   const isActive = (pattern: string): boolean => {
@@ -197,7 +205,7 @@ const BottomNav: React.FC = () => {
   };
 
   // Reset
-  const resetDefaults = () => setEnabledKeys([...DEFAULT_KEYS]);
+  const resetDefaults = () => setEnabledKeys([...defaultKeys]);
 
   // Long press timer ref
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -241,7 +249,7 @@ const BottomNav: React.FC = () => {
               </p>
               <div className="space-y-1">
                 {enabledKeys.map((key, idx) => {
-                  const item = ALL_NAV_ITEMS.find(n => n.key === key);
+                  const item = availableNavItems.find(n => n.key === key);
                   if (!item) return null;
                   const IconComp = ICON_MAP[item.iconName] || LayoutDashboard;
                   return (
@@ -283,7 +291,7 @@ const BottomNav: React.FC = () => {
                 Có thể thêm
               </p>
               <div className="space-y-1">
-                {ALL_NAV_ITEMS.filter(n => !enabledKeys.includes(n.key)).map(item => {
+                {availableNavItems.filter(n => !enabledKeys.includes(n.key)).map(item => {
                   const IconComp = ICON_MAP[item.iconName] || LayoutDashboard;
                   const disabled = enabledKeys.length >= MAX_ITEMS;
                   return (

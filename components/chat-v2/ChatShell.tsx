@@ -45,6 +45,7 @@ import {
   getUserInitials,
   isImageAttachment,
 } from '../../lib/chatV2Service';
+import { canAccessRoute } from '../../lib/routeAccess';
 
 interface ChatShellProps {
   currentUser: User;
@@ -1066,7 +1067,7 @@ const NewChatModal: React.FC<{
   const availableUsers = useMemo(() => {
     const keyword = search.trim().toLowerCase();
     return users
-      .filter(user => user.id !== currentUser.id && user.isActive !== false)
+      .filter(user => user.id !== currentUser.id && user.isActive !== false && canAccessRoute(user, '/chat'))
       .filter(user => !keyword || `${user.name} ${user.email}`.toLowerCase().includes(keyword));
   }, [currentUser.id, search, users]);
 
@@ -1197,7 +1198,7 @@ const GroupSettingsModal: React.FC<{
       return (roleRank[a.participant.role] ?? 3) - (roleRank[b.participant.role] ?? 3);
     });
   const availableUsers = users
-    .filter(user => user.isActive !== false && !activeParticipantIds.has(user.id))
+    .filter(user => user.isActive !== false && canAccessRoute(user, '/chat') && !activeParticipantIds.has(user.id))
     .filter(user => {
       const keyword = search.trim().toLowerCase();
       return !keyword || `${user.name} ${user.email}`.toLowerCase().includes(keyword);
