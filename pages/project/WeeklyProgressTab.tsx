@@ -567,6 +567,10 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
             // Reload all weekly progress to refresh visual segments
             const weeklyProgressData = await projectWeeklyProgressService.listAll(scopeKey);
             setAllWeeklyProgress(weeklyProgressData);
+            
+            // Auto select the chốt week in the visualization filter so the color shows up immediately
+            setFilterWeek(selectedWeekStart);
+            setFilterMonth(selectedWeekStart.substring(0, 7));
 
             toast.success('Đã chốt tiến độ tuần', `${getISOWeekLabel(selectedWeekStart)} · Tiến độ thi công ${constructionProgress}% · Theo giá trị ${valueProgressMetric.valueProgressPercent}%`);
         } catch (error: any) {
@@ -591,11 +595,13 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
         valueProgressMetric,
         weeklyDrafts,
         weeklyLeafTasks,
+        setFilterWeek,
+        setFilterMonth,
     ]);
 
     // Flatten tree construction based on collapse and filter states
     const dropdownTasks = useMemo(() => {
-        return tasks.sort((a, b) => {
+        return [...tasks].sort((a, b) => {
             const wbsA = a.wbsCode || '';
             const wbsB = b.wbsCode || '';
             return wbsA.localeCompare(wbsB, undefined, { numeric: true });
@@ -677,7 +683,7 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
             // Walk through visibleWeeks
             for (const week of visibleWeeks) {
                 const weekData = weeklyHistoryRollup[week]?.[taskId];
-                const currentProgress = weekData ? weekData.progress : lastProgress;
+                const currentProgress = Number(weekData ? weekData.progress : lastProgress) || 0;
                 const addedProgress = currentProgress - lastProgress;
                 
                 if (addedProgress > 0) {
@@ -698,7 +704,7 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
             }
             
             return list;
-        }, [taskId]);
+        }, [staffMap, taskId, visibleWeeks, weekColors, weeklyHistoryRollup]);
 
         const totalProgress = useMemo(() => {
             if (segments.length === 0) return 0;

@@ -50,6 +50,12 @@ export const resolveNotificationPath = (notification: AppNotification): string |
   const metadata = notification.metadata || {};
   const sourceType = notification.sourceType || '';
 
+  // ── Chat v2 ───────────────────────────────────────────
+  if (sourceType === 'chat_v2_message' || notification.category === 'chat') {
+    const conversationId = getMetaValue(metadata, ['conversationId', 'conversation_id']);
+    return withQuery('/chat', { conversation: conversationId }) || notification.link || '/chat';
+  }
+
   // ── Daily Log ─────────────────────────────────────────
   const dailyLogId = getMetaValue(metadata, ['dailyLogId', 'logId']);
   if (dailyLogId || sourceType.startsWith('dailylog')) {

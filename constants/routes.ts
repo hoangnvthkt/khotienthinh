@@ -90,6 +90,9 @@ export const ROUTE_TO_MODULE: Record<string, string> = {
   '/tender-ai/boq': 'TENDER_AI',
   '/tender-ai/cost-library': 'TENDER_AI',
 
+  // ── TIN NHẮN ─────────────────────────────────────────
+  '/chat': 'CHAT',
+
   // ── ROUTE NHẠY CẢM / MODULE BỔ SUNG ───────────────────
   '/settings': 'SETTINGS',
   '/users': 'SETTINGS',

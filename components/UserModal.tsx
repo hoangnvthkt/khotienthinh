@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, User as UserIcon, Mail, Phone, Shield, Building, Save, Package, Briefcase, GitBranch, BarChart3, Landmark, Loader2, Crown, Inbox, LayoutDashboard, MapPin, Users, Calendar, Clock, CalendarOff, DollarSign, FileSignature, FolderOpen, History, ArrowLeftRight, ClipboardCheck, FileSpreadsheet, FileText, Workflow, Layers, Repeat, Wrench, IdCard, CreditCard, Calculator, Bot, BrainCircuit, Copy, ClipboardPaste, Settings as SettingsIcon, ShoppingCart } from 'lucide-react';
+import { X, User as UserIcon, Mail, Phone, Shield, Building, Save, Package, Briefcase, GitBranch, BarChart3, Landmark, Loader2, Crown, Inbox, LayoutDashboard, MapPin, Users, Calendar, Clock, CalendarOff, DollarSign, FileSignature, FolderOpen, History, ArrowLeftRight, ClipboardCheck, FileSpreadsheet, FileText, Workflow, Layers, Repeat, Wrench, IdCard, CreditCard, Calculator, Bot, BrainCircuit, Copy, ClipboardPaste, Settings as SettingsIcon, ShoppingCart, MessageCircle } from 'lucide-react';
 import { Role, User, Warehouse } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { useToast } from '../context/ToastContext';
@@ -8,6 +8,7 @@ import { getApiErrorMessage, logApiError } from '../lib/apiError';
 import { PROJECT_MATERIAL_TAB_PERMISSIONS, PROJECT_TAB_PERMISSIONS } from '../lib/projectTabPermissions';
 import type { ProjectMaterialTabKey, ProjectOverviewTabKey } from '../lib/projectTabPermissions';
 import { getSettingsFeatureToken, SETTINGS_FEATURES, SETTINGS_MODULE_KEY } from '../lib/settingsPermissions';
+import { isChatEnabled } from '../lib/featureFlags';
 
 const PROJECT_TAB_PERMISSION_ICONS: Record<ProjectOverviewTabKey, any> = {
   executive: LayoutDashboard,
@@ -210,6 +211,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
     { key: 'EP', label: 'EP - Hồ sơ NV', icon: IdCard, color: 'text-sky-600 bg-sky-50 border-sky-200 dark:bg-sky-900/30 dark:border-sky-700' },
     { key: 'HD', label: 'HĐ - Hợp đồng', icon: FileSignature, color: 'text-blue-600 bg-blue-50 border-blue-200 dark:bg-blue-900/30 dark:border-blue-700' },
     { key: 'TENDER_AI', label: 'Tender AI', icon: Bot, color: 'text-fuchsia-600 bg-fuchsia-50 border-fuchsia-200 dark:bg-fuchsia-900/30 dark:border-fuchsia-700' },
+    ...(isChatEnabled ? [{ key: 'CHAT', label: 'Tin nhắn', icon: MessageCircle, color: 'text-pink-600 bg-pink-50 border-pink-200 dark:bg-pink-900/30 dark:border-pink-700' }] : []),
     { key: SETTINGS_MODULE_KEY, label: 'CĐ - Cài đặt', icon: SettingsIcon, color: 'text-slate-700 bg-slate-50 border-slate-200 dark:bg-slate-800/50 dark:border-slate-700' },
     { key: 'CHIBIBOT', label: 'Trợ lý ChibiBot', icon: Bot, color: 'text-pink-600 bg-pink-50 border-pink-200 dark:bg-pink-900/30 dark:border-pink-700' },
   ];
