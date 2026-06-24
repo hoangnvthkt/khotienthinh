@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import AiInsightPanel from '../../components/AiInsightPanel';
+import { EmptyState, StatusBadge, type ErpStatusTone } from '../../components/erp';
 import {
     calculateLineTotal,
     getComputedDimension,
@@ -110,6 +111,18 @@ const PO_STATUS: Record<POStatus, { label: string; color: string; bg: string; ic
     cancelled: { label: 'Huỷ', color: 'text-destructive', bg: 'bg-destructive/10 border-destructive/20', icon: <Ban size={12} /> },
 };
 
+const PO_STATUS_TONE: Record<POStatus, ErpStatusTone> = {
+    draft: 'neutral',
+    sent: 'warning',
+    confirmed: 'success',
+    in_transit: 'info',
+    partial: 'attention',
+    delivered: 'success',
+    closed: 'neutral',
+    returned: 'warning',
+    cancelled: 'danger',
+};
+
 const VENDOR_CATS = ['Xi măng', 'Thép', 'Cát & Đá', 'Gạch', 'Gỗ', 'Sơn', 'Ống/Phụ kiện nước', 'Dây & TB điện', 'VLXD khác'];
 
 const PO_SOURCE_MODE: Record<PurchaseOrderSourceMode, { label: string; color: string }> = {
@@ -171,6 +184,10 @@ const PO_PRINT_TEMPLATE_LABELS: Record<PurchaseOrderPrintTemplateKey, string> = 
     purchase_order: 'Đơn đặt hàng',
     approval_request: 'Đề nghị duyệt đơn hàng',
 };
+
+const procurementPanelClass = 'bg-card rounded-lg border border-border shadow-sm overflow-hidden';
+const procurementTableHeadClass = 'bg-slate-50 text-[10px] font-black uppercase tracking-wide text-slate-500 sticky top-0 z-10 dark:bg-slate-800 dark:text-slate-400';
+const procurementInputClass = 'rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-bold text-slate-800 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-500/15 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100';
 
 const createEmptyPoItem = (): PurchaseOrderItem => ({
     lineId: crypto.randomUUID(),
@@ -2913,24 +2930,24 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 </div>
             )}
             {/* KPI */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="bg-card rounded-2xl p-5 border border-border shadow-sm">
-                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1"><Users size={10} /> Đối tác HĐ</div>
-                    <div className="text-2xl font-black text-slate-800">{stats.partnerCount}</div>
-                </div>
-                <div className="bg-card rounded-2xl p-5 border border-border shadow-sm">
-                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1"><ShoppingCart size={10} /> Đơn hàng</div>
-                    <div className="text-2xl font-black text-slate-800">{stats.totalPo}</div>
-                    <div className="text-[10px] text-slate-400 mt-1">Tổng: {fmt(stats.totalValue)} đ</div>
-                </div>
-                <div className="bg-card rounded-2xl p-5 border border-border shadow-sm">
-                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1"><Truck size={10} /> Đã giao</div>
-                    <div className="text-2xl font-black text-emerald-600">{stats.delivered}</div>
-                </div>
-                <div className="bg-card rounded-2xl p-5 border border-border shadow-sm">
-                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1"><Clock size={10} /> Chờ giao</div>
-                    <div className="text-2xl font-black text-amber-600">{stats.pending}</div>
-                </div>
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                {[
+                    { label: 'Đối tác HĐ', value: stats.partnerCount, icon: <Users size={14} />, tone: 'text-slate-800 dark:text-slate-100', sub: '' },
+                    { label: 'Đơn hàng', value: stats.totalPo, icon: <ShoppingCart size={14} />, tone: 'text-slate-800 dark:text-slate-100', sub: `Tổng: ${fmt(stats.totalValue)} đ` },
+                    { label: 'Đã giao', value: stats.delivered, icon: <Truck size={14} />, tone: 'text-emerald-600 dark:text-emerald-400', sub: '' },
+                    { label: 'Chờ giao', value: stats.pending, icon: <Clock size={14} />, tone: 'text-amber-600 dark:text-amber-400', sub: '' },
+                ].map(metric => (
+                    <div key={metric.label} className="rounded-lg border border-border bg-card p-4 shadow-sm">
+                        <div className="mb-2 flex items-center gap-2 text-[10px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                            <span className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+                                {metric.icon}
+                            </span>
+                            {metric.label}
+                        </div>
+                        <div className={`text-2xl font-black ${metric.tone}`}>{metric.value}</div>
+                        {metric.sub && <div className="mt-1 text-[10px] font-bold text-slate-500 dark:text-slate-400">{metric.sub}</div>}
+                    </div>
+                ))}
             </div>
 
             {/* Vendor Tab */}
@@ -3009,24 +3026,29 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
 
             {/* PO Tab */}
             {subTab === 'po' && (
-                <div className="bg-card rounded-2xl border border-border shadow-sm overflow-hidden">
-                    <div className="p-5 border-b border-slate-100 flex items-center justify-between">
-                        <h3 className="text-sm font-black text-slate-700 flex items-center gap-2"><FileText size={16} className="text-blue-500" /> Đơn đặt hàng (PO)</h3>
-                        <div className="flex items-center gap-2">
+                <div className={procurementPanelClass}>
+                    <div className="flex flex-col gap-3 border-b border-slate-100 p-4 dark:border-slate-800 lg:flex-row lg:items-center lg:justify-between">
+                        <div>
+                            <h3 className="flex items-center gap-2 text-sm font-black text-slate-800 dark:text-slate-100">
+                                <FileText size={16} className="text-blue-500" /> Đơn đặt hàng (PO)
+                            </h3>
+                            <p className="mt-1 text-xs font-bold text-slate-500 dark:text-slate-400">Quản lý PO theo nhà cung cấp, đợt giao, in chứng từ và trạng thái kho.</p>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
                             <button onClick={handleDownloadPoTemplate}
-                                className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100">
+                                className="inline-flex min-h-9 items-center gap-1 whitespace-nowrap rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[10px] font-black text-emerald-700 transition hover:bg-emerald-100 active:scale-[0.98] dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-300">
                                 <FileSpreadsheet size={12} /> Mẫu Excel
                             </button>
                             {canManageTab && (
                                 <>
                                     <button onClick={openRequestPicker}
                                         disabled={scopedRequestLines.length === 0}
-                                        className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-amber-600 bg-amber-50 border border-amber-200 hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed">
+                                        className="inline-flex min-h-9 items-center gap-1 whitespace-nowrap rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-[10px] font-black text-amber-700 transition hover:bg-amber-100 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-300">
                                         <Package size={12} /> Tạo từ đề xuất
                                     </button>
                                     <button onClick={openCreatePo}
                                         disabled={partners.length === 0 || inventoryItems.length === 0 || warehouses.length === 0}
-                                        className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-blue-600 bg-blue-50 border border-blue-200 hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed">
+                                        className="inline-flex min-h-9 items-center gap-1 whitespace-nowrap rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-[10px] font-black text-blue-700 transition hover:bg-blue-100 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 dark:border-blue-900/50 dark:bg-blue-950/40 dark:text-blue-300">
                                         <Plus size={12} /> Tạo PO
                                     </button>
                                 </>
@@ -3034,19 +3056,16 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                         </div>
                     </div>
                     {partners.length === 0 ? (
-                        <div className="p-8 text-center">
-                            <AlertTriangle size={28} className="mx-auto mb-2 text-amber-300" />
-                            <p className="text-xs font-bold text-slate-400">Cần tạo đối tác tại Hợp đồng → Đối tác trước khi tạo PO</p>
+                        <div className="p-4">
+                            <EmptyState icon={<AlertTriangle size={18} />} title="Cần có đối tác trước khi tạo PO" message="Tạo đối tác tại Hợp đồng - Đối tác để chọn nhà cung cấp cho đơn hàng." compact />
                         </div>
                     ) : inventoryItems.length === 0 || warehouses.length === 0 ? (
-                        <div className="p-8 text-center">
-                            <AlertTriangle size={28} className="mx-auto mb-2 text-amber-300" />
-                            <p className="text-xs font-bold text-slate-400">Cần có danh mục vật tư WMS và kho nhận trước khi tạo PO</p>
+                        <div className="p-4">
+                            <EmptyState icon={<AlertTriangle size={18} />} title="Thiếu danh mục vật tư hoặc kho nhận" message="Cần có vật tư WMS và kho nhận trước khi tạo PO." compact />
                         </div>
                     ) : pos.length === 0 ? (
-                        <div className="p-12 text-center">
-                            <FileText size={36} className="mx-auto mb-2 text-slate-200" />
-                            <p className="text-sm font-bold text-slate-400">Chưa có đơn hàng</p>
+                        <div className="p-4">
+                            <EmptyState icon={<FileText size={18} />} title="Chưa có đơn hàng" message="Tạo PO thủ công hoặc tạo từ đề xuất công trường để bắt đầu theo dõi." />
                         </div>
                     ) : (
                         <div className="divide-y divide-slate-50 dark:divide-slate-700/40">
@@ -3096,21 +3115,19 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                         <FileText size={14} className="text-blue-500" />
                                                     </div>
                                                     <div className="min-w-0 flex-1">
-                                                        <div className="text-xs font-bold text-slate-700 flex items-center gap-2">
+                                                        <div className="flex flex-wrap items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-200">
                                                             {po.poNumber}
-                                                            <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold border ${stCfg.bg} ${stCfg.color}`}>
-                                                                {stCfg.icon} {stCfg.label}
-                                                            </span>
+                                                            <StatusBadge status={po.status} label={stCfg.label} tone={PO_STATUS_TONE[po.status]} showDot={false} />
                                                             {poWorkSummary.isRejectedBeforeReceipt && (
-                                                                <span className="inline-flex items-center gap-0.5 rounded border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[9px] font-bold text-rose-700">
+                                                                <span className="inline-flex items-center gap-0.5 rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[10px] font-black text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-300">
                                                                     <Ban size={11} /> Từ chối
                                                                 </span>
                                                             )}
-                                                            <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold border ${sourceCfg.color}`}>
+                                                            <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-black ${sourceCfg.color}`}>
                                                                 {sourceCfg.label}
                                                             </span>
                                                             {po.procurementGroupNo && (
-                                                                <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-violet-200 bg-violet-50 text-[9px] font-bold text-violet-700">
+                                                                <span className="inline-flex items-center rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] font-black text-violet-700 dark:border-violet-900/50 dark:bg-violet-950/30 dark:text-violet-300">
                                                                     Nhóm {po.procurementGroupNo}{groupSize > 1 ? ` • ${groupSize} PO` : ''}
                                                                 </span>
                                                             )}
@@ -3768,17 +3785,22 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
 
             {showRequestPicker && (
                 <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
-                    <div className="bg-card border border-border rounded-3xl shadow-2xl w-full max-w-5xl max-h-[86vh] overflow-hidden flex flex-col">
-                        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+                    <div className="flex max-h-[86vh] w-full max-w-5xl flex-col overflow-hidden rounded-lg border border-border bg-card shadow-2xl">
+                        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800">
                             <div>
-                                <h3 className="font-black text-lg text-slate-800">Tạo PO từ đề xuất công trường</h3>
-                                <p className="text-xs font-bold text-slate-400">Có thể chọn nhiều dòng từ nhiều phiếu; hệ thống giữ link theo từng dòng đề xuất.</p>
+                                <h3 className="text-lg font-black text-slate-800 dark:text-slate-100">Tạo PO từ đề xuất công trường</h3>
+                                <p className="text-xs font-bold text-slate-500 dark:text-slate-400">Có thể chọn nhiều dòng từ nhiều phiếu; hệ thống giữ link theo từng dòng đề xuất.</p>
                             </div>
-                            <button onClick={() => setShowRequestPicker(false)} className="w-8 h-8 rounded-xl text-slate-400 hover:bg-slate-100 flex items-center justify-center"><X size={18} /></button>
+                            <button onClick={() => setShowRequestPicker(false)} className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 dark:hover:bg-slate-800"><X size={18} /></button>
                         </div>
                         <div className="overflow-auto flex-1">
+                            {scopedRequestLines.length === 0 ? (
+                                <div className="p-4">
+                                    <EmptyState icon={<Package size={18} />} title="Không có đề xuất khả dụng" message="Các dòng còn nhu cầu sẽ xuất hiện tại đây khi công trường gửi đề xuất vật tư." compact />
+                                </div>
+                            ) : (
                             <table className="w-full text-xs min-w-[1260px]">
-                                <thead className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase sticky top-0 whitespace-nowrap">
+                                <thead className={`${procurementTableHeadClass} whitespace-nowrap`}>
                                     <tr>
                                         <th className="px-4 py-3 text-center w-12"></th>
                                         <th className="px-4 py-3 text-left w-36">Phiếu</th>
@@ -3880,11 +3902,12 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                     })}
                                 </tbody>
                             </table>
+                            )}
                         </div>
-                        <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3">
-                            <button onClick={() => setShowRequestPicker(false)} className="px-5 py-2.5 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-100">Đóng</button>
+                        <div className="flex justify-end gap-3 border-t border-slate-100 px-5 py-4 dark:border-slate-800">
+                            <button onClick={() => setShowRequestPicker(false)} className="rounded-lg px-5 py-2.5 text-sm font-bold text-slate-600 transition hover:bg-slate-100 active:scale-[0.98] dark:text-slate-300 dark:hover:bg-slate-800">Đóng</button>
                             <button onClick={openPoFromSelectedRequests} disabled={selectedRequestLineKeys.length === 0}
-                                className="px-6 py-2.5 rounded-xl text-sm font-black text-white bg-amber-500 hover:bg-amber-600 disabled:opacity-50">
+                                className="rounded-lg border border-amber-500 bg-amber-500 px-6 py-2.5 text-sm font-black text-white transition hover:bg-amber-600 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50">
                                 Đưa vào PO ({selectedRequestLineKeys.length})
                             </button>
                         </div>
@@ -3894,23 +3917,28 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
 
             {deliveryDraftPo && (
                 <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
-                    <div className="bg-card border border-border rounded-3xl shadow-2xl w-full max-w-5xl max-h-[86vh] overflow-hidden flex flex-col">
-                        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+                    <div className="flex max-h-[86vh] w-full max-w-5xl flex-col overflow-hidden rounded-lg border border-border bg-card shadow-2xl">
+                        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800">
                             <div>
-                                <h3 className="font-black text-lg text-slate-800">Tạo đợt giao PO</h3>
-                                <p className="text-xs font-bold text-slate-400">{deliveryDraftPo.poNumber} • {deliveryDraftPo.vendorName || 'Nhà cung cấp'}</p>
+                                <h3 className="text-lg font-black text-slate-800 dark:text-slate-100">Tạo đợt giao PO</h3>
+                                <p className="text-xs font-bold text-slate-500 dark:text-slate-400">{deliveryDraftPo.poNumber} • {deliveryDraftPo.vendorName || 'Nhà cung cấp'}</p>
                             </div>
                             <button
                                 onClick={() => savingDeliveryDraft ? undefined : setDeliveryDraftPo(null)}
                                 disabled={savingDeliveryDraft}
-                                className="w-8 h-8 rounded-xl text-slate-400 hover:bg-slate-100 flex items-center justify-center disabled:opacity-50"
+                                className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 disabled:opacity-50 dark:hover:bg-slate-800"
                             >
                                 <X size={18} />
                             </button>
                         </div>
                         <div className="overflow-auto flex-1">
+                            {deliveryDraftLines.length === 0 ? (
+                                <div className="p-4">
+                                    <EmptyState icon={<Truck size={18} />} title="Không có dòng giao khả dụng" message="PO này không còn dòng có số lượng cần giao." compact />
+                                </div>
+                            ) : (
                             <table className="w-full text-xs min-w-[980px]">
-                                <thead className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase sticky top-0 whitespace-nowrap">
+                                <thead className={`${procurementTableHeadClass} whitespace-nowrap`}>
                                     <tr>
                                         <th className="px-4 py-3 text-left">Công trường / Phiếu</th>
                                         <th className="px-4 py-3 text-left">Vật tư</th>
@@ -3949,7 +3977,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                         min={0}
                                                         value={line.issuedQty}
                                                         onChange={event => updateDeliveryDraftLine(line.key, { issuedQty: event.target.value })}
-                                                        className="w-28 rounded-lg border border-indigo-200 bg-white px-2 py-1.5 text-right font-black text-indigo-700 outline-none focus:ring-2 focus:ring-indigo-300"
+                                                        className={`${procurementInputClass} w-28 text-right text-indigo-700`}
                                                     />
                                                 </td>
                                                 <td className="px-4 py-3 text-right">
@@ -3958,7 +3986,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                         min={0}
                                                         value={line.deliveryUnitPrice}
                                                         onChange={event => updateDeliveryDraftLine(line.key, { deliveryUnitPrice: event.target.value })}
-                                                        className="w-28 rounded-lg border border-emerald-200 bg-white px-2 py-1.5 text-right font-black text-emerald-700 outline-none focus:ring-2 focus:ring-emerald-300"
+                                                        className={`${procurementInputClass} w-28 text-right text-emerald-700`}
                                                     />
                                                 </td>
                                                 <td className="px-4 py-3 text-right font-black text-emerald-700 whitespace-nowrap">
@@ -3969,8 +3997,9 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                     })}
                                 </tbody>
                             </table>
+                            )}
                         </div>
-                        <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-between gap-3">
+                        <div className="flex items-center justify-between gap-3 border-t border-slate-100 px-5 py-4 dark:border-slate-800">
                             <div className="text-xs font-bold text-slate-500">
                                 Tổng đợt giao:{' '}
                                 <span className="font-black text-emerald-700">
@@ -3978,9 +4007,9 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                 </span>
                             </div>
                             <div className="flex justify-end gap-3">
-                                <button onClick={() => setDeliveryDraftPo(null)} disabled={savingDeliveryDraft} className="px-5 py-2.5 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-100 disabled:opacity-50">Huỷ</button>
+                                <button onClick={() => setDeliveryDraftPo(null)} disabled={savingDeliveryDraft} className="rounded-lg px-5 py-2.5 text-sm font-bold text-slate-600 transition hover:bg-slate-100 active:scale-[0.98] disabled:opacity-50 dark:text-slate-300 dark:hover:bg-slate-800">Huỷ</button>
                                 <button onClick={submitPoDeliveryDraft} disabled={savingDeliveryDraft}
-                                    className="px-6 py-2.5 rounded-xl text-sm font-black text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2">
+                                    className="flex items-center gap-2 rounded-lg border border-indigo-600 bg-indigo-600 px-6 py-2.5 text-sm font-black text-white transition hover:bg-indigo-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50">
                                     {savingDeliveryDraft ? <Loader2 size={16} className="animate-spin" /> : <Truck size={16} />}
                                     Tạo đợt giao
                                 </button>
