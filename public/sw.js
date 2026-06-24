@@ -1,5 +1,5 @@
-// Vioo Service Worker v6 — PWA shell + Web Push notifications
-const CACHE_NAME = 'vioo-v6';
+// Vioo Service Worker v7 — PWA shell + Web Push notifications
+const CACHE_NAME = 'vioo-v7';
 const OFFLINE_URL = '/offline.html';
 
 const PRECACHE_URLS = [
