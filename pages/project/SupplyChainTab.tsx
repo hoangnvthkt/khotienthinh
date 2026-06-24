@@ -2198,7 +2198,6 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 <td>
                     <strong>${escapeHtml(item.name)}</strong>
                     ${item.workBoqItemName ? `<div class="approval-muted">${escapeHtml(item.workBoqItemName)}</div>` : ''}
-                    ${item.note ? `<div class="approval-muted">${escapeHtml(item.note)}</div>` : ''}
                 </td>
                 <td class="approval-center">${escapeHtml(item.unit)}</td>
                 <td class="approval-right">${Number(qty || 0).toLocaleString('vi-VN')}</td>
@@ -2265,13 +2264,13 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 <table class="approval-lines">
                     <thead>
                         <tr>
-                            <th style="width:42px;">STT</th>
-                            <th style="width:96px;">Mã</th>
+                            <th style="width:36px;">STT</th>
+                            <th style="width:85px;">Mã</th>
                             <th>Hàng hóa / nội dung</th>
-                            <th style="width:60px;">ĐVT</th>
-                            <th style="width:90px;">KL</th>
-                            <th style="width:110px;">Đơn giá</th>
-                            <th style="width:130px;">Thành tiền</th>
+                            <th style="width:50px;">ĐVT</th>
+                            <th style="width:70px;">KL</th>
+                            <th style="width:95px;">Đơn giá</th>
+                            <th style="width:115px;">Thành tiền</th>
                         </tr>
                     </thead>
                     <tbody>${rowsHtml}</tbody>
@@ -2283,7 +2282,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     </tfoot>
                 </table>
 
-                ${po.note ? `<div class="approval-note"><strong>Ghi chú:</strong> ${escapeHtml(po.note)}</div>` : ''}
+
 
                 <div class="approval-signatures">
                     <div><strong>BP Vật tư-TB</strong><span>${escapeHtml(user.name || '')}</span></div>
@@ -2331,14 +2330,14 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         };
 
         const headersHtml = `
-            <th class="center" style="width: 45px;">STT</th>
-            <th style="width: 100px;">Mã hàng hoá</th>
+            <th class="center" style="width: 36px;">STT</th>
+            <th style="width: 85px;">Mã hàng hoá</th>
             <th>Tên hàng hoá & Chi tiết kỹ thuật</th>
-            <th class="center" style="width: 60px;">ĐVT</th>
+            <th class="center" style="width: 50px;">ĐVT</th>
             ${uniqueSpecKeys.map(k => `<th class="center" style="min-width: 70px;">${escapeHtml(getHeaderLabel(k))}</th>`).join('')}
-            <th class="right" style="width: 90px;">Khối lượng</th>
-            <th class="right" style="width: 110px;">Đơn giá</th>
-            <th class="right" style="width: 130px;">Thành tiền</th>
+            <th class="right" style="width: 70px;">Khối lượng</th>
+            <th class="right" style="width: 95px;">Đơn giá</th>
+            <th class="right" style="width: 115px;">Thành tiền</th>
         `;
 
         const rowsHtml = printablePo.items.map((item, index) => {
@@ -2352,12 +2351,10 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 : '';
 
             const dateVal = item.neededDate || printablePo.expectedDeliveryDate;
-            const hasDateOrNote = dateVal || item.note;
-            const noteBoxHtml = hasDateOrNote
+            const noteBoxHtml = dateVal
                 ? `
                     <div class="note-box">
-                        ${dateVal ? `<div class="note-box-date">📅 Ngày cần: ${escapeHtml(dateVal)}</div>` : ''}
-                        ${item.note ? `<div class="note-box-italic">📝 Ghi chú dòng: ${escapeHtml(item.note)}</div>` : ''}
+                        <div class="note-box-date">📅 Ngày cần: ${escapeHtml(dateVal)}</div>
                     </div>
                 `
                 : '';
@@ -2413,7 +2410,6 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                         </tr>
                     </tfoot>
                 </table>
-                ${printablePo.note ? `<div class="note"><strong>Ghi chú đơn hàng:</strong> ${escapeHtml(printablePo.note)}</div>` : ''}
             </section>
         `;
     };
@@ -2425,17 +2421,18 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             <meta charset="utf-8" />
             <title>${escapeHtml(title)}</title>
             <style>
-                body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; color: #0f172a; margin: 32px; font-size: 12.5px; line-height: 1.5; }
-                .header { display: flex; justify-content: space-between; gap: 24px; align-items: flex-start; margin-bottom: 24px; }
-                h1 { margin: 0; font-size: 24px; letter-spacing: .02em; font-weight: 800; color: #0f172a; }
+                @page { size: A4 portrait; margin: 20mm 10mm 10mm 10mm; }
+                body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; color: #0f172a; margin: 20mm 10mm 10mm 10mm; font-size: 12px; line-height: 1.4; }
+                .header { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; margin-bottom: 12px; }
+                h1 { margin: 0; font-size: 22px; letter-spacing: .02em; font-weight: 800; color: #0f172a; }
                 .label { color: #64748b; font-weight: 700; text-transform: uppercase; font-size: 9px; letter-spacing: 0.05em; }
-                .meta { margin-top: 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px 28px; font-size: 13px; color: #334155; }
+                .meta { margin-top: 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px 20px; font-size: 12px; color: #334155; }
                 .meta > div { display: flex; flex-direction: column; gap: 2px; }
-                .meta > div .label { font-size: 8.5px; }
+                .meta > div .label { font-size: 8px; }
                 
-                table { width: 100%; border-collapse: collapse; margin-top: 28px; font-size: 12px; }
-                th, td { border: 1px solid #e2e8f0; padding: 10px 12px; vertical-align: top; line-height: 1.5; }
-                th { background: #f8fafc; text-transform: uppercase; font-size: 9.5px; font-weight: 800; letter-spacing: .05em; color: #475569; border-bottom: 2px solid #cbd5e1; }
+                table { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 11.5px; }
+                th, td { border: 1px solid #e2e8f0; padding: 6px 8px; vertical-align: top; line-height: 1.4; }
+                th { background: #f8fafc; text-transform: uppercase; font-size: 9px; font-weight: 800; letter-spacing: .05em; color: #475569; border-bottom: 2px solid #cbd5e1; }
                 
                 .right { text-align: right; }
                 .center { text-align: center; }
@@ -2444,23 +2441,23 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 .bg-slate-50\\/20 { background-color: rgba(248, 250, 252, 0.5); }
                 .text-slate-500 { color: #64748b; }
                 
-                .qr { text-align: center; font-size: 9px; color: #64748b; font-weight: 700; display: flex; flex-direction: column; align-items: center; gap: 6px; }
-                .qr svg { max-width: 100px; height: auto; }
+                .qr { text-align: center; font-size: 9px; color: #64748b; font-weight: 700; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+                .qr svg { max-width: 90px; height: auto; }
                 
                 .note-box {
                     background: #f8fafc;
                     border: 1px solid #e2e8f0;
-                    padding: 8px 12px;
-                    border-radius: 8px;
-                    margin-top: 6px;
-                    font-size: 10.5px;
+                    padding: 6px 10px;
+                    border-radius: 6px;
+                    margin-top: 4px;
+                    font-size: 10px;
                     color: #475569;
-                    line-height: 1.6;
+                    line-height: 1.5;
                 }
                 .note-box-date {
                     font-weight: 700;
                     color: #334155;
-                    margin-bottom: 3px;
+                    margin-bottom: 2px;
                 }
                 .note-box-italic {
                     font-style: italic;
@@ -2468,43 +2465,43 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 }
                 
                 .pricing-formula {
-                    font-size: 9px;
+                    font-size: 8.5px;
                     color: #7c3aed;
-                    margin-top: 4px;
+                    margin-top: 3px;
                     font-weight: bold;
                     display: inline-block;
                     background: #f5f3ff;
                     border: 1px solid #ddd6fe;
-                    padding: 2px 6px;
+                    padding: 2px 4px;
                     border-radius: 4px;
                 }
                 
-                .note { margin-top: 24px; font-size: 12px; color: #334155; background: #fdfbf7; border: 1px solid #fef3c7; padding: 12px; border-radius: 8px; }
-                .approval-sheet { font-family: "Times New Roman", Times, serif; color: #000; font-size: 14px; line-height: 1.25; }
+                .note { margin-top: 16px; font-size: 11px; color: #334155; background: #fdfbf7; border: 1px solid #fef3c7; padding: 10px; border-radius: 6px; }
+                .approval-sheet { font-family: "Times New Roman", Times, serif; color: #000; font-size: 13.5px; line-height: 1.2; }
                 .approval-header-table { width: 100%; border-collapse: collapse; margin: 0; table-layout: fixed; }
-                .approval-header-table td { border: 1px solid #cfcfcf; padding: 5px 6px; }
-                .approval-title { text-align: center; font-size: 20px; font-weight: 800; letter-spacing: .02em; }
-                .approval-date { text-align: right; font-size: 14px; padding-right: 36px !important; }
+                .approval-header-table td { border: 1px solid #cfcfcf; padding: 4px 5px; }
+                .approval-title { text-align: center; font-size: 18px; font-weight: 800; letter-spacing: .02em; }
+                .approval-date { text-align: right; font-size: 13px; padding-right: 36px !important; }
                 .approval-label-cell { width: 120px; white-space: nowrap; }
                 .approval-value-cell { border-bottom: 1px dotted #333 !important; }
-                .approval-intro { border-bottom: 0 !important; font-size: 14px; }
-                .approval-subject { text-align: center; font-size: 16px; font-weight: 800; text-transform: uppercase; }
-                .approval-lines { width: 100%; border-collapse: collapse; margin-top: 14px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; font-size: 11.5px; }
-                .approval-lines th, .approval-lines td { border: 1px solid #cfcfcf; padding: 7px 8px; vertical-align: top; }
-                .approval-lines th { background: #f3f4f6; color: #111; text-align: center; font-size: 10px; font-weight: 800; text-transform: uppercase; }
+                .approval-intro { border-bottom: 0 !important; font-size: 13px; }
+                .approval-subject { text-align: center; font-size: 15px; font-weight: 800; text-transform: uppercase; }
+                .approval-lines { width: 100%; border-collapse: collapse; margin-top: 10px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; font-size: 11px; }
+                .approval-lines th, .approval-lines td { border: 1px solid #cfcfcf; padding: 5px 6px; vertical-align: top; }
+                .approval-lines th { background: #f3f4f6; color: #111; text-align: center; font-size: 9.5px; font-weight: 800; text-transform: uppercase; }
                 .approval-lines tfoot td { background: #fafafa; }
                 .approval-delivery-row td { background: #eef7e9; font-family: "Times New Roman", Times, serif; font-size: 12px; }
                 .approval-center { text-align: center; }
                 .approval-right { text-align: right; }
                 .approval-muted { margin-top: 2px; color: #666; font-size: 10px; }
-                .approval-note { margin-top: 12px; border: 1px solid #d7d7d7; padding: 8px 10px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; font-size: 12px; }
-                .approval-signatures { margin-top: 34px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; text-align: center; font-family: "Times New Roman", Times, serif; }
-                .approval-signatures div { min-height: 82px; }
-                .approval-signatures strong { display: block; margin-bottom: 54px; }
+                .approval-note { margin-top: 10px; border: 1px solid #d7d7d7; padding: 6px 8px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; font-size: 11.5px; }
+                .approval-signatures { margin-top: 20px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; text-align: center; font-family: "Times New Roman", Times, serif; }
+                .approval-signatures div { min-height: 120px; }
+                .approval-signatures strong { display: block; margin-bottom: 85px; }
                 .approval-signatures span { font-weight: 700; }
                 .page-break { page-break-before: always; break-before: page; }
                 @media print { 
-                    body { margin: 15mm; } 
+                    body { margin: 0; } 
                     table { page-break-inside: auto; }
                     tr { page-break-inside: avoid; page-break-after: auto; }
                 }
@@ -2740,7 +2737,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 const poWithQr = await poService.ensureQrToken(po);
                 if (!po.qrToken) setPos(prev => prev.map(item => item.id === po.id ? poWithQr : item));
                 const receiveUrl = buildPoReceiveUrl(poWithQr.qrToken!);
-                const qrSvg = renderToStaticMarkup(<QRCodeSVG value={receiveUrl} size={132} level="H" includeMargin />);
+                const qrSvg = renderToStaticMarkup(<QRCodeSVG value={receiveUrl} size={90} level="H" includeMargin />);
                 html = buildPoPrintHtml(printablePo.poNumber, buildPoPrintSection({ ...printablePo, qrToken: poWithQr.qrToken }, qrSvg));
             }
             writePoPrintWindow(printWindow, html);
@@ -2773,7 +2770,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     setPos(prev => prev.map(item => item.id === po.id ? printablePo : item));
                 }
                 const receiveUrl = buildPoReceiveUrl(printablePo.qrToken!);
-                const qrSvg = renderToStaticMarkup(<QRCodeSVG value={receiveUrl} size={132} level="H" includeMargin />);
+                const qrSvg = renderToStaticMarkup(<QRCodeSVG value={receiveUrl} size={90} level="H" includeMargin />);
                 html = buildPoPrintHtml(printablePo.poNumber, buildPoPrintSection(printablePo, qrSvg));
             }
 
@@ -2818,7 +2815,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 setPos(prev => prev.map(po => printableOrders.find(item => item.id === po.id) || po));
                 const sections = printableOrders.map((po, index) => {
                     const receiveUrl = buildPoReceiveUrl(po.qrToken!);
-                    const qrSvg = renderToStaticMarkup(<QRCodeSVG value={receiveUrl} size={132} level="H" includeMargin />);
+                    const qrSvg = renderToStaticMarkup(<QRCodeSVG value={receiveUrl} size={90} level="H" includeMargin />);
                     return buildPoPrintSection(po, qrSvg, index > 0);
                 }).join('');
                 html = buildPoPrintHtml(printableOrders[0].procurementGroupNo || 'Nhóm PO', sections);
