@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Edit2, Eye, Plus, Save, Trash2, Truck, X } from 'lucide-react';
-import { SafetyAttachment, SafetyEquipment, SafetyEquipmentStatus, User } from '../../../types';
+import { Check, Edit2, Eye, Plus, Save, Trash2, Truck, X } from 'lucide-react';
+import { SafetyAttachment, SafetyEquipment, SafetyEquipmentDocument, SafetyEquipmentStatus, User } from '../../../types';
 import { EmptyState, MobileCardList, StatusBadge } from '../../erp';
+import { getSafetyEquipmentDocumentsStatus } from '../../../lib/safetyService';
 import { SAFETY_EQUIPMENT_STATUS_LABELS, getSafetyEquipmentTone } from '../../../lib/safetyWorkflow';
 import SafetyAttachmentUploader from './SafetyAttachmentUploader';
 import SafetyAttachmentList from './SafetyAttachmentList';
@@ -14,6 +15,7 @@ interface Props {
   canManage?: boolean;
   loading?: boolean;
   onSave: (input: Partial<SafetyEquipment> & { projectId: string; name: string }) => Promise<void>;
+  onToggleDocument?: (equipment: SafetyEquipment, item: SafetyEquipmentDocument, nextDone: boolean) => Promise<void>;
   onDelete?: (item: SafetyEquipment) => Promise<void>;
   onPreviewAttachment?: (attachments: SafetyAttachment[], index: number) => void;
 }
@@ -26,6 +28,9 @@ const formatDate = (value?: string | null) => {
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleDateString('vi-VN');
 };
+
+const getDocumentStatusLabel = (status: SafetyEquipment['documentsStatus']) =>
+  status === 'complete' ? 'Đã đủ hồ sơ' : status === 'partial' ? 'Chưa đủ hồ sơ' : 'Thiếu hồ sơ';
 
 const EquipmentForm: React.FC<{
   projectId: string;
@@ -43,9 +48,11 @@ const EquipmentForm: React.FC<{
   const [operatorName, setOperatorName] = useState('');
   const [inspectionExpiryDate, setInspectionExpiryDate] = useState('');
   const [status, setStatus] = useState<SafetyEquipmentStatus>('pending_review');
-  const [documentsStatus, setDocumentsStatus] = useState<'missing' | 'partial' | 'complete'>('missing');
+  const [documentChecklist, setDocumentChecklist] = useState<SafetyEquipmentDocument[]>([]);
+  const [documentName, setDocumentName] = useState('');
   const [attachments, setAttachments] = useState<SafetyAttachment[]>([]);
   const [saving, setSaving] = useState(false);
+  const documentsStatus = getSafetyEquipmentDocumentsStatus(documentChecklist);
 
   useEffect(() => {
     if (equipment) {
@@ -55,10 +62,42 @@ const EquipmentForm: React.FC<{
       setOperatorName(equipment.operatorName || '');
       setInspectionExpiryDate(equipment.inspectionExpiryDate || '');
       setStatus(equipment.status);
-      setDocumentsStatus(equipment.documentsStatus);
+      setDocumentChecklist(equipment.documentChecklist || []);
       setAttachments(equipment.attachments || []);
     }
   }, [equipment]);
+
+  const addDocumentItem = () => {
+    const trimmed = documentName.trim();
+    if (!trimmed) return;
+    setDocumentChecklist(prev => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        projectId,
+        constructionSiteId: constructionSiteId || null,
+        equipmentId: equipment?.id || tempId,
+        documentType: 'missing_document',
+        name: trimmed,
+        status: 'missing',
+        isDone: false,
+        sortOrder: prev.length,
+        attachments: [],
+        createdBy: currentUser.id,
+      },
+    ]);
+    setDocumentName('');
+  };
+
+  const toggleDocumentItem = (id: string, nextDone: boolean) => {
+    setDocumentChecklist(prev => prev.map(item => item.id === id ? {
+      ...item,
+      isDone: nextDone,
+      status: nextDone ? 'submitted' : 'missing',
+      doneBy: nextDone ? currentUser.id : null,
+      doneAt: nextDone ? new Date().toISOString() : null,
+    } : item));
+  };
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -76,6 +115,7 @@ const EquipmentForm: React.FC<{
         inspectionExpiryDate: inspectionExpiryDate || null,
         status,
         documentsStatus,
+        documentChecklist,
         attachments,
         createdBy: equipment?.createdBy || currentUser.id,
       });
@@ -127,12 +167,58 @@ const EquipmentForm: React.FC<{
             </div>
             <div>
               <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Hồ sơ thiết bị</label>
-              <select value={documentsStatus} onChange={event => setDocumentsStatus(event.target.value as any)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold outline-none">
-                <option value="missing">Thiếu hồ sơ</option>
-                <option value="partial">Chưa đủ</option>
-                <option value="complete">Đã đủ</option>
-              </select>
+              <div className={`flex min-h-10 items-center rounded-lg border px-3 text-sm font-black ${documentsStatus === 'complete' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-700'}`}>
+                {getDocumentStatusLabel(documentsStatus)}
+              </div>
             </div>
+          </div>
+          <div className="border-t border-slate-100 pt-4">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <label className="text-[10px] font-black uppercase text-slate-400">Checklist hồ sơ thiếu</label>
+              <span className="text-[10px] font-black text-slate-400">
+                {documentChecklist.filter(item => item.isDone).length}/{documentChecklist.length}
+              </span>
+            </div>
+            <div className="flex gap-2">
+              <input
+                value={documentName}
+                onChange={event => setDocumentName(event.target.value)}
+                onKeyDown={event => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    addDocumentItem();
+                  }
+                }}
+                className="min-w-0 flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold outline-none"
+                placeholder="Tên hồ sơ cần bổ sung"
+              />
+              <button type="button" onClick={addDocumentItem} className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-slate-900 text-white">
+                <Plus size={16} />
+              </button>
+            </div>
+            {documentChecklist.length > 0 && (
+              <div className="mt-3 space-y-1.5">
+                {documentChecklist.map(item => (
+                  <div key={item.id} className="grid grid-cols-[auto_1fr_auto] items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                    <button
+                      type="button"
+                      onClick={() => toggleDocumentItem(item.id, !item.isDone)}
+                      className={`mt-0.5 flex h-4 w-4 items-center justify-center rounded border ${item.isDone ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-slate-300 bg-white'}`}
+                    >
+                      {item.isDone && <Check size={12} />}
+                    </button>
+                    <span className={`min-w-0 break-words text-xs font-black text-slate-700 ${item.isDone ? 'line-through opacity-60' : ''}`}>{item.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => setDocumentChecklist(prev => prev.filter(row => row.id !== item.id).map((row, index) => ({ ...row, sortOrder: index })))}
+                      className="rounded-md p-1 text-slate-400 hover:bg-white hover:text-red-600"
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
           <div className="border-t border-slate-100 pt-4">
             <SafetyAttachmentUploader
@@ -164,6 +250,7 @@ const SafetyEquipmentPanel: React.FC<Props> = ({
   canManage,
   loading,
   onSave,
+  onToggleDocument,
   onDelete,
   onPreviewAttachment,
 }) => {
@@ -172,6 +259,8 @@ const SafetyEquipmentPanel: React.FC<Props> = ({
 
   const renderEquipment = (item: SafetyEquipment, framed = true) => {
     const listAttachments = item.attachments || [];
+    const documentChecklist = item.documentChecklist || [];
+    const doneDocuments = documentChecklist.filter(document => document.isDone).length;
     return (
       <div className={framed ? 'rounded-lg border border-slate-200 bg-white p-4 shadow-sm relative group' : 'relative group'}>
         <div className="flex items-start justify-between gap-3">
@@ -184,8 +273,33 @@ const SafetyEquipmentPanel: React.FC<Props> = ({
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
           <StatusBadge status="expiry" label={`Hạn kiểm định: ${formatDate(item.inspectionExpiryDate)}`} tone={item.inspectionExpiryDate && item.inspectionExpiryDate < new Date().toISOString().slice(0, 10) ? 'danger' : 'neutral'} />
-          <StatusBadge status={item.documentsStatus} label={item.documentsStatus === 'complete' ? 'Đủ hồ sơ' : 'Thiếu hồ sơ'} tone={item.documentsStatus === 'complete' ? 'success' : 'warning'} />
+          <StatusBadge status={item.documentsStatus} label={getDocumentStatusLabel(item.documentsStatus)} tone={item.documentsStatus === 'complete' ? 'success' : 'warning'} />
         </div>
+
+        {documentChecklist.length > 0 && (
+          <div className="mt-3 rounded-lg border border-slate-100 bg-slate-50 p-3">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <span className="text-[10px] font-black uppercase text-slate-400">Checklist hồ sơ</span>
+              <span className="text-[10px] font-black text-slate-500">{doneDocuments}/{documentChecklist.length}</span>
+            </div>
+            <div className="space-y-1.5">
+              {documentChecklist.map(document => (
+                <button
+                  key={document.id}
+                  type="button"
+                  onClick={() => canManage && onToggleDocument?.(item, document, !document.isDone)}
+                  disabled={!canManage}
+                  className="grid w-full grid-cols-[auto_1fr] gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-left transition hover:border-emerald-300 disabled:cursor-default disabled:hover:border-slate-200"
+                >
+                  <span className={`mt-0.5 flex h-4 w-4 items-center justify-center rounded border ${document.isDone ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-slate-300'}`}>
+                    {document.isDone && <Check size={12} />}
+                  </span>
+                  <span className={`min-w-0 break-words text-xs font-black text-slate-700 ${document.isDone ? 'line-through opacity-60' : ''}`}>{document.name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         <SafetyAttachmentList
           label="Hồ sơ kiểm định"

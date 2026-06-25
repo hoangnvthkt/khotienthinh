@@ -4848,10 +4848,214 @@ export type SafetyContractorStatus = 'pending_documents' | 'approved' | 'active'
 export type SafetyEquipmentStatus = 'pending_review' | 'approved' | 'active' | 'expired' | 'suspended' | 'removed';
 export type SafetyDocumentStatus = 'missing' | 'submitted' | 'approved' | 'rejected' | 'expired';
 export type SafetyWorkerStatus = 'active' | 'inactive' | 'suspended';
+export type SafetyPassportContractorType = 'subcontractor' | 'team';
+export type SafetyPassportContractorStatus = 'active' | 'suspended' | 'inactive';
+export type SafetyPassportWorkerStatus = 'active' | 'suspended' | 'inactive';
+export type SafetyPassportCertificateStatus = 'valid' | 'expiring_soon' | 'expired' | 'rejected' | 'revoked';
+export type SafetyPassportAssignmentStatus = 'eligible' | 'missing_profile' | 'missing_certificate' | 'expired_certificate' | 'missing_site_requirement' | 'suspended';
+export type SafetyPassportRequirementStatus = 'pending' | 'completed' | 'expired';
+export type SafetyPassportCommitmentStatus = 'pending' | 'signed';
+export type SafetyPassportPpeStatus = 'missing' | 'partial' | 'complete';
+export type SafetyPassportCardStatus = 'draft' | 'active' | 'expired' | 'revoked';
+export type SafetyPassportInductionType = 'site_rules' | 'toolbox' | 'commitment' | 'ppe';
 
 export interface SafetyAttachment extends Attachment {
   storagePath?: string;
   previewUrl?: string;
+}
+
+export interface SafetyPassportContractor {
+  id: string;
+  contractorType: SafetyPassportContractorType;
+  code?: string | null;
+  name: string;
+  representativeName?: string | null;
+  representativePhone?: string | null;
+  taxCode?: string | null;
+  status: SafetyPassportContractorStatus;
+  note?: string | null;
+  createdBy?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface SafetyWorkerProfile {
+  id: string;
+  workerCode: string;
+  fullName: string;
+  photoAttachment?: SafetyAttachment | null;
+  identityType: 'cccd' | 'passport' | 'other';
+  identityNumber?: string | null;
+  identityIssueDate?: string | null;
+  identityAttachments: SafetyAttachment[];
+  phone?: string | null;
+  emergencyContact?: string | null;
+  contractorId?: string | null;
+  contractor?: SafetyPassportContractor | null;
+  teamName?: string | null;
+  roleName?: string | null;
+  status: SafetyPassportWorkerStatus;
+  lockedReason?: string | null;
+  note?: string | null;
+  documents?: SafetyWorkerDocument[];
+  certificates?: SafetyWorkerCertificate[];
+  assignments?: SafetyProjectAssignment[];
+  createdBy?: string | null;
+  updatedBy?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface SafetyWorkerDocument {
+  id: string;
+  workerId: string;
+  documentType: string;
+  name: string;
+  issueDate?: string | null;
+  expiryDate?: string | null;
+  attachments: SafetyAttachment[];
+  status: SafetyDocumentStatus;
+  isRequired: boolean;
+  note?: string | null;
+  createdBy?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface SafetyCertificateType {
+  id: string;
+  code: string;
+  name: string;
+  isRequiredDefault: boolean;
+  validityDays?: number | null;
+  appliesToRoles: string[];
+  isActive: boolean;
+  sortOrder: number;
+  createdBy?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface SafetyWorkerCertificate {
+  id: string;
+  workerId: string;
+  certificateTypeId: string;
+  certificateType?: SafetyCertificateType | null;
+  certificateNo?: string | null;
+  issueDate?: string | null;
+  expiryDate?: string | null;
+  attachments: SafetyAttachment[];
+  status: 'submitted' | 'approved' | 'rejected' | 'revoked';
+  computedStatus: SafetyPassportCertificateStatus;
+  verifiedBy?: string | null;
+  verifiedAt?: string | null;
+  note?: string | null;
+  createdBy?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface SafetyProjectAssignment {
+  id: string;
+  workerId: string;
+  worker?: SafetyWorkerProfile | null;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  contractorId?: string | null;
+  contractor?: SafetyPassportContractor | null;
+  teamName?: string | null;
+  roleName?: string | null;
+  startDate: string;
+  endDate?: string | null;
+  siteTrainingStatus: SafetyPassportRequirementStatus;
+  commitmentStatus: SafetyPassportCommitmentStatus;
+  ppeStatus: SafetyPassportPpeStatus;
+  toolboxStatus: SafetyPassportRequirementStatus;
+  isLocked: boolean;
+  lockReason?: string | null;
+  eligibilityStatus: SafetyPassportAssignmentStatus;
+  eligibilityCheckedAt?: string | null;
+  createdBy?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface SafetySiteInduction {
+  id: string;
+  assignmentId: string;
+  trainingType: SafetyPassportInductionType;
+  completedAt?: string | null;
+  expiresAt?: string | null;
+  trainerUserId?: string | null;
+  attachments: SafetyAttachment[];
+  status: SafetyPassportRequirementStatus;
+  note?: string | null;
+  createdBy?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface SafetyCardTemplate {
+  id: string;
+  name: string;
+  layoutJson: Record<string, any>;
+  backgroundAttachment?: SafetyAttachment | null;
+  isDefault: boolean;
+  isActive: boolean;
+  createdBy?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface SafetyCard {
+  id: string;
+  assignmentId: string;
+  assignment?: SafetyProjectAssignment | null;
+  workerId: string;
+  worker?: SafetyWorkerProfile | null;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  contractorId?: string | null;
+  contractor?: SafetyPassportContractor | null;
+  templateId?: string | null;
+  cardCode: string;
+  qrToken: string;
+  issuedAt: string;
+  expiresAt: string;
+  status: SafetyPassportCardStatus;
+  printedCount: number;
+  revokedReason?: string | null;
+  createdBy?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface SafetyCardPrintLog {
+  id: string;
+  cardId: string;
+  printedBy?: string | null;
+  printedAt: string;
+  templateSnapshot: Record<string, any>;
+  metadata: Record<string, any>;
+}
+
+export interface SafetyPassportDashboard {
+  totalWorkers: number;
+  totalAssignments: number;
+  eligibleAssignments: number;
+  missingProfile: number;
+  missingCertificate: number;
+  expiredCertificate: number;
+  missingSiteRequirement: number;
+  suspendedAssignments: number;
+  expiringCertificates7Days: SafetyWorkerCertificate[];
+  expiringCertificates30Days: SafetyWorkerCertificate[];
+  expiredCertificates: SafetyWorkerCertificate[];
+  expiringCards30Days: SafetyCard[];
+  problematicContractors: Array<{
+    contractor: SafetyPassportContractor;
+    issueCount: number;
+  }>;
 }
 
 export interface SafetyChecklistTemplate {
@@ -4976,6 +5180,7 @@ export interface SafetyEquipment {
   inspectionExpiryDate?: string | null;
   status: SafetyEquipmentStatus;
   documentsStatus: 'missing' | 'partial' | 'complete';
+  documentChecklist?: SafetyEquipmentDocument[];
   attachments: SafetyAttachment[];
   note?: string | null;
   createdBy?: string | null;
@@ -4991,6 +5196,10 @@ export interface SafetyEquipmentDocument {
   documentType: string;
   name: string;
   status: SafetyDocumentStatus;
+  isDone?: boolean;
+  doneBy?: string | null;
+  doneAt?: string | null;
+  sortOrder?: number;
   issueDate?: string | null;
   expiryDate?: string | null;
   attachments: SafetyAttachment[];

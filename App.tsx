@@ -39,6 +39,7 @@ const CompanyProcurement = React.lazy(() => import('./pages/procurement/CompanyP
 const MyProfile = React.lazy(() => import('./pages/MyProfile'));
 const EmployeeDashboard = React.lazy(() => import('./pages/EmployeeDashboard'));
 const NotFound = React.lazy(() => import('./pages/NotFound'));
+const SafetyCardLookup = React.lazy(() => import('./pages/SafetyCardLookup'));
 
 // HRM pages
 const Employees = React.lazy(() => import('./pages/hrm/Employees'));
@@ -295,6 +296,7 @@ const AppRoutes: React.FC = () => {
           <Route path="hrm/documents" element={<HrmDocuments />} />
           <Route path="hrm/ranking" element={<EmployeeRanking />} />
           <Route path="da" element={<ProjectDashboard />} />
+          <Route path="safety-card/:qrToken" element={<SafetyCardLookup />} />
           <Route path="da/portfolio" element={<PortfolioDashboard />} />
           <Route path="procurement" element={<CompanyProcurement />} />
           <Route path="chat" element={isChatEnabled ? (isChatV2Enabled ? <ChatV2 /> : <Chat />) : <Navigate to="/" replace />} />

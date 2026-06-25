@@ -7,6 +7,7 @@ import {
   SafetyContractorStatus,
   SafetyDashboardSummary,
   SafetyEquipment,
+  SafetyEquipmentDocument,
   SafetyEquipmentStatus,
   SafetyInspection,
   SafetyInspectionItem,
@@ -28,6 +29,7 @@ const INSPECTION_TABLE = 'safety_inspections';
 const INSPECTION_ITEM_TABLE = 'safety_inspection_items';
 const CONTRACTOR_TABLE = 'safety_subcontractors';
 const EQUIPMENT_TABLE = 'safety_equipment';
+const EQUIPMENT_DOCUMENT_TABLE = 'safety_equipment_documents';
 const TEAM_TABLE = 'safety_teams';
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
@@ -41,6 +43,9 @@ const safeStorageFileName = (name: string): string => {
 };
 
 const asArray = <T,>(value: T[] | null | undefined): T[] => Array.isArray(value) ? value : [];
+
+const omitUndefined = <T extends Record<string, any>>(value: T): T =>
+  Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as T;
 
 const isImageAttachment = (attachment: SafetyAttachment) =>
   String(attachment.fileType || attachment.name || '').toLowerCase().match(/image|\.png|\.jpe?g|\.webp|\.gif/);
@@ -85,9 +90,29 @@ async function hydrateComment(row: any): Promise<SafetyComment> {
   return { ...item, attachments: await signAttachments(item.attachments) };
 }
 
-async function hydrateEquipment(row: any): Promise<SafetyEquipment> {
-  const item = fromDb(row) as SafetyEquipment;
+const isUuid = (value?: string | null): value is string =>
+  !!value && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+
+export const getSafetyEquipmentDocumentsStatus = (
+  checklist?: Array<Pick<SafetyEquipmentDocument, 'isDone'>>,
+): SafetyEquipment['documentsStatus'] => {
+  const items = asArray(checklist);
+  if (items.length === 0) return 'missing';
+  return items.every(item => item.isDone) ? 'complete' : 'partial';
+};
+
+async function hydrateEquipmentDocument(row: any): Promise<SafetyEquipmentDocument> {
+  const item = fromDb(row) as SafetyEquipmentDocument;
   return { ...item, attachments: await signAttachments(item.attachments) };
+}
+
+async function hydrateEquipment(row: any, documentChecklist: SafetyEquipmentDocument[] = []): Promise<SafetyEquipment> {
+  const item = fromDb(row) as SafetyEquipment;
+  return {
+    ...item,
+    documentChecklist,
+    attachments: await signAttachments(item.attachments),
+  };
 }
 
 async function hydrateContractor(row: any): Promise<SafetySubcontractor> {
@@ -643,16 +668,49 @@ export const safetyService = {
       constructionSiteId,
     );
     if (error) throw error;
-    return Promise.all((data || []).map(hydrateEquipment));
+    const rows = data || [];
+    const equipmentIds = rows.map(row => row.id).filter(Boolean);
+    const documentsByEquipment = new Map<string, SafetyEquipmentDocument[]>();
+
+    if (equipmentIds.length > 0) {
+      const { data: documentRows, error: documentError } = await supabase
+        .from(EQUIPMENT_DOCUMENT_TABLE)
+        .select('*')
+        .in('equipment_id', equipmentIds)
+        .order('sort_order', { ascending: true })
+        .order('created_at', { ascending: true });
+      if (documentError) throw documentError;
+      const documents = await Promise.all((documentRows || []).map(hydrateEquipmentDocument));
+      documents.forEach(document => {
+        const current = documentsByEquipment.get(document.equipmentId) || [];
+        current.push(document);
+        documentsByEquipment.set(document.equipmentId, current);
+      });
+    }
+
+    return Promise.all(rows.map(row => hydrateEquipment(row, documentsByEquipment.get(row.id) || [])));
   },
 
   async upsertEquipment(input: Partial<SafetyEquipment> & { projectId: string; name: string }): Promise<SafetyEquipment> {
-    const payload = toDb({
+    const checklistInput = Array.isArray(input.documentChecklist)
+      ? input.documentChecklist
+        .map((item, index) => ({
+          ...item,
+          name: String(item.name || '').trim(),
+          documentType: String(item.documentType || 'missing_document'),
+          sortOrder: Number.isFinite(item.sortOrder) ? item.sortOrder : index,
+          isDone: Boolean(item.isDone),
+        }))
+        .filter(item => item.name)
+      : undefined;
+    const payload = toDb(omitUndefined({
       ...input,
       status: input.status || 'pending_review',
-      documentsStatus: input.documentsStatus || 'missing',
+      documentsStatus: checklistInput ? getSafetyEquipmentDocumentsStatus(checklistInput) : input.documentsStatus || 'missing',
       attachments: input.attachments || [],
-    });
+      documentChecklist: undefined,
+    }));
+    delete payload.document_checklist;
     let result;
     if (input.id) result = await supabase.from(EQUIPMENT_TABLE).update(payload).eq('id', input.id).select().single();
     else {
@@ -660,7 +718,57 @@ export const safetyService = {
       result = await supabase.from(EQUIPMENT_TABLE).insert(payload).select().single();
     }
     if (result.error) throw result.error;
-    const equipment = await hydrateEquipment(result.data);
+    const equipmentId = result.data.id;
+
+    if (checklistInput) {
+      const { error: deleteError } = await supabase
+        .from(EQUIPMENT_DOCUMENT_TABLE)
+        .delete()
+        .eq('equipment_id', equipmentId);
+      if (deleteError) throw deleteError;
+
+      if (checklistInput.length > 0) {
+        const { error: insertError } = await supabase
+          .from(EQUIPMENT_DOCUMENT_TABLE)
+          .insert(checklistInput.map((item, index) => toDb(omitUndefined({
+            id: isUuid(item.id) ? item.id : undefined,
+            projectId: input.projectId,
+            constructionSiteId: input.constructionSiteId || null,
+            equipmentId,
+            documentType: item.documentType || 'missing_document',
+            name: item.name,
+            status: item.isDone ? 'submitted' : 'missing',
+            isDone: item.isDone,
+            doneBy: item.isDone ? item.doneBy || input.createdBy || null : null,
+            doneAt: item.isDone ? item.doneAt || new Date().toISOString() : null,
+            sortOrder: Number.isFinite(item.sortOrder) ? item.sortOrder : index,
+            attachments: item.attachments || [],
+            note: item.note || null,
+            createdBy: item.createdBy || input.createdBy || null,
+          }))));
+        if (insertError) throw insertError;
+      }
+    }
+
+    const { data: freshRow, error: freshError } = await supabase
+      .from(EQUIPMENT_TABLE)
+      .select('*')
+      .eq('id', equipmentId)
+      .single();
+    if (freshError) throw freshError;
+
+    const { data: documentRows, error: documentError } = await supabase
+      .from(EQUIPMENT_DOCUMENT_TABLE)
+      .select('*')
+      .eq('equipment_id', equipmentId)
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: true });
+    if (documentError) throw documentError;
+
+    const equipment = await hydrateEquipment(
+      freshRow,
+      await Promise.all((documentRows || []).map(hydrateEquipmentDocument)),
+    );
     const expiry = equipment.inspectionExpiryDate;
     const in30Days = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
     if (expiry && (expiry <= in30Days || equipment.status === 'expired')) {
@@ -676,6 +784,26 @@ export const safetyService = {
       }).catch(error => console.warn('Cannot notify equipment safety', error));
     }
     return equipment;
+  },
+
+  async toggleEquipmentDocumentChecklistItem(
+    item: Pick<SafetyEquipmentDocument, 'id'>,
+    nextDone: boolean,
+    currentUserId: string,
+  ): Promise<SafetyEquipmentDocument> {
+    const { data, error } = await supabase
+      .from(EQUIPMENT_DOCUMENT_TABLE)
+      .update(toDb({
+        isDone: nextDone,
+        doneBy: nextDone ? currentUserId : null,
+        doneAt: nextDone ? new Date().toISOString() : null,
+        status: nextDone ? 'submitted' : 'missing',
+      }))
+      .eq('id', item.id)
+      .select()
+      .single();
+    if (error) throw error;
+    return hydrateEquipmentDocument(data);
   },
 
   async deleteEquipment(id: string): Promise<void> {
