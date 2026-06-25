@@ -684,6 +684,25 @@ export interface ProjectWeeklyTaskProgress {
   createdAt?: string;
 }
 
+export interface ProjectDailyTaskProgress {
+  id?: string;
+  scopeKey: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  taskId: string;
+  progressDate: string;
+  weekStart: string;
+  progressPercent: number;
+  quantityDone: number;
+  dailyQuantityDone: number;
+  note?: string | null;
+  attachments?: Attachment[];
+  sourceDailyLogId?: string | null;
+  updatedBy?: string | null;
+  updatedAt?: string;
+  createdAt?: string;
+}
+
 export interface ProjectValueProgressMetric {
   contractTotalValue: number;
   purchasedValue: number;

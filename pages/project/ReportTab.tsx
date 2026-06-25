@@ -27,11 +27,14 @@ import { DailyLog, ProjectTask, ProjectTaskCompletionRequest } from '../../types
 import { dailyLogService, taskService } from '../../lib/projectService';
 import { taskCompletionRequestService } from '../../lib/projectTaskCompletionService';
 import {
-    calculateProjectProgress,
     clampProgress,
     deriveProjectTaskProgress,
     getLeafProjectTasks,
 } from '../../lib/projectScheduleRules';
+import {
+    buildProjectScheduleProjection,
+    type TaskProjectionDates,
+} from '../../lib/projectScheduleProjection';
 import DailyLogSummaryReport from '../../components/project/DailyLogSummaryReport';
 
 interface ReportTabProps {
@@ -93,13 +96,6 @@ const diffDays = (from: string, to: string): number => {
     return Math.round((b.getTime() - a.getTime()) / DAY_MS);
 };
 
-const addDays = (iso: string, amount: number): string => {
-    const date = parseIsoDate(iso);
-    if (!date) return iso;
-    date.setDate(date.getDate() + amount);
-    return toIsoDate(date);
-};
-
 const inclusiveDays = (start?: string, end?: string): number => {
     if (!start || !end) return 0;
     return Math.max(1, diffDays(start, end) + 1);
@@ -126,6 +122,14 @@ const formatDayDelta = (days: number): string => {
     return 'Đúng kế hoạch';
 };
 
+const formatNullableDayDelta = (days: number | null): string => (
+    days === null ? 'Chưa đủ dữ liệu' : formatDayDelta(days)
+);
+
+const fmtSpi = (value: number | null): string => (
+    value === null ? 'Chưa đủ dữ liệu' : value.toFixed(3)
+);
+
 const compareWbsCodes = (a = '', b = ''): number => {
     if (!a && !b) return 0;
     if (!a) return 1;
@@ -151,36 +155,6 @@ const normalizeText = (value: string): string =>
         .replace(/đ/g, 'd')
         .replace(/Đ/g, 'D')
         .toLowerCase();
-
-const getPlannedPercent = (task: ProjectTask, todayIso: string): number => {
-    if (!task.startDate || !task.endDate || todayIso < task.startDate) return 0;
-    if (todayIso >= task.endDate) return 100;
-    const total = inclusiveDays(task.startDate, task.endDate);
-    const elapsed = inclusiveDays(task.startDate, todayIso);
-    return total > 0 ? Math.min(100, Math.max(0, Math.round((elapsed / total) * 100))) : 0;
-};
-
-const getForecastEnd = (
-    task: ProjectTask,
-    todayIso: string,
-    actualStart?: string,
-    actualEnd?: string,
-): string => {
-    const progress = clampProgress(task.progress);
-    const plannedDays = inclusiveDays(task.startDate, task.endDate) || Math.max(1, Number(task.duration || 1));
-
-    if (progress >= 100) return actualEnd || todayIso;
-    if (progress > 0) {
-        const start = actualStart || (task.startDate && task.startDate <= todayIso ? task.startDate : todayIso);
-        const elapsed = Math.max(1, inclusiveDays(start, todayIso));
-        const estimatedTotal = Math.max(1, Math.ceil((elapsed * 100) / progress));
-        const forecast = addDays(start, estimatedTotal - 1);
-        return forecast < todayIso ? todayIso : forecast;
-    }
-
-    if (task.startDate && todayIso > task.startDate) return addDays(todayIso, plannedDays - 1);
-    return task.endDate || todayIso;
-};
 
 const deriveActualDates = (task: ProjectTask, dailyLogs: DailyLog[]) => {
     let start = task.actualStartDate;
@@ -412,25 +386,38 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
         const levelMap = buildLevelMap(derivedTasks);
         const delayMap = buildDelayMap(dailyLogs);
         const leafIds = new Set(getLeafProjectTasks(derivedTasks).map(task => task.id));
+        const actualDatesByTask = new Map<string, TaskProjectionDates>();
+
+        derivedTasks.forEach(task => {
+            const sourceTask = rawTaskById.get(task.id) || task;
+            actualDatesByTask.set(task.id, deriveActualDates(
+                {
+                    ...sourceTask,
+                    progress: task.progress,
+                    gateStatus: task.gateStatus,
+                    gateApprovedAt: task.gateApprovedAt || sourceTask.gateApprovedAt,
+                },
+                dailyLogs,
+            ));
+        });
+
+        const projection = buildProjectScheduleProjection({
+            tasks: derivedTasks,
+            dailyLogs,
+            todayIso,
+            taskActualDates: actualDatesByTask,
+        });
 
         const rows: ScheduleReportRow[] = [...derivedTasks]
             .sort((a, b) => compareWbsCodes(a.wbsCode, b.wbsCode) || (a.order || 0) - (b.order || 0) || a.name.localeCompare(b.name, 'vi'))
             .map(task => {
-                const sourceTask = rawTaskById.get(task.id) || task;
-                const { actualStart, actualEnd } = deriveActualDates(
-                    {
-                        ...sourceTask,
-                        progress: task.progress,
-                        gateStatus: task.gateStatus,
-                        gateApprovedAt: task.gateApprovedAt || sourceTask.gateApprovedAt,
-                    },
-                    dailyLogs,
-                );
+                const taskProjection = projection.taskProjections.get(task.id);
+                const { actualStart, actualEnd } = actualDatesByTask.get(task.id) || {};
                 const plannedDays = inclusiveDays(task.startDate, task.endDate) || Math.max(1, Number(task.duration || 1));
-                const plannedPercent = getPlannedPercent(task, todayIso);
-                const actualProgress = clampProgress(task.progress);
-                const forecastEnd = getForecastEnd(task, todayIso, actualStart, actualEnd);
-                const dayDelta = task.endDate ? diffDays(task.endDate, actualProgress >= 100 ? (actualEnd || forecastEnd) : forecastEnd) : 0;
+                const plannedPercent = taskProjection?.plannedPercent || 0;
+                const actualProgress = taskProjection?.actualProgress ?? clampProgress(task.progress);
+                const forecastEnd = taskProjection?.forecastEnd || task.endDate || todayIso;
+                const dayDelta = taskProjection?.dayDelta ?? (task.endDate ? diffDays(task.endDate, actualProgress >= 100 ? (actualEnd || forecastEnd) : forecastEnd) : 0);
                 const startDelta = actualStart && task.startDate ? diffDays(task.startDate, actualStart) : 0;
                 const status = getScheduleStatus({
                     task,
@@ -459,7 +446,7 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
                     actualStart,
                     actualEnd,
                     forecastEnd,
-                    endBasisLabel: actualProgress >= 100 ? 'Kết thúc TT' : 'Dự kiến TT',
+                    endBasisLabel: taskProjection?.endBasisLabel || (actualProgress >= 100 ? 'Kết thúc TT' : 'Dự kiến TT'),
                     dayDelta,
                     startDelta,
                     status,
@@ -470,21 +457,6 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
 
         const leafRows = rows.filter(row => row.isLeaf);
         const rowsForProject = leafRows.length > 0 ? leafRows : rows;
-        const projectStart = rows.length > 0
-            ? rows.reduce((min, row) => row.task.startDate && (!min || row.task.startDate < min) ? row.task.startDate : min, '')
-            : '';
-        const projectEnd = rows.length > 0
-            ? rows.reduce((max, row) => row.task.endDate && (!max || row.task.endDate > max) ? row.task.endDate : max, '')
-            : '';
-        const forecastProjectEnd = rowsForProject.length > 0
-            ? rowsForProject.reduce((max, row) => row.forecastEnd && (!max || row.forecastEnd > max) ? row.forecastEnd : max, '')
-            : '';
-        const projectDayDelta = projectEnd && forecastProjectEnd ? diffDays(projectEnd, forecastProjectEnd) : 0;
-        const totalPlannedWeight = rowsForProject.reduce((sum, row) => sum + row.plannedDays, 0);
-        const plannedProgress = totalPlannedWeight > 0
-            ? Math.round(rowsForProject.reduce((sum, row) => sum + row.plannedPercent * row.plannedDays, 0) / totalPlannedWeight)
-            : 0;
-        const progressSummary = calculateProjectProgress(derivedTasks);
         const topLevelRows = rows.filter(row => !row.task.parentId);
         const completedRows = rowsForProject.filter(row => row.actualProgress >= 100);
         const activeRows = rowsForProject.filter(row => row.actualProgress > 0 && row.actualProgress < 100);
@@ -501,14 +473,15 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
             touchedRows,
             lateRows,
             notStartedRows,
-            projectStart,
-            projectEnd,
-            projectDuration: inclusiveDays(projectStart, projectEnd),
-            forecastProjectEnd,
-            projectDayDelta,
-            plannedProgress,
-            actualProgress: progressSummary.progressPercent,
-            progressSummary,
+            projectStart: projection.projectStart,
+            projectEnd: projection.projectEnd,
+            projectDuration: projection.baselineDurationDays,
+            forecastProjectEnd: projection.forecastProjectEnd,
+            forecastDuration: projection.forecastDurationDays,
+            projectDayDelta: projection.forecastDeltaDays,
+            plannedProgress: projection.plannedProgressPercent,
+            actualProgress: projection.actualProgressPercent,
+            projection,
         };
     }, [dailyLogs, derivedTasks, rawTaskById, todayIso]);
 
@@ -551,10 +524,14 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
             : ['chưa có hạng mục nào ghi nhận thực hiện'];
         const lateNames = scheduleReport.lateRows.slice(0, 4).map(row => `${row.task.name} ${formatDayDelta(row.dayDelta).toLowerCase()}`);
         const progressDelta = scheduleReport.actualProgress - scheduleReport.plannedProgress;
+        const durationForecastLine = scheduleReport.projection.spiDurationDays !== null
+            ? `Nếu giữ nhịp hiện tại, dự án dự kiến cần ${scheduleReport.projection.spiDurationDays} ngày, ${formatNullableDayDelta(scheduleReport.projection.spiDeltaDays).toLowerCase()} so với kế hoạch gốc.`
+            : 'Nếu giữ nhịp hiện tại, SPI chưa đủ dữ liệu để quy đổi ra tổng thời lượng dự án.';
 
         return [
-            `Báo cáo Sếp, theo kế hoạch, tiến độ dự án bắt đầu từ ngày ${fmtDate(scheduleReport.projectStart)} tới ngày ${fmtDate(scheduleReport.projectEnd)} (${scheduleReport.projectDuration} ngày).`,
-            `Đến ngày ${fmtDate(todayIso)}, kế hoạch phải đạt khoảng ${fmtPercent(scheduleReport.plannedProgress)}, thực tế đang đạt ${fmtPercent(scheduleReport.actualProgress)}, ${formatProgressDelta(progressDelta).toLowerCase()}.`,
+            `Báo cáo Sếp, kế hoạch gốc là ${scheduleReport.projectDuration} ngày, bắt đầu từ ngày ${fmtDate(scheduleReport.projectStart)} tới ngày ${fmtDate(scheduleReport.projectEnd)}.`,
+            `Đến ngày ${fmtDate(todayIso)}, kế hoạch phải đạt khoảng ${fmtPercent(scheduleReport.plannedProgress)}, thực tế đang đạt ${fmtPercent(scheduleReport.actualProgress)}, SPI = ${fmtSpi(scheduleReport.projection.spi)}, ${formatProgressDelta(progressDelta).toLowerCase()}.`,
+            durationForecastLine,
             `Dự án bao gồm các hạng mục chính: ${itemNames.join('; ')}.`,
             `Các hạng mục đã và đang thực hiện gồm: ${touchedNames.join('; ')}.`,
             `Dự báo mốc kết thúc theo nhịp hiện tại là ${fmtDate(scheduleReport.forecastProjectEnd)}, ${formatDayDelta(scheduleReport.projectDayDelta).toLowerCase()} so với kế hoạch.`,
@@ -612,11 +589,15 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
             ['Báo cáo tiến độ dự án', fmtDate(todayIso)],
             ['Bắt đầu KH', fmtDate(scheduleReport.projectStart)],
             ['Kết thúc KH', fmtDate(scheduleReport.projectEnd)],
-            ['Thời lượng KH', `${scheduleReport.projectDuration} ngày`],
+            ['Thời lượng gốc', `${scheduleReport.projectDuration} ngày`],
             ['% KH đến hôm nay', fmtPercent(scheduleReport.plannedProgress)],
             ['% Thực tế', fmtPercent(scheduleReport.actualProgress)],
-            ['Dự kiến kết thúc', fmtDate(scheduleReport.forecastProjectEnd)],
-            ['Lệch ngày dự án', formatDayDelta(scheduleReport.projectDayDelta)],
+            ['SPI hôm nay', fmtSpi(scheduleReport.projection.spi)],
+            ['Thời lượng dự báo theo SPI', scheduleReport.projection.spiDurationDays !== null ? `${scheduleReport.projection.spiDurationDays} ngày` : 'Chưa đủ dữ liệu'],
+            ['Lệch ngày theo SPI', formatNullableDayDelta(scheduleReport.projection.spiDeltaDays)],
+            ['Dự báo mốc kết thúc', fmtDate(scheduleReport.forecastProjectEnd)],
+            ['Thời lượng dự báo theo mốc', scheduleReport.forecastDuration ? `${scheduleReport.forecastDuration} ngày` : 'Chưa đủ dữ liệu'],
+            ['Lệch mốc kết thúc', formatDayDelta(scheduleReport.projectDayDelta)],
             [],
             ['Câu trả lời nhanh'],
             ...briefingText.split('\n').map(line => [line]),
@@ -724,7 +705,33 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
                                             : 'text-slate-650 text-slate-650/80 dark:text-slate-400 bg-slate-100 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700/50'
                                 } px-1.5 py-0.5 rounded border`}>
                                     {formatProgressDelta(progressDelta).toLowerCase()}
+                                </span>
+                                , SPI ={' '}
+                                <span className="font-extrabold text-slate-900 dark:text-slate-100">
+                                    {fmtSpi(scheduleReport.projection.spi)}
                                 </span>.
+                            </p>
+                            <p>
+                                Nếu giữ nhịp hiện tại, dự án dự kiến cần{' '}
+                                <span className="font-extrabold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 px-1.5 py-0.5 rounded border border-indigo-100 dark:border-indigo-900/30">
+                                    {scheduleReport.projection.spiDurationDays !== null ? `${scheduleReport.projection.spiDurationDays} ngày` : 'chưa đủ dữ liệu'}
+                                </span>
+                                {scheduleReport.projection.spiDeltaDays !== null && (
+                                    <>
+                                        ,{' '}
+                                        <span className={`font-extrabold ${
+                                            scheduleReport.projection.spiDeltaDays > 0
+                                                ? 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 border-red-100 dark:border-red-900/30'
+                                                : scheduleReport.projection.spiDeltaDays < 0
+                                                    ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border-emerald-100 dark:border-emerald-900/30'
+                                                    : 'text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700/50'
+                                        } px-1.5 py-0.5 rounded border`}>
+                                            {formatDayDelta(scheduleReport.projection.spiDeltaDays).toLowerCase()}
+                                        </span>{' '}
+                                        so với kế hoạch gốc
+                                    </>
+                                )}
+                                .
                             </p>
                         </div>
                     </div>
@@ -750,7 +757,10 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
                             } px-1.5 py-0.5 rounded border`}>
                                 {formatDayDelta(scheduleReport.projectDayDelta).toLowerCase()}
                             </span>{' '}
-                            so với kế hoạch.
+                            so với kế hoạch. Thời lượng theo mốc dự báo là{' '}
+                            <span className="font-extrabold text-slate-900 dark:text-slate-100">
+                                {scheduleReport.forecastDuration ? `${scheduleReport.forecastDuration} ngày` : 'chưa đủ dữ liệu'}
+                            </span>.
                         </div>
                     </div>
                 </div>
@@ -868,6 +878,13 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
     const progressDelta = scheduleReport.actualProgress - scheduleReport.plannedProgress;
     const projectDeltaTone = scheduleReport.projectDayDelta > 0 ? 'red' : scheduleReport.projectDayDelta < 0 ? 'emerald' : 'slate';
     const progressDeltaTone = progressDelta < -5 ? 'red' : progressDelta > 5 ? 'cyan' : 'slate';
+    const spiDurationTone = scheduleReport.projection.spiDeltaDays === null
+        ? 'slate'
+        : scheduleReport.projection.spiDeltaDays > 0
+            ? 'red'
+            : scheduleReport.projection.spiDeltaDays < 0
+                ? 'emerald'
+                : 'slate';
 
     return (
         <div className="space-y-5">
@@ -914,25 +931,25 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
                             icon={Calendar}
                         />
                         <MetricTile
-                            label="Đến hôm nay"
-                            value={`${fmtPercent(scheduleReport.plannedProgress)} / ${fmtPercent(scheduleReport.actualProgress)}`}
-                            sub={`KH / Thực tế, ${formatProgressDelta(progressDelta).toLowerCase()}`}
+                            label="SPI hôm nay"
+                            value={scheduleReport.projection.spi === null ? '-' : fmtSpi(scheduleReport.projection.spi)}
+                            sub={`KH ${fmtPercent(scheduleReport.plannedProgress)} · TT ${fmtPercent(scheduleReport.actualProgress)}, ${formatProgressDelta(progressDelta).toLowerCase()}`}
                             icon={Activity}
                             tone={progressDeltaTone}
                         />
                         <MetricTile
-                            label="Dự báo kết thúc"
-                            value={fmtDate(scheduleReport.forecastProjectEnd)}
-                            sub={formatDayDelta(scheduleReport.projectDayDelta)}
-                            icon={scheduleReport.projectDayDelta > 0 ? TrendingDown : TrendingUp}
-                            tone={projectDeltaTone}
+                            label="Dự báo theo nhịp hiện tại"
+                            value={scheduleReport.projection.spiDurationDays !== null ? `${scheduleReport.projection.spiDurationDays} ngày` : '-'}
+                            sub={formatNullableDayDelta(scheduleReport.projection.spiDeltaDays)}
+                            icon={Clock}
+                            tone={spiDurationTone}
                         />
                         <MetricTile
-                            label="Hạng mục cần lưu ý"
-                            value={scheduleReport.lateRows.length}
-                            sub={`${scheduleReport.activeRows.length} đang làm, ${scheduleReport.completedRows.length} hoàn thành`}
-                            icon={AlertTriangle}
-                            tone={scheduleReport.lateRows.length > 0 ? 'red' : 'emerald'}
+                            label="Dự báo mốc kết thúc"
+                            value={fmtDate(scheduleReport.forecastProjectEnd)}
+                            sub={`${formatDayDelta(scheduleReport.projectDayDelta)} · ${scheduleReport.lateRows.length} hạng mục cần lưu ý`}
+                            icon={scheduleReport.projectDayDelta > 0 ? TrendingDown : TrendingUp}
+                            tone={projectDeltaTone}
                         />
                     </div>
 
