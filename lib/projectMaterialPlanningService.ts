@@ -1,10 +1,14 @@
 import {
   InventoryItem,
+  MaterialAggregateSummaryDetail,
+  MaterialAggregateSummaryRow,
   MaterialBudgetItem,
   MaterialDemandDistributionMethod,
   MaterialForecastDetail,
   MaterialForecastRow,
   MaterialForecastWindow,
+  MaterialRequest,
+  MaterialRequestFulfillmentSummary,
   MaterialPlanningDraftPo,
   MaterialPlanningForecast,
   MaterialPlanningRule,
@@ -20,6 +24,7 @@ import {
   TransactionType,
 } from '../types';
 import { fromDb, toDb } from './dbMapping';
+import { getRequestLineId } from './materialRequestFulfillmentService';
 import { buildPoUnitSnapshot, getPoLineStockUnitPrice, poLinePurchaseToStockQty, stockToPurchaseQty, stockUnitPriceToPurchaseUnitPrice } from './materialUnitConversion';
 import { isSupabaseConfigured, supabase } from './supabase';
 
@@ -353,6 +358,7 @@ export const projectMaterialPlanningService = {
     rules: MaterialPlanningRule[];
     curveTemplates?: PlanningCurveTemplate[];
     today?: string;
+    includeAllRows?: boolean;
   }): MaterialPlanningForecast {
     const today = input.today || toIsoDate(new Date());
     const taskById = new Map(input.tasks.map(task => [task.id, task]));
@@ -526,7 +532,7 @@ export const projectMaterialPlanningService = {
     }
 
     const forecastRows = [...rows.values()]
-      .filter(row => row.demandQty['90d'] > 0 || row.warnings.length > 0)
+      .filter(row => input.includeAllRows || row.demandQty['90d'] > 0 || row.warnings.length > 0)
       .sort((a, b) => b.shortageValue['30d'] - a.shortageValue['30d'] || b.demandQty['30d'] - a.demandQty['30d']);
 
     const summary: MaterialPlanningSummary = {
@@ -555,6 +561,179 @@ export const projectMaterialPlanningService = {
     }
 
     return { rows: forecastRows, summary };
+  },
+
+  buildAggregateSummary(input: {
+    projectId?: string | null;
+    constructionSiteId?: string | null;
+    siteWarehouseId?: string;
+    tasks: ProjectTask[];
+    workBoqItems: ProjectWorkBoqItem[];
+    materialBudgetItems: MaterialBudgetItem[];
+    inventoryItems: InventoryItem[];
+    purchaseOrders: PurchaseOrder[];
+    transactions?: Transaction[];
+    rules: MaterialPlanningRule[];
+    curveTemplates?: PlanningCurveTemplate[];
+    requests: MaterialRequest[];
+    requestFulfillmentLineSummaries?: Record<string, Map<string, MaterialRequestFulfillmentSummary['lineSummaries'][number]>>;
+    requestFulfillmentBatchCounts?: Record<string, number>;
+    today?: string;
+  }): MaterialAggregateSummaryRow[] {
+    const forecast = projectMaterialPlanningService.buildForecast({
+      projectId: input.projectId,
+      constructionSiteId: input.constructionSiteId,
+      siteWarehouseId: input.siteWarehouseId,
+      tasks: input.tasks,
+      workBoqItems: input.workBoqItems,
+      materialBudgetItems: input.materialBudgetItems,
+      inventoryItems: input.inventoryItems,
+      purchaseOrders: input.purchaseOrders,
+      transactions: input.transactions || [],
+      rules: input.rules,
+      curveTemplates: input.curveTemplates,
+      today: input.today,
+      includeAllRows: true,
+    });
+    const forecastByKey = new Map<string, MaterialForecastRow>(forecast.rows.map(row => [row.key, row]));
+    const itemById = new Map(input.inventoryItems.map(item => [item.id, item]));
+    const groups = new Map<string, MaterialBudgetItem[]>();
+    const budgetItemToGroup = new Map<string, string>();
+    const itemIdToGroup = new Map<string, string>();
+    const codeToGroup = new Map<string, string>();
+
+    input.materialBudgetItems.forEach(material => {
+      const key = getRowKey(material);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(material);
+      budgetItemToGroup.set(material.id, key);
+      if (material.inventoryItemId && !itemIdToGroup.has(material.inventoryItemId)) itemIdToGroup.set(material.inventoryItemId, key);
+      if (material.materialCode) codeToGroup.set(material.materialCode.trim().toLowerCase(), key);
+    });
+
+    const requestedByGroup = new Map<string, number>();
+    const receivedByGroup = new Map<string, number>();
+    const requestedByBudget = new Map<string, number>();
+
+    input.requests
+      .filter(request => request.status !== 'REJECTED')
+      .forEach(request => {
+        const hasFulfillmentBatches = Number(input.requestFulfillmentBatchCounts?.[request.id] || 0) > 0;
+        const lineSummaries = input.requestFulfillmentLineSummaries?.[request.id];
+        (request.items || []).forEach((line, index) => {
+          const groupKey = line.materialGroupKey && groups.has(line.materialGroupKey)
+            ? line.materialGroupKey
+            : line.materialGroupSnapshot?.materialGroupKey && groups.has(line.materialGroupSnapshot.materialGroupKey)
+              ? line.materialGroupSnapshot.materialGroupKey
+              : line.materialBudgetItemId && budgetItemToGroup.has(line.materialBudgetItemId)
+                ? budgetItemToGroup.get(line.materialBudgetItemId)!
+                : line.itemId && itemIdToGroup.has(line.itemId)
+                  ? itemIdToGroup.get(line.itemId)!
+                  : line.skuSnapshot && codeToGroup.has(line.skuSnapshot.trim().toLowerCase())
+                    ? codeToGroup.get(line.skuSnapshot.trim().toLowerCase())!
+                    : null;
+          if (!groupKey) return;
+          const requestQty = Number(line.requestQty || 0);
+          requestedByGroup.set(groupKey, roundQty((requestedByGroup.get(groupKey) || 0) + requestQty));
+          if (line.materialBudgetItemId) {
+            requestedByBudget.set(line.materialBudgetItemId, roundQty((requestedByBudget.get(line.materialBudgetItemId) || 0) + requestQty));
+          }
+
+          const requestLineId = getRequestLineId(request, line, index);
+          const lineSummary = lineSummaries?.get(requestLineId);
+          const receivedQty = hasFulfillmentBatches && lineSummary
+            ? Number(lineSummary.receivedQty || 0)
+            : request.status === 'COMPLETED'
+              ? Number(line.issuedQty || line.approvedQty || line.requestQty || 0)
+              : 0;
+          receivedByGroup.set(groupKey, roundQty((receivedByGroup.get(groupKey) || 0) + receivedQty));
+        });
+      });
+
+    const minDate = (values: Array<string | null | undefined>): string | null =>
+      values.filter(Boolean).sort()[0] || null;
+    const maxDate = (values: Array<string | null | undefined>): string | null => {
+      const sorted = values.filter(Boolean).sort();
+      return sorted[sorted.length - 1] || null;
+    };
+
+    return [...groups.entries()].map(([key, materials]) => {
+      const forecastRow = forecastByKey.get(key);
+      const first = materials[0];
+      const item = first.inventoryItemId ? itemById.get(first.inventoryItemId) : undefined;
+      const totalBoqQty = roundQty(materials.reduce((sum, material) => sum + Number(material.budgetQty || 0), 0));
+      const totalBoqValue = Math.round(materials.reduce((sum, material) => sum + Number(material.budgetTotal ?? Number(material.budgetQty || 0) * Number(material.budgetUnitPrice || 0)), 0));
+      const cumulativeRequested = roundQty(requestedByGroup.get(key) || 0);
+      const cumulativeImported = roundQty(materials.reduce((sum, material) => sum + Number(material.cumulativeImported || 0), 0));
+      const cumulativeExported = roundQty(receivedByGroup.get(key) || 0);
+      const siteAvailableQty = roundQty(Number(forecastRow?.siteAvailableQty ?? (item && input.siteWarehouseId ? item.stockByWarehouse?.[input.siteWarehouseId] : 0) ?? 0));
+      const hasSiteStockSnapshot = Boolean((forecastRow?.inventoryItemId || first.inventoryItemId || item?.id) && input.siteWarehouseId);
+      const remainingBoqQty = roundQty(totalBoqQty - cumulativeRequested);
+      const details: MaterialAggregateSummaryDetail[] = materials.flatMap(material => {
+        const detail = forecastRow?.details.find(item => item.materialBudgetItemId === material.id);
+        const work = material.workBoqItemId ? input.workBoqItems.find(item => item.id === material.workBoqItemId) : undefined;
+        const task = work?.sourceTaskId ? input.tasks.find(item => item.id === work.sourceTaskId) : undefined;
+        return [{
+          id: material.id,
+          materialBudgetItemId: material.id,
+          workBoqItemId: material.workBoqItemId || null,
+          taskId: detail?.taskId || task?.id || null,
+          wbsCode: detail?.wbsCode || work?.wbsCode || task?.wbsCode || null,
+          taskName: detail?.taskName || task?.name || work?.name || 'Chưa gắn tiến độ',
+          startDate: detail?.startDate || task?.startDate || null,
+          endDate: detail?.endDate || task?.endDate || null,
+          needDate: detail?.needDate || null,
+          itemName: material.itemName,
+          materialCode: material.materialCode || null,
+          category: material.category,
+          unit: material.unit,
+          budgetQty: roundQty(Number(material.budgetQty || 0)),
+          budgetTotal: Math.round(Number(material.budgetTotal ?? Number(material.budgetQty || 0) * Number(material.budgetUnitPrice || 0))),
+          cumulativeRequested: roundQty(requestedByBudget.get(material.id) || 0),
+          remainingDemandQty: roundQty(Number(detail?.remainingDemandQty || 0)),
+          demandQty: detail?.demandQty || emptyWindowMap(),
+          warnings: detail?.warnings || [],
+        }];
+      });
+      const warnings = [
+        ...(forecastRow?.warnings || []),
+        ...(!forecastRow?.inventoryItemId ? ['Chưa liên kết mã kho'] : []),
+        ...(remainingBoqQty < 0 ? ['LK yêu cầu vượt Tổng BOQ'] : []),
+        ...((forecastRow?.shortageQty['7d'] || 0) > 0 ? ['Thiếu trong 7 ngày'] : []),
+        ...((forecastRow?.shortageQty['30d'] || 0) > 0 ? ['Thiếu trong 30 ngày'] : []),
+      ];
+      return {
+        key,
+        inventoryItemId: forecastRow?.inventoryItemId || first.inventoryItemId || item?.id || null,
+        sku: forecastRow?.sku || item?.sku || first.materialCode || null,
+        itemName: forecastRow?.itemName || item?.name || first.itemName,
+        category: forecastRow?.category || item?.category || first.category,
+        unit: forecastRow?.unit || item?.unit || first.unit,
+        unitPrice: Number(forecastRow?.unitPrice || first.budgetUnitPrice || item?.priceIn || 0),
+        totalBoqQty,
+        totalBoqValue,
+        cumulativeRequested,
+        cumulativeImported,
+        cumulativeExported,
+        stockBalance: hasSiteStockSnapshot ? siteAvailableQty : roundQty(cumulativeImported - cumulativeExported),
+        remainingBoqQty,
+        requestedPercent: totalBoqQty > 0 ? Math.round((cumulativeRequested / totalBoqQty) * 1000) / 10 : 0,
+        siteAvailableQty,
+        incomingQty: forecastRow?.incomingQty || emptyWindowMap(),
+        demandQty: forecastRow?.demandQty || emptyWindowMap(),
+        shortageQty: forecastRow?.shortageQty || emptyWindowMap(),
+        startDate: minDate(details.map(detail => detail.startDate)),
+        endDate: maxDate(details.map(detail => detail.endDate)),
+        needDate: minDate(details.map(detail => detail.needDate)),
+        sourceMaterialBudgetItemIds: materials.map(material => material.id),
+        warnings: [...new Set(warnings)],
+        details: details.sort((a, b) => (a.startDate || '9999').localeCompare(b.startDate || '9999') || a.taskName.localeCompare(b.taskName)),
+      };
+    }).sort((a, b) =>
+      b.shortageQty['30d'] - a.shortageQty['30d']
+      || b.demandQty['30d'] - a.demandQty['30d']
+      || a.itemName.localeCompare(b.itemName, 'vi')
+    );
   },
 
   createDraftPoFromShortage(input: {

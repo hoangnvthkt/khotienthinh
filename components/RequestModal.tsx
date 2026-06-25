@@ -24,6 +24,7 @@ import {
     Transaction,
     TransactionStatus,
     TransactionType,
+    MaterialRequestMaterialGroupSnapshotData,
 } from '../types';
 import ItemSelectionModal from './ItemSelectionModal';
 import ProjectSubmissionDialog from './project/ProjectSubmissionDialog';
@@ -102,10 +103,15 @@ export type MaterialRequestInitialDraft = {
     note?: string;
     neededDate?: string;
     lines: Array<{
-        materialBudgetItemId: string;
+        materialBudgetItemId?: string | null;
+        itemId?: string | null;
         qty: number;
         neededDate?: string;
         note?: string;
+        overBudgetReason?: string;
+        materialGroupKey?: string | null;
+        materialGroupSource?: 'summary_aggregate' | string | null;
+        materialGroupSnapshot?: MaterialRequestMaterialGroupSnapshotData | null;
     }>;
 };
 
@@ -126,6 +132,9 @@ type RequestLineDraft = {
     skuSnapshot?: string;
     specification?: string;
     manualReason?: string;
+    materialGroupKey?: string | null;
+    materialGroupSource?: 'summary_aggregate' | string | null;
+    materialGroupSnapshot?: MaterialRequestMaterialGroupSnapshotData | null;
 };
 
 type RequestDisplayRow = RequestLineDraft | RequestItem;
@@ -212,6 +221,9 @@ const toDraftLine = (item: RequestItem): RequestLineDraft => ({
     skuSnapshot: item.skuSnapshot || '',
     specification: item.specification || '',
     manualReason: item.manualReason || '',
+    materialGroupKey: item.materialGroupKey || null,
+    materialGroupSource: item.materialGroupSource || null,
+    materialGroupSnapshot: item.materialGroupSnapshot || null,
 });
 
 const RequestModal: React.FC<RequestModalProps> = ({
@@ -525,6 +537,36 @@ const RequestModal: React.FC<RequestModalProps> = ({
         };
     };
 
+    const buildDraftLineFromInitialLine = (line: MaterialRequestInitialDraft['lines'][number]): RequestLineDraft | null => {
+        if (line.materialBudgetItemId) {
+            const budget = materialBudgetMap.get(line.materialBudgetItemId);
+            return budget ? buildDraftLineFromBudget(budget, line.qty, line.neededDate, line.note) : null;
+        }
+        if (!line.itemId) return null;
+        const inventoryItem = items.find(item => item.id === line.itemId);
+        if (!inventoryItem) return null;
+        return {
+            lineId: crypto.randomUUID(),
+            itemId: inventoryItem.id,
+            qty: Math.max(0, Number(line.qty || 0)),
+            workBoqItemId: initialDraft?.workBoqItemId || null,
+            workBoqItemName: '',
+            materialBudgetItemId: null,
+            materialBudgetItemName: null,
+            neededDate: line.neededDate || initialDraft?.neededDate || '',
+            note: line.note || '',
+            overBudgetReason: line.overBudgetReason || '',
+            isManualItem: false,
+            itemNameSnapshot: inventoryItem.name,
+            unitSnapshot: inventoryItem.unit,
+            skuSnapshot: inventoryItem.sku,
+            specification: '',
+            materialGroupKey: line.materialGroupKey || line.materialGroupSnapshot?.materialGroupKey || null,
+            materialGroupSource: line.materialGroupSource || null,
+            materialGroupSnapshot: line.materialGroupSnapshot || null,
+        };
+    };
+
     const getWarehouseName = (warehouseId?: string | null) =>
         warehouses.find(w => w.id === warehouseId)?.name || warehouseId || '-';
 
@@ -732,11 +774,8 @@ const RequestModal: React.FC<RequestModalProps> = ({
                 setFulfillmentMode(MaterialRequestFulfillmentMode.RECEIVE_TO_STOCK);
                 setOverrideReason('');
                 const initialLines = (initialDraft?.lines || [])
-                    .map(line => {
-                        const budget = materialBudgetMap.get(line.materialBudgetItemId);
-                        return budget ? buildDraftLineFromBudget(budget, line.qty, line.neededDate, line.note) : null;
-                    })
-                    .filter((line): line is RequestLineDraft => Boolean(line) && line.qty > 0);
+                    .map(buildDraftLineFromInitialLine)
+                    .filter((line): line is RequestLineDraft => Boolean(line));
                 setReqItems(initialLines);
                 setApprovedItems([]);
                 const initialWorkId = initialDraft?.workBoqItemId || '';
@@ -1117,6 +1156,9 @@ const RequestModal: React.FC<RequestModalProps> = ({
                     skuSnapshot: i.skuSnapshot || getLineInventory(i.itemId)?.sku || undefined,
                     specification: i.specification || undefined,
                     manualReason: i.manualReason || undefined,
+                    materialGroupKey: i.materialGroupKey || undefined,
+                    materialGroupSource: i.materialGroupSource || undefined,
+                    materialGroupSnapshot: i.materialGroupSnapshot || undefined,
                 };
             }),
             logs: [
@@ -1133,6 +1175,13 @@ const RequestModal: React.FC<RequestModalProps> = ({
         }
         if (!siteWarehouseId || (!isProjectRequest && !sourceWarehouseId) || reqItems.length === 0) {
             toast.warning('Thiếu thông tin', isProjectRequest ? 'Vui lòng chọn kho nhận và ít nhất 1 vật tư.' : 'Vui lòng chọn đầy đủ kho nhận, kho nguồn và ít nhất 1 vật tư.');
+            return false;
+        }
+
+        const invalidQtyLine = reqItems.find(line => Number(line.qty || 0) <= 0);
+        if (invalidQtyLine) {
+            const item = items.find(i => i.id === invalidQtyLine.itemId);
+            toast.warning('Thiếu khối lượng đề xuất', `${item?.name || invalidQtyLine.itemNameSnapshot || invalidQtyLine.itemId} cần nhập số lượng lớn hơn 0.`);
             return false;
         }
 

@@ -43,5 +43,22 @@
     "typescript": "~5.8.2",
     "vite": "^6.2.0",
     "vitest": "^4.1.8"
-  }
+  },
+  "description": "Hệ thống được thiết kế để giải quyết bài toán quản lý dòng vật tư cho doanh nghiệp xây dựng/sản xuất, nơi có đặc thù: - Nhiều kho bãi (Kho tổng, kho công trình). - Vật tư đa dạng (Nguyên vật liệu, CCDC, Thành phẩm). - Quy trình chặt chẽ: Yêu cầu -> Duyệt -> Xuất.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "lib": "lib"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hoangnvthkt/khotienthinh.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/hoangnvthkt/khotienthinh/issues"
+  },
+  "homepage": "https://github.com/hoangnvthkt/khotienthinh#readme"
 }

@@ -487,13 +487,13 @@ const Home: React.FC = () => {
             <Bell size={13} /> Xem thông báo
           </Link>
           {/* Nút chính - AI Trợ lý */}
-          <Link
+          {/* <Link
             to="/ai"
             className="group flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-gradient-to-r from-rose-500 to-pink-600 text-white text-xs font-black uppercase tracking-wider shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-95 transition-all"
           >
             <Sparkles size={14} className="group-hover:rotate-12 transition-transform" />
             🤖 AI Trợ lý
-          </Link>
+          </Link> */}
         </div>
       </div>
 

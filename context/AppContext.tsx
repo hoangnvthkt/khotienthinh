@@ -26,6 +26,7 @@ import { logApiError } from '../lib/apiError';
 import { projectSubmissionService } from '../lib/projectSubmissionService';
 import { getDefaultMaterialRequestWorkflowStep, getMaterialRequestWorkflowPatch, mapMaterialRequestFromDb, materialRequestService } from '../lib/materialRequestService';
 import { materialRequestBoqLineSnapshotService } from '../lib/materialRequestBoqLineSnapshotService';
+import { materialRequestMaterialGroupSnapshotService } from '../lib/materialRequestMaterialGroupSnapshotService';
 import { materialRequestFulfillmentService } from '../lib/materialRequestFulfillmentService';
 import {
   formatStockDecreaseIssues,
@@ -2341,6 +2342,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         console.warn('Failed to sync material request BOQ line snapshots:', err);
       }
       try {
+        await materialRequestMaterialGroupSnapshotService.upsertForRequest(requestToSave);
+      } catch (err) {
+        console.warn('Failed to sync material request material group snapshots:', err);
+      }
+      try {
         const workflowStep = requestToSave.workflowStep || getDefaultMaterialRequestWorkflowStep(requestToSave.status);
         await materialRequestService.recordEvent({
           requestId: requestToSave.id,
@@ -2667,6 +2673,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         await materialRequestBoqLineSnapshotService.upsertForRequest(updatedReq);
       } catch (err) {
         console.warn('Failed to sync material request BOQ line snapshots:', err);
+      }
+      try {
+        await materialRequestMaterialGroupSnapshotService.upsertForRequest(updatedReq);
+      } catch (err) {
+        console.warn('Failed to sync material request material group snapshots:', err);
       }
     }
 

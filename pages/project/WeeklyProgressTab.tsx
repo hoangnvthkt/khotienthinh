@@ -1,12 +1,12 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
-import { 
-    X, Save, ChevronRight, ChevronDown, Search, Calendar, User, Clock, 
-    AlertTriangle, CheckCircle2, HelpCircle, Loader2, ArrowUpRight, 
+import {
+    X, Save, ChevronRight, ChevronDown, Search, Calendar, User, Clock,
+    AlertTriangle, CheckCircle2, HelpCircle, Loader2, ArrowUpRight,
     ArrowDownRight, Folder, FolderOpen, ClipboardCheck, Sliders, PlayCircle
 } from 'lucide-react';
-import { 
-    ProjectTask, DailyLog, ProjectWeeklyTaskProgress, ContractItem, 
-    ProjectStaff, ProjectTaskCompletionRequest, PurchaseOrder, MaterialBudgetItem, 
+import {
+    ProjectTask, DailyLog, ProjectDailyTaskProgress, ProjectWeeklyTaskProgress, ContractItem,
+    ProjectStaff, ProjectTaskCompletionRequest, PurchaseOrder, MaterialBudgetItem,
     MaterialRequestFulfillmentBatch, ProjectTaskProgressMode, Attachment, TaskContractItem
 } from '../../types';
 import { useApp } from '../../context/AppContext';
@@ -17,9 +17,11 @@ import { taskCompletionRequestService } from '../../lib/projectTaskCompletionSer
 import { projectStaffService } from '../../lib/projectStaffService';
 import { contractItemService } from '../../lib/contractItemService';
 import { taskContractItemService } from '../../lib/taskContractItemService';
-import { 
-    projectWeeklyProgressService, getWeekStart, getISOWeekLabel, 
-    getProjectScopeKey, calculateWeeklyConstructionProgress, calculateProjectValueProgress 
+import {
+    projectWeeklyProgressService, getWeekStart, getISOWeekLabel,
+    getProjectScopeKey, calculateWeeklyConstructionProgress, calculateProjectValueProgress,
+    addDaysToIsoDate, buildProgressSegments, getPreviousDailyQuantityDone,
+    mergeDailyProgressRows, mergeWeeklyProgressRows, rollupDailyRowsToWeeklyRows,
 } from '../../lib/projectWeeklyProgressService';
 import { deriveProjectTaskProgress, clampProgress } from '../../lib/projectScheduleRules';
 
@@ -28,6 +30,9 @@ interface WeeklyProgressTabProps {
     constructionSiteId?: string;
     canManageTab: boolean;
 }
+
+type ProgressEntryMode = 'daily' | 'weekly';
+type ProgressDraft = { progressPercent: string; quantityDone: string; note: string };
 
 // Helper formats
 const formatQuantity = (value?: number | null): string => {
@@ -99,11 +104,16 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
     const [projectStaff, setProjectStaff] = useState<ProjectStaff[]>([]);
     const [completionRequests, setCompletionRequests] = useState<ProjectTaskCompletionRequest[]>([]);
     const [allWeeklyProgress, setAllWeeklyProgress] = useState<ProjectWeeklyTaskProgress[]>([]);
+    const [allDailyProgress, setAllDailyProgress] = useState<ProjectDailyTaskProgress[]>([]);
 
     // Weekly chốt states
+    const [entryMode, setEntryMode] = useState<ProgressEntryMode>('daily');
+    const [selectedProgressDate, setSelectedProgressDate] = useState<string>(() => addDaysToIsoDate(new Date(), 0));
     const [selectedWeekStart, setSelectedWeekStart] = useState<string>(() => getWeekStart(new Date()));
-    const [weeklyDrafts, setWeeklyDrafts] = useState<Record<string, { progressPercent: string; quantityDone: string; note: string }>>({});
+    const [dailyDrafts, setDailyDrafts] = useState<Record<string, ProgressDraft>>({});
+    const [weeklyDrafts, setWeeklyDrafts] = useState<Record<string, ProgressDraft>>({});
     const [confirmedWeeklyOverrunKeys, setConfirmedWeeklyOverrunKeys] = useState<Set<string>>(new Set());
+    const [savingDailyProgress, setSavingDailyProgress] = useState(false);
     const [savingWeeklyProgress, setSavingWeeklyProgress] = useState(false);
 
     // Filter states
@@ -144,7 +154,8 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
                 fulfillmentBatchData,
                 staffData,
                 completionData,
-                weeklyProgressData
+                weeklyProgressData,
+                dailyProgressData
             ] = await Promise.all([
                 taskService.list(effectiveId, constructionSiteId || null),
                 dailyLogService.list(effectiveId, constructionSiteId || null),
@@ -159,7 +170,8 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
                         ? projectStaffService.listBySite(constructionSiteId)
                         : Promise.resolve([]),
                 taskCompletionRequestService.list(effectiveId, constructionSiteId || null),
-                projectWeeklyProgressService.listAll(scopeKey)
+                projectWeeklyProgressService.listAll(scopeKey),
+                projectWeeklyProgressService.listDailyAll(scopeKey)
             ]);
 
             setTasks(deriveProjectTaskProgress(taskData, completionData, logData));
@@ -172,6 +184,7 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
             setProjectStaff(staffData);
             setCompletionRequests(completionData);
             setAllWeeklyProgress(weeklyProgressData);
+            setAllDailyProgress(dailyProgressData);
 
             setTaskContractLinks(linkData.reduce<Record<string, string[]>>((acc, link) => {
                 if (!acc[link.taskId]) acc[link.taskId] = [];
@@ -295,6 +308,29 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
         });
     }, [uniqueWeeks, timeFilterMode, filterWeek, filterMonth]);
 
+    const selectedWeekDays = useMemo(
+        () => Array.from({ length: 7 }, (_, index) => addDaysToIsoDate(selectedWeekStart, index)),
+        [selectedWeekStart],
+    );
+
+    const dayColors = useMemo(() => {
+        const colors: Record<string, string> = {};
+        selectedWeekDays.forEach((day, idx) => {
+            colors[day] = getWeekColor(idx + 3);
+        });
+        return colors;
+    }, [selectedWeekDays]);
+
+    const getLatestDailyProgressForTask = useCallback((taskId: string, progressDate: string, includeDate = true) => {
+        return allDailyProgress
+            .filter(row => row.scopeKey === scopeKey && row.taskId === taskId)
+            .filter(row => includeDate ? row.progressDate <= progressDate : row.progressDate < progressDate)
+            .sort((a, b) =>
+                b.progressDate.localeCompare(a.progressDate) ||
+                (b.updatedAt || '').localeCompare(a.updatedAt || '')
+            )[0];
+    }, [allDailyProgress, scopeKey]);
+
     // Load drafts when weekStart changes
     useEffect(() => {
         if (!scopeKey || weeklyLeafTasks.length === 0) {
@@ -339,19 +375,50 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
         };
     }, [scopeKey, selectedWeekStart, weeklyLeafTasks]);
 
+    // Load daily drafts when selected date changes
+    useEffect(() => {
+        if (!scopeKey || weeklyLeafTasks.length === 0) {
+            setDailyDrafts({});
+            return;
+        }
+
+        const nextDrafts: Record<string, ProgressDraft> = {};
+        weeklyLeafTasks.forEach(task => {
+            const found = getLatestDailyProgressForTask(task.id, selectedProgressDate);
+            if (found) {
+                const exactDate = found.progressDate === selectedProgressDate;
+                nextDrafts[task.id] = {
+                    progressPercent: formatNumberInput(found.progressPercent, 2),
+                    quantityDone: formatNumberInput(found.quantityDone, 2),
+                    note: exactDate ? (found.note || '') : '',
+                };
+            } else {
+                const plannedQuantity = Number(task.provisionalQuantity || 0);
+                const currentProgress = parseWeeklyProgressPercent(task.progress);
+                const defaultQuantityDone = plannedQuantity > 0 ? (plannedQuantity * currentProgress) / 100 : 0;
+                nextDrafts[task.id] = {
+                    progressPercent: formatNumberInput(currentProgress, 2),
+                    quantityDone: formatNumberInput(defaultQuantityDone, 2),
+                    note: '',
+                };
+            }
+        });
+        setDailyDrafts(nextDrafts);
+    }, [getLatestDailyProgressForTask, scopeKey, selectedProgressDate, weeklyLeafTasks]);
+
     // Compute weekly history rollup for all tasks and all weeks
     const weeklyHistoryRollup = useMemo(() => {
         if (tasks.length === 0) return {};
-        
+
         const history: Record<string, Record<string, { progress: number; note?: string; updatedBy?: string; updatedAt?: string }>> = {};
         const leafProgressMap = new Map<string, ProjectWeeklyTaskProgress>();
-        
+
         for (const week of uniqueWeeks) {
             const entriesThisWeek = allWeeklyProgress.filter(p => p.weekStart === week);
             entriesThisWeek.forEach(entry => {
                 leafProgressMap.set(entry.taskId, entry);
             });
-            
+
             const rawTasks = tasks.map(t => {
                 const entry = leafProgressMap.get(t.id);
                 if (entry) {
@@ -367,9 +434,9 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
                     progressMode: 'weekly_report' as const,
                 };
             });
-            
+
             const derived = deriveProjectTaskProgress(rawTasks, completionRequests, dailyLogs);
-            
+
             const taskProgressMap: Record<string, { progress: number; note?: string; updatedBy?: string; updatedAt?: string }> = {};
             derived.forEach(t => {
                 const leafEntry = entriesThisWeek.find(e => e.taskId === t.id);
@@ -384,6 +451,47 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
         }
         return history;
     }, [tasks, uniqueWeeks, allWeeklyProgress, completionRequests, dailyLogs]);
+
+    const dailyHistoryRollup = useMemo(() => {
+        if (tasks.length === 0) return {};
+
+        const history: Record<string, Record<string, { progress: number; note?: string; updatedBy?: string; updatedAt?: string }>> = {};
+
+        for (const day of selectedWeekDays) {
+            const rawTasks = tasks.map(t => {
+                const entry = getLatestDailyProgressForTask(t.id, day);
+                if (entry) {
+                    return {
+                        ...t,
+                        progress: entry.progressPercent,
+                        progressMode: 'weekly_report' as const,
+                    };
+                }
+                return {
+                    ...t,
+                    progress: 0,
+                    progressMode: 'weekly_report' as const,
+                };
+            });
+
+            const derived = deriveProjectTaskProgress(rawTasks, completionRequests, dailyLogs);
+            const exactEntries = allDailyProgress.filter(row => row.scopeKey === scopeKey && row.progressDate === day);
+            const taskProgressMap: Record<string, { progress: number; note?: string; updatedBy?: string; updatedAt?: string }> = {};
+
+            derived.forEach(t => {
+                const exactEntry = exactEntries.find(entry => entry.taskId === t.id);
+                taskProgressMap[t.id] = {
+                    progress: t.progress,
+                    note: exactEntry?.note || undefined,
+                    updatedBy: exactEntry?.updatedBy || undefined,
+                    updatedAt: exactEntry?.updatedAt || undefined,
+                };
+            });
+            history[day] = taskProgressMap;
+        }
+
+        return history;
+    }, [allDailyProgress, completionRequests, dailyLogs, getLatestDailyProgressForTask, scopeKey, selectedWeekDays, tasks]);
 
     const staffMap = useMemo(() => {
         const map = new Map<string, string>();
@@ -420,6 +528,27 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
         );
     }, [childCountByTaskId, completionRequests, contractItems, dailyLogs, taskContractLinkRows, tasks, weeklyConstructionProgress, weeklyDrafts, weeklyLeafTasks.length]);
 
+    const draftDailyConstructionProgress = useMemo(() => {
+        if (weeklyLeafTasks.length === 0) return weeklyConstructionProgress;
+        const draftTasks = tasks.map(task => {
+            if (childCountByTaskId.has(task.id)) return task;
+            const draft = dailyDrafts[task.id];
+            if (!draft) return task;
+            return {
+                ...task,
+                progress: parseWeeklyProgressPercent(draft.progressPercent),
+                progressMode: 'weekly_report' as ProjectTaskProgressMode,
+            };
+        });
+        return calculateWeeklyConstructionProgress(
+            deriveProjectTaskProgress(draftTasks, completionRequests, dailyLogs),
+            taskContractLinkRows,
+            contractItems,
+        );
+    }, [childCountByTaskId, completionRequests, contractItems, dailyDrafts, dailyLogs, taskContractLinkRows, tasks, weeklyConstructionProgress, weeklyLeafTasks.length]);
+
+    const draftConstructionProgress = entryMode === 'daily' ? draftDailyConstructionProgress : draftWeeklyConstructionProgress;
+
     // Check project permissions
     const ensureProjectPermission = useCallback((action: 'edit' | 'admin', label: string): boolean => {
         if (user?.role === 'ADMIN') return true;
@@ -430,6 +559,16 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
 
     const updateWeeklyDraft = useCallback((taskId: string, patch: Partial<{ progressPercent: string; quantityDone: string; note: string }>) => {
         setWeeklyDrafts(prev => ({
+            ...prev,
+            [taskId]: {
+                ...(prev[taskId] || { progressPercent: '0', quantityDone: '0', note: '' }),
+                ...patch,
+            },
+        }));
+    }, []);
+
+    const updateDailyDraft = useCallback((taskId: string, patch: Partial<ProgressDraft>) => {
+        setDailyDrafts(prev => ({
             ...prev,
             [taskId]: {
                 ...(prev[taskId] || { progressPercent: '0', quantityDone: '0', note: '' }),
@@ -472,7 +611,7 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
         if (!ok) return;
         updateWeeklyDraft(task.id, {
             progressPercent: formatNumberInput(progressPercent, 2),
-            quantityDone: Number(task.provisionalQuantity || 0) > 0 
+            quantityDone: Number(task.provisionalQuantity || 0) > 0
                 ? formatNumberInput((Number(task.provisionalQuantity) * progressPercent) / 100, 2)
                 : weeklyDrafts[task.id]?.quantityDone ?? '0',
         });
@@ -482,7 +621,7 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
         const patch: Partial<{ progressPercent: string; quantityDone: string; note: string }> = { quantityDone };
         if (quantityDone !== '') {
             const plannedQuantity = Number(task.provisionalQuantity || 0);
-            const progressPercent = plannedQuantity > 0 
+            const progressPercent = plannedQuantity > 0
                 ? parseWeeklyProgressPercent((parseNonNegativeNumber(quantityDone) / plannedQuantity) * 100)
                 : 100;
             const ok = await confirmWeeklyOverrun(task, progressPercent);
@@ -491,6 +630,178 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
         }
         updateWeeklyDraft(task.id, patch);
     }, [confirmWeeklyOverrun, updateWeeklyDraft]);
+
+    const updateDailyProgressPercent = useCallback(async (task: ProjectTask, progressPercentText: string) => {
+        if (progressPercentText === '') {
+            updateDailyDraft(task.id, { progressPercent: '', quantityDone: '' });
+            return;
+        }
+        const progressPercent = parseWeeklyProgressPercent(progressPercentText);
+        const ok = await confirmWeeklyOverrun(task, progressPercent);
+        if (!ok) return;
+        updateDailyDraft(task.id, {
+            progressPercent: formatNumberInput(progressPercent, 2),
+            quantityDone: Number(task.provisionalQuantity || 0) > 0
+                ? formatNumberInput((Number(task.provisionalQuantity) * progressPercent) / 100, 2)
+                : dailyDrafts[task.id]?.quantityDone ?? '0',
+        });
+    }, [confirmWeeklyOverrun, dailyDrafts, updateDailyDraft]);
+
+    const updateDailyQuantityDone = useCallback(async (task: ProjectTask, quantityDone: string) => {
+        const patch: Partial<ProgressDraft> = { quantityDone };
+        if (quantityDone !== '') {
+            const plannedQuantity = Number(task.provisionalQuantity || 0);
+            const progressPercent = plannedQuantity > 0
+                ? parseWeeklyProgressPercent((parseNonNegativeNumber(quantityDone) / plannedQuantity) * 100)
+                : 100;
+            const ok = await confirmWeeklyOverrun(task, progressPercent);
+            if (!ok) return;
+            patch.progressPercent = formatNumberInput(progressPercent, 2);
+        }
+        updateDailyDraft(task.id, patch);
+    }, [confirmWeeklyOverrun, updateDailyDraft]);
+
+    const handleSaveDailyProgress = useCallback(async () => {
+        if (!ensureProjectPermission('edit', 'chốt tiến độ ngày')) return;
+        if (!scopeKey || weeklyLeafTasks.length === 0) {
+            toast.warning('Chưa có hạng mục', 'Cần có hạng mục WBS lá trước khi chốt tiến độ ngày.');
+            return;
+        }
+
+        const weekStart = getWeekStart(selectedProgressDate);
+        const nowIso = new Date().toISOString();
+        setSavingDailyProgress(true);
+        try {
+            const dailyRows: ProjectDailyTaskProgress[] = weeklyLeafTasks.map(task => {
+                const currentProgress = parseWeeklyProgressPercent(task.progress);
+                const defaultQuantityDone = Number(task.provisionalQuantity || 0) > 0
+                    ? (Number(task.provisionalQuantity) * currentProgress) / 100
+                    : 0;
+                const draft = dailyDrafts[task.id] || { progressPercent: String(currentProgress), quantityDone: String(defaultQuantityDone), note: '' };
+                const progressPercent = parseWeeklyProgressPercent(draft.progressPercent);
+                const quantityDone = draft.quantityDone === ''
+                    ? (Number(task.provisionalQuantity || 0) > 0 ? (Number(task.provisionalQuantity) * progressPercent) / 100 : 0)
+                    : parseNonNegativeNumber(draft.quantityDone);
+                const previousQuantityDone = getPreviousDailyQuantityDone(allDailyProgress, scopeKey, task.id, selectedProgressDate);
+
+                return {
+                    scopeKey,
+                    projectId: projectId || null,
+                    constructionSiteId: constructionSiteId || null,
+                    taskId: task.id,
+                    progressDate: selectedProgressDate,
+                    weekStart,
+                    progressPercent,
+                    quantityDone,
+                    dailyQuantityDone: quantityDone - previousQuantityDone,
+                    note: draft.note?.trim() || null,
+                    attachments: [],
+                    updatedBy: user?.id || null,
+                    updatedAt: nowIso,
+                };
+            });
+
+            await projectWeeklyProgressService.upsertDailyMany(dailyRows);
+            const nextDailyRows = mergeDailyProgressRows(allDailyProgress, dailyRows);
+            setAllDailyProgress(nextDailyRows);
+
+            const weeklyRows = rollupDailyRowsToWeeklyRows({
+                tasks,
+                dailyRows: nextDailyRows,
+                existingWeeklyRows: allWeeklyProgress,
+                scopeKey,
+                projectId: projectId || null,
+                constructionSiteId: constructionSiteId || null,
+                weekStart,
+                updatedBy: user?.id || null,
+                updatedAt: nowIso,
+            });
+
+            await projectWeeklyProgressService.upsertMany(weeklyRows);
+            setAllWeeklyProgress(prev => mergeWeeklyProgressRows(prev, weeklyRows));
+
+            const progressByTask = new Map(weeklyRows.map(row => [row.taskId, row]));
+            const rawNextTasks = tasks.map(task => {
+                const row = progressByTask.get(task.id);
+                if (!row) return task;
+                return {
+                    ...task,
+                    progress: row.progressPercent,
+                    progressMode: 'weekly_report' as ProjectTaskProgressMode,
+                    actualStartDate: row.progressPercent > 0 ? (task.actualStartDate || selectedProgressDate) : task.actualStartDate,
+                    actualEndDate: row.progressPercent >= 100 ? (task.actualEndDate || selectedProgressDate) : task.actualEndDate,
+                };
+            });
+            const nextTasks = deriveProjectTaskProgress(rawNextTasks, completionRequests, dailyLogs, selectedProgressDate);
+            const changedTasks = nextTasks.filter(next => {
+                const prev = tasks.find(task => task.id === next.id);
+                return !!prev && (
+                    prev.progress !== next.progress ||
+                    prev.progressMode !== next.progressMode ||
+                    prev.gateStatus !== next.gateStatus ||
+                    prev.actualStartDate !== next.actualStartDate ||
+                    prev.actualEndDate !== next.actualEndDate
+                );
+            });
+            if (changedTasks.length > 0) await taskService.upsertMany(changedTasks);
+
+            setTasks(nextTasks);
+            const constructionProgress = calculateWeeklyConstructionProgress(nextTasks, taskContractLinkRows, contractItems);
+
+            await projectWeeklyProgressService.upsertSnapshot({
+                scopeKey,
+                projectId: projectId || null,
+                constructionSiteId: constructionSiteId || null,
+                weekStart,
+                constructionProgressPercent: constructionProgress,
+                valueMetric: valueProgressMetric,
+                progressMode: 'daily_report',
+                ganttPercent: constructionProgress,
+            });
+
+            setSelectedWeekStart(weekStart);
+            setFilterWeek(weekStart);
+            setFilterMonth(weekStart.substring(0, 7));
+
+            const [dailyProgressData, weeklyProgressData] = await Promise.all([
+                projectWeeklyProgressService.listDailyAll(scopeKey),
+                projectWeeklyProgressService.listAll(scopeKey),
+            ]);
+            setAllDailyProgress(prev => mergeDailyProgressRows(
+                mergeDailyProgressRows(prev, dailyProgressData),
+                dailyRows,
+            ));
+            setAllWeeklyProgress(prev => mergeWeeklyProgressRows(
+                mergeWeeklyProgressRows(prev, weeklyProgressData),
+                weeklyRows,
+            ));
+
+            toast.success('Đã chốt tiến độ ngày', `${selectedProgressDate} · ${getISOWeekLabel(weekStart)} · Tiến độ thi công ${constructionProgress}%`);
+        } catch (error: any) {
+            console.error(error);
+            toast.error('Không thể chốt tiến độ ngày', error?.message || 'Vui lòng thử lại.');
+        } finally {
+            setSavingDailyProgress(false);
+        }
+    }, [
+        allDailyProgress,
+        allWeeklyProgress,
+        completionRequests,
+        constructionSiteId,
+        contractItems,
+        dailyDrafts,
+        dailyLogs,
+        ensureProjectPermission,
+        projectId,
+        scopeKey,
+        selectedProgressDate,
+        taskContractLinkRows,
+        tasks,
+        toast,
+        user?.id,
+        valueProgressMetric,
+        weeklyLeafTasks,
+    ]);
 
     // Save weekly progress chốt
     const handleSaveWeeklyProgress = useCallback(async () => {
@@ -502,6 +813,7 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
 
         setSavingWeeklyProgress(true);
         try {
+            const nowIso = new Date().toISOString();
             const weeklyRows: ProjectWeeklyTaskProgress[] = weeklyLeafTasks.map(task => {
                 const currentProgress = parseWeeklyProgressPercent(task.progress);
                 const defaultQuantityDone = Number(task.provisionalQuantity || 0) > 0
@@ -522,11 +834,13 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
                     note: draft.note?.trim() || null,
                     attachments: [],
                     updatedBy: user?.id || null,
+                    updatedAt: nowIso,
                 };
             });
 
             await projectWeeklyProgressService.upsertMany(weeklyRows);
-            
+            setAllWeeklyProgress(prev => mergeWeeklyProgressRows(prev, weeklyRows));
+
             // Sync tasks
             const progressByTask = new Map(weeklyRows.map(row => [row.taskId, row]));
             const rawNextTasks = tasks.map(task => {
@@ -549,10 +863,10 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
                 );
             });
             if (changedTasks.length > 0) await taskService.upsertMany(changedTasks);
-            
+
             setTasks(nextTasks);
             const constructionProgress = calculateWeeklyConstructionProgress(nextTasks, taskContractLinkRows, contractItems);
-            
+
             await projectWeeklyProgressService.upsertSnapshot({
                 scopeKey,
                 projectId: projectId || null,
@@ -564,10 +878,14 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
                 ganttPercent: constructionProgress, // or standard gantt percent
             });
 
-            // Reload all weekly progress to refresh visual segments
+            // Reload all weekly progress to refresh visual segments, while keeping
+            // just-saved rows in case the immediate read returns a stale snapshot.
             const weeklyProgressData = await projectWeeklyProgressService.listAll(scopeKey);
-            setAllWeeklyProgress(weeklyProgressData);
-            
+            setAllWeeklyProgress(prev => mergeWeeklyProgressRows(
+                mergeWeeklyProgressRows(prev, weeklyProgressData),
+                weeklyRows,
+            ));
+
             // Auto select the chốt week in the visualization filter so the color shows up immediately
             setFilterWeek(selectedWeekStart);
             setFilterMonth(selectedWeekStart.substring(0, 7));
@@ -611,8 +929,8 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
     const filteredDropdownTasks = useMemo(() => {
         if (!dropdownSearch) return dropdownTasks;
         const query = dropdownSearch.toLowerCase();
-        return dropdownTasks.filter(t => 
-            t.name.toLowerCase().includes(query) || 
+        return dropdownTasks.filter(t =>
+            t.name.toLowerCase().includes(query) ||
             (t.wbsCode && t.wbsCode.toLowerCase().includes(query))
         );
     }, [dropdownTasks, dropdownSearch]);
@@ -624,7 +942,7 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
     const wbsTreeRows = useMemo(() => {
         if (tasks.length === 0) return [];
         const taskMap = new Map(tasks.map(t => [t.id, t]));
-        
+
         let rootIds: string[] = [];
         if (selectedFilterTaskId) {
             if (taskMap.has(selectedFilterTaskId)) {
@@ -637,8 +955,8 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
         }
 
         const buildTree = (
-            ids: string[], 
-            depth: number, 
+            ids: string[],
+            depth: number,
             collapsedSet: Set<string>
         ): Array<ProjectTask & { depth: number; hasChildren: boolean }> => {
             const list: Array<ProjectTask & { depth: number; hasChildren: boolean }> = [];
@@ -666,44 +984,19 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
     // Segmented progress bar renderer component inside the file
     const WeeklySegmentedProgressBar = ({ taskId }: { taskId: string }) => {
         const segments = useMemo(() => {
-            const list: Array<{
-                week: string;
-                weekLabel: string;
-                percent: number;
-                cumulativeProgress: number;
-                addedProgress: number;
-                color: string;
-                note?: string;
-                by?: string;
-                date?: string;
-            }> = [];
-            
-            let lastProgress = 0;
-            
-            // Walk through visibleWeeks
-            for (const week of visibleWeeks) {
+            return buildProgressSegments(visibleWeeks.map(week => {
                 const weekData = weeklyHistoryRollup[week]?.[taskId];
-                const currentProgress = Number(weekData ? weekData.progress : lastProgress) || 0;
-                const addedProgress = currentProgress - lastProgress;
-                
-                if (addedProgress > 0) {
-                    const staffName = weekData?.updatedBy ? (staffMap.get(weekData.updatedBy) || weekData.updatedBy) : '';
-                    list.push({
-                        week,
-                        weekLabel: getISOWeekLabel(week),
-                        percent: addedProgress,
-                        cumulativeProgress: currentProgress,
-                        addedProgress,
-                        color: weekColors[week] || '#94a3b8',
-                        note: weekData?.note || undefined,
-                        by: staffName || undefined,
-                        date: weekData?.updatedAt ? new Date(weekData.updatedAt).toLocaleDateString('vi-VN') : undefined,
-                    });
-                }
-                lastProgress = currentProgress;
-            }
-            
-            return list;
+                const staffName = weekData?.updatedBy ? (staffMap.get(weekData.updatedBy) || weekData.updatedBy) : '';
+                return {
+                    key: week,
+                    label: getISOWeekLabel(week),
+                    progress: Number(weekData?.progress || 0),
+                    color: weekColors[week] || '#94a3b8',
+                    note: weekData?.note || undefined,
+                    updatedBy: staffName || undefined,
+                    updatedAt: weekData?.updatedAt,
+                };
+            }));
         }, [staffMap, taskId, visibleWeeks, weekColors, weeklyHistoryRollup]);
 
         const totalProgress = useMemo(() => {
@@ -714,11 +1007,11 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
         return (
             <div className="relative w-full h-4 bg-slate-100 dark:bg-slate-800 rounded-full overflow-visible flex items-center">
                 {segments.map((seg, idx) => (
-                    <div 
-                        key={seg.week} 
+                    <div
+                        key={seg.key}
                         className="group relative h-full cursor-pointer transition-opacity hover:opacity-85 first:rounded-l-full last:rounded-r-full"
-                        style={{ 
-                            width: `${seg.percent}%`, 
+                        style={{
+                            width: `${seg.percent}%`,
                             backgroundColor: seg.color,
                             // If it's the only one or last one matching total progress, ensure rounded edges behave correctly
                             borderTopLeftRadius: idx === 0 ? '9999px' : '0px',
@@ -730,27 +1023,27 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
                         {/* CSS Tooltip */}
                         <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:flex flex-col bg-slate-900 dark:bg-slate-950 text-white text-[11px] rounded-xl p-3 shadow-xl z-50 pointer-events-none min-w-[200px] leading-relaxed border border-slate-700/50">
                             <div className="font-black text-amber-400 flex items-center gap-1">
-                                <Calendar size={11} /> {seg.weekLabel}
+                                <Calendar size={11} /> {seg.label}
                             </div>
                             <div className="border-b border-slate-700 my-1"></div>
                             <div className="flex justify-between">
-                                <span className="text-slate-400">Tích lũy đến tuần:</span> 
+                                <span className="text-slate-400">Tích lũy đến tuần:</span>
                                 <span className="font-bold">{seg.cumulativeProgress}%</span>
                             </div>
                             <div className="flex justify-between">
-                                <span className="text-slate-400">Thực hiện trong tuần:</span> 
+                                <span className="text-slate-400">Thực hiện trong tuần:</span>
                                 <span className="font-black text-emerald-400">+{seg.addedProgress}%</span>
                             </div>
-                            {seg.date && (
+                            {seg.updatedAt && (
                                 <div className="flex justify-between text-[10px] text-slate-400 mt-1">
                                     <span>Ngày chốt:</span>
-                                    <span>{seg.date}</span>
+                                    <span>{new Date(seg.updatedAt).toLocaleDateString('vi-VN')}</span>
                                 </div>
                             )}
-                            {seg.by && (
+                            {seg.updatedBy && (
                                 <div className="flex justify-between text-[10px] text-slate-400">
                                     <span>Người chốt:</span>
-                                    <span className="font-medium truncate max-w-[100px]">{seg.by}</span>
+                                    <span className="font-medium truncate max-w-[100px]">{seg.updatedBy}</span>
                                 </div>
                             )}
                             {seg.note && (
@@ -761,12 +1054,93 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
                         </div>
                     </div>
                 ))}
-                
+
                 {/* Total label showing cumulative percentage */}
                 {totalProgress > 0 && (
-                    <span 
+                    <span
                         className="absolute left-2 text-[9px] font-black text-white pointer-events-none"
                         style={{ textShadow: '0 1px 2px rgba(0, 0, 0, 0.8)' }}
+                    >
+                        {totalProgress}%
+                    </span>
+                )}
+            </div>
+        );
+    };
+
+    const DailySegmentedProgressBar = ({ taskId }: { taskId: string }) => {
+        const baselineProgress = useMemo(() => {
+            const previous = getLatestDailyProgressForTask(taskId, selectedWeekStart, false);
+            return Number(previous?.progressPercent || 0);
+        }, [getLatestDailyProgressForTask, selectedWeekStart, taskId]);
+
+        const segments = useMemo(() => {
+            return buildProgressSegments(selectedWeekDays.map(day => {
+                const dayData = dailyHistoryRollup[day]?.[taskId];
+                const staffName = dayData?.updatedBy ? (staffMap.get(dayData.updatedBy) || dayData.updatedBy) : '';
+                return {
+                    key: day,
+                    label: new Date(`${day}T00:00:00`).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' }),
+                    progress: Number(dayData?.progress || baselineProgress),
+                    color: dayColors[day] || '#94a3b8',
+                    note: dayData?.note || undefined,
+                    updatedBy: staffName || undefined,
+                    updatedAt: dayData?.updatedAt,
+                };
+            }), baselineProgress);
+        }, [baselineProgress, dailyHistoryRollup, dayColors, selectedWeekDays, staffMap, taskId]);
+
+        const totalProgress = useMemo(() => {
+            if (segments.length === 0) return baselineProgress;
+            return segments[segments.length - 1].cumulativeProgress;
+        }, [baselineProgress, segments]);
+
+        return (
+            <div className="relative w-full h-3 bg-slate-50 dark:bg-slate-900 rounded-full overflow-visible flex items-center">
+                {segments.map((seg, idx) => (
+                    <div
+                        key={seg.key}
+                        className="group relative h-full cursor-pointer transition-opacity hover:opacity-85"
+                        style={{
+                            width: `${seg.percent}%`,
+                            backgroundColor: seg.color,
+                            borderTopLeftRadius: idx === 0 ? '9999px' : '0px',
+                            borderBottomLeftRadius: idx === 0 ? '9999px' : '0px',
+                            borderTopRightRadius: idx === segments.length - 1 && totalProgress >= 100 ? '9999px' : '0px',
+                            borderBottomRightRadius: idx === segments.length - 1 && totalProgress >= 100 ? '9999px' : '0px',
+                        }}
+                    >
+                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:flex flex-col bg-slate-900 dark:bg-slate-950 text-white text-[11px] rounded-xl p-3 shadow-xl z-50 pointer-events-none min-w-[190px] leading-relaxed border border-slate-700/50">
+                            <div className="font-black text-cyan-300 flex items-center gap-1">
+                                <Calendar size={11} /> Ngày {seg.label}
+                            </div>
+                            <div className="border-b border-slate-700 my-1"></div>
+                            <div className="flex justify-between">
+                                <span className="text-slate-400">Lũy kế đến ngày:</span>
+                                <span className="font-bold">{seg.cumulativeProgress}%</span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span className="text-slate-400">Tăng trong ngày:</span>
+                                <span className="font-black text-emerald-400">+{seg.addedProgress}%</span>
+                            </div>
+                            {seg.updatedBy && (
+                                <div className="flex justify-between text-[10px] text-slate-400">
+                                    <span>Người chốt:</span>
+                                    <span className="font-medium truncate max-w-[100px]">{seg.updatedBy}</span>
+                                </div>
+                            )}
+                            {seg.note && (
+                                <div className="text-[10px] text-cyan-100 mt-1 italic border-t border-slate-800 pt-1 leading-normal max-w-[170px] break-words">
+                                    Ghi chú: {seg.note}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                ))}
+
+                {totalProgress > 0 && (
+                    <span
+                        className="absolute left-2 text-[8px] font-black text-slate-700 dark:text-white pointer-events-none"
                     >
                         {totalProgress}%
                     </span>
@@ -801,20 +1175,20 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
                                 <div className="flex items-center gap-2 truncate">
                                     <Sliders size={15} className="text-orange-500 shrink-0" />
                                     <span className="truncate">
-                                        {activeFilterTask 
-                                            ? `[${activeFilterTask.wbsCode}] ${activeFilterTask.name}` 
+                                        {activeFilterTask
+                                            ? `[${activeFilterTask.wbsCode}] ${activeFilterTask.name}`
                                             : '— Hiển thị toàn bộ hạng mục —'}
                                     </span>
                                 </div>
                                 <div className="flex items-center gap-1.5 shrink-0 text-slate-400">
                                     {selectedFilterTaskId && (
-                                        <X 
-                                            size={14} 
-                                            className="hover:text-slate-600 cursor-pointer" 
+                                        <X
+                                            size={14}
+                                            className="hover:text-slate-600 cursor-pointer"
                                             onClick={(e) => {
                                                 e.stopPropagation();
                                                 setSelectedFilterTaskId('');
-                                            }} 
+                                            }}
                                         />
                                     )}
                                     <ChevronDown size={14} />
@@ -854,9 +1228,8 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
                                                     setDropdownOpen(false);
                                                     setDropdownSearch('');
                                                 }}
-                                                className={`w-full text-left px-3 py-2 text-xs rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-start gap-2 ${
-                                                    selectedFilterTaskId === t.id ? 'bg-orange-50 dark:bg-orange-950/20 text-orange-600 font-black' : 'text-slate-700 dark:text-slate-300 font-bold'
-                                                }`}
+                                                className={`w-full text-left px-3 py-2 text-xs rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-start gap-2 ${selectedFilterTaskId === t.id ? 'bg-orange-50 dark:bg-orange-950/20 text-orange-600 font-black' : 'text-slate-700 dark:text-slate-300 font-bold'
+                                                    }`}
                                             >
                                                 <span className="font-mono text-indigo-500 shrink-0 w-[50px]">{t.wbsCode}</span>
                                                 <span className="truncate">{t.name}</span>
@@ -868,28 +1241,67 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
                         </div>
                     </div>
 
-                    {/* Right: Week Selection & Save button */}
+                    {/* Right: Entry mode, date/week selection & Save button */}
                     <div className="flex items-end justify-end gap-3 flex-wrap">
                         <div className="space-y-1">
-                            <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Chọn tuần chốt tiến độ</label>
-                            <input
-                                type="date"
-                                value={selectedWeekStart}
-                                onChange={e => {
-                                    if (e.target.value) setSelectedWeekStart(getWeekStart(e.target.value));
-                                }}
-                                className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-black bg-transparent focus:ring-2 focus:ring-orange-500 outline-none text-slate-700 dark:text-slate-200"
-                                title="Tuần chốt"
-                            />
+                            <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Kiểu chốt</label>
+                            <div className="flex rounded-xl bg-slate-100 p-1 dark:bg-slate-900">
+                                {[
+                                    { key: 'daily', label: 'Chốt ngày' },
+                                    { key: 'weekly', label: 'Tổng hợp tuần' },
+                                ].map(option => (
+                                    <button
+                                        key={option.key}
+                                        type="button"
+                                        onClick={() => setEntryMode(option.key as ProgressEntryMode)}
+                                        className={`rounded-lg px-3 py-1.5 text-[10px] font-black transition-colors ${entryMode === option.key
+                                                ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-white'
+                                                : 'text-slate-500 hover:text-slate-700'
+                                            }`}
+                                    >
+                                        {option.label}
+                                    </button>
+                                ))}
+                            </div>
                         </div>
-                        
+                        <div className="space-y-1">
+                            <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
+                                {entryMode === 'daily' ? 'Chọn ngày chốt tiến độ' : 'Chọn tuần chốt tiến độ'}
+                            </label>
+                            {entryMode === 'daily' ? (
+                                <input
+                                    type="date"
+                                    value={selectedProgressDate}
+                                    onChange={e => {
+                                        if (!e.target.value) return;
+                                        setSelectedProgressDate(e.target.value);
+                                        setSelectedWeekStart(getWeekStart(e.target.value));
+                                    }}
+                                    className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-black bg-transparent focus:ring-2 focus:ring-orange-500 outline-none text-slate-700 dark:text-slate-200"
+                                    title="Ngày chốt"
+                                />
+                            ) : (
+                                <input
+                                    type="date"
+                                    value={selectedWeekStart}
+                                    onChange={e => {
+                                        if (e.target.value) setSelectedWeekStart(getWeekStart(e.target.value));
+                                    }}
+                                    className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-black bg-transparent focus:ring-2 focus:ring-orange-500 outline-none text-slate-700 dark:text-slate-200"
+                                    title="Tuần chốt"
+                                />
+                            )}
+                        </div>
+
                         <button
-                            onClick={handleSaveWeeklyProgress}
-                            disabled={savingWeeklyProgress || weeklyLeafTasks.length === 0}
+                            onClick={entryMode === 'daily' ? handleSaveDailyProgress : handleSaveWeeklyProgress}
+                            disabled={savingDailyProgress || savingWeeklyProgress || weeklyLeafTasks.length === 0}
                             className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-xs font-black text-white bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 shadow-md shadow-orange-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                         >
-                            {savingWeeklyProgress ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
-                            Chốt tiến độ {getISOWeekLabel(selectedWeekStart)}
+                            {savingDailyProgress || savingWeeklyProgress ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+                            {entryMode === 'daily'
+                                ? `Chốt ngày ${new Date(`${selectedProgressDate}T00:00:00`).toLocaleDateString('vi-VN')}`
+                                : `Chốt tuần ${getISOWeekLabel(selectedWeekStart)}`}
                         </button>
                     </div>
                 </div>
@@ -909,11 +1321,10 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
                                 <button
                                     key={btn.key}
                                     onClick={() => setTimeFilterMode(btn.key as any)}
-                                    className={`px-3 py-1.5 rounded-lg text-[10px] font-black transition-all ${
-                                        timeFilterMode === btn.key 
-                                            ? 'bg-white dark:bg-slate-900 text-slate-800 dark:text-white shadow-sm' 
+                                    className={`px-3 py-1.5 rounded-lg text-[10px] font-black transition-all ${timeFilterMode === btn.key
+                                            ? 'bg-white dark:bg-slate-900 text-slate-800 dark:text-white shadow-sm'
                                             : 'text-slate-500 hover:text-slate-800 dark:text-slate-400'
-                                    }`}
+                                        }`}
                                 >
                                     {btn.label}
                                 </button>
@@ -975,7 +1386,7 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
             {/* Quick KPI stats cards */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 {[
-                    { label: 'Thi công tuần này', value: `${draftWeeklyConstructionProgress}%`, sub: `Chốt gốc: ${weeklyConstructionProgress}%`, tone: 'text-orange-600 border-orange-100 bg-orange-50/20 dark:bg-orange-950/10' },
+                    { label: entryMode === 'daily' ? 'Thi công ngày đang chốt' : 'Thi công tuần này', value: `${draftConstructionProgress}%`, sub: `Chốt gốc: ${weeklyConstructionProgress}%`, tone: 'text-orange-600 border-orange-100 bg-orange-50/20 dark:bg-orange-950/10' },
                     { label: 'Tiến độ theo giá trị', value: `${valueProgressMetric.valueProgressPercent}%`, sub: 'Tổng giá trị WBS tính lũy kế', tone: 'text-emerald-600 border-emerald-100 bg-emerald-50/20 dark:bg-emerald-950/10' },
                     { label: 'Đơn hàng PO hợp lệ', value: formatMoneyShort(valueProgressMetric.purchasedValue), sub: 'Ghi nhận từ PO đã duyệt', tone: 'text-blue-600 border-blue-100 bg-blue-50/20 dark:bg-blue-950/10' },
                     { label: 'Vật tư đã cấp', value: formatMoneyShort(valueProgressMetric.issuedValue), sub: 'Ghi nhận thực cấp từ kho', tone: 'text-violet-600 border-violet-100 bg-violet-50/20 dark:bg-violet-950/10' },
@@ -996,36 +1407,37 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
                             <tr className="text-[10px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100 dark:border-slate-700">
                                 <th className="px-4 py-3 text-left w-[100px]">WBS Code</th>
                                 <th className="px-4 py-3 text-left w-[300px]">Hạng mục thi công (WBS)</th>
-                                <th className="px-4 py-3 text-left">Biểu đồ Snapshot tiến độ theo tuần (Gốc 100%)</th>
+                                <th className="px-4 py-3 text-left">Biểu đồ tiến độ tuần/ngày (Gốc 100%)</th>
                                 <th className="px-4 py-3 text-right w-[110px]">% hoàn thành</th>
                                 <th className="px-4 py-3 text-right w-[130px]">Khối lượng hoàn thành</th>
-                                <th className="px-4 py-3 text-left w-[220px]">Ghi chú chốt tuần</th>
+                                <th className="px-4 py-3 text-left w-[220px]">Ghi chú chốt</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800/40">
                             {wbsTreeRows.map(task => {
                                 const isParent = task.hasChildren;
                                 const isCollapsed = weeklyCollapsedParents.has(task.id);
-                                const draft = weeklyDrafts[task.id] || { progressPercent: String(task.progress || 0), quantityDone: '0', note: '' };
+                                const weeklyDraft = weeklyDrafts[task.id] || { progressPercent: String(task.progress || 0), quantityDone: '0', note: '' };
+                                const dailyDraft = dailyDrafts[task.id] || weeklyDraft;
+                                const activeDraft = entryMode === 'daily' ? dailyDraft : weeklyDraft;
                                 const linkedIds = taskContractLinks[task.id] || [];
-                                const draftProgress = parseWeeklyProgressPercent(draft.progressPercent);
+                                const draftProgress = parseWeeklyProgressPercent(activeDraft.progressPercent);
                                 const isOverProgress = draftProgress > 100;
-                                
+
                                 return (
-                                    <tr 
-                                        key={task.id} 
-                                        className={`hover:bg-slate-50/50 dark:hover:bg-slate-700/20 transition-colors ${
-                                            isParent ? 'bg-slate-50/20 dark:bg-slate-800/10 font-bold' : ''
-                                        } ${isOverProgress ? 'bg-red-50/30 dark:bg-red-900/10' : ''}`}
+                                    <tr
+                                        key={task.id}
+                                        className={`hover:bg-slate-50/50 dark:hover:bg-slate-700/20 transition-colors ${isParent ? 'bg-slate-50/20 dark:bg-slate-800/10 font-bold' : ''
+                                            } ${isOverProgress ? 'bg-red-50/30 dark:bg-red-900/10' : ''}`}
                                     >
                                         {/* WBS Code */}
                                         <td className="px-4 py-3 font-mono font-black text-indigo-500 text-[11px]">
                                             {task.wbsCode || '–'}
                                         </td>
-                                        
+
                                         {/* Name with indentation and collapse/expand */}
                                         <td className="px-4 py-3">
-                                            <div 
+                                            <div
                                                 className="flex items-center gap-1.5"
                                                 style={{ paddingLeft: `${task.depth * 18}px` }}
                                             >
@@ -1052,13 +1464,13 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
                                                 )}
 
                                                 <span className="text-slate-400 shrink-0">
-                                                    {isParent 
+                                                    {isParent
                                                         ? (isCollapsed ? <Folder size={14} className="text-amber-500" /> : <FolderOpen size={14} className="text-amber-500" />)
                                                         : <PlayCircle size={13} className="text-indigo-400" />
                                                     }
                                                 </span>
 
-                                                <span 
+                                                <span
                                                     className={`truncate block ${isParent ? 'text-slate-800 dark:text-slate-100 font-bold' : 'text-slate-600 dark:text-slate-300'}`}
                                                     title={task.name}
                                                 >
@@ -1067,9 +1479,24 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
                                             </div>
                                         </td>
 
-                                        {/* Weekly progress snapshot bar */}
+                                        {/* Weekly + daily progress snapshot bars */}
                                         <td className="px-4 py-3 min-w-[200px]">
-                                            <WeeklySegmentedProgressBar taskId={task.id} />
+                                            <div className="space-y-2">
+                                                <div>
+                                                    <div className="mb-1 flex items-center justify-between text-[9px] font-black uppercase text-slate-400">
+                                                        <span>Tuần</span>
+                                                        <span>{getISOWeekLabel(selectedWeekStart)}</span>
+                                                    </div>
+                                                    <WeeklySegmentedProgressBar taskId={task.id} />
+                                                </div>
+                                                <div>
+                                                    <div className="mb-1 flex items-center justify-between text-[9px] font-black uppercase text-slate-400">
+                                                        <span>Ngày trong tuần</span>
+                                                        <span>{selectedWeekStart} → {addDaysToIsoDate(selectedWeekStart, 6)}</span>
+                                                    </div>
+                                                    <DailySegmentedProgressBar taskId={task.id} />
+                                                </div>
+                                            </div>
                                         </td>
 
                                         {/* Percent Input/Text */}
@@ -1082,13 +1509,18 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
                                                 <div className="relative">
                                                     <input
                                                         type="text"
-                                                        value={draft.progressPercent}
-                                                        onChange={e => { void updateWeeklyProgressPercent(task, e.target.value); }}
-                                                        className={`w-full pl-2 pr-6 py-1 rounded-xl border text-right font-black bg-transparent text-[11px] focus:ring-2 outline-none ${
-                                                            isOverProgress 
-                                                                ? 'border-red-200 text-red-600 bg-red-50/60 focus:ring-red-400' 
+                                                        value={activeDraft.progressPercent}
+                                                        onChange={e => {
+                                                            if (entryMode === 'daily') {
+                                                                void updateDailyProgressPercent(task, e.target.value);
+                                                            } else {
+                                                                void updateWeeklyProgressPercent(task, e.target.value);
+                                                            }
+                                                        }}
+                                                        className={`w-full pl-2 pr-6 py-1 rounded-xl border text-right font-black bg-transparent text-[11px] focus:ring-2 outline-none ${isOverProgress
+                                                                ? 'border-red-200 text-red-600 bg-red-50/60 focus:ring-red-400'
                                                                 : 'border-slate-200 dark:border-slate-700 focus:ring-orange-500 text-slate-800 dark:text-slate-200'
-                                                        }`}
+                                                            }`}
                                                     />
                                                     <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] font-bold text-slate-400 pointer-events-none">%</span>
                                                 </div>
@@ -1105,13 +1537,18 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
                                                 <div className="flex items-center gap-1.5 justify-end">
                                                     <input
                                                         type="text"
-                                                        value={draft.quantityDone}
-                                                        onChange={e => { void updateWeeklyQuantityDone(task, e.target.value); }}
-                                                        className={`w-full max-w-[85px] px-2 py-1 rounded-xl border text-right font-black bg-transparent text-[11px] focus:ring-2 outline-none ${
-                                                            isOverProgress 
-                                                                ? 'border-red-200 text-red-600 bg-red-50/60 focus:ring-red-400' 
+                                                        value={activeDraft.quantityDone}
+                                                        onChange={e => {
+                                                            if (entryMode === 'daily') {
+                                                                void updateDailyQuantityDone(task, e.target.value);
+                                                            } else {
+                                                                void updateWeeklyQuantityDone(task, e.target.value);
+                                                            }
+                                                        }}
+                                                        className={`w-full max-w-[85px] px-2 py-1 rounded-xl border text-right font-black bg-transparent text-[11px] focus:ring-2 outline-none ${isOverProgress
+                                                                ? 'border-red-200 text-red-600 bg-red-50/60 focus:ring-red-400'
                                                                 : 'border-slate-200 dark:border-slate-700 focus:ring-orange-500 text-slate-800 dark:text-slate-200'
-                                                        }`}
+                                                            }`}
                                                     />
                                                     <span className="text-[10px] font-bold text-slate-400 shrink-0 truncate max-w-[40px]" title={getTaskUnit(task, linkedIds, contractItems)}>
                                                         {getTaskUnit(task, linkedIds, contractItems)}
@@ -1129,9 +1566,15 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
                                             ) : (
                                                 <input
                                                     type="text"
-                                                    value={draft.note}
-                                                    onChange={e => updateWeeklyDraft(task.id, { note: e.target.value })}
-                                                    placeholder="Ghi chú chốt tuần..."
+                                                    value={activeDraft.note}
+                                                    onChange={e => {
+                                                        if (entryMode === 'daily') {
+                                                            updateDailyDraft(task.id, { note: e.target.value });
+                                                        } else {
+                                                            updateWeeklyDraft(task.id, { note: e.target.value });
+                                                        }
+                                                    }}
+                                                    placeholder={entryMode === 'daily' ? 'Ghi chú chốt ngày...' : 'Ghi chú chốt tuần...'}
                                                     className="w-full px-2 py-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-transparent text-[11px] outline-none focus:ring-2 focus:ring-orange-500 text-slate-800 dark:text-slate-200"
                                                 />
                                             )}
@@ -1152,9 +1595,9 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
                 <div className="flex flex-wrap gap-x-6 gap-y-3">
                     {visibleWeeks.map(week => (
                         <div key={week} className="flex items-center gap-2 text-xs font-bold text-slate-600 dark:text-slate-300">
-                            <span 
-                                className="w-3.5 h-3.5 rounded-full inline-block shrink-0 shadow-sm border border-white/50" 
-                                style={{ backgroundColor: weekColors[week] || '#94a3b8' }} 
+                            <span
+                                className="w-3.5 h-3.5 rounded-full inline-block shrink-0 shadow-sm border border-white/50"
+                                style={{ backgroundColor: weekColors[week] || '#94a3b8' }}
                             />
                             <span>{getISOWeekLabel(week)} ({week})</span>
                         </div>
@@ -1164,6 +1607,24 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
                     )}
                 </div>
             </div>
+
+            {/* Color Legend for Days
+            <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 border border-slate-100 dark:border-slate-700/60 shadow-sm space-y-3">
+                <div className="text-xs font-black uppercase text-slate-400 tracking-wider flex items-center gap-1.5">
+                    <Calendar size={13} className="text-cyan-500" /> Chú giải màu sắc chốt tiến độ ngày trong tuần
+                </div>
+                <div className="flex flex-wrap gap-x-6 gap-y-3">
+                    {selectedWeekDays.map(day => (
+                        <div key={day} className="flex items-center gap-2 text-xs font-bold text-slate-600 dark:text-slate-300">
+                            <span
+                                className="w-3.5 h-3.5 rounded-full inline-block shrink-0 shadow-sm border border-white/50"
+                                style={{ backgroundColor: dayColors[day] || '#94a3b8' }}
+                            />
+                            <span>{new Date(`${day}T00:00:00`).toLocaleDateString('vi-VN', { weekday: 'short', day: '2-digit', month: '2-digit' })}</span>
+                        </div>
+                    ))}
+                </div>
+            </div> */}
         </div>
     );
 }
