@@ -1666,6 +1666,56 @@ export interface MaterialPlanningForecast {
   summary: MaterialPlanningSummary;
 }
 
+export interface MaterialAggregateSummaryDetail {
+  id: string;
+  materialBudgetItemId: string;
+  workBoqItemId?: string | null;
+  taskId?: string | null;
+  wbsCode?: string | null;
+  taskName: string;
+  startDate?: string | null;
+  endDate?: string | null;
+  needDate?: string | null;
+  itemName: string;
+  materialCode?: string | null;
+  category: string;
+  unit: string;
+  budgetQty: number;
+  budgetTotal: number;
+  cumulativeRequested: number;
+  remainingDemandQty: number;
+  demandQty: Record<MaterialForecastWindow, number>;
+  warnings: string[];
+}
+
+export interface MaterialAggregateSummaryRow {
+  key: string;
+  inventoryItemId?: string | null;
+  sku?: string | null;
+  itemName: string;
+  category: string;
+  unit: string;
+  unitPrice: number;
+  totalBoqQty: number;
+  totalBoqValue: number;
+  cumulativeRequested: number;
+  cumulativeImported: number;
+  cumulativeExported: number;
+  stockBalance: number;
+  remainingBoqQty: number;
+  requestedPercent: number;
+  siteAvailableQty: number;
+  incomingQty: Record<MaterialForecastWindow, number>;
+  demandQty: Record<MaterialForecastWindow, number>;
+  shortageQty: Record<MaterialForecastWindow, number>;
+  startDate?: string | null;
+  endDate?: string | null;
+  needDate?: string | null;
+  sourceMaterialBudgetItemIds: string[];
+  warnings: string[];
+  details: MaterialAggregateSummaryDetail[];
+}
+
 export interface MaterialPlanningDraftPo {
   poNumber: string;
   targetWarehouseId: string;
@@ -2481,6 +2531,34 @@ export interface RequestItem {
   skuSnapshot?: string;
   specification?: string;
   manualReason?: string;
+  materialGroupKey?: string | null;
+  materialGroupSource?: 'summary_aggregate' | string | null;
+  materialGroupSnapshot?: MaterialRequestMaterialGroupSnapshotData | null;
+}
+
+export interface MaterialRequestMaterialGroupSnapshotData {
+  materialGroupKey: string;
+  inventoryItemId?: string | null;
+  materialCodeSnapshot?: string | null;
+  itemNameSnapshot?: string | null;
+  unitSnapshot?: string | null;
+  totalBoqQtySnapshot: number;
+  requestedBeforeQtySnapshot: number;
+  remainingBoqQtySnapshot: number;
+  sourceMaterialBudgetItemIds: string[];
+}
+
+export interface MaterialRequestMaterialGroupSnapshot extends MaterialRequestMaterialGroupSnapshotData {
+  id?: string;
+  requestId: string;
+  requestLineId: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  requestQty: number;
+  requestedAfterQtySnapshot: number;
+  requestStatusSnapshot?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface MaterialRequestBoqLineSnapshot {

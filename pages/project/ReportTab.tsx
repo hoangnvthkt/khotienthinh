@@ -1025,18 +1025,18 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
 
                         <div className="overflow-x-auto">
                             <table className="w-full min-w-[1120px] text-xs">
-                                <thead className="bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
+                                <thead className="bg-gradient-to-r from-indigo-500 to-purple-500 text-[11px] font-bold uppercase tracking-wider text-white border-b border-indigo-400">
                                     <tr>
-                                        <th className="px-4 py-3 text-left font-black">Hạng mục</th>
-                                        <th className="px-3 py-3 text-center font-black">KH bắt đầu</th>
-                                        <th className="px-3 py-3 text-center font-black">KH kết thúc</th>
-                                        <th className="px-3 py-3 text-right font-black">% KH</th>
-                                        <th className="px-3 py-3 text-center font-black">TT bắt đầu</th>
-                                        <th className="px-3 py-3 text-center font-black">TT/Dự kiến</th>
-                                        <th className="px-3 py-3 text-right font-black">% TT</th>
-                                        <th className="px-3 py-3 text-right font-black">Lệch ngày</th>
-                                        <th className="px-3 py-3 text-center font-black">Trạng thái</th>
-                                        <th className="px-4 py-3 text-left font-black">Ghi chú</th>
+                                        <th className="px-4 py-3 text-left font-bold whitespace-nowrap">Hạng mục</th>
+                                        <th className="px-3 py-3 text-center font-bold whitespace-nowrap">KH bắt đầu</th>
+                                        <th className="px-3 py-3 text-center font-bold whitespace-nowrap">KH kết thúc</th>
+                                        <th className="px-3 py-3 text-right font-bold whitespace-nowrap">% KH</th>
+                                        <th className="px-3 py-3 text-center font-bold whitespace-nowrap">TT bắt đầu</th>
+                                        <th className="px-3 py-3 text-center font-bold whitespace-nowrap">TT/Dự kiến</th>
+                                        <th className="px-3 py-3 text-right font-bold whitespace-nowrap">% TT</th>
+                                        <th className="px-3 py-3 text-right font-bold whitespace-nowrap">Lệch ngày</th>
+                                        <th className="px-3 py-3 text-center font-bold whitespace-nowrap">Trạng thái</th>
+                                        <th className="px-4 py-3 text-left font-bold whitespace-nowrap">Ghi chú</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100 dark:divide-slate-700/50">
