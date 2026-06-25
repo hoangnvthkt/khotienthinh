@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import {
   Ban,
   BarChart3,
@@ -19,6 +20,7 @@ import {
   Truck,
   X,
 } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
@@ -29,6 +31,7 @@ import { projectMasterService } from '../../lib/projectMasterService';
 import { poService } from '../../lib/projectService';
 import { materialRequestFulfillmentService } from '../../lib/materialRequestFulfillmentService';
 import { getPoLineStockUnitPrice } from '../../lib/materialUnitConversion';
+import { buildPoReceiveUrl } from '../../lib/poQr';
 import SupplierCombobox from '../../components/SupplierCombobox';
 import {
   canUserMutatePurchaseOrder,
@@ -81,6 +84,15 @@ const formatQty = (value: number) =>
 
 const formatMoney = (value: number) =>
   Number(value || 0).toLocaleString('vi-VN', { maximumFractionDigits: 0 }) + ' đ';
+
+const normalizeVatRate = (value?: string | number | null) => {
+  const parsed = Number(value || 0);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 0;
+  return Math.min(100, parsed);
+};
+
+const calculateVatAmount = (amount: number, vatRate?: string | number | null) =>
+  Math.round(Number(amount || 0) * normalizeVatRate(vatRate) / 100);
 
 const formatDate = (value?: string | null) => {
   if (!value) return '—';
@@ -141,7 +153,11 @@ const buildDemandSearch = (row: CompanyProcurementDemandLine, projectName: strin
 const sumPoReceivedStockQty = (po: PurchaseOrder) =>
   (po.items || []).reduce((sum, item) => sum + Number(item.receivedQty || 0), 0);
 
-const buildDeliveryPrintHtml = (detail: CompanyProcurementDeliveryGroupDetail, getWarehouseName: (id?: string | null) => string) => {
+const buildDeliveryPrintHtml = (
+  detail: CompanyProcurementDeliveryGroupDetail,
+  getWarehouseName: (id?: string | null) => string,
+  qrSvg = '',
+) => {
   const po = detail.purchaseOrder;
   const poItemByLineId = new Map((po?.items || []).map(item => [item.lineId || item.itemId, item]));
   const lines = detail.batches.flatMap(batch => batch.lines.map(line => {
@@ -154,6 +170,10 @@ const buildDeliveryPrintHtml = (detail: CompanyProcurementDeliveryGroupDetail, g
     };
   }));
   const total = lines.reduce((sum, line) => sum + line.amount, 0);
+  const vatRate = normalizeVatRate(po?.vatRate);
+  const vatAmount = calculateVatAmount(total, vatRate);
+  const paymentTotal = total + vatAmount;
+  const qrHtml = qrSvg ? `<div class="qr">${qrSvg}<div>QR nhận hàng</div></div>` : '';
   return `<!doctype html>
 <html>
 <head>
@@ -165,6 +185,8 @@ const buildDeliveryPrintHtml = (detail: CompanyProcurementDeliveryGroupDetail, g
     .top { display: flex; justify-content: space-between; gap: 24px; border-bottom: 2px solid #172033; padding-bottom: 14px; }
     h1 { margin: 0; font-size: 22px; letter-spacing: 0; }
     .muted { color: #64748b; font-size: 12px; }
+    .qr { text-align: center; font-size: 10px; color: #475569; font-weight: 700; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+    .qr svg { width: 86px; height: 86px; }
     .meta { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 18px 0; }
     .box { border: 1px solid #cbd5e1; padding: 10px; min-height: 58px; }
     .label { font-size: 10px; text-transform: uppercase; color: #64748b; font-weight: 700; }
@@ -189,6 +211,7 @@ const buildDeliveryPrintHtml = (detail: CompanyProcurementDeliveryGroupDetail, g
       <div class="label">PO</div>
       <div class="value">${po?.poNumber || detail.group.purchaseOrderId}</div>
     </div>
+    ${qrHtml}
   </div>
   <div class="meta">
     <div class="box"><div class="label">Nhà cung cấp</div><div class="value">${po?.vendorName || po?.vendorId || '—'}</div></div>
@@ -220,6 +243,8 @@ const buildDeliveryPrintHtml = (detail: CompanyProcurementDeliveryGroupDetail, g
     </tbody>
     <tfoot>
       <tr><td colspan="5" class="num">Tổng cộng</td><td class="num">${formatMoney(total)}</td></tr>
+      <tr><td colspan="5" class="num">VAT (${vatRate.toLocaleString('vi-VN')}%)</td><td class="num">${formatMoney(vatAmount)}</td></tr>
+      <tr><td colspan="5" class="num">Tổng tiền thanh toán</td><td class="num">${formatMoney(paymentTotal)}</td></tr>
     </tfoot>
   </table>
   <div class="signatures">
@@ -651,6 +676,18 @@ const CompanyProcurement: React.FC = () => {
   const printDeliveryGroup = async (detail: CompanyProcurementDeliveryGroupDetail) => {
     try {
       const fullDetail = detail.batches.length > 0 ? detail : await companyProcurementService.getDeliveryGroupDetail(detail.group.id);
+      const printablePo = fullDetail.purchaseOrder
+        ? await poService.ensureQrToken(fullDetail.purchaseOrder)
+        : null;
+      const printableDetail = printablePo
+        ? { ...fullDetail, purchaseOrder: printablePo }
+        : fullDetail;
+      if (printablePo && !fullDetail.purchaseOrder?.qrToken) {
+        setCompanyPos(prev => prev.map(po => po.id === printablePo.id ? printablePo : po));
+      }
+      const qrSvg = printablePo?.qrToken
+        ? renderToStaticMarkup(<QRCodeSVG value={buildPoReceiveUrl(printablePo.qrToken)} size={90} level="H" includeMargin />)
+        : '';
       const iframe = document.createElement('iframe');
       iframe.style.position = 'fixed';
       iframe.style.right = '0';
@@ -662,7 +699,7 @@ const CompanyProcurement: React.FC = () => {
       const doc = iframe.contentWindow?.document;
       if (!doc) throw new Error('Không tạo được khung in.');
       doc.open();
-      doc.write(buildDeliveryPrintHtml(fullDetail, getWarehouseName));
+      doc.write(buildDeliveryPrintHtml(printableDetail, getWarehouseName, qrSvg));
       doc.close();
       iframe.onload = () => {
         iframe.contentWindow?.focus();

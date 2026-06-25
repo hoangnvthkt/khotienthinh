@@ -1109,6 +1109,20 @@ export const poDeliveryScheduleService = {
         if (!data) throw new Error('Không xoá được đợt giao. Vui lòng kiểm tra quyền hoặc trạng thái đợt giao.');
         return fromDb(data) as PurchaseOrderDeliveryRemovalResult;
     },
+
+    async removePlannedBatch(id: string): Promise<void> {
+        const { data, error } = await supabase
+            .from('purchase_order_delivery_batches')
+            .delete()
+            .eq('id', id)
+            .eq('status', 'planned')
+            .select('id')
+            .maybeSingle();
+        if (error) throw error;
+        if (!data) {
+            throw new Error('Chỉ xoá được đợt giao còn ở trạng thái kế hoạch và chưa tạo WMS/QR.');
+        }
+    },
 };
 
 // ==================== PAYMENT SCHEDULES ====================

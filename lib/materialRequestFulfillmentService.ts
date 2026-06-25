@@ -27,7 +27,6 @@ import {
   hasPurchaseUnitConversion,
   poLinePurchaseToStockQty,
   poLineStockToPurchaseQty,
-  stockUnitPriceToPurchaseUnitPrice,
 } from './materialUnitConversion';
 
 const BATCH_TABLE = 'material_request_fulfillment_batches';
@@ -1573,7 +1572,7 @@ export const materialRequestFulfillmentService = {
       const linePayloads = requestLinks.map(item => {
         const inventory = inventoryById.get(item.poItem.itemId);
         const stockUnit = getPoLineStockUnit(item.poItem, inventory) || item.link.unit || null;
-        const deliveryUnitPrice = Number(item.deliveryLine.deliveryUnitPrice ?? getPoLineStockUnitPrice(item.poItem, inventory) ?? 0);
+        const deliveryPurchaseUnitPrice = Number(item.deliveryLine.deliveryUnitPrice ?? item.poItem.unitPrice ?? 0);
         return {
           id: newId(),
           batchId,
@@ -1591,7 +1590,7 @@ export const materialRequestFulfillmentService = {
           receivedQty: 0,
           unit: stockUnit,
           deliveryUnit: stockUnit,
-          deliveryUnitPrice,
+          deliveryUnitPrice: deliveryPurchaseUnitPrice,
           varianceReason: null,
           note: `Đợt ${deliveryBatch.deliveryNo} chờ nhận hàng từ ${poNumber}${poSourceSuffix}`,
         };
@@ -1606,15 +1605,12 @@ export const materialRequestFulfillmentService = {
         items: linePayloads.map(line => {
           const poItem = poItemByLineId.get(line.poLineId);
           const inventory = inventoryById.get(line.itemId || poItem?.itemId || '');
+          const deliveryStockUnitPrice = poItem
+            ? getPoLineStockUnitPrice({ ...poItem, unitPrice: Number(line.deliveryUnitPrice || 0) }, inventory)
+            : Number(line.deliveryUnitPrice || 0);
           return buildPoReceiptTransactionItem(poItem, line.issuedQty, inventory, {
-            price: Number(line.deliveryUnitPrice || 0),
-            accountingPrice: poItem
-              ? stockUnitPriceToPurchaseUnitPrice(Number(line.deliveryUnitPrice || 0), {
-                unit: getPoLineStockUnit(poItem, inventory),
-                purchaseUnit: getPoLinePurchaseUnit(poItem, inventory),
-                purchaseConversionFactor: poItem.purchaseConversionFactor ?? inventory?.purchaseConversionFactor ?? 1,
-              })
-              : Number(line.deliveryUnitPrice || 0),
+            price: deliveryStockUnitPrice,
+            accountingPrice: Number(line.deliveryUnitPrice || 0),
             materialRequestId,
             requestLineId: line.requestLineId,
             fulfillmentBatchId: batchId,

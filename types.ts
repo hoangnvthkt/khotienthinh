@@ -1723,6 +1723,7 @@ export interface PurchaseOrder extends ProjectSubmissionFields {
   poNumber: string;          // PO-001
   items: PurchaseOrderItem[];
   totalAmount: number;
+  vatRate?: number;
   orderDate: string;
   expectedDeliveryDate?: string;
   actualDeliveryDate?: string;
