@@ -26,6 +26,7 @@ import {
   Upload,
   User,
   X,
+  Download,
 } from 'lucide-react';
 import { qualityChecklistService } from '../../lib/qualityChecklistService';
 import { projectStaffService } from '../../lib/projectStaffService';
@@ -46,6 +47,7 @@ import { useApp } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm, useReasonConfirm } from '../../context/ConfirmContext';
 import ProjectSubmissionDialog from '../../components/project/ProjectSubmissionDialog';
+import MediaViewer, { MediaItem } from '../../components/project/MediaViewer';
 import { EmptyState, MobileCardList, StatusBadge as ErpStatusBadge } from '../../components/erp';
 
 interface QualityTabProps {
@@ -144,7 +146,9 @@ const MiniStat: React.FC<{
   value: number | string;
   icon: React.ReactNode;
   tone?: 'slate' | 'amber' | 'emerald' | 'red' | 'sky';
-}> = ({ label, value, icon, tone = 'slate' }) => {
+  active?: boolean;
+  onClick?: () => void;
+}> = ({ label, value, icon, tone = 'slate', active = false, onClick }) => {
   const tones = {
     slate: 'border-slate-200 bg-white text-slate-700',
     amber: 'border-amber-200 bg-amber-50 text-amber-700',
@@ -152,13 +156,26 @@ const MiniStat: React.FC<{
     red: 'border-red-200 bg-red-50 text-red-700',
     sky: 'border-sky-200 bg-sky-50 text-sky-700',
   };
-  return (
-    <div className={`rounded-lg border p-3 ${tones[tone]}`}>
+  const className = `w-full rounded-lg border p-3 ${tones[tone]} ${active ? 'ring-2 ring-amber-300 ring-offset-1' : ''} ${onClick ? 'cursor-pointer text-left transition hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-amber-300' : ''}`;
+  const content = (
+    <>
       <div className="flex items-center justify-between gap-2">
         <span className="text-[10px] font-black uppercase text-slate-400">{label}</span>
         <span className="text-slate-400">{icon}</span>
       </div>
       <div className="mt-1 text-xl font-black">{value}</div>
+    </>
+  );
+  if (onClick) {
+    return (
+      <button type="button" onClick={onClick} className={className} aria-pressed={active}>
+        {content}
+      </button>
+    );
+  }
+  return (
+    <div className={className}>
+      {content}
     </div>
   );
 };
@@ -279,6 +296,71 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
   const [uploadingFiles, setUploadingFiles] = useState(false);
 
   const [submittingChecklist, setSubmittingChecklist] = useState<QualityChecklist | null>(null);
+
+  // States and Callbacks for MediaViewer
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const [viewerItems, setViewerItems] = useState<MediaItem[]>([]);
+  const [viewerInitialIndex, setViewerInitialIndex] = useState(0);
+
+  const openImageLightbox = useCallback((clickedUrl: string) => {
+    const photos = (form.sitePhotos || []).map(p => ({
+      url: p.url,
+      name: p.caption || 'Ảnh nghiệm thu',
+      type: 'image' as const
+    }));
+
+    const imgAttachments = (form.attachments || [])
+      .filter(a => {
+        const isImgType = a.fileType?.startsWith('image/');
+        const isImgExt = /\.(png|jpe?g|gif|webp|svg)$/i.test(a.url);
+        return isImgType || isImgExt;
+      })
+      .map(a => ({
+        url: a.url,
+        name: a.name || a.fileName || 'Ảnh đính kèm',
+        type: 'image' as const
+      }));
+
+    const allImages = [...photos, ...imgAttachments];
+    const index = allImages.findIndex(img => img.url === clickedUrl);
+
+    setViewerItems(allImages);
+    setViewerInitialIndex(index >= 0 ? index : 0);
+    setViewerOpen(true);
+  }, [form.sitePhotos, form.attachments]);
+
+  const handleAttachmentClick = useCallback((attachment: Attachment) => {
+    const isImg = attachment.fileType?.startsWith('image/') || /\.(png|jpe?g|gif|webp|svg)$/i.test(attachment.url);
+    if (isImg) {
+      openImageLightbox(attachment.url);
+    } else {
+      const isPdf = attachment.fileType === 'pdf' || attachment.fileType?.includes('pdf') || /\.pdf$/i.test(attachment.url);
+      setViewerItems([{
+        url: attachment.url,
+        name: attachment.name || attachment.fileName || 'Tài liệu',
+        type: isPdf ? 'pdf' : 'other'
+      }]);
+      setViewerInitialIndex(0);
+      setViewerOpen(true);
+    }
+  }, [openImageLightbox]);
+
+  const handleDownloadDirect = useCallback(async (url: string, name: string) => {
+    try {
+      const response = await fetch(url);
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(blobUrl);
+    } catch (e) {
+      window.open(url, '_blank');
+    }
+  }, []);
 
   useEffect(() => {
     if (!projectId) return;
@@ -408,38 +490,60 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
     childrenByParent.get(currentTaskId || ROOT_KEY) || []
   ), [childrenByParent, currentTaskId]);
 
+  const taskMatchesSearch = useCallback((task: ProjectTask, query: string) => {
+    if (!query) return true;
+    return matchesSearchQueryMultiple([
+      task.wbsCode,
+      task.name,
+      task.assignee,
+      task.notes,
+      getParentPath(task),
+    ], query);
+  }, [getParentPath]);
+
+  const checklistMatchesFilters = useCallback((item: QualityChecklist) => {
+    if (statusFilter && item.status !== statusFilter) return false;
+    const query = search.trim();
+    if (!query) return true;
+    const task = item.taskId ? taskMap.get(item.taskId) : null;
+    return matchesSearchQueryMultiple([
+      item.code,
+      item.title,
+      item.workLocation,
+      item.workSupervisor,
+      item.note,
+      task?.wbsCode,
+      task?.name,
+    ], query);
+  }, [search, statusFilter, taskMap]);
+
+  const filterChecklistRows = useCallback((items: QualityChecklist[]) => (
+    items.filter(checklistMatchesFilters)
+  ), [checklistMatchesFilters]);
+
+  const getVisibleTaskChecklists = useCallback((task: ProjectTask) => {
+    const aggregateRows = getAggregateChecklists(task.id);
+    if (!statusFilter) return aggregateRows;
+
+    const query = search.trim();
+    const taskMatchedBySearch = taskMatchesSearch(task, query);
+    return aggregateRows.filter(item => {
+      if (item.status !== statusFilter) return false;
+      if (!query || taskMatchedBySearch) return true;
+      return checklistMatchesFilters(item);
+    });
+  }, [checklistMatchesFilters, getAggregateChecklists, search, statusFilter, taskMatchesSearch]);
+
   const visibleTasks = useMemo(() => {
     const query = search.trim();
     const source = query ? tasks : currentChildren;
-    if (!query) return source;
     return source
-      .filter(task => matchesSearchQueryMultiple([
-        task.wbsCode,
-        task.name,
-        task.assignee,
-        task.notes,
-        getParentPath(task),
-      ], query))
+      .filter(task => {
+        if (statusFilter) return getVisibleTaskChecklists(task).length > 0;
+        return taskMatchesSearch(task, query);
+      })
       .sort((a, b) => (a.wbsCode || '').localeCompare(b.wbsCode || '') || (a.order || 0) - (b.order || 0));
-  }, [currentChildren, getParentPath, search, tasks]);
-
-  const filterChecklistRows = useCallback((items: QualityChecklist[]) => {
-    const query = search.trim();
-    return items.filter(item => {
-      if (statusFilter && item.status !== statusFilter) return false;
-      if (!query) return true;
-      const task = item.taskId ? taskMap.get(item.taskId) : null;
-      return matchesSearchQueryMultiple([
-        item.code,
-        item.title,
-        item.workLocation,
-        item.workSupervisor,
-        item.note,
-        task?.wbsCode,
-        task?.name,
-      ], query);
-    });
-  }, [search, statusFilter, taskMap]);
+  }, [currentChildren, getVisibleTaskChecklists, search, statusFilter, taskMatchesSearch, tasks]);
 
   const directTaskChecklists = useMemo(
     () => currentTaskId ? (checklistsByTaskId.get(currentTaskId) || []) : [],
@@ -451,6 +555,11 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
     if (currentTaskId) return filterChecklistRows(directTaskChecklists);
     return [];
   }, [currentTaskId, directTaskChecklists, filterChecklistRows, orphanChecklists, showOrphans]);
+
+  const filteredOrphanChecklists = useMemo(
+    () => filterChecklistRows(orphanChecklists),
+    [filterChecklistRows, orphanChecklists],
+  );
 
   const globalCounts = useMemo(() => countByStatus(checklists), [checklists]);
   const currentCounts = useMemo(() => countByStatus(directTaskChecklists), [directTaskChecklists]);
@@ -484,6 +593,25 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
     setCurrentTaskId(null);
     setShowOrphans(true);
     setSearch('');
+  };
+
+  const openAllQualityItems = () => {
+    setStatusFilter('');
+    setCurrentTaskId(null);
+    setShowOrphans(false);
+    setSearch('');
+  };
+
+  const openStatusSummary = (status: QualityChecklistStatus) => {
+    setStatusFilter(status);
+    setCurrentTaskId(null);
+    setShowOrphans(false);
+    setSearch('');
+  };
+
+  const openUnassignedSummary = () => {
+    setStatusFilter('');
+    openOrphans();
   };
 
   const openCreate = (task: ProjectTask) => {
@@ -945,7 +1073,7 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
     );
   }
 
-  const orphanCounts = countByStatus(orphanChecklists);
+  const orphanCounts = countByStatus(filteredOrphanChecklists);
   const pageTitle = showOrphans
     ? 'Chưa gắn hạng mục'
     : currentTask
@@ -989,10 +1117,37 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
           </div>
 
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:w-[520px]">
-            <MiniStat label="Tổng hồ sơ" value={checklists.length} icon={<ClipboardCheck size={15} />} />
-            <MiniStat label="Chờ duyệt" value={globalCounts.submitted} icon={<Clock size={15} />} tone="amber" />
-            <MiniStat label="Đã duyệt" value={globalCounts.approved} icon={<CheckCircle2 size={15} />} tone="emerald" />
-            <MiniStat label="Chưa gắn" value={orphanChecklists.length} icon={<AlertCircle size={15} />} tone={orphanChecklists.length ? 'red' : 'slate'} />
+            <MiniStat
+              label="Tổng hồ sơ"
+              value={checklists.length}
+              icon={<ClipboardCheck size={15} />}
+              active={!statusFilter && !showOrphans && !currentTaskId}
+              onClick={openAllQualityItems}
+            />
+            <MiniStat
+              label="Chờ duyệt"
+              value={globalCounts.submitted}
+              icon={<Clock size={15} />}
+              tone="amber"
+              active={statusFilter === 'submitted' && !showOrphans}
+              onClick={() => openStatusSummary('submitted')}
+            />
+            <MiniStat
+              label="Đã duyệt"
+              value={globalCounts.approved}
+              icon={<CheckCircle2 size={15} />}
+              tone="emerald"
+              active={statusFilter === 'approved' && !showOrphans}
+              onClick={() => openStatusSummary('approved')}
+            />
+            <MiniStat
+              label="Chưa gắn"
+              value={orphanChecklists.length}
+              icon={<AlertCircle size={15} />}
+              tone={orphanChecklists.length ? 'red' : 'slate'}
+              active={showOrphans}
+              onClick={openUnassignedSummary}
+            />
           </div>
         </div>
       </div>
@@ -1104,7 +1259,7 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
                   key={task.id}
                   task={task}
                   childCount={(childrenByParent.get(task.id) || []).length}
-                  checklists={getAggregateChecklists(task.id)}
+                  checklists={statusFilter ? getVisibleTaskChecklists(task) : getAggregateChecklists(task.id)}
                   parentPath={searchMode ? getParentPath(task) : undefined}
                   onOpen={() => openTask(task.id)}
                 />
@@ -1126,16 +1281,16 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
         </section>
       )}
 
-      {!currentTask && !showOrphans && orphanChecklists.length > 0 && (
+      {!currentTask && !showOrphans && filteredOrphanChecklists.length > 0 && (
         <section className="space-y-3">
           <div className="flex items-center justify-between gap-3">
             <h3 className="text-sm font-black text-slate-800">Chưa gắn hạng mục</h3>
             <button onClick={openOrphans} className="text-xs font-black text-red-600 hover:text-red-700">
-              Xem {orphanChecklists.length} hồ sơ
+              Xem {filteredOrphanChecklists.length} hồ sơ
             </button>
           </div>
           <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
-            <MiniStat label="Tổng" value={orphanChecklists.length} icon={<AlertCircle size={15} />} tone="red" />
+            <MiniStat label="Tổng" value={filteredOrphanChecklists.length} icon={<AlertCircle size={15} />} tone="red" />
             <MiniStat label="Nháp" value={orphanCounts.draft} icon={<Clock size={15} />} />
             <MiniStat label="Chờ duyệt" value={orphanCounts.submitted} icon={<Send size={15} />} tone="amber" />
             <MiniStat label="Đã duyệt" value={orphanCounts.approved} icon={<CheckCircle2 size={15} />} tone="emerald" />
@@ -1279,15 +1434,26 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
                     ) : (
                       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                         {(form.sitePhotos || []).map((photo, index) => (
-                          <div key={`${photo.url}-${index}`} className="group relative overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
-                            <img src={photo.url} alt={photo.caption || `Ảnh ${index + 1}`} className="h-28 w-full object-cover" />
+                          <div
+                            key={`${photo.url}-${index}`}
+                            onClick={() => openImageLightbox(photo.url)}
+                            className="group relative cursor-pointer overflow-hidden rounded-lg border border-slate-200 bg-slate-50 transition hover:border-amber-400"
+                          >
+                            <img
+                              src={photo.url}
+                              alt={photo.caption || `Ảnh ${index + 1}`}
+                              className="h-28 w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                            />
                             <div className="absolute inset-x-0 bottom-0 bg-slate-950/55 px-2 py-1 text-[10px] font-bold text-white">
                               <span className="block truncate">{photo.caption || `Ảnh ${index + 1}`}</span>
                             </div>
                             {!readonlyForm && (
                               <button
-                                onClick={() => removePhoto(index)}
-                                className="absolute right-1 top-1 rounded bg-white/90 p-1 text-red-500 opacity-0 shadow-sm transition group-hover:opacity-100"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  removePhoto(index);
+                                }}
+                                className="absolute right-1 top-1 rounded bg-white/90 p-1 text-red-500 opacity-0 shadow-sm transition group-hover:opacity-100 z-10"
                                 title="Xoá ảnh"
                               >
                                 <X size={12} />
@@ -1328,20 +1494,34 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
                         {(form.attachments || []).map((attachment, index) => (
                           <div key={attachment.id || `${attachment.url}-${index}`} className="flex items-center gap-3 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
                             <span className="text-slate-400"><FileIcon type={attachment.fileType} /></span>
-                            <a
-                              href={attachment.url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="min-w-0 flex-1 truncate text-xs font-black text-slate-700 hover:text-amber-700"
+                            <button
+                              type="button"
+                              onClick={() => handleAttachmentClick(attachment)}
+                              className="min-w-0 flex-1 text-left truncate text-xs font-black text-slate-700 hover:text-amber-700"
                             >
                               {attachment.name || attachment.fileName || `File ${index + 1}`}
-                            </a>
+                            </button>
                             {attachment.fileSize !== undefined && (
-                              <span className="text-[10px] font-bold text-slate-400">{Math.ceil(attachment.fileSize / 1024)} KB</span>
+                              <span className="text-[10px] font-bold text-slate-400 shrink-0">{Math.ceil(attachment.fileSize / 1024)} KB</span>
                             )}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDownloadDirect(attachment.url, attachment.name || attachment.fileName || 'File');
+                              }}
+                              className="rounded p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700 transition"
+                              title="Tải xuống"
+                            >
+                              <Download size={13} />
+                            </button>
                             {!readonlyForm && (
                               <button
-                                onClick={() => removeAttachment(index)}
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  removeAttachment(index);
+                                }}
                                 className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600"
                                 title="Xoá file"
                               >
@@ -1399,6 +1579,13 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
           onConfirm={handleConfirmSubmit}
         />
       )}
+
+      <MediaViewer
+        isOpen={viewerOpen}
+        onClose={() => setViewerOpen(false)}
+        items={viewerItems}
+        initialIndex={viewerInitialIndex}
+      />
     </div>
   );
 };

@@ -33,6 +33,37 @@ interface WeeklyProgressTabProps {
 
 type ProgressEntryMode = 'daily' | 'weekly';
 type ProgressDraft = { progressPercent: string; quantityDone: string; note: string };
+type TimeFilterMode = 'recent' | 'week' | 'month' | 'all';
+
+const DEFAULT_PROGRESS_WINDOW_WEEKS = 8;
+
+const getRecentWeekWindowStart = (weekStart: string): string =>
+    addDaysToIsoDate(weekStart, -7 * (DEFAULT_PROGRESS_WINDOW_WEEKS - 1));
+
+const getMonthWeekWindow = (month: string): { fromWeek: string; toWeek: string } => {
+    const [yearText, monthText] = month.split('-');
+    const year = Number(yearText);
+    const monthIndex = Number(monthText);
+    if (!Number.isFinite(year) || !Number.isFinite(monthIndex) || monthIndex < 1 || monthIndex > 12) {
+        const fallbackWeek = getWeekStart(new Date());
+        return { fromWeek: getRecentWeekWindowStart(fallbackWeek), toWeek: fallbackWeek };
+    }
+    const monthStart = `${yearText}-${monthText}-01`;
+    const monthEnd = addDaysToIsoDate(new Date(year, monthIndex, 0), 0);
+    return {
+        fromWeek: getWeekStart(monthStart),
+        toWeek: getWeekStart(monthEnd),
+    };
+};
+
+const enumerateWeekStarts = (fromWeek?: string | null, toWeek?: string | null): string[] => {
+    if (!fromWeek || !toWeek || fromWeek > toWeek) return [];
+    const weeks: string[] = [];
+    for (let week = fromWeek; week <= toWeek; week = addDaysToIsoDate(week, 7)) {
+        weeks.push(week);
+    }
+    return weeks;
+};
 
 // Helper formats
 const formatQuantity = (value?: number | null): string => {
@@ -104,7 +135,10 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
     const [projectStaff, setProjectStaff] = useState<ProjectStaff[]>([]);
     const [completionRequests, setCompletionRequests] = useState<ProjectTaskCompletionRequest[]>([]);
     const [allWeeklyProgress, setAllWeeklyProgress] = useState<ProjectWeeklyTaskProgress[]>([]);
+    const [weeklyBaselineProgress, setWeeklyBaselineProgress] = useState<ProjectWeeklyTaskProgress[]>([]);
     const [allDailyProgress, setAllDailyProgress] = useState<ProjectDailyTaskProgress[]>([]);
+    const [dailyBaselineProgress, setDailyBaselineProgress] = useState<ProjectDailyTaskProgress[]>([]);
+    const [loadedWeekRange, setLoadedWeekRange] = useState<{ fromWeek: string; toWeek: string } | null>(null);
 
     // Weekly chốt states
     const [entryMode, setEntryMode] = useState<ProgressEntryMode>('daily');
@@ -123,9 +157,9 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
     const dropdownRef = useRef<HTMLDivElement>(null);
 
     // Time filter states
-    const [timeFilterMode, setTimeFilterMode] = useState<'all' | 'week' | 'month'>('all');
-    const [filterWeek, setFilterWeek] = useState<string>('');
-    const [filterMonth, setFilterMonth] = useState<string>('');
+    const [timeFilterMode, setTimeFilterMode] = useState<TimeFilterMode>('recent');
+    const [filterWeek, setFilterWeek] = useState<string>(() => getWeekStart(new Date()));
+    const [filterMonth, setFilterMonth] = useState<string>(() => getWeekStart(new Date()).substring(0, 7));
 
     // WBS Collapse state (default collapsed)
     const [weeklyCollapsedParents, setWeeklyCollapsedParents] = useState<Set<string>>(new Set());
@@ -143,6 +177,11 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
     const loadData = useCallback(async () => {
         if (!effectiveId) return;
         setLoading(true);
+        setAllWeeklyProgress([]);
+        setWeeklyBaselineProgress([]);
+        setAllDailyProgress([]);
+        setDailyBaselineProgress([]);
+        setLoadedWeekRange(null);
         try {
             const [
                 taskData,
@@ -154,8 +193,6 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
                 fulfillmentBatchData,
                 staffData,
                 completionData,
-                weeklyProgressData,
-                dailyProgressData
             ] = await Promise.all([
                 taskService.list(effectiveId, constructionSiteId || null),
                 dailyLogService.list(effectiveId, constructionSiteId || null),
@@ -170,8 +207,6 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
                         ? projectStaffService.listBySite(constructionSiteId)
                         : Promise.resolve([]),
                 taskCompletionRequestService.list(effectiveId, constructionSiteId || null),
-                projectWeeklyProgressService.listAll(scopeKey),
-                projectWeeklyProgressService.listDailyAll(scopeKey)
             ]);
 
             setTasks(deriveProjectTaskProgress(taskData, completionData, logData));
@@ -183,8 +218,6 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
             setFulfillmentBatches(fulfillmentBatchData);
             setProjectStaff(staffData);
             setCompletionRequests(completionData);
-            setAllWeeklyProgress(weeklyProgressData);
-            setAllDailyProgress(dailyProgressData);
 
             setTaskContractLinks(linkData.reduce<Record<string, string[]>>((acc, link) => {
                 if (!acc[link.taskId]) acc[link.taskId] = [];
@@ -202,6 +235,63 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
     useEffect(() => {
         loadData();
     }, [loadData]);
+
+    const progressWeekWindow = useMemo(() => {
+        if (timeFilterMode === 'all') return null;
+        if (timeFilterMode === 'month') {
+            return getMonthWeekWindow(filterMonth || selectedWeekStart.substring(0, 7));
+        }
+        const targetWeek = timeFilterMode === 'week'
+            ? (filterWeek || selectedWeekStart)
+            : selectedWeekStart;
+        return {
+            fromWeek: getRecentWeekWindowStart(targetWeek),
+            toWeek: targetWeek,
+        };
+    }, [filterMonth, filterWeek, selectedWeekStart, timeFilterMode]);
+
+    useEffect(() => {
+        if (!scopeKey) {
+            setAllWeeklyProgress([]);
+            setWeeklyBaselineProgress([]);
+            setAllDailyProgress([]);
+            setDailyBaselineProgress([]);
+            setLoadedWeekRange(null);
+            return;
+        }
+
+        let cancelled = false;
+        const loadProgressWindow = async () => {
+            try {
+                const [weeklyRows, weeklyBaselineRows, dailyRows, dailyBaselineRows] = await Promise.all([
+                    progressWeekWindow
+                        ? projectWeeklyProgressService.listWeeklyRange(scopeKey, progressWeekWindow.fromWeek, progressWeekWindow.toWeek)
+                        : projectWeeklyProgressService.listAll(scopeKey),
+                    progressWeekWindow
+                        ? projectWeeklyProgressService.listLatestBefore(scopeKey, progressWeekWindow.fromWeek)
+                        : Promise.resolve([]),
+                    projectWeeklyProgressService.listDailyByWeek(scopeKey, selectedWeekStart),
+                    projectWeeklyProgressService.listDailyLatestBeforeDate(scopeKey, selectedWeekStart),
+                ]);
+                if (cancelled) return;
+                setAllWeeklyProgress(weeklyRows);
+                setWeeklyBaselineProgress(weeklyBaselineRows);
+                setDailyBaselineProgress(dailyBaselineRows);
+                setAllDailyProgress(mergeDailyProgressRows(dailyBaselineRows, dailyRows));
+                setLoadedWeekRange(progressWeekWindow);
+            } catch (error) {
+                console.warn('Cannot load progress window', error);
+                if (!cancelled) {
+                    toast.error('Không thể tải snapshot tiến độ', 'Vui lòng thử lại hoặc đổi bộ lọc.');
+                }
+            }
+        };
+
+        loadProgressWindow();
+        return () => {
+            cancelled = true;
+        };
+    }, [progressWeekWindow, scopeKey, selectedWeekStart, toast]);
 
     // Handle click outside searchable select
     useEffect(() => {
@@ -262,17 +352,23 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
         });
     }, [contractItems, currentProjectFinance, fulfillmentBatches, materialBudgets, purchaseOrders]);
 
+    const loadedWindowWeeks = useMemo(
+        () => enumerateWeekStarts(loadedWeekRange?.fromWeek, loadedWeekRange?.toWeek),
+        [loadedWeekRange],
+    );
+
     // unique week lists
     const uniqueWeeks = useMemo(() => {
         const weeksSet = new Set<string>();
+        loadedWindowWeeks.forEach(week => weeksSet.add(week));
         allWeeklyProgress.forEach(p => {
             if (p.weekStart) weeksSet.add(p.weekStart);
         });
-        if (selectedWeekStart) {
+        if (weeksSet.size === 0 && selectedWeekStart) {
             weeksSet.add(selectedWeekStart);
         }
         return Array.from(weeksSet).sort();
-    }, [allWeeklyProgress, selectedWeekStart]);
+    }, [allWeeklyProgress, loadedWindowWeeks, selectedWeekStart]);
 
     const weekColors = useMemo(() => {
         const colors: Record<string, string> = {};
@@ -298,11 +394,14 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
 
     const visibleWeeks = useMemo(() => {
         return uniqueWeeks.filter(week => {
+            if (timeFilterMode === 'recent') {
+                return true;
+            }
             if (timeFilterMode === 'week') {
                 return week <= filterWeek;
             }
             if (timeFilterMode === 'month') {
-                return week.substring(0, 7) <= filterMonth;
+                return true;
             }
             return true;
         });
@@ -406,12 +505,50 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
         setDailyDrafts(nextDrafts);
     }, [getLatestDailyProgressForTask, scopeKey, selectedProgressDate, weeklyLeafTasks]);
 
+    const weeklyBaselineRollup = useMemo(() => {
+        if (tasks.length === 0) return {};
+        const leafProgressMap = new Map(weeklyBaselineProgress.map(row => [row.taskId, row]));
+        const rawTasks = tasks.map(task => {
+            const entry = leafProgressMap.get(task.id);
+            return {
+                ...task,
+                progress: entry ? entry.progressPercent : 0,
+                progressMode: 'weekly_report' as const,
+            };
+        });
+        const derived = deriveProjectTaskProgress(rawTasks, completionRequests, dailyLogs);
+        return derived.reduce<Record<string, { progress: number }>>((acc, task) => {
+            acc[task.id] = { progress: task.progress };
+            return acc;
+        }, {});
+    }, [completionRequests, dailyLogs, tasks, weeklyBaselineProgress]);
+
+    const dailyBaselineRollup = useMemo(() => {
+        if (tasks.length === 0) return {};
+        const leafProgressMap = new Map(dailyBaselineProgress.map(row => [row.taskId, row]));
+        const rawTasks = tasks.map(task => {
+            const entry = leafProgressMap.get(task.id);
+            return {
+                ...task,
+                progress: entry ? entry.progressPercent : 0,
+                progressMode: 'weekly_report' as const,
+            };
+        });
+        const derived = deriveProjectTaskProgress(rawTasks, completionRequests, dailyLogs);
+        return derived.reduce<Record<string, { progress: number }>>((acc, task) => {
+            acc[task.id] = { progress: task.progress };
+            return acc;
+        }, {});
+    }, [completionRequests, dailyBaselineProgress, dailyLogs, tasks]);
+
     // Compute weekly history rollup for all tasks and all weeks
     const weeklyHistoryRollup = useMemo(() => {
         if (tasks.length === 0) return {};
 
         const history: Record<string, Record<string, { progress: number; note?: string; updatedBy?: string; updatedAt?: string }>> = {};
-        const leafProgressMap = new Map<string, ProjectWeeklyTaskProgress>();
+        const leafProgressMap = new Map<string, ProjectWeeklyTaskProgress>(
+            weeklyBaselineProgress.map(row => [row.taskId, row]),
+        );
 
         for (const week of uniqueWeeks) {
             const entriesThisWeek = allWeeklyProgress.filter(p => p.weekStart === week);
@@ -450,7 +587,7 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
             history[week] = taskProgressMap;
         }
         return history;
-    }, [tasks, uniqueWeeks, allWeeklyProgress, completionRequests, dailyLogs]);
+    }, [tasks, uniqueWeeks, allWeeklyProgress, completionRequests, dailyLogs, weeklyBaselineProgress]);
 
     const dailyHistoryRollup = useMemo(() => {
         if (tasks.length === 0) return {};
@@ -764,8 +901,8 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
             setFilterMonth(weekStart.substring(0, 7));
 
             const [dailyProgressData, weeklyProgressData] = await Promise.all([
-                projectWeeklyProgressService.listDailyAll(scopeKey),
-                projectWeeklyProgressService.listAll(scopeKey),
+                projectWeeklyProgressService.listDailyByWeek(scopeKey, weekStart),
+                projectWeeklyProgressService.listByWeek(scopeKey, weekStart),
             ]);
             setAllDailyProgress(prev => mergeDailyProgressRows(
                 mergeDailyProgressRows(prev, dailyProgressData),
@@ -880,7 +1017,7 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
 
             // Reload all weekly progress to refresh visual segments, while keeping
             // just-saved rows in case the immediate read returns a stale snapshot.
-            const weeklyProgressData = await projectWeeklyProgressService.listAll(scopeKey);
+            const weeklyProgressData = await projectWeeklyProgressService.listByWeek(scopeKey, selectedWeekStart);
             setAllWeeklyProgress(prev => mergeWeeklyProgressRows(
                 mergeWeeklyProgressRows(prev, weeklyProgressData),
                 weeklyRows,
@@ -983,6 +1120,7 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
 
     // Segmented progress bar renderer component inside the file
     const WeeklySegmentedProgressBar = ({ taskId }: { taskId: string }) => {
+        const baselineProgress = Number(weeklyBaselineRollup[taskId]?.progress || 0);
         const segments = useMemo(() => {
             return buildProgressSegments(visibleWeeks.map(week => {
                 const weekData = weeklyHistoryRollup[week]?.[taskId];
@@ -990,19 +1128,19 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
                 return {
                     key: week,
                     label: getISOWeekLabel(week),
-                    progress: Number(weekData?.progress || 0),
+                    progress: Number(weekData?.progress ?? baselineProgress),
                     color: weekColors[week] || '#94a3b8',
                     note: weekData?.note || undefined,
                     updatedBy: staffName || undefined,
                     updatedAt: weekData?.updatedAt,
                 };
-            }));
-        }, [staffMap, taskId, visibleWeeks, weekColors, weeklyHistoryRollup]);
+            }), baselineProgress);
+        }, [baselineProgress, staffMap, taskId, visibleWeeks, weekColors, weeklyHistoryRollup]);
 
         const totalProgress = useMemo(() => {
-            if (segments.length === 0) return 0;
+            if (segments.length === 0) return baselineProgress;
             return segments[segments.length - 1].cumulativeProgress;
-        }, [segments]);
+        }, [baselineProgress, segments]);
 
         return (
             <div className="relative w-full h-4 bg-slate-100 dark:bg-slate-800 rounded-full overflow-visible flex items-center">
@@ -1069,10 +1207,7 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
     };
 
     const DailySegmentedProgressBar = ({ taskId }: { taskId: string }) => {
-        const baselineProgress = useMemo(() => {
-            const previous = getLatestDailyProgressForTask(taskId, selectedWeekStart, false);
-            return Number(previous?.progressPercent || 0);
-        }, [getLatestDailyProgressForTask, selectedWeekStart, taskId]);
+        const baselineProgress = Number(dailyBaselineRollup[taskId]?.progress || 0);
 
         const segments = useMemo(() => {
             return buildProgressSegments(selectedWeekDays.map(day => {
@@ -1274,8 +1409,11 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
                                     value={selectedProgressDate}
                                     onChange={e => {
                                         if (!e.target.value) return;
+                                        const nextWeekStart = getWeekStart(e.target.value);
                                         setSelectedProgressDate(e.target.value);
-                                        setSelectedWeekStart(getWeekStart(e.target.value));
+                                        setSelectedWeekStart(nextWeekStart);
+                                        setFilterWeek(nextWeekStart);
+                                        setFilterMonth(nextWeekStart.substring(0, 7));
                                     }}
                                     className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-black bg-transparent focus:ring-2 focus:ring-orange-500 outline-none text-slate-700 dark:text-slate-200"
                                     title="Ngày chốt"
@@ -1285,7 +1423,11 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
                                     type="date"
                                     value={selectedWeekStart}
                                     onChange={e => {
-                                        if (e.target.value) setSelectedWeekStart(getWeekStart(e.target.value));
+                                        if (!e.target.value) return;
+                                        const nextWeekStart = getWeekStart(e.target.value);
+                                        setSelectedWeekStart(nextWeekStart);
+                                        setFilterWeek(nextWeekStart);
+                                        setFilterMonth(nextWeekStart.substring(0, 7));
                                     }}
                                     className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-black bg-transparent focus:ring-2 focus:ring-orange-500 outline-none text-slate-700 dark:text-slate-200"
                                     title="Tuần chốt"
@@ -1314,13 +1456,14 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
                         <span className="text-xs font-black text-slate-400 uppercase">Bộ lọc Biểu đồ Snapshots:</span>
                         <div className="flex bg-slate-100 dark:bg-slate-700 rounded-xl p-0.5">
                             {[
-                                { key: 'all', label: 'Toàn bộ thời gian' },
+                                { key: 'recent', label: '8 tuần gần nhất' },
                                 { key: 'week', label: 'Lũy kế theo Tuần' },
                                 { key: 'month', label: 'Lũy kế theo Tháng' },
+                                { key: 'all', label: 'Toàn bộ' },
                             ].map(btn => (
                                 <button
                                     key={btn.key}
-                                    onClick={() => setTimeFilterMode(btn.key as any)}
+                                    onClick={() => setTimeFilterMode(btn.key as TimeFilterMode)}
                                     className={`px-3 py-1.5 rounded-lg text-[10px] font-black transition-all ${timeFilterMode === btn.key
                                             ? 'bg-white dark:bg-slate-900 text-slate-800 dark:text-white shadow-sm'
                                             : 'text-slate-500 hover:text-slate-800 dark:text-slate-400'

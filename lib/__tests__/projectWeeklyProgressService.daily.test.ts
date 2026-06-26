@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ProjectDailyTaskProgress, ProjectTask, ProjectWeeklyTaskProgress } from '../../types';
 import {
   buildProgressSegments,
+  fetchPagedRows,
   mergeDailyProgressRows,
   mergeWeeklyProgressRows,
   rollupDailyRowsToWeeklyRows,
@@ -109,6 +110,39 @@ describe('project daily/weekly progress helpers', () => {
 
     expect(segments.map(segment => segment.percent)).toEqual([30, 67]);
     expect(segments[1].cumulativeProgress).toBe(97);
+  });
+
+  it('builds weekly range segments using a baseline before the loaded window', () => {
+    const segments = buildProgressSegments([
+      { key: '2026-06-22', label: 'W26/2026', progress: 99, color: 'yellow' },
+    ], 30);
+
+    expect(segments).toHaveLength(1);
+    expect(segments[0].percent).toBe(69);
+    expect(segments[0].cumulativeProgress).toBe(99);
+  });
+
+  it('builds daily segments from a week-only load with a previous baseline', () => {
+    const segments = buildProgressSegments([
+      { key: '2026-06-22', label: '22/06', progress: 45, color: 'cyan' },
+      { key: '2026-06-23', label: '23/06', progress: 75, color: 'blue' },
+    ], 30);
+
+    expect(segments.map(segment => segment.percent)).toEqual([15, 30]);
+    expect(segments[1].cumulativeProgress).toBe(75);
+  });
+
+  it('fetches all Supabase pages beyond the default 1000 row limit', async () => {
+    const allRows = Array.from({ length: 1328 }, (_, index) => ({ index }));
+
+    const result = await fetchPagedRows(async (from, to) => ({
+      data: allRows.slice(from, to + 1),
+      error: null,
+    }));
+
+    expect(result.error).toBeNull();
+    expect(result.data).toHaveLength(1328);
+    expect(result.data[1327]).toEqual({ index: 1327 });
   });
 
   it('keeps the just-saved weekly row when a reload response is stale', () => {
