@@ -5,6 +5,7 @@ import {
   SafetyPassportContractor,
   SafetyPassportDashboard,
   SafetyProjectAssignment,
+  SafetyProjectWorkerRow,
   SafetyWorkerProfile,
 } from '../types';
 
@@ -57,6 +58,13 @@ export const useSafetyWorkerProfile = (workerId?: string | null) =>
 export const useSafetyProjectAssignments = (projectId: string, constructionSiteId?: string | null) =>
   useAsyncData<SafetyProjectAssignment[]>(
     () => safetyPassportService.listProjectAssignments(projectId, constructionSiteId),
+    [projectId, constructionSiteId],
+    [],
+  );
+
+export const useSafetyProjectWorkerRows = (projectId: string, constructionSiteId?: string | null) =>
+  useAsyncData<SafetyProjectWorkerRow[]>(
+    () => safetyPassportService.listProjectWorkerRows(projectId, constructionSiteId),
     [projectId, constructionSiteId],
     [],
   );

@@ -54,6 +54,13 @@ const VIEW_CONFIG: Record<SafetyView, { label: string; icon: React.ReactNode }> 
   equipment: { label: 'Máy móc / thiết bị', icon: <Truck size={14} /> },
 };
 
+const VIEW_GROUPS: Array<{ label: string; views: SafetyView[] }> = [
+  { label: 'Tổng quan', views: ['overview'] },
+  { label: 'Safety Passport', views: ['passport', 'passportWorkers', 'passportAssignments', 'passportCards', 'passportContractors'] },
+  { label: 'Hiện trường', views: ['issues', 'inspections'] },
+  { label: 'Nguồn lực', views: ['contractors', 'teams', 'equipment'] },
+];
+
 const defaultIssueFilters: SafetyIssueFilters & { search: string; status: any; severity: any; type: any } = {
   search: '',
   status: 'all',
@@ -485,29 +492,30 @@ const SafetyTab: React.FC<SafetyTabProps> = ({ projectId, constructionSiteId, ca
 
       <ActionBar
         stickyOnMobile
-        primaryAction={primaryAction}
-        secondaryActions={[
-          { label: 'Thiết bị', icon: <Truck size={15} />, onClick: () => setView('equipment') },
-          { label: 'Passport', icon: <BadgeCheck size={15} />, onClick: () => setView('passport') },
-          { label: 'Thẻ an toàn', icon: <IdCard size={15} />, onClick: () => setView('passportCards') },
-          { label: 'Nhà thầu', icon: <HardHat size={15} />, onClick: () => setView('contractors') },
-          { label: 'Tổ đội', icon: <Users size={15} />, onClick: () => setView('teams') },
-        ]}
       >
-        <div className="flex flex-wrap gap-2">
-          {(Object.keys(VIEW_CONFIG) as SafetyView[]).map(key => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setView(key)}
-              className={`inline-flex min-h-9 items-center gap-2 rounded-lg px-3 text-xs font-black transition ${
-                view === key
-                  ? 'bg-slate-900 text-white'
-                  : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-              }`}
-            >
-              {VIEW_CONFIG[key].icon} {VIEW_CONFIG[key].label}
-            </button>
+        <div className="space-y-2">
+          {VIEW_GROUPS.map(group => (
+            <div key={group.label} className="flex flex-wrap items-center gap-2">
+              <div className="w-full text-[10px] font-black uppercase tracking-wide text-slate-400 dark:text-slate-500 sm:w-28">
+                {group.label}
+              </div>
+              <div className="flex min-w-0 flex-1 flex-wrap gap-2">
+                {group.views.map(key => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setView(key)}
+                    className={`inline-flex min-h-9 items-center gap-2 rounded-lg px-3 text-xs font-black transition ${
+                      view === key
+                        ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
+                        : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    {VIEW_CONFIG[key].icon} {VIEW_CONFIG[key].label}
+                  </button>
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       </ActionBar>

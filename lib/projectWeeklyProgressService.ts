@@ -24,9 +24,28 @@ const WEEKLY_TABLE = 'project_weekly_task_progress';
 const DAILY_TABLE = 'project_daily_task_progress';
 const BATCH_TABLE = 'material_request_fulfillment_batches';
 const LINE_TABLE = 'material_request_fulfillment_lines';
+const SUPABASE_PAGE_SIZE = 1000;
 
 const VALUE_PO_STATUSES = new Set(['confirmed', 'in_transit', 'partial', 'delivered', 'closed']);
 const RECOGNIZED_STOCK_BATCH_STATUSES = new Set(['issued', 'received']);
+
+export const fetchPagedRows = async (
+  buildQuery: (from: number, to: number) => PromiseLike<{ data: any[] | null; error: any }>,
+): Promise<{ data: any[]; error: any | null }> => {
+  const rows: any[] = [];
+
+  for (let from = 0; ; from += SUPABASE_PAGE_SIZE) {
+    const to = from + SUPABASE_PAGE_SIZE - 1;
+    const { data, error } = await buildQuery(from, to);
+    if (error) return { data: rows, error };
+
+    const page = data || [];
+    rows.push(...page);
+    if (page.length < SUPABASE_PAGE_SIZE) break;
+  }
+
+  return { data: rows, error: null };
+};
 
 export const getProjectScopeKey = (projectId?: string | null, constructionSiteId?: string | null): string =>
   projectId && constructionSiteId ? `${projectId}_${constructionSiteId}` : (projectId || constructionSiteId || '');
@@ -87,6 +106,14 @@ const weeklyProgressKey = (row: Pick<ProjectWeeklyTaskProgress, 'scopeKey' | 'ta
 
 const dailyProgressKey = (row: Pick<ProjectDailyTaskProgress, 'scopeKey' | 'taskId' | 'progressDate'>): string =>
   `${row.scopeKey}__${row.taskId}__${row.progressDate}`;
+
+const latestByTask = <T extends { taskId: string }>(rows: T[]): T[] => {
+  const byTask = new Map<string, T>();
+  rows.forEach(row => {
+    if (!byTask.has(row.taskId)) byTask.set(row.taskId, row);
+  });
+  return [...byTask.values()];
+};
 
 export const mergeWeeklyProgressRows = (
   currentRows: ProjectWeeklyTaskProgress[],
@@ -435,11 +462,13 @@ const dailyToDb = (row: ProjectDailyTaskProgress): Record<string, unknown> => {
 export const projectWeeklyProgressService = {
   async listAll(scopeKey: string): Promise<ProjectWeeklyTaskProgress[]> {
     if (!isSupabaseConfigured || !scopeKey) return [];
-    const { data, error } = await supabase
+    const { data, error } = await fetchPagedRows((from, to) => supabase
       .from(WEEKLY_TABLE)
       .select('*')
       .eq('scope_key', scopeKey)
-      .order('week_start', { ascending: true });
+      .order('week_start', { ascending: true })
+      .order('task_id', { ascending: true })
+      .range(from, to));
     if (error) {
       console.warn('project weekly progress listAll failed:', error.message);
       return [];
@@ -449,12 +478,14 @@ export const projectWeeklyProgressService = {
 
   async listByWeek(scopeKey: string, weekStart: string): Promise<ProjectWeeklyTaskProgress[]> {
     if (!isSupabaseConfigured || !scopeKey) return [];
-    const { data, error } = await supabase
+    const { data, error } = await fetchPagedRows((from, to) => supabase
       .from(WEEKLY_TABLE)
       .select('*')
       .eq('scope_key', scopeKey)
       .eq('week_start', weekStart)
-      .order('updated_at', { ascending: false });
+      .order('updated_at', { ascending: false })
+      .order('task_id', { ascending: true })
+      .range(from, to));
     if (error) {
       console.warn('project weekly progress unavailable', error.message);
       return [];
@@ -462,35 +493,70 @@ export const projectWeeklyProgressService = {
     return dedupeRowsById(data || []).map(row => fromDb(row) as ProjectWeeklyTaskProgress);
   },
 
+  async listWeeklyRange(scopeKey: string, fromWeekStart: string, toWeekStart: string): Promise<ProjectWeeklyTaskProgress[]> {
+    if (!isSupabaseConfigured || !scopeKey) return [];
+    const { data, error } = await fetchPagedRows((from, to) => supabase
+      .from(WEEKLY_TABLE)
+      .select('*')
+      .eq('scope_key', scopeKey)
+      .gte('week_start', fromWeekStart)
+      .lte('week_start', toWeekStart)
+      .order('week_start', { ascending: true })
+      .order('task_id', { ascending: true })
+      .range(from, to));
+    if (error) {
+      console.warn('project weekly progress range unavailable', error.message);
+      return [];
+    }
+    return (data || []).map(row => fromDb(row) as ProjectWeeklyTaskProgress);
+  },
+
   async listLatestAtOrBefore(scopeKey: string, weekStart: string): Promise<ProjectWeeklyTaskProgress[]> {
     if (!isSupabaseConfigured || !scopeKey) return [];
-    const { data, error } = await supabase
+    const { data, error } = await fetchPagedRows((from, to) => supabase
       .from(WEEKLY_TABLE)
       .select('*')
       .eq('scope_key', scopeKey)
       .lte('week_start', weekStart)
       .order('week_start', { ascending: false })
-      .order('updated_at', { ascending: false });
+      .order('updated_at', { ascending: false })
+      .order('task_id', { ascending: true })
+      .range(from, to));
     if (error) {
       console.warn('project weekly progress unavailable', error.message);
       return [];
     }
-    const byTask = new Map<string, ProjectWeeklyTaskProgress>();
-    (data || []).forEach(row => {
-      const progress = fromDb(row) as ProjectWeeklyTaskProgress;
-      if (!byTask.has(progress.taskId)) byTask.set(progress.taskId, progress);
-    });
-    return [...byTask.values()];
+    return latestByTask((data || []).map(row => fromDb(row) as ProjectWeeklyTaskProgress));
+  },
+
+  async listLatestBefore(scopeKey: string, weekStart: string): Promise<ProjectWeeklyTaskProgress[]> {
+    if (!isSupabaseConfigured || !scopeKey) return [];
+    const { data, error } = await fetchPagedRows((from, to) => supabase
+      .from(WEEKLY_TABLE)
+      .select('*')
+      .eq('scope_key', scopeKey)
+      .lt('week_start', weekStart)
+      .order('week_start', { ascending: false })
+      .order('updated_at', { ascending: false })
+      .order('task_id', { ascending: true })
+      .range(from, to));
+    if (error) {
+      console.warn('project weekly progress baseline unavailable', error.message);
+      return [];
+    }
+    return latestByTask((data || []).map(row => fromDb(row) as ProjectWeeklyTaskProgress));
   },
 
   async listDailyAll(scopeKey: string): Promise<ProjectDailyTaskProgress[]> {
     if (!isSupabaseConfigured || !scopeKey) return [];
-    const { data, error } = await supabase
+    const { data, error } = await fetchPagedRows((from, to) => supabase
       .from(DAILY_TABLE)
       .select('*')
       .eq('scope_key', scopeKey)
       .order('progress_date', { ascending: true })
-      .order('updated_at', { ascending: true });
+      .order('updated_at', { ascending: true })
+      .order('task_id', { ascending: true })
+      .range(from, to));
     if (error) {
       console.warn('project daily progress listAll failed:', error.message);
       return [];
@@ -500,12 +566,14 @@ export const projectWeeklyProgressService = {
 
   async listDailyByDate(scopeKey: string, progressDate: string): Promise<ProjectDailyTaskProgress[]> {
     if (!isSupabaseConfigured || !scopeKey) return [];
-    const { data, error } = await supabase
+    const { data, error } = await fetchPagedRows((from, to) => supabase
       .from(DAILY_TABLE)
       .select('*')
       .eq('scope_key', scopeKey)
       .eq('progress_date', progressDate)
-      .order('updated_at', { ascending: false });
+      .order('updated_at', { ascending: false })
+      .order('task_id', { ascending: true })
+      .range(from, to));
     if (error) {
       console.warn('project daily progress unavailable', error.message);
       return [];
@@ -515,13 +583,15 @@ export const projectWeeklyProgressService = {
 
   async listDailyByWeek(scopeKey: string, weekStart: string): Promise<ProjectDailyTaskProgress[]> {
     if (!isSupabaseConfigured || !scopeKey) return [];
-    const { data, error } = await supabase
+    const { data, error } = await fetchPagedRows((from, to) => supabase
       .from(DAILY_TABLE)
       .select('*')
       .eq('scope_key', scopeKey)
       .eq('week_start', weekStart)
       .order('progress_date', { ascending: true })
-      .order('updated_at', { ascending: true });
+      .order('updated_at', { ascending: true })
+      .order('task_id', { ascending: true })
+      .range(from, to));
     if (error) {
       console.warn('project daily progress unavailable', error.message);
       return [];
@@ -531,23 +601,38 @@ export const projectWeeklyProgressService = {
 
   async listDailyLatestAtOrBeforeDate(scopeKey: string, progressDate: string): Promise<ProjectDailyTaskProgress[]> {
     if (!isSupabaseConfigured || !scopeKey) return [];
-    const { data, error } = await supabase
+    const { data, error } = await fetchPagedRows((from, to) => supabase
       .from(DAILY_TABLE)
       .select('*')
       .eq('scope_key', scopeKey)
       .lte('progress_date', progressDate)
       .order('progress_date', { ascending: false })
-      .order('updated_at', { ascending: false });
+      .order('updated_at', { ascending: false })
+      .order('task_id', { ascending: true })
+      .range(from, to));
     if (error) {
       console.warn('project daily progress unavailable', error.message);
       return [];
     }
-    const byTask = new Map<string, ProjectDailyTaskProgress>();
-    (data || []).forEach(row => {
-      const progress = fromDb(row) as ProjectDailyTaskProgress;
-      if (!byTask.has(progress.taskId)) byTask.set(progress.taskId, progress);
-    });
-    return [...byTask.values()];
+    return latestByTask((data || []).map(row => fromDb(row) as ProjectDailyTaskProgress));
+  },
+
+  async listDailyLatestBeforeDate(scopeKey: string, progressDate: string): Promise<ProjectDailyTaskProgress[]> {
+    if (!isSupabaseConfigured || !scopeKey) return [];
+    const { data, error } = await fetchPagedRows((from, to) => supabase
+      .from(DAILY_TABLE)
+      .select('*')
+      .eq('scope_key', scopeKey)
+      .lt('progress_date', progressDate)
+      .order('progress_date', { ascending: false })
+      .order('updated_at', { ascending: false })
+      .order('task_id', { ascending: true })
+      .range(from, to));
+    if (error) {
+      console.warn('project daily progress baseline unavailable', error.message);
+      return [];
+    }
+    return latestByTask((data || []).map(row => fromDb(row) as ProjectDailyTaskProgress));
   },
 
   async upsertDailyMany(rows: ProjectDailyTaskProgress[]): Promise<void> {

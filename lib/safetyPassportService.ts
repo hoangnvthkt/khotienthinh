@@ -10,12 +10,17 @@ import {
   SafetyPassportCertificateStatus,
   SafetyPassportContractor,
   SafetyPassportDashboard,
+  SafetyPassportDocumentReadiness,
   SafetyProjectAssignment,
+  SafetyProjectWorkerRow,
   SafetySiteInduction,
   SafetyWorkerCertificate,
+  SafetyWorkerDetailSaveInput,
   SafetyWorkerDocument,
+  SafetyWorkerDocumentType,
   SafetyWorkerProfile,
 } from '../types';
+import { CANONICAL_SAFETY_DOCUMENT_TYPES } from './safetyPassportConfig';
 
 const BUCKET = 'safety-passport-attachments';
 
@@ -66,6 +71,27 @@ export const getSafetyAssignmentStatusLabel = (status: SafetyPassportAssignmentS
     default: return status;
   }
 };
+
+export const maskSafetyIdentityNumber = (value?: string | null): string => {
+  const text = (value || '').replace(/\s+/g, '');
+  if (!text) return '-';
+  if (text.length <= 4) return '*'.repeat(text.length);
+  return `${'*'.repeat(Math.max(0, text.length - 4))}${text.slice(-4)}`;
+};
+
+export const getSafetyWorkerDocumentReadiness = (
+  document?: Pick<SafetyWorkerDocument, 'status' | 'expiryDate' | 'attachments'> | null,
+): SafetyPassportDocumentReadiness => {
+  if (!document || document.status === 'missing') return 'missing';
+  if (document.status === 'rejected') return 'rejected';
+  if (document.status === 'expired') return 'expired';
+  if (document.expiryDate && document.expiryDate < todayIso()) return 'expired';
+  if (asArray(document.attachments).length === 0) return 'missing';
+  return 'valid';
+};
+
+const isCanonicalSafetyDocumentType = (value?: string | null): value is SafetyWorkerDocumentType =>
+  !!value && (CANONICAL_SAFETY_DOCUMENT_TYPES as string[]).includes(value);
 
 export const buildSafetyCardQrPath = (qrToken: string): string => `/safety-card/${qrToken}`;
 
@@ -197,6 +223,81 @@ async function loadAssignmentsByIds(ids: string[]): Promise<Map<string, SafetyPr
   const rows = (data || []).map(row => mapAssignment(row, workerMap, contractorMap));
   return new Map(rows.map(item => [item.id, item]));
 }
+
+const documentsByWorkerId = (documents: SafetyWorkerDocument[]) => {
+  const map = new Map<string, SafetyWorkerDocument[]>();
+  documents.forEach(document => {
+    map.set(document.workerId, [...(map.get(document.workerId) || []), document]);
+  });
+  return map;
+};
+
+const canonicalDocumentsByType = (documents: SafetyWorkerDocument[]) =>
+  documents.reduce<Partial<Record<SafetyWorkerDocumentType, SafetyWorkerDocument>>>((acc, document) => {
+    if (isCanonicalSafetyDocumentType(document.documentType) && !acc[document.documentType]) {
+      acc[document.documentType] = document;
+    }
+    return acc;
+  }, {});
+
+const getProfileReadiness = (
+  worker: SafetyWorkerProfile | null,
+  documents: Partial<Record<SafetyWorkerDocumentType, SafetyWorkerDocument>>,
+): SafetyPassportDocumentReadiness => {
+  if (!worker) return 'missing';
+  const hasIdentityAttachment = asArray(worker.identityAttachments).length > 0
+    || getSafetyWorkerDocumentReadiness(documents.identity_front) === 'valid'
+    || getSafetyWorkerDocumentReadiness(documents.identity_back) === 'valid';
+  if (
+    worker.status !== 'active'
+    || !worker.fullName?.trim()
+    || !worker.workerCode?.trim()
+    || !worker.photoAttachment
+    || !worker.identityNumber?.trim()
+    || !hasIdentityAttachment
+  ) {
+    return 'missing';
+  }
+  return 'valid';
+};
+
+export const buildSafetyProjectWorkerRows = (params: {
+  assignments: SafetyProjectAssignment[];
+  workers: SafetyWorkerProfile[];
+  contractors: SafetyPassportContractor[];
+  documents: SafetyWorkerDocument[];
+  cards: SafetyCard[];
+}): SafetyProjectWorkerRow[] => {
+  const workerMap = new Map(params.workers.map(worker => [worker.id, worker]));
+  const contractorMap = new Map(params.contractors.map(contractor => [contractor.id, contractor]));
+  const docsByWorker = documentsByWorkerId(params.documents);
+  const cardByAssignment = new Map<string, SafetyCard>();
+  params.cards.forEach(card => {
+    if (!cardByAssignment.has(card.assignmentId)) cardByAssignment.set(card.assignmentId, card);
+  });
+
+  return params.assignments.map(assignment => {
+    const worker = assignment.worker || workerMap.get(assignment.workerId) || null;
+    const workerDocuments = worker ? docsByWorker.get(worker.id) || [] : [];
+    const documents = canonicalDocumentsByType(workerDocuments);
+    const contractor = assignment.contractor
+      || (assignment.contractorId ? contractorMap.get(assignment.contractorId) || null : null)
+      || worker?.contractor
+      || (worker?.contractorId ? contractorMap.get(worker.contractorId) || null : null);
+
+    return {
+      assignment: { ...assignment, worker, contractor },
+      worker,
+      contractor,
+      card: cardByAssignment.get(assignment.id) || null,
+      documents,
+      identityNumberMasked: maskSafetyIdentityNumber(worker?.identityNumber),
+      healthStatus: getSafetyWorkerDocumentReadiness(documents.health_check),
+      insuranceStatus: getSafetyWorkerDocumentReadiness(documents.insurance),
+      profileStatus: getProfileReadiness(worker, documents),
+    };
+  });
+};
 
 export const safetyPassportService = {
   async uploadAttachment(params: {
@@ -389,21 +490,35 @@ export const safetyPassportService = {
   },
 
   async upsertWorkerDocument(input: Partial<SafetyWorkerDocument> & { workerId: string; name: string }): Promise<SafetyWorkerDocument> {
+    const documentType = input.documentType || 'other';
     const payload = toDb(omitUndefined({
       ...input,
-      documentType: input.documentType || 'other',
+      documentType,
       status: input.status || 'submitted',
       attachments: input.attachments || [],
       isRequired: input.isRequired || false,
     }));
     let result;
-    if (input.id) result = await supabase.from(DOCUMENT_TABLE).update(payload).eq('id', input.id).select().single();
-    else {
+    let documentId = input.id;
+    if (!documentId && isCanonicalSafetyDocumentType(documentType)) {
+      const existing = await supabase
+        .from(DOCUMENT_TABLE)
+        .select('id')
+        .eq('worker_id', input.workerId)
+        .eq('document_type', documentType)
+        .maybeSingle();
+      if (existing.error) throw existing.error;
+      documentId = existing.data?.id;
+    }
+    if (documentId) {
+      delete payload.id;
+      result = await supabase.from(DOCUMENT_TABLE).update(payload).eq('id', documentId).select().single();
+    } else {
       delete payload.id;
       result = await supabase.from(DOCUMENT_TABLE).insert(payload).select().single();
     }
     if (result.error) throw result.error;
-    await logAudit(input.id ? 'document.update' : 'document.create', 'safety_worker_documents', result.data.id, { workerId: input.workerId }).catch(() => undefined);
+    await logAudit(documentId ? 'document.update' : 'document.create', 'safety_worker_documents', result.data.id, { workerId: input.workerId }).catch(() => undefined);
     return mapDocument(result.data);
   },
 
@@ -462,6 +577,82 @@ export const safetyPassportService = {
     const workerMap = await loadWorkersByIds([...(new Set((data || []).map((row: any) => row.worker_id).filter(Boolean)))]);
     const contractorMap = await loadContractorsByIds([...(new Set((data || []).map((row: any) => row.contractor_id).filter(Boolean)))]);
     return (data || []).map(row => mapAssignment(row, workerMap, contractorMap));
+  },
+
+  async listProjectWorkerRows(projectId: string, constructionSiteId?: string | null): Promise<SafetyProjectWorkerRow[]> {
+    let query = supabase.from(ASSIGNMENT_TABLE).select('*').eq('project_id', projectId).order('created_at', { ascending: false }).limit(1000);
+    if (constructionSiteId) query = query.eq('construction_site_id', constructionSiteId);
+    const { data, error } = await query;
+    if (error) throw error;
+
+    const assignmentRows = data || [];
+    const workerIds = [...(new Set(assignmentRows.map((row: any) => row.worker_id).filter(Boolean)))] as string[];
+    const contractorIdsFromAssignments = assignmentRows.map((row: any) => row.contractor_id).filter(Boolean) as string[];
+    const workerMap = await loadWorkersByIds(workerIds);
+    const contractorIdsFromWorkers = Array.from(workerMap.values()).map(worker => worker.contractorId).filter(Boolean) as string[];
+    const contractorIds = [...contractorIdsFromAssignments, ...contractorIdsFromWorkers];
+    const contractorMap = await loadContractorsByIds([...(new Set(contractorIds))]);
+    const assignments = assignmentRows.map(row => mapAssignment(row, workerMap, contractorMap));
+
+    let documents: SafetyWorkerDocument[] = [];
+    if (workerIds.length) {
+      const docsRes = await supabase
+        .from(DOCUMENT_TABLE)
+        .select('*')
+        .in('worker_id', workerIds)
+        .order('created_at', { ascending: false });
+      if (docsRes.error) throw docsRes.error;
+      documents = await Promise.all((docsRes.data || []).map(mapDocument));
+    }
+
+    const assignmentIds = assignments.map(item => item.id);
+    let cards: SafetyCard[] = [];
+    if (assignmentIds.length) {
+      const cardsRes = await supabase
+        .from(CARD_TABLE)
+        .select('*')
+        .in('assignment_id', assignmentIds)
+        .order('status', { ascending: true })
+        .order('created_at', { ascending: false });
+      if (cardsRes.error) throw cardsRes.error;
+      const assignmentMap = new Map(assignments.map(item => [item.id, item]));
+      cards = (cardsRes.data || []).map(row => mapCard(row, workerMap, assignmentMap, contractorMap));
+    }
+
+    return buildSafetyProjectWorkerRows({
+      assignments,
+      workers: Array.from(workerMap.values()),
+      contractors: Array.from(contractorMap.values()),
+      documents,
+      cards,
+    });
+  },
+
+  async saveWorkerDetail(input: SafetyWorkerDetailSaveInput): Promise<{ worker: SafetyWorkerProfile; assignment?: SafetyProjectAssignment }> {
+    const savedWorker = await this.upsertWorkerProfile(input.worker);
+    for (const document of input.documents || []) {
+      await this.upsertWorkerDocument({
+        ...document,
+        workerId: savedWorker.id,
+        name: document.name,
+        documentType: document.documentType,
+        isRequired: document.isRequired ?? ['identity_front', 'identity_back', 'health_check', 'insurance'].includes(document.documentType),
+      });
+    }
+
+    let savedAssignment: SafetyProjectAssignment | undefined;
+    if (input.assignment) {
+      savedAssignment = await this.assignWorkerToProject({
+        ...input.assignment,
+        workerId: savedWorker.id,
+        projectId: input.assignment.projectId,
+      });
+    } else {
+      await this.getWorkerProfile(savedWorker.id).catch(() => null);
+    }
+
+    const worker = await this.getWorkerProfile(savedWorker.id);
+    return { worker: worker || savedWorker, assignment: savedAssignment };
   },
 
   async updateSiteInduction(input: Partial<SafetySiteInduction> & { assignmentId: string; trainingType: SafetySiteInduction['trainingType'] }): Promise<SafetySiteInduction> {

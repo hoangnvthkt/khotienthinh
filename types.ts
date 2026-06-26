@@ -4858,6 +4858,8 @@ export type SafetyPassportCommitmentStatus = 'pending' | 'signed';
 export type SafetyPassportPpeStatus = 'missing' | 'partial' | 'complete';
 export type SafetyPassportCardStatus = 'draft' | 'active' | 'expired' | 'revoked';
 export type SafetyPassportInductionType = 'site_rules' | 'toolbox' | 'commitment' | 'ppe';
+export type SafetyWorkerDocumentType = 'identity_front' | 'identity_back' | 'health_check' | 'insurance' | 'safety_card' | 'identity' | 'other';
+export type SafetyPassportDocumentReadiness = 'missing' | 'valid' | 'expired' | 'rejected';
 
 export interface SafetyAttachment extends Attachment {
   storagePath?: string;
@@ -4887,6 +4889,9 @@ export interface SafetyWorkerProfile {
   identityType: 'cccd' | 'passport' | 'other';
   identityNumber?: string | null;
   identityIssueDate?: string | null;
+  identityIssuePlace?: string | null;
+  dateOfBirth?: string | null;
+  permanentAddress?: string | null;
   identityAttachments: SafetyAttachment[];
   phone?: string | null;
   emergencyContact?: string | null;
@@ -4909,7 +4914,7 @@ export interface SafetyWorkerProfile {
 export interface SafetyWorkerDocument {
   id: string;
   workerId: string;
-  documentType: string;
+  documentType: SafetyWorkerDocumentType | string;
   name: string;
   issueDate?: string | null;
   expiryDate?: string | null;
@@ -4965,6 +4970,8 @@ export interface SafetyProjectAssignment {
   contractor?: SafetyPassportContractor | null;
   teamName?: string | null;
   roleName?: string | null;
+  workType?: string | null;
+  siteAccessCardCode?: string | null;
   startDate: string;
   endDate?: string | null;
   siteTrainingStatus: SafetyPassportRequirementStatus;
@@ -5037,6 +5044,24 @@ export interface SafetyCardPrintLog {
   printedAt: string;
   templateSnapshot: Record<string, any>;
   metadata: Record<string, any>;
+}
+
+export interface SafetyProjectWorkerRow {
+  assignment: SafetyProjectAssignment;
+  worker: SafetyWorkerProfile | null;
+  contractor: SafetyPassportContractor | null;
+  card: SafetyCard | null;
+  documents: Partial<Record<SafetyWorkerDocumentType, SafetyWorkerDocument>>;
+  identityNumberMasked: string;
+  healthStatus: SafetyPassportDocumentReadiness;
+  insuranceStatus: SafetyPassportDocumentReadiness;
+  profileStatus: SafetyPassportDocumentReadiness;
+}
+
+export interface SafetyWorkerDetailSaveInput {
+  worker: Partial<SafetyWorkerProfile> & { fullName: string };
+  assignment?: Partial<SafetyProjectAssignment> & { projectId: string };
+  documents?: Array<Partial<SafetyWorkerDocument> & { documentType: SafetyWorkerDocumentType; name: string }>;
 }
 
 export interface SafetyPassportDashboard {

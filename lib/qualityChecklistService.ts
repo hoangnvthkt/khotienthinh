@@ -502,7 +502,7 @@ export const qualityChecklistService = {
     const now = new Date().toISOString();
     const updates: any = {
       status,
-      ...projectSubmissionService.actionMeta(userId, false),
+      ...projectSubmissionService.actionMeta(userId, status === 'submitted'),
     };
 
     if (status === 'submitted') {
@@ -535,7 +535,18 @@ export const qualityChecklistService = {
       }
     }
 
-    const { error } = await supabase.from(TABLE).update(toDb(updates)).eq('id', id);
+    const dbUpdates = toDb(updates);
+    let { error } = await supabase.from(TABLE).update(dbUpdates).eq('id', id);
+    if (
+      error &&
+      status === 'submitted' &&
+      (error.code === '42703' || [error.message, error.details, error.hint].filter(Boolean).join(' ').includes('ever_submitted'))
+    ) {
+      const fallbackUpdates = { ...dbUpdates };
+      delete fallbackUpdates.ever_submitted;
+      const retry = await supabase.from(TABLE).update(fallbackUpdates).eq('id', id);
+      error = retry.error;
+    }
     if (error) throw error;
 
     if (status === 'submitted' && submissionTarget) {
