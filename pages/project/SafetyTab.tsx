@@ -1,16 +1,17 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { AlertTriangle, ClipboardCheck, HardHat, Plus, RefreshCw, ShieldCheck, Truck, Users } from 'lucide-react';
+import { AlertTriangle, BadgeCheck, ClipboardCheck, HardHat, IdCard, Plus, RefreshCw, ShieldCheck, Truck, UserRound, Users } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
-import { safetyService, SafetyIssueFilters } from '../../lib/safetyService';
+import { getSafetyEquipmentDocumentsStatus, safetyService, SafetyIssueFilters } from '../../lib/safetyService';
 import { supabase } from '../../lib/supabase';
 import {
   SafetyAttachment,
   SafetyDashboardSummary,
   SafetyEquipment,
+  SafetyEquipmentDocument,
   SafetyInspection,
   SafetyInspectionItem,
   SafetyIssue,
@@ -29,6 +30,7 @@ import SafetyContractorPanel from '../../components/project/safety/SafetyContrac
 import SafetyEquipmentPanel from '../../components/project/safety/SafetyEquipmentPanel';
 import SafetyTeamPanel from '../../components/project/safety/SafetyTeamPanel';
 import SafetyAttachmentPreviewModal from '../../components/project/safety/SafetyAttachmentPreviewModal';
+import SafetyPassportPanel from '../../components/project/safety/SafetyPassportPanel';
 
 interface SafetyTabProps {
   projectId: string;
@@ -36,10 +38,15 @@ interface SafetyTabProps {
   canManageTab?: boolean;
 }
 
-type SafetyView = 'overview' | 'issues' | 'inspections' | 'contractors' | 'teams' | 'equipment';
+type SafetyView = 'overview' | 'passport' | 'passportContractors' | 'passportWorkers' | 'passportAssignments' | 'passportCards' | 'issues' | 'inspections' | 'contractors' | 'teams' | 'equipment';
 
 const VIEW_CONFIG: Record<SafetyView, { label: string; icon: React.ReactNode }> = {
   overview: { label: 'Tổng quan', icon: <ShieldCheck size={14} /> },
+  passport: { label: 'Passport', icon: <BadgeCheck size={14} /> },
+  passportContractors: { label: 'NTP/Tổ đội', icon: <HardHat size={14} /> },
+  passportWorkers: { label: 'Hồ sơ nhân công', icon: <UserRound size={14} /> },
+  passportAssignments: { label: 'Nhân công CT', icon: <Users size={14} /> },
+  passportCards: { label: 'Thẻ an toàn', icon: <IdCard size={14} /> },
   issues: { label: 'Sự cố / nguy cơ', icon: <AlertTriangle size={14} /> },
   inspections: { label: 'Kiểm tra hiện trường', icon: <ClipboardCheck size={14} /> },
   contractors: { label: 'Nhà thầu phụ', icon: <HardHat size={14} /> },
@@ -386,6 +393,25 @@ const SafetyTab: React.FC<SafetyTabProps> = ({ projectId, constructionSiteId, ca
     toast.success('Đã lưu thiết bị');
   };
 
+  const toggleEquipmentDocument = async (
+    item: SafetyEquipment,
+    document: SafetyEquipmentDocument,
+    nextDone: boolean,
+  ) => {
+    try {
+      const savedDocument = await safetyService.toggleEquipmentDocumentChecklistItem(document, nextDone, user.id);
+      setEquipment(prev => prev.map(row => {
+        if (row.id !== item.id) return row;
+        const nextChecklist = (row.documentChecklist || []).map(entry => entry.id === savedDocument.id ? savedDocument : entry);
+        return { ...row, documentsStatus: getSafetyEquipmentDocumentsStatus(nextChecklist), documentChecklist: nextChecklist };
+      }));
+      await loadSummary();
+    } catch (error: any) {
+      logApiError('SafetyTab.toggleEquipmentDocument', error);
+      toast.error('Không cập nhật được checklist hồ sơ', getApiErrorMessage(error));
+    }
+  };
+
   const deleteEquipment = async (item: SafetyEquipment) => {
     const ok = await confirm({
       title: 'Xóa thiết bị',
@@ -441,7 +467,7 @@ const SafetyTab: React.FC<SafetyTabProps> = ({ projectId, constructionSiteId, ca
       <PageHeader
         eyebrow="Dự án / An toàn"
         title="An toàn công trường"
-        description="Theo dõi nguy cơ, sự cố, checklist hiện trường, nhà thầu phụ và thiết bị vào công trường."
+        description="Theo dõi Safety Passport nhân công, nguy cơ, checklist hiện trường, nhà thầu phụ và thiết bị vào công trường."
         meta={
           <>
             <StatusBadge status="score" label={`Score ${summary?.safetyScore ?? '-'}`} tone={(summary?.safetyScore || 0) >= 80 ? 'success' : 'warning'} size="md" />
@@ -462,6 +488,8 @@ const SafetyTab: React.FC<SafetyTabProps> = ({ projectId, constructionSiteId, ca
         primaryAction={primaryAction}
         secondaryActions={[
           { label: 'Thiết bị', icon: <Truck size={15} />, onClick: () => setView('equipment') },
+          { label: 'Passport', icon: <BadgeCheck size={15} />, onClick: () => setView('passport') },
+          { label: 'Thẻ an toàn', icon: <IdCard size={15} />, onClick: () => setView('passportCards') },
           { label: 'Nhà thầu', icon: <HardHat size={15} />, onClick: () => setView('contractors') },
           { label: 'Tổ đội', icon: <Users size={15} />, onClick: () => setView('teams') },
         ]}
@@ -503,6 +531,56 @@ const SafetyTab: React.FC<SafetyTabProps> = ({ projectId, constructionSiteId, ca
           onOpen={setSelectedIssue}
           onEdit={issue => { setEditingIssue(issue); setShowIssueForm(true); }}
           onDelete={deleteIssue}
+          canManage={canManageTab}
+        />
+      )}
+
+      {view === 'passport' && (
+        <SafetyPassportPanel
+          mode="passport"
+          projectId={projectId}
+          constructionSiteId={constructionSiteId}
+          currentUser={user}
+          canManage={canManageTab}
+        />
+      )}
+
+      {view === 'passportContractors' && (
+        <SafetyPassportPanel
+          mode="passportContractors"
+          projectId={projectId}
+          constructionSiteId={constructionSiteId}
+          currentUser={user}
+          canManage={canManageTab}
+        />
+      )}
+
+      {view === 'passportWorkers' && (
+        <SafetyPassportPanel
+          mode="passportWorkers"
+          projectId={projectId}
+          constructionSiteId={constructionSiteId}
+          currentUser={user}
+          canManage={canManageTab}
+        />
+      )}
+
+      {view === 'passportAssignments' && (
+        <SafetyPassportPanel
+          mode="passportAssignments"
+          projectId={projectId}
+          constructionSiteId={constructionSiteId}
+          currentUser={user}
+          canManage={canManageTab}
+        />
+      )}
+
+      {view === 'passportCards' && (
+        <SafetyPassportPanel
+          mode="passportCards"
+          projectId={projectId}
+          constructionSiteId={constructionSiteId}
+          currentUser={user}
           canManage={canManageTab}
         />
       )}
@@ -560,6 +638,7 @@ const SafetyTab: React.FC<SafetyTabProps> = ({ projectId, constructionSiteId, ca
           canManage={canManageTab}
           loading={loadingView}
           onSave={saveEquipment}
+          onToggleDocument={toggleEquipmentDocument}
           onDelete={deleteEquipment}
           onPreviewAttachment={openAttachmentPreview}
         />

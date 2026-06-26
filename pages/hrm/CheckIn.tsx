@@ -152,7 +152,7 @@ const CheckIn: React.FC = () => {
       id: site.id,
       name: site.name,
       label: site.name,
-      sourceLabel: 'Cong truong',
+      sourceLabel: 'Công trường',
       type: 'construction_site',
       lat: finiteOrNull(site.latitude),
       lng: finiteOrNull(site.longitude),
@@ -165,7 +165,7 @@ const CheckIn: React.FC = () => {
       id: office.id,
       name: office.name,
       label: office.name,
-      sourceLabel: 'Van phong',
+      sourceLabel: 'Văn phòng',
       type: 'office',
       lat: finiteOrNull(office.latitude),
       lng: finiteOrNull(office.longitude),
@@ -285,7 +285,7 @@ const CheckIn: React.FC = () => {
     canvas.width = width;
     canvas.height = height;
     const ctx = canvas.getContext('2d');
-    if (!ctx) throw new Error('Khong tao duoc anh check-in.');
+    if (!ctx) throw new Error('Không tạo được ảnh check-in.');
 
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, width, height);
@@ -303,7 +303,7 @@ const CheckIn: React.FC = () => {
     const blob = await new Promise<Blob | null>(resolve => {
       canvas.toBlob(resolve, 'image/jpeg', 0.72);
     });
-    if (!blob?.size) throw new Error('Anh check-in rong.');
+    if (!blob?.size) throw new Error('Ảnh check-in rỗng.');
     return blob;
   }, [cameraReady, selectedLocation]);
 
@@ -342,7 +342,7 @@ const CheckIn: React.FC = () => {
         xpService.awardXP(currentEmployee!.id, 'daily_checkin').catch(() => { });
         celebrate({
           variant: 'checkin',
-          title: 'Check-in thanh cong',
+          title: 'Check-in thành công',
           subtitle: selectedLocation!.name,
           confetti: false,
           duration: 1600,
@@ -351,13 +351,13 @@ const CheckIn: React.FC = () => {
         setLastAction(`Da check-out luc ${timeLocal()} (${saved.eventCount || currentEventCount + 1}/6)`);
         showToast({
           type: 'success',
-          title: 'Check-out thanh cong',
+          title: 'Check-out thành công',
           message: selectedLocation!.name,
         });
       }
     } catch (error) {
       console.error('Camera check-in failed:', error);
-      setLastAction(`Chua luu duoc cham cong: ${formatSyncError(error)}`);
+      setLastAction(`Chưa lưu được chấm công: ${formatSyncError(error)}`);
     } finally {
       setProcessing(null);
     }
@@ -484,7 +484,7 @@ const CheckIn: React.FC = () => {
             {locations.map(location => (
               <option key={location.id} value={location.id}>
                 {location.sourceLabel} - {location.name}
-                {location.distanceM !== null ? ` (${location.distanceM}m)` : ' (chua co GPS)'}
+                {location.distanceM !== null ? ` (${location.distanceM}m)` : ' (chưa có GPS)'}
               </option>
             ))}
           </select>

@@ -2399,6 +2399,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 <div class="approval-signatures">
                     <div><strong>BP Vật tư-TB</strong><span>${escapeHtml(user.name || '')}</span></div>
                     <div><strong>PT Phòng QLDA</strong><span>Lưu Công Danh</span></div>
+                    <div><strong>BP Kế hoạch</strong><span>Nguyễn Thành Đô</span></div>
                     <div><strong>Giám đốc vật tư</strong><span>Nguyễn Thị Mơ</span></div>
                     <div><strong>Tổng giám đốc</strong><span>Dương Xuân Thịnh</span></div>
                 </div>
@@ -2653,7 +2654,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 .approval-right { text-align: right; }
                 .approval-muted { margin-top: 2px; color: #666; font-size: 10px; }
                 .approval-note { margin-top: 10px; border: 1px solid #d7d7d7; padding: 6px 8px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; font-size: 11.5px; }
-                .approval-signatures { margin-top: 20px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; text-align: center; font-family: "Times New Roman", Times, serif; }
+                .approval-signatures { margin-top: 20px; display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; text-align: center; font-family: "Times New Roman", Times, serif; }
                 .approval-signatures div { min-height: 120px; }
                 .approval-signatures strong { display: block; margin-bottom: 85px; }
                 .approval-signatures span { font-weight: 700; }
