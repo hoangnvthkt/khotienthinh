@@ -7,16 +7,17 @@ type StatusBadgeProps = {
   tone?: ErpStatusTone;
   size?: 'sm' | 'md';
   className?: string;
+  showDot?: boolean;
 };
 
-const StatusBadge: React.FC<StatusBadgeProps> = ({ status, label, tone, size = 'sm', className = '' }) => {
+const StatusBadge: React.FC<StatusBadgeProps> = ({ status, label, tone, size = 'sm', className = '', showDot = true }) => {
   const resolvedTone = tone || getDefaultStatusTone(status);
   const styles = ERP_TONE_STYLES[resolvedTone];
   const sizeClass = size === 'md' ? 'px-2.5 py-1 text-[11px]' : 'px-2 py-0.5 text-[10px]';
 
   return (
     <span className={`inline-flex w-fit items-center gap-1 rounded-full border font-black ${sizeClass} ${styles.badge} ${className}`}>
-      <span className={`h-1.5 w-1.5 rounded-full ${styles.dot}`} />
+      {showDot && <span className={`h-1.5 w-1.5 rounded-full ${styles.dot}`} />}
       {label || getDefaultStatusLabel(status)}
     </span>
   );

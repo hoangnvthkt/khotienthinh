@@ -14,7 +14,6 @@ import {
   Printer,
   RefreshCw,
   Save,
-  Search,
   ShoppingCart,
   Trash2,
   Truck,
@@ -33,6 +32,7 @@ import { materialRequestFulfillmentService } from '../../lib/materialRequestFulf
 import { getPoLineStockUnitPrice } from '../../lib/materialUnitConversion';
 import { buildPoReceiveUrl } from '../../lib/poQr';
 import SupplierCombobox from '../../components/SupplierCombobox';
+import { EmptyState, FilterBar, PageHeader, StatusBadge, type ErpStatusTone } from '../../components/erp';
 import {
   canUserMutatePurchaseOrder,
   getPurchaseOrderRemovalBlockReason,
@@ -138,6 +138,22 @@ const poStatusLabel: Record<string, string> = {
   returned: 'Hoàn NCC',
   cancelled: 'Đã huỷ',
 };
+
+const poStatusTone: Record<string, ErpStatusTone> = {
+  draft: 'neutral',
+  sent: 'warning',
+  confirmed: 'success',
+  in_transit: 'info',
+  partial: 'attention',
+  delivered: 'success',
+  closed: 'neutral',
+  returned: 'warning',
+  cancelled: 'danger',
+};
+
+const tableSurfaceClass = 'overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900';
+const tableHeadClass = 'sticky top-0 z-10 bg-slate-100 text-[11px] uppercase tracking-wide text-slate-500 dark:bg-slate-800 dark:text-slate-400';
+const compactInputClass = 'min-h-9 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm font-bold text-slate-800 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/15 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100';
 
 const buildDemandSearch = (row: CompanyProcurementDemandLine, projectName: string, warehouseName: string) =>
   [
@@ -720,94 +736,98 @@ const CompanyProcurement: React.FC = () => {
   ];
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
-      <div className="border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
-        <div className="px-5 py-4">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <div className="flex items-center gap-2">
-                <ShoppingCart className="h-6 w-6 text-emerald-600" />
-                <h1 className="text-2xl font-black text-slate-900 dark:text-slate-100">Mua hàng</h1>
-              </div>
-              <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">Gom nhu cầu từ nhiều dự án, tạo PO công ty và theo dõi từng đợt giao.</p>
-            </div>
+    <div className="min-h-screen bg-slate-50 px-4 py-5 dark:bg-slate-950 sm:px-5">
+      <PageHeader
+        icon={<ShoppingCart size={18} />}
+        eyebrow="Mua hàng công ty"
+        title="Mua hàng"
+        description="Gom nhu cầu từ nhiều dự án, tạo PO công ty và theo dõi từng đợt giao."
+        primaryAction={{
+          label: 'Làm mới',
+          icon: <RefreshCw size={16} />,
+          onClick: refresh,
+        }}
+        meta={
+          <>
+            <StatusBadge status="demand" label={`${demandRows.length} dòng nhu cầu`} tone="info" size="md" />
+            <StatusBadge status="po" label={`${companyPos.length} PO công ty`} tone="neutral" size="md" />
+            <StatusBadge status="delivery" label={`${deliveryGroups.length} đợt giao`} tone="success" size="md" />
+          </>
+        }
+      />
+
+      <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
+        {tabs.map(tab => {
+          const Icon = tab.icon;
+          const active = activeTab === tab.key;
+          return (
             <button
+              key={tab.key}
               type="button"
-              onClick={refresh}
-              className="inline-flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+              onClick={() => setActiveTab(tab.key)}
+              className={`inline-flex min-h-10 shrink-0 items-center gap-2 whitespace-nowrap rounded-lg border px-3 py-2 text-sm font-black transition active:scale-[0.98] ${active
+                ? 'border-emerald-300 bg-emerald-50 text-emerald-700 shadow-sm dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300'
+                : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800'
+                }`}
             >
-              <RefreshCw size={16} />
-              Làm mới
+              <Icon size={16} />
+              {tab.label}
+              {typeof tab.count === 'number' && (
+                <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300">{tab.count}</span>
+              )}
             </button>
-          </div>
-          <div className="mt-4 flex flex-wrap gap-2">
-            {tabs.map(tab => {
-              const Icon = tab.icon;
-              const active = activeTab === tab.key;
-              return (
-                <button
-                  key={tab.key}
-                  type="button"
-                  onClick={() => setActiveTab(tab.key)}
-                  className={`inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-black transition ${active
-                    ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
-                    : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300'
-                    }`}
-                >
-                  <Icon size={16} />
-                  {tab.label}
-                  {typeof tab.count === 'number' && <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300">{tab.count}</span>}
-                </button>
-              );
-            })}
-          </div>
-        </div>
+          );
+        })}
       </div>
 
-      <div className="px-5 py-5">
+      <div className="py-5">
         {loading ? (
-          <div className="flex h-72 items-center justify-center rounded-md border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
-            <Loader2 className="h-7 w-7 animate-spin text-emerald-600" />
-          </div>
+          <EmptyState
+            icon={<Loader2 className="h-5 w-5 animate-spin" />}
+            title="Đang tải dữ liệu mua hàng"
+            message="Hệ thống đang đồng bộ nhu cầu, PO và lịch giao mới nhất."
+          />
         ) : (
           <>
             {activeTab === 'demand' && (
               <div className="space-y-4">
-                <div className="flex flex-col gap-3 rounded-md border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900 xl:flex-row xl:items-center">
-                  <div className="relative flex-1">
-                    <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                    <input
-                      value={query}
-                      onChange={event => setQuery(event.target.value)}
-                      placeholder="Tìm MR, vật tư, dự án, kho"
-                      className="w-full rounded-md border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm font-semibold outline-none focus:border-emerald-300 dark:border-slate-700 dark:bg-slate-950"
-                    />
-                  </div>
-                  <select value={warehouseFilter} onChange={event => setWarehouseFilter(event.target.value)} className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-bold dark:border-slate-700 dark:bg-slate-950">
-                    <option value="">Tất cả kho</option>
-                    {warehouses.map(warehouse => <option key={warehouse.id} value={warehouse.id}>{warehouse.name}</option>)}
-                  </select>
-                  <button
-                    type="button"
-                    onClick={handleCreatePo}
-                    disabled={saving || selectedRows.length === 0}
-                    className="inline-flex items-center justify-center gap-2 rounded-md bg-emerald-600 px-4 py-2 text-sm font-black text-white shadow-sm hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300"
-                  >
-                    {saving ? <Loader2 size={16} className="animate-spin" /> : <ShoppingCart size={16} />}
-                    Tạo PO gộp
-                  </button>
-                </div>
+                <FilterBar
+                  searchValue={query}
+                  onSearchChange={setQuery}
+                  searchPlaceholder="Tìm MR, vật tư, dự án, kho"
+                  filters={
+                    <>
+                      <select value={warehouseFilter} onChange={event => setWarehouseFilter(event.target.value)} className={`${compactInputClass} min-w-[180px]`}>
+                        <option value="">Tất cả kho</option>
+                        {warehouses.map(warehouse => <option key={warehouse.id} value={warehouse.id}>{warehouse.name}</option>)}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={handleCreatePo}
+                        disabled={saving || selectedRows.length === 0}
+                        className="inline-flex min-h-10 items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-emerald-600 bg-emerald-600 px-4 py-2 text-sm font-black text-white shadow-sm transition hover:bg-emerald-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-slate-300 dark:disabled:border-slate-700 dark:disabled:bg-slate-800"
+                      >
+                        {saving ? <Loader2 size={16} className="animate-spin" /> : <ShoppingCart size={16} />}
+                        Tạo PO gộp
+                      </button>
+                    </>
+                  }
+                  summary={selectedRows.length > 0 ? (
+                    <>Đã chọn {selectedRows.length} dòng, tổng SL còn cần {formatQty(selectedSummary.qty)}, giá trị tạm tính {formatMoney(selectedSummary.value)}.</>
+                  ) : null}
+                />
 
-                {selectedRows.length > 0 && (
-                  <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
-                    Đã chọn {selectedRows.length} dòng, tổng SL còn cần {formatQty(selectedSummary.qty)}, giá trị tạm tính {formatMoney(selectedSummary.value)}.
-                  </div>
-                )}
-
-                <div className="overflow-hidden rounded-md border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+                {filteredDemandRows.length === 0 ? (
+                  <EmptyState
+                    icon={<ClipboardList size={18} />}
+                    title="Không có nhu cầu phù hợp"
+                    message="Thử đổi bộ lọc hoặc chờ các đề xuất vật tư mới từ công trường."
+                  />
+                ) : (
+                <div className={tableSurfaceClass}>
                   <div className="overflow-x-auto">
                     <table className="min-w-[1550px] w-full text-left text-sm table-fixed">
-                      <thead className="bg-slate-100 text-xs uppercase text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                      <thead className={tableHeadClass}>
                         <tr>
                           <th className="w-10 px-2 py-3"></th>
                           <th className="w-64 px-2 py-3">Nhu cầu</th>
@@ -913,14 +933,22 @@ const CompanyProcurement: React.FC = () => {
                     </table>
                   </div>
                 </div>
+                )}
               </div>
             )}
 
             {activeTab === 'po' && (
-              <div className="overflow-hidden rounded-md border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+              companyPos.length === 0 ? (
+                <EmptyState
+                  icon={<ShoppingCart size={18} />}
+                  title="Chưa có PO công ty"
+                  message="Chọn nhu cầu chờ mua để tạo PO gộp theo nhà cung cấp."
+                />
+              ) : (
+              <div className={tableSurfaceClass}>
                 <div className="overflow-x-auto">
                   <table className="min-w-[1100px] w-full text-left text-sm">
-                    <thead className="bg-slate-100 text-xs uppercase text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                    <thead className={tableHeadClass}>
                       <tr>
                         <th className="px-4 py-3">PO</th>
                         <th className="px-4 py-3">NCC / Nhóm mua</th>
@@ -955,9 +983,9 @@ const CompanyProcurement: React.FC = () => {
                             <td className="px-4 py-4 text-right font-black">{formatMoney(po.totalAmount)}</td>
                             <td className="px-4 py-4">
                               <div className="flex flex-wrap gap-1.5">
-                                <span className="rounded bg-blue-50 px-2 py-1 text-xs font-black text-blue-700 dark:bg-blue-950/30 dark:text-blue-300">{poStatusLabel[po.status] || po.status}</span>
+                                <StatusBadge status={po.status} label={poStatusLabel[po.status] || po.status} tone={poStatusTone[po.status] || 'neutral'} showDot={false} />
                                 {workSummary.isRejectedBeforeReceipt && (
-                                  <span className="inline-flex items-center gap-1 rounded bg-rose-50 px-2 py-1 text-xs font-black text-rose-700 dark:bg-rose-950/30 dark:text-rose-300">
+                                  <span className="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[10px] font-black text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-300">
                                     <Ban size={12} /> Từ chối
                                   </span>
                                 )}
@@ -996,9 +1024,17 @@ const CompanyProcurement: React.FC = () => {
                   </table>
                 </div>
               </div>
+              )
             )}
 
             {activeTab === 'delivery' && (
+              deliveryGroups.length === 0 ? (
+                <EmptyState
+                  icon={<Truck size={18} />}
+                  title="Chưa có đợt giao hàng"
+                  message="Tạo đợt giao từ một PO đã duyệt để theo dõi xuất hàng về công trường."
+                />
+              ) : (
               <div className="grid gap-3">
                 {deliveryGroups.map(detail => {
                   const po = detail.purchaseOrder;
@@ -1017,16 +1053,14 @@ const CompanyProcurement: React.FC = () => {
                   const isDeletingGroup = deletingDeliveryGroupId === detail.group.id;
                   const isSavingGroup = savingDeliveryGroupId === detail.group.id;
                   return (
-                    <div key={detail.group.id} className="rounded-md border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                    <div key={detail.group.id} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                         <div className="text-left">
                           <div className="flex items-center gap-2">
                             <FileText className="h-5 w-5 text-indigo-600" />
                             <span className="font-mono text-lg font-black text-indigo-700 dark:text-indigo-300">{detail.group.deliveryNo}</span>
                             {isRejectedGroup && (
-                              <span className="inline-flex items-center gap-1 rounded bg-rose-50 px-2 py-1 text-xs font-black text-rose-700 dark:bg-rose-950/30 dark:text-rose-300">
-                                <Ban size={12} /> Từ chối
-                              </span>
+                              <StatusBadge status="rejected" label="Từ chối" tone="danger" showDot={false} />
                             )}
                           </div>
                           <div className="mt-1 text-sm font-bold text-slate-700 dark:text-slate-200">{po?.poNumber || detail.group.purchaseOrderId} • {po?.vendorName || po?.vendorId || '—'} • {formatDate(detail.group.plannedDate)}</div>
@@ -1039,7 +1073,7 @@ const CompanyProcurement: React.FC = () => {
                           <button
                             type="button"
                             onClick={() => toggleDeliveryGroupView(detail.group.id)}
-                            className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-black text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
+                            className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-black text-slate-700 transition hover:bg-slate-50 active:scale-[0.98] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
                           >
                             {isExpandedGroup ? <EyeOff size={16} /> : <Eye size={16} />}
                             {isExpandedGroup ? 'Thu gọn' : 'Xem'}
@@ -1050,7 +1084,7 @@ const CompanyProcurement: React.FC = () => {
                                 type="button"
                                 onClick={() => handleSaveDeliveryGroup(detail)}
                                 disabled={isSavingGroup}
-                                className="inline-flex items-center gap-2 rounded-md bg-emerald-600 px-3 py-2 text-sm font-black text-white hover:bg-emerald-700 disabled:opacity-60"
+                                className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-emerald-600 bg-emerald-600 px-3 py-2 text-sm font-black text-white transition hover:bg-emerald-700 active:scale-[0.98] disabled:opacity-60"
                               >
                                 {isSavingGroup ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
                                 Lưu
@@ -1059,7 +1093,7 @@ const CompanyProcurement: React.FC = () => {
                                 type="button"
                                 onClick={cancelEditingDeliveryGroup}
                                 disabled={isSavingGroup}
-                                className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-black text-slate-700 hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
+                                className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-black text-slate-700 transition hover:bg-slate-50 active:scale-[0.98] disabled:opacity-60 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
                               >
                                 <X size={16} />
                                 Huỷ
@@ -1075,7 +1109,7 @@ const CompanyProcurement: React.FC = () => {
                                 : !canEditGroup
                                   ? 'Đợt đã được xử lý, nhập kho hoặc từ chối nên không thể sửa.'
                                   : 'Sửa đợt giao'}
-                              className="inline-flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-black text-amber-700 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300"
+                              className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-black text-amber-700 transition hover:bg-amber-100 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300"
                             >
                               <Pencil size={16} />
                               Sửa
@@ -1084,7 +1118,7 @@ const CompanyProcurement: React.FC = () => {
                           <button
                             type="button"
                             onClick={() => printDeliveryGroup(detail)}
-                            className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-black text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
+                            className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-black text-slate-700 transition hover:bg-slate-50 active:scale-[0.98] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
                           >
                             <Printer size={16} />
                             In đợt
@@ -1098,7 +1132,7 @@ const CompanyProcurement: React.FC = () => {
                               : isRemovableDeliveryGroup(detail)
                                 ? 'Xoá đợt giao'
                                 : 'Cần huỷ/từ chối phiếu kho trước khi xoá đợt.'}
-                            className="inline-flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-black text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300"
+                            className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-black text-red-700 transition hover:bg-red-100 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300"
                           >
                             {isDeletingGroup ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
                             Xoá
@@ -1199,13 +1233,21 @@ const CompanyProcurement: React.FC = () => {
                   );
                 })}
               </div>
+              )
             )}
 
             {activeTab === 'reconcile' && (
-              <div className="overflow-hidden rounded-md border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+              demandRows.length === 0 ? (
+                <EmptyState
+                  icon={<BarChart3 size={18} />}
+                  title="Chưa có dữ liệu đối chiếu"
+                  message="Khi có nhu cầu và PO, bảng này sẽ hiển thị BOQ, đề xuất, PO mở và thực nhận."
+                />
+              ) : (
+              <div className={tableSurfaceClass}>
                 <div className="overflow-x-auto">
                   <table className="min-w-[1000px] w-full text-left text-sm">
-                    <thead className="bg-slate-100 text-xs uppercase text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                    <thead className={tableHeadClass}>
                       <tr>
                         <th className="px-4 py-3">Dự án / MR</th>
                         <th className="px-4 py-3">Vật tư</th>
@@ -1241,6 +1283,7 @@ const CompanyProcurement: React.FC = () => {
                   </table>
                 </div>
               </div>
+              )
             )}
           </>
         )}
