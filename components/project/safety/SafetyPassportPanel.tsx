@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, BadgeCheck, Briefcase, CheckCircle2, CreditCard, FileWarning, HardHat, IdCard, Plus, Save, ShieldCheck, Upload, UserRound, X } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Briefcase, IdCard, Plus, Save, UserRound, X } from 'lucide-react';
 import { EmptyState, MobileCardList, StatusBadge } from '../../erp';
 import { useToast } from '../../../context/ToastContext';
 import {
@@ -7,22 +7,21 @@ import {
   useSafetyPassportContractors,
   useSafetyPassportDashboard,
   useSafetyProjectAssignments,
+  useSafetyProjectWorkerRows,
   useSafetyWorkers,
 } from '../../../hooks/useSafetyPassport';
 import {
-  SafetyAttachment,
-  SafetyPassportAssignmentStatus,
   SafetyPassportContractor,
   SafetyPassportContractorType,
   SafetyProjectAssignment,
+  SafetyProjectWorkerRow,
   SafetyWorkerProfile,
   User,
 } from '../../../types';
-import {
-  getSafetyAssignmentStatusLabel,
-  safetyPassportService,
-} from '../../../lib/safetyPassportService';
+import { safetyPassportService } from '../../../lib/safetyPassportService';
 import SafetyPassportCardPreview from './SafetyPassportCardPreview';
+import SafetyPassportWorkerDetailModal from './SafetyPassportWorkerDetailModal';
+import SafetyPassportWorkerTable from './SafetyPassportWorkerTable';
 
 export type SafetyPassportMode = 'passport' | 'passportContractors' | 'passportWorkers' | 'passportAssignments' | 'passportCards';
 
@@ -33,12 +32,6 @@ interface Props {
   currentUser: User;
   canManage?: boolean;
 }
-
-const statusTone = (status: SafetyPassportAssignmentStatus) => {
-  if (status === 'eligible') return 'success';
-  if (status === 'suspended' || status === 'expired_certificate') return 'danger';
-  return 'warning';
-};
 
 const formatDate = (value?: string | null) => {
   if (!value) return '-';
@@ -67,17 +60,6 @@ const ModalShell: React.FC<{ title: string; eyebrow: string; onClose: () => void
       <div className="flex justify-end gap-2 border-t border-slate-100 px-5 py-4">{footer}</div>
     </div>
   </div>
-);
-
-const FilePicker: React.FC<{ label: string; onPick: (file: File) => void }> = ({ label, onPick }) => (
-  <label className="inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-lg border border-dashed border-slate-300 px-3 text-xs font-black text-slate-600 hover:border-orange-300 hover:bg-orange-50">
-    <Upload size={14} /> {label}
-    <input type="file" className="hidden" onChange={event => {
-      const file = event.target.files?.[0];
-      if (file) onPick(file);
-      event.currentTarget.value = '';
-    }} />
-  </label>
 );
 
 const ContractorModal: React.FC<{
@@ -152,177 +134,6 @@ const ContractorModal: React.FC<{
   );
 };
 
-const WorkerModal: React.FC<{
-  worker: SafetyWorkerProfile | null;
-  contractors: SafetyPassportContractor[];
-  currentUser: User;
-  onClose: () => void;
-  onSaved: (item: SafetyWorkerProfile) => void;
-}> = ({ worker, contractors, currentUser, onClose, onSaved }) => {
-  const toast = useToast();
-  const [fullName, setFullName] = useState(worker?.fullName || '');
-  const [workerCode, setWorkerCode] = useState(worker?.workerCode || '');
-  const [phone, setPhone] = useState(worker?.phone || '');
-  const [identityNumber, setIdentityNumber] = useState(worker?.identityNumber || '');
-  const [roleName, setRoleName] = useState(worker?.roleName || '');
-  const [contractorId, setContractorId] = useState(worker?.contractorId || '');
-  const [teamName, setTeamName] = useState(worker?.teamName || '');
-  const [photoAttachment, setPhotoAttachment] = useState<SafetyAttachment | null>(worker?.photoAttachment || null);
-  const [identityAttachments, setIdentityAttachments] = useState<SafetyAttachment[]>(worker?.identityAttachments || []);
-  const [documentName, setDocumentName] = useState('');
-  const [certificateTypeId, setCertificateTypeId] = useState('');
-  const [certificateNo, setCertificateNo] = useState('');
-  const [certificateExpiry, setCertificateExpiry] = useState('');
-  const [certificateAttachment, setCertificateAttachment] = useState<SafetyAttachment | null>(null);
-  const [types, setTypes] = useState<any[]>([]);
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    safetyPassportService.listCertificateTypes().then(setTypes).catch(() => setTypes([]));
-  }, []);
-
-  const upload = async (file: File, category: string) => safetyPassportService.uploadAttachment({
-    workerId: worker?.id || 'draft',
-    category,
-    file,
-    uploadedBy: currentUser.name || currentUser.username,
-  });
-
-  const save = async () => {
-    if (!fullName.trim()) return;
-    setSaving(true);
-    try {
-      const saved = await safetyPassportService.upsertWorkerProfile({
-        id: worker?.id,
-        fullName: fullName.trim(),
-        workerCode: workerCode.trim() || undefined,
-        phone: phone.trim() || null,
-        identityNumber: identityNumber.trim() || null,
-        identityType: 'cccd',
-        contractorId: contractorId || null,
-        teamName: teamName.trim() || null,
-        roleName: roleName.trim() || null,
-        photoAttachment,
-        identityAttachments,
-        status: worker?.status || 'active',
-        createdBy: worker?.createdBy || currentUser.id,
-        updatedBy: currentUser.id,
-      });
-
-      if (documentName.trim()) {
-        await safetyPassportService.upsertWorkerDocument({
-          workerId: saved.id,
-          documentType: 'identity',
-          name: documentName.trim(),
-          attachments: identityAttachments,
-          status: identityAttachments.length ? 'submitted' : 'missing',
-          isRequired: true,
-          createdBy: currentUser.id,
-        });
-      }
-
-      if (certificateTypeId) {
-        await safetyPassportService.upsertWorkerCertificate({
-          workerId: saved.id,
-          certificateTypeId,
-          certificateNo: certificateNo.trim() || null,
-          expiryDate: certificateExpiry || null,
-          attachments: certificateAttachment ? [certificateAttachment] : [],
-          status: 'submitted',
-          createdBy: currentUser.id,
-        });
-      }
-
-      onSaved(await safetyPassportService.getWorkerProfile(saved.id) || saved);
-      toast.success('Đã lưu hồ sơ nhân công');
-      onClose();
-    } catch (error: any) {
-      toast.error('Không lưu được hồ sơ nhân công', error?.message || 'Có lỗi xảy ra');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <ModalShell
-      title={worker ? 'Sửa hồ sơ nhân công' : 'Tạo hồ sơ nhân công'}
-      eyebrow="Safety Passport"
-      onClose={onClose}
-      footer={<><button type="button" onClick={onClose} className="rounded-lg px-4 py-2 text-xs font-bold text-slate-500 hover:bg-slate-100">Hủy</button><button type="button" disabled={saving} onClick={save} className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-xs font-black text-white"><Save size={14} /> Lưu</button></>}
-    >
-      <div className="space-y-5">
-        <div className="grid gap-4 md:grid-cols-2">
-          <div>
-            <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Họ tên</label>
-            <input value={fullName} onChange={event => setFullName(event.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold outline-none" required />
-          </div>
-          <div>
-            <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Mã nhân công</label>
-            <input value={workerCode} onChange={event => setWorkerCode(event.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold outline-none" placeholder="Tự sinh nếu bỏ trống" />
-          </div>
-          <div>
-            <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">CCCD/giấy tờ</label>
-            <input value={identityNumber} onChange={event => setIdentityNumber(event.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold outline-none" />
-          </div>
-          <div>
-            <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Điện thoại</label>
-            <input value={phone} onChange={event => setPhone(event.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold outline-none" />
-          </div>
-          <div>
-            <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Nhà thầu/tổ đội</label>
-            <select value={contractorId} onChange={event => setContractorId(event.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold outline-none">
-              <option value="">Chưa chọn</option>
-              {contractors.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Tổ đội / vai trò</label>
-            <div className="grid grid-cols-2 gap-2">
-              <input value={teamName} onChange={event => setTeamName(event.target.value)} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold outline-none" placeholder="Tổ đội" />
-              <input value={roleName} onChange={event => setRoleName(event.target.value)} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold outline-none" placeholder="Vai trò" />
-            </div>
-          </div>
-        </div>
-        <div className="grid gap-3 rounded-lg border border-slate-100 bg-slate-50 p-3 md:grid-cols-2">
-          <div>
-            <div className="mb-2 text-[10px] font-black uppercase text-slate-400">Ảnh nhân công</div>
-            <FilePicker label={photoAttachment ? 'Đổi ảnh' : 'Tải ảnh'} onPick={async file => setPhotoAttachment(await upload(file, 'photo'))} />
-            {photoAttachment && <div className="mt-2 text-xs font-bold text-emerald-600">{photoAttachment.name}</div>}
-          </div>
-          <div>
-            <div className="mb-2 text-[10px] font-black uppercase text-slate-400">File CCCD/giấy tờ</div>
-            <FilePicker label="Tải giấy tờ" onPick={async file => {
-              const attachment = await upload(file, 'identity');
-              setIdentityAttachments(prev => [...prev, attachment]);
-            }} />
-            <div className="mt-2 text-xs font-bold text-slate-500">{identityAttachments.length} file</div>
-          </div>
-        </div>
-        <div className="grid gap-3 rounded-lg border border-slate-100 p-3 md:grid-cols-2">
-          <div>
-            <div className="mb-2 text-[10px] font-black uppercase text-slate-400">Hồ sơ bổ sung</div>
-            <input value={documentName} onChange={event => setDocumentName(event.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold outline-none" placeholder="VD: Giấy khám sức khỏe" />
-          </div>
-          <div>
-            <div className="mb-2 text-[10px] font-black uppercase text-slate-400">Chứng chỉ</div>
-            <div className="grid gap-2 md:grid-cols-3">
-              <select value={certificateTypeId} onChange={event => setCertificateTypeId(event.target.value)} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold outline-none">
-                <option value="">Chọn loại</option>
-                {types.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
-              </select>
-              <input value={certificateNo} onChange={event => setCertificateNo(event.target.value)} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold outline-none" placeholder="Số chứng chỉ" />
-              <input type="date" value={certificateExpiry} onChange={event => setCertificateExpiry(event.target.value)} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold outline-none" />
-            </div>
-            <div className="mt-2">
-              <FilePicker label={certificateAttachment ? 'Đổi file chứng chỉ' : 'Tải chứng chỉ'} onPick={async file => setCertificateAttachment(await upload(file, 'certificate'))} />
-            </div>
-          </div>
-        </div>
-      </div>
-    </ModalShell>
-  );
-};
-
 const AssignmentModal: React.FC<{
   projectId: string;
   constructionSiteId?: string | null;
@@ -337,6 +148,9 @@ const AssignmentModal: React.FC<{
   const selectedWorker = workers.find(item => item.id === workerId);
   const [contractorId, setContractorId] = useState('');
   const [roleName, setRoleName] = useState('');
+  const [workType, setWorkType] = useState('');
+  const [siteAccessCardCode, setSiteAccessCardCode] = useState('');
+  const [startDate, setStartDate] = useState(new Date().toISOString().slice(0, 10));
   const [siteTrainingStatus, setSiteTrainingStatus] = useState<'pending' | 'completed' | 'expired'>('pending');
   const [commitmentStatus, setCommitmentStatus] = useState<'pending' | 'signed'>('pending');
   const [ppeStatus, setPpeStatus] = useState<'missing' | 'partial' | 'complete'>('missing');
@@ -360,6 +174,9 @@ const AssignmentModal: React.FC<{
         contractorId: contractorId || null,
         teamName: selectedWorker?.teamName || null,
         roleName: roleName.trim() || selectedWorker?.roleName || null,
+        workType: workType.trim() || null,
+        siteAccessCardCode: siteAccessCardCode.trim() || null,
+        startDate,
         siteTrainingStatus,
         commitmentStatus,
         ppeStatus,
@@ -403,6 +220,18 @@ const AssignmentModal: React.FC<{
           <input value={roleName} onChange={event => setRoleName(event.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold outline-none" />
         </div>
         <div>
+          <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Loại công việc</label>
+          <input value={workType} onChange={event => setWorkType(event.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold outline-none" />
+        </div>
+        <div>
+          <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Mã thẻ vào ra</label>
+          <input value={siteAccessCardCode} onChange={event => setSiteAccessCardCode(event.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold outline-none" />
+        </div>
+        <div>
+          <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Ngày vào</label>
+          <input type="date" value={startDate} onChange={event => setStartDate(event.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold outline-none" />
+        </div>
+        <div>
           <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Đào tạo nội quy</label>
           <select value={siteTrainingStatus} onChange={event => setSiteTrainingStatus(event.target.value as any)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold outline-none">
             <option value="pending">Chưa xong</option><option value="completed">Đã xong</option><option value="expired">Hết hạn</option>
@@ -437,20 +266,26 @@ const SafetyPassportPanel: React.FC<Props> = ({ mode, projectId, constructionSit
   const contractors = useSafetyPassportContractors();
   const workers = useSafetyWorkers();
   const assignments = useSafetyProjectAssignments(projectId, constructionSiteId);
+  const projectWorkerRows = useSafetyProjectWorkerRows(projectId, constructionSiteId);
   const cards = useSafetyCards(projectId, constructionSiteId);
   const [contractorModal, setContractorModal] = useState<SafetyPassportContractor | null | 'new'>(null);
-  const [workerModal, setWorkerModal] = useState<SafetyWorkerProfile | null | 'new'>(null);
+  const [workerDetailContext, setWorkerDetailContext] = useState<{
+    worker: SafetyWorkerProfile | null;
+    assignment?: SafetyProjectAssignment | null;
+    documents?: SafetyProjectWorkerRow['documents'];
+  } | null>(null);
   const [showAssignmentModal, setShowAssignmentModal] = useState(false);
   const [selectedCard, setSelectedCard] = useState<any>(null);
 
   const reloadAll = async () => {
-    await Promise.all([dashboard.reload(), contractors.reload(), workers.reload(), assignments.reload(), cards.reload()]);
+    await Promise.all([dashboard.reload(), contractors.reload(), workers.reload(), assignments.reload(), projectWorkerRows.reload(), cards.reload()]);
   };
 
   const issueCard = async (assignment: SafetyProjectAssignment) => {
     try {
       const card = await safetyPassportService.issueSafetyCard({ assignment, expiresAt: nextYearIso(), createdBy: currentUser.id });
       cards.setData(prev => [card, ...prev]);
+      await projectWorkerRows.reload();
       toast.success('Đã cấp thẻ an toàn');
     } catch (error: any) {
       toast.error('Không cấp được thẻ', error?.message || 'Có lỗi xảy ra');
@@ -461,6 +296,27 @@ const SafetyPassportPanel: React.FC<Props> = ({ mode, projectId, constructionSit
     await safetyPassportService.logCardPrint(card, currentUser.id).catch(() => undefined);
     window.print();
   };
+
+  const workerDetailModal = workerDetailContext && (
+    <SafetyPassportWorkerDetailModal
+      worker={workerDetailContext.worker}
+      assignment={workerDetailContext.assignment}
+      documents={workerDetailContext.documents}
+      projectId={workerDetailContext.assignment ? projectId : undefined}
+      constructionSiteId={workerDetailContext.assignment ? constructionSiteId : undefined}
+      contractors={contractors.data}
+      currentUser={currentUser}
+      canManage={canManage}
+      onClose={() => setWorkerDetailContext(null)}
+      onSaved={result => {
+        workers.setData(prev => [result.worker, ...prev.filter(item => item.id !== result.worker.id)]);
+        if (result.assignment) {
+          assignments.setData(prev => [result.assignment as SafetyProjectAssignment, ...prev.filter(item => item.id !== result.assignment?.id)]);
+        }
+        void reloadAll();
+      }}
+    />
+  );
 
   if (mode === 'passport') {
     const data = dashboard.data;
@@ -549,56 +405,38 @@ const SafetyPassportPanel: React.FC<Props> = ({ mode, projectId, constructionSit
           </div>
           <StatusBadge status={item.status} label={item.status === 'active' ? 'Hoạt động' : item.status} tone={item.status === 'active' ? 'success' : 'warning'} />
         </div>
-        <div className="mt-3 flex justify-end">{canManage && <button onClick={() => setWorkerModal(item)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-black text-blue-600 hover:bg-blue-50">Sửa</button>}</div>
+        <div className="mt-3 flex justify-end">{canManage && <button onClick={() => setWorkerDetailContext({ worker: item })} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-black text-blue-600 hover:bg-blue-50">Xem/Sửa</button>}</div>
       </div>
     );
     return (
       <section className="space-y-4">
-        <div className="flex justify-end">{canManage && <button onClick={() => setWorkerModal('new')} className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-slate-900 px-3 text-xs font-black text-white"><Plus size={14} /> Tạo hồ sơ</button>}</div>
+        <div className="flex justify-end">{canManage && <button onClick={() => setWorkerDetailContext({ worker: null })} className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-slate-900 px-3 text-xs font-black text-white"><Plus size={14} /> Tạo hồ sơ</button>}</div>
         {workers.data.length === 0 ? <EmptyState icon={<UserRound size={18} />} title="Chưa có hồ sơ nhân công" message="Tạo hồ sơ gốc một lần để tái sử dụng ở nhiều công trình." /> : (
           <>
             <div className="md:hidden"><MobileCardList items={workers.data} getKey={item => item.id} renderItem={item => renderWorker(item, false)} /></div>
             <div className="hidden grid-cols-2 gap-3 md:grid xl:grid-cols-3">{workers.data.map(item => <div key={item.id}>{renderWorker(item)}</div>)}</div>
           </>
         )}
-        {workerModal && <WorkerModal worker={workerModal === 'new' ? null : workerModal} contractors={contractors.data} currentUser={currentUser} onClose={() => setWorkerModal(null)} onSaved={saved => workers.setData(prev => [saved, ...prev.filter(item => item.id !== saved.id)])} />}
+        {workerDetailModal}
       </section>
     );
   }
 
   if (mode === 'passportAssignments') {
-    const renderAssignment = (item: SafetyProjectAssignment, framed = true) => (
-      <div className={framed ? 'rounded-lg border border-slate-200 bg-white p-4 shadow-sm' : ''}>
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <div className="font-mono text-[10px] font-black text-orange-600">{item.worker?.workerCode || '-'}</div>
-            <h3 className="mt-1 text-sm font-black text-slate-800">{item.worker?.fullName || item.workerId}</h3>
-            <p className="mt-1 text-xs font-medium text-slate-500">{item.contractor?.name || item.teamName || '-'} · {item.roleName || '-'}</p>
-          </div>
-          <StatusBadge status={item.eligibilityStatus} label={getSafetyAssignmentStatusLabel(item.eligibilityStatus)} tone={statusTone(item.eligibilityStatus)} />
-        </div>
-        <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] font-bold text-slate-500">
-          <div>Nội quy: {item.siteTrainingStatus}</div>
-          <div>Cam kết: {item.commitmentStatus}</div>
-          <div>PPE: {item.ppeStatus}</div>
-          <div>Toolbox: {item.toolboxStatus}</div>
-        </div>
-        {canManage && item.eligibilityStatus === 'eligible' && (
-          <div className="mt-3 flex justify-end"><button onClick={() => issueCard(item)} className="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-black text-emerald-700"><CreditCard size={13} /> Cấp thẻ</button></div>
-        )}
-      </div>
-    );
     return (
-      <section className="space-y-4">
-        <div className="flex justify-end">{canManage && <button onClick={() => setShowAssignmentModal(true)} className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-slate-900 px-3 text-xs font-black text-white"><Plus size={14} /> Gán nhân công</button>}</div>
-        {assignments.data.length === 0 ? <EmptyState icon={<HardHat size={18} />} title="Chưa có nhân công công trình" message="Gán hồ sơ Safety Passport vào công trình để kiểm tra điều kiện." /> : (
-          <>
-            <div className="md:hidden"><MobileCardList items={assignments.data} getKey={item => item.id} renderItem={item => renderAssignment(item, false)} /></div>
-            <div className="hidden grid-cols-2 gap-3 md:grid xl:grid-cols-3">{assignments.data.map(item => <div key={item.id}>{renderAssignment(item)}</div>)}</div>
-          </>
-        )}
-        {showAssignmentModal && <AssignmentModal projectId={projectId} constructionSiteId={constructionSiteId} workers={workers.data} contractors={contractors.data} currentUser={currentUser} onClose={() => setShowAssignmentModal(false)} onSaved={saved => assignments.setData(prev => [saved, ...prev.filter(item => item.id !== saved.id)])} />}
-      </section>
+      <>
+        <SafetyPassportWorkerTable
+          rows={projectWorkerRows.data}
+          loading={projectWorkerRows.loading}
+          canManage={canManage}
+          onCreateAssignment={() => setShowAssignmentModal(true)}
+          onOpenDetail={row => setWorkerDetailContext({ worker: row.worker, assignment: row.assignment, documents: row.documents })}
+          onIssueCard={row => issueCard(row.assignment)}
+          onPrintCard={printCard}
+        />
+        {showAssignmentModal && <AssignmentModal projectId={projectId} constructionSiteId={constructionSiteId} workers={workers.data} contractors={contractors.data} currentUser={currentUser} onClose={() => setShowAssignmentModal(false)} onSaved={saved => { assignments.setData(prev => [saved, ...prev.filter(item => item.id !== saved.id)]); void reloadAll(); }} />}
+        {workerDetailModal}
+      </>
     );
   }
 

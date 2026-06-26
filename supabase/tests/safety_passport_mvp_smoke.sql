@@ -59,6 +59,42 @@ begin
   select eligibility_status into v_status
   from public.safety_project_assignments
   where id = v_assignment_id;
+  if v_status <> 'missing_profile' then
+    raise exception 'expected missing_profile while health/insurance are missing, got %', v_status;
+  end if;
+
+  insert into public.safety_worker_documents (
+    worker_id,
+    document_type,
+    name,
+    expiry_date,
+    attachments,
+    status,
+    is_required
+  )
+  values
+    (
+      v_worker_id,
+      'health_check',
+      '__SMOKE_HEALTH__',
+      current_date + 365,
+      '[{"name":"health.pdf","url":"smoke/health.pdf"}]'::jsonb,
+      'submitted',
+      true
+    ),
+    (
+      v_worker_id,
+      'insurance',
+      '__SMOKE_INSURANCE__',
+      current_date + 365,
+      '[{"name":"insurance.pdf","url":"smoke/insurance.pdf"}]'::jsonb,
+      'submitted',
+      true
+    );
+
+  select eligibility_status into v_status
+  from public.safety_project_assignments
+  where id = v_assignment_id;
   if v_status <> 'missing_certificate' then
     raise exception 'expected missing_certificate, got %', v_status;
   end if;
