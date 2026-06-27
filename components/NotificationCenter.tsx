@@ -261,7 +261,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId, enabled
     };
 
     const handleRequestBrowserPermission = async () => {
-        if (!('Notification' in window)) return;
+        if (!('Notification' in window) || !webPushService.isSupported()) return;
         const permission = await webPushService.requestNotificationPermission();
         setBrowserPermission(permission);
         if (permission === 'granted') {
@@ -322,7 +322,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId, enabled
                                 )}
                             </h3>
                             <div className="flex items-center gap-1">
-                                {browserPermission === 'default' && (
+                                {browserPermission === 'default' && webPushService.isSupported() && (
                                     <button onClick={handleRequestBrowserPermission}
                                         className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors text-slate-400 hover:text-blue-500" title="Bật thông báo trình duyệt">
                                         <Bell size={12} />

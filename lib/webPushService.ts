@@ -7,11 +7,20 @@ type PushCapability = {
   reason?: 'missing_vapid_key' | 'unsupported_browser' | 'insecure_context' | 'ios_requires_standalone';
 };
 
+const APP_MANIFEST_ID = '/';
+
 const urlBase64ToUint8Array = (base64String: string) => {
   const padding = '='.repeat((4 - base64String.length % 4) % 4);
   const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
   const rawData = window.atob(base64);
   return Uint8Array.from([...rawData].map(char => char.charCodeAt(0)));
+};
+
+const uint8ArrayToUrlBase64 = (value: ArrayBuffer | null) => {
+  if (!value) return '';
+  const bytes = new Uint8Array(value);
+  const binary = String.fromCharCode(...bytes);
+  return window.btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 };
 
 const getSubscriptionKeys = (subscription: PushSubscription) => {
@@ -23,6 +32,12 @@ const getSubscriptionKeys = (subscription: PushSubscription) => {
   };
 };
 
+const usesCurrentVapidKey = (subscription: PushSubscription) => {
+  const key = subscription.options?.applicationServerKey || null;
+  if (!key) return true;
+  return uint8ArrayToUrlBase64(key) === VAPID_PUBLIC_KEY.replace(/=+$/, '');
+};
+
 const hasWindow = () => typeof window !== 'undefined' && typeof navigator !== 'undefined';
 
 const isLocalhost = () => hasWindow() && ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
@@ -32,6 +47,27 @@ const isSecurePushContext = () => hasWindow() && (window.isSecureContext || isLo
 const getUserAgent = () => hasWindow() ? navigator.userAgent : '';
 
 const getNow = () => new Date().toISOString();
+
+const getBrowser = () => {
+  if (!hasWindow()) return 'unknown';
+  const ua = getUserAgent();
+  if (/CriOS/i.test(ua)) return 'chrome-ios';
+  if (/FxiOS/i.test(ua)) return 'firefox-ios';
+  if (/EdgiOS/i.test(ua)) return 'edge-ios';
+  if (/Edg\//i.test(ua)) return 'edge';
+  if (/Chrome|Chromium|CriOS/i.test(ua) && !/Edg\//i.test(ua)) return 'chrome';
+  if (/Firefox|FxiOS/i.test(ua)) return 'firefox';
+  if (/Safari/i.test(ua) && !/Chrome|Chromium|CriOS|FxiOS|Edg\//i.test(ua)) return 'safari';
+  return 'unknown';
+};
+
+const getVapidPublicKeyHash = () => {
+  let hash = 0;
+  for (let i = 0; i < VAPID_PUBLIC_KEY.length; i++) {
+    hash = Math.imul(31, hash) + VAPID_PUBLIC_KEY.charCodeAt(i) | 0;
+  }
+  return Math.abs(hash).toString(16);
+};
 
 export const webPushService = {
   isIOS() {
@@ -98,6 +134,7 @@ export const webPushService = {
 
   async requestNotificationPermission(): Promise<NotificationPermission> {
     if (!hasWindow() || !('Notification' in window)) return 'denied';
+    if (!this.getCapability().supported) return 'denied';
     return Notification.requestPermission();
   },
 
@@ -128,6 +165,11 @@ export const webPushService = {
       user_agent: navigator.userAgent,
       platform: this.getPlatform(),
       device_type: this.getDeviceType(),
+      browser: getBrowser(),
+      is_standalone_pwa: this.isStandalonePWA(),
+      manifest_id: APP_MANIFEST_ID,
+      vapid_public_key_hash: getVapidPublicKeyHash(),
+      notification_permission: this.getNotificationPermission(),
       is_active: true,
       updated_at: now,
       last_seen_at: now,
@@ -145,6 +187,17 @@ export const webPushService = {
     if (!registration) return false;
 
     let subscription = await registration.pushManager.getSubscription();
+    if (subscription && !usesCurrentVapidKey(subscription)) {
+      const staleEndpoint = subscription.endpoint;
+      await subscription.unsubscribe().catch(() => false);
+      await supabase
+        .from('web_push_subscriptions')
+        .update({ is_active: false, updated_at: getNow(), last_used_at: getNow() })
+        .eq('user_id', userId)
+        .eq('endpoint', staleEndpoint);
+      subscription = null;
+    }
+
     if (!subscription) {
       subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,

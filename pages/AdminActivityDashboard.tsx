@@ -68,6 +68,7 @@ const AdminActivityDashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [retryingId, setRetryingId] = useState<string | null>(null);
+  const [testingSubscriptionId, setTestingSubscriptionId] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -115,6 +116,7 @@ const AdminActivityDashboard: React.FC = () => {
       delivery.user?.email?.toLowerCase().includes(normalizedSearch) ||
       delivery.notification?.title?.toLowerCase().includes(normalizedSearch) ||
       delivery.errorMessage?.toLowerCase().includes(normalizedSearch) ||
+      delivery.subscription?.browser?.toLowerCase().includes(normalizedSearch) ||
       delivery.subscription?.platform?.toLowerCase().includes(normalizedSearch)
     );
   }, [deliveries, normalizedSearch]);
@@ -129,6 +131,19 @@ const AdminActivityDashboard: React.FC = () => {
       setError(err?.message || 'Retry Web Push thất bại.');
     } finally {
       setRetryingId(null);
+    }
+  };
+
+  const testSubscription = async (subscription: PushSubscriptionAdminRow) => {
+    setTestingSubscriptionId(subscription.id);
+    setError(null);
+    try {
+      await userActivityService.sendTestPushToSubscription(subscription.id);
+      await loadData();
+    } catch (err: any) {
+      setError(err?.message || 'Gửi thử Web Push thất bại.');
+    } finally {
+      setTestingSubscriptionId(null);
     }
   };
 
@@ -281,13 +296,20 @@ const AdminActivityDashboard: React.FC = () => {
                       </td>
                       <td className="px-4 py-3 text-slate-500">
                         {delivery.subscription?.platform || '-'} / {delivery.subscription?.deviceType || '-'}
+                        <p className="text-[10px] text-slate-400">
+                          {delivery.subscription?.browser || 'unknown'} · {delivery.subscription?.isStandalonePWA ? 'standalone' : 'browser'}
+                        </p>
                       </td>
                       <td className="px-4 py-3">
                         <span className={`inline-flex px-2 py-1 rounded-lg text-[10px] font-black uppercase ${statusStyle[delivery.status] || statusStyle.pending}`}>
                           {delivery.status}
                         </span>
                       </td>
-                      <td className="px-4 py-3 max-w-[260px] truncate text-xs text-slate-500">{delivery.errorMessage || '-'}</td>
+                      <td className="px-4 py-3 max-w-[260px] truncate text-xs text-slate-500">
+                        {delivery.providerStatusCode ? `HTTP ${delivery.providerStatusCode}` : ''}
+                        {delivery.providerStatusCode && delivery.errorMessage ? ' · ' : ''}
+                        {delivery.errorMessage || (!delivery.providerStatusCode ? '-' : '')}
+                      </td>
                       <td className="px-4 py-3 text-right text-slate-500">{formatDateTime(delivery.createdAt)}</td>
                       <td className="px-4 py-3 text-right">
                         <button
@@ -320,9 +342,11 @@ const AdminActivityDashboard: React.FC = () => {
                   <tr>
                     <th className="text-left px-4 py-3">User</th>
                     <th className="text-left px-4 py-3">Platform</th>
+                    <th className="text-left px-4 py-3">Browser</th>
                     <th className="text-left px-4 py-3">Active</th>
                     <th className="text-left px-4 py-3">Last used</th>
                     <th className="text-left px-4 py-3">Endpoint</th>
+                    <th className="text-right px-4 py-3">Test</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -330,6 +354,12 @@ const AdminActivityDashboard: React.FC = () => {
                     <tr key={sub.id}>
                       <td className="px-4 py-3 font-bold text-slate-700 dark:text-slate-200">{sub.user?.name || sub.userId}</td>
                       <td className="px-4 py-3 text-slate-500">{sub.platform || '-'} / {sub.deviceType || '-'}</td>
+                      <td className="px-4 py-3 text-slate-500">
+                        {sub.browser || '-'}
+                        <p className="text-[10px] text-slate-400">
+                          {sub.isStandalonePWA ? 'standalone PWA' : 'browser tab'} · {sub.notificationPermission || 'unknown'}
+                        </p>
+                      </td>
                       <td className="px-4 py-3">
                         <span className={`inline-flex px-2 py-1 rounded-lg text-[10px] font-black uppercase ${sub.isActive ? statusStyle.sent : statusStyle.failed}`}>
                           {sub.isActive ? 'active' : 'off'}
@@ -337,10 +367,20 @@ const AdminActivityDashboard: React.FC = () => {
                       </td>
                       <td className="px-4 py-3 text-slate-500">{formatDateTime(sub.lastUsedAt || sub.lastSeenAt)}</td>
                       <td className="px-4 py-3 text-xs text-slate-400 max-w-[420px] truncate">{sub.endpoint}</td>
+                      <td className="px-4 py-3 text-right">
+                        <button
+                          onClick={() => testSubscription(sub)}
+                          disabled={!sub.isActive || testingSubscriptionId === sub.id}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700 disabled:opacity-40 dark:bg-emerald-950/30 dark:text-emerald-300"
+                          title="Gửi thử Web Push tới thiết bị này"
+                        >
+                          <Bell size={14} className={testingSubscriptionId === sub.id ? 'animate-pulse' : ''} />
+                        </button>
+                      </td>
                     </tr>
                   ))}
                   {!loading && subscriptions.length === 0 && (
-                    <tr><td colSpan={5} className="px-4 py-10 text-center text-slate-400 font-bold">Chưa có thiết bị đăng ký push</td></tr>
+                    <tr><td colSpan={7} className="px-4 py-10 text-center text-slate-400 font-bold">Chưa có thiết bị đăng ký push</td></tr>
                   )}
                 </tbody>
               </table>

@@ -45,6 +45,11 @@ export interface PushSubscriptionAdminRow {
   userAgent?: string | null;
   platform?: string | null;
   deviceType?: string | null;
+  browser?: string | null;
+  isStandalonePWA?: boolean | null;
+  manifestId?: string | null;
+  vapidPublicKeyHash?: string | null;
+  notificationPermission?: string | null;
   isActive?: boolean | null;
   createdAt: string;
   updatedAt: string;
@@ -62,6 +67,7 @@ export interface NotificationDelivery {
   status: 'pending' | 'sent' | 'failed' | 'skipped';
   provider?: string | null;
   errorMessage?: string | null;
+  providerStatusCode?: number | null;
   sentAt?: string | null;
   createdAt: string;
   user?: UserSession['user'];
@@ -76,6 +82,8 @@ export interface NotificationDelivery {
     id: string;
     platform?: string | null;
     deviceType?: string | null;
+    browser?: string | null;
+    isStandalonePWA?: boolean | null;
     isActive?: boolean | null;
     lastUsedAt?: string | null;
     endpoint?: string | null;
@@ -148,6 +156,11 @@ const mapSubscription = (row: any): PushSubscriptionAdminRow => ({
   userAgent: row.user_agent,
   platform: row.platform,
   deviceType: row.device_type,
+  browser: row.browser,
+  isStandalonePWA: row.is_standalone_pwa,
+  manifestId: row.manifest_id,
+  vapidPublicKeyHash: row.vapid_public_key_hash,
+  notificationPermission: row.notification_permission,
   isActive: row.is_active,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
@@ -165,6 +178,7 @@ const mapDelivery = (row: any): NotificationDelivery => ({
   status: row.status,
   provider: row.provider,
   errorMessage: row.error_message,
+  providerStatusCode: row.provider_status_code,
   sentAt: row.sent_at,
   createdAt: row.created_at,
   user: mapUser(row.users),
@@ -179,6 +193,8 @@ const mapDelivery = (row: any): NotificationDelivery => ({
     id: row.web_push_subscriptions.id,
     platform: row.web_push_subscriptions.platform,
     deviceType: row.web_push_subscriptions.device_type,
+    browser: row.web_push_subscriptions.browser,
+    isStandalonePWA: row.web_push_subscriptions.is_standalone_pwa,
     isActive: row.web_push_subscriptions.is_active,
     lastUsedAt: row.web_push_subscriptions.last_used_at,
     endpoint: row.web_push_subscriptions.endpoint,
@@ -344,7 +360,7 @@ export const userActivityService = {
   } = {}): Promise<NotificationDelivery[]> {
     let query = supabase
       .from('notification_deliveries')
-      .select('*, users:user_id(id,name,email,avatar,role), notifications:notification_id(id,title,message,priority,created_at), web_push_subscriptions:subscription_id(id,platform,device_type,is_active,last_used_at,endpoint)')
+      .select('*, users:user_id(id,name,email,avatar,role), notifications:notification_id(id,title,message,priority,created_at), web_push_subscriptions:subscription_id(id,platform,device_type,browser,is_standalone_pwa,is_active,last_used_at,endpoint)')
       .order('created_at', { ascending: false })
       .limit(options.limit || 200);
 
@@ -362,6 +378,14 @@ export const userActivityService = {
   async retryWebPush(notificationId: string, subscriptionId?: string | null) {
     const { data, error } = await supabase.functions.invoke('send-web-push', {
       body: { notificationId, subscriptionId: subscriptionId || undefined },
+    });
+    if (error) throw error;
+    return data;
+  },
+
+  async sendTestPushToSubscription(subscriptionId: string) {
+    const { data, error } = await supabase.functions.invoke('send-web-push', {
+      body: { subscriptionId, test: true },
     });
     if (error) throw error;
     return data;

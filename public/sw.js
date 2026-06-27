@@ -1,12 +1,14 @@
-// Vioo Service Worker v7 — PWA shell + Web Push notifications
-const CACHE_NAME = 'vioo-v7';
+// Vioo Service Worker v8 - PWA shell + Web Push notifications
+const CACHE_NAME = 'vioo-v8';
 const OFFLINE_URL = '/offline.html';
 
 const PRECACHE_URLS = [
   '/',
   '/offline.html',
   '/manifest.json',
+  '/apple-touch-icon.png',
   '/icons/icon-72.png',
+  '/icons/icon-180.png',
   '/icons/icon-192.png',
   '/icons/icon-512.png',
 ];
