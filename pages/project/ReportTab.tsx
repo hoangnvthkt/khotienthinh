@@ -7,6 +7,7 @@ import {
     Calendar,
     CheckCircle2,
     ChevronDown,
+    ChevronUp,
     ChevronRight,
     ChevronsDown,
     ChevronsUp,
@@ -318,6 +319,7 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
     const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
     const [briefingCopied, setBriefingCopied] = useState(false);
     const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
+    const [briefingCollapsed, setBriefingCollapsed] = useState(false);
     const projectScopeId = projectId || constructionSiteId;
 
     useEffect(() => {
@@ -648,7 +650,7 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
                 </div>
             );
         }
-        
+
         if (scheduleReport.rows.length === 0) {
             return (
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm font-semibold leading-7 text-slate-500 dark:border-slate-700 dark:bg-slate-900">
@@ -697,13 +699,12 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
                                     {fmtPercent(scheduleReport.actualProgress)}
                                 </span>
                                 ,{' '}
-                                <span className={`font-extrabold ${
-                                    progressDelta < -5 
-                                        ? 'text-red-650 text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 border-red-100 dark:border-red-900/30' 
-                                        : progressDelta > 5 
-                                            ? 'text-cyan-600 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-950/40 border-cyan-100 dark:border-cyan-900/30' 
+                                <span className={`font-extrabold ${progressDelta < -5
+                                        ? 'text-red-650 text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 border-red-100 dark:border-red-900/30'
+                                        : progressDelta > 5
+                                            ? 'text-cyan-600 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-950/40 border-cyan-100 dark:border-cyan-900/30'
                                             : 'text-slate-650 text-slate-650/80 dark:text-slate-400 bg-slate-100 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700/50'
-                                } px-1.5 py-0.5 rounded border`}>
+                                    } px-1.5 py-0.5 rounded border`}>
                                     {formatProgressDelta(progressDelta).toLowerCase()}
                                 </span>
                                 , SPI ={' '}
@@ -719,13 +720,12 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
                                 {scheduleReport.projection.spiDeltaDays !== null && (
                                     <>
                                         ,{' '}
-                                        <span className={`font-extrabold ${
-                                            scheduleReport.projection.spiDeltaDays > 0
+                                        <span className={`font-extrabold ${scheduleReport.projection.spiDeltaDays > 0
                                                 ? 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 border-red-100 dark:border-red-900/30'
                                                 : scheduleReport.projection.spiDeltaDays < 0
                                                     ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border-emerald-100 dark:border-emerald-900/30'
                                                     : 'text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700/50'
-                                        } px-1.5 py-0.5 rounded border`}>
+                                            } px-1.5 py-0.5 rounded border`}>
                                             {formatDayDelta(scheduleReport.projection.spiDeltaDays).toLowerCase()}
                                         </span>{' '}
                                         so với kế hoạch gốc
@@ -748,13 +748,12 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
                                 {fmtDate(scheduleReport.forecastProjectEnd)}
                             </span>
                             ,{' '}
-                            <span className={`font-extrabold ${
-                                scheduleReport.projectDayDelta > 0 
-                                    ? 'text-red-650 text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 border-red-100 dark:border-red-900/30' 
-                                    : scheduleReport.projectDayDelta < 0 
-                                        ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border-emerald-100 dark:border-emerald-900/30' 
+                            <span className={`font-extrabold ${scheduleReport.projectDayDelta > 0
+                                    ? 'text-red-650 text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 border-red-100 dark:border-red-900/30'
+                                    : scheduleReport.projectDayDelta < 0
+                                        ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border-emerald-100 dark:border-emerald-900/30'
                                         : 'text-slate-650 text-slate-650/80 dark:text-slate-400 bg-slate-100 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700/50'
-                            } px-1.5 py-0.5 rounded border`}>
+                                } px-1.5 py-0.5 rounded border`}>
                                 {formatDayDelta(scheduleReport.projectDayDelta).toLowerCase()}
                             </span>{' '}
                             so với kế hoạch. Thời lượng theo mốc dự báo là{' '}
@@ -819,11 +818,10 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
                                                 {row.task.name}
                                             </span>
                                         </div>
-                                        <span className={`font-extrabold text-xs shrink-0 ${
-                                            row.actualProgress >= 100 
-                                                ? 'text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 border-emerald-100 dark:border-emerald-800/30' 
+                                        <span className={`font-extrabold text-xs shrink-0 ${row.actualProgress >= 100
+                                                ? 'text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 border-emerald-100 dark:border-emerald-800/30'
                                                 : 'text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 border-amber-100 dark:border-amber-800/30'
-                                        } px-2 py-0.5 rounded border shadow-sm`}>
+                                            } px-2 py-0.5 rounded border shadow-sm`}>
                                             đạt {fmtPercent(row.actualProgress)}
                                         </span>
                                     </div>
@@ -837,14 +835,12 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
                     </div>
 
                     {/* Phần 5: Các điểm cần báo cáo thêm */}
-                    <div className={`rounded-xl border p-5 shadow-sm ${
-                        lateRows.length > 0 
-                            ? 'border-red-200 bg-red-50/20 dark:border-red-900/30 dark:bg-red-950/10' 
+                    <div className={`rounded-xl border p-5 shadow-sm ${lateRows.length > 0
+                            ? 'border-red-200 bg-red-50/20 dark:border-red-900/30 dark:bg-red-950/10'
                             : 'border-emerald-200 bg-emerald-50/20 dark:border-emerald-900/30 dark:bg-emerald-950/10'
-                    }`}>
-                        <div className={`mb-3 flex items-center gap-2 text-xs font-black uppercase tracking-wider ${
-                            lateRows.length > 0 ? 'text-red-650 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'
                         }`}>
+                        <div className={`mb-3 flex items-center gap-2 text-xs font-black uppercase tracking-wider ${lateRows.length > 0 ? 'text-red-650 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'
+                            }`}>
                             <AlertTriangle size={14} />
                             Các điểm cần báo cáo thêm
                         </div>
@@ -897,18 +893,16 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
                     <button
                         type="button"
                         onClick={() => changeReportView('overview')}
-                        className={`flex items-center gap-1.5 rounded-md px-3 py-2 text-xs font-black transition-colors ${
-                            activeReportView === 'overview' ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-white' : 'text-slate-500 hover:text-slate-700'
-                        }`}
+                        className={`flex items-center gap-1.5 rounded-md px-3 py-2 text-xs font-black transition-colors ${activeReportView === 'overview' ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-white' : 'text-slate-500 hover:text-slate-700'
+                            }`}
                     >
                         <BarChart3 size={14} /> Tiến độ dự án
                     </button>
                     <button
                         type="button"
                         onClick={() => changeReportView('dailylog')}
-                        className={`flex items-center gap-1.5 rounded-md px-3 py-2 text-xs font-black transition-colors ${
-                            activeReportView === 'dailylog' ? 'bg-white text-teal-700 shadow-sm dark:bg-slate-800' : 'text-slate-500 hover:text-slate-700'
-                        }`}
+                        className={`flex items-center gap-1.5 rounded-md px-3 py-2 text-xs font-black transition-colors ${activeReportView === 'dailylog' ? 'bg-white text-teal-700 shadow-sm dark:bg-slate-800' : 'text-slate-500 hover:text-slate-700'
+                            }`}
                     >
                         <Calendar size={14} /> Nhật ký công trường
                     </button>
@@ -954,15 +948,31 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
                     </div>
 
                     <section className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-700/60 dark:bg-slate-800">
-                        <div className="flex flex-col gap-3 border-b border-slate-100 p-4 dark:border-slate-700/60 sm:flex-row sm:items-start sm:justify-between">
+                        <div className={`flex flex-col gap-3 p-4 sm:flex-row sm:items-start sm:justify-between ${briefingCollapsed ? '' : 'border-b border-slate-100 dark:border-slate-700/60'
+                            }`}>
                             <div>
                                 <div className="flex items-center gap-2 text-sm font-black text-slate-800 dark:text-white">
                                     <Clipboard size={16} className="text-slate-500" />
-                                    Câu trả lời nhanh cho TGĐ
+                                    Tổng hợp nhanh báo cáo TGĐ
                                 </div>
                                 <p className="mt-1 text-xs font-bold text-slate-500">Tự động tổng hợp theo dữ liệu tiến độ đến ngày {fmtDate(todayIso)}.</p>
                             </div>
                             <div className="flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setBriefingCollapsed(!briefingCollapsed)}
+                                    className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-700 transition-colors hover:bg-slate-50"
+                                >
+                                    {briefingCollapsed ? (
+                                        <>
+                                            <ChevronDown size={14} /> Mở rộng
+                                        </>
+                                    ) : (
+                                        <>
+                                            <ChevronUp size={14} /> Thu gọn
+                                        </>
+                                    )}
+                                </button>
                                 <button
                                     type="button"
                                     onClick={copyBriefing}
@@ -979,9 +989,11 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
                                 </button>
                             </div>
                         </div>
-                        <div className="p-4">
-                            {renderVisualBriefing()}
-                        </div>
+                        {!briefingCollapsed && (
+                            <div className="p-4">
+                                {renderVisualBriefing()}
+                            </div>
+                        )}
                     </section>
 
                     <section className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-700/60 dark:bg-slate-800">
@@ -993,23 +1005,22 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
                                 </div>
                                 <p className="mt-1 text-xs font-bold text-slate-500">So sánh ngày kế hoạch, ngày thực tế, % kế hoạch đến hôm nay và dự báo lệch ngày.</p>
                             </div>
-                            <div className="flex flex-col gap-2 md:flex-row md:items-center">
-                                <div className="flex items-center gap-1 overflow-x-auto rounded-lg border border-slate-200 bg-slate-50 p-1">
+                            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center w-full xl:w-auto xl:justify-end">
+                                <div className="flex items-center gap-1 overflow-x-auto rounded-lg border border-slate-200 bg-slate-50 p-1 max-w-full shrink-0">
                                     <Filter size={13} className="ml-2 shrink-0 text-slate-400" />
                                     {statusFilters.map(filter => (
                                         <button
                                             key={filter.key}
                                             type="button"
                                             onClick={() => setStatusFilter(filter.key)}
-                                            className={`shrink-0 rounded-md px-2.5 py-1.5 text-[11px] font-black transition-colors ${
-                                                statusFilter === filter.key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                                            }`}
+                                            className={`shrink-0 rounded-md px-2.5 py-1.5 text-[11px] font-black transition-colors ${statusFilter === filter.key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                                                }`}
                                         >
                                             {filter.label} <span className="text-slate-400">{filter.count}</span>
                                         </button>
                                     ))}
                                 </div>
-                                <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1">
+                                <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 shrink-0">
                                     <button
                                         type="button"
                                         onClick={expandAll}
@@ -1028,7 +1039,7 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
                                         Thu gọn hết
                                     </button>
                                 </div>
-                                <label className="flex min-w-[240px] items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-500">
+                                <label className="flex min-w-[240px] items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-500 shrink-0 sm:flex-1 md:flex-initial">
                                     <Search size={14} className="shrink-0 text-slate-400" />
                                     <input
                                         value={searchTerm}
@@ -1040,9 +1051,9 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
                             </div>
                         </div>
 
-                        <div className="overflow-x-auto">
+                        <div className="overflow-x-auto max-h-[650px] scrollbar-thin">
                             <table className="w-full min-w-[1120px] text-xs">
-                                <thead className="bg-gradient-to-r from-indigo-500 to-purple-500 text-[11px] font-bold uppercase tracking-wider text-white border-b border-indigo-400">
+                                <thead className="sticky top-0 z-10 bg-gradient-to-r from-indigo-500 to-purple-500 text-[11px] font-bold uppercase tracking-wider text-white border-b border-indigo-400">
                                     <tr>
                                         <th className="px-4 py-3 text-left font-bold whitespace-nowrap">Hạng mục</th>
                                         <th className="px-3 py-3 text-center font-bold whitespace-nowrap">KH bắt đầu</th>
@@ -1076,11 +1087,10 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
                                         const isParent = row.hasChildren;
 
                                         return (
-                                            <tr 
-                                                key={row.task.id} 
-                                                className={`hover:bg-slate-50/70 dark:hover:bg-slate-900/40 ${
-                                                    isParent ? 'bg-slate-50/40 dark:bg-slate-800/10' : ''
-                                                }`}
+                                            <tr
+                                                key={row.task.id}
+                                                className={`hover:bg-slate-50/70 dark:hover:bg-slate-900/40 ${isParent ? 'bg-slate-50/40 dark:bg-slate-800/10' : ''
+                                                    }`}
                                             >
                                                 <td className="px-4 py-3 align-top">
                                                     <div className="flex min-w-0 items-start gap-1" style={{ paddingLeft: row.level * 16 }}>
@@ -1105,11 +1115,10 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
                                                         )}
                                                         <span className="mt-0.5 w-12 shrink-0 text-[11px] font-black text-slate-400">{row.task.wbsCode || '-'}</span>
                                                         <div className="min-w-0">
-                                                            <div className={`leading-5 ${
-                                                                isParent 
-                                                                    ? 'text-[13px] font-black text-slate-900 dark:text-white' 
+                                                            <div className={`leading-5 ${isParent
+                                                                    ? 'text-[13px] font-black text-slate-900 dark:text-white'
                                                                     : 'text-[12px] font-semibold text-slate-700 dark:text-slate-200'
-                                                            }`}>
+                                                                }`}>
                                                                 {row.task.name}
                                                             </div>
                                                             <div className="mt-0.5 text-[11px] font-bold text-slate-400">

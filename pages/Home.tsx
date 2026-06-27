@@ -218,6 +218,12 @@ const getCurrentRqApprover = (request: RequestInstance) =>
 
 const Home: React.FC = () => {
   const navigate = useNavigate();
+  const scrollToSection = (id: string) => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
   const {
     user,
     users,
@@ -500,7 +506,10 @@ const Home: React.FC = () => {
       {/* 4 KPI Cards Section */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Card 1: Việc cần xử lý */}
-        <div className="relative overflow-hidden bg-gradient-to-br from-white to-slate-50/50 dark:from-slate-800 dark:to-slate-900/50 rounded-2xl p-5 border border-slate-100/80 dark:border-slate-700/60 shadow-sm transition-all duration-300 hover:shadow-md hover:scale-[1.02] group">
+        <button
+          onClick={() => scrollToSection('todo-section')}
+          className="relative text-left w-full overflow-hidden bg-gradient-to-br from-white to-slate-50/50 dark:from-slate-800 dark:to-slate-900/50 rounded-2xl p-5 border border-slate-100/80 dark:border-slate-700/60 shadow-sm transition-all duration-300 hover:shadow-md hover:scale-[1.02] active:scale-[0.98] group cursor-pointer"
+        >
           <div className="absolute top-0 right-0 w-24 h-24 bg-rose-500/5 dark:bg-rose-400/5 rounded-bl-full pointer-events-none transition-transform duration-300 group-hover:scale-110" />
           <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
             <ClipboardList size={11} className="text-rose-500" /> CẦN XỬ LÝ
@@ -511,10 +520,13 @@ const Home: React.FC = () => {
           <div className="text-[10px] text-rose-600 dark:text-rose-455 font-bold mt-2 flex items-center gap-1">
             <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" /> Việc chờ bạn duyệt hoặc xác nhận
           </div>
-        </div>
+        </button>
 
         {/* Card 2: Hồ sơ theo dõi */}
-        <div className="relative overflow-hidden bg-gradient-to-br from-white to-slate-50/50 dark:from-slate-800 dark:to-slate-900/50 rounded-2xl p-5 border border-slate-100/80 dark:border-slate-700/60 shadow-sm transition-all duration-300 hover:shadow-md hover:scale-[1.02] group">
+        <button
+          onClick={() => scrollToSection('tracking-section')}
+          className="relative text-left w-full overflow-hidden bg-gradient-to-br from-white to-slate-50/50 dark:from-slate-800 dark:to-slate-900/50 rounded-2xl p-5 border border-slate-100/80 dark:border-slate-700/60 shadow-sm transition-all duration-300 hover:shadow-md hover:scale-[1.02] active:scale-[0.98] group cursor-pointer"
+        >
           <div className="absolute top-0 right-0 w-24 h-24 bg-blue-500/5 dark:bg-blue-400/5 rounded-bl-full pointer-events-none transition-transform duration-300 group-hover:scale-110" />
           <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
             <FileText size={11} className="text-blue-500" /> THEO DÕI CỦA TÔI
@@ -525,10 +537,13 @@ const Home: React.FC = () => {
           <div className="text-[10px] text-muted-foreground font-medium mt-2">
             Phiếu yêu cầu & quy trình đã tạo
           </div>
-        </div>
+        </button>
 
         {/* Card 3: Cảnh báo rủi ro */}
-        <div className="relative overflow-hidden bg-gradient-to-br from-white to-slate-50/50 dark:from-slate-800 dark:to-slate-900/50 rounded-2xl p-5 border border-slate-100/80 dark:border-slate-700/60 shadow-sm transition-all duration-300 hover:shadow-md hover:scale-[1.02] group">
+        <button
+          onClick={() => scrollToSection('warning-section')}
+          className="relative text-left w-full overflow-hidden bg-gradient-to-br from-white to-slate-50/50 dark:from-slate-800 dark:to-slate-900/50 rounded-2xl p-5 border border-slate-100/80 dark:border-slate-700/60 shadow-sm transition-all duration-300 hover:shadow-md hover:scale-[1.02] active:scale-[0.98] group cursor-pointer"
+        >
           <div className="absolute top-0 right-0 w-24 h-24 bg-amber-500/5 dark:bg-amber-400/5 rounded-bl-full pointer-events-none transition-transform duration-300 group-hover:scale-110" />
           <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
             <AlertTriangle size={11} className="text-amber-500" /> CẢNH BÁO RỦI RO
@@ -539,10 +554,13 @@ const Home: React.FC = () => {
           <div className="text-[10px] text-muted-foreground font-medium mt-2">
             Thông báo quan trọng cần chú ý
           </div>
-        </div>
+        </button>
 
         {/* Card 4: Dự án theo dõi */}
-        <div className="relative overflow-hidden bg-gradient-to-br from-white to-slate-50/50 dark:from-slate-800 dark:to-slate-900/50 rounded-2xl p-5 border border-slate-100/80 dark:border-slate-700/60 shadow-sm transition-all duration-300 hover:shadow-md hover:scale-[1.02] group">
+        <Link
+          to="/da"
+          className="relative text-left block overflow-hidden bg-gradient-to-br from-white to-slate-50/50 dark:from-slate-800 dark:to-slate-900/50 rounded-2xl p-5 border border-slate-100/80 dark:border-slate-700/60 shadow-sm transition-all duration-300 hover:shadow-md hover:scale-[1.02] active:scale-[0.98] group cursor-pointer w-full"
+        >
           <div className="absolute top-0 right-0 w-24 h-24 bg-teal-500/5 dark:bg-teal-400/5 rounded-bl-full pointer-events-none transition-transform duration-300 group-hover:scale-110" />
           <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
             <FolderKanban size={11} className="text-teal-500" /> DỰ ÁN THEO DÕI
@@ -553,10 +571,10 @@ const Home: React.FC = () => {
           <div className="text-[10px] text-muted-foreground font-medium mt-2">
             Hồ sơ & công trường đang mở
           </div>
-        </div>
+        </Link>
       </div>
 
-      <section className="space-y-3">
+      <section className="space-y-3 scroll-mt-6" id="todo-section">
         <div className="flex items-center justify-between gap-3">
           <div>
             <h2 className="text-base font-black text-slate-900 dark:text-white">Cần tôi xử lý</h2>
@@ -580,7 +598,7 @@ const Home: React.FC = () => {
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1fr_360px]">
         <div className="space-y-6">
-          <section className="space-y-3">
+          <section className="space-y-3 scroll-mt-6" id="tracking-section">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <h2 className="text-base font-black text-slate-900 dark:text-white">Theo dõi của tôi</h2>
@@ -634,7 +652,7 @@ const Home: React.FC = () => {
         </div>
 
         <aside className="space-y-6">
-          <section className="space-y-3">
+          <section className="space-y-3 scroll-mt-6" id="warning-section">
             <div>
               <h2 className="text-base font-black text-slate-900 dark:text-white">Cảnh báo</h2>
               <p className="text-xs font-bold text-slate-400">Thông tin cần chú ý để giảm sai sót vận hành.</p>
