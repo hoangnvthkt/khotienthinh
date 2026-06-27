@@ -473,7 +473,7 @@ const SafetyTab: React.FC<SafetyTabProps> = ({ projectId, constructionSiteId, ca
       <PageHeader
         eyebrow="Dự án / An toàn"
         title="An toàn công trường"
-        description="Theo dõi Safety Passport nhân công, NTP/tổ đội, nguy cơ, checklist hiện trường và thiết bị vào công trường."
+        // description="Theo dõi Safety Passport nhân công, NTP/tổ đội, nguy cơ, checklist hiện trường và thiết bị vào công trường."
         meta={
           <>
             <StatusBadge status="score" label={`Score ${summary?.safetyScore ?? '-'}`} tone={(summary?.safetyScore || 0) >= 80 ? 'success' : 'warning'} size="md" />
@@ -504,11 +504,10 @@ const SafetyTab: React.FC<SafetyTabProps> = ({ projectId, constructionSiteId, ca
                     key={key}
                     type="button"
                     onClick={() => setView(key)}
-                    className={`inline-flex min-h-9 items-center gap-2 rounded-lg px-3 text-xs font-black transition ${
-                      view === key
+                    className={`inline-flex min-h-9 items-center gap-2 rounded-lg px-3 text-xs font-black transition ${view === key
                         ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
                         : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800'
-                    }`}
+                      }`}
                   >
                     {VIEW_CONFIG[key].icon} {VIEW_CONFIG[key].label}
                   </button>
