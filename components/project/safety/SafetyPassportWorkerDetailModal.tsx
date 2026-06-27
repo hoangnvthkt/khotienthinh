@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Save, Upload, X } from 'lucide-react';
+import { Save, Upload, X, Camera } from 'lucide-react';
 import { useToast } from '../../../context/ToastContext';
 import {
   SafetyAttachment,
@@ -12,6 +12,7 @@ import {
 } from '../../../types';
 import { SAFETY_DOCUMENT_LABELS } from '../../../lib/safetyPassportConfig';
 import { safetyPassportService } from '../../../lib/safetyPassportService';
+import { ImageCaptureEditorModal } from './ImageCaptureEditorModal';
 
 type CanonicalDocs = Partial<Record<SafetyWorkerDocumentType, SafetyWorkerDocument>>;
 
@@ -86,7 +87,8 @@ const ImageDocumentBox: React.FC<{
   attachment: SafetyAttachment | null;
   disabled?: boolean;
   onPick: (file: File) => void;
-}> = ({ label, attachment, disabled, onPick }) => (
+  onCaptureClick?: () => void;
+}> = ({ label, attachment, disabled, onPick, onCaptureClick }) => (
   <div className="rounded-lg border border-slate-200 bg-white p-3">
     <div className="mb-2 text-[10px] font-black uppercase tracking-wide text-slate-500">{label}</div>
     <div className="flex aspect-[16/10] items-center justify-center overflow-hidden rounded-lg bg-slate-100">
@@ -94,8 +96,17 @@ const ImageDocumentBox: React.FC<{
         ? <img src={imageUrl(attachment)} alt={label} className="h-full w-full object-contain" />
         : <span className="text-xs font-black text-slate-300">Chưa có ảnh</span>}
     </div>
-    <div className="mt-2">
+    <div className="mt-2 flex gap-1.5">
       <FilePicker label={attachment ? 'Đổi file' : 'Tải file'} disabled={disabled} onPick={onPick} />
+      {!disabled && onCaptureClick && (
+        <button
+          type="button"
+          onClick={onCaptureClick}
+          className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-slate-250 bg-white px-2.5 text-xs font-black text-slate-600 hover:border-indigo-300 hover:bg-indigo-50/30 hover:text-indigo-600 transition-all active:scale-95"
+        >
+          <Camera size={13} /> Chụp &amp; Sửa
+        </button>
+      )}
     </div>
   </div>
 );
@@ -131,6 +142,7 @@ const SafetyPassportWorkerDetailModal: React.FC<Props> = ({
   const [photoAttachment, setPhotoAttachment] = useState<SafetyAttachment | null>(null);
   const [identityFrontAttachment, setIdentityFrontAttachment] = useState<SafetyAttachment | null>(null);
   const [identityBackAttachment, setIdentityBackAttachment] = useState<SafetyAttachment | null>(null);
+  const [captureTarget, setCaptureTarget] = useState<'identity_front' | 'identity_back' | 'photo' | null>(null);
 
   const [siteAccessCardCode, setSiteAccessCardCode] = useState('');
   const [workType, setWorkType] = useState('');
@@ -360,9 +372,9 @@ const SafetyPassportWorkerDetailModal: React.FC<Props> = ({
             <Field label="Hộ khẩu thường trú"><input disabled={disabled} value={permanentAddress} onChange={event => setPermanentAddress(event.target.value)} className={inputClass} /></Field>
           </div>
           <div className="mt-3 grid gap-3 md:grid-cols-3">
-            <ImageDocumentBox label="CCCD mặt trước" disabled={disabled} attachment={identityFrontAttachment} onPick={async file => setIdentityFrontAttachment(await upload(file, 'identity_front'))} />
-            <ImageDocumentBox label="CCCD mặt sau" disabled={disabled} attachment={identityBackAttachment} onPick={async file => setIdentityBackAttachment(await upload(file, 'identity_back'))} />
-            <ImageDocumentBox label="Ảnh thẻ" disabled={disabled} attachment={photoAttachment} onPick={async file => setPhotoAttachment(await upload(file, 'photo'))} />
+            <ImageDocumentBox label="CCCD mặt trước" disabled={disabled} attachment={identityFrontAttachment} onPick={async file => setIdentityFrontAttachment(await upload(file, 'identity_front'))} onCaptureClick={() => setCaptureTarget('identity_front')} />
+            <ImageDocumentBox label="CCCD mặt sau" disabled={disabled} attachment={identityBackAttachment} onPick={async file => setIdentityBackAttachment(await upload(file, 'identity_back'))} onCaptureClick={() => setCaptureTarget('identity_back')} />
+            <ImageDocumentBox label="Ảnh thẻ" disabled={disabled} attachment={photoAttachment} onPick={async file => setPhotoAttachment(await upload(file, 'photo'))} onCaptureClick={() => setCaptureTarget('photo')} />
           </div>
         </section>
 
@@ -402,6 +414,31 @@ const SafetyPassportWorkerDetailModal: React.FC<Props> = ({
               {isLocked && <Field label="Lý do khóa" className="md:col-span-5"><input disabled={disabled} value={lockReason} onChange={event => setLockReason(event.target.value)} className={inputClass} /></Field>}
             </div>
           </section>
+        )}
+
+        {captureTarget && (
+          <ImageCaptureEditorModal
+            isOpen={!!captureTarget}
+            onClose={() => setCaptureTarget(null)}
+            label={
+              captureTarget === 'identity_front'
+                ? 'CCCD mặt trước'
+                : captureTarget === 'identity_back'
+                  ? 'CCCD mặt sau'
+                  : 'Ảnh thẻ'
+            }
+            onConfirm={async (file) => {
+              const attachment = await upload(file, captureTarget);
+              if (captureTarget === 'identity_front') {
+                setIdentityFrontAttachment(attachment);
+              } else if (captureTarget === 'identity_back') {
+                setIdentityBackAttachment(attachment);
+              } else if (captureTarget === 'photo') {
+                setPhotoAttachment(attachment);
+              }
+              setCaptureTarget(null);
+            }}
+          />
         )}
       </div>
     </ModalShell>

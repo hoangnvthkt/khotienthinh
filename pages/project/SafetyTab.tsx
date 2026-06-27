@@ -38,27 +38,26 @@ interface SafetyTabProps {
   canManageTab?: boolean;
 }
 
-type SafetyView = 'overview' | 'passport' | 'passportContractors' | 'passportWorkers' | 'passportAssignments' | 'passportCards' | 'issues' | 'inspections' | 'contractors' | 'teams' | 'equipment';
+type SafetyView = 'overview' | 'passport' | 'passportWorkers' | 'passportAssignments' | 'passportCards' | 'issues' | 'inspections' | 'contractors' | 'teams' | 'equipment';
 
 const VIEW_CONFIG: Record<SafetyView, { label: string; icon: React.ReactNode }> = {
   overview: { label: 'Tổng quan', icon: <ShieldCheck size={14} /> },
   passport: { label: 'Passport', icon: <BadgeCheck size={14} /> },
-  passportContractors: { label: 'NTP/Tổ đội', icon: <HardHat size={14} /> },
   passportWorkers: { label: 'Hồ sơ nhân công', icon: <UserRound size={14} /> },
   passportAssignments: { label: 'Nhân công CT', icon: <Users size={14} /> },
   passportCards: { label: 'Thẻ an toàn', icon: <IdCard size={14} /> },
   issues: { label: 'Sự cố / nguy cơ', icon: <AlertTriangle size={14} /> },
   inspections: { label: 'Kiểm tra hiện trường', icon: <ClipboardCheck size={14} /> },
-  contractors: { label: 'Nhà thầu phụ', icon: <HardHat size={14} /> },
-  teams: { label: 'Tổ đội', icon: <Users size={14} /> },
+  contractors: { label: 'Nhà thầu phụ CT', icon: <HardHat size={14} /> },
+  teams: { label: 'Tổ đội CT', icon: <Users size={14} /> },
   equipment: { label: 'Máy móc / thiết bị', icon: <Truck size={14} /> },
 };
 
 const VIEW_GROUPS: Array<{ label: string; views: SafetyView[] }> = [
   { label: 'Tổng quan', views: ['overview'] },
-  { label: 'Safety Passport', views: ['passport', 'passportWorkers', 'passportAssignments', 'passportCards', 'passportContractors'] },
+  { label: 'Safety Passport', views: ['passport', 'passportWorkers', 'passportAssignments', 'passportCards', 'contractors', 'teams'] },
   { label: 'Hiện trường', views: ['issues', 'inspections'] },
-  { label: 'Nguồn lực', views: ['contractors', 'teams', 'equipment'] },
+  { label: 'Thiết bị', views: ['equipment'] },
 ];
 
 const defaultIssueFilters: SafetyIssueFilters & { search: string; status: any; severity: any; type: any } = {
@@ -474,7 +473,7 @@ const SafetyTab: React.FC<SafetyTabProps> = ({ projectId, constructionSiteId, ca
       <PageHeader
         eyebrow="Dự án / An toàn"
         title="An toàn công trường"
-        description="Theo dõi Safety Passport nhân công, nguy cơ, checklist hiện trường, nhà thầu phụ và thiết bị vào công trường."
+        // description="Theo dõi Safety Passport nhân công, NTP/tổ đội, nguy cơ, checklist hiện trường và thiết bị vào công trường."
         meta={
           <>
             <StatusBadge status="score" label={`Score ${summary?.safetyScore ?? '-'}`} tone={(summary?.safetyScore || 0) >= 80 ? 'success' : 'warning'} size="md" />
@@ -505,11 +504,10 @@ const SafetyTab: React.FC<SafetyTabProps> = ({ projectId, constructionSiteId, ca
                     key={key}
                     type="button"
                     onClick={() => setView(key)}
-                    className={`inline-flex min-h-9 items-center gap-2 rounded-lg px-3 text-xs font-black transition ${
-                      view === key
+                    className={`inline-flex min-h-9 items-center gap-2 rounded-lg px-3 text-xs font-black transition ${view === key
                         ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
                         : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800'
-                    }`}
+                      }`}
                   >
                     {VIEW_CONFIG[key].icon} {VIEW_CONFIG[key].label}
                   </button>
@@ -546,16 +544,6 @@ const SafetyTab: React.FC<SafetyTabProps> = ({ projectId, constructionSiteId, ca
       {view === 'passport' && (
         <SafetyPassportPanel
           mode="passport"
-          projectId={projectId}
-          constructionSiteId={constructionSiteId}
-          currentUser={user}
-          canManage={canManageTab}
-        />
-      )}
-
-      {view === 'passportContractors' && (
-        <SafetyPassportPanel
-          mode="passportContractors"
           projectId={projectId}
           constructionSiteId={constructionSiteId}
           currentUser={user}

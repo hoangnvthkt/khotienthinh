@@ -69,7 +69,7 @@ const ALL_ACTIONS: ActionDef[] = [
   { id: 'contract', label: 'Hợp đồng LĐ', iconName: 'FileText', color: 'bg-sky-500', shadow: 'shadow-sky-500/30', route: '/hrm/contracts' },
   { id: 'rq-dashboard', label: 'Yêu cầu nội bộ', iconName: 'Inbox', color: 'bg-lime-600', shadow: 'shadow-lime-600/30', route: '/rq' },
   { id: 'feedback', label: 'Gửi góp ý', iconName: 'MessageSquarePlus', color: 'bg-blue-600', shadow: 'shadow-blue-600/30', route: '/feedback' },
-  { id: 'checkin', label: 'Check-in', iconName: 'MapPin', color: 'bg-green-500', shadow: 'shadow-green-500/30', route: '/checkin' },
+  { id: 'checkin', label: 'Check-in', iconName: 'MapPin', color: 'bg-green-500', shadow: 'shadow-green-500/30', route: '/hrm/checkin' },
 ];
 
 const DEFAULT_ENABLED = ['search', 'new-transaction', 'new-employee', 'new-request', 'new-workflow', 'payroll'];

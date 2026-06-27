@@ -13,6 +13,7 @@ import { ChatProvider, useChat } from './context/ChatContext';
 import { RequestProvider, useRequest } from './context/RequestContext';
 import { CelebrationProvider } from './components/Celebration';
 import ErrorBoundary from './components/ErrorBoundary';
+import ReleaseNotesModal from './components/ReleaseNotesModal';
 import { Role } from './types';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
 import { ROUTE_TO_MODULE } from './constants/routes';
@@ -20,6 +21,7 @@ import { getProjectAllowedSubModuleRedirect, hasProjectTabPermissionRoute } from
 import { createPerformanceTrace } from './lib/performanceTrace';
 import { isChatEnabled, isChatV2Enabled } from './lib/featureFlags';
 import { hasAnySettingsManagementFeature } from './lib/settingsPermissions';
+import { useLatestReleaseNotice } from './hooks/useLatestReleaseNotice';
 
 // Lazy load all page components for code splitting
 const Dashboard = React.lazy(() => import('./pages/Dashboard'));
@@ -501,6 +503,27 @@ const AppDataWarmup: React.FC = () => {
   return null;
 };
 
+const ReleaseNoticeHost: React.FC = () => {
+  const location = useLocation();
+  const { user } = useApp();
+  const noticeUser = location.pathname === '/login' ? null : user;
+  const {
+    release,
+    isOpen,
+    isMarkingRead,
+    acknowledgeRelease,
+  } = useLatestReleaseNotice(noticeUser);
+
+  return (
+    <ReleaseNotesModal
+      isOpen={isOpen}
+      release={release}
+      isSubmitting={isMarkingRead}
+      onAcknowledge={acknowledgeRelease}
+    />
+  );
+};
+
 const RouteErrorBoundary: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const location = useLocation();
   const resetKey = `${location.pathname}${location.search}${location.hash}`;
@@ -531,6 +554,7 @@ const App: React.FC = () => {
                       <Router>
                         <RouteErrorBoundary>
                           <AppDataWarmup />
+                          <ReleaseNoticeHost />
                           <AppRoutes />
                         </RouteErrorBoundary>
                       </Router>

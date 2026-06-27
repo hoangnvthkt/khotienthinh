@@ -3,6 +3,7 @@ import { useChat } from '../context/ChatContext';
 import { useApp } from '../context/AppContext';
 import { useModuleData } from '../hooks/useModuleData';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
+import { webPushService } from '../lib/webPushService';
 import {
     MessageCircle, Search, Plus, Send, Paperclip, Users, X, Check, CheckCheck,
     Hash, User as UserIcon, Smile, MoreVertical, ArrowLeft, Image as ImageIcon, File,
@@ -1177,7 +1178,7 @@ const Chat: React.FC = () => {
 
     const saveAccountSettings = async () => {
         if (notificationsEnabled && 'Notification' in window && Notification.permission === 'default') {
-            await Notification.requestPermission();
+            await webPushService.requestNotificationPermission();
         }
 
         if (!isSupabaseConfigured || !user?.id) {

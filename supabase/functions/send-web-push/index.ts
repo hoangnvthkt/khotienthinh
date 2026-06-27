@@ -22,6 +22,7 @@ type NotificationRow = {
 
 type PushSubscriptionRow = {
   id: string;
+  user_id: string;
   endpoint: string;
   p256dh: string;
   auth: string;
@@ -84,11 +85,12 @@ const getErrorMessage = (err: unknown) => {
 const recordDelivery = async (
   admin: ReturnType<typeof createClient>,
   params: {
-    notificationId: string;
+    notificationId: string | null;
     userId: string;
     subscriptionId?: string | null;
     status: DeliveryStatus;
     errorMessage?: string;
+    providerStatusCode?: number | null;
   },
 ) => {
   const { error } = await admin.from('notification_deliveries').insert({
@@ -99,9 +101,98 @@ const recordDelivery = async (
     status: params.status,
     provider: 'web-push',
     error_message: params.errorMessage || null,
+    provider_status_code: params.providerStatusCode || null,
     sent_at: params.status === 'sent' ? new Date().toISOString() : null,
   });
   if (error) console.error('notification delivery log failed:', error);
+};
+
+const getProviderStatusCode = (err: unknown) => {
+  const statusCode = (err as { statusCode?: number; status?: number })?.statusCode || (err as { status?: number })?.status;
+  return typeof statusCode === 'number' ? statusCode : null;
+};
+
+const getPushPayload = (params: {
+  title: string;
+  body: string;
+  tag: string;
+  url: string;
+  notificationId?: string;
+  priority?: string;
+}) => JSON.stringify({
+  title: params.title,
+  body: params.body,
+  tag: params.tag,
+  url: params.url,
+  notificationId: params.notificationId || '',
+  priority: params.priority || 'normal',
+  icon: '/icons/icon-192.png',
+  badge: '/icons/icon-72.png',
+});
+
+const sendToSubscription = async (
+  admin: ReturnType<typeof createClient>,
+  params: {
+    sub: PushSubscriptionRow;
+    payload: string;
+    notificationId?: string | null;
+  },
+) => {
+  const now = new Date().toISOString();
+  try {
+    const response = await webpush.sendNotification({
+      endpoint: params.sub.endpoint,
+      keys: { p256dh: params.sub.p256dh, auth: params.sub.auth },
+    }, params.payload);
+
+    await admin
+      .from('web_push_subscriptions')
+      .update({
+        last_used_at: now,
+        last_seen_at: now,
+        updated_at: now,
+      })
+      .eq('id', params.sub.id);
+
+    await recordDelivery(admin, {
+      notificationId: params.notificationId || null,
+      userId: params.sub.user_id,
+      subscriptionId: params.sub.id,
+      status: 'sent',
+      providerStatusCode: response?.statusCode || null,
+    });
+
+    return { status: 'sent' as const, deactivated: false };
+  } catch (err) {
+    const providerStatusCode = getProviderStatusCode(err);
+    const errorMessage = getErrorMessage(err);
+    let deactivated = false;
+
+    if (providerStatusCode === 404 || providerStatusCode === 410) {
+      await admin
+        .from('web_push_subscriptions')
+        .update({
+          is_active: false,
+          last_used_at: now,
+          updated_at: now,
+        })
+        .eq('id', params.sub.id);
+      deactivated = true;
+    } else {
+      console.error('send web push failed:', err);
+    }
+
+    await recordDelivery(admin, {
+      notificationId: params.notificationId || null,
+      userId: params.sub.user_id,
+      subscriptionId: params.sub.id,
+      status: 'failed',
+      errorMessage,
+      providerStatusCode,
+    });
+
+    return { status: 'failed' as const, deactivated };
+  }
 };
 
 Deno.serve(async (req) => {
@@ -123,6 +214,45 @@ Deno.serve(async (req) => {
     const subscriptionId = body.subscriptionId || body.subscription_id
       ? String(body.subscriptionId || body.subscription_id)
       : '';
+    const isTest = body.test === true || body.mode === 'test';
+
+    if (isTest) {
+      if (!subscriptionId) return json({ error: 'subscriptionId is required for test push' }, 400);
+      if (!isAdminJwtRequest) return json({ error: 'Test push requires an admin session' }, 403);
+
+      const { data: testSubData, error: testSubError } = await admin
+        .from('web_push_subscriptions')
+        .select('id, user_id, endpoint, p256dh, auth')
+        .eq('id', subscriptionId)
+        .eq('is_active', true)
+        .maybeSingle();
+      if (testSubError) throw testSubError;
+      const testSub = testSubData as PushSubscriptionRow | null;
+      if (!testSub) {
+        return json({ total: 0, sent: 0, failed: 0, deactivated: 0, skipped: 1, reason: 'subscription_not_active_or_not_found' });
+      }
+
+      const result = await sendToSubscription(admin, {
+        sub: testSub,
+        payload: getPushPayload({
+          title: 'Vioo test push',
+          body: 'Thiết bị này đã nhận Web Push thử nghiệm.',
+          tag: `vioo-test-${testSub.id}`,
+          url: '/settings',
+          priority: 'normal',
+        }),
+      });
+
+      return json({
+        total: 1,
+        sent: result.status === 'sent' ? 1 : 0,
+        failed: result.status === 'failed' ? 1 : 0,
+        deactivated: result.deactivated ? 1 : 0,
+        skipped: 0,
+        mode: 'test',
+      });
+    }
+
     if (!notificationId) return json({ error: 'notificationId is required' }, 400);
 
     const { data: notificationData, error: notificationError } = await admin
@@ -150,7 +280,7 @@ Deno.serve(async (req) => {
 
     const { data: subscriptions, error: subError } = await admin
       .from('web_push_subscriptions')
-      .select('id, endpoint, p256dh, auth')
+      .select('id, user_id, endpoint, p256dh, auth')
       .eq('user_id', notification.user_id)
       .eq('is_active', true);
     if (subError) throw subError;
@@ -165,7 +295,7 @@ Deno.serve(async (req) => {
       return json({ total: 0, sent: 0, failed: 0, deactivated: 0, skipped: 1, reason: 'no_active_subscriptions' });
     }
 
-    const payload = JSON.stringify({
+    const payload = getPushPayload({
       title: notification.title || 'Thông báo',
       body: notification.message || notification.body || '',
       tag: notification.id,
@@ -193,49 +323,14 @@ Deno.serve(async (req) => {
     }
 
     for (const sub of targetSubscriptions) {
-      try {
-        await webpush.sendNotification({
-          endpoint: sub.endpoint,
-          keys: { p256dh: sub.p256dh, auth: sub.auth },
-        }, payload);
-        await admin
-          .from('web_push_subscriptions')
-          .update({
-            last_used_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', sub.id);
-        await recordDelivery(admin, {
-          notificationId,
-          userId: notification.user_id,
-          subscriptionId: sub.id,
-          status: 'sent',
-        });
+      const result = await sendToSubscription(admin, { sub, payload, notificationId });
+      if (result.status === 'sent') {
         sent++;
-      } catch (err) {
+      } else {
         failed++;
-        const statusCode = (err as { statusCode?: number; status?: number })?.statusCode || (err as { status?: number })?.status;
-        const errorMessage = getErrorMessage(err);
-        if (statusCode === 404 || statusCode === 410) {
-          await admin
-            .from('web_push_subscriptions')
-            .update({
-              is_active: false,
-              last_used_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', sub.id);
+        if (result.deactivated) {
           deactivated++;
-        } else {
-          console.error('send web push failed:', err);
         }
-        await recordDelivery(admin, {
-          notificationId,
-          userId: notification.user_id,
-          subscriptionId: sub.id,
-          status: 'failed',
-          errorMessage,
-        });
       }
     }
 
