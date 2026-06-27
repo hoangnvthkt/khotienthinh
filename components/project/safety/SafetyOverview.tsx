@@ -93,7 +93,7 @@ const SafetyOverview: React.FC<Props> = ({ summary, loading, onOpenView, onOpenA
       <div className="grid gap-3 md:grid-cols-3">
         <StatCard label="Thiết bị sắp/hết hạn" value={summary.expiringEquipment + summary.expiredEquipment} icon={<Truck size={18} />} tone={summary.expiredEquipment ? 'red' : summary.expiringEquipment ? 'amber' : 'emerald'} onClick={() => onOpenView('equipment')} />
         <StatCard label="Nhân sự chưa huấn luyện" value={summary.untrainedWorkers} icon={<Users size={18} />} tone={summary.untrainedWorkers ? 'amber' : 'emerald'} />
-        <StatCard label="Nhà thầu thiếu hồ sơ" value={summary.contractorsMissingDocs} icon={<HardHat size={18} />} tone={summary.contractorsMissingDocs ? 'amber' : 'emerald'} onClick={() => onOpenView('contractors')} />
+        <StatCard label="NTP công trình thiếu hồ sơ" value={summary.contractorsMissingDocs} icon={<HardHat size={18} />} tone={summary.contractorsMissingDocs ? 'amber' : 'emerald'} onClick={() => onOpenView('contractors')} />
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[1.4fr_0.8fr]">

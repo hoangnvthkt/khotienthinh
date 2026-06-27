@@ -1,9 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Edit2, Eye, HardHat, Plus, Save, Trash2, X } from 'lucide-react';
-import { SafetyAttachment, SafetyContractorStatus, SafetySubcontractor, User, BusinessPartner } from '../../../types';
+import { SafetyAttachment, SafetyContractorStatus, SafetySubcontractor, SubcontractorContract, User } from '../../../types';
 import { EmptyState, MobileCardList, StatusBadge } from '../../erp';
 import { SAFETY_CONTRACTOR_STATUS_LABELS, getSafetyContractorTone } from '../../../lib/safetyWorkflow';
-import { partnerService } from '../../../lib/partnerService';
+import { subcontractorContractService } from '../../../lib/hdService';
 import SafetyAttachmentUploader from './SafetyAttachmentUploader';
 import SafetyAttachmentList from './SafetyAttachmentList';
 
@@ -20,6 +20,12 @@ interface Props {
 }
 
 const statusOptions: SafetyContractorStatus[] = ['pending_documents', 'approved', 'active', 'suspended', 'completed'];
+
+const contractSearchText = (contract: SubcontractorContract) =>
+  [contract.code, contract.name, contract.subcontractorName, contract.scopeOfWork]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
 
 const ContractorForm: React.FC<{
   projectId: string;
@@ -39,20 +45,34 @@ const ContractorForm: React.FC<{
   const [documentsStatus, setDocumentsStatus] = useState<'missing' | 'partial' | 'complete'>('missing');
   const [attachments, setAttachments] = useState<SafetyAttachment[]>([]);
   const [saving, setSaving] = useState(false);
-
-  // Đối tác kinh doanh
-  const [partners, setPartners] = useState<BusinessPartner[]>([]);
+  const [linkedContractCode, setLinkedContractCode] = useState('');
+  const [contractOptions, setContractOptions] = useState<SubcontractorContract[]>([]);
+  const [contractsLoading, setContractsLoading] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
 
   useEffect(() => {
-    partnerService.list()
-      .then(setPartners)
-      .catch(err => console.warn('Không tải được danh sách đối tác', err));
-  }, []);
+    let cancelled = false;
+    setContractsLoading(true);
+    const loader = projectId
+      ? subcontractorContractService.listBySite(projectId, constructionSiteId || null)
+      : subcontractorContractService.list();
+    loader
+      .then(rows => {
+        if (!cancelled) setContractOptions(rows);
+      })
+      .catch(err => console.warn('Không tải được danh sách HĐ thầu phụ', err))
+      .finally(() => {
+        if (!cancelled) setContractsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [constructionSiteId, projectId]);
 
   useEffect(() => {
     if (contractor) {
       setName(contractor.name || '');
+      setLinkedContractCode(contractor.code || '');
       setRepresentativeName(contractor.representativeName || '');
       setRepresentativePhone(contractor.representativePhone || '');
       setWorkScope(contractor.workScope || '');
@@ -62,14 +82,17 @@ const ContractorForm: React.FC<{
     }
   }, [contractor]);
 
-  const filteredPartners = partners.filter(p =>
-    p.name.toLowerCase().includes(name.toLowerCase())
-  );
+  const filteredContracts = useMemo(() => {
+    const term = name.trim().toLowerCase();
+    return contractOptions
+      .filter(contract => !term || contractSearchText(contract).includes(term))
+      .slice(0, 30);
+  }, [contractOptions, name]);
 
-  const selectPartner = (p: BusinessPartner) => {
-    setName(p.name);
-    setRepresentativeName(p.contactName || '');
-    setRepresentativePhone(p.contactPhone || p.phone || '');
+  const selectContract = (contract: SubcontractorContract) => {
+    setName(contract.subcontractorName || contract.name);
+    setLinkedContractCode(contract.code || '');
+    setWorkScope(contract.scopeOfWork || contract.name || '');
     setShowDropdown(false);
   };
 
@@ -83,6 +106,7 @@ const ContractorForm: React.FC<{
         projectId,
         constructionSiteId: constructionSiteId || null,
         name: name.trim(),
+        code: linkedContractCode || null,
         representativeName: representativeName.trim() || null,
         representativePhone: representativePhone.trim() || null,
         workScope: workScope.trim() || null,
@@ -112,33 +136,41 @@ const ContractorForm: React.FC<{
         <div className="flex-1 space-y-4 overflow-y-auto p-5">
           <div className="grid gap-4 md:grid-cols-2">
             <div className="relative md:col-span-2">
-              <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Tên nhà thầu</label>
+              <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Tên nhà thầu phụ CT</label>
               <input
                 value={name}
                 onChange={event => {
                   setName(event.target.value);
+                  setLinkedContractCode('');
                   setShowDropdown(true);
                 }}
                 onFocus={() => setShowDropdown(true)}
                 onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold outline-none"
-                placeholder="Nhập tên hoặc chọn đối tác..."
+                placeholder="Tìm theo HĐ đối tác hoặc nhập tay..."
                 required
               />
-              {showDropdown && name.trim() && filteredPartners.length > 0 && (
+              {showDropdown && (
                 <div className="absolute z-10 mt-1 max-h-48 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg">
-                  {filteredPartners.map(p => (
+                  {contractsLoading ? (
+                    <div className="px-4 py-3 text-xs font-bold text-slate-400">Đang tải HĐ đối tác...</div>
+                  ) : filteredContracts.length > 0 ? filteredContracts.map(contract => (
                     <button
-                      key={p.id}
+                      key={contract.id}
                       type="button"
-                      onMouseDown={() => selectPartner(p)}
-                      className="w-full px-4 py-2 text-left text-xs font-bold text-slate-700 hover:bg-slate-50 border-b border-slate-100 last:border-b-0"
+                      onMouseDown={() => selectContract(contract)}
+                      className="w-full border-b border-slate-100 px-4 py-2 text-left text-xs font-bold text-slate-700 hover:bg-slate-50 last:border-b-0"
                     >
-                      <div className="text-slate-800">{p.name}</div>
-                      <div className="text-[10px] text-slate-400">Đại diện: {p.contactName || '-'} • SĐT: {p.contactPhone || p.phone || '-'}</div>
+                      <div className="text-slate-800">{contract.subcontractorName || contract.name}</div>
+                      <div className="text-[10px] text-slate-400">{contract.code} • {contract.name}{contract.scopeOfWork ? ` • ${contract.scopeOfWork}` : ''}</div>
                     </button>
-                  ))}
+                  )) : (
+                    <div className="px-4 py-3 text-xs font-bold text-slate-400">Không có HĐ đối tác phù hợp. Có thể nhập tay để tạo mới.</div>
+                  )}
                 </div>
+              )}
+              {linkedContractCode && (
+                <div className="mt-1 text-[10px] font-bold text-emerald-600">Đã lấy dữ liệu từ HĐ {linkedContractCode}</div>
               )}
             </div>
             <div>
@@ -212,6 +244,7 @@ const SafetyContractorPanel: React.FC<Props> = ({
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h3 className="text-sm font-black text-slate-800">{contractor.name}</h3>
+            {contractor.code && <p className="mt-1 text-[10px] font-black uppercase text-emerald-600">HĐ: {contractor.code}</p>}
             <p className="mt-1 text-xs font-medium text-slate-500">{contractor.workScope || 'Chưa khai báo hạng mục'}</p>
           </div>
           <div className="flex flex-col items-end gap-2">
