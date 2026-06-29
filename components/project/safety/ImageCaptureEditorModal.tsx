@@ -58,6 +58,63 @@ export const ImageCaptureEditorModal: React.FC<Props> = ({ isOpen, onClose, onCo
     }
   }, [isOpen]);
 
+  // Listen to paste event globally when modal is open
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handlePaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.indexOf('image') !== -1) {
+          const file = items[i].getAsFile();
+          if (file) {
+            const reader = new FileReader();
+            reader.onload = (event) => {
+              if (event.target?.result) {
+                setImageSrc(event.target.result as string);
+                setStep('editing');
+              }
+            };
+            reader.readAsDataURL(file);
+            e.preventDefault();
+            break;
+          }
+        }
+      }
+    };
+
+    window.addEventListener('paste', handlePaste);
+    return () => {
+      window.removeEventListener('paste', handlePaste);
+    };
+  }, [isOpen]);
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (step !== 'select_source') return;
+
+    const file = e.dataTransfer.files?.[0];
+    if (file && file.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        if (event.target?.result) {
+          setImageSrc(event.target.result as string);
+          setStep('editing');
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   // Initialize Canvas when imageSrc changes
   useEffect(() => {
     if (step === 'editing' && imageSrc && canvasRef.current) {
@@ -352,7 +409,11 @@ export const ImageCaptureEditorModal: React.FC<Props> = ({ isOpen, onClose, onCo
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[999] flex items-center justify-center bg-slate-900/80 backdrop-blur-sm p-4">
+    <div 
+      className="fixed inset-0 z-[999] flex items-center justify-center bg-slate-900/80 backdrop-blur-sm p-4"
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+    >
       <div className="flex h-full max-h-[90vh] w-full max-w-4xl flex-col rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950 overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 px-5 py-4">
@@ -403,6 +464,11 @@ export const ImageCaptureEditorModal: React.FC<Props> = ({ isOpen, onClose, onCo
                     <span className="block text-[9px] font-bold text-slate-400 mt-0.5">Sử dụng webcam thiết bị</span>
                   </div>
                 </button>
+              </div>
+
+              <div className="border border-dashed border-slate-250 dark:border-slate-850 rounded-xl p-3 bg-slate-100/50 dark:bg-slate-900/50 flex flex-col items-center justify-center text-[11px] text-slate-400">
+                <span className="font-bold text-slate-600 dark:text-slate-350">Hoặc kéo thả ảnh vào đây / Nhấn Ctrl + V để dán</span>
+                <span className="text-[9px] mt-0.5">Hỗ trợ dán file ảnh hoặc ảnh đã copy vào clipboard</span>
               </div>
 
               <div className="flex gap-2 p-3 bg-blue-50/50 dark:bg-blue-950/10 rounded-xl border border-blue-100/50 dark:border-blue-900/30 text-[10px] font-bold text-blue-500 text-left">
