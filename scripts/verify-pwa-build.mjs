@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 const root = process.cwd();
@@ -19,6 +19,58 @@ const requiredFiles = [
 ];
 
 const failures = [];
+
+const parseEnvFile = (filePath) => {
+  if (!existsSync(filePath)) return {};
+  return Object.fromEntries(
+    readFileSync(filePath, 'utf8')
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line && !line.startsWith('#') && line.includes('='))
+      .map((line) => {
+        const index = line.indexOf('=');
+        const key = line.slice(0, index).trim();
+        const value = line.slice(index + 1).trim().replace(/^['"]|['"]$/g, '');
+        return [key, value];
+      })
+  );
+};
+
+const getBuildEnvValue = (key) => {
+  if (process.env[key]) return process.env[key].trim();
+  for (const envFile of ['.env.production.local', '.env.production', '.env.local', '.env']) {
+    const value = parseEnvFile(join(root, envFile))[key];
+    if (value) return value.trim();
+  }
+  return '';
+};
+
+const walkFiles = (dir) => {
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir).flatMap((name) => {
+    const filePath = join(dir, name);
+    return statSync(filePath).isDirectory() ? walkFiles(filePath) : [filePath];
+  });
+};
+
+const verifyVapidPublicKey = () => {
+  const vapidPublicKey = getBuildEnvValue('VITE_VAPID_PUBLIC_KEY');
+  if (!vapidPublicKey) {
+    failures.push('Missing VITE_VAPID_PUBLIC_KEY for the frontend build');
+    return;
+  }
+
+  if (!/^[A-Za-z0-9_-]{80,120}$/.test(vapidPublicKey)) {
+    failures.push('VITE_VAPID_PUBLIC_KEY must look like a URL-safe VAPID public key');
+    return;
+  }
+
+  const jsAssets = walkFiles(join(dist, 'assets')).filter((filePath) => filePath.endsWith('.js'));
+  const keyIsBundled = jsAssets.some((filePath) => readFileSync(filePath, 'utf8').includes(vapidPublicKey));
+  if (!keyIsBundled) {
+    failures.push('Built frontend bundle does not include VITE_VAPID_PUBLIC_KEY; rebuild with the production env configured');
+  }
+};
 
 const getPngSize = (filePath) => {
   const buffer = readFileSync(filePath);
@@ -54,6 +106,7 @@ for (const file of requiredFiles) {
   }
 }
 
+verifyVapidPublicKey();
 verifyPng('apple-touch-icon.png', 180);
 
 const manifestPath = join(dist, 'manifest.json');

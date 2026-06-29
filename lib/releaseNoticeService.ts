@@ -18,6 +18,21 @@ export interface AppRelease {
   createdAt: string;
 }
 
+export interface AppReleaseInput {
+  version: string;
+  title: string;
+  releaseDate: string;
+  summary: string;
+  features: ReleaseNoteEntry[];
+  improvements: ReleaseNoteEntry[];
+  bugFixes: ReleaseNoteEntry[];
+  isActive: boolean;
+}
+
+export interface AppReleaseWithStats extends AppRelease {
+  readCount: number;
+}
+
 const RELEASE_COLUMNS = 'id, version, title, release_date, summary, features, improvements, bug_fixes, is_active, created_at';
 
 const toText = (value: unknown): string => {
@@ -64,7 +79,49 @@ const mapReleaseFromDb = (row: any): AppRelease => ({
 const isDuplicateReadError = (error: any): boolean =>
   error?.code === '23505' || String(error?.message || '').toLowerCase().includes('duplicate key');
 
+const releaseInputToDbPayload = (input: AppReleaseInput) => ({
+  version: input.version.trim(),
+  title: input.title.trim(),
+  release_date: input.releaseDate,
+  summary: input.summary.trim(),
+  features: input.features,
+  improvements: input.improvements,
+  bug_fixes: input.bugFixes,
+  is_active: input.isActive,
+});
+
 export const releaseNoticeService = {
+  async listReleasesWithStats(): Promise<AppReleaseWithStats[]> {
+    if (!isSupabaseConfigured) return [];
+
+    const [releaseResult, readsResult] = await Promise.all([
+      supabase
+        .from('app_releases')
+        .select(RELEASE_COLUMNS)
+        .order('release_date', { ascending: false })
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('user_release_reads')
+        .select('release_id'),
+    ]);
+
+    if (releaseResult.error) throw releaseResult.error;
+    if (readsResult.error) throw readsResult.error;
+
+    const readCounts = (readsResult.data || []).reduce<Record<string, number>>((acc, row: any) => {
+      if (row.release_id) acc[row.release_id] = (acc[row.release_id] || 0) + 1;
+      return acc;
+    }, {});
+
+    return (releaseResult.data || []).map(row => {
+      const release = mapReleaseFromDb(row);
+      return {
+        ...release,
+        readCount: readCounts[release.id] || 0,
+      };
+    });
+  },
+
   async getLatestActiveRelease(): Promise<AppRelease | null> {
     if (!isSupabaseConfigured) return null;
 
@@ -79,6 +136,66 @@ export const releaseNoticeService = {
 
     if (error) throw error;
     return data ? mapReleaseFromDb(data) : null;
+  },
+
+  async createRelease(input: AppReleaseInput): Promise<AppRelease> {
+    if (!isSupabaseConfigured) throw new Error('Supabase chưa được cấu hình.');
+
+    const { data, error } = await supabase
+      .from('app_releases')
+      .insert(releaseInputToDbPayload(input))
+      .select(RELEASE_COLUMNS)
+      .single();
+
+    if (error) throw error;
+    return mapReleaseFromDb(data);
+  },
+
+  async updateRelease(releaseId: string, input: AppReleaseInput): Promise<AppRelease> {
+    if (!isSupabaseConfigured) throw new Error('Supabase chưa được cấu hình.');
+
+    const { data, error } = await supabase
+      .from('app_releases')
+      .update(releaseInputToDbPayload(input))
+      .eq('id', releaseId)
+      .select(RELEASE_COLUMNS)
+      .single();
+
+    if (error) throw error;
+    return mapReleaseFromDb(data);
+  },
+
+  async setReleaseActive(releaseId: string, isActive: boolean): Promise<void> {
+    if (!isSupabaseConfigured) throw new Error('Supabase chưa được cấu hình.');
+
+    const { error } = await supabase
+      .from('app_releases')
+      .update({ is_active: isActive })
+      .eq('id', releaseId);
+
+    if (error) throw error;
+  },
+
+  async deleteRelease(releaseId: string): Promise<void> {
+    if (!isSupabaseConfigured) throw new Error('Supabase chưa được cấu hình.');
+
+    const { error } = await supabase
+      .from('app_releases')
+      .delete()
+      .eq('id', releaseId);
+
+    if (error) throw error;
+  },
+
+  async resetReleaseReads(releaseId: string): Promise<void> {
+    if (!isSupabaseConfigured) throw new Error('Supabase chưa được cấu hình.');
+
+    const { error } = await supabase
+      .from('user_release_reads')
+      .delete()
+      .eq('release_id', releaseId);
+
+    if (error) throw error;
   },
 
   async hasReadRelease(userId: string, releaseId: string): Promise<boolean> {

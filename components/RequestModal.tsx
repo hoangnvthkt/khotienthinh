@@ -1,7 +1,7 @@
 
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { X, Send, CheckCircle, Trash2, Info, Truck, PackageCheck, AlertCircle, XCircle, Plus, User, Loader2, Save, FileDown, Clock, ChevronDown, ChevronRight, Printer } from 'lucide-react';
+import { X, Send, CheckCircle, Trash2, Info, Truck, PackageCheck, AlertCircle, XCircle, Plus, User, Loader2, Save, FileDown, Clock, ChevronDown, ChevronUp, ChevronRight, Printer } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useApp } from '../context/AppContext';
 import {
@@ -271,6 +271,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
     const [reqItems, setReqItems] = useState<RequestLineDraft[]>([]);
     const [approvedItems, setApprovedItems] = useState<{ lineId?: string, itemId: string, qty: number }[]>([]);
     const [selectedWorkBoqItemIds, setSelectedWorkBoqItemIds] = useState<Set<string>>(() => new Set());
+    const [boqSectionExpanded, setBoqSectionExpanded] = useState(false);
     const [draftWorkBoqSearch, setDraftWorkBoqSearch] = useState('');
     const [isWorkBoqSearchOpen, setWorkBoqSearchOpen] = useState(false);
     const [selectedMaterialBudgetIds, setSelectedMaterialBudgetIds] = useState<Set<string>>(() => new Set());
@@ -2612,12 +2613,28 @@ const RequestModal: React.FC<RequestModalProps> = ({
 
                     {isEditable && isProjectRequest && (
                         <div className="mb-5 rounded-xl border border-amber-200/30 dark:border-amber-900/30 bg-amber-50/10 dark:bg-amber-950/10 p-4">
-                            <div className="flex items-center justify-between gap-3 mb-3">
+                            <div className={`flex items-center justify-between gap-3 ${boqSectionExpanded ? 'mb-3' : ''}`}>
                                 <div>
                                     <div className="text-xs font-black text-foreground">Thêm vật tư theo BOQ triển khai</div>
                                     <div className="text-[10px] font-bold text-muted-foreground">BOQ là mức trần cảnh báo; đề xuất vượt vẫn gửi được khi nhập lý do.</div>
                                 </div>
-	                            </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setBoqSectionExpanded(!boqSectionExpanded)}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-200 dark:border-amber-800 text-[10px] font-black text-amber-700 bg-white dark:bg-slate-900 hover:bg-amber-50/55 transition-colors active:scale-95 shrink-0"
+                                >
+                                    {boqSectionExpanded ? (
+                                        <>
+                                            Thu gọn <ChevronUp size={12} />
+                                        </>
+                                    ) : (
+                                        <>
+                                            Mở rộng <ChevronDown size={12} />
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                            {boqSectionExpanded && (
 	                            <div className="grid grid-cols-1 md:grid-cols-12 gap-2">
 	                                <div className="relative md:col-span-7">
 		                                    <input
@@ -2752,6 +2769,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                     className="md:col-span-12 px-3 py-2 rounded-xl border border-amber-200/40 dark:border-amber-800/40 bg-card text-xs outline-none focus:ring-2 focus:ring-amber-300 text-foreground"
                                 />
                             </div>
+                            )}
                         </div>
                     )}
 
