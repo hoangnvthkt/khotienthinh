@@ -30,6 +30,8 @@ type PushSubscriptionRow = {
 
 type DeliveryStatus = 'sent' | 'failed' | 'skipped';
 
+const UNREAD_BADGE_LIMIT = 100;
+
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
@@ -112,6 +114,39 @@ const getProviderStatusCode = (err: unknown) => {
   return typeof statusCode === 'number' ? statusCode : null;
 };
 
+const normalizeBadgeCount = (count: number) => {
+  if (!Number.isFinite(count)) return 0;
+  return Math.max(0, Math.min(UNREAD_BADGE_LIMIT, Math.floor(count)));
+};
+
+const getUnreadBadgeCount = async (
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+) => {
+  const baseQuery = () => admin
+    .from('notifications')
+    .select('id')
+    .eq('is_read', false)
+    .eq('is_dismissed', false)
+    .neq('category', 'inventory')
+    .limit(UNREAD_BADGE_LIMIT);
+
+  const [userResult, globalResult] = await Promise.all([
+    baseQuery().eq('user_id', userId),
+    baseQuery().is('user_id', null),
+  ]);
+  if (userResult.error) throw userResult.error;
+  if (globalResult.error) throw globalResult.error;
+
+  const unreadIds = new Set<string>();
+  for (const row of [...(userResult.data || []), ...(globalResult.data || [])]) {
+    unreadIds.add(row.id);
+    if (unreadIds.size >= UNREAD_BADGE_LIMIT) return UNREAD_BADGE_LIMIT;
+  }
+
+  return unreadIds.size;
+};
+
 const getPushPayload = (params: {
   title: string;
   body: string;
@@ -119,16 +154,24 @@ const getPushPayload = (params: {
   url: string;
   notificationId?: string;
   priority?: string;
-}) => JSON.stringify({
-  title: params.title,
-  body: params.body,
-  tag: params.tag,
-  url: params.url,
-  notificationId: params.notificationId || '',
-  priority: params.priority || 'normal',
-  icon: '/icons/icon-192.png',
-  badge: '/icons/icon-72.png',
-});
+  unreadCount?: number;
+}) => {
+  const unreadCount = typeof params.unreadCount === 'number'
+    ? normalizeBadgeCount(params.unreadCount)
+    : undefined;
+
+  return JSON.stringify({
+    title: params.title,
+    body: params.body,
+    tag: params.tag,
+    url: params.url,
+    notificationId: params.notificationId || '',
+    priority: params.priority || 'normal',
+    icon: '/icons/icon-192.png',
+    badge: '/icons/icon-72.png',
+    ...(typeof unreadCount === 'number' ? { unreadCount, badgeCount: unreadCount } : {}),
+  });
+};
 
 const sendToSubscription = async (
   admin: ReturnType<typeof createClient>,
@@ -232,6 +275,7 @@ Deno.serve(async (req) => {
         return json({ total: 0, sent: 0, failed: 0, deactivated: 0, skipped: 1, reason: 'subscription_not_active_or_not_found' });
       }
 
+      const unreadCount = await getUnreadBadgeCount(admin, testSub.user_id);
       const result = await sendToSubscription(admin, {
         sub: testSub,
         payload: getPushPayload({
@@ -240,6 +284,7 @@ Deno.serve(async (req) => {
           tag: `vioo-test-${testSub.id}`,
           url: '/settings',
           priority: 'normal',
+          unreadCount,
         }),
       });
 
@@ -295,6 +340,7 @@ Deno.serve(async (req) => {
       return json({ total: 0, sent: 0, failed: 0, deactivated: 0, skipped: 1, reason: 'no_active_subscriptions' });
     }
 
+    const unreadCount = await getUnreadBadgeCount(admin, notification.user_id);
     const payload = getPushPayload({
       title: notification.title || 'Thông báo',
       body: notification.message || notification.body || '',
@@ -302,6 +348,7 @@ Deno.serve(async (req) => {
       url: notification.action_url || notification.link || '/',
       notificationId: notification.id,
       priority: getPriority(notification),
+      unreadCount,
     });
 
     let sent = 0;

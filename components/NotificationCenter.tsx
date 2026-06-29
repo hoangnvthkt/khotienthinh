@@ -7,6 +7,7 @@ import { useNavigate } from 'react-router-dom';
 import { notificationService, AppNotification, NOTIFICATION_CATEGORIES } from '../lib/notificationService';
 import { resolveNotificationPath, toHashRoute } from '../lib/notificationRoutes';
 import { webPushService } from '../lib/webPushService';
+import { appBadgeService } from '../lib/appBadgeService';
 
 interface NotificationCenterProps {
     userId?: string;
@@ -42,6 +43,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId, enabled
         typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'denied'
     );
     const [webPushEnabled, setWebPushEnabled] = useState(false);
+    const unreadCountRef = useRef(0);
     const webPushEnabledRef = useRef(false);
     const bellRef = useRef<HTMLButtonElement>(null);
     const panelRef = useRef<HTMLDivElement>(null);
@@ -71,10 +73,17 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId, enabled
         setNotifications(list);
     }, [userId]);
 
+    const applyUnreadCount = useCallback((count: number) => {
+        const nextCount = Math.max(0, Math.min(100, Math.floor(Number.isFinite(count) ? count : 0)));
+        unreadCountRef.current = nextCount;
+        setUnreadCount(nextCount);
+        appBadgeService.setUnreadCount(nextCount);
+    }, []);
+
     const loadCount = useCallback(async () => {
         const count = await notificationService.countUnread(userId);
-        setUnreadCount(count);
-    }, [userId]);
+        applyUnreadCount(count);
+    }, [userId, applyUnreadCount]);
 
     useEffect(() => {
         if (!isActive) return;
@@ -94,7 +103,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId, enabled
                 if (prev.some(item => item.id === n.id)) return prev;
                 return [n, ...prev].slice(0, 50);
             });
-            if (!n.isRead) setUnreadCount(c => Math.min(100, c + 1));
+            if (!n.isRead) applyUnreadCount(unreadCountRef.current + 1);
 
             // Fallback browser notification when Web Push is not enabled on this device.
             if ('Notification' in window && !document.hasFocus() && Notification.permission === 'granted' && !webPushEnabledRef.current) {
@@ -135,7 +144,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId, enabled
             }
         }, userId);
         return () => { notificationService.unsubscribe(channel); };
-    }, [isActive, userId]);
+    }, [isActive, userId, applyUnreadCount]);
 
     useEffect(() => {
         if (!isActive) return;
@@ -162,6 +171,19 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId, enabled
                 webPushEnabledRef.current = false;
             });
     }, [isActive, userId, browserPermission]);
+
+    useEffect(() => {
+        if (!isActive) return;
+        const syncUnreadBadge = () => {
+            if (!document.hidden) loadCount();
+        };
+        window.addEventListener('focus', syncUnreadBadge);
+        document.addEventListener('visibilitychange', syncUnreadBadge);
+        return () => {
+            window.removeEventListener('focus', syncUnreadBadge);
+            document.removeEventListener('visibilitychange', syncUnreadBadge);
+        };
+    }, [isActive, loadCount]);
 
     // Auto-check alerts on mount + every 15 minutes
     useEffect(() => {
@@ -218,26 +240,26 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId, enabled
     const handleMarkRead = async (id: string) => {
         await notificationService.markRead(id);
         setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
-        setUnreadCount(c => Math.max(0, c - 1));
+        applyUnreadCount(unreadCountRef.current - 1);
     };
 
     const handleMarkAllRead = async () => {
         await notificationService.markAllRead(userId);
         setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
-        setUnreadCount(0);
+        applyUnreadCount(0);
     };
 
     const handleDismiss = async (id: string) => {
         await notificationService.dismiss(id);
         setNotifications(prev => prev.filter(n => n.id !== id));
         const n = notifications.find(n => n.id === id);
-        if (n && !n.isRead) setUnreadCount(c => Math.max(0, c - 1));
+        if (n && !n.isRead) applyUnreadCount(unreadCountRef.current - 1);
     };
 
     const handleDismissAll = async () => {
         await notificationService.dismissAll(userId);
         setNotifications([]);
-        setUnreadCount(0);
+        applyUnreadCount(0);
     };
 
     const handleNotificationClick = async (n: AppNotification) => {
