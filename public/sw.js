@@ -1,5 +1,5 @@
-// Vioo Service Worker v8 - PWA shell + Web Push notifications
-const CACHE_NAME = 'vioo-v8';
+// Vioo Service Worker v9 - PWA shell + Web Push notifications
+const CACHE_NAME = 'vioo-v9';
 const OFFLINE_URL = '/offline.html';
 
 const PRECACHE_URLS = [
@@ -82,6 +82,37 @@ self.addEventListener('message', (event) => {
   }
 });
 
+const normalizeBadgeCount = (value) => {
+  const count = Number(value);
+  if (!Number.isFinite(count)) return null;
+  return Math.max(0, Math.min(100, Math.floor(count)));
+};
+
+const getAppBadgeCount = (data) => {
+  if (!data || typeof data !== 'object') return null;
+  return normalizeBadgeCount(
+    data.badgeCount ?? data.unreadCount ?? data.appBadge ?? data.app_badge
+  );
+};
+
+const setAppBadgeFromPush = async (data) => {
+  const count = getAppBadgeCount(data);
+  const badgeNavigator = self.navigator;
+  if (count === null || !badgeNavigator?.setAppBadge) return;
+
+  try {
+    if (count > 0) {
+      await badgeNavigator.setAppBadge(count);
+    } else if (badgeNavigator.clearAppBadge) {
+      await badgeNavigator.clearAppBadge();
+    } else {
+      await badgeNavigator.setAppBadge(0);
+    }
+  } catch (error) {
+    console.warn('App badge update failed:', error);
+  }
+};
+
 self.addEventListener('push', (event) => {
   let data;
   try {
@@ -109,7 +140,10 @@ self.addEventListener('push', (event) => {
   };
 
   event.waitUntil(
-    self.registration.showNotification(data.title || 'Vioo', options)
+    Promise.all([
+      setAppBadgeFromPush(data),
+      self.registration.showNotification(data.title || 'Vioo', options),
+    ])
   );
 });
 

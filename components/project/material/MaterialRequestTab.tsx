@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { AlertTriangle, LayoutGrid, ListChecks, Loader2, Package, Plus, Search } from 'lucide-react';
+import { AlertTriangle, Calendar, ChevronRight, Clock, LayoutGrid, ListChecks, Loader2, Package, Plus, Search } from 'lucide-react';
 import {
     InventoryItem,
     MaterialRequest,
@@ -8,6 +8,7 @@ import {
     MaterialRequestFulfillmentSummary,
     MaterialRequestKanbanLaneId,
     ProjectWorkflowBoardFilter,
+    RequestStatus,
     ProjectWorkflowConfiguration,
     ProjectWorkflowSubject,
     ProjectWorkBoqItem,
@@ -169,9 +170,8 @@ export const MaterialRequestTab: React.FC<MaterialRequestTabProps> = ({
         }
 
         return (
-            <div className="p-4">
-                <div className="overflow-hidden rounded-2xl border border-slate-100 bg-white dark:border-slate-700/60 dark:bg-slate-900/30">
-                    {filteredListRequests.map(request => {
+            <div className="p-4 space-y-3">
+                {filteredListRequests.map(request => {
                     const subject = requestWorkflowSubjects[request.id];
                     const requester = userById.get(request.requesterId);
                     const assigneeIds = subject?.currentAssigneeUserIds?.length
@@ -203,48 +203,101 @@ export const MaterialRequestTab: React.FC<MaterialRequestTabProps> = ({
                     const slaState = getMaterialRequestSlaState(request);
                     const materialSummary = `${request.items?.length || 0} dòng vật tư${summary ? ` • nhận ${summary.receivedQty.toLocaleString('vi-VN')}/${summary.committedQty.toLocaleString('vi-VN')}` : ''}`;
 
+                    // Xác định màu trạng thái để làm viền accent trái
+                    let statusAccentBg = 'bg-slate-400';
+                    if (request.status === RequestStatus.DRAFT) statusAccentBg = 'bg-slate-300';
+                    else if (request.status === RequestStatus.REJECTED) statusAccentBg = 'bg-rose-500';
+                    else if (request.status === RequestStatus.APPROVED || request.status === RequestStatus.COMPLETED || request.status === RequestStatus.LEGACY_APPROVED) statusAccentBg = 'bg-emerald-500';
+                    else if (request.status === RequestStatus.IN_TRANSIT) statusAccentBg = 'bg-indigo-500';
+                    else if (request.status === RequestStatus.PENDING || request.status === RequestStatus.LEGACY_PENDING) statusAccentBg = 'bg-amber-500';
+
+                    if (slaState === 'overdue') {
+                        statusAccentBg = 'bg-rose-600';
+                    }
+
+                    // Avatar Initials
+                    const requesterName = requester?.name || request.requesterId || 'U';
+                    const initials = requesterName.split(' ').map(n => n[0]).filter(Boolean).slice(-2).join('').toUpperCase();
+
                     return (
                         <button
                             key={request.id}
                             type="button"
                             onClick={() => onOpenRequest(request)}
-                            className="grid w-full grid-cols-1 gap-3 border-b border-slate-100 px-4 py-4 text-left transition hover:bg-slate-50/70 last:border-b-0 dark:border-slate-800 dark:hover:bg-slate-800/50 lg:grid-cols-[minmax(150px,0.75fr)_minmax(260px,1.35fr)_minmax(170px,0.8fr)_minmax(155px,0.7fr)_auto] lg:items-center"
+                            className="group relative grid w-full grid-cols-1 gap-4 rounded-2xl border border-slate-100 bg-white p-5 pl-7 text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800/80 dark:bg-slate-900/60 lg:grid-cols-[minmax(160px,0.8fr)_minmax(280px,1.4fr)_minmax(180px,0.85fr)_minmax(160px,0.75fr)_auto] lg:items-center"
                         >
+                            {/* Left accent border */}
+                            <div className={`absolute left-0 top-0 bottom-0 w-1.5 rounded-l-2xl ${statusAccentBg}`} />
+
                             <div className="min-w-0">
-                                <div className="truncate text-sm font-black text-slate-800 dark:text-white">{request.title || 'Đề xuất vật tư'}</div>
-                                <div className="mt-0.5 truncate font-mono text-[10px] font-bold text-purple-600">{request.code} - Đề xuất vật tư</div>
-                                <div className="mt-1 flex flex-wrap gap-1.5">
+                                <div className="truncate text-sm font-extrabold text-slate-800 dark:text-white group-hover:text-indigo-650 dark:group-hover:text-indigo-400 transition-colors">{request.title || 'Đề xuất vật tư'}</div>
+                                <div className="mt-1 font-mono text-[10px] font-semibold text-purple-650 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/40 px-1.5 py-0.5 rounded w-fit">{request.code} - Đề xuất</div>
+                                <div className="mt-2 flex flex-wrap gap-1.5">
                                     <StatusBadge status={request.status} label={statusView.label} tone={statusView.tone} />
                                     {slaState === 'overdue' && <StatusBadge status="overdue" label="Quá hạn SLA" tone="attention" />}
                                 </div>
                             </div>
+
                             <div className="min-w-0">
                                 <div className="truncate text-sm font-black text-slate-800 dark:text-white">{materialSummary}</div>
-                                <div className="mt-1 line-clamp-2 text-xs font-bold leading-relaxed text-slate-500 dark:text-slate-300">{statusView.nextAction}</div>
-                                <div className="mt-2 flex flex-wrap gap-1.5">
-                                    {overLines.length > 0 && <StatusBadge status="warning" label={`${overLines.length} dòng vượt/ngoài BOQ`} tone="attention" />}
-                                    {request.overrideReason && <StatusBadge status="warning" label="Có lý do override" tone="warning" />}
+                                <div className="mt-1.5 line-clamp-2 text-xs font-bold leading-relaxed text-slate-500 dark:text-slate-400 border-l-2 border-slate-200 dark:border-slate-700 pl-2.5">{statusView.nextAction}</div>
+                                <div className="mt-2.5 flex flex-wrap gap-1.5">
+                                    {overLines.length > 0 && (
+                                        <span className="flex items-center gap-1 text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded-full border border-amber-200/60 dark:border-amber-900/60">
+                                            <AlertTriangle size={10} /> {overLines.length} dòng ngoài BOQ
+                                        </span>
+                                    )}
+                                    {request.overrideReason && (
+                                        <span className="flex items-center gap-1 text-[10px] font-bold text-orange-650 dark:text-orange-400 bg-orange-50 dark:bg-orange-950/40 px-2 py-0.5 rounded-full border border-orange-200/60 dark:border-orange-900/60">
+                                            <AlertTriangle size={10} /> Có lý do override
+                                        </span>
+                                    )}
                                 </div>
                             </div>
-                            <div className="min-w-0 text-xs">
-                                <div className="font-black text-slate-400">Người yêu cầu</div>
-                                <div className="mt-1 truncate font-bold text-slate-700 dark:text-slate-200">{requester?.name || request.requesterId || '-'}</div>
-                                {handlerLabel && (
-                                    <div className="mt-1 truncate text-[11px] font-bold text-slate-400">Xử lý: {handlerLabel}</div>
+
+                            <div className="flex items-start gap-2.5 min-w-0 text-xs">
+                                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-50 text-[11px] font-bold text-indigo-650 dark:bg-indigo-950/40 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-900/50">
+                                    {initials}
+                                </div>
+                                <div className="min-w-0">
+                                    <div className="font-semibold uppercase tracking-wider text-[9px] text-slate-400">Người yêu cầu</div>
+                                    <div className="mt-0.5 truncate font-bold text-slate-700 dark:text-slate-200">{requesterName}</div>
+                                    {handlerLabel && (
+                                        <div className="mt-0.5 truncate text-[10px] font-medium text-slate-400 dark:text-slate-500">
+                                            Xử lý: <span className="font-semibold text-slate-600 dark:text-slate-300">{handlerLabel}</span>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="min-w-0 text-xs space-y-1">
+                                <div className="font-semibold uppercase tracking-wider text-[9px] text-slate-400">Hạn / ngày tạo</div>
+                                <div className="flex items-center gap-1.5 font-bold text-slate-700 dark:text-slate-200">
+                                    <Calendar size={12} className="text-slate-400" />
+                                    <span>{formatDate(request.workflowStepDueAt || request.expectedDate || request.createdDate)}</span>
+                                </div>
+                                <div className="flex items-center gap-1.5 text-[10px] font-medium text-slate-400 dark:text-slate-500">
+                                    <Clock size={12} className="text-slate-400" />
+                                    <span>Tạo: {formatDate(request.createdDate)}</span>
+                                </div>
+                            </div>
+
+                            <div className="justify-self-start lg:justify-self-end">
+                                {statusView.isActionable ? (
+                                    <div className="flex items-center gap-1 rounded-xl bg-indigo-600 hover:bg-indigo-700 px-3.5 py-2 text-[10px] font-black uppercase text-white shadow-sm shadow-indigo-200 dark:shadow-none transition-all duration-200 active:scale-95 group-hover:translate-x-0.5">
+                                        <span>{statusView.actionLabel}</span>
+                                        <ChevronRight size={12} />
+                                    </div>
+                                ) : (
+                                    <div className="flex items-center gap-1 rounded-xl border border-slate-200 dark:border-slate-700/80 hover:bg-slate-50 dark:hover:bg-slate-800 px-3.5 py-2 text-[10px] font-bold uppercase text-slate-650 dark:text-slate-400 transition-colors group-hover:border-indigo-200 dark:group-hover:border-indigo-900 group-hover:text-indigo-650 dark:group-hover:text-indigo-400">
+                                        <span>{statusView.actionLabel}</span>
+                                        <ChevronRight size={12} className="opacity-0 group-hover:opacity-100 transition-all duration-200 transform group-hover:translate-x-0.5" />
+                                    </div>
                                 )}
-                            </div>
-                            <div className="min-w-0 text-xs">
-                                <div className="font-black text-slate-400">Hạn / ngày tạo</div>
-                                <div className="mt-1 truncate font-bold text-slate-700 dark:text-slate-200">{formatDate(request.workflowStepDueAt || request.expectedDate || request.createdDate)}</div>
-                                <div className="mt-1 truncate text-[11px] font-bold text-slate-400">{formatDate(request.createdDate)}</div>
-                            </div>
-                            <div className="justify-self-start rounded-xl border border-slate-200 px-3 py-2 text-[10px] font-black uppercase text-slate-700 transition group-hover:border-purple-200 group-hover:text-purple-700 lg:justify-self-end">
-                                {statusView.actionLabel}
                             </div>
                         </button>
                     );
                 })}
-                </div>
             </div>
         );
     };

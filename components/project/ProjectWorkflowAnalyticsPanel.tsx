@@ -87,7 +87,7 @@ const ProjectWorkflowAnalyticsPanel: React.FC<Props> = ({ requests, subjectsByRe
           </div>
         </div>
         <div className="rounded-xl border border-border bg-card px-3 py-2">
-          <div className="mb-2 flex items-center gap-1 text-[10px] font-black uppercase text-muted-foreground"><UserRound size={11} /> Tải việc</div>
+          <div className="mb-2 flex items-center gap-1 text-[10px] font-black uppercase text-muted-foreground"><UserRound size={11} /> Người nhận việc</div>
           <div className="space-y-1.5">
             {summary.workload.map(row => (
               <div key={row.userId} className="flex items-center justify-between gap-2 text-[10px] font-bold text-muted-foreground">

@@ -7,7 +7,7 @@ import {
   HardHat, Briefcase, Tag, Ruler, Trash2, Edit2,
   Truck, User as UserIcon, Search, AlertCircle,
   Database, MapPinned, DollarSign, Calendar, Layers, GitBranch, Percent, TrendingDown, PenTool, Bot, FolderKanban,
-  Package, FileSpreadsheet, Upload, Download, Loader2, RefreshCcw, ClipboardCheck, BrainCircuit
+  Package, FileSpreadsheet, Upload, Download, Loader2, RefreshCcw, ClipboardCheck, BrainCircuit, Megaphone
 } from 'lucide-react';
 import MasterDataConfirmModal from '../components/MasterDataConfirmModal';
 import { RealtimeBadge } from '../components/OfflineIndicator';
@@ -25,6 +25,7 @@ import SettingsWorkGroups from './settings/SettingsWorkGroups';
 import SettingsInspectionTemplates from './settings/SettingsInspectionTemplates';
 import SettingsG8CostNormLibrary from './settings/SettingsG8CostNormLibrary';
 import SettingsAiLearning from './settings/SettingsAiLearning';
+import SettingsReleaseNotes from './settings/SettingsReleaseNotes';
 import { useModuleData } from '../hooks/useModuleData';
 import { useToast } from '../context/ToastContext';
 import { useAsyncAction } from '../hooks/useAsyncAction';
@@ -938,6 +939,7 @@ const Settings: React.FC = () => {
 
   const tabs = [
     { id: 'general', label: 'Chung', icon: SettingsIcon },
+    { id: 'release-notes', label: 'Phiên bản', icon: Megaphone, adminOnly: true },
     { id: 'warehouses', label: 'Kho bãi', icon: Building },
     { id: 'master-data', label: 'Dữ liệu gốc', icon: Database },
     { id: 'g8-cost-norms', label: 'Định mức G8', icon: FileSpreadsheet },
@@ -952,7 +954,7 @@ const Settings: React.FC = () => {
     { id: 'ai-learning', label: 'AI Learning', icon: BrainCircuit },
     { id: 'account', label: 'Tài khoản', icon: UserIcon },
     { id: 'maintenance', label: 'Bảo trì', icon: AlertCircle },
-  ].filter(tab => canOpenSettingsFeature(tab.id as SettingsFeatureId));
+  ].filter(tab => tab.adminOnly ? isSettingsAdmin : canOpenSettingsFeature(tab.id as SettingsFeatureId));
   const activeSettingsTab = tabs.some(tab => tab.id === activeTab) ? activeTab : 'account';
 
   const filteredMaterialItems = useMemo(() => {
@@ -1033,6 +1035,10 @@ const Settings: React.FC = () => {
               fileInputRef={fileInputRef} handleLogoUpload={handleLogoUpload}
               handleSaveGeneral={handleSaveGeneral}
             />
+          )}
+
+          {activeSettingsTab === 'release-notes' && (
+            <SettingsReleaseNotes />
           )}
 
           {activeSettingsTab === 'warehouses' && (
