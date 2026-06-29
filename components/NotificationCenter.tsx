@@ -8,12 +8,18 @@ import { notificationService, AppNotification, NOTIFICATION_CATEGORIES } from '.
 import { resolveNotificationPath, toHashRoute } from '../lib/notificationRoutes';
 import { webPushService } from '../lib/webPushService';
 import { appBadgeService } from '../lib/appBadgeService';
+import { notificationSoundService } from '../lib/notificationSoundService';
 
 interface NotificationCenterProps {
     userId?: string;
     enabled?: boolean;
     mode?: 'always' | 'mobile' | 'desktop';
 }
+
+type BrowserNotificationOptions = NotificationOptions & {
+    renotify?: boolean;
+    vibrate?: number[];
+};
 
 const SEVERITY_STYLES = {
     info: { border: 'border-l-blue-400', bg: 'bg-blue-50/50', icon: <Info size={14} className="text-blue-500" /> },
@@ -103,16 +109,22 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId, enabled
                 if (prev.some(item => item.id === n.id)) return prev;
                 return [n, ...prev].slice(0, 50);
             });
-            if (!n.isRead) applyUnreadCount(unreadCountRef.current + 1);
+            if (!n.isRead) {
+                applyUnreadCount(unreadCountRef.current + 1);
+                void notificationSoundService.play(n.severity === 'critical' ? 'urgent' : 'normal');
+            }
 
             // Fallback browser notification when Web Push is not enabled on this device.
             if ('Notification' in window && !document.hasFocus() && Notification.permission === 'granted' && !webPushEnabledRef.current) {
-                const browserNotif = new Notification(n.title, {
+                const browserOptions: BrowserNotificationOptions = {
                     body: n.message,
                     icon: '/icons/icon-192.png',
                     tag: n.id, // dedup
-                    silent: n.severity !== 'critical',
-                });
+                    renotify: true,
+                    silent: false,
+                    vibrate: [100, 50, 100],
+                };
+                const browserNotif = new Notification(n.title, browserOptions);
                 browserNotif.onclick = () => {
                     window.focus();
                     const target = resolveNotificationPath(n);
@@ -124,24 +136,6 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId, enabled
                 };
             }
 
-            // Sound for urgent/critical notifications
-            if (n.severity === 'critical') {
-                try {
-                    const audio = new Audio('data:audio/wav;base64,UklGRl9vT19teleQBJAGNkYXRh');
-                    // Fallback: use system beep via AudioContext
-                    const ctx = new AudioContext();
-                    const osc = ctx.createOscillator();
-                    const gain = ctx.createGain();
-                    osc.connect(gain);
-                    gain.connect(ctx.destination);
-                    osc.frequency.value = 800;
-                    gain.gain.value = 0.1;
-                    osc.start();
-                    setTimeout(() => { osc.stop(); ctx.close(); }, 200);
-                } catch {
-                    // Audio not available
-                }
-            }
         }, userId);
         return () => { notificationService.unsubscribe(channel); };
     }, [isActive, userId, applyUnreadCount]);

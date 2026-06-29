@@ -1,5 +1,5 @@
-// Vioo Service Worker v9 - PWA shell + Web Push notifications
-const CACHE_NAME = 'vioo-v9';
+// Vioo Service Worker v10 - PWA shell + Web Push notifications
+const CACHE_NAME = 'vioo-v10';
 const OFFLINE_URL = '/offline.html';
 
 const PRECACHE_URLS = [
@@ -129,6 +129,7 @@ self.addEventListener('push', (event) => {
     icon: data.icon || '/icons/icon-192.png',
     badge: data.badge || '/icons/icon-72.png',
     tag: data.tag || notificationId || 'vioo-notification',
+    timestamp: Date.now(),
     data: {
       url,
       notificationId,
@@ -136,6 +137,8 @@ self.addEventListener('push', (event) => {
     },
     actions: data.actions || [],
     vibrate: [100, 50, 100],
+    renotify: data.renotify !== false,
+    silent: data.silent === true,
     requireInteraction: data.priority === 'urgent' || data.priority === 'high',
   };
 
