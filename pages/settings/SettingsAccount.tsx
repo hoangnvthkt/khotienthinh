@@ -6,6 +6,7 @@ import { useToast } from '../../context/ToastContext';
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
 import { webPushService } from '../../lib/webPushService';
 import { pwaService, PWAStatus } from '../../lib/pwaService';
+import { notificationSoundService } from '../../lib/notificationSoundService';
 
 interface SettingsAccountProps {
   currentUser: User;
@@ -85,6 +86,8 @@ const SettingsAccount: React.FC<SettingsAccountProps> = ({
     setPushBusy(true);
     setPushMessage('');
     try {
+      void notificationSoundService.prime();
+
       if (!webPushService.isPushSupported()) {
         await refreshPushState();
         setPushMessage('Thiết bị hoặc trình duyệt hiện tại chưa sẵn sàng nhận Web Push.');
@@ -106,7 +109,10 @@ const SettingsAccount: React.FC<SettingsAccountProps> = ({
       const enabled = await webPushService.subscribeUserToPush(currentUser.id);
       setPushEnabled(enabled);
       setPushMessage(enabled ? 'Đã bật thông báo trên thiết bị này.' : 'Không thể tạo subscription cho thiết bị này.');
-      if (enabled) toast.success('Đã bật thông báo thiết bị');
+      if (enabled) {
+        void notificationSoundService.play('success', { force: true });
+        toast.success('Đã bật thông báo thiết bị');
+      }
     } catch (err: any) {
       logApiError('settingsAccount.enableWebPush', err);
       const message = getApiErrorMessage(err, 'Không thể bật thông báo trên thiết bị này.');
@@ -135,6 +141,19 @@ const SettingsAccount: React.FC<SettingsAccountProps> = ({
       setPushBusy(false);
       void refreshPushState();
     }
+  };
+
+  const handleApplyPwaUpdate = async () => {
+    if (!('serviceWorker' in navigator)) {
+      window.location.reload();
+      return;
+    }
+    const registration = await navigator.serviceWorker.getRegistration('/').catch(() => null);
+    if (registration?.waiting) {
+      registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+      return;
+    }
+    window.location.reload();
   };
 
   const handleChangePassword = async (e: React.FormEvent) => {
@@ -313,6 +332,18 @@ const SettingsAccount: React.FC<SettingsAccountProps> = ({
             {pwaStatus?.isIOS && !pwaStatus.isStandalone && (
               <div className="mt-3 rounded-xl border border-amber-100 bg-amber-50 p-3 text-[11px] font-semibold text-amber-700">
                 Trên iPhone/iPad, hãy dùng Share rồi Add to Home Screen trước khi bật Web Push.
+              </div>
+            )}
+            {pwaStatus?.serviceWorkerState === 'waiting' && (
+              <div className="mt-3 flex flex-col gap-2 rounded-xl border border-blue-100 bg-blue-50 p-3 text-[11px] font-semibold text-blue-700 sm:flex-row sm:items-center sm:justify-between">
+                <span>Có bản PWA mới đang chờ. Cập nhật để dùng service worker mới nhất.</span>
+                <button
+                  type="button"
+                  onClick={handleApplyPwaUpdate}
+                  className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-3 py-2 text-[11px] font-black text-white transition hover:bg-blue-700"
+                >
+                  Cập nhật ngay
+                </button>
               </div>
             )}
           </div>
