@@ -1798,6 +1798,7 @@ export interface PurchaseOrder extends ProjectSubmissionFields {
   actualDeliveryDate?: string;
   status: POStatus;
   sourceMode?: PurchaseOrderSourceMode;
+  approvalRequestTitle?: string | null;
   procurementGroupId?: string | null;
   procurementGroupNo?: string | null;
   qrToken?: string;
