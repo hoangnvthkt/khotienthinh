@@ -27,6 +27,7 @@ import { getApiErrorMessage, logApiError } from '../../lib/apiError';
 import { isGlobalWarehouseKeeper, isWarehouseKeeperFor } from '../../lib/wmsPermissions';
 import { getMaterialPlanningScopeKey, materialPlanningCurveService, materialPlanningRuleService, projectMaterialPlanningService } from '../../lib/projectMaterialPlanningService';
 import { MaterialBoqFormModal } from '../../components/project/material/MaterialBoqFormModal';
+import { CustomMaterialRequestTab } from '../../components/project/material/CustomMaterialRequestTab';
 import { G8NormApplyModal } from '../../components/project/material/G8NormApplyModal';
 import { MaterialBoqImportPreviewModal } from '../../components/project/material/MaterialBoqImportPreviewModal';
 import { MaterialDashboardTab } from '../../components/project/material/MaterialDashboardTab';
@@ -104,6 +105,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         visibleMaterialTabs,
         canManageBoq,
         canManagePlanning,
+        canManageRequest,
         canManagePo,
         boqPbacLoaded,
         canEditBoq,
@@ -2377,6 +2379,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         boq: '📋 BOQ',
         planning: '🧭 Kế hoạch',
         request: '📦 Yêu cầu',
+        custom: '🧩 Phi tiêu chuẩn',
         po: '🛒 Đơn hàng (PO)',
         waste: '📊 Hao hụt',
         dashboard: '📈 Dashboard',
@@ -2386,6 +2389,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         boq: workBoqItems.length + computedBoqItems.length,
         planning: 0,
         request: requests.length,
+        custom: 0,
         po: 0,
         waste: stats.overWaste,
         dashboard: 0,
@@ -2794,6 +2798,16 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                     canMoveMaterialRequest={canMoveMaterialRequest}
                     onMoveMaterialRequest={handleMoveMaterialRequest}
                     onOpenRequest={openProjectRequestDetail}
+                />
+            )}
+
+            {materialAccess.custom.canView && activeSubTab === 'custom' && (
+                <CustomMaterialRequestTab
+                    projectId={projectId}
+                    constructionSiteId={constructionSiteId}
+                    currentUserId={user.id}
+                    currentUserName={user.name || user.username}
+                    canManage={materialAccess.custom.canManage || canManageRequest || canManagePo || user.role === Role.ADMIN}
                 />
             )}
 

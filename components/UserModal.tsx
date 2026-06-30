@@ -33,6 +33,7 @@ const PROJECT_MATERIAL_TAB_PERMISSION_ICONS: Record<ProjectMaterialTabKey, any> 
   boq: FileSpreadsheet,
   planning: Clock,
   request: Package,
+  custom: ClipboardPaste,
   po: FileSignature,
   waste: History,
   dashboard: LayoutDashboard,

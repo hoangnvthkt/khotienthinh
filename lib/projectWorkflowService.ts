@@ -373,14 +373,17 @@ export const projectWorkflowService = {
     if (error) throw error;
   },
 
-  async listSubjectsByMaterialRequestIds(requestIds: string[]): Promise<Record<string, ProjectWorkflowSubject>> {
-    const ids = Array.from(new Set(requestIds.filter(Boolean)));
+  async listSubjectsBySubjectIds(
+    subjectType: ProjectWorkflowSubjectType,
+    subjectIds: string[],
+  ): Promise<Record<string, ProjectWorkflowSubject>> {
+    const ids = Array.from(new Set(subjectIds.filter(Boolean)));
     if (ids.length === 0) return {};
 
     const { data, error } = await supabase
       .from(SUBJECT_TABLE)
       .select(subjectSelect)
-      .eq('subject_type', 'material_request')
+      .eq('subject_type', subjectType)
       .in('subject_id', ids);
     if (error) {
       if (isMissingProjectWorkflowError(error)) return {};
@@ -394,19 +397,27 @@ export const projectWorkflowService = {
     }, {});
   },
 
-  async getSubjectByMaterialRequestId(requestId: string): Promise<ProjectWorkflowSubject | null> {
-    if (!requestId) return null;
+  async listSubjectsByMaterialRequestIds(requestIds: string[]): Promise<Record<string, ProjectWorkflowSubject>> {
+    return this.listSubjectsBySubjectIds('material_request', requestIds);
+  },
+
+  async getSubjectBySubjectId(subjectType: ProjectWorkflowSubjectType, subjectId: string): Promise<ProjectWorkflowSubject | null> {
+    if (!subjectId) return null;
     const { data, error } = await supabase
       .from(SUBJECT_TABLE)
       .select(subjectSelect)
-      .eq('subject_type', 'material_request')
-      .eq('subject_id', requestId)
+      .eq('subject_type', subjectType)
+      .eq('subject_id', subjectId)
       .maybeSingle();
     if (error) {
       if (isMissingProjectWorkflowError(error)) return null;
       throw error;
     }
     return data ? mapSubject(data) : null;
+  },
+
+  async getSubjectByMaterialRequestId(requestId: string): Promise<ProjectWorkflowSubject | null> {
+    return this.getSubjectBySubjectId('material_request', requestId);
   },
 
   async listAssignmentsBySubjectIds(subjectIds: string[]): Promise<Record<string, WorkflowStepAssignment[]>> {

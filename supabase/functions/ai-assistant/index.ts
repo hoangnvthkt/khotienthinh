@@ -15,7 +15,7 @@ interface ChatMessage {
 }
 
 interface AssistantRequest {
-  action?: 'feedback' | 'estimate_suggestion' | 'cost_norm_standardization' | 'cost_norm_import_excel' | 'tender_detect_columns' | 'tender_suggest_mapping' | 'tender_risk_rfi';
+  action?: 'feedback' | 'estimate_suggestion' | 'cost_norm_standardization' | 'cost_norm_import_excel' | 'custom_material_smart_import_excel' | 'tender_detect_columns' | 'tender_suggest_mapping' | 'tender_risk_rfi';
   question?: string;
   prompt?: string;
   conversationId?: string | null;
@@ -49,9 +49,12 @@ interface AssistantRequest {
   priceBookSamples?: any[];
   fileName?: string;
   sheetName?: string;
+  templateKey?: string;
   rows?: any[];
   mergedRanges?: any[];
   localPackages?: any[];
+  localGuess?: any;
+  knownMappingProfiles?: any[];
 }
 
 interface AppUserContext {
@@ -461,6 +464,14 @@ function canUseTenderAssistant(actor: AppUserContext | null) {
 
 function canUseCostNormAssistant(actor: AppUserContext | null) {
   return isAdminOrModuleAdmin(actor, ['HD', 'TENDER_AI']);
+}
+
+function canUseCustomMaterialAssistant(actor: AppUserContext | null) {
+  if (!actor || actor.isActive === false) return false;
+  if (String(actor.role || '').toUpperCase() === 'ADMIN') return true;
+  const allowedModules = normalizeStringArray(actor.allowedModules).map(m => m.toUpperCase());
+  const adminModules = normalizeStringArray(actor.adminModules).map(m => m.toUpperCase());
+  return ['DA', 'WMS', 'TENDER_AI'].some(moduleCode => allowedModules.includes(moduleCode) || adminModules.includes(moduleCode));
 }
 
 function getBearerToken(request: Request) {
@@ -1360,6 +1371,137 @@ ${compactJson(Array.isArray(req.localPackages) ? req.localPackages.slice(0, 80) 
   return jsonResponse({ packages, warnings, confidenceScore });
 }
 
+function parseCustomMaterialSmartImportNumber(value: any, fallback = 0) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  const raw = String(value ?? '').trim().replace(/\s/g, '');
+  if (!raw) return fallback;
+  const normalized = raw.includes(',')
+    ? raw.replace(/\./g, '').replace(',', '.')
+    : /^\d{1,3}(\.\d{3})+(\.\d+)?$/.test(raw)
+      ? raw.replace(/\./g, '')
+      : raw;
+  const num = Number(normalized);
+  return Number.isFinite(num) ? num : fallback;
+}
+
+function normalizeCustomMaterialSmartImportPayload(parsed: any, req: AssistantRequest) {
+  const templateKey = parsed?.templateKey === 'xa_go' ? 'xa_go' : 'xa_go';
+  const lines = Array.isArray(parsed?.lines) ? parsed.lines.slice(0, 600).map((line: any, index: number) => ({
+    rowNumber: Math.max(1, Number(line.rowNumber ?? line.sourceRowNumber ?? index + 1)),
+    description: String(line.description ?? line.dienGiai ?? line.dien_giai ?? '').trim(),
+    chungLoai: String(line.chungLoai ?? line.chung_loai ?? line.profileType ?? '').trim(),
+    quyCach: String(line.quyCach ?? line.quy_cach ?? line.specification ?? '').trim(),
+    quantity: parseCustomMaterialSmartImportNumber(line.quantity ?? line.slCauKien ?? line.sl_cau_kien, 0),
+    lengthMm: parseCustomMaterialSmartImportNumber(line.lengthMm ?? line.length_mm ?? line.daiMm, 0),
+    kgPerM: parseCustomMaterialSmartImportNumber(line.kgPerM ?? line.kg_per_m, 0),
+    weightKg: line.weightKg === null || line.weightKg === undefined
+      ? line.weight_kg === null || line.weight_kg === undefined ? null : parseCustomMaterialSmartImportNumber(line.weight_kg, 0)
+      : parseCustomMaterialSmartImportNumber(line.weightKg, 0),
+    technicalNote: String(line.technicalNote ?? line.technical_note ?? line.note ?? '').trim(),
+    warnings: Array.isArray(line.warnings) ? line.warnings.map(String).slice(0, 5) : [],
+  })).filter((line: any) => line.description || line.quyCach || line.quantity || line.lengthMm || line.kgPerM) : [];
+
+  return {
+    templateKey,
+    sheetName: String(parsed?.sheetName || req.sheetName || ''),
+    headerRows: Array.isArray(parsed?.headerRows) ? parsed.headerRows.map(Number).filter(Number.isFinite).slice(0, 5) : [],
+    dataStartRow: Math.max(1, Number(parsed?.dataStartRow || lines[0]?.rowNumber || 1)),
+    dataEndRow: Math.max(1, Number(parsed?.dataEndRow || lines[lines.length - 1]?.rowNumber || lines[0]?.rowNumber || 1)),
+    mapping: parsed?.mapping && typeof parsed.mapping === 'object' ? parsed.mapping : {},
+    lines,
+    confidenceScore: Math.max(0, Math.min(1, Number(parsed?.confidenceScore ?? 0.55))),
+    warnings: Array.isArray(parsed?.warnings) ? parsed.warnings.map(String).slice(0, 12) : [],
+  };
+}
+
+async function handleCustomMaterialSmartImportExcel(req: AssistantRequest, actor: AppUserContext | null) {
+  if (!canUseCustomMaterialAssistant(actor)) {
+    return jsonResponse({ error: 'Tài khoản hiện tại chưa có quyền DA/WMS để dùng AI import vật tư phi tiêu chuẩn.' }, 403);
+  }
+  if (req.templateKey && req.templateKey !== 'xa_go') {
+    return jsonResponse({ error: 'AI smart import hiện chỉ hỗ trợ mẫu Xà gồ.' }, 400);
+  }
+  const rows = Array.isArray(req.rows) ? req.rows.slice(0, 600) : [];
+  if (rows.length === 0) return jsonResponse({ error: 'Thiếu dữ liệu Excel raw để AI nhận diện.' }, 400);
+
+  const prompt = `
+Bạn là AI đọc Excel đề xuất vật tư phi tiêu chuẩn cho nhà xưởng kết cấu thép.
+Nhiệm vụ: nhận diện bảng Xà gồ từ dữ liệu raw của workbook có thể có merge cell, header nhiều tầng, cột cá nhân hóa.
+
+Quy tắc bắt buộc:
+- Chỉ dùng rows, mergedRanges, localGuess và knownMappingProfiles được cung cấp.
+- Không bịa dòng, không bịa thông số kỹ thuật. Ô nào không có thì để rỗng/null và ghi warning.
+- Bỏ qua dòng tiêu đề, dòng nhóm/tổng như "Xà gồ: Phôi G350..." nếu không phải cấu kiện thật.
+- Dòng cấu kiện thật thường có mã/diễn giải như XCT1, chủng loại, quy cách, SL cấu kiện, dài(mm), kg/m.
+- Mapping value dùng columnIndex 0-based.
+- Không ghi DB, không tạo mã vật tư, không tạo giá/đơn giá.
+- Trả về DUY NHẤT JSON object.
+
+Schema:
+{
+  "templateKey": "xa_go",
+  "sheetName": "tên sheet",
+  "headerRows": [1, 2],
+  "dataStartRow": 3,
+  "dataEndRow": 20,
+  "mapping": {
+    "description": { "columnIndex": 1, "label": "Diễn giải" },
+    "chungLoai": { "columnIndex": 2, "label": "Chủng loại" },
+    "quyCach": { "columnIndex": 3, "label": "Quy cách" },
+    "quantity": { "columnIndex": 4, "label": "SL cấu kiện" },
+    "lengthMm": { "columnIndex": 5, "label": "Dài(mm)" },
+    "kgPerM": { "columnIndex": 6, "label": "Kg/m" },
+    "weightKg": { "columnIndex": 7, "label": "Khối lượng(kg)" },
+    "technicalNote": { "columnIndex": 8, "label": "Ghi chú" }
+  },
+  "lines": [
+    {
+      "rowNumber": 4,
+      "description": "XCT1",
+      "chungLoai": "Mạ kẽm",
+      "quyCach": "ZZ250-2-20-72-20-78",
+      "quantity": 48,
+      "lengthMm": 10345,
+      "kgPerM": 6.78,
+      "weightKg": 3367.87,
+      "technicalNote": "",
+      "warnings": []
+    }
+  ],
+  "confidenceScore": 0.0,
+  "warnings": ["cảnh báo chung"]
+}
+
+File: ${String(req.fileName || '')}
+Sheet: ${String(req.sheetName || '')}
+Template: xa_go
+
+Merged ranges:
+${compactJson(Array.isArray(req.mergedRanges) ? req.mergedRanges.slice(0, 200) : [], 8000)}
+
+Rows:
+${compactJson(rows, 26000)}
+
+Local guess:
+${compactJson(req.localGuess || {}, 14000)}
+
+Known mapping profiles:
+${compactJson(Array.isArray(req.knownMappingProfiles) ? req.knownMappingProfiles.slice(0, 5) : [], 8000)}
+`.trim();
+
+  const raw = await callGemini(prompt, 0.02, req.model || GEMINI_FAST_MODEL, 'application/json');
+  const parsed = extractJsonObject(raw);
+  const preview = normalizeCustomMaterialSmartImportPayload(parsed, req);
+  await writeTenderAiLog(req, actor, 'custom_material_smart_import_excel', {
+    fileName: req.fileName || null,
+    sheetName: preview.sheetName,
+    lineCount: preview.lines.length,
+    confidenceScore: preview.confidenceScore,
+    warnings: preview.warnings,
+  });
+  return jsonResponse(preview);
+}
+
 function normalizeMappingObject(raw: any) {
   const mapping = raw?.mapping && typeof raw.mapping === 'object' ? raw.mapping : {};
   const allowedKeys = ['lineNo', 'itemCode', 'name', 'description', 'unit', 'quantity', 'ownerUnitPrice', 'ownerAmount', 'note'];
@@ -1680,6 +1822,10 @@ Deno.serve(async (request: Request) => {
     if (req.action === 'cost_norm_import_excel') {
       const actor = await resolveActor(request, req.userId);
       return handleCostNormImportExcel(req, actor);
+    }
+    if (req.action === 'custom_material_smart_import_excel') {
+      const actor = await resolveActor(request, req.userId);
+      return handleCustomMaterialSmartImportExcel(req, actor);
     }
     if (req.action === 'tender_detect_columns') {
       const actor = await resolveActor(request, req.userId);

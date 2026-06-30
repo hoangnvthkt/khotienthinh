@@ -39,6 +39,7 @@ export const PROJECT_MATERIAL_TAB_PERMISSIONS = [
   { key: 'boq', label: 'BOQ', route: '/da/tabs/material/boq' },
   { key: 'planning', label: 'Kế hoạch', route: '/da/tabs/material/planning' },
   { key: 'request', label: 'Yêu cầu', route: '/da/tabs/material/request' },
+  { key: 'custom', label: 'Phi tiêu chuẩn', route: '/da/tabs/material/custom' },
   { key: 'po', label: 'Đơn hàng PO', route: '/da/tabs/material/po' },
   { key: 'waste', label: 'Hao hụt', route: '/da/tabs/material/waste' },
   { key: 'dashboard', label: 'Dashboard', route: '/da/tabs/material/dashboard' },

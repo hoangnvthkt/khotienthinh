@@ -1744,6 +1744,235 @@ export interface MaterialPlanningDraftPo {
   note?: string;
 }
 
+export type CustomMaterialRequestStatus =
+  | 'draft'
+  | 'submitted'
+  | 'approved'
+  | 'returned'
+  | 'rejected'
+  | 'cancelled'
+  | 'rfq_created'
+  | 'po_created'
+  | 'partially_received'
+  | 'completed';
+
+export type CustomMaterialTemplateKey = 'generic' | 'xa_go';
+
+export type CustomMaterialLineStatus =
+  | 'draft'
+  | 'submitted'
+  | 'approved'
+  | 'rfq_created'
+  | 'quoted'
+  | 'ordered'
+  | 'partially_received'
+  | 'received'
+  | 'closed'
+  | 'cancelled';
+
+export type CustomMaterialProfileType =
+  | 'xa_go'
+  | 'ton_seam_lock'
+  | 'ton_5_song'
+  | 'ton_thung'
+  | 'phu_kien'
+  | 'ket_cau_thep'
+  | 'other';
+
+export interface CustomMaterialAttachment {
+  id: string;
+  requestId: string;
+  lineId?: string | null;
+  storageBucket: string;
+  storagePath: string;
+  fileName: string;
+  fileType: 'excel_source' | 'image' | 'drawing' | 'cad' | 'pdf' | 'quote' | 'receipt' | 'other';
+  mimeType?: string | null;
+  fileSize?: number | null;
+  revision: number;
+  isPrimary: boolean;
+  uploadedBy: string;
+  createdAt: string;
+}
+
+export interface CustomMaterialRequestLine {
+  id: string;
+  requestId: string;
+  lineCode: string;
+  sortOrder: number;
+  groupKey: CustomMaterialProfileType | string;
+  profileType: CustomMaterialProfileType | string;
+  description: string;
+  effectiveWidth?: number | null;
+  length?: number | null;
+  quantity: number;
+  areaM2?: number | null;
+  lengthMd?: number | null;
+  thickness?: number | null;
+  color?: string | null;
+  unit: string;
+  technicalNote?: string | null;
+  specJson: Record<string, unknown>;
+  status: CustomMaterialLineStatus;
+  orderedQty: number;
+  receivedQty: number;
+  quoteUnitPrice?: number | null;
+  quoteAmount?: number | null;
+  selectedSupplierId?: string | null;
+  selectedSupplierName?: string | null;
+  attachments?: CustomMaterialAttachment[];
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface CustomMaterialRequest {
+  id: string;
+  code: string;
+  title: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  workPackage?: string | null;
+  workSection?: string | null;
+  requestScope?: string | null;
+  templateKey: CustomMaterialTemplateKey;
+  requestingDepartment?: string | null;
+  requestedByName?: string | null;
+  neededDate?: string | null;
+  note?: string | null;
+  status: CustomMaterialRequestStatus;
+  revision: number;
+  sourceExcelAttachmentId?: string | null;
+  submittedAt?: string | null;
+  approvedAt?: string | null;
+  approvedBy?: string | null;
+  rejectedAt?: string | null;
+  rejectedBy?: string | null;
+  returnedAt?: string | null;
+  returnedBy?: string | null;
+  cancelledAt?: string | null;
+  cancelledBy?: string | null;
+  createdBy: string;
+  updatedBy?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  lines: CustomMaterialRequestLine[];
+  attachments?: CustomMaterialAttachment[];
+}
+
+export interface CustomMaterialImportPreviewRow {
+  rowNumber: number;
+  status: 'create' | 'error';
+  errors: string[];
+  warnings?: string[];
+  line: Omit<CustomMaterialRequestLine, 'id' | 'requestId' | 'lineCode' | 'status' | 'orderedQty' | 'receivedQty'>;
+}
+
+export type CustomMaterialSmartImportSource = 'memory' | 'local' | 'ai';
+
+export interface CustomMaterialWorkbookMergedRange {
+  startRow: number;
+  endRow: number;
+  startCol: number;
+  endCol: number;
+  value?: string;
+}
+
+export interface CustomMaterialWorkbookRowPreview {
+  rowNumber: number;
+  values: string[];
+  rawValues: string[];
+  text: string;
+}
+
+export interface CustomMaterialWorkbookSheetPreview {
+  fileName: string;
+  sheetNames: string[];
+  selectedSheetName: string;
+  rows: CustomMaterialWorkbookRowPreview[];
+  mergedRanges: CustomMaterialWorkbookMergedRange[];
+  columnCount: number;
+}
+
+export type CustomMaterialSmartImportField =
+  | 'description'
+  | 'chungLoai'
+  | 'quyCach'
+  | 'quantity'
+  | 'lengthMm'
+  | 'kgPerM'
+  | 'weightKg'
+  | 'technicalNote';
+
+export interface CustomMaterialSmartImportColumnMapping {
+  columnIndex: number;
+  label: string;
+  confidence?: number;
+}
+
+export type CustomMaterialSmartImportMapping = Partial<Record<CustomMaterialSmartImportField, CustomMaterialSmartImportColumnMapping>>;
+
+export interface CustomMaterialSmartImportDataRange {
+  startRow: number;
+  endRow: number;
+}
+
+export interface CustomMaterialSmartImportPreview {
+  templateKey: CustomMaterialTemplateKey;
+  source: CustomMaterialSmartImportSource;
+  confidenceScore: number;
+  warnings: string[];
+  detectedSheet: string;
+  headerRows: number[];
+  dataRange: CustomMaterialSmartImportDataRange;
+  mapping: CustomMaterialSmartImportMapping;
+  rows: CustomMaterialImportPreviewRow[];
+  signatureHash: string;
+  sampleHeaders: string[];
+  workbookSheet?: CustomMaterialWorkbookSheetPreview;
+}
+
+export interface CustomMaterialRfqSupplier {
+  id: string;
+  rfqId: string;
+  supplierId: string;
+  supplierName?: string | null;
+  status: 'invited' | 'quoted' | 'awarded' | 'declined';
+  quoteUnitPrice?: number | null;
+  quoteAmount?: number | null;
+  deliveryDate?: string | null;
+  note?: string | null;
+  quoteAttachmentId?: string | null;
+  quoteSnapshot?: Record<string, unknown>;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface CustomMaterialRfq {
+  id: string;
+  rfqNo: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  status: 'draft' | 'sent' | 'quoted' | 'awarded' | 'cancelled';
+  title?: string | null;
+  note?: string | null;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  lineIds?: string[];
+  suppliers?: CustomMaterialRfqSupplier[];
+}
+
+export interface CustomMaterialDemandLine {
+  key: string;
+  request: CustomMaterialRequest;
+  line: CustomMaterialRequestLine;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  openQty: number;
+  orderedQty: number;
+  receivedQty: number;
+}
+
 export interface ProjectMaterialRequest extends ProjectSubmissionFields {
   id: string;
   projectId?: string | null;
@@ -1908,6 +2137,12 @@ export interface PurchaseOrderItem {
   computedArea?: number;
   computedWeight?: number;
   computedLineTotal?: number;
+  sourceType?: 'material_request_line' | 'custom_material_line';
+  customMaterialRequestId?: string | null;
+  customMaterialLineId?: string | null;
+  customMaterialLineCode?: string | null;
+  customMaterialRequestCode?: string | null;
+  attachments?: CustomMaterialAttachment[];
 }
 
 export type PurchaseOrderSupplierReturnStatus = 'pending' | 'completed' | 'cancelled';
@@ -2776,7 +3011,7 @@ export enum WorkflowInstanceAction {
 
 export type CustomFieldType = 'text' | 'textarea' | 'number' | 'date' | 'select' | 'file' | 'table';
 
-export type ProjectWorkflowSubjectType = 'material_request';
+export type ProjectWorkflowSubjectType = 'material_request' | 'custom_material_request';
 export type ProjectWorkflowSubjectStatus = 'RUNNING' | 'RETURNED' | 'COMPLETED' | 'REJECTED' | 'CANCELLED';
 export type WorkflowStepAssignmentStatus = 'PENDING' | 'APPROVED' | 'RETURNED' | 'REJECTED' | 'SKIPPED';
 export type ProjectWorkflowAction = 'approve' | 'return' | 'reject' | 'resubmit' | 'reassign' | 'rollback';
