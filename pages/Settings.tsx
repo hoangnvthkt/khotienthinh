@@ -7,7 +7,7 @@ import {
   HardHat, Briefcase, Tag, Ruler, Trash2, Edit2,
   Truck, User as UserIcon, Search, AlertCircle,
   Database, MapPinned, DollarSign, Calendar, Layers, GitBranch, Percent, TrendingDown, PenTool, Bot, FolderKanban,
-  Package, FileSpreadsheet, Upload, Download, Loader2, RefreshCcw, ClipboardCheck, BrainCircuit, Megaphone
+  Package, FileSpreadsheet, Upload, Download, Loader2, RefreshCcw, ClipboardCheck, BrainCircuit, Megaphone, BellRing
 } from 'lucide-react';
 import MasterDataConfirmModal from '../components/MasterDataConfirmModal';
 import { RealtimeBadge } from '../components/OfflineIndicator';
@@ -26,6 +26,7 @@ import SettingsInspectionTemplates from './settings/SettingsInspectionTemplates'
 import SettingsG8CostNormLibrary from './settings/SettingsG8CostNormLibrary';
 import SettingsAiLearning from './settings/SettingsAiLearning';
 import SettingsReleaseNotes from './settings/SettingsReleaseNotes';
+import SettingsAlerts from './settings/SettingsAlerts';
 import { useModuleData } from '../hooks/useModuleData';
 import { useToast } from '../context/ToastContext';
 import { useAsyncAction } from '../hooks/useAsyncAction';
@@ -950,6 +951,7 @@ const Settings: React.FC = () => {
     { id: 'loss-norms', label: 'Định mức hao hụt', icon: TrendingDown },
     { id: 'hrm-master-data', label: 'Dữ liệu gốc HRM', icon: Briefcase },
     { id: 'users', label: 'Người dùng', icon: Users },
+    { id: 'alerts', label: 'Cảnh báo', icon: BellRing, adminOnly: true },
     { id: 'chibi-bot', label: 'Trợ lý ảo', icon: Bot },
     { id: 'ai-learning', label: 'AI Learning', icon: BrainCircuit },
     { id: 'account', label: 'Tài khoản', icon: UserIcon },
@@ -1907,6 +1909,10 @@ const Settings: React.FC = () => {
               getRoleBadge={getRoleBadge}
               isDeletingUser={deletingUserLoading}
             />
+          )}
+
+          {activeSettingsTab === 'alerts' && (
+            <SettingsAlerts users={users} currentUserId={currentUser.id} />
           )}
 
           {activeSettingsTab === 'account' && (

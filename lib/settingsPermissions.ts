@@ -14,6 +14,7 @@ export const SETTINGS_FEATURES = [
   { id: 'loss-norms', label: 'Định mức hao hụt' },
   { id: 'hrm-master-data', label: 'Dữ liệu gốc HRM' },
   { id: 'users', label: 'Người dùng' },
+  { id: 'alerts', label: 'Cảnh báo' },
   { id: 'chibi-bot', label: 'Trợ lý ảo' },
   { id: 'ai-learning', label: 'AI Learning' },
   { id: 'maintenance', label: 'Bảo trì' },
