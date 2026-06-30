@@ -286,7 +286,7 @@ const FilePreviewModal: React.FC<{
                     <Paperclip size={16} className="text-rose-400" />
                     <div className="flex-1 min-w-0">
                         <p className="text-sm font-bold text-slate-700 dark:text-slate-200 truncate">{file.fileName}</p>
-                        <p className="text-[10px] text-slate-400">{file.fileType} • {(file.fileSize / 1024).toFixed(1)} KB</p>
+                        <p className="text-xs font-medium text-slate-450 dark:text-slate-500">{file.fileType} • {(file.fileSize / 1024).toFixed(1)} KB</p>
                     </div>
                     <button
                         onClick={() => downloadWorkflowFile(file)}
@@ -444,27 +444,27 @@ const FileFieldInput: React.FC<{
                     onDragOver={e => { e.preventDefault(); !disabled && !isUploading && setDragOver(true); }}
                     onDragLeave={() => setDragOver(false)}
                     onDrop={handleDrop}
-                    className={`flex flex-col items-center gap-2 px-4 py-5 rounded-xl border-2 border-dashed cursor-pointer transition-all ${dragOver
+                    className={`flex flex-col items-center gap-3 px-6 py-8 rounded-2xl border-2 border-dashed cursor-pointer transition-all ${dragOver
                         ? 'border-emerald-400 bg-emerald-50/50 dark:bg-emerald-900/10'
                         : 'border-slate-200 dark:border-slate-600 hover:border-emerald-300 hover:bg-emerald-50/30 dark:hover:bg-emerald-900/5'
                         } ${disabled || isUploading ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                    <Upload size={20} className={dragOver ? 'text-emerald-500' : 'text-slate-400'} />
-                    <span className="text-xs text-slate-500 text-center">
+                    <Upload size={24} className={dragOver ? 'text-emerald-500' : 'text-slate-400'} />
+                    <span className="text-sm text-slate-500 text-center">
                         <span className="font-bold text-emerald-600">{isUploading ? 'Đang tải file...' : 'Chọn file'}</span>{!isUploading && ' hoặc kéo thả vào đây'}
-                        <br /><span className="text-[10px] text-slate-400">Excel, PDF, Word, Ảnh (tối đa 5MB)</span>
+                        <br /><span className="text-xs text-slate-400">Excel, PDF, Word, Ảnh (tối đa 5MB)</span>
                     </span>
                 </div>
             ) : (
                 <div>
-                    <div className="flex items-center gap-2 px-4 py-2.5 bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-200 dark:border-emerald-800/30 rounded-xl">
+                    <div className="flex items-center gap-3 px-5 py-3.5 bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-200 dark:border-emerald-800/30 rounded-2xl">
                         {isExcelFile(value.fileName) ? (
                             <FileSpreadsheet size={16} className="text-emerald-600 shrink-0" />
                         ) : (
                             <Paperclip size={16} className="text-rose-400 shrink-0" />
                         )}
                         <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-slate-700 dark:text-slate-300 truncate">{value.fileName}</p>
-                            <p className="text-[10px] text-slate-400">{(value.fileSize / 1024).toFixed(1)} KB</p>
+                            <p className="text-base font-bold text-slate-750 dark:text-slate-300 truncate">{value.fileName}</p>
+                            <p className="text-xs font-medium text-slate-450 dark:text-slate-500">{(value.fileSize / 1024).toFixed(1)} KB</p>
                         </div>
                         <div className="flex gap-1 shrink-0">
                             <button onClick={() => setShowPreview(true)}
@@ -547,12 +547,12 @@ const TableFieldInput: React.FC<TableFieldInputProps> = ({ fieldName, columns, v
     return (
         <div className="mt-2 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden bg-white dark:bg-slate-900">
             <div className="overflow-x-auto">
-                <table className="w-full text-xs text-left" style={{ minWidth: Math.max(600, columns.length * 150) }}>
+                <table className="w-full text-sm text-left" style={{ minWidth: Math.max(600, columns.length * 150) }}>
                     <thead>
                         <tr className="bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 font-bold border-b border-slate-200 dark:border-slate-700">
-                            <th className="px-3 py-2 text-center w-10">#</th>
+                            <th className="px-4 py-3 text-center w-12">#</th>
                             {columns.map((col, idx) => (
-                                <th key={idx} className="px-3 py-2">{col}</th>
+                                <th key={idx} className="px-4 py-3">{col}</th>
                             ))}
                             {!disabled && <th className="px-3 py-2 text-center w-12"></th>}
                         </tr>
@@ -560,17 +560,17 @@ const TableFieldInput: React.FC<TableFieldInputProps> = ({ fieldName, columns, v
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                         {rows.map((row, ri) => (
                             <tr key={ri} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
-                                <td className="px-3 py-2 text-center text-slate-400 font-semibold align-middle">
+                                <td className="px-4 py-3 text-center text-slate-400 font-semibold align-middle">
                                     {String(ri + 1).padStart(2, '0')}
                                 </td>
                                 {columns.map((_, ci) => (
-                                    <td key={ci} className="px-2 py-1 align-middle">
+                                    <td key={ci} className="px-3 py-2 align-middle">
                                         <input
                                             type="text"
                                             value={row[ci] ?? ''}
                                             onChange={e => handleCellChange(ri, ci, e.target.value)}
                                             disabled={disabled}
-                                            className="w-full px-2.5 py-1.5 border border-slate-200 dark:border-slate-700 rounded-lg bg-transparent focus:ring-1 focus:ring-accent outline-none text-slate-700 dark:text-slate-200"
+                                            className="w-full px-3.5 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-transparent focus:ring-1 focus:ring-accent outline-none text-slate-700 dark:text-slate-200 text-sm font-semibold"
                                             placeholder="..."
                                         />
                                     </td>
@@ -597,7 +597,7 @@ const TableFieldInput: React.FC<TableFieldInputProps> = ({ fieldName, columns, v
                     <button
                         type="button"
                         onClick={addRow}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 bg-accent hover:bg-emerald-600 text-white text-[11px] font-bold rounded-lg transition shadow-sm"
+                        className="inline-flex items-center gap-1.5 px-4.5 py-2.5 bg-accent hover:bg-emerald-600 text-white text-xs font-bold rounded-xl transition shadow-sm"
                     >
                         <Plus size={12} /> Thêm dòng
                     </button>
@@ -1177,7 +1177,7 @@ const WorkflowInstances: React.FC = () => {
     ) => (
         fields.map(field => (
             <div key={field.id}>
-                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1.5">
+                <label className="block text-sm font-bold text-slate-500 dark:text-slate-400 mb-1.5">
                     {field.label} {field.required && <span className="text-red-500">*</span>}
                 </label>
                 {field.type === 'text' && (
@@ -1187,7 +1187,7 @@ const WorkflowInstances: React.FC = () => {
                         onChange={e => onChange(field.name, e.target.value)}
                         disabled={disabled}
                         placeholder={field.placeholder || `Nhập ${field.label.toLowerCase()}...`}
-                        className="w-full px-4 py-2.5 bg-white/50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl outline-none focus:ring-2 focus:ring-accent text-sm disabled:opacity-50"
+                        className="w-full px-4 py-3 bg-white/50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl outline-none focus:ring-2 focus:ring-accent text-base font-semibold disabled:opacity-50"
                     />
                 )}
                 {field.type === 'textarea' && (
@@ -1196,7 +1196,7 @@ const WorkflowInstances: React.FC = () => {
                         onChange={e => onChange(field.name, e.target.value)}
                         disabled={disabled}
                         placeholder={field.placeholder || `Nhập ${field.label.toLowerCase()}...`}
-                        className="w-full px-4 py-2.5 bg-white/50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl outline-none focus:ring-2 focus:ring-accent text-sm resize-none disabled:opacity-50"
+                        className="w-full px-4 py-3 bg-white/50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl outline-none focus:ring-2 focus:ring-accent text-base font-semibold resize-none disabled:opacity-50"
                         rows={3}
                     />
                 )}
@@ -1207,7 +1207,7 @@ const WorkflowInstances: React.FC = () => {
                         onChange={e => onChange(field.name, e.target.value)}
                         disabled={disabled}
                         placeholder={field.placeholder || `Nhập ${field.label.toLowerCase()}...`}
-                        className="w-full px-4 py-2.5 bg-white/50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl outline-none focus:ring-2 focus:ring-accent text-sm disabled:opacity-50"
+                        className="w-full px-4 py-3 bg-white/50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl outline-none focus:ring-2 focus:ring-accent text-base font-semibold disabled:opacity-50"
                     />
                 )}
                 {field.type === 'date' && (
@@ -1216,7 +1216,7 @@ const WorkflowInstances: React.FC = () => {
                         value={data[field.name] || ''}
                         onChange={e => onChange(field.name, e.target.value)}
                         disabled={disabled}
-                        className="w-full px-4 py-2.5 bg-white/50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl outline-none focus:ring-2 focus:ring-accent text-sm disabled:opacity-50"
+                        className="w-full px-4 py-3 bg-white/50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl outline-none focus:ring-2 focus:ring-accent text-base font-semibold disabled:opacity-50"
                     />
                 )}
                 {field.type === 'select' && (
@@ -1224,7 +1224,7 @@ const WorkflowInstances: React.FC = () => {
                         value={data[field.name] || ''}
                         onChange={e => onChange(field.name, e.target.value)}
                         disabled={disabled}
-                        className="w-full px-4 py-2.5 bg-white/50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl outline-none focus:ring-2 focus:ring-accent text-sm disabled:opacity-50"
+                        className="w-full px-4 py-3 bg-white/50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl outline-none focus:ring-2 focus:ring-accent text-base font-semibold disabled:opacity-50"
                     >
                         <option value="">-- Chọn {field.label.toLowerCase()} --</option>
                         {(field.options || []).map(opt => (
@@ -1638,7 +1638,7 @@ const WorkflowInstances: React.FC = () => {
                                                 <p className="text-[10px] font-bold text-amber-500 uppercase tracking-wider">Nhập dữ liệu bước này</p>
                                                 {currentNode.config.formFields.map((field: any) => (
                                                     <div key={field.name || field.label}>
-                                                        <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">{field.label || field.name}</label>
+                                                        <label className="block text-sm font-bold text-slate-500 dark:text-slate-400 mb-1">{field.label || field.name}</label>
                                                         <input type="text" value={stepFormData[field.name || field.label] || ''} onChange={e => setStepFormData(prev => ({ ...prev, [field.name || field.label]: e.target.value }))} placeholder={`Nhập ${(field.label || field.name).toLowerCase()}...`} className="w-full px-3 py-2 bg-white/80 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-600 rounded-xl text-xs outline-none focus:ring-2 focus:ring-accent" />
                                                     </div>
                                                 ))}
@@ -2067,7 +2067,7 @@ const WorkflowInstances: React.FC = () => {
                                                     <p className="text-[10px] font-bold text-amber-500 uppercase tracking-wider">Nhập dữ liệu bước này</p>
                                                     {currentNode.config.formFields.map((field: any) => (
                                                         <div key={field.name || field.label}>
-                                                            <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">
+                                                            <label className="block text-sm font-bold text-slate-500 dark:text-slate-400 mb-1">
                                                                 {field.label || field.name}
                                                             </label>
                                                             <input
@@ -2306,17 +2306,17 @@ const WorkflowInstances: React.FC = () => {
             {/* Create Instance Modal */}
             {showCreateModal && (
                 <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 h-[100dvh] max-h-[100dvh] overflow-hidden p-0 sm:p-4">
-                    <div className="glass-card bg-white dark:bg-slate-800 rounded-t-2xl sm:rounded-2xl p-6 w-full max-w-lg shadow-2xl flex flex-col h-[100dvh] sm:h-auto max-h-[100dvh] sm:max-h-[90vh] overflow-hidden relative">
+                    <div className="glass-card bg-white dark:bg-slate-800 rounded-t-2xl sm:rounded-2xl p-6 w-full sm:w-[75vw] xl:max-w-[1050px] 2xl:max-w-[1200px] shadow-2xl flex flex-col h-[100dvh] sm:h-auto max-h-[100dvh] sm:max-h-[90vh] overflow-hidden relative">
                         <h2 className="text-lg font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
                             <Send size={20} className="text-accent" /> Tạo phiếu mới
                         </h2>
                         <div className="space-y-4 flex-1 min-h-0 overflow-y-auto -webkit-overflow-scrolling-touch pr-1">
                             <div>
-                                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Chọn quy trình *</label>
+                                <label className="block text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Chọn quy trình *</label>
                                 <select
                                     value={selectedTemplateId}
                                     onChange={e => handleSelectTemplate(e.target.value)}
-                                    className="w-full px-4 py-2.5 bg-white/50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl outline-none focus:ring-2 focus:ring-accent text-sm"
+                                    className="w-full px-4 py-3 bg-white/50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl outline-none focus:ring-2 focus:ring-accent text-base font-semibold"
                                 >
                                     <option value="">-- Chọn quy trình --</option>
                                     {nonMaterialActiveTemplates.map(t => (
@@ -2325,13 +2325,13 @@ const WorkflowInstances: React.FC = () => {
                                 </select>
                             </div>
                             <div>
-                                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Tiêu đề phiếu *</label>
+                                <label className="block text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Tiêu đề phiếu *</label>
                                 <input
                                     type="text"
                                     value={newTitle}
                                     onChange={e => setNewTitle(e.target.value)}
                                     placeholder="VD: Thanh toán hạng mục móng CT5..."
-                                    className="w-full px-4 py-2.5 bg-white/50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl outline-none focus:ring-2 focus:ring-accent text-sm"
+                                    className="w-full px-4 py-3 bg-white/50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl outline-none focus:ring-2 focus:ring-accent text-base font-semibold"
                                 />
                             </div>
 
@@ -2348,22 +2348,22 @@ const WorkflowInstances: React.FC = () => {
                             )}
 
                             <div>
-                                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Ghi chú</label>
+                                <label className="block text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Ghi chú</label>
                                 <textarea
                                     value={newNote}
                                     onChange={e => setNewNote(e.target.value)}
                                     placeholder="Nội dung chi tiết..."
-                                    className="w-full px-4 py-2.5 bg-white/50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl outline-none focus:ring-2 focus:ring-accent text-sm resize-none"
+                                    className="w-full px-4 py-3 bg-white/50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl outline-none focus:ring-2 focus:ring-accent text-base font-semibold resize-none"
                                     rows={2}
                                 />
                             </div>
                         </div>
-                        <div className="flex gap-3 mt-6 border-t border-slate-100 dark:border-slate-700/50 pt-4">
-                            <button onClick={() => setShowCreateModal(false)} className="flex-1 px-4 py-2.5 border border-slate-200 dark:border-slate-600 rounded-xl font-bold text-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition">Hủy</button>
+                        <div className="flex gap-4 mt-8 border-t border-slate-100 dark:border-slate-700/50 pt-5">
+                            <button onClick={() => setShowCreateModal(false)} className="flex-1 px-5 py-3 border border-slate-200 dark:border-slate-600 rounded-xl font-bold text-base hover:bg-slate-50 dark:hover:bg-slate-700 transition">Hủy</button>
                             <button
                                 onClick={handleCreate}
                                 disabled={isSubmitting || !selectedTemplateId || !newTitle.trim() || selectedCustomFields.some(f => f.required && !customFormData[f.name])}
-                                className="flex-1 px-4 py-2.5 bg-accent text-white rounded-xl font-bold text-sm hover:bg-emerald-600 transition disabled:opacity-50 shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2"
+                                className="flex-1 px-5 py-3 bg-accent text-white rounded-xl font-bold text-base hover:bg-emerald-600 transition disabled:opacity-50 shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2"
                             >
                                 {isSubmitting ? (
                                     <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Đang gửi...</>
@@ -2382,25 +2382,25 @@ const WorkflowInstances: React.FC = () => {
                 const editCustomFields = editTemplate?.customFields || [];
                 return (
                     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 h-[100dvh] max-h-[100dvh] overflow-hidden p-0 sm:p-4">
-                        <div className="glass-card bg-white dark:bg-slate-800 rounded-t-2xl sm:rounded-2xl p-6 w-full max-w-lg shadow-2xl flex flex-col h-[100dvh] sm:h-auto max-h-[100dvh] sm:max-h-[90vh] overflow-hidden relative">
+                        <div className="glass-card bg-white dark:bg-slate-800 rounded-t-2xl sm:rounded-2xl p-6 w-full sm:w-[75vw] xl:max-w-[1050px] 2xl:max-w-[1200px] shadow-2xl flex flex-col h-[100dvh] sm:h-auto max-h-[100dvh] sm:max-h-[90vh] overflow-hidden relative">
                             <h2 className="text-lg font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
                                 <Edit2 size={20} className="text-blue-500" /> Sửa phiếu
                             </h2>
                             <div className="space-y-4 flex-1 min-h-0 overflow-y-auto -webkit-overflow-scrolling-touch pr-1">
                                 <div>
-                                    <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Mã phiếu</label>
+                                    <label className="block text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Mã phiếu</label>
                                     <input
                                         type="text" value={editingInstance.code} disabled
-                                        className="w-full px-4 py-2.5 bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl text-sm opacity-60"
+                                        className="w-full px-4 py-3 bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl text-base opacity-60 font-semibold"
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Tiêu đề phiếu *</label>
+                                    <label className="block text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Tiêu đề phiếu *</label>
                                     <input
                                         type="text"
                                         value={editTitle}
                                         onChange={e => setEditTitle(e.target.value)}
-                                        className="w-full px-4 py-2.5 bg-white/50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl outline-none focus:ring-2 focus:ring-accent text-sm"
+                                        className="w-full px-4 py-3 bg-white/50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl outline-none focus:ring-2 focus:ring-accent text-base font-semibold"
                                         autoFocus
                                     />
                                 </div>
@@ -2419,17 +2419,17 @@ const WorkflowInstances: React.FC = () => {
 
                                 {/* Note field */}
                                 <div>
-                                    <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Ghi chú</label>
+                                    <label className="block text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Ghi chú</label>
                                     <textarea
                                         value={editFormData.note || ''}
                                         onChange={e => setEditFormData(prev => ({ ...prev, note: e.target.value }))}
-                                        className="w-full px-4 py-2.5 bg-white/50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl outline-none focus:ring-2 focus:ring-accent text-sm resize-none"
+                                        className="w-full px-4 py-3 bg-white/50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl outline-none focus:ring-2 focus:ring-accent text-base font-semibold resize-none"
                                         rows={2}
                                     />
                                 </div>
                             </div>
-                            <div className="flex gap-3 mt-6 border-t border-slate-100 dark:border-slate-700/50 pt-4">
-                                <button onClick={() => setEditingInstance(null)} className="flex-1 px-4 py-2.5 border border-slate-200 dark:border-slate-600 rounded-xl font-bold text-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition">Hủy</button>
+                            <div className="flex gap-4 mt-8 border-t border-slate-100 dark:border-slate-700/50 pt-5">
+                                <button onClick={() => setEditingInstance(null)} className="flex-1 px-5 py-3 border border-slate-200 dark:border-slate-600 rounded-xl font-bold text-base hover:bg-slate-50 dark:hover:bg-slate-700 transition">Hủy</button>
                                 <button
                                     onClick={handleEditSave}
                                     disabled={isSubmitting || !editTitle.trim()}
@@ -2454,7 +2454,7 @@ const WorkflowInstances: React.FC = () => {
                         <h2 className="text-lg font-bold text-red-600 mb-2">Xóa phiếu?</h2>
                         <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">Phiếu và tất cả lịch sử xử lý sẽ bị xóa vĩnh viễn. Hành động này không thể hoàn tác.</p>
                         <div className="flex gap-3">
-                            <button onClick={() => setDeleteConfirmId(null)} className="flex-1 px-4 py-2.5 border border-slate-200 dark:border-slate-600 rounded-xl font-bold text-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition">Hủy</button>
+                            <button onClick={() => setDeleteConfirmId(null)} className="flex-1 px-5 py-3 border border-slate-200 dark:border-slate-600 rounded-xl font-bold text-base hover:bg-slate-50 dark:hover:bg-slate-700 transition">Hủy</button>
                             <button onClick={() => handleDelete(deleteConfirmId)} className="flex-1 px-4 py-2.5 bg-red-500 text-white rounded-xl font-bold text-sm hover:bg-red-600 transition shadow-lg shadow-red-500/20">Xóa</button>
                         </div>
                     </div>
@@ -2468,7 +2468,7 @@ const WorkflowInstances: React.FC = () => {
                         <h2 className="text-lg font-bold text-amber-600 mb-2">Hủy phiếu?</h2>
                         <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">Phiếu sẽ bị hủy và không thể tiếp tục xử lý. Bạn vẫn có thể xem lại phiếu đã hủy.</p>
                         <div className="flex gap-3">
-                            <button onClick={() => setCancelConfirmId(null)} className="flex-1 px-4 py-2.5 border border-slate-200 dark:border-slate-600 rounded-xl font-bold text-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition">Đóng</button>
+                            <button onClick={() => setCancelConfirmId(null)} className="flex-1 px-5 py-3 border border-slate-200 dark:border-slate-600 rounded-xl font-bold text-base hover:bg-slate-50 dark:hover:bg-slate-700 transition">Đóng</button>
                             <button onClick={() => handleCancel(cancelConfirmId)} className="flex-1 px-4 py-2.5 bg-amber-500 text-white rounded-xl font-bold text-sm hover:bg-amber-600 transition shadow-lg shadow-amber-500/20">Xác nhận hủy</button>
                         </div>
                     </div>
@@ -2504,7 +2504,7 @@ const WorkflowInstances: React.FC = () => {
                             <p className="text-xs text-slate-400 mb-4">Chọn bước muốn quay lại để tiếp tục xử lý.</p>
                             <div className="space-y-4">
                                 <div>
-                                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Quay lại bước *</label>
+                                    <label className="block text-sm font-bold text-slate-500 uppercase tracking-wider mb-1.5">Quay lại bước *</label>
                                     <select
                                         value={reopenTargetNodeId}
                                         onChange={e => setReopenTargetNodeId(e.target.value)}
@@ -2517,7 +2517,7 @@ const WorkflowInstances: React.FC = () => {
                                     </select>
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Lý do mở lại</label>
+                                    <label className="block text-sm font-bold text-slate-500 uppercase tracking-wider mb-1.5">Lý do mở lại</label>
                                     <textarea
                                         value={reopenComment}
                                         onChange={e => setReopenComment(e.target.value)}

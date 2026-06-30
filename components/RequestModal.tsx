@@ -2324,7 +2324,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
 
     return (
         <div className="fixed inset-0 z-[1000] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4 h-[100dvh] max-h-[100dvh] overflow-hidden">
-            <div className="bg-card text-card-foreground border border-border rounded-t-2xl sm:rounded-2xl w-full sm:w-[70vw] xl:max-w-[1050px] 2xl:max-w-[1180px] shadow-2xl flex flex-col h-[100dvh] sm:h-auto max-h-[100dvh] sm:max-h-[85vh] overflow-hidden relative">
+            <div className="bg-card text-card-foreground border border-border rounded-t-2xl sm:rounded-2xl w-full sm:w-[90vw] xl:max-w-[1450px] 2xl:max-w-[1650px] shadow-2xl flex flex-col h-[100dvh] sm:h-auto max-h-[100dvh] sm:max-h-[92vh] overflow-hidden relative">
 
                 {/* Decision Overlay */}
                 {showApprovalPanel && (
@@ -2403,8 +2403,8 @@ const RequestModal: React.FC<RequestModalProps> = ({
                 {/* Content */}
                 <div className="p-6 overflow-y-auto flex-1 min-h-0 bg-slate-50/10 dark:bg-background/20 -webkit-overflow-scrolling-touch">
                     {isEditable && (
-                        <div className="mb-5 rounded-xl border border-blue-200/50 bg-card p-4 shadow-sm dark:border-blue-900/40">
-                            <label className="mb-2 block text-[10px] font-black uppercase text-blue-600 dark:text-blue-400">
+                        <div className="mb-8 rounded-2xl border border-blue-250 bg-card p-5 shadow-sm dark:border-blue-900/50">
+                            <label className="mb-3 block text-xs font-black uppercase text-blue-650 dark:text-blue-400">
                                 Tên đề xuất
                             </label>
                             <input
@@ -2413,7 +2413,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                 onChange={(event) => setRequestTitle(event.target.value)}
                                 maxLength={200}
                                 autoFocus={!request}
-                                className="w-full bg-transparent text-base font-black text-foreground outline-none placeholder:font-bold placeholder:text-muted-foreground"
+                                className="w-full bg-transparent text-lg font-black text-foreground outline-none placeholder:font-bold placeholder:text-muted-foreground"
                                 placeholder="Ví dụ: Vật tư thi công sàn tầng 4"
                             />
                         </div>
@@ -2456,55 +2456,55 @@ const RequestModal: React.FC<RequestModalProps> = ({
                         />
                     )}
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-                        <div className="bg-card p-4 rounded-xl border border-border shadow-sm space-y-2">
-                            <label className="text-[10px] uppercase font-black text-slate-400">Người yêu cầu</label>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 mb-10">
+                        <div className="bg-card p-5 rounded-2xl border border-border shadow-sm space-y-3">
+                            <label className="text-xs uppercase font-black text-slate-400">Người yêu cầu</label>
                             <div className="flex items-center gap-2 text-slate-800 font-bold">
-                                <User size={18} className="text-slate-400" />
-                                <span className="text-sm">{requester?.name || 'N/A'}</span>
+                                <User size={20} className="text-slate-400" />
+                                <span className="text-base">{requester?.name || 'N/A'}</span>
                             </div>
                         </div>
 
                         {!isEditable && request?.submittedToName && (
-                            <div className="bg-card p-4 rounded-xl border border-amber-200/40 dark:border-amber-900/40 shadow-sm space-y-2">
-                                <label className="text-[10px] uppercase font-black text-amber-500">Người nhận xử lý</label>
+                            <div className="bg-card p-5 rounded-2xl border border-amber-200/40 dark:border-amber-900/40 shadow-sm space-y-3">
+                                <label className="text-xs uppercase font-black text-amber-500">Người nhận xử lý</label>
                                 <div className="flex items-center gap-2 text-amber-700 font-bold">
-                                    <User size={18} className="text-amber-400" />
-                                    <span className="text-sm">{request.submittedToName}</span>
+                                    <User size={20} className="text-amber-400" />
+                                    <span className="text-base">{request.submittedToName}</span>
                                 </div>
                                 {request.submissionNote && <div className="text-[10px] text-slate-400 truncate">{request.submissionNote}</div>}
                             </div>
                         )}
 
-                        <div className="bg-card p-4 rounded-xl border border-border shadow-sm space-y-2">
-                            <label className="text-[10px] uppercase font-black text-slate-400">Kho nhận hàng</label>
+                        <div className="bg-card p-5 rounded-2xl border border-border shadow-sm space-y-3">
+                            <label className="text-xs uppercase font-black text-slate-400">Kho nhận hàng</label>
                             <div className="flex items-center gap-2 text-slate-800 font-bold">
-                                <Truck size={18} className="text-slate-400" />
+                                <Truck size={20} className="text-slate-400" />
                                 {isEditable ? (
                                     <select
                                         value={siteWarehouseId}
                                         onChange={(e) => setSiteWarehouseId(e.target.value)}
-                                        className="w-full bg-transparent outline-none text-sm"
+                                        className="w-full bg-transparent outline-none text-base font-medium"
                                     >
                                         <option value="">-- Chọn kho nhận --</option>
                                         {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
                                     </select>
                                 ) : (
-                                    <span className="text-sm">{targetWh?.name}</span>
+                                    <span className="text-base">{targetWh?.name}</span>
                                 )}
                             </div>
                         </div>
 
                         {showSourceWarehouseField && (
-                            <div className="bg-card p-4 rounded-xl border border-blue-200/40 dark:border-blue-900/40 shadow-sm space-y-2">
-                                <label className="text-[10px] uppercase font-black text-blue-400">Kho cung cấp</label>
+                            <div className="bg-card p-5 rounded-2xl border border-blue-200/40 dark:border-blue-900/40 shadow-sm space-y-3">
+                                <label className="text-xs uppercase font-black text-blue-400">Kho cung cấp</label>
                                 <div className="flex items-center gap-2 text-blue-700 font-bold">
-                                    <PackageCheck size={18} className="text-blue-400" />
+                                    <PackageCheck size={20} className="text-blue-400" />
                                     {isEditable || canEditApprovalQuantities ? (
                                         <select
                                             value={sourceWarehouseId}
                                             onChange={(e) => setSourceWarehouseId(e.target.value)}
-                                            className="w-full bg-transparent outline-none text-sm"
+                                            className="w-full bg-transparent outline-none text-base font-medium"
                                         >
                                             <option value="">{isProjectRequest ? '-- Phòng vật tư phân nguồn sau --' : '-- Chọn kho nguồn --'}</option>
                                             {warehouses.filter(w => w.id !== siteWarehouseId).map(w => (
@@ -2512,21 +2512,21 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                             ))}
                                         </select>
                                     ) : (
-                                        <span className="text-sm">{sourceWh?.name || 'Chưa phân nguồn'}</span>
+                                        <span className="text-base">{sourceWh?.name || 'Chưa phân nguồn'}</span>
                                     )}
                                 </div>
                             </div>
                         )}
 
                         {isEditable && isProjectRequest && canSeeAvailability && (
-                            <div className="bg-card p-4 rounded-xl border border-cyan-200/40 dark:border-cyan-900/40 shadow-sm space-y-2">
-                                <label className="text-[10px] uppercase font-black text-cyan-500">Xem tồn kho khi đề xuất</label>
+                            <div className="bg-card p-5 rounded-2xl border border-cyan-200/40 dark:border-cyan-900/40 shadow-sm space-y-3">
+                                <label className="text-xs uppercase font-black text-cyan-500">Xem tồn kho khi đề xuất</label>
                                 <div className="flex items-center gap-2 text-cyan-700 font-bold">
-                                    <PackageCheck size={18} className="text-cyan-400" />
+                                    <PackageCheck size={20} className="text-cyan-400" />
                                     <select
                                         value={stockPreviewWarehouseId}
                                         onChange={(e) => setStockPreviewWarehouseId(e.target.value)}
-                                        className="w-full bg-transparent outline-none text-sm"
+                                        className="w-full bg-transparent outline-none text-base font-medium"
                                     >
                                         <option value="">Tổng tồn tất cả kho</option>
                                         {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
@@ -2536,10 +2536,10 @@ const RequestModal: React.FC<RequestModalProps> = ({
                         )}
 
                         {/* Ngày giờ yêu cầu */}
-                        <div className="bg-card p-4 rounded-xl border border-border shadow-sm space-y-2">
-                            <label className="text-[10px] uppercase font-black text-slate-400">Ngày giờ yêu cầu</label>
+                        <div className="bg-card p-5 rounded-2xl border border-border shadow-sm space-y-3">
+                            <label className="text-xs uppercase font-black text-slate-400">Ngày giờ yêu cầu</label>
                             <div className="flex items-center gap-2 text-slate-800 font-bold">
-                                <Clock size={18} className="text-slate-400" />
+                                <Clock size={20} className="text-slate-400" />
                                 <span className="text-sm font-bold font-mono">
                                     {isEditable && !request
                                         ? formatFullDateTime(new Date().toISOString())
@@ -2549,43 +2549,43 @@ const RequestModal: React.FC<RequestModalProps> = ({
                         </div>
 
                         {/* Hạn giao mong muốn */}
-                        <div className="bg-card p-4 rounded-xl border border-rose-200/40 dark:border-rose-900/40 shadow-sm space-y-2">
-                            <label className="text-[10px] uppercase font-black text-rose-500">Hạn giao mong muốn (Ngày cần)</label>
+                        <div className="bg-card p-5 rounded-2xl border border-rose-200/40 dark:border-rose-900/40 shadow-sm space-y-3">
+                            <label className="text-xs uppercase font-black text-rose-500">Hạn giao mong muốn (Ngày cần)</label>
                             <div className="flex items-center gap-2 text-slate-800 font-bold">
-                                <Clock size={18} className="text-rose-400" />
+                                <Clock size={20} className="text-rose-400" />
                                 {isEditable ? (
                                     <input
                                         type="datetime-local"
                                         value={toDatetimeLocalString(expectedDate)}
                                         onChange={(e) => setExpectedDate(toISOStringFromLocal(e.target.value))}
-                                        className="w-full bg-transparent outline-none text-sm font-bold text-slate-700 font-mono"
+                                        className="w-full bg-transparent outline-none text-base font-bold text-slate-705 font-mono"
                                     />
                                 ) : (
-                                    <span className="text-sm font-bold font-mono text-rose-700">
+                                    <span className="text-base font-bold font-mono text-rose-700">
                                         {formatFullDateTime(request?.expectedDate)}
                                     </span>
                                 )}
                             </div>
                         </div>
 
-                        <div className="bg-card p-4 rounded-xl border border-border shadow-sm space-y-2">
-                            <label className="text-[10px] uppercase font-black text-slate-400">Ghi chú phiếu</label>
+                        <div className="bg-card p-5 rounded-2xl border border-border shadow-sm space-y-3">
+                            <label className="text-xs uppercase font-black text-slate-400">Ghi chú phiếu</label>
                             <input
                                 type="text"
                                 disabled={!isEditable && !canEditApprovalQuantities}
                                 value={note}
                                 onChange={(e) => setNote(e.target.value)}
-                                className="w-full bg-transparent outline-none text-sm text-slate-700"
+                                className="w-full bg-transparent outline-none text-base text-slate-700"
                                 placeholder="Lý do hoặc chỉ dẫn..."
                             />
                         </div>
-                        <div className="bg-card p-4 rounded-xl border border-emerald-250/40 dark:border-emerald-900/40 shadow-sm space-y-2">
-                            <label className="text-[10px] uppercase font-black text-emerald-500">Cách cấp vật tư</label>
+                        <div className="bg-card p-5 rounded-2xl border border-emerald-250/40 dark:border-emerald-900/40 shadow-sm space-y-3">
+                            <label className="text-xs uppercase font-black text-emerald-500">Cách cấp vật tư</label>
                             {isEditable ? (
                                 <select
                                     value={fulfillmentMode}
                                     onChange={(e) => setFulfillmentMode(e.target.value as MaterialRequestFulfillmentMode)}
-                                    className="w-full bg-transparent outline-none text-sm font-bold text-slate-700"
+                                    className="w-full bg-transparent outline-none text-base font-bold text-slate-700"
                                 >
                                     <option value={MaterialRequestFulfillmentMode.RECEIVE_TO_STOCK}>Nhập kho công trường</option>
                                     <option value={MaterialRequestFulfillmentMode.DIRECT_CONSUMPTION}>Cấp thẳng sử dụng</option>
@@ -2598,13 +2598,13 @@ const RequestModal: React.FC<RequestModalProps> = ({
                         </div>
 
                         {canEditApprovalQuantities && isAdmin(user) && (
-                            <div className="bg-card p-4 rounded-xl border border-amber-250/45 dark:border-amber-900/45 shadow-sm space-y-2">
-                                <label className="text-[10px] uppercase font-black text-amber-600">Lý do override</label>
+                            <div className="bg-card p-5 rounded-2xl border border-amber-250/45 dark:border-amber-900/45 shadow-sm space-y-3">
+                                <label className="text-xs uppercase font-black text-amber-600">Lý do override</label>
                                 <input
                                     type="text"
                                     value={overrideReason}
                                     onChange={(e) => setOverrideReason(e.target.value)}
-                                    className="w-full bg-transparent outline-none text-sm text-slate-700"
+                                    className="w-full bg-transparent outline-none text-base text-slate-700"
                                     placeholder="Bắt buộc nếu duyệt vượt tồn khả dụng"
                                 />
                             </div>
@@ -2612,11 +2612,11 @@ const RequestModal: React.FC<RequestModalProps> = ({
                     </div>
 
                     {isEditable && isProjectRequest && (
-                        <div className="mb-5 rounded-xl border border-amber-200/30 dark:border-amber-900/30 bg-amber-50/10 dark:bg-amber-950/10 p-4">
+                        <div className="mb-8 rounded-2xl border border-amber-250 dark:border-amber-800 bg-amber-50/10 dark:bg-amber-950/10 p-6">
                             <div className={`flex items-center justify-between gap-3 ${boqSectionExpanded ? 'mb-3' : ''}`}>
                                 <div>
-                                    <div className="text-xs font-black text-foreground">Thêm vật tư theo BOQ triển khai</div>
-                                    <div className="text-[10px] font-bold text-muted-foreground">BOQ là mức trần cảnh báo; đề xuất vượt vẫn gửi được khi nhập lý do.</div>
+                                    <div className="text-sm font-black text-foreground">Thêm vật tư theo BOQ triển khai</div>
+                                    <div className="text-xs font-bold text-muted-foreground">BOQ là mức trần cảnh báo; đề xuất vượt vẫn gửi được khi nhập lý do.</div>
                                 </div>
                                 <button
                                     type="button"
@@ -2646,7 +2646,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
 	                                        onFocus={() => setWorkBoqSearchOpen(true)}
 	                                        onBlur={() => window.setTimeout(() => setWorkBoqSearchOpen(false), 150)}
 	                                        placeholder="Tìm đầu mục công việc..."
-	                                        className="w-full px-3 py-2 rounded-xl border border-amber-200/40 dark:border-amber-800/40 bg-card text-xs font-bold outline-none focus:ring-2 focus:ring-amber-300 text-foreground"
+	                                        className="w-full px-4 py-3 rounded-xl border border-amber-200/40 dark:border-amber-800/40 bg-card text-sm font-bold outline-none focus:ring-2 focus:ring-amber-300 text-foreground"
 	                                    />
 	                                    {isWorkBoqSearchOpen && (
 	                                        <div className="absolute left-0 right-0 top-full z-30 mt-1 max-h-64 overflow-y-auto rounded-xl border border-amber-200/60 bg-card shadow-xl">
@@ -2678,24 +2678,24 @@ const RequestModal: React.FC<RequestModalProps> = ({
 	                                    type="date"
 	                                    value={draftNeededDate}
 	                                    onChange={event => setDraftNeededDate(event.target.value)}
-	                                    className="md:col-span-3 px-3 py-2 rounded-xl border border-amber-200/40 dark:border-amber-800/40 bg-card text-xs font-bold outline-none focus:ring-2 focus:ring-amber-300 text-foreground"
+	                                    className="md:col-span-3 px-4 py-3 rounded-xl border border-amber-200/40 dark:border-amber-800/40 bg-card text-sm font-bold outline-none focus:ring-2 focus:ring-amber-300 text-foreground"
 	                                />
 	                                <button
 	                                    onClick={handleAddBudgetLines}
 	                                    disabled={selectedMaterialBudgetIds.size === 0}
-	                                    className="md:col-span-2 px-3 py-2 rounded-xl bg-amber-500 text-white text-xs font-black hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-50"
+	                                    className="md:col-span-2 px-4 py-3 rounded-xl bg-amber-500 text-white text-sm font-black hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-50"
 	                                >
 	                                    Thêm {selectedMaterialBudgetIds.size > 0 ? `(${selectedMaterialBudgetIds.size})` : ''}
 	                                </button>
 		                                <div className="md:col-span-12 rounded-xl border border-amber-200/40 bg-card dark:border-amber-800/40">
-		                                    <div className="border-b border-amber-100/60 px-3 py-2 text-[10px] font-black uppercase text-muted-foreground">
+		                                    <div className="border-b border-amber-100/60 px-4 py-3 text-xs font-black uppercase text-muted-foreground">
 		                                        {selectedWorkBoqLabel}
 		                                    </div>
 		                                    <div className="max-h-72 overflow-y-auto divide-y divide-border/60">
 		                                        {selectedWorkBoqItemIds.size === 0 ? (
-		                                            <div className="px-3 py-4 text-xs font-bold text-muted-foreground">Gõ tên hoặc mã WBS rồi tick một hoặc nhiều đầu mục công việc.</div>
+		                                            <div className="px-4 py-5 text-sm font-bold text-muted-foreground">Gõ tên hoặc mã WBS rồi tick một hoặc nhiều đầu mục công việc.</div>
 		                                        ) : budgetOptions.length === 0 ? (
-		                                            <div className="px-3 py-4 text-xs font-bold text-muted-foreground">Các đầu mục đã chọn chưa khai báo vật tư có KL dự toán.</div>
+		                                            <div className="px-4 py-5 text-sm font-bold text-muted-foreground">Các đầu mục đã chọn chưa khai báo vật tư có KL dự toán.</div>
 		                                        ) : (
 		                                            budgetOptions.map(item => {
 		                                                const checked = selectedMaterialBudgetIds.has(item.id);
@@ -2704,13 +2704,13 @@ const RequestModal: React.FC<RequestModalProps> = ({
 		                                                const work = item.workBoqItemId ? workBoqMap.get(item.workBoqItemId) : undefined;
 		                                                const overQty = Math.max(0, reservation.totalRequested - reservation.budgetQty);
 		                                                return (
-	                                                    <label key={item.id} className="grid grid-cols-1 gap-2 px-3 py-2 text-xs md:grid-cols-12 md:items-center">
+	                                                    <label key={item.id} className="grid grid-cols-1 gap-3 px-4 py-3 text-sm md:grid-cols-12 md:items-center">
 	                                                        <div className="flex min-w-0 items-start gap-2 md:col-span-7">
 	                                                            <input
 	                                                                type="checkbox"
 	                                                                checked={checked}
 	                                                                onChange={() => handleToggleBudgetSelection(item)}
-	                                                                className="mt-1 h-4 w-4 rounded border-amber-300 text-amber-600 focus:ring-amber-300"
+	                                                                className="mt-1 h-5 w-5 rounded border-amber-300 text-amber-600 focus:ring-amber-300"
 	                                                            />
 		                                                            <div className="min-w-0">
 		                                                                <div className="truncate font-black text-foreground">{item.itemName}</div>
@@ -2749,7 +2749,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
 	                                                                }
 	                                                            }}
 	                                                            placeholder="Số lượng"
-	                                                            className="md:col-span-2 px-3 py-2 rounded-xl border border-amber-200/40 dark:border-amber-800/40 bg-card text-xs font-bold outline-none focus:ring-2 focus:ring-amber-300 text-foreground"
+	                                                            className="md:col-span-2 px-4 py-2.5 rounded-xl border border-amber-200/40 dark:border-amber-800/40 bg-card text-sm font-bold outline-none focus:ring-2 focus:ring-amber-300 text-foreground"
 	                                                        />
 	                                                        <div className="md:col-span-3 flex flex-wrap justify-start gap-1 md:justify-end">
 	                                                            {!inventoryItem && <span className="rounded bg-red-50 px-1.5 py-0.5 text-[9px] font-bold text-red-600 border border-red-200/60">Chưa có mã kho</span>}
@@ -2766,7 +2766,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
 	                                    value={draftLineNote}
 	                                    onChange={event => setDraftLineNote(event.target.value)}
                                     placeholder="Ghi chú dòng..."
-                                    className="md:col-span-12 px-3 py-2 rounded-xl border border-amber-200/40 dark:border-amber-800/40 bg-card text-xs outline-none focus:ring-2 focus:ring-amber-300 text-foreground"
+                                    className="md:col-span-12 px-4 py-3 rounded-xl border border-amber-200/40 dark:border-amber-800/40 bg-card text-sm outline-none focus:ring-2 focus:ring-amber-300 text-foreground"
                                 />
                             </div>
                             )}
@@ -2896,7 +2896,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                             type="number" min="1"
                                                             value={primary.requestQty}
                                                             onChange={(e) => handleUpdateItem(primary.index, 'qty', e.target.value)}
-                                                            className="w-20 text-right p-1 border border-border bg-card text-foreground rounded font-bold"
+                                                            className="w-28 text-right px-3 py-2 border border-border bg-card text-foreground rounded-xl font-bold text-sm"
                                                         />
                                                     ) : (
                                                         <span className="font-bold text-foreground">{group.requestQty.toLocaleString('vi-VN')}</span>
@@ -3412,7 +3412,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                         <div className="p-5 overflow-y-auto space-y-4">
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                                 <div>
-                                    <label className="text-[10px] uppercase font-black text-muted-foreground block mb-1">Nguồn hàng</label>
+                                    <label className="text-xs uppercase font-black text-muted-foreground block mb-1">Nguồn hàng</label>
                                     <select
                                         value={issueSourceType}
                                         onChange={event => handleIssueSourceTypeChange(event.target.value as MaterialRequestFulfillmentSourceType)}
@@ -3424,7 +3424,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                     </select>
                                 </div>
                                 <div className="md:col-span-2">
-                                    <label className="text-[10px] uppercase font-black text-muted-foreground block mb-1">Ghi chú đợt cấp</label>
+                                    <label className="text-xs uppercase font-black text-muted-foreground block mb-1">Ghi chú đợt cấp</label>
                                     <input
                                         value={issueNote}
                                         onChange={event => setIssueNote(event.target.value)}

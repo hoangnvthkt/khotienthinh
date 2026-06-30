@@ -350,7 +350,26 @@ const SafetyPassportWorkerDetailModal: React.FC<Props> = ({
             {hasAssignmentContext && <Field label="Ngày vào"><input disabled={disabled} type="date" value={startDate} onChange={event => setStartDate(event.target.value)} className={inputClass} /></Field>}
             {hasAssignmentContext && <Field label="Loại công việc"><input disabled={disabled} value={workType} onChange={event => setWorkType(event.target.value)} className={inputClass} /></Field>}
             <Field label="Họ tên" className="md:col-span-2"><input disabled={disabled} value={fullName} onChange={event => setFullName(event.target.value)} className={inputClass} required /></Field>
-            <Field label="Chức danh"><input disabled={disabled} value={roleName} onChange={event => setRoleName(event.target.value)} className={inputClass} /></Field>
+            <Field label="Chức danh">
+              <select
+                disabled={disabled}
+                value={roleName}
+                onChange={event => setRoleName(event.target.value)}
+                className={inputClass}
+              >
+                <option value="">-- Chọn chức danh --</option>
+                <option value="Công nhân">Công nhân</option>
+                <option value="Lái Máy">Lái Máy</option>
+                <option value="Cán bộ Kỹ thuật">Cán bộ Kỹ thuật</option>
+                <option value="Cán bộ Kỹ thuật trưởng">Cán bộ Kỹ thuật trưởng</option>
+                <option value="Chỉ huy phó">Chỉ huy phó</option>
+                <option value="Chỉ huy trưởng">Chỉ huy trưởng</option>
+                <option value="Cán bộ an toàn">Cán bộ an toàn</option>
+                <option value="Trưởng ban an toàn">Trưởng ban an toàn</option>
+                <option value="Thủ kho">Thủ kho</option>
+                <option value="Trợ lý dự án">Trợ lý dự án</option>
+              </select>
+            </Field>
             <Field label="Ngày sinh"><input disabled={disabled} type="date" value={dateOfBirth} onChange={event => setDateOfBirth(event.target.value)} className={inputClass} /></Field>
             <Field label="Số điện thoại"><input disabled={disabled} value={phone} onChange={event => setPhone(event.target.value)} className={inputClass} /></Field>
             <Field label="Nhà thầu / tổ đội">
@@ -368,7 +387,18 @@ const SafetyPassportWorkerDetailModal: React.FC<Props> = ({
           <div className="grid gap-3 md:grid-cols-4">
             <Field label="Số CMND/CCCD"><input disabled={disabled} value={identityNumber} onChange={event => setIdentityNumber(event.target.value)} className={inputClass} /></Field>
             <Field label="Ngày cấp"><input disabled={disabled} type="date" value={identityIssueDate} onChange={event => setIdentityIssueDate(event.target.value)} className={inputClass} /></Field>
-            <Field label="Nơi cấp"><input disabled={disabled} value={identityIssuePlace} onChange={event => setIdentityIssuePlace(event.target.value)} className={inputClass} /></Field>
+            <Field label="Nơi cấp">
+              <select
+                disabled={disabled}
+                value={identityIssuePlace}
+                onChange={event => setIdentityIssuePlace(event.target.value)}
+                className={inputClass}
+              >
+                <option value="">-- Chọn nơi cấp --</option>
+                <option value="Bộ công an">Bộ công an</option>
+                <option value="Cục Cảnh Sát">Cục Cảnh Sát</option>
+              </select>
+            </Field>
             <Field label="Hộ khẩu thường trú"><input disabled={disabled} value={permanentAddress} onChange={event => setPermanentAddress(event.target.value)} className={inputClass} /></Field>
           </div>
           <div className="mt-3 grid gap-3 md:grid-cols-3">

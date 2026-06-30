@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Briefcase, IdCard, Plus, Save, UserRound, X } from 'lucide-react';
+import { Briefcase, IdCard, Plus, Save, UserRound, X, LayoutGrid, List } from 'lucide-react';
 import { EmptyState, MobileCardList, StatusBadge } from '../../erp';
 import { useToast } from '../../../context/ToastContext';
 import {
@@ -276,6 +276,7 @@ const SafetyPassportPanel: React.FC<Props> = ({ mode, projectId, constructionSit
   } | null>(null);
   const [showAssignmentModal, setShowAssignmentModal] = useState(false);
   const [selectedCard, setSelectedCard] = useState<any>(null);
+  const [workerViewMode, setWorkerViewMode] = useState<'list' | 'card'>('list');
 
   const reloadAll = async () => {
     await Promise.all([dashboard.reload(), contractors.reload(), workers.reload(), assignments.reload(), projectWorkerRows.reload(), cards.reload()]);
@@ -410,8 +411,110 @@ const SafetyPassportPanel: React.FC<Props> = ({ mode, projectId, constructionSit
     );
     return (
       <section className="space-y-4">
-        <div className="flex justify-end">{canManage && <button onClick={() => setWorkerDetailContext({ worker: null })} className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-slate-900 px-3 text-xs font-black text-white"><Plus size={14} /> Tạo hồ sơ</button>}</div>
-        {workers.data.length === 0 ? <EmptyState icon={<UserRound size={18} />} title="Chưa có hồ sơ nhân công" message="Tạo hồ sơ gốc một lần để tái sử dụng ở nhiều công trình." /> : (
+        <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-50/50 dark:bg-slate-800/10 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800">
+          <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-1 dark:bg-slate-800">
+            <button
+              type="button"
+              onClick={() => setWorkerViewMode('list')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-black transition-all ${
+                workerViewMode === 'list'
+                  ? 'bg-white shadow-sm text-slate-800 dark:bg-slate-700 dark:text-white'
+                  : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
+              }`}
+            >
+              <List size={14} />
+              <span>Danh sách</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setWorkerViewMode('card')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-black transition-all ${
+                workerViewMode === 'card'
+                  ? 'bg-white shadow-sm text-slate-800 dark:bg-slate-700 dark:text-white'
+                  : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
+              }`}
+            >
+              <LayoutGrid size={14} />
+              <span>Thẻ</span>
+            </button>
+          </div>
+          {canManage && (
+            <button
+              onClick={() => setWorkerDetailContext({ worker: null })}
+              className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-slate-900 px-3 text-xs font-black text-white hover:bg-slate-800 transition"
+            >
+              <Plus size={14} /> Tạo hồ sơ
+            </button>
+          )}
+        </div>
+
+        {workers.data.length === 0 ? (
+          <EmptyState icon={<UserRound size={18} />} title="Chưa có hồ sơ nhân công" message="Tạo hồ sơ gốc một lần để tái sử dụng ở nhiều công trình." />
+        ) : workerViewMode === 'list' ? (
+          <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <table className="w-full text-left text-sm border-collapse">
+              <thead>
+                <tr className="bg-slate-50 text-slate-500 font-bold border-b border-slate-200 text-xs dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700 uppercase tracking-wider">
+                  <th className="p-3.5 w-12 text-center">Ảnh</th>
+                  <th className="p-3.5">Mã nhân công</th>
+                  <th className="p-3.5">Họ và tên</th>
+                  <th className="p-3.5">Nhà thầu / Tổ đội</th>
+                  <th className="p-3.5">Số điện thoại</th>
+                  <th className="p-3.5 w-32 text-center">Trạng thái</th>
+                  {canManage && <th className="p-3.5 w-24 text-center"></th>}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
+                {workers.data.map(item => (
+                  <tr
+                    key={item.id}
+                    onClick={() => setWorkerDetailContext({ worker: item })}
+                    className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors group"
+                  >
+                    <td className="p-3.5 text-center align-middle" onClick={e => e.stopPropagation()}>
+                      <div className="h-10 w-10 overflow-hidden rounded-full border border-slate-100 bg-slate-50 dark:border-slate-800 dark:bg-slate-800 mx-auto">
+                        {item.photoAttachment?.url ? (
+                          <img src={item.photoAttachment.url} className="h-full w-full object-cover" />
+                        ) : (
+                          <div className="flex h-full items-center justify-center text-[10px] font-black text-slate-400">NO</div>
+                        )}
+                      </div>
+                    </td>
+                    <td className="p-3.5 font-mono font-bold text-xs text-orange-655 align-middle">
+                      {item.workerCode}
+                    </td>
+                    <td className="p-3.5 font-bold text-slate-800 dark:text-slate-200 group-hover:text-blue-600 transition-colors align-middle">
+                      {item.fullName}
+                    </td>
+                    <td className="p-3.5 text-slate-600 dark:text-slate-400 align-middle">
+                      {item.contractor?.name || item.teamName || '-'}
+                    </td>
+                    <td className="p-3.5 font-mono text-slate-600 dark:text-slate-400 align-middle">
+                      {item.phone || '-'}
+                    </td>
+                    <td className="p-3.5 text-center align-middle" onClick={e => e.stopPropagation()}>
+                      <StatusBadge
+                        status={item.status}
+                        label={item.status === 'active' ? 'Hoạt động' : item.status}
+                        tone={item.status === 'active' ? 'success' : 'warning'}
+                      />
+                    </td>
+                    {canManage && (
+                      <td className="p-3.5 text-center align-middle" onClick={e => e.stopPropagation()}>
+                        <button
+                          onClick={() => setWorkerDetailContext({ worker: item })}
+                          className="rounded-lg border border-slate-200 bg-white hover:bg-blue-50 dark:hover:bg-slate-800 px-2.5 py-1 text-xs font-black text-blue-600 dark:border-slate-700/80 transition"
+                        >
+                          Xem/Sửa
+                        </button>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
           <>
             <div className="md:hidden"><MobileCardList items={workers.data} getKey={item => item.id} renderItem={item => renderWorker(item, false)} /></div>
             <div className="hidden grid-cols-2 gap-3 md:grid xl:grid-cols-3">{workers.data.map(item => <div key={item.id}>{renderWorker(item)}</div>)}</div>
