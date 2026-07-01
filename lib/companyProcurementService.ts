@@ -69,7 +69,7 @@ const loadInventoryByIds = async (ids: string[]): Promise<Map<string, InventoryI
   if (uniqueIds.length === 0) return new Map();
   const { data, error } = await supabase
     .from('items')
-    .select('id, sku, name, category, unit, purchase_unit, purchase_conversion_factor, price_in, price_out, min_stock, supplier_id, image_url, location, stock_by_warehouse')
+    .select('id, sku, accounting_code, name, category, unit, purchase_unit, purchase_conversion_factor, price_in, price_out, min_stock, supplier_id, image_url, location, stock_by_warehouse')
     .in('id', uniqueIds);
   if (error) throw error;
   return new Map((data || []).map(row => {

@@ -268,6 +268,7 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 
 const mapInventoryItemFromDb = (i: any): InventoryItem => ({
   ...i,
+  accountingCode: i.accounting_code ?? i.accountingCode ?? null,
   purchaseUnit: i.purchase_unit,
   purchaseConversionFactor: Number(i.purchase_conversion_factor ?? 1),
   priceIn: i.price_in,
@@ -676,7 +677,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (event.eventType === 'INSERT' || event.eventType === 'UPDATE') {
         const i = event.newRecord;
         const mapped = {
-          ...i, priceIn: i.price_in, priceOut: i.price_out, minStock: i.min_stock, defaultLeadTimeDays: i.default_lead_time_days ?? 7,
+          ...i, accountingCode: i.accounting_code ?? i.accountingCode ?? null,
+          priceIn: i.price_in, priceOut: i.price_out, minStock: i.min_stock, defaultLeadTimeDays: i.default_lead_time_days ?? 7,
           supplierId: i.supplier_id, imageUrl: i.image_url, stockByWarehouse: i.stock_by_warehouse,
           purchaseUnit: i.purchase_unit ?? undefined,
           purchaseConversionFactor: Number(i.purchase_conversion_factor ?? 1)
@@ -1315,6 +1317,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (table === 'items') {
         payload = {
           id: data.id, sku: data.sku, name: data.name, category: data.category, unit: data.unit,
+          accounting_code: data.accountingCode ?? null,
           purchase_unit: data.purchaseUnit ?? null,
           purchase_conversion_factor: Number(data.purchaseConversionFactor || 1),
           price_in: data.priceIn, price_out: data.priceOut, min_stock: data.minStock,

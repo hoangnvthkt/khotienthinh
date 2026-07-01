@@ -740,6 +740,7 @@ export interface ProjectOpeningBalanceLine {
   id?: string;
   openingBalanceId?: string;
   inventoryItemId?: string | null;
+  accountingCode?: string | null;
   sku: string;
   itemName: string;
   unit: string;
@@ -757,7 +758,10 @@ export interface ProjectOpeningBalanceLine {
 
 export type ProjectOpeningBalanceImportRow = Omit<ProjectOpeningBalanceLine, 'id' | 'openingBalanceId' | 'createdAt' | 'updatedAt'> & {
   rowNumber?: number;
+  purchasedAmount?: number;
+  issuedAmount?: number;
   errors?: string[];
+  warnings?: string[];
 };
 
 export type BoqReconciliationStatus = 'draft' | 'submitted' | 'reviewed' | 'locked';
@@ -2332,6 +2336,7 @@ export interface ItemUnit {
 export interface InventoryItem {
   id: string;
   sku: string;
+  accountingCode?: string | null;
   name: string;
   category: string;
   unit: string;          // Đơn vị tồn kho & xuất kho (VD: Cây, Cái, Tấm)

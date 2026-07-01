@@ -6,7 +6,7 @@ import {
     RefreshCcw, Download, Upload,
     FileSpreadsheet, GitBranch, ListTree, Loader2, BookOpen
 } from 'lucide-react';
-import { MaterialBudgetItem, InventoryItem, MaterialRequest, RequestStatus, ProjectTask, ProjectWorkBoqItem, ContractItem, TaskContractItem, MaterialRequestFulfillmentSummary, MaterialRequestFulfillmentBatch, MaterialRequestEvent, MaterialRequestKanbanLaneId, MaterialRequestKanbanStage, MaterialRequestWorkflowStep, ProjectSubmissionTarget, Role, PurchaseOrder, MaterialPlanningRule, MaterialPlanningDraftPo, PlanningCurveTemplate, ProjectWorkflowActionContext, ProjectWorkflowBoardFilter, ProjectWorkflowConfiguration, ProjectWorkflowRuntimeContext, ProjectWorkflowSubject, MaterialRequestWorkflowBoardCard, WorkflowNode, WorkflowNodeType, WorkflowStepAssignment } from '../../types';
+import { MaterialBudgetItem, InventoryItem, MaterialRequest, RequestStatus, ProjectTask, ProjectWorkBoqItem, ContractItem, TaskContractItem, MaterialRequestFulfillmentSummary, MaterialRequestFulfillmentBatch, MaterialRequestEvent, MaterialRequestKanbanLaneId, MaterialRequestKanbanStage, MaterialRequestWorkflowStep, ProjectSubmissionTarget, Role, PurchaseOrder, MaterialPlanningRule, MaterialPlanningDraftPo, PlanningCurveTemplate, ProjectWorkflowActionContext, ProjectWorkflowBoardFilter, ProjectWorkflowConfiguration, ProjectWorkflowRuntimeContext, ProjectWorkflowSubject, MaterialRequestWorkflowBoardCard, WorkflowNode, WorkflowNodeType, WorkflowStepAssignment, Project, ProjectFinance } from '../../types';
 import { boqService, taskService, workBoqService, poService } from '../../lib/projectService';
 import { materialRequestFulfillmentService, getRequestLineId } from '../../lib/materialRequestFulfillmentService';
 import { useApp } from '../../context/AppContext';
@@ -31,6 +31,7 @@ import { CustomMaterialRequestTab } from '../../components/project/material/Cust
 import { G8NormApplyModal } from '../../components/project/material/G8NormApplyModal';
 import { MaterialBoqImportPreviewModal } from '../../components/project/material/MaterialBoqImportPreviewModal';
 import { MaterialDashboardTab } from '../../components/project/material/MaterialDashboardTab';
+import ProjectOpeningBalanceModal from '../../components/project/ProjectOpeningBalanceModal';
 import { MaterialRequestTab } from '../../components/project/material/MaterialRequestTab';
 import { MaterialSummaryTab } from '../../components/project/material/MaterialSummaryTab';
 import { MaterialTabHeader } from '../../components/project/material/MaterialTabHeader';
@@ -81,12 +82,15 @@ const AGGREGATE_OUTSIDE_BOQ_REASON = 'Đề xuất ngoài BOQ theo tổng địn
 interface MaterialTabProps {
     constructionSiteId?: string;
     projectId?: string;
+    project?: Project;
+    projectFinance?: ProjectFinance | null;
+    siteName?: string;
     siteWarehouseId?: string; // ID kho công trường
     canManageTab?: boolean;
     materialPermissions?: ProjectMaterialTabPermissionMap;
 }
 
-const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId, siteWarehouseId, canManageTab = true, materialPermissions }) => {
+const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId, project, projectFinance, siteName, siteWarehouseId, canManageTab = true, materialPermissions }) => {
     const location = useLocation();
     const { items: inventoryItems, requests: allRequests, warehouses, users, employees, orgUnits, user, transactions, hrmConstructionSites, loadModuleData, isModuleAdmin } = useApp();
     const { templates: workflowTemplates, nodes: workflowNodes, edges: workflowEdges } = useWorkflow();
@@ -100,6 +104,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     const [activeSubTab, setActiveSubTab] = useState<ProjectMaterialTabKey>(() =>
         getValidMaterialTab(new URLSearchParams(location.search).get('materialTab')) || 'summary'
     );
+    const [openingBalanceOpen, setOpeningBalanceOpen] = useState(false);
     const {
         materialAccess,
         visibleMaterialTabs,
@@ -2394,6 +2399,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         waste: stats.overWaste,
         dashboard: 0,
     };
+    const canManageOpeningBalance = canManageTab && Boolean(project);
 
     return (
         <div className="space-y-6">
@@ -2407,7 +2413,30 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                 tabCounts={materialTabCounts}
                 formatMoneyShort={fmt}
                 onTabChange={setActiveSubTab}
+                actions={canManageOpeningBalance ? (
+                    <button
+                        type="button"
+                        onClick={() => setOpeningBalanceOpen(true)}
+                        disabled={!constructionSiteId}
+                        title={!constructionSiteId ? 'Cần liên kết công trường trước khi nhập đầu kỳ' : 'Nhập dữ liệu đầu kỳ vật tư'}
+                        className="flex shrink-0 items-center gap-1.5 rounded-xl border border-orange-200 bg-orange-50 px-3 py-2 text-xs font-black text-orange-700 transition hover:bg-orange-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-400"
+                    >
+                        <FileSpreadsheet size={14} /> Nhập đầu kỳ
+                    </button>
+                ) : null}
             />
+
+            {project && constructionSiteId && (
+                <ProjectOpeningBalanceModal
+                    open={openingBalanceOpen}
+                    project={project}
+                    constructionSiteId={constructionSiteId}
+                    siteName={siteName}
+                    finance={projectFinance}
+                    onClose={() => setOpeningBalanceOpen(false)}
+                    onApplied={() => { void loadBoqData(); }}
+                />
+            )}
 
             {visibleMaterialTabs.length === 0 && (
                 <div className="rounded-2xl border border-slate-100 bg-white p-12 text-center shadow-sm">

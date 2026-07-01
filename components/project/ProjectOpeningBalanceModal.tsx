@@ -10,6 +10,7 @@ import {
   ProjectOpeningBalanceLine,
 } from '../../types';
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
+import { normalizeLookupText, SITE_WAREHOUSE_STOP_WORDS } from '../../lib/projectMaterialTabUtils';
 import { getProjectScopeKey } from '../../lib/projectWeeklyProgressService';
 import {
   calculateOpeningRecognizedValue,
@@ -67,11 +68,31 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
   const toast = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
   const scopeKey = useMemo(() => getProjectScopeKey(project.id, constructionSiteId), [constructionSiteId, project.id]);
-  const defaultWarehouseId = warehouses[0]?.id || '';
+  const defaultWarehouseId = useMemo(() => {
+    const active = warehouses.filter(warehouse => !warehouse.isArchived);
+    const siteWarehouses = active.filter(warehouse => warehouse.type === 'SITE');
+    const siteText = normalizeLookupText(siteName || project.name);
+    if (siteText) {
+      const exact = siteWarehouses.find(warehouse => normalizeLookupText(warehouse.name).includes(siteText));
+      if (exact) return exact.id;
+      const tokens = siteText.split(' ').filter(token => token.length > 1 && !SITE_WAREHOUSE_STOP_WORDS.has(token));
+      const allTokenMatch = siteWarehouses.find(warehouse => {
+        const name = normalizeLookupText(warehouse.name);
+        return tokens.length > 0 && tokens.every(token => name.includes(token));
+      });
+      if (allTokenMatch) return allTokenMatch.id;
+      const partialTokenMatch = siteWarehouses.find(warehouse => {
+        const name = normalizeLookupText(warehouse.name);
+        return tokens.some(token => name.includes(token));
+      });
+      if (partialTokenMatch) return partialTokenMatch.id;
+    }
+    return siteWarehouses[0]?.id || active[0]?.id || '';
+  }, [project.name, siteName, warehouses]);
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
   const [existingOpening, setExistingOpening] = useState<ProjectOpeningBalance | null>(null);
-  const [asOfDate, setAsOfDate] = useState(new Date().toISOString().slice(0, 10));
+  const [asOfDate, setAsOfDate] = useState('2026-06-20');
   const [contractValue, setContractValue] = useState(String(finance?.contractValue || ''));
   const [constructionProgress, setConstructionProgress] = useState(String(finance?.progressPercent || ''));
   const [purchasedValue, setPurchasedValue] = useState('');
@@ -79,12 +100,15 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
   const [usedValue, setUsedValue] = useState('');
   const [note, setNote] = useState('');
   const [lines, setLines] = useState<ProjectOpeningBalanceLine[]>([emptyLine(defaultWarehouseId)]);
+  const [importMessages, setImportMessages] = useState<{ errors: string[]; warnings: string[] }>({ errors: [], warnings: [] });
 
   useEffect(() => {
     if (!open) return;
     setStep(0);
     setContractValue(String(finance?.contractValue || ''));
     setConstructionProgress(String(finance?.progressPercent || ''));
+    setAsOfDate('2026-06-20');
+    setImportMessages({ errors: [], warnings: [] });
     setLines([emptyLine(defaultWarehouseId)]);
     let cancelled = false;
     projectOpeningBalanceService.getOpeningBalanceByScope(scopeKey)
@@ -109,7 +133,7 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
   }, [defaultWarehouseId, finance?.contractValue, finance?.progressPercent, open, scopeKey]);
 
   const locked = existingOpening?.status === 'locked';
-  const recognizedValue = calculateOpeningRecognizedValue(toNumber(purchasedValue), toNumber(issuedValue));
+  const recognizedValue = calculateOpeningRecognizedValue(toNumber(purchasedValue), toNumber(issuedValue), toNumber(usedValue));
   const valueProgress = toNumber(contractValue) > 0 ? Math.min(100, Math.round((recognizedValue / toNumber(contractValue)) * 100)) : 0;
   const lineTotals = useMemo(() => lines.reduce((acc, line) => {
     const unitPrice = Number(line.unitPrice || 0);
@@ -142,20 +166,25 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
     event.target.value = '';
     if (!file) return;
     try {
-      const parsed = await projectOpeningBalanceService.parseOpeningBalanceImport(file);
-      const nextLines = parsed.map(row => ({
+      const parsed = await projectOpeningBalanceService.parseOpeningBalanceImport(file, {
+        existingItems: items,
+        defaultWarehouseId,
+      });
+      const nextLines = parsed.rows.map(row => ({
         ...row,
         warehouseId: resolveWarehouseId(row.warehouseId || ''),
       }));
-      const validLines = nextLines.filter(row => row.sku && row.itemName && row.warehouseId);
+      const validLines = nextLines.filter(row => row.sku && row.itemName && row.warehouseId && !(row.errors || []).length);
       if (validLines.length === 0) {
+        setImportMessages({ errors: parsed.errors, warnings: parsed.warnings });
         toast.warning('File chưa có dòng hợp lệ', 'Cần mã vật tư, tên vật tư và kho.');
         return;
       }
       setLines(validLines);
-      const stockValue = validLines.reduce((sum, line) => sum + Number(line.remainingValue || 0), 0);
-      if (!purchasedValue) setPurchasedValue(String(stockValue));
-      if (!issuedValue) setIssuedValue(String(stockValue));
+      setPurchasedValue(String(parsed.totals.purchasedValue || 0));
+      setIssuedValue(String(parsed.totals.issuedValue || 0));
+      setUsedValue(String(parsed.totals.usedValue || parsed.totals.issuedValue || 0));
+      setImportMessages({ errors: parsed.errors, warnings: parsed.warnings });
       toast.success('Đã đọc file đầu kỳ', `${validLines.length} dòng vật tư được đưa vào bảng rà soát.`);
     } catch (error: any) {
       logApiError('ProjectOpeningBalanceModal.import', error);
@@ -339,7 +368,7 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
                   <div className="text-lg font-black text-orange-700">{valueProgress}%</div>
                 </div>
                 <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 text-xs font-bold text-slate-500">
-                  Hệ thống dùng max(đã mua, đã xuất/cấp) cho phần đầu kỳ để tránh đếm trùng.
+                  Chi phí vật tư đầu kỳ ưu tiên giá trị đã xuất/sử dụng; giá trị đã mua chỉ dùng làm tham chiếu tổng nhập.
                 </div>
               </div>
             </div>
@@ -360,10 +389,29 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
                   <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleImport} />
                 </div>
               </div>
+              {(importMessages.errors.length > 0 || importMessages.warnings.length > 0) && (
+                <div className="grid md:grid-cols-2 gap-3">
+                  {importMessages.errors.length > 0 && (
+                    <div className="rounded-2xl border border-red-200 bg-red-50 p-3 text-xs font-bold text-red-700">
+                      <div className="mb-1 font-black uppercase">Dòng lỗi</div>
+                      {importMessages.errors.slice(0, 6).map(message => <div key={message}>{message}</div>)}
+                      {importMessages.errors.length > 6 && <div>+{importMessages.errors.length - 6} lỗi khác</div>}
+                    </div>
+                  )}
+                  {importMessages.warnings.length > 0 && (
+                    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs font-bold text-amber-800">
+                      <div className="mb-1 font-black uppercase">Cảnh báo</div>
+                      {importMessages.warnings.slice(0, 6).map(message => <div key={message}>{message}</div>)}
+                      {importMessages.warnings.length > 6 && <div>+{importMessages.warnings.length - 6} cảnh báo khác</div>}
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="overflow-x-auto rounded-2xl border border-slate-100">
-                <table className="min-w-[980px] w-full text-xs">
+                <table className="min-w-[1120px] w-full text-xs">
                   <thead className="bg-slate-50 text-slate-500">
                     <tr>
+                      <th className="p-2 text-left">Mã KT</th>
                       <th className="p-2 text-left">Mã</th>
                       <th className="p-2 text-left">Tên vật tư</th>
                       <th className="p-2 text-left">ĐVT</th>
@@ -380,6 +428,7 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
                   <tbody className="divide-y divide-slate-100">
                     {lines.map((line, index) => (
                       <tr key={index}>
+                        <td className="p-2"><input value={line.accountingCode || ''} onChange={e => updateLine(index, { accountingCode: e.target.value })} className="w-28 px-2 py-1.5 rounded-lg border border-slate-200 font-bold" /></td>
                         <td className="p-2"><input value={line.sku} onChange={e => updateLine(index, { sku: e.target.value })} className="w-28 px-2 py-1.5 rounded-lg border border-slate-200 font-bold" /></td>
                         <td className="p-2"><input value={line.itemName} onChange={e => updateLine(index, { itemName: e.target.value })} className="w-52 px-2 py-1.5 rounded-lg border border-slate-200 font-bold" /></td>
                         <td className="p-2"><input value={line.unit} onChange={e => updateLine(index, { unit: e.target.value })} className="w-20 px-2 py-1.5 rounded-lg border border-slate-200" /></td>

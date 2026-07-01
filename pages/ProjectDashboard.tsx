@@ -3110,6 +3110,9 @@ const ProjectDashboard: React.FC = () => {
                         <MaterialTab
                             constructionSiteId={effectiveSiteId || undefined}
                             projectId={selectedProject.id}
+                            project={selectedProject}
+                            projectFinance={selectedFinance}
+                            siteName={selectedSite?.name}
                             canManageTab={canManageProjectTab('material')}
                             materialPermissions={materialTabPermissions}
                         />

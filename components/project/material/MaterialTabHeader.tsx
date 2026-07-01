@@ -25,6 +25,7 @@ type MaterialTabHeaderProps = {
     tabCounts: Record<ProjectMaterialTabKey, number>;
     formatMoneyShort: (value: number) => string;
     onTabChange: (tab: ProjectMaterialTabKey) => void;
+    actions?: React.ReactNode;
 };
 
 export const MaterialTabHeader: React.FC<MaterialTabHeaderProps> = ({
@@ -37,13 +38,17 @@ export const MaterialTabHeader: React.FC<MaterialTabHeaderProps> = ({
     tabCounts,
     formatMoneyShort,
     onTabChange,
+    actions,
 }) => (
     <>
         <div className="flex items-center justify-between">
             <h3 className="text-sm font-black text-slate-700 dark:text-white">Quản lý vật tư</h3>
-            <React.Suspense fallback={null}>
-                <AiInsightPanel module="material" siteId={constructionSiteId} />
-            </React.Suspense>
+            <div className="flex items-center gap-2">
+                {actions}
+                <React.Suspense fallback={null}>
+                    <AiInsightPanel module="material" siteId={constructionSiteId} />
+                </React.Suspense>
+            </div>
         </div>
 
         <div className="flex gap-1 overflow-x-auto rounded-2xl border border-slate-100 bg-white p-1.5 shadow-sm dark:border-slate-700/60 dark:bg-slate-850 [&::-webkit-scrollbar]:hidden">

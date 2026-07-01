@@ -647,16 +647,15 @@ const DailyLogDetailTabs: React.FC<Props> = ({
 
   return (
     <div className="border-t border-slate-100 pt-4">
-      <label className="text-[10px] font-black text-slate-500 uppercase block mb-2">Chi tiết thi công (FastCons)</label>
+      <label className="text-[10px] font-black text-slate-500 uppercase block mb-2">Chi tiết thi công</label>
       {/* Tab bar */}
       <div className="flex gap-1 mb-3">
         {TABS.map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
-            className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
-              tab === t.key
+            className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${tab === t.key
                 ? 'text-teal-700 bg-teal-100 border border-teal-200'
                 : 'text-slate-500 hover:bg-slate-100'
-            }`}>
+              }`}>
             {t.icon} {t.label}
             {t.key === 'volumes' && volumes.length > 0 && <span className="ml-1 w-4 h-4 rounded-full bg-teal-500 text-white text-[8px] flex items-center justify-center">{volumes.length}</span>}
             {t.key === 'materials' && materials.length > 0 && <span className="ml-1 w-4 h-4 rounded-full bg-orange-500 text-white text-[8px] flex items-center justify-center">{materials.length}</span>}
@@ -724,13 +723,12 @@ const DailyLogDetailTabs: React.FC<Props> = ({
                         {filteredVolumeSourceOptions.map(option => (
                           <label
                             key={option.key}
-                            className={`flex items-start gap-2 px-3 py-2.5 border-b border-teal-50 last:border-b-0 cursor-pointer transition-colors ${
-                              option.alreadyAdded
+                            className={`flex items-start gap-2 px-3 py-2.5 border-b border-teal-50 last:border-b-0 cursor-pointer transition-colors ${option.alreadyAdded
                                 ? 'opacity-55 cursor-not-allowed bg-slate-50'
                                 : selectedVolumeSourceKeys.has(option.key)
                                   ? 'bg-teal-50'
                                   : 'hover:bg-teal-50/70'
-                            }`}
+                              }`}
                           >
                             <input
                               type="checkbox"
