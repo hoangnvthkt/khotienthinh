@@ -4,6 +4,7 @@ export const LEGACY_PROJECT_SUPPLY_ROUTE = '/da/tabs/supply';
 export const PROJECT_TAB_PERMISSIONS = [
   { key: 'executive', label: 'Điều hành', icon: '🏛️', route: '/da/tabs/executive' },
   { key: 'org', label: 'Tổ chức', icon: '👥', route: '/da/tabs/org' },
+  { key: 'finance', label: 'Tài chính', icon: '💹', route: '/da/tabs/finance' },
   { key: 'budget', label: 'Ngân sách', icon: '📊', route: '/da/tabs/budget' },
   { key: 'cashflow', label: 'Dòng tiền', icon: '💰', route: '/da/tabs/cashflow' },
   { key: 'contract', label: 'Hợp đồng', icon: '📋', route: '/da/tabs/contract' },
@@ -25,6 +26,12 @@ export const PROJECT_TAB_PERMISSIONS = [
 export type ProjectOverviewTabKey = typeof PROJECT_TAB_PERMISSIONS[number]['key'];
 export type ProjectTabPermissionRoute = typeof PROJECT_TAB_PERMISSIONS[number]['route'];
 
+export const PROJECT_FINANCE_LEGACY_TAB_KEYS = ['budget', 'cashflow', 'payment'] as const;
+export type ProjectFinanceLegacyTabKey = typeof PROJECT_FINANCE_LEGACY_TAB_KEYS[number];
+
+export const isProjectFinanceLegacyTabKey = (value?: string | null): value is ProjectFinanceLegacyTabKey =>
+  PROJECT_FINANCE_LEGACY_TAB_KEYS.some(key => key === value);
+
 export const PROJECT_TAB_ROUTES = PROJECT_TAB_PERMISSIONS.map(tab => tab.route);
 
 export const PROJECT_TAB_ROUTE_BY_KEY = PROJECT_TAB_PERMISSIONS.reduce((acc, tab) => {
@@ -39,6 +46,7 @@ export const PROJECT_MATERIAL_TAB_PERMISSIONS = [
   { key: 'boq', label: 'BOQ', route: '/da/tabs/material/boq' },
   { key: 'planning', label: 'Kế hoạch', route: '/da/tabs/material/planning' },
   { key: 'request', label: 'Yêu cầu', route: '/da/tabs/material/request' },
+  { key: 'custom', label: 'Phi tiêu chuẩn', route: '/da/tabs/material/custom' },
   { key: 'po', label: 'Đơn hàng PO', route: '/da/tabs/material/po' },
   { key: 'waste', label: 'Hao hụt', route: '/da/tabs/material/waste' },
   { key: 'dashboard', label: 'Dashboard', route: '/da/tabs/material/dashboard' },

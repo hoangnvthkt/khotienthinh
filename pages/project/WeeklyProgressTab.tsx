@@ -20,7 +20,7 @@ import { taskContractItemService } from '../../lib/taskContractItemService';
 import {
     projectWeeklyProgressService, getWeekStart, getISOWeekLabel,
     getProjectScopeKey, calculateWeeklyConstructionProgress, calculateProjectValueProgress,
-    addDaysToIsoDate, buildProgressSegments, getPreviousDailyQuantityDone,
+    addDaysToIsoDate, buildProgressSegments,
     mergeDailyProgressRows, mergeWeeklyProgressRows, rollupDailyRowsToWeeklyRows,
 } from '../../lib/projectWeeklyProgressService';
 import { deriveProjectTaskProgress, clampProgress } from '../../lib/projectScheduleRules';
@@ -819,7 +819,14 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
                 const quantityDone = draft.quantityDone === ''
                     ? (Number(task.provisionalQuantity || 0) > 0 ? (Number(task.provisionalQuantity) * progressPercent) / 100 : 0)
                     : parseNonNegativeNumber(draft.quantityDone);
-                const previousQuantityDone = getPreviousDailyQuantityDone(allDailyProgress, scopeKey, task.id, selectedProgressDate);
+                const previousDailyProgress = getLatestDailyProgressForTask(task.id, selectedProgressDate, false);
+                const latestDailyProgress = getLatestDailyProgressForTask(task.id, selectedProgressDate);
+                const exactDailyProgress = latestDailyProgress?.progressDate === selectedProgressDate ? latestDailyProgress : undefined;
+                const previousQuantityDone = previousDailyProgress
+                    ? Number(previousDailyProgress.quantityDone || 0)
+                    : exactDailyProgress
+                        ? Number(exactDailyProgress.quantityDone || 0) - Number(exactDailyProgress.dailyQuantityDone || 0)
+                        : defaultQuantityDone;
 
                 return {
                     scopeKey,
@@ -929,6 +936,7 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
         dailyDrafts,
         dailyLogs,
         ensureProjectPermission,
+        getLatestDailyProgressForTask,
         projectId,
         scopeKey,
         selectedProgressDate,

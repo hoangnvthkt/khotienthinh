@@ -21,6 +21,8 @@ import { useConfirm, useReasonConfirm } from '../../context/ConfirmContext';
 import { useApp } from '../../context/AppContext';
 import DailyLogDetailTabs from '../../components/project/DailyLogDetailTabs';
 import SafetyImageGalleryModal from '../../components/project/safety/SafetyImageGalleryModal';
+import { buildDailyLogVolumesFromDailyProgress } from '../../lib/dailyLogProgressImport';
+import { getProjectScopeKey, projectWeeklyProgressService } from '../../lib/projectWeeklyProgressService';
 
 interface DailyLogTabProps {
     constructionSiteId?: string;
@@ -667,6 +669,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     const reasonConfirm = useReasonConfirm();
     const { user, users, items: inventoryItems, warehouses, hrmConstructionSites, loadModuleData } = useApp();
     const effectiveId = projectId || constructionSiteId || '';
+    const scopeKey = useMemo(() => getProjectScopeKey(projectId || null, constructionSiteId || null), [constructionSiteId, projectId]);
     const [logs, setLogs] = useState<DailyLog[]>([]);
     const [tasks, setTasks] = useState<ProjectTask[]>([]);
     const [workBoqItems, setWorkBoqItems] = useState<ProjectWorkBoqItem[]>([]);
@@ -675,6 +678,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     const [machineCatalogs, setMachineCatalogs] = useState<ContractMachineCatalogItem[]>([]);
     const [businessPartners, setBusinessPartners] = useState<BusinessPartner[]>([]);
     const [savingLog, setSavingLog] = useState(false);
+    const [importingProgressVolumes, setImportingProgressVolumes] = useState(false);
     const savingLogRef = useRef(false);
     const statusBusyRef = useRef<Set<string>>(new Set());
     const logRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -1012,6 +1016,56 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
             setUploading(false);
         }
     };
+
+    const handleImportDailyProgressVolumes = useCallback(async () => {
+        if (!fDate) {
+            toast.warning('Chưa chọn ngày nhật ký');
+            return;
+        }
+        if (!scopeKey) {
+            toast.warning('Chưa xác định dự án', 'Cần chọn dự án/công trường trước khi lấy khối lượng.');
+            return;
+        }
+
+        const dateLabel = new Date(`${fDate}T00:00:00`).toLocaleDateString('vi-VN');
+        setImportingProgressVolumes(true);
+        try {
+            const dailyProgressRows = await projectWeeklyProgressService.listDailyByDate(scopeKey, fDate);
+            if (dailyProgressRows.length === 0) {
+                toast.info('Chưa có chốt tiến độ ngày', `Ngày ${dateLabel} chưa có dòng tiến độ đã chốt.`);
+                return;
+            }
+
+            const result = buildDailyLogVolumesFromDailyProgress({
+                dailyProgressRows,
+                tasks,
+                workBoqItems,
+                existingVolumes: fVolumes,
+            });
+
+            if (result.volumes.length === 0) {
+                const skipped = result.skippedDuplicateCount + result.skippedNonPositiveCount;
+                toast.info(
+                    'Chưa ghi nhận khối lượng hoàn thành',
+                    skipped > 0
+                        ? `Ngày ${dateLabel}: các dòng đã có trong nhật ký hoặc KL ngày bằng 0.`
+                        : `Ngày ${dateLabel} chưa có KL ngày phù hợp để nhập.`,
+                );
+                return;
+            }
+
+            setFVolumes(prev => [...prev, ...result.volumes]);
+            const skippedText = result.skippedDuplicateCount > 0
+                ? ` Bỏ qua ${result.skippedDuplicateCount} dòng đã có.`
+                : '';
+            toast.success('Đã lấy khối lượng từ chốt tiến độ', `Thêm ${result.volumes.length} dòng cho ngày ${dateLabel}.${skippedText}`);
+        } catch (error: any) {
+            console.error(error);
+            toast.error('Không thể lấy khối lượng', error?.message || 'Vui lòng thử lại.');
+        } finally {
+            setImportingProgressVolumes(false);
+        }
+    }, [fDate, fVolumes, scopeKey, tasks, toast, workBoqItems]);
 
     const recalculateTaskProgress = useCallback(async (nextLogs: DailyLog[], currentTasks = tasks) => {
         const derivedTasks = deriveProjectTaskProgress(currentTasks, completionRequests, nextLogs);
@@ -2543,6 +2597,9 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                 siteWarehouseName={siteWarehouse?.name}
                                 verifiedQuantityByTaskId={verifiedQuantityByTaskId}
                                 verifiedQuantityByWorkBoqItemId={verifiedQuantityByWorkBoqItemId}
+                                dailyProgressDate={fDate}
+                                importingDailyProgressVolumes={importingProgressVolumes}
+                                onImportDailyProgressVolumes={handleImportDailyProgressVolumes}
                             />
                         </div>
                         <div className="px-4 sm:px-6 py-3 sm:py-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] border-t border-slate-100 dark:border-slate-700/60 bg-slate-50/50 dark:bg-slate-900/45 flex justify-end gap-3 shrink-0">

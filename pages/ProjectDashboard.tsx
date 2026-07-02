@@ -39,14 +39,17 @@ import {
     PROJECT_TAB_PERMISSIONS,
     PROJECT_MATERIAL_TAB_PERMISSIONS,
     PROJECT_MATERIAL_TAB_ROUTE_BY_KEY,
+    PROJECT_FINANCE_LEGACY_TAB_KEYS,
     PROJECT_TAB_ROUTE_BY_KEY,
     LEGACY_PROJECT_SUPPLY_ROUTE,
     hasProjectMaterialTabPermissionRoute,
     hasProjectTabPermissionRoute,
+    isProjectFinanceLegacyTabKey,
     isProjectOverviewTabKey,
     type ProjectMaterialTabPermissionMap,
     type ProjectOverviewTabKey,
 } from '../lib/projectTabPermissions';
+import type { ProjectFinanceWorkspaceTab } from '../lib/projectFinanceWorkspaceService';
 import {
     BarChart3, TrendingUp, TrendingDown, DollarSign, Target, Percent,
     Plus, Edit2, Trash2, X, Check, Save, ChevronDown, ChevronLeft, ChevronRight, FileText,
@@ -64,6 +67,7 @@ const ContractTab = React.lazy(() => import('./project/ContractTab'));
 const GanttTab = React.lazy(() => import('./project/GanttTab'));
 const WeeklyProgressTab = React.lazy(() => import('./project/WeeklyProgressTab'));
 const DailyLogTab = React.lazy(() => import('./project/DailyLogTab'));
+const ProjectFinanceWorkspace = React.lazy(() => import('./project/ProjectFinanceWorkspace'));
 const PaymentWorkbenchTab = React.lazy(() => import('./project/PaymentWorkbenchTab'));
 const SubcontractTab = React.lazy(() => import('./project/SubcontractTab'));
 const MaterialTab = React.lazy(() => import('./project/MaterialTab'));
@@ -113,6 +117,16 @@ const PROGRESS_MODE_OPTIONS: { value: ProjectProgressCalculationMode; label: str
     { value: 'contract_value', label: 'Theo giá trị hợp đồng (VT cấp phát)' },
     { value: 'manual', label: 'Nhập thủ công' },
 ];
+
+const FINANCE_LEGACY_TAB_TO_WORKSPACE_TAB: Record<(typeof PROJECT_FINANCE_LEGACY_TAB_KEYS)[number], ProjectFinanceWorkspaceTab> = {
+    budget: 'budget',
+    cashflow: 'cashflow',
+    payment: 'payments',
+};
+
+const FINANCE_WORKSPACE_TABS: ProjectFinanceWorkspaceTab[] = ['overview', 'budget', 'payables', 'receivables', 'payments', 'cashflow', 'ledger'];
+const normalizeFinanceWorkspaceTab = (value?: string | null): ProjectFinanceWorkspaceTab | null =>
+    FINANCE_WORKSPACE_TABS.includes(value as ProjectFinanceWorkspaceTab) ? value as ProjectFinanceWorkspaceTab : null;
 
 const fmt = (n: number) => {
     if (n >= 1e9) return (n / 1e9).toFixed(1) + ' tỷ';
@@ -440,6 +454,10 @@ const ProjectDashboard: React.FC = () => {
             hasProjectMaterialTabPermissionRoute(allowedRoutes) ||
             hasProjectMaterialTabPermissionRoute(user.adminSubModules?.DA)
         )) return true;
+        if (tabKey === 'finance') {
+            return [tabKey, ...PROJECT_FINANCE_LEGACY_TAB_KEYS].some(key => allowedRoutes.includes(PROJECT_TAB_ROUTE_BY_KEY[key]));
+        }
+        if (isProjectFinanceLegacyTabKey(tabKey) && allowedRoutes.includes(PROJECT_TAB_ROUTE_BY_KEY.finance)) return true;
 
         return allowedRoutes.includes(PROJECT_TAB_ROUTE_BY_KEY[tabKey]);
     }, [user.adminSubModules, user.allowedModules, user.allowedSubModules, user.role]);
@@ -447,8 +465,13 @@ const ProjectDashboard: React.FC = () => {
     const canManageProjectTab = useCallback((tabKey: ProjectOverviewTabKey) => {
         if (user.role === Role.ADMIN) return true;
         if ((user.adminModules || []).includes('DA')) return true;
+        const adminRoutes = user.adminSubModules?.DA || [];
         if (tabKey === 'material' && user.adminSubModules?.DA?.includes(LEGACY_PROJECT_SUPPLY_ROUTE)) return true;
-        return Boolean(user.adminSubModules?.DA?.includes(PROJECT_TAB_ROUTE_BY_KEY[tabKey]));
+        if (tabKey === 'finance') {
+            return [tabKey, ...PROJECT_FINANCE_LEGACY_TAB_KEYS].some(key => adminRoutes.includes(PROJECT_TAB_ROUTE_BY_KEY[key]));
+        }
+        if (isProjectFinanceLegacyTabKey(tabKey) && adminRoutes.includes(PROJECT_TAB_ROUTE_BY_KEY.finance)) return true;
+        return Boolean(adminRoutes.includes(PROJECT_TAB_ROUTE_BY_KEY[tabKey]));
     }, [user.adminModules, user.adminSubModules, user.role]);
 
     const materialTabPermissions = useMemo<ProjectMaterialTabPermissionMap>(() => {
@@ -475,7 +498,7 @@ const ProjectDashboard: React.FC = () => {
     }, [canManageProjectTab, user.adminSubModules, user.allowedSubModules, user.role]);
 
     const visibleOverviewTabs = useMemo(
-        () => PROJECT_TAB_PERMISSIONS.filter(tab => canViewProjectTab(tab.key)),
+        () => PROJECT_TAB_PERMISSIONS.filter(tab => !isProjectFinanceLegacyTabKey(tab.key) && canViewProjectTab(tab.key)),
         [canViewProjectTab]
     );
     const defaultOverviewTab = visibleOverviewTabs[0]?.key || 'executive';
@@ -588,7 +611,7 @@ const ProjectDashboard: React.FC = () => {
 
     useEffect(() => {
         if (activeView !== 'overview') return;
-        if (!['budget', 'cashflow', 'contract', 'report'].includes(overviewTab)) return;
+        if (!['finance', 'budget', 'cashflow', 'contract', 'payment', 'report'].includes(overviewTab)) return;
         loadCustomerContracts();
     }, [activeView, loadCustomerContracts, overviewTab]);
 
@@ -621,9 +644,13 @@ const ProjectDashboard: React.FC = () => {
         if (canViewProjectTab(tabKey)) {
             const project = selectedProjectId ? projectRows.find(item => item.id === selectedProjectId) : null;
             const siteId = project?.constructionSiteId || selectedSiteId;
-            setOverviewTab(tabKey);
+            const financeWorkspaceTab = isProjectFinanceLegacyTabKey(tabKey)
+                ? FINANCE_LEGACY_TAB_TO_WORKSPACE_TAB[tabKey]
+                : null;
+            const targetTab: ProjectOverviewTabKey = financeWorkspaceTab ? 'finance' : tabKey;
+            setOverviewTab(targetTab);
             if (selectedProjectId) {
-                navigate(buildProjectDashboardPath(selectedProjectId, siteId, tabKey));
+                navigate(buildProjectDashboardPath(selectedProjectId, siteId, targetTab, financeWorkspaceTab ? { financeTab: financeWorkspaceTab } : undefined));
             }
             return;
         }
@@ -651,7 +678,8 @@ const ProjectDashboard: React.FC = () => {
             setSelectedSiteId(siteIdParam);
         }
 
-        if (isProjectOverviewTabKey(tab)) setOverviewTab(tab);
+        if (isProjectFinanceLegacyTabKey(tab)) setOverviewTab('finance');
+        else if (isProjectOverviewTabKey(tab)) setOverviewTab(tab);
         setActiveView('overview');
     }, [location.search, projectRows]);
 
@@ -2950,6 +2978,12 @@ const ProjectDashboard: React.FC = () => {
                 <p className="text-xs text-slate-400 mt-1">Bấm "Dự án" để chọn công trường đã tạo tại HrmConstructionSite.</p>
             </div>
         );
+        const projectTransactionsForScope = projectTransactions.filter(t => matchesProjectScope(t, selectedProject.id, effectiveSiteId));
+        const routeParams = new URLSearchParams(location.search);
+        const routeTab = routeParams.get('tab');
+        const financeInitialTab: ProjectFinanceWorkspaceTab = isProjectFinanceLegacyTabKey(routeTab)
+            ? FINANCE_LEGACY_TAB_TO_WORKSPACE_TAB[routeTab]
+            : normalizeFinanceWorkspaceTab(routeParams.get('financeTab')) || 'overview';
 
         return (
             <div className="space-y-6">
@@ -3079,12 +3113,24 @@ const ProjectDashboard: React.FC = () => {
                         ) : renderSiteRequired('Điều hành')
                     ) : overviewTab === 'org' ? (
                         <ProjectOrgTab projectId={selectedProject.id} constructionSiteId={effectiveSiteId} canManageTab={canManageProjectTab('org')} />
+                    ) : overviewTab === 'finance' ? (
+                        hasSiteLink ? (
+                            <ProjectFinanceWorkspace
+                                constructionSiteId={effectiveSiteId!}
+                                projectId={selectedProject.id}
+                                transactions={projectTransactionsForScope}
+                                contractValue={contractValue}
+                                canManageFinance={canManageProjectTab('finance')}
+                                canManagePayment={canManageProjectTab('payment')}
+                                initialTab={financeInitialTab}
+                            />
+                        ) : renderSiteRequired('Tài chính')
                     ) : overviewTab === 'cashflow' ? (
                         hasSiteLink ? (
                             <CashFlowTab
                                 constructionSiteId={effectiveSiteId!}
                                 projectId={selectedProject.id}
-                                transactions={projectTransactions.filter(t => matchesProjectScope(t, selectedProject.id, effectiveSiteId))}
+                                transactions={projectTransactionsForScope}
                                 contractValue={contractValue}
                             />
                         ) : renderSiteRequired('Dòng tiền')
@@ -3110,6 +3156,9 @@ const ProjectDashboard: React.FC = () => {
                         <MaterialTab
                             constructionSiteId={effectiveSiteId || undefined}
                             projectId={selectedProject.id}
+                            project={selectedProject}
+                            projectFinance={selectedFinance}
+                            siteName={selectedSite?.name}
                             canManageTab={canManageProjectTab('material')}
                             materialPermissions={materialTabPermissions}
                         />

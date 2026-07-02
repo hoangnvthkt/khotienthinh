@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, User as UserIcon, Mail, Phone, Shield, Building, Save, Package, Briefcase, GitBranch, BarChart3, Landmark, Loader2, Crown, Inbox, LayoutDashboard, MapPin, Users, Calendar, Clock, CalendarOff, DollarSign, FileSignature, FolderOpen, History, ArrowLeftRight, ClipboardCheck, FileSpreadsheet, FileText, Workflow, Layers, Repeat, Wrench, IdCard, CreditCard, Calculator, Bot, BrainCircuit, Copy, ClipboardPaste, Settings as SettingsIcon, ShoppingCart, MessageCircle } from 'lucide-react';
+import { X, User as UserIcon, Mail, Phone, Shield, Building, Save, Package, Briefcase, GitBranch, BarChart3, Landmark, Loader2, Crown, Inbox, LayoutDashboard, MapPin, Users, Calendar, Clock, CalendarOff, DollarSign, FileSignature, FolderOpen, History, ArrowLeftRight, ClipboardCheck, FileSpreadsheet, FileText, Workflow, Layers, Repeat, Wrench, IdCard, CreditCard, Calculator, Bot, BrainCircuit, Copy, ClipboardPaste, Settings as SettingsIcon, ShoppingCart, MessageCircle, BellRing } from 'lucide-react';
 import { Role, User, Warehouse } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { useToast } from '../context/ToastContext';
@@ -13,6 +13,7 @@ import { isChatEnabled } from '../lib/featureFlags';
 const PROJECT_TAB_PERMISSION_ICONS: Record<ProjectOverviewTabKey, any> = {
   executive: LayoutDashboard,
   org: Users,
+  finance: DollarSign,
   budget: DollarSign,
   cashflow: Repeat,
   contract: FileSignature,
@@ -33,6 +34,7 @@ const PROJECT_MATERIAL_TAB_PERMISSION_ICONS: Record<ProjectMaterialTabKey, any> 
   boq: FileSpreadsheet,
   planning: Clock,
   request: Package,
+  custom: ClipboardPaste,
   po: FileSignature,
   waste: History,
   dashboard: LayoutDashboard,
@@ -67,6 +69,7 @@ const SETTINGS_FEATURE_ICONS: Record<(typeof SETTINGS_FEATURES)[number]['id'], a
   'loss-norms': BarChart3,
   'hrm-master-data': Briefcase,
   users: Users,
+  alerts: BellRing,
   'chibi-bot': Bot,
   'ai-learning': BrainCircuit,
   maintenance: Wrench,

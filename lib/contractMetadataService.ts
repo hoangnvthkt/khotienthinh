@@ -29,6 +29,7 @@ const mapMaterialNorm = (row: any): ContractMaterialNormItem => fromDb(row) as C
 const mapCostItem = (row: any): ContractCostItem => fromDb(row) as ContractCostItem;
 const mapInventoryItem = (row: any): InventoryItem => fromDb({
   ...row,
+  accounting_code: row.accounting_code ?? row.accountingCode ?? null,
   stock_by_warehouse: row.stock_by_warehouse || {},
 }) as InventoryItem;
 
@@ -366,7 +367,7 @@ export const contractCatalogInventoryService = {
     if (!isSupabaseConfigured) return [];
     const { data, error } = await supabase
       .from('items')
-      .select('id, sku, name, category, unit, purchase_unit, purchase_conversion_factor, price_in, price_out, min_stock, supplier_id, image_url, location, stock_by_warehouse')
+      .select('id, sku, accounting_code, name, category, unit, purchase_unit, purchase_conversion_factor, price_in, price_out, min_stock, supplier_id, image_url, location, stock_by_warehouse')
       .order('name', { ascending: true });
     if (error) throw error;
     return (data || []).map(mapInventoryItem);

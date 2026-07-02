@@ -7,6 +7,7 @@ import {
   ClipboardList,
   Eye,
   EyeOff,
+  FileSpreadsheet,
   FileText,
   Loader2,
   PackageCheck,
@@ -24,6 +25,8 @@ import { useApp } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { companyProcurementService } from '../../lib/companyProcurementService';
+import { customMaterialRequestService } from '../../lib/customMaterialRequestService';
+import { formatCustomMaterialLineSpec } from '../../lib/customMaterialTemplates';
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
 import { partnerService } from '../../lib/partnerService';
 import { projectMasterService } from '../../lib/projectMasterService';
@@ -44,13 +47,15 @@ import {
   CompanyProcurementCreateLine,
   CompanyProcurementDeliveryGroupDetail,
   CompanyProcurementDemandLine,
+  CustomMaterialDemandLine,
+  CustomMaterialRfq,
   Project,
   PurchaseOrder,
   PurchaseOrderRequestLineLink,
   RequestStatus,
 } from '../../types';
 
-type TabKey = 'demand' | 'po' | 'delivery' | 'reconcile';
+type TabKey = 'demand' | 'custom' | 'po' | 'delivery' | 'reconcile';
 
 type DraftLine = {
   vendorId: string;
@@ -77,6 +82,16 @@ type DeliveryEditDraft = {
     issuedQty: string;
     deliveryUnitPrice: string;
   }>;
+};
+
+type CustomQuoteDraft = {
+  rfqId: string;
+  supplierId: string;
+  supplierName: string;
+  quoteUnitPrice: string;
+  quoteAmount: string;
+  deliveryDate: string;
+  note: string;
 };
 
 const formatQty = (value: number) =>
@@ -287,9 +302,14 @@ const CompanyProcurement: React.FC = () => {
   const [demandRows, setDemandRows] = useState<CompanyProcurementDemandLine[]>([]);
   const [companyPos, setCompanyPos] = useState<PurchaseOrder[]>([]);
   const [deliveryGroups, setDeliveryGroups] = useState<CompanyProcurementDeliveryGroupDetail[]>([]);
+  const [customDemandRows, setCustomDemandRows] = useState<CustomMaterialDemandLine[]>([]);
+  const [customRfqs, setCustomRfqs] = useState<CustomMaterialRfq[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [partners, setPartners] = useState<BusinessPartner[]>([]);
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
+  const [selectedCustomKeys, setSelectedCustomKeys] = useState<string[]>([]);
+  const [customSupplierId, setCustomSupplierId] = useState('');
+  const [customQuoteDraft, setCustomQuoteDraft] = useState<CustomQuoteDraft | null>(null);
   const [draftByKey, setDraftByKey] = useState<Record<string, DraftLine>>({});
   const [query, setQuery] = useState('');
   const [warehouseFilter, setWarehouseFilter] = useState('');
@@ -322,12 +342,19 @@ const CompanyProcurement: React.FC = () => {
         projectMasterService.list(),
         partnerService.list({ classification: 'supplier' }),
       ]);
+      const [customDemand, rfqs] = await Promise.all([
+        customMaterialRequestService.listApprovedDemand(),
+        customMaterialRequestService.listRfqs(),
+      ]);
       setDemandRows(demand);
       setCompanyPos(pos);
       setDeliveryGroups(groups);
+      setCustomDemandRows(customDemand);
+      setCustomRfqs(rfqs);
       setProjects(projectRows);
       setPartners(partnerRows);
       setSelectedKeys(prev => prev.filter(key => demand.some(row => row.key === key)));
+      setSelectedCustomKeys(prev => prev.filter(key => customDemand.some(row => row.key === key)));
     } catch (err: any) {
       logApiError('companyProcurement.refresh', err);
       toast.error('Không tải được dữ liệu mua hàng', getApiErrorMessage(err));
@@ -349,14 +376,39 @@ const CompanyProcurement: React.FC = () => {
     });
   }, [demandRows, getProjectName, getWarehouseName, query, warehouseFilter]);
 
+  const filteredCustomDemandRows = useMemo(() => {
+    const lower = query.trim().toLowerCase();
+    return customDemandRows.filter(row => {
+      if (!lower) return true;
+      return [
+        row.request.code,
+        row.request.title,
+        row.request.workPackage,
+        row.line.lineCode,
+        row.line.description,
+        row.line.color,
+        getProjectName(row.projectId),
+      ].filter(Boolean).join(' ').toLowerCase().includes(lower);
+    });
+  }, [customDemandRows, getProjectName, query]);
+
   const selectedRows = useMemo(() =>
     selectedKeys.map(key => demandRows.find(row => row.key === key)).filter((row): row is CompanyProcurementDemandLine => !!row),
     [demandRows, selectedKeys]);
+
+  const selectedCustomRows = useMemo(() =>
+    selectedCustomKeys.map(key => customDemandRows.find(row => row.key === key)).filter((row): row is CustomMaterialDemandLine => !!row),
+    [customDemandRows, selectedCustomKeys]);
 
   const selectedSummary = useMemo(() => selectedRows.reduce((acc, row) => ({
     qty: acc.qty + row.remainingQty,
     value: acc.value + Number(draftByKey[row.key]?.orderStockQty || row.remainingQty) * Number(draftByKey[row.key]?.stockUnitPrice || itemById.get(row.itemId)?.priceIn || 0),
   }), { qty: 0, value: 0 }), [draftByKey, itemById, selectedRows]);
+
+  const selectedCustomSummary = useMemo(() => selectedCustomRows.reduce((acc, row) => ({
+    qty: acc.qty + row.openQty,
+    value: acc.value + Number(row.line.quoteAmount || (Number(row.line.quoteUnitPrice || 0) * row.openQty) || 0),
+  }), { qty: 0, value: 0 }), [selectedCustomRows]);
 
   const toggleRow = (row: CompanyProcurementDemandLine) => {
     const selected = selectedKeys.includes(row.key);
@@ -386,6 +438,12 @@ const CompanyProcurement: React.FC = () => {
         ...patch,
       },
     }));
+  };
+
+  const toggleCustomRow = (row: CustomMaterialDemandLine) => {
+    setSelectedCustomKeys(prev => prev.includes(row.key)
+      ? prev.filter(key => key !== row.key)
+      : [...prev, row.key]);
   };
 
   const handleCreatePo = async () => {
@@ -425,6 +483,112 @@ const CompanyProcurement: React.FC = () => {
     } catch (err: any) {
       logApiError('companyProcurement.createPo', err);
       toast.error('Không tạo được PO gộp', getApiErrorMessage(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCreateCustomRfq = async () => {
+    if (saving || selectedCustomRows.length === 0) return;
+    const supplier = customSupplierId ? partnerById.get(customSupplierId) : null;
+    if (!supplier) {
+      toast.warning('Chưa chọn nhà cung cấp', 'Chọn một NCC để tạo RFQ phi tiêu chuẩn.');
+      return;
+    }
+    setSaving(true);
+    try {
+      const rfq = await customMaterialRequestService.createRfq({
+        lines: selectedCustomRows,
+        suppliers: [supplier],
+        title: `RFQ vật tư phi tiêu chuẩn ${selectedCustomRows[0].request.code}`,
+        note: `Tạo RFQ từ ${selectedCustomRows.length} dòng phi tiêu chuẩn`,
+        actorUserId: user.id,
+      });
+      toast.success('Đã tạo RFQ', `${rfq.rfqNo} đã sẵn sàng gửi ${supplier.name}.`);
+      setSelectedCustomKeys([]);
+      setCustomSupplierId('');
+      await refresh();
+      setActiveTab('custom');
+    } catch (err: any) {
+      logApiError('companyProcurement.createCustomRfq', err);
+      toast.error('Không tạo được RFQ', getApiErrorMessage(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSaveCustomQuote = async () => {
+    if (!customQuoteDraft || saving) return;
+    if (Number(customQuoteDraft.quoteUnitPrice || 0) <= 0 && Number(customQuoteDraft.quoteAmount || 0) <= 0) {
+      toast.warning('Thiếu báo giá', 'Nhập đơn giá hoặc tổng giá trị báo giá.');
+      return;
+    }
+    setSaving(true);
+    try {
+      await customMaterialRequestService.addSupplierQuote({
+        rfqId: customQuoteDraft.rfqId,
+        supplierId: customQuoteDraft.supplierId,
+        supplierName: customQuoteDraft.supplierName,
+        quoteUnitPrice: Number(customQuoteDraft.quoteUnitPrice || 0),
+        quoteAmount: Number(customQuoteDraft.quoteAmount || 0) || null,
+        deliveryDate: customQuoteDraft.deliveryDate || null,
+        note: customQuoteDraft.note || null,
+      });
+      toast.success('Đã ghi nhận báo giá', customQuoteDraft.supplierName);
+      setCustomQuoteDraft(null);
+      await refresh();
+    } catch (err: any) {
+      logApiError('companyProcurement.saveCustomQuote', err);
+      toast.error('Không lưu được báo giá', getApiErrorMessage(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleExportCustomRfq = async (rfq: CustomMaterialRfq) => {
+    try {
+      const blob = await customMaterialRequestService.exportRfq(rfq, customDemandRows);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${rfq.rfqNo}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      logApiError('companyProcurement.exportCustomRfq', err);
+      toast.error('Không xuất được RFQ', getApiErrorMessage(err));
+    }
+  };
+
+  const handleCreateCustomPo = async () => {
+    if (saving || selectedCustomRows.length === 0) return;
+    const supplierIds = Array.from(new Set(selectedCustomRows.map(row => row.line.selectedSupplierId).filter(Boolean)));
+    if (supplierIds.length !== 1) {
+      toast.warning('Chọn dòng cùng một NCC', 'Các dòng tạo PO cần có báo giá và cùng một nhà cung cấp.');
+      return;
+    }
+    const supplierId = supplierIds[0]!;
+    const supplierName = selectedCustomRows.find(row => row.line.selectedSupplierId === supplierId)?.line.selectedSupplierName
+      || partnerById.get(supplierId)?.name
+      || supplierId;
+    setSaving(true);
+    try {
+      const po = await customMaterialRequestService.createPoFromQuotedLines({
+        lines: selectedCustomRows,
+        supplierId,
+        supplierName,
+        actorUserId: user.id,
+        note: `PO phi tiêu chuẩn từ ${selectedCustomRows.length} dòng CMR`,
+      });
+      toast.success('Đã tạo PO phi tiêu chuẩn', po.poNumber);
+      setSelectedCustomKeys([]);
+      await refresh();
+      setActiveTab('po');
+    } catch (err: any) {
+      logApiError('companyProcurement.createCustomPo', err);
+      toast.error('Không tạo được PO phi tiêu chuẩn', getApiErrorMessage(err));
     } finally {
       setSaving(false);
     }
@@ -730,6 +894,7 @@ const CompanyProcurement: React.FC = () => {
 
   const tabs: Array<{ key: TabKey; label: string; icon: React.ElementType; count?: number }> = [
     { key: 'demand', label: 'Nhu cầu chờ mua', icon: ClipboardList, count: demandRows.length },
+    { key: 'custom', label: 'Phi tiêu chuẩn', icon: FileSpreadsheet, count: customDemandRows.length },
     { key: 'po', label: 'PO công ty', icon: ShoppingCart, count: companyPos.length },
     { key: 'delivery', label: 'Lịch giao hàng', icon: Truck, count: deliveryGroups.length },
     { key: 'reconcile', label: 'Đối chiếu', icon: BarChart3 },
@@ -934,6 +1099,179 @@ const CompanyProcurement: React.FC = () => {
                   </div>
                 </div>
                 )}
+              </div>
+            )}
+
+            {activeTab === 'custom' && (
+              <div className="space-y-4">
+                <FilterBar
+                  searchValue={query}
+                  onSearchChange={setQuery}
+                  searchPlaceholder="Tìm CMR, mã dòng, quy cách, màu, công trình"
+                  filters={
+                    <>
+                      <SupplierCombobox
+                        value={customSupplierId}
+                        suppliers={partners}
+                        onChange={partner => setCustomSupplierId(partner?.id || '')}
+                        placeholder="Chọn NCC tạo RFQ..."
+                        inputClassName="rounded-lg py-2 text-sm min-w-[260px]"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleCreateCustomRfq}
+                        disabled={saving || selectedCustomRows.length === 0 || !customSupplierId}
+                        className="inline-flex min-h-10 items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-blue-600 bg-blue-600 px-4 py-2 text-sm font-black text-white shadow-sm transition hover:bg-blue-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-slate-300 dark:disabled:border-slate-700 dark:disabled:bg-slate-800"
+                      >
+                        {saving ? <Loader2 size={16} className="animate-spin" /> : <FileSpreadsheet size={16} />}
+                        Tạo RFQ
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleCreateCustomPo}
+                        disabled={saving || selectedCustomRows.length === 0}
+                        className="inline-flex min-h-10 items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-emerald-600 bg-emerald-600 px-4 py-2 text-sm font-black text-white shadow-sm transition hover:bg-emerald-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-slate-300 dark:disabled:border-slate-700 dark:disabled:bg-slate-800"
+                      >
+                        {saving ? <Loader2 size={16} className="animate-spin" /> : <ShoppingCart size={16} />}
+                        Tạo PO custom
+                      </button>
+                    </>
+                  }
+                  summary={selectedCustomRows.length > 0 ? (
+                    <>Đã chọn {selectedCustomRows.length} dòng, SL còn cần {formatQty(selectedCustomSummary.qty)}, giá trị báo giá {formatMoney(selectedCustomSummary.value)}.</>
+                  ) : null}
+                />
+
+                {filteredCustomDemandRows.length === 0 ? (
+                  <EmptyState
+                    icon={<FileSpreadsheet size={18} />}
+                    title="Không có dòng phi tiêu chuẩn chờ xử lý"
+                    message="Các phiếu CMR đã duyệt sẽ xuất hiện tại đây để tạo RFQ và PO."
+                  />
+                ) : (
+                  <div className={tableSurfaceClass}>
+                    <div className="overflow-x-auto">
+                      <table className="min-w-[1360px] w-full table-fixed text-left text-sm">
+                        <thead className={tableHeadClass}>
+                          <tr>
+                            <th className="w-10 px-2 py-3"></th>
+                            <th className="w-56 px-2 py-3">CMR / Dòng</th>
+                            <th className="w-56 px-2 py-3">Dự án</th>
+                            <th className="w-72 px-2 py-3">Quy cách</th>
+                            <th className="w-24 px-2 py-3 text-right">SL</th>
+                            <th className="w-24 px-2 py-3 text-right">M2</th>
+                            <th className="w-24 px-2 py-3 text-right">Md</th>
+                            <th className="w-36 px-2 py-3">Màu</th>
+                            <th className="w-36 px-2 py-3 text-right">Đơn giá</th>
+                            <th className="w-40 px-2 py-3 text-right">Báo giá</th>
+                            <th className="w-52 px-2 py-3">NCC chọn</th>
+                            <th className="w-28 px-2 py-3 text-center">Trạng thái</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                          {filteredCustomDemandRows.map(row => {
+                            const selected = selectedCustomKeys.includes(row.key);
+                            return (
+                              <tr key={row.key} className={selected ? 'bg-blue-50/70 dark:bg-blue-950/20' : ''}>
+                                <td className="px-2 py-3">
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleCustomRow(row)}
+                                    className={`flex h-6 w-6 items-center justify-center rounded border ${selected ? 'border-blue-500 bg-blue-600 text-white' : 'border-slate-300 bg-white text-transparent dark:border-slate-700 dark:bg-slate-950'}`}
+                                  >
+                                    <Check size={14} />
+                                  </button>
+                                </td>
+                                <td className="px-2 py-3">
+                                  <div className="font-mono text-xs font-black text-blue-700">{row.request.code}</div>
+                                  <div className="mt-1 font-mono text-[11px] font-bold text-slate-500">{row.line.lineCode}</div>
+                                  <div className="mt-1 text-[11px] font-semibold text-slate-500">{row.request.neededDate || 'Chưa có ngày cần hàng'}</div>
+                                </td>
+                                <td className="px-2 py-3">
+                                  <div className="font-bold text-slate-800 dark:text-slate-100">{getProjectName(row.projectId)}</div>
+                                  <div className="mt-1 text-xs font-semibold text-slate-500">{row.request.workPackage || row.request.workSection || '—'}</div>
+                                </td>
+                                <td className="px-2 py-3">
+                                  <div className="font-black text-slate-900 dark:text-slate-100">{row.line.description}</div>
+                                  <div className="mt-1 text-[11px] font-semibold text-slate-500">
+                                    {formatCustomMaterialLineSpec(row.line) || 'Thông số trong file đính kèm'}
+                                  </div>
+                                  {row.line.technicalNote && <div className="mt-1 rounded bg-slate-50 px-2 py-1 text-[11px] font-bold text-slate-500 dark:bg-slate-800">{row.line.technicalNote}</div>}
+                                </td>
+                                <td className="px-2 py-3 text-right font-black">{formatQty(row.openQty)} {row.line.unit}</td>
+                                <td className="px-2 py-3 text-right font-bold">{row.line.areaM2 == null ? '—' : formatQty(Number(row.line.areaM2))}</td>
+                                <td className="px-2 py-3 text-right font-bold">{row.line.lengthMd == null ? '—' : formatQty(Number(row.line.lengthMd))}</td>
+                                <td className="px-2 py-3 font-bold">{row.line.color || '—'}</td>
+                                <td className="px-2 py-3 text-right font-bold">{row.line.quoteUnitPrice ? formatMoney(Number(row.line.quoteUnitPrice)) : '—'}</td>
+                                <td className="px-2 py-3 text-right font-black">{row.line.quoteAmount ? formatMoney(Number(row.line.quoteAmount)) : row.line.quoteUnitPrice ? formatMoney(Number(row.line.quoteUnitPrice) * row.openQty) : '—'}</td>
+                                <td className="px-2 py-3">
+                                  <div className="font-bold text-slate-700 dark:text-slate-200">{row.line.selectedSupplierName || '—'}</div>
+                                </td>
+                                <td className="px-2 py-3 text-center">
+                                  <StatusBadge status={row.line.status} label={row.line.status} tone={row.line.status === 'quoted' ? 'success' : row.line.status === 'approved' ? 'warning' : 'info'} showDot={false} />
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid gap-3 xl:grid-cols-2">
+                  {customRfqs.length === 0 ? (
+                    <div className="rounded-lg border border-dashed border-slate-200 bg-white p-8 text-center text-sm font-bold text-slate-400 dark:border-slate-800 dark:bg-slate-900">
+                      Chưa có RFQ phi tiêu chuẩn
+                    </div>
+                  ) : customRfqs.map(rfq => (
+                    <div key={rfq.id} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                        <div>
+                          <div className="font-mono text-sm font-black text-blue-700">{rfq.rfqNo}</div>
+                          <div className="mt-1 text-sm font-black text-slate-800 dark:text-white">{rfq.title || 'RFQ phi tiêu chuẩn'}</div>
+                          <div className="mt-1 text-xs font-bold text-slate-500">{rfq.lineIds?.length || 0} dòng • {rfq.suppliers?.length || 0} NCC</div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleExportCustomRfq(rfq)}
+                          className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950"
+                        >
+                          <FileSpreadsheet size={14} /> Xuất RFQ
+                        </button>
+                      </div>
+                      <div className="mt-3 space-y-2">
+                        {(rfq.suppliers || []).map(supplier => (
+                          <div key={supplier.id} className="flex flex-col gap-2 rounded-md border border-slate-100 p-3 dark:border-slate-800 md:flex-row md:items-center md:justify-between">
+                            <div>
+                              <div className="font-bold text-slate-800 dark:text-white">{supplier.supplierName || supplier.supplierId}</div>
+                              <div className="mt-1 text-xs font-bold text-slate-500">
+                                {supplier.status === 'quoted'
+                                  ? `Đơn giá ${formatMoney(Number(supplier.quoteUnitPrice || 0))} • Tổng ${supplier.quoteAmount ? formatMoney(Number(supplier.quoteAmount)) : '—'}`
+                                  : 'Chờ nhập báo giá'}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setCustomQuoteDraft({
+                                rfqId: rfq.id,
+                                supplierId: supplier.supplierId,
+                                supplierName: supplier.supplierName || supplier.supplierId,
+                                quoteUnitPrice: supplier.quoteUnitPrice ? String(supplier.quoteUnitPrice) : '',
+                                quoteAmount: supplier.quoteAmount ? String(supplier.quoteAmount) : '',
+                                deliveryDate: supplier.deliveryDate || '',
+                                note: supplier.note || '',
+                              })}
+                              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-xs font-black text-emerald-700 hover:bg-emerald-100"
+                            >
+                              <Save size={14} /> Nhập báo giá
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 
@@ -1288,6 +1626,70 @@ const CompanyProcurement: React.FC = () => {
           </>
         )}
       </div>
+
+      {customQuoteDraft && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
+          <div className="w-full max-w-xl rounded-lg bg-white shadow-xl dark:bg-slate-900">
+            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+              <div>
+                <h2 className="text-lg font-black text-slate-900 dark:text-white">Nhập báo giá RFQ</h2>
+                <p className="mt-1 text-sm font-bold text-slate-500">{customQuoteDraft.supplierName}</p>
+              </div>
+              <button type="button" onClick={() => setCustomQuoteDraft(null)} className="rounded-md p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="grid gap-4 p-5 md:grid-cols-2">
+              <label className="grid gap-1 text-xs font-black uppercase text-slate-500">
+                Đơn giá
+                <input
+                  type="number"
+                  min="0"
+                  value={customQuoteDraft.quoteUnitPrice}
+                  onChange={event => setCustomQuoteDraft(prev => prev ? { ...prev, quoteUnitPrice: event.target.value } : prev)}
+                  className="h-10 rounded-md border border-slate-200 bg-white px-3 text-right text-sm font-bold text-slate-800 outline-none focus:border-emerald-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                />
+              </label>
+              <label className="grid gap-1 text-xs font-black uppercase text-slate-500">
+                Tổng báo giá
+                <input
+                  type="number"
+                  min="0"
+                  value={customQuoteDraft.quoteAmount}
+                  onChange={event => setCustomQuoteDraft(prev => prev ? { ...prev, quoteAmount: event.target.value } : prev)}
+                  className="h-10 rounded-md border border-slate-200 bg-white px-3 text-right text-sm font-bold text-slate-800 outline-none focus:border-emerald-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                />
+              </label>
+              <label className="grid gap-1 text-xs font-black uppercase text-slate-500">
+                Ngày giao dự kiến
+                <input
+                  type="date"
+                  value={customQuoteDraft.deliveryDate}
+                  onChange={event => setCustomQuoteDraft(prev => prev ? { ...prev, deliveryDate: event.target.value } : prev)}
+                  className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm font-bold text-slate-800 outline-none focus:border-emerald-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                />
+              </label>
+              <label className="grid gap-1 text-xs font-black uppercase text-slate-500 md:col-span-2">
+                Ghi chú
+                <textarea
+                  value={customQuoteDraft.note}
+                  onChange={event => setCustomQuoteDraft(prev => prev ? { ...prev, note: event.target.value } : prev)}
+                  className="min-h-[86px] rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-bold normal-case text-slate-800 outline-none focus:border-emerald-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                />
+              </label>
+            </div>
+            <div className="flex justify-end gap-2 border-t border-slate-200 px-5 py-4 dark:border-slate-800">
+              <button type="button" onClick={() => setCustomQuoteDraft(null)} className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-black text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200">
+                Huỷ
+              </button>
+              <button type="button" onClick={handleSaveCustomQuote} disabled={saving} className="inline-flex h-10 items-center gap-2 rounded-lg bg-emerald-600 px-4 text-sm font-black text-white hover:bg-emerald-700 disabled:opacity-60">
+                {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                Lưu báo giá
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {selectedPoForDelivery && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">

@@ -11,11 +11,27 @@ import {
 } from '../types';
 import { fromDb, toDb } from './dbMapping';
 import { getExcelCell, parseExcelRows } from './excelImport';
+import { loadXlsx } from './loadXlsx';
 import { getWeekStart, projectWeeklyProgressService } from './projectWeeklyProgressService';
 import { isSupabaseConfigured, supabase } from './supabase';
 
 const BALANCE_TABLE = 'project_opening_balances';
 const LINE_TABLE = 'project_opening_balance_lines';
+
+export interface ProjectOpeningBalanceImportTotals {
+  purchasedValue: number;
+  issuedValue: number;
+  usedValue: number;
+  remainingQty: number;
+  remainingValue: number;
+}
+
+export interface ProjectOpeningBalanceImportResult {
+  rows: ProjectOpeningBalanceImportRow[];
+  totals: ProjectOpeningBalanceImportTotals;
+  errors: string[];
+  warnings: string[];
+}
 
 const numberOrZero = (value: unknown): number => {
   if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
@@ -31,8 +47,64 @@ const clampPercent = (value: unknown): number => Math.min(100, Math.max(0, numbe
 const cleanUndefined = <T extends Record<string, unknown>>(input: T): T =>
   Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined)) as T;
 
-export const calculateOpeningRecognizedValue = (purchasedValue: number, issuedValue: number): number =>
-  Math.max(0, Number(purchasedValue || 0), Number(issuedValue || 0));
+export const calculateOpeningRecognizedValue = (
+  purchasedValue: number,
+  issuedValue: number,
+  usedValue?: number,
+): number => {
+  const used = Math.max(0, Number(usedValue || 0));
+  const issued = Math.max(0, Number(issuedValue || 0));
+  const purchased = Math.max(0, Number(purchasedValue || 0));
+  return used > 0 ? used : issued > 0 ? issued : purchased;
+};
+
+const accountingExpenseValue = (balance: ProjectOpeningBalance): number =>
+  calculateOpeningRecognizedValue(balance.purchasedValue, balance.issuedValue, balance.usedValue);
+
+const normalizeLookupText = (value: unknown): string =>
+  String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+
+const normalizeSkuPart = (value: unknown): string =>
+  String(value || '')
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'D')
+    .replace(/Đ/g, 'D')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'OPEN';
+
+const specKey = (accountingCode?: string | null, itemName?: string | null): string =>
+  `${normalizeLookupText(accountingCode)}::${normalizeLookupText(itemName)}`;
+
+const emptyImportTotals = (): ProjectOpeningBalanceImportTotals => ({
+  purchasedValue: 0,
+  issuedValue: 0,
+  usedValue: 0,
+  remainingQty: 0,
+  remainingValue: 0,
+});
+
+const summarizeImportRows = (rows: ProjectOpeningBalanceImportRow[]): ProjectOpeningBalanceImportTotals =>
+  rows.reduce((totals, row) => {
+    const unitPrice = Number(row.unitPrice || 0);
+    const purchasedAmount = Number(row.purchasedAmount || 0) || Number(row.purchasedQty || 0) * unitPrice;
+    const issuedAmount = Number(row.issuedAmount || 0) || Number(row.issuedQty || 0) * unitPrice;
+    totals.purchasedValue += Math.max(0, purchasedAmount);
+    totals.issuedValue += Math.max(0, issuedAmount);
+    totals.usedValue += Math.max(0, issuedAmount);
+    totals.remainingQty += Math.max(0, Number(row.remainingQty || 0));
+    totals.remainingValue += Math.max(0, Number(row.remainingValue || 0));
+    return totals;
+  }, emptyImportTotals());
 
 export const normalizeOpeningBalance = (
   balance: ProjectOpeningBalance,
@@ -43,7 +115,7 @@ export const normalizeOpeningBalance = (
   purchasedValue: Math.max(0, Number(balance.purchasedValue || 0)),
   issuedValue: Math.max(0, Number(balance.issuedValue || 0)),
   usedValue: Math.max(0, Number(balance.usedValue || 0)),
-  recognizedValue: calculateOpeningRecognizedValue(balance.purchasedValue, balance.issuedValue),
+  recognizedValue: calculateOpeningRecognizedValue(balance.purchasedValue, balance.issuedValue, balance.usedValue),
   stockTransactionIds: balance.stockTransactionIds || [],
 });
 
@@ -52,6 +124,7 @@ const normalizeLine = (line: ProjectOpeningBalanceLine): ProjectOpeningBalanceLi
   const remainingQty = Math.max(0, Number(line.remainingQty || 0));
   return {
     ...line,
+    accountingCode: String(line.accountingCode || '').trim() || null,
     sku: String(line.sku || '').trim(),
     itemName: String(line.itemName || '').trim(),
     unit: String(line.unit || 'Cái').trim() || 'Cái',
@@ -99,6 +172,7 @@ const lineToDb = (line: ProjectOpeningBalanceLine, openingBalanceId: string): Re
 const itemToDb = (item: InventoryItem): Record<string, unknown> => ({
   id: item.id,
   sku: item.sku,
+  accounting_code: item.accountingCode || null,
   name: item.name,
   category: item.category || 'Đầu kỳ',
   unit: item.unit || 'Cái',
@@ -223,18 +297,26 @@ const buildItemsForLines = (
 ): { itemByLineKey: Map<string, InventoryItem>; createdItems: InventoryItem[] } => {
   const byId = new Map(existingItems.map(item => [item.id, item]));
   const bySku = new Map(existingItems.map(item => [item.sku.trim().toLowerCase(), item]));
+  const byAccountingSpec = new Map(
+    existingItems
+      .filter(item => item.accountingCode)
+      .map(item => [specKey(item.accountingCode, item.name), item] as const),
+  );
   const createdItems: InventoryItem[] = [];
   const itemByLineKey = new Map<string, InventoryItem>();
 
   lines.forEach((line, index) => {
     const normalized = normalizeLine(line);
     const skuKey = normalized.sku.toLowerCase();
+    const accountingKey = specKey(normalized.accountingCode, normalized.itemName);
     let item = normalized.inventoryItemId ? byId.get(normalized.inventoryItemId) : undefined;
+    if (!item && normalized.accountingCode) item = byAccountingSpec.get(accountingKey);
     if (!item && skuKey) item = bySku.get(skuKey);
     if (!item) {
       item = {
         id: normalized.inventoryItemId || crypto.randomUUID(),
         sku: normalized.sku || `OPEN-${String(index + 1).padStart(4, '0')}`,
+        accountingCode: normalized.accountingCode || null,
         name: normalized.itemName || normalized.sku || `Vật tư đầu kỳ ${index + 1}`,
         category: 'Đầu kỳ',
         unit: normalized.unit || 'Cái',
@@ -247,11 +329,272 @@ const buildItemsForLines = (
       createdItems.push(item);
       byId.set(item.id, item);
       bySku.set(item.sku.trim().toLowerCase(), item);
+      if (item.accountingCode) byAccountingSpec.set(specKey(item.accountingCode, item.name), item);
     }
     itemByLineKey.set(String(index), item);
   });
 
   return { itemByLineKey, createdItems };
+};
+
+interface ProjectOpeningBalanceImportOptions {
+  existingItems?: InventoryItem[];
+  defaultWarehouseId?: string;
+}
+
+interface AccountingColumnMap {
+  accountingCode?: number;
+  itemName?: number;
+  unit?: number;
+  importQty?: number;
+  importUnitPrice?: number;
+  importAmount?: number;
+  exportQty?: number;
+  exportUnitPrice?: number;
+  exportAmount?: number;
+}
+
+const getMatrixCell = (row: unknown[] | undefined, index?: number): unknown =>
+  index === undefined || !row ? '' : row[index];
+
+const rowHasValue = (row: unknown[] | undefined): boolean =>
+  !!row && row.some(value => String(value ?? '').trim() !== '');
+
+const findExistingAccountingItem = (
+  existingItems: InventoryItem[],
+  accountingCode: string,
+  itemName: string,
+): InventoryItem | undefined =>
+  existingItems.find(item => item.accountingCode && specKey(item.accountingCode, item.name) === specKey(accountingCode, itemName));
+
+const buildAccountingSkuResolver = (existingItems: InventoryItem[] = []) => {
+  const nextByBase = new Map<string, number>();
+  const skuBySpec = new Map<string, string>();
+  const usedSkus = new Set(existingItems.map(item => String(item.sku || '').trim().toLowerCase()).filter(Boolean));
+
+  existingItems.forEach(item => {
+    if (!item.accountingCode) return;
+    const base = normalizeSkuPart(item.accountingCode);
+    const sku = String(item.sku || '').toUpperCase();
+    if (sku.startsWith(`${base}-`)) {
+      const suffix = sku.slice(base.length + 1);
+      if (/^\d+$/.test(suffix)) {
+        nextByBase.set(base, Math.max(nextByBase.get(base) || 1, Number(suffix) + 1));
+      }
+    }
+    skuBySpec.set(specKey(item.accountingCode, item.name), item.sku);
+  });
+
+  return (accountingCode: string, itemName: string) => {
+    const key = specKey(accountingCode, itemName);
+    const existingSku = skuBySpec.get(key);
+    if (existingSku) return existingSku;
+
+    const base = normalizeSkuPart(accountingCode);
+    let next = nextByBase.get(base) || 1;
+    let sku = `${base}-${String(next).padStart(3, '0')}`;
+    while (usedSkus.has(sku.toLowerCase())) {
+      next += 1;
+      sku = `${base}-${String(next).padStart(3, '0')}`;
+    }
+    nextByBase.set(base, next + 1);
+    usedSkus.add(sku.toLowerCase());
+    skuBySpec.set(key, sku);
+    return sku;
+  };
+};
+
+const buildAccountingColumnMap = (topRow: unknown[], subRow: unknown[]): AccountingColumnMap => {
+  const map: AccountingColumnMap = {};
+  let activeGroup: 'import' | 'export' | null = null;
+  const width = Math.max(topRow.length, subRow.length);
+
+  for (let index = 0; index < width; index += 1) {
+    const top = normalizeLookupText(topRow[index]);
+    const sub = normalizeLookupText(subRow[index]);
+
+    if (top.includes('ma hang') || top.includes('ma vat tu')) {
+      map.accountingCode = index;
+      activeGroup = null;
+      continue;
+    }
+    if (top.includes('ten hang') || top.includes('ten vat tu')) {
+      map.itemName = index;
+      activeGroup = null;
+      continue;
+    }
+    if (top === 'dvt' || top.includes('don vi')) {
+      map.unit = index;
+      activeGroup = null;
+      continue;
+    }
+    if (top.includes('nhap kho')) {
+      activeGroup = 'import';
+    } else if (top.includes('xuat kho')) {
+      activeGroup = 'export';
+    } else if (top && !sub) {
+      activeGroup = null;
+    }
+
+    if (!activeGroup || !sub) continue;
+    if (sub.includes('so luong')) {
+      if (activeGroup === 'import') map.importQty = index;
+      else map.exportQty = index;
+    } else if (sub.includes('don gia')) {
+      if (activeGroup === 'import') map.importUnitPrice = index;
+      else map.exportUnitPrice = index;
+    } else if (sub.includes('thanh tien')) {
+      if (activeGroup === 'import') map.importAmount = index;
+      else map.exportAmount = index;
+    }
+  }
+
+  return map;
+};
+
+const isAccountingColumnMap = (map: AccountingColumnMap): boolean =>
+  map.accountingCode !== undefined
+  && map.itemName !== undefined
+  && map.unit !== undefined
+  && (map.importQty !== undefined || map.importAmount !== undefined)
+  && (map.exportQty !== undefined || map.exportAmount !== undefined);
+
+const parseAccountingOpeningRows = (
+  matrix: unknown[][],
+  options: ProjectOpeningBalanceImportOptions = {},
+): ProjectOpeningBalanceImportResult | null => {
+  let headerIndex = -1;
+  let columns: AccountingColumnMap | null = null;
+
+  for (let index = 0; index < matrix.length - 1; index += 1) {
+    const map = buildAccountingColumnMap(matrix[index] || [], matrix[index + 1] || []);
+    if (isAccountingColumnMap(map)) {
+      headerIndex = index;
+      columns = map;
+      break;
+    }
+  }
+
+  if (headerIndex < 0 || !columns) return null;
+
+  const existingItems = options.existingItems || [];
+  const resolveSku = buildAccountingSkuResolver(existingItems);
+  const rows: ProjectOpeningBalanceImportRow[] = [];
+
+  matrix.slice(headerIndex + 2).forEach((row, localIndex) => {
+    if (!rowHasValue(row)) return;
+
+    const rowNumber = headerIndex + 3 + localIndex;
+    const accountingCode = String(getMatrixCell(row, columns!.accountingCode) || '').trim();
+    const itemName = String(getMatrixCell(row, columns!.itemName) || '').trim();
+    const unit = String(getMatrixCell(row, columns!.unit) || '').trim() || 'Cái';
+    const importQty = numberOrZero(getMatrixCell(row, columns!.importQty));
+    const importUnitPrice = numberOrZero(getMatrixCell(row, columns!.importUnitPrice));
+    const importAmount = numberOrZero(getMatrixCell(row, columns!.importAmount)) || importQty * importUnitPrice;
+    const exportQty = numberOrZero(getMatrixCell(row, columns!.exportQty));
+    const exportUnitPrice = numberOrZero(getMatrixCell(row, columns!.exportUnitPrice));
+    const exportAmount = numberOrZero(getMatrixCell(row, columns!.exportAmount))
+      || exportQty * (exportUnitPrice || importUnitPrice);
+    const unitPrice = importUnitPrice || exportUnitPrice;
+    const remainingQty = Math.max(0, importQty - exportQty);
+    const existingItem = accountingCode && itemName
+      ? findExistingAccountingItem(existingItems, accountingCode, itemName)
+      : undefined;
+    const errors: string[] = [];
+    const warnings: string[] = [];
+
+    if (!accountingCode) errors.push('Thiếu mã hàng kế toán.');
+    if (!itemName) errors.push('Thiếu tên hàng/quy cách.');
+    if (!unit) errors.push('Thiếu đơn vị tính.');
+    if (exportQty > importQty) warnings.push('Số lượng xuất lớn hơn nhập, tồn được tính bằng 0.');
+    if (importQty <= 0 && exportQty <= 0 && importAmount <= 0 && exportAmount <= 0) warnings.push('Dòng không có số lượng/giá trị nhập xuất.');
+
+    rows.push({
+      rowNumber,
+      inventoryItemId: existingItem?.id || null,
+      accountingCode,
+      sku: accountingCode && itemName ? resolveSku(accountingCode, itemName) : accountingCode,
+      itemName,
+      unit,
+      warehouseId: options.defaultWarehouseId || '',
+      purchasedQty: importQty,
+      issuedQty: exportQty,
+      usedQty: exportQty,
+      remainingQty,
+      unitPrice,
+      remainingValue: remainingQty * unitPrice,
+      purchasedAmount: Math.max(0, importAmount),
+      issuedAmount: Math.max(0, exportAmount),
+      note: accountingCode ? `Mã kế toán: ${accountingCode}` : null,
+      errors,
+      warnings,
+    });
+  });
+
+  const nonEmptyRows = rows.filter(row =>
+    row.accountingCode || row.itemName || row.purchasedQty > 0 || row.issuedQty > 0 || row.purchasedAmount || row.issuedAmount
+  );
+
+  return {
+    rows: nonEmptyRows,
+    totals: summarizeImportRows(nonEmptyRows),
+    errors: nonEmptyRows.flatMap(row => (row.errors || []).map(error => `Dòng ${row.rowNumber}: ${error}`)),
+    warnings: nonEmptyRows.flatMap(row => (row.warnings || []).map(warning => `Dòng ${row.rowNumber}: ${warning}`)),
+  };
+};
+
+const parseLegacyOpeningRows = async (
+  file: File,
+  options: ProjectOpeningBalanceImportOptions = {},
+): Promise<ProjectOpeningBalanceImportResult> => {
+  const rows = await parseExcelRows(file);
+  const parsedRows = rows.map<ProjectOpeningBalanceImportRow>((row, index) => {
+    const accountingCode = getExcelCell(row, ['Mã kế toán', 'Ma ke toan', 'Mã hàng kế toán', 'Ma hang ke toan', 'Mã hàng gốc', 'Ma hang goc']);
+    const sku = getExcelCell(row, ['Mã vật tư', 'Ma vat tu', 'SKU', 'sku', 'Mã hàng', 'Ma hang']);
+    const itemName = getExcelCell(row, ['Tên vật tư', 'Ten vat tu', 'Tên hàng', 'Ten hang', 'Item', 'itemName']);
+    const unit = getExcelCell(row, ['Đơn vị', 'Don vi', 'Unit', 'unit']) || 'Cái';
+    const warehouseId = getExcelCell(row, ['Kho', 'warehouseId', 'warehouse_id', 'Mã kho', 'Ma kho', 'Tên kho', 'Ten kho'])
+      || options.defaultWarehouseId
+      || '';
+    const purchasedQty = numberOrZero(getExcelCell(row, ['SL đã mua', 'So luong da mua', 'Purchased Qty', 'purchasedQty']));
+    const issuedQty = numberOrZero(getExcelCell(row, ['SL đã xuất', 'SL đã cấp', 'So luong da xuat', 'Issued Qty', 'issuedQty']));
+    const usedQty = numberOrZero(getExcelCell(row, ['SL đã sử dụng', 'So luong da su dung', 'Used Qty', 'usedQty']));
+    const remainingQty = numberOrZero(getExcelCell(row, ['SL tồn hiện tại', 'Ton hien tai', 'Remaining Qty', 'remainingQty', 'Tồn kho']));
+    const unitPrice = numberOrZero(getExcelCell(row, ['Đơn giá', 'Don gia', 'Unit Price', 'unitPrice']));
+    const remainingValue = numberOrZero(getExcelCell(row, ['Thành tiền tồn', 'Thanh tien ton', 'Remaining Value', 'remainingValue']));
+    const note = getExcelCell(row, ['Ghi chú', 'Ghi chu', 'Note', 'note']);
+    const errors: string[] = [];
+    if (!sku) errors.push('Thiếu mã vật tư.');
+    if (!itemName) errors.push('Thiếu tên vật tư.');
+    if (!warehouseId) errors.push('Thiếu kho.');
+    return {
+      rowNumber: index + 2,
+      inventoryItemId: null,
+      accountingCode: accountingCode || null,
+      sku,
+      itemName,
+      unit,
+      warehouseId,
+      purchasedQty,
+      issuedQty,
+      usedQty,
+      remainingQty,
+      unitPrice,
+      remainingValue: remainingValue || remainingQty * unitPrice,
+      purchasedAmount: remainingValue || remainingQty * unitPrice,
+      issuedAmount: remainingValue || remainingQty * unitPrice,
+      note,
+      errors,
+      warnings: [],
+    };
+  }).filter(row => row.sku || row.itemName || row.warehouseId || row.remainingQty > 0);
+
+  return {
+    rows: parsedRows,
+    totals: summarizeImportRows(parsedRows),
+    errors: parsedRows.flatMap(row => (row.errors || []).map(error => `Dòng ${row.rowNumber}: ${error}`)),
+    warnings: parsedRows.flatMap(row => (row.warnings || []).map(warning => `Dòng ${row.rowNumber}: ${warning}`)),
+  };
 };
 
 export interface ProjectOpeningBalanceLockResult {
@@ -367,10 +710,17 @@ export const projectOpeningBalanceService = {
 
     const projectFinance = buildFinance(balance, input.existingFinance);
     const { itemByLineKey, createdItems } = buildItemsForLines(lines, input.existingItems);
-    const linesWithItems = lines.map((line, index) => ({
-      ...line,
-      inventoryItemId: itemByLineKey.get(String(index))?.id || line.inventoryItemId || null,
-    }));
+    const linesWithItems = lines.map((line, index) => {
+      const item = itemByLineKey.get(String(index));
+      return {
+        ...line,
+        inventoryItemId: item?.id || line.inventoryItemId || null,
+        sku: item?.sku || line.sku,
+        itemName: line.itemName || item?.name || '',
+        unit: line.unit || item?.unit || 'Cái',
+        accountingCode: line.accountingCode || item?.accountingCode || null,
+      };
+    });
     const stockEntries = linesWithItems
       .map((line, index) => ({ line, index }))
       .filter(entry => entry.line.remainingQty > 0);
@@ -455,7 +805,8 @@ export const projectOpeningBalanceService = {
         stockTransactions.push(tx);
       }
 
-      if (balance.purchasedValue > 0) {
+      const materialExpenseValue = accountingExpenseValue(balance);
+      if (materialExpenseValue > 0) {
         const sourceRef = `opening_balance:${openingId}:materials`;
         const tx: ProjectTransaction = {
           id: crypto.randomUUID(),
@@ -464,8 +815,8 @@ export const projectOpeningBalanceService = {
           constructionSiteId: balance.constructionSiteId || '',
           type: 'expense',
           category: 'materials',
-          amount: balance.purchasedValue,
-          description: `Chi phí vật tư đầu kỳ đến ${balance.asOfDate}`,
+          amount: materialExpenseValue,
+          description: `Chi phí vật tư đã sử dụng đầu kỳ đến ${balance.asOfDate}`,
           date: balance.asOfDate,
           source: 'import',
           sourceRef,
@@ -527,7 +878,8 @@ export const projectOpeningBalanceService = {
       };
     }
 
-    if (balance.purchasedValue > 0) {
+    const materialExpenseValue = accountingExpenseValue(balance);
+    if (materialExpenseValue > 0) {
       materialProjectTransaction = {
         id: crypto.randomUUID(),
         projectId: balance.projectId || null,
@@ -535,8 +887,8 @@ export const projectOpeningBalanceService = {
         constructionSiteId: balance.constructionSiteId || '',
         type: 'expense',
         category: 'materials',
-        amount: balance.purchasedValue,
-        description: `Chi phí vật tư đầu kỳ đến ${balance.asOfDate}`,
+        amount: materialExpenseValue,
+        description: `Chi phí vật tư đã sử dụng đầu kỳ đến ${balance.asOfDate}`,
         date: balance.asOfDate,
         source: 'import',
         sourceRef: `opening_balance:${balance.id || 'local'}:materials`,
@@ -571,40 +923,17 @@ export const projectOpeningBalanceService = {
     if (error) throw error;
   },
 
-  async parseOpeningBalanceImport(file: File): Promise<ProjectOpeningBalanceImportRow[]> {
-    const rows = await parseExcelRows(file);
-    return rows.map((row, index) => {
-      const sku = getExcelCell(row, ['Mã vật tư', 'Ma vat tu', 'SKU', 'sku', 'Mã hàng', 'Ma hang']);
-      const itemName = getExcelCell(row, ['Tên vật tư', 'Ten vat tu', 'Tên hàng', 'Ten hang', 'Item', 'itemName']);
-      const unit = getExcelCell(row, ['Đơn vị', 'Don vi', 'Unit', 'unit']) || 'Cái';
-      const warehouseId = getExcelCell(row, ['Kho', 'warehouseId', 'warehouse_id', 'Mã kho', 'Ma kho', 'Tên kho', 'Ten kho']);
-      const purchasedQty = numberOrZero(getExcelCell(row, ['SL đã mua', 'So luong da mua', 'Purchased Qty', 'purchasedQty']));
-      const issuedQty = numberOrZero(getExcelCell(row, ['SL đã xuất', 'SL đã cấp', 'So luong da xuat', 'Issued Qty', 'issuedQty']));
-      const usedQty = numberOrZero(getExcelCell(row, ['SL đã sử dụng', 'So luong da su dung', 'Used Qty', 'usedQty']));
-      const remainingQty = numberOrZero(getExcelCell(row, ['SL tồn hiện tại', 'Ton hien tai', 'Remaining Qty', 'remainingQty', 'Tồn kho']));
-      const unitPrice = numberOrZero(getExcelCell(row, ['Đơn giá', 'Don gia', 'Unit Price', 'unitPrice']));
-      const remainingValue = numberOrZero(getExcelCell(row, ['Thành tiền tồn', 'Thanh tien ton', 'Remaining Value', 'remainingValue']));
-      const note = getExcelCell(row, ['Ghi chú', 'Ghi chu', 'Note', 'note']);
-      const errors: string[] = [];
-      if (!sku) errors.push('Thiếu mã vật tư.');
-      if (!itemName) errors.push('Thiếu tên vật tư.');
-      if (!warehouseId) errors.push('Thiếu kho.');
-      return {
-        rowNumber: index + 2,
-        inventoryItemId: null,
-        sku,
-        itemName,
-        unit,
-        warehouseId,
-        purchasedQty,
-        issuedQty,
-        usedQty,
-        remainingQty,
-        unitPrice,
-        remainingValue: remainingValue || remainingQty * unitPrice,
-        note,
-        errors,
-      };
-    }).filter(row => row.sku || row.itemName || row.warehouseId || row.remainingQty > 0);
+  async parseOpeningBalanceImport(
+    file: File,
+    options: ProjectOpeningBalanceImportOptions = {},
+  ): Promise<ProjectOpeningBalanceImportResult> {
+    const XLSX = await loadXlsx();
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(buffer, { type: 'array' });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const matrix = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '', raw: false });
+    const accountingResult = parseAccountingOpeningRows(matrix, options);
+    if (accountingResult) return accountingResult;
+    return parseLegacyOpeningRows(file, options);
   },
 };

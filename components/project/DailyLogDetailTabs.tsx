@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Plus, X, Package, Users, Wrench, Layers, Paperclip, ClipboardCheck, Search, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, X, Package, Users, Wrench, Layers, Paperclip, ClipboardCheck, Search, ChevronDown, ChevronUp, FileSpreadsheet, Loader2 } from 'lucide-react';
 import {
   DailyLogVolume, DailyLogMaterial, DailyLogLabor, DailyLogMachine,
   Attachment, BusinessPartner, ContractLaborCatalogItem, ContractMachineCatalogItem, InventoryItem, ProjectTask, ProjectWorkBoqItem,
@@ -24,6 +24,9 @@ interface Props {
   siteWarehouseName?: string;
   verifiedQuantityByTaskId?: Record<string, number>;
   verifiedQuantityByWorkBoqItemId?: Record<string, number>;
+  dailyProgressDate?: string;
+  importingDailyProgressVolumes?: boolean;
+  onImportDailyProgressVolumes?: () => void;
 }
 
 type TabKey = 'volumes' | 'materials' | 'labor' | 'machines';
@@ -235,6 +238,9 @@ const DailyLogDetailTabs: React.FC<Props> = ({
   siteWarehouseName,
   verifiedQuantityByTaskId = {},
   verifiedQuantityByWorkBoqItemId = {},
+  dailyProgressDate,
+  importingDailyProgressVolumes = false,
+  onImportDailyProgressVolumes,
 }) => {
   const [tab, setTab] = useState<TabKey>('volumes');
   const [laborModes, setLaborModes] = useState<Record<number, 'catalog' | 'partner'>>({});
@@ -428,6 +434,10 @@ const DailyLogDetailTabs: React.FC<Props> = ({
   const selectedMachineTasks = useMemo(
     () => taskQuickOptions.filter(option => selectedMachineTaskIds.has(option.key)).map(option => option.item),
     [selectedMachineTaskIds, taskQuickOptions]
+  );
+  const dailyProgressDateLabel = useMemo(
+    () => dailyProgressDate ? new Date(`${dailyProgressDate}T00:00:00`).toLocaleDateString('vi-VN') : '',
+    [dailyProgressDate]
   );
   const laborPairExists = (source: LaborSourceOption, task: ProjectTask) => laborDetails.some(row => {
     if (row.taskId !== task.id) return false;
@@ -647,16 +657,15 @@ const DailyLogDetailTabs: React.FC<Props> = ({
 
   return (
     <div className="border-t border-slate-100 pt-4">
-      <label className="text-[10px] font-black text-slate-500 uppercase block mb-2">Chi tiết thi công (FastCons)</label>
+      <label className="text-[10px] font-black text-slate-500 uppercase block mb-2">Chi tiết thi công</label>
       {/* Tab bar */}
       <div className="flex gap-1 mb-3">
         {TABS.map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
-            className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
-              tab === t.key
+            className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${tab === t.key
                 ? 'text-teal-700 bg-teal-100 border border-teal-200'
                 : 'text-slate-500 hover:bg-slate-100'
-            }`}>
+              }`}>
             {t.icon} {t.label}
             {t.key === 'volumes' && volumes.length > 0 && <span className="ml-1 w-4 h-4 rounded-full bg-teal-500 text-white text-[8px] flex items-center justify-center">{volumes.length}</span>}
             {t.key === 'materials' && materials.length > 0 && <span className="ml-1 w-4 h-4 rounded-full bg-orange-500 text-white text-[8px] flex items-center justify-center">{materials.length}</span>}
@@ -669,6 +678,31 @@ const DailyLogDetailTabs: React.FC<Props> = ({
       {/* Volumes Tab */}
       {tab === 'volumes' && (
         <div className="space-y-3">
+          {onImportDailyProgressVolumes && (
+            <div className="rounded-xl border border-cyan-100 bg-cyan-50/70 px-3 py-2.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+              <div className="min-w-0">
+                <div className="text-[11px] font-black text-cyan-800">Chốt tiến độ ngày</div>
+                <div className="text-[10px] font-bold text-cyan-600 truncate">
+                  {dailyProgressDateLabel ? `Ngày ${dailyProgressDateLabel}` : 'Chưa chọn ngày nhật ký'}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={onImportDailyProgressVolumes}
+                disabled={importingDailyProgressVolumes || !dailyProgressDate}
+                title="Lấy từ chốt tiến độ"
+                className="h-8 px-3 rounded-lg bg-cyan-600 text-white text-[10px] font-black hover:bg-cyan-700 disabled:opacity-50 flex items-center justify-center gap-1.5 shrink-0"
+              >
+                {importingDailyProgressVolumes ? <Loader2 size={13} className="animate-spin" /> : <FileSpreadsheet size={13} />}
+                Lấy từ chốt tiến độ
+              </button>
+            </div>
+          )}
+          {volumes.length === 0 && (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-center text-[11px] font-bold text-slate-500">
+              Chưa ghi nhận khối lượng hoàn thành.
+            </div>
+          )}
           {volumeSourceOptions.length > 0 && (
             <div className="rounded-2xl border border-teal-100 bg-teal-50/50 overflow-hidden">
               <button
@@ -724,13 +758,12 @@ const DailyLogDetailTabs: React.FC<Props> = ({
                         {filteredVolumeSourceOptions.map(option => (
                           <label
                             key={option.key}
-                            className={`flex items-start gap-2 px-3 py-2.5 border-b border-teal-50 last:border-b-0 cursor-pointer transition-colors ${
-                              option.alreadyAdded
+                            className={`flex items-start gap-2 px-3 py-2.5 border-b border-teal-50 last:border-b-0 cursor-pointer transition-colors ${option.alreadyAdded
                                 ? 'opacity-55 cursor-not-allowed bg-slate-50'
                                 : selectedVolumeSourceKeys.has(option.key)
                                   ? 'bg-teal-50'
                                   : 'hover:bg-teal-50/70'
-                            }`}
+                              }`}
                           >
                             <input
                               type="checkbox"

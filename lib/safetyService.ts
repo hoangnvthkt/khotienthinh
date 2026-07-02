@@ -184,8 +184,8 @@ async function notifySafety(params: {
   }
 
   if (params.severity === 'critical') {
-    await notificationService.create({
-      userId: undefined,
+    await notificationService.notifyAlert({
+      alertKey: 'safety_critical',
       type: 'error',
       category: 'safety',
       title: params.title,
@@ -193,6 +193,7 @@ async function notifySafety(params: {
       severity: 'critical',
       sourceType: params.sourceType,
       sourceId: params.sourceId,
+      projectId: params.projectId || undefined,
       constructionSiteId: params.constructionSiteId || undefined,
       link: '/da',
       metadata,
