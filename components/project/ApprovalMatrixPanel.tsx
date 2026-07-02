@@ -177,7 +177,7 @@ const ApprovalMatrixPanel: React.FC<Props> = ({ constructionSiteId }) => {
               <div className="col-span-2">
                 <label className="text-[9px] font-bold text-slate-500 uppercase block mb-1">Tên quy tắc *</label>
                 <input value={fName} onChange={e => setFName(e.target.value)}
-                  placeholder="VD: Admin duyệt TT > 500tr"
+                  placeholder="VD: TGĐ duyệt TT > 500tr"
                   className="w-full px-3 py-2 rounded-xl border border-violet-200 text-xs outline-none focus:ring-2 focus:ring-violet-400 dark:bg-slate-800 dark:border-slate-600" />
               </div>
               <div>

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Plus, X, Package, Users, Wrench, Layers, Paperclip, ClipboardCheck, Search, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, X, Package, Users, Wrench, Layers, Paperclip, ClipboardCheck, Search, ChevronDown, ChevronUp, FileSpreadsheet, Loader2 } from 'lucide-react';
 import {
   DailyLogVolume, DailyLogMaterial, DailyLogLabor, DailyLogMachine,
   Attachment, BusinessPartner, ContractLaborCatalogItem, ContractMachineCatalogItem, InventoryItem, ProjectTask, ProjectWorkBoqItem,
@@ -24,6 +24,9 @@ interface Props {
   siteWarehouseName?: string;
   verifiedQuantityByTaskId?: Record<string, number>;
   verifiedQuantityByWorkBoqItemId?: Record<string, number>;
+  dailyProgressDate?: string;
+  importingDailyProgressVolumes?: boolean;
+  onImportDailyProgressVolumes?: () => void;
 }
 
 type TabKey = 'volumes' | 'materials' | 'labor' | 'machines';
@@ -235,6 +238,9 @@ const DailyLogDetailTabs: React.FC<Props> = ({
   siteWarehouseName,
   verifiedQuantityByTaskId = {},
   verifiedQuantityByWorkBoqItemId = {},
+  dailyProgressDate,
+  importingDailyProgressVolumes = false,
+  onImportDailyProgressVolumes,
 }) => {
   const [tab, setTab] = useState<TabKey>('volumes');
   const [laborModes, setLaborModes] = useState<Record<number, 'catalog' | 'partner'>>({});
@@ -428,6 +434,10 @@ const DailyLogDetailTabs: React.FC<Props> = ({
   const selectedMachineTasks = useMemo(
     () => taskQuickOptions.filter(option => selectedMachineTaskIds.has(option.key)).map(option => option.item),
     [selectedMachineTaskIds, taskQuickOptions]
+  );
+  const dailyProgressDateLabel = useMemo(
+    () => dailyProgressDate ? new Date(`${dailyProgressDate}T00:00:00`).toLocaleDateString('vi-VN') : '',
+    [dailyProgressDate]
   );
   const laborPairExists = (source: LaborSourceOption, task: ProjectTask) => laborDetails.some(row => {
     if (row.taskId !== task.id) return false;
@@ -668,6 +678,31 @@ const DailyLogDetailTabs: React.FC<Props> = ({
       {/* Volumes Tab */}
       {tab === 'volumes' && (
         <div className="space-y-3">
+          {onImportDailyProgressVolumes && (
+            <div className="rounded-xl border border-cyan-100 bg-cyan-50/70 px-3 py-2.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+              <div className="min-w-0">
+                <div className="text-[11px] font-black text-cyan-800">Chốt tiến độ ngày</div>
+                <div className="text-[10px] font-bold text-cyan-600 truncate">
+                  {dailyProgressDateLabel ? `Ngày ${dailyProgressDateLabel}` : 'Chưa chọn ngày nhật ký'}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={onImportDailyProgressVolumes}
+                disabled={importingDailyProgressVolumes || !dailyProgressDate}
+                title="Lấy từ chốt tiến độ"
+                className="h-8 px-3 rounded-lg bg-cyan-600 text-white text-[10px] font-black hover:bg-cyan-700 disabled:opacity-50 flex items-center justify-center gap-1.5 shrink-0"
+              >
+                {importingDailyProgressVolumes ? <Loader2 size={13} className="animate-spin" /> : <FileSpreadsheet size={13} />}
+                Lấy từ chốt tiến độ
+              </button>
+            </div>
+          )}
+          {volumes.length === 0 && (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-center text-[11px] font-bold text-slate-500">
+              Chưa ghi nhận khối lượng hoàn thành.
+            </div>
+          )}
           {volumeSourceOptions.length > 0 && (
             <div className="rounded-2xl border border-teal-100 bg-teal-50/50 overflow-hidden">
               <button

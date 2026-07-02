@@ -4,6 +4,7 @@ export const LEGACY_PROJECT_SUPPLY_ROUTE = '/da/tabs/supply';
 export const PROJECT_TAB_PERMISSIONS = [
   { key: 'executive', label: 'Điều hành', icon: '🏛️', route: '/da/tabs/executive' },
   { key: 'org', label: 'Tổ chức', icon: '👥', route: '/da/tabs/org' },
+  { key: 'finance', label: 'Tài chính', icon: '💹', route: '/da/tabs/finance' },
   { key: 'budget', label: 'Ngân sách', icon: '📊', route: '/da/tabs/budget' },
   { key: 'cashflow', label: 'Dòng tiền', icon: '💰', route: '/da/tabs/cashflow' },
   { key: 'contract', label: 'Hợp đồng', icon: '📋', route: '/da/tabs/contract' },
@@ -24,6 +25,12 @@ export const PROJECT_TAB_PERMISSIONS = [
 
 export type ProjectOverviewTabKey = typeof PROJECT_TAB_PERMISSIONS[number]['key'];
 export type ProjectTabPermissionRoute = typeof PROJECT_TAB_PERMISSIONS[number]['route'];
+
+export const PROJECT_FINANCE_LEGACY_TAB_KEYS = ['budget', 'cashflow', 'payment'] as const;
+export type ProjectFinanceLegacyTabKey = typeof PROJECT_FINANCE_LEGACY_TAB_KEYS[number];
+
+export const isProjectFinanceLegacyTabKey = (value?: string | null): value is ProjectFinanceLegacyTabKey =>
+  PROJECT_FINANCE_LEGACY_TAB_KEYS.some(key => key === value);
 
 export const PROJECT_TAB_ROUTES = PROJECT_TAB_PERMISSIONS.map(tab => tab.route);
 

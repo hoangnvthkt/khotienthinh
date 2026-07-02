@@ -13,6 +13,7 @@ import { isChatEnabled } from '../lib/featureFlags';
 const PROJECT_TAB_PERMISSION_ICONS: Record<ProjectOverviewTabKey, any> = {
   executive: LayoutDashboard,
   org: Users,
+  finance: DollarSign,
   budget: DollarSign,
   cashflow: Repeat,
   contract: FileSignature,
