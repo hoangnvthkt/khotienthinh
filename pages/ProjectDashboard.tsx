@@ -55,8 +55,9 @@ import {
     Plus, Edit2, Trash2, X, Check, Save, ChevronDown, ChevronLeft, ChevronRight, FileText,
     Building2, HardHat, AlertCircle, ArrowUpRight, ArrowDownRight,
     Upload, Download, Filter, Calendar, Tag, List, Paperclip, Eye, Image,
-    Users, UserPlus, Loader2, RefreshCcw, Search, EyeOff, ArchiveRestore, Shield, Pin
+    Users, UserPlus, Loader2, RefreshCcw, Search, EyeOff, ArchiveRestore, Shield, Pin, Package
 } from 'lucide-react';
+import { useTheme } from '../context/ThemeContext';
 
 import PremiumMemberSelect, { MemberOption } from '../components/common/PremiumMemberSelect';
 import PremiumEntitySelect, { EntityOption } from '../components/common/PremiumEntitySelect';
@@ -363,7 +364,27 @@ const siteToProjectFallback = (site: { id: string; name: string; address?: strin
     createdAt: site.createdAt,
 });
 
+const tabIconMap: Record<string, React.ComponentType<any>> = {
+    executive: Building2,
+    org: Users,
+    finance: DollarSign,
+    budget: BarChart3,
+    cashflow: TrendingUp,
+    contract: FileText,
+    gantt: Calendar,
+    weekly_progress: Calendar,
+    dailylog: FileText,
+    material: Package,
+    quality: Check,
+    safety: HardHat,
+    subcontract: Building2,
+    documents: Paperclip,
+    report: BarChart3,
+    payment: DollarSign,
+};
+
 const ProjectDashboard: React.FC = () => {
+    const { isEnterprise } = useTheme();
     const location = useLocation();
     const navigate = useNavigate();
     const {
@@ -2988,73 +3009,147 @@ const ProjectDashboard: React.FC = () => {
         return (
             <div className="space-y-6">
                 {/* Header Banner */}
-                <div className="bg-gradient-to-r from-orange-500 to-amber-500 rounded-2xl p-4 px-5 text-white shadow-md">
-                    <div className="flex items-center justify-between flex-wrap gap-3">
+                {isEnterprise ? (
+                    <div className="bg-white rounded-lg border border-slate-200 p-3 px-4 shadow-sm flex flex-col md:flex-row md:items-center md:justify-between gap-3 text-slate-800">
                         <div className="flex items-center gap-3">
-                            <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center shrink-0"><HardHat size={18} /></div>
+                            <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+                                <HardHat size={16} />
+                            </div>
                             <div>
-                                <h2 className="text-lg font-bold leading-snug">{selectedProject.name}</h2>
-                                <p className="text-white/85 text-xs mt-0.5">
-                                    {selectedProject.code} • {selectedSite ? `Công trường: ${selectedSite.name}` : 'Chưa liên kết công trường HRM'}
+                                <div className="flex items-center gap-2 flex-wrap">
+                                    <h2 className="text-base font-black text-slate-900 leading-none">{selectedProject.name}</h2>
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-bold border border-slate-200">
+                                        {selectedProject.code}
+                                    </span>
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 font-bold border border-emerald-200">
+                                        {STATUS_CONFIG[statusKey]?.label || statusKey}
+                                    </span>
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-bold border border-blue-200">
+                                        Tiến độ: {displayProgress}%
+                                    </span>
+                                </div>
+                                <p className="text-slate-500 text-xs mt-1 font-medium">
+                                    {selectedSite ? `Công trường: ${selectedSite.name}` : 'Chưa liên kết công trường HRM'}
                                 </p>
-                                {metaChips.length > 0 && (
-                                    <div className="mt-1.5 flex flex-wrap gap-1">
-                                        {metaChips.map(chip => (
-                                            <span key={chip.label} className="px-1.5 py-0.5 rounded bg-white/25 text-white text-[9px] font-bold border border-white/10">
-                                                {chip.label}
-                                            </span>
-                                        ))}
-                                    </div>
-                                )}
                             </div>
                         </div>
-                        <div className="text-right">
-                            <div className="inline-block px-2 py-0.5 rounded-full text-[11px] font-bold bg-white/20 mb-0.5">{STATUS_CONFIG[statusKey]?.label || statusKey}</div>
-                            <div className="text-xl font-extrabold">{displayProgress}%</div>
+
+                        {/* Action buttons */}
+                        <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                            <button
+                                onClick={() => { setActiveView('list'); setSelectedSiteId(null); setSelectedProjectId(null); }}
+                                className="flex items-center gap-1 px-2.5 py-1.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold border border-slate-200 transition-all shrink-0"
+                            >
+                                ← Dự án khác
+                            </button>
+                            {canManageProjects && (
+                                <button
+                                    onClick={() => openEditProject(selectedProject)}
+                                    className="flex items-center gap-1 px-2.5 py-1.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold border border-slate-200 transition-all shrink-0"
+                                >
+                                    <Edit2 size={11} /> Dự án
+                                </button>
+                            )}
+                            {hasSiteLink && (
+                                <>
+                                    {canManageCashflowTab && (
+                                        <>
+                                            <button
+                                                onClick={() => { resetTxForm(); setShowTxForm(true); }}
+                                                className="flex items-center gap-1 px-2.5 py-1.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold transition-all shrink-0 shadow-sm"
+                                            >
+                                                <Plus size={11} /> Giao dịch
+                                            </button>
+                                            <button
+                                                onClick={() => fileInputRef.current?.click()}
+                                                className="flex items-center gap-1 px-2.5 py-1.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold border border-slate-200 transition-all shrink-0"
+                                            >
+                                                <Upload size={11} /> Import Excel
+                                            </button>
+                                        </>
+                                    )}
+                                    <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleImportExcel} />
+                                    {canManageBudgetTab && (
+                                        <button
+                                            onClick={() => effectiveSiteId && openBudgetForm(effectiveSiteId)}
+                                            className="flex items-center gap-1 px-2.5 py-1.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold border border-slate-200 transition-all shrink-0"
+                                        >
+                                            <Edit2 size={11} /> Ngân sách
+                                        </button>
+                                    )}
+                                </>
+                            )}
                         </div>
                     </div>
+                ) : (
+                    <div className="bg-gradient-to-r from-orange-500 to-amber-500 rounded-2xl p-4 px-5 text-white shadow-md">
+                        <div className="flex items-center justify-between flex-wrap gap-3">
+                            <div className="flex items-center gap-3">
+                                <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center shrink-0"><HardHat size={18} /></div>
+                                <div>
+                                    <h2 className="text-lg font-bold leading-snug">{selectedProject.name}</h2>
+                                    <p className="text-white/85 text-xs mt-0.5">
+                                        {selectedProject.code} • {selectedSite ? `Công trường: ${selectedSite.name}` : 'Chưa liên kết công trường HRM'}
+                                    </p>
+                                    {metaChips.length > 0 && (
+                                        <div className="mt-1.5 flex flex-wrap gap-1">
+                                            {metaChips.map(chip => (
+                                                <span key={chip.label} className="px-1.5 py-0.5 rounded bg-white/25 text-white text-[9px] font-bold border border-white/10">
+                                                    {chip.label}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                            <div className="text-right">
+                                <div className="inline-block px-2 py-0.5 rounded-full text-[11px] font-bold bg-white/20 mb-0.5">{STATUS_CONFIG[statusKey]?.label || statusKey}</div>
+                                <div className="text-xl font-extrabold">{displayProgress}%</div>
+                            </div>
+                        </div>
 
-                    {/* Action buttons inside the orange card */}
-                    <div className="mt-3.5 flex flex-wrap items-center gap-1.5 border-t border-white/10 pt-3">
-                        <button onClick={() => { setActiveView('list'); setSelectedSiteId(null); setSelectedProjectId(null); }}
-                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold bg-white/10 hover:bg-white/20 text-white transition-all shrink-0">
-                            ← Dự án khác
-                        </button>
-                        {canManageProjects && (
-                            <button onClick={() => openEditProject(selectedProject)}
-                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold text-slate-700 bg-white hover:bg-slate-50 transition-all shrink-0">
-                                <Edit2 size={12} /> Dự án
+                        {/* Action buttons inside the orange card */}
+                        <div className="mt-3.5 flex flex-wrap items-center gap-1.5 border-t border-white/10 pt-3">
+                            <button onClick={() => { setActiveView('list'); setSelectedSiteId(null); setSelectedProjectId(null); }}
+                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold bg-white/10 hover:bg-white/20 text-white transition-all shrink-0">
+                                ← Dự án khác
                             </button>
-                        )}
-                        {hasSiteLink && (
-                            <>
-                                {canManageCashflowTab && (
-                                    <>
-                                        <button onClick={() => { resetTxForm(); setShowTxForm(true); }}
-                                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 transition-all shrink-0">
-                                            <Plus size={12} /> Giao dịch
+                            {canManageProjects && (
+                                <button onClick={() => openEditProject(selectedProject)}
+                                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold text-slate-700 bg-white hover:bg-slate-50 transition-all shrink-0">
+                                    <Edit2 size={12} /> Dự án
+                                </button>
+                            )}
+                            {hasSiteLink && (
+                                <>
+                                    {canManageCashflowTab && (
+                                        <>
+                                            <button onClick={() => { resetTxForm(); setShowTxForm(true); }}
+                                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 transition-all shrink-0">
+                                                <Plus size={12} /> Giao dịch
+                                            </button>
+                                            <button onClick={() => fileInputRef.current?.click()}
+                                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold text-emerald-600 bg-emerald-50 hover:bg-emerald-100 transition-all shrink-0">
+                                                <Upload size={12} /> Import Excel
+                                            </button>
+                                        </>
+                                    )}
+                                    <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleImportExcel} />
+                                    {canManageBudgetTab && (
+                                        <button onClick={() => effectiveSiteId && openBudgetForm(effectiveSiteId)}
+                                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold text-orange-600 bg-orange-50 hover:bg-orange-100 transition-all shrink-0">
+                                            <Edit2 size={12} /> Ngân sách
                                         </button>
-                                        <button onClick={() => fileInputRef.current?.click()}
-                                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold text-emerald-600 bg-emerald-50 hover:bg-emerald-100 transition-all shrink-0">
-                                            <Upload size={12} /> Import Excel
-                                        </button>
-                                    </>
-                                )}
-                                <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleImportExcel} />
-                                {canManageBudgetTab && (
-                                    <button onClick={() => effectiveSiteId && openBudgetForm(effectiveSiteId)}
-                                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold text-orange-600 bg-orange-50 hover:bg-orange-100 transition-all shrink-0">
-                                        <Edit2 size={12} /> Ngân sách
-                                    </button>
-                                )}
-                            </>
-                        )}
-                    </div>
+                                    )}
+                                </>
+                            )}
+                        </div>
 
-                    <div className="mt-3 h-1.5 bg-white/20 rounded-full overflow-hidden">
-                        <div className="h-full bg-white rounded-full transition-all duration-700" style={{ width: `${displayProgress}%` }} />
+                        <div className="mt-3 h-1.5 bg-white/20 rounded-full overflow-hidden">
+                            <div className="h-full bg-white rounded-full transition-all duration-700" style={{ width: `${displayProgress}%` }} />
+                        </div>
                     </div>
-                </div>
+                )}
 
                 {attentionItems.length > 0 && (
                     <section className="rounded-2xl border border-orange-100 bg-orange-50/60 p-4 dark:border-orange-900/40 dark:bg-orange-950/20">
@@ -3084,15 +3179,19 @@ const ProjectDashboard: React.FC = () => {
 
                 {/* Overview Sub-tabs */}
                 <div className="flex gap-1 bg-white dark:bg-slate-800 rounded-2xl p-1.5 border border-slate-100 dark:border-slate-700/50 shadow-sm overflow-x-auto [&::-webkit-scrollbar]:hidden">
-                    {visibleOverviewTabs.map(tab => (
-                        <button key={tab.key} onClick={() => goToProjectTab(tab.key)}
-                            className={`shrink-0 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${overviewTab === tab.key
-                                    ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-lg shadow-orange-500/25'
-                                    : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50'
-                                }`}>
-                            <span>{tab.icon}</span> {tab.label}
-                        </button>
-                    ))}
+                    {visibleOverviewTabs.map(tab => {
+                        const IconComp = tabIconMap[tab.key];
+                        return (
+                            <button key={tab.key} onClick={() => goToProjectTab(tab.key)}
+                                className={`shrink-0 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${overviewTab === tab.key
+                                        ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-lg shadow-orange-500/25'
+                                        : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50'
+                                    }`}>
+                                {isEnterprise && IconComp ? <IconComp size={14} className="shrink-0" /> : <span>{tab.icon}</span>}
+                                {tab.label}
+                            </button>
+                        );
+                    })}
                 </div>
 
                 <Suspense fallback={

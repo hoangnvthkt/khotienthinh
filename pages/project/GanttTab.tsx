@@ -31,6 +31,7 @@ import { computeCriticalPath, getDelayDays, rippleEffect, type CriticalPathResul
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
+import { useTheme } from '../../context/ThemeContext';
 import {
     applyProgressGateTransition,
     calculateProjectProgress,
@@ -399,6 +400,7 @@ const ProgressCell: React.FC<{ value: number; onChange: (v: number) => void; dis
 const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canManageTab = true }) => {
     const { projectFinances, updateProjectFinance, user } = useApp();
     const toast = useToast();
+    const { isEnterprise } = useTheme();
     const confirm = useConfirm();
     const location = useLocation();
     const effectiveId = projectId || constructionSiteId || '';
@@ -2981,7 +2983,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                         <thead>
                                             <tr className="bg-slate-50/80 dark:bg-slate-700/50 border-b border-border dark:border-slate-700" style={{ height: `${GANTT_HEADER_HEIGHT}px` }}>
                                                 {viewMode === 'table' && (
-                                                    <th className="sticky top-0 z-30 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-center w-[40px]">
+                                                    <th className="sticky top-0 z-30 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-center w-[54px] whitespace-nowrap">
                                                         <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">STT</span>
                                                     </th>
                                                 )}
@@ -3085,7 +3087,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
 	                                                    className={`border-b border-slate-50 dark:border-slate-700/50 hover:bg-orange-50/30 dark:hover:bg-slate-700/30 group transition-colors ${status === 'overdue' ? 'bg-red-50/20' : status === 'pending_gate' ? 'bg-amber-50/20' : ''} ${isFocusedTask ? 'bg-orange-100/80 dark:bg-orange-900/30 ring-2 ring-orange-400/60' : ''}`}>
                                                     {/* STT */}
                                                     {viewMode === 'table' && (
-                                                        <td className="px-2 py-2.5 text-center text-muted-foreground font-bold">{idx + 1}</td>
+                                                        <td className="px-2 py-2.5 text-center text-muted-foreground font-bold whitespace-nowrap">{idx + 1}</td>
                                                     )}
                                                     {/* Mã WBS */}
                                                     {(viewMode === 'table' || viewMode === 'split') && (
@@ -3109,7 +3111,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                                                 <span className="w-5 shrink-0" />
                                                             ) : null}
                                                             {task.isMilestone && <Flag size={11} className="text-red-500 shrink-0" />}
-                                                            <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: task.color || COLORS[idx % COLORS.length] }} />
+                                                            {!isEnterprise && <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: task.color || COLORS[idx % COLORS.length] }} />}
                                                             <span className="font-bold text-foreground dark:text-slate-200 truncate cursor-pointer hover:text-orange-600 transition-colors"
                                                                 onClick={() => openEdit(task)} title={task.name}>
                                                                 {task.name}

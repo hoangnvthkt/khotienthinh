@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Bot, Sparkles, X, Loader2, RefreshCw, AlertTriangle,
-  AlertCircle, Info, ChevronDown, ChevronUp, Zap, Clock, Lightbulb
+  AlertCircle, Info, ChevronDown, ChevronUp, Zap, Clock, Lightbulb,
+  TrendingUp, Package, Calendar, Users, Truck, BookOpen, FileText, FileSignature
 } from 'lucide-react';
+import { useTheme } from '../context/ThemeContext';
 import { escapeHtml } from '../lib/safeHtml';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
@@ -30,15 +32,15 @@ interface AiInsightPanelProps {
   compact?: boolean;
 }
 
-const MODULE_CONFIG: Record<string, { title: string; gradient: string; emoji: string }> = {
-  cashflow: { title: 'Phân tích Dòng tiền', gradient: 'from-emerald-500 to-teal-600', emoji: '💰' },
-  material: { title: 'Phân tích Vật tư', gradient: 'from-amber-500 to-orange-600', emoji: '📦' },
-  gantt: { title: 'Phân tích Tiến độ', gradient: 'from-blue-500 to-indigo-600', emoji: '📅' },
-  subcontract: { title: 'Đánh giá Nhà thầu', gradient: 'from-violet-500 to-purple-600', emoji: '👷' },
-  supplychain: { title: 'Phân tích Cung ứng', gradient: 'from-cyan-500 to-blue-600', emoji: '🚛' },
-  dailylog: { title: 'Phân tích Nhật ký', gradient: 'from-rose-500 to-pink-600', emoji: '📋' },
-  documents: { title: 'Phân tích Tài liệu', gradient: 'from-indigo-500 to-blue-600', emoji: '📑' },
-  contract: { title: 'Phân tích Hợp đồng', gradient: 'from-fuchsia-500 to-purple-600', emoji: '📝' },
+const MODULE_CONFIG: Record<string, { title: string; gradient: string; emoji: string; icon: React.ComponentType<any> }> = {
+  cashflow: { title: 'Phân tích Dòng tiền', gradient: 'from-emerald-500 to-teal-600', emoji: '💰', icon: TrendingUp },
+  material: { title: 'Phân tích Vật tư', gradient: 'from-amber-500 to-orange-600', emoji: '📦', icon: Package },
+  gantt: { title: 'Phân tích Tiến độ', gradient: 'from-blue-500 to-indigo-600', emoji: '📅', icon: Calendar },
+  subcontract: { title: 'Đánh giá Nhà thầu', gradient: 'from-violet-500 to-purple-600', emoji: '👷', icon: Users },
+  supplychain: { title: 'Phân tích Cung ứng', gradient: 'from-cyan-500 to-blue-600', emoji: '🚛', icon: Truck },
+  dailylog: { title: 'Phân tích Nhật ký', gradient: 'from-rose-500 to-pink-600', emoji: '📋', icon: BookOpen },
+  documents: { title: 'Phân tích Tài liệu', gradient: 'from-indigo-500 to-blue-600', emoji: '📑', icon: FileText },
+  contract: { title: 'Phân tích Hợp đồng', gradient: 'from-fuchsia-500 to-purple-600', emoji: '📝', icon: FileSignature },
 };
 
 const ALERT_STYLES = {
@@ -59,6 +61,7 @@ const formatMarkdown = (text: string): string => {
 };
 
 const AiInsightPanel: React.FC<AiInsightPanelProps> = ({ module, siteId, siteName, data, compact = false }) => {
+  const { isEnterprise } = useTheme();
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<AiInsightResult | null>(null);
@@ -122,7 +125,7 @@ const AiInsightPanel: React.FC<AiInsightPanelProps> = ({ module, siteId, siteNam
             </div>
             <div>
               <h3 className="text-sm font-black text-white flex items-center gap-1.5">
-                {cfg.emoji} {cfg.title}
+                {isEnterprise && cfg.icon ? <cfg.icon size={14} className="shrink-0 text-white" /> : cfg.emoji} {cfg.title}
               </h3>
               <p className="text-[10px] text-white/60">
                 {result?.cached && <><Zap size={9} className="inline mr-0.5" />Từ cache • </>}

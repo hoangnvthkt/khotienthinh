@@ -7,7 +7,7 @@ import {
   Users, Briefcase, FileSpreadsheet, GitBranch, Workflow, BarChart3, MessageCircle,
   MessageSquarePlus,
   Landmark, Repeat, Wrench, ChevronsLeft, ChevronsRight, AppWindow, ArrowLeft, Inbox, Layers, HardDrive,
-  Calendar, CalendarOff, DollarSign, FileSignature, MapPin, Bot, FolderOpen, GripVertical, BookOpen, Clock,
+  Calendar, CalendarOff, DollarSign, FileSignature, MapPin, Bot, FolderOpen, BookOpen, Clock,
   IdCard, Award, Trophy, Globe, Building2, HardHat, Handshake, Settings2, Calculator, ShoppingCart, Activity
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
@@ -315,7 +315,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
   return (
     <>
       {isOpen && <div className="fixed inset-0 bg-black/60 z-[60] lg:hidden backdrop-blur-sm" onClick={toggle} />}
-      <aside className={`fixed top-0 left-0 z-[70] h-[100dvh] ${sidebarWidth} text-slate-800 dark:text-white transition-all duration-300 lg:translate-x-0 lg:static ${sidebarBg} ${isOpen ? 'translate-x-0' : '-translate-x-full'} flex flex-col`}>
+      <aside className={`vioo-app-sidebar fixed top-0 left-0 z-[70] h-[100dvh] ${sidebarWidth} text-slate-800 dark:text-white transition-all duration-300 lg:translate-x-0 lg:static ${sidebarBg} ${isOpen ? 'translate-x-0' : '-translate-x-full'} flex flex-col`}>
 
         {/* Logo */}
         <div className={`flex items-center h-16 px-4 border-b border-white/20 dark:border-white/5 shrink-0 ${collapsed ? 'justify-center' : 'space-x-3'}`}>
@@ -381,7 +381,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
         )}
 
         {/* ==================== NAVIGATION ==================== */}
-        <nav className="px-2 py-2 flex-1 overflow-y-auto space-y-0.5">
+        <nav className="vioo-sidebar-nav px-2 py-2 flex-1 overflow-y-auto space-y-0.5">
 
           {/* ====== MOBILE FLAT VIEW — show everything at once ====== */}
           <div className="lg:hidden">
@@ -392,8 +392,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
                   <p className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-2 px-1">Ứng dụng <span className="text-slate-300 dark:text-slate-600 normal-case">(giữ kéo để sắp xếp)</span></p>
                   <div className="grid grid-cols-4 gap-2">
                     {orderedModules.map((mod, idx) => {
-                      const ModIcon = mod.icon;
                       const isActiveModule = detectAppFromUrl() === mod.key;
+                      const ModIcon = mod.icon;
                       return (
                         <button
                           key={mod.key}
@@ -403,9 +403,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
                           onDrop={() => handleDrop(idx)}
                           onDragEnd={handleDragEnd}
                           onClick={() => { handleModuleClick(mod); toggle(); }}
-                          className={`flex flex-col items-center gap-1.5 py-3 px-1 rounded-xl transition-all ${dragOverIdx === idx ? 'ring-2 ring-accent scale-105' : ''} ${dragIdx === idx ? 'opacity-40' : ''} ${isActiveModule ? `bg-gradient-to-br ${mod.gradient} text-white shadow-lg ${mod.shadow}` : `${mod.bg} border ${mod.border} hover:shadow-md`}`}
+                          className={`flex flex-col items-center gap-1.5 py-3 px-1 rounded-xl transition-all ${isActiveModule ? 'active-module' : ''} ${dragOverIdx === idx ? 'ring-2 ring-accent scale-105' : ''} ${dragIdx === idx ? 'opacity-40' : ''} ${isActiveModule ? `bg-gradient-to-br ${mod.gradient} text-white shadow-lg ${mod.shadow}` : `${mod.bg} border ${mod.border} hover:shadow-md`}`}
                         >
-                          <ModIcon size={20} className={isActiveModule ? '' : mod.color.split(' ')[0]} />
+                          <ModIcon className={`vioo-sidebar-app-icon w-5 h-5 ${isActiveModule ? 'text-white' : mod.color}`} />
                           <span className={`text-[9px] font-bold leading-tight text-center ${isActiveModule ? 'text-white' : 'text-slate-600 dark:text-slate-400'}`}>{mod.shortLabel}</span>
                         </button>
                       );
@@ -484,7 +484,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
                   <span className="text-xs font-bold">Quay lại</span>
                 </button>
                 <div className={`mx-1 mb-2 px-3 py-2 rounded-xl flex items-center gap-2.5 bg-gradient-to-r ${activeModule.gradient} text-white shadow-lg ${activeModule.shadow}`}>
-                  <activeModule.icon size={18} />
+                  <activeModule.icon className="vioo-sidebar-app-icon w-5 h-5 text-white" />
                   <span className="text-sm font-black">{activeModule.label}</span>
                 </div>
                 {filteredNavItems.map((item: any) => (
@@ -716,12 +716,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
                         title={collapsed ? mod.label : undefined}
                         className={`w-full flex items-center ${collapsed ? 'justify-center' : 'gap-3'} ${collapsed ? 'px-2' : 'px-4'} py-3 rounded-xl transition-all group hover:shadow-md ${mod.bg} border ${mod.border} ${dragOverIdx === idx ? 'ring-2 ring-accent scale-[1.03] shadow-lg' : 'hover:scale-[1.01]'} ${dragIdx === idx ? 'opacity-40' : ''}`}
                       >
-                        {!collapsed && (
-                          <GripVertical size={14} className="text-slate-300 dark:text-slate-600 shrink-0 cursor-grab active:cursor-grabbing" />
-                        )}
-                        <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${mod.gradient} flex items-center justify-center text-white shadow-sm ${mod.shadow} shrink-0`}>
-                          <ModIcon size={16} />
-                        </div>
+                        <ModIcon className={`vioo-sidebar-app-icon w-5 h-5 shrink-0 ${mod.color}`} />
                         {!collapsed && (
                           <div className="text-left min-w-0 flex-1">
                             <span className={`text-sm font-bold ${mod.color} block truncate`}>{mod.label}</span>
@@ -750,7 +745,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
               {/* Active module header */}
               {!collapsed && (
                 <div className={`mx-1 mb-2 px-3 py-2 rounded-xl flex items-center gap-2.5 bg-gradient-to-r ${activeModule.gradient} text-white shadow-lg ${activeModule.shadow}`}>
-                  <activeModule.icon size={18} />
+                  <activeModule.icon className="vioo-sidebar-app-icon w-5 h-5 text-white" />
                   <span className="text-sm font-black">{activeModule.label}</span>
                 </div>
               )}

@@ -81,6 +81,39 @@ const SETTINGS_SUB_MODULES = SETTINGS_FEATURES.map(feature => ({
   label: feature.label,
 }));
 
+const readEdgeFunctionError = async (error: any, fallback: string) => {
+  const context = error?.context;
+  let payload: any = null;
+
+  try {
+    if (context && typeof context.clone === 'function') {
+      payload = await context.clone().json();
+    } else if (context && typeof context.json === 'function') {
+      payload = await context.json();
+    }
+  } catch {
+    payload = null;
+  }
+
+  const message = payload?.error || payload?.message || error?.message || fallback;
+  const enhanced = new Error(message);
+  (enhanced as any).status = context?.status || error?.status;
+  (enhanced as any).details = payload?.details || error?.details;
+  (enhanced as any).hint = payload?.hint || error?.hint;
+  (enhanced as any).code = payload?.code || error?.code;
+  return enhanced;
+};
+
+const unwrapEdgeFunctionResponse = async <T,>(
+  response: { data: T | null; error: any },
+  fallback: string,
+): Promise<T> => {
+  if (response.error) throw await readEdgeFunctionError(response.error, fallback);
+  const result: any = response.data;
+  if (result?.error) throw new Error(result.error);
+  return result as T;
+};
+
 // Sub-app definitions per module (matches Sidebar's moduleNavMap)
 const SUB_MODULE_CONFIG: Record<string, { to: string; label: string; icon: any }[]> = {
   WMS: [
@@ -375,6 +408,19 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
       const hasPasswordChange = formData.password && formData.password.trim().length > 0;
       const hasEmailChange = Boolean(userToEdit && formData.email && formData.email !== userToEdit.email);
       let createdAuthUserId: string | undefined;
+      const authProfile = {
+        name: formData.name || '',
+        username: formData.username || '',
+        phone: formData.phone || '',
+        role: formData.role || Role.EMPLOYEE,
+        avatar: formData.avatar || `https://i.pravatar.cc/150?u=${formData.email}`,
+        assignedWarehouseId: hasWmsAccess ? formData.assignedWarehouseId || '' : '',
+        allowedModules: formData.role === Role.ADMIN ? ALL_MODULES.map(m => m.key) : (formData.allowedModules || []),
+        allowedSubModules: formData.role === Role.ADMIN ? {} : (formData.allowedSubModules || {}),
+        adminModules: formData.role === Role.ADMIN ? [] : (formData.adminModules || []),
+        adminSubModules: formData.role === Role.ADMIN ? {} : (formData.adminSubModules || {}),
+        isActive: true,
+      };
 
       // === NEW USER: Create Supabase Auth account first ===
       if (!userToEdit && isSupabaseConfigured && hasPasswordChange) {
@@ -386,18 +432,12 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
             body: {
               email: formData.email,
               password: formData.password,
+              profile: authProfile,
             },
           });
 
-          if (response.error) {
-            throw new Error(response.error.message || 'Lỗi gọi Edge Function create-user');
-          }
-
-          const result = response.data;
-          if (result.error) {
-            throw new Error(result.error);
-          }
-          createdAuthUserId = result.userId || result.user?.id || result.id;
+          const result: any = await unwrapEdgeFunctionResponse(response, 'Không thể tạo tài khoản Auth trên Supabase.');
+          createdAuthUserId = result.userId || result.user?.id || result.id || result.profile?.auth_id || result.profile?.authId || result.profile?.id;
         } catch (authErr: any) {
           setSaving(false);
           logApiError('userModal.createAuthUser', authErr);
@@ -422,14 +462,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
             },
           });
 
-          if (response.error) {
-            throw new Error(response.error.message || 'Lỗi gọi Edge Function');
-          }
-
-          const result = response.data;
-          if (result.error) {
-            throw new Error(result.error);
-          }
+          await unwrapEdgeFunctionResponse(response, 'Không thể đổi email hoặc mật khẩu trên Supabase Auth.');
         } catch (pwErr: any) {
           setSaving(false);
           logApiError('userModal.resetPassword', pwErr);

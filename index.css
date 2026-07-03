@@ -703,3 +703,802 @@ button:not(:disabled):active,
 .dark #scanner-overlay, .dark .fixed.inset-0.z-50 .bg-white {
   background-color: var(--card) !important;
 }
+
+/* ==========================================================================
+   ENTERPRISE CLEAN MODE DESIGN TOKENS & STYLING OVERRIDES (Base.vn Style)
+   ========================================================================== */
+
+:root {
+  /* Default Modern Mode Design Tokens */
+  --erp-radius-card: 24px;
+  --erp-radius-btn: 12px;
+  --erp-radius-tab: 12px;
+  --erp-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --erp-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  --erp-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+  --erp-primary: #10b981;
+  --erp-primary-hover: #059669;
+  --erp-sidebar-bg: rgba(255, 255, 255, 0.7);
+  --erp-sidebar-border: rgba(255, 255, 255, 0.5);
+  --erp-sidebar-text: #475569;
+  --erp-sidebar-active-bg: rgba(16, 185, 129, 0.1);
+  --erp-sidebar-active-text: #059669;
+}
+
+.enterprise {
+  /* Enterprise Mode Design Tokens */
+  --erp-radius-card: 8px;
+  --erp-radius-btn: 8px;
+  --erp-radius-tab: 6px;
+  --erp-shadow-sm: none;
+  --erp-shadow-md: 0 1px 2px 0 rgba(0,0,0,0.05);
+  --erp-shadow-lg: 0 1px 3px 0 rgba(0,0,0,0.05);
+  --erp-primary: #064e3b; /* Vioo dark green */
+  --erp-primary-hover: #047857; /* emerald-700 */
+  --erp-sidebar-bg: #ffffff; /* keep sidebar background white */
+  --erp-sidebar-border: #e2e8f0;
+  --erp-sidebar-text: #1f2937;
+  --erp-sidebar-active-bg: #064e3b; /* Vioo dark green bg */
+  --erp-sidebar-active-text: #ffffff; /* White active text */
+}
+
+/* Force body bg to be flat light gray-50 */
+.enterprise body {
+  background-image: none !important;
+  background-color: #f9fafb !important;
+}
+
+/* Radius overrides */
+.enterprise .rounded-2xl,
+.enterprise .rounded-3xl {
+  border-radius: var(--erp-radius-card) !important;
+}
+
+.enterprise .rounded-xl {
+  border-radius: var(--erp-radius-btn) !important;
+}
+
+.enterprise .rounded-lg {
+  border-radius: 6px !important;
+}
+
+/* Shadow overrides */
+.enterprise .shadow,
+.enterprise .shadow-sm,
+.enterprise .shadow-md,
+.enterprise .shadow-lg,
+.enterprise .shadow-xl,
+.enterprise .shadow-2xl {
+  box-shadow: var(--erp-shadow-sm) !important;
+}
+
+/* Override glass components to flat solid white cards */
+.enterprise .glass-panel {
+  background: #ffffff !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: 1px solid #e5e7eb !important;
+  box-shadow: var(--erp-shadow-sm) !important;
+  border-radius: var(--erp-radius-card) !important;
+}
+
+.enterprise .glass-card {
+  background: #ffffff !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: 1px solid #e5e7eb !important;
+  box-shadow: var(--erp-shadow-sm) !important;
+  border-radius: var(--erp-radius-card) !important;
+}
+
+.enterprise .glass-card:hover {
+  border-color: #cbd5e1 !important;
+  box-shadow: var(--erp-shadow-md) !important;
+}
+
+/* Flatten gradients to solid colors */
+.enterprise [class*="bg-gradient-to"] {
+  background-image: none !important;
+}
+
+/* Flatten orange gradient buttons/tabs to solid Emerald primary */
+.enterprise button.bg-gradient-to-r.from-orange-500,
+.enterprise button[class*="from-orange-500"],
+.enterprise a[class*="from-orange-500"],
+.enterprise div[role="button"][class*="from-orange-500"],
+.enterprise .bg-gradient-to-r.from-orange-500.to-amber-500 {
+  background-image: none !important;
+  background-color: var(--erp-primary) !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+}
+
+.enterprise button.bg-gradient-to-r.from-orange-500:hover,
+.enterprise button[class*="from-orange-500"]:hover,
+.enterprise a[class*="from-orange-500"]:hover,
+.enterprise div[role="button"][class*="from-orange-500"]:hover {
+  background-color: var(--erp-primary-hover) !important;
+}
+
+/* Active tab indigo-purple gradient to solid Emerald primary */
+.enterprise .bg-gradient-to-r.from-indigo-500.to-purple-500 {
+  background-image: none !important;
+  background-color: var(--erp-primary) !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+}
+
+/* Project Dashboard Header Banner overriding */
+.enterprise .bg-gradient-to-r.from-orange-500.to-amber-500.rounded-2xl {
+  background-image: none !important;
+  background-color: #ffffff !important;
+  color: #1f2937 !important;
+  border: 1px solid #e5e7eb !important;
+  box-shadow: var(--erp-shadow-sm) !important;
+  padding: 12px 16px !important;
+}
+
+.enterprise .bg-gradient-to-r.from-orange-500.to-amber-500.rounded-2xl .text-white\/85 {
+  color: #6b7280 !important;
+}
+
+.enterprise .bg-gradient-to-r.from-orange-500.to-amber-500.rounded-2xl .w-9.h-9.bg-white\/20 {
+  background-color: #f3f4f6 !important;
+  color: var(--erp-primary) !important;
+}
+
+.enterprise .bg-gradient-to-r.from-orange-500.to-amber-500.rounded-2xl button {
+  border-radius: var(--erp-radius-btn) !important;
+}
+
+.enterprise .bg-gradient-to-r.from-orange-500.to-amber-500.rounded-2xl button.bg-white {
+  background-color: #f3f4f6 !important;
+  border: 1px solid #e5e7eb !important;
+  color: #374151 !important;
+}
+
+.enterprise .bg-gradient-to-r.from-orange-500.to-amber-500.rounded-2xl button.bg-white:hover {
+  background-color: #ffffff !important;
+}
+
+/* Sidebar Enterprise style override */
+.enterprise aside,
+.enterprise aside.glass-panel {
+  background-color: var(--erp-sidebar-bg) !important; /* #ffffff */
+  border-right: 1px solid var(--erp-sidebar-border) !important; /* #e2e8f0 */
+  background-image: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  box-shadow: none !important;
+  border-radius: 0px !important;
+  color: var(--erp-sidebar-text) !important;
+}
+
+.enterprise aside * {
+  transition: none !important;
+}
+
+/* Sidebar headers, logo text, labels */
+.enterprise aside span,
+.enterprise aside h1,
+.enterprise aside h2,
+.enterprise aside h3,
+.enterprise aside p,
+.enterprise aside a,
+.enterprise aside button,
+.enterprise aside div {
+  color: var(--erp-sidebar-text) !important;
+}
+
+.enterprise aside div[class*="border-b"] span,
+.enterprise aside div[class*="border-b"] p {
+  color: #1f2937 !important; /* Admin name / app title */
+}
+
+.enterprise aside div[class*="border-b"] p[class*="text-accent"] {
+  color: #059669 !important; /* Admin role badge */
+  font-weight: 700 !important;
+}
+
+/* Make all buttons/links in the sidebar transparent by default with no custom borders */
+.enterprise aside button,
+.enterprise aside a,
+.enterprise aside div[role="button"] {
+  background-color: transparent !important;
+  background-image: none !important;
+  border-color: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+/* General Layout for list links & module buttons - Facebook Style */
+.enterprise aside button[class*="rounded-xl"],
+.enterprise aside div.space-y-1 button,
+.enterprise aside div.grid button,
+.enterprise aside nav a,
+.enterprise aside nav button {
+  height: 46px !important;
+  padding: 0 14px !important;
+  border-radius: 8px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  gap: 12px !important;
+  border: none !important;
+  background-color: transparent !important;
+}
+
+/* Sidebar App icon containers override - transparent with unified size */
+.enterprise aside div[class*="bg-gradient-to-br"],
+.enterprise aside div[class*="bg-gradient-to-r"] {
+  background-image: none !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+  width: auto !important;
+  height: auto !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border: none !important;
+}
+
+/* Active module header in the sidebar - flat transparent background */
+.enterprise aside div[class*="bg-gradient-to-r"][class*="mx-1"][class*="mb-2"] {
+  background-image: none !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+  padding-left: 14px !important;
+  padding-right: 14px !important;
+}
+
+.enterprise aside div[class*="bg-gradient-to-r"][class*="mx-1"][class*="mb-2"] span {
+  color: #1f2937 !important;
+  font-weight: 800 !important;
+  font-size: 15px !important;
+}
+
+.enterprise aside div[class*="bg-gradient-to-r"][class*="mx-1"][class*="mb-2"] svg {
+  color: #059669 !important;
+  width: 20px !important;
+  height: 20px !important;
+}
+
+/* Enforce 20px icon size globally in sidebar */
+.enterprise aside button svg,
+.enterprise aside a svg {
+  width: 20px !important;
+  height: 20px !important;
+}
+
+/* Set text colors of labels and icons to match too, or keep them uniform #1f2937 */
+.enterprise aside button span[class*="text-"],
+.enterprise aside a span[class*="text-"],
+.enterprise aside span:not([class*="text-"]):not([class*="text-white"]):not([class*="text-slate-"]),
+.enterprise aside p:not([class*="text-"]):not([class*="text-white"]):not([class*="text-slate-"]),
+.enterprise aside h1,
+.enterprise aside h2,
+.enterprise aside h3 {
+  color: #1f2937 !important;
+  font-weight: 500 !important;
+}
+
+.enterprise aside a svg,
+.enterprise aside button svg {
+  color: #4b5563 !important;
+}
+
+/* Text phụ color */
+.enterprise aside span.text-slate-300,
+.enterprise aside p.text-slate-300,
+.enterprise aside span.text-slate-400,
+.enterprise aside p.text-slate-400,
+.enterprise aside div.text-\[10px\],
+.enterprise aside div.text-\[9px\] {
+  color: #65676B !important;
+}
+
+/* Active items (both general navigation links and modules if active) */
+.enterprise aside a.active,
+.enterprise aside button.active-module,
+.enterprise aside a[class*="bg-accent"],
+.enterprise aside a[class*="bg-gradient-to-r"].active,
+.enterprise aside div[class*="bg-gradient-to-r"].active-module,
+.enterprise aside nav a.active,
+.enterprise aside nav button.active {
+  background-image: none !important;
+  background-color: var(--erp-sidebar-active-bg) !important; /* #D1FAE5 */
+  color: var(--erp-sidebar-active-text) !important; /* #065F46 */
+  border-radius: 8px !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+.enterprise aside a.active svg,
+.enterprise aside button.active-module svg,
+.enterprise aside button.active-module div[class*="bg-gradient-"] svg,
+.enterprise aside a[class*="bg-accent"] svg,
+.enterprise aside a[class*="bg-gradient-to-r"].active svg,
+.enterprise aside nav a.active svg,
+.enterprise aside nav button.active svg {
+  color: var(--erp-sidebar-active-text) !important;
+}
+
+.enterprise aside a.active span,
+.enterprise aside button.active-module span,
+.enterprise aside a[class*="bg-accent"] span,
+.enterprise aside nav a.active span,
+.enterprise aside nav button.active span {
+  color: var(--erp-sidebar-active-text) !important;
+  font-weight: 600 !important;
+}
+
+/* General hover state for list items */
+.enterprise aside a:hover,
+.enterprise aside button:hover,
+.enterprise aside div[role="button"]:hover,
+.enterprise aside nav a:hover,
+.enterprise aside nav button:hover {
+  background-color: rgba(0, 0, 0, 0.05) !important;
+  color: #1f2937 !important;
+}
+
+.enterprise aside a:hover svg,
+.enterprise aside button:hover svg,
+.enterprise aside nav a:hover svg,
+.enterprise aside nav button:hover svg {
+  color: #059669 !important;
+}
+
+.enterprise aside a:hover span,
+.enterprise aside button:hover span,
+.enterprise aside nav a:hover span,
+.enterprise aside nav button:hover span {
+  color: #000000 !important;
+}
+
+/* Logo container green box */
+.enterprise aside div.bg-accent {
+  background-color: #059669 !important; /* emerald-600 */
+  color: #ffffff !important;
+}
+
+/* Manage Warehouse Indicator Card inside Sidebar */
+.enterprise aside div[class*="bg-white/40"],
+.enterprise aside div[class*="bg-slate-800/50"] {
+  background-color: #f8fafc !important;
+  border-color: var(--erp-sidebar-border) !important;
+}
+
+.enterprise aside div[class*="bg-white/40"] span {
+  color: #64748b !important;
+}
+
+.enterprise aside div[class*="bg-white/40"] span[class*="text-white"],
+.enterprise aside div[class*="bg-white/40"] span.font-bold {
+  color: #1f2937 !important;
+}
+
+/* Buttons like Dark theme, Notification, Logout inside Sidebar */
+.enterprise aside button[class*="bg-slate-800/50"],
+.enterprise aside button[class*="bg-white/50"],
+.enterprise aside div[class*="bg-slate-800/50"],
+.enterprise aside div[class*="bg-white/50"],
+.enterprise aside button[class*="border-white/60"],
+.enterprise aside div[class*="border-white/60"],
+.enterprise aside .notification-center-btn {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #4b5563 !important;
+}
+
+.enterprise aside button[class*="bg-slate-800/50"] svg,
+.enterprise aside button[class*="bg-white/50"] svg,
+.enterprise aside div[class*="bg-slate-800/50"] svg,
+.enterprise aside div[class*="bg-white/50"] svg {
+  color: #4b5563 !important;
+}
+
+.enterprise aside button[class*="bg-slate-800/50"]:hover,
+.enterprise aside button[class*="bg-white/50"]:hover {
+  background-color: #f1f5f9 !important;
+  border-color: #94a3b8 !important;
+}
+
+.enterprise aside button[class*="bg-red-500/10"] {
+  background-color: #fef2f2 !important;
+  border-color: #fca5a5 !important;
+  color: #ef4444 !important;
+}
+
+.enterprise aside button[class*="bg-red-500/10"] * {
+  color: #ef4444 !important;
+}
+
+.enterprise aside button[class*="bg-red-500/10"]:hover {
+  background-color: #ef4444 !important;
+  color: #ffffff !important;
+}
+
+.enterprise aside button[class*="bg-red-500/10"]:hover * {
+  color: #ffffff !important;
+}
+
+/* Sidebar raised reference style */
+.enterprise .vioo-app-sidebar {
+  --vioo-sidebar-item-radius: 20px;
+  --vioo-sidebar-item-height: 54px;
+  --vioo-sidebar-text: #6b7a91;
+  --vioo-sidebar-text-strong: #1f2937;
+  --vioo-sidebar-hover-bg: #fbfdff;
+  --vioo-sidebar-hover-shadow: none;
+  --vioo-sidebar-active-bg: #07533f;
+  --vioo-sidebar-active-text: #ffffff;
+  background: linear-gradient(180deg, #ffffff 0%, #fbfcff 100%) !important;
+  border-right: 1px solid #e5eaf2 !important;
+  box-shadow: 18px 0 46px -44px rgba(15, 23, 42, 0.55) !important;
+  color: var(--vioo-sidebar-text-strong) !important;
+  font-family: Inter, system-ui, sans-serif !important;
+}
+
+.enterprise .vioo-app-sidebar * {
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease !important;
+}
+
+.enterprise .vioo-app-sidebar .vioo-sidebar-nav {
+  padding: 12px 8px 10px !important;
+  scrollbar-gutter: stable;
+}
+
+.enterprise .vioo-app-sidebar .space-y-0\.5 > :not([hidden]) ~ :not([hidden]) {
+  margin-top: 8px !important;
+}
+
+.enterprise .vioo-app-sidebar .space-y-1 > :not([hidden]) ~ :not([hidden]) {
+  margin-top: 8px !important;
+}
+
+.enterprise .vioo-app-sidebar .vioo-sidebar-nav a,
+.enterprise .vioo-app-sidebar .vioo-sidebar-nav button {
+  min-height: var(--vioo-sidebar-item-height) !important;
+  height: var(--vioo-sidebar-item-height) !important;
+  padding: 0 18px !important;
+  border-radius: var(--vioo-sidebar-item-radius) !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: var(--vioo-sidebar-text) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  gap: 18px !important;
+  font-size: 15px !important;
+  font-weight: 800 !important;
+  line-height: 22px !important;
+  letter-spacing: 0 !important;
+}
+
+.enterprise .vioo-app-sidebar .vioo-sidebar-nav a > div:first-child,
+.enterprise .vioo-app-sidebar .vioo-sidebar-nav button > div:first-child {
+  display: flex !important;
+  align-items: center !important;
+  gap: 18px !important;
+  min-width: 0 !important;
+}
+
+.enterprise .vioo-app-sidebar .vioo-sidebar-nav a svg,
+.enterprise .vioo-app-sidebar .vioo-sidebar-nav button svg {
+  width: 22px !important;
+  height: 22px !important;
+  margin-right: 0 !important;
+  color: currentColor !important;
+  stroke-width: 2.25 !important;
+  flex-shrink: 0 !important;
+}
+
+.enterprise .vioo-app-sidebar .vioo-sidebar-nav span.font-bold,
+.enterprise .vioo-app-sidebar .vioo-sidebar-nav span[class*="font-bold"] {
+  color: inherit !important;
+  font-size: 15px !important;
+  font-weight: 800 !important;
+  line-height: 22px !important;
+  letter-spacing: 0 !important;
+}
+
+.enterprise .vioo-app-sidebar .vioo-sidebar-nav span[class*="bg-slate-200"],
+.enterprise .vioo-app-sidebar .vioo-sidebar-nav span[class*="bg-slate-700"] {
+  min-width: 40px !important;
+  height: 30px !important;
+  padding: 0 11px !important;
+  border-radius: 13px !important;
+  background: #e8eef7 !important;
+  color: #263244 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-size: 15px !important;
+  font-weight: 800 !important;
+  line-height: 1 !important;
+}
+
+.enterprise .vioo-app-sidebar .vioo-sidebar-nav a:hover:not([aria-current="page"]),
+.enterprise .vioo-app-sidebar .vioo-sidebar-nav button:hover:not(.active-module):not([aria-current="page"]) {
+  background: var(--vioo-sidebar-hover-bg) !important;
+  color: var(--vioo-sidebar-text-strong) !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+.enterprise .vioo-app-sidebar .vioo-sidebar-nav a:hover:not([aria-current="page"]) svg,
+.enterprise .vioo-app-sidebar .vioo-sidebar-nav button:hover:not(.active-module):not([aria-current="page"]) svg {
+  color: currentColor !important;
+}
+
+.enterprise .vioo-app-sidebar .vioo-sidebar-nav a[aria-current="page"],
+.enterprise .vioo-app-sidebar .vioo-sidebar-nav button.active-module,
+.enterprise .vioo-app-sidebar .vioo-sidebar-nav button[aria-current="page"] {
+  background: linear-gradient(135deg, #087657 0%, var(--vioo-sidebar-active-bg) 56%, #044231 100%) !important;
+  color: var(--vioo-sidebar-active-text) !important;
+  box-shadow: 0 20px 34px -24px rgba(7, 83, 63, 0.82), inset 0 1px 0 rgba(255, 255, 255, 0.22) !important;
+  transform: translateY(-1px) !important;
+}
+
+.enterprise .vioo-app-sidebar .vioo-sidebar-nav a[aria-current="page"] *,
+.enterprise .vioo-app-sidebar .vioo-sidebar-nav button.active-module *,
+.enterprise .vioo-app-sidebar .vioo-sidebar-nav button[aria-current="page"] * {
+  color: var(--vioo-sidebar-active-text) !important;
+}
+
+.enterprise .vioo-app-sidebar .vioo-sidebar-nav a[aria-current="page"] svg,
+.enterprise .vioo-app-sidebar .vioo-sidebar-nav button.active-module svg,
+.enterprise .vioo-app-sidebar .vioo-sidebar-nav button[aria-current="page"] svg {
+  color: var(--vioo-sidebar-active-text) !important;
+}
+
+.enterprise .vioo-app-sidebar .vioo-sidebar-nav div[class*="bg-gradient-to-r"][class*="mx-1"][class*="mb-2"] {
+  min-height: var(--vioo-sidebar-item-height) !important;
+  padding: 0 18px !important;
+  border-radius: var(--vioo-sidebar-item-radius) !important;
+  background: linear-gradient(135deg, #087657 0%, var(--vioo-sidebar-active-bg) 56%, #044231 100%) !important;
+  color: var(--vioo-sidebar-active-text) !important;
+  box-shadow: 0 20px 34px -24px rgba(7, 83, 63, 0.82), inset 0 1px 0 rgba(255, 255, 255, 0.22) !important;
+  gap: 18px !important;
+}
+
+.enterprise .vioo-app-sidebar .vioo-sidebar-nav div[class*="bg-gradient-to-r"][class*="mx-1"][class*="mb-2"] span,
+.enterprise .vioo-app-sidebar .vioo-sidebar-nav div[class*="bg-gradient-to-r"][class*="mx-1"][class*="mb-2"] svg {
+  color: var(--vioo-sidebar-active-text) !important;
+}
+
+.enterprise .vioo-app-sidebar .vioo-sidebar-nav .grid button {
+  min-height: 72px !important;
+  height: auto !important;
+  padding: 10px 4px !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+  gap: 6px !important;
+  text-align: center !important;
+}
+
+.enterprise .vioo-app-sidebar .vioo-sidebar-nav .grid button span {
+  font-size: 10px !important;
+  font-weight: 800 !important;
+  line-height: 14px !important;
+}
+
+.enterprise .vioo-app-sidebar .vioo-sidebar-nav .vioo-sidebar-app-icon {
+  color: currentColor !important;
+  stroke-width: 2.25 !important;
+}
+
+.enterprise .vioo-app-sidebar .vioo-sidebar-nav button:active,
+.enterprise .vioo-app-sidebar .vioo-sidebar-nav a:active {
+  transform: translateY(0) scale(0.99) !important;
+}
+
+.enterprise .vioo-app-sidebar.w-\[72px\] .vioo-sidebar-nav a,
+.enterprise .vioo-app-sidebar.w-\[72px\] .vioo-sidebar-nav button {
+  justify-content: center !important;
+  padding: 0 !important;
+}
+
+.enterprise .vioo-app-sidebar.w-\[72px\] .vioo-sidebar-nav a > div:first-child,
+.enterprise .vioo-app-sidebar.w-\[72px\] .vioo-sidebar-nav button > div:first-child {
+  justify-content: center !important;
+  gap: 0 !important;
+}
+
+.enterprise .vioo-app-sidebar > div:first-child {
+  height: 64px !important;
+  border-bottom: 1px solid #eef2f7 !important;
+}
+
+.enterprise .vioo-app-sidebar > div:first-child span {
+  color: var(--vioo-sidebar-text-strong) !important;
+  font-size: 18px !important;
+  font-weight: 900 !important;
+  letter-spacing: -0.02em !important;
+}
+
+.enterprise .vioo-app-sidebar > div:first-child div.bg-accent {
+  width: 32px !important;
+  height: 32px !important;
+  border-radius: 9px !important;
+  background: #059669 !important;
+  color: #ffffff !important;
+  font-size: 12px !important;
+  font-weight: 900 !important;
+}
+
+.enterprise .vioo-app-sidebar > div:nth-child(2) {
+  border-bottom: 1px solid #eef2f7 !important;
+}
+
+.enterprise .vioo-app-sidebar > div:nth-child(2) p:first-of-type {
+  color: var(--vioo-sidebar-text-strong) !important;
+  font-size: 14px !important;
+  font-weight: 900 !important;
+  line-height: 18px !important;
+}
+
+.enterprise .vioo-app-sidebar > div:nth-child(2) p[class*="text-accent"] {
+  color: #059669 !important;
+  font-size: 11px !important;
+  font-weight: 900 !important;
+  letter-spacing: 0.08em !important;
+}
+
+.enterprise .vioo-app-sidebar button[class*="bg-red-500/10"] {
+  min-height: 36px !important;
+  border-radius: 10px !important;
+  background: #fef2f2 !important;
+  color: #ef4444 !important;
+  font-size: 11px !important;
+  font-weight: 900 !important;
+}
+
+.enterprise .vioo-app-sidebar button[class*="bg-red-500/10"] * {
+  color: #ef4444 !important;
+}
+
+.enterprise .vioo-app-sidebar button[class*="bg-red-500/10"]:hover {
+  background: #fee2e2 !important;
+}
+
+/* Fallback solid background colors for gradient buttons outside sidebar */
+.enterprise button[class*="bg-gradient-to-r"]:not(aside *):not([class*="from-white"]),
+.enterprise a[class*="bg-gradient-to-r"]:not(aside *):not([class*="from-white"]) {
+  background-image: none !important;
+  background-color: var(--erp-primary) !important; /* default fallback to emerald green */
+  color: #ffffff !important;
+  box-shadow: none !important;
+}
+
+/* Specific solid fallback colors based on their gradient classes */
+.enterprise button[class*="bg-gradient-to-r"][class*="from-indigo-"]:not(aside *),
+.enterprise button[class*="bg-gradient-to-r"][class*="from-violet-"]:not(aside *),
+.enterprise button[class*="bg-gradient-to-r"][class*="from-purple-"]:not(aside *),
+.enterprise a[class*="bg-gradient-to-r"][class*="from-indigo-"]:not(aside *),
+.enterprise a[class*="bg-gradient-to-r"][class*="from-violet-"]:not(aside *),
+.enterprise a[class*="bg-gradient-to-r"][class*="from-purple-"]:not(aside *) {
+  background-color: #6366f1 !important; /* solid indigo */
+}
+
+.enterprise button[class*="bg-gradient-to-r"][class*="from-emerald-"]:not(aside *),
+.enterprise button[class*="bg-gradient-to-r"][class*="from-teal-"]:not(aside *),
+.enterprise a[class*="bg-gradient-to-r"][class*="from-emerald-"]:not(aside *),
+.enterprise a[class*="bg-gradient-to-r"][class*="from-teal-"]:not(aside *) {
+  background-color: #059669 !important; /* solid emerald */
+}
+
+.enterprise button[class*="bg-gradient-to-r"][class*="from-orange-"]:not(aside *),
+.enterprise button[class*="bg-gradient-to-r"][class*="from-amber-"]:not(aside *),
+.enterprise a[class*="bg-gradient-to-r"][class*="from-orange-"]:not(aside *),
+.enterprise a[class*="bg-gradient-to-r"][class*="from-amber-"]:not(aside *) {
+  background-color: #d97706 !important; /* solid amber */
+}
+
+.enterprise button[class*="bg-gradient-to-r"][class*="from-rose-"]:not(aside *),
+.enterprise button[class*="bg-gradient-to-r"][class*="from-pink-"]:not(aside *),
+.enterprise button[class*="bg-gradient-to-r"][class*="from-red-"]:not(aside *),
+.enterprise a[class*="bg-gradient-to-r"][class*="from-rose-"]:not(aside *),
+.enterprise a[class*="bg-gradient-to-r"][class*="from-pink-"]:not(aside *),
+.enterprise a[class*="bg-gradient-to-r"][class*="from-red-"]:not(aside *) {
+  background-color: #e11d48 !important; /* solid rose */
+}
+
+.enterprise button[class*="bg-gradient-to-r"][class*="from-cyan-"]:not(aside *),
+.enterprise button[class*="bg-gradient-to-r"][class*="from-blue-"]:not(aside *),
+.enterprise button[class*="bg-gradient-to-r"][class*="from-sky-"]:not(aside *),
+.enterprise a[class*="bg-gradient-to-r"][class*="from-cyan-"]:not(aside *),
+.enterprise a[class*="bg-gradient-to-r"][class*="from-blue-"]:not(aside *),
+.enterprise a[class*="bg-gradient-to-r"][class*="from-sky-"]:not(aside *) {
+  background-color: #2563eb !important; /* solid blue */
+}
+
+/* Hover effects */
+.enterprise button[class*="bg-gradient-to-r"]:not(aside *):hover,
+.enterprise a[class*="bg-gradient-to-r"]:not(aside *):hover {
+  filter: brightness(0.9) !important;
+}
+
+/* Table overrides */
+.enterprise table {
+  border-collapse: collapse !important;
+  width: 100% !important;
+}
+
+.enterprise table thead th {
+  background-color: #f3f4f6 !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  color: #4b5563 !important;
+  padding: 10px 12px !important;
+  height: 40px !important;
+  border-bottom: 1px solid #e5e7eb !important;
+  border-top: 1px solid #e5e7eb !important;
+  text-transform: none !important;
+  letter-spacing: normal !important;
+}
+
+.enterprise table tbody tr {
+  height: 42px !important;
+  border-bottom: 1px solid #f3f4f6 !important;
+}
+
+.enterprise table tbody tr:hover {
+  background-color: #f9fafb !important;
+}
+
+.enterprise table td {
+  font-size: 13px !important;
+  padding: 10px 12px !important;
+  color: #1f2937 !important;
+}
+
+/* Auto right-align numeric fields */
+.enterprise table td.text-right,
+.enterprise table th.text-right {
+  text-align: right !important;
+}
+
+/* Financial KPI Cards overrides */
+.enterprise .bg-gradient-to-br[class*="from-blue-500"],
+.enterprise .bg-gradient-to-br[class*="from-orange-500"],
+.enterprise .bg-gradient-to-br[class*="from-emerald-500"],
+.enterprise .bg-gradient-to-br[class*="from-red-500"],
+.enterprise .bg-gradient-to-br[class*="from-violet-500"] {
+  background-image: none !important;
+  background-color: #ffffff !important;
+  color: #1f2937 !important;
+  border: 1px solid #e5e7eb !important;
+  box-shadow: var(--erp-shadow-sm) !important;
+}
+
+.enterprise .bg-gradient-to-br[class*="from-blue-500"] *,
+.enterprise .bg-gradient-to-br[class*="from-orange-500"] *,
+.enterprise .bg-gradient-to-br[class*="from-emerald-500"] *,
+.enterprise .bg-gradient-to-br[class*="from-red-500"] *,
+.enterprise .bg-gradient-to-br[class*="from-violet-500"] * {
+  color: #1f2937 !important;
+}
+
+.enterprise .bg-gradient-to-br[class*="from-blue-500"] p[class*="text-white/80"],
+.enterprise .bg-gradient-to-br[class*="from-orange-500"] p[class*="text-white/80"],
+.enterprise .bg-gradient-to-br[class*="from-emerald-500"] p[class*="text-white/80"],
+.enterprise .bg-gradient-to-br[class*="from-red-500"] p[class*="text-white/80"],
+.enterprise .bg-gradient-to-br[class*="from-violet-500"] p[class*="text-white/80"] {
+  color: #4b5563 !important;
+}
+
+.enterprise .bg-gradient-to-br[class*="from-blue-500"] div[class*="bg-white/20"],
+.enterprise .bg-gradient-to-br[class*="from-orange-500"] div[class*="bg-white/20"],
+.enterprise .bg-gradient-to-br[class*="from-emerald-500"] div[class*="bg-white/20"],
+.enterprise .bg-gradient-to-br[class*="from-red-500"] div[class*="bg-white/20"],
+.enterprise .bg-gradient-to-br[class*="from-violet-500"] div[class*="bg-white/20"] {
+  background-color: #f3f4f6 !important;
+  color: var(--erp-primary) !important;
+}
