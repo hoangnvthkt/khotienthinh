@@ -12,6 +12,7 @@ import {
 import { fromDb, toDb } from './dbMapping';
 import { getExcelCell, parseExcelRows } from './excelImport';
 import { loadXlsx } from './loadXlsx';
+import { parseVietnameseMoney, parseVietnameseNumber } from './projectMaterialTabUtils';
 import { getWeekStart, projectWeeklyProgressService } from './projectWeeklyProgressService';
 import { isSupabaseConfigured, supabase } from './supabase';
 
@@ -34,12 +35,11 @@ export interface ProjectOpeningBalanceImportResult {
 }
 
 const numberOrZero = (value: unknown): number => {
-  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
-  const raw = String(value ?? '').trim();
-  if (!raw) return 0;
-  const normalized = raw.replace(/[^\d,.-]/g, '').replace(/\./g, '').replace(',', '.');
-  const parsed = Number(normalized);
-  return Number.isFinite(parsed) ? parsed : 0;
+  return parseVietnameseNumber(value);
+};
+
+const moneyOrZero = (value: unknown): number => {
+  return parseVietnameseMoney(value);
 };
 
 const clampPercent = (value: unknown): number => Math.min(100, Math.max(0, numberOrZero(value)));
@@ -82,8 +82,33 @@ const normalizeSkuPart = (value: unknown): string =>
     .replace(/[^A-Z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '') || 'OPEN';
 
-const specKey = (accountingCode?: string | null, itemName?: string | null): string =>
-  `${normalizeLookupText(accountingCode)}::${normalizeLookupText(itemName)}`;
+const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const isGeneratedVariantSku = (sku: unknown, accountingCode: unknown): boolean => {
+  const normalizedSku = normalizeSkuPart(sku);
+  const base = normalizeSkuPart(accountingCode);
+  return new RegExp(`^${escapeRegExp(base)}-\\d+$`).test(normalizedSku);
+};
+
+const trimInferredItemName = (value: string): string =>
+  value.replace(/[\s\-–—_*.,;:\/\\]+$/g, '').trim();
+
+const inferCommonItemName = (names: string[]): string => {
+  const cleanNames = [...new Set(names.map(name => name.trim()).filter(Boolean))];
+  if (cleanNames.length === 0) return '';
+  if (cleanNames.length === 1) return cleanNames[0];
+
+  let prefix = cleanNames[0];
+  for (const name of cleanNames.slice(1)) {
+    let index = 0;
+    while (index < prefix.length && index < name.length && prefix[index] === name[index]) index += 1;
+    prefix = prefix.slice(0, index);
+    if (!prefix) break;
+  }
+
+  const inferred = trimInferredItemName(prefix);
+  return inferred.length >= 3 ? inferred : cleanNames[0];
+};
 
 const emptyImportTotals = (): ProjectOpeningBalanceImportTotals => ({
   purchasedValue: 0,
@@ -297,26 +322,23 @@ const buildItemsForLines = (
 ): { itemByLineKey: Map<string, InventoryItem>; createdItems: InventoryItem[] } => {
   const byId = new Map(existingItems.map(item => [item.id, item]));
   const bySku = new Map(existingItems.map(item => [item.sku.trim().toLowerCase(), item]));
-  const byAccountingSpec = new Map(
-    existingItems
-      .filter(item => item.accountingCode)
-      .map(item => [specKey(item.accountingCode, item.name), item] as const),
-  );
   const createdItems: InventoryItem[] = [];
   const itemByLineKey = new Map<string, InventoryItem>();
 
   lines.forEach((line, index) => {
     const normalized = normalizeLine(line);
     const skuKey = normalized.sku.toLowerCase();
-    const accountingKey = specKey(normalized.accountingCode, normalized.itemName);
     let item = normalized.inventoryItemId ? byId.get(normalized.inventoryItemId) : undefined;
-    if (!item && normalized.accountingCode) item = byAccountingSpec.get(accountingKey);
     if (!item && skuKey) item = bySku.get(skuKey);
+    if (!item && normalized.accountingCode) {
+      item = findExistingRootAccountingItem(existingItems, normalized.accountingCode, normalized.itemName);
+    }
     if (!item) {
+      const rootCode = normalized.accountingCode || normalized.sku;
       item = {
         id: normalized.inventoryItemId || crypto.randomUUID(),
-        sku: normalized.sku || `OPEN-${String(index + 1).padStart(4, '0')}`,
-        accountingCode: normalized.accountingCode || null,
+        sku: normalized.sku || rootCode || `OPEN-${String(index + 1).padStart(4, '0')}`,
+        accountingCode: normalized.accountingCode || normalized.sku || null,
         name: normalized.itemName || normalized.sku || `Vật tư đầu kỳ ${index + 1}`,
         category: 'Đầu kỳ',
         unit: normalized.unit || 'Cái',
@@ -329,7 +351,6 @@ const buildItemsForLines = (
       createdItems.push(item);
       byId.set(item.id, item);
       bySku.set(item.sku.trim().toLowerCase(), item);
-      if (item.accountingCode) byAccountingSpec.set(specKey(item.accountingCode, item.name), item);
     }
     itemByLineKey.set(String(index), item);
   });
@@ -354,54 +375,45 @@ interface AccountingColumnMap {
   exportAmount?: number;
 }
 
+interface AccountingRawRow {
+  rowNumber: number;
+  accountingCode: string;
+  itemName: string;
+  unit: string;
+  importQty: number;
+  importUnitPrice: number;
+  importAmount: number;
+  exportQty: number;
+  exportUnitPrice: number;
+  exportAmount: number;
+  remainingValue: number;
+  errors: string[];
+  warnings: string[];
+}
+
 const getMatrixCell = (row: unknown[] | undefined, index?: number): unknown =>
   index === undefined || !row ? '' : row[index];
 
 const rowHasValue = (row: unknown[] | undefined): boolean =>
   !!row && row.some(value => String(value ?? '').trim() !== '');
 
-const findExistingAccountingItem = (
+const findExistingRootAccountingItem = (
   existingItems: InventoryItem[],
   accountingCode: string,
-  itemName: string,
-): InventoryItem | undefined =>
-  existingItems.find(item => item.accountingCode && specKey(item.accountingCode, item.name) === specKey(accountingCode, itemName));
+  inferredName?: string,
+): InventoryItem | undefined => {
+  const codeKey = normalizeLookupText(accountingCode);
+  const nameKey = normalizeLookupText(inferredName);
+  const exactSku = existingItems.find(item => normalizeLookupText(item.sku) === codeKey);
+  if (exactSku) return exactSku;
 
-const buildAccountingSkuResolver = (existingItems: InventoryItem[] = []) => {
-  const nextByBase = new Map<string, number>();
-  const skuBySpec = new Map<string, string>();
-  const usedSkus = new Set(existingItems.map(item => String(item.sku || '').trim().toLowerCase()).filter(Boolean));
+  const sameCodeItems = existingItems.filter(item => normalizeLookupText(item.accountingCode) === codeKey);
+  if (nameKey) {
+    const sameName = sameCodeItems.find(item => normalizeLookupText(item.name) === nameKey);
+    if (sameName) return sameName;
+  }
 
-  existingItems.forEach(item => {
-    if (!item.accountingCode) return;
-    const base = normalizeSkuPart(item.accountingCode);
-    const sku = String(item.sku || '').toUpperCase();
-    if (sku.startsWith(`${base}-`)) {
-      const suffix = sku.slice(base.length + 1);
-      if (/^\d+$/.test(suffix)) {
-        nextByBase.set(base, Math.max(nextByBase.get(base) || 1, Number(suffix) + 1));
-      }
-    }
-    skuBySpec.set(specKey(item.accountingCode, item.name), item.sku);
-  });
-
-  return (accountingCode: string, itemName: string) => {
-    const key = specKey(accountingCode, itemName);
-    const existingSku = skuBySpec.get(key);
-    if (existingSku) return existingSku;
-
-    const base = normalizeSkuPart(accountingCode);
-    let next = nextByBase.get(base) || 1;
-    let sku = `${base}-${String(next).padStart(3, '0')}`;
-    while (usedSkus.has(sku.toLowerCase())) {
-      next += 1;
-      sku = `${base}-${String(next).padStart(3, '0')}`;
-    }
-    nextByBase.set(base, next + 1);
-    usedSkus.add(sku.toLowerCase());
-    skuBySpec.set(key, sku);
-    return sku;
-  };
+  return sameCodeItems.find(item => !isGeneratedVariantSku(item.sku, accountingCode));
 };
 
 const buildAccountingColumnMap = (topRow: unknown[], subRow: unknown[]): AccountingColumnMap => {
@@ -478,8 +490,7 @@ const parseAccountingOpeningRows = (
   if (headerIndex < 0 || !columns) return null;
 
   const existingItems = options.existingItems || [];
-  const resolveSku = buildAccountingSkuResolver(existingItems);
-  const rows: ProjectOpeningBalanceImportRow[] = [];
+  const rawRows: AccountingRawRow[] = [];
 
   matrix.slice(headerIndex + 2).forEach((row, localIndex) => {
     if (!rowHasValue(row)) return;
@@ -489,17 +500,16 @@ const parseAccountingOpeningRows = (
     const itemName = String(getMatrixCell(row, columns!.itemName) || '').trim();
     const unit = String(getMatrixCell(row, columns!.unit) || '').trim() || 'Cái';
     const importQty = numberOrZero(getMatrixCell(row, columns!.importQty));
-    const importUnitPrice = numberOrZero(getMatrixCell(row, columns!.importUnitPrice));
-    const importAmount = numberOrZero(getMatrixCell(row, columns!.importAmount)) || importQty * importUnitPrice;
+    const importUnitPrice = moneyOrZero(getMatrixCell(row, columns!.importUnitPrice));
+    const importAmount = moneyOrZero(getMatrixCell(row, columns!.importAmount)) || importQty * importUnitPrice;
     const exportQty = numberOrZero(getMatrixCell(row, columns!.exportQty));
-    const exportUnitPrice = numberOrZero(getMatrixCell(row, columns!.exportUnitPrice));
-    const exportAmount = numberOrZero(getMatrixCell(row, columns!.exportAmount))
+    const exportUnitPrice = moneyOrZero(getMatrixCell(row, columns!.exportUnitPrice));
+    const exportAmount = moneyOrZero(getMatrixCell(row, columns!.exportAmount))
       || exportQty * (exportUnitPrice || importUnitPrice);
-    const unitPrice = importUnitPrice || exportUnitPrice;
-    const remainingQty = Math.max(0, importQty - exportQty);
-    const existingItem = accountingCode && itemName
-      ? findExistingAccountingItem(existingItems, accountingCode, itemName)
-      : undefined;
+    const unitPrice = importUnitPrice
+      || (importQty > 0 ? importAmount / importQty : 0)
+      || exportUnitPrice
+      || (exportQty > 0 ? exportAmount / exportQty : 0);
     const errors: string[] = [];
     const warnings: string[] = [];
 
@@ -509,37 +519,112 @@ const parseAccountingOpeningRows = (
     if (exportQty > importQty) warnings.push('Số lượng xuất lớn hơn nhập, tồn được tính bằng 0.');
     if (importQty <= 0 && exportQty <= 0 && importAmount <= 0 && exportAmount <= 0) warnings.push('Dòng không có số lượng/giá trị nhập xuất.');
 
-    rows.push({
+    rawRows.push({
       rowNumber,
-      inventoryItemId: existingItem?.id || null,
       accountingCode,
-      sku: accountingCode && itemName ? resolveSku(accountingCode, itemName) : accountingCode,
       itemName,
       unit,
-      warehouseId: options.defaultWarehouseId || '',
-      purchasedQty: importQty,
-      issuedQty: exportQty,
-      usedQty: exportQty,
-      remainingQty,
-      unitPrice,
-      remainingValue: remainingQty * unitPrice,
-      purchasedAmount: Math.max(0, importAmount),
-      issuedAmount: Math.max(0, exportAmount),
-      note: accountingCode ? `Mã kế toán: ${accountingCode}` : null,
+      importQty,
+      importUnitPrice: unitPrice,
+      importAmount: Math.max(0, importAmount),
+      exportQty,
+      exportUnitPrice: exportUnitPrice || unitPrice,
+      exportAmount: Math.max(0, exportAmount),
+      remainingValue: Math.max(0, importQty - exportQty) * unitPrice,
       errors,
       warnings,
     });
   });
 
-  const nonEmptyRows = rows.filter(row =>
-    row.accountingCode || row.itemName || row.purchasedQty > 0 || row.issuedQty > 0 || row.purchasedAmount || row.issuedAmount
+  const nonEmptyRawRows = rawRows.filter(row =>
+    row.accountingCode || row.itemName || row.importQty > 0 || row.exportQty > 0 || row.importAmount || row.exportAmount
   );
+  const groupedRows = new Map<string, AccountingRawRow[]>();
+  const invalidRows: ProjectOpeningBalanceImportRow[] = [];
+
+  nonEmptyRawRows.forEach(row => {
+    if (!row.accountingCode) {
+      invalidRows.push({
+        rowNumber: row.rowNumber,
+        inventoryItemId: null,
+        accountingCode: null,
+        sku: '',
+        itemName: row.itemName,
+        unit: row.unit,
+        warehouseId: options.defaultWarehouseId || '',
+        purchasedQty: row.importQty,
+        issuedQty: row.exportQty,
+        usedQty: row.exportQty,
+        remainingQty: Math.max(0, row.importQty - row.exportQty),
+        unitPrice: row.importUnitPrice || row.exportUnitPrice,
+        remainingValue: row.remainingValue,
+        purchasedAmount: row.importAmount,
+        issuedAmount: row.exportAmount,
+        note: null,
+        errors: row.errors,
+        warnings: row.warnings,
+      });
+      return;
+    }
+
+    const key = normalizeLookupText(row.accountingCode);
+    const existing = groupedRows.get(key) || [];
+    existing.push(row);
+    groupedRows.set(key, existing);
+  });
+
+  const rows: ProjectOpeningBalanceImportRow[] = [
+    ...invalidRows,
+    ...Array.from(groupedRows.values()).map(groupRows => {
+      const accountingCode = groupRows[0].accountingCode;
+      const inferredName = inferCommonItemName(groupRows.map(row => row.itemName));
+      const existingItem = findExistingRootAccountingItem(existingItems, accountingCode, inferredName);
+      const purchasedQty = groupRows.reduce((sum, row) => sum + row.importQty, 0);
+      const issuedQty = groupRows.reduce((sum, row) => sum + row.exportQty, 0);
+      const purchasedAmount = groupRows.reduce((sum, row) => sum + row.importAmount, 0);
+      const issuedAmount = groupRows.reduce((sum, row) => sum + row.exportAmount, 0);
+      const remainingQty = Math.max(0, purchasedQty - issuedQty);
+      const remainingValue = groupRows.reduce((sum, row) => sum + row.remainingValue, 0);
+      const importAveragePrice = purchasedQty > 0 ? purchasedAmount / purchasedQty : 0;
+      const exportAveragePrice = issuedQty > 0 ? issuedAmount / issuedQty : 0;
+      const unitPrice = remainingQty > 0
+        ? remainingValue / remainingQty
+        : importAveragePrice || exportAveragePrice;
+      const unit = groupRows.find(row => row.unit)?.unit || 'Cái';
+      const groupedNote = groupRows.length > 1
+        ? `Mã kế toán: ${accountingCode}. Đã gộp ${groupRows.length} dòng quy cách về mã vật tư gốc.`
+        : `Mã kế toán: ${accountingCode}`;
+
+      return {
+        rowNumber: groupRows[0].rowNumber,
+        inventoryItemId: existingItem?.id || null,
+        accountingCode,
+        sku: accountingCode,
+        itemName: existingItem?.name || inferredName || accountingCode,
+        unit,
+        warehouseId: options.defaultWarehouseId || '',
+        purchasedQty,
+        issuedQty,
+        usedQty: issuedQty,
+        remainingQty,
+        unitPrice,
+        remainingValue,
+        purchasedAmount: Math.max(0, purchasedAmount),
+        issuedAmount: Math.max(0, issuedAmount),
+        note: groupedNote,
+        errors: groupRows.flatMap(row => row.errors),
+        warnings: groupRows.flatMap(row => row.warnings),
+      };
+    }),
+  ];
+  const errors = nonEmptyRawRows.flatMap(row => row.errors.map(error => `Dòng ${row.rowNumber}: ${error}`));
+  const warnings = nonEmptyRawRows.flatMap(row => row.warnings.map(warning => `Dòng ${row.rowNumber}: ${warning}`));
 
   return {
-    rows: nonEmptyRows,
-    totals: summarizeImportRows(nonEmptyRows),
-    errors: nonEmptyRows.flatMap(row => (row.errors || []).map(error => `Dòng ${row.rowNumber}: ${error}`)),
-    warnings: nonEmptyRows.flatMap(row => (row.warnings || []).map(warning => `Dòng ${row.rowNumber}: ${warning}`)),
+    rows,
+    totals: summarizeImportRows(rows.filter(row => !(row.errors || []).length)),
+    errors,
+    warnings,
   };
 };
 
@@ -560,8 +645,8 @@ const parseLegacyOpeningRows = async (
     const issuedQty = numberOrZero(getExcelCell(row, ['SL đã xuất', 'SL đã cấp', 'So luong da xuat', 'Issued Qty', 'issuedQty']));
     const usedQty = numberOrZero(getExcelCell(row, ['SL đã sử dụng', 'So luong da su dung', 'Used Qty', 'usedQty']));
     const remainingQty = numberOrZero(getExcelCell(row, ['SL tồn hiện tại', 'Ton hien tai', 'Remaining Qty', 'remainingQty', 'Tồn kho']));
-    const unitPrice = numberOrZero(getExcelCell(row, ['Đơn giá', 'Don gia', 'Unit Price', 'unitPrice']));
-    const remainingValue = numberOrZero(getExcelCell(row, ['Thành tiền tồn', 'Thanh tien ton', 'Remaining Value', 'remainingValue']));
+    const unitPrice = moneyOrZero(getExcelCell(row, ['Đơn giá', 'Don gia', 'Unit Price', 'unitPrice']));
+    const remainingValue = moneyOrZero(getExcelCell(row, ['Thành tiền tồn', 'Thanh tien ton', 'Remaining Value', 'remainingValue']));
     const note = getExcelCell(row, ['Ghi chú', 'Ghi chu', 'Note', 'note']);
     const errors: string[] = [];
     if (!sku) errors.push('Thiếu mã vật tư.');

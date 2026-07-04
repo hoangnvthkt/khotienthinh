@@ -107,7 +107,7 @@ export const MaterialRequestTab: React.FC<MaterialRequestTabProps> = ({
     onMoveMaterialRequest,
     onOpenRequest,
 }) => {
-    const [viewMode, setViewMode] = useState<'list' | 'kanban'>('list');
+    const [viewMode, setViewMode] = useState<'list' | 'kanban'>('kanban');
     const workflowTemplateNodes = workflowConfiguration?.binding
         ? workflowNodes.filter(node => node.templateId === workflowConfiguration.binding?.workflowTemplateId)
         : [];
@@ -306,7 +306,7 @@ export const MaterialRequestTab: React.FC<MaterialRequestTabProps> = ({
         <div className="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm dark:border-slate-700/60 dark:bg-slate-800">
             <div className="flex items-center justify-between border-b border-slate-100 p-5">
                 <div>
-                    <h3 className="flex items-center gap-2 text-sm font-black text-slate-700"><Package size={16} className="text-purple-500" /> Đề xuất vật tư ({requests.length})</h3>
+                    <h3 className="flex items-center gap-2 text-sm font-black text-slate-700"><Package size={16} className="text-emerald-600" /> Đề xuất vật tư ({requests.length})</h3>
                     <p className="mt-1 text-[10px] font-bold text-slate-400">Danh sách vận hành nhanh và Kanban SLA theo luồng công trường - phòng vật tư - kho công trường</p>
                 </div>
                 <div className="flex flex-wrap items-center justify-end gap-2">
@@ -314,14 +314,14 @@ export const MaterialRequestTab: React.FC<MaterialRequestTabProps> = ({
                       <button
                           type="button"
                           onClick={() => setViewMode('list')}
-                          className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-[10px] font-black ${viewMode === 'list' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}
+                          className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-[10px] font-black ${viewMode === 'list' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                       >
                           <ListChecks size={12} /> Danh sách
                       </button>
                       <button
                           type="button"
                           onClick={() => setViewMode('kanban')}
-                          className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-[10px] font-black ${viewMode === 'kanban' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}
+                          className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-[10px] font-black ${viewMode === 'kanban' ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                       >
                           <LayoutGrid size={12} /> Kanban
                       </button>

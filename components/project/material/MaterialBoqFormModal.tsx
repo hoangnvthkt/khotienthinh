@@ -1,6 +1,7 @@
 import React from 'react';
 import { CheckCircle2, Edit2, Plus, Save, Search, X } from 'lucide-react';
 import type { InventoryItem, MaterialBudgetItem, ProjectWorkBoqItem } from '../../../types';
+import { parseVietnameseMoney } from '../../../lib/projectMaterialTabUtils';
 
 type MaterialBoqFormModalProps = {
     editingBoq: MaterialBudgetItem | null;
@@ -151,7 +152,7 @@ export const MaterialBoqFormModal: React.FC<MaterialBoqFormModalProps> = ({
                         <CheckCircle2 size={12} className="text-emerald-500" />
                         <span className="font-bold text-emerald-700">Đã chọn: {bName}</span>
                         <span className="text-emerald-500">({bMaterialCode})</span>
-                        <span className="ml-auto text-emerald-400">{bCat} • {bUnit} • {formatMoneyShort(Number(bPrice))} đ</span>
+                        <span className="ml-auto text-emerald-400">{bCat} • {bUnit} • {formatMoneyShort(parseVietnameseMoney(bPrice))} đ</span>
                     </div>
                 )}
 
@@ -189,7 +190,7 @@ export const MaterialBoqFormModal: React.FC<MaterialBoqFormModalProps> = ({
                 <div className="grid grid-cols-2 gap-3">
                     <div>
                         <label className="mb-1 block text-[10px] font-bold uppercase text-slate-500">Đơn giá (VNĐ)</label>
-                        <input type="number" value={bPrice} onChange={event => onBPriceChange(event.target.value)} placeholder="0"
+                        <input type="text" inputMode="decimal" value={bPrice} onChange={event => onBPriceChange(event.target.value)} placeholder="0"
                             className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500" readOnly={!!bInventoryItemId} />
                     </div>
                     <div>
@@ -208,7 +209,7 @@ export const MaterialBoqFormModal: React.FC<MaterialBoqFormModalProps> = ({
                             {bBudgetQtyManuallyEdited && bBudgetQty > 0 && Math.abs(bBudgetQty - autoBudgetQty) > 0.000001 && (
                                 <span className="ml-2 font-bold text-amber-600">• KL đang nhập: {formatQuantity(bBudgetQty)} {bUnit || ''}</span>
                             )}
-                            {bPrice !== '' && bBudgetQty > 0 && <span className="ml-2 text-indigo-400">• Giá trị: {formatMoneyShort(bBudgetQty * Number(bPrice))} đ</span>}
+                            {bPrice !== '' && bBudgetQty > 0 && <span className="ml-2 text-indigo-400">• Giá trị: {formatMoneyShort(bBudgetQty * parseVietnameseMoney(bPrice))} đ</span>}
                             {hasValidThreshold && autoBudgetQty > 0 && (
                                 <button
                                     type="button"

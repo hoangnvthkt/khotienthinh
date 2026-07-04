@@ -42,6 +42,7 @@ import {
     formatBoqWriteError,
     formatPercent,
     formatQuantity,
+    formatVietnameseMoney,
     getValidMaterialTab,
     importNumber,
     importText,
@@ -51,6 +52,7 @@ import {
     MATERIAL_REQUEST_BUDGET_HOLDING_STATUSES,
     normalizeKey,
     normalizeLookupText,
+    parseVietnameseMoney,
     pickImportValue,
     PROJECT_REQUEST_DATA_TABS,
     PROJECT_REQUEST_FULFILLMENT_TABS,
@@ -1558,7 +1560,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         setBName(item.name);
         setBCat(item.category);
         setBUnit(item.unit);
-        setBPrice(String(item.priceIn));
+        setBPrice(formatVietnameseMoney(item.priceIn));
         setAcQuery(item.name);
         setAcOpen(false);
     };
@@ -1605,7 +1607,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         if (!ensureBoqPermission(canEditBoq, 'edit', 'sửa BOQ vật tư')) return;
         setEditingBoq(item);
         setBCat(item.category); setBName(item.itemName); setBUnit(item.unit);
-        setBPrice(String(item.budgetUnitPrice));
+        setBPrice(formatVietnameseMoney(item.budgetUnitPrice));
         setBThreshold(formatQuantity(item.wasteThreshold));
         setBBudgetQtyInput(formatQuantity(item.budgetQty));
         setBBudgetQtyManuallyEdited(true);
@@ -1971,7 +1973,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         }
         if (!bName || !bUnit || bPrice === '') return;
         const budgetQty = bBudgetQty;
-        const budgetUnitPrice = Number(bPrice);
+        const budgetUnitPrice = parseVietnameseMoney(bPrice);
 
         const item: MaterialBudgetItem = {
             id: editingBoq?.id || crypto.randomUUID(),
@@ -2158,7 +2160,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                 if (wbs) seenWorkWbs.add(wbsKey);
                 const existing = existingWorkByWbs.get(normalizeKey(wbs));
                 const plannedQty = importNumber(pickImportValue(row, ['KL dự toán', 'Khối lượng dự toán', 'Khối lượng']));
-                const unitPrice = importNumber(pickImportValue(row, ['Đơn giá', 'Đơn giá dự toán']));
+                const unitPrice = parseVietnameseMoney(pickImportValue(row, ['Đơn giá', 'Đơn giá dự toán']));
                 const item: ProjectWorkBoqItem = {
                     id: existing?.id || crypto.randomUUID(),
                     projectId: effectiveId,
@@ -2254,7 +2256,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                 const existing = matchKeys.map(key => existingMaterials.get(key)).find(Boolean);
                 const formulaBudgetQty = workItem ? calculateMaterialBudgetQty(Number(workItem.plannedQty || 0), wasteThreshold) : 0;
                 const budgetQty = importedBudgetQty > 0 ? importedBudgetQty : formulaBudgetQty;
-                const importedUnitPrice = importNumber(pickImportValue(row, ['Đơn giá', 'Đơn giá dự toán']));
+                const importedUnitPrice = parseVietnameseMoney(pickImportValue(row, ['Đơn giá', 'Đơn giá dự toán']));
                 const budgetUnitPrice = importedUnitPrice || existing?.budgetUnitPrice || matchedInventory?.priceIn || 0;
                 const item: MaterialBudgetItem = {
                     id: existing?.id || crypto.randomUUID(),

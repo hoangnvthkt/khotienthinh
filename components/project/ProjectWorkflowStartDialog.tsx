@@ -13,6 +13,7 @@ interface Props {
   users: User[];
   employees?: Employee[];
   orgUnits?: OrgUnit[];
+  submitLabel?: string;
   onCancel: () => void;
   onConfirm: (input: { templateId: string; assigneeUserIds: string[]; comment: string }) => Promise<void> | void;
 }
@@ -26,6 +27,7 @@ const ProjectWorkflowStartDialog: React.FC<Props> = ({
   users,
   employees = [],
   orgUnits = [],
+  submitLabel = 'Gửi duyệt',
   onCancel,
   onConfirm,
 }) => {
@@ -90,7 +92,7 @@ const ProjectWorkflowStartDialog: React.FC<Props> = ({
       <div className="w-full max-w-xl overflow-hidden rounded-xl bg-white shadow-2xl">
         <div className="flex items-start justify-between border-b border-slate-100 px-5 py-4">
           <div>
-            <div className="flex items-center gap-1.5 text-[10px] font-black uppercase text-indigo-600"><GitBranch size={13} /> Bắt đầu workflow</div>
+            <div className="flex items-center gap-1.5 text-[10px] font-black uppercase text-emerald-600"><GitBranch size={13} /> Bắt đầu workflow</div>
             <h3 className="mt-1 text-base font-black text-slate-800">Gửi đề xuất vật tư</h3>
             <p className="mt-1 text-xs font-bold text-slate-400">{requestCode}</p>
           </div>
@@ -100,7 +102,7 @@ const ProjectWorkflowStartDialog: React.FC<Props> = ({
           {loading && <div className="text-xs font-bold text-slate-400">Đang tải cấu hình workflow...</div>}
           {configuration?.valid && firstNode && (
             <>
-              <div className="rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-2 text-xs font-bold text-indigo-700">
+              <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700">
                 Bước đầu tiên: <span className="font-black">{firstNode.label}</span>
               </div>
               <ProjectWorkflowAssigneeSelect
@@ -120,7 +122,7 @@ const ProjectWorkflowStartDialog: React.FC<Props> = ({
                   rows={3}
                   value={comment}
                   onChange={event => setComment(event.target.value)}
-                  className="w-full resize-none rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-200"
+                  className="w-full resize-none rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-200"
                 />
               </div>
             </>
@@ -133,8 +135,8 @@ const ProjectWorkflowStartDialog: React.FC<Props> = ({
         </div>
         <div className="flex justify-end gap-2 border-t border-slate-100 px-5 py-4">
           <button onClick={onCancel} disabled={submitting} className="rounded-lg px-4 py-2 text-xs font-bold text-slate-500 hover:bg-slate-100">Hủy</button>
-          <button onClick={submit} disabled={submitting || loading || !configuration?.valid || !firstNode} className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-xs font-black text-white hover:bg-indigo-700 disabled:opacity-50">
-            <Send size={14} /> {submitting ? 'Đang gửi...' : 'Gửi duyệt'}
+          <button onClick={submit} disabled={submitting || loading || !configuration?.valid || !firstNode} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-black text-white hover:bg-emerald-700 disabled:opacity-50">
+            <Send size={14} /> {submitting ? 'Đang gửi...' : submitLabel}
           </button>
         </div>
       </div>

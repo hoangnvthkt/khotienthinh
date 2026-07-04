@@ -71,15 +71,7 @@ const ProjectWorkflowActionDialog: React.FC<Props> = ({
   onCancel,
   onConfirm,
 }) => {
-  const [assigneeUserIds, setAssigneeUserIds] = useState<string[]>(
-    action === 'resubmit'
-      ? subject.returnToAssigneeUserIds?.length
-        ? subject.returnToAssigneeUserIds
-        : subject.returnToAssigneeUserId
-          ? [subject.returnToAssigneeUserId]
-          : []
-      : []
-  );
+  const [assigneeUserIds, setAssigneeUserIds] = useState<string[]>([]);
   const [comment, setComment] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);

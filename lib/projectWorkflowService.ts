@@ -453,7 +453,14 @@ export const projectWorkflowService = {
       return cached.rows;
     }
 
-    const codes = node?.config?.eligiblePermissionCodes?.filter(Boolean) || [];
+    const targetPermissionCodes = (node?.config?.assignmentTargets || [])
+      .filter(target => target.type === 'project_permission' && target.permissionCode)
+      .map(target => target.permissionCode!)
+      .filter(Boolean);
+    const codes = Array.from(new Set([
+      ...(node?.config?.eligiblePermissionCodes?.filter(Boolean) || []),
+      ...targetPermissionCodes,
+    ]));
     const staff = codes.length > 0
       ? await projectStaffService.listProjectStaffWithPermissions(
         subject.projectId || undefined,

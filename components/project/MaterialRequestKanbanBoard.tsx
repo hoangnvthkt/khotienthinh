@@ -231,8 +231,13 @@ const MaterialRequestKanbanBoard: React.FC<MaterialRequestKanbanBoardProps> = ({
     const logistics = MATERIAL_REQUEST_KANBAN_COLUMNS.filter(column =>
       ['batch_planning', 'site_quality_check', 'site_receipt', 'completed', 'closed'].includes(column.id)
     );
+    const draftColumn = {
+      ...MATERIAL_REQUEST_KANBAN_COLUMNS[0],
+      label: 'Nháp lưu tạm',
+      hint: 'Phiếu lưu tạm hoặc trả về, chưa vào luồng duyệt',
+    };
     return [
-      MATERIAL_REQUEST_KANBAN_COLUMNS[0],
+      draftColumn,
       ...Array.from(dynamicById.values()).sort((a, b) => a.order - b.order),
       { id: 'legacy_review' as const, label: 'Legacy chờ duyệt', hint: 'Phiếu đã gửi trước khi bắt buộc workflow động' },
       ...logistics,
@@ -317,6 +322,7 @@ const MaterialRequestKanbanBoard: React.FC<MaterialRequestKanbanBoardProps> = ({
     return columns.filter(column => {
       if (column.id === 'legacy_review') return (requestsByStage[column.id] || []).length > 0;
       if (!hideEmptyWorkflowLanes) return true;
+      if (column.id === 'draft') return (requestsByStage[column.id] || []).length > 0;
       if (!column.id.startsWith('workflow:')) return true;
       return (requestsByStage[column.id] || []).length > 0;
     });

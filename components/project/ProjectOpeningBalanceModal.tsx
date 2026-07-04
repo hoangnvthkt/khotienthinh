@@ -7,10 +7,18 @@ import {
   Project,
   ProjectFinance,
   ProjectOpeningBalance,
+  ProjectOpeningBalanceImportRow,
   ProjectOpeningBalanceLine,
 } from '../../types';
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
-import { normalizeLookupText, SITE_WAREHOUSE_STOP_WORDS } from '../../lib/projectMaterialTabUtils';
+import {
+  formatVietnameseMoney,
+  formatVietnameseNumber,
+  normalizeLookupText,
+  parseVietnameseMoney,
+  parseVietnameseNumber,
+  SITE_WAREHOUSE_STOP_WORDS,
+} from '../../lib/projectMaterialTabUtils';
 import { getProjectScopeKey } from '../../lib/projectWeeklyProgressService';
 import {
   calculateOpeningRecognizedValue,
@@ -19,9 +27,14 @@ import {
 } from '../../lib/projectOpeningBalanceService';
 
 const fmtFull = (n: number) => `${Math.round(Number(n || 0)).toLocaleString('vi-VN')} đ`;
-const toNumber = (value: string | number): number => Number(value || 0) || 0;
+const toNumber = (value: string | number): number => parseVietnameseNumber(value);
+const toMoney = (value: string | number): number => parseVietnameseMoney(value);
+const fmtInput = (value: unknown, maximumFractionDigits = 6) => formatVietnameseNumber(value, maximumFractionDigits);
+const fmtMoneyInput = (value: unknown) => formatVietnameseMoney(value);
 
-const emptyLine = (warehouseId = ''): ProjectOpeningBalanceLine => ({
+type ProjectOpeningBalanceModalLine = ProjectOpeningBalanceLine & Pick<ProjectOpeningBalanceImportRow, 'purchasedAmount' | 'issuedAmount'>;
+
+const emptyLine = (warehouseId = ''): ProjectOpeningBalanceModalLine => ({
   sku: '',
   itemName: '',
   unit: 'Cái',
@@ -99,14 +112,14 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
   const [issuedValue, setIssuedValue] = useState('');
   const [usedValue, setUsedValue] = useState('');
   const [note, setNote] = useState('');
-  const [lines, setLines] = useState<ProjectOpeningBalanceLine[]>([emptyLine(defaultWarehouseId)]);
+  const [lines, setLines] = useState<ProjectOpeningBalanceModalLine[]>([emptyLine(defaultWarehouseId)]);
   const [importMessages, setImportMessages] = useState<{ errors: string[]; warnings: string[] }>({ errors: [], warnings: [] });
 
   useEffect(() => {
     if (!open) return;
     setStep(0);
-    setContractValue(String(finance?.contractValue || ''));
-    setConstructionProgress(String(finance?.progressPercent || ''));
+    setContractValue(finance?.contractValue ? fmtMoneyInput(finance.contractValue) : '');
+    setConstructionProgress(finance?.progressPercent ? fmtInput(finance.progressPercent, 2) : '');
     setAsOfDate('2026-06-20');
     setImportMessages({ errors: [], warnings: [] });
     setLines([emptyLine(defaultWarehouseId)]);
@@ -117,11 +130,11 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
         setExistingOpening(balance);
         if (!balance) return;
         setAsOfDate(balance.asOfDate);
-        setContractValue(String(balance.contractValue || ''));
-        setConstructionProgress(String(balance.constructionProgressPercent || ''));
-        setPurchasedValue(String(balance.purchasedValue || ''));
-        setIssuedValue(String(balance.issuedValue || ''));
-        setUsedValue(String(balance.usedValue || ''));
+        setContractValue(balance.contractValue ? fmtMoneyInput(balance.contractValue) : '');
+        setConstructionProgress(balance.constructionProgressPercent ? fmtInput(balance.constructionProgressPercent, 2) : '');
+        setPurchasedValue(balance.purchasedValue ? fmtMoneyInput(balance.purchasedValue) : '');
+        setIssuedValue(balance.issuedValue ? fmtMoneyInput(balance.issuedValue) : '');
+        setUsedValue(balance.usedValue ? fmtMoneyInput(balance.usedValue) : '');
         setNote(balance.note || '');
         if (balance.id) {
           const savedLines = await projectOpeningBalanceService.listLines(balance.id);
@@ -133,8 +146,8 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
   }, [defaultWarehouseId, finance?.contractValue, finance?.progressPercent, open, scopeKey]);
 
   const locked = existingOpening?.status === 'locked';
-  const recognizedValue = calculateOpeningRecognizedValue(toNumber(purchasedValue), toNumber(issuedValue), toNumber(usedValue));
-  const valueProgress = toNumber(contractValue) > 0 ? Math.min(100, Math.round((recognizedValue / toNumber(contractValue)) * 100)) : 0;
+  const recognizedValue = calculateOpeningRecognizedValue(toMoney(purchasedValue), toMoney(issuedValue), toMoney(usedValue));
+  const valueProgress = toMoney(contractValue) > 0 ? Math.min(100, Math.round((recognizedValue / toMoney(contractValue)) * 100)) : 0;
   const lineTotals = useMemo(() => lines.reduce((acc, line) => {
     const unitPrice = Number(line.unitPrice || 0);
     acc.remainingValue += Number(line.remainingValue || Number(line.remainingQty || 0) * unitPrice || 0);
@@ -142,7 +155,7 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
     return acc;
   }, { remainingQty: 0, remainingValue: 0 }), [lines]);
 
-  const updateLine = (index: number, patch: Partial<ProjectOpeningBalanceLine>) => {
+  const updateLine = (index: number, patch: Partial<ProjectOpeningBalanceModalLine>) => {
     setLines(prev => prev.map((line, i) => {
       if (i !== index) return line;
       const next = { ...line, ...patch };
@@ -160,6 +173,21 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
     );
     return found?.id || raw || defaultWarehouseId;
   };
+
+  const formatInputOnBlur = (value: string, setter: (next: string) => void, maximumFractionDigits = 2) => {
+    if (!String(value || '').trim()) return;
+    setter(formatVietnameseNumber(value, maximumFractionDigits));
+  };
+
+  const formatMoneyOnBlur = (value: string, setter: (next: string) => void) => {
+    if (!String(value || '').trim()) return;
+    setter(fmtMoneyInput(value));
+  };
+
+  const getPurchasedAmount = (line: ProjectOpeningBalanceModalLine) =>
+    Number(line.purchasedAmount || 0) || Number(line.purchasedQty || 0) * Number(line.unitPrice || 0);
+  const getIssuedAmount = (line: ProjectOpeningBalanceModalLine) =>
+    Number(line.issuedAmount || 0) || Number(line.issuedQty || 0) * Number(line.unitPrice || 0);
 
   const handleImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -181,9 +209,9 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
         return;
       }
       setLines(validLines);
-      setPurchasedValue(String(parsed.totals.purchasedValue || 0));
-      setIssuedValue(String(parsed.totals.issuedValue || 0));
-      setUsedValue(String(parsed.totals.usedValue || parsed.totals.issuedValue || 0));
+      setPurchasedValue(fmtMoneyInput(parsed.totals.purchasedValue || 0));
+      setIssuedValue(fmtMoneyInput(parsed.totals.issuedValue || 0));
+      setUsedValue(fmtMoneyInput(parsed.totals.usedValue || parsed.totals.issuedValue || 0));
       setImportMessages({ errors: parsed.errors, warnings: parsed.warnings });
       toast.success('Đã đọc file đầu kỳ', `${validLines.length} dòng vật tư được đưa vào bảng rà soát.`);
     } catch (error: any) {
@@ -195,7 +223,7 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
   const validate = (): string | null => {
     if (!constructionSiteId) return 'Dự án cần liên kết công trường trước khi nhập đầu kỳ.';
     if (!asOfDate) return 'Thiếu ngày chốt đầu kỳ.';
-    if (toNumber(contractValue) <= 0) return 'Tổng giá trị dự án phải lớn hơn 0.';
+    if (toMoney(contractValue) <= 0) return 'Tổng giá trị dự án phải lớn hơn 0.';
     if (toNumber(constructionProgress) < 0 || toNumber(constructionProgress) > 100) return 'Tiến độ thi công phải trong khoảng 0-100%.';
     const warehouseIds = new Set(warehouses.map(warehouse => warehouse.id));
     const invalidLine = lines.find(line => line.remainingQty > 0 && (!line.sku || !line.itemName || !line.warehouseId));
@@ -219,11 +247,11 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
         projectId: project.id,
         constructionSiteId,
         asOfDate,
-        contractValue: toNumber(contractValue),
+        contractValue: toMoney(contractValue),
         constructionProgressPercent: toNumber(constructionProgress),
-        purchasedValue: toNumber(purchasedValue),
-        issuedValue: toNumber(issuedValue),
-        usedValue: toNumber(usedValue),
+        purchasedValue: toMoney(purchasedValue),
+        issuedValue: toMoney(issuedValue),
+        usedValue: toMoney(usedValue),
         recognizedValue,
         status: 'draft',
         note: note.trim() || null,
@@ -334,11 +362,11 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
             <div className="grid md:grid-cols-2 gap-4">
               <div>
                 <label className={labelCls}>Tổng giá trị dự án / hợp đồng</label>
-                <input type="number" value={contractValue} onChange={e => setContractValue(e.target.value)} className={inputCls} placeholder="0" />
+                <input type="text" inputMode="decimal" value={contractValue} onChange={e => setContractValue(e.target.value)} onBlur={() => formatMoneyOnBlur(contractValue, setContractValue)} className={inputCls} placeholder="0" />
               </div>
               <div>
                 <label className={labelCls}>Tiến độ thi công hiện tại (%)</label>
-                <input type="number" min={0} max={100} value={constructionProgress} onChange={e => setConstructionProgress(e.target.value)} className={inputCls} placeholder="0" />
+                <input type="text" inputMode="decimal" value={constructionProgress} onChange={e => setConstructionProgress(e.target.value)} onBlur={() => formatInputOnBlur(constructionProgress, setConstructionProgress, 2)} className={inputCls} placeholder="0" />
               </div>
               <div className="md:col-span-2 rounded-2xl border border-slate-100 bg-slate-50 p-4 text-sm font-bold text-slate-500">
                 Tiến độ này là số chốt ban đầu. Sau khi triển khai, tab Gantt/tiến độ tuần sẽ tiếp tục cập nhật tiến độ thi công.
@@ -348,15 +376,15 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
             <div className="grid md:grid-cols-3 gap-4">
               <div>
                 <label className={labelCls}>Giá trị vật tư đã mua</label>
-                <input type="number" value={purchasedValue} onChange={e => setPurchasedValue(e.target.value)} className={inputCls} placeholder="0" />
+                <input type="text" inputMode="decimal" value={purchasedValue} onChange={e => setPurchasedValue(e.target.value)} onBlur={() => formatMoneyOnBlur(purchasedValue, setPurchasedValue)} className={inputCls} placeholder="0" />
               </div>
               <div>
                 <label className={labelCls}>Giá trị đã xuất/cấp</label>
-                <input type="number" value={issuedValue} onChange={e => setIssuedValue(e.target.value)} className={inputCls} placeholder="0" />
+                <input type="text" inputMode="decimal" value={issuedValue} onChange={e => setIssuedValue(e.target.value)} onBlur={() => formatMoneyOnBlur(issuedValue, setIssuedValue)} className={inputCls} placeholder="0" />
               </div>
               <div>
                 <label className={labelCls}>Giá trị đã sử dụng</label>
-                <input type="number" value={usedValue} onChange={e => setUsedValue(e.target.value)} className={inputCls} placeholder="0" />
+                <input type="text" inputMode="decimal" value={usedValue} onChange={e => setUsedValue(e.target.value)} onBlur={() => formatMoneyOnBlur(usedValue, setUsedValue)} className={inputCls} placeholder="0" />
               </div>
               <div className="md:col-span-3 grid md:grid-cols-3 gap-3">
                 <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4">
@@ -408,42 +436,44 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
                 </div>
               )}
               <div className="overflow-x-auto rounded-2xl border border-slate-100">
-                <table className="min-w-[1120px] w-full text-xs">
+                <table className="min-w-[1600px] w-full table-fixed text-xs">
                   <thead className="bg-slate-50 text-slate-500">
                     <tr>
-                      <th className="p-2 text-left">Mã KT</th>
-                      <th className="p-2 text-left">Mã</th>
-                      <th className="p-2 text-left">Tên vật tư</th>
-                      <th className="p-2 text-left">ĐVT</th>
-                      <th className="p-2 text-left">Kho</th>
-                      <th className="p-2 text-right">Đã mua</th>
-                      <th className="p-2 text-right">Đã xuất</th>
-                      <th className="p-2 text-right">Đã dùng</th>
-                      <th className="p-2 text-right">Tồn</th>
-                      <th className="p-2 text-right">Đơn giá</th>
-                      <th className="p-2 text-right">Thành tiền</th>
-                      <th className="p-2" />
+                      <th className="w-32 p-2 text-left">Mã vật tư</th>
+                      <th className="w-64 p-2 text-left">Tên vật tư gốc</th>
+                      <th className="w-24 p-2 text-left">ĐVT</th>
+                      <th className="w-48 p-2 text-left">Kho</th>
+                      <th className="w-28 p-2 text-right">Đã mua</th>
+                      <th className="w-28 p-2 text-right">Đã xuất</th>
+                      <th className="w-28 p-2 text-right">Đã dùng</th>
+                      <th className="w-28 p-2 text-right">Tồn</th>
+                      <th className="w-40 p-2 text-right">Đơn giá</th>
+                      <th className="w-36 p-2 text-right">Tiền nhập</th>
+                      <th className="w-36 p-2 text-right">Tiền xuất</th>
+                      <th className="w-36 p-2 text-right">Tiền tồn</th>
+                      <th className="w-12 p-2" />
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {lines.map((line, index) => (
-                      <tr key={index}>
-                        <td className="p-2"><input value={line.accountingCode || ''} onChange={e => updateLine(index, { accountingCode: e.target.value })} className="w-28 px-2 py-1.5 rounded-lg border border-slate-200 font-bold" /></td>
-                        <td className="p-2"><input value={line.sku} onChange={e => updateLine(index, { sku: e.target.value })} className="w-28 px-2 py-1.5 rounded-lg border border-slate-200 font-bold" /></td>
-                        <td className="p-2"><input value={line.itemName} onChange={e => updateLine(index, { itemName: e.target.value })} className="w-52 px-2 py-1.5 rounded-lg border border-slate-200 font-bold" /></td>
+                      <tr key={index} className="align-top">
+                        <td className="p-2"><input value={line.accountingCode || line.sku || ''} onChange={e => updateLine(index, { accountingCode: e.target.value, sku: e.target.value })} className="w-28 px-2 py-1.5 rounded-lg border border-slate-200 font-bold" /></td>
+                        <td className="p-2"><input value={line.itemName} onChange={e => updateLine(index, { itemName: e.target.value })} className="w-60 px-2 py-1.5 rounded-lg border border-slate-200 font-bold" /></td>
                         <td className="p-2"><input value={line.unit} onChange={e => updateLine(index, { unit: e.target.value })} className="w-20 px-2 py-1.5 rounded-lg border border-slate-200" /></td>
                         <td className="p-2">
-                          <select value={line.warehouseId} onChange={e => updateLine(index, { warehouseId: e.target.value })} className="w-40 px-2 py-1.5 rounded-lg border border-slate-200 font-bold">
+                          <select value={line.warehouseId} onChange={e => updateLine(index, { warehouseId: e.target.value })} className="w-44 px-2 py-1.5 rounded-lg border border-slate-200 font-bold">
                             <option value="">Chọn kho</option>
                             {warehouses.map(warehouse => <option key={warehouse.id} value={warehouse.id}>{warehouse.name}</option>)}
                           </select>
                         </td>
                         {(['purchasedQty', 'issuedQty', 'usedQty', 'remainingQty', 'unitPrice'] as const).map(key => (
                           <td key={key} className="p-2">
-                            <input type="number" value={line[key] || ''} onChange={e => updateLine(index, { [key]: toNumber(e.target.value) })} className="w-24 px-2 py-1.5 rounded-lg border border-slate-200 text-right" />
+                            <input type="text" inputMode="decimal" value={key === 'unitPrice' ? fmtMoneyInput(line[key]) : fmtInput(line[key], 6)} onChange={e => updateLine(index, { [key]: key === 'unitPrice' ? toMoney(e.target.value) : toNumber(e.target.value) })} className={`${key === 'unitPrice' ? 'w-32' : 'w-24'} px-2 py-1.5 rounded-lg border border-slate-200 text-right tabular-nums`} />
                           </td>
                         ))}
-                        <td className="p-2 text-right font-black text-slate-700">{fmtFull(line.remainingValue || 0)}</td>
+                        <td className="p-2 text-right font-black text-slate-700 tabular-nums whitespace-nowrap">{fmtFull(getPurchasedAmount(line))}</td>
+                        <td className="p-2 text-right font-black text-slate-700 tabular-nums whitespace-nowrap">{fmtFull(getIssuedAmount(line))}</td>
+                        <td className="p-2 text-right font-black text-slate-700 tabular-nums whitespace-nowrap">{fmtFull(line.remainingValue || 0)}</td>
                         <td className="p-2 text-center">
                           <button onClick={() => setLines(prev => prev.filter((_, i) => i !== index))} className="w-7 h-7 rounded-lg text-red-500 hover:bg-red-50"><Trash2 size={14} className="mx-auto" /></button>
                         </td>
@@ -456,7 +486,7 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
           ) : (
             <div className="space-y-4">
               <div className="grid md:grid-cols-4 gap-3">
-                <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4"><div className="text-[10px] font-black uppercase text-slate-400">Giá trị dự án</div><div className="font-black text-slate-800">{fmtFull(toNumber(contractValue))}</div></div>
+                <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4"><div className="text-[10px] font-black uppercase text-slate-400">Giá trị dự án</div><div className="font-black text-slate-800">{fmtFull(toMoney(contractValue))}</div></div>
                 <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4"><div className="text-[10px] font-black uppercase text-slate-400">Tiến độ thi công</div><div className="font-black text-slate-800">{toNumber(constructionProgress)}%</div></div>
                 <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4"><div className="text-[10px] font-black uppercase text-slate-400">Recognized</div><div className="font-black text-slate-800">{fmtFull(recognizedValue)}</div></div>
                 <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4"><div className="text-[10px] font-black uppercase text-slate-400">Tồn chi tiết</div><div className="font-black text-slate-800">{lines.filter(line => line.remainingQty > 0).length} dòng</div></div>

@@ -504,10 +504,11 @@ const syncDeliveryGroupStatus = async (deliveryGroupId?: string | null) => {
   }
   const rows = data || [];
   if (rows.length === 0) return;
-  const allClosed = rows.every(row => ['received', 'returned', 'cancelled'].includes(row.status));
+  const allReceived = rows.every(row => row.status === 'received');
+  const allRejected = rows.every(row => ['returned', 'cancelled'].includes(row.status));
   const { error: updateError } = await supabase
     .from(DELIVERY_GROUP_TABLE)
-    .update({ status: allClosed ? 'received' : 'issued' })
+    .update({ status: allReceived ? 'received' : allRejected ? 'cancelled' : 'issued' })
     .eq('id', deliveryGroupId);
   if (updateError && !isMissingDeliveryGroupTable(updateError)) throw updateError;
 };

@@ -50,7 +50,7 @@ const subjectStatusLabel: Record<ProjectWorkflowSubjectStatus, string> = {
 };
 
 const statusTone: Record<ProjectWorkflowSubjectStatus, string> = {
-  RUNNING: 'border-indigo-200 bg-indigo-50 text-indigo-700',
+  RUNNING: 'border-emerald-200 bg-emerald-50 text-emerald-700',
   RETURNED: 'border-orange-200 bg-orange-50 text-orange-700',
   COMPLETED: 'border-emerald-200 bg-emerald-50 text-emerald-700',
   REJECTED: 'border-red-200 bg-red-50 text-red-700',
@@ -108,7 +108,6 @@ const ProjectWorkflowPanel: React.FC<Props> = ({
       ? [subject.currentAssigneeUserId]
       : [];
   const assigneeNames = assigneeIds.map(id => userById.get(id)?.name || id);
-  const returnedBy = subject.returnedByUserId ? userById.get(subject.returnedByUserId) : null;
   const nodeConfig = currentNode?.config || {};
   const allowReject = nodeConfig.allowReject !== false;
   const allowReassign = nodeConfig.allowReassign !== false;
@@ -148,55 +147,26 @@ const ProjectWorkflowPanel: React.FC<Props> = ({
   };
 
   return (
-    <div className="mb-6 space-y-4 rounded-xl border border-indigo-100 bg-indigo-50/35 p-4">
+    <div className="mb-5 space-y-3 rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="text-[10px] font-black uppercase tracking-widest text-indigo-500">Workflow đề xuất</div>
-          <h4 className="mt-1 text-sm font-black text-slate-800">
-            {subject.workflowInstance?.title || subject.workflowInstance?.code || documentName}
+        <div className="min-w-0">
+          <div className="text-[10px] font-black uppercase tracking-wide text-slate-400">Thao tác workflow</div>
+          <h4 className="mt-0.5 text-sm font-black text-slate-800">
+            {nextNode?.type === WorkflowNodeType.END
+              ? completionHandoff?.actionLabel || 'Hoàn tất phê duyệt'
+              : currentNode?.label || subject.workflowInstance?.title || subject.workflowInstance?.code || documentName}
           </h4>
-          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] font-bold text-slate-500">
+          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-semibold text-slate-500">
             <span className="inline-flex items-center gap-1"><GitBranch size={12} /> {currentNode?.label || 'Chưa xác định bước'}</span>
-            <span className="inline-flex items-center gap-1"><Clock size={12} /> Cập nhật {formatDateTime(subject.updatedAt)}</span>
+            {assigneeNames.length > 0 && <span className="inline-flex items-center gap-1"><UserRound size={12} /> {assigneeNames.join(', ')}</span>}
+            <span className="inline-flex items-center gap-1"><Clock size={12} /> {formatDateTime(subject.updatedAt)}</span>
+            {nodeConfig.slaHours ? <span>SLA {nodeConfig.slaHours} giờ</span> : null}
           </div>
+          <div className="mt-1 text-[11px] font-semibold text-slate-500">{permissionLabel}</div>
         </div>
-        <span className={`inline-flex items-center rounded-lg border px-2 py-1 text-[10px] font-black ${statusTone[subject.status]}`}>
+        <span className={`inline-flex items-center rounded-md border px-2.5 py-1 text-[10px] font-black ${statusTone[subject.status]}`}>
           {subjectStatusLabel[subject.status]}
         </span>
-      </div>
-
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
-        <div className="rounded-xl border border-white bg-white/80 px-3 py-2">
-          <div className="text-[10px] font-black uppercase text-slate-400">Bước hiện tại</div>
-          <div className="mt-1 text-xs font-black text-slate-800">{currentNode?.label || '-'}</div>
-          {nodeConfig.slaHours ? <div className="mt-1 text-[10px] font-bold text-indigo-500">SLA {nodeConfig.slaHours} giờ</div> : null}
-        </div>
-        <div className="rounded-xl border border-white bg-white/80 px-3 py-2">
-          <div className="text-[10px] font-black uppercase text-slate-400">Bước kế tiếp</div>
-          <div className="mt-1 text-xs font-black text-slate-800">
-            {nextNode?.type === WorkflowNodeType.END ? 'Hoàn tất phê duyệt' : nextNode?.label || '-'}
-          </div>
-          {completionHandoff?.required && nextNode?.type === WorkflowNodeType.END && (
-            <div className="mt-1 text-[10px] font-bold text-indigo-500">Bàn giao nghiệp vụ</div>
-          )}
-        </div>
-        <div className="rounded-xl border border-white bg-white/80 px-3 py-2">
-          <div className="text-[10px] font-black uppercase text-slate-400">Pool đang xử lý</div>
-          <div className="mt-1 flex items-start gap-1.5 text-xs font-black text-slate-800">
-            <UserRound size={14} className="text-slate-400" />
-            <span>{assigneeNames.length > 0 ? assigneeNames.join(', ') : '-'}</span>
-          </div>
-          {currentUserId && assigneeIds.includes(currentUserId) && <div className="mt-1 text-[10px] font-bold text-emerald-600">Đang giao cho bạn</div>}
-        </div>
-        <div className="rounded-xl border border-white bg-white/80 px-3 py-2">
-          <div className="text-[10px] font-black uppercase text-slate-400">Trả lại gần nhất</div>
-          <div className="mt-1 text-xs font-black text-slate-800">{returnedBy?.name || '-'}</div>
-          <div className="mt-1 text-[10px] font-bold text-slate-400">{formatDateTime(subject.returnedAt)}</div>
-        </div>
-      </div>
-
-      <div className="rounded-xl border border-white bg-white/80 px-3 py-2 text-xs font-bold text-slate-500">
-        {permissionLabel}
       </div>
 
       {(canShowRunningActions || shouldShowReassign || shouldShowResubmit || shouldShowRollback) && (
@@ -232,7 +202,7 @@ const ProjectWorkflowPanel: React.FC<Props> = ({
             <button
               disabled={disabled}
               onClick={() => setActiveAction('approve')}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-black text-white hover:bg-indigo-700 disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-black text-white hover:bg-emerald-700 disabled:opacity-50"
             >
               <CheckCircle2 size={14} /> {targetLabel}
             </button>
@@ -259,7 +229,7 @@ const ProjectWorkflowPanel: React.FC<Props> = ({
       )}
 
       {!canShowRunningActions && subject.status === 'RUNNING' && (
-        <div className="flex items-start gap-2 rounded-xl border border-slate-100 bg-white px-3 py-2 text-xs font-bold text-slate-500">
+        <div className="flex items-start gap-2 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-500">
           <AlertTriangle size={14} className="mt-0.5 shrink-0 text-slate-300" />
           Chỉ người đang được gán bước mới có quyền duyệt, trả lại hoặc từ chối. Quản trị workflow chỉ được đổi người xử lý.
         </div>

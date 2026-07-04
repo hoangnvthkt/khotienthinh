@@ -51,6 +51,18 @@ const ProjectWorkflowAssigneeSelect: React.FC<Props> = ({
     ),
     [node?.config?.assignmentTargets],
   );
+  const configuredDepartmentIds = useMemo(
+    () => new Set(
+      (node?.config?.assignmentTargets || [])
+        .filter(target => target.type === 'department' && target.orgUnitId)
+        .map(target => target.orgUnitId!),
+    ),
+    [node?.config?.assignmentTargets],
+  );
+  const hasCreatorTarget = useMemo(
+    () => (node?.config?.assignmentTargets || []).some(target => target.type === 'creator'),
+    [node?.config?.assignmentTargets],
+  );
   const activeUsers = useMemo(
     () => users
       .filter(user => user.isActive !== false)
@@ -63,14 +75,28 @@ const ProjectWorkflowAssigneeSelect: React.FC<Props> = ({
   );
   const displayCandidates = useMemo(() => {
     const byUserId = new Map<string, ProjectStaff>();
-    candidates.forEach(candidate => {
-      if (candidate.userId) byUserId.set(candidate.userId, candidate);
-    });
+    const hasExplicitPeoplePool = configuredUserTargetIds.size > 0 || configuredDepartmentIds.size > 0 || hasCreatorTarget;
+    const isInConfiguredDepartment = (userId?: string | null) => !!userId && activeEmployees.some(employee =>
+      employee.userId === userId
+      && (employee.departmentId && configuredDepartmentIds.has(employee.departmentId)
+        || employee.orgUnitId && configuredDepartmentIds.has(employee.orgUnitId))
+    );
+    const isConfiguredCreator = (userId?: string | null) => !!userId && hasCreatorTarget && userId === creatorUserId;
 
-    const shouldShowUserFallback = candidates.length === 0 || configuredUserTargetIds.size > 0;
-    if (shouldShowUserFallback) {
+    candidates
+      .filter(candidate => {
+        if (!hasExplicitPeoplePool) return true;
+        return configuredUserTargetIds.has(candidate.userId)
+          || isInConfiguredDepartment(candidate.userId)
+          || isConfiguredCreator(candidate.userId);
+      })
+      .forEach(candidate => {
+        if (candidate.userId) byUserId.set(candidate.userId, candidate);
+      });
+
+    if (configuredUserTargetIds.size > 0 || hasCreatorTarget) {
       activeUsers
-        .filter(user => configuredUserTargetIds.size === 0 || configuredUserTargetIds.has(user.id))
+        .filter(user => configuredUserTargetIds.has(user.id) || isConfiguredCreator(user.id))
         .forEach((user, index) => {
           if (byUserId.has(user.id)) return;
           byUserId.set(user.id, {
@@ -82,6 +108,29 @@ const ProjectWorkflowAssigneeSelect: React.FC<Props> = ({
             sortOrder: index,
             userName: user.name || user.username || user.email || user.id,
             positionName: user.role,
+          });
+        });
+    }
+
+    if (configuredDepartmentIds.size > 0) {
+      activeEmployees
+        .filter(employee => employee.userId)
+        .filter(employee =>
+          (employee.departmentId && configuredDepartmentIds.has(employee.departmentId))
+          || (employee.orgUnitId && configuredDepartmentIds.has(employee.orgUnitId))
+        )
+        .forEach((employee, index) => {
+          const user = userById.get(employee.userId!);
+          if (!user || user.isActive === false || byUserId.has(user.id)) return;
+          byUserId.set(user.id, {
+            id: `department-${user.id}`,
+            projectId: subject.projectId || null,
+            constructionSiteId: subject.constructionSiteId || null,
+            userId: user.id,
+            positionId: employee.positionId || '',
+            sortOrder: index,
+            userName: user.name || user.username || user.email || user.id,
+            positionName: employee.title || user.role,
           });
         });
     }
@@ -104,9 +153,13 @@ const ProjectWorkflowAssigneeSelect: React.FC<Props> = ({
 
     return Array.from(byUserId.values());
   }, [
+    activeEmployees,
     activeUsers,
     candidates,
+    configuredDepartmentIds,
     configuredUserTargetIds,
+    creatorUserId,
+    hasCreatorTarget,
     selectedUserIds,
     subject.constructionSiteId,
     subject.projectId,
@@ -123,14 +176,6 @@ const ProjectWorkflowAssigneeSelect: React.FC<Props> = ({
       );
     });
   }, [displayCandidates, searchTerm, userById]);
-  const configuredDepartmentIds = useMemo(
-    () => new Set(
-      (node?.config?.assignmentTargets || [])
-        .filter(target => target.type === 'department' && target.orgUnitId)
-        .map(target => target.orgUnitId!),
-    ),
-    [node?.config?.assignmentTargets],
-  );
   const candidateUserIds = useMemo(
     () => new Set(displayCandidates.map(candidate => candidate.userId)),
     [displayCandidates],
@@ -180,21 +225,6 @@ const ProjectWorkflowAssigneeSelect: React.FC<Props> = ({
 
     return () => { alive = false; };
   }, [creatorUserId, lockedUserId, node?.id, node?.config?.assigneeRole, onChange, selectedUserIds.length, subject.id, userById]);
-
-  useEffect(() => {
-    if (lockedUserId) return;
-    const configuredTargets = node?.config?.assignmentTargets || [];
-    const configuredUserIds = projectWorkflowService.resolveAssignmentTargetUserIds({
-      selectedUserIds: [],
-      targets: configuredTargets,
-      employees,
-      orgUnits,
-      creatorUserId,
-    });
-    if (configuredUserIds.length > 0) {
-      setDistinctSelection([...selectedUserIds, ...configuredUserIds]);
-    }
-  }, [creatorUserId, employees, lockedUserId, node?.config?.assignmentTargets, orgUnits]);
 
   const toggleUser = (userId: string) => {
     if (disabled || loading) return;
@@ -248,27 +278,31 @@ const ProjectWorkflowAssigneeSelect: React.FC<Props> = ({
       </div>
 
       {selectionMode === 'multiple' && departments.length > 0 && (
-        <div className="mb-2 flex flex-wrap gap-1.5">
-          {departments.map(department => {
-            const checked = selectedDepartmentIds.includes(department.id);
-            return (
-              <button
-                key={department.id}
-                type="button"
-                disabled={disabled || loading}
-                onClick={() => toggleDepartment(department.id)}
-                className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[10px] font-black disabled:opacity-50 ${checked ? 'border-indigo-300 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'}`}
-              >
-                <Building2 size={11} /> {department.name}
-              </button>
-            );
-          })}
+        <div className="mb-2 rounded-lg border border-slate-100 bg-slate-50/70 px-2 py-2">
+          <div className="mb-1.5 text-[10px] font-black uppercase text-slate-400">Chọn nhanh theo nhóm cấu hình</div>
+          <div className="flex flex-wrap gap-1.5">
+            {departments.map(department => {
+              const checked = selectedDepartmentIds.includes(department.id);
+              return (
+                <button
+                  key={department.id}
+                  type="button"
+                  disabled={disabled || loading}
+                  aria-pressed={checked}
+                  onClick={() => toggleDepartment(department.id)}
+                  className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[10px] font-black disabled:opacity-50 ${checked ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'}`}
+                >
+                  <Building2 size={11} /> {department.name}
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
 
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
         <div className="flex items-center justify-between bg-slate-50 px-3 py-2 text-[10px] font-black uppercase text-slate-400 border-b border-slate-100">
-          <span>Danh sách ứng viên</span>
+          <span>Danh sách người có thể chọn</span>
           {loading && <Loader2 size={13} className="animate-spin text-slate-300" />}
         </div>
         {!loading && displayCandidates.length > 0 && (
@@ -278,7 +312,7 @@ const ProjectWorkflowAssigneeSelect: React.FC<Props> = ({
               type="text"
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
-              placeholder="Tìm kiếm ứng viên..."
+              placeholder="Tìm người nhận..."
               className="w-full bg-transparent border-none outline-none text-xs text-slate-700 placeholder-slate-400 font-medium"
             />
             {searchTerm && (

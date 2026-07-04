@@ -18,6 +18,7 @@ import {
     MaterialRequestFulfillmentBatch,
     MaterialRequestFulfillmentSummary,
     MaterialRequestFulfillmentSourceType,
+    MaterialRequestWorkflowStep,
     RequestItem,
     RequestStatus,
     InventoryItem,
@@ -25,6 +26,7 @@ import {
     TransactionStatus,
     TransactionType,
     MaterialRequestMaterialGroupSnapshotData,
+    WorkflowNodeType,
 } from '../types';
 import ItemSelectionModal from './ItemSelectionModal';
 import ProjectSubmissionDialog from './project/ProjectSubmissionDialog';
@@ -39,7 +41,7 @@ import { useConfirm } from '../context/ConfirmContext';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
 import { projectSubmissionService } from '../lib/projectSubmissionService';
 import { projectWorkflowService } from '../lib/projectWorkflowService';
-import { getMaterialRequestWorkflowPatch, materialRequestService } from '../lib/materialRequestService';
+import { getDefaultMaterialRequestWorkflowStep, getMaterialRequestWorkflowPatch, MATERIAL_REQUEST_KANBAN_COLUMNS, materialRequestService } from '../lib/materialRequestService';
 import { materialRequestFulfillmentService, getCommittedQty, getRequestLineId } from '../lib/materialRequestFulfillmentService';
 import { buildFulfillmentBatchReceiveUrl } from '../lib/fulfillmentBatchQr';
 import { formatReservationSourceList } from '../lib/inventoryStockGuard';
@@ -69,6 +71,60 @@ const toISOStringFromLocal = (localString?: string | null) => {
     const d = new Date(localString);
     if (Number.isNaN(d.getTime())) return '';
     return d.toISOString();
+};
+
+type DetailWorkflowStepState = 'done' | 'current' | 'pending' | 'blocked';
+
+type DetailWorkflowStep = {
+    id: string;
+    label: string;
+    hint?: string;
+    state: DetailWorkflowStepState;
+};
+
+const FALLBACK_DETAIL_APPROVAL_STEPS: Array<{ id: MaterialRequestWorkflowStep; label: string; hint: string }> = [
+    { id: 'site_manager_review', label: 'BCH CT duyệt', hint: 'Kiểm tra nhu cầu tại công trường' },
+    { id: 'material_department_review', label: 'BP vật tư tiếp nhận', hint: 'Kiểm tra nguồn cấp và điều phối' },
+];
+
+const DETAIL_OPERATION_STEPS: Array<{ id: MaterialRequestWorkflowStep; label: string; hint: string }> = [
+    { id: 'batch_planning', label: 'Tạo đợt cấp / PO', hint: 'Lập đợt cấp hàng hoặc đặt mua' },
+    { id: 'site_quality_check', label: 'Kho kiểm tra', hint: 'Kho công trường duyệt số lượng/chất lượng' },
+    { id: 'site_receipt', label: 'Xác nhận nhập kho', hint: 'Ghi nhận thực nhận tại công trường' },
+    { id: 'completed', label: 'Hoàn tất', hint: 'Đã nhận đủ theo phiếu' },
+];
+
+const getWorkflowStepLabel = (step?: string | null) => {
+    if (!step) return 'Tạo đề xuất';
+    if (step === 'returned_to_creator') return 'Trả về người tạo';
+    if (step === 'rejected') return 'Từ chối';
+    const column = MATERIAL_REQUEST_KANBAN_COLUMNS.find(item => item.id === step);
+    if (column?.label) return column.label;
+    const fallback = [...FALLBACK_DETAIL_APPROVAL_STEPS, ...DETAIL_OPERATION_STEPS].find(item => item.id === step);
+    return fallback?.label || String(step);
+};
+
+const formatHoursLabel = (hours?: number | null) => {
+    if (!hours) return '';
+    const days = Math.floor(hours / 24);
+    const remainingHours = hours % 24;
+    if (days > 0 && remainingHours > 0) return `${days} ngày ${remainingHours} giờ`;
+    if (days > 0) return `${days} ngày`;
+    return `${hours} giờ`;
+};
+
+const DETAIL_STEP_TONE: Record<DetailWorkflowStepState, string> = {
+    done: 'bg-emerald-500 text-white',
+    current: 'bg-emerald-600 text-white shadow-sm shadow-emerald-200',
+    pending: 'bg-slate-100 text-slate-500',
+    blocked: 'bg-red-500 text-white shadow-sm shadow-red-200',
+};
+
+const DETAIL_STEP_DOT_TONE: Record<DetailWorkflowStepState, string> = {
+    done: 'bg-white/95 text-emerald-600',
+    current: 'bg-white text-emerald-700',
+    pending: 'bg-white text-slate-400',
+    blocked: 'bg-white text-red-600',
 };
 
 interface RequestModalProps {
@@ -1015,18 +1071,6 @@ const RequestModal: React.FC<RequestModalProps> = ({
 
     const submitRequestForApproval = async (draftRequest: MaterialRequest, submissionTarget?: ProjectSubmissionTarget) => {
         if (!submissionTarget) return;
-        const ok = await confirm({
-            title: 'Gửi đề xuất duyệt',
-            targetName: draftRequest.code,
-            subtitle: `Phiếu sẽ chuyển sang Chờ duyệt và gửi tới ${submissionTarget.name}.`,
-            confirmText: 'Xác nhận gửi',
-            actionLabel: 'Gửi duyệt',
-            cancelLabel: 'Kiểm tra lại',
-            intent: 'success',
-            countdownSeconds: 1,
-        });
-        if (!ok) return;
-
         const dynamicConfiguration = isProjectRequest
             ? await projectWorkflowService.getConfiguration('material_request', effectiveProjectId || null, effectiveConstructionSiteId || null)
             : null;
@@ -1052,7 +1096,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                 : {}),
             logs: [
                 ...(draftRequest.logs || []),
-                { action: dynamicBinding ? 'DRAFT_SAVED' : 'SUBMITTED', userId: user.id, timestamp: now, note: submissionTarget.note || undefined },
+                { action: 'SUBMITTED', userId: user.id, timestamp: now, note: submissionTarget.note || undefined },
             ],
         };
 
@@ -1063,6 +1107,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                 toast.error('Không thể gửi đề xuất', 'Không lưu được phiếu đề xuất lên hệ thống. Vui lòng thử lại.');
                 return;
             }
+            let savedForCallback = requestToSave;
             if (dynamicBinding) {
                 const targetUserIds = submissionTarget.userIds?.length
                     ? submissionTarget.userIds
@@ -1075,10 +1120,12 @@ const RequestModal: React.FC<RequestModalProps> = ({
                     firstAssigneeUserIds: targetUserIds,
                     comment: submissionTarget.note,
                 });
+                const freshRequest = await materialRequestService.getById(requestToSave.id);
+                if (freshRequest) savedForCallback = freshRequest;
             }
             setSubmittingProjectRequest(null);
             toast.success('Đã gửi đề xuất vật tư', `Phiếu đã gửi tới ${submissionTarget.name}.`);
-            onSaved?.(requestToSave);
+            onSaved?.(savedForCallback);
             onClose();
         } catch (err: any) {
             logApiError('requestModal.submitApproval', err);
@@ -1224,7 +1271,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
         return true;
     };
 
-    const handleSubmitCreate = async () => {
+    const handleSaveDraft = async () => {
         if (isSaving) return;
         const isValid = await validateDraftForm();
         if (!isValid) return;
@@ -1240,10 +1287,10 @@ const RequestModal: React.FC<RequestModalProps> = ({
         }
 
         const ok = await confirm({
-            title: isExistingDraft ? 'Lưu phiếu nháp' : 'Tạo đề xuất nháp',
+            title: isExistingDraft ? 'Lưu phiếu nháp' : 'Lưu đề xuất nháp',
             targetName: newRequest.code,
-            subtitle: 'Phiếu sẽ lưu ở trạng thái Nháp. Anh/chị mở lại phiếu để kiểm tra rồi mới gửi duyệt.',
-            confirmText: isExistingDraft ? 'Xác nhận lưu' : 'Xác nhận tạo',
+            subtitle: 'Phiếu sẽ lưu tạm ở trạng thái Nháp. Khi sẵn sàng, anh/chị có thể gửi duyệt sau.',
+            confirmText: 'Xác nhận lưu',
             actionLabel: isExistingDraft ? 'Lưu nháp' : 'Tạo nháp',
             cancelLabel: 'Kiểm tra lại',
             intent: 'success',
@@ -1254,8 +1301,20 @@ const RequestModal: React.FC<RequestModalProps> = ({
         await saveMaterialRequest(
             newRequest,
             isExistingDraft ? 'Đã lưu phiếu nháp' : 'Đã tạo phiếu nháp',
-            'Phiếu đang ở trạng thái Nháp. Mở lại phiếu để kiểm tra và gửi duyệt khi sẵn sàng.',
+            'Phiếu đang ở trạng thái Nháp. Anh/chị có thể mở lại để gửi duyệt khi sẵn sàng.',
         );
+    };
+
+    const handleCreateAndSend = async () => {
+        if (isSaving) return;
+        const isValid = await validateDraftForm();
+        if (!isValid) return;
+        try {
+            setSubmittingProjectRequest(buildDraftRequestFromForm(await allocateMaterialRequestCode()));
+        } catch (err: any) {
+            logApiError('requestModal.allocateCreateAndSendCode', err);
+            toast.error('Không thể cấp mã phiếu', getApiErrorMessage(err, 'Không lấy được mã MR mới từ hệ thống.'));
+        }
     };
 
     const handleOpenSubmitDraft = async () => {
@@ -2232,14 +2291,129 @@ const RequestModal: React.FC<RequestModalProps> = ({
     const requester = users.find(u => u.id === (request?.requesterId || user.id));
     const latestRequestLog = request?.logs?.[request.logs.length - 1];
     const isReturnedDraft = request?.status === RequestStatus.DRAFT && latestRequestLog?.action === 'RETURNED';
-    const requestStatusText = isReturnedDraft
-        ? 'Bị trả lại'
-        : request?.status === RequestStatus.DRAFT
-            ? 'Nháp'
-            : request?.status || 'NEW';
     const canSeeAvailability = !isProjectRequest || canViewAvailableStock;
     const showSourceWarehouseField = !isEditable || !isProjectRequest || canEditApprovalQuantities;
     const stockContextWarehouseId = isEditable && isProjectRequest ? stockPreviewWarehouseId : sourceWarehouseId;
+    const materialRequestWorkflowStep = request
+        ? (request.workflowStep || getDefaultMaterialRequestWorkflowStep(request.status))
+        : 'draft';
+    const materialRequestWorkflowStepText = String(materialRequestWorkflowStep || 'draft');
+    const currentWorkflowNode = projectWorkflowSubject?.currentRuntimeNode || projectWorkflowSubject?.currentNode || null;
+    const currentTemplateNodeId = projectWorkflowSubject?.currentRuntimeNode?.templateNodeId
+        || projectWorkflowSubject?.currentNode?.id
+        || projectWorkflowSubject?.currentNodeId
+        || null;
+    const dynamicWorkflowSteps = projectWorkflowSubject
+        ? projectWorkflowNodes
+            .filter(node => node.type !== WorkflowNodeType.START && node.type !== WorkflowNodeType.END)
+            .slice()
+            .sort((a, b) => (a.positionX - b.positionX) || (a.positionY - b.positionY))
+            .map(node => ({
+                id: `workflow:${node.id}`,
+                label: node.label,
+                hint: node.config?.slaHours ? `SLA ${formatHoursLabel(node.config.slaHours)}` : 'Bước duyệt workflow',
+            }))
+        : [];
+    const approvalDetailSteps = dynamicWorkflowSteps.length > 0
+        ? dynamicWorkflowSteps
+        : FALLBACK_DETAIL_APPROVAL_STEPS.map(step => ({
+            id: step.id,
+            label: step.label,
+            hint: step.hint,
+        }));
+    const shouldShowDraftDetailStep = request?.status === RequestStatus.DRAFT
+        || materialRequestWorkflowStepText === 'draft'
+        || materialRequestWorkflowStepText === 'returned_to_creator';
+    const baseDetailWorkflowSteps: Array<Omit<DetailWorkflowStep, 'state'>> = [
+        ...(shouldShowDraftDetailStep
+            ? [{
+                id: 'draft',
+                label: materialRequestWorkflowStepText === 'returned_to_creator' ? 'Sửa phiếu' : 'Nháp lưu tạm',
+                hint: materialRequestWorkflowStepText === 'returned_to_creator' ? 'Người tạo bổ sung và gửi lại' : 'Phiếu chưa gửi vào luồng duyệt',
+            }]
+            : []),
+        ...approvalDetailSteps,
+        ...DETAIL_OPERATION_STEPS.map(step => ({ id: step.id, label: step.label, hint: step.hint })),
+    ];
+    const currentDynamicStepId = currentTemplateNodeId ? `workflow:${currentTemplateNodeId}` : '';
+    const hasCurrentDynamicStep = currentDynamicStepId
+        ? dynamicWorkflowSteps.some(step => step.id === currentDynamicStepId)
+        : false;
+    let detailCurrentStepId = materialRequestWorkflowStepText;
+    if (request?.status === RequestStatus.COMPLETED || materialRequestWorkflowStepText === 'completed') {
+        detailCurrentStepId = 'completed';
+    } else if (request?.status === RequestStatus.APPROVED && (!request.workflowStep || ['site_manager_review', 'material_department_review'].includes(materialRequestWorkflowStepText))) {
+        detailCurrentStepId = 'batch_planning';
+    } else if ((projectWorkflowSubject?.status === 'RUNNING' || projectWorkflowSubject?.status === 'RETURNED') && hasCurrentDynamicStep) {
+        detailCurrentStepId = currentDynamicStepId;
+    } else if (dynamicWorkflowSteps.length > 0 && materialRequestWorkflowStepText === 'site_manager_review') {
+        detailCurrentStepId = dynamicWorkflowSteps[0]?.id || materialRequestWorkflowStepText;
+    } else if (dynamicWorkflowSteps.length > 0 && materialRequestWorkflowStepText === 'material_department_review') {
+        detailCurrentStepId = dynamicWorkflowSteps[dynamicWorkflowSteps.length - 1]?.id || materialRequestWorkflowStepText;
+    } else if (materialRequestWorkflowStepText === 'returned_to_creator') {
+        detailCurrentStepId = 'draft';
+    }
+    const rawDetailCurrentIndex = baseDetailWorkflowSteps.findIndex(step => step.id === detailCurrentStepId);
+    const detailCurrentIndex = rawDetailCurrentIndex >= 0 ? rawDetailCurrentIndex : 0;
+    const isDetailWorkflowBlocked = request?.status === RequestStatus.REJECTED
+        || materialRequestWorkflowStepText === 'rejected'
+        || materialRequestWorkflowStepText === 'returned_to_creator'
+        || projectWorkflowSubject?.status === 'RETURNED'
+        || projectWorkflowSubject?.status === 'REJECTED';
+    const isDetailWorkflowCompleted = request?.status === RequestStatus.COMPLETED || materialRequestWorkflowStepText === 'completed';
+    const detailWorkflowSteps: DetailWorkflowStep[] = baseDetailWorkflowSteps.map((step, index) => {
+        let state: DetailWorkflowStepState = 'pending';
+        if (isDetailWorkflowCompleted) {
+            state = index === baseDetailWorkflowSteps.length - 1 ? 'current' : 'done';
+        } else if (index < detailCurrentIndex) {
+            state = 'done';
+        } else if (index === detailCurrentIndex) {
+            state = isDetailWorkflowBlocked ? 'blocked' : 'current';
+        }
+        return { ...step, state };
+    });
+    const detailCurrentStep = detailWorkflowSteps[detailCurrentIndex] || detailWorkflowSteps[0];
+    const detailNextStep = isDetailWorkflowBlocked || isDetailWorkflowCompleted
+        ? null
+        : detailWorkflowSteps.find((_, index) => index > detailCurrentIndex && _.state === 'pending') || null;
+    const currentAssigneeIds = projectWorkflowSubject?.currentAssigneeUserIds?.length
+        ? projectWorkflowSubject.currentAssigneeUserIds
+        : projectWorkflowSubject?.currentAssigneeUserId
+            ? [projectWorkflowSubject.currentAssigneeUserId]
+            : request?.submittedToUserId
+                ? [request.submittedToUserId]
+                : [];
+    const currentAssigneeNames = currentAssigneeIds.map(id => users.find(item => item.id === id)?.name || id);
+    const detailAssigneeSummary = currentAssigneeNames.length > 0
+        ? currentAssigneeNames.join(', ')
+        : request?.submittedToName || '-';
+    const currentWorkflowSlaHours = currentWorkflowNode?.config?.slaHours ?? null;
+    const detailSlaHours = request?.workflowStepSlaHours ?? currentWorkflowSlaHours;
+    const detailSlaText = request?.workflowStepDueAt
+        ? `Hạn ${formatFullDateTime(request.workflowStepDueAt)}`
+        : detailSlaHours
+            ? `SLA ${formatHoursLabel(detailSlaHours)}`
+            : 'Không SLA';
+    const detailSlaSubtext = request?.workflowStepStartedAt ? `Bắt đầu ${formatFullDateTime(request.workflowStepStartedAt)}` : '';
+    const detailStageLabel = request?.status === RequestStatus.REJECTED || materialRequestWorkflowStepText === 'rejected'
+        ? 'Từ chối'
+        : materialRequestWorkflowStepText === 'returned_to_creator' || projectWorkflowSubject?.status === 'RETURNED'
+            ? 'Trả về người tạo'
+            : detailCurrentStep?.label || getWorkflowStepLabel(materialRequestWorkflowStepText);
+    const detailStatusBadgeClass = request?.status === RequestStatus.REJECTED || materialRequestWorkflowStepText === 'rejected'
+        ? 'border-red-200 bg-red-50 text-red-700'
+        : materialRequestWorkflowStepText === 'returned_to_creator' || projectWorkflowSubject?.status === 'RETURNED'
+            ? 'border-orange-200 bg-orange-50 text-orange-700'
+            : isDetailWorkflowCompleted
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                : 'border-emerald-200 bg-emerald-50 text-emerald-700';
+    const detailMetaParts = request ? [
+        request.code,
+        requester?.name ? `Người yêu cầu: ${requester.name}` : null,
+        targetWh?.name ? `Kho nhận: ${targetWh.name}` : null,
+        formatFullDateTime(request.expectedDate) !== '-' ? `Ngày cần: ${formatFullDateTime(request.expectedDate)}` : null,
+        fulfillmentMode === MaterialRequestFulfillmentMode.DIRECT_CONSUMPTION ? 'Cấp thẳng sử dụng' : 'Nhập kho công trường',
+    ].filter(Boolean) : [];
     const editableBudgetSnapshots = isEditable ? buildSequentialLineBudgetSnapshots(reqItems, request?.id) : null;
     const requestDisplayRows: RequestDisplayRow[] = isEditable ? reqItems : (request?.items || []);
     const materialDisplayGroups = requestDisplayRows.reduce<RequestDisplayGroup[]>((groups, row, index) => {
@@ -2368,7 +2542,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                         </h3>
                         <p className="truncate text-xs text-muted-foreground">
                             {request?.code ? `${request.code} - Đề xuất vật tư` : 'Phiếu mới - Đề xuất vật tư'}
-                            {request ? ` • Trạng thái: ${requestStatusText}${request.submittedToName ? ` • Gửi: ${request.submittedToName}` : ''}` : ''}
+                            {request ? ` • Trạng thái: ${getRequestStatusLabel(request.status)}${request.submittedToName ? ` • Gửi: ${request.submittedToName}` : ''}` : ''}
                         </p>
                     </div>
                     <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors">
@@ -2382,8 +2556,8 @@ const RequestModal: React.FC<RequestModalProps> = ({
                         request?.status === RequestStatus.APPROVED ? 'bg-blue-600' :
                             request?.status === RequestStatus.IN_TRANSIT ? 'bg-indigo-600' :
                                 request?.status === RequestStatus.COMPLETED ? 'bg-emerald-600' :
-                                    request?.status === RequestStatus.REJECTED ? 'bg-red-655' :
-                                        isReturnedDraft ? 'bg-rose-605' :
+                                    request?.status === RequestStatus.REJECTED ? 'bg-red-600' :
+                                        isReturnedDraft ? 'bg-rose-600' :
                                             request?.status === RequestStatus.DRAFT ? 'bg-slate-500' : 'bg-slate-600'
                         }`}>
                         <div className="flex items-center uppercase tracking-widest">
@@ -2417,6 +2591,78 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                 placeholder="Ví dụ: Vật tư thi công sàn tầng 4"
                             />
                         </div>
+                    )}
+                    {!isEditable && request && (
+                        <section className="mb-5 overflow-hidden rounded-lg border border-emerald-100 bg-card shadow-sm dark:border-emerald-900/40">
+                            <div className="flex flex-col gap-4 border-b border-emerald-100/80 px-5 py-4 lg:flex-row lg:items-start lg:justify-between dark:border-emerald-900/40">
+                                <div className="min-w-0">
+                                    <div className="text-[11px] font-black uppercase tracking-wide text-emerald-600 dark:text-emerald-400">
+                                        Luồng đề xuất vật tư
+                                    </div>
+                                    <h4 className="mt-1 text-xl font-black leading-tight text-foreground">
+                                        {request.title || requestTitle.trim() || 'Đề xuất vật tư'}
+                                    </h4>
+                                    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-semibold text-muted-foreground">
+                                        {detailMetaParts.map((part, index) => (
+                                            <span key={`${part}-${index}`} className="inline-flex min-w-0 items-center gap-1">
+                                                {index > 0 && <span className="text-slate-300">•</span>}
+                                                <span className="truncate">{part}</span>
+                                            </span>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div className="flex shrink-0 items-center gap-2">
+                                    <span className={`inline-flex items-center rounded-md border px-3 py-1.5 text-xs font-black ${detailStatusBadgeClass}`}>
+                                        {detailStageLabel}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div className="px-5 py-4">
+                                <div className="flex gap-1 overflow-x-auto pb-1 pr-4">
+                                    {detailWorkflowSteps.map((step, index) => (
+                                        <div
+                                            key={step.id}
+                                            className={`relative flex min-h-[58px] min-w-[164px] flex-1 items-center gap-2 px-4 py-3 text-[11px] font-black uppercase leading-snug ${DETAIL_STEP_TONE[step.state]} ${index < detailWorkflowSteps.length - 1 ? 'after:absolute after:-right-3 after:top-0 after:z-10 after:h-full after:w-6 after:skew-x-[-18deg] after:border-r after:border-white/90 after:bg-inherit' : 'rounded-r-md'} ${index === 0 ? 'rounded-l-md' : ''}`}
+                                            title={step.hint || step.label}
+                                        >
+                                            <span className={`relative z-20 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-black ${DETAIL_STEP_DOT_TONE[step.state]}`}>
+                                                {step.state === 'done' ? <CheckCircle size={14} /> : index + 1}
+                                            </span>
+                                            <span className="relative z-20 min-w-0">{step.label}</span>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                <div className="mt-4 grid grid-cols-1 divide-y divide-slate-100 rounded-lg border border-slate-100 bg-slate-50/60 md:grid-cols-4 md:divide-x md:divide-y-0 dark:divide-slate-800 dark:border-slate-800 dark:bg-slate-900/40">
+                                    <div className="px-4 py-3">
+                                        <div className="text-[10px] font-black uppercase tracking-wide text-slate-400">Bước hiện tại</div>
+                                        <div className="mt-1 text-sm font-black text-foreground">{detailStageLabel}</div>
+                                        {detailCurrentStep?.hint && <div className="mt-0.5 text-[11px] font-semibold text-muted-foreground">{detailCurrentStep.hint}</div>}
+                                    </div>
+                                    <div className="px-4 py-3">
+                                        <div className="text-[10px] font-black uppercase tracking-wide text-slate-400">Bước kế tiếp</div>
+                                        <div className="mt-1 text-sm font-black text-foreground">{detailNextStep?.label || '-'}</div>
+                                        {detailNextStep?.hint && <div className="mt-0.5 text-[11px] font-semibold text-muted-foreground">{detailNextStep.hint}</div>}
+                                    </div>
+                                    <div className="px-4 py-3">
+                                        <div className="text-[10px] font-black uppercase tracking-wide text-slate-400">Người xử lý</div>
+                                        <div className="mt-1 flex items-start gap-1.5 text-sm font-black text-foreground">
+                                            <User size={15} className="mt-0.5 shrink-0 text-slate-400" />
+                                            <span>{detailAssigneeSummary}</span>
+                                        </div>
+                                    </div>
+                                    <div className="px-4 py-3">
+                                        <div className="text-[10px] font-black uppercase tracking-wide text-slate-400">Thời hạn bước</div>
+                                        <div className="mt-1 flex items-start gap-1.5 text-sm font-black text-foreground">
+                                            <Clock size={15} className="mt-0.5 shrink-0 text-slate-400" />
+                                            <span>{detailSlaText}</span>
+                                        </div>
+                                        {detailSlaSubtext && <div className="mt-0.5 text-[11px] font-semibold text-muted-foreground">{detailSlaSubtext}</div>}
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
                     )}
                     {projectWorkflowSubject && request && (
                         <ProjectWorkflowPanel
@@ -2456,28 +2702,28 @@ const RequestModal: React.FC<RequestModalProps> = ({
                         />
                     )}
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 mb-10">
-                        <div className="bg-card p-5 rounded-2xl border border-border shadow-sm space-y-3">
-                            <label className="text-xs uppercase font-black text-slate-400">Người yêu cầu</label>
+                    <div className="mb-8 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
+                        <div className="space-y-2 rounded-lg border border-border bg-card p-4 shadow-sm">
+                            <label className="text-[11px] uppercase tracking-wide font-black text-slate-400">Người yêu cầu</label>
                             <div className="flex items-center gap-2 text-slate-800 font-bold">
                                 <User size={20} className="text-slate-400" />
-                                <span className="text-base">{requester?.name || 'N/A'}</span>
+                                <span className="text-[15px]">{requester?.name || 'N/A'}</span>
                             </div>
                         </div>
 
                         {!isEditable && request?.submittedToName && (
-                            <div className="bg-card p-5 rounded-2xl border border-amber-200/40 dark:border-amber-900/40 shadow-sm space-y-3">
-                                <label className="text-xs uppercase font-black text-amber-500">Người nhận xử lý</label>
+                            <div className="space-y-2 rounded-lg border border-amber-200/40 bg-card p-4 shadow-sm dark:border-amber-900/40">
+                                <label className="text-[11px] uppercase tracking-wide font-black text-amber-500">Người nhận xử lý</label>
                                 <div className="flex items-center gap-2 text-amber-700 font-bold">
                                     <User size={20} className="text-amber-400" />
-                                    <span className="text-base">{request.submittedToName}</span>
+                                    <span className="text-[15px]">{request.submittedToName}</span>
                                 </div>
                                 {request.submissionNote && <div className="text-[10px] text-slate-400 truncate">{request.submissionNote}</div>}
                             </div>
                         )}
 
-                        <div className="bg-card p-5 rounded-2xl border border-border shadow-sm space-y-3">
-                            <label className="text-xs uppercase font-black text-slate-400">Kho nhận hàng</label>
+                        <div className="space-y-2 rounded-lg border border-border bg-card p-4 shadow-sm">
+                            <label className="text-[11px] uppercase tracking-wide font-black text-slate-400">Kho nhận hàng</label>
                             <div className="flex items-center gap-2 text-slate-800 font-bold">
                                 <Truck size={20} className="text-slate-400" />
                                 {isEditable ? (
@@ -2490,14 +2736,14 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                         {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
                                     </select>
                                 ) : (
-                                    <span className="text-base">{targetWh?.name}</span>
+                                    <span className="text-[15px]">{targetWh?.name}</span>
                                 )}
                             </div>
                         </div>
 
                         {showSourceWarehouseField && (
-                            <div className="bg-card p-5 rounded-2xl border border-blue-200/40 dark:border-blue-900/40 shadow-sm space-y-3">
-                                <label className="text-xs uppercase font-black text-blue-400">Kho cung cấp</label>
+                            <div className="space-y-2 rounded-lg border border-blue-200/40 bg-card p-4 shadow-sm dark:border-blue-900/40">
+                                <label className="text-[11px] uppercase tracking-wide font-black text-blue-400">Kho cung cấp</label>
                                 <div className="flex items-center gap-2 text-blue-700 font-bold">
                                     <PackageCheck size={20} className="text-blue-400" />
                                     {isEditable || canEditApprovalQuantities ? (
@@ -2512,15 +2758,15 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                             ))}
                                         </select>
                                     ) : (
-                                        <span className="text-base">{sourceWh?.name || 'Chưa phân nguồn'}</span>
+                                        <span className="text-[15px]">{sourceWh?.name || 'Chưa phân nguồn'}</span>
                                     )}
                                 </div>
                             </div>
                         )}
 
                         {isEditable && isProjectRequest && canSeeAvailability && (
-                            <div className="bg-card p-5 rounded-2xl border border-cyan-200/40 dark:border-cyan-900/40 shadow-sm space-y-3">
-                                <label className="text-xs uppercase font-black text-cyan-500">Xem tồn kho khi đề xuất</label>
+                            <div className="space-y-2 rounded-lg border border-cyan-200/40 bg-card p-4 shadow-sm dark:border-cyan-900/40">
+                                <label className="text-[11px] uppercase tracking-wide font-black text-cyan-500">Xem tồn kho khi đề xuất</label>
                                 <div className="flex items-center gap-2 text-cyan-700 font-bold">
                                     <PackageCheck size={20} className="text-cyan-400" />
                                     <select
@@ -2536,8 +2782,8 @@ const RequestModal: React.FC<RequestModalProps> = ({
                         )}
 
                         {/* Ngày giờ yêu cầu */}
-                        <div className="bg-card p-5 rounded-2xl border border-border shadow-sm space-y-3">
-                            <label className="text-xs uppercase font-black text-slate-400">Ngày giờ yêu cầu</label>
+                        <div className="space-y-2 rounded-lg border border-border bg-card p-4 shadow-sm">
+                            <label className="text-[11px] uppercase tracking-wide font-black text-slate-400">Ngày giờ yêu cầu</label>
                             <div className="flex items-center gap-2 text-slate-800 font-bold">
                                 <Clock size={20} className="text-slate-400" />
                                 <span className="text-sm font-bold font-mono">
@@ -2549,8 +2795,8 @@ const RequestModal: React.FC<RequestModalProps> = ({
                         </div>
 
                         {/* Hạn giao mong muốn */}
-                        <div className="bg-card p-5 rounded-2xl border border-rose-200/40 dark:border-rose-900/40 shadow-sm space-y-3">
-                            <label className="text-xs uppercase font-black text-rose-500">Hạn giao mong muốn (Ngày cần)</label>
+                        <div className="space-y-2 rounded-lg border border-rose-200/40 bg-card p-4 shadow-sm dark:border-rose-900/40">
+                            <label className="text-[11px] uppercase tracking-wide font-black text-rose-500">Hạn giao mong muốn (Ngày cần)</label>
                             <div className="flex items-center gap-2 text-slate-800 font-bold">
                                 <Clock size={20} className="text-rose-400" />
                                 {isEditable ? (
@@ -2558,18 +2804,18 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                         type="datetime-local"
                                         value={toDatetimeLocalString(expectedDate)}
                                         onChange={(e) => setExpectedDate(toISOStringFromLocal(e.target.value))}
-                                        className="w-full bg-transparent outline-none text-base font-bold text-slate-705 font-mono"
+                                        className="w-full bg-transparent outline-none text-base font-bold text-slate-700 font-mono"
                                     />
                                 ) : (
-                                    <span className="text-base font-bold font-mono text-rose-700">
+                                    <span className="text-[15px] font-bold font-mono text-rose-700">
                                         {formatFullDateTime(request?.expectedDate)}
                                     </span>
                                 )}
                             </div>
                         </div>
 
-                        <div className="bg-card p-5 rounded-2xl border border-border shadow-sm space-y-3">
-                            <label className="text-xs uppercase font-black text-slate-400">Ghi chú phiếu</label>
+                        <div className="space-y-2 rounded-lg border border-border bg-card p-4 shadow-sm">
+                            <label className="text-[11px] uppercase tracking-wide font-black text-slate-400">Ghi chú phiếu</label>
                             <input
                                 type="text"
                                 disabled={!isEditable && !canEditApprovalQuantities}
@@ -2579,8 +2825,8 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                 placeholder="Lý do hoặc chỉ dẫn..."
                             />
                         </div>
-                        <div className="bg-card p-5 rounded-2xl border border-emerald-250/40 dark:border-emerald-900/40 shadow-sm space-y-3">
-                            <label className="text-xs uppercase font-black text-emerald-500">Cách cấp vật tư</label>
+                        <div className="space-y-2 rounded-lg border border-emerald-250/40 bg-card p-4 shadow-sm dark:border-emerald-900/40">
+                            <label className="text-[11px] uppercase tracking-wide font-black text-emerald-500">Cách cấp vật tư</label>
                             {isEditable ? (
                                 <select
                                     value={fulfillmentMode}
@@ -2598,8 +2844,8 @@ const RequestModal: React.FC<RequestModalProps> = ({
                         </div>
 
                         {canEditApprovalQuantities && isAdmin(user) && (
-                            <div className="bg-card p-5 rounded-2xl border border-amber-250/45 dark:border-amber-900/45 shadow-sm space-y-3">
-                                <label className="text-xs uppercase font-black text-amber-600">Lý do override</label>
+                            <div className="space-y-2 rounded-lg border border-amber-250/45 bg-card p-4 shadow-sm dark:border-amber-900/45">
+                                <label className="text-[11px] uppercase tracking-wide font-black text-amber-600">Lý do override</label>
                                 <input
                                     type="text"
                                     value={overrideReason}
@@ -3343,8 +3589,19 @@ const RequestModal: React.FC<RequestModalProps> = ({
                             </button>
                         )}
 
-                        {isEditable && (
-                            <button disabled={isSaving} onClick={handleSubmitCreate} className="px-3 py-1.5 sm:px-6 sm:py-2 rounded-lg bg-slate-700 text-white text-xs sm:text-sm font-bold hover:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed flex items-center shadow-lg shadow-slate-500/20 whitespace-nowrap">
+                        {isEditable && isProjectRequest && !request && (
+                            <>
+                                <button disabled={isSaving} onClick={handleSaveDraft} className="px-3 py-1.5 sm:px-5 sm:py-2 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs sm:text-sm font-bold hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed flex items-center whitespace-nowrap">
+                                    {isSaving ? <Loader2 size={14} className="mr-1.5 sm:mr-2 animate-spin" /> : <Save size={14} className="mr-1.5 sm:mr-2" />} Lưu nháp
+                                </button>
+                                <button disabled={isSaving} onClick={handleCreateAndSend} className="px-3 py-1.5 sm:px-6 sm:py-2 rounded-lg bg-emerald-600 text-white text-xs sm:text-sm font-bold hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed flex items-center shadow-lg shadow-emerald-500/20 whitespace-nowrap">
+                                    {isSaving ? <Loader2 size={14} className="mr-1.5 sm:mr-2 animate-spin" /> : <Send size={14} className="mr-1.5 sm:mr-2" />} {isSaving ? 'Đang gửi...' : 'Tạo và gửi duyệt'}
+                                </button>
+                            </>
+                        )}
+
+                        {isEditable && (!isProjectRequest || !!request) && (
+                            <button disabled={isSaving} onClick={handleSaveDraft} className="px-3 py-1.5 sm:px-6 sm:py-2 rounded-lg bg-slate-700 text-white text-xs sm:text-sm font-bold hover:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed flex items-center shadow-lg shadow-slate-500/20 whitespace-nowrap">
                                 {isSaving ? <Loader2 size={14} className="mr-1.5 sm:mr-2 animate-spin" /> : <Save size={14} className="mr-1.5 sm:mr-2" />} {isSaving ? 'Đang lưu...' : request ? 'Lưu nháp' : 'Tạo đề xuất'}
                             </button>
                         )}
@@ -3903,9 +4160,10 @@ const RequestModal: React.FC<RequestModalProps> = ({
                     projectId={effectiveProjectId}
                     constructionSiteId={effectiveConstructionSiteId}
                     users={users}
-                    employees={employees}
-                    orgUnits={orgUnits}
-                    onCancel={() => setSubmittingProjectRequest(null)}
+	                    employees={employees}
+	                    orgUnits={orgUnits}
+	                    submitLabel={request ? 'Gửi duyệt' : 'Tạo và gửi duyệt'}
+	                    onCancel={() => setSubmittingProjectRequest(null)}
                     onConfirm={input => submitRequestForApproval(submittingProjectRequest, {
                         userId: input.assigneeUserIds[0],
                         userIds: input.assigneeUserIds,

@@ -39,14 +39,46 @@ export const formatQuantity = (value: number) =>
 export const formatPercent = (value: number) =>
     Number(value || 0).toLocaleString('vi-VN', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
-export const importNumber = (value: unknown) => {
-    const raw = String(value ?? '').trim().replace(/\s/g, '');
+export const parseVietnameseNumber = (value: unknown) => {
+    if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+    const raw = String(value ?? '')
+        .trim()
+        .replace(/[\s\u00a0]/g, '')
+        .replace(/[^\d,.-]/g, '');
     if (!raw) return 0;
-    let normalized = raw;
-    if (raw.includes(',')) normalized = raw.replace(/\./g, '').replace(',', '.');
-    else if (/^\d{1,3}(\.\d{3})+$/.test(raw)) normalized = raw.replace(/\./g, '');
-    const n = Number(normalized);
+    const sign = raw.startsWith('-') ? '-' : '';
+    const unsigned = raw.replace(/-/g, '');
+    const normalized = unsigned.includes(',')
+        ? unsigned.replace(/\./g, '').replace(',', '.')
+        : unsigned.replace(/\./g, '');
+    const n = Number(`${sign}${normalized}`);
     return Number.isFinite(n) ? n : 0;
+};
+
+export const formatVietnameseNumber = (value: unknown, maximumFractionDigits = MATERIAL_BUDGET_QTY_PRECISION) =>
+    parseVietnameseNumber(value).toLocaleString('vi-VN', { maximumFractionDigits });
+
+export const parseVietnameseMoney = (value: unknown) => {
+    if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+    const raw = String(value ?? '')
+        .trim()
+        .replace(/[\s\u00a0]/g, '')
+        .replace(/[^\d,.-]/g, '');
+    if (!raw) return 0;
+    const sign = raw.startsWith('-') ? '-' : '';
+    const unsigned = raw.replace(/-/g, '');
+    if (!unsigned.includes('.') && /^\d{1,3}(,\d{3})+$/.test(unsigned)) {
+        const n = Number(`${sign}${unsigned.replace(/,/g, '')}`);
+        return Number.isFinite(n) ? n : 0;
+    }
+    return parseVietnameseNumber(raw);
+};
+
+export const formatVietnameseMoney = (value: unknown) =>
+    parseVietnameseMoney(value).toLocaleString('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+export const importNumber = (value: unknown) => {
+    return parseVietnameseNumber(value);
 };
 
 export const normalizeKey = (value?: string | null) => String(value || '').trim().toLowerCase();
