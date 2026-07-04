@@ -1,21 +1,30 @@
 import React, { useEffect, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useToast } from '../../context/ToastContext';
 import {
   Activity,
   AlertTriangle,
+  ArrowRight,
+  ArrowUpRight,
   Banknote,
   Building2,
   CalendarClock,
+  CalendarDays,
   CheckCircle2,
   CircleDollarSign,
   ClipboardCheck,
+  Clock,
   FileText,
+  Gauge,
   HardHat,
+  ListChecks,
   Package,
   RefreshCw,
   ShieldCheck,
+  TimerReset,
   TrendingUp,
   Truck,
+  WalletCards,
 } from 'lucide-react';
 import {
   ExecutiveAlertSeverity,
@@ -32,6 +41,9 @@ interface FastConsDashboardProps {
   constructionSiteId: string;
   projectId?: string;
 }
+
+type ExecutiveTaskRow = ProjectDashboardMetrics['executive']['timeline']['rows'][number];
+type ExecutiveAction = ProjectDashboardMetrics['executive']['actionLinks'][number];
 
 const fmtMoney = (value: number): string => {
   const n = Number(value || 0);
@@ -54,6 +66,12 @@ const fmtDeltaDays = (days: number): string => {
   if (days > 0) return `+${days} ngày`;
   if (days < 0) return `${days} ngày`;
   return 'Không đổi';
+};
+
+const fmtScheduleDelta = (days: number): string => {
+  if (days > 0) return `Chậm ${days} ngày`;
+  if (days < 0) return `Nhanh ${Math.abs(days)} ngày`;
+  return 'Đúng kế hoạch';
 };
 
 const metricTone = (value: number, positiveGood = true): string => {
@@ -97,6 +115,159 @@ const SummaryCard = ({
       </div>
       {sub && <div className="mt-2 text-[11px] font-semibold opacity-75 truncate">{sub}</div>}
     </div>
+  );
+};
+
+const ExecutiveKpiCard = ({
+  title,
+  value,
+  sub,
+  icon,
+  tone = 'slate',
+  onClick,
+}: {
+  title: string;
+  value: string;
+  sub?: string;
+  icon: React.ReactNode;
+  tone?: 'slate' | 'emerald' | 'orange' | 'blue' | 'violet' | 'red' | 'cyan';
+  onClick?: () => void;
+}) => {
+  const toneClass = {
+    slate: 'border-slate-200 bg-white text-slate-900',
+    emerald: 'border-emerald-200 bg-emerald-50/60 text-emerald-800',
+    orange: 'border-orange-200 bg-orange-50/70 text-orange-800',
+    blue: 'border-blue-200 bg-blue-50/70 text-blue-800',
+    violet: 'border-violet-200 bg-violet-50/70 text-violet-800',
+    red: 'border-red-200 bg-red-50/70 text-red-800',
+    cyan: 'border-cyan-200 bg-cyan-50/70 text-cyan-800',
+  }[tone];
+  const Element = onClick ? 'button' : 'div';
+
+  return (
+    <Element
+      type={onClick ? 'button' : undefined}
+      onClick={onClick}
+      className={`group rounded-xl border p-4 text-left shadow-sm transition ${toneClass} ${onClick ? 'hover:-translate-y-0.5 hover:shadow-md active:translate-y-0' : ''}`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-[10px] font-black uppercase tracking-wide text-slate-500">{title}</div>
+          <div className="mt-2 text-2xl font-black leading-none tracking-normal sm:text-3xl">{value}</div>
+        </div>
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/80 text-current shadow-sm">
+          {icon}
+        </div>
+      </div>
+      {sub && <div className="mt-3 min-h-8 text-[11px] font-bold leading-4 text-slate-500">{sub}</div>}
+    </Element>
+  );
+};
+
+const TaskHighlightPanel = ({
+  title,
+  rows,
+  empty,
+  tone,
+  onOpenTask,
+  onOpenAll,
+}: {
+  title: string;
+  rows: ExecutiveTaskRow[];
+  empty: string;
+  tone: 'emerald' | 'blue' | 'orange' | 'red';
+  onOpenTask: (taskId: string) => void;
+  onOpenAll: () => void;
+}) => {
+  const toneClass = {
+    emerald: 'text-emerald-700 bg-emerald-50 border-emerald-100',
+    blue: 'text-blue-700 bg-blue-50 border-blue-100',
+    orange: 'text-orange-700 bg-orange-50 border-orange-100',
+    red: 'text-red-700 bg-red-50 border-red-100',
+  }[tone];
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <div>
+          <div className="text-xs font-black text-slate-900">{title}</div>
+          <div className="mt-0.5 text-[11px] font-bold text-slate-400">{rows.length} hạng mục</div>
+        </div>
+        <button
+          type="button"
+          onClick={onOpenAll}
+          className={`rounded-lg border px-2.5 py-1 text-[10px] font-black ${toneClass}`}
+        >
+          Mở
+        </button>
+      </div>
+      <div className="space-y-2">
+        {rows.slice(0, 4).map(row => (
+          <button
+            key={row.taskId}
+            type="button"
+            onClick={() => onOpenTask(row.taskId)}
+            className="w-full rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-left transition hover:border-slate-200 hover:bg-white"
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="truncate text-xs font-black text-slate-800">{row.wbsCode ? `${row.wbsCode} · ` : ''}{row.name}</div>
+                <div className="mt-1 truncate text-[10px] font-bold text-slate-400">
+                  {fmtDate(row.startDate)} - {fmtDate(row.plannedEndDate)} · {row.actualProgress}%
+                </div>
+              </div>
+              <div className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-black ${row.dayDelta > 0 ? 'bg-red-50 text-red-700' : row.dayDelta < 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                {fmtScheduleDelta(row.dayDelta)}
+              </div>
+            </div>
+          </button>
+        ))}
+        {rows.length === 0 && (
+          <div className="rounded-lg border border-dashed border-slate-200 px-3 py-5 text-center text-[11px] font-bold text-slate-400">
+            {empty}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const ExecutiveActionCard = ({
+  action,
+  onOpen,
+}: {
+  action: ExecutiveAction;
+  onOpen: (action: ExecutiveAction) => void;
+}) => {
+  const toneClass = {
+    critical: 'border-red-200 bg-red-50 text-red-700',
+    warning: 'border-orange-200 bg-orange-50 text-orange-700',
+    info: 'border-blue-200 bg-blue-50 text-blue-700',
+    success: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  }[action.tone || 'info'];
+
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(action)}
+      className="group flex min-h-[96px] w-full flex-col justify-between rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-slate-300 hover:shadow-md"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="truncate text-xs font-black text-slate-900">{action.title}</div>
+          <div className="mt-1 line-clamp-2 text-[11px] font-semibold leading-4 text-slate-500">{action.description}</div>
+        </div>
+        <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${toneClass}`}>
+          <ArrowUpRight size={14} />
+        </div>
+      </div>
+      <div className="mt-3 flex items-center justify-between gap-2">
+        <div className="text-[11px] font-black text-slate-500">
+          {action.amount ? fmtMoney(action.amount) : action.count != null ? `${action.count} mục` : 'Mở chi tiết'}
+        </div>
+        <ArrowRight size={13} className="text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-slate-500" />
+      </div>
+    </button>
   );
 };
 
@@ -634,6 +805,8 @@ const FastConsDashboard: React.FC<FastConsDashboardProps> = ({ constructionSiteI
   const [isSyncing, setIsSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const toast = useToast();
+  const navigate = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
     let cancelled = false;
@@ -719,6 +892,45 @@ const FastConsDashboard: React.FC<FastConsDashboardProps> = ({ constructionSiteI
   const financial = metrics.financialKPIs;
   const scheduleHealth = metrics.executive.scheduleHealth;
   const approvalQueue = metrics.executive.approvalQueue;
+  const timeline = metrics.executive.timeline || {
+    todayIso: new Date().toISOString().slice(0, 10),
+    projectStart: '',
+    projectEnd: scheduleHealth.baselineEndDate,
+    projectDurationDays: 0,
+    calendarElapsedDays: 0,
+    verifiedLogDays: 0,
+    forecastProjectEnd: scheduleHealth.forecastEndDate,
+    forecastDurationDays: 0,
+    forecastDeltaDays: scheduleHealth.forecastDeltaDays,
+    plannedProgress: scheduleHealth.plannedProgress,
+    actualProgress: scheduleHealth.actualProgress,
+    progressVariance: scheduleHealth.progressVariance,
+    rows: [],
+    activeRows: [],
+    completedRows: [],
+    lateRows: [],
+    upcomingRows: [],
+    notStartedRows: [],
+  };
+  const financialExecutive = metrics.executive.financialExecutive || {
+    contractValue: financial?.revisedContractValue || metrics.progress.contractTotalValue || 0,
+    received: metrics.cashFlow.cashIn,
+    spent: metrics.cashFlow.cashOut,
+    cashBalance: metrics.cashFlow.balance,
+    upcomingReceivable30d: 0,
+    upcomingPayable30d: 0,
+    overdueReceivable: 0,
+    overduePayable: 0,
+    overdueReceivableCount: 0,
+    overduePayableCount: 0,
+  };
+  const taskHighlights = metrics.executive.taskHighlights || {
+    active: timeline.activeRows,
+    completed: timeline.completedRows,
+    late: timeline.lateRows,
+    upcoming: timeline.upcomingRows,
+  };
+  const actionLinks = metrics.executive.actionLinks || [];
   const forecastTone = scheduleHealth.forecastDeltaDays > 0 || scheduleHealth.status === 'red'
     ? 'red'
     : scheduleHealth.status === 'amber'
@@ -732,85 +944,230 @@ const FastConsDashboard: React.FC<FastConsDashboardProps> = ({ constructionSiteI
   const progressVarianceText = `${scheduleHealth.progressVariance >= 0 ? '+' : ''}${scheduleHealth.progressVariance}%`;
   const constructionProgressPercent = metrics.progress.constructionProgressPercent ?? metrics.progress.percent ?? 0;
   const valueProgressPercent = metrics.progress.valueProgressPercent ?? (metrics.progress.mode === 'contract_value' ? metrics.progress.percent : 0);
+  const projectStatusText = scheduleHealth.status === 'red'
+    ? 'Cần can thiệp'
+    : scheduleHealth.status === 'amber'
+      ? 'Cần theo dõi'
+      : 'Ổn định';
+
+  const openProjectTab = (targetTab: string, params?: Record<string, string>) => {
+    const query = new URLSearchParams(location.search);
+    query.set('tab', targetTab);
+    if (projectId) query.set('projectId', projectId);
+    if (constructionSiteId) query.set('siteId', constructionSiteId);
+    Object.entries(params || {}).forEach(([key, value]) => {
+      if (value) query.set(key, value);
+    });
+    navigate(`/da?${query.toString()}`);
+  };
+
+  const openAction = (action: ExecutiveAction) => {
+    openProjectTab(action.targetTab, action.params);
+  };
 
   return (
     <section className="space-y-4">
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-        <div className="px-5 py-4 border-b border-slate-100 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-          <div>
-            <h2 className="text-sm font-black text-slate-900 flex items-center gap-2">
+      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-4 md:flex-row md:items-center md:justify-between md:px-5">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
               <BarIcon />
-              Dashboard điều hành dự án
-            </h2>
-            <p className="text-[11px] font-semibold text-slate-400 mt-1">
-              Tổng hợp từ Gantt, BOQ, nghiệm thu, thanh toán, tạm ứng, PO và dòng tiền hiện có.
+              <h2 className="truncate text-base font-black text-slate-950">Điều hành dự án</h2>
+              <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-black ${scheduleHealth.status === 'red' ? 'bg-red-50 text-red-700' : scheduleHealth.status === 'amber' ? 'bg-orange-50 text-orange-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                {projectStatusText}
+              </span>
+            </div>
+            <p className="mt-1 text-[11px] font-semibold text-slate-400">
+              Cập nhật {new Date(metrics.calculatedAt).toLocaleString('vi-VN')} từ tiến độ, tài chính, thanh toán và nhật ký.
             </p>
           </div>
-          <div className="flex items-center gap-3 shrink-0">
-            <span className="text-[10px] font-bold text-slate-400">
-              Lần tính: {new Date(metrics.calculatedAt).toLocaleString('vi-VN')}
-            </span>
+          <div className="flex items-center gap-2">
             <button
               onClick={handleSync}
               disabled={isSyncing}
-              className="px-3 py-1.5 bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest rounded-lg hover:bg-slate-800 active:scale-95 transition flex items-center gap-1.5 disabled:opacity-50 shadow-sm"
+              className="flex items-center gap-1.5 rounded-lg bg-slate-950 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-white shadow-sm transition hover:bg-slate-800 active:scale-95 disabled:opacity-50"
               title="Đồng bộ lại toàn bộ dữ liệu mới nhất"
             >
-              {isSyncing ? <RefreshCw size={10} className="animate-spin" /> : <RefreshCw size={10} />}
+              {isSyncing ? <RefreshCw size={12} className="animate-spin" /> : <RefreshCw size={12} />}
               Cập nhật
             </button>
           </div>
         </div>
-        <div className="p-4 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-3">
-          <SummaryCard
-            title="Tiến độ thi công"
-            value={`${constructionProgressPercent}%`}
-            sub={`Kế hoạch ${scheduleHealth.plannedProgress}% · lệch ${progressVarianceText}`}
-            icon={<Activity size={16} />}
-            tone={progressTone}
-          />
-          <SummaryCard
-            title="Tiến độ theo giá trị"
-            value={`${valueProgressPercent}%`}
-            sub={`Ghi nhận ${fmtMoney(metrics.progress.recognizedValue || 0)} / HĐ ${fmtMoney(metrics.progress.contractTotalValue || 0)}`}
-            icon={<Package size={16} />}
-            tone={valueProgressPercent >= constructionProgressPercent ? 'emerald' : 'orange'}
-          />
-          <SummaryCard
-            title="Forecast hoàn thành"
-            value={fmtDate(scheduleHealth.forecastEndDate)}
-            sub={`${fmtDeltaDays(scheduleHealth.forecastDeltaDays)} · ảnh hưởng ${scheduleHealth.impactedTaskCount}`}
-            icon={<CalendarClock size={16} />}
-            tone={forecastTone}
-          />
-          <SummaryCard
-            title="Vị thế tiền mặt"
-            value={fmtMoney(metrics.cashFlow.balance)}
-            sub={`Thu ${fmtMoney(metrics.cashFlow.cashIn)} · Chi ${fmtMoney(metrics.cashFlow.cashOut)}`}
-            icon={<Banknote size={16} />}
-            tone={metrics.cashFlow.balance >= 0 ? 'emerald' : 'red'}
-          />
-          <SummaryCard
-            title="Công nợ"
-            value={fmtMoney(metrics.cashFlow.receivable)}
-            sub={`Phải trả ${fmtMoney(metrics.cashFlow.payable)}`}
-            icon={<CircleDollarSign size={16} />}
-            tone={metrics.cashFlow.receivable >= metrics.cashFlow.payable ? 'emerald' : 'orange'}
-          />
-          <SummaryCard
-            title="Chờ duyệt"
-            value={`${approvalQueue.total}`}
-            sub={`NT ${approvalQueue.quantityAcceptanceSubmitted} · TT ${approvalQueue.paymentCertificateSubmitted}`}
-            icon={<ClipboardCheck size={16} />}
-            tone={approvalQueue.total > 0 ? 'orange' : 'emerald'}
-          />
-          <SummaryCard
-            title="Chi phí 7 ngày tới"
-            value={fmtMoney(metrics.sevenDayForecast.totalCost)}
-            sub={`${metrics.sevenDayForecast.taskCount} hạng mục đang chạy`}
-            icon={<CalendarClock size={16} />}
-            tone="violet"
-          />
+
+        <div className="grid gap-4 p-4 xl:grid-cols-[1.25fr_0.75fr]">
+          <div className="rounded-xl bg-emerald-600 p-5 text-white shadow-sm">
+            <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wide text-emerald-100">
+                  <CalendarDays size={16} />
+                  Đã thi công
+                </div>
+                <div className="mt-3 flex items-end gap-2">
+                  <span className="text-5xl font-black leading-none sm:text-6xl">{timeline.calendarElapsedDays}</span>
+                  <span className="pb-1 text-sm font-black text-emerald-100">ngày</span>
+                </div>
+                <div className="mt-3 text-sm font-bold text-emerald-50">
+                  Tổng {timeline.projectDurationDays || '-'} ngày kế hoạch · {timeline.verifiedLogDays} ngày có nhật ký xác nhận
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3 sm:min-w-[280px]">
+                <div className="rounded-lg bg-white/12 p-3">
+                  <div className="text-[10px] font-black uppercase text-emerald-100">Kết thúc KH</div>
+                  <div className="mt-1 text-sm font-black">{fmtDate(timeline.projectEnd || scheduleHealth.baselineEndDate)}</div>
+                </div>
+                <div className="rounded-lg bg-white/12 p-3">
+                  <div className="text-[10px] font-black uppercase text-emerald-100">Kết thúc dự kiến</div>
+                  <div className="mt-1 text-sm font-black">{fmtDate(timeline.forecastProjectEnd || scheduleHealth.forecastEndDate)}</div>
+                </div>
+                <div className="rounded-lg bg-white/12 p-3">
+                  <div className="text-[10px] font-black uppercase text-emerald-100">Nhanh/chậm</div>
+                  <div className="mt-1 text-sm font-black">{fmtScheduleDelta(timeline.forecastDeltaDays || scheduleHealth.forecastDeltaDays)}</div>
+                </div>
+                <div className="rounded-lg bg-white/12 p-3">
+                  <div className="text-[10px] font-black uppercase text-emerald-100">Tiến độ TT</div>
+                  <div className="mt-1 text-sm font-black">{constructionProgressPercent}%</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <ExecutiveKpiCard
+              title="Kế hoạch"
+              value={`${timeline.plannedProgress || scheduleHealth.plannedProgress}%`}
+              sub={`Thực tế lệch ${progressVarianceText}`}
+              icon={<Gauge size={17} />}
+              tone={progressTone}
+              onClick={() => openProjectTab('report')}
+            />
+            <ExecutiveKpiCard
+              title="Forecast"
+              value={fmtScheduleDelta(timeline.forecastDeltaDays || scheduleHealth.forecastDeltaDays)}
+              sub={`Dự kiến ${fmtDate(timeline.forecastProjectEnd || scheduleHealth.forecastEndDate)}`}
+              icon={<TimerReset size={17} />}
+              tone={forecastTone}
+              onClick={() => openProjectTab('gantt')}
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-7">
+        <ExecutiveKpiCard
+          title="Tiến độ thi công"
+          value={`${constructionProgressPercent}%`}
+          sub={`KH ${timeline.plannedProgress || scheduleHealth.plannedProgress}% · ${progressVarianceText}`}
+          icon={<Activity size={17} />}
+          tone={progressTone}
+          onClick={() => openProjectTab('gantt')}
+        />
+        <ExecutiveKpiCard
+          title="Tiến độ giá trị"
+          value={`${valueProgressPercent}%`}
+          sub={`${fmtMoney(metrics.progress.actualProductionValue || metrics.progress.recognizedValue || 0)} / ${fmtMoney(metrics.progress.contractTotalValue || 0)}`}
+          icon={<CircleDollarSign size={17} />}
+          tone={valueProgressPercent >= constructionProgressPercent ? 'emerald' : 'orange'}
+          onClick={() => openProjectTab('gantt')}
+        />
+        <ExecutiveKpiCard
+          title="Tổng hợp đồng"
+          value={fmtMoney(financialExecutive.contractValue)}
+          sub={fmtFull(financialExecutive.contractValue)}
+          icon={<FileText size={17} />}
+          tone="slate"
+          onClick={() => openProjectTab('contract')}
+        />
+        <ExecutiveKpiCard
+          title="Đã thu"
+          value={fmtMoney(financialExecutive.received)}
+          sub={`Tiền thật đã ghi nhận`}
+          icon={<WalletCards size={17} />}
+          tone="emerald"
+          onClick={() => openProjectTab('finance', { financeTab: 'cashflow' })}
+        />
+        <ExecutiveKpiCard
+          title="Đã chi"
+          value={fmtMoney(financialExecutive.spent)}
+          sub={`Số dư ${fmtMoney(financialExecutive.cashBalance)}`}
+          icon={<Banknote size={17} />}
+          tone={financialExecutive.cashBalance >= 0 ? 'blue' : 'red'}
+          onClick={() => openProjectTab('finance', { financeTab: 'cashflow' })}
+        />
+        <ExecutiveKpiCard
+          title="Sắp thu 30 ngày"
+          value={fmtMoney(financialExecutive.upcomingReceivable30d)}
+          sub={`Quá hạn ${fmtMoney(financialExecutive.overdueReceivable)} · ${financialExecutive.overdueReceivableCount} khoản`}
+          icon={<Clock size={17} />}
+          tone={financialExecutive.overdueReceivable > 0 ? 'orange' : 'cyan'}
+          onClick={() => openProjectTab('payment', { paymentTab: financialExecutive.overdueReceivable > 0 ? 'overdue' : 'upcoming' })}
+        />
+        <ExecutiveKpiCard
+          title="Sắp chi 30 ngày"
+          value={fmtMoney(financialExecutive.upcomingPayable30d)}
+          sub={`Quá hạn ${fmtMoney(financialExecutive.overduePayable)} · ${financialExecutive.overduePayableCount} khoản`}
+          icon={<CalendarClock size={17} />}
+          tone={financialExecutive.overduePayable > 0 ? 'red' : 'violet'}
+          onClick={() => openProjectTab('payment', { paymentTab: financialExecutive.overduePayable > 0 ? 'overdue' : 'upcoming' })}
+        />
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-4">
+        <TaskHighlightPanel
+          title="Đang thi công"
+          rows={taskHighlights.active}
+          empty="Chưa có hạng mục đang thi công."
+          tone="blue"
+          onOpenTask={taskId => openProjectTab('gantt', { taskId })}
+          onOpenAll={() => openProjectTab('report', { reportStatus: 'active' })}
+        />
+        <TaskHighlightPanel
+          title="Đã hoàn thành"
+          rows={taskHighlights.completed}
+          empty="Chưa có hạng mục hoàn thành."
+          tone="emerald"
+          onOpenTask={taskId => openProjectTab('gantt', { taskId })}
+          onOpenAll={() => openProjectTab('report', { reportStatus: 'completed' })}
+        />
+        <TaskHighlightPanel
+          title="Chậm / cần xử lý"
+          rows={taskHighlights.late}
+          empty="Chưa ghi nhận hạng mục chậm."
+          tone="red"
+          onOpenTask={taskId => openProjectTab('gantt', { taskId })}
+          onOpenAll={() => openProjectTab('report', { reportStatus: 'late' })}
+        />
+        <TaskHighlightPanel
+          title="Sắp đến hạn"
+          rows={taskHighlights.upcoming}
+          empty="Chưa có hạng mục sắp đến hạn."
+          tone="orange"
+          onOpenTask={taskId => openProjectTab('gantt', { taskId })}
+          onOpenAll={() => openProjectTab('gantt')}
+        />
+      </div>
+
+      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white text-slate-700 shadow-sm">
+              <ListChecks size={15} />
+            </div>
+            <div>
+              <div className="text-xs font-black text-slate-900">Hành động nhanh</div>
+              <div className="text-[11px] font-bold text-slate-400">Mở đúng tab và bộ lọc liên quan</div>
+            </div>
+          </div>
+          <div className="text-[10px] font-black uppercase tracking-wide text-slate-400">{actionLinks.length} lối tắt</div>
+        </div>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {actionLinks.slice(0, 8).map(action => (
+            <ExecutiveActionCard key={action.id} action={action} onOpen={openAction} />
+          ))}
+          {actionLinks.length === 0 && (
+            <div className="rounded-xl border border-dashed border-slate-200 bg-white px-4 py-8 text-center text-xs font-bold text-slate-400 md:col-span-2 xl:col-span-4">
+              Cần bấm Cập nhật để tạo các lối tắt điều hành mới.
+            </div>
+          )}
         </div>
       </div>
 

@@ -422,10 +422,10 @@ export const calculateProjectValueProgress = (input: {
 
   const openingPurchasedValue = Number(opening?.purchasedValue || 0);
   const openingIssuedValue = Number(opening?.issuedValue || 0);
-  const openingRecognizedValue = Number(opening?.recognizedValue || Math.max(openingPurchasedValue, openingIssuedValue) || 0);
   const totalPurchasedValue = openingPurchasedValue + purchasedValue;
   const totalIssuedValue = openingIssuedValue + issuedValue;
-  const recognizedValue = openingRecognizedValue + purchasedValue + issuedValue;
+  const actualProductionValue = Math.max(0, Number(input.projectFinance?.actualProductionValue || 0));
+  const recognizedValue = actualProductionValue;
   const valueProgressPercent = contractTotalValue > 0
     ? clampProgress(Math.round((recognizedValue / contractTotalValue) * 100))
     : 0;
@@ -434,6 +434,7 @@ export const calculateProjectValueProgress = (input: {
     contractTotalValue,
     purchasedValue: totalPurchasedValue,
     issuedValue: totalIssuedValue,
+    actualProductionValue,
     recognizedValue,
     valueProgressPercent,
   };

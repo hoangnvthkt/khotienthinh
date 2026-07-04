@@ -55,6 +55,11 @@ import {
   calculateWeeklyConstructionProgress,
   projectWeeklyProgressService,
 } from './projectWeeklyProgressService';
+import {
+  buildExecutiveScheduleSummary,
+  type ExecutiveScheduleSummary,
+  type ExecutiveScheduleTaskRow,
+} from './projectExecutiveScheduleService';
 
 export interface ProjectProgressMetric {
   mode: ProjectProgressCalculationMode;
@@ -68,10 +73,11 @@ export interface ProjectProgressMetric {
   totalWeight: number;
   /** Tổng giá trị hợp đồng */
   contractTotalValue?: number;
-  /** Giá trị được ghi nhận theo PO + cấp kho không trùng PO */
+  /** Giá trị sản lượng thực tế nhập tay */
   suppliedValue?: number;
   purchasedValue?: number;
   issuedValue?: number;
+  actualProductionValue?: number;
   recognizedValue?: number;
 }
 
@@ -196,8 +202,43 @@ export interface ExecutivePriorityAlert {
   amount?: number;
 }
 
+export interface ExecutiveTaskHighlightMetric {
+  active: ExecutiveScheduleTaskRow[];
+  completed: ExecutiveScheduleTaskRow[];
+  late: ExecutiveScheduleTaskRow[];
+  upcoming: ExecutiveScheduleTaskRow[];
+}
+
+export interface ExecutiveFinancialMetric {
+  contractValue: number;
+  received: number;
+  spent: number;
+  cashBalance: number;
+  upcomingReceivable30d: number;
+  upcomingPayable30d: number;
+  overdueReceivable: number;
+  overduePayable: number;
+  overdueReceivableCount: number;
+  overduePayableCount: number;
+}
+
+export interface ExecutiveActionLink {
+  id: string;
+  title: string;
+  description: string;
+  targetTab: string;
+  params?: Record<string, string>;
+  tone?: ExecutiveAlertSeverity;
+  amount?: number;
+  count?: number;
+}
+
 export interface ExecutiveDashboardMetric {
   scheduleHealth: ExecutiveScheduleHealthMetric;
+  timeline: ExecutiveScheduleSummary;
+  taskHighlights: ExecutiveTaskHighlightMetric;
+  financialExecutive: ExecutiveFinancialMetric;
+  actionLinks: ExecutiveActionLink[];
   paymentPeriodRisks: ExecutivePaymentPeriodRisk[];
   approvalQueue: ExecutiveApprovalQueueMetric;
   priorityAlerts: ExecutivePriorityAlert[];
@@ -402,6 +443,7 @@ const buildProgressMetric = (
     suppliedValue: valueMetric.recognizedValue,
     purchasedValue: valueMetric.purchasedValue,
     issuedValue: valueMetric.issuedValue,
+    actualProductionValue: valueMetric.actualProductionValue,
     recognizedValue: valueMetric.recognizedValue,
   };
 };
@@ -522,6 +564,60 @@ const buildCashFlowMetric = (
     receivable: owner.debt,
     payable: subcontractor.debt + supplier.debt,
     overdueCount,
+  };
+};
+
+const getScheduleRemainingAmount = (schedule: PaymentSchedule): number =>
+  clampMoney(Number(schedule.amount || 0) - Number(schedule.paidAmount || 0));
+
+const isUnpaidSchedule = (schedule: PaymentSchedule): boolean =>
+  schedule.status !== 'paid' && getScheduleRemainingAmount(schedule) > 0;
+
+const buildFinancialExecutiveMetric = (
+  paymentSchedules: PaymentSchedule[],
+  cashFlow: CashFlowDashboardMetric,
+  progress: ProjectProgressMetric,
+  financialKPIs?: ProjectFinancialKPIs,
+): ExecutiveFinancialMetric => {
+  const today = todayIso();
+  const horizon = addDaysIso(today, 30);
+  const contractValue = clampMoney(
+    financialKPIs?.revisedContractValue ||
+    progress.contractTotalValue ||
+    0,
+  );
+
+  const unpaid = paymentSchedules.filter(isUnpaidSchedule);
+  const upcomingReceivables = unpaid.filter(schedule =>
+    schedule.type === 'receivable' &&
+    schedule.dueDate >= today &&
+    schedule.dueDate <= horizon,
+  );
+  const upcomingPayables = unpaid.filter(schedule =>
+    schedule.type === 'payable' &&
+    schedule.dueDate >= today &&
+    schedule.dueDate <= horizon,
+  );
+  const overdueReceivables = unpaid.filter(schedule =>
+    schedule.type === 'receivable' &&
+    (schedule.status === 'overdue' || schedule.dueDate < today),
+  );
+  const overduePayables = unpaid.filter(schedule =>
+    schedule.type === 'payable' &&
+    (schedule.status === 'overdue' || schedule.dueDate < today),
+  );
+
+  return {
+    contractValue,
+    received: cashFlow.cashIn,
+    spent: cashFlow.cashOut,
+    cashBalance: cashFlow.balance,
+    upcomingReceivable30d: sum(upcomingReceivables, getScheduleRemainingAmount),
+    upcomingPayable30d: sum(upcomingPayables, getScheduleRemainingAmount),
+    overdueReceivable: sum(overdueReceivables, getScheduleRemainingAmount),
+    overduePayable: sum(overduePayables, getScheduleRemainingAmount),
+    overdueReceivableCount: overdueReceivables.length,
+    overduePayableCount: overduePayables.length,
   };
 };
 
@@ -864,9 +960,85 @@ const buildPriorityAlerts = (
     .slice(0, 8);
 };
 
+const buildExecutiveActionLinks = (
+  timeline: ExecutiveScheduleSummary,
+  financialExecutive: ExecutiveFinancialMetric,
+): ExecutiveActionLink[] => {
+  const firstLateTask = timeline.lateRows[0];
+  const links: ExecutiveActionLink[] = [
+    {
+      id: 'report-late',
+      title: 'Hạng mục chậm',
+      description: 'Mở báo cáo với bộ lọc hạng mục đang chậm.',
+      targetTab: 'report',
+      params: { reportStatus: 'late' },
+      tone: timeline.lateRows.length > 0 ? 'critical' : 'success',
+      count: timeline.lateRows.length,
+    },
+    {
+      id: 'report-active',
+      title: 'Đang thi công',
+      description: 'Xem các hạng mục đang có tiến độ thực tế.',
+      targetTab: 'report',
+      params: { reportStatus: 'active' },
+      tone: 'info',
+      count: timeline.activeRows.length,
+    },
+    {
+      id: 'report-completed',
+      title: 'Đã hoàn thành',
+      description: 'Xem các hạng mục hoàn thành và lệch ngày thực tế.',
+      targetTab: 'report',
+      params: { reportStatus: 'completed' },
+      tone: 'success',
+      count: timeline.completedRows.length,
+    },
+    {
+      id: 'gantt-focus-late',
+      title: 'Mở Gantt task chậm',
+      description: firstLateTask ? firstLateTask.name : 'Chưa có hạng mục chậm cần mở.',
+      targetTab: 'gantt',
+      params: firstLateTask ? { taskId: firstLateTask.taskId } : undefined,
+      tone: firstLateTask ? 'warning' : 'success',
+      count: firstLateTask ? timeline.lateRows.length : 0,
+    },
+    {
+      id: 'finance-receivables',
+      title: 'Phải thu',
+      description: 'Mở tài chính với danh sách khoản phải thu.',
+      targetTab: 'finance',
+      params: { financeTab: 'receivables' },
+      tone: financialExecutive.overdueReceivable > 0 ? 'warning' : 'info',
+      amount: financialExecutive.overdueReceivable || financialExecutive.upcomingReceivable30d,
+    },
+    {
+      id: 'finance-payables',
+      title: 'Phải trả',
+      description: 'Mở tài chính với danh sách khoản phải trả.',
+      targetTab: 'finance',
+      params: { financeTab: 'payables' },
+      tone: financialExecutive.overduePayable > 0 ? 'warning' : 'info',
+      amount: financialExecutive.overduePayable || financialExecutive.upcomingPayable30d,
+    },
+    {
+      id: 'payments-upcoming',
+      title: 'Thanh toán 30 ngày',
+      description: 'Mở lịch thanh toán sắp đến hạn.',
+      targetTab: 'payment',
+      params: { paymentTab: 'upcoming' },
+      tone: 'info',
+      amount: financialExecutive.upcomingReceivable30d + financialExecutive.upcomingPayable30d,
+    },
+  ];
+
+  return links;
+};
+
 const buildExecutiveMetric = (
   tasks: ProjectTask[],
   logs: DailyLog[],
+  timeline: ExecutiveScheduleSummary,
+  financialExecutive: ExecutiveFinancialMetric,
   completionRequests: ProjectTaskCompletionRequest[],
   acceptances: QuantityAcceptance[],
   certs: PaymentCertificate[],
@@ -884,8 +1056,19 @@ const buildExecutiveMetric = (
   const paymentPeriodRisks = buildPaymentPeriodRisks(paymentSchedules);
   const approvalQueue = buildApprovalQueueMetric(tasks, logs, completionRequests, acceptances, certs, variations, reconciliationGroups);
   const priorityAlerts = buildPriorityAlerts(scheduleHealth, paymentPeriodRisks, approvalQueue, sourceWarnings);
+  const taskHighlights: ExecutiveTaskHighlightMetric = {
+    active: timeline.activeRows.slice(0, 8),
+    completed: timeline.completedRows.slice(0, 8),
+    late: timeline.lateRows.slice(0, 8),
+    upcoming: timeline.upcomingRows.slice(0, 8),
+  };
+  const actionLinks = buildExecutiveActionLinks(timeline, financialExecutive);
   return {
     scheduleHealth,
+    timeline,
+    taskHighlights,
+    financialExecutive,
+    actionLinks,
     paymentPeriodRisks,
     approvalQueue,
     priorityAlerts,
@@ -974,6 +1157,7 @@ export const projectDashboardMetricsService = {
     const sourceNotes = [
       'Dữ liệu chủ đầu tư và nhà thầu ưu tiên BOQ, nghiệm thu, chứng chỉ thanh toán, tạm ứng.',
       'Khối lượng thi công từ Daily Log chỉ quy đổi sang BOQ hợp đồng qua nhóm đối chiếu đã rà soát/khóa.',
+      'Tiến độ theo giá trị lấy từ sản lượng thực tế nhập tay ở Tab Tiến độ, không tính từ PO hoặc vật tư cấp kho.',
       'Dữ liệu NCC ưu tiên PO và giao dịch chi vật tư để tránh tạo model trùng khi chưa có tạm ứng NCC riêng.',
       'Chi phí thầu phụ ưu tiên chứng chỉ thanh toán/tạm ứng; giao dịch chi thầu phụ chỉ dùng làm fallback.',
     ];
@@ -1047,9 +1231,17 @@ export const projectDashboardMetricsService = {
       return data ? fromDb(data) as ProjectFinance : undefined;
     }, undefined as ProjectFinance | undefined);
     const progress = buildProgressMetric(project, tasks, taskLinks, customerItems, purchaseOrders, finance, materialBudgets, fulfillmentBatches);
+    const timeline = buildExecutiveScheduleSummary({
+      tasks,
+      dailyLogs: logs,
+      completionRequests,
+    });
+    const financialExecutive = buildFinancialExecutiveMetric(paymentSchedules, cashFlow, progress, financialKPIs);
     const executive = buildExecutiveMetric(
       tasks,
       logs,
+      timeline,
+      financialExecutive,
       completionRequests,
       acceptances,
       certs,

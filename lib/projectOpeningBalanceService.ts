@@ -269,6 +269,10 @@ const projectFinanceToDb = (finance: ProjectFinance): Record<string, unknown> =>
   revenueReceived: Number(finance.revenueReceived || 0),
   revenuePending: Number(finance.revenuePending || 0),
   progressPercent: clampPercent(finance.progressPercent),
+  actual_production_value: Number(finance.actualProductionValue || 0),
+  actual_production_updated_at: finance.actualProductionUpdatedAt || null,
+  actual_production_updated_by: finance.actualProductionUpdatedBy || null,
+  actual_production_note: finance.actualProductionNote || null,
   status: finance.status,
   notes: finance.notes || null,
   updatedAt: finance.updatedAt,
@@ -292,6 +296,7 @@ const defaultFinance = (balance: ProjectOpeningBalance, financeId?: string): Pro
   revenueReceived: 0,
   revenuePending: 0,
   progressPercent: balance.constructionProgressPercent,
+  actualProductionValue: 0,
   status: 'active',
   notes: balance.note || undefined,
   updatedAt: new Date().toISOString(),
@@ -943,6 +948,7 @@ export const projectOpeningBalanceService = {
           contractTotalValue: balance.contractValue,
           purchasedValue: balance.purchasedValue,
           issuedValue: balance.issuedValue,
+          actualProductionValue: balance.recognizedValue,
           recognizedValue: balance.recognizedValue,
           valueProgressPercent: balance.contractValue > 0
             ? Math.min(100, Math.round((balance.recognizedValue / balance.contractValue) * 100))

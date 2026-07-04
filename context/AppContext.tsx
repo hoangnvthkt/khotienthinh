@@ -963,14 +963,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     ...row,
     projectId: row.projectId ?? row.project_id ?? null,
     constructionSiteId: row.constructionSiteId ?? row.construction_site_id,
+    actualProductionValue: Number(row.actualProductionValue ?? row.actual_production_value ?? 0),
+    actualProductionUpdatedAt: row.actualProductionUpdatedAt ?? row.actual_production_updated_at ?? undefined,
+    actualProductionUpdatedBy: row.actualProductionUpdatedBy ?? row.actual_production_updated_by ?? undefined,
+    actualProductionNote: row.actualProductionNote ?? row.actual_production_note ?? undefined,
   });
 
   const projectFinancePayload = (finance: ProjectFinance) => {
-    const { projectId, ...legacyPayload } = finance;
+    const {
+      projectId,
+      actualProductionValue,
+      actualProductionUpdatedAt,
+      actualProductionUpdatedBy,
+      actualProductionNote,
+      ...legacyPayload
+    } = finance;
     return {
       ...legacyPayload,
       project_id: projectId || null,
       construction_site_id: finance.constructionSiteId || null,
+      actual_production_value: Number(actualProductionValue || 0),
+      actual_production_updated_at: actualProductionUpdatedAt || null,
+      actual_production_updated_by: actualProductionUpdatedBy || null,
+      actual_production_note: actualProductionNote || null,
     };
   };
 

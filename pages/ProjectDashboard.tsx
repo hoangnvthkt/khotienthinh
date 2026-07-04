@@ -114,7 +114,7 @@ const PROGRESS_MODE_OPTIONS: { value: ProjectProgressCalculationMode; label: str
     { value: 'budget', label: 'Theo ngân sách công việc' },
     { value: 'duration', label: 'Theo thời gian thực hiện' },
     { value: 'task_count', label: 'Theo số lượng công việc hoàn thành' },
-    { value: 'contract_value', label: 'Theo giá trị hợp đồng (VT cấp phát)' },
+    { value: 'contract_value', label: 'Theo giá trị hợp đồng (sản lượng thực tế)' },
     { value: 'manual', label: 'Nhập thủ công' },
 ];
 

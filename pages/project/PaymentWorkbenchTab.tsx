@@ -5,18 +5,26 @@ import {
   CheckCircle2,
   CreditCard,
   Download,
+  Edit2,
   ExternalLink,
   Filter,
   Loader2,
+  Plus,
   RefreshCcw,
   Search,
+  Save,
   ShieldCheck,
+  Trash2,
   X,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import {
   ContractItemType,
+  PaymentDossierStatus,
   PaymentQualityStatus,
+  PaymentSchedule,
+  PaymentScheduleMilestoneType,
+  PaymentScheduleStatus,
   PaymentScheduleWorkbenchRow,
 } from '../../types';
 import {
@@ -75,6 +83,10 @@ const qualityLabel = {
 };
 
 const today = () => new Date().toISOString().slice(0, 10);
+const parseMoneyInput = (value: string): number => {
+  const parsed = Number(value.replace(/[^\d]/g, ''));
+  return Number.isFinite(parsed) ? Math.max(0, Math.round(parsed)) : 0;
+};
 const fmtMoney = (value: number) => {
   const amount = Number(value || 0);
   if (Math.abs(amount) >= 1_000_000_000) return `${(amount / 1_000_000_000).toLocaleString('vi-VN', { maximumFractionDigits: 2 })} tỷ`;
@@ -106,6 +118,130 @@ const getVisibleRows = (rows: PaymentScheduleWorkbenchRow[], activeTab: PaymentS
   return rows;
 };
 
+const milestoneOptions: Array<{ value: PaymentScheduleMilestoneType; label: string }> = [
+  { value: 'advance', label: 'Tạm ứng' },
+  { value: 'progress', label: 'Tiến độ' },
+  { value: 'settlement', label: 'Quyết toán' },
+  { value: 'retention', label: 'Giữ lại' },
+  { value: 'other', label: 'Khác' },
+];
+
+const statusOptions: Array<{ value: PaymentScheduleStatus; label: string }> = [
+  { value: 'pending', label: 'Chờ xử lý' },
+  { value: 'paid', label: 'Đã thanh toán' },
+  { value: 'overdue', label: 'Quá hạn' },
+];
+
+const dossierOptions: Array<{ value: PaymentDossierStatus; label: string }> = [
+  { value: 'not_started', label: 'Chưa lập' },
+  { value: 'preparing', label: 'Đang chuẩn bị' },
+  { value: 'submitted', label: 'Đã trình' },
+  { value: 'approved', label: 'Đã duyệt' },
+];
+
+const qualityOptions: Array<{ value: PaymentQualityStatus; label: string }> = [
+  { value: 'not_applicable', label: 'Không áp dụng' },
+  { value: 'not_confirmed', label: 'Chưa xác nhận' },
+  { value: 'passed', label: 'Đạt' },
+  { value: 'failed', label: 'Không đạt' },
+];
+
+const fieldClass = 'w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-orange-300 focus:ring-2 focus:ring-orange-100';
+
+const FormField = ({ label, children }: { label: string; children: React.ReactNode }) => (
+  <label className="block">
+    <span className="mb-1.5 block text-[10px] font-black uppercase tracking-wide text-slate-400">{label}</span>
+    {children}
+  </label>
+);
+
+const PaymentScheduleEditor: React.FC<{
+  form: PaymentSchedule;
+  saving: boolean;
+  onChange: (next: PaymentSchedule) => void;
+  onClose: () => void;
+  onSave: () => void;
+}> = ({ form, saving, onChange, onClose, onSave }) => (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
+    <div className="w-full max-w-3xl rounded-2xl border border-slate-200 bg-white shadow-2xl">
+      <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
+        <div>
+          <div className="text-sm font-black text-slate-900">Kế hoạch thanh toán</div>
+          <div className="mt-0.5 text-[11px] font-bold text-slate-400">Tạo hoặc cập nhật dòng thanh toán công trình</div>
+        </div>
+        <button type="button" onClick={onClose} className="rounded-lg p-2 text-slate-400 hover:bg-slate-50 hover:text-slate-700">
+          <X size={16} />
+        </button>
+      </div>
+      <div className="grid gap-3 p-5 md:grid-cols-2">
+        <FormField label="Loại dòng tiền">
+          <select className={fieldClass} value={form.type} onChange={event => onChange({ ...form, type: event.target.value as PaymentSchedule['type'] })}>
+            <option value="receivable">Phải thu</option>
+            <option value="payable">Phải trả</option>
+          </select>
+        </FormField>
+        <FormField label="Loại hợp đồng">
+          <select className={fieldClass} value={form.contractType || ''} onChange={event => onChange({ ...form, contractType: (event.target.value || undefined) as PaymentSchedule['contractType'] })}>
+            <option value="">Không gắn hợp đồng</option>
+            <option value="customer">HĐ nhận thầu</option>
+            <option value="subcontractor">HĐ thầu phụ</option>
+          </select>
+        </FormField>
+        <FormField label="Đợt">
+          <input className={fieldClass} type="number" min={1} value={form.sequenceNo || 1} onChange={event => onChange({ ...form, sequenceNo: Number(event.target.value || 1) })} />
+        </FormField>
+        <FormField label="Mốc">
+          <select className={fieldClass} value={form.milestoneType || 'progress'} onChange={event => onChange({ ...form, milestoneType: event.target.value as PaymentScheduleMilestoneType })}>
+            {milestoneOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+        </FormField>
+        <FormField label="Mô tả">
+          <input className={fieldClass} value={form.description} onChange={event => onChange({ ...form, description: event.target.value })} placeholder="VD: Đợt 1 - tạm ứng 30%" />
+        </FormField>
+        <FormField label="Đối tượng">
+          <input className={fieldClass} value={form.contactName || ''} onChange={event => onChange({ ...form, contactName: event.target.value })} placeholder="Tên CĐT/NTP/NCC" />
+        </FormField>
+        <FormField label="Giá trị dự kiến">
+          <input className={fieldClass} inputMode="numeric" value={form.amount ? Math.round(form.amount).toLocaleString('vi-VN') : ''} onChange={event => onChange({ ...form, amount: parseMoneyInput(event.target.value) })} placeholder="0" />
+        </FormField>
+        <FormField label="Ngày dự kiến">
+          <input type="date" className={fieldClass} value={form.dueDate || today()} onChange={event => onChange({ ...form, dueDate: event.target.value })} />
+        </FormField>
+        <FormField label="Trạng thái">
+          <select className={fieldClass} value={form.status || 'pending'} onChange={event => onChange({ ...form, status: event.target.value as PaymentScheduleStatus })}>
+            {statusOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+        </FormField>
+        <FormField label="Đã thanh toán">
+          <input className={fieldClass} inputMode="numeric" value={form.paidAmount ? Math.round(form.paidAmount).toLocaleString('vi-VN') : ''} onChange={event => onChange({ ...form, paidAmount: parseMoneyInput(event.target.value) })} placeholder="0" />
+        </FormField>
+        <FormField label="Ngày thanh toán">
+          <input type="date" className={fieldClass} value={form.paidDate || ''} onChange={event => onChange({ ...form, paidDate: event.target.value || undefined })} />
+        </FormField>
+        <FormField label="Hồ sơ">
+          <select className={fieldClass} value={form.dossierStatus || 'not_started'} onChange={event => onChange({ ...form, dossierStatus: event.target.value as PaymentDossierStatus })}>
+            {dossierOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+        </FormField>
+        <FormField label="Chất lượng">
+          <select className={fieldClass} value={form.qualityStatus || 'not_confirmed'} onChange={event => onChange({ ...form, qualityStatus: event.target.value as PaymentQualityStatus })}>
+            {qualityOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+        </FormField>
+        <FormField label="Ghi chú phạm vi">
+          <input className={fieldClass} value={form.plannedScopeNote || ''} onChange={event => onChange({ ...form, plannedScopeNote: event.target.value })} placeholder="Hạng mục/phạm vi dự kiến" />
+        </FormField>
+      </div>
+      <div className="flex justify-end gap-2 border-t border-slate-100 px-5 py-4">
+        <button type="button" onClick={onClose} className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-black text-slate-600 hover:bg-slate-50">Hủy</button>
+        <button type="button" onClick={onSave} disabled={saving} className="inline-flex items-center gap-1.5 rounded-xl bg-orange-500 px-4 py-2 text-xs font-black text-white hover:bg-orange-600 disabled:opacity-50">
+          {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Lưu
+        </button>
+      </div>
+    </div>
+  </div>
+);
+
 const PaymentWorkbenchTab: React.FC<PaymentWorkbenchTabProps> = ({ constructionSiteId, projectId, canManageTab = true }) => {
   const { user } = useApp();
   const toast = useToast();
@@ -125,6 +261,8 @@ const PaymentWorkbenchTab: React.FC<PaymentWorkbenchTabProps> = ({ constructionS
   const [loading, setLoading] = useState(true);
   const [actingRowId, setActingRowId] = useState<string | null>(null);
   const [rows, setRows] = useState<PaymentScheduleWorkbenchRow[]>([]);
+  const [form, setForm] = useState<PaymentSchedule | null>(null);
+  const [savingForm, setSavingForm] = useState(false);
   const [summary, setSummary] = useState({
     customerContractValue: 0,
     totalReceivable: 0,
@@ -178,6 +316,29 @@ const PaymentWorkbenchTab: React.FC<PaymentWorkbenchTabProps> = ({ constructionS
   useEffect(() => { loadPermissions(); }, [loadPermissions]);
 
   const canConfirm = canManageTab || user?.role === 'ADMIN' || projectPerms.has('confirm');
+  const canEditSchedule = canManageTab || user?.role === 'ADMIN' || projectPerms.has('edit');
+  const canDeleteSchedule = canManageTab || user?.role === 'ADMIN' || projectPerms.has('delete');
+
+  const requireSchedulePermission = async (code: ProjectPermissionCode, actionLabel: string) => {
+    if (canManageTab || user?.role === 'ADMIN' || projectPerms.has(code)) return true;
+    if (!pbacLoaded) {
+      toast.info('Đang tải quyền', 'Vui lòng thử lại sau vài giây.');
+      return false;
+    }
+    try {
+      await projectStaffService.requireProjectPermission({
+        userId: user?.id,
+        projectId,
+        constructionSiteId,
+        code,
+        actionLabel,
+      });
+      return true;
+    } catch (error: any) {
+      toast.warning('Không đủ quyền', error?.message || `Bạn cần quyền ${code}.`);
+      return false;
+    }
+  };
 
   const requireConfirmPermission = async (actionLabel: string) => {
     if (canManageTab || user?.role === 'ADMIN' || projectPerms.has('confirm')) return true;
@@ -258,6 +419,90 @@ const PaymentWorkbenchTab: React.FC<PaymentWorkbenchTabProps> = ({ constructionS
   const handleOpenGantt = (row: PaymentScheduleWorkbenchRow) => {
     const task = row.plannedTasks[0];
     navigate(buildProjectUrl(projectId, constructionSiteId, 'gantt', { taskId: task?.id }));
+  };
+
+  const openNew = async () => {
+    if (!(await requireSchedulePermission('edit', 'tạo kế hoạch thanh toán'))) return;
+    setForm({
+      id: crypto.randomUUID(),
+      projectId: projectId || null,
+      constructionSiteId,
+      sequenceNo: rows.length + 1,
+      milestoneType: 'progress',
+      description: '',
+      amount: 0,
+      dueDate: today(),
+      paidAmount: 0,
+      status: 'pending',
+      type: contractType === 'subcontractor' ? 'payable' : 'receivable',
+      contractType: contractType === 'all' ? undefined : contractType,
+      contractId: contractId || undefined,
+      contactName: '',
+      plannedTaskIds: [],
+      dossierStatus: 'not_started',
+      qualityStatus: 'not_confirmed',
+    });
+  };
+
+  const openEdit = async (row: PaymentScheduleWorkbenchRow) => {
+    if (!(await requireSchedulePermission('edit', 'sửa kế hoạch thanh toán'))) return;
+    setForm({
+      ...row,
+      projectId: row.projectId || projectId || null,
+      constructionSiteId,
+      plannedTaskIds: row.plannedTaskIds || [],
+    });
+  };
+
+  const saveForm = async () => {
+    if (!form) return;
+    if (!form.description.trim()) {
+      toast.warning('Thiếu mô tả', 'Nhập mô tả kế hoạch thanh toán trước khi lưu.');
+      return;
+    }
+    if (Number(form.amount || 0) <= 0) {
+      toast.warning('Thiếu giá trị', 'Nhập giá trị kế hoạch thanh toán lớn hơn 0.');
+      return;
+    }
+    setSavingForm(true);
+    try {
+      await paymentService.upsert({
+        ...form,
+        projectId: projectId || null,
+        constructionSiteId,
+        paidDate: form.status === 'paid' ? (form.paidDate || today()) : form.paidDate,
+        paidAmount: Number(form.paidAmount || 0),
+      });
+      setForm(null);
+      toast.success('Đã lưu kế hoạch thanh toán');
+      await loadWorkbench();
+    } catch (error: any) {
+      toast.error('Không lưu được kế hoạch thanh toán', error?.message || 'Vui lòng thử lại.');
+    } finally {
+      setSavingForm(false);
+    }
+  };
+
+  const deleteRow = async (row: PaymentScheduleWorkbenchRow) => {
+    if (!(await requireSchedulePermission('delete', 'xóa kế hoạch thanh toán'))) return;
+    const ok = await confirm({
+      title: 'Xóa kế hoạch thanh toán',
+      targetName: row.description,
+      warningText: 'Dòng kế hoạch này sẽ bị xoá khỏi lịch thanh toán công trình.',
+      actionLabel: 'Xóa',
+      countdownSeconds: 0,
+    });
+    if (!ok) return;
+    setActingRowId(row.id);
+    try {
+      await paymentService.remove(row.id);
+      toast.success('Đã xóa kế hoạch thanh toán');
+      await loadWorkbench();
+    } catch (error: any) {
+      toast.error('Không xóa được kế hoạch thanh toán', error?.message || 'Vui lòng thử lại.');
+    } finally {
+      setActingRowId(null);
+    }
   };
 
   const handleMarkPaid = async (row: PaymentScheduleWorkbenchRow) => {
@@ -347,6 +592,11 @@ const PaymentWorkbenchTab: React.FC<PaymentWorkbenchTabProps> = ({ constructionS
           <p className="text-xs font-bold text-slate-400 mt-1">Kế hoạch thanh toán nhập tay theo hợp đồng, có hạng mục dự kiến và xác nhận chất lượng tổng hợp.</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          {canEditSchedule && (
+            <button onClick={openNew} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-orange-500 text-xs font-black text-white hover:bg-orange-600 transition">
+              <Plus size={14} /> Thêm kế hoạch
+            </button>
+          )}
           <button onClick={loadWorkbench} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 text-xs font-black text-slate-600 hover:bg-slate-50 transition">
             <RefreshCcw size={14} /> Tải lại
           </button>
@@ -494,6 +744,16 @@ const PaymentWorkbenchTab: React.FC<PaymentWorkbenchTabProps> = ({ constructionS
                       <StatusPill label={row.status === 'paid' ? 'Đã thanh toán' : row.isOverdue ? 'Quá hạn' : 'Chờ thanh toán'} tone={row.status === 'paid' ? 'emerald' : row.isOverdue ? 'red' : 'amber'} />
                     </td>
                     <td className="p-3 text-right whitespace-nowrap">
+                      {canEditSchedule && (
+                        <button disabled={actingRowId === row.id} onClick={() => openEdit(row)} className="px-2 py-1 rounded-lg text-[10px] font-bold text-blue-600 hover:bg-blue-50 disabled:opacity-50">
+                          <Edit2 size={11} className="inline mr-1" />Sửa
+                        </button>
+                      )}
+                      {canDeleteSchedule && (
+                        <button disabled={actingRowId === row.id} onClick={() => deleteRow(row)} className="px-2 py-1 rounded-lg text-[10px] font-bold text-red-600 hover:bg-red-50 disabled:opacity-50">
+                          <Trash2 size={11} className="inline mr-1" />Xóa
+                        </button>
+                      )}
                       {canConfirm && row.status !== 'paid' && (
                         <button disabled={actingRowId === row.id} onClick={() => handleMarkPaid(row)} className="px-2 py-1 rounded-lg text-[10px] font-bold text-emerald-600 hover:bg-emerald-50 disabled:opacity-50">Đã TT</button>
                       )}
@@ -511,6 +771,15 @@ const PaymentWorkbenchTab: React.FC<PaymentWorkbenchTabProps> = ({ constructionS
           </div>
         )}
       </div>
+      {form && (
+        <PaymentScheduleEditor
+          form={form}
+          saving={savingForm}
+          onChange={setForm}
+          onClose={() => setForm(null)}
+          onSave={saveForm}
+        />
+      )}
     </div>
   );
 };

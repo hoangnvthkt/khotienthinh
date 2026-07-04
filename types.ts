@@ -434,6 +434,10 @@ export interface ProjectFinance {
 
   // Tiến độ
   progressPercent: number;
+  actualProductionValue?: number;
+  actualProductionUpdatedAt?: string;
+  actualProductionUpdatedBy?: string;
+  actualProductionNote?: string;
   status: ProjectStatus;
 
   notes?: string;
@@ -707,6 +711,7 @@ export interface ProjectValueProgressMetric {
   contractTotalValue: number;
   purchasedValue: number;
   issuedValue: number;
+  actualProductionValue: number;
   recognizedValue: number;
   valueProgressPercent: number;
 }

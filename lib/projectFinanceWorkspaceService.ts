@@ -107,6 +107,7 @@ export interface ProjectFinanceWorkspaceSummary {
 
 export interface ProjectFinanceWorkspaceData {
   summary: ProjectFinanceWorkspaceSummary;
+  paymentSchedules: PaymentSchedule[];
   payables: ProjectFinancePayableRow[];
   receivables: ProjectFinanceReceivableRow[];
   ledger: ProjectFinanceLedgerRow[];
@@ -188,6 +189,32 @@ const payableStatus = (recognized: number, paid: number, committed = recognized)
   return 'payable';
 };
 
+export const buildPurchaseOrderPayableRow = (
+  po: PurchaseOrder,
+  transactions: ProjectTransaction[],
+): ProjectFinancePayableRow => {
+  const committedAmount = calculatePoCommittedAmount(po);
+  const recognizedAmount = money(calculatePoRecognizedPayable(po));
+  const paidAmount = estimatePaidForRef(transactions, [`purchase_order:${po.id}`, `po:${po.id}`, po.id], po.poNumber);
+  return {
+    id: `po:${po.id}`,
+    sourceType: 'purchase_order',
+    sourceId: po.id,
+    counterpartyType: 'supplier',
+    counterpartyName: po.vendorName || po.vendorId || 'Nhà cung cấp',
+    documentNo: po.poNumber,
+    description: 'Phải trả NCC theo thực nhận PO',
+    documentDate: po.orderDate || po.createdAt,
+    dueDate: po.expectedDeliveryDate || null,
+    status: payableStatus(recognizedAmount, paidAmount, committedAmount),
+    committedAmount,
+    recognizedAmount,
+    paidAmount,
+    outstandingAmount: Math.max(0, recognizedAmount - paidAmount),
+    sourceTab: 'material',
+  };
+};
+
 const receivableStatus = (recognized: number, received: number, planned = recognized) => {
   if (recognized <= 0 && planned > 0) return 'planned';
   if (recognized <= 0) return 'draft';
@@ -235,28 +262,7 @@ const buildPayables = (
   const subcontractById = new Map(subcontractors.map(contract => [contract.id, contract]));
   const poRows: ProjectFinancePayableRow[] = purchaseOrders
     .filter(po => !['cancelled', 'returned'].includes(String(po.status || '')))
-    .map(po => {
-      const committedAmount = calculatePoCommittedAmount(po);
-      const recognizedAmount = money(calculatePoRecognizedPayable(po));
-      const paidAmount = estimatePaidForRef(transactions, [`purchase_order:${po.id}`, `po:${po.id}`, po.id], po.poNumber);
-      return {
-        id: `po:${po.id}`,
-        sourceType: 'purchase_order',
-        sourceId: po.id,
-        counterpartyType: 'supplier',
-        counterpartyName: po.vendorName || po.vendorId || 'Nhà cung cấp',
-        documentNo: po.poNumber,
-        description: 'Phải trả NCC theo thực nhận PO',
-        documentDate: po.orderDate || po.createdAt,
-        dueDate: po.expectedDeliveryDate || null,
-        status: payableStatus(recognizedAmount, paidAmount, committedAmount),
-        committedAmount,
-        recognizedAmount,
-        paidAmount,
-        outstandingAmount: Math.max(0, recognizedAmount - paidAmount),
-        sourceTab: 'material',
-      };
-    });
+    .map(po => buildPurchaseOrderPayableRow(po, transactions));
 
   const certRows: ProjectFinancePayableRow[] = paymentCertificates
     .filter(cert => cert.contractType === 'subcontractor')
@@ -557,6 +563,7 @@ export const projectFinanceWorkspaceService = {
         payables,
         receivables,
       }),
+      paymentSchedules: schedules,
       payables,
       receivables,
       ledger: buildLedgerRows(transactions),

@@ -49,6 +49,12 @@ type ReportView = 'overview' | 'dailylog';
 type StatusFilter = 'all' | 'active' | 'late' | 'completed' | 'not_started';
 type ScheduleStatus = 'completed' | 'ahead' | 'on_track' | 'late' | 'not_started' | 'not_due';
 
+const STATUS_FILTER_KEYS: StatusFilter[] = ['all', 'active', 'late', 'completed', 'not_started'];
+
+const normalizeStatusFilter = (value?: string | null): StatusFilter => (
+    STATUS_FILTER_KEYS.includes(value as StatusFilter) ? value as StatusFilter : 'all'
+);
+
 interface DelayInfo {
     days: number;
     reasons: string[];
@@ -308,6 +314,10 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
     const location = useLocation();
     const navigate = useNavigate();
     const queryReportView = useMemo(() => new URLSearchParams(location.search).get('reportView'), [location.search]);
+    const queryReportStatus = useMemo(
+        () => normalizeStatusFilter(new URLSearchParams(location.search).get('reportStatus')),
+        [location.search],
+    );
     const [activeReportView, setActiveReportView] = useState<ReportView>(
         queryReportView === 'dailylog' ? 'dailylog' : 'overview',
     );
@@ -316,7 +326,7 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
     const [completionRequests, setCompletionRequests] = useState<ProjectTaskCompletionRequest[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
-    const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+    const [statusFilter, setStatusFilter] = useState<StatusFilter>(queryReportStatus);
     const [briefingCopied, setBriefingCopied] = useState(false);
     const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
     const [briefingCollapsed, setBriefingCollapsed] = useState(false);
@@ -325,6 +335,10 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
     useEffect(() => {
         setActiveReportView(queryReportView === 'dailylog' ? 'dailylog' : 'overview');
     }, [queryReportView]);
+
+    useEffect(() => {
+        setStatusFilter(queryReportStatus);
+    }, [queryReportStatus]);
 
     const changeReportView = (view: ReportView) => {
         setActiveReportView(view);
@@ -339,6 +353,24 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
             params.set('reportView', 'dailylog');
         } else {
             params.delete('reportView');
+        }
+
+        navigate(`/da?${params.toString()}`, { replace: true });
+    };
+
+    const changeStatusFilter = (filter: StatusFilter) => {
+        setStatusFilter(filter);
+
+        const params = new URLSearchParams(location.search);
+        if (projectId) params.set('projectId', projectId);
+        if (constructionSiteId) params.set('siteId', constructionSiteId);
+        params.set('tab', 'report');
+        params.delete('dailyLogId');
+        params.delete('reportView');
+        if (filter === 'all') {
+            params.delete('reportStatus');
+        } else {
+            params.set('reportStatus', filter);
         }
 
         navigate(`/da?${params.toString()}`, { replace: true });
@@ -1012,7 +1044,7 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
                                         <button
                                             key={filter.key}
                                             type="button"
-                                            onClick={() => setStatusFilter(filter.key)}
+                                            onClick={() => changeStatusFilter(filter.key)}
                                             className={`shrink-0 rounded-md px-2.5 py-1.5 text-[11px] font-black transition-colors ${statusFilter === filter.key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
                                                 }`}
                                         >

@@ -10,11 +10,11 @@ import {
     Circle, PlayCircle, ArrowUpDown, ChevronUp, ChevronsUp, ChevronsDown, Copy,
     Anchor, Link2, Shield, Wrench, Users, Zap, Lock, Bell,
     FlaskConical, Lightbulb, RotateCcw, Check,
-    Upload, Download, FileSpreadsheet, Loader2, XCircle, Eye,
+    Upload, Download, FileSpreadsheet, Loader2, XCircle, Eye, CircleDollarSign,
     Paperclip, ClipboardCheck
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { ProjectTask, ProjectBaseline, TaskDependencyType, ResourceType, DailyLog, GateStatus, ProjectTaskProgressMode, ContractItem, ProjectStaff, ProjectTaskCompletionRequest, Attachment, ProjectDelayEvent, ProjectDelayEventStatus, ProjectScheduleRevision, ProjectScheduleRevisionTask, PurchaseOrder, MaterialBudgetItem, MaterialRequestFulfillmentBatch, ProjectWeeklyTaskProgress, TaskContractItem } from '../../types';
+import { ProjectTask, ProjectBaseline, TaskDependencyType, ResourceType, DailyLog, GateStatus, ProjectTaskProgressMode, ContractItem, ProjectStaff, ProjectTaskCompletionRequest, Attachment, ProjectDelayEvent, ProjectDelayEventStatus, ProjectScheduleRevision, ProjectScheduleRevisionTask, PurchaseOrder, MaterialBudgetItem, MaterialRequestFulfillmentBatch, ProjectWeeklyTaskProgress, TaskContractItem, ProjectFinance } from '../../types';
 import { taskService, baselineService, dailyLogService, poService, boqService } from '../../lib/projectService';
 import { taskCompletionRequestService } from '../../lib/projectTaskCompletionService';
 import { buildScheduleForecast } from '../../lib/projectScheduleForecast';
@@ -222,6 +222,18 @@ const formatMoneyShort = (value?: number | null): string => {
     return `${Math.round(n).toLocaleString('vi-VN')} đ`;
 };
 
+const formatMoneyInput = (value?: number | null): string => {
+    const n = Number(value || 0);
+    if (!Number.isFinite(n) || n <= 0) return '';
+    return Math.round(n).toLocaleString('vi-VN');
+};
+
+const parseMoneyInput = (value: string): number => {
+    const normalized = value.replace(/[^\d]/g, '');
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? Math.max(0, Math.round(parsed)) : 0;
+};
+
 const fileToBase64 = (file: File): Promise<string> => new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result as string);
@@ -397,7 +409,7 @@ const ProgressCell: React.FC<{ value: number; onChange: (v: number) => void; dis
 
 // ============= MAIN COMPONENT =============
 const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canManageTab = true }) => {
-    const { projectFinances, updateProjectFinance, user } = useApp();
+    const { projectFinances, addProjectFinance, updateProjectFinance, user } = useApp();
     const toast = useToast();
     const confirm = useConfirm();
     const location = useLocation();
@@ -418,6 +430,9 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
     const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
     const [materialBudgets, setMaterialBudgets] = useState<MaterialBudgetItem[]>([]);
     const [fulfillmentBatches, setFulfillmentBatches] = useState<MaterialRequestFulfillmentBatch[]>([]);
+    const [actualProductionDraft, setActualProductionDraft] = useState('');
+    const [actualProductionNote, setActualProductionNote] = useState('');
+    const [savingActualProduction, setSavingActualProduction] = useState(false);
     const [projectStaff, setProjectStaff] = useState<ProjectStaff[]>([]);
     const [completionRequests, setCompletionRequests] = useState<ProjectTaskCompletionRequest[]>([]);
     const [projectPerms, setProjectPerms] = useState<Set<ProjectPermissionCode>>(new Set());
@@ -703,10 +718,23 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
         fulfillmentBatches,
         materialBudgets,
     }), [contractItems, currentProjectFinance, fulfillmentBatches, materialBudgets, purchaseOrders]);
+
+    useEffect(() => {
+        setActualProductionDraft(formatMoneyInput(currentProjectFinance?.actualProductionValue));
+        setActualProductionNote(currentProjectFinance?.actualProductionNote || '');
+    }, [currentProjectFinance?.actualProductionNote, currentProjectFinance?.actualProductionValue, currentProjectFinance?.id]);
+
     const weeklyConstructionProgress = useMemo(
         () => calculateWeeklyConstructionProgress(tasks, taskContractLinkRows, contractItems),
         [contractItems, taskContractLinkRows, tasks],
     );
+
+    const actualProductionPreviewValue = useMemo(() => parseMoneyInput(actualProductionDraft), [actualProductionDraft]);
+    const actualProductionPreviewPercent = useMemo(() => (
+        valueProgressMetric.contractTotalValue > 0
+            ? clampProgress(Math.round((actualProductionPreviewValue / valueProgressMetric.contractTotalValue) * 100))
+            : 0
+    ), [actualProductionPreviewValue, valueProgressMetric.contractTotalValue]);
 
     const completionRequestsByTaskId = useMemo(() => {
         const map = new Map<string, ProjectTaskCompletionRequest[]>();
@@ -968,6 +996,80 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
             updatedAt: new Date().toISOString(),
         }).catch(error => console.warn('Failed to sync project finance progress', error));
     }, [constructionSiteId, contractItems, projectFinances, taskContractLinkRows, updateProjectFinance]);
+
+    const saveActualProductionValue = useCallback(async () => {
+        if (!ensureProjectPermission('edit', 'cập nhật sản lượng thực tế')) return;
+        if (!projectId && !constructionSiteId) {
+            toast.error('Thiếu phạm vi dự án', 'Không xác định được dự án hoặc công trường để lưu sản lượng thực tế.');
+            return;
+        }
+
+        const value = parseMoneyInput(actualProductionDraft);
+        const now = new Date().toISOString();
+        const baseFinance: ProjectFinance = currentProjectFinance || {
+            id: crypto.randomUUID(),
+            projectId: projectId || null,
+            constructionSiteId: constructionSiteId || '',
+            contractValue: valueProgressMetric.contractTotalValue || 0,
+            budgetMaterials: 0,
+            budgetLabor: 0,
+            budgetSubcontract: 0,
+            budgetMachinery: 0,
+            budgetOverhead: 0,
+            actualMaterials: 0,
+            actualLabor: 0,
+            actualSubcontract: 0,
+            actualMachinery: 0,
+            actualOverhead: 0,
+            revenueReceived: 0,
+            revenuePending: 0,
+            progressPercent: weeklyConstructionProgress,
+            status: 'active',
+            updatedAt: now,
+        };
+
+        const nextFinance: ProjectFinance = {
+            ...baseFinance,
+            projectId: projectId || baseFinance.projectId || null,
+            constructionSiteId: constructionSiteId || baseFinance.constructionSiteId || '',
+            contractValue: Number(baseFinance.contractValue || valueProgressMetric.contractTotalValue || 0),
+            progressPercent: Number(baseFinance.progressPercent || weeklyConstructionProgress || 0),
+            actualProductionValue: value,
+            actualProductionUpdatedAt: now,
+            actualProductionUpdatedBy: user?.id,
+            actualProductionNote: actualProductionNote.trim() || undefined,
+            updatedAt: now,
+        };
+
+        setSavingActualProduction(true);
+        try {
+            if (currentProjectFinance) {
+                await updateProjectFinance(nextFinance);
+            } else {
+                await addProjectFinance(nextFinance);
+            }
+            setActualProductionDraft(formatMoneyInput(value));
+            toast.success('Đã cập nhật sản lượng thực tế', `Tiến độ theo giá trị hiện là ${actualProductionPreviewPercent}%.`);
+        } catch (error: any) {
+            toast.error('Không lưu được sản lượng thực tế', error?.message || 'Vui lòng thử lại.');
+        } finally {
+            setSavingActualProduction(false);
+        }
+    }, [
+        actualProductionDraft,
+        actualProductionNote,
+        actualProductionPreviewPercent,
+        addProjectFinance,
+        constructionSiteId,
+        currentProjectFinance,
+        ensureProjectPermission,
+        projectId,
+        toast,
+        updateProjectFinance,
+        user?.id,
+        valueProgressMetric.contractTotalValue,
+        weeklyConstructionProgress,
+    ]);
 
 
 
@@ -1728,7 +1830,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                 'Nhân công dự kiến': task.resourceCount ?? 1,
                 'Tiến độ (%)': task.progress,
                 'Tiến độ theo giá trị (%)': valueProgressMetric.valueProgressPercent,
-                'Giá trị đã ghi nhận': valueProgressMetric.recognizedValue,
+                'Sản lượng thực tế': valueProgressMetric.actualProductionValue,
                 'Tổng giá trị hợp đồng': valueProgressMetric.contractTotalValue,
                 'Trạng thái': getStatusLabel(status),
                 'Mã cha': task.parentId ? tasks.find(t => t.id === task.parentId)?.wbsCode || '' : '',
@@ -2483,6 +2585,70 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                 </div>
             </div>
 
+            <div className="bg-card rounded-2xl border border-emerald-100 shadow-sm overflow-hidden">
+                <div className="p-4 grid grid-cols-1 xl:grid-cols-[1fr_1.35fr] gap-4">
+                    <div className="flex items-start gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center border border-emerald-100 shrink-0">
+                            <CircleDollarSign size={18} />
+                        </div>
+                        <div className="min-w-0">
+                            <div className="text-xs font-black uppercase tracking-wide text-emerald-600">Sản lượng thực tế</div>
+                            <div className="mt-1 text-lg font-black text-foreground dark:text-white">
+                                {valueProgressMetric.valueProgressPercent}% theo giá trị
+                            </div>
+                            <div className="mt-1 text-[11px] font-bold text-muted-foreground">
+                                {formatMoneyShort(valueProgressMetric.actualProductionValue)} / {formatMoneyShort(valueProgressMetric.contractTotalValue)} · PO/vật tư không còn dùng để tính tỷ lệ này
+                            </div>
+                            {currentProjectFinance?.actualProductionUpdatedAt && (
+                                <div className="mt-1 text-[10px] font-semibold text-muted-foreground">
+                                    Cập nhật {new Date(currentProjectFinance.actualProductionUpdatedAt).toLocaleString('vi-VN')}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-3 items-end">
+                        <label className="min-w-0">
+                            <span className="block text-[10px] font-black uppercase tracking-wide text-muted-foreground mb-1.5">Giá trị sản lượng thực tế</span>
+                            <input
+                                value={actualProductionDraft}
+                                onChange={event => setActualProductionDraft(event.target.value)}
+                                onBlur={() => setActualProductionDraft(formatMoneyInput(parseMoneyInput(actualProductionDraft)))}
+                                inputMode="numeric"
+                                placeholder="Nhập số tiền..."
+                                className="w-full rounded-xl border border-border bg-transparent px-3 py-2.5 text-sm font-black text-foreground outline-none focus:ring-2 focus:ring-emerald-500"
+                                disabled={!canManageTab || savingActualProduction}
+                            />
+                        </label>
+                        <label className="min-w-0">
+                            <span className="block text-[10px] font-black uppercase tracking-wide text-muted-foreground mb-1.5">Ghi chú</span>
+                            <input
+                                value={actualProductionNote}
+                                onChange={event => setActualProductionNote(event.target.value)}
+                                placeholder="VD: cập nhật theo nghiệm thu nội bộ"
+                                className="w-full rounded-xl border border-border bg-transparent px-3 py-2.5 text-sm font-bold text-foreground outline-none focus:ring-2 focus:ring-emerald-500"
+                                disabled={!canManageTab || savingActualProduction}
+                            />
+                        </label>
+                        <div className="flex items-center gap-3">
+                            <div className="hidden sm:block text-right">
+                                <div className="text-[10px] font-black uppercase tracking-wide text-muted-foreground">Sau khi lưu</div>
+                                <div className="text-base font-black text-emerald-600">{actualProductionPreviewPercent}%</div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={saveActualProductionValue}
+                                disabled={!canManageTab || savingActualProduction}
+                                className="h-[42px] px-4 rounded-xl bg-emerald-600 text-white text-xs font-black shadow-sm hover:bg-emerald-700 active:scale-95 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 whitespace-nowrap"
+                            >
+                                {savingActualProduction ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                                Lưu
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             {/* GĐ5: Sandbox active banner */}
             {isSandboxMode && (
                 <div className="bg-gradient-to-r from-violet-600 to-purple-600 rounded-2xl p-4 shadow-lg flex items-center justify-between">
@@ -2768,7 +2934,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                         color: 'text-emerald-600',
                         icon: '💰',
                         bar: valueProgressMetric.valueProgressPercent,
-                        sub: `${formatMoneyShort(valueProgressMetric.recognizedValue)} / ${formatMoneyShort(valueProgressMetric.contractTotalValue)}`,
+                        sub: `${formatMoneyShort(valueProgressMetric.actualProductionValue)} / ${formatMoneyShort(valueProgressMetric.contractTotalValue)}`,
                     },
                     { label: 'Hoàn thành', value: stats.completed, color: 'text-emerald-600', icon: '✅' },
                     { label: 'Chờ NT', value: stats.pendingGate, color: stats.pendingGate > 0 ? 'text-amber-600' : 'text-muted-foreground', icon: '🛡️' },
@@ -3195,7 +3361,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                                     </td>
                                                     <td className={`px-2 ${isSplitOrTable ? 'py-0' : 'py-2.5'} overflow-hidden whitespace-nowrap`}
                                                         style={{ height: isSplitOrTable ? `${ROW_HEIGHT}px` : undefined }}
-                                                        title={`Giá trị ghi nhận: ${formatMoneyShort(valueProgressMetric.recognizedValue)} / ${formatMoneyShort(valueProgressMetric.contractTotalValue)}`}>
+                                                        title={`Sản lượng thực tế: ${formatMoneyShort(valueProgressMetric.actualProductionValue)} / ${formatMoneyShort(valueProgressMetric.contractTotalValue)}`}>
                                                         <div className="flex flex-col justify-center h-full gap-1">
                                                             <div className="flex items-center gap-1.5">
                                                                 <div className="flex-1 h-1.5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
@@ -3205,7 +3371,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                                             </div>
                                                             {viewMode === 'table' && (
                                                                 <div className="text-[9px] font-bold text-muted-foreground truncate">
-                                                                    {formatMoneyShort(valueProgressMetric.recognizedValue)}
+                                                                    {formatMoneyShort(valueProgressMetric.actualProductionValue)}
                                                                 </div>
                                                             )}
                                                         </div>
