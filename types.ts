@@ -996,6 +996,57 @@ export interface DailyLogMachine {
   note?: string;
 }
 
+export interface DailyLogPhoto {
+  name: string;
+  url: string;
+  sourceContributionId?: string;
+  sourceUserId?: string;
+  sourceUserName?: string;
+}
+
+export type DailyLogContributionStatus = 'draft' | 'submitted' | 'returned' | 'included';
+
+export interface DailyLogContribution {
+  id: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  dailyLogId?: string | null;
+  date: string;
+  authorUserId: string;
+  authorName?: string | null;
+  content: string;
+  issues?: string | null;
+  photos?: DailyLogPhoto[];
+  status: DailyLogContributionStatus;
+  submittedToUserId?: string | null;
+  submittedToName?: string | null;
+  submittedAt?: string | null;
+  returnedBy?: string | null;
+  returnedByName?: string | null;
+  returnedAt?: string | null;
+  returnReason?: string | null;
+  includedInDailyLogId?: string | null;
+  includedBy?: string | null;
+  includedAt?: string | null;
+  lastActionBy?: string | null;
+  lastActionAt?: string | null;
+  createdAt: string;
+  updatedAt?: string | null;
+}
+
+export interface DailyLogSummarySource {
+  id?: string;
+  dailyLogId: string;
+  contributionId: string;
+  sourceUserId?: string | null;
+  sourceUserName?: string | null;
+  includedText?: boolean;
+  includedPhotos?: DailyLogPhoto[];
+  metadata?: Record<string, unknown>;
+  createdBy?: string | null;
+  createdAt?: string;
+}
+
 export interface DailyLog {
   id: string;
   projectId?: string | null;
@@ -1016,7 +1067,7 @@ export interface DailyLog {
   supervisorHygieneOk?: boolean;
   supervisorTrafficOk?: boolean;
   issues?: string;
-  photos?: { name: string; url: string }[];
+  photos?: DailyLogPhoto[];
   gpsLat?: number;
   gpsLng?: number;
   gpsAccuracy?: number;
@@ -1043,9 +1094,16 @@ export interface DailyLog {
   everSubmitted?: boolean;
   lastActionBy?: string | null;
   lastActionAt?: string | null;
+  summarizedById?: string | null;
+  summarizedByName?: string | null;
+  summarizedAt?: string | null;
+  summarySourceType?: 'member_contributions' | 'manual' | string | null;
+  summarySourceMetadata?: Record<string, unknown> | null;
+  summaryContributionCount?: number;
   createdBy: string;
   createdById?: string;
   createdAt: string;
+  updatedAt?: string;
   // FastCons: Chi tiết nhật ký gộp
   volumes?: DailyLogVolume[];      // Khối lượng thi công theo hạng mục
   materials?: DailyLogMaterial[];  // Vật tư sử dụng

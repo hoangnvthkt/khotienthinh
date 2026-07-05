@@ -22,8 +22,6 @@ interface Props {
   inventoryItems?: InventoryItem[];
   siteWarehouseId?: string;
   siteWarehouseName?: string;
-  verifiedQuantityByTaskId?: Record<string, number>;
-  verifiedQuantityByWorkBoqItemId?: Record<string, number>;
   dailyProgressDate?: string;
   importingDailyProgressVolumes?: boolean;
   onImportDailyProgressVolumes?: () => void;
@@ -236,8 +234,6 @@ const DailyLogDetailTabs: React.FC<Props> = ({
   inventoryItems = [],
   siteWarehouseId,
   siteWarehouseName,
-  verifiedQuantityByTaskId = {},
-  verifiedQuantityByWorkBoqItemId = {},
   dailyProgressDate,
   importingDailyProgressVolumes = false,
   onImportDailyProgressVolumes,
@@ -700,96 +696,7 @@ const DailyLogDetailTabs: React.FC<Props> = ({
           )}
           {volumes.length === 0 && (
             <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-center text-[11px] font-bold text-slate-500">
-              Chưa ghi nhận khối lượng hoàn thành.
-            </div>
-          )}
-          {volumeSourceOptions.length > 0 && (
-            <div className="rounded-2xl border border-teal-100 bg-teal-50/50 overflow-hidden">
-              <button
-                type="button"
-                onClick={() => toggleQuickPanel('volumes')}
-                className="w-full px-3 py-3 flex items-center justify-between gap-3 text-left hover:bg-teal-100/50 transition-colors"
-              >
-                <div>
-                  <div className="text-[11px] font-black text-teal-800">Thêm nhanh nhiều hạng mục</div>
-                  <div className="text-[10px] font-bold text-teal-600">
-                    {quickPanelOpen.volumes ? 'Chọn checkbox các hạng mục cần ghi khối lượng.' : 'Mở để chọn nhiều hạng mục bằng checkbox.'}
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  {selectedVolumeSourceKeys.size > 0 && (
-                    <span className="rounded-full bg-teal-600 px-2 py-0.5 text-[9px] font-black text-white">{selectedVolumeSourceKeys.size}</span>
-                  )}
-                  {quickPanelOpen.volumes ? <ChevronUp size={16} className="text-teal-700" /> : <ChevronDown size={16} className="text-teal-700" />}
-                </div>
-              </button>
-              {quickPanelOpen.volumes && (
-                <div className="px-3 pb-3 space-y-3">
-                  <div className="flex items-center justify-end gap-2">
-                    <button
-                      type="button"
-                      onClick={toggleFilteredVolumeSources}
-                      disabled={selectableFilteredVolumeOptions.length === 0}
-                      className="px-2.5 py-1.5 rounded-lg border border-teal-200 bg-white text-[10px] font-black text-teal-700 hover:bg-teal-100 disabled:opacity-50"
-                    >
-                      {allFilteredVolumeSelected ? 'Bỏ chọn kết quả' : 'Chọn kết quả'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={addSelectedVolumeSources}
-                      disabled={selectedVolumeSourceKeys.size === 0}
-                      className="px-3 py-1.5 rounded-lg bg-teal-600 text-white text-[10px] font-black hover:bg-teal-700 disabled:opacity-50"
-                    >
-                      Thêm {selectedVolumeSourceKeys.size > 0 ? selectedVolumeSourceKeys.size : ''}
-                    </button>
-                  </div>
-                  <div className="relative">
-                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-teal-500" />
-                    <input
-                      value={volumeSourceSearch}
-                      onChange={event => setVolumeSourceSearch(event.target.value)}
-                      placeholder="Tìm theo mã WBS, tên hạng mục, BOQ..."
-                      className="w-full pl-9 pr-3 py-2 rounded-xl border border-teal-100 bg-white text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-teal-300"
-                    />
-                  </div>
-                  <div className="max-h-56 overflow-y-auto rounded-xl border border-teal-100 bg-white">
-                    {filteredVolumeSourceOptions.length > 0 ? (
-                      <div className="grid grid-cols-1 lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x-0 divide-teal-50">
-                        {filteredVolumeSourceOptions.map(option => (
-                          <label
-                            key={option.key}
-                            className={`flex items-start gap-2 px-3 py-2.5 border-b border-teal-50 last:border-b-0 cursor-pointer transition-colors ${option.alreadyAdded
-                                ? 'opacity-55 cursor-not-allowed bg-slate-50'
-                                : selectedVolumeSourceKeys.has(option.key)
-                                  ? 'bg-teal-50'
-                                  : 'hover:bg-teal-50/70'
-                              }`}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={selectedVolumeSourceKeys.has(option.key)}
-                              disabled={option.alreadyAdded}
-                              onChange={() => toggleVolumeSource(option.key)}
-                              className="mt-0.5 accent-teal-600"
-                            />
-                            <div className="min-w-0 flex-1">
-                              <div className="text-xs font-black text-slate-700 truncate">{option.label}</div>
-                              <div className="text-[10px] font-bold text-slate-400 truncate">{option.meta || 'Hạng mục thi công'}</div>
-                            </div>
-                            {option.alreadyAdded && (
-                              <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-black text-slate-400">Đã có</span>
-                            )}
-                          </label>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="px-3 py-4 text-center text-[11px] font-bold text-slate-400">
-                        Không tìm thấy hạng mục phù hợp.
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
+              Chưa có dữ liệu chốt tiến độ ngày.
             </div>
           )}
           {volumes.map((v, i) => {
@@ -798,14 +705,8 @@ const DailyLogDetailTabs: React.FC<Props> = ({
             const taskPlannedQty = Number(task?.provisionalQuantity || 0);
             const workBoqPlannedQty = Number(workBoqItem?.plannedQty || 0);
             const plannedQty = taskPlannedQty > 0 ? taskPlannedQty : workBoqPlannedQty;
-            const verifiedByTask = v.taskId ? Number(verifiedQuantityByTaskId[v.taskId] || 0) : 0;
-            const verifiedByWorkBoq = v.workBoqItemId ? Number(verifiedQuantityByWorkBoqItemId[v.workBoqItemId] || 0) : 0;
-            const verifiedQty = Math.max(verifiedByTask, verifiedByWorkBoq);
-            const remainingQty = Math.max(0, plannedQty - verifiedQty);
-            const hasQuantityLimit = plannedQty > 0;
             const currentQty = Math.max(0, Number(v.quantity || 0));
             const rowProgressPercent = plannedQty > 0 ? Math.min(100, (currentQty / plannedQty) * 100) : 0;
-            const cumulativeProgressPercent = plannedQty > 0 ? Math.min(100, ((verifiedQty + currentQty) / plannedQty) * 100) : 0;
             const attachments = v.attachments || [];
 
             return (
@@ -820,200 +721,55 @@ const DailyLogDetailTabs: React.FC<Props> = ({
                       </div>
                     </div>
                   </div>
-                  <button onClick={() => onVolumesChange(volumes.filter((_, idx) => idx !== i))}
-                    className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-white">
-                    <X size={14} />
-                  </button>
+                  <span className="rounded-full border border-amber-200 bg-white px-2 py-0.5 text-[9px] font-black text-amber-700">
+                    Chỉ xem
+                  </span>
                 </div>
 
                 <div className="p-3 space-y-3">
-                  <SearchablePicker
-                    value={v.taskName || v.contractItemName || ''}
-                    placeholder="Gõ để tìm hạng mục trong Tiến độ..."
-                    options={taskOptions}
-                    onTextChange={value => {
-                      const u = [...volumes];
-                      u[i] = {
-                        ...v,
-                        taskId: undefined,
-                        taskName: value,
-                        workBoqItemId: undefined,
-                        workBoqItemName: undefined,
-                        contractItemId: undefined,
-                        contractItemName: value,
-                      };
-                      onVolumesChange(u);
-                    }}
-                    onPick={task => {
-                      const updated = [...volumes];
-                      const matchedWorkBoq = workBoqByTaskId.get(task.id);
-                      updated[i] = {
-                        ...v,
-                        taskId: task.id,
-                        taskName: task.name,
-                        workBoqItemId: matchedWorkBoq?.id,
-                        workBoqItemName: matchedWorkBoq?.name,
-                        contractItemId: undefined,
-                        contractItemName: task.name,
-                        unit: matchedWorkBoq?.unit || task.fallbackUnit || v.unit,
-                      };
-                      onVolumesChange(updated);
-                    }}
-                  />
-
-                  <SearchablePicker
-                    value={v.workBoqItemName || ''}
-                    placeholder="Gắn đầu mục BOQ thi công để đối chiếu hợp đồng..."
-                    options={workBoqOptions}
-                    onTextChange={value => {
-                      const u = [...volumes];
-                      u[i] = {
-                        ...v,
-                        workBoqItemId: undefined,
-                        workBoqItemName: value,
-                      };
-                      onVolumesChange(u);
-                    }}
-                    onPick={item => {
-                      const u = [...volumes];
-                      u[i] = {
-                        ...v,
-                        workBoqItemId: item.id,
-                        workBoqItemName: item.name,
-                        taskId: item.sourceTaskId || v.taskId,
-                        taskName: item.sourceTaskId ? taskById.get(item.sourceTaskId)?.name || v.taskName : v.taskName,
-                        unit: item.unit || v.unit,
-                      };
-                      onVolumesChange(u);
-                    }}
-                  />
-
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
                     <div className="rounded-xl bg-slate-50 p-2">
                       <p className="text-[9px] font-black text-slate-400 uppercase">KL tạm tính</p>
                       <p className="text-base font-black text-slate-700">{formatQuantity(plannedQty)}</p>
                     </div>
-                    <div className="rounded-xl bg-emerald-50 p-2">
-                      <p className="text-[9px] font-black text-emerald-500 uppercase">Đã xác nhận</p>
-                      <p className="text-base font-black text-emerald-700">{formatQuantity(verifiedQty)}</p>
-                    </div>
                     <div className="rounded-xl bg-amber-50 p-2">
-                      <p className="text-[9px] font-black text-amber-500 uppercase">Còn lại</p>
-                      <p className="text-base font-black text-amber-700">{formatQuantity(remainingQty)}</p>
+                      <p className="text-[9px] font-black text-amber-500 uppercase">KL chốt ngày</p>
+                      <p className="text-base font-black text-amber-700">{formatQuantity(currentQty)}</p>
+                    </div>
+                    <div className="rounded-xl bg-cyan-50 p-2">
+                      <p className="text-[9px] font-black text-cyan-500 uppercase">Tỷ lệ ngày</p>
+                      <p className="text-base font-black text-cyan-700">{formatPercent(rowProgressPercent)}%</p>
+                    </div>
+                    <div className="rounded-xl bg-slate-50 p-2">
+                      <p className="text-[9px] font-black text-slate-400 uppercase">ĐVT</p>
+                      <p className="text-base font-black text-slate-700">{v.unit || task?.fallbackUnit || workBoqItem?.unit || '-'}</p>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-[1fr_120px] gap-2">
-                    <div>
-                      <label className="text-[10px] font-black text-slate-500 uppercase block mb-1.5">Khối lượng hoàn thành</label>
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        pattern="[0-9]*[,.]?[0-9]*"
-                        placeholder="0"
-                        value={volumeQuantityDrafts[i] ?? formatDecimalInput(v.quantity)}
-                        disabled={hasQuantityLimit && remainingQty <= 0}
-                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-amber-400 bg-white"
-                        onChange={e => {
-                          const rawValue = e.target.value;
-                          const inputQty = parseNonNegativeDecimal(rawValue);
-                          setVolumeQuantityDrafts(prev => ({ ...prev, [i]: rawValue }));
-                          if (inputQty === null) return;
-                          const u = [...volumes];
-                          const nextQty = hasQuantityLimit ? Math.min(inputQty, remainingQty) : inputQty;
-                          u[i] = { ...v, quantity: nextQty };
-                          onVolumesChange(u);
-                          if (hasQuantityLimit && inputQty > remainingQty) {
-                            setVolumeQuantityDrafts(prev => ({ ...prev, [i]: formatDecimalInput(nextQty) }));
-                          }
-                        }}
-                        onBlur={() => {
-                          setVolumeQuantityDrafts(prev => {
-                            const next = { ...prev };
-                            delete next[i];
-                            return next;
-                          });
-                        }}
-                      />
-                      {hasQuantityLimit ? (
-                        <div className={`mt-1 space-y-0.5 text-[10px] font-bold ${remainingQty <= 0 ? 'text-red-500' : 'text-amber-600'}`}>
-                          <p>Tối đa được nhập {formatQuantity(remainingQty)} {v.unit || task?.fallbackUnit || workBoqItem?.unit || ''}; phần vượt phải tách thành phát sinh/đầu mục khác.</p>
-                          <p>Quy đổi dòng này {formatPercent(rowProgressPercent)}%; lũy kế sau xác nhận {formatPercent(cumulativeProgressPercent)}%.</p>
-                        </div>
-                      ) : (
-                        <p className="mt-1 text-[10px] font-bold text-slate-400">
-                          Hạng mục chưa có KL tạm tính nên hệ thống chưa giới hạn khối lượng.
-                        </p>
-                      )}
+                  {v.note && (
+                    <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
+                      <div className="text-[9px] font-black text-slate-400 uppercase">Ghi chú từ chốt tiến độ</div>
+                      <p className="mt-1 whitespace-pre-wrap text-xs font-medium text-slate-600">{v.note}</p>
                     </div>
-                    <div>
-                      <label className="text-[10px] font-black text-slate-500 uppercase block mb-1.5">ĐVT</label>
-                      <input placeholder="ĐVT" value={v.unit || ''} className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-amber-400 bg-white"
-                        onChange={e => {
-                          const u = [...volumes];
-                          u[i] = { ...v, unit: e.target.value };
-                          onVolumesChange(u);
-                        }} />
-                    </div>
-                  </div>
+                  )}
 
-                  <div>
-                    <label className="text-[10px] font-black text-slate-500 uppercase block mb-1.5">Ghi chú</label>
-                    <textarea value={v.note || ''} rows={3}
-                      placeholder="Mô tả phần việc đã hoàn thành, vị trí, điều kiện thi công..."
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-amber-400 resize-none bg-white"
-                      onChange={e => {
-                        const u = [...volumes];
-                        u[i] = { ...v, note: e.target.value };
-                        onVolumesChange(u);
-                      }} />
-                  </div>
-
-                  <div>
-                    <label className="text-[10px] font-black text-slate-500 uppercase block mb-1.5">Bằng chứng</label>
-                    <label className="flex items-center justify-center gap-2 px-3 py-3 rounded-xl border border-dashed border-amber-200 bg-amber-50/60 text-xs font-black text-amber-700 cursor-pointer hover:bg-amber-100 transition-colors">
-                      <Paperclip size={14} /> Chọn ảnh/file
-                      <input type="file" multiple className="hidden" onChange={async e => {
-                        const nextAttachments = await filesToAttachments(e.target.files);
-                        const u = [...volumes];
-                        u[i] = {
-                          ...v,
-                          attachments: [...attachments, ...nextAttachments],
-                          photoUrl: v.photoUrl || nextAttachments[0]?.url,
-                        };
-                        onVolumesChange(u);
-                        e.target.value = '';
-                      }} />
-                    </label>
-                    {attachments.length > 0 && (
-                      <div className="mt-2 space-y-1">
-                        {attachments.map(file => (
-                          <div key={file.id || `${file.name}-${file.fileSize}`} className="flex items-center justify-between gap-2 text-[10px] font-bold text-slate-500 bg-slate-50 rounded-lg px-2 py-1">
-                            <span className="truncate">{file.name || file.fileName}</span>
-                            <div className="flex items-center gap-2 shrink-0">
-                              {file.fileSize !== undefined && <span>{Math.round(file.fileSize / 1024)} KB</span>}
-                              <button type="button" onClick={() => {
-                                const u = [...volumes];
-                                const filtered = attachments.filter(item => item !== file);
-                                u[i] = { ...v, attachments: filtered, photoUrl: filtered[0]?.url || '' };
-                                onVolumesChange(u);
-                              }} className="text-slate-300 hover:text-red-500">
-                                <X size={12} />
-                              </button>
-                            </div>
+                  {attachments.length > 0 && (
+                    <div className="space-y-1">
+                      <div className="text-[9px] font-black text-slate-400 uppercase">Bằng chứng từ chốt tiến độ</div>
+                      {attachments.map(file => (
+                        <div key={file.id || `${file.name}-${file.fileSize}`} className="flex items-center justify-between gap-2 text-[10px] font-bold text-slate-500 bg-slate-50 rounded-lg px-2 py-1">
+                          <span className="truncate">{file.name || file.fileName}</span>
+                          <div className="flex items-center gap-2 shrink-0">
+                            {file.fileSize !== undefined && <span>{Math.round(file.fileSize / 1024)} KB</span>}
                           </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             );
           })}
-          <button onClick={() => onVolumesChange([...volumes, { taskId: '', taskName: '', workBoqItemId: undefined, workBoqItemName: '', contractItemId: undefined, contractItemName: '', quantity: 0, unit: 'm2', attachments: [] }])}
-            className="flex items-center gap-1 text-[10px] font-bold text-teal-600 bg-teal-50 hover:bg-teal-100 px-3 py-1.5 rounded-lg border border-teal-200">
-            <Plus size={10} /> Thêm khối lượng
-          </button>
         </div>
       )}
 

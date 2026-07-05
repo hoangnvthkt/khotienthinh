@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 import {
-    ProjectTask, DailyLog, AcceptanceRecord,
+    ProjectTask, DailyLog, DailyLogContribution, DailyLogSummarySource, AcceptanceRecord,
     MaterialBudgetItem, ProjectMaterialRequest, ProjectVendor,
     PurchaseOrder, PaymentSchedule, ProjectBaseline, ProjectWorkBoqItem, PurchaseOrderRequestLineLink,
     PaymentDossierStatus, PaymentQualityStatus, PaymentScheduleMilestoneType, PurchaseOrderDeliveryRemovalResult, PurchaseOrderRemovalResult,
@@ -412,16 +412,171 @@ export const dailyLogService = {
             .eq('id', id)
             .single();
         if (readError) throw readError;
-        if ((data?.status || 'draft') !== 'draft') {
-            throw new Error('Chỉ xoá được nhật ký ở trạng thái Nháp. Phiếu đã gửi/duyệt cần được trả lại hoặc rollback theo đúng quy trình.');
+        if (!['draft', 'rejected'].includes(data?.status || 'draft')) {
+            throw new Error('Chỉ xoá được nhật ký ở trạng thái Nháp hoặc Bị trả lại. Phiếu đang chờ/đã duyệt cần được xử lý theo đúng quy trình.');
         }
-        if (data?.ever_submitted) {
-            throw new Error('Nhật ký đã từng gửi xác nhận, không được xoá cứng. Vui lòng trả lại/rollback để giữ lịch sử.');
-        }
-        const { error } = await supabase
+        const { data: deleted, error } = await supabase
             .from('daily_logs')
             .delete()
-            .eq('id', id);
+            .eq('id', id)
+            .select('id')
+            .maybeSingle();
+        if (error) throw error;
+        if (!deleted?.id) {
+            throw new Error('Không xoá được nhật ký. Phiếu có thể đã bị khoá hoặc quyền RLS chưa cho phép xoá.');
+        }
+    },
+};
+
+export const dailyLogContributionService = {
+    async list(projectIdOrSiteId: string, constructionSiteId?: string | null): Promise<DailyLogContribution[]> {
+        const { data, error } = await supabase
+            .from('daily_log_contributions')
+            .select('*')
+            .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId))
+            .order('date', { ascending: false })
+            .order('created_at', { ascending: true });
+        if (error) throw error;
+        return (data || []).map(fromDb) as DailyLogContribution[];
+    },
+
+    async findMine(input: {
+        projectIdOrSiteId: string;
+        constructionSiteId?: string | null;
+        date: string;
+        authorUserId: string;
+    }): Promise<DailyLogContribution | null> {
+        const { data, error } = await supabase
+            .from('daily_log_contributions')
+            .select('*')
+            .or(buildProjectScopeFilter(input.projectIdOrSiteId, input.constructionSiteId))
+            .eq('date', input.date)
+            .eq('author_user_id', input.authorUserId)
+            .maybeSingle();
+        if (error) throw error;
+        return data ? fromDb(data) as DailyLogContribution : null;
+    },
+
+    async upsert(item: DailyLogContribution): Promise<void> {
+        const now = new Date().toISOString();
+        const payload = toDb({
+            ...item,
+            lastActionBy: item.lastActionBy || item.authorUserId,
+            lastActionAt: now,
+            updatedAt: now,
+        });
+        const { error } = await supabase
+            .from('daily_log_contributions')
+            .upsert(payload, { onConflict: 'id' });
+        if (error) throw error;
+    },
+
+    async submit(input: {
+        contribution: DailyLogContribution;
+        targetUserId?: string | null;
+        targetName?: string | null;
+        actorUserId?: string | null;
+    }): Promise<void> {
+        const now = new Date().toISOString();
+        await this.upsert({
+            ...input.contribution,
+            status: 'submitted',
+            submittedToUserId: input.targetUserId || null,
+            submittedToName: input.targetName || null,
+            submittedAt: now,
+            returnedBy: null,
+            returnedByName: null,
+            returnedAt: null,
+            returnReason: null,
+            lastActionBy: input.actorUserId || input.contribution.authorUserId,
+            lastActionAt: now,
+        });
+    },
+
+    async returnContribution(input: {
+        contributionId: string;
+        reason: string;
+        actorUserId?: string | null;
+        actorName?: string | null;
+    }): Promise<void> {
+        const now = new Date().toISOString();
+        const { error } = await supabase
+            .from('daily_log_contributions')
+            .update({
+                status: 'returned',
+                returned_by: input.actorUserId || null,
+                returned_by_name: input.actorName || null,
+                returned_at: now,
+                return_reason: input.reason,
+                last_action_by: input.actorUserId || null,
+                last_action_at: now,
+                updated_at: now,
+            })
+            .eq('id', input.contributionId);
+        if (error) throw error;
+    },
+
+    async markIncluded(input: {
+        contributionIds: string[];
+        dailyLogId: string;
+        actorUserId?: string | null;
+    }): Promise<void> {
+        const ids = [...new Set(input.contributionIds.filter(Boolean))];
+        if (ids.length === 0) return;
+        const now = new Date().toISOString();
+        const { error } = await supabase
+            .from('daily_log_contributions')
+            .update({
+                status: 'included',
+                included_in_daily_log_id: input.dailyLogId,
+                daily_log_id: input.dailyLogId,
+                included_by: input.actorUserId || null,
+                included_at: now,
+                last_action_by: input.actorUserId || null,
+                last_action_at: now,
+                updated_at: now,
+            })
+            .in('id', ids);
+        if (error) throw error;
+    },
+};
+
+export const dailyLogSummarySourceService = {
+    async listByLogIds(dailyLogIds: string[]): Promise<Record<string, DailyLogSummarySource[]>> {
+        const ids = [...new Set(dailyLogIds.filter(Boolean))];
+        if (ids.length === 0) return {};
+        const { data, error } = await supabase
+            .from('daily_log_summary_sources')
+            .select('*')
+            .in('daily_log_id', ids)
+            .order('created_at', { ascending: true });
+        if (error) throw error;
+        const result: Record<string, DailyLogSummarySource[]> = Object.fromEntries(ids.map(id => [id, []]));
+        (data || []).forEach(row => {
+            const source = fromDb(row) as DailyLogSummarySource;
+            if (!result[source.dailyLogId]) result[source.dailyLogId] = [];
+            result[source.dailyLogId].push(source);
+        });
+        return result;
+    },
+
+    async replaceForLog(dailyLogId: string, sources: DailyLogSummarySource[]): Promise<void> {
+        const { error: deleteError } = await supabase
+            .from('daily_log_summary_sources')
+            .delete()
+            .eq('daily_log_id', dailyLogId);
+        if (deleteError) throw deleteError;
+
+        if (sources.length === 0) return;
+        const rows = sources.map(source => {
+            const row = toDb({ ...source, dailyLogId });
+            delete row.id;
+            delete row.created_at;
+            return row;
+        });
+        const { error } = await supabase
+            .from('daily_log_summary_sources')
+            .insert(rows);
         if (error) throw error;
     },
 };

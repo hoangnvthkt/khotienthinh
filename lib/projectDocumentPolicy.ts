@@ -137,7 +137,10 @@ export function getProjectDocumentPolicy(input: ProjectDocumentPolicyInput): Pro
     if (dependencies.blockers.length > 0) {
       return deny(dependencies.blockers[0], dependencies.requiredRollbackSteps);
     }
-    if (!isAdmin && !hasPermission(input.permissions, 'edit')) {
+    if (!isAdmin && input.documentType === 'daily_log' && !hasPermission(input.permissions, 'edit') && !hasPermission(input.permissions, 'submit') && !hasPermission(input.permissions, 'verify')) {
+      return deny('Bạn cần quyền "edit", "submit" hoặc "verify" để chỉnh sửa nhật ký của mình.');
+    }
+    if (!isAdmin && input.documentType !== 'daily_log' && !hasPermission(input.permissions, 'edit')) {
       return deny('Bạn cần quyền "edit" để chỉnh sửa phiếu này.');
     }
     if (!isAdmin && relatedKnown && !related) {
@@ -147,6 +150,18 @@ export function getProjectDocumentPolicy(input: ProjectDocumentPolicyInput): Pro
   }
 
   if (input.action === 'delete') {
+    if (input.documentType === 'daily_log' && ['draft', 'returned', 'rejected'].includes(status)) {
+      if (dependencies.blockers.length > 0) {
+        return deny(dependencies.blockers[0], dependencies.requiredRollbackSteps);
+      }
+      if (!isAdmin && relatedKnown && !related) {
+        return deny('Chỉ người lập phiếu được xoá nhật ký khi phiếu ở nháp hoặc đã được trả lại.');
+      }
+      if (!isAdmin && !hasPermission(input.permissions, 'delete') && !hasPermission(input.permissions, 'edit') && !hasPermission(input.permissions, 'submit') && !hasPermission(input.permissions, 'verify')) {
+        return deny('Bạn cần quyền "delete", "edit", "submit" hoặc "verify" để xoá nhật ký của mình.');
+      }
+      return allow();
+    }
     if (status !== 'draft' || input.everSubmitted) {
       const reason = LOCKED_DELETE_STATUSES.has(status)
         ? 'Chỉ được xoá phiếu nháp chưa từng gửi duyệt. Phiếu đã gửi, trả lại, duyệt, huỷ hoặc thanh toán cần được giữ lại để truy vết.'
