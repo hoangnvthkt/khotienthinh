@@ -27,6 +27,7 @@ import SettingsG8CostNormLibrary from './settings/SettingsG8CostNormLibrary';
 import SettingsAiLearning from './settings/SettingsAiLearning';
 import SettingsReleaseNotes from './settings/SettingsReleaseNotes';
 import SettingsAlerts from './settings/SettingsAlerts';
+import SettingsHrmMetadata from './settings/SettingsHrmMetadata';
 import { useModuleData } from '../hooks/useModuleData';
 import { useToast } from '../context/ToastContext';
 import { useAsyncAction } from '../hooks/useAsyncAction';
@@ -101,9 +102,7 @@ const Settings: React.FC = () => {
     addSupplier, updateSupplier, removeSupplier,
     appSettings, updateAppSettings, clearAllData, connectionError,
     users, addUser, updateUser, removeUser, user: currentUser, logout, isLoading, realtimeStatus, lastRealtimeEvent,
-    hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules, hrmConstructionSites,
-    addHrmItem, updateHrmItem, removeHrmItem,
-    items, addItem, updateItem, removeItem, transactions, requests, lossNorms, addLossNorm, updateLossNorm, removeLossNorm,
+	    items, addItem, updateItem, removeItem, transactions, requests, lossNorms, addLossNorm, updateLossNorm, removeLossNorm,
     saveSignature, deleteSignature
   } = useApp();
   const isSettingsAdmin = currentUser.role === Role.ADMIN;
@@ -178,22 +177,9 @@ const Settings: React.FC = () => {
     [activeWarehouseTypes, warehouseTypes]
   );
 
-  // Master data state management
-  const [activeMasterSection, setActiveMasterSection] = useState<'items' | 'categories' | 'units' | 'suppliers' | null>(null);
-  const [activeHrmSection, setActiveHrmSection] = useState<'areas' | 'offices' | 'employee_types' | 'positions' | 'salary_policies' | 'work_schedules' | 'construction_sites' | null>(null);
-  const [editingItem, setEditingItem] = useState<{ type: 'cat' | 'unit' | 'sup', data: any } | null>(null);
-  const [editingHrmItem, setEditingHrmItem] = useState<any | null>(null);
-  const [newHrmName, setNewHrmName] = useState('');
-  const [newHrmDesc, setNewHrmDesc] = useState('');
-  const [newHrmLat, setNewHrmLat] = useState('');
-  const [newHrmLng, setNewHrmLng] = useState('');
-  const [newHrmRadius, setNewHrmRadius] = useState('');
-  const [newHrmManager, setNewHrmManager] = useState('');
-  // Work schedule time states
-  const [wsMorningStart, setWsMorningStart] = useState('08:00');
-  const [wsMorningEnd, setWsMorningEnd] = useState('12:00');
-  const [wsAfternoonStart, setWsAfternoonStart] = useState('13:00');
-  const [wsAfternoonEnd, setWsAfternoonEnd] = useState('17:00');
+	  // Master data state management
+	  const [activeMasterSection, setActiveMasterSection] = useState<'items' | 'categories' | 'units' | 'suppliers' | null>(null);
+	  const [editingItem, setEditingItem] = useState<{ type: 'cat' | 'unit' | 'sup', data: any } | null>(null);
 
   // Input fields for adding
   const [newCatName, setNewCatName] = useState('');
@@ -1606,295 +1592,9 @@ const Settings: React.FC = () => {
             </div>
           )}
 
-          {activeSettingsTab === 'hrm-master-data' && (
-            <div className="animate-in slide-in-from-right-4 duration-300">
-              {!activeHrmSection ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {[
-                    { key: 'areas' as const, label: 'Khu vực / Chuyên môn', desc: 'Phân vùng theo lĩnh vực chuyên môn.', icon: MapPinned, color: 'blue', count: hrmAreas.length },
-                    { key: 'offices' as const, label: 'Văn phòng', desc: 'Các địa điểm văn phòng công ty.', icon: Building, color: 'emerald', count: hrmOffices.length },
-                    { key: 'employee_types' as const, label: 'Phân loại nhân sự', desc: 'Fulltime, Part-time, Intern...', icon: Layers, color: 'violet', count: hrmEmployeeTypes.length },
-                    { key: 'positions' as const, label: 'Vị trí công việc', desc: 'Ban GĐ, Trưởng phòng, Chuyên viên...', icon: HardHat, color: 'amber', count: hrmPositions.length },
-                    { key: 'salary_policies' as const, label: 'Chính sách lương', desc: 'Lương VP, Lương nhà máy, công trường...', icon: DollarSign, color: 'rose', count: hrmSalaryPolicies.length },
-                    { key: 'work_schedules' as const, label: 'Lịch làm việc', desc: 'Lịch VP, Lịch nhà máy, công trường...', icon: Calendar, color: 'cyan', count: hrmWorkSchedules.length },
-                    { key: 'construction_sites' as const, label: 'Công trường', desc: 'Danh sách các công trường / dự án.', icon: HardHat, color: 'orange', count: hrmConstructionSites.length },
-                  ].map(item => (
-                    <button
-                      key={item.key}
-                      onClick={() => setActiveHrmSection(item.key)}
-                      className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm hover:shadow-xl hover:border-slate-200 transition-all group text-left"
-                    >
-                      <div className={`w-14 h-14 bg-${item.color}-50 text-${item.color}-600 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform`}>
-                        <item.icon size={28} />
-                      </div>
-                      <h3 className="text-xl font-black text-slate-800 mb-2">{item.label}</h3>
-                      <p className="text-sm text-slate-500 font-medium">{item.desc}</p>
-                      <div className="mt-6 flex items-center justify-between">
-                        <span className={`text-${item.color}-600 font-bold text-xs uppercase tracking-widest flex items-center`}>
-                          Thiết lập ngay <Plus size={14} className="ml-1" />
-                        </span>
-                        <span className="text-xs font-black text-slate-400 bg-slate-100 px-2 py-1 rounded-lg">{item.count} mục</span>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              ) : (() => {
-                const hrmConfig: Record<string, { table: string; label: string; items: any[]; hasDesc: boolean; placeholderName: string; placeholderDesc?: string; color: string; icon: any }> = {
-                  'areas': { table: 'hrm_areas', label: 'Khu vực / Chuyên môn', items: hrmAreas, hasDesc: true, placeholderName: 'VD: Kết cấu thép, Xây dựng, Cơ khí...', placeholderDesc: 'Mô tả khu vực', color: 'blue', icon: MapPinned },
-                  'offices': { table: 'hrm_offices', label: 'Văn phòng', items: hrmOffices, hasDesc: true, placeholderName: 'VD: Văn phòng Hà Nội...', placeholderDesc: 'Địa chỉ văn phòng', color: 'emerald', icon: Building },
-                  'employee_types': { table: 'hrm_employee_types', label: 'Phân loại nhân sự', items: hrmEmployeeTypes, hasDesc: false, placeholderName: 'VD: Fulltime, Part-time, Intern...', color: 'violet', icon: Layers },
-                  'positions': { table: 'hrm_positions', label: 'Vị trí công việc', items: hrmPositions, hasDesc: false, placeholderName: 'VD: Ban GĐ, Trưởng phòng, Chuyên viên...', color: 'amber', icon: HardHat },
-                  'salary_policies': { table: 'hrm_salary_policies', label: 'Chính sách lương', items: hrmSalaryPolicies, hasDesc: true, placeholderName: 'VD: Lương văn phòng, Lương nhà máy...', placeholderDesc: 'Mô tả chính sách', color: 'rose', icon: DollarSign },
-                  'work_schedules': { table: 'hrm_work_schedules', label: 'Lịch làm việc', items: hrmWorkSchedules, hasDesc: true, placeholderName: 'VD: Lịch văn phòng, Lịch nhà máy...', placeholderDesc: 'Mô tả lịch làm việc', color: 'cyan', icon: Calendar },
-                  'construction_sites': { table: 'hrm_construction_sites', label: 'Công trường', items: hrmConstructionSites, hasDesc: true, placeholderName: 'VD: Công trường A, Dự án B...', placeholderDesc: 'Địa chỉ / mô tả công trường', color: 'orange', icon: HardHat },
-                };
-                const cfg = hrmConfig[activeHrmSection];
-                if (!cfg) return null;
-
-                const handleHrmAdd = () => {
-                  if (!newHrmName.trim()) return;
-                  const hasGps = activeHrmSection === 'construction_sites' || activeHrmSection === 'offices';
-                  if (editingHrmItem) {
-                    const updated: any = { ...editingHrmItem, name: newHrmName.trim(), ...(cfg.hasDesc ? { [cfg.table === 'hrm_offices' ? 'address' : 'description']: newHrmDesc.trim() } : {}) };
-                    if (hasGps) {
-                      updated.latitude = newHrmLat ? parseFloat(newHrmLat) : undefined;
-                      updated.longitude = newHrmLng ? parseFloat(newHrmLng) : undefined;
-                      updated.checkInRadius = newHrmRadius ? parseInt(newHrmRadius) : (activeHrmSection === 'offices' ? 100 : 200);
-                      updated.managerId = newHrmManager || undefined;
-                    }
-                    if (activeHrmSection === 'work_schedules') {
-                      updated.morningStart = wsMorningStart;
-                      updated.morningEnd = wsMorningEnd;
-                      updated.afternoonStart = wsAfternoonStart;
-                      updated.afternoonEnd = wsAfternoonEnd;
-                    }
-                    updateHrmItem(cfg.table, updated);
-                    setEditingHrmItem(null);
-                  } else {
-                    const newItem: any = { id: crypto.randomUUID(), name: newHrmName.trim() };
-                    if (cfg.hasDesc) {
-                      newItem[cfg.table === 'hrm_offices' ? 'address' : 'description'] = newHrmDesc.trim();
-                    }
-                    if (hasGps) {
-                      newItem.latitude = newHrmLat ? parseFloat(newHrmLat) : undefined;
-                      newItem.longitude = newHrmLng ? parseFloat(newHrmLng) : undefined;
-                      newItem.checkInRadius = newHrmRadius ? parseInt(newHrmRadius) : (activeHrmSection === 'offices' ? 100 : 200);
-                      newItem.managerId = newHrmManager || undefined;
-                    }
-                    if (activeHrmSection === 'work_schedules') {
-                      newItem.morningStart = wsMorningStart;
-                      newItem.morningEnd = wsMorningEnd;
-                      newItem.afternoonStart = wsAfternoonStart;
-                      newItem.afternoonEnd = wsAfternoonEnd;
-                    }
-                    addHrmItem(cfg.table, newItem);
-                  }
-                  setNewHrmName(''); setNewHrmDesc(''); setNewHrmLat(''); setNewHrmLng(''); setNewHrmRadius(''); setNewHrmManager('');
-                  setWsMorningStart('08:00'); setWsMorningEnd('12:00'); setWsAfternoonStart('13:00'); setWsAfternoonEnd('17:00');
-                };
-
-                const handleHrmEdit = (item: any) => {
-                  setEditingHrmItem(item);
-                  setNewHrmName(item.name);
-                  setNewHrmDesc(item.description || item.address || '');
-                  setNewHrmLat(item.latitude ? String(item.latitude) : '');
-                  setNewHrmLng(item.longitude ? String(item.longitude) : '');
-                  setNewHrmRadius(item.checkInRadius ? String(item.checkInRadius) : '');
-                  setNewHrmManager(item.managerId || '');
-                  // Work schedule time fields
-                  setWsMorningStart(item.morningStart || '08:00');
-                  setWsMorningEnd(item.morningEnd || '12:00');
-                  setWsAfternoonStart(item.afternoonStart || '13:00');
-                  setWsAfternoonEnd(item.afternoonEnd || '17:00');
-                };
-
-                const handleHrmDelete = (id: string) => {
-                  const item = cfg.items.find((i: any) => i.id === id);
-                  triggerAction(
-                    `Xoá ${cfg.label}`,
-                    `Bạn chắc chắn muốn xoá "${item?.name}"? Nhân sự đang sử dụng mục này sẽ mất liên kết.`,
-                    'danger',
-                    'Xoá vĩnh viễn',
-                    () => removeHrmItem(cfg.table, id)
-                  );
-                };
-
-                return (
-                  <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden flex flex-col min-h-[600px]">
-                    <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        <button
-                          onClick={() => { setActiveHrmSection(null); setEditingHrmItem(null); setNewHrmName(''); setNewHrmDesc(''); setNewHrmLat(''); setNewHrmLng(''); setNewHrmRadius(''); setNewHrmManager(''); }}
-                          className="p-2 hover:bg-white rounded-xl text-slate-400 hover:text-slate-800 transition-all border border-transparent hover:border-slate-200"
-                        >
-                          <X size={20} />
-                        </button>
-                        <div>
-                          <h2 className="text-lg font-black text-slate-800">Quản lý {cfg.label}</h2>
-                          <p className="text-xs text-slate-500 font-medium">Thêm, sửa hoặc xoá dữ liệu gốc HRM.</p>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex-1 p-8">
-                      <div className="max-w-2xl mx-auto space-y-6">
-                        <div className="bg-slate-50 p-6 rounded-3xl border border-slate-200 space-y-4">
-                          <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">
-                            {editingHrmItem ? `Cập nhật ${cfg.label}` : `Thêm ${cfg.label} mới`}
-                          </h3>
-                          <div className="space-y-3">
-                            <input
-                              type="text" placeholder={cfg.placeholderName} value={newHrmName}
-                              onChange={(e) => setNewHrmName(e.target.value)}
-                              onKeyDown={(e) => e.key === 'Enter' && !cfg.hasDesc && handleHrmAdd()}
-                              className="w-full bg-white border border-slate-200 rounded-2xl px-6 py-4 text-sm font-bold outline-none focus:ring-2 focus:ring-accent transition-all"
-                            />
-                            {cfg.hasDesc && (
-                              <input
-                                type="text" placeholder={cfg.placeholderDesc} value={newHrmDesc}
-                                onChange={(e) => setNewHrmDesc(e.target.value)}
-                                onKeyDown={(e) => e.key === 'Enter' && handleHrmAdd()}
-                                className="w-full bg-white border border-slate-200 rounded-2xl px-6 py-4 text-sm font-bold outline-none focus:ring-2 focus:ring-accent transition-all"
-                              />
-                            )}
-                            {(activeHrmSection === 'construction_sites' || activeHrmSection === 'offices') && (
-                              <div className="space-y-3 bg-blue-50 p-4 rounded-2xl border border-blue-200">
-                                <div className="flex items-center justify-between">
-                                  <h4 className="text-[10px] font-black text-blue-600 uppercase tracking-widest">📍 Toạ độ GPS (Check-in)</h4>
-                                  <button type="button" onClick={() => {
-                                    navigator.geolocation.getCurrentPosition(
-                                      (pos) => { setNewHrmLat(String(pos.coords.latitude)); setNewHrmLng(String(pos.coords.longitude)); },
-                                      (error) => {
-                                        logApiError('settings.getCurrentPosition', error);
-                                        toast.error('Không thể lấy vị trí GPS', 'Vui lòng kiểm tra quyền truy cập vị trí của trình duyệt.');
-                                      },
-                                      { enableHighAccuracy: true }
-                                    );
-                                  }} className="px-3 py-1.5 bg-blue-500 text-white rounded-xl text-[10px] font-black hover:bg-blue-600 transition flex items-center gap-1">
-                                    <MapPin size={12} /> Lấy toạ độ hiện tại
-                                  </button>
-                                </div>
-                                <div className="grid grid-cols-3 gap-3">
-                                  <div>
-                                    <label className="text-[9px] font-bold text-blue-500 uppercase block mb-1">Latitude</label>
-                                    <input type="text" placeholder="VD: 21.0285" value={newHrmLat} onChange={e => setNewHrmLat(e.target.value)}
-                                      className="w-full bg-white border border-blue-200 rounded-xl px-3 py-2.5 text-xs font-mono font-bold outline-none focus:ring-2 focus:ring-blue-400" />
-                                  </div>
-                                  <div>
-                                    <label className="text-[9px] font-bold text-blue-500 uppercase block mb-1">Longitude</label>
-                                    <input type="text" placeholder="VD: 105.8542" value={newHrmLng} onChange={e => setNewHrmLng(e.target.value)}
-                                      className="w-full bg-white border border-blue-200 rounded-xl px-3 py-2.5 text-xs font-mono font-bold outline-none focus:ring-2 focus:ring-blue-400" />
-                                  </div>
-                                  <div>
-                                    <label className="text-[9px] font-bold text-blue-500 uppercase block mb-1">Bán kính (m)</label>
-                                    <input type="number" placeholder={activeHrmSection === 'offices' ? '100' : '200'} value={newHrmRadius} onChange={e => setNewHrmRadius(e.target.value)}
-                                      className="w-full bg-white border border-blue-200 rounded-xl px-3 py-2.5 text-xs font-bold outline-none focus:ring-2 focus:ring-blue-400" />
-                                  </div>
-                                </div>
-                                <p className="text-[9px] text-blue-400 font-medium">NV check-in phải ở trong bán kính này. Để trống = không giới hạn.</p>
-                              </div>
-                            )}
-                            {(activeHrmSection === 'construction_sites' || activeHrmSection === 'offices') && (
-                              <div>
-                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1 block">👤 Người quản lý</label>
-                                <select value={newHrmManager} onChange={e => setNewHrmManager(e.target.value)}
-                                  className="w-full bg-white border border-slate-200 rounded-2xl px-6 py-4 text-sm font-bold outline-none focus:ring-2 focus:ring-accent transition-all">
-                                  <option value="">— Chưa chọn người quản lý —</option>
-                                  {users.map(u => <option key={u.id} value={u.id}>{u.name} ({u.role})</option>)}
-                                </select>
-                                <p className="text-[9px] text-slate-400 mt-1">Người quản lý có thể duyệt đề xuất chấm công tại {activeHrmSection === 'offices' ? 'văn phòng' : 'công trường'} này.</p>
-                              </div>
-                            )}
-                            {activeHrmSection === 'work_schedules' && (
-                              <div className="space-y-3 bg-cyan-50 p-4 rounded-2xl border border-cyan-200">
-                                <h4 className="text-[10px] font-black text-cyan-600 uppercase tracking-widest">🕐 Giờ làm việc</h4>
-                                <div className="grid grid-cols-2 gap-3">
-                                  <div>
-                                    <label className="text-[9px] font-bold text-cyan-500 uppercase block mb-1">Ca sáng bắt đầu</label>
-                                    <input type="time" value={wsMorningStart} onChange={e => setWsMorningStart(e.target.value)}
-                                      className="w-full bg-white border border-cyan-200 rounded-xl px-3 py-2.5 text-xs font-bold outline-none focus:ring-2 focus:ring-cyan-400" />
-                                  </div>
-                                  <div>
-                                    <label className="text-[9px] font-bold text-cyan-500 uppercase block mb-1">Ca sáng kết thúc</label>
-                                    <input type="time" value={wsMorningEnd} onChange={e => setWsMorningEnd(e.target.value)}
-                                      className="w-full bg-white border border-cyan-200 rounded-xl px-3 py-2.5 text-xs font-bold outline-none focus:ring-2 focus:ring-cyan-400" />
-                                  </div>
-                                  <div>
-                                    <label className="text-[9px] font-bold text-cyan-500 uppercase block mb-1">Ca chiều bắt đầu</label>
-                                    <input type="time" value={wsAfternoonStart} onChange={e => setWsAfternoonStart(e.target.value)}
-                                      className="w-full bg-white border border-cyan-200 rounded-xl px-3 py-2.5 text-xs font-bold outline-none focus:ring-2 focus:ring-cyan-400" />
-                                  </div>
-                                  <div>
-                                    <label className="text-[9px] font-bold text-cyan-500 uppercase block mb-1">Ca chiều kết thúc</label>
-                                    <input type="time" value={wsAfternoonEnd} onChange={e => setWsAfternoonEnd(e.target.value)}
-                                      className="w-full bg-white border border-cyan-200 rounded-xl px-3 py-2.5 text-xs font-bold outline-none focus:ring-2 focus:ring-cyan-400" />
-                                  </div>
-                                </div>
-                                <p className="text-[9px] text-cyan-400 font-medium">CheckIn trước giờ bắt đầu ca sáng = đúng giờ. CheckOut sau giờ kết thúc ca chiều = đủ ngày.</p>
-                              </div>
-                            )}
-                            <div className="flex gap-3">
-                              {editingHrmItem && (
-                                <button
-                                  onClick={() => { setEditingHrmItem(null); setNewHrmName(''); setNewHrmDesc(''); setNewHrmLat(''); setNewHrmLng(''); setNewHrmRadius(''); setNewHrmManager(''); }}
-                                  className="px-6 py-3 border border-slate-200 text-slate-500 rounded-2xl font-bold text-xs uppercase hover:bg-slate-50 transition-all"
-                                >
-                                  Hủy
-                                </button>
-                              )}
-                              <button onClick={handleHrmAdd} className={`flex-1 bg-${cfg.color}-600 text-white px-8 py-3 rounded-2xl font-black text-xs uppercase tracking-widest hover:opacity-90 transition shadow-lg flex items-center justify-center gap-2`}>
-                                {editingHrmItem ? <Save size={18} /> : <Plus size={18} />}
-                                {editingHrmItem ? 'Cập nhật' : 'Thêm mới'}
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 gap-3">
-                          {cfg.items.map((item: any) => (
-                            <div key={item.id} className={`flex items-center justify-between p-5 rounded-2xl bg-white border border-slate-100 hover:border-${cfg.color}-200 hover:shadow-md transition-all group`}>
-                              <div className="flex items-center gap-4">
-                                <div className={`w-10 h-10 bg-${cfg.color}-50 text-${cfg.color}-600 rounded-xl flex items-center justify-center font-black text-xs`}>
-                                  <cfg.icon size={18} />
-                                </div>
-                                <div>
-                                  <span className="text-sm font-bold text-slate-700 block">{item.name}</span>
-                                  {(item.description || item.address) && (
-                                    <span className="text-xs text-slate-400">{item.description || item.address}</span>
-                                  )}
-                                  {item.morningStart && (
-                                    <span className="text-[10px] text-cyan-600 font-bold mt-0.5 block">
-                                      🕐 Sáng: {item.morningStart}–{item.morningEnd || '12:00'} | Chiều: {item.afternoonStart || '13:00'}–{item.afternoonEnd || '17:00'}
-                                    </span>
-                                  )}
-                                  {item.managerId && (
-                                    <span className="text-[10px] text-blue-500 font-bold flex items-center gap-1 mt-0.5">
-                                      👤 {users.find(u => u.id === item.managerId)?.name || 'N/A'}
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                              <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button onClick={() => handleHrmEdit(item)} className={`p-2 text-slate-400 hover:text-${cfg.color}-600 hover:bg-${cfg.color}-50 rounded-xl transition-colors`}><Edit2 size={16} /></button>
-                                <button onClick={() => handleHrmDelete(item.id)} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-colors"><Trash2 size={16} /></button>
-                              </div>
-                            </div>
-                          ))}
-                          {cfg.items.length === 0 && (
-                            <div className="text-center py-12 text-slate-400">
-                              <cfg.icon size={40} className="mx-auto mb-3 opacity-30" />
-                              <p className="text-sm font-bold">Chưa có dữ liệu nào</p>
-                              <p className="text-xs">Hãy thêm {cfg.label.toLowerCase()} đầu tiên</p>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()}
-            </div>
-          )}
+	          {activeSettingsTab === 'hrm-master-data' && (
+	            <SettingsHrmMetadata />
+	          )}
 
           {activeSettingsTab === 'users' && (
             <SettingsUsers

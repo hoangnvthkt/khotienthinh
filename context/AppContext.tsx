@@ -7,6 +7,7 @@ import {
   RequestStatus, AuditLog, GlobalActivity, ActivityType, MaterialRequestFulfillmentMode,
   ItemCategory, ItemUnit, Employee, MaterialLossNorm, AuditSession,
   HrmArea, HrmOffice, HrmEmployeeType, HrmPosition, HrmSalaryPolicy, HrmWorkSchedule, HrmConstructionSite,
+  HrmCatalogItem, HrmCatalogKey, HrmOrgBlock, HrmPositionGroup, HrmPositionLevel, HrmCompetencyGroup, HrmCompetencyLevel,
   OrgUnit, ProjectFinance, ProjectTransaction,
   Asset, AssetCategory, AssetAssignment, AssetMaintenance, AssetStatus, AssetLocationStock, AssetTransfer, AssetOrigin, AssetAttachment,
   AttendanceRecord, LeaveRequest, PayrollRecord, LaborContract, LeaveBalance, PayrollTemplate, HrmHoliday, HrmSalaryHistory,
@@ -88,6 +89,236 @@ const userToDbPayload = (data: User) => {
   return payload;
 };
 
+const mapHrmPositionFromDb = (row: any): HrmPosition => ({
+  id: row.id,
+  name: row.name,
+  level: row.level ?? undefined,
+  code: row.code ?? undefined,
+  groupCode: row.group_code ?? row.groupCode ?? undefined,
+  levelCode: row.level_code ?? row.levelCode ?? undefined,
+  suggestedOrgUnitCode: row.suggested_org_unit_code ?? row.suggestedOrgUnitCode ?? undefined,
+  isActive: row.is_active ?? row.isActive ?? true,
+  sortOrder: row.sort_order ?? row.sortOrder ?? 0,
+  source: row.source ?? undefined,
+  metadata: row.metadata ?? undefined,
+  createdAt: row.created_at ?? row.createdAt,
+});
+
+const hrmPositionToDbPayload = (item: HrmPosition) => ({
+  id: item.id,
+  name: item.name,
+  level: item.level ?? null,
+  code: item.code || null,
+  group_code: item.groupCode || null,
+  level_code: item.levelCode || null,
+  suggested_org_unit_code: item.suggestedOrgUnitCode || null,
+  is_active: item.isActive ?? true,
+  sort_order: item.sortOrder ?? 0,
+  source: item.source || 'custom',
+  metadata: item.metadata || {},
+  created_at: item.createdAt,
+});
+
+const mapOrgUnitFromDb = (row: any): OrgUnit => ({
+  id: row.id,
+  name: row.name,
+  type: row.type,
+  code: row.code ?? undefined,
+  blockCode: row.block_code ?? row.blockCode ?? undefined,
+  source: row.source ?? undefined,
+  aliasNames: row.alias_names ?? row.aliasNames ?? [],
+  isActive: row.is_active ?? row.isActive ?? true,
+  customTypeLabel: row.customTypeLabel || row.custom_type_label || undefined,
+  parentId: row.parent_id,
+  description: row.description,
+  orderIndex: row.order_index ?? row.orderIndex ?? 0,
+  color: row.color ?? undefined,
+  createdAt: row.created_at ?? row.createdAt,
+});
+
+const orgUnitToDbPayload = (unit: OrgUnit) => ({
+  id: unit.id,
+  name: unit.name,
+  type: unit.type,
+  "customTypeLabel": unit.customTypeLabel || null,
+  parent_id: unit.parentId || null,
+  description: unit.description || '',
+  order_index: unit.orderIndex || 0,
+  code: unit.code || null,
+  block_code: unit.blockCode || null,
+  source: unit.source || 'custom',
+  alias_names: unit.aliasNames || [],
+  is_active: unit.isActive ?? true,
+});
+
+const mapHrmCatalogItemFromDb = (row: any): HrmCatalogItem => ({
+  id: row.id,
+  catalogKey: row.catalog_key ?? row.catalogKey,
+  code: row.code,
+  name: row.name,
+  description: row.description ?? undefined,
+  isActive: row.is_active ?? row.isActive ?? true,
+  sortOrder: row.sort_order ?? row.sortOrder ?? 0,
+  source: row.source ?? undefined,
+  metadata: row.metadata ?? undefined,
+  createdAt: row.created_at ?? row.createdAt,
+  updatedAt: row.updated_at ?? row.updatedAt,
+});
+
+const hrmCatalogItemToDbPayload = (item: HrmCatalogItem) => ({
+  id: item.id,
+  catalog_key: item.catalogKey,
+  code: item.code,
+  name: item.name,
+  description: item.description || null,
+  is_active: item.isActive ?? true,
+  sort_order: item.sortOrder ?? 0,
+  source: item.source || 'custom',
+  metadata: item.metadata || {},
+  created_at: item.createdAt,
+  updated_at: item.updatedAt,
+});
+
+const mapHrmOrgBlockFromDb = (row: any): HrmOrgBlock => ({
+  id: row.id,
+  code: row.code,
+  name: row.name,
+  description: row.description ?? undefined,
+  isActive: row.is_active ?? row.isActive ?? true,
+  sortOrder: row.sort_order ?? row.sortOrder ?? 0,
+  source: row.source ?? undefined,
+  metadata: row.metadata ?? undefined,
+  createdAt: row.created_at ?? row.createdAt,
+  updatedAt: row.updated_at ?? row.updatedAt,
+});
+
+const hrmOrgBlockToDbPayload = (item: HrmOrgBlock) => ({
+  id: item.id,
+  code: item.code,
+  name: item.name,
+  description: item.description || null,
+  is_active: item.isActive ?? true,
+  sort_order: item.sortOrder ?? 0,
+  source: item.source || 'custom',
+  metadata: item.metadata || {},
+  created_at: item.createdAt,
+  updated_at: item.updatedAt,
+});
+
+const mapHrmPositionGroupFromDb = (row: any): HrmPositionGroup => ({
+  id: row.id,
+  code: row.code,
+  name: row.name,
+  description: row.description ?? undefined,
+  isActive: row.is_active ?? row.isActive ?? true,
+  sortOrder: row.sort_order ?? row.sortOrder ?? 0,
+  source: row.source ?? undefined,
+  metadata: row.metadata ?? undefined,
+  createdAt: row.created_at ?? row.createdAt,
+  updatedAt: row.updated_at ?? row.updatedAt,
+});
+
+const hrmPositionGroupToDbPayload = (item: HrmPositionGroup) => ({
+  id: item.id,
+  code: item.code,
+  name: item.name,
+  description: item.description || null,
+  is_active: item.isActive ?? true,
+  sort_order: item.sortOrder ?? 0,
+  source: item.source || 'custom',
+  metadata: item.metadata || {},
+  created_at: item.createdAt,
+  updated_at: item.updatedAt,
+});
+
+const mapHrmPositionLevelFromDb = (row: any): HrmPositionLevel => ({
+  id: row.id,
+  code: row.code,
+  name: row.name,
+  groupCode: row.group_code ?? row.groupCode ?? undefined,
+  description: row.description ?? undefined,
+  salaryRange: row.salary_range ?? row.salaryRange ?? undefined,
+  allowanceFactor: row.allowance_factor ?? row.allowanceFactor ?? undefined,
+  titleAllowanceAmount: row.title_allowance_amount ?? row.titleAllowanceAmount ?? undefined,
+  phoneAllowanceAmount: row.phone_allowance_amount ?? row.phoneAllowanceAmount ?? undefined,
+  isActive: row.is_active ?? row.isActive ?? true,
+  sortOrder: row.sort_order ?? row.sortOrder ?? 0,
+  source: row.source ?? undefined,
+  metadata: row.metadata ?? undefined,
+  createdAt: row.created_at ?? row.createdAt,
+  updatedAt: row.updated_at ?? row.updatedAt,
+});
+
+const hrmPositionLevelToDbPayload = (item: HrmPositionLevel) => ({
+  id: item.id,
+  code: item.code,
+  name: item.name,
+  group_code: item.groupCode || null,
+  description: item.description || null,
+  salary_range: item.salaryRange || null,
+  allowance_factor: item.allowanceFactor ?? null,
+  title_allowance_amount: item.titleAllowanceAmount ?? null,
+  phone_allowance_amount: item.phoneAllowanceAmount ?? null,
+  is_active: item.isActive ?? true,
+  sort_order: item.sortOrder ?? 0,
+  source: item.source || 'custom',
+  metadata: item.metadata || {},
+  created_at: item.createdAt,
+  updated_at: item.updatedAt,
+});
+
+const mapHrmCompetencyGroupFromDb = (row: any): HrmCompetencyGroup => ({
+  id: row.id,
+  code: row.code,
+  name: row.name,
+  description: row.description ?? undefined,
+  isActive: row.is_active ?? row.isActive ?? true,
+  sortOrder: row.sort_order ?? row.sortOrder ?? 0,
+  source: row.source ?? undefined,
+  metadata: row.metadata ?? undefined,
+  createdAt: row.created_at ?? row.createdAt,
+  updatedAt: row.updated_at ?? row.updatedAt,
+});
+
+const hrmCompetencyGroupToDbPayload = (item: HrmCompetencyGroup) => ({
+  id: item.id,
+  code: item.code,
+  name: item.name,
+  description: item.description || null,
+  is_active: item.isActive ?? true,
+  sort_order: item.sortOrder ?? 0,
+  source: item.source || 'custom',
+  metadata: item.metadata || {},
+  created_at: item.createdAt,
+  updated_at: item.updatedAt,
+});
+
+const mapHrmCompetencyLevelFromDb = (row: any): HrmCompetencyLevel => ({
+  id: row.id,
+  code: row.code,
+  name: row.name,
+  description: row.description ?? undefined,
+  isActive: row.is_active ?? row.isActive ?? true,
+  sortOrder: row.sort_order ?? row.sortOrder ?? 0,
+  source: row.source ?? undefined,
+  metadata: row.metadata ?? undefined,
+  createdAt: row.created_at ?? row.createdAt,
+  updatedAt: row.updated_at ?? row.updatedAt,
+});
+
+const hrmCompetencyLevelToDbPayload = (item: HrmCompetencyLevel) => ({
+  id: item.id,
+  code: item.code,
+  name: item.name,
+  description: item.description || null,
+  is_active: item.isActive ?? true,
+  sort_order: item.sortOrder ?? 0,
+  source: item.source || 'custom',
+  metadata: item.metadata || {},
+  created_at: item.createdAt,
+  updated_at: item.updatedAt,
+});
+
 export type AppModule = 'wms' | 'wms-core' | 'hrm' | 'da' | 'ts' | 'ex' | 'admin';
 export type ModuleLoadStatus = 'idle' | 'loading' | 'loaded' | 'error';
 
@@ -105,7 +336,24 @@ const REALTIME_TABLES_BY_MODULE: Partial<Record<AppModule, string[]>> = {
   admin: ['app_settings', 'users'],
   'wms-core': ['items', 'warehouses', 'warehouse_types', 'requests'],
   wms: ['items', 'transactions', 'warehouses', 'warehouse_types', 'requests', 'suppliers', 'activities', 'categories', 'units'],
-  hrm: ['employees', 'org_units', 'hrm_attendance'],
+  hrm: [
+    'employees',
+    'org_units',
+    'hrm_areas',
+    'hrm_offices',
+    'hrm_employee_types',
+    'hrm_positions',
+    'hrm_salary_policies',
+    'hrm_work_schedules',
+    'hrm_construction_sites',
+    'hrm_org_blocks',
+    'hrm_position_groups',
+    'hrm_position_levels',
+    'hrm_competency_groups',
+    'hrm_competency_levels',
+    'hrm_catalog_items',
+    'hrm_attendance',
+  ],
 };
 
 interface AppContextType {
@@ -135,6 +383,13 @@ interface AppContextType {
   hrmOffices: HrmOffice[];
   hrmEmployeeTypes: HrmEmployeeType[];
   hrmPositions: HrmPosition[];
+  hrmOrgBlocks: HrmOrgBlock[];
+  hrmPositionGroups: HrmPositionGroup[];
+  hrmPositionLevels: HrmPositionLevel[];
+  hrmCompetencyGroups: HrmCompetencyGroup[];
+  hrmCompetencyLevels: HrmCompetencyLevel[];
+  hrmCatalogItems: HrmCatalogItem[];
+  getHrmCatalogItems: (catalogKey: HrmCatalogKey | string) => HrmCatalogItem[];
   hrmSalaryPolicies: HrmSalaryPolicy[];
   hrmWorkSchedules: HrmWorkSchedule[];
   hrmConstructionSites: HrmConstructionSite[];
@@ -425,6 +680,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [hrmOffices, setHrmOffices] = useState<HrmOffice[]>([]);
   const [hrmEmployeeTypes, setHrmEmployeeTypes] = useState<HrmEmployeeType[]>([]);
   const [hrmPositions, setHrmPositions] = useState<HrmPosition[]>([]);
+  const [hrmOrgBlocks, setHrmOrgBlocks] = useState<HrmOrgBlock[]>([]);
+  const [hrmPositionGroups, setHrmPositionGroups] = useState<HrmPositionGroup[]>([]);
+  const [hrmPositionLevels, setHrmPositionLevels] = useState<HrmPositionLevel[]>([]);
+  const [hrmCompetencyGroups, setHrmCompetencyGroups] = useState<HrmCompetencyGroup[]>([]);
+  const [hrmCompetencyLevels, setHrmCompetencyLevels] = useState<HrmCompetencyLevel[]>([]);
+  const [hrmCatalogItems, setHrmCatalogItems] = useState<HrmCatalogItem[]>([]);
   const [hrmSalaryPolicies, setHrmSalaryPolicies] = useState<HrmSalaryPolicy[]>([]);
   const [hrmWorkSchedules, setHrmWorkSchedules] = useState<HrmWorkSchedule[]>([]);
   const [hrmConstructionSites, setHrmConstructionSites] = useState<HrmConstructionSite[]>([]);
@@ -473,6 +734,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     { id: 'u3', name: 'Cái' },
     { id: 'u4', name: 'Mét' }
   ]);
+
+  const getHrmCatalogItems = useCallback((catalogKey: HrmCatalogKey | string) => {
+    return hrmCatalogItems
+      .filter(item => item.catalogKey === catalogKey && item.isActive !== false)
+      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.name.localeCompare(b.name, 'vi'));
+  }, [hrmCatalogItems]);
 
   const [isLoading, setIsLoading] = useState(isSupabaseConfigured);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -802,12 +1069,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           gender: e.gender, phone: e.phone, email: e.email, dateOfBirth: e.date_of_birth,
           startDate: e.start_date, officialDate: e.official_date, status: e.status,
           userId: e.user_id, areaId: e.area_id, officeId: e.office_id,
-          employeeTypeId: e.employee_type_id, positionId: e.position_id,
-          salaryPolicyId: e.salary_policy_id, workScheduleId: e.work_schedule_id,
-          constructionSiteId: e.construction_site_id, departmentId: e.department_id,
-          factoryId: e.factory_id, maritalStatus: e.marital_status,
-          avatarUrl: e.avatar_url, createdAt: e.created_at, updatedAt: e.updated_at
-        };
+	          employeeTypeId: e.employee_type_id, positionId: e.position_id,
+	          salaryPolicyId: e.salary_policy_id, workScheduleId: e.work_schedule_id,
+	          constructionSiteId: e.construction_site_id, departmentId: e.department_id,
+	          factoryId: e.factory_id,
+	          employmentStatusId: e.employment_status_id,
+	          educationLevelId: e.education_level_id,
+	          socialInsuranceStatusId: e.social_insurance_status_id,
+	          maritalStatus: e.marital_status,
+	          avatarUrl: e.avatar_url, orgUnitId: e.org_unit_id || undefined,
+	          createdAt: e.created_at, updatedAt: e.updated_at
+	        };
         setEmployees(prev => {
           const exists = prev.find(emp => emp.id === mappedEmp.id);
           if (exists) return prev.map(emp => emp.id === mappedEmp.id ? mappedEmp : emp);
@@ -869,28 +1141,68 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
 
     // ── Org Units ──
-    const unsubOrg = realtimeService.on('org_units', (event) => {
-      if (event.eventType === 'INSERT' || event.eventType === 'UPDATE') {
-        const u = event.newRecord;
-        const mapped: OrgUnit = { id: u.id, name: u.name, type: u.type, parentId: u.parent_id, description: u.description, orderIndex: u.order_index, createdAt: u.created_at };
-        setOrgUnits(prev => {
-          const exists = prev.find(ou => ou.id === mapped.id);
-          if (exists) return prev.map(ou => ou.id === mapped.id ? mapped : ou);
-          return [...prev, mapped];
-        });
-      } else if (event.eventType === 'DELETE') {
-        setOrgUnits(prev => prev.filter(ou => ou.id !== event.oldRecord.id));
-      }
-    });
+	    const unsubOrg = realtimeService.on('org_units', (event) => {
+	      if (event.eventType === 'INSERT' || event.eventType === 'UPDATE') {
+	        const mapped = mapOrgUnitFromDb(event.newRecord);
+	        setOrgUnits(prev => {
+	          const exists = prev.find(ou => ou.id === mapped.id);
+	          if (exists) return prev.map(ou => ou.id === mapped.id ? mapped : ou);
+	          return [...prev, mapped];
+	        });
+	      } else if (event.eventType === 'DELETE') {
+	        setOrgUnits(prev => prev.filter(ou => ou.id !== event.oldRecord.id));
+	      }
+	    });
 
-    setActiveRealtimeModules([]);
+	    const upsertById = <T extends { id: string }>(
+	      setter: React.Dispatch<React.SetStateAction<T[]>>,
+	      item: T,
+	    ) => {
+	      setter(prev => {
+	        const exists = prev.some(existing => existing.id === item.id);
+	        return exists ? prev.map(existing => existing.id === item.id ? item : existing) : [...prev, item];
+	      });
+	    };
+
+	    const unsubHrmPositions = realtimeService.on('hrm_positions', (event) => {
+	      if (event.eventType === 'INSERT' || event.eventType === 'UPDATE') upsertById(setHrmPositions, mapHrmPositionFromDb(event.newRecord));
+	      else if (event.eventType === 'DELETE') setHrmPositions(prev => prev.filter(item => item.id !== event.oldRecord.id));
+	    });
+	    const unsubHrmOrgBlocks = realtimeService.on('hrm_org_blocks', (event) => {
+	      if (event.eventType === 'INSERT' || event.eventType === 'UPDATE') upsertById(setHrmOrgBlocks, mapHrmOrgBlockFromDb(event.newRecord));
+	      else if (event.eventType === 'DELETE') setHrmOrgBlocks(prev => prev.filter(item => item.id !== event.oldRecord.id));
+	    });
+	    const unsubHrmPositionGroups = realtimeService.on('hrm_position_groups', (event) => {
+	      if (event.eventType === 'INSERT' || event.eventType === 'UPDATE') upsertById(setHrmPositionGroups, mapHrmPositionGroupFromDb(event.newRecord));
+	      else if (event.eventType === 'DELETE') setHrmPositionGroups(prev => prev.filter(item => item.id !== event.oldRecord.id));
+	    });
+	    const unsubHrmPositionLevels = realtimeService.on('hrm_position_levels', (event) => {
+	      if (event.eventType === 'INSERT' || event.eventType === 'UPDATE') upsertById(setHrmPositionLevels, mapHrmPositionLevelFromDb(event.newRecord));
+	      else if (event.eventType === 'DELETE') setHrmPositionLevels(prev => prev.filter(item => item.id !== event.oldRecord.id));
+	    });
+	    const unsubHrmCompetencyGroups = realtimeService.on('hrm_competency_groups', (event) => {
+	      if (event.eventType === 'INSERT' || event.eventType === 'UPDATE') upsertById(setHrmCompetencyGroups, mapHrmCompetencyGroupFromDb(event.newRecord));
+	      else if (event.eventType === 'DELETE') setHrmCompetencyGroups(prev => prev.filter(item => item.id !== event.oldRecord.id));
+	    });
+	    const unsubHrmCompetencyLevels = realtimeService.on('hrm_competency_levels', (event) => {
+	      if (event.eventType === 'INSERT' || event.eventType === 'UPDATE') upsertById(setHrmCompetencyLevels, mapHrmCompetencyLevelFromDb(event.newRecord));
+	      else if (event.eventType === 'DELETE') setHrmCompetencyLevels(prev => prev.filter(item => item.id !== event.oldRecord.id));
+	    });
+	    const unsubHrmCatalogItems = realtimeService.on('hrm_catalog_items', (event) => {
+	      if (event.eventType === 'INSERT' || event.eventType === 'UPDATE') upsertById(setHrmCatalogItems, mapHrmCatalogItemFromDb(event.newRecord));
+	      else if (event.eventType === 'DELETE') setHrmCatalogItems(prev => prev.filter(item => item.id !== event.oldRecord.id));
+	    });
+
+	    setActiveRealtimeModules([]);
 
     return () => {
       unsubStatus();
       unsubWildcard();
       unsubItems(); unsubTx(); unsubWh(); unsubWhTypes(); unsubSup(); unsubReq();
       unsubAct(); unsubUsers(); unsubEmp(); unsubAttendance(); unsubCat(); unsubUnits();
-      unsubSettings(); unsubOrg();
+	      unsubSettings(); unsubOrg();
+	      unsubHrmPositions(); unsubHrmOrgBlocks(); unsubHrmPositionGroups(); unsubHrmPositionLevels();
+	      unsubHrmCompetencyGroups(); unsubHrmCompetencyLevels(); unsubHrmCatalogItems();
       realtimeTablesRef.current.clear();
       realtimeService.disconnect();
     };
@@ -1097,7 +1409,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         markModuleLoaded('wms-core');
       } else if (module === 'hrm') {
         const [
-          empData, areasData, officesData, empTypesData, positionsData, salaryData, schedulesData, constructionSitesData, orgUnitsData,
+          empData, areasData, officesData, empTypesData, positionsData, orgBlocksData, positionGroupsData, positionLevelsData,
+          competencyGroupsData, competencyLevelsData, catalogItemsData, salaryData, schedulesData, constructionSitesData, orgUnitsData,
           leaveBalData, leaveReqData, attendData, payrollData, contractData, payrollTplData, holidayData, salaryHistData, shiftTypesData, empShiftsData
         ] = await Promise.all([
           fetchTableHelper('employees'),
@@ -1105,6 +1418,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           fetchTableHelper('hrm_offices'),
           fetchTableHelper('hrm_employee_types'),
           fetchTableHelper('hrm_positions'),
+          fetchTableHelper('hrm_org_blocks'),
+          fetchTableHelper('hrm_position_groups'),
+          fetchTableHelper('hrm_position_levels'),
+          fetchTableHelper('hrm_competency_groups'),
+          fetchTableHelper('hrm_competency_levels'),
+          fetchTableHelper('hrm_catalog_items'),
           fetchTableHelper('hrm_salary_policies'),
           fetchTableHelper('hrm_work_schedules'),
           fetchTableHelper('hrm_construction_sites'),
@@ -1141,21 +1460,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             positionId: e.position_id,
             salaryPolicyId: e.salary_policy_id,
             workScheduleId: e.work_schedule_id,
-            constructionSiteId: e.construction_site_id,
-            departmentId: e.department_id,
-            factoryId: e.factory_id,
-            maritalStatus: e.marital_status,
-            avatarUrl: e.avatar_url,
-            orgUnitId: e.org_unit_id || undefined,
+	            constructionSiteId: e.construction_site_id,
+	            departmentId: e.department_id,
+	            factoryId: e.factory_id,
+	            employmentStatusId: e.employment_status_id,
+	            educationLevelId: e.education_level_id,
+	            socialInsuranceStatusId: e.social_insurance_status_id,
+	            maritalStatus: e.marital_status,
+	            avatarUrl: e.avatar_url,
+	            orgUnitId: e.org_unit_id || undefined,
             createdAt: e.created_at,
             updatedAt: e.updated_at,
           })));
         }
-        if (areasData) setHrmAreas(areasData);
-        if (officesData) setHrmOffices(officesData);
-        if (empTypesData) setHrmEmployeeTypes(empTypesData);
-        if (positionsData) setHrmPositions(positionsData);
-        if (salaryData) setHrmSalaryPolicies(salaryData);
+	        if (areasData) setHrmAreas(areasData);
+	        if (officesData) setHrmOffices(officesData);
+	        if (empTypesData) setHrmEmployeeTypes(empTypesData);
+	        if (positionsData) setHrmPositions(positionsData.map(mapHrmPositionFromDb));
+	        if (orgBlocksData) setHrmOrgBlocks(orgBlocksData.map(mapHrmOrgBlockFromDb));
+	        if (positionGroupsData) setHrmPositionGroups(positionGroupsData.map(mapHrmPositionGroupFromDb));
+	        if (positionLevelsData) setHrmPositionLevels(positionLevelsData.map(mapHrmPositionLevelFromDb));
+	        if (competencyGroupsData) setHrmCompetencyGroups(competencyGroupsData.map(mapHrmCompetencyGroupFromDb));
+	        if (competencyLevelsData) setHrmCompetencyLevels(competencyLevelsData.map(mapHrmCompetencyLevelFromDb));
+	        if (catalogItemsData) setHrmCatalogItems(catalogItemsData.map(mapHrmCatalogItemFromDb));
+	        if (salaryData) setHrmSalaryPolicies(salaryData);
         if (schedulesData) setHrmWorkSchedules(schedulesData.map((s: any) => ({
           id: s.id,
           name: s.name,
@@ -1169,16 +1497,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (constructionSitesData) setHrmConstructionSites(constructionSitesData);
         {
           const requiredOrgUnits = requireModuleData(module, 'org_units', orgUnitsData);
-          const units = requiredOrgUnits.map((u: any) => ({
-            id: u.id,
-            name: u.name,
-            type: u.type,
-            customTypeLabel: u.customTypeLabel || undefined,
-            parentId: u.parent_id,
-            description: u.description,
-            orderIndex: u.order_index,
-            createdAt: u.created_at,
-          }));
+	          const units = requiredOrgUnits.map(mapOrgUnitFromDb);
 
           if (!units.some((u: OrgUnit) => u.type === 'factory')) {
             const root = units.find((u: OrgUnit) => !u.parentId && u.type === 'company');
@@ -1402,18 +1721,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           user_id: data.userId || null,               // empty string → null for uuid FK
           area_id: data.areaId || null, office_id: data.officeId || null, employee_type_id: data.employeeTypeId || null,
           position_id: data.positionId || null, salary_policy_id: data.salaryPolicyId || null,
-          work_schedule_id: data.workScheduleId || null, construction_site_id: data.constructionSiteId || null,
-          department_id: data.departmentId || null, factory_id: data.factoryId || null,
-          marital_status: data.maritalStatus || null,
-          avatar_url: data.avatarUrl || null,
-          org_unit_id: data.orgUnitId || null,        // FK → org_units.id for 3D map
-          salary_grade_id: data.salaryGradeId || null
-        };
-      } else if (table === 'org_units') {
-        payload = {
-          id: data.id, name: data.name, type: data.type, "customTypeLabel": data.customTypeLabel || null,
-          parent_id: data.parentId || null, description: data.description || '', order_index: data.orderIndex || 0
-        };
+	          work_schedule_id: data.workScheduleId || null, construction_site_id: data.constructionSiteId || null,
+	          department_id: data.departmentId || null, factory_id: data.factoryId || null,
+	          employment_status_id: data.employmentStatusId || null,
+	          education_level_id: data.educationLevelId || null,
+	          social_insurance_status_id: data.socialInsuranceStatusId || null,
+	          marital_status: data.maritalStatus || null,
+	          avatar_url: data.avatarUrl || null,
+	          org_unit_id: data.orgUnitId || null,        // FK → org_units.id for 3D map
+	          salary_grade_id: data.salaryGradeId || null
+	        };
+	      } else if (table === 'org_units') {
+	        payload = orgUnitToDbPayload(data);
       } else if (table === 'assets') {
         payload = assetToDbPayload(data);
       } else if (table === 'asset_location_stocks') {
@@ -2850,10 +3169,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           position_id: e.positionId || null,
           salary_policy_id: e.salaryPolicyId || null,
           work_schedule_id: e.workScheduleId || null,
-          construction_site_id: e.constructionSiteId || null,
-          department_id: e.departmentId || null,
-          factory_id: e.factoryId || null,
-          marital_status: e.maritalStatus || null,
+	          construction_site_id: e.constructionSiteId || null,
+	          department_id: e.departmentId || null,
+	          factory_id: e.factoryId || null,
+	          employment_status_id: e.employmentStatusId || null,
+	          education_level_id: e.educationLevelId || null,
+	          social_insurance_status_id: e.socialInsuranceStatusId || null,
+	          marital_status: e.maritalStatus || null,
           avatar_url: e.avatarUrl || null,
           org_unit_id: e.orgUnitId || null,
         };
@@ -2915,9 +3237,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const hrmSetterMap: Record<string, React.Dispatch<React.SetStateAction<any[]>>> = {
     'hrm_areas': setHrmAreas,
     'hrm_offices': setHrmOffices,
-    'hrm_employee_types': setHrmEmployeeTypes,
-    'hrm_positions': setHrmPositions,
-    'hrm_salary_policies': setHrmSalaryPolicies,
+	    'hrm_employee_types': setHrmEmployeeTypes,
+	    'hrm_positions': setHrmPositions,
+	    'hrm_org_blocks': setHrmOrgBlocks,
+	    'hrm_position_groups': setHrmPositionGroups,
+	    'hrm_position_levels': setHrmPositionLevels,
+	    'hrm_competency_groups': setHrmCompetencyGroups,
+	    'hrm_competency_levels': setHrmCompetencyLevels,
+	    'hrm_catalog_items': setHrmCatalogItems,
+	    'hrm_salary_policies': setHrmSalaryPolicies,
     'hrm_work_schedules': setHrmWorkSchedules,
     'hrm_construction_sites': setHrmConstructionSites,
     // HRM 5A
@@ -2982,15 +3310,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         createdAt: item.createdAt || new Date().toISOString(),
       };
     }
-    if (table === 'hrm_work_schedules') {
-      return {
-        id: item.id, name: item.name, description: item.description,
+	    if (table === 'hrm_work_schedules') {
+	      return {
+	        id: item.id, name: item.name, description: item.description,
         morning_start: item.morningStart || null, morning_end: item.morningEnd || null,
         afternoon_start: item.afternoonStart || null, afternoon_end: item.afternoonEnd || null,
-        created_at: item.createdAt,
-      };
-    }
-    if (table === 'hrm_shift_types') {
+	        created_at: item.createdAt,
+	      };
+	    }
+	    if (table === 'hrm_positions') {
+	      return hrmPositionToDbPayload(item);
+	    }
+	    if (table === 'hrm_org_blocks') {
+	      return hrmOrgBlockToDbPayload(item);
+	    }
+	    if (table === 'hrm_position_groups') {
+	      return hrmPositionGroupToDbPayload(item);
+	    }
+	    if (table === 'hrm_position_levels') {
+	      return hrmPositionLevelToDbPayload(item);
+	    }
+	    if (table === 'hrm_competency_groups') {
+	      return hrmCompetencyGroupToDbPayload(item);
+	    }
+	    if (table === 'hrm_competency_levels') {
+	      return hrmCompetencyLevelToDbPayload(item);
+	    }
+	    if (table === 'hrm_catalog_items') {
+	      return hrmCatalogItemToDbPayload(item);
+	    }
+	    if (table === 'hrm_shift_types') {
       return {
         id: item.id, name: item.name,
         start_time: item.startTime, end_time: item.endTime,
@@ -3540,7 +3889,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     <AppContext.Provider value={{
       user, users, appSettings, theme, setUser, switchUser, addUser, updateUser, removeUser, items, warehouses, warehouseTypes, suppliers, transactions, requests, activities,
       categories, units, employees,
-      hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules, hrmConstructionSites, constructionSites: hrmConstructionSites,
+	      hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmOrgBlocks, hrmPositionGroups, hrmPositionLevels,
+	      hrmCompetencyGroups, hrmCompetencyLevels, hrmCatalogItems, getHrmCatalogItems,
+	      hrmSalaryPolicies, hrmWorkSchedules, hrmConstructionSites, constructionSites: hrmConstructionSites,
       shiftTypes, employeeShifts,
       attendanceRecords, leaveRequests, leaveLogs, leaveBalances, payrollRecords, payrollTemplates, holidays, laborContracts, salaryHistory,
       attendanceProposals, approveLeave, rejectLeave, addLeaveLog,

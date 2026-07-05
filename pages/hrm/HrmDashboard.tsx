@@ -411,7 +411,7 @@ const HrmDashboard: React.FC = () => {
                     </div>
                     <div>
                       <div className="text-xs font-bold text-slate-700 dark:text-white">{emp.fullName}</div>
-                      <div className="text-[10px] text-slate-400">{emp.title || positionMap.get(emp.positionId || '') || emp.employeeCode}</div>
+                      <div className="text-[10px] text-slate-400">{positionMap.get(emp.positionId || '') || emp.title || emp.employeeCode}</div>
                     </div>
                   </div>
                 ))}

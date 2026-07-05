@@ -133,7 +133,108 @@ export interface HrmPosition {
   id: string;
   name: string;
   level?: number;
+  code?: string;
+  groupCode?: string;
+  levelCode?: string;
+  suggestedOrgUnitCode?: string;
+  isActive?: boolean;
+  sortOrder?: number;
+  source?: 'catalog' | 'legacy' | 'custom' | string;
+  metadata?: Record<string, unknown>;
   createdAt?: string;
+}
+
+export interface HrmOrgBlock {
+  id: string;
+  code: string;
+  name: string;
+  description?: string;
+  isActive?: boolean;
+  sortOrder?: number;
+  source?: 'catalog' | 'legacy' | 'custom' | string;
+  metadata?: Record<string, unknown>;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface HrmPositionGroup {
+  id: string;
+  code: string;
+  name: string;
+  description?: string;
+  isActive?: boolean;
+  sortOrder?: number;
+  source?: 'catalog' | 'legacy' | 'custom' | string;
+  metadata?: Record<string, unknown>;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface HrmPositionLevel {
+  id: string;
+  code: string;
+  name: string;
+  groupCode?: string;
+  description?: string;
+  salaryRange?: string;
+  allowanceFactor?: number;
+  titleAllowanceAmount?: number;
+  phoneAllowanceAmount?: number;
+  isActive?: boolean;
+  sortOrder?: number;
+  source?: 'catalog' | 'legacy' | 'custom' | string;
+  metadata?: Record<string, unknown>;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface HrmCompetencyGroup {
+  id: string;
+  code: string;
+  name: string;
+  description?: string;
+  isActive?: boolean;
+  sortOrder?: number;
+  source?: 'catalog' | 'legacy' | 'custom' | string;
+  metadata?: Record<string, unknown>;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface HrmCompetencyLevel {
+  id: string;
+  code: string;
+  name: string;
+  description?: string;
+  isActive?: boolean;
+  sortOrder?: number;
+  source?: 'catalog' | 'legacy' | 'custom' | string;
+  metadata?: Record<string, unknown>;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export type HrmCatalogKey =
+  | 'employment_status'
+  | 'labor_contract_type'
+  | 'education_level'
+  | 'social_insurance_status'
+  | 'employee_type'
+  | 'marital_status'
+  | string;
+
+export interface HrmCatalogItem {
+  id: string;
+  catalogKey: HrmCatalogKey;
+  code: string;
+  name: string;
+  description?: string;
+  isActive?: boolean;
+  sortOrder?: number;
+  source?: 'catalog' | 'legacy' | 'custom' | string;
+  metadata?: Record<string, unknown>;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface HrmSalaryPolicy {
@@ -2289,6 +2390,11 @@ export interface OrgUnit {
   id: string;
   name: string;
   type: OrgUnitType;
+  code?: string;
+  blockCode?: string;
+  source?: 'catalog' | 'legacy' | 'custom' | string;
+  aliasNames?: string[];
+  isActive?: boolean;
   customTypeLabel?: string; // User-defined type label when type='custom'
   parentId?: string | null;
   description?: string;
@@ -2321,6 +2427,9 @@ export interface Employee {
   constructionSiteId?: string;
   departmentId?: string;
   factoryId?: string;
+  employmentStatusId?: string;
+  educationLevelId?: string;
+  socialInsuranceStatusId?: string;
   maritalStatus?: string;
   avatarUrl?: string; // URL ảnh đại diện nhân sự (Supabase Storage)
   orgUnitId?: string; // FK → org_units.id — dùng cho 3D Org Map (phòng ban / chi nhánh)

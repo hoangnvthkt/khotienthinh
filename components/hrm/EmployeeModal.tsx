@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Employee, LeaveBalance } from '../../types';
-import { X, Save, User as UserIcon, MapPinned, Building, Layers, HardHat, DollarSign, Calendar, Factory, FolderTree, CalendarDays, Camera, Loader2, GitBranch } from 'lucide-react';
+import { X, Save, User as UserIcon, Building, Layers, HardHat, DollarSign, Calendar, Factory, FolderTree, CalendarDays, Camera, Loader2, GitBranch, GraduationCap, HeartPulse } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useToast } from '../../context/ToastContext';
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
@@ -14,7 +14,7 @@ interface EmployeeModalProps {
 }
 
 const EmployeeModal: React.FC<EmployeeModalProps> = ({ employee, onClose, mode = 'admin', onSelfUpdate }) => {
-    const { addEmployee, updateEmployee, users, employees, warehouses, hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules, hrmConstructionSites, orgUnits, leaveBalances, addHrmItem, updateHrmItem } = useApp();
+    const { addEmployee, updateEmployee, users, employees, warehouses, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules, hrmConstructionSites, orgUnits, leaveBalances, getHrmCatalogItems, addHrmItem, updateHrmItem } = useApp();
     const toast = useToast();
     const isSelfMode = mode === 'self';
     const [formData, setFormData] = useState<Partial<Employee>>({
@@ -26,7 +26,10 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ employee, onClose, mode =
         dateOfBirth: '',
         startDate: '',
         officialDate: '',
-        status: 'Đang làm việc',
+	        status: 'Đang làm việc',
+	        employmentStatusId: undefined,
+	        educationLevelId: undefined,
+	        socialInsuranceStatusId: undefined,
         userId: undefined,
 
         officeId: undefined,
@@ -43,15 +46,28 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ employee, onClose, mode =
     });
     const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
     const [uploadingAvatar, setUploadingAvatar] = useState(false);
-    const [saving, setSaving] = useState(false);
-    const fileInputRef = useRef<HTMLInputElement>(null);
+	    const [saving, setSaving] = useState(false);
+	    const fileInputRef = useRef<HTMLInputElement>(null);
+	    const employmentStatuses = useMemo(() => getHrmCatalogItems('employment_status'), [getHrmCatalogItems]);
+	    const educationLevels = useMemo(() => getHrmCatalogItems('education_level'), [getHrmCatalogItems]);
+	    const socialInsuranceStatuses = useMemo(() => getHrmCatalogItems('social_insurance_status'), [getHrmCatalogItems]);
 
-    useEffect(() => {
-        if (employee) {
-            setFormData(employee);
-            setAvatarPreview(employee.avatarUrl || null);
-        }
-    }, [employee]);
+	    useEffect(() => {
+	        if (employee) {
+	            setFormData(employee);
+	            setAvatarPreview(employee.avatarUrl || null);
+	        }
+	    }, [employee]);
+
+	    useEffect(() => {
+	        if (employee || formData.employmentStatusId || employmentStatuses.length === 0) return;
+	        const defaultStatus = employmentStatuses.find(item => item.code === 'DL') || employmentStatuses[0];
+	        setFormData(prev => ({
+	            ...prev,
+	            employmentStatusId: defaultStatus.id,
+	            status: defaultStatus.code === 'NV' ? 'Đã nghỉ việc' : 'Đang làm việc',
+	        }));
+	    }, [employee, employmentStatuses, formData.employmentStatusId]);
 
     const handleAvatarUpload = async (file: File) => {
         if (file.size > 2 * 1024 * 1024) {
@@ -100,10 +116,20 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ employee, onClose, mode =
         return !isLinkedToOther;
     });
 
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-        const { name, value } = e.target;
-        setFormData(prev => ({ ...prev, [name]: value }));
-    };
+	    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+	        const { name, value } = e.target;
+	        setFormData(prev => ({ ...prev, [name]: value }));
+	    };
+
+	    const handleEmploymentStatusChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+	        const value = e.target.value || undefined;
+	        const selected = employmentStatuses.find(item => item.id === value);
+	        setFormData(prev => ({
+	            ...prev,
+	            employmentStatusId: value,
+	            status: selected?.code === 'NV' ? 'Đã nghỉ việc' : 'Đang làm việc',
+	        }));
+	    };
 
     const handleLinkedUserChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         const userId = e.target.value || undefined;
@@ -268,14 +294,14 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ employee, onClose, mode =
 
                             {!isSelfMode && (
                                 <div className="space-y-2">
-                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Chức Danh</label>
+	                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Chức danh ghi chú</label>
                                     <input
                                         type="text"
                                         name="title"
                                         value={formData.title || ''}
                                         onChange={handleChange}
                                         className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-white text-sm focus:ring-2 focus:ring-accent"
-                                        placeholder="Ví dụ: Kế toán, Thủ kho..."
+	                                        placeholder="Tên hiển thị phụ, không thay thế VTCV"
                                     />
                                 </div>
                             )}
@@ -345,18 +371,32 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ employee, onClose, mode =
 
                             {!isSelfMode && (
                                 <>
-                                    <div className="space-y-2">
-                                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Tình Trạng</label>
-                                        <select
-                                            name="status"
-                                            value={formData.status}
-                                            onChange={handleChange}
-                                            className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-white text-sm focus:ring-2 focus:ring-accent"
-                                        >
-                                            <option value="Đang làm việc">Đang làm việc</option>
-                                            <option value="Đã nghỉ việc">Đã nghỉ việc</option>
-                                        </select>
-                                    </div>
+	                                    <div className="space-y-2">
+	                                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Tình Trạng</label>
+	                                        {employmentStatuses.length > 0 ? (
+	                                            <select
+	                                                name="employmentStatusId"
+	                                                value={formData.employmentStatusId || ''}
+	                                                onChange={handleEmploymentStatusChange}
+	                                                className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-white text-sm focus:ring-2 focus:ring-accent"
+	                                            >
+	                                                <option value="">-- Vui lòng chọn --</option>
+	                                                {employmentStatuses.map(item => (
+	                                                    <option key={item.id} value={item.id}>{item.code} - {item.name}</option>
+	                                                ))}
+	                                            </select>
+	                                        ) : (
+	                                            <select
+	                                                name="status"
+	                                                value={formData.status}
+	                                                onChange={handleChange}
+	                                                className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-white text-sm focus:ring-2 focus:ring-accent"
+	                                            >
+	                                                <option value="Đang làm việc">Đang làm việc</option>
+	                                                <option value="Đã nghỉ việc">Đã nghỉ việc</option>
+	                                            </select>
+	                                        )}
+	                                    </div>
 
                                     <div className="space-y-2">
                                         <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Ngày Bắt Đầu (Thử Việc)</label>
@@ -403,9 +443,9 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ employee, onClose, mode =
                                         {hrmOffices.map(o => (<option key={o.id} value={o.id}>{o.name}</option>))}
                                     </select>
                                 </div>
-                                <div className="space-y-2">
-                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
-                                        <Layers size={12} /> Phân loại nhân sự *
+	                                <div className="space-y-2">
+	                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+	                                        <Layers size={12} /> Phân loại nhân sự *
                                     </label>
                                     <select
                                         name="employeeTypeId"
@@ -414,12 +454,40 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ employee, onClose, mode =
                                         className="w-full px-4 py-3 rounded-xl border border-violet-200 dark:border-violet-800/30 bg-violet-50 dark:bg-violet-900/10 text-slate-800 dark:text-white text-sm focus:ring-2 focus:ring-violet-500"
                                     >
                                         <option value="">-- Vui lòng chọn --</option>
-                                        {hrmEmployeeTypes.map(t => (<option key={t.id} value={t.id}>{t.name}</option>))}
-                                    </select>
-                                </div>
-                                <div className="space-y-2">
-                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
-                                        <HardHat size={12} /> Vị trí công việc *
+	                                        {hrmEmployeeTypes.map(t => (<option key={t.id} value={t.id}>{t.name}</option>))}
+	                                    </select>
+	                                </div>
+	                                <div className="space-y-2">
+	                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+	                                        <GraduationCap size={12} /> Trình độ
+	                                    </label>
+	                                    <select
+	                                        name="educationLevelId"
+	                                        value={formData.educationLevelId || ''}
+	                                        onChange={handleChange}
+	                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-white text-sm focus:ring-2 focus:ring-accent"
+	                                    >
+	                                        <option value="">-- Vui lòng chọn --</option>
+	                                        {educationLevels.map(item => (<option key={item.id} value={item.id}>{item.code} - {item.name}</option>))}
+	                                    </select>
+	                                </div>
+	                                <div className="space-y-2">
+	                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+	                                        <HeartPulse size={12} /> BHXH
+	                                    </label>
+	                                    <select
+	                                        name="socialInsuranceStatusId"
+	                                        value={formData.socialInsuranceStatusId || ''}
+	                                        onChange={handleChange}
+	                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-white text-sm focus:ring-2 focus:ring-accent"
+	                                    >
+	                                        <option value="">-- Vui lòng chọn --</option>
+	                                        {socialInsuranceStatuses.map(item => (<option key={item.id} value={item.id}>{item.code} - {item.name}</option>))}
+	                                    </select>
+	                                </div>
+	                                <div className="space-y-2">
+	                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+	                                        <HardHat size={12} /> Vị trí công việc *
                                     </label>
                                     <select
                                         name="positionId"
@@ -428,7 +496,10 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ employee, onClose, mode =
                                         className="w-full px-4 py-3 rounded-xl border border-violet-200 dark:border-violet-800/30 bg-violet-50 dark:bg-violet-900/10 text-slate-800 dark:text-white text-sm focus:ring-2 focus:ring-violet-500"
                                     >
                                         <option value="">-- Vui lòng chọn --</option>
-                                        {hrmPositions.map(p => (<option key={p.id} value={p.id}>{p.name}</option>))}
+	                                        {hrmPositions
+	                                            .filter(p => p.isActive !== false)
+	                                            .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.name.localeCompare(b.name, 'vi'))
+	                                            .map(p => (<option key={p.id} value={p.id}>{p.code ? `${p.code} - ` : ''}{p.name}</option>))}
                                     </select>
                                 </div>
                                 <div className="space-y-2">

@@ -14,7 +14,7 @@ interface EmployeeDetailModalProps {
 type TabKey = 'personal' | 'work' | 'contact' | 'assets' | 'documents';
 
 const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({ employee, onClose, onEdit }) => {
-    const { user, users, hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules, hrmConstructionSites, orgUnits, assets, assetAssignments, assetCategories } = useApp();
+    const { user, users, hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules, hrmConstructionSites, orgUnits, getHrmCatalogItems, assets, assetAssignments, assetCategories } = useApp();
     const { canManage } = usePermission();
     const canCRUD = canManage('/hrm/employees');
     const canEditEmployee = canCRUD || employee.userId === user.id;
@@ -30,6 +30,9 @@ const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({ employee, onC
     const constructionSite = hrmConstructionSites.find(cs => cs.id === employee.constructionSiteId);
     const department = orgUnits.find(u => u.id === employee.departmentId);
     const factory = orgUnits.find(u => u.id === employee.factoryId);
+    const employmentStatus = getHrmCatalogItems('employment_status').find(item => item.id === employee.employmentStatusId);
+    const educationLevel = getHrmCatalogItems('education_level').find(item => item.id === employee.educationLevelId);
+    const socialInsuranceStatus = getHrmCatalogItems('social_insurance_status').find(item => item.id === employee.socialInsuranceStatusId);
 
     const tabs: { key: TabKey; label: string; icon: React.ReactNode }[] = [
         { key: 'personal', label: 'Cá Nhân', icon: <UserIcon size={15} /> },
@@ -110,7 +113,7 @@ const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({ employee, onC
                                 <div className="flex items-center space-x-2 mt-1">
                                     <span className="text-xs font-bold text-accent bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 rounded-md">{employee.employeeCode}</span>
                                     <span className={`text-xs font-bold px-2 py-0.5 rounded-md ${employee.status === 'Đang làm việc' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400' : 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400'}`}>
-                                        {employee.status}
+                                        {employmentStatus?.name || employee.status}
                                     </span>
                                 </div>
                             </div>
@@ -146,6 +149,7 @@ const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({ employee, onC
                             <InfoRow label="Giới tính" value={employee.gender} />
                             <InfoRow label="Ngày sinh" value={employee.dateOfBirth} />
                             <InfoRow label="Tình trạng HN" value={employee.maritalStatus} />
+                            <InfoRow label="Trình độ" value={educationLevel ? `${educationLevel.code} - ${educationLevel.name}` : null} />
                             <InfoRow label="Chức danh" value={employee.title} />
                             {linkedUser && (
                                 <InfoRow label="Tài khoản" value={`${linkedUser.name} (${linkedUser.email})`} />
@@ -156,9 +160,11 @@ const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({ employee, onC
                     {activeTab === 'work' && (
                         <div>
                             <InfoRow label="Khu vực" value={area?.name} badge badgeColor="bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400" />
+                            <InfoRow label="Tình trạng" value={employmentStatus ? `${employmentStatus.code} - ${employmentStatus.name}` : employee.status} />
                             <InfoRow label="Văn phòng" value={office?.name} badge badgeColor="bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400" />
                             <InfoRow label="Vị trí" value={position?.name} badge badgeColor="bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400" />
                             <InfoRow label="Loại NV" value={empType?.name} />
+                            <InfoRow label="BHXH" value={socialInsuranceStatus ? `${socialInsuranceStatus.code} - ${socialInsuranceStatus.name}` : null} />
                             <InfoRow label="Chính sách lương" value={salaryPolicy?.name} />
                             <InfoRow label="Lịch làm việc" value={workSchedule?.name} />
                             <InfoRow label="Công trường" value={constructionSite?.name} badge badgeColor="bg-orange-50 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400" />

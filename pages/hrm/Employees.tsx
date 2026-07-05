@@ -16,9 +16,10 @@ import ExcelImportReviewModal from '../../components/ExcelImportReviewModal';
 import { ExcelImportMode, ExcelImportPreview, applyImportChanges, buildImportPreview, parseExcelRows } from '../../lib/excelImport';
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 import { employeeSelfService } from '../../lib/employeeSelfService';
+import { findHrmCatalogItem, normalizeHrmMetadataKey, validateHrmCatalogReference } from '../../lib/hrmMetadataCatalog';
 
 const Employees: React.FC = () => {
-    const { employees, users, addEmployee, updateEmployee, replaceEmployeeLocal, removeEmployee, addHrmItem, hrmAreas, hrmOffices, hrmPositions, hrmConstructionSites, orgUnits, user, setUser } = useApp();
+    const { employees, users, addEmployee, updateEmployee, replaceEmployeeLocal, removeEmployee, addHrmItem, hrmOffices, hrmPositions, hrmConstructionSites, orgUnits, getHrmCatalogItems, user, setUser } = useApp();
     const { canManage } = usePermission();
     const canCRUD = canManage('/hrm/employees');
     useModuleData('hrm');
@@ -37,6 +38,9 @@ const Employees: React.FC = () => {
     const [viewMode, setViewMode] = useState<'grid' | 'table'>(() => {
         return (localStorage.getItem('emp_view_mode') as 'grid' | 'table') || 'grid';
     });
+    const employmentStatusItems = useMemo(() => getHrmCatalogItems('employment_status'), [getHrmCatalogItems]);
+    const educationLevelItems = useMemo(() => getHrmCatalogItems('education_level'), [getHrmCatalogItems]);
+    const socialInsuranceStatusItems = useMemo(() => getHrmCatalogItems('social_insurance_status'), [getHrmCatalogItems]);
 
     const filteredEmployees = useMemo(() => {
         return employees.filter(emp =>
@@ -145,6 +149,38 @@ const Employees: React.FC = () => {
         return 'Đang làm việc';
     };
 
+    const findMetadataByCodeOrName = <TItem extends { id: string; code?: string | null; name: string; isActive?: boolean | null }>(
+        items: TItem[],
+        value: string,
+    ) => {
+        const normalized = normalizeHrmMetadataKey(value);
+        if (!normalized) return undefined;
+        return items.find(item => item.isActive !== false && normalizeHrmMetadataKey(item.code) === normalized)
+            || items.find(item => item.isActive !== false && normalizeHrmMetadataKey(item.name) === normalized);
+    };
+
+    const findPositionRef = (value: string) => findMetadataByCodeOrName(hrmPositions, value);
+    const findOrgUnitRef = (value: string) => findMetadataByCodeOrName(orgUnits, value);
+    const formatCatalog = (items: typeof employmentStatusItems, id?: string) => {
+        const item = items.find(catalogItem => catalogItem.id === id);
+        return item ? `${item.code} - ${item.name}` : id || '-';
+    };
+    const legacyStatusFromEmploymentStatusId = (id?: string, fallback: Employee['status'] = 'Đang làm việc'): Employee['status'] => {
+        const item = employmentStatusItems.find(statusItem => statusItem.id === id);
+        if (!item) return fallback;
+        return item.code === 'NV' ? 'Đã nghỉ việc' : 'Đang làm việc';
+    };
+    const applyOrgUnitLinks = (employee: Employee): Employee => {
+        const unit = employee.orgUnitId ? orgUnits.find(item => item.id === employee.orgUnitId) : undefined;
+        return {
+            ...employee,
+            status: legacyStatusFromEmploymentStatusId(employee.employmentStatusId, employee.status),
+            departmentId: unit?.type === 'department' ? unit.id : employee.departmentId,
+            factoryId: unit?.type === 'factory' ? unit.id : employee.factoryId,
+            constructionSiteId: unit?.type === 'construction_site' ? unit.id : employee.constructionSiteId,
+        };
+    };
+
     const findLinkedUser = (value: string) => {
         const accountKey = value.trim().toLowerCase();
         if (!accountKey) return undefined;
@@ -166,17 +202,19 @@ const Employees: React.FC = () => {
             const XLSX = await loadXlsx();
             const createHeaders = [
                 'Mã nhân sự *', 'Họ tên *', 'Chức danh', 'Giới tính', 'SĐT', 'Email',
-                'Ngày sinh', 'Ngày vào làm', 'Ngày chính thức', 'Trạng thái', 'Tài khoản hệ thống',
+                'Ngày sinh', 'Ngày vào làm', 'Ngày chính thức', 'Mã phòng/tổ *', 'Mã VTCV *',
+                'Mã tình trạng', 'Mã trình độ', 'Mã BHXH', 'Tài khoản hệ thống',
             ];
             const createRows = [
-                ['NS-001', 'Nguyễn Văn A', 'Kỹ sư hiện trường', 'Nam', '0900000000', 'a@example.com', '1990-01-01', '2026-05-01', '2026-07-01', 'Đang làm việc', ''],
+                ['NS-001', 'Nguyễn Văn A', 'Ghi chú chức danh', 'Nam', '0900000000', 'a@example.com', '1990-01-01', '2026-05-01', '2026-07-01', 'HCNS', 'VT040', 'DL', 'ĐH', 'TG', ''],
             ];
-            const updateHeaders = ['Mã nhân sự *', 'Chức danh', 'SĐT', 'Email', 'Trạng thái', 'Tài khoản hệ thống'];
-            const updateRows = [['NS-001', 'Chỉ huy trưởng', '', '', '', '']];
+            const updateHeaders = ['Mã nhân sự *', 'Chức danh', 'SĐT', 'Email', 'Mã phòng/tổ', 'Mã VTCV', 'Mã tình trạng', 'Mã trình độ', 'Mã BHXH', 'Tài khoản hệ thống'];
+            const updateRows = [['NS-001', 'Ghi chú mới', '', '', 'QLDA', 'VT046', 'DL', 'ĐH', 'TG', '']];
             const guideRows = [
                 ['Nội dung', 'Hướng dẫn'],
                 ['Nhập mới', 'Dùng sheet Nhap_moi. Mã nhân sự đã tồn tại sẽ bị báo lỗi.'],
                 ['Cập nhật', 'Dùng sheet Cap_nhat hoặc file chỉ gồm Mã nhân sự và các cột muốn sửa.'],
+                ['Metadata HRM', 'Dùng mã trong Cài đặt > Dữ liệu gốc HRM: Mã phòng/tổ, Mã VTCV, Mã tình trạng, Mã trình độ, Mã BHXH.'],
                 ['Ô trống', 'Trong chế độ Cập nhật, ô trống nghĩa là không đổi dữ liệu.'],
                 ['Xóa giá trị', 'Dùng token __CLEAR__ cho các cột cho phép xoá như email, SĐT, tài khoản hệ thống.'],
             ];
@@ -227,7 +265,7 @@ const Employees: React.FC = () => {
         }),
         fields: [
             { key: 'fullName', label: 'Họ tên', aliases: ['Họ tên *', 'Họ tên', 'Ho ten', 'Họ và tên', 'Tên nhân sự', 'fullName'], requiredOnCreate: true },
-            { key: 'title', label: 'Chức danh', aliases: ['Chức danh', 'Chuc danh', 'Vị trí', 'title'], clearable: true },
+            { key: 'title', label: 'Chức danh ghi chú', aliases: ['Chức danh', 'Chuc danh', 'title'], clearable: true },
             { key: 'gender', label: 'Giới tính', aliases: ['Giới tính', 'Gioi tinh', 'gender'], normalize: value => normalizeGender(String(value)) },
             { key: 'phone', label: 'SĐT', aliases: ['SĐT', 'SDT', 'Số điện thoại', 'phone'], clearable: true },
             {
@@ -246,7 +284,72 @@ const Employees: React.FC = () => {
             { key: 'dateOfBirth', label: 'Ngày sinh', aliases: ['Ngày sinh', 'Ngay sinh', 'dateOfBirth'], clearable: true, normalize: value => normalizeDate(String(value)) },
             { key: 'startDate', label: 'Ngày vào làm', aliases: ['Ngày vào làm', 'Ngay vao lam', 'startDate'], clearable: true, normalize: value => normalizeDate(String(value)) },
             { key: 'officialDate', label: 'Ngày chính thức', aliases: ['Ngày chính thức', 'Ngay chinh thuc', 'officialDate'], clearable: true, normalize: value => normalizeDate(String(value)) },
-            { key: 'status', label: 'Trạng thái', aliases: ['Trạng thái', 'Trang thai', 'status'], normalize: value => normalizeStatus(String(value)) },
+            {
+                key: 'orgUnitId',
+                label: 'Mã phòng/tổ',
+                aliases: ['Mã phòng/tổ *', 'Mã phòng/tổ', 'Ma phong to', 'Mã bộ phận', 'Ma bo phan', 'orgUnitCode', 'org_unit_code'],
+                requiredOnCreate: orgUnits.some(unit => unit.code),
+                clearable: true,
+                normalize: value => findOrgUnitRef(String(value))?.id,
+                validate: (value, row) => {
+                    const raw = pick(row, ['Mã phòng/tổ *', 'Mã phòng/tổ', 'Ma phong to', 'Mã bộ phận', 'Ma bo phan', 'orgUnitCode', 'org_unit_code']);
+                    return raw && !value ? `Mã phòng/tổ "${raw}" không tồn tại trong metadata HRM.` : undefined;
+                },
+                format: value => orgUnits.find(unit => unit.id === value)?.name || String(value || '-'),
+            },
+            {
+                key: 'positionId',
+                label: 'Mã VTCV',
+                aliases: ['Mã VTCV *', 'Mã VTCV', 'Ma VTCV', 'Mã vị trí', 'Ma vi tri', 'positionCode', 'position_code', 'Vị trí'],
+                requiredOnCreate: hrmPositions.some(position => position.code),
+                clearable: true,
+                normalize: value => findPositionRef(String(value))?.id,
+                validate: (value, row) => {
+                    const raw = pick(row, ['Mã VTCV *', 'Mã VTCV', 'Ma VTCV', 'Mã vị trí', 'Ma vi tri', 'positionCode', 'position_code', 'Vị trí']);
+                    return raw && !value ? `Mã VTCV "${raw}" không tồn tại trong metadata HRM.` : undefined;
+                },
+                format: value => hrmPositions.find(position => position.id === value)?.name || String(value || '-'),
+            },
+            ...(employmentStatusItems.length > 0 ? [{
+                key: 'employmentStatusId' as keyof Employee & string,
+                label: 'Mã tình trạng',
+                aliases: ['Mã tình trạng', 'Ma tinh trang', 'Mã trạng thái', 'Ma trang thai', 'Trạng thái', 'Trang thai', 'status'],
+                normalize: (value: string) => findHrmCatalogItem(employmentStatusItems, 'employment_status', value)?.id,
+                validate: (value: unknown, row: Record<string, unknown>) => {
+                    const raw = pick(row, ['Mã tình trạng', 'Ma tinh trang', 'Mã trạng thái', 'Ma trang thai', 'Trạng thái', 'Trang thai', 'status']);
+                    return raw && !value ? validateHrmCatalogReference(employmentStatusItems, 'employment_status', raw, 'Mã tình trạng').error : undefined;
+                },
+                format: (value: unknown) => formatCatalog(employmentStatusItems, String(value || '')),
+            }] : [{
+                key: 'status' as keyof Employee & string,
+                label: 'Trạng thái',
+                aliases: ['Trạng thái', 'Trang thai', 'status'],
+                normalize: (value: string) => normalizeStatus(String(value)),
+            }]),
+            {
+                key: 'educationLevelId',
+                label: 'Mã trình độ',
+                aliases: ['Mã trình độ', 'Ma trinh do', 'Trình độ', 'Trinh do', 'educationCode', 'education_level_code'],
+                clearable: true,
+                normalize: value => findHrmCatalogItem(educationLevelItems, 'education_level', value)?.id,
+                validate: (value, row) => {
+                    const raw = pick(row, ['Mã trình độ', 'Ma trinh do', 'Trình độ', 'Trinh do', 'educationCode', 'education_level_code']);
+                    return raw && !value ? validateHrmCatalogReference(educationLevelItems, 'education_level', raw, 'Mã trình độ').error : undefined;
+                },
+                format: value => formatCatalog(educationLevelItems, String(value || '')),
+            },
+            {
+                key: 'socialInsuranceStatusId',
+                label: 'Mã BHXH',
+                aliases: ['Mã BHXH', 'Ma BHXH', 'BHXH', 'socialInsuranceCode', 'social_insurance_status_code'],
+                clearable: true,
+                normalize: value => findHrmCatalogItem(socialInsuranceStatusItems, 'social_insurance_status', value)?.id,
+                validate: (value, row) => {
+                    const raw = pick(row, ['Mã BHXH', 'Ma BHXH', 'BHXH', 'socialInsuranceCode', 'social_insurance_status_code']);
+                    return raw && !value ? validateHrmCatalogReference(socialInsuranceStatusItems, 'social_insurance_status', raw, 'Mã BHXH').error : undefined;
+                },
+                format: value => formatCatalog(socialInsuranceStatusItems, String(value || '')),
+            },
             {
                 key: 'userId',
                 label: 'Tài khoản hệ thống',
@@ -293,11 +396,11 @@ const Employees: React.FC = () => {
             if (importPreview.mode === 'create') {
                 for (const record of records) {
                     const linkedUser = record.userId ? users.find(u => u.id === record.userId) : undefined;
-                    const employee: Employee = {
+                    const employee: Employee = applyOrgUnitLinks({
                         ...record,
                         avatarUrl: record.avatarUrl || linkedUser?.avatar,
                         updatedAt: new Date().toISOString(),
-                    };
+                    });
                     await addEmployee(employee);
                     addHrmItem('hrm_leave_balances', {
                         id: crypto.randomUUID(),
@@ -315,7 +418,7 @@ const Employees: React.FC = () => {
             } else {
                 const changedRows = importPreview.rows.filter(row => row.status === 'update' && row.existingRecord && row.nextRecord);
                 for (const row of changedRows) {
-                    await updateEmployee({ ...row.existingRecord!, ...row.nextRecord!, updatedAt: new Date().toISOString() });
+                    await updateEmployee(applyOrgUnitLinks({ ...row.existingRecord!, ...row.nextRecord!, updatedAt: new Date().toISOString() }));
                 }
                 toast.success('Cập nhật nhân sự thành công', `${changedRows.length} hồ sơ đã được cập nhật.`);
             }
