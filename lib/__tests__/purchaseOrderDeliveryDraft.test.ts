@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { InventoryItem, PurchaseOrderDeliveryBatch, PurchaseOrderItem } from '../../types';
 import * as deliveryDraft from '../purchaseOrderDeliveryDraft';
-import { makePoDeliveryLineDraft } from '../purchaseOrderDeliveryDraft';
+import {
+  getPoDeliveryDraftInitialLineValues,
+  getPoDeliveryScheduleLineInitialValues,
+  makePoDeliveryLineDraft,
+  shouldAutoCreatePoDeliveryScheduleForForm,
+  syncPoItemPricesFromDeliverySchedule,
+  syncPoItemsFromDeliverySchedule,
+} from '../purchaseOrderDeliveryDraft';
 
 const inventory: InventoryItem = {
   id: 'item-1',
@@ -103,13 +110,79 @@ describe('purchaseOrderDeliveryDraft', () => {
       },
     ];
 
-    const syncItems = (deliveryDraft as any).syncPoItemsFromDeliverySchedule;
-    expect(typeof syncItems).toBe('function');
-
-    const [synced] = syncItems([{ ...poItem, qty: 1, unitPrice: 1 }], schedule);
+    const [synced] = syncPoItemsFromDeliverySchedule([{ ...poItem, qty: 1, unitPrice: 1 }], schedule);
 
     expect(synced.qty).toBe(15);
     expect(synced.unitPrice).toBeCloseTo(120);
+  });
+
+  it('zeros scheduled quantity and price when an empty request schedule should stay empty', () => {
+    const [synced] = syncPoItemsFromDeliverySchedule(
+      [{ ...poItem, qty: 16, unitPrice: 103750 }],
+      [],
+      { emptyScheduleBehavior: 'zero_qty_and_price' },
+    );
+
+    expect(synced.qty).toBe(0);
+    expect(synced.unitPrice).toBe(0);
+  });
+
+  it('does not auto-create default delivery schedule when editing a request PO with removed batches', () => {
+    expect(shouldAutoCreatePoDeliveryScheduleForForm({
+      isEditing: true,
+      sourceMode: 'from_request',
+    })).toBe(false);
+  });
+
+  it('auto-creates default delivery schedule for new request PO drafts', () => {
+    expect(shouldAutoCreatePoDeliveryScheduleForForm({
+      isEditing: false,
+      sourceMode: 'from_request',
+    })).toBe(true);
+  });
+
+  it('starts new delivery draft lines empty for request POs after deleted batches', () => {
+    expect(getPoDeliveryDraftInitialLineValues({
+      remainingQty: 16,
+      unitPrice: 103750,
+      sourceMode: 'from_request',
+    })).toEqual({
+      issuedQty: '',
+      deliveryUnitPrice: '',
+    });
+  });
+
+  it('keeps default delivery draft values for proactive POs', () => {
+    expect(getPoDeliveryDraftInitialLineValues({
+      remainingQty: 16,
+      unitPrice: 103750,
+      sourceMode: 'proactive_project',
+    })).toEqual({
+      issuedQty: '16',
+      deliveryUnitPrice: '103750',
+    });
+  });
+
+  it('starts added schedule lines at zero for request POs so old prices do not return', () => {
+    expect(getPoDeliveryScheduleLineInitialValues({
+      remainingQty: 16,
+      unitPrice: 103750,
+      sourceMode: 'from_request',
+    })).toEqual({
+      plannedQty: 0,
+      deliveryUnitPrice: 0,
+    });
+  });
+
+  it('keeps added schedule defaults for proactive POs', () => {
+    expect(getPoDeliveryScheduleLineInitialValues({
+      remainingQty: 16,
+      unitPrice: 103750,
+      sourceMode: 'proactive_project',
+    })).toEqual({
+      plannedQty: 16,
+      deliveryUnitPrice: 103750,
+    });
   });
 
   it('keeps request demand quantity when only schedule price should be synced', () => {
@@ -141,5 +214,101 @@ describe('purchaseOrderDeliveryDraft', () => {
 
     expect(synced.qty).toBe(16);
     expect(synced.unitPrice).toBe(120);
+  });
+
+  it('zeros unmatched request PO lines when another line already has a delivery schedule', () => {
+    const schedule: PurchaseOrderDeliveryBatch[] = [
+      {
+        id: 'batch-1',
+        purchaseOrderId: 'po-1',
+        deliveryNo: 1,
+        plannedDeliveryDate: '2026-07-06',
+        status: 'planned',
+        lines: [
+          {
+            id: 'line-2-b1',
+            deliveryBatchId: 'batch-1',
+            purchaseOrderId: 'po-1',
+            purchaseOrderLineId: 'line-2',
+            itemId: 'item-2',
+            plannedQty: 4,
+            deliveryUnitPrice: 500,
+          },
+        ],
+      },
+    ];
+
+    const [synced] = syncPoItemsFromDeliverySchedule(
+      [{ ...poItem, qty: 16, unitPrice: 103750 }],
+      schedule,
+      { unmatchedLineBehavior: 'zero_qty_and_price' },
+    );
+
+    expect(synced.qty).toBe(0);
+    expect(synced.unitPrice).toBe(0);
+  });
+
+  it('zeros request PO lines that have a zero-quantity schedule line with an old price', () => {
+    const schedule: PurchaseOrderDeliveryBatch[] = [
+      {
+        id: 'batch-1',
+        purchaseOrderId: 'po-1',
+        deliveryNo: 1,
+        plannedDeliveryDate: '2026-07-06',
+        status: 'planned',
+        lines: [
+          {
+            id: 'line-1-b1',
+            deliveryBatchId: 'batch-1',
+            purchaseOrderId: 'po-1',
+            purchaseOrderLineId: 'line-1',
+            itemId: 'item-1',
+            plannedQty: 0,
+            deliveryUnitPrice: 103750,
+          },
+        ],
+      },
+    ];
+
+    const [synced] = syncPoItemsFromDeliverySchedule(
+      [{ ...poItem, qty: 16, unitPrice: 103750 }],
+      schedule,
+      { unmatchedLineBehavior: 'zero_qty_and_price' },
+    );
+
+    expect(synced.qty).toBe(0);
+    expect(synced.unitPrice).toBe(0);
+  });
+
+  it('keeps unmatched request demand but zeros price when saving without a delivery schedule for that line', () => {
+    const schedule: PurchaseOrderDeliveryBatch[] = [
+      {
+        id: 'batch-1',
+        purchaseOrderId: 'po-1',
+        deliveryNo: 1,
+        plannedDeliveryDate: '2026-07-06',
+        status: 'planned',
+        lines: [
+          {
+            id: 'line-2-b1',
+            deliveryBatchId: 'batch-1',
+            purchaseOrderId: 'po-1',
+            purchaseOrderLineId: 'line-2',
+            itemId: 'item-2',
+            plannedQty: 4,
+            deliveryUnitPrice: 500,
+          },
+        ],
+      },
+    ];
+
+    const [synced] = syncPoItemPricesFromDeliverySchedule(
+      [{ ...poItem, qty: 16, unitPrice: 103750 }],
+      schedule,
+      { unmatchedLineBehavior: 'zero_price' },
+    );
+
+    expect(synced.qty).toBe(16);
+    expect(synced.unitPrice).toBe(0);
   });
 });

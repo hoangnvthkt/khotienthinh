@@ -82,13 +82,22 @@ import {
     stockUnitPriceToPurchaseUnitPrice,
 } from '../../lib/materialUnitConversion';
 import {
+    getPoDeliveryDraftInitialLineValues,
+    getPoDeliveryScheduleLineInitialValues,
     makePoDeliveryLineDraft as buildPoDeliveryLineDraft,
+    shouldAutoCreatePoDeliveryScheduleForForm,
     syncPoItemPricesFromDeliverySchedule,
     syncPoItemsFromDeliverySchedule,
 } from '../../lib/purchaseOrderDeliveryDraft';
 import { buildPurchaseOrderListSummary } from '../../lib/purchaseOrderDisplay';
 import { getPurchaseOrderDemandStats, getPurchaseOrderLineDemandQty } from '../../lib/purchaseOrderDemand';
-import { getPurchaseOrderDisplayAmount } from '../../lib/purchaseOrderAmount';
+import { getPurchaseOrderDisplayAmount, getPurchaseOrderDisplayLineAmount } from '../../lib/purchaseOrderAmount';
+import {
+    appendRequestRowsToPoItems,
+    buildPurchaseOrderRequestLineLinks,
+    filterRequestRowsForPoCart,
+    hasRequestRowDefaultSupplierMismatch,
+} from '../../lib/purchaseOrderRequestCart';
 
 interface SupplyChainTabProps {
     constructionSiteId?: string;
@@ -432,6 +441,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     const [expandedPoId, setExpandedPoId] = useState<string | null>(null);
     const [expandedDeliveryGroupKey, setExpandedDeliveryGroupKey] = useState<string | null>(null);
     const [showRequestPicker, setShowRequestPicker] = useState(false);
+    const [requestPickerMode, setRequestPickerMode] = useState<'create_po' | 'append_to_po'>('create_po');
     const [selectedRequestLineKeys, setSelectedRequestLineKeys] = useState<string[]>([]);
     const [supplierReturnPo, setSupplierReturnPo] = useState<PurchaseOrder | null>(null);
     const [poDeliveryBatchesByPo, setPoDeliveryBatchesByPo] = useState<Record<string, PurchaseOrderDeliveryBatch[]>>({});
@@ -568,13 +578,30 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             lines: activeItems.map(item => makePoDeliveryLineDraft(batchId, purchaseOrderId, item, Number(item.qty || 0))),
         }];
     };
+    const getPoDeliveryBatchesForForm = (
+        currentBatches: PurchaseOrderDeliveryBatch[] = pDeliveryBatches,
+        items: PurchaseOrderItem[] = pItems,
+        plannedDate = pExpDate,
+        purchaseOrderId = editingPo?.id || '',
+        sourceMode: PurchaseOrderSourceMode = pSourceMode,
+        isEditing = Boolean(editingPo),
+    ): PurchaseOrderDeliveryBatch[] => {
+        if (currentBatches.length > 0) return currentBatches;
+        if (!shouldAutoCreatePoDeliveryScheduleForForm({ isEditing, sourceMode })) return [];
+        return buildDefaultPoDeliveryBatches(items, plannedDate, purchaseOrderId);
+    };
     const normalizePoDeliveryBatchesForSave = (
         po: PurchaseOrder,
         items: PurchaseOrderItem[],
     ): PurchaseOrderDeliveryBatch[] => {
-        const sourceBatches = pDeliveryBatches.length > 0
-            ? pDeliveryBatches
-            : buildDefaultPoDeliveryBatches(items, po.expectedDeliveryDate || pExpDate, po.id);
+        const sourceBatches = getPoDeliveryBatchesForForm(
+            pDeliveryBatches,
+            items,
+            po.expectedDeliveryDate || pExpDate,
+            po.id,
+            po.sourceMode || pSourceMode,
+            Boolean(editingPo),
+        );
         const activeItems = items.filter(item => item.itemId && Number(item.qty || 0) > 0);
         const normalized = sourceBatches.map((batch, index) => {
             const batchId = batch.purchaseOrderId === po.id && batch.id ? batch.id : crypto.randomUUID();
@@ -634,7 +661,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         return Number(orderedQty || 0) - scheduledQty;
     };
     const addPoDeliveryBatch = () => {
-        const base = pDeliveryBatches.length > 0 ? pDeliveryBatches : buildDefaultPoDeliveryBatches(pItems, pExpDate);
+        const base = getPoDeliveryBatchesForForm();
         const batchId = crypto.randomUUID();
         const activeItems = pItems.map(item => normalizePoItem(item, inventoryItems)).filter(item => item.itemId && Number(item.qty || 0) > 0);
         setPDeliveryBatches([
@@ -653,7 +680,18 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 lines: activeItems.map(item => {
                     const lineKey = item.lineId || item.itemId;
                     const remainingQty = Math.max(0, getPoDeliveryRemainingQty(base, lineKey, Number(item.qty || 0)));
-                    return makePoDeliveryLineDraft(batchId, editingPo?.id || '', item, remainingQty);
+                    const lineInitialValues = getPoDeliveryScheduleLineInitialValues({
+                        remainingQty,
+                        unitPrice: Number(item.unitPrice || 0),
+                        sourceMode: pSourceMode,
+                    });
+                    return makePoDeliveryLineDraft(
+                        batchId,
+                        editingPo?.id || '',
+                        item,
+                        lineInitialValues.plannedQty,
+                        lineInitialValues.deliveryUnitPrice,
+                    );
                 }),
             },
         ]);
@@ -663,6 +701,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     };
     const getEditablePoDeliveryBatches = (currentBatches: PurchaseOrderDeliveryBatch[], renderedBatchId: string) => {
         if (currentBatches.length > 0) return currentBatches;
+        if (!shouldAutoCreatePoDeliveryScheduleForForm({ isEditing: Boolean(editingPo), sourceMode: pSourceMode })) return [];
         return buildDefaultPoDeliveryBatches(pItems, pExpDate).map((batch, index) => {
             if (index !== 0) return batch;
             return {
@@ -684,7 +723,13 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     ...batch,
                     lines: [
                         ...batch.lines,
-                        makePoDeliveryLineDraft(batch.id, editingPo?.id || '', sourceItem, plannedQty),
+                        makePoDeliveryLineDraft(
+                            batch.id,
+                            editingPo?.id || '',
+                            sourceItem,
+                            plannedQty,
+                            pSourceMode === 'from_request' ? 0 : undefined,
+                        ),
                     ],
                 };
             }
@@ -724,7 +769,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                             editingPo?.id || '',
                             sourceItem,
                             0,
-                            undefined,
+                            pSourceMode === 'from_request' ? 0 : undefined,
                             undefined,
                             stockPlannedQty,
                         ),
@@ -770,7 +815,9 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     const removePoDeliveryBatch = (batchId: string) => {
         setPDeliveryBatches(prev => {
             const next = prev.filter(batch => batch.id !== batchId);
-            return next.length > 0 ? next.map((batch, index) => ({ ...batch, deliveryNo: index + 1 })) : buildDefaultPoDeliveryBatches(pItems, pExpDate);
+            if (next.length > 0) return next.map((batch, index) => ({ ...batch, deliveryNo: index + 1 }));
+            if (!shouldAutoCreatePoDeliveryScheduleForForm({ isEditing: Boolean(editingPo), sourceMode: pSourceMode })) return [];
+            return buildDefaultPoDeliveryBatches(pItems, pExpDate);
         });
     };
 
@@ -811,6 +858,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             setEditingPo(null);
             setShowPoForm(true);
             setShowRequestPicker(false);
+            setRequestPickerMode('create_po');
             setSelectedRequestLineKeys([]);
             setPVendorId(firstVendorId);
             setPNum(nextPoNumber);
@@ -932,6 +980,11 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             .filter(row => row.remainingQty > 0)
             .filter(row => !row.line.isManualItem && inventoryItems.some(item => item.id === row.line.itemId));
     }, [inventoryItems, openOrderedQtyByRequestLine, requestFulfillmentBatchCounts, requestFulfillmentSummaries, scopedMaterialRequests]);
+    const appendableRequestLines = useMemo(
+        () => filterRequestRowsForPoCart(scopedRequestLines, pItems),
+        [pItems, scopedRequestLines],
+    );
+    const requestPickerRows = requestPickerMode === 'append_to_po' ? appendableRequestLines : scopedRequestLines;
     const requestedQtyByBudget = useMemo(() => {
         const map = new Map<string, number>();
         scopedMaterialRequests
@@ -1058,6 +1111,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         setPVendorId(''); setPNum(''); setPNumAutoGenerated(false); setPDate(new Date().toISOString().split('T')[0]);
         setPSourceMode('proactive_project');
         setPTargetWarehouseId(''); setPExpDate(''); setPVatRate('0'); setPItems([createEmptyPoItem()]); setPDeliveryBatches([]); setPApprovalRequestTitle(''); setPNote('');
+        setRequestPickerMode('create_po');
         setSelectedRequestLineKeys([]);
     };
     const openCreatePo = async () => {
@@ -1078,6 +1132,34 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     const openRequestPicker = async () => {
         if (!ensureCanManage('tạo PO từ đề xuất')) return;
         await loadPoBoqMetaData().catch(error => console.warn('Failed to load PO BOQ metadata:', error));
+        setRequestPickerMode('create_po');
+        setSelectedRequestLineKeys([]);
+        setShowRequestPicker(true);
+    };
+
+    const openAppendRequestPicker = async () => {
+        if (!editingPo || pSourceMode !== 'from_request') return;
+        if (!ensureCanManage('thêm đề xuất vào PO')) return;
+        const loadedDeliveryGroups = await loadPoDeliveryPrintGroups(editingPo, true);
+        const fulfillmentBatches = loadedDeliveryGroups.flatMap(group => group.batches);
+        const blockReason = getPurchaseOrderRemovalBlockReason(
+            editingPo,
+            user,
+            fulfillmentBatches,
+            poDeliveryBatchesByPo[editingPo.id] || [],
+            supplierReturnsByPo[editingPo.id] || [],
+        );
+        if (blockReason) {
+            toast.warning('Chưa thể thêm đề xuất', blockReason);
+            return;
+        }
+        if (purchaseOrderHasStockImpact(editingPo, supplierReturnsByPo[editingPo.id] || [])) {
+            toast.warning('Không thể thêm đề xuất', 'PO đã phát sinh nhập kho/hoàn kho nên cần giữ nguyên để đối soát.');
+            return;
+        }
+        await loadPoBoqMetaData().catch(error => console.warn('Failed to load PO BOQ metadata:', error));
+        setRequestPickerMode('append_to_po');
+        setSelectedRequestLineKeys([]);
         setShowRequestPicker(true);
     };
 
@@ -1110,17 +1192,24 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             vendorId: i.vendorId || po.vendorId,
             vendorName: i.vendorName || po.vendorName,
         }, inventoryItems));
+        const nextSourceMode = normalizedItems.some(item => item.requestId) ? 'from_request' : (po.sourceMode || 'proactive_project');
+        const existingDeliveryBatches = poDeliveryBatchesByPo[po.id] || [];
         setEditingPo(po); setPVendorId(po.vendorId); setPNum(po.poNumber); setPNumAutoGenerated(false);
         setPTargetWarehouseId(po.targetWarehouseId || '');
-        setPSourceMode(normalizedItems.some(item => item.requestId) ? 'from_request' : (po.sourceMode || 'proactive_project'));
+        setPSourceMode(nextSourceMode);
         setPDate(po.orderDate); setPExpDate(po.expectedDeliveryDate || '');
         setPVatRate(String(normalizeVatRate(po.vatRate)));
         setPItems(normalizedItems);
-        setPDeliveryBatches((poDeliveryBatchesByPo[po.id] || []).length > 0
-            ? (poDeliveryBatchesByPo[po.id] || [])
-            : buildDefaultPoDeliveryBatches(normalizedItems, po.expectedDeliveryDate || '', po.id));
+        setPDeliveryBatches(getPoDeliveryBatchesForForm(
+            existingDeliveryBatches,
+            normalizedItems,
+            po.expectedDeliveryDate || '',
+            po.id,
+            nextSourceMode,
+            true,
+        ));
         setPApprovalRequestTitle(po.approvalRequestTitle || '');
-        setPNote(po.note || ''); setShowPoForm(true);
+        setPNote(po.note || ''); setRequestPickerMode('create_po'); setSelectedRequestLineKeys([]); setShowPoForm(true);
     };
 
     const openPoFromSelectedRequests = async () => {
@@ -1221,6 +1310,54 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         setPNote(`Gom từ ${new Set(selectedRows.map(row => row.request.code)).size} đề xuất công trường`);
         setShowRequestPicker(false);
         setShowPoForm(true);
+    };
+
+    const appendSelectedRequestsToEditingPo = () => {
+        if (!editingPo || pSourceMode !== 'from_request') return;
+        const selectedRows = appendableRequestLines.filter(row => selectedRequestLineKeys.includes(row.key));
+        if (selectedRows.length === 0) {
+            toast.warning('Chưa chọn dòng đề xuất', 'Vui lòng chọn ít nhất một dòng còn nhu cầu để thêm vào PO.');
+            return;
+        }
+
+        const currentVendorId = pVendorId || editingPo.vendorId || pItems.find(item => item.vendorId)?.vendorId || '';
+        if (!currentVendorId || !supplierById.has(currentVendorId)) {
+            toast.warning('Thiếu NCC PO', 'Vui lòng chọn nhà cung cấp cho PO trước khi thêm đề xuất.');
+            return;
+        }
+
+        const mismatchedRow = selectedRows.find(row => hasRequestRowDefaultSupplierMismatch(
+            row,
+            inventoryItems.find(item => item.id === row.line.itemId),
+            currentVendorId,
+        ));
+        if (mismatchedRow) {
+            const inventory = inventoryItems.find(item => item.id === mismatchedRow.line.itemId);
+            toast.warning(
+                'Khác NCC mặc định',
+                `${inventory?.name || mismatchedRow.line.itemNameSnapshot || mismatchedRow.line.itemId} đang có NCC mặc định khác PO hiện tại. V1 chỉ cho thêm đề xuất cùng NCC.`,
+            );
+            return;
+        }
+
+        const supplierPatch = getSupplierPatch(currentVendorId);
+        setPItems(prev => appendRequestRowsToPoItems({
+            existingItems: prev,
+            rows: selectedRows,
+            inventoryItems,
+            materialBudgetItems,
+            workBoqItems,
+            supplierPatch,
+            lineIdFactory: () => crypto.randomUUID(),
+        }).map(item => normalizePoItem(item, inventoryItems)));
+
+        const selectedTargetWarehouses = Array.from(new Set(selectedRows.map(row => row.request.siteWarehouseId).filter(Boolean)));
+        if (!pTargetWarehouseId && selectedTargetWarehouses.length === 1) {
+            setPTargetWarehouseId(selectedTargetWarehouses[0] || '');
+        }
+        setSelectedRequestLineKeys([]);
+        setShowRequestPicker(false);
+        toast.success('Đã thêm đề xuất vào PO', `${selectedRows.length} dòng đề xuất đã được đưa vào ${editingPo.poNumber}.`);
     };
 
     const closeRequestLineNeed = async (row: typeof scopedRequestLines[number]) => {
@@ -1333,6 +1470,11 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             const request = scopedMaterialRequests.find(item => item.id === link.materialRequestId);
             const siteName = request?.constructionSiteId ? constructionSiteById.get(request.constructionSiteId)?.name || request.constructionSiteId : '';
             const unit = getPoLineStockUnit(poItem, inventory) || link.unit || inventory?.unit || '';
+            const draftInitialValues = getPoDeliveryDraftInitialLineValues({
+                remainingQty,
+                unitPrice: getPoLineStockUnitPrice(poItem, inventory) || 0,
+                sourceMode: po.sourceMode || 'from_request',
+            });
             return {
                 key: `${link.materialRequestId}:${link.requestLineId}:${link.purchaseOrderLineId}`,
                 purchaseOrderLineId: link.purchaseOrderLineId,
@@ -1344,8 +1486,8 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 unit,
                 remainingQty,
                 allocatedQty,
-                issuedQty: String(remainingQty),
-                deliveryUnitPrice: String(getPoLineStockUnitPrice(poItem, inventory) || 0),
+                issuedQty: draftInitialValues.issuedQty,
+                deliveryUnitPrice: draftInitialValues.deliveryUnitPrice,
             } as PoDeliveryDraftLine;
         }).filter(Boolean) as PoDeliveryDraftLine[];
         if (rows.length === 0) {
@@ -1443,9 +1585,14 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             toast.warning('Thiếu thông tin PO', 'Vui lòng nhập số PO/nhóm mua hàng và kho nhận mặc định.');
             return;
         }
+        const poDeliveryBatchesForSave = getPoDeliveryBatchesForForm();
         const poItemsForSave = pSourceMode === 'from_request'
-            ? syncPoItemPricesFromDeliverySchedule(pItems, pDeliveryBatches)
-            : syncPoItemsFromDeliverySchedule(pItems, pDeliveryBatches);
+            ? syncPoItemPricesFromDeliverySchedule(
+                pItems,
+                poDeliveryBatchesForSave,
+                { emptyScheduleBehavior: 'zero_price', unmatchedLineBehavior: 'zero_price' },
+            )
+            : syncPoItemsFromDeliverySchedule(pItems, poDeliveryBatchesForSave);
         const preparedItems = poItemsForSave
             .map(i => normalizePoItem(i, inventoryItems))
             .map(i => pSourceMode === 'proactive_stock' ? {
@@ -1523,38 +1670,16 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             return map;
         }, new Map());
         const groupEntries = Array.from(groups.entries());
-        const buildLinks = (po: PurchaseOrder, items: PurchaseOrderItem[]): PurchaseOrderRequestLineLink[] => items
-            .filter(item => item.requestId && item.requestLineId && item.lineId)
-            .map(item => {
-                const sourceRequest = scopedMaterialRequests.find(req => req.id === item.requestId);
-                const sourceLine = sourceRequest?.items.find((line, index) => (line.lineId || `${sourceRequest.id}-${index}`) === item.requestLineId);
-                const sourceSummaryLine = sourceRequest
-                    ? requestFulfillmentSummaries[sourceRequest.id]?.lineSummaries.find(summary => summary.requestLineId === item.requestLineId)
-                    : undefined;
-                const inventory = inventoryItems.find(inv => inv.id === item.itemId);
-                const orderedStockQty = poLinePurchaseToStockQty(item, Number(item.qty || 0), inventory);
-                return {
-                    projectId: projectId || null,
-                    constructionSiteId: sourceRequest?.constructionSiteId || scopedSiteId || null,
-                    sourceConstructionSiteId: sourceRequest?.constructionSiteId || scopedSiteId || null,
-                    targetWarehouseId: sourceRequest?.siteWarehouseId || pTargetWarehouseId || null,
-                    allocationStatus: 'open',
-                    purchaseOrderId: po.id,
-                    purchaseOrderLineId: item.lineId!,
-                    materialRequestId: item.requestId!,
-                    materialRequestCode: item.requestCode || null,
-                    requestLineId: item.requestLineId!,
-                    itemId: item.itemId,
-                    workBoqItemId: item.workBoqItemId || null,
-                    materialBudgetItemId: item.materialBudgetItemId || null,
-                    requestedQty: Number(sourceLine?.requestQty || orderedStockQty || 0),
-                    orderedQty: orderedStockQty,
-                    requestedQtySnapshot: Number(sourceLine?.requestQty || orderedStockQty || 0),
-                    orderedStockQtySnapshot: orderedStockQty,
-                    actualReceivedQtySnapshot: Number(sourceSummaryLine?.receivedQty || 0),
-                    unit: getPoLineStockUnit(item, inventory) || null,
-                    note: item.note || null,
-                };
+        const buildLinks = (po: PurchaseOrder, items: PurchaseOrderItem[]): PurchaseOrderRequestLineLink[] =>
+            buildPurchaseOrderRequestLineLinks({
+                po,
+                items,
+                requests: scopedMaterialRequests,
+                inventoryItems,
+                projectId,
+                scopedSiteId,
+                targetWarehouseId: pTargetWarehouseId,
+                summariesByRequestId: requestFulfillmentSummaries,
             });
 
         if (editingPo && groupEntries.length > 1) {
@@ -1813,12 +1938,12 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     sourceId: po.id,
                     constructionSiteId: po.constructionSiteId || constructionSiteId,
                     link: '/da',
-	                    metadata: {
-	                        projectId: po.projectId || projectId,
-	                        totalAmount: getPurchaseOrderDisplayAmount(po, poDeliveryBatchesByPo[po.id] || []),
-	                        vendorId: po.vendorId,
-	                        vendorName: po.vendorName,
-	                    },
+                    metadata: {
+                        projectId: po.projectId || projectId,
+                        totalAmount: getPurchaseOrderDisplayAmount(po, poDeliveryBatchesByPo[po.id] || []),
+                        vendorId: po.vendorId,
+                        vendorName: po.vendorName,
+                    },
                 }).catch(error => console.warn('Cannot notify PO recipient', error));
                 setSubmittingPo(null);
             }
@@ -3221,9 +3346,20 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         return { partnerCount: partners.length, totalPo, totalValue, delivered, pending };
     }, [partners, pos]);
 
+    const poDeliveryBatchesForForm = useMemo(
+        () => getPoDeliveryBatchesForForm(),
+        [constructionSiteId, editingPo, inventoryItems, pDeliveryBatches, pExpDate, pItems, pSourceMode, projectId, user?.id],
+    );
     const scheduledPItems = useMemo(
-        () => syncPoItemsFromDeliverySchedule(pItems, pDeliveryBatches),
-        [pItems, pDeliveryBatches],
+        () => syncPoItemsFromDeliverySchedule(
+            pItems,
+            poDeliveryBatchesForForm,
+            {
+                emptyScheduleBehavior: pSourceMode === 'from_request' ? 'zero_qty_and_price' : 'keep_items',
+                unmatchedLineBehavior: pSourceMode === 'from_request' ? 'zero_qty_and_price' : 'keep_items',
+            },
+        ),
+        [pItems, poDeliveryBatchesForForm, pSourceMode],
     );
     const scheduledPItemByLineKey = useMemo(() => {
         const map = new Map<string, PurchaseOrderItem>();
@@ -3834,14 +3970,14 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                     <div className="bg-card border border-border rounded-2xl shadow-sm p-4 sm:p-5 space-y-6">
                                                         {/* Upper Section: Metadata Grid & Highlighted Action Bar */}
                                                         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-800">
-	                                                            <div className="flex-1 min-w-0">
-	                                                                <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Thông tin phiếu đặt hàng</h3>
-	                                                                <div className="mb-3 border-l-4 border-amber-300 pl-3">
-	                                                                    <span className="block text-[9px] font-black uppercase tracking-wider text-amber-600">Đề xuất vật tư</span>
-	                                                                    <span className="block truncate text-sm font-black text-slate-800 dark:text-slate-100">{poListSummary.requestTitle}</span>
-	                                                                    <span className="block truncate text-[11px] font-bold text-slate-500 dark:text-slate-400">{poListSummary.materialSummary}</span>
-	                                                                </div>
-	                                                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-3 text-xs">
+                                                            <div className="flex-1 min-w-0">
+                                                                <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Thông tin phiếu đặt hàng</h3>
+                                                                <div className="mb-3 border-l-4 border-amber-300 pl-3">
+                                                                    <span className="block text-[9px] font-black uppercase tracking-wider text-amber-600">Đề xuất vật tư</span>
+                                                                    <span className="block truncate text-sm font-black text-slate-800 dark:text-slate-100">{poListSummary.requestTitle}</span>
+                                                                    <span className="block truncate text-[11px] font-bold text-slate-500 dark:text-slate-400">{poListSummary.materialSummary}</span>
+                                                                </div>
+                                                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-3 text-xs">
                                                                     <div>
                                                                         <span className="text-slate-400 block font-medium">Nhà cung cấp</span>
                                                                         <span className="font-bold text-slate-700 dark:text-slate-200 truncate block">{po.vendorName || '—'}</span>
@@ -3894,22 +4030,22 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                                         ))}
                                                                         <th className="text-right py-3 px-3 w-20">SL</th>
                                                                         <th className="text-right py-3 px-3 w-20">Đã nhận</th>
-	                                                                        <th className="text-right py-3 px-3 w-20">Đã hoàn</th>
-	                                                                        <th className="text-right py-3 px-3 w-20">Chờ hoàn</th>
-	                                                                        <th className="text-right py-3 px-3 w-20">Net</th>
-	                                                                        <th className="text-right py-3 px-3 w-24">Còn thiếu</th>
-	                                                                        <th className="text-right py-3 px-3 w-24">Đơn giá</th>
-	                                                                        <th className="text-right py-3 px-4 w-28">Thành tiền</th>
+                                                                        <th className="text-right py-3 px-3 w-20">Đã hoàn</th>
+                                                                        <th className="text-right py-3 px-3 w-20">Chờ hoàn</th>
+                                                                        <th className="text-right py-3 px-3 w-20">Net</th>
+                                                                        <th className="text-right py-3 px-3 w-24">Còn thiếu</th>
+                                                                        <th className="text-right py-3 px-3 w-24">Đơn giá</th>
+                                                                        <th className="text-right py-3 px-4 w-28">Thành tiền</th>
                                                                     </tr>
                                                                 </thead>
                                                                 <tbody className="divide-y divide-border bg-card text-foreground">
                                                                     {po.items.map((item, i) => {
                                                                         const work = item.workBoqItemId ? workBoqMap.get(item.workBoqItemId) : undefined;
-	                                                                        const inventory = inventoryItems.find(inv => inv.id === item.itemId);
-	                                                                        const stockUnit = getPoLineStockUnit(item, inventory);
-	                                                                        const lineKey = item.lineId || item.itemId;
-	                                                                        const lineDemandQty = getPurchaseOrderLineDemandQty(po, lineKey, poRequestLinks, inventoryItems);
-	                                                                        const lineCompletedReturnQty = Math.max(
+                                                                        const inventory = inventoryItems.find(inv => inv.id === item.itemId);
+                                                                        const stockUnit = getPoLineStockUnit(item, inventory);
+                                                                        const lineKey = item.lineId || item.itemId;
+                                                                        const lineDemandQty = getPurchaseOrderLineDemandQty(po, lineKey, poRequestLinks, inventoryItems);
+                                                                        const lineCompletedReturnQty = Math.max(
                                                                             Number(item.returnedQty || 0),
                                                                             supplierReturns
                                                                                 .filter(returnDoc => returnDoc.status === 'completed')
@@ -3918,12 +4054,13 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                                                     .reduce((lineSum, line) => lineSum + Number(line.returnQty || 0), 0), 0),
                                                                         );
                                                                         const linePendingReturnQty = supplierReturns
-	                                                                                .filter(returnDoc => returnDoc.status === 'pending')
-	                                                                                .reduce((sum, returnDoc) => sum + returnDoc.lines
-	                                                                                    .filter(line => line.purchaseOrderLineId === lineKey)
-	                                                                                    .reduce((lineSum, line) => lineSum + Number(line.returnQty || 0), 0), 0);
-	                                                                        const lineNetReceivedQty = Math.max(0, Number(item.receivedQty || 0) - lineCompletedReturnQty);
-	                                                                        const lineRemainingNeedQty = Math.max(0, lineDemandQty - lineNetReceivedQty);
+                                                                            .filter(returnDoc => returnDoc.status === 'pending')
+                                                                            .reduce((sum, returnDoc) => sum + returnDoc.lines
+                                                                                .filter(line => line.purchaseOrderLineId === lineKey)
+                                                                                .reduce((lineSum, line) => lineSum + Number(line.returnQty || 0), 0), 0);
+                                                                        const lineNetReceivedQty = Math.max(0, Number(item.receivedQty || 0) - lineCompletedReturnQty);
+                                                                        const lineRemainingNeedQty = Math.max(0, lineDemandQty - lineNetReceivedQty);
+                                                                        const lineDisplayAmount = getPurchaseOrderDisplayLineAmount(po, item, deliveryBatches);
                                                                         return (
                                                                             <tr key={i} className="hover:bg-slate-50/30 dark:hover:bg-slate-800/10 transition-colors">
                                                                                 <td className="py-3.5 px-4 vertical-top">
@@ -3960,29 +4097,29 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                                                         </td>
                                                                                     );
                                                                                 })}
-	                                                                                <td className="py-3.5 px-3 text-right text-slate-700 dark:text-slate-400 font-bold">{fmtQty(lineDemandQty)}</td>
-	                                                                                <td className="py-3.5 px-3 text-right text-emerald-600 dark:text-emerald-400 font-black">{(item.receivedQty || 0).toLocaleString()}</td>
-	                                                                                <td className="py-3.5 px-3 text-right text-rose-600 dark:text-rose-400 font-black">{lineCompletedReturnQty.toLocaleString()}</td>
-	                                                                                <td className="py-3.5 px-3 text-right text-amber-600 dark:text-amber-400 font-black">{linePendingReturnQty.toLocaleString()}</td>
-	                                                                                <td className="py-3.5 px-3 text-right text-blue-700 dark:text-blue-300 font-black">{lineNetReceivedQty.toLocaleString()}</td>
-	                                                                                <td className={`py-3.5 px-3 text-right font-black ${lineRemainingNeedQty > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}`}>{fmtQty(lineRemainingNeedQty)}</td>
-	                                                                                <td className="py-3.5 px-3 text-right text-slate-600 dark:text-slate-400 font-medium">{fmtMoney(item.unitPrice)}</td>
-                                                                                <td className="py-3.5 px-4 text-right font-black text-slate-850 dark:text-slate-100 text-sm">{fmtMoney(calculateLineTotal(item))} đ</td>
+                                                                                <td className="py-3.5 px-3 text-right text-slate-700 dark:text-slate-400 font-bold">{fmtQty(lineDemandQty)}</td>
+                                                                                <td className="py-3.5 px-3 text-right text-emerald-600 dark:text-emerald-400 font-black">{(item.receivedQty || 0).toLocaleString()}</td>
+                                                                                <td className="py-3.5 px-3 text-right text-rose-600 dark:text-rose-400 font-black">{lineCompletedReturnQty.toLocaleString()}</td>
+                                                                                <td className="py-3.5 px-3 text-right text-amber-600 dark:text-amber-400 font-black">{linePendingReturnQty.toLocaleString()}</td>
+                                                                                <td className="py-3.5 px-3 text-right text-blue-700 dark:text-blue-300 font-black">{lineNetReceivedQty.toLocaleString()}</td>
+                                                                                <td className={`py-3.5 px-3 text-right font-black ${lineRemainingNeedQty > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}`}>{fmtQty(lineRemainingNeedQty)}</td>
+                                                                                <td className="py-3.5 px-3 text-right text-slate-600 dark:text-slate-400 font-medium">{fmtMoney(lineDisplayAmount.unitPrice)}</td>
+                                                                                <td className="py-3.5 px-4 text-right font-black text-slate-850 dark:text-slate-100 text-sm">{fmtMoney(lineDisplayAmount.totalAmount)} đ</td>
                                                                             </tr>
                                                                         );
                                                                     })}
                                                                 </tbody>
                                                                 <tfoot>
                                                                     <tr className="bg-slate-50 dark:bg-slate-800/20 text-xs font-black border-t border-slate-200 dark:border-slate-800">
-	                                                                        <td colSpan={9 + uniqueSpecKeys.length} className="py-3 px-4 text-center text-slate-500">TỔNG CỘNG ĐƠN HÀNG:</td>
-	                                                                        <td className="py-3 px-4 text-right text-slate-800 dark:text-slate-100 text-sm underline decoration-double">{fmtMoney(poDisplayAmount)} đ</td>
+                                                                        <td colSpan={9 + uniqueSpecKeys.length} className="py-3 px-4 text-center text-slate-500">TỔNG CỘNG ĐƠN HÀNG:</td>
+                                                                        <td className="py-3 px-4 text-right text-slate-800 dark:text-slate-100 text-sm underline decoration-double">{fmtMoney(poDisplayAmount)} đ</td>
                                                                     </tr>
                                                                     <tr className="bg-slate-50 dark:bg-slate-800/20 text-xs font-black">
-	                                                                        <td colSpan={9 + uniqueSpecKeys.length} className="py-3 px-4 text-center text-slate-500">VAT ({poVatRate.toLocaleString('vi-VN')}%):</td>
+                                                                        <td colSpan={9 + uniqueSpecKeys.length} className="py-3 px-4 text-center text-slate-500">VAT ({poVatRate.toLocaleString('vi-VN')}%):</td>
                                                                         <td className="py-3 px-4 text-right text-slate-800 dark:text-slate-100 text-sm">{fmtMoney(poVatAmount)} đ</td>
                                                                     </tr>
                                                                     <tr className="bg-emerald-50/70 dark:bg-emerald-950/20 text-xs font-black">
-	                                                                        <td colSpan={9 + uniqueSpecKeys.length} className="py-3 px-4 text-center text-emerald-700 dark:text-emerald-300">TỔNG TIỀN THANH TOÁN:</td>
+                                                                        <td colSpan={9 + uniqueSpecKeys.length} className="py-3 px-4 text-center text-emerald-700 dark:text-emerald-300">TỔNG TIỀN THANH TOÁN:</td>
                                                                         <td className="py-3 px-4 text-right text-emerald-700 dark:text-emerald-300 text-sm underline decoration-double">{fmtMoney(poPaymentTotal)} đ</td>
                                                                     </tr>
                                                                 </tfoot>
@@ -4201,11 +4338,11 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                                             <Truck size={13} /> {deliveryDraftButtonLabel}
                                                                         </button>
                                                                     )}
-	                                                                    {canManageTab && po.status === 'partial' && receiptStats.remainingQty > 0 && (
-	                                                                        <button onClick={() => updatePoStatus(po.id, 'delivered')} className="px-4 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 border-solid font-bold text-xs flex items-center gap-1.5 cursor-pointer transition-all">
-	                                                                            <CheckCircle2 size={13} /> Kết thúc thiếu PO
-	                                                                        </button>
-	                                                                    )}
+                                                                    {canManageTab && po.status === 'partial' && receiptStats.remainingQty > 0 && (
+                                                                        <button onClick={() => updatePoStatus(po.id, 'delivered')} className="px-4 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 border-solid font-bold text-xs flex items-center gap-1.5 cursor-pointer transition-all">
+                                                                            <CheckCircle2 size={13} /> Kết thúc thiếu PO
+                                                                        </button>
+                                                                    )}
                                                                     {canManageTab && po.status === 'delivered' && (
                                                                         <button onClick={() => updatePoStatus(po.id, 'closed')} className="px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-800 text-white font-bold text-xs flex items-center gap-1.5 border-0 cursor-pointer transition-all">
                                                                             <FileText size={13} /> Đóng PO
@@ -4273,19 +4410,40 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             )}
 
             {showRequestPicker && (
-                <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
+                <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
                     <div className="flex max-h-[86vh] w-full max-w-5xl flex-col overflow-hidden rounded-lg border border-border bg-card shadow-2xl">
                         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800">
                             <div>
-                                <h3 className="text-lg font-black text-slate-800 dark:text-slate-100">Tạo PO từ đề xuất công trường</h3>
-                                <p className="text-xs font-bold text-slate-500 dark:text-slate-400">Có thể chọn nhiều dòng từ nhiều phiếu; hệ thống giữ link theo từng dòng đề xuất.</p>
+                                <h3 className="text-lg font-black text-slate-800 dark:text-slate-100">
+                                    {requestPickerMode === 'append_to_po' ? 'Thêm đề xuất vào PO' : 'Tạo PO từ đề xuất công trường'}
+                                </h3>
+                                <p className="text-xs font-bold text-slate-500 dark:text-slate-400">
+                                    {requestPickerMode === 'append_to_po'
+                                        ? 'Chọn các dòng còn nhu cầu để thêm vào PO hiện tại; lịch giao sẽ không tự thay đổi.'
+                                        : 'Có thể chọn nhiều dòng từ nhiều phiếu; hệ thống giữ link theo từng dòng đề xuất.'}
+                                </p>
                             </div>
-                            <button onClick={() => setShowRequestPicker(false)} className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 dark:hover:bg-slate-800"><X size={18} /></button>
+                            <button
+                                onClick={() => {
+                                    setShowRequestPicker(false);
+                                    setSelectedRequestLineKeys([]);
+                                }}
+                                className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 dark:hover:bg-slate-800"
+                            >
+                                <X size={18} />
+                            </button>
                         </div>
                         <div className="overflow-auto flex-1">
-                            {scopedRequestLines.length === 0 ? (
+                            {requestPickerRows.length === 0 ? (
                                 <div className="p-4">
-                                    <EmptyState icon={<Package size={18} />} title="Không có đề xuất khả dụng" message="Các dòng còn nhu cầu sẽ xuất hiện tại đây khi công trường gửi đề xuất vật tư." compact />
+                                    <EmptyState
+                                        icon={<Package size={18} />}
+                                        title="Không có đề xuất khả dụng"
+                                        message={requestPickerMode === 'append_to_po'
+                                            ? 'Các dòng còn nhu cầu và chưa nằm trong PO hiện tại sẽ xuất hiện tại đây.'
+                                            : 'Các dòng còn nhu cầu sẽ xuất hiện tại đây khi công trường gửi đề xuất vật tư.'}
+                                        compact
+                                    />
                                 </div>
                             ) : (
                                 <table className="w-full text-xs min-w-[1260px]">
@@ -4307,7 +4465,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-50 dark:divide-slate-700/40">
-                                        {scopedRequestLines.map(row => {
+                                        {requestPickerRows.map(row => {
                                             const inv = inventoryItems.find(item => item.id === row.line.itemId);
                                             const work = row.line.workBoqItemId ? workBoqMap.get(row.line.workBoqItemId) : undefined;
                                             const remaining = row.remainingQty;
@@ -4394,10 +4552,20 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                             )}
                         </div>
                         <div className="flex justify-end gap-3 border-t border-slate-100 px-5 py-4 dark:border-slate-800">
-                            <button onClick={() => setShowRequestPicker(false)} className="rounded-lg px-5 py-2.5 text-sm font-bold text-slate-600 transition hover:bg-slate-100 active:scale-[0.98] dark:text-slate-300 dark:hover:bg-slate-800">Đóng</button>
-                            <button onClick={openPoFromSelectedRequests} disabled={selectedRequestLineKeys.length === 0}
+                            <button
+                                onClick={() => {
+                                    setShowRequestPicker(false);
+                                    setSelectedRequestLineKeys([]);
+                                }}
+                                className="rounded-lg px-5 py-2.5 text-sm font-bold text-slate-600 transition hover:bg-slate-100 active:scale-[0.98] dark:text-slate-300 dark:hover:bg-slate-800"
+                            >
+                                Đóng
+                            </button>
+                            <button
+                                onClick={requestPickerMode === 'append_to_po' ? appendSelectedRequestsToEditingPo : openPoFromSelectedRequests}
+                                disabled={selectedRequestLineKeys.length === 0}
                                 className="rounded-lg border border-amber-500 bg-amber-500 px-6 py-2.5 text-sm font-black text-white transition hover:bg-amber-600 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50">
-                                Đưa vào PO ({selectedRequestLineKeys.length})
+                                {requestPickerMode === 'append_to_po' ? 'Thêm vào PO' : 'Đưa vào PO'} ({selectedRequestLineKeys.length})
                             </button>
                         </div>
                     </div>
@@ -4704,7 +4872,17 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                             {importingPo && poImportMode === 'update' ? <Loader2 size={10} className="animate-spin" /> : <RefreshCcw size={10} />} Cập nhật
                                             <input type="file" accept=".xlsx,.xls" className="hidden" onChange={handleImportPoExcel} disabled={importingPo} />
                                         </label>
-                                        <button onClick={() => setPItems([...pItems, createEmptyPoItem()])}
+                                        {editingPo && pSourceMode === 'from_request' && (
+                                            <button
+                                                type="button"
+                                                onClick={openAppendRequestPicker}
+                                                disabled={appendableRequestLines.length === 0}
+                                                className="text-amber-600 hover:text-amber-700 disabled:text-slate-300 disabled:cursor-not-allowed flex items-center gap-0.5"
+                                            >
+                                                <Package size={10} /> Thêm đề xuất
+                                            </button>
+                                        )}
+                                        <button type="button" onClick={() => setPItems([...pItems, createEmptyPoItem()])}
                                             className="text-blue-500 hover:text-blue-700 flex items-center gap-0.5"><Plus size={10} /> Thêm dòng</button>
                                     </div>
                                 </label>
@@ -4713,20 +4891,25 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                         const normalizedLine = normalizePoItem(item, inventoryItems);
                                         const previewLine = pSourceMode === 'proactive_stock' ? normalizedLine : buildPoBudgetSnapshot(normalizedLine);
                                         const overBudgetQty = Number(previewLine.overBudgetQtySnapshot || 0);
-	                                        const rowWork = item.workBoqItemId ? workBoqMap.get(item.workBoqItemId) : undefined;
-	                                        const inventory = inventoryItems.find(inv => inv.id === previewLine.itemId);
-	                                        const purchaseUnit = getPoLinePurchaseUnit(previewLine, inventory);
-	                                        const stockUnit = getPoLineStockUnit(previewLine, inventory);
-	                                        const lineKey = normalizedLine.lineId || normalizedLine.itemId;
-	                                        const scheduledLine = scheduledPItemByLineKey.get(lineKey);
-	                                        const scheduleQtyPreview = Number(scheduledLine?.qty ?? previewLine.qty ?? 0);
-	                                        const scheduleUnitPricePreview = Number(scheduledLine?.unitPrice ?? previewLine.unitPrice ?? 0);
-	                                        const stockQtyPreview = poLinePurchaseToStockQty(previewLine, scheduleQtyPreview, inventory);
-	                                        const lineTotalPreview = calculateLineTotal({
-	                                            ...previewLine,
-	                                            qty: scheduleQtyPreview,
-	                                            unitPrice: scheduleUnitPricePreview,
-	                                        });
+                                        const rowWork = item.workBoqItemId ? workBoqMap.get(item.workBoqItemId) : undefined;
+                                        const inventory = inventoryItems.find(inv => inv.id === previewLine.itemId);
+                                        const purchaseUnit = getPoLinePurchaseUnit(previewLine, inventory);
+                                        const stockUnit = getPoLineStockUnit(previewLine, inventory);
+                                        const lineKey = normalizedLine.lineId || normalizedLine.itemId;
+                                        const scheduledLine = scheduledPItemByLineKey.get(lineKey);
+                                        const scheduleQtyPreview = Number(scheduledLine?.qty ?? previewLine.qty ?? 0);
+                                        const scheduleUnitPricePreview = Number(scheduledLine?.unitPrice ?? previewLine.unitPrice ?? 0);
+                                        const stockQtyPreview = poLinePurchaseToStockQty(previewLine, scheduleQtyPreview, inventory);
+                                        const lineTotalPreview = calculateLineTotal({
+                                            ...previewLine,
+                                            qty: scheduleQtyPreview,
+                                            unitPrice: scheduleUnitPricePreview,
+                                        });
+                                        const pricingPreviewLine = {
+                                            ...item,
+                                            qty: pSourceMode === 'from_request' ? scheduleQtyPreview : Number(item.qty || 0),
+                                            unitPrice: pSourceMode === 'from_request' ? scheduleUnitPricePreview : Number(item.unitPrice || 0),
+                                        };
                                         const hasUnitConversion = hasPurchaseUnitConversion({
                                             unit: stockUnit,
                                             purchaseUnit,
@@ -4771,37 +4954,37 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                 <div className="col-span-4 md:col-span-1 px-2.5 py-2 rounded-lg border border-border bg-muted/30 text-xs text-muted-foreground font-bold truncate">
                                                     {purchaseUnit || item.unit || 'ĐVT'}
                                                 </div>
-	                                                {pSourceMode === 'from_request' ? (
-	                                                    <div className="col-span-4 md:col-span-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5">
-	                                                        <span className="block text-[9px] font-black uppercase text-slate-400">Đã lập lịch</span>
-	                                                        <span className="block truncate text-xs font-black text-slate-800">{fmtQty(scheduleQtyPreview)}</span>
-	                                                    </div>
-	                                                ) : (
-	                                                    <input
-	                                                        type="number"
-	                                                        min={0}
-	                                                        step={1}
-	                                                        value={item.qty || ''}
-	                                                        onChange={e => updatePoItem(i, { qty: Number(e.target.value) || 0 })}
-	                                                        placeholder="SL"
-	                                                        className="col-span-4 md:col-span-1 px-2.5 py-2 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-blue-500 outline-none"
-	                                                    />
-	                                                )}
-	                                                {pSourceMode === 'from_request' ? (
-	                                                    <div className="col-span-4 md:col-span-2 rounded-lg border border-emerald-100 bg-emerald-50 px-2.5 py-1.5">
-	                                                        <span className="block text-[9px] font-black uppercase text-emerald-500">Giá theo đợt</span>
-	                                                        <span className="block truncate text-xs font-black text-emerald-700">{fmtMoney(scheduleUnitPricePreview)} đ</span>
-	                                                    </div>
-	                                                ) : (
-	                                                    <input
-	                                                        type="number"
-	                                                        min={0}
-	                                                        value={item.unitPrice || ''}
-	                                                        onChange={e => updatePoItem(i, { unitPrice: Number(e.target.value) || 0 })}
-	                                                        placeholder="Đơn giá"
-	                                                        className="col-span-4 md:col-span-2 px-2.5 py-2 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-blue-500 outline-none"
-	                                                    />
-	                                                )}
+                                                {pSourceMode === 'from_request' ? (
+                                                    <div className="col-span-4 md:col-span-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5">
+                                                        <span className="block text-[9px] font-black uppercase text-slate-400">Đã lập lịch</span>
+                                                        <span className="block truncate text-xs font-black text-slate-800">{fmtQty(scheduleQtyPreview)}</span>
+                                                    </div>
+                                                ) : (
+                                                    <input
+                                                        type="number"
+                                                        min={0}
+                                                        step={1}
+                                                        value={item.qty || ''}
+                                                        onChange={e => updatePoItem(i, { qty: Number(e.target.value) || 0 })}
+                                                        placeholder="SL"
+                                                        className="col-span-4 md:col-span-1 px-2.5 py-2 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-blue-500 outline-none"
+                                                    />
+                                                )}
+                                                {pSourceMode === 'from_request' ? (
+                                                    <div className="col-span-4 md:col-span-2 rounded-lg border border-emerald-100 bg-emerald-50 px-2.5 py-1.5">
+                                                        <span className="block text-[9px] font-black uppercase text-emerald-500">Giá theo đợt</span>
+                                                        <span className="block truncate text-xs font-black text-emerald-700">{fmtMoney(scheduleUnitPricePreview)} đ</span>
+                                                    </div>
+                                                ) : (
+                                                    <input
+                                                        type="number"
+                                                        min={0}
+                                                        value={item.unitPrice || ''}
+                                                        onChange={e => updatePoItem(i, { unitPrice: Number(e.target.value) || 0 })}
+                                                        placeholder="Đơn giá"
+                                                        className="col-span-4 md:col-span-2 px-2.5 py-2 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-blue-500 outline-none"
+                                                    />
+                                                )}
                                                 <input
                                                     type="date"
                                                     value={item.neededDate || ''}
@@ -4832,19 +5015,19 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                 </button>
                                                 {(item.isManualItem || item.requestCode || item.materialBudgetItemName || item.workBoqItemName || rowWork?.name || overBudgetQty > 0 || hasUnitConversion || (item.specs && Object.keys(item.specs).length > 0)) && (
                                                     <div className="col-span-12 flex flex-wrap gap-1">
-	                                                        {item.isManualItem && <span className="px-1.5 py-0.5 rounded border border-rose-100 bg-rose-50 text-[9px] font-bold text-rose-700">Cần cấp mã vật tư trước</span>}
-	                                                        {item.requestCode && <span className="px-1.5 py-0.5 rounded border border-amber-100 bg-amber-50 text-[9px] font-bold text-amber-700">YC {item.requestCode}</span>}
-	                                                        {pSourceMode === 'from_request' && (
-	                                                            <span className="px-1.5 py-0.5 rounded border border-blue-100 bg-blue-50 text-[9px] font-bold text-blue-700">
-	                                                                Nhu cầu gốc {fmtQty(Number(previewLine.qty || 0))} {purchaseUnit || previewLine.unit}
-	                                                            </span>
-	                                                        )}
-	                                                        {pSourceMode === 'from_request' && (
-	                                                            <span className="px-1.5 py-0.5 rounded border border-amber-100 bg-amber-50 text-[9px] font-bold text-amber-700">
-	                                                                Đã lập lịch {fmtQty(scheduleQtyPreview)}, còn {fmtQty(Math.max(0, Number(previewLine.qty || 0) - scheduleQtyPreview))}
-	                                                            </span>
-	                                                        )}
-	                                                        {(item.workBoqItemName || rowWork?.name) && <span className="px-1.5 py-0.5 rounded border border-blue-100 bg-blue-50 text-[9px] font-bold text-blue-700">{rowWork?.wbsCode ? `${rowWork.wbsCode} - ` : ''}{item.workBoqItemName || rowWork?.name}</span>}
+                                                        {item.isManualItem && <span className="px-1.5 py-0.5 rounded border border-rose-100 bg-rose-50 text-[9px] font-bold text-rose-700">Cần cấp mã vật tư trước</span>}
+                                                        {item.requestCode && <span className="px-1.5 py-0.5 rounded border border-amber-100 bg-amber-50 text-[9px] font-bold text-amber-700">YC {item.requestCode}</span>}
+                                                        {pSourceMode === 'from_request' && (
+                                                            <span className="px-1.5 py-0.5 rounded border border-blue-100 bg-blue-50 text-[9px] font-bold text-blue-700">
+                                                                Nhu cầu gốc {fmtQty(Number(previewLine.qty || 0))} {purchaseUnit || previewLine.unit}
+                                                            </span>
+                                                        )}
+                                                        {pSourceMode === 'from_request' && (
+                                                            <span className="px-1.5 py-0.5 rounded border border-amber-100 bg-amber-50 text-[9px] font-bold text-amber-700">
+                                                                Đã lập lịch {fmtQty(scheduleQtyPreview)}, còn {fmtQty(Math.max(0, Number(previewLine.qty || 0) - scheduleQtyPreview))}
+                                                            </span>
+                                                        )}
+                                                        {(item.workBoqItemName || rowWork?.name) && <span className="px-1.5 py-0.5 rounded border border-blue-100 bg-blue-50 text-[9px] font-bold text-blue-700">{rowWork?.wbsCode ? `${rowWork.wbsCode} - ` : ''}{item.workBoqItemName || rowWork?.name}</span>}
                                                         {item.materialBudgetItemName && <span className="px-1.5 py-0.5 rounded border border-emerald-100 bg-emerald-50 text-[9px] font-bold text-emerald-700">{item.materialBudgetItemName}</span>}
                                                         {overBudgetQty > 0 && <span className="px-1.5 py-0.5 rounded border border-orange-100 bg-orange-50 text-[9px] font-bold text-orange-700">Vượt {overBudgetQty.toLocaleString('vi-VN')} {stockUnit || previewLine.unit}</span>}
                                                         {hasUnitConversion && (
@@ -4852,11 +5035,11 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                                 Nhập kho {fmtQty(stockQtyPreview)} {stockUnit} (1 {purchaseUnit} = {fmtQty(Number(previewLine.purchaseConversionFactor || inventory?.purchaseConversionFactor || 1))} {stockUnit})
                                                             </span>
                                                         )}
-	                                                        {scheduleQtyPreview > 0 && scheduleUnitPricePreview > 0 && (
-	                                                            <span className="px-1.5 py-0.5 rounded border border-emerald-100 bg-emerald-50 text-[9px] font-bold text-emerald-700">
-	                                                                Tính tiền {fmtQty(scheduleQtyPreview)} {purchaseUnit || previewLine.unit} × {fmtMoney(scheduleUnitPricePreview)} = {fmtMoney(lineTotalPreview)} đ
-	                                                            </span>
-	                                                        )}
+                                                        {scheduleQtyPreview > 0 && scheduleUnitPricePreview > 0 && (
+                                                            <span className="px-1.5 py-0.5 rounded border border-emerald-100 bg-emerald-50 text-[9px] font-bold text-emerald-700">
+                                                                Tính tiền {fmtQty(scheduleQtyPreview)} {purchaseUnit || previewLine.unit} × {fmtMoney(scheduleUnitPricePreview)} = {fmtMoney(lineTotalPreview)} đ
+                                                            </span>
+                                                        )}
                                                         {formatSpecsSummary(item).map((badge, bIdx) => (
                                                             <span key={bIdx} className="px-1.5 py-0.5 rounded border border-violet-100 bg-violet-50 text-[9px] font-bold text-violet-700">
                                                                 {badge}
@@ -5030,7 +5213,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                             <div className="text-blue-700 font-bold flex flex-wrap items-center justify-between">
                                                                 <span>Công thức & Thành tiền tạm tính:</span>
                                                                 <span>
-                                                                    {formatPricingFormula(item)} = <span className="text-sm font-black underline">{calculateLineTotal(item).toLocaleString('vi-VN')} đ</span>
+                                                                    {formatPricingFormula(pricingPreviewLine)} = <span className="text-sm font-black underline">{calculateLineTotal(pricingPreviewLine).toLocaleString('vi-VN')} đ</span>
                                                                 </span>
                                                             </div>
                                                         </div>
@@ -5062,19 +5245,24 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                             onClick={() => resetPoDeliveryDraftFromItems()}
                                             className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-[10px] font-black text-slate-600 hover:bg-slate-100"
                                         >
-	                                            Tạo lại lịch
+                                            Tạo lại lịch
                                         </button>
                                         <button
                                             type="button"
                                             onClick={addPoDeliveryBatch}
                                             className="px-3 py-1.5 rounded-lg border border-blue-200 bg-blue-50 text-[10px] font-black text-blue-700 hover:bg-blue-100 inline-flex items-center gap-1"
                                         >
-                                            <Plus size={12} /> Thêm đợt
+                                            <Plus size={12} /> Tạo giao đợt tiếp
                                         </button>
                                     </div>
                                 </div>
                                 <div className="space-y-2">
-                                    {(pDeliveryBatches.length > 0 ? pDeliveryBatches : buildDefaultPoDeliveryBatches(pItems, pExpDate)).map((batch, batchIndex, displayBatches) => {
+                                    {poDeliveryBatchesForForm.length === 0 && (
+                                        <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-center text-xs font-bold text-slate-400">
+                                            Chưa có đợt giao nào. Bấm Thêm đợt để lập đợt giao mới hoặc Tạo lại lịch để lấy lại toàn bộ nhu cầu gốc.
+                                        </div>
+                                    )}
+                                    {poDeliveryBatchesForForm.map((batch, batchIndex, displayBatches) => {
                                         const activeItems = pItems.map(item => normalizePoItem(item, inventoryItems)).filter(item => item.itemId && Number(item.qty || 0) > 0);
                                         const showPurchaseColumns = activeItems.some(item => {
                                             const inventory = inventoryItems.find(inv => inv.id === item.itemId);
@@ -5101,7 +5289,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                             onChange={e => updatePoDeliveryBatch(batch.id, { plannedDeliveryDate: e.target.value || null })}
                                                             className="px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs font-bold"
                                                         />
-                                                        {pDeliveryBatches.length > 1 && (
+                                                        {poDeliveryBatchesForForm.length > 1 && (
                                                             <button
                                                                 type="button"
                                                                 onClick={() => removePoDeliveryBatch(batch.id)}
@@ -5153,6 +5341,9 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                                     : remainingQty > 0.000001
                                                                         ? 'text-amber-600'
                                                                         : 'text-emerald-600';
+                                                                const deliveryPriceInputValue = currentLine
+                                                                    ? (Number(currentLine.deliveryUnitPrice || 0) > 0 ? currentLine.deliveryUnitPrice : '')
+                                                                    : (pSourceMode === 'from_request' ? '' : item.unitPrice ?? '');
                                                                 return (
                                                                     <tr key={lineKey}>
                                                                         <td className="px-2 py-2">
@@ -5205,7 +5396,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                                                 type="number"
                                                                                 min={0}
                                                                                 step="any"
-                                                                                value={currentLine?.deliveryUnitPrice ?? item.unitPrice ?? ''}
+                                                                                value={deliveryPriceInputValue}
                                                                                 onChange={e => updatePoDeliveryLinePrice(batch.id, lineKey, Number(e.target.value) || 0)}
                                                                                 className="w-32 rounded-lg border border-slate-200 px-2 py-1.5 text-right text-xs font-bold text-emerald-700"
                                                                             />
@@ -5273,10 +5464,10 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     recipientPermissionCodes={['confirm']}
                     recipientHint="Chọn đích danh người nhận/xác nhận đơn hàng vật tư."
                     details={[
-	                        { label: 'Nhà cung cấp', value: submittingPo.vendorName || '-' },
-	                        { label: 'Tổng giá trị', value: `${fmtMoney(submittingPoDisplayAmount)} đ` },
-	                        { label: 'VAT', value: `${submittingPoVatRate.toLocaleString('vi-VN')}% • ${fmtMoney(submittingPoVatAmount)} đ` },
-	                        { label: 'Tổng thanh toán', value: `${fmtMoney(submittingPoDisplayAmount + submittingPoVatAmount)} đ` },
+                        { label: 'Nhà cung cấp', value: submittingPo.vendorName || '-' },
+                        { label: 'Tổng giá trị', value: `${fmtMoney(submittingPoDisplayAmount)} đ` },
+                        { label: 'VAT', value: `${submittingPoVatRate.toLocaleString('vi-VN')}% • ${fmtMoney(submittingPoVatAmount)} đ` },
+                        { label: 'Tổng thanh toán', value: `${fmtMoney(submittingPoDisplayAmount + submittingPoVatAmount)} đ` },
                         { label: 'Số dòng', value: `${submittingPo.items.length} dòng vật tư` },
                         { label: 'Ngày cần giao', value: submittingPo.expectedDeliveryDate || '-' },
                     ]}

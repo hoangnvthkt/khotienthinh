@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PurchaseOrder, PurchaseOrderDeliveryBatch } from '../../types';
-import { getPurchaseOrderDisplayAmount } from '../purchaseOrderAmount';
+import { getPurchaseOrderDisplayAmount, getPurchaseOrderDisplayLineAmount } from '../purchaseOrderAmount';
 
 const po: PurchaseOrder = {
   id: 'po-102',
@@ -61,7 +61,42 @@ describe('purchaseOrderAmount', () => {
     expect(amount).toBe(1000000);
   });
 
+  it('returns zero for request POs when every delivery batch has been removed', () => {
+    expect(getPurchaseOrderDisplayAmount(po, [])).toBe(0);
+  });
+
+  it('returns zero when every delivery batch is cancelled', () => {
+    const amount = getPurchaseOrderDisplayAmount(po, [
+      deliveryBatch('batch-1', 10, 100000, 'cancelled'),
+    ]);
+
+    expect(amount).toBe(0);
+  });
+
+  it('returns zero line price and total for request POs when every delivery batch has been removed', () => {
+    const lineAmount = getPurchaseOrderDisplayLineAmount(po, po.items[0], []);
+
+    expect(lineAmount).toEqual({
+      unitPrice: 0,
+      totalAmount: 0,
+      scheduledQty: 0,
+    });
+  });
+
+  it('uses active delivery batches for visible line price and total', () => {
+    const lineAmount = getPurchaseOrderDisplayLineAmount(po, po.items[0], [
+      deliveryBatch('batch-1', 10, 100000),
+      deliveryBatch('batch-2', 6, 110000),
+    ]);
+
+    expect(lineAmount).toEqual({
+      unitPrice: 103750,
+      totalAmount: 1660000,
+      scheduledQty: 16,
+    });
+  });
+
   it('falls back to saved PO amount when there is no delivery schedule', () => {
-    expect(getPurchaseOrderDisplayAmount(po, [])).toBe(1660000);
+    expect(getPurchaseOrderDisplayAmount({ ...po, sourceMode: 'proactive_project' }, [])).toBe(1660000);
   });
 });
