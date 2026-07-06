@@ -244,6 +244,158 @@ export interface HrmSalaryPolicy {
   createdAt?: string;
 }
 
+export type HrmCompensationPlanStatus = 'draft' | 'active' | 'archived';
+export type HrmCompensationAssignmentStatus = 'draft' | 'active' | 'superseded';
+export type HrmCompensationReviewStatus = 'pending' | 'approved' | 'needs_review';
+export type HrmPayrollImportStatus = 'uploaded' | 'validated' | 'partially_approved' | 'applied' | 'rejected';
+export type HrmPayrollImportRowStatus = 'valid' | 'warning' | 'error';
+
+export interface SalaryGrade {
+  id: string;
+  code: string;
+  name: string;
+  groupName?: string;
+  level: number;
+  bhxhCoefficient?: number;
+  regulatedSalary?: number;
+  pc1ChucDanh?: number;
+  pc2ThuLao?: number;
+  pc3LienLac?: number;
+  planId?: string;
+  hrmLevelCode?: string;
+  p1SalaryAmount?: number;
+  source?: 'excel_seed' | 'catalog' | 'legacy' | 'custom' | string;
+  metadata?: Record<string, unknown>;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface HrmCompensationPlan {
+  id: string;
+  code: string;
+  name: string;
+  effectiveFrom: string;
+  effectiveTo?: string | null;
+  status: HrmCompensationPlanStatus;
+  defaultP3BandCode: string;
+  defaultKpiRatingCode: string;
+  hasP2: boolean;
+  source?: string;
+  metadata?: Record<string, unknown>;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface Hrm3pBand {
+  id: string;
+  planId: string;
+  code: string;
+  groupCode: string;
+  p3Coefficient: number;
+  kpiPayMultiplier: number;
+  marketBucket?: string;
+  ratio?: number;
+  sortOrder: number;
+  isActive?: boolean;
+  source?: string;
+  metadata?: Record<string, unknown>;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface Hrm3pGradeBandRate {
+  id: string;
+  planId: string;
+  salaryGradeId: string;
+  p3BandId: string;
+  p1SalaryAmount: number;
+  p3StandardAmount: number;
+  standardTotalAmount: number;
+  source?: string;
+  metadata?: Record<string, unknown>;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface HrmPositionSalaryMapping {
+  id: string;
+  planId: string;
+  positionId: string;
+  positionCodeSnapshot?: string;
+  orgUnitCodeSnapshot?: string;
+  salaryGradeId: string;
+  confidence: 'exact' | 'contextual' | 'manual_review';
+  source?: string;
+  metadata?: Record<string, unknown>;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface HrmEmployeeCompensationAssignment {
+  id: string;
+  employeeId: string;
+  employeeCodeSnapshot: string;
+  employeeNameSnapshot: string;
+  planId: string;
+  positionId?: string;
+  orgUnitId?: string;
+  salaryGradeId: string;
+  p3BandId: string;
+  effectiveFrom: string;
+  effectiveTo?: string | null;
+  status: HrmCompensationAssignmentStatus;
+  source: 'excel_seed' | 'manual' | 'legacy_default' | string;
+  reviewStatus: HrmCompensationReviewStatus;
+  reviewNote?: string;
+  metadata?: Record<string, unknown>;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface HrmPayrollComponent {
+  id: string;
+  planId: string;
+  code: string;
+  name: string;
+  componentType: string;
+  formulaKey?: string;
+  sortOrder: number;
+  isActive?: boolean;
+  isRecurring?: boolean;
+  source?: string;
+  metadata?: Record<string, unknown>;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface HrmPayrollImportBatch {
+  id: string;
+  sourceFileName: string;
+  sourceFileHash: string;
+  importType: 'employee_compensation_seed' | string;
+  status: HrmPayrollImportStatus;
+  metadata?: Record<string, unknown>;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface HrmPayrollImportRow {
+  id: string;
+  batchId: string;
+  sourceRowNumber: number;
+  rawPayload: Record<string, unknown>;
+  normalizedPayload: Record<string, unknown>;
+  validationStatus: HrmPayrollImportRowStatus;
+  reviewStatus: HrmCompensationReviewStatus;
+  matchedEmployeeId?: string;
+  appliedAssignmentId?: string;
+  warningMessages?: string[];
+  errorMessages?: string[];
+  metadata?: Record<string, unknown>;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface HrmWorkSchedule {
   id: string;
   name: string;
@@ -4523,6 +4675,19 @@ export interface PayrollRecord {
   note?: string;
   status: 'draft' | 'confirmed' | 'paid';
   paidDate?: string;
+  calculationMode?: 'legacy_template' | '3p';
+  compensationPlanId?: string;
+  compensationAssignmentId?: string;
+  salaryGradeId?: string;
+  p3BandId?: string;
+  kpiBandId?: string;
+  p1Salary?: number;
+  p3StandardSalary?: number;
+  p3ActualSalary?: number;
+  kpiMultiplier?: number;
+  recurringAllowanceTotal?: number;
+  payrollComponentSnapshot?: Record<string, number>;
+  calculationSnapshot?: Record<string, unknown>;
   templateValues?: Record<string, any>;
   templateId?: string;
   createdAt: string;

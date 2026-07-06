@@ -215,6 +215,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
       { to: '/hrm/shifts', icon: Clock, label: 'Ca làm việc' },
       { to: '/hrm/leave', icon: CalendarOff, label: 'Nghỉ phép' },
       { to: '/hrm/payroll', icon: DollarSign, label: 'Bảng lương' },
+      { to: '/hrm/salary-3p', icon: Award, label: 'Lương 3P' },
       { to: '/hrm/contracts', icon: FileSignature, label: 'Hợp đồng LĐ' },
       { to: '/hrm/documents', icon: FolderOpen, label: 'Hồ sơ & Công văn' },
       { to: '/hrm/reports', icon: BarChart3, label: 'Báo cáo NS' },

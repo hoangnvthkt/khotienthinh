@@ -3,6 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { useModuleData } from '../../hooks/useModuleData';
 import { useTheme } from '../../context/ThemeContext';
 import { loadXlsx } from '../../lib/loadXlsx';
+import { calculatePayroll3p, Hrm3pMatrixParseResult } from '../../lib/hrmPayroll3p';
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 import {
   DollarSign, Plus, Download, Search, Calculator,
@@ -84,7 +85,8 @@ function getDefaultFields(): PayrollTemplateField[] {
 const Payroll: React.FC = () => {
   const {
     employees, payrollRecords, payrollTemplates, attendanceRecords, laborContracts,
-    hrmSalaryPolicies, addHrmItem, updateHrmItem, removeHrmItem
+    hrmSalaryPolicies, salaryGrades, hrmCompensationPlans, hrm3pBands, hrm3pGradeBandRates,
+    hrmEmployeeCompensationAssignments, addHrmItem, updateHrmItem, removeHrmItem
   } = useApp();
   useModuleData('hrm');
   const { theme } = useTheme();
@@ -101,6 +103,7 @@ const Payroll: React.FC = () => {
   const [selectedMonth, setSelectedMonth] = useState(() => new Date().getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState(() => new Date().getFullYear());
   const [showGenModal, setShowGenModal] = useState(false);
+  const [generationMode, setGenerationMode] = useState<'3p' | 'legacy_template'>('3p');
   const [standardDays, setStandardDays] = useState(26);
   const [searchText, setSearchText] = useState('');
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
@@ -136,6 +139,66 @@ const Payroll: React.FC = () => {
     const paid = currentPayrolls.filter(p => p.status === 'paid').length;
     return { total, draft, paid, count: currentPayrolls.length };
   }, [currentPayrolls]);
+
+  const activeCompensationPlan = useMemo(() =>
+    hrmCompensationPlans.find(plan => plan.code === '3P_2026') ||
+    hrmCompensationPlans.find(plan => plan.status === 'active') ||
+    hrmCompensationPlans[0],
+    [hrmCompensationPlans],
+  );
+
+  const payroll3pMatrix = useMemo<Hrm3pMatrixParseResult | null>(() => {
+    if (!activeCompensationPlan) return null;
+    const planBands = hrm3pBands.filter(band => band.planId === activeCompensationPlan.id && band.isActive !== false);
+    const gradeById = new Map(salaryGrades.map(grade => [grade.id, grade]));
+    const bandById = new Map(planBands.map(band => [band.id, band]));
+    return {
+      bands: planBands.map((band, index) => ({
+        code: band.code,
+        groupCode: band.groupCode,
+        p3Coefficient: band.p3Coefficient,
+        kpiPayMultiplier: band.kpiPayMultiplier,
+        sortOrder: band.sortOrder ?? index + 1,
+      })),
+      grades: salaryGrades
+        .filter(grade => grade.planId === activeCompensationPlan.id || /^E\d+$/.test(grade.code))
+        .map(grade => ({
+          code: grade.code,
+          name: grade.name,
+          groupName: grade.groupName || '',
+          level: grade.level,
+          hrmLevelCode: grade.hrmLevelCode || `L${grade.level}`,
+          p1SalaryAmount: grade.p1SalaryAmount || grade.regulatedSalary || 0,
+          sourceRowNumber: 0,
+          titles: Array.isArray(grade.metadata?.titles) ? grade.metadata.titles.map(String) : [],
+        })),
+      rates: hrm3pGradeBandRates
+        .filter(rate => rate.planId === activeCompensationPlan.id)
+        .map(rate => ({
+          gradeCode: gradeById.get(rate.salaryGradeId)?.code || '',
+          bandCode: bandById.get(rate.p3BandId)?.code || '',
+          p1SalaryAmount: rate.p1SalaryAmount,
+          p3StandardAmount: rate.p3StandardAmount,
+          standardTotalAmount: rate.standardTotalAmount,
+        }))
+        .filter(rate => rate.gradeCode && rate.bandCode),
+      kpiMultipliers: Object.fromEntries(planBands.map(band => [band.code, band.kpiPayMultiplier])),
+    };
+  }, [activeCompensationPlan, hrm3pBands, hrm3pGradeBandRates, salaryGrades]);
+
+  const activeAssignmentsByEmployee = useMemo(() => {
+    const selectedDate = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-01`;
+    const map = new Map<string, typeof hrmEmployeeCompensationAssignments[number]>();
+    hrmEmployeeCompensationAssignments
+      .filter(assignment => assignment.status === 'active')
+      .filter(assignment => !activeCompensationPlan || assignment.planId === activeCompensationPlan.id)
+      .filter(assignment => assignment.effectiveFrom <= selectedDate && (!assignment.effectiveTo || assignment.effectiveTo >= selectedDate))
+      .sort((a, b) => b.effectiveFrom.localeCompare(a.effectiveFrom))
+      .forEach(assignment => {
+        if (!map.has(assignment.employeeId)) map.set(assignment.employeeId, assignment);
+      });
+    return map;
+  }, [activeCompensationPlan, hrmEmployeeCompensationAssignments, selectedMonth, selectedYear]);
 
   // ==================== ATTENDANCE HELPERS ====================
 
@@ -209,6 +272,101 @@ const Payroll: React.FC = () => {
   // ==================== GENERATE PAYROLL ====================
 
   const generatePayroll = () => {
+    if (generationMode === '3p') {
+      if (!activeCompensationPlan || !payroll3pMatrix) {
+        alert('Chưa có metadata lương 3P active. Vui lòng kiểm tra trang Lương 3P.');
+        return;
+      }
+      const existing = new Set(currentPayrolls.map(p => p.employeeId));
+      const gradeById = new Map(salaryGrades.map(grade => [grade.id, grade]));
+      const bandById = new Map(hrm3pBands.map(band => [band.id, band]));
+      const targetEmployees = activeEmployees.filter(emp => !existing.has(emp.id) && activeAssignmentsByEmployee.has(emp.id));
+      const skipped = activeEmployees.filter(emp => !existing.has(emp.id) && !activeAssignmentsByEmployee.has(emp.id)).length;
+
+      targetEmployees.forEach(emp => {
+        const assignment = activeAssignmentsByEmployee.get(emp.id);
+        if (!assignment) return;
+        const grade = gradeById.get(assignment.salaryGradeId);
+        const p3Band = bandById.get(assignment.p3BandId);
+        const defaultKpiBand = hrm3pBands.find(band => band.planId === activeCompensationPlan.id && band.code === activeCompensationPlan.defaultKpiRatingCode) || p3Band;
+        if (!grade || !p3Band || !defaultKpiBand) return;
+
+        const meta: Record<string, any> = assignment.metadata || {};
+        const recurringAllowances = {
+          title: Number(meta.title_allowance_amount || 0),
+          phone: Number(meta.phone_allowance_amount || 0),
+          attraction: Number(meta.attraction_support_amount || 0),
+          meal: Number(meta.meal_support_amount || 0),
+          seniority: Number(meta.seniority_allowance_amount || 0),
+        };
+        const stats = getAttendanceStats(emp.id);
+        const calc = calculatePayroll3p({
+          employeeId: emp.id,
+          employeeCode: emp.employeeCode,
+          employeeName: emp.fullName,
+          month: selectedMonth,
+          year: selectedYear,
+          standardDays,
+          workingDays: stats.workingDays || standardDays,
+          gradeCode: grade.code,
+          p3BandCode: p3Band.code,
+          kpiBandCode: defaultKpiBand.code,
+          recurringAllowances,
+          matrix: payroll3pMatrix,
+        });
+
+        const record: PayrollRecord = {
+          id: crypto.randomUUID(),
+          employeeId: emp.id,
+          month: selectedMonth,
+          year: selectedYear,
+          workingDays: calc.workingDays,
+          standardDays,
+          overtimeHours: stats.otNormal + stats.otWeekend + stats.otHoliday,
+          baseSalary: calc.p1Salary,
+          dailyRate: standardDays > 0 ? Math.round(calc.p1Salary / standardDays) : 0,
+          overtimeRate: 0,
+          allowancePosition: recurringAllowances.title,
+          allowanceMeal: recurringAllowances.meal,
+          allowanceTransport: 0,
+          allowancePhone: recurringAllowances.phone,
+          allowanceOther: recurringAllowances.attraction + recurringAllowances.seniority,
+          deductionInsurance: 0,
+          deductionTax: 0,
+          deductionAdvance: 0,
+          deductionOther: 0,
+          grossSalary: calc.grossSalary,
+          netSalary: calc.netSalary,
+          status: 'draft',
+          note: `3P: ${activeCompensationPlan.code} / ${grade.code}-${p3Band.code} / KPI ${defaultKpiBand.code}`,
+          createdAt: new Date().toISOString(),
+          calculationMode: '3p',
+          compensationPlanId: activeCompensationPlan.id,
+          compensationAssignmentId: assignment.id,
+          salaryGradeId: grade.id,
+          p3BandId: p3Band.id,
+          kpiBandId: defaultKpiBand.id,
+          p1Salary: calc.p1Salary,
+          p3StandardSalary: calc.p3StandardSalary,
+          p3ActualSalary: calc.p3ActualSalary,
+          kpiMultiplier: calc.kpiMultiplier,
+          recurringAllowanceTotal: calc.recurringAllowanceTotal,
+          payrollComponentSnapshot: calc.payrollComponentSnapshot,
+          calculationSnapshot: calc.calculationSnapshot,
+        };
+
+        addHrmItem('hrm_payrolls', record);
+      });
+
+      setShowGenModal(false);
+      if (targetEmployees.length > 0) {
+        alert(`Đã tạo ${targetEmployees.length} phiếu lương 3P. ${skipped > 0 ? `${skipped} nhân sự chưa có assignment hoặc đã có phiếu.` : ''}`);
+      } else {
+        alert('Không có nhân sự đủ điều kiện tạo lương 3P mới trong kỳ này.');
+      }
+      return;
+    }
+
     const template = payrollTemplates.find(t => t.id === selectedTemplateId);
     if (!template) { alert('Vui lòng chọn mẫu bảng lương!'); return; }
 
@@ -375,12 +533,30 @@ const Payroll: React.FC = () => {
   // ==================== EXPORT ====================
 
   const exportCSV = () => {
-    const header = ['Mã NV', 'Họ tên', 'Ngày công', 'Lương CB', 'Tổng phụ cấp', 'Tổng khấu trừ', 'Tổng TN', 'Thực lĩnh', 'Trạng thái'];
+    const gradeById = new Map(salaryGrades.map(grade => [grade.id, grade]));
+    const bandById = new Map(hrm3pBands.map(band => [band.id, band]));
+    const header = ['Mã NV', 'Họ tên', 'Mode', 'Grade', 'P3 Band', 'KPI Band', 'Ngày công', 'P1/Lương CB', 'P3 chuẩn', 'P3 thực tính', 'PC', 'Tổng khấu trừ', 'Tổng TN', 'Thực lĩnh', 'Trạng thái'];
     const rows = filteredPayrolls.map(p => {
       const emp = employeeMap.get(p.employeeId);
       const totalAllowance = p.allowancePosition + p.allowanceMeal + p.allowanceTransport + p.allowancePhone + p.allowanceOther;
       const totalDeduction = p.deductionInsurance + p.deductionTax + p.deductionAdvance + p.deductionOther;
-      return [emp?.employeeCode, emp?.fullName, p.workingDays, p.baseSalary, totalAllowance, totalDeduction, p.grossSalary, p.netSalary, PAYROLL_STATUS_LABELS[p.status]];
+      return [
+        emp?.employeeCode,
+        emp?.fullName,
+        p.calculationMode || 'legacy_template',
+        p.salaryGradeId ? gradeById.get(p.salaryGradeId)?.code || '' : '',
+        p.p3BandId ? bandById.get(p.p3BandId)?.code || '' : '',
+        p.kpiBandId ? bandById.get(p.kpiBandId)?.code || '' : '',
+        p.workingDays,
+        p.p1Salary || p.baseSalary,
+        p.p3StandardSalary || 0,
+        p.p3ActualSalary || 0,
+        p.recurringAllowanceTotal ?? totalAllowance,
+        totalDeduction,
+        p.grossSalary,
+        p.netSalary,
+        PAYROLL_STATUS_LABELS[p.status],
+      ];
     });
     const csv = [header, ...rows].map(r => r.join(',')).join('\n');
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
@@ -393,12 +569,19 @@ const Payroll: React.FC = () => {
   // Export Excel
   const exportExcel = async () => {
     const XLSX = await loadXlsx();
-    const header = ['M\u00e3 NV', 'H\u1ecd t\u00ean', 'Ng\u00e0y c\u00f4ng', 'Ng\u00e0y chu\u1ea9n', 'OT(h)', 'L\u01b0\u01a1ng CB', 'PC ch\u1ee9c v\u1ee5', 'PC \u0103n', 'PC \u0111i l\u1ea1i', 'PC \u0111i\u1ec7n tho\u1ea1i', 'PC kh\u00e1c', 'BHXH/YT/TN', 'Thu\u1ebf TNCN', 'T\u1ea1m \u1ee9ng', 'KT kh\u00e1c', 'T\u1ed5ng TN', 'Th\u1ef1c l\u0129nh', 'Tr\u1ea1ng th\u00e1i'];
+    const gradeById = new Map(salaryGrades.map(grade => [grade.id, grade]));
+    const bandById = new Map(hrm3pBands.map(band => [band.id, band]));
+    const header = ['M\u00e3 NV', 'H\u1ecd t\u00ean', 'Mode', 'Grade', 'P3 Band', 'KPI Band', 'Ng\u00e0y c\u00f4ng', 'Ng\u00e0y chu\u1ea9n', 'OT(h)', 'P1/L\u01b0\u01a1ng CB', 'P3 chu\u1ea9n', 'P3 th\u1ef1c t\u00ednh', 'PC', 'BHXH/YT/TN', 'Thu\u1ebf TNCN', 'T\u1ea1m \u1ee9ng', 'KT kh\u00e1c', 'T\u1ed5ng TN', 'Th\u1ef1c l\u0129nh', 'Tr\u1ea1ng th\u00e1i'];
     const rows = filteredPayrolls.map(p => {
       const emp = employeeMap.get(p.employeeId);
+      const totalAllowance = p.allowancePosition + p.allowanceMeal + p.allowanceTransport + p.allowancePhone + p.allowanceOther;
       return [
-        emp?.employeeCode, emp?.fullName, p.workingDays, p.standardDays, p.overtimeHours,
-        p.baseSalary, p.allowancePosition, p.allowanceMeal, p.allowanceTransport, p.allowancePhone, p.allowanceOther,
+        emp?.employeeCode, emp?.fullName, p.calculationMode || 'legacy_template',
+        p.salaryGradeId ? gradeById.get(p.salaryGradeId)?.code || '' : '',
+        p.p3BandId ? bandById.get(p.p3BandId)?.code || '' : '',
+        p.kpiBandId ? bandById.get(p.kpiBandId)?.code || '' : '',
+        p.workingDays, p.standardDays, p.overtimeHours,
+        p.p1Salary || p.baseSalary, p.p3StandardSalary || 0, p.p3ActualSalary || 0, p.recurringAllowanceTotal ?? totalAllowance,
         p.deductionInsurance, p.deductionTax, p.deductionAdvance, p.deductionOther,
         p.grossSalary, p.netSalary, PAYROLL_STATUS_LABELS[p.status]
       ];
@@ -541,6 +724,7 @@ const Payroll: React.FC = () => {
                       const tplId = (p as any).templateId;
                       const tpl = tplId ? payrollTemplates.find(t => t.id === tplId) : null;
                       const tplValues: Record<string, number> = (p as any).templateValues || {};
+                      const is3pRecord = p.calculationMode === '3p';
 
                       return (
                         <React.Fragment key={p.id}>
@@ -584,17 +768,40 @@ const Payroll: React.FC = () => {
                               </div>
                             </td>
                           </tr>
-                          {/* Expanded detail row — show template fields */}
-                          {isExpanded && tpl && (
+                          {/* Expanded detail row — show 3P snapshot or legacy template fields */}
+                          {isExpanded && (tpl || is3pRecord) && (
                             <tr>
                               <td colSpan={8} className="px-4 py-3 bg-slate-50/80 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700">
                                 <div className="max-w-2xl">
-                                  <p className="text-[10px] font-black text-slate-400 uppercase mb-2 flex items-center gap-1">
-                                    <FileText size={12} /> Chi ti\u1ebft phi\u1ebfu l\u01b0\u01a1ng \u2014 M\u1eabu: {tpl.name}
-                                    {p.status === 'draft' && <span className="ml-2 text-blue-500">(click s\u1ed1 \u0111\u1ec3 s\u1eeda)</span>}
-                                  </p>
-                                  <div className="grid grid-cols-1 gap-1">
-                                    {tpl.fields.sort((a, b) => a.order - b.order).map(field => {
+                                  {is3pRecord ? (
+                                    <>
+                                      <p className="text-[10px] font-black text-slate-400 uppercase mb-2 flex items-center gap-1">
+                                        <FileText size={12} /> Chi tiết phiếu lương 3P — Snapshot bất biến
+                                      </p>
+                                      <div className="grid grid-cols-1 gap-1">
+                                        {[
+                                          ['P1', p.p1Salary || 0],
+                                          ['P3 tiêu chuẩn', p.p3StandardSalary || 0],
+                                          [`P3 thực tính (KPI x${(p.kpiMultiplier || 1).toFixed(2)})`, p.p3ActualSalary || 0],
+                                          ['Phụ cấp recurring', p.recurringAllowanceTotal || 0],
+                                          ['Tổng thu nhập', p.grossSalary || 0],
+                                          ['Thực lĩnh', p.netSalary || 0],
+                                        ].map(([label, value]) => (
+                                          <div key={String(label)} className="flex justify-between items-center px-3 py-1.5 rounded-lg text-xs bg-emerald-50/60 dark:bg-emerald-950/20">
+                                            <span className="text-slate-600 dark:text-slate-400">{label}</span>
+                                            <span className="font-black text-emerald-600">{fmtMoney(Number(value))}</span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </>
+                                  ) : tpl ? (
+                                    <>
+                                      <p className="text-[10px] font-black text-slate-400 uppercase mb-2 flex items-center gap-1">
+                                        <FileText size={12} /> Chi ti\u1ebft phi\u1ebfu l\u01b0\u01a1ng \u2014 M\u1eabu: {tpl.name}
+                                        {p.status === 'draft' && <span className="ml-2 text-blue-500">(click s\u1ed1 \u0111\u1ec3 s\u1eeda)</span>}
+                                      </p>
+                                      <div className="grid grid-cols-1 gap-1">
+                                        {tpl.fields.sort((a, b) => a.order - b.order).map(field => {
                                       const rawVal = editingPayrollValues[field.name] ?? tplValues[field.name] ?? 0;
                                       const val = field.type === 'formula' && field.formula
                                         ? evaluateFormula(field.formula, { ...tplValues, ...editingPayrollValues })
@@ -625,14 +832,16 @@ const Payroll: React.FC = () => {
                                           )}
                                         </div>
                                       );
-                                    })}
-                                  </div>
-                                  {p.status === 'draft' && Object.keys(editingPayrollValues).length > 0 && (
-                                    <button onClick={() => savePayrollEdit(p)}
-                                      className="mt-3 px-4 py-2 bg-blue-500 text-white rounded-xl text-xs font-black hover:bg-blue-600 transition">
-                                      L\u01b0u thay \u0111\u1ed5i
-                                    </button>
-                                  )}
+                                        })}
+                                      </div>
+                                      {p.status === 'draft' && Object.keys(editingPayrollValues).length > 0 && (
+                                        <button onClick={() => savePayrollEdit(p)}
+                                          className="mt-3 px-4 py-2 bg-blue-500 text-white rounded-xl text-xs font-black hover:bg-blue-600 transition">
+                                          L\u01b0u thay \u0111\u1ed5i
+                                        </button>
+                                      )}
+                                    </>
+                                  ) : null}
                                 </div>
                               </td>
                             </tr>
@@ -665,6 +874,24 @@ const Payroll: React.FC = () => {
                 </div>
                 <div className="p-6 space-y-4">
                   <div>
+                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1 block">Nguồn tính</label>
+                    <div className="grid grid-cols-2 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+                      <button
+                        onClick={() => setGenerationMode('3p')}
+                        className={`px-3 py-2 text-xs font-black ${generationMode === '3p' ? 'bg-emerald-500 text-white' : 'bg-white dark:bg-slate-800 text-slate-500'}`}
+                      >
+                        Lương 3P
+                      </button>
+                      <button
+                        onClick={() => setGenerationMode('legacy_template')}
+                        className={`px-3 py-2 text-xs font-black ${generationMode === 'legacy_template' ? 'bg-emerald-500 text-white' : 'bg-white dark:bg-slate-800 text-slate-500'}`}
+                      >
+                        Mẫu legacy
+                      </button>
+                    </div>
+                  </div>
+                  {generationMode === 'legacy_template' && (
+                  <div>
                     <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1 block">Chọn mẫu bảng lương *</label>
                     <select value={selectedTemplateId} onChange={e => setSelectedTemplateId(e.target.value)}
                       className="w-full px-3 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 outline-none font-bold">
@@ -675,12 +902,18 @@ const Payroll: React.FC = () => {
                       })}
                     </select>
                   </div>
+                  )}
                   <div>
                     <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1 block">Ngày công chuẩn</label>
                     <input type="number" value={standardDays} onChange={e => setStandardDays(Number(e.target.value))}
                       className="w-full px-3 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 outline-none" />
                   </div>
-                  {selectedTemplateId && (
+                  {generationMode === '3p' && (
+                    <div className="bg-emerald-50 dark:bg-emerald-950/20 p-3 rounded-xl text-xs text-emerald-700 dark:text-emerald-400 font-bold">
+                      Hệ thống sẽ lấy assignment 3P active, KPI mặc định {activeCompensationPlan?.defaultKpiRatingCode || 'B3'}, và chỉ tạo phiếu cho nhân sự chưa có bảng lương tháng này.
+                    </div>
+                  )}
+                  {generationMode === 'legacy_template' && selectedTemplateId && (
                     <div className="bg-emerald-50 dark:bg-emerald-950/20 p-3 rounded-xl text-xs text-emerald-700 dark:text-emerald-400 font-bold">
                       ✅ Hệ thống sẽ:<br/>
                       • Lấy ngày công từ bảng chấm công tháng {selectedMonth}<br/>
@@ -689,7 +922,7 @@ const Payroll: React.FC = () => {
                       • Chỉ tạo phiếu cho NV chưa có bảng lương
                     </div>
                   )}
-                  {payrollTemplates.length === 0 && (
+                  {generationMode === 'legacy_template' && payrollTemplates.length === 0 && (
                     <div className="bg-amber-50 dark:bg-amber-950/20 p-3 rounded-xl text-xs text-amber-700 dark:text-amber-400 font-bold">
                       ⚠️ Chưa có mẫu bảng lương. Vui lòng tạo mẫu trong tab "Mẫu bảng lương" trước.
                     </div>
@@ -697,7 +930,7 @@ const Payroll: React.FC = () => {
                 </div>
                 <div className="p-6 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-2">
                   <button onClick={() => setShowGenModal(false)} className="px-4 py-2.5 text-xs font-black text-slate-500 hover:text-slate-700 transition">Huỷ</button>
-                  <button onClick={generatePayroll} disabled={!selectedTemplateId}
+                  <button onClick={generatePayroll} disabled={generationMode === 'legacy_template' && !selectedTemplateId}
                     className="px-4 py-2.5 bg-emerald-500 text-white rounded-xl text-xs font-black hover:bg-emerald-600 transition disabled:opacity-50">
                     Tạo bảng lương
                   </button>

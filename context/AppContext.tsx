@@ -8,6 +8,8 @@ import {
   ItemCategory, ItemUnit, Employee, MaterialLossNorm, AuditSession,
   HrmArea, HrmOffice, HrmEmployeeType, HrmPosition, HrmSalaryPolicy, HrmWorkSchedule, HrmConstructionSite,
   HrmCatalogItem, HrmCatalogKey, HrmOrgBlock, HrmPositionGroup, HrmPositionLevel, HrmCompetencyGroup, HrmCompetencyLevel,
+  SalaryGrade, HrmCompensationPlan, Hrm3pBand, Hrm3pGradeBandRate, HrmPositionSalaryMapping,
+  HrmEmployeeCompensationAssignment, HrmPayrollComponent, HrmPayrollImportBatch, HrmPayrollImportRow,
   OrgUnit, ProjectFinance, ProjectTransaction,
   Asset, AssetCategory, AssetAssignment, AssetMaintenance, AssetStatus, AssetLocationStock, AssetTransfer, AssetOrigin, AssetAttachment,
   AttendanceRecord, LeaveRequest, PayrollRecord, LaborContract, LeaveBalance, PayrollTemplate, HrmHoliday, HrmSalaryHistory,
@@ -319,6 +321,302 @@ const hrmCompetencyLevelToDbPayload = (item: HrmCompetencyLevel) => ({
   updated_at: item.updatedAt,
 });
 
+const mapSalaryGradeFromDb = (row: any): SalaryGrade => ({
+  id: row.id,
+  code: row.code,
+  name: row.name,
+  groupName: row.group_name ?? row.groupName ?? undefined,
+  level: row.level ?? 0,
+  bhxhCoefficient: row.bhxh_coefficient ?? row.bhxhCoefficient ?? undefined,
+  regulatedSalary: row.regulated_salary ?? row.regulatedSalary ?? undefined,
+  pc1ChucDanh: row.pc1_chuc_danh ?? row.pc1ChucDanh ?? undefined,
+  pc2ThuLao: row.pc2_thu_lao ?? row.pc2ThuLao ?? undefined,
+  pc3LienLac: row.pc3_lien_lac ?? row.pc3LienLac ?? undefined,
+  planId: row.plan_id ?? row.planId ?? undefined,
+  hrmLevelCode: row.hrm_level_code ?? row.hrmLevelCode ?? undefined,
+  p1SalaryAmount: row.p1_salary_amount ?? row.p1SalaryAmount ?? undefined,
+  source: row.source ?? undefined,
+  metadata: row.metadata ?? undefined,
+  createdAt: row.created_at ?? row.createdAt,
+  updatedAt: row.updated_at ?? row.updatedAt,
+});
+
+const salaryGradeToDbPayload = (item: SalaryGrade) => ({
+  id: item.id,
+  code: item.code,
+  name: item.name,
+  group_name: item.groupName || null,
+  level: item.level ?? 0,
+  bhxh_coefficient: item.bhxhCoefficient ?? 0,
+  regulated_salary: item.regulatedSalary ?? 0,
+  pc1_chuc_danh: item.pc1ChucDanh ?? 0,
+  pc2_thu_lao: item.pc2ThuLao ?? 0,
+  pc3_lien_lac: item.pc3LienLac ?? 0,
+  plan_id: item.planId || null,
+  hrm_level_code: item.hrmLevelCode || null,
+  p1_salary_amount: item.p1SalaryAmount ?? null,
+  source: item.source || 'custom',
+  metadata: item.metadata || {},
+  created_at: item.createdAt,
+  updated_at: item.updatedAt,
+});
+
+const mapHrmCompensationPlanFromDb = (row: any): HrmCompensationPlan => ({
+  id: row.id,
+  code: row.code,
+  name: row.name,
+  effectiveFrom: row.effective_from ?? row.effectiveFrom,
+  effectiveTo: row.effective_to ?? row.effectiveTo ?? undefined,
+  status: row.status,
+  defaultP3BandCode: row.default_p3_band_code ?? row.defaultP3BandCode ?? 'B3',
+  defaultKpiRatingCode: row.default_kpi_rating_code ?? row.defaultKpiRatingCode ?? 'B3',
+  hasP2: row.has_p2 ?? row.hasP2 ?? false,
+  source: row.source ?? undefined,
+  metadata: row.metadata ?? undefined,
+  createdAt: row.created_at ?? row.createdAt,
+  updatedAt: row.updated_at ?? row.updatedAt,
+});
+
+const hrmCompensationPlanToDbPayload = (item: HrmCompensationPlan) => ({
+  id: item.id,
+  code: item.code,
+  name: item.name,
+  effective_from: item.effectiveFrom,
+  effective_to: item.effectiveTo || null,
+  status: item.status,
+  default_p3_band_code: item.defaultP3BandCode || 'B3',
+  default_kpi_rating_code: item.defaultKpiRatingCode || 'B3',
+  has_p2: item.hasP2 ?? false,
+  source: item.source || 'custom',
+  metadata: item.metadata || {},
+  created_at: item.createdAt,
+  updated_at: item.updatedAt,
+});
+
+const mapHrm3pBandFromDb = (row: any): Hrm3pBand => ({
+  id: row.id,
+  planId: row.plan_id ?? row.planId,
+  code: row.code,
+  groupCode: row.group_code ?? row.groupCode,
+  p3Coefficient: row.p3_coefficient ?? row.p3Coefficient ?? 0,
+  kpiPayMultiplier: row.kpi_pay_multiplier ?? row.kpiPayMultiplier ?? 1,
+  marketBucket: row.market_bucket ?? row.marketBucket ?? undefined,
+  ratio: row.ratio ?? undefined,
+  sortOrder: row.sort_order ?? row.sortOrder ?? 0,
+  isActive: row.is_active ?? row.isActive ?? true,
+  source: row.source ?? undefined,
+  metadata: row.metadata ?? undefined,
+  createdAt: row.created_at ?? row.createdAt,
+  updatedAt: row.updated_at ?? row.updatedAt,
+});
+
+const hrm3pBandToDbPayload = (item: Hrm3pBand) => ({
+  id: item.id,
+  plan_id: item.planId,
+  code: item.code,
+  group_code: item.groupCode,
+  p3_coefficient: item.p3Coefficient ?? 0,
+  kpi_pay_multiplier: item.kpiPayMultiplier ?? 1,
+  market_bucket: item.marketBucket || null,
+  ratio: item.ratio ?? null,
+  sort_order: item.sortOrder ?? 0,
+  is_active: item.isActive ?? true,
+  source: item.source || 'custom',
+  metadata: item.metadata || {},
+  created_at: item.createdAt,
+  updated_at: item.updatedAt,
+});
+
+const mapHrm3pGradeBandRateFromDb = (row: any): Hrm3pGradeBandRate => ({
+  id: row.id,
+  planId: row.plan_id ?? row.planId,
+  salaryGradeId: row.salary_grade_id ?? row.salaryGradeId,
+  p3BandId: row.p3_band_id ?? row.p3BandId,
+  p1SalaryAmount: row.p1_salary_amount ?? row.p1SalaryAmount ?? 0,
+  p3StandardAmount: row.p3_standard_amount ?? row.p3StandardAmount ?? 0,
+  standardTotalAmount: row.standard_total_amount ?? row.standardTotalAmount ?? 0,
+  source: row.source ?? undefined,
+  metadata: row.metadata ?? undefined,
+  createdAt: row.created_at ?? row.createdAt,
+  updatedAt: row.updated_at ?? row.updatedAt,
+});
+
+const hrm3pGradeBandRateToDbPayload = (item: Hrm3pGradeBandRate) => ({
+  id: item.id,
+  plan_id: item.planId,
+  salary_grade_id: item.salaryGradeId,
+  p3_band_id: item.p3BandId,
+  p1_salary_amount: item.p1SalaryAmount ?? 0,
+  p3_standard_amount: item.p3StandardAmount ?? 0,
+  standard_total_amount: item.standardTotalAmount ?? 0,
+  source: item.source || 'custom',
+  metadata: item.metadata || {},
+  created_at: item.createdAt,
+  updated_at: item.updatedAt,
+});
+
+const mapHrmPositionSalaryMappingFromDb = (row: any): HrmPositionSalaryMapping => ({
+  id: row.id,
+  planId: row.plan_id ?? row.planId,
+  positionId: row.position_id ?? row.positionId,
+  positionCodeSnapshot: row.position_code_snapshot ?? row.positionCodeSnapshot ?? undefined,
+  orgUnitCodeSnapshot: row.org_unit_code_snapshot ?? row.orgUnitCodeSnapshot ?? undefined,
+  salaryGradeId: row.salary_grade_id ?? row.salaryGradeId,
+  confidence: row.confidence ?? 'manual_review',
+  source: row.source ?? undefined,
+  metadata: row.metadata ?? undefined,
+  createdAt: row.created_at ?? row.createdAt,
+  updatedAt: row.updated_at ?? row.updatedAt,
+});
+
+const hrmPositionSalaryMappingToDbPayload = (item: HrmPositionSalaryMapping) => ({
+  id: item.id,
+  plan_id: item.planId,
+  position_id: item.positionId,
+  position_code_snapshot: item.positionCodeSnapshot || null,
+  org_unit_code_snapshot: item.orgUnitCodeSnapshot || null,
+  salary_grade_id: item.salaryGradeId,
+  confidence: item.confidence || 'manual_review',
+  source: item.source || 'manual',
+  metadata: item.metadata || {},
+  created_at: item.createdAt,
+  updated_at: item.updatedAt,
+});
+
+const mapHrmEmployeeCompAssignmentFromDb = (row: any): HrmEmployeeCompensationAssignment => ({
+  id: row.id,
+  employeeId: row.employee_id ?? row.employeeId,
+  employeeCodeSnapshot: row.employee_code_snapshot ?? row.employeeCodeSnapshot,
+  employeeNameSnapshot: row.employee_name_snapshot ?? row.employeeNameSnapshot,
+  planId: row.plan_id ?? row.planId,
+  positionId: row.position_id ?? row.positionId ?? undefined,
+  orgUnitId: row.org_unit_id ?? row.orgUnitId ?? undefined,
+  salaryGradeId: row.salary_grade_id ?? row.salaryGradeId,
+  p3BandId: row.p3_band_id ?? row.p3BandId,
+  effectiveFrom: row.effective_from ?? row.effectiveFrom,
+  effectiveTo: row.effective_to ?? row.effectiveTo ?? undefined,
+  status: row.status,
+  source: row.source,
+  reviewStatus: row.review_status ?? row.reviewStatus ?? 'pending',
+  reviewNote: row.review_note ?? row.reviewNote ?? undefined,
+  metadata: row.metadata ?? undefined,
+  createdAt: row.created_at ?? row.createdAt,
+  updatedAt: row.updated_at ?? row.updatedAt,
+});
+
+const hrmEmployeeCompAssignmentToDbPayload = (item: HrmEmployeeCompensationAssignment) => ({
+  id: item.id,
+  employee_id: item.employeeId,
+  employee_code_snapshot: item.employeeCodeSnapshot,
+  employee_name_snapshot: item.employeeNameSnapshot,
+  plan_id: item.planId,
+  position_id: item.positionId || null,
+  org_unit_id: item.orgUnitId || null,
+  salary_grade_id: item.salaryGradeId,
+  p3_band_id: item.p3BandId,
+  effective_from: item.effectiveFrom,
+  effective_to: item.effectiveTo || null,
+  status: item.status || 'active',
+  source: item.source || 'manual',
+  review_status: item.reviewStatus || 'pending',
+  review_note: item.reviewNote || null,
+  metadata: item.metadata || {},
+  created_at: item.createdAt,
+  updated_at: item.updatedAt,
+});
+
+const mapHrmPayrollComponentFromDb = (row: any): HrmPayrollComponent => ({
+  id: row.id,
+  planId: row.plan_id ?? row.planId,
+  code: row.code,
+  name: row.name,
+  componentType: row.component_type ?? row.componentType,
+  formulaKey: row.formula_key ?? row.formulaKey ?? undefined,
+  sortOrder: row.sort_order ?? row.sortOrder ?? 0,
+  isActive: row.is_active ?? row.isActive ?? true,
+  isRecurring: row.is_recurring ?? row.isRecurring ?? true,
+  source: row.source ?? undefined,
+  metadata: row.metadata ?? undefined,
+  createdAt: row.created_at ?? row.createdAt,
+  updatedAt: row.updated_at ?? row.updatedAt,
+});
+
+const hrmPayrollComponentToDbPayload = (item: HrmPayrollComponent) => ({
+  id: item.id,
+  plan_id: item.planId,
+  code: item.code,
+  name: item.name,
+  component_type: item.componentType,
+  formula_key: item.formulaKey || null,
+  sort_order: item.sortOrder ?? 0,
+  is_active: item.isActive ?? true,
+  is_recurring: item.isRecurring ?? true,
+  source: item.source || 'custom',
+  metadata: item.metadata || {},
+  created_at: item.createdAt,
+  updated_at: item.updatedAt,
+});
+
+const jsonbArrayToStrings = (value: unknown): string[] => (
+  Array.isArray(value) ? value.map(String) : []
+);
+
+const mapHrmPayrollImportBatchFromDb = (row: any): HrmPayrollImportBatch => ({
+  id: row.id,
+  sourceFileName: row.source_file_name ?? row.sourceFileName,
+  sourceFileHash: row.source_file_hash ?? row.sourceFileHash,
+  importType: row.import_type ?? row.importType,
+  status: row.status,
+  metadata: row.metadata ?? undefined,
+  createdAt: row.created_at ?? row.createdAt,
+  updatedAt: row.updated_at ?? row.updatedAt,
+});
+
+const hrmPayrollImportBatchToDbPayload = (item: HrmPayrollImportBatch) => ({
+  id: item.id,
+  source_file_name: item.sourceFileName,
+  source_file_hash: item.sourceFileHash,
+  import_type: item.importType,
+  status: item.status,
+  metadata: item.metadata || {},
+  created_at: item.createdAt,
+  updated_at: item.updatedAt,
+});
+
+const mapHrmPayrollImportRowFromDb = (row: any): HrmPayrollImportRow => ({
+  id: row.id,
+  batchId: row.batch_id ?? row.batchId,
+  sourceRowNumber: row.source_row_number ?? row.sourceRowNumber,
+  rawPayload: row.raw_payload ?? row.rawPayload ?? {},
+  normalizedPayload: row.normalized_payload ?? row.normalizedPayload ?? {},
+  validationStatus: row.validation_status ?? row.validationStatus ?? 'valid',
+  reviewStatus: row.review_status ?? row.reviewStatus ?? 'pending',
+  matchedEmployeeId: row.matched_employee_id ?? row.matchedEmployeeId ?? undefined,
+  appliedAssignmentId: row.applied_assignment_id ?? row.appliedAssignmentId ?? undefined,
+  warningMessages: jsonbArrayToStrings(row.warning_messages ?? row.warningMessages),
+  errorMessages: jsonbArrayToStrings(row.error_messages ?? row.errorMessages),
+  metadata: row.metadata ?? undefined,
+  createdAt: row.created_at ?? row.createdAt,
+  updatedAt: row.updated_at ?? row.updatedAt,
+});
+
+const hrmPayrollImportRowToDbPayload = (item: HrmPayrollImportRow) => ({
+  id: item.id,
+  batch_id: item.batchId,
+  source_row_number: item.sourceRowNumber,
+  raw_payload: item.rawPayload || {},
+  normalized_payload: item.normalizedPayload || {},
+  validation_status: item.validationStatus,
+  review_status: item.reviewStatus,
+  matched_employee_id: item.matchedEmployeeId || null,
+  applied_assignment_id: item.appliedAssignmentId || null,
+  warning_messages: item.warningMessages || [],
+  error_messages: item.errorMessages || [],
+  metadata: item.metadata || {},
+  created_at: item.createdAt,
+  updated_at: item.updatedAt,
+});
+
 export type AppModule = 'wms' | 'wms-core' | 'hrm' | 'da' | 'ts' | 'ex' | 'admin';
 export type ModuleLoadStatus = 'idle' | 'loading' | 'loaded' | 'error';
 
@@ -352,6 +650,15 @@ const REALTIME_TABLES_BY_MODULE: Partial<Record<AppModule, string[]>> = {
     'hrm_competency_groups',
     'hrm_competency_levels',
     'hrm_catalog_items',
+    'salary_grades',
+    'hrm_compensation_plans',
+    'hrm_3p_bands',
+    'hrm_3p_grade_band_rates',
+    'hrm_position_salary_mappings',
+    'hrm_employee_compensation_assignments',
+    'hrm_payroll_components',
+    'hrm_payroll_import_batches',
+    'hrm_payroll_import_rows',
     'hrm_attendance',
   ],
 };
@@ -390,6 +697,15 @@ interface AppContextType {
   hrmCompetencyLevels: HrmCompetencyLevel[];
   hrmCatalogItems: HrmCatalogItem[];
   getHrmCatalogItems: (catalogKey: HrmCatalogKey | string) => HrmCatalogItem[];
+  salaryGrades: SalaryGrade[];
+  hrmCompensationPlans: HrmCompensationPlan[];
+  hrm3pBands: Hrm3pBand[];
+  hrm3pGradeBandRates: Hrm3pGradeBandRate[];
+  hrmPositionSalaryMappings: HrmPositionSalaryMapping[];
+  hrmEmployeeCompensationAssignments: HrmEmployeeCompensationAssignment[];
+  hrmPayrollComponents: HrmPayrollComponent[];
+  hrmPayrollImportBatches: HrmPayrollImportBatch[];
+  hrmPayrollImportRows: HrmPayrollImportRow[];
   hrmSalaryPolicies: HrmSalaryPolicy[];
   hrmWorkSchedules: HrmWorkSchedule[];
   hrmConstructionSites: HrmConstructionSite[];
@@ -686,6 +1002,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [hrmCompetencyGroups, setHrmCompetencyGroups] = useState<HrmCompetencyGroup[]>([]);
   const [hrmCompetencyLevels, setHrmCompetencyLevels] = useState<HrmCompetencyLevel[]>([]);
   const [hrmCatalogItems, setHrmCatalogItems] = useState<HrmCatalogItem[]>([]);
+  const [salaryGrades, setSalaryGrades] = useState<SalaryGrade[]>([]);
+  const [hrmCompensationPlans, setHrmCompensationPlans] = useState<HrmCompensationPlan[]>([]);
+  const [hrm3pBands, setHrm3pBands] = useState<Hrm3pBand[]>([]);
+  const [hrm3pGradeBandRates, setHrm3pGradeBandRates] = useState<Hrm3pGradeBandRate[]>([]);
+  const [hrmPositionSalaryMappings, setHrmPositionSalaryMappings] = useState<HrmPositionSalaryMapping[]>([]);
+  const [hrmEmployeeCompensationAssignments, setHrmEmployeeCompensationAssignments] = useState<HrmEmployeeCompensationAssignment[]>([]);
+  const [hrmPayrollComponents, setHrmPayrollComponents] = useState<HrmPayrollComponent[]>([]);
+  const [hrmPayrollImportBatches, setHrmPayrollImportBatches] = useState<HrmPayrollImportBatch[]>([]);
+  const [hrmPayrollImportRows, setHrmPayrollImportRows] = useState<HrmPayrollImportRow[]>([]);
   const [hrmSalaryPolicies, setHrmSalaryPolicies] = useState<HrmSalaryPolicy[]>([]);
   const [hrmWorkSchedules, setHrmWorkSchedules] = useState<HrmWorkSchedule[]>([]);
   const [hrmConstructionSites, setHrmConstructionSites] = useState<HrmConstructionSite[]>([]);
@@ -1192,6 +1517,42 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 	      if (event.eventType === 'INSERT' || event.eventType === 'UPDATE') upsertById(setHrmCatalogItems, mapHrmCatalogItemFromDb(event.newRecord));
 	      else if (event.eventType === 'DELETE') setHrmCatalogItems(prev => prev.filter(item => item.id !== event.oldRecord.id));
 	    });
+	    const unsubSalaryGrades = realtimeService.on('salary_grades', (event) => {
+	      if (event.eventType === 'INSERT' || event.eventType === 'UPDATE') upsertById(setSalaryGrades, mapSalaryGradeFromDb(event.newRecord));
+	      else if (event.eventType === 'DELETE') setSalaryGrades(prev => prev.filter(item => item.id !== event.oldRecord.id));
+	    });
+	    const unsubHrmCompensationPlans = realtimeService.on('hrm_compensation_plans', (event) => {
+	      if (event.eventType === 'INSERT' || event.eventType === 'UPDATE') upsertById(setHrmCompensationPlans, mapHrmCompensationPlanFromDb(event.newRecord));
+	      else if (event.eventType === 'DELETE') setHrmCompensationPlans(prev => prev.filter(item => item.id !== event.oldRecord.id));
+	    });
+	    const unsubHrm3pBands = realtimeService.on('hrm_3p_bands', (event) => {
+	      if (event.eventType === 'INSERT' || event.eventType === 'UPDATE') upsertById(setHrm3pBands, mapHrm3pBandFromDb(event.newRecord));
+	      else if (event.eventType === 'DELETE') setHrm3pBands(prev => prev.filter(item => item.id !== event.oldRecord.id));
+	    });
+	    const unsubHrm3pGradeBandRates = realtimeService.on('hrm_3p_grade_band_rates', (event) => {
+	      if (event.eventType === 'INSERT' || event.eventType === 'UPDATE') upsertById(setHrm3pGradeBandRates, mapHrm3pGradeBandRateFromDb(event.newRecord));
+	      else if (event.eventType === 'DELETE') setHrm3pGradeBandRates(prev => prev.filter(item => item.id !== event.oldRecord.id));
+	    });
+	    const unsubHrmPositionSalaryMappings = realtimeService.on('hrm_position_salary_mappings', (event) => {
+	      if (event.eventType === 'INSERT' || event.eventType === 'UPDATE') upsertById(setHrmPositionSalaryMappings, mapHrmPositionSalaryMappingFromDb(event.newRecord));
+	      else if (event.eventType === 'DELETE') setHrmPositionSalaryMappings(prev => prev.filter(item => item.id !== event.oldRecord.id));
+	    });
+	    const unsubHrmEmployeeCompAssignments = realtimeService.on('hrm_employee_compensation_assignments', (event) => {
+	      if (event.eventType === 'INSERT' || event.eventType === 'UPDATE') upsertById(setHrmEmployeeCompensationAssignments, mapHrmEmployeeCompAssignmentFromDb(event.newRecord));
+	      else if (event.eventType === 'DELETE') setHrmEmployeeCompensationAssignments(prev => prev.filter(item => item.id !== event.oldRecord.id));
+	    });
+	    const unsubHrmPayrollComponents = realtimeService.on('hrm_payroll_components', (event) => {
+	      if (event.eventType === 'INSERT' || event.eventType === 'UPDATE') upsertById(setHrmPayrollComponents, mapHrmPayrollComponentFromDb(event.newRecord));
+	      else if (event.eventType === 'DELETE') setHrmPayrollComponents(prev => prev.filter(item => item.id !== event.oldRecord.id));
+	    });
+	    const unsubHrmPayrollImportBatches = realtimeService.on('hrm_payroll_import_batches', (event) => {
+	      if (event.eventType === 'INSERT' || event.eventType === 'UPDATE') upsertById(setHrmPayrollImportBatches, mapHrmPayrollImportBatchFromDb(event.newRecord));
+	      else if (event.eventType === 'DELETE') setHrmPayrollImportBatches(prev => prev.filter(item => item.id !== event.oldRecord.id));
+	    });
+	    const unsubHrmPayrollImportRows = realtimeService.on('hrm_payroll_import_rows', (event) => {
+	      if (event.eventType === 'INSERT' || event.eventType === 'UPDATE') upsertById(setHrmPayrollImportRows, mapHrmPayrollImportRowFromDb(event.newRecord));
+	      else if (event.eventType === 'DELETE') setHrmPayrollImportRows(prev => prev.filter(item => item.id !== event.oldRecord.id));
+	    });
 
 	    setActiveRealtimeModules([]);
 
@@ -1203,6 +1564,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 	      unsubSettings(); unsubOrg();
 	      unsubHrmPositions(); unsubHrmOrgBlocks(); unsubHrmPositionGroups(); unsubHrmPositionLevels();
 	      unsubHrmCompetencyGroups(); unsubHrmCompetencyLevels(); unsubHrmCatalogItems();
+	      unsubSalaryGrades(); unsubHrmCompensationPlans(); unsubHrm3pBands(); unsubHrm3pGradeBandRates();
+	      unsubHrmPositionSalaryMappings(); unsubHrmEmployeeCompAssignments(); unsubHrmPayrollComponents();
+	      unsubHrmPayrollImportBatches(); unsubHrmPayrollImportRows();
       realtimeTablesRef.current.clear();
       realtimeService.disconnect();
     };
@@ -1410,7 +1774,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } else if (module === 'hrm') {
         const [
           empData, areasData, officesData, empTypesData, positionsData, orgBlocksData, positionGroupsData, positionLevelsData,
-          competencyGroupsData, competencyLevelsData, catalogItemsData, salaryData, schedulesData, constructionSitesData, orgUnitsData,
+          competencyGroupsData, competencyLevelsData, catalogItemsData,
+          salaryGradesData, compensationPlansData, bands3pData, gradeBandRatesData, positionSalaryMappingsData,
+          employeeCompAssignmentsData, payrollComponentsData, payrollImportBatchesData, payrollImportRowsData,
+          salaryData, schedulesData, constructionSitesData, orgUnitsData,
           leaveBalData, leaveReqData, attendData, payrollData, contractData, payrollTplData, holidayData, salaryHistData, shiftTypesData, empShiftsData
         ] = await Promise.all([
           fetchTableHelper('employees'),
@@ -1424,6 +1791,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           fetchTableHelper('hrm_competency_groups'),
           fetchTableHelper('hrm_competency_levels'),
           fetchTableHelper('hrm_catalog_items'),
+          fetchTableHelper('salary_grades'),
+          fetchTableHelper('hrm_compensation_plans'),
+          fetchTableHelper('hrm_3p_bands'),
+          fetchTableHelper('hrm_3p_grade_band_rates'),
+          fetchTableHelper('hrm_position_salary_mappings'),
+          fetchTableHelper('hrm_employee_compensation_assignments'),
+          fetchTableHelper('hrm_payroll_components'),
+          fetchTableHelper('hrm_payroll_import_batches'),
+          fetchTableHelper('hrm_payroll_import_rows'),
           fetchTableHelper('hrm_salary_policies'),
           fetchTableHelper('hrm_work_schedules'),
           fetchTableHelper('hrm_construction_sites'),
@@ -1483,6 +1859,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 	        if (competencyGroupsData) setHrmCompetencyGroups(competencyGroupsData.map(mapHrmCompetencyGroupFromDb));
 	        if (competencyLevelsData) setHrmCompetencyLevels(competencyLevelsData.map(mapHrmCompetencyLevelFromDb));
 	        if (catalogItemsData) setHrmCatalogItems(catalogItemsData.map(mapHrmCatalogItemFromDb));
+	        if (salaryGradesData) setSalaryGrades(salaryGradesData.map(mapSalaryGradeFromDb));
+	        if (compensationPlansData) setHrmCompensationPlans(compensationPlansData.map(mapHrmCompensationPlanFromDb));
+	        if (bands3pData) setHrm3pBands(bands3pData.map(mapHrm3pBandFromDb));
+	        if (gradeBandRatesData) setHrm3pGradeBandRates(gradeBandRatesData.map(mapHrm3pGradeBandRateFromDb));
+	        if (positionSalaryMappingsData) setHrmPositionSalaryMappings(positionSalaryMappingsData.map(mapHrmPositionSalaryMappingFromDb));
+	        if (employeeCompAssignmentsData) setHrmEmployeeCompensationAssignments(employeeCompAssignmentsData.map(mapHrmEmployeeCompAssignmentFromDb));
+	        if (payrollComponentsData) setHrmPayrollComponents(payrollComponentsData.map(mapHrmPayrollComponentFromDb));
+	        if (payrollImportBatchesData) setHrmPayrollImportBatches(payrollImportBatchesData.map(mapHrmPayrollImportBatchFromDb));
+	        if (payrollImportRowsData) setHrmPayrollImportRows(payrollImportRowsData.map(mapHrmPayrollImportRowFromDb));
 	        if (salaryData) setHrmSalaryPolicies(salaryData);
         if (schedulesData) setHrmWorkSchedules(schedulesData.map((s: any) => ({
           id: s.id,
@@ -3245,6 +3630,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 	    'hrm_competency_groups': setHrmCompetencyGroups,
 	    'hrm_competency_levels': setHrmCompetencyLevels,
 	    'hrm_catalog_items': setHrmCatalogItems,
+	    'salary_grades': setSalaryGrades,
+	    'hrm_compensation_plans': setHrmCompensationPlans,
+	    'hrm_3p_bands': setHrm3pBands,
+	    'hrm_3p_grade_band_rates': setHrm3pGradeBandRates,
+	    'hrm_position_salary_mappings': setHrmPositionSalaryMappings,
+	    'hrm_employee_compensation_assignments': setHrmEmployeeCompensationAssignments,
+	    'hrm_payroll_components': setHrmPayrollComponents,
+	    'hrm_payroll_import_batches': setHrmPayrollImportBatches,
+	    'hrm_payroll_import_rows': setHrmPayrollImportRows,
 	    'hrm_salary_policies': setHrmSalaryPolicies,
     'hrm_work_schedules': setHrmWorkSchedules,
     'hrm_construction_sites': setHrmConstructionSites,
@@ -3338,6 +3732,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 	    }
 	    if (table === 'hrm_catalog_items') {
 	      return hrmCatalogItemToDbPayload(item);
+	    }
+	    if (table === 'salary_grades') {
+	      return salaryGradeToDbPayload(item);
+	    }
+	    if (table === 'hrm_compensation_plans') {
+	      return hrmCompensationPlanToDbPayload(item);
+	    }
+	    if (table === 'hrm_3p_bands') {
+	      return hrm3pBandToDbPayload(item);
+	    }
+	    if (table === 'hrm_3p_grade_band_rates') {
+	      return hrm3pGradeBandRateToDbPayload(item);
+	    }
+	    if (table === 'hrm_position_salary_mappings') {
+	      return hrmPositionSalaryMappingToDbPayload(item);
+	    }
+	    if (table === 'hrm_employee_compensation_assignments') {
+	      return hrmEmployeeCompAssignmentToDbPayload(item);
+	    }
+	    if (table === 'hrm_payroll_components') {
+	      return hrmPayrollComponentToDbPayload(item);
+	    }
+	    if (table === 'hrm_payroll_import_batches') {
+	      return hrmPayrollImportBatchToDbPayload(item);
+	    }
+	    if (table === 'hrm_payroll_import_rows') {
+	      return hrmPayrollImportRowToDbPayload(item);
 	    }
 	    if (table === 'hrm_shift_types') {
       return {
@@ -3891,6 +4312,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       categories, units, employees,
 	      hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmOrgBlocks, hrmPositionGroups, hrmPositionLevels,
 	      hrmCompetencyGroups, hrmCompetencyLevels, hrmCatalogItems, getHrmCatalogItems,
+	      salaryGrades, hrmCompensationPlans, hrm3pBands, hrm3pGradeBandRates, hrmPositionSalaryMappings,
+	      hrmEmployeeCompensationAssignments, hrmPayrollComponents, hrmPayrollImportBatches, hrmPayrollImportRows,
 	      hrmSalaryPolicies, hrmWorkSchedules, hrmConstructionSites, constructionSites: hrmConstructionSites,
       shiftTypes, employeeShifts,
       attendanceRecords, leaveRequests, leaveLogs, leaveBalances, payrollRecords, payrollTemplates, holidays, laborContracts, salaryHistory,
