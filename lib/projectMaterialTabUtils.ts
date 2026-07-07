@@ -107,6 +107,131 @@ export const normalizeLookupText = (value?: string | null) =>
         .replace(/[^a-z0-9]+/g, ' ')
         .trim();
 
+const numeric = (value: unknown) => {
+    const amount = Number(value || 0);
+    return Number.isFinite(amount) ? amount : 0;
+};
+
+const roundQuantity = (value: number) => {
+    const multiplier = 10 ** MATERIAL_BUDGET_QTY_PRECISION;
+    return Math.round((value + Number.EPSILON) * multiplier) / multiplier;
+};
+
+const roundPercent = (value: number) => Math.round((value + Number.EPSILON) * 10) / 10;
+
+export type MaterialWasteAggregateRow = MaterialBudgetItem & {
+    aggregateSourceCount?: number;
+    aggregateSourceIds?: string[];
+};
+
+const materialWasteGroupKey = (item: MaterialBudgetItem) => {
+    const code = String(item.materialCode || '').trim();
+    const inventoryId = String(item.inventoryItemId || '').trim();
+    const identity = code
+        ? `code:${normalizeLookupText(code)}`
+        : inventoryId
+            ? `inventory:${inventoryId}`
+            : `name:${normalizeLookupText(item.itemName)}`;
+    return `${identity}|unit:${normalizeLookupText(item.unit)}`;
+};
+
+const materialWasteGroupDisplayCode = (item: MaterialBudgetItem) =>
+    String(item.materialCode || item.inventoryItemId || item.itemName || item.id).trim();
+
+export const aggregateMaterialWasteRows = (items: MaterialBudgetItem[]): MaterialWasteAggregateRow[] => {
+    const grouped = new Map<string, {
+        row: MaterialWasteAggregateRow;
+        thresholdWeightedTotal: number;
+        thresholdWeight: number;
+    }>();
+
+    items.forEach(item => {
+        const key = materialWasteGroupKey(item);
+        const unitKey = normalizeLookupText(item.unit) || 'unit';
+        const displayCode = materialWasteGroupDisplayCode(item);
+        const current = grouped.get(key);
+        const budgetQty = numeric(item.budgetQty);
+        const actualQty = numeric(item.actualQty);
+        const budgetTotal = numeric(item.budgetTotal);
+        const actualTotal = numeric(item.actualTotal);
+        const wasteQty = numeric(item.wasteQty ?? actualQty - budgetQty);
+        const wasteValue = numeric(item.wasteValue);
+        const cumulativeRequested = numeric(item.cumulativeRequested);
+        const cumulativeImported = numeric(item.cumulativeImported);
+        const cumulativeExported = numeric(item.cumulativeExported ?? actualQty);
+        const threshold = numeric(item.wasteThreshold);
+
+        if (!current) {
+            grouped.set(key, {
+                row: {
+                    ...item,
+                    id: `waste:${displayCode}:${unitKey}`,
+                    budgetQty,
+                    budgetTotal,
+                    actualQty,
+                    actualTotal,
+                    wasteQty,
+                    wasteValue,
+                    cumulativeRequested,
+                    cumulativeImported,
+                    cumulativeExported,
+                    aggregateSourceCount: 1,
+                    aggregateSourceIds: [item.id],
+                },
+                thresholdWeightedTotal: threshold * budgetQty,
+                thresholdWeight: budgetQty,
+            });
+            return;
+        }
+
+        const row = current.row;
+        row.budgetQty = roundQuantity(numeric(row.budgetQty) + budgetQty);
+        row.budgetTotal = roundQuantity(numeric(row.budgetTotal) + budgetTotal);
+        row.actualQty = roundQuantity(numeric(row.actualQty) + actualQty);
+        row.actualTotal = roundQuantity(numeric(row.actualTotal) + actualTotal);
+        row.wasteQty = roundQuantity(numeric(row.wasteQty) + wasteQty);
+        row.wasteValue = roundQuantity(numeric(row.wasteValue) + wasteValue);
+        row.cumulativeRequested = roundQuantity(numeric(row.cumulativeRequested) + cumulativeRequested);
+        row.cumulativeImported = roundQuantity(numeric(row.cumulativeImported) + cumulativeImported);
+        row.cumulativeExported = roundQuantity(numeric(row.cumulativeExported) + cumulativeExported);
+        row.aggregateSourceCount = (row.aggregateSourceCount || 1) + 1;
+        row.aggregateSourceIds = [...(row.aggregateSourceIds || []), item.id];
+        if (!row.materialCode && item.materialCode) row.materialCode = item.materialCode;
+        if (!row.inventoryItemId && item.inventoryItemId) row.inventoryItemId = item.inventoryItemId;
+        current.thresholdWeightedTotal += threshold * budgetQty;
+        current.thresholdWeight += budgetQty;
+    });
+
+    return Array.from(grouped.values()).map(({ row, thresholdWeightedTotal, thresholdWeight }) => {
+        const budgetQty = numeric(row.budgetQty);
+        const actualQty = numeric(row.actualQty);
+        const wasteQty = roundQuantity(actualQty - budgetQty);
+        const cumulativeRequested = numeric(row.cumulativeRequested);
+        const cumulativeImported = numeric(row.cumulativeImported);
+        const budgetTotal = numeric(row.budgetTotal);
+        return {
+            ...row,
+            budgetQty: roundQuantity(budgetQty),
+            actualQty: roundQuantity(actualQty),
+            budgetTotal: roundQuantity(budgetTotal),
+            actualTotal: roundQuantity(numeric(row.actualTotal)),
+            budgetUnitPrice: budgetQty > 0 ? roundQuantity(budgetTotal / budgetQty) : numeric(row.budgetUnitPrice),
+            wasteQty,
+            wastePercent: budgetQty > 0 ? roundPercent((wasteQty / budgetQty) * 100) : 0,
+            wasteValue: roundQuantity(numeric(row.wasteValue)),
+            wasteThreshold: thresholdWeight > 0 ? thresholdWeightedTotal / thresholdWeight : numeric(row.wasteThreshold),
+            cumulativeRequested: roundQuantity(cumulativeRequested),
+            cumulativeImported: roundQuantity(cumulativeImported),
+            cumulativeExported: roundQuantity(numeric(row.cumulativeExported)),
+            stockBalance: roundQuantity(cumulativeImported - actualQty),
+            budgetOverPercent: budgetQty > 0 ? Math.max(0, roundPercent(((cumulativeRequested - budgetQty) / budgetQty) * 100)) : 0,
+            autoAlert: budgetQty > 0 && cumulativeRequested > budgetQty
+                ? 'Vượt ngân sách'
+                : wasteQty > 0 ? 'Vượt định mức hao hụt' : undefined,
+        };
+    });
+};
+
 export const SITE_WAREHOUSE_STOP_WORDS = new Set(['kho', 'cong', 'truong', 'du', 'an', 'ct', 'tai', 'khu']);
 
 export const summarizeSync = (preview: WorkBoqSyncPreview) =>

@@ -2059,7 +2059,274 @@ export interface ProjectMaterialRequest extends ProjectSubmissionFields {
 
 // ==================== CUNG ỨNG ====================
 export type POStatus = 'draft' | 'sent' | 'confirmed' | 'in_transit' | 'partial' | 'delivered' | 'closed' | 'returned' | 'cancelled';
-export type PurchaseOrderSourceMode = 'from_request' | 'proactive_project' | 'proactive_stock' | 'company_consolidated';
+export type PurchaseOrderSourceMode =
+  | 'from_request'
+  | 'proactive_project'
+  | 'proactive_stock'
+  | 'company_consolidated'
+  | 'site_direct_planned'
+  | 'site_direct_immediate';
+
+export type SupplierPayableSourceType =
+  | 'purchase_order'
+  | 'site_direct_purchase'
+  | 'supplier_return_credit'
+  | 'opening_balance'
+  | 'manual_adjustment';
+export type SupplierPayableDocumentStatus = 'draft' | 'open' | 'payable' | 'partial' | 'paid' | 'cancelled' | 'reversed';
+
+export interface SupplierPayableDocument {
+  id: string;
+  code?: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  supplierId?: string | null;
+  supplierNameSnapshot: string;
+  sourceType: SupplierPayableSourceType;
+  sourceId: string;
+  documentNo: string;
+  documentDate?: string | null;
+  dueDate?: string | null;
+  currency: string;
+  committedAmount: number;
+  recognizedAmount: number;
+  paidAmount: number;
+  creditAmount: number;
+  outstandingAmount: number;
+  status: SupplierPayableDocumentStatus;
+  qrToken?: string | null;
+  invoiceNumber?: string | null;
+  invoiceDate?: string | null;
+  metadata?: Record<string, any>;
+  createdBy?: string | null;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface SupplierPayableBalance {
+  id?: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  supplierId?: string | null;
+  supplierNameSnapshot: string;
+  currency: string;
+  recognizedAmount: number;
+  paidAmount: number;
+  creditAmount: number;
+  outstandingAmount: number;
+  documentCount: number;
+  oldestDueDate?: string | null;
+  latestDocumentDate?: string | null;
+  isOverdue?: boolean;
+  updatedAt?: string;
+}
+
+export type SupplierPaymentAllocationMode = 'fifo' | 'manual' | 'proportional';
+export type SupplierPaymentBatchStatus = 'draft' | 'submitted' | 'approved' | 'paid' | 'cancelled' | 'reversed';
+export type SupplierPaymentMethod = 'bank_transfer' | 'cash' | 'site_cash' | 'offset' | 'other';
+
+export interface SupplierPaymentBatch {
+  id: string;
+  code: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  supplierId?: string | null;
+  supplierNameSnapshot: string;
+  periodMonth?: string | null;
+  paymentDate: string;
+  paymentMethod?: SupplierPaymentMethod;
+  cashFundId?: string | null;
+  cashVoucherId?: string | null;
+  projectTransactionId?: string | null;
+  bankAccountSnapshot?: string | null;
+  documentRef?: string | null;
+  totalRecognizedSnapshot?: number;
+  amount: number;
+  paymentAmount?: number;
+  currency?: string;
+  status: SupplierPaymentBatchStatus;
+  allocationMode: SupplierPaymentAllocationMode;
+  qrToken?: string | null;
+  attachments?: Attachment[];
+  metadata?: Record<string, any>;
+  createdBy?: string | null;
+  approvedBy?: string | null;
+  paidBy?: string | null;
+  createdAt: string;
+  approvedAt?: string | null;
+  paidAt?: string | null;
+  updatedAt?: string;
+  note?: string | null;
+}
+
+export interface SupplierPaymentAllocation {
+  id: string;
+  paymentBatchId: string;
+  payableDocumentId: string;
+  sourceType?: SupplierPayableSourceType;
+  sourceId?: string;
+  documentNoSnapshot?: string;
+  recognizedAmountSnapshot?: number;
+  paidBeforeSnapshot?: number;
+  outstandingBeforeSnapshot?: number;
+  allocatedAmount: number;
+  discountAmount: number;
+  withholdingAmount: number;
+  allocationMode: SupplierPaymentAllocationMode;
+  note?: string | null;
+  createdAt: string;
+}
+
+export type SiteDirectPurchaseMode = 'planned' | 'immediate';
+export type SiteDirectPurchasePaymentSource = 'site_cash' | 'company_bank' | 'staff_paid' | 'supplier_credit';
+export type SiteDirectPurchaseStatus =
+  | 'draft'
+  | 'submitted'
+  | 'approved_to_buy'
+  | 'purchased'
+  | 'received'
+  | 'finance_review'
+  | 'reconciled'
+  | 'closed'
+  | 'rejected'
+  | 'cancelled';
+export type SiteDirectPurchaseLineType = 'stock_item' | 'expense_only';
+export type SiteDirectPurchaseLineStatus = 'pending' | 'accepted' | 'adjusted' | 'rejected';
+
+export interface SiteDirectPurchase {
+  id: string;
+  code: string;
+  projectId?: string | null;
+  constructionSiteId: string;
+  supplierId?: string | null;
+  supplierNameSnapshot: string;
+  purchaseMode: SiteDirectPurchaseMode;
+  paymentSource: SiteDirectPurchasePaymentSource;
+  targetWarehouseId?: string | null;
+  status: SiteDirectPurchaseStatus;
+  purchaseDate?: string | null;
+  invoiceNumber?: string | null;
+  invoiceDate?: string | null;
+  grossAmount: number;
+  vatAmount: number;
+  totalAmount: number;
+  poId?: string | null;
+  wmsTransactionId?: string | null;
+  siteCashSettlementId?: string | null;
+  qrToken?: string | null;
+  attachments?: Attachment[];
+  createdBy?: string | null;
+  createdAt: string;
+  updatedAt?: string;
+  lines?: SiteDirectPurchaseLine[];
+}
+
+export interface SiteDirectPurchaseLine {
+  id: string;
+  directPurchaseId: string;
+  lineNo: number;
+  lineType: SiteDirectPurchaseLineType;
+  itemId?: string | null;
+  skuSnapshot?: string | null;
+  itemNameSnapshot: string;
+  unitSnapshot?: string | null;
+  quantity: number;
+  unitPrice: number;
+  vatRate: number;
+  lineAmount: number;
+  vatAmount?: number;
+  acceptedQuantity: number;
+  acceptedAmount: number;
+  status?: SiteDirectPurchaseLineStatus;
+  rejectionReason?: string | null;
+  workBoqItemId?: string | null;
+  materialBudgetItemId?: string | null;
+  note?: string | null;
+}
+
+export type SiteCashSettlementBatchStatus = 'draft' | 'submitted' | 'reviewing' | 'approved' | 'closed' | 'cancelled';
+export type SiteCashSettlementLineSourceType = 'site_direct_purchase' | 'cash_voucher' | 'manual_adjustment';
+export type SiteCashSettlementLineStatus = 'pending' | 'accepted' | 'adjusted' | 'rejected';
+
+export interface SiteCashSettlementBatch {
+  id: string;
+  code: string;
+  projectId?: string | null;
+  constructionSiteId: string;
+  periodMonth: string;
+  cashFundId?: string | null;
+  openingBalance: number;
+  topupAmount: number;
+  acceptedSpendAmount: number;
+  rejectedSpendAmount: number;
+  closingBalance: number;
+  status: SiteCashSettlementBatchStatus;
+  qrToken?: string | null;
+  createdBy?: string | null;
+  approvedBy?: string | null;
+  createdAt: string;
+  approvedAt?: string | null;
+  updatedAt?: string;
+  note?: string | null;
+}
+
+export interface SiteCashSettlementLine {
+  id: string;
+  settlementBatchId: string;
+  sourceType: SiteCashSettlementLineSourceType;
+  sourceId: string;
+  supplierId?: string | null;
+  documentNoSnapshot?: string | null;
+  description?: string | null;
+  claimedAmount: number;
+  spendAmount?: number;
+  approvedAmount: number;
+  status: SiteCashSettlementLineStatus;
+  reviewNote?: string | null;
+  note?: string | null;
+  createdAt: string;
+}
+
+export type DocumentTraceNodeType =
+  | 'material_request'
+  | 'purchase_order'
+  | 'wms_transaction'
+  | 'supplier_payable_document'
+  | 'supplier_payment_batch'
+  | 'project_transaction'
+  | 'site_direct_purchase'
+  | 'site_cash_settlement_batch';
+
+export interface DocumentQrPayload {
+  v: 1;
+  type: DocumentTraceNodeType;
+  id: string;
+  token: string;
+}
+
+export interface DocumentTraceNode {
+  id: string;
+  type: DocumentTraceNodeType;
+  label: string;
+  documentNo?: string | null;
+  status?: string | null;
+  amount?: number | null;
+  qrToken?: string | null;
+  metadata?: Record<string, any>;
+}
+
+export interface DocumentTraceEdge {
+  from: string;
+  to: string;
+  relation: string;
+  amount?: number | null;
+  metadata?: Record<string, any>;
+}
+
+export interface DocumentTraceGraph {
+  nodes: DocumentTraceNode[];
+  edges: DocumentTraceEdge[];
+}
 
 export interface ProjectVendor {
   id: string;

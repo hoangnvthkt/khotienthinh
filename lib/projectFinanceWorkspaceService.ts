@@ -11,6 +11,7 @@ import {
   ProjectTransaction,
   PurchaseOrder,
   SubcontractorContract,
+  SupplierPayableBalance,
 } from '../types';
 
 export type ProjectFinanceWorkspaceTab =
@@ -25,9 +26,15 @@ export type ProjectFinanceWorkspaceTab =
 export type ProjectFinanceCounterpartyType = 'customer' | 'supplier' | 'subcontractor' | 'team' | 'other';
 export type ProjectFinanceDocumentType =
   | 'purchase_order'
+  | 'supplier_payable'
   | 'payment_certificate'
   | 'payment_schedule'
   | 'project_transaction';
+export type ProjectFinanceSourceTab = 'material' | 'contract' | 'payment' | 'cashflow' | 'finance';
+export interface ProjectFinanceSourceRoute {
+  tab: ProjectFinanceSourceTab;
+  params?: Record<string, string>;
+}
 
 export interface ProjectFinancePayableRow {
   id: string;
@@ -44,7 +51,9 @@ export interface ProjectFinancePayableRow {
   recognizedAmount: number;
   paidAmount: number;
   outstandingAmount: number;
-  sourceTab: 'material' | 'contract' | 'payment' | 'cashflow';
+  sourceTab: ProjectFinanceSourceTab;
+  sourceLabel?: string;
+  sourceRoute?: ProjectFinanceSourceRoute;
 }
 
 export interface ProjectFinanceReceivableRow {
@@ -62,7 +71,9 @@ export interface ProjectFinanceReceivableRow {
   recognizedAmount: number;
   receivedAmount: number;
   outstandingAmount: number;
-  sourceTab: 'contract' | 'payment' | 'cashflow';
+  sourceTab: 'contract' | 'payment' | 'cashflow' | 'finance';
+  sourceLabel?: string;
+  sourceRoute?: ProjectFinanceSourceRoute;
 }
 
 export interface ProjectFinanceLedgerRow {
@@ -189,6 +200,20 @@ const payableStatus = (recognized: number, paid: number, committed = recognized)
   return 'payable';
 };
 
+const formatPeriodMonth = (value?: string | null) => {
+  if (!value) return null;
+  const [year, month] = value.slice(0, 10).split('-');
+  if (!year || !month) return null;
+  return `T${month}/${year}`;
+};
+
+const formatShortDate = (value?: string | null) => {
+  if (!value) return null;
+  const [year, month, day] = value.slice(0, 10).split('-');
+  if (!year || !month || !day) return null;
+  return `${day}/${month}/${year}`;
+};
+
 export const buildPurchaseOrderPayableRow = (
   po: PurchaseOrder,
   transactions: ProjectTransaction[],
@@ -212,6 +237,52 @@ export const buildPurchaseOrderPayableRow = (
     paidAmount,
     outstandingAmount: Math.max(0, recognizedAmount - paidAmount),
     sourceTab: 'material',
+    sourceLabel: 'Mở PO',
+    sourceRoute: {
+      tab: 'material',
+      params: {
+        materialTab: 'po',
+        poId: po.id,
+      },
+    },
+  };
+};
+
+export const buildSupplierPayableRowFromBalance = (balance: SupplierPayableBalance): ProjectFinancePayableRow => {
+  const recognizedAmount = money(balance.recognizedAmount);
+  const paidAmount = money(balance.paidAmount);
+  const outstandingAmount = money(balance.outstandingAmount);
+  const period = formatPeriodMonth(balance.latestDocumentDate || balance.oldestDueDate);
+  const latestDate = formatShortDate(balance.latestDocumentDate);
+  const description = [
+    `${balance.documentCount || 0} chứng từ AP`,
+    period ? `kỳ ${period}` : '',
+    latestDate ? `mới nhất ${latestDate}` : '',
+  ].filter(Boolean).join(' • ');
+  return {
+    id: `supplier_payable:${balance.id || balance.supplierId || balance.supplierNameSnapshot}`,
+    sourceType: 'supplier_payable',
+    sourceId: balance.supplierId || balance.id || balance.supplierNameSnapshot,
+    counterpartyType: 'supplier',
+    counterpartyName: balance.supplierNameSnapshot || balance.supplierId || 'Nhà cung cấp',
+    documentNo: 'Công nợ NCC',
+    description: description || 'Chứng từ AP phải trả NCC',
+    documentDate: balance.latestDocumentDate || null,
+    dueDate: balance.oldestDueDate || null,
+    status: payableStatus(recognizedAmount, paidAmount + money(balance.creditAmount), recognizedAmount),
+    committedAmount: recognizedAmount,
+    recognizedAmount,
+    paidAmount,
+    outstandingAmount,
+    sourceTab: 'material',
+    sourceLabel: 'Chứng từ AP',
+    sourceRoute: {
+      tab: 'finance',
+      params: {
+        financeTab: 'payables',
+        ...(balance.supplierId ? { supplierId: balance.supplierId } : {}),
+      },
+    },
   };
 };
 
@@ -258,11 +329,16 @@ const buildPayables = (
   schedules: PaymentSchedule[],
   transactions: ProjectTransaction[],
   subcontractors: SubcontractorContract[],
+  supplierPayableBalances: SupplierPayableBalance[] = [],
 ): ProjectFinancePayableRow[] => {
   const subcontractById = new Map(subcontractors.map(contract => [contract.id, contract]));
-  const poRows: ProjectFinancePayableRow[] = purchaseOrders
-    .filter(po => !['cancelled', 'returned'].includes(String(po.status || '')))
-    .map(po => buildPurchaseOrderPayableRow(po, transactions));
+  const materialPayableRows: ProjectFinancePayableRow[] = supplierPayableBalances.length > 0
+    ? supplierPayableBalances
+      .filter(balance => money(balance.recognizedAmount) > 0 || money(balance.outstandingAmount) > 0)
+      .map(buildSupplierPayableRowFromBalance)
+    : purchaseOrders
+      .filter(po => !['cancelled', 'returned'].includes(String(po.status || '')))
+      .map(po => buildPurchaseOrderPayableRow(po, transactions));
 
   const certRows: ProjectFinancePayableRow[] = paymentCertificates
     .filter(cert => cert.contractType === 'subcontractor')
@@ -319,7 +395,7 @@ const buildPayables = (
       };
     });
 
-  return [...poRows, ...certRows, ...scheduleRows]
+  return [...materialPayableRows, ...certRows, ...scheduleRows]
     .sort((a, b) => String(a.dueDate || a.documentDate || '').localeCompare(String(b.dueDate || b.documentDate || '')));
 };
 
@@ -465,9 +541,16 @@ const buildSummary = (input: {
     .filter(contract => contract.status !== 'cancelled')
     .reduce((sum, contract) => sum + Number(contract.value || 0), 0));
   const budgetAmount = money(rootCosts.reduce((sum, item) => sum + Number(item.budgetAmount || 0), 0));
-  const actualCost = sumTransactions(input.transactions, tx => tx.type === 'expense');
   const cashIn = sumTransactions(input.transactions, tx => tx.type === 'revenue_received');
-  const cashOut = actualCost;
+  const supplierMaterialCost = money(input.payables
+    .filter(row => row.sourceType === 'supplier_payable' || row.sourceType === 'purchase_order')
+    .reduce((sum, row) => sum + row.recognizedAmount, 0));
+  const nonSupplierCashCost = sumTransactions(input.transactions, tx => {
+    if (tx.type !== 'expense') return false;
+    return !(tx.category === 'materials' && String(tx.sourceRef || '').startsWith('supplier_payment_batch:'));
+  });
+  const actualCost = money(supplierMaterialCost + nonSupplierCashCost);
+  const cashOut = sumTransactions(input.transactions, tx => tx.type === 'expense');
   const certifiedRevenue = money(input.paymentCertificates
     .filter(cert => cert.contractType === 'customer' && ['approved', 'paid'].includes(cert.status))
     .reduce((sum, cert) => sum + Number(cert.grossThisPeriod ?? cert.currentCompletedValue ?? 0), 0));
@@ -535,6 +618,7 @@ export const projectFinanceWorkspaceService = {
       advances,
       costItems,
       purchaseOrders,
+      supplierPayableBalances,
       loadedTransactions,
     ] = await Promise.all([
       loadScopedRows<CustomerContract>('customer_contracts', projectId, constructionSiteId),
@@ -544,13 +628,14 @@ export const projectFinanceWorkspaceService = {
       loadScopedRows<AdvancePayment>('advance_payments', projectId, constructionSiteId),
       loadScopedRows<ProjectCostItem>('project_cost_items', projectId, constructionSiteId, 'order'),
       loadScopedPurchaseOrders(projectId, constructionSiteId),
+      loadScopedRows<SupplierPayableBalance>('supplier_payable_balances', projectId, constructionSiteId, 'latest_document_date'),
       input.transactions
         ? Promise.resolve(input.transactions)
         : loadScopedRows<ProjectTransaction>('project_transactions', projectId, constructionSiteId, 'date'),
     ]);
 
     const transactions = dedupeById(loadedTransactions);
-    const payables = buildPayables(purchaseOrders, paymentCertificates, schedules, transactions, subcontractors);
+    const payables = buildPayables(purchaseOrders, paymentCertificates, schedules, transactions, subcontractors, supplierPayableBalances);
     const receivables = buildReceivables(customerContracts, paymentCertificates, schedules, transactions);
     return {
       summary: buildSummary({

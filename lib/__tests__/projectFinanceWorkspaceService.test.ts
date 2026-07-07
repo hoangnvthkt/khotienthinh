@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ProjectTransaction, PurchaseOrder } from '../../types';
-import { buildPurchaseOrderPayableRow, calculatePoRecognizedPayable } from '../projectFinanceWorkspaceService';
+import { ProjectTransaction, PurchaseOrder, SupplierPayableBalance } from '../../types';
+import {
+  buildPurchaseOrderPayableRow,
+  buildSupplierPayableRowFromBalance,
+  calculatePoRecognizedPayable,
+} from '../projectFinanceWorkspaceService';
 
 vi.mock('../supabase', () => ({
   supabase: {},
@@ -114,5 +118,70 @@ describe('projectFinanceWorkspaceService', () => {
     expect(row.paidAmount).toBe(12_000_000);
     expect(row.outstandingAmount).toBe(0);
     expect(row.status).toBe('paid');
+  });
+
+  it('builds supplier payable rows from AP balances instead of PO payment transactions', () => {
+    const balance: SupplierPayableBalance = {
+      id: 'balance-supplier-a',
+      projectId: 'project-1',
+      constructionSiteId: 'site-1',
+      supplierId: 'supplier-a',
+      supplierNameSnapshot: 'NCC A',
+      currency: 'VND',
+      recognizedAmount: 1_000_000_000,
+      paidAmount: 300_000_000,
+      creditAmount: 0,
+      outstandingAmount: 700_000_000,
+      documentCount: 10,
+      oldestDueDate: '2026-07-01',
+      latestDocumentDate: '2026-07-31',
+    };
+
+    const row = buildSupplierPayableRowFromBalance(balance);
+
+    expect(row.sourceType).toBe('supplier_payable');
+    expect(row.counterpartyName).toBe('NCC A');
+    expect(row.recognizedAmount).toBe(1_000_000_000);
+    expect(row.paidAmount).toBe(300_000_000);
+    expect(row.outstandingAmount).toBe(700_000_000);
+    expect(row.description).toContain('10 chứng từ');
+  });
+
+  it('uses business labels instead of supplier UUIDs for aggregated AP rows', () => {
+    const balance: SupplierPayableBalance = {
+      id: '50b50577-1c2d-4d82-9154-9f18800b6f6b',
+      projectId: 'project-1',
+      constructionSiteId: 'site-1',
+      supplierId: '50b50577-1c2d-4d82-9154-9f18800b6f6b',
+      supplierNameSnapshot: 'Công ty TNHH Tuấn Anh',
+      currency: 'VND',
+      recognizedAmount: 360_000,
+      paidAmount: 0,
+      creditAmount: 0,
+      outstandingAmount: 360_000,
+      documentCount: 1,
+      latestDocumentDate: '2026-07-15',
+    };
+
+    const row = buildSupplierPayableRowFromBalance(balance);
+
+    expect(row.documentNo).toBe('Công nợ NCC');
+    expect(row.documentNo).not.toContain(balance.supplierId!);
+    expect(row.description).toContain('1 chứng từ AP');
+    expect(row.description).toContain('T07/2026');
+    expect(row.sourceLabel).toBe('Chứng từ AP');
+  });
+
+  it('deep-links purchase order payable rows to the PO document position', () => {
+    const row = buildPurchaseOrderPayableRow(basePo({ id: 'po-deep-link', poNumber: 'PO-2026-001' }), []);
+
+    expect(row.sourceRoute).toEqual({
+      tab: 'material',
+      params: {
+        materialTab: 'po',
+        poId: 'po-deep-link',
+      },
+    });
+    expect(row.sourceLabel).toBe('Mở PO');
   });
 });

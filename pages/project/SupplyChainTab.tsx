@@ -106,6 +106,7 @@ interface SupplyChainTabProps {
     compact?: boolean;
     initialDraftPo?: MaterialPlanningDraftPo | null;
     initialDraftPoKey?: number;
+    deepLinkPoId?: string | null;
 }
 
 const fmt = (n: number) => {
@@ -158,6 +159,8 @@ const PO_SOURCE_MODE: Record<PurchaseOrderSourceMode, { label: string; color: st
     proactive_project: { label: 'Mua chủ động dự án', color: 'bg-blue-500/10 text-blue-450 border-blue-500/20' },
     proactive_stock: { label: 'Mua dự trữ kho tổng', color: 'bg-muted text-muted-foreground border-border' },
     company_consolidated: { label: 'PO công ty', color: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20' },
+    site_direct_planned: { label: 'Mua nóng có đề xuất', color: 'bg-orange-500/10 text-orange-600 border-orange-500/20' },
+    site_direct_immediate: { label: 'Mua nóng ngay', color: 'bg-rose-500/10 text-rose-600 border-rose-500/20' },
 };
 
 const ACTIVE_REQUEST_BUDGET_STATUSES = new Set<RequestStatus | string>([
@@ -325,7 +328,7 @@ const hasPoStockImpactHint = (
     return hasReceivedQty || hasReceiptTransactions || hasCompletedSupplierReturn;
 };
 
-const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, projectId, canManageTab = true, compact = false, initialDraftPo = null, initialDraftPoKey = 0 }) => {
+const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, projectId, canManageTab = true, compact = false, initialDraftPo = null, initialDraftPoKey = 0, deepLinkPoId = null }) => {
     const toast = useToast();
     const confirm = useConfirm();
     const reasonConfirm = useReasonConfirm();
@@ -523,6 +526,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     const poImportModeRef = useRef<ExcelImportMode>('create');
     const poBoqMetaScopeRef = useRef<string | null>(null);
     const lastInitialDraftPoKeyRef = useRef<number>(0);
+    const lastDeepLinkPoIdRef = useRef<string | null>(null);
     const workBoqMap = useMemo(() => new Map(workBoqItems.map(item => [item.id, item])), [workBoqItems]);
     const materialBudgetMap = useMemo(() => new Map(materialBudgetItems.map(item => [item.id, item])), [materialBudgetItems]);
     const supplierById = useMemo(() => new Map(partners.map(partner => [partner.id, partner])), [partners]);
@@ -3399,8 +3403,26 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     const poPageEnd = Math.min(sortedPos.length, (poPage - 1) * PO_PAGE_SIZE + pagedPos.length);
 
     useEffect(() => {
+        if (!deepLinkPoId) {
+            lastDeepLinkPoIdRef.current = null;
+            return;
+        }
+        if (lastDeepLinkPoIdRef.current === deepLinkPoId) return;
+        const targetIndex = sortedPos.findIndex(po => po.id === deepLinkPoId);
+        if (targetIndex < 0) return;
+        const targetPo = sortedPos[targetIndex];
+        lastDeepLinkPoIdRef.current = deepLinkPoId;
+        setPoPage(Math.floor(targetIndex / PO_PAGE_SIZE) + 1);
+        setExpandedPoId(deepLinkPoId);
+        setExpandedDeliveryGroupKey(null);
+        setPoPrintMenuId(null);
+        void loadPoDeliveryPrintGroups(targetPo);
+    }, [deepLinkPoId, sortedPos]);
+
+    useEffect(() => {
+        if (deepLinkPoId) return;
         setPoPage(1);
-    }, [constructionSiteId, projectId, sortedPos.length]);
+    }, [constructionSiteId, deepLinkPoId, projectId, sortedPos.length]);
 
     useEffect(() => {
         if (poPage > poPageCount) setPoPage(poPageCount);

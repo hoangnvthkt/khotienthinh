@@ -37,6 +37,7 @@ import { MaterialSummaryTab } from '../../components/project/material/MaterialSu
 import { MaterialTabHeader } from '../../components/project/material/MaterialTabHeader';
 import { MaterialWasteTab } from '../../components/project/material/MaterialWasteTab';
 import {
+    aggregateMaterialWasteRows,
     calculateMaterialBudgetQty,
     fmt,
     formatBoqWriteError,
@@ -201,6 +202,10 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     const [requestFulfillmentBatchCounts, setRequestFulfillmentBatchCounts] = useState<Record<string, number>>({});
     const activeMaterialRequestDeepLinkId = useMemo(
         () => new URLSearchParams(location.search).get('requestId'),
+        [location.search],
+    );
+    const activePurchaseOrderDeepLinkId = useMemo(
+        () => new URLSearchParams(location.search).get('poId'),
         [location.search],
     );
     const needsProjectRequestData = PROJECT_REQUEST_DATA_TABS.has(activeSubTab) || isReqModalOpen || Boolean(activeMaterialRequestDeepLinkId);
@@ -1919,9 +1924,14 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         };
     };
 
-    const sortedWasteBoqItems = useMemo(
-        () => [...computedBoqItems].sort((a, b) => (b.wastePercent || 0) - (a.wastePercent || 0)),
+    const aggregatedWasteBoqItems = useMemo(
+        () => aggregateMaterialWasteRows(computedBoqItems),
         [computedBoqItems],
+    );
+
+    const sortedWasteBoqItems = useMemo(
+        () => [...aggregatedWasteBoqItems].sort((a, b) => (b.wastePercent || 0) - (a.wastePercent || 0)),
+        [aggregatedWasteBoqItems],
     );
 
     const handleSyncWithSchedule = async () => {
@@ -2017,35 +2027,35 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     };
 
     const buildWorkBoqExcelRows = () => workBoqTree.map(({ item }) => ({
-            'Mã WBS': item.wbsCode || '',
-            'Mã cha': item.parentId ? workBoqItems.find(parent => parent.id === item.parentId)?.wbsCode || '' : '',
-            'Tên đầu mục': item.name,
-            'ĐVT': item.unit || '',
-            'KL dự toán': item.plannedQty || 0,
-            'Đơn giá': item.unitPrice || 0,
-            'Ghi chú': item.notes || '',
-        }));
+        'Mã WBS': item.wbsCode || '',
+        'Mã cha': item.parentId ? workBoqItems.find(parent => parent.id === item.parentId)?.wbsCode || '' : '',
+        'Tên đầu mục': item.name,
+        'ĐVT': item.unit || '',
+        'KL dự toán': item.plannedQty || 0,
+        'Đơn giá': item.unitPrice || 0,
+        'Ghi chú': item.notes || '',
+    }));
 
     const buildMaterialBoqExcelRows = (includeActualColumns = true) => computedBoqItems.map(item => {
-            const workItem = item.workBoqItemId ? workBoqItems.find(work => work.id === item.workBoqItemId) : undefined;
-            const row: Record<string, string | number> = {
-                'WBS đầu mục': workItem?.wbsCode || '',
-                'Mã vật tư/SKU': item.materialCode || '',
-                'Tên vật tư': item.itemName,
-                'Nhóm': item.category,
-                'ĐVT': item.unit,
-                'KL dự toán': item.budgetQty,
-                'Ngưỡng hao hụt': item.wasteThreshold,
-                'Đơn giá': item.budgetUnitPrice,
-                'Ghi chú': item.notes || '',
-            };
-            if (includeActualColumns) {
-                row['KL thực tế công trường'] = item.actualQty || 0;
-                row['Giá trị thực tế công trường'] = item.actualTotal || 0;
-                row['Chênh KL thực tế - dự toán'] = item.wasteQty || 0;
-            }
-            return row;
-        });
+        const workItem = item.workBoqItemId ? workBoqItems.find(work => work.id === item.workBoqItemId) : undefined;
+        const row: Record<string, string | number> = {
+            'WBS đầu mục': workItem?.wbsCode || '',
+            'Mã vật tư/SKU': item.materialCode || '',
+            'Tên vật tư': item.itemName,
+            'Nhóm': item.category,
+            'ĐVT': item.unit,
+            'KL dự toán': item.budgetQty,
+            'Ngưỡng hao hụt': item.wasteThreshold,
+            'Đơn giá': item.budgetUnitPrice,
+            'Ghi chú': item.notes || '',
+        };
+        if (includeActualColumns) {
+            row['KL thực tế công trường'] = item.actualQty || 0;
+            row['Giá trị thực tế công trường'] = item.actualTotal || 0;
+            row['Chênh KL thực tế - dự toán'] = item.wasteQty || 0;
+        }
+        return row;
+    });
 
     const buildWorkBoqWorkbook = (XLSX: any, workRows: Record<string, string | number>[], materialRows: Record<string, string | number>[], includeActualColumns = true) => {
         const wb = XLSX.utils.book_new();
@@ -2317,19 +2327,19 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
 
     // Stats using computed data
     const stats = useMemo(() => {
-        const totalBudget = computedBoqItems.reduce((s, b) => s + (b.budgetTotal || 0), 0);
-        const totalActual = computedBoqItems.reduce((s, b) => s + (b.actualTotal || 0), 0);
-        const overWaste = computedBoqItems.filter(b => (b.wasteQty || 0) > 0);
-        const overBudget = computedBoqItems.filter(b => (b.budgetOverPercent || 0) > 0);
-        const totalWasteValue = computedBoqItems.reduce((s, b) => s + Math.abs(b.wasteValue || 0), 0);
-        const totalRequested = computedBoqItems.reduce((s, b) => s + (b.cumulativeRequested || 0) * (b.budgetUnitPrice || 0), 0);
+        const totalBudget = aggregatedWasteBoqItems.reduce((s, b) => s + (b.budgetTotal || 0), 0);
+        const totalActual = aggregatedWasteBoqItems.reduce((s, b) => s + (b.actualTotal || 0), 0);
+        const overWaste = aggregatedWasteBoqItems.filter(b => (b.wasteQty || 0) > 0);
+        const overBudget = aggregatedWasteBoqItems.filter(b => (b.budgetOverPercent || 0) > 0);
+        const totalWasteValue = aggregatedWasteBoqItems.reduce((s, b) => s + Math.abs(b.wasteValue || 0), 0);
+        const totalRequested = aggregatedWasteBoqItems.reduce((s, b) => s + (b.cumulativeRequested || 0) * (b.budgetUnitPrice || 0), 0);
         const pending = requests.filter(r => r.status === RequestStatus.PENDING).length;
         return { totalBudget, totalActual, diff: totalActual - totalBudget, overWaste: overWaste.length, overBudget: overBudget.length, totalWasteValue, totalRequested, pendingReq: pending, boqCount: computedBoqItems.length };
-    }, [computedBoqItems, requests]);
+    }, [aggregatedWasteBoqItems, computedBoqItems.length, requests]);
 
     // Chart data for waste comparison
     const wasteChartData = useMemo(() => {
-        return computedBoqItems.map(b => ({
+        return aggregatedWasteBoqItems.map(b => ({
             name: b.itemName.length > 8 ? b.itemName.slice(0, 8) + '…' : b.itemName,
             'Dự toán': b.budgetQty,
             'Thực tế': b.actualQty,
@@ -2337,7 +2347,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             threshold: b.wasteThreshold,
             isOver: (b.wasteQty || 0) > 0,
         }));
-    }, [computedBoqItems]);
+    }, [aggregatedWasteBoqItems]);
 
     const budgetCategoryChartData = useMemo(() => {
         const catMap: Record<string, number> = {};
@@ -2552,27 +2562,27 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                     return (
                                         <section
                                             key={item.id}
-                                             className={`overflow-hidden rounded-2xl border transition shadow-sm
-                                                 ${isOrphan 
-                                                     ? 'border-amber-200 border-l-4 border-l-amber-500 bg-amber-50/20 dark:border-amber-900/50 dark:bg-amber-950/5' 
-                                                     : isLevel0
-                                                         ? 'border-blue-200 border-l-4 border-l-blue-600 bg-blue-50/50 dark:border-blue-900/40 dark:border-l-blue-500 dark:bg-slate-900/60'
-                                                         : level === 1
-                                                             ? 'border-indigo-200 border-l-4 border-l-indigo-400 bg-indigo-50/20 dark:border-indigo-950/60 dark:border-l-indigo-500 dark:bg-slate-900/40'
-                                                             : 'border-slate-200 border-l-4 border-l-slate-400 bg-slate-50/40 dark:border-slate-800 dark:border-l-slate-600 dark:bg-slate-900/20'
-                                                 } 
+                                            className={`overflow-hidden rounded-2xl border transition shadow-sm
+                                                 ${isOrphan
+                                                    ? 'border-amber-200 border-l-4 border-l-amber-500 bg-amber-50/20 dark:border-amber-900/50 dark:bg-amber-950/5'
+                                                    : isLevel0
+                                                        ? 'border-blue-200 border-l-4 border-l-blue-600 bg-blue-50/50 dark:border-blue-900/40 dark:border-l-blue-500 dark:bg-slate-900/60'
+                                                        : level === 1
+                                                            ? 'border-indigo-200 border-l-4 border-l-indigo-400 bg-indigo-50/20 dark:border-indigo-950/60 dark:border-l-indigo-500 dark:bg-slate-900/40'
+                                                            : 'border-slate-200 border-l-4 border-l-slate-400 bg-slate-50/40 dark:border-slate-800 dark:border-l-slate-600 dark:bg-slate-900/20'
+                                                }
                                                  ${level > 0 ? 'ml-4 md:ml-8' : ''}
                                              `}
-                                         >
-                                             <div className={`
+                                        >
+                                            <div className={`
                                                  ${isOrphan
-                                                     ? 'bg-amber-50/50 dark:bg-amber-950/20'
-                                                     : isLevel0 
-                                                         ? 'bg-gradient-to-r from-blue-100/80 to-blue-50/30 dark:from-blue-950/60 dark:to-slate-900/40' 
-                                                         : level === 1
-                                                             ? 'bg-gradient-to-r from-indigo-100/60 to-indigo-50/10 dark:from-indigo-950/40 dark:to-slate-900/30'
-                                                             : 'bg-gradient-to-r from-slate-100 to-slate-50/20 dark:from-slate-900/60 dark:to-slate-900/20'
-                                                 } px-4 py-4
+                                                    ? 'bg-amber-50/50 dark:bg-amber-950/20'
+                                                    : isLevel0
+                                                        ? 'bg-gradient-to-r from-blue-100/80 to-blue-50/30 dark:from-blue-950/60 dark:to-slate-900/40'
+                                                        : level === 1
+                                                            ? 'bg-gradient-to-r from-indigo-100/60 to-indigo-50/10 dark:from-indigo-950/40 dark:to-slate-900/30'
+                                                            : 'bg-gradient-to-r from-slate-100 to-slate-50/20 dark:from-slate-900/60 dark:to-slate-900/20'
+                                                } px-4 py-4
                                              `}>
                                                 <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
                                                     <div className="min-w-0 flex-1">
@@ -2850,6 +2860,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                         canManageTab={canManagePo}
                         initialDraftPo={planningDraftPo}
                         initialDraftPoKey={planningDraftPoKey}
+                        deepLinkPoId={activePurchaseOrderDeepLinkId}
                         compact
                     />
                 </React.Suspense>

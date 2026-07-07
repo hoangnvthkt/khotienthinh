@@ -633,10 +633,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (currentProfile) {
           const mappedUser = mapUserFromDb(currentProfile);
           setUser(mappedUser);
-          setUsers(prev => {
-            const exists = prev.some(u => u.id === mappedUser.id);
-            return exists ? prev.map(u => u.id === mappedUser.id ? mappedUser : u) : [mappedUser, ...prev];
-          });
+          
+          // Fetch all users list
+          const { data: allUsers, error: usersError } = await supabase
+            .from('users')
+            .select('*');
+          if (usersError) {
+            console.warn('Error fetching all users list:', usersError.message);
+            setUsers(prev => {
+              const exists = prev.some(u => u.id === mappedUser.id);
+              return exists ? prev.map(u => u.id === mappedUser.id ? mappedUser : u) : [mappedUser, ...prev];
+            });
+          } else if (allUsers) {
+            setUsers(allUsers.map(mapUserFromDb));
+          } else {
+            setUsers(prev => {
+              const exists = prev.some(u => u.id === mappedUser.id);
+              return exists ? prev.map(u => u.id === mappedUser.id ? mappedUser : u) : [mappedUser, ...prev];
+            });
+          }
+          
           const { avatar, ...userForStorage } = mappedUser;
           localStorage.setItem('vioo_user', JSON.stringify(userForStorage));
           setConnectionError(null);
@@ -1571,10 +1587,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         trace.startStep('map user + localStorage');
         const mappedUser = mapUserFromDb(userData);
         setUser(mappedUser);
-        setUsers(prev => {
-          const exists = prev.some(u => u.id === mappedUser.id);
-          return exists ? prev.map(u => u.id === mappedUser.id ? mappedUser : u) : [mappedUser, ...prev];
-        });
+        
+        // Fetch all users list
+        const { data: allUsers, error: usersError } = await supabase
+          .from('users')
+          .select('*');
+        if (usersError) {
+          console.warn('Error fetching all users list during login:', usersError.message);
+          setUsers(prev => {
+            const exists = prev.some(u => u.id === mappedUser.id);
+            return exists ? prev.map(u => u.id === mappedUser.id ? mappedUser : u) : [mappedUser, ...prev];
+          });
+        } else if (allUsers) {
+          setUsers(allUsers.map(mapUserFromDb));
+        } else {
+          setUsers(prev => {
+            const exists = prev.some(u => u.id === mappedUser.id);
+            return exists ? prev.map(u => u.id === mappedUser.id ? mappedUser : u) : [mappedUser, ...prev];
+          });
+        }
         const { avatar, ...userForStorage } = mappedUser;
         localStorage.setItem('vioo_user', JSON.stringify(userForStorage));
         localStorage.removeItem('vioo_explicit_logout_at');

@@ -9,6 +9,7 @@ import {
   CalendarClock,
   CreditCard,
   Edit2,
+  ExternalLink,
   FileText,
   Landmark,
   Loader2,
@@ -31,15 +32,19 @@ import {
   ProjectCostCategory,
   ProjectTransaction,
   ProjectTxType,
+  SupplierPayableDocument,
 } from '../../types';
 import {
   ProjectFinanceLedgerRow,
   ProjectFinancePayableRow,
   ProjectFinanceReceivableRow,
+  ProjectFinanceSourceRoute,
   ProjectFinanceWorkspaceData,
   ProjectFinanceWorkspaceTab,
   projectFinanceWorkspaceService,
 } from '../../lib/projectFinanceWorkspaceService';
+import { allocateSupplierPayment, supplierPaymentBatchService } from '../../lib/supplierPaymentBatchService';
+import { supplierPayableService } from '../../lib/supplierPayableService';
 import { paymentService } from '../../lib/projectService';
 import { useApp } from '../../context/AppContext';
 import { useConfirm } from '../../context/ConfirmContext';
@@ -63,6 +68,13 @@ interface PurchaseOrderPaymentForm {
   date: string;
   documentRef: string;
   note: string;
+}
+
+interface SupplierPayableDocumentDrawerState {
+  row: ProjectFinancePayableRow;
+  documents: SupplierPayableDocument[];
+  loading: boolean;
+  error?: string | null;
 }
 
 const tabs: Array<{ key: ProjectFinanceWorkspaceTab; label: string; icon: React.ElementType }> = [
@@ -148,17 +160,31 @@ const statusLabel = (status: string) => {
     pending: 'Chờ xử lý',
     overdue: 'Quá hạn',
     draft: 'Nháp',
+    open: 'Đang mở',
     submitted: 'Đã trình',
     approved: 'Đã duyệt',
+    cancelled: 'Đã hủy',
+    reversed: 'Đã đảo',
   };
   return labels[status] || status;
 };
 
 const statusTone = (status: string) => {
   if (['paid', 'received', 'approved'].includes(status)) return 'bg-emerald-50 text-emerald-700 border-emerald-100';
-  if (['overdue', 'payable', 'receivable'].includes(status)) return 'bg-red-50 text-red-700 border-red-100';
+  if (['overdue', 'payable', 'receivable', 'open'].includes(status)) return 'bg-red-50 text-red-700 border-red-100';
   if (['partial', 'waiting_receipt', 'pending', 'submitted'].includes(status)) return 'bg-amber-50 text-amber-700 border-amber-100';
   return 'bg-slate-50 text-slate-600 border-slate-100';
+};
+
+const supplierPayableSourceLabel = (sourceType: SupplierPayableDocument['sourceType']) => {
+  const labels: Record<SupplierPayableDocument['sourceType'], string> = {
+    purchase_order: 'PO',
+    site_direct_purchase: 'Mua nóng',
+    supplier_return_credit: 'Bù trừ/hoàn trả',
+    opening_balance: 'Đầu kỳ',
+    manual_adjustment: 'Điều chỉnh',
+  };
+  return labels[sourceType] || sourceType;
 };
 
 const EmptyState = ({ label }: { label: string }) => (
@@ -395,7 +421,7 @@ const PurchaseOrderPaymentModal = ({
       <div className="w-full max-w-3xl rounded-xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900">
         <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-4 dark:border-slate-800">
           <div>
-            <div className="text-[11px] font-black uppercase tracking-wide text-emerald-600">Ghi thanh toán PO</div>
+            <div className="text-[11px] font-black uppercase tracking-wide text-emerald-600">Ghi thanh toán NCC</div>
             <div className="mt-1 text-base font-black text-slate-900 dark:text-white">{row.documentNo}</div>
             <div className="mt-0.5 text-xs font-bold text-slate-400">{row.counterpartyName}</div>
           </div>
@@ -407,7 +433,7 @@ const PurchaseOrderPaymentModal = ({
         <div className="space-y-4 p-5">
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <div className={metricClass}>
-              <div className="text-[10px] font-black uppercase tracking-wide text-slate-400">Tổng PO</div>
+              <div className="text-[10px] font-black uppercase tracking-wide text-slate-400">Giá trị</div>
               <div className="mt-1 text-sm font-black text-slate-800 dark:text-slate-100">{fmtMoney(row.committedAmount)}</div>
             </div>
             <div className={metricClass}>
@@ -458,6 +484,112 @@ const PurchaseOrderPaymentModal = ({
   );
 };
 
+const SupplierPayableDocumentsDrawer = ({
+  state,
+  onClose,
+  onOpenDocumentSource,
+}: {
+  state: SupplierPayableDocumentDrawerState | null;
+  onClose: () => void;
+  onOpenDocumentSource: (document: SupplierPayableDocument) => void;
+}) => {
+  if (!state) return null;
+  const { row, documents, loading, error } = state;
+  return (
+    <div className="fixed inset-0 z-[1000] flex justify-end bg-slate-950/40" onClick={event => event.target === event.currentTarget && onClose()}>
+      <div className="flex h-full w-full max-w-[720px] flex-col bg-white shadow-2xl dark:bg-slate-950">
+        <div className="border-b border-slate-100 px-5 py-4 dark:border-slate-800">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-1 rounded-full border border-orange-100 bg-orange-50 px-2 py-0.5 text-[10px] font-black text-orange-700">
+                  <FileText size={11} /> AP NCC
+                </span>
+                <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-black ${statusTone(row.status)}`}>{statusLabel(row.status)}</span>
+              </div>
+              <h3 className="mt-2 truncate text-base font-black text-slate-900 dark:text-white">{row.counterpartyName}</h3>
+              <p className="mt-0.5 text-xs font-bold text-slate-500">{row.description}</p>
+            </div>
+            <button type="button" onClick={onClose} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800">
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-3 gap-2 border-b border-slate-100 px-5 py-3 text-xs dark:border-slate-800">
+          <div>
+            <div className="text-[10px] font-black uppercase text-slate-400">Ghi nhận</div>
+            <div className="mt-1 font-black text-blue-700">{fmtMoney(row.recognizedAmount)}</div>
+          </div>
+          <div>
+            <div className="text-[10px] font-black uppercase text-slate-400">Đã TT</div>
+            <div className="mt-1 font-black text-emerald-700">{fmtMoney(row.paidAmount)}</div>
+          </div>
+          <div>
+            <div className="text-[10px] font-black uppercase text-slate-400">Còn phải trả</div>
+            <div className="mt-1 font-black text-red-600">{fmtMoney(row.outstandingAmount)}</div>
+          </div>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50/70 p-5 dark:bg-slate-900/40">
+          {loading && (
+            <div className="flex items-center justify-center gap-2 rounded-lg border border-slate-100 bg-white p-8 text-sm font-bold text-slate-400 dark:border-slate-800 dark:bg-slate-950">
+              <Loader2 size={16} className="animate-spin text-orange-500" /> Đang tải chứng từ AP...
+            </div>
+          )}
+          {!loading && error && (
+            <div className="rounded-lg border border-red-100 bg-red-50 p-4 text-sm font-bold text-red-700">
+              {error}
+            </div>
+          )}
+          {!loading && !error && documents.length === 0 && (
+            <EmptyState label="Chưa tìm thấy chứng từ AP chi tiết cho NCC này." />
+          )}
+          {!loading && !error && documents.length > 0 && (
+            <div className="space-y-2">
+              {documents.map(document => (
+                <div key={document.id} className="rounded-lg border border-slate-100 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-950">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-mono text-xs font-black text-slate-800 dark:text-slate-100">{document.code || document.documentNo}</span>
+                        <span className={`inline-flex rounded-full border px-2 py-0.5 text-[9px] font-black ${statusTone(document.status)}`}>{statusLabel(document.status)}</span>
+                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-black text-slate-500 dark:bg-slate-800">
+                          {supplierPayableSourceLabel(document.sourceType)}
+                        </span>
+                      </div>
+                      <div className="mt-1 text-xs font-bold text-slate-600 dark:text-slate-300">
+                        Nguồn: {document.documentNo || document.sourceId}
+                        {document.invoiceNumber ? ` • HĐ: ${document.invoiceNumber}` : ''}
+                      </div>
+                      <div className="mt-1 text-[10px] font-bold text-slate-400">
+                        Ngày CT: {fmtDate(document.documentDate)} • Hạn TT: {fmtDate(document.dueDate)}
+                      </div>
+                    </div>
+                    <div className="shrink-0 text-left sm:text-right">
+                      <div className="text-xs font-black text-blue-700">{fmtMoney(document.recognizedAmount)}</div>
+                      <div className="text-[10px] font-bold text-red-500">Còn {fmtMoney(document.outstandingAmount)}</div>
+                    </div>
+                  </div>
+                  <div className="mt-3 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => onOpenDocumentSource(document)}
+                      className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-black text-orange-700 hover:bg-orange-50 dark:hover:bg-orange-950/30"
+                    >
+                      <ExternalLink size={11} /> Mở chứng từ nguồn
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const PayablesTable = ({
   rows,
   canManage,
@@ -470,49 +602,50 @@ const PayablesTable = ({
   rows: ProjectFinancePayableRow[];
   canManage?: boolean;
   canRecordPoPayment?: boolean;
-  onOpenSource: (tab: string) => void;
+  onOpenSource: (row: ProjectFinancePayableRow) => void;
   onEditSchedule?: (row: ProjectFinancePayableRow) => void;
   onDeleteSchedule?: (row: ProjectFinancePayableRow) => void;
   onPayPurchaseOrder?: (row: ProjectFinancePayableRow) => void;
 }) => {
   if (rows.length === 0) return <EmptyState label="Chưa có khoản phải trả trong phạm vi công trình này." />;
   return (
-    <div className="overflow-hidden rounded-lg border border-slate-100 bg-white dark:border-slate-700 dark:bg-slate-900">
-      <table className="w-full text-left">
+    <div className="overflow-x-auto rounded-lg border border-slate-100 bg-white dark:border-slate-700 dark:bg-slate-900">
+      <table className="w-full min-w-[950px] text-left">
         <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-wide text-slate-400 dark:bg-slate-800">
           <tr>
-            <th className="px-3 py-2">Chứng từ</th>
-            <th className="px-3 py-2">Đối tượng</th>
-            <th className="px-3 py-2 text-right">Cam kết</th>
-            <th className="px-3 py-2 text-right">Được ghi nhận</th>
-            <th className="px-3 py-2 text-right">Đã TT</th>
-            <th className="px-3 py-2 text-right">Còn phải trả</th>
-            <th className="px-3 py-2 text-center">Trạng thái</th>
-            <th className="px-3 py-2 text-right">Thao tác</th>
+            <th className="px-3 py-2 whitespace-nowrap">Chứng từ</th>
+            <th className="px-3 py-2 whitespace-nowrap">Đối tượng</th>
+            <th className="px-3 py-2 text-right whitespace-nowrap">Cam kết</th>
+            <th className="px-3 py-2 text-right whitespace-nowrap">Được ghi nhận</th>
+            <th className="px-3 py-2 text-right whitespace-nowrap">Đã TT</th>
+            <th className="px-3 py-2 text-right whitespace-nowrap">Còn phải trả</th>
+            <th className="px-3 py-2 text-center whitespace-nowrap">Trạng thái</th>
+            <th className="px-3 py-2 text-right whitespace-nowrap">Thao tác</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
           {rows.map(row => {
-            const isPurchaseOrder = row.sourceType === 'purchase_order';
-            const canPayPurchaseOrder = Boolean(canRecordPoPayment && isPurchaseOrder && row.recognizedAmount > 0 && row.outstandingAmount > 0);
-            const isPurchaseOrderPaid = isPurchaseOrder && row.recognizedAmount > 0 && row.outstandingAmount <= 0;
+            const isSupplierPayable = row.sourceType === 'purchase_order' || row.sourceType === 'supplier_payable';
+            const canPayPurchaseOrder = Boolean(canRecordPoPayment && isSupplierPayable && row.recognizedAmount > 0 && row.outstandingAmount > 0);
+            const isPurchaseOrderPaid = isSupplierPayable && row.recognizedAmount > 0 && row.outstandingAmount <= 0;
+            const sourceLabel = row.sourceLabel || 'Nguồn';
             return (
             <tr key={row.id} className="text-xs hover:bg-slate-50/70 dark:hover:bg-slate-800/60">
               <td className="px-3 py-3">
-                <button onClick={() => onOpenSource(row.sourceTab)} className="text-left font-black text-slate-800 hover:text-orange-600 dark:text-slate-100">
+                <button onClick={() => onOpenSource(row)} className="text-left font-black text-slate-800 hover:text-orange-600 dark:text-slate-100 whitespace-nowrap">
                   {row.documentNo}
                 </button>
                 <div className="mt-0.5 text-[10px] font-bold text-slate-400">{row.description}</div>
               </td>
               <td className="px-3 py-3 font-bold text-slate-600 dark:text-slate-300">{row.counterpartyName}</td>
-              <td className="px-3 py-3 text-right font-bold">{fmtMoney(row.committedAmount)}</td>
-              <td className="px-3 py-3 text-right font-black text-blue-700">{fmtMoney(row.recognizedAmount)}</td>
-              <td className="px-3 py-3 text-right text-emerald-700">{fmtMoney(row.paidAmount)}</td>
-              <td className="px-3 py-3 text-right font-black text-red-600">{fmtMoney(row.outstandingAmount)}</td>
-              <td className="px-3 py-3 text-center">
+              <td className="px-3 py-3 text-right font-bold whitespace-nowrap">{fmtMoney(row.committedAmount)}</td>
+              <td className="px-3 py-3 text-right font-black text-blue-700 whitespace-nowrap">{fmtMoney(row.recognizedAmount)}</td>
+              <td className="px-3 py-3 text-right text-emerald-700 whitespace-nowrap">{fmtMoney(row.paidAmount)}</td>
+              <td className="px-3 py-3 text-right font-black text-red-600 whitespace-nowrap">{fmtMoney(row.outstandingAmount)}</td>
+              <td className="px-3 py-3 text-center whitespace-nowrap">
                 <span className={`inline-flex rounded-full border px-2 py-1 text-[10px] font-black ${statusTone(row.status)}`}>{statusLabel(row.status)}</span>
               </td>
-              <td className="px-3 py-3 text-right">
+              <td className="px-3 py-3 text-right whitespace-nowrap">
                 {canManage && row.sourceType === 'payment_schedule' ? (
                   <div className="flex justify-end gap-1">
                     <button type="button" onClick={() => onEditSchedule?.(row)} className="rounded-md px-2 py-1 text-[10px] font-black text-blue-600 hover:bg-blue-50">
@@ -522,11 +655,11 @@ const PayablesTable = ({
                       <Trash2 size={11} className="inline" /> Xóa
                     </button>
                   </div>
-                ) : isPurchaseOrder ? (
+                ) : isSupplierPayable ? (
                   <div className="flex flex-wrap justify-end gap-1">
                     {canPayPurchaseOrder && (
                       <button type="button" onClick={() => onPayPurchaseOrder?.(row)} className="rounded-md px-2 py-1 text-[10px] font-black text-emerald-700 hover:bg-emerald-50">
-                        <CreditCard size={11} className="inline" /> {row.paidAmount > 0 ? 'Thanh toán tiếp' : 'Ghi thanh toán'}
+                        <CreditCard size={11} className="inline" /> {row.paidAmount > 0 ? 'Thanh toán tiếp' : 'Thanh toán NCC'}
                       </button>
                     )}
                     {isPurchaseOrderPaid && (
@@ -534,13 +667,13 @@ const PayablesTable = ({
                         Đã thanh toán
                       </span>
                     )}
-                    <button type="button" onClick={() => onOpenSource(row.sourceTab)} className="rounded-md px-2 py-1 text-[10px] font-black text-slate-500 hover:bg-slate-50">
-                      Nguồn
+                    <button type="button" onClick={() => onOpenSource(row)} className="rounded-md px-2 py-1 text-[10px] font-black text-slate-500 hover:bg-slate-50">
+                      {sourceLabel}
                     </button>
                   </div>
                 ) : (
-                  <button type="button" onClick={() => onOpenSource(row.sourceTab)} className="rounded-md px-2 py-1 text-[10px] font-black text-slate-500 hover:bg-slate-50">
-                    Nguồn
+                  <button type="button" onClick={() => onOpenSource(row)} className="rounded-md px-2 py-1 text-[10px] font-black text-slate-500 hover:bg-slate-50">
+                    {sourceLabel}
                   </button>
                 )}
               </td>
@@ -568,38 +701,38 @@ const ReceivablesTable = ({
 }) => {
   if (rows.length === 0) return <EmptyState label="Chưa có khoản phải thu trong phạm vi công trình này." />;
   return (
-    <div className="overflow-hidden rounded-lg border border-slate-100 bg-white dark:border-slate-700 dark:bg-slate-900">
-      <table className="w-full text-left">
+    <div className="overflow-x-auto rounded-lg border border-slate-100 bg-white dark:border-slate-700 dark:bg-slate-900">
+      <table className="w-full min-w-[950px] text-left">
         <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-wide text-slate-400 dark:bg-slate-800">
           <tr>
-            <th className="px-3 py-2">Chứng từ</th>
-            <th className="px-3 py-2">Chủ đầu tư</th>
-            <th className="px-3 py-2 text-right">Giá trị</th>
-            <th className="px-3 py-2 text-right">Được ghi nhận</th>
-            <th className="px-3 py-2 text-right">Đã thu</th>
-            <th className="px-3 py-2 text-right">Còn phải thu</th>
-            <th className="px-3 py-2 text-center">Trạng thái</th>
-            <th className="px-3 py-2 text-right">Thao tác</th>
+            <th className="px-3 py-2 whitespace-nowrap">Chứng từ</th>
+            <th className="px-3 py-2 whitespace-nowrap">Chủ đầu tư</th>
+            <th className="px-3 py-2 text-right whitespace-nowrap">Giá trị</th>
+            <th className="px-3 py-2 text-right whitespace-nowrap">Được ghi nhận</th>
+            <th className="px-3 py-2 text-right whitespace-nowrap">Đã thu</th>
+            <th className="px-3 py-2 text-right whitespace-nowrap">Còn phải thu</th>
+            <th className="px-3 py-2 text-center whitespace-nowrap">Trạng thái</th>
+            <th className="px-3 py-2 text-right whitespace-nowrap">Thao tác</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
           {rows.map(row => (
             <tr key={row.id} className="text-xs hover:bg-slate-50/70 dark:hover:bg-slate-800/60">
               <td className="px-3 py-3">
-                <button onClick={() => onOpenSource(row.sourceTab)} className="text-left font-black text-slate-800 hover:text-orange-600 dark:text-slate-100">
+                <button onClick={() => onOpenSource(row.sourceTab)} className="text-left font-black text-slate-800 hover:text-orange-600 dark:text-slate-100 whitespace-nowrap">
                   {row.documentNo}
                 </button>
                 <div className="mt-0.5 text-[10px] font-bold text-slate-400">{row.description}</div>
               </td>
               <td className="px-3 py-3 font-bold text-slate-600 dark:text-slate-300">{row.counterpartyName}</td>
-              <td className="px-3 py-3 text-right font-bold">{fmtMoney(row.contractAmount)}</td>
-              <td className="px-3 py-3 text-right font-black text-blue-700">{fmtMoney(row.recognizedAmount)}</td>
-              <td className="px-3 py-3 text-right text-emerald-700">{fmtMoney(row.receivedAmount)}</td>
-              <td className="px-3 py-3 text-right font-black text-red-600">{fmtMoney(row.outstandingAmount)}</td>
-              <td className="px-3 py-3 text-center">
+              <td className="px-3 py-3 text-right font-bold whitespace-nowrap">{fmtMoney(row.contractAmount)}</td>
+              <td className="px-3 py-3 text-right font-black text-blue-700 whitespace-nowrap">{fmtMoney(row.recognizedAmount)}</td>
+              <td className="px-3 py-3 text-right text-emerald-700 whitespace-nowrap">{fmtMoney(row.receivedAmount)}</td>
+              <td className="px-3 py-3 text-right font-black text-red-600 whitespace-nowrap">{fmtMoney(row.outstandingAmount)}</td>
+              <td className="px-3 py-3 text-center whitespace-nowrap">
                 <span className={`inline-flex rounded-full border px-2 py-1 text-[10px] font-black ${statusTone(row.status)}`}>{statusLabel(row.status)}</span>
               </td>
-              <td className="px-3 py-3 text-right">
+              <td className="px-3 py-3 text-right whitespace-nowrap">
                 {canManage && row.sourceType === 'payment_schedule' ? (
                   <div className="flex justify-end gap-1">
                     <button type="button" onClick={() => onEditSchedule?.(row)} className="rounded-md px-2 py-1 text-[10px] font-black text-blue-600 hover:bg-blue-50">
@@ -657,30 +790,30 @@ const LedgerTable = ({
         )}
       </div>
       {filtered.length === 0 ? <EmptyState label="Chưa có giao dịch tài chính phù hợp." /> : (
-        <div className="overflow-hidden rounded-lg border border-slate-100 bg-white dark:border-slate-700 dark:bg-slate-900">
-          <table className="w-full text-left">
+        <div className="overflow-x-auto rounded-lg border border-slate-100 bg-white dark:border-slate-700 dark:bg-slate-900">
+          <table className="w-full min-w-[650px] text-left">
             <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-wide text-slate-400 dark:bg-slate-800">
               <tr>
-                <th className="px-3 py-2">Ngày</th>
-                <th className="px-3 py-2">Nội dung</th>
-                <th className="px-3 py-2">Nguồn</th>
-                <th className="px-3 py-2 text-right">Số tiền</th>
-                <th className="px-3 py-2 text-right">Thao tác</th>
+                <th className="px-3 py-2 whitespace-nowrap">Ngày</th>
+                <th className="px-3 py-2 whitespace-nowrap">Nội dung</th>
+                <th className="px-3 py-2 whitespace-nowrap">Nguồn</th>
+                <th className="px-3 py-2 text-right whitespace-nowrap">Số tiền</th>
+                <th className="px-3 py-2 text-right whitespace-nowrap">Thao tác</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
               {filtered.map(row => (
                 <tr key={row.id} className="text-xs">
-                  <td className="px-3 py-3 font-bold text-slate-500">{fmtDate(row.date)}</td>
+                  <td className="px-3 py-3 font-bold text-slate-500 whitespace-nowrap">{fmtDate(row.date)}</td>
                   <td className="px-3 py-3">
                     <div className="font-black text-slate-800 dark:text-slate-100">{row.description}</div>
                     <div className="mt-0.5 text-[10px] font-bold text-slate-400">{row.category} • {row.sourceRef || row.source}</div>
                   </td>
-                  <td className="px-3 py-3 font-bold text-slate-500">{row.source}</td>
-                  <td className={`px-3 py-3 text-right font-black ${row.type === 'expense' ? 'text-red-600' : 'text-emerald-700'}`}>
+                  <td className="px-3 py-3 font-bold text-slate-500 whitespace-nowrap">{row.source}</td>
+                  <td className={`px-3 py-3 text-right font-black whitespace-nowrap ${row.type === 'expense' ? 'text-red-600' : 'text-emerald-700'}`}>
                     {row.type === 'expense' ? '-' : '+'}{fmtMoney(Math.abs(row.amount))}
                   </td>
-                  <td className="px-3 py-3 text-right">
+                  <td className="px-3 py-3 text-right whitespace-nowrap">
                     {canManage && row.source === 'manual' ? (
                       <div className="flex justify-end gap-1">
                         <button type="button" onClick={() => onEdit?.(row)} className="rounded-md px-2 py-1 text-[10px] font-black text-blue-600 hover:bg-blue-50">
@@ -737,6 +870,7 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
   const [savingTransaction, setSavingTransaction] = useState(false);
   const [poPaymentForm, setPoPaymentForm] = useState<PurchaseOrderPaymentForm | null>(null);
   const [savingPoPayment, setSavingPoPayment] = useState(false);
+  const [supplierPayableDrawer, setSupplierPayableDrawer] = useState<SupplierPayableDocumentDrawerState | null>(null);
   const canManageSchedules = canManageFinance || canManagePayment;
   const canManageLedger = canManageFinance;
   const canRecordPoPayment = canManageFinance;
@@ -773,20 +907,70 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
     navigate(`${location.pathname}?${params.toString()}`, { replace: true });
   };
 
-  const openSource = (tab: string) => {
+  const openSourceRoute = useCallback((route?: ProjectFinanceSourceRoute | null, fallbackTab?: string) => {
     const params = new URLSearchParams(location.search);
+    const tab = route?.tab || fallbackTab || 'finance';
     if (tab === 'payment') {
       params.set('tab', 'finance');
       params.set('financeTab', 'payments');
     } else if (tab === 'cashflow') {
       params.set('tab', 'finance');
       params.set('financeTab', 'cashflow');
+    } else if (tab === 'finance') {
+      params.set('tab', 'finance');
+      params.set('financeTab', route?.params?.financeTab || 'overview');
     } else {
       params.set('tab', tab);
       params.delete('financeTab');
     }
+    Object.entries(route?.params || {}).forEach(([key, value]) => {
+      if (value) params.set(key, value);
+    });
     navigate(`${location.pathname}?${params.toString()}`);
-  };
+  }, [location.pathname, location.search, navigate]);
+
+  const openSource = useCallback((tab: string) => {
+    openSourceRoute(null, tab);
+  }, [openSourceRoute]);
+
+  const openPayableSource = useCallback(async (row: ProjectFinancePayableRow) => {
+    if (row.sourceType !== 'supplier_payable') {
+      openSourceRoute(row.sourceRoute, row.sourceTab);
+      return;
+    }
+
+    setSupplierPayableDrawer({ row, documents: [], loading: true, error: null });
+    try {
+      const documents = await supplierPayableService.listDocuments({
+        projectId: projectId || null,
+        constructionSiteId,
+        supplierId: row.sourceRoute?.params?.supplierId || null,
+      });
+      setSupplierPayableDrawer({ row, documents, loading: false, error: null });
+    } catch (err: any) {
+      setSupplierPayableDrawer({
+        row,
+        documents: [],
+        loading: false,
+        error: err?.message || 'Không tải được danh sách chứng từ AP.',
+      });
+    }
+  }, [constructionSiteId, openSourceRoute, projectId]);
+
+  const openSupplierPayableDocumentSource = useCallback((document: SupplierPayableDocument) => {
+    if (document.sourceType === 'purchase_order' && document.sourceId) {
+      setSupplierPayableDrawer(null);
+      openSourceRoute({
+        tab: 'material',
+        params: {
+          materialTab: 'po',
+          poId: document.sourceId,
+        },
+      });
+      return;
+    }
+    toast.info('Chưa có màn nguồn riêng', 'Chứng từ này chưa có màn chi tiết nguồn trong phiên bản hiện tại.');
+  }, [openSourceRoute, toast]);
 
   const createDefaultSchedule = (type: PaymentSchedule['type']): PaymentSchedule => ({
     id: crypto.randomUUID(),
@@ -874,16 +1058,16 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
 
   const openPoPayment = (row: ProjectFinancePayableRow) => {
     if (!canRecordPoPayment) return;
-    if (row.sourceType !== 'purchase_order') {
+    if (row.sourceType !== 'purchase_order' && row.sourceType !== 'supplier_payable') {
       openSource(row.sourceTab);
       return;
     }
     if (row.recognizedAmount <= 0) {
-      toast.info('Chưa có giá trị phải trả', 'PO này chưa có phần nhận hàng được ghi nhận để thanh toán.');
+      toast.info('Chưa có giá trị phải trả', 'Chứng từ này chưa có phần được ghi nhận để thanh toán.');
       return;
     }
     if (row.outstandingAmount <= 0) {
-      toast.success('PO đã thanh toán đủ');
+      toast.success('Khoản phải trả đã thanh toán đủ');
       return;
     }
     setPoPaymentForm({
@@ -935,6 +1119,64 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
 
     setSavingPoPayment(true);
     try {
+      if (poPaymentForm.row.sourceType === 'supplier_payable' || poPaymentForm.row.sourceType === 'purchase_order') {
+        try {
+          const batchId = crypto.randomUUID();
+          const payableDocuments = poPaymentForm.row.sourceType === 'purchase_order'
+            ? [await supplierPayableService.syncPurchaseOrderById(poPaymentForm.row.sourceId)]
+            : await supplierPayableService.listDocuments({
+              projectId: projectId || null,
+              constructionSiteId,
+              supplierId: poPaymentForm.row.sourceId,
+            });
+          const openDocuments = payableDocuments.filter(document => Number(document.outstandingAmount || 0) > 0);
+          const allocations = allocateSupplierPayment({
+            mode: 'fifo',
+            paymentBatchId: batchId,
+            amount,
+            documents: openDocuments,
+          });
+          if (allocations.length === 0) throw new Error('Không tìm thấy chứng từ AP còn phải trả để phân bổ.');
+          const batchCode = `PAY-${(poPaymentForm.date || todayIso()).replaceAll('-', '')}-${batchId.slice(0, 8).toUpperCase()}`;
+          await supplierPaymentBatchService.createDraft({
+            id: batchId,
+            code: batchCode,
+            projectId: projectId || null,
+            constructionSiteId,
+            supplierId: poPaymentForm.row.sourceType === 'supplier_payable' ? poPaymentForm.row.sourceId : openDocuments[0]?.supplierId || null,
+            supplierNameSnapshot: poPaymentForm.row.counterpartyName,
+            periodMonth: `${(poPaymentForm.date || todayIso()).slice(0, 7)}-01`,
+            paymentDate: poPaymentForm.date || todayIso(),
+            paymentMethod: 'bank_transfer',
+            documentRef: documentRef || null,
+            totalRecognizedSnapshot: poPaymentForm.row.recognizedAmount,
+            amount,
+            paymentAmount: amount,
+            currency: 'VND',
+            allocationMode: 'fifo',
+            status: 'draft',
+            qrToken: `pay_${batchId.replaceAll('-', '')}`,
+            attachments: [],
+            metadata: {
+              shortcut: poPaymentForm.row.sourceType,
+              note,
+            },
+            createdBy: user?.id || null,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            note: note || null,
+          }, allocations);
+          await supplierPaymentBatchService.post(batchId, user?.id || null);
+          setPoPaymentForm(null);
+          toast.success('Đã tạo đợt thanh toán NCC', `${poPaymentForm.row.counterpartyName} đã được ghi nhận qua AP batch.`);
+          await load();
+          return;
+        } catch (batchError: any) {
+          if (poPaymentForm.row.sourceType === 'supplier_payable') throw batchError;
+          console.warn('Fallback to legacy PO payment transaction', batchError);
+        }
+      }
+
       await addProjectTransaction(nextTransaction);
       setPoPaymentForm(null);
       toast.success('Đã ghi thanh toán PO', `${poPaymentForm.row.documentNo} đã được cập nhật trong công nợ phải trả.`);
@@ -1133,7 +1375,7 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
                   <PayablesTable
                     rows={data.payables.slice(0, 5)}
                     canManage={false}
-                    onOpenSource={openSource}
+                    onOpenSource={openPayableSource}
                   />
                 </section>
                 <section className="space-y-3">
@@ -1169,7 +1411,7 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
                 rows={data.payables}
                 canManage={canManageSchedules}
                 canRecordPoPayment={canRecordPoPayment}
-                onOpenSource={openSource}
+                onOpenSource={openPayableSource}
                 onEditSchedule={openEditSchedule}
                 onDeleteSchedule={deleteSchedule}
                 onPayPurchaseOrder={openPoPayment}
@@ -1245,6 +1487,11 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
           onSave={savePoPayment}
         />
       )}
+      <SupplierPayableDocumentsDrawer
+        state={supplierPayableDrawer}
+        onClose={() => setSupplierPayableDrawer(null)}
+        onOpenDocumentSource={openSupplierPayableDocumentSource}
+      />
     </div>
   );
 };

@@ -14,10 +14,13 @@ const ChartFallback = () => (
 );
 
 const PAGE_SIZE = 10;
+type MaterialWasteRow = MaterialBudgetItem & {
+    aggregateSourceCount?: number;
+};
 
 type MaterialWasteTabProps = {
     computedBoqItems: MaterialBudgetItem[];
-    sortedWasteBoqItems: MaterialBudgetItem[];
+    sortedWasteBoqItems: MaterialWasteRow[];
     wasteChartData: MaterialWasteChartDatum[];
     formatQuantity: (value: number) => string;
     formatPercent: (value: number) => string;
@@ -88,7 +91,15 @@ export const MaterialWasteTab: React.FC<MaterialWasteTabProps> = ({
                                     const isNeg = (item.wastePercent || 0) <= 0;
                                     return (
                                         <tr key={item.id} className={`${isOver ? 'bg-red-50/30' : ''}`}>
-                                            <td className="px-4 py-2.5 font-bold text-slate-700">{item.itemName}</td>
+                                            <td className="px-4 py-2.5">
+                                                <div className="font-bold text-slate-700">{item.itemName}</div>
+                                                {(item.materialCode || (item.aggregateSourceCount || 0) > 1) && (
+                                                    <div className="mt-0.5 text-[10px] font-bold text-slate-400">
+                                                        {item.materialCode || 'Chưa có mã'}
+                                                        {(item.aggregateSourceCount || 0) > 1 ? ` • gộp ${item.aggregateSourceCount} dòng` : ''}
+                                                    </div>
+                                                )}
+                                            </td>
                                             <td className="px-4 py-2.5 text-center text-slate-500">{item.unit}</td>
                                             <td className="px-4 py-2.5 text-right text-slate-600">{formatQuantity(item.budgetQty)}</td>
                                             <td className="px-4 py-2.5 text-right font-bold text-slate-700">{formatQuantity(item.actualQty)}</td>

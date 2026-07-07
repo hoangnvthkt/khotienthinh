@@ -132,7 +132,7 @@ const PurchaseOrderSupplierReturnDialog: React.FC<PurchaseOrderSupplierReturnDia
   };
 
   return (
-    <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
       <div className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
         <div className="flex items-center justify-between bg-slate-900 px-6 py-4 text-white">
           <div>
