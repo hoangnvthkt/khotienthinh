@@ -20,7 +20,7 @@ import {
     Plus, Edit2, Trash2, X, Save, Truck, Star, Phone, Mail, MapPin,
     FileText, CheckCircle2, Clock, Ban, Send, Package, ChevronDown,
     ChevronLeft, ChevronRight, ChevronUp, Users, DollarSign, ShoppingCart, AlertTriangle, FileSpreadsheet,
-    Upload, Printer, QrCode, Loader2, RefreshCcw, PackageX
+    Upload, Printer, QrCode, Loader2, RefreshCcw, PackageX, MoreVertical
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import {
@@ -98,6 +98,7 @@ import {
     filterRequestRowsForPoCart,
     hasRequestRowDefaultSupplierMismatch,
 } from '../../lib/purchaseOrderRequestCart';
+import { getPurchaseOrderUiPolicy, type PurchaseOrderUiAction } from '../../lib/purchaseOrderUiPolicy';
 
 interface SupplyChainTabProps {
     constructionSiteId?: string;
@@ -441,7 +442,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     const [editingVendor, setEditingVendor] = useState<ProjectVendor | null>(null);
     const [showPoForm, setShowPoForm] = useState(false);
     const [editingPo, setEditingPo] = useState<PurchaseOrder | null>(null);
-    const [expandedPoId, setExpandedPoId] = useState<string | null>(null);
+    const [selectedPoId, setSelectedPoId] = useState<string | null>(null);
     const [expandedDeliveryGroupKey, setExpandedDeliveryGroupKey] = useState<string | null>(null);
     const [showRequestPicker, setShowRequestPicker] = useState(false);
     const [requestPickerMode, setRequestPickerMode] = useState<'create_po' | 'append_to_po'>('create_po');
@@ -3328,17 +3329,111 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         }
     };
 
-    const togglePoExpanded = (po: PurchaseOrder) => {
-        const nextExpandedId = expandedPoId === po.id ? null : po.id;
-        setExpandedPoId(nextExpandedId);
+    const openPoDetail = (po: PurchaseOrder) => {
+        setSelectedPoId(po.id);
         setExpandedDeliveryGroupKey(null);
-        if (nextExpandedId) void loadPoDeliveryPrintGroups(po);
+        setPoPrintMenuId(null);
+        if (PO_DELIVERY_PRINT_AUTOLOAD_STATUSES.has(po.status)) void loadPoDeliveryPrintGroups(po);
+    };
+
+    const closePoDetail = () => {
+        setSelectedPoId(null);
+        setExpandedDeliveryGroupKey(null);
+        setPoPrintMenuId(null);
     };
 
     const toggleDeliveryGroupExpanded = (po: PurchaseOrder, group: PoDeliveryPrintGroup) => {
         const nextKey = `${po.id}:${group.key}`;
         setExpandedDeliveryGroupKey(prev => prev === nextKey ? null : nextKey);
-        setExpandedPoId(null);
+    };
+
+    const getPoActionIcon = (action: PurchaseOrderUiAction) => {
+        if (action.id.includes('print')) return <Printer size={13} />;
+        if (action.id === 'edit_po') return <Edit2 size={13} />;
+        if (action.id === 'remove_po') return <Trash2 size={13} />;
+        if (action.id === 'supplier_return') return <PackageX size={13} />;
+        if (action.id === 'view_history') return <FileText size={13} />;
+        if (action.id === 'approve_po' || action.id === 'close_partial' || action.id === 'close_po') return <CheckCircle2 size={13} />;
+        if (action.id === 'request_approval') return <Send size={13} />;
+        if (action.id === 'request_revision') return <RefreshCcw size={13} />;
+        if (action.id === 'create_delivery' || action.id === 'create_supplemental_delivery') return <Truck size={13} />;
+        if (action.id === 'create_receipt') return <QrCode size={13} />;
+        return <FileText size={13} />;
+    };
+
+    const getPoMenuActionClass = (action: PurchaseOrderUiAction) => {
+        if (action.disabled) return 'text-slate-300 cursor-not-allowed';
+        if (action.intent === 'danger') return 'text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:hover:bg-rose-950/30';
+        if (action.intent === 'success') return 'text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800 dark:hover:bg-emerald-950/30';
+        if (action.intent === 'warning') return 'text-amber-700 hover:bg-amber-50 hover:text-amber-800 dark:hover:bg-amber-950/30';
+        if (action.intent === 'primary') return 'text-blue-700 hover:bg-blue-50 hover:text-blue-800 dark:hover:bg-blue-950/30';
+        return 'text-slate-600 hover:bg-slate-50 hover:text-slate-800 dark:text-slate-300 dark:hover:bg-slate-800';
+    };
+
+    const runPoUiAction = async (po: PurchaseOrder, action: PurchaseOrderUiAction) => {
+        if (action.disabled) {
+            toast.warning('Không thể thao tác', action.disabledReason || 'Thao tác này chưa khả dụng với PO hiện tại.');
+            return;
+        }
+        setPoPrintMenuId(null);
+        switch (action.id) {
+            case 'request_approval':
+                await updatePoStatus(po.id, 'sent');
+                return;
+            case 'approve_po':
+                await updatePoStatus(po.id, 'confirmed');
+                return;
+            case 'request_revision':
+                await updatePoStatus(po.id, 'draft');
+                return;
+            case 'create_delivery':
+            case 'create_supplemental_delivery':
+                await openPoDeliveryDraft(po);
+                return;
+            case 'create_receipt': {
+                const deliveryBatch = (poDeliveryBatchesByPo[po.id] || []).find(batch => batch.id === action.deliveryBatchId)
+                    || (poDeliveryBatchesByPo[po.id] || []).find(batch => batch.status === 'planned');
+                if (!deliveryBatch) {
+                    openPoDetail(po);
+                    toast.info('Chưa có đợt giao kế hoạch', 'Mở chi tiết PO để kiểm tra lịch giao hoặc tạo đợt giao mới.');
+                    return;
+                }
+                await handleCreatePoDeliveryReceipt(po, deliveryBatch);
+                return;
+            }
+            case 'close_partial':
+                await updatePoStatus(po.id, 'delivered');
+                return;
+            case 'close_po':
+                await updatePoStatus(po.id, 'closed');
+                return;
+            case 'print_purchase_order':
+                await handlePrintPo(po, 'purchase_order');
+                return;
+            case 'print_approval_request':
+                await handlePrintPo(po, 'approval_request');
+                return;
+            case 'print_group_purchase_order':
+                if (po.procurementGroupId) await handlePrintPoGroup(po.procurementGroupId, 'purchase_order');
+                return;
+            case 'print_group_approval_request':
+                if (po.procurementGroupId) await handlePrintPoGroup(po.procurementGroupId, 'approval_request');
+                return;
+            case 'edit_po':
+                openEditPo(po);
+                return;
+            case 'remove_po':
+                await handleDeletePo(po);
+                return;
+            case 'supplier_return':
+                setSupplierReturnPo(po);
+                return;
+            case 'view_history':
+                openPoDetail(po);
+                return;
+            default:
+                openPoDetail(po);
+        }
     };
 
     // Stats
@@ -3401,6 +3496,10 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     );
     const poPageStart = sortedPos.length === 0 ? 0 : (poPage - 1) * PO_PAGE_SIZE + 1;
     const poPageEnd = Math.min(sortedPos.length, (poPage - 1) * PO_PAGE_SIZE + pagedPos.length);
+    const selectedPo = useMemo(
+        () => selectedPoId ? pos.find(po => po.id === selectedPoId) || null : null,
+        [pos, selectedPoId],
+    );
 
     useEffect(() => {
         if (!deepLinkPoId) {
@@ -3413,7 +3512,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         const targetPo = sortedPos[targetIndex];
         lastDeepLinkPoIdRef.current = deepLinkPoId;
         setPoPage(Math.floor(targetIndex / PO_PAGE_SIZE) + 1);
-        setExpandedPoId(deepLinkPoId);
+        setSelectedPoId(deepLinkPoId);
         setExpandedDeliveryGroupKey(null);
         setPoPrintMenuId(null);
         void loadPoDeliveryPrintGroups(targetPo);
@@ -3598,11 +3697,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                             {pagedPos.map(po => {
                                 const stCfg = PO_STATUS[po.status];
                                 const sourceCfg = PO_SOURCE_MODE[po.sourceMode || 'proactive_project'];
-                                const isExpanded = expandedPoId === po.id;
-                                const targetWh = warehouses.find(w => w.id === po.targetWarehouseId);
                                 const groupSize = po.procurementGroupId ? (procurementGroupCounts[po.procurementGroupId] || 0) : 0;
-                                const groupPrintMenuKey = po.procurementGroupId ? `group:${po.procurementGroupId}` : '';
-                                const isPrintMenuOpen = poPrintMenuId === po.id || (!!groupPrintMenuKey && poPrintMenuId === groupPrintMenuKey);
                                 const supplierReturns = supplierReturnsByPo[po.id] || [];
                                 const deliveryBatches = poDeliveryBatchesByPo[po.id] || [];
                                 const totalReceivedQty = po.items.reduce((sum, item) => sum + Number(item.receivedQty || 0), 0);
@@ -3617,163 +3712,243 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                     .reduce((sum, item) => sum + item.lines.reduce((lineSum, line) => lineSum + Number(line.returnQty || 0), 0), 0);
                                 const supplierReturnableQty = Math.max(0, totalReceivedQty - completedReturnQty - pendingReturnQty);
                                 const receiptStats = getPurchaseOrderDemandStats(po, poRequestLinks, inventoryItems);
-                                const isCompanyConsolidatedPo = po.sourceMode === 'company_consolidated';
-                                const hasActiveDeliveryBatch = deliveryBatches.some(batch => ['planned', 'wms_pending'].includes(batch.status));
-                                const canCreateDeliveryDraft = !isCompanyConsolidatedPo
-                                    && !hasActiveDeliveryBatch
-                                    && PO_DELIVERY_DRAFT_STATUSES.has(po.status)
-                                    && receiptStats.remainingQty > 0;
-                                const deliveryDraftButtonLabel = po.status === 'confirmed' ? 'Tạo đợt giao' : 'Tạo giao đợt tiếp';
-                                const poListSummary = buildPurchaseOrderListSummary(po, scopedMaterialRequests);
-                                const receiptProgressLabel = receiptStats.orderedQty > 0
-                                    ? `Đã nhận ${fmtQty(receiptStats.receivedQty)}/${fmtQty(receiptStats.orderedQty)}`
-                                    : 'Chưa có số lượng';
-                                const receiptRemainingLabel = receiptStats.remainingQty > 0
-                                    ? `Còn thiếu ${fmtQty(receiptStats.remainingQty)}`
-                                    : 'Đủ nhu cầu';
-                                const deliveryBatchLabel = deliveryBatches.length > 0 ? `${deliveryBatches.length} đợt giao` : 'Chưa có lịch giao';
                                 const deliveryPrintGroups = poDeliveryPrintGroupsByPoId[po.id] || [];
                                 const fulfillmentBatchesForPo = deliveryPrintGroups.flatMap(group => group.batches);
                                 const poWorkSummary = summarizePurchaseOrderWork(po, fulfillmentBatchesForPo, deliveryBatches);
                                 const poRemovalBlockReason = getPurchaseOrderRemovalBlockReason(po, user, fulfillmentBatchesForPo, deliveryBatches, supplierReturns);
                                 const canMutatePoDocument = canUserMutatePurchaseOrder(po, user);
                                 const poHasStockImpact = hasPoStockImpactHint(po, supplierReturns);
+                                const isCompanyConsolidatedPo = po.sourceMode === 'company_consolidated';
                                 const editBlockReason = isCompanyConsolidatedPo
                                     ? 'PO công ty cần sửa tại màn Mua hàng công ty.'
                                     : poRemovalBlockReason || (poHasStockImpact ? 'PO đã phát sinh nhập kho/hoàn kho nên không thể sửa.' : null);
-                                const removalTitle = poRemovalBlockReason || (poHasStockImpact ? 'Lưu trữ PO' : 'Xoá PO');
-                                const isLoadingDeliveryPrintGroups = loadingPoDeliveryPrintPoId === po.id;
+                                const poListSummary = buildPurchaseOrderListSummary(po, scopedMaterialRequests);
+                                const poUiPolicy = getPurchaseOrderUiPolicy({
+                                    po,
+                                    receiptStats,
+                                    deliveryBatches,
+                                    supplierReturnableQty,
+                                    canManageTab,
+                                    canRunRestrictedPoActions,
+                                    canMutatePoDocument,
+                                    editBlockReason,
+                                    removalBlockReason: poRemovalBlockReason,
+                                    hasStockImpact: poHasStockImpact,
+                                    isRejectedBeforeReceipt: poWorkSummary.isRejectedBeforeReceipt,
+                                    groupSize,
+                                });
+                                const isPrintMenuOpen = poPrintMenuId === po.id;
                                 const poVatRate = normalizeVatRate(po.vatRate);
                                 const poDisplayAmount = getPurchaseOrderDisplayAmount(po, deliveryBatches);
                                 const poVatAmount = calculateVatAmount(poDisplayAmount, poVatRate);
                                 const poPaymentTotal = poDisplayAmount + poVatAmount;
+                                const receiptProgressLabel = receiptStats.orderedQty > 0
+                                    ? `${fmtQty(receiptStats.receivedQty)}/${fmtQty(receiptStats.orderedQty)}`
+                                    : '0/0';
+                                const receiptRemainingLabel = receiptStats.remainingQty > 0
+                                    ? `Còn thiếu ${fmtQty(receiptStats.remainingQty)}`
+                                    : 'Đủ nhu cầu';
                                 return (
                                     <div key={po.id} className={isPrintMenuOpen ? 'relative z-50' : 'relative z-0'}>
-                                        <div className="px-5 py-3.5 hover:bg-slate-50/40 group cursor-pointer"
-                                            onClick={() => togglePoExpanded(po)}>
-                                            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                                                <div className="flex items-start gap-3 flex-1 min-w-0">
-                                                    <div className="mt-0.5 w-9 h-9 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center shrink-0">
-                                                        <FileText size={14} className="text-blue-500" />
-                                                    </div>
-                                                    <div className="min-w-0 flex-1">
-                                                        <div className="flex flex-wrap items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-200">
-                                                            <span className="text-sm font-black text-slate-800 dark:text-slate-100">{po.poNumber}</span>
-                                                            <StatusBadge status={po.status} label={stCfg.label} tone={PO_STATUS_TONE[po.status]} showDot={false} />
-                                                            {poWorkSummary.isRejectedBeforeReceipt && (
-                                                                <span className="inline-flex items-center gap-0.5 rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[10px] font-black text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-300">
-                                                                    <Ban size={11} /> Từ chối
-                                                                </span>
-                                                            )}
-                                                            <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-black ${sourceCfg.color}`}>
-                                                                {sourceCfg.label}
+                                        <div className="px-5 py-4 transition hover:bg-slate-50/50 dark:hover:bg-slate-900/30">
+                                            <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+                                                <div className="min-w-0">
+                                                    <div className="mb-1.5 flex flex-wrap items-center gap-2">
+                                                        <span className="font-mono text-[11px] font-black uppercase tracking-wide text-slate-400">{po.poNumber}</span>
+                                                        <StatusBadge status={po.status} label={stCfg.label} tone={PO_STATUS_TONE[po.status]} showDot={false} />
+                                                        {poUiPolicy.alerts.map(alert => (
+                                                            <span
+                                                                key={alert.id}
+                                                                className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-black ${alert.tone === 'danger' ? 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-300' : alert.tone === 'warning' ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300' : 'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300'}`}
+                                                            >
+                                                                {alert.label}
                                                             </span>
-                                                            {po.procurementGroupNo && (
-                                                                <span className="inline-flex items-center rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] font-black text-violet-700 dark:border-violet-900/50 dark:bg-violet-950/30 dark:text-violet-300">
-                                                                    Nhóm {po.procurementGroupNo}{groupSize > 1 ? ` • ${groupSize} PO` : ''}
-                                                                </span>
-                                                            )}
-                                                        </div>
-                                                        <div className="mt-1.5 truncate text-sm font-black text-slate-800 dark:text-slate-100">
-                                                            {poListSummary.requestTitle}
-                                                        </div>
-                                                        <div className="mt-0.5 truncate text-[11px] font-bold text-slate-500 dark:text-slate-400">
-                                                            {poListSummary.materialSummary}
-                                                        </div>
-                                                        <div className="mt-2 flex flex-wrap gap-1.5 text-[10px] font-black text-slate-500 dark:text-slate-400">
-                                                            <span className="rounded-md border border-slate-200 bg-white px-2 py-0.5 dark:border-slate-700 dark:bg-slate-900">{po.items.length} mục</span>
-                                                            <span className="rounded-md border border-slate-200 bg-white px-2 py-0.5 dark:border-slate-700 dark:bg-slate-900">{deliveryBatchLabel}</span>
-                                                            <span className="rounded-md border border-emerald-100 bg-emerald-50 px-2 py-0.5 text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-950/20 dark:text-emerald-300">{receiptProgressLabel}</span>
-                                                            <span className={`rounded-md border px-2 py-0.5 ${receiptStats.remainingQty > 0 ? 'border-amber-100 bg-amber-50 text-amber-700 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300' : 'border-emerald-100 bg-emerald-50 text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-950/20 dark:text-emerald-300'}`}>{receiptRemainingLabel}</span>
-                                                            {po.expectedDeliveryDate && (
-                                                                <span className="rounded-md border border-blue-100 bg-blue-50 px-2 py-0.5 text-blue-700 dark:border-blue-900/40 dark:bg-blue-950/20 dark:text-blue-300">
-                                                                    Giao {new Date(po.expectedDeliveryDate).toLocaleDateString('vi-VN')}
-                                                                </span>
-                                                            )}
-                                                        </div>
+                                                        ))}
+                                                    </div>
+                                                    <div className="truncate text-sm font-black text-slate-900 dark:text-slate-100">
+                                                        {poListSummary.requestTitle}
+                                                    </div>
+                                                    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-bold text-slate-500 dark:text-slate-400">
+                                                        <span>{sourceCfg.label}</span>
+                                                        <span>{po.vendorName || poListSummary.materialSummary}</span>
+                                                        {po.procurementGroupNo && <span>Nhóm {po.procurementGroupNo}{groupSize > 1 ? ` - ${groupSize} PO` : ''}</span>}
+                                                    </div>
+                                                    <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] font-bold text-slate-500 dark:text-slate-400">
+                                                        <span>MR/Vật tư: <strong className="text-slate-700 dark:text-slate-200">{poListSummary.materialSummary}</strong></span>
+                                                        <span>Nhận: <strong className="text-emerald-700 dark:text-emerald-300">{receiptProgressLabel}</strong></span>
+                                                        <span className={receiptStats.remainingQty > 0 ? 'text-amber-700 dark:text-amber-300' : 'text-emerald-700 dark:text-emerald-300'}>{receiptRemainingLabel}</span>
+                                                        {po.expectedDeliveryDate && <span>Giao gần nhất: {new Date(po.expectedDeliveryDate).toLocaleDateString('vi-VN')}</span>}
                                                     </div>
                                                 </div>
-                                                <div className="flex items-center justify-between gap-3 shrink-0 lg:justify-end">
+                                                <div className="flex items-center justify-between gap-3 lg:justify-end">
                                                     <div className="text-right">
-                                                        <div className="text-sm font-black text-slate-800">{fmtMoney(poPaymentTotal)} đ</div>
+                                                        <div className="text-sm font-black text-slate-900 dark:text-slate-100">{fmtMoney(poPaymentTotal)} đ</div>
                                                         <div className="text-[9px] font-bold text-slate-400">
-                                                            Trước VAT: {fmtMoney(poDisplayAmount)} đ{poVatRate > 0 ? ` • VAT ${poVatRate.toLocaleString('vi-VN')}%` : ''}
+                                                            Trước VAT: {fmtMoney(poDisplayAmount)} đ{poVatRate > 0 ? ` - VAT ${poVatRate.toLocaleString('vi-VN')}%` : ''}
                                                         </div>
                                                     </div>
-                                                    <div className="flex gap-1">
-                                                        <div className="relative">
-                                                            <button onClick={e => { e.stopPropagation(); setPoPrintMenuId(prev => prev === po.id ? null : po.id); }} title="Chọn mẫu in/PDF"
-                                                                disabled={printingPoId === po.id}
-                                                                className="w-7 h-7 rounded-lg flex items-center justify-center text-blue-400 hover:text-blue-600 hover:bg-blue-50 border border-transparent hover:border-blue-200 disabled:opacity-50">
-                                                                {printingPoId === po.id ? <Loader2 size={13} className="animate-spin" /> : <Printer size={13} />}
-                                                            </button>
-                                                            {poPrintMenuId === po.id && (
-                                                                <div onClick={event => event.stopPropagation()} className="absolute right-0 top-8 z-[100] w-56 overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-xl">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => openPoDetail(po)}
+                                                        className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-blue-600 px-4 text-xs font-black text-white shadow-sm transition hover:bg-blue-700 active:scale-[0.98]"
+                                                    >
+                                                        <FileText size={14} /> Xử lý
+                                                    </button>
+                                                    <div className="relative">
+                                                        <button
+                                                            type="button"
+                                                            onClick={event => {
+                                                                event.stopPropagation();
+                                                                setPoPrintMenuId(prev => prev === po.id ? null : po.id);
+                                                            }}
+                                                            className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 hover:text-slate-800 dark:border-slate-700 dark:bg-slate-950 dark:hover:bg-slate-900"
+                                                            title="Thao tác khác"
+                                                        >
+                                                            <MoreVertical size={16} />
+                                                        </button>
+                                                        {isPrintMenuOpen && (
+                                                            <div onClick={event => event.stopPropagation()} className="absolute right-0 top-10 z-[100] w-64 overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-xl">
+                                                                {poUiPolicy.menuActions.map(action => (
                                                                     <button
+                                                                        key={action.id}
                                                                         type="button"
-                                                                        onClick={() => handlePrintPo(po, 'purchase_order')}
-                                                                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-[11px] font-black text-slate-600 hover:bg-blue-50 hover:text-blue-700"
+                                                                        disabled={action.disabled}
+                                                                        title={action.disabledReason || action.label}
+                                                                        onClick={() => void runPoUiAction(po, action)}
+                                                                        className={`flex w-full items-center gap-2 px-3 py-2 text-left text-[11px] font-black transition disabled:pointer-events-auto disabled:opacity-60 ${getPoMenuActionClass(action)}`}
                                                                     >
-                                                                        <Printer size={13} /> Đơn đặt hàng
+                                                                        {getPoActionIcon(action)} {action.label}
                                                                     </button>
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => handlePrintPo(po, 'approval_request')}
-                                                                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-[11px] font-black text-slate-600 hover:bg-rose-50 hover:text-rose-700"
-                                                                    >
-                                                                        <FileText size={13} /> Đề nghị duyệt đơn hàng
-                                                                    </button>
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                        {po.procurementGroupId && groupSize > 1 && (
-                                                            <div className="relative">
-                                                                <button onClick={e => { e.stopPropagation(); setPoPrintMenuId(prev => prev === `group:${po.procurementGroupId}` ? null : `group:${po.procurementGroupId}`); }} title="Chọn mẫu in tất cả PO trong nhóm"
-                                                                    disabled={printingPoId === po.procurementGroupId}
-                                                                    className="h-7 rounded-lg px-2 text-[9px] font-black text-violet-500 hover:bg-violet-50 hover:text-violet-700 border border-transparent hover:border-violet-200 disabled:opacity-50">
-                                                                    {printingPoId === po.procurementGroupId ? <Loader2 size={12} className="animate-spin" /> : 'In nhóm'}
-                                                                </button>
-                                                                {poPrintMenuId === `group:${po.procurementGroupId}` && (
-                                                                    <div onClick={event => event.stopPropagation()} className="absolute right-0 top-8 z-[100] w-60 overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-xl">
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={() => handlePrintPoGroup(po.procurementGroupId!, 'purchase_order')}
-                                                                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-[11px] font-black text-slate-600 hover:bg-violet-50 hover:text-violet-700"
-                                                                        >
-                                                                            <Printer size={13} /> Nhóm - Đơn đặt hàng
-                                                                        </button>
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={() => handlePrintPoGroup(po.procurementGroupId!, 'approval_request')}
-                                                                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-[11px] font-black text-slate-600 hover:bg-rose-50 hover:text-rose-700"
-                                                                        >
-                                                                            <FileText size={13} /> Nhóm - Đề nghị duyệt
-                                                                        </button>
-                                                                    </div>
-                                                                )}
+                                                                ))}
                                                             </div>
                                                         )}
                                                     </div>
-                                                    {canMutatePoDocument && (
-                                                        <div className="flex gap-0.5 opacity-0 group-hover:opacity-100">
-                                                            <button
-                                                                onClick={e => { e.stopPropagation(); if (!editBlockReason) openEditPo(po); }}
-                                                                disabled={!!editBlockReason}
-                                                                title={editBlockReason || 'Sửa PO'}
-                                                                className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-blue-500 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-slate-300"
-                                                            >
-                                                                <Edit2 size={11} />
-                                                            </button>
-                                                            <button onClick={async e => { e.stopPropagation(); if (!poRemovalBlockReason) handleDeletePo(po); }}
-                                                                disabled={!!poRemovalBlockReason}
-                                                                title={removalTitle}
-                                                                className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-slate-300"><Trash2 size={11} /></button>
-                                                        </div>
-                                                    )}
-                                                    {isExpanded ? <ChevronUp size={14} className="text-slate-400" /> : <ChevronDown size={14} className="text-slate-400" />}
                                                 </div>
                                             </div>
                                         </div>
+                                    </div>
+                                );
+                            })}
+                            <div className="flex flex-col gap-3 bg-slate-50/60 px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
+                                <div className="text-xs font-bold text-slate-500">
+                                    Đang xem {poPageStart}-{poPageEnd} trên {sortedPos.length} PO
+                                </div>
+                                <div className="flex items-center justify-end gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setPoPage(prev => Math.max(1, prev - 1))}
+                                        disabled={poPage <= 1}
+                                        className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                        <ChevronLeft size={14} /> Trước
+                                    </button>
+                                    <span className="min-w-[82px] text-center text-xs font-black text-slate-500">
+                                        {poPage}/{poPageCount}
+                                    </span>
+                                    <button
+                                        type="button"
+                                        onClick={() => setPoPage(prev => Math.min(poPageCount, prev + 1))}
+                                        disabled={poPage >= poPageCount}
+                                        className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                        Sau <ChevronRight size={14} />
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {selectedPo && (() => {
+                const po = selectedPo;
+                const stCfg = PO_STATUS[po.status];
+                const sourceCfg = PO_SOURCE_MODE[po.sourceMode || 'proactive_project'];
+                const targetWh = warehouses.find(w => w.id === po.targetWarehouseId);
+                const groupSize = po.procurementGroupId ? (procurementGroupCounts[po.procurementGroupId] || 0) : 0;
+                const supplierReturns = supplierReturnsByPo[po.id] || [];
+                const deliveryBatches = poDeliveryBatchesByPo[po.id] || [];
+                const totalReceivedQty = po.items.reduce((sum, item) => sum + Number(item.receivedQty || 0), 0);
+                const completedReturnQty = Math.max(
+                    po.items.reduce((sum, item) => sum + Number(item.returnedQty || 0), 0),
+                    supplierReturns
+                        .filter(item => item.status === 'completed')
+                        .reduce((sum, item) => sum + item.lines.reduce((lineSum, line) => lineSum + Number(line.returnQty || 0), 0), 0),
+                );
+                const pendingReturnQty = supplierReturns
+                    .filter(item => item.status === 'pending')
+                    .reduce((sum, item) => sum + item.lines.reduce((lineSum, line) => lineSum + Number(line.returnQty || 0), 0), 0);
+                const supplierReturnableQty = Math.max(0, totalReceivedQty - completedReturnQty - pendingReturnQty);
+                const receiptStats = getPurchaseOrderDemandStats(po, poRequestLinks, inventoryItems);
+                const isCompanyConsolidatedPo = po.sourceMode === 'company_consolidated';
+                const hasActiveDeliveryBatch = deliveryBatches.some(batch => ['planned', 'wms_pending'].includes(batch.status));
+                const canCreateDeliveryDraft = !isCompanyConsolidatedPo
+                    && !hasActiveDeliveryBatch
+                    && PO_DELIVERY_DRAFT_STATUSES.has(po.status)
+                    && receiptStats.remainingQty > 0;
+                const deliveryDraftButtonLabel = po.status === 'confirmed' ? 'Tạo đợt giao' : 'Tạo giao đợt tiếp';
+                const poListSummary = buildPurchaseOrderListSummary(po, scopedMaterialRequests);
+                const deliveryPrintGroups = poDeliveryPrintGroupsByPoId[po.id] || [];
+                const fulfillmentBatchesForPo = deliveryPrintGroups.flatMap(group => group.batches);
+                const poWorkSummary = summarizePurchaseOrderWork(po, fulfillmentBatchesForPo, deliveryBatches);
+                const poRemovalBlockReason = getPurchaseOrderRemovalBlockReason(po, user, fulfillmentBatchesForPo, deliveryBatches, supplierReturns);
+                const canMutatePoDocument = canUserMutatePurchaseOrder(po, user);
+                const poHasStockImpact = hasPoStockImpactHint(po, supplierReturns);
+                const editBlockReason = isCompanyConsolidatedPo
+                    ? 'PO công ty cần sửa tại màn Mua hàng công ty.'
+                    : poRemovalBlockReason || (poHasStockImpact ? 'PO đã phát sinh nhập kho/hoàn kho nên không thể sửa.' : null);
+                const isLoadingDeliveryPrintGroups = loadingPoDeliveryPrintPoId === po.id;
+                const poVatRate = normalizeVatRate(po.vatRate);
+                const poDisplayAmount = getPurchaseOrderDisplayAmount(po, deliveryBatches);
+                const poVatAmount = calculateVatAmount(poDisplayAmount, poVatRate);
+                const poPaymentTotal = poDisplayAmount + poVatAmount;
+
+                return (
+                    <div className="fixed inset-0 z-[1000] flex justify-end bg-slate-950/45 backdrop-blur-sm" onClick={closePoDetail}>
+                        <aside
+                            className="flex h-full w-full max-w-[min(1280px,calc(100vw-24px))] flex-col overflow-hidden border-l border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950"
+                            onClick={event => event.stopPropagation()}
+                        >
+                            <div className="shrink-0 border-b border-slate-200 bg-white px-5 py-4 dark:border-slate-800 dark:bg-slate-950">
+                                <div className="flex items-start justify-between gap-4">
+                                    <div className="min-w-0">
+                                        <div className="mb-2 flex flex-wrap items-center gap-2">
+                                            <span className="font-mono text-xs font-black uppercase tracking-wide text-slate-400">{po.poNumber}</span>
+                                            <StatusBadge status={po.status} label={stCfg.label} tone={PO_STATUS_TONE[po.status]} showDot={false} />
+                                            <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-black ${sourceCfg.color}`}>
+                                                {sourceCfg.label}
+                                            </span>
+                                            {po.procurementGroupNo && (
+                                                <span className="inline-flex items-center rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] font-black text-violet-700 dark:border-violet-900/50 dark:bg-violet-950/30 dark:text-violet-300">
+                                                    Nhóm {po.procurementGroupNo}{groupSize > 1 ? ` • ${groupSize} PO` : ''}
+                                                </span>
+                                            )}
+                                            {poWorkSummary.isRejectedBeforeReceipt && (
+                                                <span className="inline-flex items-center gap-0.5 rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[10px] font-black text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-300">
+                                                    <Ban size={11} /> Đợt giao bị từ chối
+                                                </span>
+                                            )}
+                                        </div>
+                                        <h3 className="truncate text-lg font-black text-slate-900 dark:text-slate-100">{poListSummary.requestTitle}</h3>
+                                        <p className="mt-1 truncate text-xs font-bold text-slate-500 dark:text-slate-400">{po.vendorName || 'Chưa có nhà cung cấp'} • {poListSummary.materialSummary}</p>
+                                    </div>
+                                    <div className="flex shrink-0 items-start gap-3">
+                                        <div className="hidden text-right sm:block">
+                                            <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">Tổng thanh toán</div>
+                                            <div className="text-base font-black text-emerald-700 dark:text-emerald-300">{fmtMoney(poPaymentTotal)} đ</div>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={closePoDetail}
+                                            className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-900 dark:hover:text-slate-200"
+                                            title="Đóng chi tiết PO"
+                                        >
+                                            <X size={18} />
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="flex-1 overflow-y-auto bg-slate-50/60 py-4 dark:bg-slate-950/60">
                                         {(isLoadingDeliveryPrintGroups || deliveryPrintGroups.length > 0) && (
                                             <div className="px-5 pb-4 -mt-1">
                                                 <div className="ml-12 space-y-2 rounded-xl border border-slate-100 bg-slate-50/70 p-2 dark:border-slate-800 dark:bg-slate-900/30">
@@ -3953,8 +4128,8 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                 </div>
                                             </div>
                                         )}
-                                        {/* Expanded items */}
-                                        {isExpanded && (() => {
+
+                                {(() => {
                                             const uniqueSpecKeys = Array.from(
                                                 new Set(
                                                     po.items.flatMap(item =>
@@ -4396,40 +4571,12 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                     </div>
                                                 </div>
                                             );
-                                        })()}
-                                    </div>
-                                );
-                            })}
-                            <div className="flex flex-col gap-3 bg-slate-50/60 px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
-                                <div className="text-xs font-bold text-slate-500">
-                                    Đang xem {poPageStart}-{poPageEnd} trên {sortedPos.length} PO
-                                </div>
-                                <div className="flex items-center justify-end gap-2">
-                                    <button
-                                        type="button"
-                                        onClick={() => setPoPage(prev => Math.max(1, prev - 1))}
-                                        disabled={poPage <= 1}
-                                        className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                                    >
-                                        <ChevronLeft size={14} /> Trước
-                                    </button>
-                                    <span className="min-w-[82px] text-center text-xs font-black text-slate-500">
-                                        {poPage}/{poPageCount}
-                                    </span>
-                                    <button
-                                        type="button"
-                                        onClick={() => setPoPage(prev => Math.min(poPageCount, prev + 1))}
-                                        disabled={poPage >= poPageCount}
-                                        className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                                    >
-                                        Sau <ChevronRight size={14} />
-                                    </button>
-                                </div>
+                                })()}
                             </div>
-                        </div>
-                    )}
-                </div>
-            )}
+                        </aside>
+                    </div>
+                );
+            })()}
 
             {showRequestPicker && (
                 <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
@@ -4595,7 +4742,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             )}
 
             {deliveryDraftPo && (
-                <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
+                <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
                     <div className="flex max-h-[86vh] w-full max-w-5xl flex-col overflow-hidden rounded-lg border border-border bg-card shadow-2xl">
                         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800">
                             <div>
@@ -4783,7 +4930,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
 
             {/* PO Form Modal */}
             {showPoForm && (
-                <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm">
+                <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/40 backdrop-blur-sm">
                     <div className="bg-card border border-border rounded-3xl shadow-2xl w-full max-w-5xl mx-4 max-h-[90vh] overflow-y-auto">
                         <div className="px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-t-3xl flex items-center justify-between">
                             <span className="font-bold text-lg text-white flex items-center gap-2">
