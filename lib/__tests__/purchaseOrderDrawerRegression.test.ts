@@ -27,4 +27,16 @@ describe('purchase order drawer regression guard', () => {
     expect(source).not.toContain('PurchaseOrderActionPanel');
     expect(source).not.toContain('role="tab"');
   });
+
+  it('collapses the material description table by default behind a triangle toggle', () => {
+    expect(source).toContain('const [isPoItemsExpanded, setIsPoItemsExpanded]');
+    expect(source).toContain('setIsPoItemsExpanded(false);');
+    expect(source).toContain('aria-expanded={isPoItemsExpanded}');
+    expect(source).toContain('setIsPoItemsExpanded(prev => !prev)');
+    expect(source).toContain('isPoItemsExpanded ? <ChevronDown');
+    expect(source).toContain('id={`po-items-table-${po.id}`}');
+
+    expect(source).not.toContain('const [isPoMetaExpanded, setIsPoMetaExpanded]');
+    expect(source).not.toContain('aria-expanded={isPoMetaExpanded}');
+  });
 });

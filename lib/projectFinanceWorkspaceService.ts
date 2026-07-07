@@ -275,7 +275,7 @@ export const buildSupplierPayableRowFromBalance = (balance: SupplierPayableBalan
     paidAmount,
     outstandingAmount,
     sourceTab: 'material',
-    sourceLabel: 'Chứng từ AP',
+    sourceLabel: 'CT công nợ NCC',
     sourceRoute: {
       tab: 'finance',
       params: {
