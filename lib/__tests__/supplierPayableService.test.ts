@@ -1,9 +1,24 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PurchaseOrder, SupplierPayableDocument, SupplierPaymentAllocation } from '../../types';
+
+const supabaseMocks = vi.hoisted(() => ({
+  from: vi.fn(),
+  select: vi.fn(),
+  order: vi.fn(),
+  eq: vi.fn(),
+}));
+
+vi.mock('../supabase', () => ({
+  supabase: {
+    from: supabaseMocks.from,
+  },
+}));
+
 import {
   buildPayableDocumentFromPurchaseOrder,
   buildSupplierPayableBalances,
   calculatePurchaseOrderRecognizedAmount,
+  supplierPayableService,
 } from '../supplierPayableService';
 
 const basePo = (overrides: Partial<PurchaseOrder> = {}): PurchaseOrder => ({
@@ -35,6 +50,20 @@ const basePo = (overrides: Partial<PurchaseOrder> = {}): PurchaseOrder => ({
 });
 
 describe('supplierPayableService helpers', () => {
+  beforeEach(() => {
+    const query = {
+      select: supabaseMocks.select,
+      order: supabaseMocks.order,
+      eq: supabaseMocks.eq,
+      data: [],
+      error: null,
+    };
+    supabaseMocks.from.mockReset().mockReturnValue(query);
+    supabaseMocks.select.mockReset().mockReturnValue(query);
+    supabaseMocks.order.mockReset().mockReturnValue(query);
+    supabaseMocks.eq.mockReset().mockReturnValue(query);
+  });
+
   it('recognizes PO payable from net received quantity only', () => {
     expect(calculatePurchaseOrderRecognizedAmount(basePo())).toBe(10_000_000);
   });
@@ -91,5 +120,18 @@ describe('supplierPayableService helpers', () => {
     expect(balance.paidAmount).toBe(3_000_000);
     expect(balance.outstandingAmount).toBe(57_000_000);
     expect(balance.documentCount).toBe(2);
+  });
+
+  it('filters AP documents by source type and source id when loading a PO cockpit', async () => {
+    await supplierPayableService.listDocuments({
+      projectId: 'project-1',
+      sourceType: 'purchase_order',
+      sourceId: 'po-1',
+    });
+
+    expect(supabaseMocks.from).toHaveBeenCalledWith('supplier_payable_document_balances');
+    expect(supabaseMocks.eq).toHaveBeenCalledWith('project_id', 'project-1');
+    expect(supabaseMocks.eq).toHaveBeenCalledWith('source_type', 'purchase_order');
+    expect(supabaseMocks.eq).toHaveBeenCalledWith('source_id', 'po-1');
   });
 });

@@ -2,6 +2,7 @@ import type {
   PurchaseOrder,
   SupplierPayableBalance,
   SupplierPayableDocument,
+  SupplierPayableSourceType,
   SupplierPaymentAllocation,
 } from '../types';
 import { fromDb, toDb } from './dbMapping';
@@ -175,12 +176,16 @@ export const supplierPayableService = {
     constructionSiteId?: string | null;
     supplierId?: string | null;
     status?: string | null;
+    sourceType?: SupplierPayableSourceType | null;
+    sourceId?: string | null;
   } = {}): Promise<SupplierPayableDocument[]> {
     let query = supabase.from(DOCUMENT_BALANCE_VIEW).select('*').order('document_date', { ascending: false });
     if (input.projectId) query = query.eq('project_id', input.projectId);
     if (input.constructionSiteId) query = query.eq('construction_site_id', input.constructionSiteId);
     if (input.supplierId) query = query.eq('supplier_id', input.supplierId);
     if (input.status) query = query.eq('status', input.status);
+    if (input.sourceType) query = query.eq('source_type', input.sourceType);
+    if (input.sourceId) query = query.eq('source_id', input.sourceId);
     const { data, error } = await query;
     if (error) {
       if (error.code === '42P01') return [];

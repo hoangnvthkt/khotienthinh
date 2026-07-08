@@ -95,6 +95,53 @@ describe('purchaseOrderUiPolicy', () => {
     expect(policy.primaryAction?.deliveryBatchId).toBe('batch-1');
   });
 
+  it('maps WMS pending purchase orders to open the related WMS transaction when available', () => {
+    const policy = getPurchaseOrderUiPolicy(baseInput({
+      po: makePo({ status: 'in_transit', sourceMode: 'from_request' }),
+      deliveryBatches: [plannedBatch({ status: 'wms_pending' })],
+      pendingWmsTransactionId: 'tx-wms-1',
+    }));
+
+    expect(policy.primaryAction?.id).toBe('open_wms_transaction');
+    expect(policy.primaryAction?.label).toBe('Mở phiếu WMS');
+    expect(policy.primaryAction?.transactionId).toBe('tx-wms-1');
+  });
+
+  it('prompts supplier payable creation once received quantity is recognized but AP is missing', () => {
+    const policy = getPurchaseOrderUiPolicy(baseInput({
+      po: makePo({ status: 'delivered' }),
+      receiptStats: {
+        orderedQty: 100,
+        receivedQty: 100,
+        remainingQty: 0,
+      },
+      recognizedPayableAmount: 100_000,
+      supplierPayableStatus: 'none',
+    }));
+
+    expect(policy.primaryAction?.id).toBe('create_supplier_payable');
+    expect(policy.primaryAction?.label).toBe('Tạo công nợ NCC');
+  });
+
+  it('does not prompt supplier payable creation once AP is paid', () => {
+    const policy = getPurchaseOrderUiPolicy(baseInput({
+      po: makePo({ status: 'closed' }),
+      receiptStats: {
+        orderedQty: 100,
+        receivedQty: 100,
+        remainingQty: 0,
+      },
+      recognizedPayableAmount: 100_000,
+      supplierPayableStatus: 'paid',
+    }));
+
+    expect([
+      policy.primaryAction?.id,
+      ...policy.secondaryActions.map(action => action.id),
+      ...policy.menuActions.map(action => action.id),
+    ]).not.toContain('create_supplier_payable');
+  });
+
   it('prioritizes supplemental delivery for partial purchase orders with remaining quantity', () => {
     const policy = getPurchaseOrderUiPolicy(baseInput({
       po: makePo({ status: 'partial' }),

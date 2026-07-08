@@ -20,6 +20,8 @@ export type PurchaseOrderUiActionId =
   | 'edit_po'
   | 'remove_po'
   | 'supplier_return'
+  | 'open_wms_transaction'
+  | 'create_supplier_payable'
   | 'view_history';
 
 export type PurchaseOrderUiActionIntent = 'primary' | 'success' | 'warning' | 'danger' | 'neutral';
@@ -31,6 +33,7 @@ export interface PurchaseOrderUiAction {
   disabled?: boolean;
   disabledReason?: string | null;
   deliveryBatchId?: string;
+  transactionId?: string;
 }
 
 export interface PurchaseOrderUiAlert {
@@ -58,6 +61,9 @@ export interface PurchaseOrderUiPolicyInput {
   hasStockImpact?: boolean;
   isRejectedBeforeReceipt?: boolean;
   groupSize?: number;
+  pendingWmsTransactionId?: string | null;
+  recognizedPayableAmount?: number;
+  supplierPayableStatus?: 'none' | 'draft' | 'open' | 'payable' | 'partial' | 'paid' | 'cancelled' | 'reversed';
 }
 
 export interface PurchaseOrderUiPolicy {
@@ -100,6 +106,9 @@ export const getPurchaseOrderUiPolicy = ({
   hasStockImpact = false,
   isRejectedBeforeReceipt = false,
   groupSize = 1,
+  pendingWmsTransactionId = null,
+  recognizedPayableAmount = 0,
+  supplierPayableStatus = 'none',
 }: PurchaseOrderUiPolicyInput): PurchaseOrderUiPolicy => {
   const isCompanyConsolidatedPo = po.sourceMode === 'company_consolidated';
   const plannedBatch = firstPlannedBatch(deliveryBatches);
@@ -173,6 +182,34 @@ export const getPurchaseOrderUiPolicy = ({
 
   if (['returned', 'cancelled'].includes(po.status)) {
     nextStep = 'PO đã kết thúc trạng thái, chỉ xem chi tiết và lịch sử.';
+  }
+
+  if (pendingWmsTransactionId && deliveryBatches.some(batch => batch.status === 'wms_pending')) {
+    primaryAction = {
+      id: 'open_wms_transaction',
+      label: 'Mở phiếu WMS',
+      intent: 'primary',
+      transactionId: pendingWmsTransactionId,
+    };
+    nextStep = 'Đợt giao đang chờ kho xử lý. Mở phiếu WMS để duyệt, từ chối hoặc xác nhận nhập theo quyền.';
+  }
+
+  const canCreateSupplierPayable = Number(recognizedPayableAmount || 0) > 0
+    && (supplierPayableStatus === 'none' || supplierPayableStatus === 'draft')
+    && !['draft', 'sent', 'confirmed', 'in_transit', 'cancelled', 'returned'].includes(po.status);
+  if (canCreateSupplierPayable) {
+    const action: PurchaseOrderUiAction = {
+      id: 'create_supplier_payable',
+      label: 'Tạo công nợ NCC',
+      intent: 'success',
+    };
+    if (!primaryAction || ['delivered', 'closed'].includes(po.status)) primaryAction = action;
+    else secondaryActions.push(action);
+    nextStep = 'PO đã có giá trị thực nhận. Tạo chứng từ công nợ NCC để chuyển sang bước thanh toán.';
+  } else if (Number(recognizedPayableAmount || 0) > 0 && ['open', 'partial'].includes(supplierPayableStatus || '')) {
+    nextStep = 'Công nợ NCC đã ghi nhận, tiếp tục theo dõi số còn phải trả và thanh toán.';
+  } else if (Number(recognizedPayableAmount || 0) > 0 && supplierPayableStatus === 'paid') {
+    nextStep = 'Công nợ NCC đã thanh toán, còn lại in chứng từ và tra cứu lịch sử.';
   }
 
   if (canRunRestrictedPoActions && ['partial', 'delivered', 'closed'].includes(po.status) && supplierReturnableQty > 0) {
