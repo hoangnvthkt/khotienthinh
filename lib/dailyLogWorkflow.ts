@@ -15,6 +15,12 @@ export const isDailyLogSummaryEditable = (log?: DailyLog | null): boolean =>
 
 export type DailyLogSourceReviewState = 'waiting_review' | 'included' | 'needs_rereview' | 'returned';
 
+export interface DailyLogSummarySourceLogOptions {
+  canReviewSources: boolean;
+  currentUserId?: string | null;
+  sourceSummaryLogIds?: Iterable<string>;
+}
+
 export interface DailyLogSummarySourceSnapshot {
   sourceLogId: string;
   submittedAt: string | null;
@@ -96,6 +102,45 @@ export const getDailyLogSourceReviewState = ({
 
   return 'included';
 };
+
+const isSubmittedDailyLogDetailSource = (log: DailyLog): boolean =>
+  !isDailyLogSummaryRow(log) &&
+  getDailyLogWorkflowStatus(log) === 'submitted' &&
+  (log.submittedToPermission || 'verify') !== 'approve';
+
+const isReturnedDailyLogDetailSource = (log: DailyLog): boolean =>
+  !isDailyLogSummaryRow(log) &&
+  getDailyLogWorkflowStatus(log) === 'rejected' &&
+  Boolean(log.everSubmitted || log.rejectedAt || log.submittedAt);
+
+const isDraftDailyLogDetailSource = (log: DailyLog): boolean =>
+  !isDailyLogSummaryRow(log) && getDailyLogWorkflowStatus(log) === 'draft';
+
+export const getDailyLogSummarySourceLogs = (
+  dayLogs: DailyLog[],
+  options: DailyLogSummarySourceLogOptions,
+): DailyLog[] => {
+  const linkedSourceIds = new Set(options.sourceSummaryLogIds || []);
+  const seen = new Set<string>();
+
+  return dayLogs.filter(log => {
+    if (isDailyLogSummaryRow(log) || seen.has(log.id)) return false;
+
+    const alreadyLinkedToSummary = linkedSourceIds.has(log.id);
+    const isSource = alreadyLinkedToSummary ||
+      isSubmittedDailyLogDetailSource(log) ||
+      (options.canReviewSources && (
+        isDraftDailyLogDetailSource(log) ||
+        isReturnedDailyLogDetailSource(log)
+      ));
+
+    if (!isSource) return false;
+    seen.add(log.id);
+    return true;
+  });
+};
+
+export const getDefaultDailyLogSummaryApprover = <T extends { userId?: string }>(_approvers: T[]): T | null => null;
 
 interface CanReturnDailyLogSourceInput {
   sourceLog: DailyLog;

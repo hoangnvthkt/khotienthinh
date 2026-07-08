@@ -5,7 +5,9 @@ import {
   buildDailyLogSummaryVolumes,
   canReturnDailyLogSource,
   DAILY_SUMMARY_SOURCE_TYPE,
+  getDefaultDailyLogSummaryApprover,
   getDailyLogSourceReviewState,
+  getDailyLogSummarySourceLogs,
 } from '../dailyLogWorkflow';
 
 const sourceLog = (patch: Partial<DailyLog> = {}): DailyLog => ({
@@ -153,5 +155,38 @@ describe('daily log source workflow', () => {
       included: true,
       snapshot: buildDailyLogSourceSnapshot(returnedLog),
     })).toBe('returned');
+  });
+
+  it('keeps new member detail logs visible after a KTT summary has already selected other sources', () => {
+    const existingSummary = summaryLog({
+      status: 'draft',
+      summarySourceMetadata: {
+        legacyDailyLogIds: ['source-1'],
+      },
+    });
+    const newMemberDraft = sourceLog({
+      id: 'source-2',
+      status: 'draft',
+      createdBy: 'Nhan vien moi',
+      createdById: 'member-2',
+      submittedAt: null,
+      submittedToUserId: null,
+      requestedVerifierId: null,
+    });
+
+    const result = getDailyLogSummarySourceLogs(
+      [existingSummary, sourceLog(), newMemberDraft],
+      {
+        canReviewSources: true,
+        currentUserId: 'ktt-1',
+        sourceSummaryLogIds: new Set(['source-1']),
+      },
+    );
+
+    expect(result.map(log => log.id)).toEqual(['source-1', 'source-2']);
+  });
+
+  it('does not preselect a CHT approver by default', () => {
+    expect(getDefaultDailyLogSummaryApprover([{ userId: 'cht-1' } as any])).toBeNull();
   });
 });

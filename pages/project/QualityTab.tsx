@@ -18,7 +18,6 @@ import {
   Paperclip,
   Plus,
   RotateCcw,
-  Save,
   Search,
   Send,
   ShieldCheck,
@@ -29,6 +28,7 @@ import {
   Download,
 } from 'lucide-react';
 import { qualityChecklistService } from '../../lib/qualityChecklistService';
+import { canReviewQualityChecklist } from '../../lib/qualityChecklistWorkflow';
 import { projectStaffService } from '../../lib/projectStaffService';
 import { taskService } from '../../lib/projectService';
 import { supabase } from '../../lib/supabase';
@@ -59,6 +59,22 @@ interface QualityTabProps {
 type StatusCounts = Record<QualityChecklistStatus, number>;
 
 const ROOT_KEY = '__root__';
+
+type QualityFormSubmissionDraft = {
+  editingChecklist: QualityChecklist | null;
+  formTask: ProjectTask | null;
+  constructionSiteId: string;
+  values: {
+    title: string;
+    workDescription: string;
+    workLocation: string;
+    workDate: string;
+    workSupervisor: string;
+    sitePhotos: QualitySitePhoto[];
+    attachments: Attachment[];
+    note: string;
+  };
+};
 
 const STATUS_CONFIG: Record<QualityChecklistStatus, {
   label: string;
@@ -296,6 +312,7 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
   const [uploadingFiles, setUploadingFiles] = useState(false);
 
   const [submittingChecklist, setSubmittingChecklist] = useState<QualityChecklist | null>(null);
+  const [submittingFormDraft, setSubmittingFormDraft] = useState<QualityFormSubmissionDraft | null>(null);
 
   // States and Callbacks for MediaViewer
   const [viewerOpen, setViewerOpen] = useState(false);
@@ -573,9 +590,9 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
   }, [canManageTab, user?.id, user?.name, user?.role]);
 
   const canApproveChecklist = useCallback((checklist: QualityChecklist) => {
-    if (!canManageTab || checklist.status !== 'submitted') return false;
-    return user?.role === Role.ADMIN || checklist.submittedToUserId === user?.id;
-  }, [canManageTab, user?.id, user?.role]);
+    if (!canManageTab) return false;
+    return canReviewQualityChecklist(checklist, user, projectStaff);
+  }, [canManageTab, projectStaff, user]);
 
   const openTask = (taskId: string) => {
     setCurrentTaskId(taskId);
@@ -656,6 +673,7 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
     setEditingChecklist(null);
     setReadonlyForm(false);
     setForm({});
+    setSubmittingFormDraft(null);
   };
 
   const uploadFiles = async (files: File[], kind: 'photo' | 'attachment') => {
@@ -743,52 +761,77 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
     }));
   };
 
-  const handleSave = async () => {
-    if (readonlyForm) return;
+  const buildFormSubmissionDraft = (): QualityFormSubmissionDraft | null => {
+    if (readonlyForm) return null;
     const title = String(form.title || '').trim();
     if (!title) {
       toast.error('Thiếu tên hồ sơ', 'Vui lòng nhập tên hồ sơ nghiệm thu.');
-      return;
+      return null;
     }
 
+    if (!editingChecklist && !formTask) {
+      toast.error('Chưa chọn hạng mục tiến độ.');
+      return null;
+    }
+
+    const targetSiteId = siteId || formTask?.constructionSiteId || editingChecklist?.constructionSiteId || '';
+    if (!targetSiteId) {
+      toast.error('Thiếu công trường', 'Cần chọn công trường trước khi gửi duyệt hồ sơ.');
+      return null;
+    }
+
+    return {
+      editingChecklist,
+      formTask,
+      constructionSiteId: targetSiteId,
+      values: {
+        title,
+        workDescription: form.workDescription || '',
+        workLocation: form.workLocation || '',
+        workDate: form.workDate || todayIso(),
+        workSupervisor: form.workSupervisor || '',
+        sitePhotos: form.sitePhotos || [],
+        attachments: form.attachments || [],
+        note: form.note || '',
+      },
+    };
+  };
+
+  const handlePrepareFormSubmit = () => {
+    const draft = buildFormSubmissionDraft();
+    if (draft) setSubmittingFormDraft(draft);
+  };
+
+  const handleConfirmFormSubmit = async (target: ProjectSubmissionTarget) => {
+    if (!submittingFormDraft) return;
     setSaving(true);
     try {
-      if (editingChecklist) {
-        await qualityChecklistService.update(editingChecklist.id, {
-          title,
-          workDescription: form.workDescription || '',
-          workLocation: form.workLocation || '',
-          workDate: form.workDate || todayIso(),
-          workSupervisor: form.workSupervisor || '',
-          sitePhotos: form.sitePhotos || [],
-          attachments: form.attachments || [],
-          note: form.note || '',
-        });
-        toast.success('Đã cập nhật hồ sơ nghiệm thu');
+      if (submittingFormDraft.editingChecklist) {
+        await qualityChecklistService.update(submittingFormDraft.editingChecklist.id, submittingFormDraft.values);
+        await qualityChecklistService.setStatus(
+          submittingFormDraft.editingChecklist.id,
+          'submitted',
+          user?.id,
+          target.note,
+          target,
+        );
       } else {
-        if (!formTask) throw new Error('Chưa chọn hạng mục tiến độ.');
-        const targetSiteId = siteId || formTask.constructionSiteId || '';
-        if (!targetSiteId) throw new Error('Thiếu công trường để tạo hồ sơ.');
+        if (!submittingFormDraft.formTask) throw new Error('Chưa chọn hạng mục tiến độ.');
         await qualityChecklistService.createForTask({
           projectId,
-          constructionSiteId: targetSiteId,
-          taskId: formTask.id,
-          title,
-          workDescription: form.workDescription || '',
-          workLocation: form.workLocation || '',
-          workDate: form.workDate || todayIso(),
-          workSupervisor: form.workSupervisor || '',
-          sitePhotos: form.sitePhotos || [],
-          attachments: form.attachments || [],
-          note: form.note || '',
+          constructionSiteId: submittingFormDraft.constructionSiteId,
+          taskId: submittingFormDraft.formTask.id,
+          ...submittingFormDraft.values,
           createdBy: user?.id || user?.name,
+          submissionTarget: target,
         });
-        toast.success('Đã tạo hồ sơ nghiệm thu');
       }
+      toast.success('Đã gửi duyệt hồ sơ nghiệm thu');
+      setSubmittingFormDraft(null);
       closeForm();
       await loadData();
     } catch (error: any) {
-      toast.error('Không lưu được hồ sơ', error?.message);
+      toast.error('Không gửi được hồ sơ', error?.message);
     } finally {
       setSaving(false);
     }
@@ -841,6 +884,15 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
     }
 
     try {
+      if ((status === 'approved' || status === 'returned') && user?.role !== Role.ADMIN) {
+        await projectStaffService.requireProjectPermission({
+          userId: user?.id,
+          projectId,
+          constructionSiteId: siteId || checklist.constructionSiteId,
+          code: 'approve',
+          actionLabel: status === 'approved' ? 'phê duyệt hồ sơ chất lượng' : 'trả lại hồ sơ chất lượng',
+        });
+      }
       await qualityChecklistService.setStatus(checklist.id, status, user?.id, reason);
       toast.success(status === 'approved' ? 'Đã phê duyệt hồ sơ' : 'Đã cập nhật trạng thái hồ sơ');
       await loadData();
@@ -1539,7 +1591,7 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
 
             <div className="flex items-center justify-between gap-3 border-t border-slate-100 bg-slate-50 px-5 py-4">
               <div className="text-[10px] font-bold text-slate-400">
-                {editingChecklist ? `${editingChecklist.code} · ${STATUS_CONFIG[editingChecklist.status]?.label || editingChecklist.status}` : 'Hồ sơ nháp mới'}
+                {editingChecklist ? `${editingChecklist.code} · ${STATUS_CONFIG[editingChecklist.status]?.label || editingChecklist.status}` : 'Gửi duyệt hồ sơ mới'}
               </div>
               <div className="flex gap-2">
                 <button onClick={closeForm} className="rounded-lg px-4 py-2 text-xs font-black text-slate-500 hover:bg-white">
@@ -1547,12 +1599,12 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
                 </button>
                 {!readonlyForm && (
                   <button
-                    onClick={handleSave}
+                    onClick={handlePrepareFormSubmit}
                     disabled={saving || uploadingPhotos || uploadingFiles}
                     className="inline-flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-xs font-black text-white hover:bg-amber-600 disabled:opacity-50"
                   >
-                    {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-                    Lưu hồ sơ
+                    {saving ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                    Gửi duyệt
                   </button>
                 )}
               </div>
@@ -1561,9 +1613,32 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
         </div>
       )}
 
+      {submittingFormDraft && (
+        <ProjectSubmissionDialog
+          title="Gửi duyệt hồ sơ nghiệm thu"
+          actionLabel="Gửi duyệt"
+          documentLabel="HỒ SƠ CHẤT LƯỢNG"
+          documentName={submittingFormDraft.values.title}
+          documentSubtitle={submittingFormDraft.editingChecklist
+            ? `${submittingFormDraft.editingChecklist.code} · ${taskLabel(submittingFormDraft.formTask)}`
+            : taskLabel(submittingFormDraft.formTask)}
+          details={[
+            { label: 'Ảnh nghiệm thu', value: `${submittingFormDraft.values.sitePhotos.length} ảnh` },
+            { label: 'File đính kèm', value: `${submittingFormDraft.values.attachments.length} file` },
+          ]}
+          projectId={projectId}
+          constructionSiteId={submittingFormDraft.constructionSiteId}
+          recipientPermissionCodes={['approve']}
+          recipientHint="Chọn người có quyền phê duyệt hồ sơ chất lượng."
+          onCancel={() => setSubmittingFormDraft(null)}
+          onConfirm={handleConfirmFormSubmit}
+        />
+      )}
+
       {submittingChecklist && (
         <ProjectSubmissionDialog
           title="Gửi duyệt hồ sơ nghiệm thu"
+          actionLabel="Gửi duyệt"
           documentLabel="HỒ SƠ CHẤT LƯỢNG"
           documentName={submittingChecklist.title}
           documentSubtitle={`${submittingChecklist.code} · ${taskLabel(submittingChecklist.taskId ? taskMap.get(submittingChecklist.taskId) : null)}`}

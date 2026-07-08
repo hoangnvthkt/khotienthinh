@@ -16,6 +16,7 @@ import {
 import { fromDb, toDb } from './dbMapping';
 import { auditService } from './auditService';
 import { projectSubmissionService } from './projectSubmissionService';
+import { buildQualityChecklistForTask } from './qualityChecklistWorkflow';
 
 const TABLE = 'quality_checklists';
 const TPL_TABLE = 'inspection_templates';
@@ -417,54 +418,64 @@ export const qualityChecklistService = {
     attachments?: QualityChecklist['attachments'];
     note?: string;
     createdBy?: string;
+    submissionTarget?: ProjectSubmissionTarget | null;
   }): Promise<QualityChecklist> {
     const code = await nextCode(params.constructionSiteId);
-    const checklist: Partial<QualityChecklist> = {
-      constructionSiteId: params.constructionSiteId,
-      projectId: params.projectId,
-      taskId: params.taskId,
-      contractItemId: null,
-      dailyLogId: null,
-      templateId: null,
-      workTypeId: null,
+    const checklist = buildQualityChecklistForTask({
       code,
-      title: params.title || code,
-      templateCode: undefined,
-      templateName: undefined,
-      templateVersion: undefined,
-      workDescription: params.workDescription,
-      workLocation: params.workLocation,
-      workDate: params.workDate || new Date().toISOString().slice(0, 10),
-      workSupervisor: params.workSupervisor,
-      checklistData: [],
-      sitePhotos: params.sitePhotos || [],
-      attachments: params.attachments || [],
-      status: 'draft',
-      currentAttempt: 1,
-      totalCriteria: 0,
-      passedCriteria: 0,
-      failedCriteria: 0,
-      inspectionResult: undefined,
-      note: params.note,
-      createdBy: params.createdBy,
-    };
+      now: new Date().toISOString(),
+      params,
+      submissionTarget: params.submissionTarget,
+    });
 
     const dbItem = toDb(checklist);
     delete dbItem.id;
-    const { data, error } = await supabase.from(TABLE).insert(dbItem).select().single();
+    let { data, error } = await supabase.from(TABLE).insert(dbItem).select().single();
+    if (
+      error &&
+      params.submissionTarget &&
+      (error.code === '42703' || [error.message, error.details, error.hint].filter(Boolean).join(' ').includes('ever_submitted'))
+    ) {
+      const fallbackItem = { ...dbItem };
+      delete fallbackItem.ever_submitted;
+      const retry = await supabase.from(TABLE).insert(fallbackItem).select().single();
+      data = retry.data;
+      error = retry.error;
+    }
     if (error) throw error;
+    const created = normalize(data);
+
+    if (params.submissionTarget) {
+      await projectSubmissionService.notifyTarget({
+        target: params.submissionTarget,
+        actorId: params.createdBy,
+        category: 'quality',
+        title: `Hồ sơ chất lượng ${code} chờ duyệt`,
+        message: `Bạn được chọn phê duyệt hồ sơ chất lượng ${created.title}.`,
+        sourceType: 'quality_checklist',
+        sourceId: created.id,
+        constructionSiteId: params.constructionSiteId,
+        link: `/da`,
+        metadata: {
+          projectId: params.projectId,
+          constructionSiteId: params.constructionSiteId,
+        },
+      }).catch(error => console.warn('Cannot notify quality checklist recipient', error));
+    }
 
     await auditService.log({
       tableName: TABLE,
       recordId: data.id,
       action: 'INSERT',
-      newData: { code, taskId: params.taskId, title: params.title },
+      newData: { code, taskId: params.taskId, title: params.title, status: created.status },
       userId: params.createdBy || 'system',
       userName: params.createdBy || 'system',
-      description: `Tạo hồ sơ CL ${code} từ hạng mục tiến độ`,
+      description: params.submissionTarget
+        ? `Tạo và gửi duyệt hồ sơ CL ${code} từ hạng mục tiến độ`
+        : `Tạo hồ sơ CL ${code} từ hạng mục tiến độ`,
     });
 
-    return normalize(data);
+    return created;
   },
 
   async update(id: string, updates: Partial<QualityChecklist>): Promise<void> {

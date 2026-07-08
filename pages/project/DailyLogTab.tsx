@@ -25,6 +25,8 @@ import {
     buildDailyLogSourceSnapshot,
     buildDailyLogSummaryVolumes,
     canReturnDailyLogSource,
+    getDailyLogSummarySourceLogs,
+    getDefaultDailyLogSummaryApprover,
     getDailyLogSourceReviewState,
     getDailyLogSummarySourceSnapshots,
     isDailyLogSummaryEditable,
@@ -1231,7 +1233,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                     || (a.userName || '').localeCompare(b.userName || '', 'vi')
                 );
             setApproverOptions(options);
-            setSelectedApprover(options[0] || null);
+            setSelectedApprover(getDefaultDailyLogSummaryApprover(options));
             return options;
         } catch (err: any) {
             console.warn('Cannot load daily log approvers', err?.message || err);
@@ -1988,29 +1990,13 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         return map;
     }, [logs]);
 
-    const canUseOwnLogAsSummarySource = useCallback((log: DailyLog) => {
-        if (isSummaryDailyLog(log)) return false;
-        if (!isDailyLogOwner(log)) return false;
-        if (!['draft', 'rejected'].includes(getLogStatus(log))) return false;
-        return isAdminUser || userPerms.has('verify');
-    }, [isAdminUser, isDailyLogOwner, userPerms]);
-
     const getSummarySourceLogs = useCallback((dayLogs: DailyLog[]) => {
-        const seen = new Set<string>();
-        return dayLogs.filter(log => {
-            const isReturnedSource = !isSummaryDailyLog(log)
-                && getLogStatus(log) === 'rejected'
-                && (Boolean(log.everSubmitted || log.rejectedAt || log.submittedAt) || sourceSummaryByLogId.has(log.id))
-                && (isAdminUser || userPerms.has('verify'));
-            const isSource = isLegacyDailyLogSource(log)
-                || canUseOwnLogAsSummarySource(log)
-                || sourceSummaryByLogId.has(log.id)
-                || isReturnedSource;
-            if (!isSource || seen.has(log.id)) return false;
-            seen.add(log.id);
-            return true;
+        return getDailyLogSummarySourceLogs(dayLogs, {
+            canReviewSources: isAdminUser || userPerms.has('verify'),
+            currentUserId: user?.id,
+            sourceSummaryLogIds: sourceSummaryByLogId.keys(),
         });
-    }, [canUseOwnLogAsSummarySource, isAdminUser, sourceSummaryByLogId, userPerms]);
+    }, [isAdminUser, sourceSummaryByLogId, user?.id, userPerms]);
 
     const canReviewDailyLog = useCallback((log: DailyLog) => canReturnDailyLogSource({
         sourceLog: log,
