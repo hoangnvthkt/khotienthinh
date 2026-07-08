@@ -255,6 +255,14 @@ export const supplierPayableService = {
     return normalizeDocument(Array.isArray(data) ? data[0] : data);
   },
 
+  async syncDeliveryStatementById(statementId: string): Promise<SupplierPayableDocument> {
+    const { data, error } = await supabase.rpc('sync_supplier_payable_from_delivery_statement', {
+      p_statement_id: statementId,
+    });
+    if (error) throw error;
+    return normalizeDocument(Array.isArray(data) ? data[0] : data);
+  },
+
   async backfillFromPurchaseOrders(purchaseOrders: PurchaseOrder[]): Promise<SupplierPayableDocument[]> {
     const eligible = purchaseOrders.filter(po => calculatePurchaseOrderRecognizedAmount(po) > 0);
     const documents: SupplierPayableDocument[] = [];

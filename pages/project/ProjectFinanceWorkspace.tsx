@@ -229,6 +229,7 @@ const supplierPayableSourceLabel = (sourceType: SupplierPayableDocument['sourceT
   const labels: Record<SupplierPayableDocument['sourceType'], string> = {
     purchase_order: 'PO',
     site_direct_purchase: 'Mua nóng',
+    supplier_delivery_statement: 'Đối soát HĐ NCC',
     supplier_return_credit: 'Bù trừ/hoàn trả',
     opening_balance: 'Đầu kỳ',
     manual_adjustment: 'Điều chỉnh',
@@ -1439,6 +1440,18 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
         params: {
           materialTab: 'po',
           siteDirectPurchaseId: document.sourceId,
+        },
+      });
+      return;
+    }
+    if (document.sourceType === 'supplier_delivery_statement' && document.sourceId) {
+      setSupplierPayableDrawer(null);
+      openSourceRoute({
+        tab: 'material',
+        params: {
+          materialTab: 'direct',
+          supplierDeliveryStatementId: document.sourceId,
+          ...(document.supplierContractId ? { supplierContractId: document.supplierContractId } : {}),
         },
       });
       return;

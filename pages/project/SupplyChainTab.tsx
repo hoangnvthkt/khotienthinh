@@ -54,6 +54,11 @@ import {
     SiteDirectPurchaseStatus,
     SiteSmallToolRecord,
     SiteSmallToolStatus,
+    SupplierContract,
+    SupplierContractLine,
+    SupplierDeliveryStatement,
+    SupplierDirectDeliveryLine,
+    SupplierDirectDeliveryNote,
     Transaction,
     TransactionStatus,
 } from '../../types';
@@ -81,6 +86,13 @@ import TransactionDetailModal from '../../components/TransactionDetailModal';
 import { supplierPayableService } from '../../lib/supplierPayableService';
 import { calculateSiteDirectPurchaseTotals, siteDirectPurchaseService } from '../../lib/siteDirectPurchaseService';
 import { siteSmallToolService } from '../../lib/siteSmallToolService';
+import { supplierContractService } from '../../lib/hdService';
+import {
+    calculateSupplierDirectDeliveryLineTotals,
+    supplierContractLineService,
+    supplierDeliveryStatementService,
+    supplierDirectDeliveryService,
+} from '../../lib/supplierDeliveryStatementService';
 import { isSupabaseConfigured, supabase } from '../../lib/supabase';
 import { useReservedStock } from '../../hooks/useReservedStock';
 import {
@@ -223,6 +235,24 @@ const SMALL_TOOL_STATUS: Record<SiteSmallToolStatus, { label: string; badge: str
 
 const SMALL_TOOL_STATUS_OPTIONS: Array<SiteSmallToolStatus | 'all'> = ['all', 'stored', 'in_use', 'damaged', 'lost', 'disposed'];
 
+const SUPPLIER_DIRECT_DELIVERY_STATUS: Record<SupplierDirectDeliveryNote['status'], { label: string; tone: ErpStatusTone }> = {
+    draft: { label: 'Nháp', tone: 'neutral' },
+    submitted: { label: 'Đã trình', tone: 'warning' },
+    site_confirmed: { label: 'Công trường xác nhận', tone: 'info' },
+    finance_review: { label: 'Kế toán kiểm tra', tone: 'warning' },
+    accepted: { label: 'Đã duyệt', tone: 'success' },
+    statemented: { label: 'Đã đối soát', tone: 'success' },
+    rejected: { label: 'Từ chối', tone: 'danger' },
+    cancelled: { label: 'Huỷ', tone: 'danger' },
+};
+
+const SUPPLIER_DELIVERY_STATEMENT_STATUS: Record<SupplierDeliveryStatement['status'], { label: string; tone: ErpStatusTone }> = {
+    draft: { label: 'Nháp', tone: 'neutral' },
+    posted: { label: 'Đã ghi AP', tone: 'success' },
+    cancelled: { label: 'Huỷ', tone: 'danger' },
+    reversed: { label: 'Đã đảo', tone: 'warning' },
+};
+
 const ACTIVE_REQUEST_BUDGET_STATUSES = new Set<RequestStatus | string>([
     RequestStatus.PENDING,
     RequestStatus.APPROVED,
@@ -284,6 +314,12 @@ type SiteDirectPurchaseFormLine = SiteDirectPurchaseLine & {
     vatRateInput?: string;
 };
 
+type SupplierDirectDeliveryFormLine = SupplierDirectDeliveryLine & {
+    quantityInput?: string;
+    unitPriceInput?: string;
+    vatRateInput?: string;
+};
+
 const todayIsoDate = () => new Date().toISOString().slice(0, 10);
 
 const safeStorageFileName = (name: string): string =>
@@ -297,6 +333,14 @@ const buildSiteDirectPurchaseCode = (mode: SiteDirectPurchaseMode, id: string) =
     const date = todayIsoDate().replace(/-/g, '');
     return `${mode === 'planned' ? 'MNDX' : 'MNN'}-${date}-${id.replace(/-/g, '').slice(0, 6).toUpperCase()}`;
 };
+
+const buildSupplierDirectDeliveryCode = (id: string) => {
+    const date = todayIsoDate().replace(/-/g, '');
+    return `GHHD-${date}-${id.replace(/-/g, '').slice(0, 6).toUpperCase()}`;
+};
+
+const buildSupplierDeliveryStatementCode = (id: string, periodMonth: string) =>
+    `DCHD-${periodMonth.replace(/-/g, '').slice(0, 6)}-${id.replace(/-/g, '').slice(0, 6).toUpperCase()}`;
 
 const createEmptyDirectPurchaseLine = (
     directPurchaseId = '',
@@ -362,6 +406,85 @@ const normalizeDirectPurchaseFormLine = (line: SiteDirectPurchaseFormLine, index
         acceptedQuantity: Number(line.acceptedQuantity || 0),
         acceptedAmount: Number(line.acceptedAmount || 0),
         status: line.status || 'pending',
+    };
+};
+
+const createEmptySupplierDeliveryLine = (
+    deliveryNoteId = '',
+    supplierContractId = '',
+    lineNo = 1,
+    contractLine?: SupplierContractLine | null,
+): SupplierDirectDeliveryFormLine => {
+    const quantity = 1;
+    const unitPrice = Number(contractLine?.unitPrice || 0);
+    const vatRate = Number(contractLine?.vatRate || 0);
+    const totals = calculateSupplierDirectDeliveryLineTotals({ quantity, unitPrice, vatRate });
+    return {
+        id: crypto.randomUUID(),
+        deliveryNoteId,
+        supplierContractId,
+        supplierContractLineId: contractLine?.id || null,
+        lineNo,
+        itemId: contractLine?.itemId || null,
+        skuSnapshot: contractLine?.skuSnapshot || null,
+        itemNameSnapshot: contractLine?.itemNameSnapshot || '',
+        unitSnapshot: contractLine?.unitSnapshot || '',
+        quantity,
+        unitPrice,
+        vatRate,
+        lineAmount: totals.lineAmount,
+        vatAmount: totals.vatAmount,
+        totalAmount: totals.totalAmount,
+        acceptedQuantity: 0,
+        acceptedAmount: 0,
+        status: 'pending',
+        issueReason: null,
+        workBoqItemId: null,
+        materialBudgetItemId: null,
+        statementId: null,
+        rejectionReason: null,
+        note: null,
+        quantityInput: '1',
+        unitPriceInput: unitPrice ? String(unitPrice) : '',
+        vatRateInput: String(vatRate || 0),
+    };
+};
+
+const hydrateSupplierDeliveryFormLine = (line: SupplierDirectDeliveryLine): SupplierDirectDeliveryFormLine => ({
+    ...line,
+    quantityInput: String(line.quantity || ''),
+    unitPriceInput: String(line.unitPrice || ''),
+    vatRateInput: String(line.vatRate || 0),
+});
+
+const normalizeSupplierDeliveryFormLine = (
+    line: SupplierDirectDeliveryFormLine,
+    index: number,
+    deliveryNoteId: string,
+    supplierContractId: string,
+): SupplierDirectDeliveryLine => {
+    const quantity = Number(line.quantityInput ?? line.quantity ?? 0);
+    const unitPrice = Number(line.unitPriceInput ?? line.unitPrice ?? 0);
+    const vatRate = Number(line.vatRateInput ?? line.vatRate ?? 0);
+    const totals = calculateSupplierDirectDeliveryLineTotals({ quantity, unitPrice, vatRate });
+    return {
+        ...line,
+        deliveryNoteId,
+        supplierContractId,
+        lineNo: index + 1,
+        quantity,
+        unitPrice,
+        vatRate,
+        lineAmount: totals.lineAmount,
+        vatAmount: totals.vatAmount,
+        totalAmount: totals.totalAmount,
+        acceptedQuantity: Number(line.acceptedQuantity || 0),
+        acceptedAmount: Number(line.acceptedAmount || 0),
+        status: line.status || 'pending',
+        issueReason: line.issueReason || null,
+        workBoqItemId: line.workBoqItemId || null,
+        materialBudgetItemId: line.materialBudgetItemId || null,
+        statementId: line.statementId || null,
     };
 };
 
@@ -487,7 +610,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     const { items: inventoryItems, warehouses, requests: materialRequests, constructionSites, transactions, loadModuleData, refreshWmsRecords, user, addTransaction, updateRequestStatus } = useApp();
     const { getStockSummary } = useReservedStock();
     const effectiveId = projectId || constructionSiteId || '';
-    const [subTab] = useState<'vendor' | 'po'>('po');
+    const [subTab, setSubTab] = useState<'vendor' | 'po' | 'direct'>('po');
     const [poPage, setPoPage] = useState(1);
 
     // Vendors
@@ -548,7 +671,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         try {
             setLoadingDirectPurchases(true);
             setLoadingSmallTools(true);
-            const [partnerRows, poRows, stockPoRows, linkRows, directPurchaseRows, smallToolRows] = await Promise.all([
+            const [partnerRows, poRows, stockPoRows, linkRows, directPurchaseRows, smallToolRows, supplierContractRows, supplierDeliveryRows, supplierStatementRows] = await Promise.all([
                 partnerService.list({ classification: 'supplier' }),
                 poService.list(effectiveId, constructionSiteId || null),
                 poService.listStockOrders().catch(() => [] as PurchaseOrder[]),
@@ -561,11 +684,26 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     console.warn('Failed to load site small tools', error);
                     return [] as SiteSmallToolRecord[];
                 }),
+                supplierContractService.listBySite(projectId || constructionSiteId || '', constructionSiteId || null).catch(error => {
+                    console.warn('Failed to load supplier contracts', error);
+                    return [] as SupplierContract[];
+                }),
+                supplierDirectDeliveryService.list({ projectId: projectId || null, constructionSiteId: constructionSiteId || null }).catch(error => {
+                    console.warn('Failed to load supplier direct deliveries', error);
+                    return [] as SupplierDirectDeliveryNote[];
+                }),
+                supplierDeliveryStatementService.list({ projectId: projectId || null, constructionSiteId: constructionSiteId || null }).catch(error => {
+                    console.warn('Failed to load supplier delivery statements', error);
+                    return [] as SupplierDeliveryStatement[];
+                }),
             ]);
             setPartners(partnerRows);
             setVendors([]);
             setDirectPurchases(directPurchaseRows);
             setSmallToolRecords(smallToolRows);
+            setSupplierContracts(supplierContractRows);
+            setSupplierDeliveryNotes(supplierDeliveryRows);
+            setSupplierDeliveryStatements(supplierStatementRows);
             const scopedStockRows = stockPoRows.filter(po => !po.projectId && !po.constructionSiteId);
             const linkedPoIds = Array.from(new Set(linkRows.map(link => link.purchaseOrderId).filter(Boolean)));
             const linkedCompanyPoRows = await poService.listByIds(linkedPoIds)
@@ -615,6 +753,13 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     const [poPayableErrorsByPoId, setPoPayableErrorsByPoId] = useState<Record<string, string | null>>({});
     const [directPurchases, setDirectPurchases] = useState<SiteDirectPurchase[]>([]);
     const [loadingDirectPurchases, setLoadingDirectPurchases] = useState(false);
+    const [supplierContracts, setSupplierContracts] = useState<SupplierContract[]>([]);
+    const [supplierContractLines, setSupplierContractLines] = useState<SupplierContractLine[]>([]);
+    const [supplierDeliveryNotes, setSupplierDeliveryNotes] = useState<SupplierDirectDeliveryNote[]>([]);
+    const [supplierDeliveryStatements, setSupplierDeliveryStatements] = useState<SupplierDeliveryStatement[]>([]);
+    const [showSupplierDeliveryForm, setShowSupplierDeliveryForm] = useState(false);
+    const [savingSupplierDelivery, setSavingSupplierDelivery] = useState(false);
+    const [supplierDeliveryActionLoading, setSupplierDeliveryActionLoading] = useState<string | null>(null);
     const [smallToolRecords, setSmallToolRecords] = useState<SiteSmallToolRecord[]>([]);
     const [loadingSmallTools, setLoadingSmallTools] = useState(false);
     const [smallToolSearch, setSmallToolSearch] = useState('');
@@ -693,6 +838,14 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     const [uploadingDirectPurchaseFiles, setUploadingDirectPurchaseFiles] = useState(false);
     const [dpNote, setDpNote] = useState('');
     const [dpLines, setDpLines] = useState<SiteDirectPurchaseFormLine[]>([createEmptyDirectPurchaseLine()]);
+    const [sdId, setSdId] = useState('');
+    const [sdCode, setSdCode] = useState('');
+    const [sdSupplierContractId, setSdSupplierContractId] = useState('');
+    const [sdDeliveryTicketNo, setSdDeliveryTicketNo] = useState('');
+    const [sdDeliveryDate, setSdDeliveryDate] = useState(todayIsoDate());
+    const [sdVehicleNo, setSdVehicleNo] = useState('');
+    const [sdNote, setSdNote] = useState('');
+    const [sdLines, setSdLines] = useState<SupplierDirectDeliveryFormLine[]>([createEmptySupplierDeliveryLine()]);
 
     const getPoNumberScope = useCallback((sourceMode: PurchaseOrderSourceMode) => ({
         projectId: sourceMode === 'proactive_stock' ? null : projectId || constructionSiteId || null,
@@ -741,6 +894,8 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     const workBoqMap = useMemo(() => new Map(workBoqItems.map(item => [item.id, item])), [workBoqItems]);
     const materialBudgetMap = useMemo(() => new Map(materialBudgetItems.map(item => [item.id, item])), [materialBudgetItems]);
     const supplierById = useMemo(() => new Map(partners.map(partner => [partner.id, partner])), [partners]);
+    const supplierContractById = useMemo(() => new Map(supplierContracts.map(contract => [contract.id, contract])), [supplierContracts]);
+    const selectedSupplierDeliveryContract = sdSupplierContractId ? supplierContractById.get(sdSupplierContractId) : undefined;
     const constructionSiteById = useMemo(() => new Map(constructionSites.map(site => [site.id, site])), [constructionSites]);
     const getSupplierPatch = (supplierId?: string | null): Pick<PurchaseOrderItem, 'vendorId' | 'vendorName'> => {
         const supplier = supplierId ? supplierById.get(supplierId) : undefined;
@@ -771,6 +926,222 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         setDpNote('');
         setDpLines([createEmptyDirectPurchaseLine(id)]);
         setShowDirectPurchaseForm(false);
+    };
+
+    const resetSupplierDeliveryForm = () => {
+        const id = crypto.randomUUID();
+        setSdId(id);
+        setSdCode(buildSupplierDirectDeliveryCode(id));
+        setSdSupplierContractId('');
+        setSdDeliveryTicketNo('');
+        setSdDeliveryDate(todayIsoDate());
+        setSdVehicleNo('');
+        setSdNote('');
+        setSupplierContractLines([]);
+        setSdLines([createEmptySupplierDeliveryLine(id)]);
+        setShowSupplierDeliveryForm(false);
+    };
+
+    const loadSupplierContractLinesForForm = async (supplierContractId: string, deliveryNoteId = sdId) => {
+        if (!supplierContractId) {
+            setSupplierContractLines([]);
+            setSdLines([createEmptySupplierDeliveryLine(deliveryNoteId)]);
+            return;
+        }
+        try {
+            const lines = await supplierContractLineService.listByContract(supplierContractId);
+            setSupplierContractLines(lines);
+            setSdLines(lines.length > 0
+                ? lines.slice(0, 1).map((line, index) => createEmptySupplierDeliveryLine(deliveryNoteId, supplierContractId, index + 1, line))
+                : [createEmptySupplierDeliveryLine(deliveryNoteId, supplierContractId)]);
+        } catch (error: any) {
+            logApiError('supplyChain.supplierDelivery.contractLines', error);
+            toast.error('Không tải được đơn giá HĐ', getApiErrorMessage(error, 'Không thể tải dòng đơn giá HĐ NCC.'));
+        }
+    };
+
+    const openCreateSupplierDelivery = () => {
+        if (!ensureCanManage('tạo phiếu giao nhận theo HĐ')) return;
+        if (!constructionSiteId) {
+            toast.warning('Thiếu công trường', 'Phiếu giao HĐ cần gắn công trường để đối soát và ghi AP.');
+            return;
+        }
+        const id = crypto.randomUUID();
+        setSdId(id);
+        setSdCode(buildSupplierDirectDeliveryCode(id));
+        setSdSupplierContractId('');
+        setSdDeliveryTicketNo('');
+        setSdDeliveryDate(todayIsoDate());
+        setSdVehicleNo('');
+        setSdNote('');
+        setSupplierContractLines([]);
+        setSdLines([createEmptySupplierDeliveryLine(id)]);
+        setShowSupplierDeliveryForm(true);
+    };
+
+    const selectSupplierDeliveryContract = async (supplierContractId: string) => {
+        setSdSupplierContractId(supplierContractId);
+        await loadSupplierContractLinesForForm(supplierContractId, sdId);
+    };
+
+    const updateSupplierDeliveryLine = (lineId: string, patch: Partial<SupplierDirectDeliveryFormLine>) => {
+        setSdLines(prev => prev.map(line => line.id === lineId ? { ...line, ...patch } : line));
+    };
+
+    const addSupplierDeliveryLine = (contractLine?: SupplierContractLine | null) => {
+        setSdLines(prev => [...prev, createEmptySupplierDeliveryLine(sdId, sdSupplierContractId, prev.length + 1, contractLine)]);
+    };
+
+    const removeSupplierDeliveryLine = (lineId: string) => {
+        setSdLines(prev => prev.length > 1 ? prev.filter(line => line.id !== lineId) : prev);
+    };
+
+    const saveSupplierDelivery = async () => {
+        if (!ensureCanManage('lưu phiếu giao nhận theo HĐ')) return;
+        if (!constructionSiteId) {
+            toast.warning('Thiếu công trường', 'Phiếu giao HĐ cần gắn công trường.');
+            return;
+        }
+        const contract = selectedSupplierDeliveryContract;
+        if (!contract) {
+            toast.warning('Thiếu HĐ NCC', 'Chọn HĐ Nhà cung cấp trước khi lưu phiếu giao.');
+            return;
+        }
+        if (!sdDeliveryTicketNo.trim()) {
+            toast.warning('Thiếu số phiếu NCC', 'Nhập số phiếu giao/biên bản giao hàng của NCC.');
+            return;
+        }
+        const normalizedLines = sdLines.map((line, index) => normalizeSupplierDeliveryFormLine(line, index, sdId, contract.id));
+        const invalidLine = normalizedLines.find(line =>
+            !line.itemNameSnapshot.trim()
+            || Number(line.quantity || 0) <= 0
+            || Number(line.unitPrice || 0) < 0
+        );
+        if (invalidLine) {
+            toast.warning('Kiểm tra dòng giao nhận', 'Mỗi dòng cần tên vật tư, số lượng lớn hơn 0 và đơn giá hợp lệ.');
+            return;
+        }
+        const totals = normalizedLines.reduce((sum, line) => ({
+            grossAmount: sum.grossAmount + line.lineAmount,
+            vatAmount: sum.vatAmount + line.vatAmount,
+            totalAmount: sum.totalAmount + line.totalAmount,
+        }), { grossAmount: 0, vatAmount: 0, totalAmount: 0 });
+        const note: SupplierDirectDeliveryNote = {
+            id: sdId,
+            code: sdCode || buildSupplierDirectDeliveryCode(sdId),
+            projectId: projectId || null,
+            constructionSiteId,
+            supplierContractId: contract.id,
+            supplierContractCode: contract.code,
+            supplierId: contract.supplierId || null,
+            supplierNameSnapshot: contract.supplierName || contract.supplierId || 'Nhà cung cấp',
+            deliveryTicketNo: sdDeliveryTicketNo.trim(),
+            deliveryDate: sdDeliveryDate || todayIsoDate(),
+            vehicleNo: sdVehicleNo.trim() || null,
+            status: 'draft',
+            grossAmount: Math.round(totals.grossAmount),
+            vatAmount: Math.round(totals.vatAmount),
+            totalAmount: Math.round(totals.totalAmount),
+            attachments: [],
+            qrToken: `qr_supplier_delivery_${sdId.replace(/-/g, '').slice(0, 16)}`,
+            createdBy: user?.id || null,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            note: sdNote.trim() || null,
+        };
+        setSavingSupplierDelivery(true);
+        try {
+            const saved = await supplierDirectDeliveryService.upsert(note, normalizedLines);
+            toast.success('Đã tạo phiếu giao HĐ', `${saved.code} - ${fmtMoney(saved.totalAmount)} đ`);
+            resetSupplierDeliveryForm();
+            await loadSupplyData();
+        } catch (error: any) {
+            logApiError('supplyChain.supplierDelivery.save', error);
+            toast.error('Không lưu được phiếu giao HĐ', getApiErrorMessage(error, 'Không thể lưu phiếu giao nhận theo HĐ NCC.'));
+        } finally {
+            setSavingSupplierDelivery(false);
+        }
+    };
+
+    const approveSupplierDeliveryNote = async (note: SupplierDirectDeliveryNote) => {
+        if (!ensureCanManage('duyệt phiếu giao nhận theo HĐ')) return;
+        setSupplierDeliveryActionLoading(`approve:${note.id}`);
+        try {
+            const detail = await supplierDirectDeliveryService.getDetail(note.id);
+            await supplierDirectDeliveryService.reviewLines(note.id, detail.lines.map(line => ({
+                lineId: line.id,
+                status: 'accepted',
+                acceptedQuantity: line.quantity,
+                acceptedAmount: line.totalAmount,
+                reviewNote: 'Duyệt thực nhận theo HĐ NCC',
+            })));
+            await supplierDirectDeliveryService.setStatus(note.id, 'accepted');
+            toast.success('Đã duyệt phiếu giao HĐ', note.code);
+            await loadSupplyData();
+        } catch (error: any) {
+            logApiError('supplyChain.supplierDelivery.approve', error);
+            toast.error('Không duyệt được phiếu giao HĐ', getApiErrorMessage(error, 'Không thể duyệt dòng giao nhận.'));
+        } finally {
+            setSupplierDeliveryActionLoading(null);
+        }
+    };
+
+    const createAndPostSupplierDeliveryStatement = async (note: SupplierDirectDeliveryNote) => {
+        if (!ensureCanManage('đối soát phiếu giao nhận theo HĐ')) return;
+        setSupplierDeliveryActionLoading(`statement:${note.id}`);
+        try {
+            const detail = await supplierDirectDeliveryService.getDetail(note.id);
+            const acceptedLines = detail.lines.filter(line => line.status === 'accepted' || line.status === 'adjusted');
+            if (acceptedLines.length === 0) {
+                toast.warning('Chưa có dòng được duyệt', 'Duyệt phiếu giao trước khi tạo đối soát/AP.');
+                return;
+            }
+            const statementId = crypto.randomUUID();
+            const periodMonth = `${(note.deliveryDate || todayIsoDate()).slice(0, 7)}-01`;
+            const totals = acceptedLines.reduce((sum, line) => ({
+                grossAmount: sum.grossAmount + line.lineAmount,
+                vatAmount: sum.vatAmount + line.vatAmount,
+                totalAmount: sum.totalAmount + line.totalAmount,
+            }), { grossAmount: 0, vatAmount: 0, totalAmount: 0 });
+            const statement: SupplierDeliveryStatement = {
+                id: statementId,
+                code: buildSupplierDeliveryStatementCode(statementId, periodMonth),
+                projectId: note.projectId || projectId || null,
+                constructionSiteId: note.constructionSiteId || constructionSiteId || null,
+                supplierContractId: note.supplierContractId,
+                supplierContractCode: note.supplierContractCode || null,
+                supplierId: note.supplierId || null,
+                supplierNameSnapshot: note.supplierNameSnapshot,
+                periodMonth,
+                statementDate: todayIsoDate(),
+                status: 'draft',
+                grossAmount: Math.round(totals.grossAmount),
+                vatAmount: Math.round(totals.vatAmount),
+                totalAmount: Math.round(totals.totalAmount),
+                payableDocumentId: null,
+                qrToken: `qr_supplier_statement_${statementId.replace(/-/g, '').slice(0, 16)}`,
+                attachments: [],
+                metadata: {
+                    deliveryNoteIds: [note.id],
+                    supplierContractId: note.supplierContractId,
+                    supplierContractCode: note.supplierContractCode || null,
+                },
+                createdBy: user?.id || null,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+                note: `Đối soát từ phiếu giao ${note.code}`,
+            };
+            const draft = await supplierDeliveryStatementService.upsert(statement, acceptedLines);
+            const posted = await supplierDeliveryStatementService.post(draft.id, user?.id || null);
+            await supplierPayableService.syncDeliveryStatementById(posted.id).catch(() => null);
+            toast.success('Đã đối soát và ghi AP', `${posted.code} - ${fmtMoney(posted.totalAmount)} đ`);
+            await loadSupplyData();
+        } catch (error: any) {
+            logApiError('supplyChain.supplierDelivery.statement', error);
+            toast.error('Không tạo được đối soát/AP', getApiErrorMessage(error, 'Không thể tạo bảng đối soát HĐ NCC.'));
+        } finally {
+            setSupplierDeliveryActionLoading(null);
+        }
     };
     const openCreateDirectPurchase = (mode: SiteDirectPurchaseMode = 'immediate') => {
         if (!ensureCanManage('tạo phiếu mua nóng')) return;
@@ -4122,6 +4493,26 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         () => calculateSiteDirectPurchaseTotals(directPurchaseFormLines),
         [directPurchaseFormLines],
     );
+    const supplierDeliveryFormLines = useMemo(
+        () => sdLines.map((line, index) => normalizeSupplierDeliveryFormLine(line, index, sdId, sdSupplierContractId)),
+        [sdId, sdLines, sdSupplierContractId],
+    );
+    const supplierDeliveryFormTotals = useMemo(
+        () => supplierDeliveryFormLines.reduce((sum, line) => ({
+            grossAmount: sum.grossAmount + line.lineAmount,
+            vatAmount: sum.vatAmount + line.vatAmount,
+            totalAmount: sum.totalAmount + line.totalAmount,
+        }), { grossAmount: 0, vatAmount: 0, totalAmount: 0 }),
+        [supplierDeliveryFormLines],
+    );
+    const statementsByDeliveryNoteId = useMemo(() => {
+        const map = new Map<string, SupplierDeliveryStatement[]>();
+        supplierDeliveryStatements.forEach(statement => {
+            const ids = Array.isArray(statement.metadata?.deliveryNoteIds) ? statement.metadata?.deliveryNoteIds : [];
+            ids.forEach((id: string) => map.set(id, [...(map.get(id) || []), statement]));
+        });
+        return map;
+    }, [supplierDeliveryStatements]);
     const poVatRateCalc = normalizeVatRate(pVatRate);
     const poVatAmountCalc = calculateVatAmount(poTotalCalc, poVatRateCalc);
     const poPaymentTotalCalc = poTotalCalc + poVatAmountCalc;
@@ -4234,8 +4625,16 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         const target = directPurchases.find(purchase => purchase.id === directPurchaseId);
         if (!target) return;
         lastDeepLinkDirectPurchaseIdRef.current = directPurchaseId;
+        setSubTab('direct');
         void openDirectPurchaseDetail(target);
     }, [directPurchases]);
+
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('supplierDeliveryStatementId') || params.get('supplierContractId')) {
+            setSubTab('direct');
+        }
+    }, [supplierDeliveryStatements]);
 
     useEffect(() => {
         if (deepLinkPoId) return;
@@ -4273,7 +4672,26 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     <AiInsightPanel module="supplychain" siteId={constructionSiteId} />
                 </div>
             )}
+            <div className="flex flex-wrap gap-2 rounded-lg border border-border bg-card p-1 shadow-sm">
+                <button
+                    type="button"
+                    onClick={() => setSubTab('po')}
+                    className={`inline-flex min-h-9 items-center gap-2 rounded-md px-3 py-2 text-xs font-black transition ${subTab === 'po' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-900'}`}
+                >
+                    <FileText size={14} /> Đơn đặt hàng (PO)
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] ${subTab === 'po' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-300'}`}>{pos.length}</span>
+                </button>
+                <button
+                    type="button"
+                    onClick={() => setSubTab('direct')}
+                    className={`inline-flex min-h-9 items-center gap-2 rounded-md px-3 py-2 text-xs font-black transition ${subTab === 'direct' ? 'bg-orange-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-900'}`}
+                >
+                    <Package size={14} /> Mua nóng / CCDC
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] ${subTab === 'direct' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-300'}`}>{directPurchases.length + supplierDeliveryNotes.length + smallToolRecords.length}</span>
+                </button>
+            </div>
             {/* KPI */}
+            {subTab === 'po' && (
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
                 {[
                     { 
@@ -4352,6 +4770,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     );
                 })}
             </div>
+            )}
 
             {/* Vendor Tab */}
             {subTab === 'vendor' && (
@@ -4427,6 +4846,8 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 </div>
             )}
 
+            {subTab === 'direct' && (
+            <div className="space-y-6">
             <div className={procurementPanelClass}>
                 <div className="flex flex-col gap-3 border-b border-slate-100 p-4 dark:border-slate-800 lg:flex-row lg:items-center lg:justify-between">
                     <div>
@@ -4549,6 +4970,141 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                 })}
                             </tbody>
                         </table>
+                    </div>
+                )}
+            </div>
+
+            <div className={procurementPanelClass}>
+                <div className="flex flex-col gap-3 border-b border-slate-100 p-4 dark:border-slate-800 lg:flex-row lg:items-center lg:justify-between">
+                    <div>
+                        <h3 className="flex items-center gap-2 text-sm font-black text-slate-800 dark:text-slate-100">
+                            <Truck size={16} className="text-blue-500" /> Gọi hàng HĐ NCC
+                        </h3>
+                        <p className="mt-1 text-xs font-bold text-slate-500 dark:text-slate-400">Cát, đá, xi măng, bê tông giao tới công trường dùng ngay: không PO, không nhập kho, đối soát theo HĐ NCC rồi ghi AP.</p>
+                    </div>
+                    {canManageTab && (
+                        <button
+                            type="button"
+                            onClick={openCreateSupplierDelivery}
+                            className="inline-flex min-h-9 items-center gap-1 whitespace-nowrap rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-[10px] font-black text-blue-700 transition hover:bg-blue-100 active:scale-[0.98]"
+                        >
+                            <Plus size={12} /> Tạo phiếu giao HĐ
+                        </button>
+                    )}
+                </div>
+                <div className="grid grid-cols-2 gap-2 border-b border-slate-100 bg-slate-50/50 p-4 text-xs dark:border-slate-800 dark:bg-slate-900/20 lg:grid-cols-4">
+                    <div className="rounded-lg border border-slate-100 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
+                        <div className="text-[10px] font-black uppercase text-slate-400">HĐ NCC</div>
+                        <div className="mt-1 text-lg font-black text-slate-900 dark:text-white">{supplierContracts.length}</div>
+                    </div>
+                    <div className="rounded-lg border border-slate-100 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
+                        <div className="text-[10px] font-black uppercase text-slate-400">Phiếu giao</div>
+                        <div className="mt-1 text-lg font-black text-blue-700">{supplierDeliveryNotes.length}</div>
+                    </div>
+                    <div className="rounded-lg border border-slate-100 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
+                        <div className="text-[10px] font-black uppercase text-slate-400">Đã đối soát</div>
+                        <div className="mt-1 text-lg font-black text-emerald-700">{supplierDeliveryStatements.filter(item => item.status === 'posted').length}</div>
+                    </div>
+                    <div className="rounded-lg border border-slate-100 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
+                        <div className="text-[10px] font-black uppercase text-slate-400">Giá trị giao</div>
+                        <div className="mt-1 text-lg font-black text-blue-700">{fmtMoney(supplierDeliveryNotes.reduce((sum, note) => sum + Number(note.totalAmount || 0), 0))} đ</div>
+                    </div>
+                </div>
+                {supplierDeliveryNotes.length === 0 ? (
+                    <div className="p-4">
+                        <EmptyState icon={<Truck size={18} />} title="Chưa có phiếu giao theo HĐ" message="Chọn HĐ NCC đã khai trong module HD, nhập phiếu giao từng chuyến và đối soát cuối kỳ để sinh AP." compact />
+                    </div>
+                ) : (
+                    <div className="overflow-x-auto">
+                        <table className="w-full min-w-[1080px] text-left text-xs">
+                            <thead className={procurementTableHeadClass}>
+                                <tr>
+                                    <th className="px-4 py-3">Phiếu giao</th>
+                                    <th className="px-4 py-3">HĐ / NCC</th>
+                                    <th className="px-4 py-3">Phiếu NCC</th>
+                                    <th className="px-4 py-3 text-right">Giá trị</th>
+                                    <th className="px-4 py-3">Đối soát/AP</th>
+                                    <th className="px-4 py-3 text-right">Thao tác</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
+                                {[...supplierDeliveryNotes]
+                                    .sort((a, b) => String(b.deliveryDate || '').localeCompare(String(a.deliveryDate || '')))
+                                    .map(note => {
+                                        const statusCfg = SUPPLIER_DIRECT_DELIVERY_STATUS[note.status] || SUPPLIER_DIRECT_DELIVERY_STATUS.draft;
+                                        const statements = statementsByDeliveryNoteId.get(note.id) || [];
+                                        const postedStatement = statements.find(statement => statement.status === 'posted');
+                                        const isBusy = supplierDeliveryActionLoading?.endsWith(`:${note.id}`);
+                                        return (
+                                            <tr key={note.id} className="hover:bg-blue-50/40 dark:hover:bg-slate-900/50">
+                                                <td className="px-4 py-3">
+                                                    <div className="font-mono text-xs font-black text-slate-900 dark:text-white">{note.code}</div>
+                                                    <div className="mt-1 flex flex-wrap items-center gap-1">
+                                                        <StatusBadge status={note.status} label={statusCfg.label} tone={statusCfg.tone} showDot={false} />
+                                                        {note.vehicleNo && <span className="rounded-full border border-slate-200 px-2 py-0.5 text-[9px] font-black text-slate-500">{note.vehicleNo}</span>}
+                                                    </div>
+                                                    <div className="mt-1 text-[10px] font-bold text-slate-400">{note.deliveryDate}</div>
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    <div className="font-mono text-[10px] font-black text-blue-700">{note.supplierContractCode || note.supplierContractId}</div>
+                                                    <div className="mt-1 font-black text-slate-700 dark:text-slate-200">{note.supplierNameSnapshot}</div>
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    <div className="font-black text-slate-700 dark:text-slate-200">{note.deliveryTicketNo}</div>
+                                                    <div className="mt-1 text-[10px] font-bold text-slate-400">{note.note || 'Không bắt buộc lý do cấp'}</div>
+                                                </td>
+                                                <td className="px-4 py-3 text-right font-black text-blue-700 whitespace-nowrap">{fmtMoney(note.totalAmount)} đ</td>
+                                                <td className="px-4 py-3">
+                                                    {postedStatement ? (
+                                                        <div>
+                                                            <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-black text-emerald-700">Đã ghi AP</span>
+                                                            <div className="mt-1 font-mono text-[10px] font-black text-emerald-700">{postedStatement.code}</div>
+                                                        </div>
+                                                    ) : (
+                                                        <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-black text-amber-700">Chưa đối soát</span>
+                                                    )}
+                                                </td>
+                                                <td className="px-4 py-3 text-right">
+                                                    <div className="flex flex-wrap justify-end gap-1">
+                                                        {canManageTab && note.status !== 'accepted' && note.status !== 'statemented' && (
+                                                            <button type="button" onClick={() => void approveSupplierDeliveryNote(note)} disabled={isBusy} className="rounded-md px-2 py-1 text-[10px] font-black text-emerald-700 hover:bg-emerald-50 disabled:opacity-50">
+                                                                {isBusy ? <Loader2 size={11} className="inline animate-spin" /> : <CheckCircle2 size={11} className="inline" />} Duyệt
+                                                            </button>
+                                                        )}
+                                                        {canManageTab && !postedStatement && (note.status === 'accepted' || note.status === 'statemented') && (
+                                                            <button type="button" onClick={() => void createAndPostSupplierDeliveryStatement(note)} disabled={isBusy} className="rounded-md px-2 py-1 text-[10px] font-black text-blue-700 hover:bg-blue-50 disabled:opacity-50">
+                                                                {isBusy ? <Loader2 size={11} className="inline animate-spin" /> : <FileText size={11} className="inline" />} Đối soát/AP
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+                {supplierDeliveryStatements.length > 0 && (
+                    <div className="border-t border-slate-100 p-4 dark:border-slate-800">
+                        <div className="mb-3 text-xs font-black uppercase text-slate-400">Bảng đối soát HĐ NCC gần đây</div>
+                        <div className="grid gap-2 lg:grid-cols-2">
+                            {[...supplierDeliveryStatements].slice(0, 4).map(statement => {
+                                const cfg = SUPPLIER_DELIVERY_STATEMENT_STATUS[statement.status] || SUPPLIER_DELIVERY_STATEMENT_STATUS.draft;
+                                return (
+                                    <div key={statement.id} className="rounded-lg border border-slate-100 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950">
+                                        <div className="flex items-start justify-between gap-2">
+                                            <div>
+                                                <div className="font-mono text-[10px] font-black text-blue-700">{statement.code}</div>
+                                                <div className="mt-1 text-xs font-black text-slate-700 dark:text-slate-200">{statement.supplierContractCode || statement.supplierContractId} • {statement.supplierNameSnapshot}</div>
+                                            </div>
+                                            <StatusBadge status={statement.status} label={cfg.label} tone={cfg.tone} showDot={false} />
+                                        </div>
+                                        <div className="mt-2 text-right text-sm font-black text-blue-700">{fmtMoney(statement.totalAmount)} đ</div>
+                                    </div>
+                                );
+                            })}
+                        </div>
                     </div>
                 )}
             </div>
@@ -4682,6 +5238,9 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     </div>
                 )}
             </div>
+
+            </div>
+            )}
 
             {/* PO Tab */}
             {subTab === 'po' && (
@@ -5235,6 +5794,153 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     </div>
                 );
             })()}
+
+            {showSupplierDeliveryForm && (
+                <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
+                    <div className="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-lg border border-border bg-card shadow-2xl">
+                        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800">
+                            <div>
+                                <h3 className="text-lg font-black text-slate-800 dark:text-slate-100">Tạo phiếu giao HĐ NCC</h3>
+                                <p className="text-xs font-bold text-slate-500 dark:text-slate-400">Vật tư giao tới công trường dùng ngay, không PO, không nhập kho.</p>
+                            </div>
+                            <button onClick={() => setShowSupplierDeliveryForm(false)} disabled={savingSupplierDelivery} className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 disabled:opacity-50 dark:hover:bg-slate-800">
+                                <X size={18} />
+                            </button>
+                        </div>
+                        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-5">
+                            <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+                                <div className="md:col-span-2">
+                                    <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">HĐ Nhà cung cấp *</label>
+                                    <select value={sdSupplierContractId} onChange={event => void selectSupplierDeliveryContract(event.target.value)} className={`${procurementInputClass} w-full`}>
+                                        <option value="">Chọn HĐ NCC</option>
+                                        {supplierContracts.map(contract => (
+                                            <option key={contract.id} value={contract.id}>{contract.code} - {contract.name} - {contract.supplierName || 'NCC'}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Mã phiếu</label>
+                                    <input value={sdCode} onChange={event => setSdCode(event.target.value)} className={`${procurementInputClass} w-full`} />
+                                </div>
+                                <div>
+                                    <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Ngày giao</label>
+                                    <input type="date" value={sdDeliveryDate} onChange={event => setSdDeliveryDate(event.target.value)} className={`${procurementInputClass} w-full`} />
+                                </div>
+                                <div>
+                                    <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Số phiếu NCC *</label>
+                                    <input value={sdDeliveryTicketNo} onChange={event => setSdDeliveryTicketNo(event.target.value)} className={`${procurementInputClass} w-full`} placeholder="BBG/PN/No..." />
+                                </div>
+                                <div>
+                                    <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Xe/chuyến</label>
+                                    <input value={sdVehicleNo} onChange={event => setSdVehicleNo(event.target.value)} className={`${procurementInputClass} w-full`} placeholder="Biển số / mã chuyến" />
+                                </div>
+                                <div className="md:col-span-2">
+                                    <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Lý do cấp / ghi chú</label>
+                                    <input value={sdNote} onChange={event => setSdNote(event.target.value)} className={`${procurementInputClass} w-full`} placeholder="Không bắt buộc" />
+                                </div>
+                            </div>
+
+                            {selectedSupplierDeliveryContract && (
+                                <div className="rounded-lg border border-blue-100 bg-blue-50/60 p-3 text-xs dark:border-blue-900/40 dark:bg-blue-950/20">
+                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                        <div>
+                                            <div className="font-black text-blue-800 dark:text-blue-200">{selectedSupplierDeliveryContract.code} - {selectedSupplierDeliveryContract.name}</div>
+                                            <div className="mt-1 font-bold text-blue-600 dark:text-blue-300">{selectedSupplierDeliveryContract.supplierName || 'Nhà cung cấp'} • Giá trị HĐ {fmtMoney(selectedSupplierDeliveryContract.value)} đ</div>
+                                        </div>
+                                        <div className="font-black text-blue-700">{supplierContractLines.length} dòng đơn giá</div>
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="rounded-xl border border-slate-200 dark:border-slate-800">
+                                <div className="flex flex-col gap-2 border-b border-slate-100 p-3 dark:border-slate-800 md:flex-row md:items-center md:justify-between">
+                                    <h4 className="text-xs font-black uppercase text-slate-500">Dòng giao nhận</h4>
+                                    <div className="flex flex-wrap gap-2">
+                                        {supplierContractLines.length > 0 && (
+                                            <select
+                                                onChange={event => {
+                                                    const contractLine = supplierContractLines.find(line => line.id === event.target.value);
+                                                    if (contractLine) addSupplierDeliveryLine(contractLine);
+                                                    event.currentTarget.value = '';
+                                                }}
+                                                className={`${procurementInputClass} min-h-8`}
+                                                defaultValue=""
+                                            >
+                                                <option value="">Thêm từ đơn giá HĐ</option>
+                                                {supplierContractLines.map(line => (
+                                                    <option key={line.id} value={line.id}>{line.itemNameSnapshot} - {fmtMoney(line.unitPrice)} đ/{line.unitSnapshot || '-'}</option>
+                                                ))}
+                                            </select>
+                                        )}
+                                        <button type="button" onClick={() => addSupplierDeliveryLine(null)} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[10px] font-black text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+                                            <Plus size={12} /> Dòng tự do
+                                        </button>
+                                    </div>
+                                </div>
+                                <div className="overflow-x-auto">
+                                    <table className="w-full min-w-[980px] text-left text-xs">
+                                        <thead className={procurementTableHeadClass}>
+                                            <tr>
+                                                <th className="px-3 py-2">Vật tư</th>
+                                                <th className="px-3 py-2 text-right">SL</th>
+                                                <th className="px-3 py-2">ĐVT</th>
+                                                <th className="px-3 py-2 text-right">Đơn giá</th>
+                                                <th className="px-3 py-2 text-right">VAT %</th>
+                                                <th className="px-3 py-2 text-right">Thành tiền</th>
+                                                <th className="px-3 py-2"></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                            {sdLines.map((line, index) => {
+                                                const normalized = supplierDeliveryFormLines[index] || normalizeSupplierDeliveryFormLine(line, index, sdId, sdSupplierContractId);
+                                                return (
+                                                    <tr key={line.id}>
+                                                        <td className="px-3 py-2">
+                                                            <input value={line.itemNameSnapshot} onChange={event => updateSupplierDeliveryLine(line.id, { itemNameSnapshot: event.target.value })} className={`${procurementInputClass} w-full`} placeholder="Cát, đá, xi măng, bê tông..." />
+                                                            <input value={line.issueReason || ''} onChange={event => updateSupplierDeliveryLine(line.id, { issueReason: event.target.value })} className={`${procurementInputClass} mt-1 w-full`} placeholder="Lý do cấp, không bắt buộc" />
+                                                        </td>
+                                                        <td className="px-3 py-2">
+                                                            <input type="number" min={0} step="any" value={line.quantityInput ?? ''} onChange={event => updateSupplierDeliveryLine(line.id, { quantityInput: event.target.value })} className={`${procurementInputClass} w-full text-right`} />
+                                                        </td>
+                                                        <td className="px-3 py-2">
+                                                            <input value={line.unitSnapshot || ''} onChange={event => updateSupplierDeliveryLine(line.id, { unitSnapshot: event.target.value })} className={`${procurementInputClass} w-full`} placeholder="m3/tấn/bao" />
+                                                        </td>
+                                                        <td className="px-3 py-2">
+                                                            <input type="number" min={0} step="any" value={line.unitPriceInput ?? ''} onChange={event => updateSupplierDeliveryLine(line.id, { unitPriceInput: event.target.value })} className={`${procurementInputClass} w-full text-right`} />
+                                                        </td>
+                                                        <td className="px-3 py-2">
+                                                            <input type="number" min={0} max={100} step="any" value={line.vatRateInput ?? '0'} onChange={event => updateSupplierDeliveryLine(line.id, { vatRateInput: event.target.value })} className={`${procurementInputClass} w-full text-right`} />
+                                                        </td>
+                                                        <td className="px-3 py-2 text-right font-black text-blue-700 whitespace-nowrap">{fmtMoney(normalized.totalAmount)} đ</td>
+                                                        <td className="px-3 py-2 text-right">
+                                                            <button type="button" onClick={() => removeSupplierDeliveryLine(line.id)} className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600">
+                                                                <Trash2 size={13} />
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <div className="flex flex-wrap items-center justify-end gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm dark:border-slate-800 dark:bg-slate-900/40">
+                                <span className="font-bold text-slate-500">Trước VAT: <b className="text-slate-900 dark:text-white">{fmtMoney(supplierDeliveryFormTotals.grossAmount)} đ</b></span>
+                                <span className="font-bold text-slate-500">VAT: <b className="text-slate-900 dark:text-white">{fmtMoney(supplierDeliveryFormTotals.vatAmount)} đ</b></span>
+                                <span className="text-base font-black text-blue-700">Tổng: {fmtMoney(supplierDeliveryFormTotals.totalAmount)} đ</span>
+                            </div>
+                        </div>
+                        <div className="flex justify-end gap-2 border-t border-slate-100 p-4 dark:border-slate-800">
+                            <button type="button" onClick={() => setShowSupplierDeliveryForm(false)} disabled={savingSupplierDelivery} className="rounded-lg px-5 py-2.5 text-sm font-bold text-slate-600 transition hover:bg-slate-100 disabled:opacity-50 dark:text-slate-300 dark:hover:bg-slate-800">Huỷ</button>
+                            <button type="button" onClick={saveSupplierDelivery} disabled={savingSupplierDelivery} className="inline-flex items-center gap-2 rounded-lg border border-blue-600 bg-blue-600 px-6 py-2.5 text-sm font-black text-white transition hover:bg-blue-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50">
+                                {savingSupplierDelivery ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                                Lưu phiếu giao HĐ
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {showDirectPurchaseForm && (
                 <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">

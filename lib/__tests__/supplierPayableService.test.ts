@@ -169,4 +169,43 @@ describe('supplierPayableService helpers', () => {
     expect(document.sourceId).toBe('direct-1');
     expect(document.outstandingAmount).toBe(500_000);
   });
+
+  it('syncs AP document from a supplier delivery statement and keeps contract metadata', async () => {
+    supabaseMocks.rpc.mockResolvedValueOnce({
+      data: {
+        id: 'ap-statement-1',
+        code: 'AP-DCHD-001',
+        source_type: 'supplier_delivery_statement',
+        source_id: 'statement-1',
+        supplier_id: 'supplier-a',
+        supplier_name_snapshot: 'NCC A',
+        supplier_contract_id: 'contract-1',
+        supplier_contract_code: 'HD-NCC-001',
+        document_no: 'DCHD-001',
+        document_date: '2026-07-31',
+        currency: 'VND',
+        committed_amount: 12_375_000,
+        recognized_amount: 12_375_000,
+        paid_amount: 0,
+        credit_amount: 0,
+        outstanding_amount: 12_375_000,
+        status: 'open',
+        metadata: {
+          supplierContractId: 'contract-1',
+          supplierContractCode: 'HD-NCC-001',
+        },
+        created_at: '2026-07-31T00:00:00.000Z',
+      },
+      error: null,
+    });
+
+    const document = await supplierPayableService.syncDeliveryStatementById('statement-1');
+
+    expect(supabaseMocks.rpc).toHaveBeenCalledWith('sync_supplier_payable_from_delivery_statement', {
+      p_statement_id: 'statement-1',
+    });
+    expect(document.sourceType).toBe('supplier_delivery_statement');
+    expect(document.supplierContractId).toBe('contract-1');
+    expect(document.supplierContractCode).toBe('HD-NCC-001');
+  });
 });

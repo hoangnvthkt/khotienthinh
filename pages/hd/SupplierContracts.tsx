@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Plus, Search, Filter, ChevronDown, Loader2, FileSignature,
@@ -10,18 +10,41 @@ import { supabase, isSupabaseConfigured } from '../../lib/supabase';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
-import { SupplierContract, HdContractStatus, ContractAttachment, Project, BusinessPartner } from '../../types';
+import {
+  SupplierContract,
+  HdContractStatus,
+  ContractAttachment,
+  Project,
+  BusinessPartner,
+  SupplierContractLine,
+  SupplierDeliveryStatement,
+  SupplierDirectDeliveryNote,
+  SupplierPayableDocument,
+  SupplierPaymentBatch,
+} from '../../types';
 import { useModuleData } from '../../hooks/useModuleData';
 import { projectMasterService } from '../../lib/projectMasterService';
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 import SearchableSelect from '../../components/common/SearchableSelect';
 import { partnerService } from '../../lib/partnerService';
+import {
+  supplierContractLineService,
+  supplierDeliveryStatementService,
+  supplierDirectDeliveryService,
+} from '../../lib/supplierDeliveryStatementService';
+import { supplierPayableService } from '../../lib/supplierPayableService';
+import { supplierPaymentBatchService } from '../../lib/supplierPaymentBatchService';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 const formatCurrency = (v: number, currency = 'VND') =>
   new Intl.NumberFormat('vi-VN', { style: 'currency', currency, maximumFractionDigits: 0 }).format(v);
 
 const formatDate = (d?: string) => d ? new Date(d).toLocaleDateString('vi-VN') : '—';
+
+const moneyNumber = (value: unknown) => {
+  const amount = Number(value || 0);
+  return Number.isFinite(amount) ? amount : 0;
+};
 
 const daysUntil = (d?: string) => {
   if (!d) return null;
@@ -53,6 +76,19 @@ const PAYMENT_METHODS = [
   { value: 'cash',          label: 'Tiền mặt' },
   { value: 'credit',        label: 'Công nợ' },
 ];
+
+type SupplierContractDetailTab = 'info' | 'rates' | 'deliveries' | 'statements' | 'payments' | 'docs';
+
+const EMPTY_CONTRACT_LINE_FORM = {
+  itemNameSnapshot: '',
+  unitSnapshot: '',
+  unitPrice: 0,
+  vatRate: 10,
+  quantityLimit: '',
+  amountLimit: '',
+  deliveryTerms: '',
+  note: '',
+};
 
 const EMPTY_FORM: Omit<SupplierContract, 'id' | 'attachments' | 'createdAt' | 'updatedAt'> = {
   code: '', name: '', type: 'purchase', supplierId: '', supplierName: '',
@@ -87,7 +123,15 @@ const SupplierContracts: React.FC = () => {
 
   // Detail modal
   const [selectedContract, setSelectedContract] = useState<SupplierContract | null>(null);
-  const [detailTab, setDetailTab] = useState<'info' | 'docs'>('info');
+  const [detailTab, setDetailTab] = useState<SupplierContractDetailTab>('info');
+  const [contractLines, setContractLines] = useState<SupplierContractLine[]>([]);
+  const [contractDeliveries, setContractDeliveries] = useState<SupplierDirectDeliveryNote[]>([]);
+  const [contractStatements, setContractStatements] = useState<SupplierDeliveryStatement[]>([]);
+  const [contractPayables, setContractPayables] = useState<SupplierPayableDocument[]>([]);
+  const [contractPaymentBatches, setContractPaymentBatches] = useState<SupplierPaymentBatch[]>([]);
+  const [loadingContractLedger, setLoadingContractLedger] = useState(false);
+  const [contractLineForm, setContractLineForm] = useState(EMPTY_CONTRACT_LINE_FORM);
+  const [savingContractLine, setSavingContractLine] = useState(false);
 
   // Upload state
   const [uploading, setUploading] = useState(false);
@@ -127,6 +171,56 @@ const SupplierContracts: React.FC = () => {
   };
 
   useEffect(() => { fetchContracts(); }, []);
+
+  const loadSupplierContractLedger = useCallback(async (contract: SupplierContract) => {
+    setLoadingContractLedger(true);
+    try {
+      const [lines, deliveries, statements, payables, paymentBatches] = await Promise.all([
+        supplierContractLineService.listByContract(contract.id),
+        supplierDirectDeliveryService.list({
+          projectId: contract.projectId || null,
+          constructionSiteId: contract.constructionSiteId || null,
+          supplierContractId: contract.id,
+        }),
+        supplierDeliveryStatementService.list({
+          projectId: contract.projectId || null,
+          constructionSiteId: contract.constructionSiteId || null,
+          supplierContractId: contract.id,
+        }),
+        supplierPayableService.listDocuments({
+          projectId: contract.projectId || null,
+          constructionSiteId: contract.constructionSiteId || null,
+          supplierId: contract.supplierId || null,
+          sourceType: 'supplier_delivery_statement',
+        }),
+        supplierPaymentBatchService.listBatches({
+          projectId: contract.projectId || null,
+          constructionSiteId: contract.constructionSiteId || null,
+          supplierId: contract.supplierId || null,
+        }),
+      ]);
+      setContractLines(lines);
+      setContractDeliveries(deliveries);
+      setContractStatements(statements);
+      setContractPayables(payables.filter(doc =>
+        doc.supplierContractId === contract.id || doc.metadata?.supplierContractId === contract.id,
+      ));
+      setContractPaymentBatches(paymentBatches);
+    } catch (e: any) {
+      toast.error('Không tải được dữ liệu HĐ NCC', e?.message || 'Vui lòng thử lại.');
+      setContractLines([]);
+      setContractDeliveries([]);
+      setContractStatements([]);
+      setContractPayables([]);
+      setContractPaymentBatches([]);
+    } finally {
+      setLoadingContractLedger(false);
+    }
+  }, [toast]);
+
+  useEffect(() => {
+    if (selectedContract) void loadSupplierContractLedger(selectedContract);
+  }, [loadSupplierContractLedger, selectedContract]);
 
   // ── save (add / edit) ────────────────────────────────────────────────────────
   const handleSave = async () => {
@@ -171,6 +265,42 @@ const SupplierContracts: React.FC = () => {
     setShowForm(false);
     setEditingId(null);
     setForm(EMPTY_FORM);
+  };
+
+  const handleSaveContractLine = async () => {
+    if (!selectedContract) return;
+    if (!contractLineForm.itemNameSnapshot.trim()) {
+      toast.warning('Thiếu tên vật tư', 'Nhập tên vật tư/điều khoản đơn giá trước khi lưu.');
+      return;
+    }
+    if (Number(contractLineForm.unitPrice || 0) < 0) {
+      toast.warning('Đơn giá không hợp lệ', 'Đơn giá HĐ không được âm.');
+      return;
+    }
+    setSavingContractLine(true);
+    try {
+      const nextLine: SupplierContractLine = {
+        id: crypto.randomUUID(),
+        supplierContractId: selectedContract.id,
+        lineNo: contractLines.length + 1,
+        itemNameSnapshot: contractLineForm.itemNameSnapshot.trim(),
+        unitSnapshot: contractLineForm.unitSnapshot.trim() || null,
+        unitPrice: Number(contractLineForm.unitPrice || 0),
+        vatRate: Number(contractLineForm.vatRate || 0),
+        quantityLimit: contractLineForm.quantityLimit === '' ? null : Number(contractLineForm.quantityLimit || 0),
+        amountLimit: contractLineForm.amountLimit === '' ? null : Number(contractLineForm.amountLimit || 0),
+        deliveryTerms: contractLineForm.deliveryTerms.trim() || null,
+        note: contractLineForm.note.trim() || null,
+      };
+      await supplierContractLineService.upsert([nextLine]);
+      setContractLineForm(EMPTY_CONTRACT_LINE_FORM);
+      await loadSupplierContractLedger(selectedContract);
+      toast.success('Đã thêm dòng đơn giá HĐ');
+    } catch (e: any) {
+      toast.error('Không lưu được dòng đơn giá', e?.message || 'Vui lòng thử lại.');
+    } finally {
+      setSavingContractLine(false);
+    }
   };
 
   const handleEdit = (c: SupplierContract) => {
@@ -263,6 +393,10 @@ const SupplierContracts: React.FC = () => {
     const matchStatus = !filterStatus || c.status === filterStatus;
     return matchSearch && matchStatus;
   });
+  const contractRecognizedAmount = contractPayables.reduce((sum, doc) => sum + moneyNumber(doc.recognizedAmount), 0);
+  const contractPaidAmount = contractPayables.reduce((sum, doc) => sum + moneyNumber(doc.paidAmount), 0);
+  const contractOutstandingAmount = contractPayables.reduce((sum, doc) => sum + moneyNumber(doc.outstandingAmount), 0);
+  const contractRemainingAmount = selectedContract ? Math.max(0, moneyNumber(selectedContract.value) - contractRecognizedAmount) : 0;
 
   // ── render ───────────────────────────────────────────────────────────────────
   return (
@@ -554,34 +688,213 @@ const SupplierContracts: React.FC = () => {
             </div>
             {/* Tabs */}
             <div className="flex border-b border-slate-100 dark:border-slate-800 px-6">
-              {(['info', 'docs'] as const).map(tab => (
+              {([
+                ['info', 'Thông tin'],
+                ['rates', `Đơn giá (${contractLines.length})`],
+                ['deliveries', `Giao nhận (${contractDeliveries.length})`],
+                ['statements', `Đối soát (${contractStatements.length})`],
+                ['payments', 'Thanh toán'],
+                ['docs', `Tài liệu (${selectedContract.attachments?.length || 0})`],
+              ] as Array<[SupplierContractDetailTab, string]>).map(([tab, label]) => (
                 <button key={tab} onClick={() => setDetailTab(tab)}
                   className={`px-4 py-2 text-sm font-bold border-b-2 transition-colors ${detailTab === tab ? 'border-blue-600 text-blue-600 dark:text-blue-400' : 'border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'}`}>
-                  {tab === 'info' ? '📋 Thông tin' : `📎 Tài liệu (${selectedContract.attachments?.length || 0})`}
+                  {label}
                 </button>
               ))}
             </div>
             <div className="flex-1 overflow-y-auto p-6">
               {detailTab === 'info' && (
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  {[
-                    ['Nhà cung cấp', selectedContract.supplierName],
-                    ['Người đại diện', selectedContract.supplierRepresentative],
-                    ['Giá trị HĐ', formatCurrency(selectedContract.value, selectedContract.currency)],
-                    ['Thanh toán', PAYMENT_METHODS.find(m => m.value === selectedContract.paymentMethod)?.label],
-                    ['Điều kiện TT', selectedContract.paymentTerms],
-                    ['Số PO', selectedContract.purchaseOrderNumber],
-                    ['Ngày ký', formatDate(selectedContract.signedDate)],
-                    ['Ngày hiệu lực', formatDate(selectedContract.effectiveDate)],
-                    ['Ngày hết hạn', formatDate(selectedContract.expiryDate)],
-                    ['Bảo lãnh', selectedContract.guaranteeInfo],
-                    ['Ghi chú', selectedContract.note],
-                  ].map(([label, val]) => val ? (
-                    <div key={label as string} className="bg-slate-50 dark:bg-slate-800 rounded-xl p-3">
-                      <p className="text-xs font-bold text-slate-400 uppercase mb-1">{label}</p>
-                      <p className="font-medium text-slate-800 dark:text-white">{val}</p>
+                <div className="space-y-4">
+                  <div className="grid grid-cols-4 gap-3">
+                    {[
+                      ['Giá trị HĐ', formatCurrency(selectedContract.value, selectedContract.currency), 'text-slate-900 dark:text-white'],
+                      ['Đã ghi nhận phải trả', formatCurrency(contractRecognizedAmount, selectedContract.currency), 'text-blue-700 dark:text-blue-300'],
+                      ['Đã thanh toán', formatCurrency(contractPaidAmount, selectedContract.currency), 'text-emerald-700 dark:text-emerald-300'],
+                      ['Còn phải trả', formatCurrency(contractOutstandingAmount, selectedContract.currency), 'text-red-700 dark:text-red-300'],
+                    ].map(([label, value, tone]) => (
+                      <div key={label} className="rounded-xl border border-slate-100 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-800">
+                        <p className="text-[10px] font-black uppercase text-slate-400">{label}</p>
+                        <p className={`mt-1 text-sm font-black ${tone}`}>{value}</p>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    {[
+                      ['Nhà cung cấp', selectedContract.supplierName],
+                      ['Người đại diện', selectedContract.supplierRepresentative],
+                      ['Còn lại theo HĐ', formatCurrency(contractRemainingAmount, selectedContract.currency)],
+                      ['Thanh toán', PAYMENT_METHODS.find(m => m.value === selectedContract.paymentMethod)?.label],
+                      ['Điều kiện TT', selectedContract.paymentTerms],
+                      ['Số PO', selectedContract.purchaseOrderNumber],
+                      ['Ngày ký', formatDate(selectedContract.signedDate)],
+                      ['Ngày hiệu lực', formatDate(selectedContract.effectiveDate)],
+                      ['Ngày hết hạn', formatDate(selectedContract.expiryDate)],
+                      ['Bảo lãnh', selectedContract.guaranteeInfo],
+                      ['Ghi chú', selectedContract.note],
+                    ].map(([label, val]) => val ? (
+                      <div key={label as string} className="bg-slate-50 dark:bg-slate-800 rounded-xl p-3">
+                        <p className="text-xs font-bold text-slate-400 uppercase mb-1">{label}</p>
+                        <p className="font-medium text-slate-800 dark:text-white">{val}</p>
+                      </div>
+                    ) : null)}
+                  </div>
+                </div>
+              )}
+              {detailTab === 'rates' && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-12 gap-2 rounded-xl border border-slate-200 p-3 dark:border-slate-800">
+                    <input
+                      value={contractLineForm.itemNameSnapshot}
+                      onChange={e => setContractLineForm({ ...contractLineForm, itemNameSnapshot: e.target.value })}
+                      className="col-span-3 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                      placeholder="Tên vật tư"
+                    />
+                    <input
+                      value={contractLineForm.unitSnapshot}
+                      onChange={e => setContractLineForm({ ...contractLineForm, unitSnapshot: e.target.value })}
+                      className="col-span-1 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                      placeholder="ĐVT"
+                    />
+                    <input
+                      type="number"
+                      value={contractLineForm.unitPrice}
+                      onChange={e => setContractLineForm({ ...contractLineForm, unitPrice: Number(e.target.value) })}
+                      className="col-span-2 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                      placeholder="Đơn giá"
+                    />
+                    <input
+                      type="number"
+                      value={contractLineForm.vatRate}
+                      onChange={e => setContractLineForm({ ...contractLineForm, vatRate: Number(e.target.value) })}
+                      className="col-span-1 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                      placeholder="VAT"
+                    />
+                    <input
+                      value={contractLineForm.deliveryTerms}
+                      onChange={e => setContractLineForm({ ...contractLineForm, deliveryTerms: e.target.value })}
+                      className="col-span-3 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                      placeholder="Điều khoản giao nhận"
+                    />
+                    <button
+                      onClick={handleSaveContractLine}
+                      disabled={savingContractLine}
+                      className="col-span-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-black text-white disabled:opacity-50"
+                    >
+                      {savingContractLine ? 'Đang lưu' : 'Thêm đơn giá'}
+                    </button>
+                  </div>
+                  <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800">
+                    <table className="w-full text-sm">
+                      <thead className="bg-slate-50 text-xs font-black uppercase text-slate-400 dark:bg-slate-800">
+                        <tr>
+                          <th className="px-3 py-2 text-left">Vật tư</th>
+                          <th className="px-3 py-2 text-left">ĐVT</th>
+                          <th className="px-3 py-2 text-right">Đơn giá</th>
+                          <th className="px-3 py-2 text-right">VAT</th>
+                          <th className="px-3 py-2 text-left">Điều khoản</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                        {contractLines.length === 0 ? (
+                          <tr><td colSpan={5} className="px-3 py-6 text-center text-slate-400">Chưa khai báo dòng đơn giá HĐ</td></tr>
+                        ) : contractLines.map(line => (
+                          <tr key={line.id}>
+                            <td className="px-3 py-2 font-bold text-slate-800 dark:text-white">{line.itemNameSnapshot}</td>
+                            <td className="px-3 py-2 text-slate-500">{line.unitSnapshot || '-'}</td>
+                            <td className="px-3 py-2 text-right font-bold">{formatCurrency(line.unitPrice, selectedContract.currency)}</td>
+                            <td className="px-3 py-2 text-right">{line.vatRate}%</td>
+                            <td className="px-3 py-2 text-slate-500">{line.deliveryTerms || '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+              {detailTab === 'deliveries' && (
+                <div className="space-y-3">
+                  {loadingContractLedger ? (
+                    <p className="py-8 text-center text-sm font-bold text-slate-400">Đang tải giao nhận...</p>
+                  ) : contractDeliveries.length === 0 ? (
+                    <p className="py-8 text-center text-sm font-bold text-slate-400">Chưa có phiếu giao nhận theo HĐ này</p>
+                  ) : contractDeliveries.map(note => (
+                    <div key={note.id} className="rounded-xl border border-slate-200 p-3 dark:border-slate-800">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-black text-slate-800 dark:text-white">{note.code}</p>
+                          <p className="text-xs font-bold text-slate-400">Phiếu NCC {note.deliveryTicketNo} · {formatDate(note.deliveryDate)}</p>
+                        </div>
+                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-black text-slate-600 dark:bg-slate-800 dark:text-slate-300">{note.status}</span>
+                      </div>
+                      <p className="mt-2 text-right text-sm font-black text-blue-700 dark:text-blue-300">{formatCurrency(note.totalAmount, selectedContract.currency)}</p>
                     </div>
-                  ) : null)}
+                  ))}
+                </div>
+              )}
+              {detailTab === 'statements' && (
+                <div className="space-y-3">
+                  {contractStatements.length === 0 ? (
+                    <p className="py-8 text-center text-sm font-bold text-slate-400">Chưa có bảng đối soát theo HĐ này</p>
+                  ) : contractStatements.map(statement => (
+                    <div key={statement.id} className="rounded-xl border border-slate-200 p-3 dark:border-slate-800">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-black text-slate-800 dark:text-white">{statement.code}</p>
+                          <p className="text-xs font-bold text-slate-400">Kỳ {formatDate(statement.periodMonth)} · ngày {formatDate(statement.statementDate)}</p>
+                        </div>
+                        <span className={`rounded-full px-2 py-0.5 text-xs font-black ${statement.status === 'posted' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
+                          {statement.status}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-right text-sm font-black text-blue-700 dark:text-blue-300">{formatCurrency(statement.totalAmount, selectedContract.currency)}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {detailTab === 'payments' && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="rounded-xl border border-slate-100 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-800">
+                      <p className="text-[10px] font-black uppercase text-slate-400">AP theo HĐ</p>
+                      <p className="mt-1 text-sm font-black text-blue-700">{formatCurrency(contractRecognizedAmount, selectedContract.currency)}</p>
+                    </div>
+                    <div className="rounded-xl border border-slate-100 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-800">
+                      <p className="text-[10px] font-black uppercase text-slate-400">Đã trả</p>
+                      <p className="mt-1 text-sm font-black text-emerald-700">{formatCurrency(contractPaidAmount, selectedContract.currency)}</p>
+                    </div>
+                    <div className="rounded-xl border border-slate-100 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-800">
+                      <p className="text-[10px] font-black uppercase text-slate-400">Còn phải trả</p>
+                      <p className="mt-1 text-sm font-black text-red-700">{formatCurrency(contractOutstandingAmount, selectedContract.currency)}</p>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-xs font-black uppercase text-slate-400">Chứng từ phải trả từ đối soát HĐ</p>
+                    {contractPayables.length === 0 ? (
+                      <p className="rounded-xl border border-dashed border-slate-200 py-6 text-center text-sm font-bold text-slate-400 dark:border-slate-800">Chưa ghi nhận AP theo HĐ này</p>
+                    ) : contractPayables.map(doc => (
+                      <div key={doc.id} className="flex items-center justify-between rounded-xl border border-slate-200 p-3 dark:border-slate-800">
+                        <div>
+                          <p className="font-black text-slate-800 dark:text-white">{doc.documentNo}</p>
+                          <p className="text-xs font-bold text-slate-400">{formatDate(doc.documentDate)} · {doc.status}</p>
+                        </div>
+                        <p className="font-black text-red-700">{formatCurrency(doc.outstandingAmount, selectedContract.currency)}</p>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-xs font-black uppercase text-slate-400">Đợt thanh toán NCC trong phạm vi dự án/công trường</p>
+                    {contractPaymentBatches.length === 0 ? (
+                      <p className="rounded-xl border border-dashed border-slate-200 py-6 text-center text-sm font-bold text-slate-400 dark:border-slate-800">Chưa có đợt thanh toán NCC</p>
+                    ) : contractPaymentBatches.map(batch => (
+                      <div key={batch.id} className="flex items-center justify-between rounded-xl border border-slate-200 p-3 dark:border-slate-800">
+                        <div>
+                          <p className="font-black text-slate-800 dark:text-white">{batch.code}</p>
+                          <p className="text-xs font-bold text-slate-400">{formatDate(batch.paymentDate)} · {batch.status}</p>
+                        </div>
+                        <p className="font-black text-emerald-700">{formatCurrency(batch.amount, selectedContract.currency)}</p>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
               {detailTab === 'docs' && (

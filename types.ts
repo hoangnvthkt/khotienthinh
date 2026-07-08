@@ -2070,6 +2070,7 @@ export type PurchaseOrderSourceMode =
 export type SupplierPayableSourceType =
   | 'purchase_order'
   | 'site_direct_purchase'
+  | 'supplier_delivery_statement'
   | 'supplier_return_credit'
   | 'opening_balance'
   | 'manual_adjustment';
@@ -2082,6 +2083,8 @@ export interface SupplierPayableDocument {
   constructionSiteId?: string | null;
   supplierId?: string | null;
   supplierNameSnapshot: string;
+  supplierContractId?: string | null;
+  supplierContractCode?: string | null;
   sourceType: SupplierPayableSourceType;
   sourceId: string;
   documentNo: string;
@@ -2286,6 +2289,134 @@ export interface SiteSmallToolRecord {
 export type SiteCashSettlementBatchStatus = 'draft' | 'submitted' | 'reviewing' | 'approved' | 'closed' | 'cancelled';
 export type SiteCashSettlementLineSourceType = 'site_direct_purchase' | 'cash_voucher' | 'manual_adjustment';
 export type SiteCashSettlementLineStatus = 'pending' | 'accepted' | 'adjusted' | 'rejected';
+
+export interface SupplierContractLine {
+  id: string;
+  supplierContractId: string;
+  lineNo: number;
+  itemId?: string | null;
+  skuSnapshot?: string | null;
+  itemNameSnapshot: string;
+  unitSnapshot?: string | null;
+  unitPrice: number;
+  vatRate: number;
+  quantityLimit?: number | null;
+  amountLimit?: number | null;
+  deliveryTerms?: string | null;
+  note?: string | null;
+  createdAt?: string;
+  updatedAt?: string | null;
+}
+
+export type SupplierDirectDeliveryNoteStatus =
+  | 'draft'
+  | 'submitted'
+  | 'site_confirmed'
+  | 'finance_review'
+  | 'accepted'
+  | 'statemented'
+  | 'rejected'
+  | 'cancelled';
+export type SupplierDirectDeliveryLineStatus = 'pending' | 'accepted' | 'adjusted' | 'rejected';
+
+export interface SupplierDirectDeliveryNote {
+  id: string;
+  code: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  supplierContractId: string;
+  supplierContractCode?: string | null;
+  supplierId?: string | null;
+  supplierNameSnapshot: string;
+  deliveryTicketNo: string;
+  deliveryDate: string;
+  vehicleNo?: string | null;
+  status: SupplierDirectDeliveryNoteStatus;
+  grossAmount: number;
+  vatAmount: number;
+  totalAmount: number;
+  attachments?: Attachment[];
+  qrToken?: string | null;
+  createdBy?: string | null;
+  createdAt: string;
+  updatedAt?: string | null;
+  note?: string | null;
+  lines?: SupplierDirectDeliveryLine[];
+}
+
+export interface SupplierDirectDeliveryLine {
+  id: string;
+  deliveryNoteId: string;
+  supplierContractId: string;
+  supplierContractLineId?: string | null;
+  lineNo: number;
+  itemId?: string | null;
+  skuSnapshot?: string | null;
+  itemNameSnapshot: string;
+  unitSnapshot?: string | null;
+  quantity: number;
+  unitPrice: number;
+  vatRate: number;
+  lineAmount: number;
+  vatAmount: number;
+  totalAmount: number;
+  acceptedQuantity: number;
+  acceptedAmount: number;
+  status: SupplierDirectDeliveryLineStatus;
+  issueReason?: string | null;
+  workBoqItemId?: string | null;
+  materialBudgetItemId?: string | null;
+  statementId?: string | null;
+  rejectionReason?: string | null;
+  note?: string | null;
+  createdAt?: string;
+  updatedAt?: string | null;
+}
+
+export type SupplierDeliveryStatementStatus = 'draft' | 'posted' | 'cancelled' | 'reversed';
+
+export interface SupplierDeliveryStatement {
+  id: string;
+  code: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  supplierContractId: string;
+  supplierContractCode?: string | null;
+  supplierId?: string | null;
+  supplierNameSnapshot: string;
+  periodMonth: string;
+  statementDate: string;
+  status: SupplierDeliveryStatementStatus;
+  grossAmount: number;
+  vatAmount: number;
+  totalAmount: number;
+  payableDocumentId?: string | null;
+  qrToken?: string | null;
+  attachments?: Attachment[];
+  metadata?: Record<string, any>;
+  createdBy?: string | null;
+  postedBy?: string | null;
+  postedAt?: string | null;
+  createdAt: string;
+  updatedAt?: string | null;
+  note?: string | null;
+}
+
+export interface SupplierDeliveryStatementLine {
+  id: string;
+  statementId: string;
+  deliveryNoteId: string;
+  deliveryLineId: string;
+  supplierContractId: string;
+  itemNameSnapshot: string;
+  unitSnapshot?: string | null;
+  acceptedQuantity: number;
+  acceptedAmount: number;
+  vatAmount: number;
+  totalAmount: number;
+  note?: string | null;
+  createdAt: string;
+}
 
 export interface SiteCashSettlementBatch {
   id: string;
