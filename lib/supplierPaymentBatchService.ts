@@ -151,6 +151,43 @@ const batchPayload = (batch: SupplierPaymentBatch) => {
 };
 
 export const supplierPaymentBatchService = {
+  async listBatches(input: {
+    projectId?: string | null;
+    constructionSiteId?: string | null;
+    supplierId?: string | null;
+    status?: string | null;
+    periodMonth?: string | null;
+  } = {}): Promise<SupplierPaymentBatch[]> {
+    let query = supabase.from(BATCH_TABLE).select('*').order('payment_date', { ascending: false });
+    if (input.projectId) query = query.eq('project_id', input.projectId);
+    if (input.constructionSiteId) query = query.eq('construction_site_id', input.constructionSiteId);
+    if (input.supplierId) query = query.eq('supplier_id', input.supplierId);
+    if (input.status) query = query.eq('status', input.status);
+    if (input.periodMonth) query = query.eq('period_month', input.periodMonth);
+    const { data, error } = await query;
+    if (error) {
+      if (error.code === '42P01') return [];
+      throw error;
+    }
+    return (data || []).map(normalizeBatch);
+  },
+
+  async getBatchDetail(paymentBatchId: string): Promise<{
+    batch: SupplierPaymentBatch;
+    allocations: SupplierPaymentAllocation[];
+  }> {
+    const { data, error } = await supabase
+      .from(BATCH_TABLE)
+      .select('*')
+      .eq('id', paymentBatchId)
+      .single();
+    if (error) throw error;
+    return {
+      batch: normalizeBatch(data),
+      allocations: await this.listAllocations(paymentBatchId),
+    };
+  },
+
   async createDraft(input: SupplierPaymentBatch, allocations: SupplierPaymentAllocation[] = []): Promise<SupplierPaymentBatch> {
     const { data, error } = await supabase
       .from(BATCH_TABLE)
@@ -167,6 +204,29 @@ export const supplierPaymentBatchService = {
       if (allocationError) throw allocationError;
     }
     return batch;
+  },
+
+  async updateDraft(input: SupplierPaymentBatch, allocations: SupplierPaymentAllocation[] = []): Promise<SupplierPaymentBatch> {
+    const { data, error } = await supabase
+      .from(BATCH_TABLE)
+      .upsert(batchPayload(input), { onConflict: 'id' })
+      .select('*')
+      .single();
+    if (error) throw error;
+
+    const { error: deleteError } = await supabase
+      .from(ALLOCATION_TABLE)
+      .delete()
+      .eq('payment_batch_id', input.id);
+    if (deleteError) throw deleteError;
+
+    if (allocations.length > 0) {
+      const { error: allocationError } = await supabase
+        .from(ALLOCATION_TABLE)
+        .upsert(allocations.map(toDb), { onConflict: 'payment_batch_id,payable_document_id' });
+      if (allocationError) throw allocationError;
+    }
+    return normalizeBatch(data);
   },
 
   async listAllocations(paymentBatchId: string): Promise<SupplierPaymentAllocation[]> {

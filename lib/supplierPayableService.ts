@@ -247,6 +247,14 @@ export const supplierPayableService = {
     return normalizeDocument(Array.isArray(data) ? data[0] : data);
   },
 
+  async syncSiteDirectPurchaseById(directPurchaseId: string): Promise<SupplierPayableDocument> {
+    const { data, error } = await supabase.rpc('sync_supplier_payable_from_site_direct_purchase', {
+      p_direct_purchase_id: directPurchaseId,
+    });
+    if (error) throw error;
+    return normalizeDocument(Array.isArray(data) ? data[0] : data);
+  },
+
   async backfillFromPurchaseOrders(purchaseOrders: PurchaseOrder[]): Promise<SupplierPayableDocument[]> {
     const eligible = purchaseOrders.filter(po => calculatePurchaseOrderRecognizedAmount(po) > 0);
     const documents: SupplierPayableDocument[] = [];

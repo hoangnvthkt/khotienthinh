@@ -33,6 +33,10 @@ import {
   ProjectTransaction,
   ProjectTxType,
   SupplierPayableDocument,
+  SupplierPaymentAllocation,
+  SupplierPaymentAllocationMode,
+  SupplierPaymentBatch,
+  SupplierPaymentMethod,
 } from '../../types';
 import {
   ProjectFinanceLedgerRow,
@@ -43,7 +47,7 @@ import {
   ProjectFinanceWorkspaceTab,
   projectFinanceWorkspaceService,
 } from '../../lib/projectFinanceWorkspaceService';
-import { allocateSupplierPayment, supplierPaymentBatchService } from '../../lib/supplierPaymentBatchService';
+import { allocateSupplierPayment, assertSupplierPaymentBatchCanPost, supplierPaymentBatchService } from '../../lib/supplierPaymentBatchService';
 import { supplierPayableService } from '../../lib/supplierPayableService';
 import { paymentService } from '../../lib/projectService';
 import { useApp } from '../../context/AppContext';
@@ -68,6 +72,32 @@ interface PurchaseOrderPaymentForm {
   date: string;
   documentRef: string;
   note: string;
+}
+
+interface SupplierPaymentBatchFormState {
+  batchId: string;
+  supplierId: string;
+  supplierName: string;
+  amount: number;
+  paymentDate: string;
+  periodMonth: string;
+  paymentMethod: SupplierPaymentMethod;
+  documentRef: string;
+  note: string;
+  allocationMode: SupplierPaymentAllocationMode;
+  documents: SupplierPayableDocument[];
+  manualAllocations: Record<string, number>;
+  lockedDocumentIds?: string[];
+  loadingDocuments: boolean;
+  documentError?: string | null;
+}
+
+interface SupplierPaymentBatchDetailState {
+  batchId: string;
+  batch?: SupplierPaymentBatch | null;
+  allocations: SupplierPaymentAllocation[];
+  loading: boolean;
+  error?: string | null;
 }
 
 interface SupplierPayableDocumentDrawerState {
@@ -99,11 +129,16 @@ const fmtMoney = (value: number) => {
 
 const fmtDate = (value?: string | null) => value ? new Date(value).toLocaleDateString('vi-VN') : '-';
 const todayIso = () => new Date().toISOString().slice(0, 10);
+const toPeriodMonth = (date: string) => `${(date || todayIso()).slice(0, 7)}-01`;
+const fmtPeriodMonth = (value?: string | null) => value ? `T${value.slice(5, 7)}/${value.slice(0, 4)}` : '-';
 
 const parseMoneyInput = (value: string): number => {
   const parsed = Number(value.replace(/[^\d]/g, ''));
   return Number.isFinite(parsed) ? Math.max(0, Math.round(parsed)) : 0;
 };
+
+const buildSupplierPaymentBatchCode = (paymentDate: string, batchId: string) =>
+  `PAY-${(paymentDate || todayIso()).replaceAll('-', '')}-${batchId.slice(0, 8).toUpperCase()}`;
 
 const paymentMilestoneOptions: Array<{ value: PaymentScheduleMilestoneType; label: string }> = [
   { value: 'advance', label: 'Tạm ứng' },
@@ -117,6 +152,20 @@ const paymentStatusOptions: Array<{ value: PaymentScheduleStatus; label: string 
   { value: 'pending', label: 'Chờ xử lý' },
   { value: 'paid', label: 'Đã thanh toán' },
   { value: 'overdue', label: 'Quá hạn' },
+];
+
+const supplierPaymentMethodOptions: Array<{ value: SupplierPaymentMethod; label: string }> = [
+  { value: 'bank_transfer', label: 'Chuyển khoản' },
+  { value: 'cash', label: 'Tiền mặt' },
+  { value: 'site_cash', label: 'Quỹ công trường' },
+  { value: 'offset', label: 'Bù trừ' },
+  { value: 'other', label: 'Khác' },
+];
+
+const supplierPaymentAllocationModeOptions: Array<{ value: SupplierPaymentAllocationMode; label: string }> = [
+  { value: 'fifo', label: 'FIFO' },
+  { value: 'manual', label: 'Thủ công' },
+  { value: 'proportional', label: 'Theo tỷ lệ' },
 ];
 
 const dossierStatusOptions: Array<{ value: PaymentDossierStatus; label: string }> = [
@@ -479,6 +528,388 @@ const PurchaseOrderPaymentModal = ({
             {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Ghi thanh toán
           </button>
         </div>
+      </div>
+    </div>
+  );
+};
+
+const SupplierPaymentBatchModal = ({
+  form,
+  supplierRows,
+  saving,
+  onClose,
+  onSelectSupplier,
+  onChange,
+  onManualAllocationChange,
+  onSave,
+}: {
+  form: SupplierPaymentBatchFormState;
+  supplierRows: ProjectFinancePayableRow[];
+  saving: boolean;
+  onClose: () => void;
+  onSelectSupplier: (supplierId: string) => void;
+  onChange: (next: SupplierPaymentBatchFormState) => void;
+  onManualAllocationChange: (documentId: string, amount: number) => void;
+  onSave: () => void;
+}) => {
+  const documents = form.documents.filter(document => Number(document.outstandingAmount || 0) > 0);
+  const allocations = allocateSupplierPayment({
+    mode: form.allocationMode,
+    paymentBatchId: form.batchId,
+    amount: form.amount,
+    documents,
+    manualAllocations: form.manualAllocations,
+  });
+  const allocatedByDocument = new Map(allocations.map(allocation => [allocation.payableDocumentId, allocation.allocatedAmount]));
+  const totalAllocated = allocations.reduce((sum, allocation) => sum + Number(allocation.allocatedAmount || 0), 0);
+  const allocationDiff = form.amount - totalAllocated;
+  const supplierLocked = Boolean(form.lockedDocumentIds?.length);
+
+  return (
+    <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-slate-950/40 p-4">
+      <div className="flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+        <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-4 dark:border-slate-800">
+          <div>
+            <div className="text-[11px] font-black uppercase tracking-wide text-emerald-600">Thanh toán NCC theo đợt</div>
+            <div className="mt-1 text-base font-black text-slate-900 dark:text-white">{form.supplierName || 'Chọn nhà cung cấp'}</div>
+            <div className="mt-0.5 text-xs font-bold text-slate-400">Phân bổ theo AP document, post qua RPC atomic.</div>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-lg p-2 text-slate-400 hover:bg-slate-50 hover:text-slate-700 dark:hover:bg-slate-800">
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto p-5">
+          <div className="grid gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
+            <div className="space-y-3 rounded-lg border border-slate-100 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-950/40">
+              <FieldLabel label="Nhà cung cấp">
+                <select
+                  className={inputClass}
+                  value={form.supplierId}
+                  disabled={supplierLocked}
+                  onChange={event => onSelectSupplier(event.target.value)}
+                >
+                  <option value="">Chọn NCC còn công nợ</option>
+                  {supplierRows.map(row => (
+                    <option key={row.id} value={row.sourceId}>
+                      {row.counterpartyName} - còn {fmtMoney(row.outstandingAmount)}
+                    </option>
+                  ))}
+                </select>
+              </FieldLabel>
+              <div className="grid grid-cols-2 gap-3">
+                <FieldLabel label="Ngày thanh toán">
+                  <input
+                    type="date"
+                    className={inputClass}
+                    value={form.paymentDate}
+                    onChange={event => onChange({ ...form, paymentDate: event.target.value, periodMonth: toPeriodMonth(event.target.value) })}
+                  />
+                </FieldLabel>
+                <FieldLabel label="Kỳ">
+                  <input
+                    type="month"
+                    className={inputClass}
+                    value={(form.periodMonth || toPeriodMonth(form.paymentDate)).slice(0, 7)}
+                    onChange={event => onChange({ ...form, periodMonth: `${event.target.value}-01` })}
+                  />
+                </FieldLabel>
+              </div>
+              <FieldLabel label="Số tiền thanh toán">
+                <input
+                  className={inputClass}
+                  inputMode="numeric"
+                  value={form.amount ? Math.round(form.amount).toLocaleString('vi-VN') : ''}
+                  onChange={event => onChange({ ...form, amount: parseMoneyInput(event.target.value) })}
+                  placeholder="0"
+                />
+              </FieldLabel>
+              <FieldLabel label="Phương thức">
+                <select className={inputClass} value={form.paymentMethod} onChange={event => onChange({ ...form, paymentMethod: event.target.value as SupplierPaymentMethod })}>
+                  {supplierPaymentMethodOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
+              </FieldLabel>
+              <FieldLabel label="Chế độ phân bổ">
+                <select
+                  className={inputClass}
+                  value={form.allocationMode}
+                  onChange={event => {
+                    const nextMode = event.target.value as SupplierPaymentAllocationMode;
+                    const nextAllocations = allocateSupplierPayment({
+                      mode: nextMode === 'manual' ? form.allocationMode : nextMode,
+                      paymentBatchId: form.batchId,
+                      amount: form.amount,
+                      documents,
+                      manualAllocations: form.manualAllocations,
+                    });
+                    const manualAllocations = nextMode === 'manual'
+                      ? Object.fromEntries(nextAllocations.map(allocation => [allocation.payableDocumentId, allocation.allocatedAmount]))
+                      : form.manualAllocations;
+                    onChange({ ...form, allocationMode: nextMode, manualAllocations });
+                  }}
+                >
+                  {supplierPaymentAllocationModeOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
+              </FieldLabel>
+              <FieldLabel label="Mã chứng từ">
+                <input className={inputClass} value={form.documentRef} onChange={event => onChange({ ...form, documentRef: event.target.value })} placeholder="VD: UNC-001, PC-001" />
+              </FieldLabel>
+              <FieldLabel label="Ghi chú">
+                <textarea className={`${inputClass} min-h-20 resize-none`} value={form.note} onChange={event => onChange({ ...form, note: event.target.value })} placeholder="Ghi chú thanh toán" />
+              </FieldLabel>
+              <div className="grid grid-cols-3 gap-2 text-xs">
+                <div className="rounded-lg bg-white p-3 dark:bg-slate-900">
+                  <div className="text-[10px] font-black uppercase text-slate-400">Số tiền</div>
+                  <div className="mt-1 font-black text-slate-800 dark:text-slate-100">{fmtMoney(form.amount)}</div>
+                </div>
+                <div className="rounded-lg bg-white p-3 dark:bg-slate-900">
+                  <div className="text-[10px] font-black uppercase text-emerald-500">Phân bổ</div>
+                  <div className="mt-1 font-black text-emerald-700">{fmtMoney(totalAllocated)}</div>
+                </div>
+                <div className="rounded-lg bg-white p-3 dark:bg-slate-900">
+                  <div className="text-[10px] font-black uppercase text-amber-500">Lệch</div>
+                  <div className={`mt-1 font-black ${allocationDiff === 0 ? 'text-emerald-700' : 'text-amber-700'}`}>{fmtMoney(allocationDiff)}</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="min-w-0 rounded-lg border border-slate-100 bg-white dark:border-slate-800 dark:bg-slate-950">
+              <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 dark:border-slate-800">
+                <div>
+                  <div className="text-xs font-black text-slate-800 dark:text-slate-100">Chứng từ AP còn phải trả</div>
+                  <div className="mt-0.5 text-[10px] font-bold text-slate-400">Preview outstanding sau thanh toán theo từng chứng từ.</div>
+                </div>
+                {form.loadingDocuments && <Loader2 size={16} className="animate-spin text-orange-500" />}
+              </div>
+              <div className="max-h-[520px] overflow-auto">
+                {form.documentError && <div className="m-4 rounded-lg border border-red-100 bg-red-50 p-3 text-xs font-bold text-red-700">{form.documentError}</div>}
+                {!form.loadingDocuments && !form.documentError && documents.length === 0 && (
+                  <div className="p-4"><EmptyState label="Chưa có chứng từ AP còn nợ cho NCC này." /></div>
+                )}
+                {documents.length > 0 && (
+                  <table className="w-full min-w-[760px] text-left text-xs">
+                    <thead className="sticky top-0 bg-slate-50 text-[10px] font-black uppercase text-slate-400 dark:bg-slate-900">
+                      <tr>
+                        <th className="px-3 py-2">Chứng từ</th>
+                        <th className="px-3 py-2 text-right">Ghi nhận</th>
+                        <th className="px-3 py-2 text-right">Đã TT</th>
+                        <th className="px-3 py-2 text-right">Còn nợ</th>
+                        <th className="px-3 py-2 text-right">Phân bổ</th>
+                        <th className="px-3 py-2 text-right">Sau TT</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
+                      {documents.map(document => {
+                        const allocatedAmount = allocatedByDocument.get(document.id) || 0;
+                        return (
+                          <tr key={document.id}>
+                            <td className="px-3 py-3">
+                              <div className="font-black text-slate-800 dark:text-slate-100">{document.code || document.documentNo}</div>
+                              <div className="mt-0.5 text-[10px] font-bold text-slate-400">{supplierPayableSourceLabel(document.sourceType)} • {fmtDate(document.documentDate)}</div>
+                            </td>
+                            <td className="px-3 py-3 text-right font-bold text-blue-700">{fmtMoney(document.recognizedAmount)}</td>
+                            <td className="px-3 py-3 text-right text-emerald-700">{fmtMoney(document.paidAmount)}</td>
+                            <td className="px-3 py-3 text-right font-black text-red-600">{fmtMoney(document.outstandingAmount)}</td>
+                            <td className="px-3 py-3 text-right">
+                              {form.allocationMode === 'manual' ? (
+                                <input
+                                  className="w-28 rounded-lg border border-slate-200 px-2 py-1.5 text-right text-xs font-black text-emerald-700 outline-none focus:border-emerald-300 dark:border-slate-700 dark:bg-slate-900"
+                                  inputMode="numeric"
+                                  value={allocatedAmount ? Math.round(allocatedAmount).toLocaleString('vi-VN') : ''}
+                                  onChange={event => onManualAllocationChange(document.id, parseMoneyInput(event.target.value))}
+                                />
+                              ) : (
+                                <span className="font-black text-emerald-700">{fmtMoney(allocatedAmount)}</span>
+                              )}
+                            </td>
+                            <td className="px-3 py-3 text-right font-black text-slate-700 dark:text-slate-200">
+                              {fmtMoney(Math.max(0, Number(document.outstandingAmount || 0) - allocatedAmount))}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-2 border-t border-slate-100 px-5 py-4 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between">
+          <div className={`text-xs font-bold ${allocationDiff === 0 ? 'text-emerald-700' : 'text-amber-700'}`}>
+            {allocationDiff === 0 ? 'Số tiền và phân bổ đã khớp.' : `Cần phân bổ khớp số tiền, còn lệch ${fmtMoney(allocationDiff)}.`}
+          </div>
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={onClose} className="rounded-lg border border-slate-200 px-4 py-2 text-xs font-black text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">Hủy</button>
+            <button type="button" onClick={onSave} disabled={saving || form.loadingDocuments} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-black text-white hover:bg-emerald-700 disabled:opacity-50">
+              {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Ghi thanh toán
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const SupplierPaymentBatchPanel = ({
+  batches,
+  loading,
+  canManage,
+  onCreate,
+  onOpenDetail,
+}: {
+  batches: SupplierPaymentBatch[];
+  loading: boolean;
+  canManage?: boolean;
+  onCreate: () => void;
+  onOpenDetail: (batchId: string) => void;
+}) => (
+  <section className="space-y-3">
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <h4 className="text-sm font-black text-slate-800 dark:text-white">Thanh toán NCC</h4>
+        <p className="mt-0.5 text-[11px] font-bold text-slate-400">Tạo đợt thanh toán và xem phân bổ theo từng chứng từ AP.</p>
+      </div>
+      {canManage && (
+        <button type="button" onClick={onCreate} className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-black text-white hover:bg-emerald-700">
+          <Plus size={14} /> Tạo đợt thanh toán
+        </button>
+      )}
+    </div>
+    {loading ? (
+      <div className="rounded-lg border border-slate-100 bg-white p-8 text-center text-sm font-bold text-slate-400 dark:border-slate-700 dark:bg-slate-900">
+        <Loader2 size={18} className="mx-auto mb-2 animate-spin text-emerald-600" /> Đang tải đợt thanh toán...
+      </div>
+    ) : batches.length === 0 ? (
+      <EmptyState label="Chưa có đợt thanh toán NCC trong phạm vi này." />
+    ) : (
+      <div className="overflow-x-auto rounded-lg border border-slate-100 bg-white dark:border-slate-700 dark:bg-slate-900">
+        <table className="w-full min-w-[880px] text-left text-xs">
+          <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-wide text-slate-400 dark:bg-slate-800">
+            <tr>
+              <th className="px-3 py-2">Batch</th>
+              <th className="px-3 py-2">NCC</th>
+              <th className="px-3 py-2">Kỳ</th>
+              <th className="px-3 py-2">Ngày TT</th>
+              <th className="px-3 py-2 text-right">Số tiền</th>
+              <th className="px-3 py-2 text-center">Trạng thái</th>
+              <th className="px-3 py-2 text-right">Thao tác</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
+            {batches.map(batch => (
+              <tr key={batch.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/60">
+                <td className="px-3 py-3 font-mono font-black text-slate-800 dark:text-slate-100">{batch.code}</td>
+                <td className="px-3 py-3 font-bold text-slate-600 dark:text-slate-300">{batch.supplierNameSnapshot}</td>
+                <td className="px-3 py-3 font-bold text-slate-500">{fmtPeriodMonth(batch.periodMonth)}</td>
+                <td className="px-3 py-3 font-bold text-slate-500">{fmtDate(batch.paymentDate)}</td>
+                <td className="px-3 py-3 text-right font-black text-emerald-700">{fmtMoney(batch.paymentAmount || batch.amount)}</td>
+                <td className="px-3 py-3 text-center"><span className={`inline-flex rounded-full border px-2 py-1 text-[10px] font-black ${statusTone(batch.status)}`}>{statusLabel(batch.status)}</span></td>
+                <td className="px-3 py-3 text-right">
+                  <button type="button" onClick={() => onOpenDetail(batch.id)} className="rounded-md px-2 py-1 text-[10px] font-black text-emerald-700 hover:bg-emerald-50">
+                    Chi tiết
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )}
+  </section>
+);
+
+const SupplierPaymentBatchDetailDrawer = ({
+  state,
+  reversing,
+  onClose,
+  onReverse,
+}: {
+  state: SupplierPaymentBatchDetailState | null;
+  reversing: boolean;
+  onClose: () => void;
+  onReverse: (batch: SupplierPaymentBatch) => void;
+}) => {
+  if (!state) return null;
+  const batch = state.batch || null;
+  return (
+    <div className="fixed inset-0 z-[1000] flex justify-end bg-slate-950/40" onClick={event => event.target === event.currentTarget && onClose()}>
+      <div className="flex h-full w-full max-w-[760px] flex-col bg-white shadow-2xl dark:bg-slate-950">
+        <div className="border-b border-slate-100 px-5 py-4 dark:border-slate-800">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <div className="text-[11px] font-black uppercase tracking-wide text-emerald-600">Chi tiết thanh toán NCC</div>
+              <h3 className="mt-1 truncate text-base font-black text-slate-900 dark:text-white">{batch?.code || state.batchId}</h3>
+              <p className="mt-0.5 text-xs font-bold text-slate-500">{batch?.supplierNameSnapshot || 'Đang tải...'}</p>
+            </div>
+            <button type="button" onClick={onClose} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800">
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50/70 p-5 dark:bg-slate-900/40">
+          {state.loading && (
+            <div className="flex items-center justify-center gap-2 rounded-lg border border-slate-100 bg-white p-8 text-sm font-bold text-slate-400 dark:border-slate-800 dark:bg-slate-950">
+              <Loader2 size={16} className="animate-spin text-emerald-600" /> Đang tải batch...
+            </div>
+          )}
+          {!state.loading && state.error && <div className="rounded-lg border border-red-100 bg-red-50 p-4 text-sm font-bold text-red-700">{state.error}</div>}
+          {!state.loading && !state.error && batch && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-lg border border-slate-100 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
+                  <div className="text-[10px] font-black uppercase text-slate-400">Số tiền</div>
+                  <div className="mt-1 text-sm font-black text-emerald-700">{fmtMoney(batch.paymentAmount || batch.amount)}</div>
+                </div>
+                <div className="rounded-lg border border-slate-100 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
+                  <div className="text-[10px] font-black uppercase text-slate-400">Trạng thái</div>
+                  <span className={`mt-1 inline-flex rounded-full border px-2 py-1 text-[10px] font-black ${statusTone(batch.status)}`}>{statusLabel(batch.status)}</span>
+                </div>
+                <div className="rounded-lg border border-slate-100 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
+                  <div className="text-[10px] font-black uppercase text-slate-400">Ngày TT</div>
+                  <div className="mt-1 text-sm font-black text-slate-700 dark:text-slate-200">{fmtDate(batch.paymentDate)}</div>
+                </div>
+                <div className="rounded-lg border border-slate-100 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
+                  <div className="text-[10px] font-black uppercase text-slate-400">Giao dịch</div>
+                  <div className="mt-1 truncate text-xs font-black text-slate-700 dark:text-slate-200">{batch.projectTransactionId || '-'}</div>
+                </div>
+              </div>
+              <div className="rounded-lg border border-slate-100 bg-white dark:border-slate-800 dark:bg-slate-950">
+                <div className="border-b border-slate-100 px-4 py-3 text-xs font-black text-slate-800 dark:border-slate-800 dark:text-slate-100">Phân bổ AP</div>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[620px] text-left text-xs">
+                    <thead className="bg-slate-50 text-[10px] font-black uppercase text-slate-400 dark:bg-slate-900">
+                      <tr>
+                        <th className="px-3 py-2">Chứng từ</th>
+                        <th className="px-3 py-2">Nguồn</th>
+                        <th className="px-3 py-2 text-right">Trước TT</th>
+                        <th className="px-3 py-2 text-right">Phân bổ</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
+                      {state.allocations.map(allocation => (
+                        <tr key={allocation.id}>
+                          <td className="px-3 py-3 font-black text-slate-800 dark:text-slate-100">{allocation.documentNoSnapshot || allocation.payableDocumentId}</td>
+                          <td className="px-3 py-3 font-bold text-slate-500">{allocation.sourceType ? supplierPayableSourceLabel(allocation.sourceType) : '-'}</td>
+                          <td className="px-3 py-3 text-right font-bold text-red-600">{fmtMoney(allocation.outstandingBeforeSnapshot || 0)}</td>
+                          <td className="px-3 py-3 text-right font-black text-emerald-700">{fmtMoney(allocation.allocatedAmount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+        {batch?.status === 'paid' && (
+          <div className="flex justify-end gap-2 border-t border-slate-100 px-5 py-4 dark:border-slate-800">
+            <button type="button" onClick={() => onReverse(batch)} disabled={reversing} className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-xs font-black text-red-700 hover:bg-red-100 disabled:opacity-50">
+              {reversing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCcw size={14} />} Đảo thanh toán
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -871,9 +1302,22 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
   const [poPaymentForm, setPoPaymentForm] = useState<PurchaseOrderPaymentForm | null>(null);
   const [savingPoPayment, setSavingPoPayment] = useState(false);
   const [supplierPayableDrawer, setSupplierPayableDrawer] = useState<SupplierPayableDocumentDrawerState | null>(null);
+  const [payablesView, setPayablesView] = useState<'documents' | 'payments'>('documents');
+  const [supplierPaymentBatches, setSupplierPaymentBatches] = useState<SupplierPaymentBatch[]>([]);
+  const [loadingSupplierPaymentBatches, setLoadingSupplierPaymentBatches] = useState(false);
+  const [supplierPaymentForm, setSupplierPaymentForm] = useState<SupplierPaymentBatchFormState | null>(null);
+  const [savingSupplierPaymentBatch, setSavingSupplierPaymentBatch] = useState(false);
+  const [supplierPaymentBatchDetail, setSupplierPaymentBatchDetail] = useState<SupplierPaymentBatchDetailState | null>(null);
+  const [reversingSupplierPaymentBatch, setReversingSupplierPaymentBatch] = useState(false);
   const canManageSchedules = canManageFinance || canManagePayment;
   const canManageLedger = canManageFinance;
   const canRecordPoPayment = canManageFinance;
+  const supplierPaymentRows = useMemo(
+    () => (data?.payables || [])
+      .filter(row => row.sourceType === 'supplier_payable' && row.outstandingAmount > 0)
+      .sort((a, b) => b.outstandingAmount - a.outstandingAmount || a.counterpartyName.localeCompare(b.counterpartyName)),
+    [data?.payables],
+  );
 
   useEffect(() => {
     const paramTab = queryParams.get('financeTab');
@@ -898,6 +1342,25 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
   }, [constructionSiteId, projectId, transactions]);
 
   useEffect(() => { load(); }, [load]);
+
+  const loadSupplierPaymentBatches = useCallback(async () => {
+    setLoadingSupplierPaymentBatches(true);
+    try {
+      setSupplierPaymentBatches(await supplierPaymentBatchService.listBatches({
+        projectId: projectId || null,
+        constructionSiteId,
+      }));
+    } catch (err: any) {
+      toast.error('Không tải được đợt thanh toán NCC', err?.message || 'Vui lòng thử lại.');
+      setSupplierPaymentBatches([]);
+    } finally {
+      setLoadingSupplierPaymentBatches(false);
+    }
+  }, [constructionSiteId, projectId, toast]);
+
+  useEffect(() => {
+    if (activeTab === 'payables') void loadSupplierPaymentBatches();
+  }, [activeTab, loadSupplierPaymentBatches]);
 
   const openTab = (tab: ProjectFinanceWorkspaceTab) => {
     setActiveTab(tab);
@@ -965,6 +1428,17 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
         params: {
           materialTab: 'po',
           poId: document.sourceId,
+        },
+      });
+      return;
+    }
+    if (document.sourceType === 'site_direct_purchase' && document.sourceId) {
+      setSupplierPayableDrawer(null);
+      openSourceRoute({
+        tab: 'material',
+        params: {
+          materialTab: 'po',
+          siteDirectPurchaseId: document.sourceId,
         },
       });
       return;
@@ -1056,8 +1530,73 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
     }
   };
 
-  const openPoPayment = (row: ProjectFinancePayableRow) => {
+  const createSupplierPaymentBatchForm = (patch: Partial<SupplierPaymentBatchFormState> = {}): SupplierPaymentBatchFormState => {
+    const paymentDate = patch.paymentDate || todayIso();
+    const batchId = patch.batchId || crypto.randomUUID();
+    return {
+      batchId,
+      supplierId: '',
+      supplierName: '',
+      amount: 0,
+      paymentDate,
+      periodMonth: patch.periodMonth || toPeriodMonth(paymentDate),
+      paymentMethod: 'bank_transfer',
+      documentRef: '',
+      note: '',
+      allocationMode: 'fifo',
+      documents: [],
+      manualAllocations: {},
+      loadingDocuments: false,
+      documentError: null,
+      ...patch,
+    };
+  };
+
+  const loadSupplierPaymentDocumentsIntoForm = useCallback(async (
+    batchId: string,
+    supplierId: string,
+    defaultAmount?: number,
+  ) => {
+    if (!supplierId) return;
+    setSupplierPaymentForm(prev => prev?.batchId === batchId ? {
+      ...prev,
+      loadingDocuments: true,
+      documentError: null,
+      documents: [],
+      manualAllocations: {},
+    } : prev);
+    try {
+      const documents = (await supplierPayableService.listDocuments({
+        projectId: projectId || null,
+        constructionSiteId,
+        supplierId,
+      })).filter(document => Number(document.outstandingAmount || 0) > 0);
+      const totalOutstanding = documents.reduce((sum, document) => sum + Number(document.outstandingAmount || 0), 0);
+      setSupplierPaymentForm(prev => prev?.batchId === batchId ? {
+        ...prev,
+        documents,
+        amount: defaultAmount != null ? defaultAmount : (prev.amount || totalOutstanding),
+        loadingDocuments: false,
+        documentError: null,
+        manualAllocations: {},
+      } : prev);
+    } catch (err: any) {
+      setSupplierPaymentForm(prev => prev?.batchId === batchId ? {
+        ...prev,
+        documents: [],
+        loadingDocuments: false,
+        documentError: err?.message || 'Không tải được chứng từ AP.',
+      } : prev);
+    }
+  }, [constructionSiteId, projectId]);
+
+  const openSupplierPaymentBatchForm = useCallback(async (row?: ProjectFinancePayableRow) => {
     if (!canRecordPoPayment) return;
+    const batchId = crypto.randomUUID();
+    if (!row) {
+      setSupplierPaymentForm(createSupplierPaymentBatchForm({ batchId }));
+      return;
+    }
     if (row.sourceType !== 'purchase_order' && row.sourceType !== 'supplier_payable') {
       openSource(row.sourceTab);
       return;
@@ -1070,13 +1609,190 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
       toast.success('Khoản phải trả đã thanh toán đủ');
       return;
     }
-    setPoPaymentForm({
-      row,
+
+    if (row.sourceType === 'supplier_payable') {
+      const supplierId = row.sourceRoute?.params?.supplierId || row.sourceId;
+      setSupplierPaymentForm(createSupplierPaymentBatchForm({
+        batchId,
+        supplierId,
+        supplierName: row.counterpartyName,
+        amount: row.outstandingAmount,
+        loadingDocuments: true,
+      }));
+      await loadSupplierPaymentDocumentsIntoForm(batchId, supplierId, row.outstandingAmount);
+      return;
+    }
+
+    setSupplierPaymentForm(createSupplierPaymentBatchForm({
+      batchId,
+      supplierId: row.sourceId,
+      supplierName: row.counterpartyName,
       amount: row.outstandingAmount,
-      date: todayIso(),
-      documentRef: '',
-      note: '',
+      loadingDocuments: true,
+      lockedDocumentIds: [row.sourceId],
+    }));
+    try {
+      const document = await supplierPayableService.syncPurchaseOrderById(row.sourceId);
+      setSupplierPaymentForm(prev => prev?.batchId === batchId ? {
+        ...prev,
+        supplierId: document.supplierId || row.sourceId,
+        supplierName: document.supplierNameSnapshot || row.counterpartyName,
+        documents: Number(document.outstandingAmount || 0) > 0 ? [document] : [],
+        amount: Math.min(row.outstandingAmount, Number(document.outstandingAmount || row.outstandingAmount)),
+        loadingDocuments: false,
+        documentError: null,
+        lockedDocumentIds: [document.id],
+      } : prev);
+    } catch (err: any) {
+      setSupplierPaymentForm(prev => prev?.batchId === batchId ? {
+        ...prev,
+        documents: [],
+        loadingDocuments: false,
+        documentError: err?.message || 'Không đồng bộ được AP từ PO.',
+      } : prev);
+    }
+  }, [canRecordPoPayment, loadSupplierPaymentDocumentsIntoForm, openSource, toast]);
+
+  const selectSupplierForPaymentForm = (supplierId: string) => {
+    if (!supplierPaymentForm) return;
+    const batchId = supplierPaymentForm.batchId;
+    const row = supplierPaymentRows.find(item => item.sourceId === supplierId);
+    setSupplierPaymentForm(prev => prev ? {
+      ...prev,
+      supplierId,
+      supplierName: row?.counterpartyName || '',
+      amount: row?.outstandingAmount || 0,
+      documents: [],
+      manualAllocations: {},
+      documentError: null,
+    } : prev);
+    if (supplierId) void loadSupplierPaymentDocumentsIntoForm(batchId, supplierId, row?.outstandingAmount || 0);
+  };
+
+  const updateSupplierManualAllocation = (documentId: string, amount: number) => {
+    setSupplierPaymentForm(prev => prev ? {
+      ...prev,
+      manualAllocations: {
+        ...prev.manualAllocations,
+        [documentId]: amount,
+      },
+    } : prev);
+  };
+
+  const saveSupplierPaymentBatch = async () => {
+    if (!supplierPaymentForm) return;
+    const form = supplierPaymentForm;
+    const amount = Math.round(Number(form.amount || 0));
+    const documents = form.documents.filter(document => Number(document.outstandingAmount || 0) > 0);
+    if (!form.supplierId) {
+      toast.warning('Thiếu nhà cung cấp', 'Chọn NCC cần thanh toán.');
+      return;
+    }
+    if (amount <= 0) {
+      toast.warning('Thiếu số tiền', 'Nhập số tiền thanh toán lớn hơn 0.');
+      return;
+    }
+    if (documents.length === 0) {
+      toast.warning('Không có chứng từ AP', 'NCC này chưa có chứng từ AP còn phải trả.');
+      return;
+    }
+    const allocations = allocateSupplierPayment({
+      mode: form.allocationMode,
+      paymentBatchId: form.batchId,
+      amount,
+      documents,
+      manualAllocations: form.manualAllocations,
     });
+    const totalAllocated = Math.round(allocations.reduce((sum, allocation) => sum + Number(allocation.allocatedAmount || 0), 0));
+    if (allocations.length === 0) {
+      toast.warning('Chưa phân bổ thanh toán', 'Chọn ít nhất một chứng từ AP để phân bổ.');
+      return;
+    }
+    if (totalAllocated !== amount) {
+      toast.warning('Phân bổ chưa khớp', `Tổng phân bổ phải bằng số tiền thanh toán. Hiện lệch ${fmtMoney(amount - totalAllocated)}.`);
+      return;
+    }
+    try {
+      assertSupplierPaymentBatchCanPost({ amount, allocations, documents });
+    } catch (err: any) {
+      toast.warning('Phân bổ không hợp lệ', err?.message || 'Kiểm tra lại số tiền phân bổ.');
+      return;
+    }
+
+    setSavingSupplierPaymentBatch(true);
+    try {
+      const now = new Date().toISOString();
+      const batchCode = buildSupplierPaymentBatchCode(form.paymentDate, form.batchId);
+      await supplierPaymentBatchService.updateDraft({
+        id: form.batchId,
+        code: batchCode,
+        projectId: projectId || null,
+        constructionSiteId,
+        supplierId: form.supplierId || null,
+        supplierNameSnapshot: form.supplierName || documents[0]?.supplierNameSnapshot || 'Nhà cung cấp',
+        periodMonth: form.periodMonth || toPeriodMonth(form.paymentDate),
+        paymentDate: form.paymentDate || todayIso(),
+        paymentMethod: form.paymentMethod,
+        documentRef: form.documentRef.trim() || null,
+        totalRecognizedSnapshot: documents.reduce((sum, document) => sum + Number(document.recognizedAmount || 0), 0),
+        amount,
+        paymentAmount: amount,
+        currency: 'VND',
+        status: 'draft',
+        allocationMode: form.allocationMode,
+        qrToken: `pay_${form.batchId.replaceAll('-', '')}`,
+        attachments: [],
+        metadata: { note: form.note.trim() },
+        createdBy: user?.id || null,
+        createdAt: now,
+        updatedAt: now,
+        note: form.note.trim() || null,
+      }, allocations);
+      await supplierPaymentBatchService.post(form.batchId, user?.id || null);
+      setSupplierPaymentForm(null);
+      toast.success('Đã tạo đợt thanh toán NCC', `${form.supplierName || documents[0]?.supplierNameSnapshot} đã thanh toán ${fmtMoney(amount)}.`);
+      await Promise.all([load(), loadSupplierPaymentBatches()]);
+    } catch (err: any) {
+      toast.error('Không ghi được thanh toán NCC', err?.message || 'Vui lòng thử lại.');
+    } finally {
+      setSavingSupplierPaymentBatch(false);
+    }
+  };
+
+  const openSupplierPaymentBatchDetail = async (batchId: string) => {
+    setSupplierPaymentBatchDetail({ batchId, batch: null, allocations: [], loading: true, error: null });
+    try {
+      const detail = await supplierPaymentBatchService.getBatchDetail(batchId);
+      setSupplierPaymentBatchDetail({ batchId, batch: detail.batch, allocations: detail.allocations, loading: false, error: null });
+    } catch (err: any) {
+      setSupplierPaymentBatchDetail({ batchId, batch: null, allocations: [], loading: false, error: err?.message || 'Không tải được chi tiết batch.' });
+    }
+  };
+
+  const reverseSupplierPaymentBatch = async (batch: SupplierPaymentBatch) => {
+    const ok = await confirm({
+      title: 'Đảo thanh toán NCC',
+      targetName: batch.code,
+      warningText: 'Hệ thống sẽ tạo giao dịch đảo và khôi phục công nợ AP theo RPC.',
+      actionLabel: 'Đảo thanh toán',
+      countdownSeconds: 0,
+    });
+    if (!ok) return;
+    setReversingSupplierPaymentBatch(true);
+    try {
+      await supplierPaymentBatchService.reverse(batch.id, user?.id || null);
+      toast.success('Đã đảo thanh toán NCC', batch.code);
+      setSupplierPaymentBatchDetail(null);
+      await Promise.all([load(), loadSupplierPaymentBatches()]);
+    } catch (err: any) {
+      toast.error('Không đảo được thanh toán NCC', err?.message || 'Vui lòng thử lại.');
+    } finally {
+      setReversingSupplierPaymentBatch(false);
+    }
+  };
+
+  const openPoPayment = (row: ProjectFinancePayableRow) => {
+    void openSupplierPaymentBatchForm(row);
   };
 
   const savePoPayment = async () => {
@@ -1399,23 +2115,56 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <h4 className="text-sm font-black text-slate-800 dark:text-white">Khoản phải trả</h4>
-                  <p className="mt-0.5 text-[11px] font-bold text-slate-400">Sửa trực tiếp các khoản nhập tay từ lịch thanh toán.</p>
+                  <p className="mt-0.5 text-[11px] font-bold text-slate-400">Theo dõi AP NCC và các đợt thanh toán đã post.</p>
                 </div>
-                {canManageSchedules && (
-                  <button type="button" onClick={() => openNewSchedule('payable')} className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-orange-500 px-3 py-2 text-xs font-black text-white hover:bg-orange-600">
-                    <Plus size={14} /> Thêm phải trả
-                  </button>
-                )}
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <div className="inline-flex rounded-lg border border-slate-200 bg-white p-1 dark:border-slate-700 dark:bg-slate-900">
+                    <button
+                      type="button"
+                      onClick={() => setPayablesView('documents')}
+                      className={`rounded-md px-3 py-1.5 text-xs font-black ${payablesView === 'documents' ? 'bg-orange-500 text-white' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
+                    >
+                      Chứng từ phải trả
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPayablesView('payments')}
+                      className={`rounded-md px-3 py-1.5 text-xs font-black ${payablesView === 'payments' ? 'bg-emerald-600 text-white' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
+                    >
+                      Thanh toán NCC
+                    </button>
+                  </div>
+                  {payablesView === 'documents' && canManageSchedules && (
+                    <button type="button" onClick={() => openNewSchedule('payable')} className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-orange-500 px-3 py-2 text-xs font-black text-white hover:bg-orange-600">
+                      <Plus size={14} /> Thêm phải trả
+                    </button>
+                  )}
+                  {payablesView === 'payments' && canRecordPoPayment && (
+                    <button type="button" onClick={() => openSupplierPaymentBatchForm()} className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-black text-white hover:bg-emerald-700">
+                      <Plus size={14} /> Tạo đợt thanh toán
+                    </button>
+                  )}
+                </div>
               </div>
-              <PayablesTable
-                rows={data.payables}
-                canManage={canManageSchedules}
-                canRecordPoPayment={canRecordPoPayment}
-                onOpenSource={openPayableSource}
-                onEditSchedule={openEditSchedule}
-                onDeleteSchedule={deleteSchedule}
-                onPayPurchaseOrder={openPoPayment}
-              />
+              {payablesView === 'documents' ? (
+                <PayablesTable
+                  rows={data.payables}
+                  canManage={canManageSchedules}
+                  canRecordPoPayment={canRecordPoPayment}
+                  onOpenSource={openPayableSource}
+                  onEditSchedule={openEditSchedule}
+                  onDeleteSchedule={deleteSchedule}
+                  onPayPurchaseOrder={openPoPayment}
+                />
+              ) : (
+                <SupplierPaymentBatchPanel
+                  batches={supplierPaymentBatches}
+                  loading={loadingSupplierPaymentBatches}
+                  canManage={canRecordPoPayment}
+                  onCreate={() => openSupplierPaymentBatchForm()}
+                  onOpenDetail={openSupplierPaymentBatchDetail}
+                />
+              )}
             </section>
           )}
           {activeTab === 'receivables' && (
@@ -1487,6 +2236,24 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
           onSave={savePoPayment}
         />
       )}
+      {supplierPaymentForm && (
+        <SupplierPaymentBatchModal
+          form={supplierPaymentForm}
+          supplierRows={supplierPaymentRows}
+          saving={savingSupplierPaymentBatch}
+          onClose={() => setSupplierPaymentForm(null)}
+          onSelectSupplier={selectSupplierForPaymentForm}
+          onChange={setSupplierPaymentForm}
+          onManualAllocationChange={updateSupplierManualAllocation}
+          onSave={saveSupplierPaymentBatch}
+        />
+      )}
+      <SupplierPaymentBatchDetailDrawer
+        state={supplierPaymentBatchDetail}
+        reversing={reversingSupplierPaymentBatch}
+        onClose={() => setSupplierPaymentBatchDetail(null)}
+        onReverse={reverseSupplierPaymentBatch}
+      />
       <SupplierPayableDocumentsDrawer
         state={supplierPayableDrawer}
         onClose={() => setSupplierPayableDrawer(null)}

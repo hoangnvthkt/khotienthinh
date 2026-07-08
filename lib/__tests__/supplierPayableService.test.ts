@@ -3,6 +3,7 @@ import type { PurchaseOrder, SupplierPayableDocument, SupplierPaymentAllocation 
 
 const supabaseMocks = vi.hoisted(() => ({
   from: vi.fn(),
+  rpc: vi.fn(),
   select: vi.fn(),
   order: vi.fn(),
   eq: vi.fn(),
@@ -11,6 +12,7 @@ const supabaseMocks = vi.hoisted(() => ({
 vi.mock('../supabase', () => ({
   supabase: {
     from: supabaseMocks.from,
+    rpc: supabaseMocks.rpc,
   },
 }));
 
@@ -59,6 +61,7 @@ describe('supplierPayableService helpers', () => {
       error: null,
     };
     supabaseMocks.from.mockReset().mockReturnValue(query);
+    supabaseMocks.rpc.mockReset();
     supabaseMocks.select.mockReset().mockReturnValue(query);
     supabaseMocks.order.mockReset().mockReturnValue(query);
     supabaseMocks.eq.mockReset().mockReturnValue(query);
@@ -133,5 +136,37 @@ describe('supplierPayableService helpers', () => {
     expect(supabaseMocks.eq).toHaveBeenCalledWith('project_id', 'project-1');
     expect(supabaseMocks.eq).toHaveBeenCalledWith('source_type', 'purchase_order');
     expect(supabaseMocks.eq).toHaveBeenCalledWith('source_id', 'po-1');
+  });
+
+  it('syncs AP document from a site direct purchase through the posting RPC', async () => {
+    supabaseMocks.rpc.mockResolvedValueOnce({
+      data: {
+        id: 'ap-direct-1',
+        code: 'AP-MN-001',
+        source_type: 'site_direct_purchase',
+        source_id: 'direct-1',
+        supplier_name_snapshot: 'NCC A',
+        document_no: 'MN-001',
+        document_date: '2026-07-08',
+        currency: 'VND',
+        committed_amount: 500_000,
+        recognized_amount: 500_000,
+        paid_amount: 0,
+        credit_amount: 0,
+        outstanding_amount: 500_000,
+        status: 'open',
+        created_at: '2026-07-08T00:00:00.000Z',
+      },
+      error: null,
+    });
+
+    const document = await supplierPayableService.syncSiteDirectPurchaseById('direct-1');
+
+    expect(supabaseMocks.rpc).toHaveBeenCalledWith('sync_supplier_payable_from_site_direct_purchase', {
+      p_direct_purchase_id: 'direct-1',
+    });
+    expect(document.sourceType).toBe('site_direct_purchase');
+    expect(document.sourceId).toBe('direct-1');
+    expect(document.outstandingAmount).toBe(500_000);
   });
 });

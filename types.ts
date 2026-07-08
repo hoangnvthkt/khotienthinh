@@ -2190,8 +2190,10 @@ export type SiteDirectPurchaseStatus =
   | 'closed'
   | 'rejected'
   | 'cancelled';
-export type SiteDirectPurchaseLineType = 'stock_item' | 'expense_only';
+export type SiteDirectPurchaseLineType = 'stock_item' | 'expense_only' | 'small_tool';
 export type SiteDirectPurchaseLineStatus = 'pending' | 'accepted' | 'adjusted' | 'rejected';
+export type SiteSmallToolStatus = 'stored' | 'in_use' | 'damaged' | 'lost' | 'disposed';
+export type SiteSmallToolHolderType = 'site' | 'employee' | 'team' | 'manual';
 
 export interface SiteDirectPurchase {
   id: string;
@@ -2218,6 +2220,7 @@ export interface SiteDirectPurchase {
   createdBy?: string | null;
   createdAt: string;
   updatedAt?: string;
+  note?: string | null;
   lines?: SiteDirectPurchaseLine[];
 }
 
@@ -2241,6 +2244,42 @@ export interface SiteDirectPurchaseLine {
   rejectionReason?: string | null;
   workBoqItemId?: string | null;
   materialBudgetItemId?: string | null;
+  smallToolCategory?: string | null;
+  smallToolHolderType?: SiteSmallToolHolderType | null;
+  smallToolHolderId?: string | null;
+  smallToolHolderNameSnapshot?: string | null;
+  smallToolLocationNote?: string | null;
+  note?: string | null;
+}
+
+export interface SiteSmallToolRecord {
+  id: string;
+  code: string;
+  projectId?: string | null;
+  constructionSiteId: string;
+  sourceType: 'site_direct_purchase';
+  sourceId: string;
+  sourceLineId: string;
+  sourceCode?: string | null;
+  supplierId?: string | null;
+  supplierNameSnapshot?: string | null;
+  itemNameSnapshot: string;
+  category?: string | null;
+  unitSnapshot?: string | null;
+  quantity: number;
+  unitCost: number;
+  totalAmount: number;
+  purchaseDate?: string | null;
+  holderType: SiteSmallToolHolderType;
+  holderId?: string | null;
+  holderNameSnapshot?: string | null;
+  locationNote?: string | null;
+  status: SiteSmallToolStatus;
+  attachments?: Attachment[];
+  qrToken?: string | null;
+  createdBy?: string | null;
+  createdAt: string;
+  updatedAt?: string | null;
   note?: string | null;
 }
 

@@ -18,9 +18,9 @@ import {
 } from '../../lib/poSpecsUtils';
 import {
     Plus, Edit2, Trash2, X, Save, Truck, Star, Phone, Mail, MapPin,
-    FileText, CheckCircle2, Clock, Ban, Send, Package, ChevronDown,
+    FileText, CheckCircle2, Clock, Ban, Send, Package, Wrench, ChevronDown,
     ChevronLeft, ChevronRight, Users, ShoppingCart, AlertTriangle, FileSpreadsheet,
-    Upload, Printer, QrCode, Loader2, RefreshCcw, PackageX, MoreVertical, Search
+    Upload, Printer, QrCode, Loader2, RefreshCcw, PackageX, MoreVertical, Search, ExternalLink, Image as ImageIcon
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import {
@@ -44,8 +44,18 @@ import {
     MaterialRequestFulfillmentSummary,
     PurchaseOrderDeliveryGroup,
     RequestStatus,
+    Attachment,
     SupplierPayableDocument,
+    SiteDirectPurchase,
+    SiteDirectPurchaseLine,
+    SiteDirectPurchaseLineType,
+    SiteDirectPurchaseMode,
+    SiteDirectPurchasePaymentSource,
+    SiteDirectPurchaseStatus,
+    SiteSmallToolRecord,
+    SiteSmallToolStatus,
     Transaction,
+    TransactionStatus,
 } from '../../types';
 import { boqService, vendorService, poService, poDeliveryScheduleService, workBoqService } from '../../lib/projectService';
 import { materialRequestFulfillmentService, getRequestLineId } from '../../lib/materialRequestFulfillmentService';
@@ -69,6 +79,9 @@ import PurchaseOrderSupplierReturnDialog from '../../components/project/Purchase
 import PurchaseOrderCockpitDrawer from '../../components/project/PurchaseOrderCockpitDrawer';
 import TransactionDetailModal from '../../components/TransactionDetailModal';
 import { supplierPayableService } from '../../lib/supplierPayableService';
+import { calculateSiteDirectPurchaseTotals, siteDirectPurchaseService } from '../../lib/siteDirectPurchaseService';
+import { siteSmallToolService } from '../../lib/siteSmallToolService';
+import { isSupabaseConfigured, supabase } from '../../lib/supabase';
 import { useReservedStock } from '../../hooks/useReservedStock';
 import {
     canUserMutatePurchaseOrder,
@@ -169,6 +182,47 @@ const PO_SOURCE_MODE: Record<PurchaseOrderSourceMode, { label: string; color: st
     site_direct_immediate: { label: 'Mua nóng ngay', color: 'bg-rose-500/10 text-rose-600 border-rose-500/20' },
 };
 
+const DIRECT_PURCHASE_MODE: Record<SiteDirectPurchaseMode, { label: string; tone: string }> = {
+    planned: { label: 'Đề xuất trước', tone: 'border-orange-200 bg-orange-50 text-orange-700' },
+    immediate: { label: 'Mua ngay', tone: 'border-rose-200 bg-rose-50 text-rose-700' },
+};
+
+const DIRECT_PURCHASE_PAYMENT_SOURCE: Record<SiteDirectPurchasePaymentSource, string> = {
+    site_cash: 'Quỹ công trường',
+    company_bank: 'Công ty chuyển khoản',
+    staff_paid: 'Cá nhân ứng trước',
+    supplier_credit: 'Công nợ NCC',
+};
+
+const DIRECT_PURCHASE_STATUS: Record<SiteDirectPurchaseStatus, { label: string; tone: ErpStatusTone }> = {
+    draft: { label: 'Nháp', tone: 'neutral' },
+    submitted: { label: 'Đã trình', tone: 'warning' },
+    approved_to_buy: { label: 'Được mua', tone: 'success' },
+    purchased: { label: 'Đã mua', tone: 'attention' },
+    received: { label: 'Đã nhập kho', tone: 'info' },
+    finance_review: { label: 'Kế toán duyệt', tone: 'warning' },
+    reconciled: { label: 'Đã ghi AP', tone: 'success' },
+    closed: { label: 'Đã đóng', tone: 'neutral' },
+    rejected: { label: 'Từ chối', tone: 'danger' },
+    cancelled: { label: 'Huỷ', tone: 'danger' },
+};
+
+const DIRECT_PURCHASE_LINE_TYPE: Record<SiteDirectPurchaseLineType, { label: string; badge: string; defaultName: string; defaultUnit: string }> = {
+    stock_item: { label: 'Vật tư tồn kho', badge: 'border-blue-200 bg-blue-50 text-blue-700', defaultName: '', defaultUnit: '' },
+    expense_only: { label: 'Chi phí không kho', badge: 'border-violet-200 bg-violet-50 text-violet-700', defaultName: 'Chi phí mua nóng', defaultUnit: 'lần' },
+    small_tool: { label: 'CCDC nhỏ', badge: 'border-amber-200 bg-amber-50 text-amber-700', defaultName: '', defaultUnit: 'cái' },
+};
+
+const SMALL_TOOL_STATUS: Record<SiteSmallToolStatus, { label: string; badge: string }> = {
+    stored: { label: 'Đang lưu', badge: 'border-slate-200 bg-slate-50 text-slate-600' },
+    in_use: { label: 'Đang dùng', badge: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
+    damaged: { label: 'Hỏng', badge: 'border-orange-200 bg-orange-50 text-orange-700' },
+    lost: { label: 'Mất', badge: 'border-red-200 bg-red-50 text-red-700' },
+    disposed: { label: 'Thanh lý', badge: 'border-slate-300 bg-slate-100 text-slate-500' },
+};
+
+const SMALL_TOOL_STATUS_OPTIONS: Array<SiteSmallToolStatus | 'all'> = ['all', 'stored', 'in_use', 'damaged', 'lost', 'disposed'];
+
 const ACTIVE_REQUEST_BUDGET_STATUSES = new Set<RequestStatus | string>([
     RequestStatus.PENDING,
     RequestStatus.APPROVED,
@@ -217,6 +271,98 @@ type PoApprovalDeliveryBatch = {
         purchaseOrderLineId: string;
         plannedQty: number;
     }>;
+};
+
+type SiteDirectPurchaseDetailState = {
+    purchase: SiteDirectPurchase;
+    lines: SiteDirectPurchaseLine[];
+};
+
+type SiteDirectPurchaseFormLine = SiteDirectPurchaseLine & {
+    quantityInput?: string;
+    unitPriceInput?: string;
+    vatRateInput?: string;
+};
+
+const todayIsoDate = () => new Date().toISOString().slice(0, 10);
+
+const safeStorageFileName = (name: string): string =>
+    name.normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-zA-Z0-9._-]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 120) || 'attachment';
+
+const buildSiteDirectPurchaseCode = (mode: SiteDirectPurchaseMode, id: string) => {
+    const date = todayIsoDate().replace(/-/g, '');
+    return `${mode === 'planned' ? 'MNDX' : 'MNN'}-${date}-${id.replace(/-/g, '').slice(0, 6).toUpperCase()}`;
+};
+
+const createEmptyDirectPurchaseLine = (
+    directPurchaseId = '',
+    lineNo = 1,
+    lineType: SiteDirectPurchaseLineType = 'stock_item',
+): SiteDirectPurchaseFormLine => ({
+    id: crypto.randomUUID(),
+    directPurchaseId,
+    lineNo,
+    lineType,
+    itemId: null,
+    skuSnapshot: null,
+    itemNameSnapshot: DIRECT_PURCHASE_LINE_TYPE[lineType]?.defaultName || '',
+    unitSnapshot: DIRECT_PURCHASE_LINE_TYPE[lineType]?.defaultUnit || '',
+    quantity: 1,
+    unitPrice: 0,
+    vatRate: 0,
+    lineAmount: 0,
+    vatAmount: 0,
+    acceptedQuantity: 0,
+    acceptedAmount: 0,
+    status: 'pending',
+    smallToolCategory: lineType === 'small_tool' ? 'Dụng cụ nhỏ' : null,
+    smallToolHolderType: lineType === 'small_tool' ? 'site' : null,
+    smallToolHolderId: null,
+    smallToolHolderNameSnapshot: lineType === 'small_tool' ? 'Công trường' : null,
+    smallToolLocationNote: null,
+    quantityInput: '1',
+    unitPriceInput: '',
+    vatRateInput: '0',
+});
+
+const hydrateDirectPurchaseFormLine = (line: SiteDirectPurchaseLine): SiteDirectPurchaseFormLine => ({
+    ...line,
+    quantityInput: String(line.quantity || ''),
+    unitPriceInput: String(line.unitPrice || ''),
+    vatRateInput: String(line.vatRate || 0),
+});
+
+const normalizeDirectPurchaseFormLine = (line: SiteDirectPurchaseFormLine, index: number, directPurchaseId: string): SiteDirectPurchaseLine => {
+    const quantity = Number(line.quantityInput ?? line.quantity ?? 0);
+    const unitPrice = Number(line.unitPriceInput ?? line.unitPrice ?? 0);
+    const vatRate = Number(line.vatRateInput ?? line.vatRate ?? 0);
+    const lineAmount = Math.round(quantity * unitPrice);
+    const vatAmount = Math.round(lineAmount * Math.max(0, vatRate) / 100);
+    return {
+        ...line,
+        directPurchaseId,
+        lineNo: index + 1,
+        itemId: line.lineType === 'stock_item' ? line.itemId || null : null,
+        skuSnapshot: line.lineType === 'stock_item' ? line.skuSnapshot || null : null,
+        unitSnapshot: line.unitSnapshot || DIRECT_PURCHASE_LINE_TYPE[line.lineType]?.defaultUnit || '',
+        smallToolCategory: line.lineType === 'small_tool' ? line.smallToolCategory || null : null,
+        smallToolHolderType: line.lineType === 'small_tool' ? line.smallToolHolderType || 'site' : null,
+        smallToolHolderId: line.lineType === 'small_tool' ? line.smallToolHolderId || null : null,
+        smallToolHolderNameSnapshot: line.lineType === 'small_tool' ? line.smallToolHolderNameSnapshot || 'Công trường' : null,
+        smallToolLocationNote: line.lineType === 'small_tool' ? line.smallToolLocationNote || null : null,
+        quantity,
+        unitPrice,
+        vatRate,
+        lineAmount,
+        vatAmount,
+        acceptedQuantity: Number(line.acceptedQuantity || 0),
+        acceptedAmount: Number(line.acceptedAmount || 0),
+        status: line.status || 'pending',
+    };
 };
 
 const PO_PRINT_TEMPLATE_LABELS: Record<PurchaseOrderPrintTemplateKey, string> = {
@@ -400,14 +546,26 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     const loadSupplyData = async () => {
         if (!effectiveId) return;
         try {
-            const [partnerRows, poRows, stockPoRows, linkRows] = await Promise.all([
+            setLoadingDirectPurchases(true);
+            setLoadingSmallTools(true);
+            const [partnerRows, poRows, stockPoRows, linkRows, directPurchaseRows, smallToolRows] = await Promise.all([
                 partnerService.list({ classification: 'supplier' }),
                 poService.list(effectiveId, constructionSiteId || null),
                 poService.listStockOrders().catch(() => [] as PurchaseOrder[]),
                 poService.listRequestLineLinks(effectiveId, constructionSiteId || null).catch(() => [] as PurchaseOrderRequestLineLink[]),
+                siteDirectPurchaseService.list({ projectId: projectId || null, constructionSiteId: constructionSiteId || null }).catch(error => {
+                    console.warn('Failed to load site direct purchases', error);
+                    return [] as SiteDirectPurchase[];
+                }),
+                siteSmallToolService.list({ projectId: projectId || null, constructionSiteId: constructionSiteId || null }).catch(error => {
+                    console.warn('Failed to load site small tools', error);
+                    return [] as SiteSmallToolRecord[];
+                }),
             ]);
             setPartners(partnerRows);
             setVendors([]);
+            setDirectPurchases(directPurchaseRows);
+            setSmallToolRecords(smallToolRows);
             const scopedStockRows = stockPoRows.filter(po => !po.projectId && !po.constructionSiteId);
             const linkedPoIds = Array.from(new Set(linkRows.map(link => link.purchaseOrderId).filter(Boolean)));
             const linkedCompanyPoRows = await poService.listByIds(linkedPoIds)
@@ -436,6 +594,9 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             setPoDeliveryBatchesByPo(deliveryScheduleRows);
         } catch (error) {
             console.error(error);
+        } finally {
+            setLoadingDirectPurchases(false);
+            setLoadingSmallTools(false);
         }
     };
 
@@ -452,6 +613,18 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     const [poPayableDocumentsByPoId, setPoPayableDocumentsByPoId] = useState<Record<string, SupplierPayableDocument[]>>({});
     const [loadingPoPayableId, setLoadingPoPayableId] = useState<string | null>(null);
     const [poPayableErrorsByPoId, setPoPayableErrorsByPoId] = useState<Record<string, string | null>>({});
+    const [directPurchases, setDirectPurchases] = useState<SiteDirectPurchase[]>([]);
+    const [loadingDirectPurchases, setLoadingDirectPurchases] = useState(false);
+    const [smallToolRecords, setSmallToolRecords] = useState<SiteSmallToolRecord[]>([]);
+    const [loadingSmallTools, setLoadingSmallTools] = useState(false);
+    const [smallToolSearch, setSmallToolSearch] = useState('');
+    const [smallToolStatusFilter, setSmallToolStatusFilter] = useState<SiteSmallToolStatus | 'all'>('all');
+    const [smallToolActionLoading, setSmallToolActionLoading] = useState<string | null>(null);
+    const [selectedDirectPurchase, setSelectedDirectPurchase] = useState<SiteDirectPurchaseDetailState | null>(null);
+    const [showDirectPurchaseForm, setShowDirectPurchaseForm] = useState(false);
+    const [editingDirectPurchase, setEditingDirectPurchase] = useState<SiteDirectPurchase | null>(null);
+    const [savingDirectPurchase, setSavingDirectPurchase] = useState(false);
+    const [directActionLoading, setDirectActionLoading] = useState<string | null>(null);
     const [showRequestPicker, setShowRequestPicker] = useState(false);
     const [requestPickerMode, setRequestPickerMode] = useState<'create_po' | 'append_to_po'>('create_po');
     const [selectedRequestLineKeys, setSelectedRequestLineKeys] = useState<string[]>([]);
@@ -500,6 +673,26 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     const [poImportPreview, setPoImportPreview] = useState<ExcelImportPreview<PurchaseOrderItem> | null>(null);
     const [submittingPo, setSubmittingPo] = useState<PurchaseOrder | null>(null);
     const [printingPoId, setPrintingPoId] = useState<string | null>(null);
+    const directPurchaseFileInputRef = useRef<HTMLInputElement | null>(null);
+
+    const [dpId, setDpId] = useState('');
+    const [dpCode, setDpCode] = useState('');
+    const [dpMode, setDpMode] = useState<SiteDirectPurchaseMode>('immediate');
+    const [dpSupplierId, setDpSupplierId] = useState('');
+    const [dpManualSupplierEnabled, setDpManualSupplierEnabled] = useState(false);
+    const [dpManualSupplierName, setDpManualSupplierName] = useState('');
+    const [dpPaymentSource, setDpPaymentSource] = useState<SiteDirectPurchasePaymentSource>('supplier_credit');
+    const [dpTargetWarehouseId, setDpTargetWarehouseId] = useState('');
+    const [dpPurchaseDate, setDpPurchaseDate] = useState(todayIsoDate());
+    const [dpInvoiceNumber, setDpInvoiceNumber] = useState('');
+    const [dpInvoiceDate, setDpInvoiceDate] = useState('');
+    const [dpAttachmentName, setDpAttachmentName] = useState('');
+    const [dpAttachmentUrl, setDpAttachmentUrl] = useState('');
+    const [dpAttachments, setDpAttachments] = useState<Attachment[]>([]);
+    const [dpAttachmentAccept, setDpAttachmentAccept] = useState<string>('*/*');
+    const [uploadingDirectPurchaseFiles, setUploadingDirectPurchaseFiles] = useState(false);
+    const [dpNote, setDpNote] = useState('');
+    const [dpLines, setDpLines] = useState<SiteDirectPurchaseFormLine[]>([createEmptyDirectPurchaseLine()]);
 
     const getPoNumberScope = useCallback((sourceMode: PurchaseOrderSourceMode) => ({
         projectId: sourceMode === 'proactive_stock' ? null : projectId || constructionSiteId || null,
@@ -544,6 +737,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     const poBoqMetaScopeRef = useRef<string | null>(null);
     const lastInitialDraftPoKeyRef = useRef<number>(0);
     const lastDeepLinkPoIdRef = useRef<string | null>(null);
+    const lastDeepLinkDirectPurchaseIdRef = useRef<string | null>(null);
     const workBoqMap = useMemo(() => new Map(workBoqItems.map(item => [item.id, item])), [workBoqItems]);
     const materialBudgetMap = useMemo(() => new Map(materialBudgetItems.map(item => [item.id, item])), [materialBudgetItems]);
     const supplierById = useMemo(() => new Map(partners.map(partner => [partner.id, partner])), [partners]);
@@ -556,6 +750,396 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         if (inventory?.supplierId && supplierById.has(inventory.supplierId)) return getSupplierPatch(inventory.supplierId);
         if (pVendorId && supplierById.has(pVendorId)) return getSupplierPatch(pVendorId);
         return { vendorId: null, vendorName: null };
+    };
+    const resetDirectPurchaseForm = () => {
+        const id = crypto.randomUUID();
+        setEditingDirectPurchase(null);
+        setDpId(id);
+        setDpMode('immediate');
+        setDpCode(buildSiteDirectPurchaseCode('immediate', id));
+        setDpSupplierId('');
+        setDpManualSupplierEnabled(false);
+        setDpManualSupplierName('');
+        setDpPaymentSource('supplier_credit');
+        setDpTargetWarehouseId('');
+        setDpPurchaseDate(todayIsoDate());
+        setDpInvoiceNumber('');
+        setDpInvoiceDate('');
+        setDpAttachmentName('');
+        setDpAttachmentUrl('');
+        setDpAttachments([]);
+        setDpNote('');
+        setDpLines([createEmptyDirectPurchaseLine(id)]);
+        setShowDirectPurchaseForm(false);
+    };
+    const openCreateDirectPurchase = (mode: SiteDirectPurchaseMode = 'immediate') => {
+        if (!ensureCanManage('tạo phiếu mua nóng')) return;
+        if (!constructionSiteId) {
+            toast.warning('Thiếu công trường', 'Mua nóng cần scope công trường để theo dõi WMS/AP và hoàn ứng.');
+            return;
+        }
+        const id = crypto.randomUUID();
+        setEditingDirectPurchase(null);
+        setDpId(id);
+        setDpMode(mode);
+        setDpCode(buildSiteDirectPurchaseCode(mode, id));
+        setDpSupplierId('');
+        setDpManualSupplierEnabled(false);
+        setDpManualSupplierName('');
+        setDpPaymentSource(mode === 'immediate' ? 'site_cash' : 'supplier_credit');
+        setDpTargetWarehouseId('');
+        setDpPurchaseDate(todayIsoDate());
+        setDpInvoiceNumber('');
+        setDpInvoiceDate('');
+        setDpAttachmentName('');
+        setDpAttachmentUrl('');
+        setDpAttachments([]);
+        setDpNote('');
+        setDpLines([createEmptyDirectPurchaseLine(id)]);
+        setShowDirectPurchaseForm(true);
+    };
+    const openEditDirectPurchase = async (purchase: SiteDirectPurchase) => {
+        if (!ensureCanManage('sửa phiếu mua nóng')) return;
+        setDirectActionLoading(`edit:${purchase.id}`);
+        try {
+            const detail = await siteDirectPurchaseService.getDetail(purchase.id);
+            setEditingDirectPurchase(detail.purchase);
+            setDpId(detail.purchase.id);
+            setDpCode(detail.purchase.code);
+            setDpMode(detail.purchase.purchaseMode);
+            const hasKnownSupplier = Boolean(detail.purchase.supplierId && supplierById.has(detail.purchase.supplierId));
+            setDpSupplierId(hasKnownSupplier ? detail.purchase.supplierId || '' : '');
+            setDpManualSupplierEnabled(!hasKnownSupplier);
+            setDpManualSupplierName(hasKnownSupplier ? '' : detail.purchase.supplierNameSnapshot || '');
+            setDpPaymentSource(detail.purchase.paymentSource);
+            setDpTargetWarehouseId(detail.purchase.targetWarehouseId || '');
+            setDpPurchaseDate(detail.purchase.purchaseDate || todayIsoDate());
+            setDpInvoiceNumber(detail.purchase.invoiceNumber || '');
+            setDpInvoiceDate(detail.purchase.invoiceDate || '');
+            setDpAttachmentName(detail.purchase.attachments?.[0]?.name || '');
+            setDpAttachmentUrl(detail.purchase.attachments?.[0]?.url || '');
+            setDpAttachments(detail.purchase.attachments || []);
+            setDpNote(detail.purchase.note || '');
+            setDpLines(detail.lines.length > 0
+                ? detail.lines.map(hydrateDirectPurchaseFormLine)
+                : [createEmptyDirectPurchaseLine(detail.purchase.id)]);
+            setShowDirectPurchaseForm(true);
+        } catch (error: any) {
+            logApiError('supplyChain.siteDirect.edit', error);
+            toast.error('Không tải được phiếu mua nóng', getApiErrorMessage(error, 'Không thể tải chi tiết phiếu mua nóng.'));
+        } finally {
+            setDirectActionLoading(null);
+        }
+    };
+    const updateDirectPurchaseLine = (lineId: string, patch: Partial<SiteDirectPurchaseFormLine>) => {
+        setDpLines(prev => prev.map(line => line.id === lineId ? { ...line, ...patch } : line));
+    };
+    const selectDirectPurchaseInventoryItem = (lineId: string, itemId: string) => {
+        const inventory = inventoryItems.find(item => item.id === itemId);
+        updateDirectPurchaseLine(lineId, {
+            itemId: inventory?.id || null,
+            skuSnapshot: inventory?.sku || null,
+            itemNameSnapshot: inventory?.name || '',
+            unitSnapshot: inventory?.purchaseUnit || inventory?.unit || '',
+            unitPriceInput: inventory?.priceIn ? String(inventory.priceIn) : '',
+            unitPrice: Number(inventory?.priceIn || 0),
+        });
+        if (!dpManualSupplierEnabled && !dpSupplierId && inventory?.supplierId && supplierById.has(inventory.supplierId)) {
+            setDpSupplierId(inventory.supplierId);
+        }
+    };
+    const addDirectPurchaseLine = (lineType: SiteDirectPurchaseLineType) => {
+        setDpLines(prev => [...prev, createEmptyDirectPurchaseLine(dpId, prev.length + 1, lineType)]);
+    };
+    const removeDirectPurchaseLine = (lineId: string) => {
+        setDpLines(prev => prev.length > 1 ? prev.filter(line => line.id !== lineId) : prev);
+    };
+    const pickDirectPurchaseFiles = (accept: string) => {
+        setDpAttachmentAccept(accept);
+        window.setTimeout(() => directPurchaseFileInputRef.current?.click(), 0);
+    };
+    const uploadDirectPurchaseFiles = async (files: File[]) => {
+        if (files.length === 0) return;
+        setUploadingDirectPurchaseFiles(true);
+        try {
+            const uploaded: Attachment[] = [];
+            for (const file of files) {
+                if (isSupabaseConfigured) {
+                    const path = `site-direct-purchases/${projectId || constructionSiteId || effectiveId || 'scope'}/${dpId}/${Date.now()}-${crypto.randomUUID()}-${safeStorageFileName(file.name)}`;
+                    const { error } = await supabase.storage.from('project-attachments').upload(path, file, {
+                        cacheControl: '3600',
+                        upsert: false,
+                        contentType: file.type || undefined,
+                    });
+                    if (error) throw error;
+                    const { data } = supabase.storage.from('project-attachments').getPublicUrl(path);
+                    uploaded.push({
+                        id: crypto.randomUUID(),
+                        name: file.name,
+                        fileName: file.name,
+                        url: data.publicUrl,
+                        fileType: file.type,
+                        fileSize: file.size,
+                        category: file.type.startsWith('image/') ? 'image' : 'invoice',
+                        uploadedAt: new Date().toISOString(),
+                        uploadedBy: user?.id,
+                    });
+                } else {
+                    uploaded.push({
+                        id: crypto.randomUUID(),
+                        name: file.name,
+                        fileName: file.name,
+                        url: URL.createObjectURL(file),
+                        fileType: file.type,
+                        fileSize: file.size,
+                        category: file.type.startsWith('image/') ? 'image' : 'invoice',
+                        uploadedAt: new Date().toISOString(),
+                        uploadedBy: user?.id,
+                    });
+                }
+            }
+            setDpAttachments(prev => [...prev, ...uploaded]);
+            toast.success('Đã đính kèm chứng từ', `${uploaded.length} file đã được thêm vào phiếu mua nóng.`);
+        } catch (error: any) {
+            logApiError('supplyChain.siteDirect.uploadAttachment', error);
+            toast.error('Không tải được file', getApiErrorMessage(error, 'Không thể upload file chứng từ mua nóng.'));
+        } finally {
+            setUploadingDirectPurchaseFiles(false);
+            if (directPurchaseFileInputRef.current) directPurchaseFileInputRef.current.value = '';
+        }
+    };
+    const saveDirectPurchase = async () => {
+        if (!ensureCanManage('lưu phiếu mua nóng')) return;
+        if (!constructionSiteId) {
+            toast.warning('Thiếu công trường', 'Mua nóng cần gắn công trường.');
+            return;
+        }
+        const supplier = dpSupplierId ? supplierById.get(dpSupplierId) : null;
+        const supplierNameSnapshot = dpManualSupplierEnabled ? dpManualSupplierName.trim() : supplier?.name;
+        if (!supplierNameSnapshot) {
+            toast.warning('Thiếu NCC', dpManualSupplierEnabled ? 'Nhập tên NCC/cửa hàng viết tay.' : 'Chọn nhà cung cấp cho phiếu mua nóng hoặc bật NCC viết tay.');
+            return;
+        }
+        const normalizedLines = dpLines.map((line, index) => normalizeDirectPurchaseFormLine(line, index, dpId));
+        const invalidLine = normalizedLines.find(line =>
+            !line.itemNameSnapshot
+            || Number(line.quantity || 0) <= 0
+            || Number(line.unitPrice || 0) < 0
+            || (line.lineType === 'stock_item' && !line.itemId)
+        );
+        if (invalidLine) {
+            toast.warning('Kiểm tra dòng mua nóng', 'Dòng tồn kho cần mã vật tư; dòng chi phí/CCDC cần tên, số lượng lớn hơn 0 và đơn giá hợp lệ.');
+            return;
+        }
+        const totals = calculateSiteDirectPurchaseTotals(normalizedLines);
+        const status = editingDirectPurchase?.status || (dpMode === 'planned' ? 'draft' : 'purchased');
+        const manualLinkAttachment: Attachment[] = dpAttachmentUrl.trim()
+            ? [{
+                id: editingDirectPurchase?.attachments?.[0]?.id || crypto.randomUUID(),
+                name: dpAttachmentName.trim() || dpInvoiceNumber.trim() || 'Chứng từ mua nóng',
+                url: dpAttachmentUrl.trim(),
+                category: 'invoice',
+                uploadedAt: editingDirectPurchase?.attachments?.[0]?.uploadedAt || new Date().toISOString(),
+                uploadedBy: user?.id,
+            }]
+            : [];
+        const attachments = [
+            ...dpAttachments,
+            ...manualLinkAttachment.filter(att => !dpAttachments.some(existing => existing.url === att.url)),
+        ];
+        const purchase: SiteDirectPurchase = {
+            id: dpId,
+            code: dpCode || buildSiteDirectPurchaseCode(dpMode, dpId),
+            projectId: projectId || null,
+            constructionSiteId,
+            supplierId: dpManualSupplierEnabled ? null : supplier?.id || null,
+            supplierNameSnapshot,
+            purchaseMode: dpMode,
+            paymentSource: dpPaymentSource,
+            targetWarehouseId: dpTargetWarehouseId || null,
+            status,
+            purchaseDate: dpPurchaseDate || null,
+            invoiceNumber: dpInvoiceNumber.trim() || null,
+            invoiceDate: dpInvoiceDate || null,
+            grossAmount: totals.grossAmount,
+            vatAmount: totals.vatAmount,
+            totalAmount: totals.totalAmount,
+            poId: editingDirectPurchase?.poId || null,
+            wmsTransactionId: editingDirectPurchase?.wmsTransactionId || null,
+            siteCashSettlementId: editingDirectPurchase?.siteCashSettlementId || null,
+            qrToken: editingDirectPurchase?.qrToken || `qr_site_direct_${dpId.replace(/-/g, '').slice(0, 16)}`,
+            attachments,
+            createdBy: editingDirectPurchase?.createdBy || user?.id || null,
+            createdAt: editingDirectPurchase?.createdAt || new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            note: dpNote.trim() || null,
+        };
+        setSavingDirectPurchase(true);
+        try {
+            const saved = await siteDirectPurchaseService.upsert(purchase, normalizedLines);
+            toast.success(editingDirectPurchase ? 'Đã cập nhật phiếu mua nóng' : 'Đã tạo phiếu mua nóng', `${saved.code} - ${fmtMoney(saved.totalAmount)} đ`);
+            setShowDirectPurchaseForm(false);
+            setEditingDirectPurchase(null);
+            await loadSupplyData();
+        } catch (error: any) {
+            logApiError('supplyChain.siteDirect.save', error);
+            toast.error('Không lưu được phiếu mua nóng', getApiErrorMessage(error, 'Không thể lưu phiếu mua nóng.'));
+        } finally {
+            setSavingDirectPurchase(false);
+        }
+    };
+    const openDirectPurchaseDetail = async (purchase: SiteDirectPurchase) => {
+        setDirectActionLoading(`detail:${purchase.id}`);
+        try {
+            const detail = await siteDirectPurchaseService.getDetail(purchase.id);
+            setSelectedDirectPurchase(detail);
+        } catch (error: any) {
+            logApiError('supplyChain.siteDirect.detail', error);
+            toast.error('Không tải được phiếu mua nóng', getApiErrorMessage(error, 'Không thể tải chi tiết phiếu mua nóng.'));
+        } finally {
+            setDirectActionLoading(null);
+        }
+    };
+    const openDirectPurchaseDetailById = async (id: string) => {
+        const purchase = directPurchases.find(item => item.id === id);
+        if (purchase) {
+            await openDirectPurchaseDetail(purchase);
+            return;
+        }
+        setDirectActionLoading(`detail:${id}`);
+        try {
+            const detail = await siteDirectPurchaseService.getDetail(id);
+            setSelectedDirectPurchase(detail);
+        } catch (error: any) {
+            logApiError('supplyChain.siteDirect.detailById', error);
+            toast.error('Không tải được phiếu mua nóng', getApiErrorMessage(error, 'Không thể tải chứng từ nguồn của CCDC.'));
+        } finally {
+            setDirectActionLoading(null);
+        }
+    };
+    const reloadSelectedDirectPurchase = async (id: string) => {
+        const detail = await siteDirectPurchaseService.getDetail(id);
+        setSelectedDirectPurchase(detail);
+        await loadSupplyData();
+    };
+    const updateSmallToolCustody = async (record: SiteSmallToolRecord) => {
+        if (!ensureCanManage('cập nhật bàn giao CCDC nhỏ')) return;
+        const holderName = window.prompt('Người/bộ phận đang giữ CCDC', record.holderNameSnapshot || '');
+        if (holderName === null) return;
+        const locationNote = window.prompt('Vị trí đang để CCDC', record.locationNote || '');
+        if (locationNote === null) return;
+        setSmallToolActionLoading(`custody:${record.id}`);
+        try {
+            await siteSmallToolService.updateCustody(record.id, {
+                holderType: 'manual',
+                holderId: null,
+                holderNameSnapshot: holderName.trim() || 'Chưa rõ người giữ',
+                locationNote: locationNote.trim() || null,
+            });
+            toast.success('Đã cập nhật CCDC', `${record.code} đã được cập nhật người/vị trí giữ.`);
+            await loadSupplyData();
+        } catch (error: any) {
+            logApiError('supplyChain.smallTool.custody', error);
+            toast.error('Không cập nhật được CCDC', getApiErrorMessage(error, 'Không thể cập nhật người/vị trí giữ.'));
+        } finally {
+            setSmallToolActionLoading(null);
+        }
+    };
+    const updateSmallToolStatus = async (record: SiteSmallToolRecord, status: SiteSmallToolStatus) => {
+        if (!ensureCanManage('cập nhật trạng thái CCDC nhỏ')) return;
+        const needsNote = status === 'damaged' || status === 'lost' || status === 'disposed';
+        const note = needsNote ? window.prompt(`Ghi chú ${SMALL_TOOL_STATUS[status].label.toLowerCase()}`, record.note || '') : record.note || null;
+        if (needsNote && note === null) return;
+        setSmallToolActionLoading(`status:${record.id}`);
+        try {
+            const saved = await siteSmallToolService.updateStatus(record.id, status, note || null);
+            toast.success('Đã cập nhật CCDC', `${saved.code} - ${SMALL_TOOL_STATUS[saved.status].label}`);
+            await loadSupplyData();
+        } catch (error: any) {
+            logApiError('supplyChain.smallTool.status', error);
+            toast.error('Không cập nhật được CCDC', getApiErrorMessage(error, 'Không thể cập nhật trạng thái CCDC.'));
+        } finally {
+            setSmallToolActionLoading(null);
+        }
+    };
+    const updateDirectPurchaseStatus = async (purchase: SiteDirectPurchase, status: SiteDirectPurchaseStatus) => {
+        if (!ensureCanManage('cập nhật trạng thái mua nóng')) return;
+        setDirectActionLoading(`${status}:${purchase.id}`);
+        try {
+            const saved = status === 'approved_to_buy'
+                ? await siteDirectPurchaseService.approveToBuy(purchase.id)
+                : status === 'submitted'
+                    ? await siteDirectPurchaseService.submit(purchase.id)
+                    : await siteDirectPurchaseService.setStatus(purchase.id, status);
+            toast.success('Đã cập nhật phiếu mua nóng', `${saved.code} - ${DIRECT_PURCHASE_STATUS[saved.status]?.label || saved.status}`);
+            await reloadSelectedDirectPurchase(purchase.id);
+        } catch (error: any) {
+            logApiError('supplyChain.siteDirect.status', error);
+            toast.error('Không cập nhật được phiếu mua nóng', getApiErrorMessage(error, 'Không thể cập nhật trạng thái.'));
+        } finally {
+            setDirectActionLoading(null);
+        }
+    };
+    const reviewDirectPurchaseLine = async (line: SiteDirectPurchaseLine, status: 'accepted' | 'adjusted' | 'rejected') => {
+        const detail = selectedDirectPurchase;
+        if (!detail || !ensureCanManage('duyệt dòng mua nóng')) return;
+        setDirectActionLoading(`review:${line.id}`);
+        try {
+            await siteDirectPurchaseService.reviewLines(detail.purchase.id, [{
+                lineId: line.id,
+                status,
+                acceptedQuantity: status === 'rejected' ? 0 : Number(line.quantity || 0),
+                acceptedAmount: status === 'rejected' ? 0 : Number(line.lineAmount || 0) + Number(line.vatAmount || 0),
+                reviewNote: status === 'rejected' ? 'Kế toán từ chối dòng chứng từ' : 'Kế toán chấp nhận dòng chứng từ',
+            }]);
+            await reloadSelectedDirectPurchase(detail.purchase.id);
+        } catch (error: any) {
+            logApiError('supplyChain.siteDirect.reviewLine', error);
+            toast.error('Không duyệt được dòng mua nóng', getApiErrorMessage(error, 'Không thể duyệt dòng chứng từ.'));
+        } finally {
+            setDirectActionLoading(null);
+        }
+    };
+    const createDirectPurchaseWmsDraft = async (purchase: SiteDirectPurchase) => {
+        if (!ensureCanManage('tạo phiếu nhập WMS từ mua nóng')) return;
+        setDirectActionLoading(`wms:${purchase.id}`);
+        try {
+            const tx = await siteDirectPurchaseService.createWmsImportDraft(purchase.id, user?.id || '');
+            await refreshWmsRecords({
+                transactionIds: [tx.id],
+                itemIds: tx.items.map(item => item.itemId),
+            });
+            toast.success('Đã tạo phiếu nhập WMS', `${purchase.code} đã có phiếu ${tx.id}.`);
+            await reloadSelectedDirectPurchase(purchase.id);
+        } catch (error: any) {
+            logApiError('supplyChain.siteDirect.createWms', error);
+            toast.error('Không tạo được WMS import', getApiErrorMessage(error, 'Không thể tạo phiếu nhập WMS.'));
+        } finally {
+            setDirectActionLoading(null);
+        }
+    };
+    const syncDirectPurchasePayable = async (purchase: SiteDirectPurchase) => {
+        if (!ensureCanManage('ghi nhận AP mua nóng')) return;
+        setDirectActionLoading(`ap:${purchase.id}`);
+        try {
+            const document = await siteDirectPurchaseService.syncPayable(purchase.id);
+            await siteDirectPurchaseService.setStatus(purchase.id, 'reconciled').catch(() => document);
+            toast.success('Đã ghi nhận AP mua nóng', `${document.documentNo || purchase.code}: ${fmtMoney(document.recognizedAmount)} đ`);
+            await reloadSelectedDirectPurchase(purchase.id);
+        } catch (error: any) {
+            logApiError('supplyChain.siteDirect.syncPayable', error);
+            toast.error('Không ghi nhận được AP', getApiErrorMessage(error, 'Stock line cần WMS hoàn tất và dòng chứng từ đã được duyệt.'));
+        } finally {
+            setDirectActionLoading(null);
+        }
+    };
+    const openDirectPurchaseWmsTransaction = (purchase: SiteDirectPurchase) => {
+        const tx = transactions.find(item => item.id === purchase.wmsTransactionId);
+        if (!tx) {
+            toast.info('Chưa tải phiếu WMS', 'Phiếu WMS có thể chưa nằm trong dữ liệu hiện tại. Vui lòng mở module Phiếu kho hoặc tải lại dữ liệu.');
+            return;
+        }
+        setSelectedWmsTransaction(tx);
     };
     const makePoDeliveryLineDraft = (
         batchId: string,
@@ -3470,6 +4054,40 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         const partial = pos.filter(p => p.status === 'partial').length;
         return { totalPo, totalValue, delivered, inTransit, partial };
     }, [pos]);
+    const directPurchaseStats = useMemo(() => {
+        const total = directPurchases.length;
+        const totalValue = directPurchases.reduce((sum, purchase) => sum + Number(purchase.totalAmount || 0), 0);
+        const pendingWms = directPurchases.filter(purchase => !purchase.wmsTransactionId && purchase.status !== 'reconciled' && purchase.status !== 'closed').length;
+        const payableReady = directPurchases.filter(purchase => ['finance_review', 'received', 'purchased'].includes(purchase.status)).length;
+        return { total, totalValue, pendingWms, payableReady };
+    }, [directPurchases]);
+    const sortedDirectPurchases = useMemo(
+        () => [...directPurchases].sort((a, b) => String(b.purchaseDate || b.createdAt || '').localeCompare(String(a.purchaseDate || a.createdAt || ''))),
+        [directPurchases],
+    );
+    const filteredSmallToolRecords = useMemo(() => {
+        const keyword = smallToolSearch.trim().toLowerCase();
+        return smallToolRecords.filter(record => {
+            const matchesStatus = smallToolStatusFilter === 'all' || record.status === smallToolStatusFilter;
+            const haystack = [
+                record.code,
+                record.itemNameSnapshot,
+                record.category,
+                record.holderNameSnapshot,
+                record.locationNote,
+                record.supplierNameSnapshot,
+                record.sourceCode,
+            ].filter(Boolean).join(' ').toLowerCase();
+            return matchesStatus && (!keyword || haystack.includes(keyword));
+        });
+    }, [smallToolRecords, smallToolSearch, smallToolStatusFilter]);
+    const smallToolStats = useMemo(() => {
+        const activeRecords = smallToolRecords.filter(record => record.status !== 'disposed');
+        const inUse = activeRecords.filter(record => record.status === 'in_use').length;
+        const issueCount = activeRecords.filter(record => record.status === 'damaged' || record.status === 'lost').length;
+        const totalValue = activeRecords.reduce((sum, record) => sum + Number(record.totalAmount || 0), 0);
+        return { total: activeRecords.length, inUse, issueCount, totalValue };
+    }, [smallToolRecords]);
 
     const poDeliveryBatchesForForm = useMemo(
         () => getPoDeliveryBatchesForForm(),
@@ -3496,6 +4114,14 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         const previewLine = pSourceMode === 'proactive_stock' ? normalizedLine : buildPoBudgetSnapshot(normalizedLine);
         return sum + calculateLineTotal(previewLine);
     }, 0);
+    const directPurchaseFormLines = useMemo(
+        () => dpLines.map((line, index) => normalizeDirectPurchaseFormLine(line, index, dpId)),
+        [dpId, dpLines],
+    );
+    const directPurchaseFormTotals = useMemo(
+        () => calculateSiteDirectPurchaseTotals(directPurchaseFormLines),
+        [directPurchaseFormLines],
+    );
     const poVatRateCalc = normalizeVatRate(pVatRate);
     const poVatAmountCalc = calculateVatAmount(poTotalCalc, poVatRateCalc);
     const poPaymentTotalCalc = poTotalCalc + poVatAmountCalc;
@@ -3596,6 +4222,20 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         setPoPrintMenuId(null);
         void loadPoDeliveryPrintGroups(targetPo);
     }, [deepLinkPoId, sortedPos]);
+
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const directPurchaseId = params.get('siteDirectPurchaseId');
+        if (!directPurchaseId) {
+            lastDeepLinkDirectPurchaseIdRef.current = null;
+            return;
+        }
+        if (lastDeepLinkDirectPurchaseIdRef.current === directPurchaseId) return;
+        const target = directPurchases.find(purchase => purchase.id === directPurchaseId);
+        if (!target) return;
+        lastDeepLinkDirectPurchaseIdRef.current = directPurchaseId;
+        void openDirectPurchaseDetail(target);
+    }, [directPurchases]);
 
     useEffect(() => {
         if (deepLinkPoId) return;
@@ -3786,6 +4426,262 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     )}
                 </div>
             )}
+
+            <div className={procurementPanelClass}>
+                <div className="flex flex-col gap-3 border-b border-slate-100 p-4 dark:border-slate-800 lg:flex-row lg:items-center lg:justify-between">
+                    <div>
+                        <h3 className="flex items-center gap-2 text-sm font-black text-slate-800 dark:text-slate-100">
+                            <Package size={16} className="text-orange-500" /> Mua nóng công trường
+                        </h3>
+                        <p className="mt-1 text-xs font-bold text-slate-500 dark:text-slate-400">Phiếu mua trực tiếp tại công trường, nối WMS/AP nhưng không thay thế PO chuẩn.</p>
+                    </div>
+                    {canManageTab && (
+                        <div className="flex flex-wrap items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={() => openCreateDirectPurchase('planned')}
+                                className="inline-flex min-h-9 items-center gap-1 whitespace-nowrap rounded-lg border border-orange-200 bg-orange-50 px-3 py-1.5 text-[10px] font-black text-orange-700 transition hover:bg-orange-100 active:scale-[0.98]"
+                            >
+                                <Send size={12} /> Đề xuất mua nóng
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => openCreateDirectPurchase('immediate')}
+                                className="inline-flex min-h-9 items-center gap-1 whitespace-nowrap rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-[10px] font-black text-rose-700 transition hover:bg-rose-100 active:scale-[0.98]"
+                            >
+                                <Plus size={12} /> Mua ngay
+                            </button>
+                        </div>
+                    )}
+                </div>
+                <div className="grid grid-cols-2 gap-2 border-b border-slate-100 bg-slate-50/50 p-4 text-xs dark:border-slate-800 dark:bg-slate-900/20 lg:grid-cols-4">
+                    <div className="rounded-lg border border-slate-100 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
+                        <div className="text-[10px] font-black uppercase text-slate-400">Tổng phiếu</div>
+                        <div className="mt-1 text-lg font-black text-slate-900 dark:text-white">{directPurchaseStats.total}</div>
+                    </div>
+                    <div className="rounded-lg border border-slate-100 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
+                        <div className="text-[10px] font-black uppercase text-slate-400">Giá trị</div>
+                        <div className="mt-1 text-lg font-black text-orange-700">{fmtMoney(directPurchaseStats.totalValue)} đ</div>
+                    </div>
+                    <div className="rounded-lg border border-slate-100 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
+                        <div className="text-[10px] font-black uppercase text-slate-400">Cần WMS/AP</div>
+                        <div className="mt-1 text-lg font-black text-amber-700">{directPurchaseStats.pendingWms}</div>
+                    </div>
+                    <div className="rounded-lg border border-slate-100 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
+                        <div className="text-[10px] font-black uppercase text-slate-400">Sẵn sàng review</div>
+                        <div className="mt-1 text-lg font-black text-emerald-700">{directPurchaseStats.payableReady}</div>
+                    </div>
+                </div>
+                {loadingDirectPurchases ? (
+                    <div className="flex items-center justify-center gap-2 p-8 text-sm font-bold text-slate-400">
+                        <Loader2 size={16} className="animate-spin text-orange-500" /> Đang tải phiếu mua nóng...
+                    </div>
+                ) : sortedDirectPurchases.length === 0 ? (
+                    <div className="p-4">
+                        <EmptyState icon={<Package size={18} />} title="Chưa có phiếu mua nóng" message="Tạo phiếu mua nóng khi công trường cần mua trực tiếp ngoài luồng PO chuẩn." compact />
+                    </div>
+                ) : (
+                    <div className="overflow-x-auto">
+                        <table className="w-full min-w-[980px] text-left text-xs">
+                            <thead className={procurementTableHeadClass}>
+                                <tr>
+                                    <th className="px-4 py-3">Phiếu</th>
+                                    <th className="px-4 py-3">NCC / Nguồn tiền</th>
+                                    <th className="px-4 py-3 text-right">Giá trị</th>
+                                    <th className="px-4 py-3">WMS</th>
+                                    <th className="px-4 py-3">AP</th>
+                                    <th className="px-4 py-3 text-right">Thao tác</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
+                                {sortedDirectPurchases.map(purchase => {
+                                    const statusCfg = DIRECT_PURCHASE_STATUS[purchase.status] || DIRECT_PURCHASE_STATUS.draft;
+                                    const modeCfg = DIRECT_PURCHASE_MODE[purchase.purchaseMode];
+                                    const wmsTx = purchase.wmsTransactionId ? transactions.find(tx => tx.id === purchase.wmsTransactionId) : null;
+                                    const isLoadingAction = directActionLoading?.endsWith(`:${purchase.id}`);
+                                    return (
+                                        <tr key={purchase.id} className="hover:bg-orange-50/40 dark:hover:bg-slate-900/50">
+                                            <td className="px-4 py-3">
+                                                <button type="button" onClick={() => openDirectPurchaseDetail(purchase)} className="font-mono text-xs font-black text-slate-900 hover:text-orange-700 dark:text-white">
+                                                    {purchase.code}
+                                                </button>
+                                                <div className="mt-1 flex flex-wrap items-center gap-1">
+                                                    <span className={`rounded-full border px-2 py-0.5 text-[9px] font-black ${modeCfg.tone}`}>{modeCfg.label}</span>
+                                                    <StatusBadge status={purchase.status} label={statusCfg.label} tone={statusCfg.tone} showDot={false} />
+                                                </div>
+                                                <div className="mt-1 text-[10px] font-bold text-slate-400">{purchase.purchaseDate || purchase.createdAt?.slice(0, 10) || '—'}</div>
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                <div className="font-black text-slate-700 dark:text-slate-200">{purchase.supplierNameSnapshot}</div>
+                                                <div className="mt-1 text-[10px] font-bold text-slate-400">{DIRECT_PURCHASE_PAYMENT_SOURCE[purchase.paymentSource]}</div>
+                                            </td>
+                                            <td className="px-4 py-3 text-right font-black text-orange-700 whitespace-nowrap">{fmtMoney(purchase.totalAmount)} đ</td>
+                                            <td className="px-4 py-3">
+                                                {purchase.wmsTransactionId ? (
+                                                    <button type="button" onClick={() => openDirectPurchaseWmsTransaction(purchase)} className="font-mono text-[10px] font-black text-blue-700 hover:underline">
+                                                        {purchase.wmsTransactionId.slice(-10)} {wmsTx?.status ? `• ${wmsTx.status}` : ''}
+                                                    </button>
+                                                ) : (
+                                                    <span className="text-[10px] font-bold text-slate-400">Chưa tạo</span>
+                                                )}
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                {purchase.status === 'reconciled' || purchase.status === 'closed' ? (
+                                                    <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-black text-emerald-700">Đã ghi AP</span>
+                                                ) : (
+                                                    <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-black text-amber-700">Chưa ghi AP</span>
+                                                )}
+                                            </td>
+                                            <td className="px-4 py-3 text-right">
+                                                <div className="flex flex-wrap justify-end gap-1">
+                                                    <button type="button" onClick={() => openDirectPurchaseDetail(purchase)} className="rounded-md px-2 py-1 text-[10px] font-black text-orange-700 hover:bg-orange-50">
+                                                        <FileText size={11} className="inline" /> Chi tiết
+                                                    </button>
+                                                    {canManageTab && (
+                                                        <button type="button" onClick={() => openEditDirectPurchase(purchase)} disabled={isLoadingAction} className="rounded-md px-2 py-1 text-[10px] font-black text-blue-700 hover:bg-blue-50 disabled:opacity-50">
+                                                            {isLoadingAction ? <Loader2 size={11} className="inline animate-spin" /> : <Edit2 size={11} className="inline" />} Sửa
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </div>
+
+            <div className={procurementPanelClass}>
+                <div className="flex flex-col gap-3 border-b border-slate-100 p-4 dark:border-slate-800 lg:flex-row lg:items-center lg:justify-between">
+                    <div>
+                        <h3 className="flex items-center gap-2 text-sm font-black text-slate-800 dark:text-slate-100">
+                            <Wrench size={16} className="text-amber-500" /> CCDC nhỏ / Ngoài kho
+                        </h3>
+                        <p className="mt-1 text-xs font-bold text-slate-500 dark:text-slate-400">Theo dõi vật tư vụn và dụng cụ nhỏ không nhập WMS nhưng cần biết đang ở đâu, ai giữ.</p>
+                    </div>
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                        <div className="relative">
+                            <Search size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                            <input
+                                value={smallToolSearch}
+                                onChange={event => setSmallToolSearch(event.target.value)}
+                                className={`${procurementInputClass} min-h-9 w-full pl-8 sm:w-72`}
+                                placeholder="Tìm CCDC, người giữ, nguồn..."
+                            />
+                        </div>
+                        <select
+                            value={smallToolStatusFilter}
+                            onChange={event => setSmallToolStatusFilter(event.target.value as SiteSmallToolStatus | 'all')}
+                            className={`${procurementInputClass} min-h-9`}
+                        >
+                            {SMALL_TOOL_STATUS_OPTIONS.map(status => (
+                                <option key={status} value={status}>{status === 'all' ? 'Tất cả trạng thái' : SMALL_TOOL_STATUS[status].label}</option>
+                            ))}
+                        </select>
+                    </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2 border-b border-slate-100 bg-slate-50/50 p-4 text-xs dark:border-slate-800 dark:bg-slate-900/20 lg:grid-cols-4">
+                    <div className="rounded-lg border border-slate-100 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
+                        <div className="text-[10px] font-black uppercase text-slate-400">Đang theo dõi</div>
+                        <div className="mt-1 text-lg font-black text-slate-900 dark:text-white">{smallToolStats.total}</div>
+                    </div>
+                    <div className="rounded-lg border border-slate-100 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
+                        <div className="text-[10px] font-black uppercase text-slate-400">Đang dùng</div>
+                        <div className="mt-1 text-lg font-black text-emerald-700">{smallToolStats.inUse}</div>
+                    </div>
+                    <div className="rounded-lg border border-slate-100 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
+                        <div className="text-[10px] font-black uppercase text-slate-400">Hỏng / mất</div>
+                        <div className="mt-1 text-lg font-black text-red-600">{smallToolStats.issueCount}</div>
+                    </div>
+                    <div className="rounded-lg border border-slate-100 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
+                        <div className="text-[10px] font-black uppercase text-slate-400">Giá trị snapshot</div>
+                        <div className="mt-1 text-lg font-black text-amber-700">{fmtMoney(smallToolStats.totalValue)} đ</div>
+                    </div>
+                </div>
+                {loadingSmallTools ? (
+                    <div className="flex items-center justify-center gap-2 p-8 text-sm font-bold text-slate-400">
+                        <Loader2 size={16} className="animate-spin text-amber-500" /> Đang tải sổ CCDC nhỏ...
+                    </div>
+                ) : filteredSmallToolRecords.length === 0 ? (
+                    <div className="p-4">
+                        <EmptyState icon={<Wrench size={18} />} title="Chưa có CCDC ngoài kho" message="Dòng mua nóng loại CCDC nhỏ sau khi được duyệt và ghi AP sẽ xuất hiện tại đây." compact />
+                    </div>
+                ) : (
+                    <div className="overflow-x-auto">
+                        <table className="w-full min-w-[1040px] text-left text-xs">
+                            <thead className={procurementTableHeadClass}>
+                                <tr>
+                                    <th className="px-4 py-3">CCDC</th>
+                                    <th className="px-4 py-3">Người / vị trí giữ</th>
+                                    <th className="px-4 py-3 text-right">SL</th>
+                                    <th className="px-4 py-3 text-right">Giá trị</th>
+                                    <th className="px-4 py-3">Nguồn</th>
+                                    <th className="px-4 py-3">Trạng thái</th>
+                                    <th className="px-4 py-3 text-right">Thao tác</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
+                                {filteredSmallToolRecords.map(record => {
+                                    const statusCfg = SMALL_TOOL_STATUS[record.status] || SMALL_TOOL_STATUS.stored;
+                                    const isBusy = smallToolActionLoading?.endsWith(`:${record.id}`);
+                                    return (
+                                        <tr key={record.id} className="hover:bg-amber-50/40 dark:hover:bg-slate-900/50">
+                                            <td className="px-4 py-3">
+                                                <div className="font-mono text-[10px] font-black text-slate-400">{record.code}</div>
+                                                <div className="mt-1 font-black text-slate-800 dark:text-slate-100">{record.itemNameSnapshot}</div>
+                                                <div className="mt-1 text-[10px] font-bold text-slate-400">{record.category || 'CCDC nhỏ'} • {record.supplierNameSnapshot || 'NCC viết tay'}</div>
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                <div className="font-black text-slate-700 dark:text-slate-200">{record.holderNameSnapshot || 'Chưa rõ'}</div>
+                                                <div className="mt-1 text-[10px] font-bold text-slate-400">{record.locationNote || 'Chưa cập nhật vị trí'}</div>
+                                            </td>
+                                            <td className="px-4 py-3 text-right font-black text-slate-800 dark:text-slate-100 whitespace-nowrap">{fmtQty(record.quantity)} {record.unitSnapshot || ''}</td>
+                                            <td className="px-4 py-3 text-right font-black text-amber-700 whitespace-nowrap">{fmtMoney(record.totalAmount)} đ</td>
+                                            <td className="px-4 py-3">
+                                                <button type="button" onClick={() => void openDirectPurchaseDetailById(record.sourceId)} className="inline-flex items-center gap-1 font-mono text-[10px] font-black text-orange-700 hover:underline">
+                                                    <ExternalLink size={11} /> {record.sourceCode || record.sourceId.slice(0, 8)}
+                                                </button>
+                                                <div className="mt-1 text-[10px] font-bold text-slate-400">{record.purchaseDate || record.createdAt?.slice(0, 10) || '—'}</div>
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black ${statusCfg.badge}`}>{statusCfg.label}</span>
+                                            </td>
+                                            <td className="px-4 py-3 text-right">
+                                                <div className="flex flex-wrap justify-end gap-1">
+                                                    <button type="button" onClick={() => void updateSmallToolCustody(record)} disabled={isBusy} className="rounded-md px-2 py-1 text-[10px] font-black text-blue-700 hover:bg-blue-50 disabled:opacity-50">
+                                                        Bàn giao
+                                                    </button>
+                                                    {record.status !== 'stored' && (
+                                                        <button type="button" onClick={() => void updateSmallToolStatus(record, 'stored')} disabled={isBusy} className="rounded-md px-2 py-1 text-[10px] font-black text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+                                                            Lưu kho
+                                                        </button>
+                                                    )}
+                                                    {record.status !== 'in_use' && (
+                                                        <button type="button" onClick={() => void updateSmallToolStatus(record, 'in_use')} disabled={isBusy} className="rounded-md px-2 py-1 text-[10px] font-black text-emerald-700 hover:bg-emerald-50 disabled:opacity-50">
+                                                            Đang dùng
+                                                        </button>
+                                                    )}
+                                                    <button type="button" onClick={() => void updateSmallToolStatus(record, 'damaged')} disabled={isBusy} className="rounded-md px-2 py-1 text-[10px] font-black text-orange-700 hover:bg-orange-50 disabled:opacity-50">
+                                                        Hỏng
+                                                    </button>
+                                                    <button type="button" onClick={() => void updateSmallToolStatus(record, 'lost')} disabled={isBusy} className="rounded-md px-2 py-1 text-[10px] font-black text-red-600 hover:bg-red-50 disabled:opacity-50">
+                                                        Mất
+                                                    </button>
+                                                    <button type="button" onClick={() => void updateSmallToolStatus(record, 'disposed')} disabled={isBusy} className="rounded-md px-2 py-1 text-[10px] font-black text-slate-500 hover:bg-slate-100 disabled:opacity-50">
+                                                        Thanh lý
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </div>
 
             {/* PO Tab */}
             {subTab === 'po' && (
@@ -4196,6 +5092,407 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     />
                 );
             })()}
+
+            {selectedDirectPurchase && (() => {
+                const { purchase, lines } = selectedDirectPurchase;
+                const statusCfg = DIRECT_PURCHASE_STATUS[purchase.status] || DIRECT_PURCHASE_STATUS.draft;
+                const modeCfg = DIRECT_PURCHASE_MODE[purchase.purchaseMode];
+                const targetWarehouse = warehouses.find(warehouse => warehouse.id === purchase.targetWarehouseId);
+                const wmsTransaction = purchase.wmsTransactionId ? transactions.find(tx => tx.id === purchase.wmsTransactionId) : null;
+                const hasStockLines = lines.some(line => line.lineType === 'stock_item' && line.status !== 'rejected');
+                const hasAcceptedLines = lines.some(line => line.status === 'accepted' || line.status === 'adjusted');
+                const wmsCompleted = !hasStockLines || String(wmsTransaction?.status || '').toLowerCase() === String(TransactionStatus.COMPLETED).toLowerCase() || String(wmsTransaction?.status || '').toLowerCase() === 'completed';
+                const actionBusy = Boolean(directActionLoading?.endsWith(`:${purchase.id}`));
+                return (
+                    <div className="fixed inset-0 z-[1000] flex justify-end bg-slate-950/40" onClick={event => event.target === event.currentTarget && setSelectedDirectPurchase(null)}>
+                        <div className="flex h-full w-full max-w-4xl flex-col bg-white shadow-2xl dark:bg-slate-950">
+                            <div className="border-b border-slate-100 px-5 py-4 dark:border-slate-800">
+                                <div className="flex items-start justify-between gap-4">
+                                    <div className="min-w-0">
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black ${modeCfg.tone}`}>{modeCfg.label}</span>
+                                            <StatusBadge status={purchase.status} label={statusCfg.label} tone={statusCfg.tone} showDot={false} />
+                                            <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-black text-slate-500">
+                                                {DIRECT_PURCHASE_PAYMENT_SOURCE[purchase.paymentSource]}
+                                            </span>
+                                        </div>
+                                        <h3 className="mt-2 font-mono text-base font-black text-slate-900 dark:text-white">{purchase.code}</h3>
+                                        <p className="mt-0.5 text-xs font-bold text-slate-500">{purchase.supplierNameSnapshot} • {purchase.purchaseDate || 'Chưa có ngày mua'}</p>
+                                    </div>
+                                    <button type="button" onClick={() => setSelectedDirectPurchase(null)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800">
+                                        <X size={18} />
+                                    </button>
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 border-b border-slate-100 px-5 py-3 text-xs dark:border-slate-800 lg:grid-cols-4">
+                                <div>
+                                    <div className="text-[10px] font-black uppercase text-slate-400">Tổng tiền</div>
+                                    <div className="mt-1 font-black text-orange-700">{fmtMoney(purchase.totalAmount)} đ</div>
+                                </div>
+                                <div>
+                                    <div className="text-[10px] font-black uppercase text-slate-400">Kho nhận</div>
+                                    <div className="mt-1 font-black text-slate-800 dark:text-slate-100">{targetWarehouse?.name || 'Không nhập kho'}</div>
+                                </div>
+                                <div>
+                                    <div className="text-[10px] font-black uppercase text-slate-400">WMS</div>
+                                    <div className="mt-1 font-black text-blue-700">{purchase.wmsTransactionId ? `${purchase.wmsTransactionId.slice(-10)} ${wmsTransaction?.status ? `• ${wmsTransaction.status}` : ''}` : 'Chưa tạo'}</div>
+                                </div>
+                                <div>
+                                    <div className="text-[10px] font-black uppercase text-slate-400">Hoá đơn</div>
+                                    <div className="mt-1 font-black text-slate-800 dark:text-slate-100">{purchase.invoiceNumber || '—'}</div>
+                                    {(purchase.attachments || []).slice(0, 3).map(att => (
+                                        <a key={att.id || att.url} href={att.url} target="_blank" rel="noreferrer" className="mt-1 inline-flex max-w-full items-center gap-1 text-[10px] font-black text-orange-700 hover:underline">
+                                            {att.fileType?.startsWith('image/') ? <ImageIcon size={10} /> : <ExternalLink size={10} />}
+                                            <span className="truncate">{att.name || 'Mở chứng từ'}</span>
+                                        </a>
+                                    ))}
+                                </div>
+                            </div>
+                            <div className="flex flex-wrap gap-2 border-b border-slate-100 px-5 py-3 dark:border-slate-800">
+                                {canManageTab && purchase.status === 'draft' && (
+                                    <button type="button" onClick={() => updateDirectPurchaseStatus(purchase, 'submitted')} disabled={actionBusy} className="inline-flex items-center gap-1 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-[10px] font-black text-orange-700 hover:bg-orange-100 disabled:opacity-50">
+                                        <Send size={12} /> Trình duyệt
+                                    </button>
+                                )}
+                                {canManageTab && purchase.status === 'submitted' && (
+                                    <button type="button" onClick={() => updateDirectPurchaseStatus(purchase, 'approved_to_buy')} disabled={actionBusy} className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[10px] font-black text-emerald-700 hover:bg-emerald-100 disabled:opacity-50">
+                                        <CheckCircle2 size={12} /> Duyệt mua
+                                    </button>
+                                )}
+                                {canManageTab && purchase.status === 'approved_to_buy' && (
+                                    <button type="button" onClick={() => updateDirectPurchaseStatus(purchase, 'purchased')} disabled={actionBusy} className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-[10px] font-black text-blue-700 hover:bg-blue-100 disabled:opacity-50">
+                                        <Package size={12} /> Đã mua
+                                    </button>
+                                )}
+                                {canManageTab && hasStockLines && !purchase.wmsTransactionId && (
+                                    <button type="button" onClick={() => createDirectPurchaseWmsDraft(purchase)} disabled={actionBusy} className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-[10px] font-black text-indigo-700 hover:bg-indigo-100 disabled:opacity-50">
+                                        <Truck size={12} /> Tạo WMS import
+                                    </button>
+                                )}
+                                {purchase.wmsTransactionId && (
+                                    <button type="button" onClick={() => openDirectPurchaseWmsTransaction(purchase)} className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-white px-3 py-2 text-[10px] font-black text-blue-700 hover:bg-blue-50">
+                                        <ExternalLink size={12} /> Mở WMS
+                                    </button>
+                                )}
+                                {canManageTab && hasAcceptedLines && (
+                                    <button type="button" onClick={() => syncDirectPurchasePayable(purchase)} disabled={actionBusy} title={!wmsCompleted ? 'Hệ thống sẽ kiểm tra WMS trước khi ghi AP.' : 'Ghi nhận AP mua nóng'} className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[10px] font-black text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50">
+                                        <FileText size={12} /> Ghi AP
+                                    </button>
+                                )}
+                                {actionBusy && <span className="inline-flex items-center gap-1 px-2 text-[10px] font-bold text-slate-400"><Loader2 size={12} className="animate-spin" /> Đang xử lý</span>}
+                            </div>
+                            <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50/70 p-5 dark:bg-slate-900/40">
+                                <div className="space-y-2">
+                                    {lines.map(line => {
+                                        const amount = Number(line.lineAmount || 0) + Number(line.vatAmount || 0);
+                                        const inventory = line.itemId ? inventoryItems.find(item => item.id === line.itemId) : null;
+                                        const lineTypeMeta = DIRECT_PURCHASE_LINE_TYPE[line.lineType] || DIRECT_PURCHASE_LINE_TYPE.expense_only;
+                                        return (
+                                            <div key={line.id} className="rounded-lg border border-slate-100 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-950">
+                                                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                                                    <div className="min-w-0">
+                                                        <div className="flex flex-wrap items-center gap-2">
+                                                            <span className={`rounded-full border px-2 py-0.5 text-[9px] font-black ${lineTypeMeta.badge}`}>
+                                                                {lineTypeMeta.label}
+                                                            </span>
+                                                            <span className={`rounded-full border px-2 py-0.5 text-[9px] font-black ${line.status === 'accepted' || line.status === 'adjusted' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : line.status === 'rejected' ? 'border-red-200 bg-red-50 text-red-700' : 'border-slate-200 bg-slate-50 text-slate-500'}`}>
+                                                                {line.status === 'accepted' ? 'Đã duyệt' : line.status === 'adjusted' ? 'Điều chỉnh' : line.status === 'rejected' ? 'Từ chối' : 'Chờ duyệt'}
+                                                            </span>
+                                                        </div>
+                                                        <div className="mt-2 font-black text-slate-900 dark:text-white">{line.itemNameSnapshot || inventory?.name || line.itemId}</div>
+                                                        <div className="mt-1 text-[10px] font-bold text-slate-400">
+                                                            {line.skuSnapshot || inventory?.sku || '—'} • {fmtQty(line.quantity)} {line.unitSnapshot || inventory?.unit || ''} × {fmtMoney(line.unitPrice)} đ • VAT {Number(line.vatRate || 0).toLocaleString('vi-VN')}%
+                                                        </div>
+                                                        {line.lineType === 'small_tool' && (
+                                                            <div className="mt-1 text-[10px] font-bold text-amber-700">
+                                                                {line.smallToolCategory || 'CCDC nhỏ'} • {line.smallToolHolderNameSnapshot || 'Công trường'}{line.smallToolLocationNote ? ` • ${line.smallToolLocationNote}` : ''}
+                                                            </div>
+                                                        )}
+                                                        {line.note && <div className="mt-1 text-[10px] font-bold text-slate-500">{line.note}</div>}
+                                                    </div>
+                                                    <div className="shrink-0 text-left lg:text-right">
+                                                        <div className="text-sm font-black text-orange-700">{fmtMoney(amount)} đ</div>
+                                                        <div className="mt-2 flex flex-wrap justify-start gap-1 lg:justify-end">
+                                                            {canManageTab && line.status !== 'accepted' && (
+                                                                <button type="button" onClick={() => reviewDirectPurchaseLine(line, 'accepted')} className="rounded-md px-2 py-1 text-[10px] font-black text-emerald-700 hover:bg-emerald-50">
+                                                                    Duyệt
+                                                                </button>
+                                                            )}
+                                                            {canManageTab && line.status !== 'rejected' && (
+                                                                <button type="button" onClick={() => reviewDirectPurchaseLine(line, 'rejected')} className="rounded-md px-2 py-1 text-[10px] font-black text-red-600 hover:bg-red-50">
+                                                                    Từ chối
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
+
+            {showDirectPurchaseForm && (
+                <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
+                    <div className="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-lg border border-border bg-card shadow-2xl">
+                        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800">
+                            <div>
+                                <h3 className="text-lg font-black text-slate-800 dark:text-slate-100">{editingDirectPurchase ? 'Sửa phiếu mua nóng' : 'Tạo phiếu mua nóng công trường'}</h3>
+                                <p className="text-xs font-bold text-slate-500 dark:text-slate-400">Vật tư tồn kho đi WMS; chi phí không kho chỉ ghi AP; CCDC nhỏ sinh sổ ngoài kho.</p>
+                            </div>
+                            <button onClick={() => setShowDirectPurchaseForm(false)} disabled={savingDirectPurchase} className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 disabled:opacity-50 dark:hover:bg-slate-800">
+                                <X size={18} />
+                            </button>
+                        </div>
+                        <div className="min-h-0 flex-1 overflow-y-auto p-5">
+                            <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+                                <div>
+                                    <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Số phiếu</label>
+                                    <input value={dpCode} onChange={event => setDpCode(event.target.value)} className={`${procurementInputClass} w-full`} />
+                                </div>
+                                <div>
+                                    <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Mode</label>
+                                    <select value={dpMode} onChange={event => {
+                                        const nextMode = event.target.value as SiteDirectPurchaseMode;
+                                        setDpMode(nextMode);
+                                        if (!editingDirectPurchase) setDpCode(buildSiteDirectPurchaseCode(nextMode, dpId));
+                                    }} className={`${procurementInputClass} w-full`}>
+                                        <option value="planned">Đề xuất trước rồi mua</option>
+                                        <option value="immediate">Mua ngay rồi cập nhật chứng từ</option>
+                                    </select>
+                                </div>
+                                <div className="md:col-span-2">
+                                    <div className="mb-1 flex items-center justify-between gap-2">
+                                        <label className="block text-[10px] font-black uppercase text-slate-400">Nhà cung cấp</label>
+                                        <label className="inline-flex items-center gap-1 text-[10px] font-black text-orange-700">
+                                            <input
+                                                type="checkbox"
+                                                checked={dpManualSupplierEnabled}
+                                                onChange={event => {
+                                                    setDpManualSupplierEnabled(event.target.checked);
+                                                    if (event.target.checked) setDpSupplierId('');
+                                                    else setDpManualSupplierName('');
+                                                }}
+                                                className="accent-orange-600"
+                                            />
+                                            NCC viết tay
+                                        </label>
+                                    </div>
+                                    {dpManualSupplierEnabled ? (
+                                        <input
+                                            value={dpManualSupplierName}
+                                            onChange={event => setDpManualSupplierName(event.target.value)}
+                                            className={`${procurementInputClass} w-full`}
+                                            placeholder="VD: Tạp hoá cô Lan, Cửa hàng kim khí Hùng..."
+                                        />
+                                    ) : (
+                                        <SupplierCombobox value={dpSupplierId} suppliers={partners} onChange={supplier => setDpSupplierId(supplier?.id || '')} inputClassName="rounded-lg py-2 text-xs" />
+                                    )}
+                                </div>
+                                <div>
+                                    <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Nguồn tiền</label>
+                                    <select value={dpPaymentSource} onChange={event => setDpPaymentSource(event.target.value as SiteDirectPurchasePaymentSource)} className={`${procurementInputClass} w-full`}>
+                                        {Object.entries(DIRECT_PURCHASE_PAYMENT_SOURCE).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Kho nhận</label>
+                                    <select value={dpTargetWarehouseId} onChange={event => setDpTargetWarehouseId(event.target.value)} className={`${procurementInputClass} w-full`}>
+                                        <option value="">Không nhập kho / chưa chọn</option>
+                                        {warehouses.map(warehouse => <option key={warehouse.id} value={warehouse.id}>{warehouse.name}</option>)}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Ngày mua</label>
+                                    <input type="date" value={dpPurchaseDate} onChange={event => setDpPurchaseDate(event.target.value)} className={`${procurementInputClass} w-full`} />
+                                </div>
+                                <div>
+                                    <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Ngày HĐ</label>
+                                    <input type="date" value={dpInvoiceDate} onChange={event => setDpInvoiceDate(event.target.value)} className={`${procurementInputClass} w-full`} />
+                                </div>
+                                <div>
+                                    <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Số HĐ/biên nhận</label>
+                                    <input value={dpInvoiceNumber} onChange={event => setDpInvoiceNumber(event.target.value)} className={`${procurementInputClass} w-full`} placeholder="VD: HD-001" />
+                                </div>
+                                <div>
+                                    <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Tên chứng từ</label>
+                                    <input value={dpAttachmentName} onChange={event => setDpAttachmentName(event.target.value)} className={`${procurementInputClass} w-full`} placeholder="Ảnh HĐ / phiếu giao" />
+                                </div>
+                                <div className="md:col-span-2">
+                                    <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Link chứng từ</label>
+                                    <input value={dpAttachmentUrl} onChange={event => setDpAttachmentUrl(event.target.value)} className={`${procurementInputClass} w-full`} placeholder="URL file hoá đơn/biên nhận" />
+                                </div>
+                                <div className="md:col-span-2">
+                                    <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Ghi chú</label>
+                                    <input value={dpNote} onChange={event => setDpNote(event.target.value)} className={`${procurementInputClass} w-full`} placeholder="Lý do mua nóng, người mua, chứng từ kèm theo..." />
+                                </div>
+                                <div className="md:col-span-4 rounded-lg border border-slate-100 bg-slate-50/70 p-3 dark:border-slate-800 dark:bg-slate-900/30">
+                                    <input
+                                        ref={directPurchaseFileInputRef}
+                                        type="file"
+                                        multiple
+                                        accept={dpAttachmentAccept}
+                                        className="hidden"
+                                        onChange={event => void uploadDirectPurchaseFiles(Array.from(event.target.files || []))}
+                                    />
+                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                        <div>
+                                            <div className="text-[10px] font-black uppercase text-slate-400">File / hình ảnh đính kèm</div>
+                                            <div className="mt-0.5 text-[10px] font-bold text-slate-500">Hoá đơn, ảnh biên nhận, phiếu giao hàng hoặc file scan.</div>
+                                        </div>
+                                        <div className="flex flex-wrap gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={() => pickDirectPurchaseFiles('image/*')}
+                                                disabled={uploadingDirectPurchaseFiles}
+                                                className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[10px] font-black text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
+                                            >
+                                                <ImageIcon size={12} /> Hình ảnh
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => pickDirectPurchaseFiles('.pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.webp,image/*,application/pdf')}
+                                                disabled={uploadingDirectPurchaseFiles}
+                                                className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-[10px] font-black text-blue-700 hover:bg-blue-100 disabled:opacity-50"
+                                            >
+                                                {uploadingDirectPurchaseFiles ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />} File
+                                            </button>
+                                        </div>
+                                    </div>
+                                    {dpAttachments.length > 0 && (
+                                        <div className="mt-3 flex flex-wrap gap-2">
+                                            {dpAttachments.map(att => (
+                                                <span key={att.id || att.url} className="inline-flex max-w-full items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-black text-slate-600 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300">
+                                                    {att.fileType?.startsWith('image/') ? <ImageIcon size={11} className="text-emerald-600" /> : <FileText size={11} className="text-blue-600" />}
+                                                    <a href={att.url} target="_blank" rel="noreferrer" className="max-w-[220px] truncate hover:text-orange-700 hover:underline">{att.name}</a>
+                                                    <button type="button" onClick={() => setDpAttachments(prev => prev.filter(item => (item.id || item.url) !== (att.id || att.url)))} className="ml-1 rounded text-slate-400 hover:text-red-600">
+                                                        <X size={11} />
+                                                    </button>
+                                                </span>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                            <div className="mt-5 overflow-x-auto rounded-lg border border-slate-100 dark:border-slate-800">
+                                <table className="w-full min-w-[1120px] text-left text-xs">
+                                    <thead className={procurementTableHeadClass}>
+                                        <tr>
+                                            <th className="px-3 py-2 w-36">Loại dòng</th>
+                                            <th className="px-3 py-2">Vật tư / Chi phí</th>
+                                            <th className="px-3 py-2 w-24 text-right">SL</th>
+                                            <th className="px-3 py-2 w-24">ĐVT</th>
+                                            <th className="px-3 py-2 w-32 text-right">Đơn giá</th>
+                                            <th className="px-3 py-2 w-24 text-right">VAT %</th>
+                                            <th className="px-3 py-2 w-36 text-right">Thành tiền</th>
+                                            <th className="px-3 py-2 w-14"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
+                                        {dpLines.map((line, index) => {
+                                            const preview = directPurchaseFormLines[index];
+                                            const total = Number(preview.lineAmount || 0) + Number(preview.vatAmount || 0);
+                                            return (
+                                                <tr key={line.id}>
+                                                    <td className="px-3 py-2">
+                                                        <select value={line.lineType} onChange={event => {
+                                                            const nextType = event.target.value as SiteDirectPurchaseLineType;
+                                                            const lineTypeMeta = DIRECT_PURCHASE_LINE_TYPE[nextType] || DIRECT_PURCHASE_LINE_TYPE.expense_only;
+                                                            updateDirectPurchaseLine(line.id, {
+                                                                lineType: nextType,
+                                                                itemId: null,
+                                                                skuSnapshot: null,
+                                                                itemNameSnapshot: lineTypeMeta.defaultName,
+                                                                unitSnapshot: lineTypeMeta.defaultUnit,
+                                                                smallToolCategory: nextType === 'small_tool' ? line.smallToolCategory || 'Dụng cụ nhỏ' : null,
+                                                                smallToolHolderType: nextType === 'small_tool' ? line.smallToolHolderType || 'site' : null,
+                                                                smallToolHolderId: nextType === 'small_tool' ? line.smallToolHolderId || null : null,
+                                                                smallToolHolderNameSnapshot: nextType === 'small_tool' ? line.smallToolHolderNameSnapshot || 'Công trường' : null,
+                                                                smallToolLocationNote: nextType === 'small_tool' ? line.smallToolLocationNote || null : null,
+                                                            });
+                                                        }} className={`${procurementInputClass} w-full`}>
+                                                            <option value="stock_item">Vật tư tồn kho</option>
+                                                            <option value="expense_only">Chi phí không kho</option>
+                                                            <option value="small_tool">CCDC nhỏ</option>
+                                                        </select>
+                                                    </td>
+                                                    <td className="px-3 py-2">
+                                                        {line.lineType === 'stock_item' ? (
+                                                            <InventoryItemCombobox
+                                                                value={line.itemId || ''}
+                                                                items={inventoryItems}
+                                                                onChange={selected => selectDirectPurchaseInventoryItem(line.id, selected?.id || '')}
+                                                                className="w-full"
+                                                            />
+                                                        ) : (
+                                                            <input value={line.itemNameSnapshot} onChange={event => updateDirectPurchaseLine(line.id, { itemNameSnapshot: event.target.value })} className={`${procurementInputClass} w-full`} placeholder={line.lineType === 'small_tool' ? 'Tên CCDC nhỏ / vật tư ngoài kho' : 'Mô tả chi phí'} />
+                                                        )}
+                                                        {line.lineType === 'small_tool' && (
+                                                            <div className="mt-1 grid grid-cols-1 gap-1 md:grid-cols-3">
+                                                                <input value={line.smallToolCategory || ''} onChange={event => updateDirectPurchaseLine(line.id, { smallToolCategory: event.target.value })} className={`${procurementInputClass} w-full`} placeholder="Nhóm CCDC" />
+                                                                <input value={line.smallToolHolderNameSnapshot || ''} onChange={event => updateDirectPurchaseLine(line.id, { smallToolHolderType: 'manual', smallToolHolderNameSnapshot: event.target.value })} className={`${procurementInputClass} w-full`} placeholder="Người/bộ phận giữ" />
+                                                                <input value={line.smallToolLocationNote || ''} onChange={event => updateDirectPurchaseLine(line.id, { smallToolLocationNote: event.target.value })} className={`${procurementInputClass} w-full`} placeholder="Vị trí để" />
+                                                            </div>
+                                                        )}
+                                                        <input value={line.note || ''} onChange={event => updateDirectPurchaseLine(line.id, { note: event.target.value })} className={`${procurementInputClass} mt-1 w-full`} placeholder="Ghi chú dòng" />
+                                                    </td>
+                                                    <td className="px-3 py-2">
+                                                        <input type="number" min={0} step="any" value={line.quantityInput ?? ''} onChange={event => updateDirectPurchaseLine(line.id, { quantityInput: event.target.value })} className={`${procurementInputClass} w-full text-right`} />
+                                                    </td>
+                                                    <td className="px-3 py-2">
+                                                        <input value={line.unitSnapshot || ''} onChange={event => updateDirectPurchaseLine(line.id, { unitSnapshot: event.target.value })} className={`${procurementInputClass} w-full`} />
+                                                    </td>
+                                                    <td className="px-3 py-2">
+                                                        <input type="number" min={0} step="any" value={line.unitPriceInput ?? ''} onChange={event => updateDirectPurchaseLine(line.id, { unitPriceInput: event.target.value })} className={`${procurementInputClass} w-full text-right`} />
+                                                    </td>
+                                                    <td className="px-3 py-2">
+                                                        <input type="number" min={0} max={100} step="any" value={line.vatRateInput ?? '0'} onChange={event => updateDirectPurchaseLine(line.id, { vatRateInput: event.target.value })} className={`${procurementInputClass} w-full text-right`} />
+                                                    </td>
+                                                    <td className="px-3 py-2 text-right font-black text-orange-700 whitespace-nowrap">{fmtMoney(total)} đ</td>
+                                                    <td className="px-3 py-2 text-right">
+                                                        <button type="button" onClick={() => removeDirectPurchaseLine(line.id)} className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600">
+                                                            <X size={14} />
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                                <button type="button" onClick={() => addDirectPurchaseLine('stock_item')} className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-[10px] font-black text-blue-700 hover:bg-blue-100">
+                                    <Package size={12} /> Thêm vật tư tồn kho
+                                </button>
+                                <button type="button" onClick={() => addDirectPurchaseLine('expense_only')} className="inline-flex items-center gap-1 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-[10px] font-black text-violet-700 hover:bg-violet-100">
+                                    <Plus size={12} /> Thêm chi phí không kho
+                                </button>
+                                <button type="button" onClick={() => addDirectPurchaseLine('small_tool')} className="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[10px] font-black text-amber-700 hover:bg-amber-100">
+                                    <Wrench size={12} /> Thêm CCDC nhỏ
+                                </button>
+                            </div>
+                        </div>
+                        <div className="flex flex-col gap-3 border-t border-slate-100 px-5 py-4 dark:border-slate-800 md:flex-row md:items-center md:justify-between">
+                            <div className="text-xs font-bold text-slate-500">
+                                Trước VAT <span className="font-black text-slate-800">{fmtMoney(directPurchaseFormTotals.grossAmount)} đ</span>
+                                {' '}• VAT <span className="font-black text-blue-700">{fmtMoney(directPurchaseFormTotals.vatAmount)} đ</span>
+                                {' '}• Tổng <span className="font-black text-orange-700">{fmtMoney(directPurchaseFormTotals.totalAmount)} đ</span>
+                            </div>
+                            <div className="flex justify-end gap-3">
+                                <button type="button" onClick={() => setShowDirectPurchaseForm(false)} disabled={savingDirectPurchase} className="rounded-lg px-5 py-2.5 text-sm font-bold text-slate-600 transition hover:bg-slate-100 disabled:opacity-50 dark:text-slate-300 dark:hover:bg-slate-800">Huỷ</button>
+                                <button type="button" onClick={saveDirectPurchase} disabled={savingDirectPurchase} className="inline-flex items-center gap-2 rounded-lg border border-orange-600 bg-orange-600 px-6 py-2.5 text-sm font-black text-white transition hover:bg-orange-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50">
+                                    {savingDirectPurchase ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                                    Lưu phiếu mua nóng
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {showRequestPicker && (
                 <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">

@@ -1,5 +1,14 @@
-import type { SiteDirectPurchase, SiteDirectPurchaseLine } from '../types';
+import type {
+  SiteDirectPurchase,
+  SiteDirectPurchaseLine,
+  SiteDirectPurchaseLineStatus,
+  SiteDirectPurchaseStatus,
+  SupplierPayableDocument,
+  Transaction,
+} from '../types';
+import { TransactionStatus, TransactionType } from '../types';
 import { fromDb, toDb } from './dbMapping';
+import { siteSmallToolService } from './siteSmallToolService';
 import { supabase } from './supabase';
 
 const PURCHASE_TABLE = 'site_direct_purchases';
@@ -11,6 +20,19 @@ const numeric = (value: unknown) => {
 };
 
 const money = (value: unknown) => Math.round(numeric(value) * 100) / 100;
+
+const newId = () => globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+const isMissingDirectPurchaseTable = (error: any): boolean =>
+  error?.code === '42P01'
+  || String(error?.message || '').includes(PURCHASE_TABLE)
+  || String(error?.message || '').includes(LINE_TABLE);
+
+const completedWmsStatuses = new Set<string>([
+  TransactionStatus.COMPLETED,
+  TransactionStatus.LEGACY_COMPLETED,
+  'completed',
+]);
 
 export const calculateSiteDirectPurchaseTotals = (lines: SiteDirectPurchaseLine[]) => {
   const grossAmount = money(lines.reduce((sum, line) => sum + numeric(line.quantity) * numeric(line.unitPrice), 0));
@@ -30,7 +52,7 @@ export const canRecognizeSiteDirectPurchaseLine = (
   context: { wmsStatus?: string | null; financeAccepted?: boolean },
 ) => {
   if (line.status === 'rejected') return false;
-  if (line.lineType === 'expense_only') return Boolean(context.financeAccepted);
+  if (line.lineType === 'expense_only' || line.lineType === 'small_tool') return Boolean(context.financeAccepted);
   return context.wmsStatus === 'completed' && Boolean(context.financeAccepted);
 };
 
@@ -39,6 +61,40 @@ const normalizePurchase = (row: any): SiteDirectPurchase => ({
   grossAmount: money(row.gross_amount),
   vatAmount: money(row.vat_amount),
   totalAmount: money(row.total_amount),
+  attachments: row.attachments || [],
+  note: row.note || null,
+});
+
+const normalizeLine = (row: any): SiteDirectPurchaseLine => ({
+  ...(fromDb(row) as SiteDirectPurchaseLine),
+  quantity: numeric(row.quantity),
+  unitPrice: money(row.unit_price),
+  vatRate: numeric(row.vat_rate),
+  lineAmount: money(row.line_amount),
+  vatAmount: money(row.vat_amount),
+  acceptedQuantity: numeric(row.accepted_quantity),
+  acceptedAmount: money(row.accepted_amount),
+});
+
+const normalizePayableDocument = (row: any): SupplierPayableDocument => {
+  const mapped = fromDb(row) as SupplierPayableDocument;
+  const paidAmount = money((mapped as any).paidAmount ?? (mapped as any).allocatedPaidAmount ?? 0);
+  const creditAmount = money(mapped.creditAmount || 0);
+  const recognizedAmount = money(mapped.recognizedAmount || 0);
+  return {
+    ...mapped,
+    currency: mapped.currency || 'VND',
+    paidAmount,
+    creditAmount,
+    outstandingAmount: money((mapped as any).outstandingAmount ?? Math.max(0, recognizedAmount - paidAmount - creditAmount)),
+    metadata: mapped.metadata || {},
+  };
+};
+
+const buildLinePayload = (line: SiteDirectPurchaseLine) => toDb({
+  ...line,
+  lineAmount: money(numeric(line.quantity) * numeric(line.unitPrice)),
+  vatAmount: money(numeric(line.quantity) * numeric(line.unitPrice) * numeric(line.vatRate) / 100),
 });
 
 export const siteDirectPurchaseService = {
@@ -54,7 +110,10 @@ export const siteDirectPurchaseService = {
     if (lines.length > 0) {
       const { error: lineError } = await supabase
         .from(LINE_TABLE)
-        .upsert(lines.map(toDb), { onConflict: 'id' });
+        .upsert(lines.map(line => buildLinePayload({
+          ...line,
+          directPurchaseId: line.directPurchaseId || input.id,
+        })), { onConflict: 'id' });
       if (lineError) throw lineError;
     }
 
@@ -78,5 +137,204 @@ export const siteDirectPurchaseService = {
       throw error;
     }
     return (data || []).map(normalizePurchase);
+  },
+
+  async getDetail(id: string): Promise<{ purchase: SiteDirectPurchase; lines: SiteDirectPurchaseLine[] }> {
+    const { data: purchaseRow, error: purchaseError } = await supabase
+      .from(PURCHASE_TABLE)
+      .select('*')
+      .eq('id', id)
+      .single();
+    if (purchaseError) throw purchaseError;
+
+    const { data: lineRows, error: lineError } = await supabase
+      .from(LINE_TABLE)
+      .select('*')
+      .eq('direct_purchase_id', id)
+      .order('line_no', { ascending: true });
+    if (lineError) {
+      if (isMissingDirectPurchaseTable(lineError)) return { purchase: normalizePurchase(purchaseRow), lines: [] };
+      throw lineError;
+    }
+
+    const lines = (lineRows || []).map(normalizeLine);
+    return {
+      purchase: {
+        ...normalizePurchase(purchaseRow),
+        lines,
+      },
+      lines,
+    };
+  },
+
+  async deleteDraft(id: string): Promise<void> {
+    const { data, error } = await supabase
+      .from(PURCHASE_TABLE)
+      .delete()
+      .eq('id', id)
+      .in('status', ['draft', 'cancelled'])
+      .select('id');
+    if (error) throw error;
+    if ((data || []).length === 0) throw new Error('Chỉ xoá được phiếu mua nóng còn nháp hoặc đã huỷ.');
+  },
+
+  async setStatus(id: string, status: SiteDirectPurchaseStatus): Promise<SiteDirectPurchase> {
+    const { data, error } = await supabase
+      .from(PURCHASE_TABLE)
+      .update(toDb({ status }))
+      .eq('id', id)
+      .select('*')
+      .single();
+    if (error) throw error;
+    return normalizePurchase(data);
+  },
+
+  async submit(id: string): Promise<SiteDirectPurchase> {
+    return this.setStatus(id, 'submitted');
+  },
+
+  async approveToBuy(id: string): Promise<SiteDirectPurchase> {
+    return this.setStatus(id, 'approved_to_buy');
+  },
+
+  async markPurchased(id: string, patch: Partial<SiteDirectPurchase> = {}): Promise<SiteDirectPurchase> {
+    const { data, error } = await supabase
+      .from(PURCHASE_TABLE)
+      .update(toDb({
+        ...patch,
+        status: 'purchased',
+      }))
+      .eq('id', id)
+      .select('*')
+      .single();
+    if (error) throw error;
+    return normalizePurchase(data);
+  },
+
+  async reviewLines(
+    id: string,
+    reviews: Array<{
+      lineId: string;
+      status: SiteDirectPurchaseLineStatus;
+      acceptedQuantity?: number;
+      acceptedAmount?: number;
+      reviewNote?: string | null;
+      rejectionReason?: string | null;
+    }>,
+  ): Promise<{ purchase: SiteDirectPurchase; lines: SiteDirectPurchaseLine[] }> {
+    for (const review of reviews) {
+      const payload = toDb({
+        status: review.status,
+        acceptedQuantity: review.status === 'rejected' ? 0 : numeric(review.acceptedQuantity),
+        acceptedAmount: review.status === 'rejected' ? 0 : money(review.acceptedAmount),
+        rejectionReason: review.status === 'rejected' ? review.rejectionReason || review.reviewNote || 'Không được duyệt' : null,
+        note: review.reviewNote || null,
+      });
+      const { error } = await supabase
+        .from(LINE_TABLE)
+        .update(payload)
+        .eq('id', review.lineId)
+        .eq('direct_purchase_id', id);
+      if (error) throw error;
+    }
+    return this.getDetail(id);
+  },
+
+  async linkWmsImport(id: string, transactionId: string): Promise<SiteDirectPurchase> {
+    const { data, error } = await supabase
+      .from(PURCHASE_TABLE)
+      .update(toDb({ wmsTransactionId: transactionId, status: 'purchased' }))
+      .eq('id', id)
+      .select('*')
+      .single();
+    if (error) throw error;
+    return normalizePurchase(data);
+  },
+
+  async syncSmallTools(id: string) {
+    return siteSmallToolService.syncFromSiteDirectPurchase(id);
+  },
+
+  async createWmsImportDraft(id: string, actorId: string): Promise<Transaction> {
+    const { purchase, lines } = await this.getDetail(id);
+    const stockLines = lines.filter(line => line.lineType === 'stock_item' && line.status !== 'rejected' && numeric(line.quantity) > 0);
+    if (stockLines.length === 0) throw new Error('Phiếu mua nóng không có dòng vật tư tồn kho cần nhập WMS.');
+    if (!purchase.targetWarehouseId) throw new Error('Chọn kho nhận trước khi tạo phiếu nhập WMS.');
+
+    const transaction: Transaction = {
+      id: `tx-site-direct-${Date.now()}-${newId().slice(0, 8)}`,
+      type: TransactionType.IMPORT,
+      date: new Date().toISOString(),
+      items: stockLines.map(line => ({
+        itemId: line.itemId || '',
+        quantity: numeric(line.quantity),
+        price: money(line.unitPrice),
+        accountingQty: numeric(line.quantity),
+        accountingUnit: line.unitSnapshot || undefined,
+        accountingPrice: money(line.unitPrice),
+      })).filter(item => item.itemId && item.quantity > 0),
+      targetWarehouseId: purchase.targetWarehouseId,
+      supplierId: purchase.supplierId || undefined,
+      requesterId: actorId,
+      createdBy: actorId,
+      approverId: actorId,
+      status: TransactionStatus.PENDING,
+      relatedRequestId: `direct-purchase:${id}`,
+      note: `Mua nóng ${purchase.code} - ${purchase.supplierNameSnapshot}`,
+    };
+
+    if (transaction.items.length === 0) throw new Error('Dòng vật tư tồn kho chưa liên kết mã vật tư WMS.');
+
+    const { error: txError } = await supabase
+      .from('transactions')
+      .insert({
+        id: transaction.id,
+        type: transaction.type,
+        date: transaction.date,
+        items: transaction.items,
+        target_warehouse_id: transaction.targetWarehouseId,
+        supplier_id: transaction.supplierId,
+        requester_id: transaction.requesterId,
+        created_by: transaction.createdBy,
+        approver_id: transaction.approverId,
+        status: transaction.status,
+        note: transaction.note,
+        related_request_id: transaction.relatedRequestId,
+      });
+    if (txError) throw txError;
+
+    await this.linkWmsImport(id, transaction.id);
+    return transaction;
+  },
+
+  async syncPayable(id: string): Promise<SupplierPayableDocument> {
+    const { purchase, lines } = await this.getDetail(id);
+    const stockLines = lines.filter(line => line.lineType === 'stock_item' && line.status !== 'rejected');
+    const smallToolLines = lines.filter(line => line.lineType === 'small_tool' && (line.status === 'accepted' || line.status === 'adjusted'));
+    const acceptedLines = lines.filter(line => line.status === 'accepted' || line.status === 'adjusted');
+    if (acceptedLines.length === 0) throw new Error('Chưa có dòng mua nóng được duyệt để ghi nhận AP.');
+
+    if (stockLines.length > 0) {
+      if (!purchase.wmsTransactionId) throw new Error('WMS import chưa hoàn tất cho phiếu mua nóng vật tư tồn kho.');
+      const { data: txRow, error: txError } = await supabase
+        .from('transactions')
+        .select('id,status')
+        .eq('id', purchase.wmsTransactionId)
+        .single();
+      if (txError) throw txError;
+      if (!completedWmsStatuses.has(String(txRow?.status || ''))) {
+        throw new Error('WMS import chưa hoàn tất cho phiếu mua nóng vật tư tồn kho.');
+      }
+    }
+
+    if (smallToolLines.length > 0) {
+      await this.syncSmallTools(id);
+    }
+
+    const { data, error } = await supabase.rpc('sync_supplier_payable_from_site_direct_purchase', {
+      p_direct_purchase_id: id,
+    });
+    if (error) throw error;
+    return normalizePayableDocument(Array.isArray(data) ? data[0] : data);
   },
 };
