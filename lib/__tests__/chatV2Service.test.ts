@@ -2,9 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { Role, User } from '../../types';
 import {
   applyRealtimeMessageEvent,
+  buildChatV2AttachmentUploadTarget,
   buildChatV2MessagePreview,
+  getChatV2InboxChannelName,
   getChatV2ConversationTitle,
   inferMessageKindFromAttachments,
+  insertChatV2Mention,
+  normalizeChatV2MessageMetadata,
   sanitizeChatFileName,
   summarizeReactions,
   isImageAttachment,
@@ -93,6 +97,8 @@ describe('chatV2Service helpers', () => {
       kind: 'text',
       metadata: {},
       payload: {},
+      replyPreview: null,
+      mentions: [],
       createdAt,
       updatedAt: createdAt,
       attachments: [],
@@ -119,5 +125,62 @@ describe('chatV2Service helpers', () => {
     expect(inferMessageKindFromAttachments([])).toBe('text');
     expect(inferMessageKindFromAttachments([png, jpg])).toBe('image');
     expect(inferMessageKindFromAttachments([png, pdf])).toBe('file');
+  });
+
+  it('uses distinct inbox realtime topics for badge and chat shell subscriptions', () => {
+    expect(getChatV2InboxChannelName('u1', 'badge')).toBe('chat:v2:inbox:badge:u1');
+    expect(getChatV2InboxChannelName('u1', 'shell')).toBe('chat:v2:inbox:shell:u1');
+  });
+
+  it('normalizes reply preview and mentions from message metadata', () => {
+    const metadata = normalizeChatV2MessageMetadata({
+      replyPreview: {
+        messageId: 'm1',
+        senderId: 'u2',
+        senderName: 'Trần Thị B',
+        bodyPreview: 'Nội dung cần trả lời',
+        kind: 'text',
+      },
+      mentions: [
+        { userId: 'u2', displayName: 'Trần Thị B' },
+        { userId: '', displayName: 'Không hợp lệ' },
+        { userId: 'u3', displayName: '' },
+      ],
+      custom: 'value',
+    });
+
+    expect(metadata.replyPreview).toEqual({
+      messageId: 'm1',
+      senderId: 'u2',
+      senderName: 'Trần Thị B',
+      bodyPreview: 'Nội dung cần trả lời',
+      kind: 'text',
+    });
+    expect(metadata.mentions).toEqual([{ userId: 'u2', displayName: 'Trần Thị B' }]);
+    expect(metadata.payload.custom).toBe('value');
+  });
+
+  it('keeps original attachment display name while sanitizing only the storage path', () => {
+    const target = buildChatV2AttachmentUploadTarget({
+      conversationId: '11111111-1111-4111-8111-111111111111',
+      messageId: '22222222-2222-4222-8222-222222222222',
+      attachmentId: '33333333-3333-4333-8333-333333333333',
+      originalFileName: 'Ảnh nghiệm thu số 1.png',
+    });
+
+    expect(target.fileName).toBe('Ảnh nghiệm thu số 1.png');
+    expect(target.storagePath).toBe('11111111-1111-4111-8111-111111111111/22222222-2222-4222-8222-222222222222/33333333-3333-4333-8333-333333333333-Anh-nghiem-thu-so-1.png');
+  });
+
+  it('inserts a selected mention at the current @ token', () => {
+    const result = insertChatV2Mention({
+      body: 'Nhờ @ha kiểm tra giúp',
+      selectionStart: 7,
+      selectionEnd: 10,
+      displayName: 'Đặng Thị Thu Hà',
+    });
+
+    expect(result.body).toBe('Nhờ @Đặng Thị Thu Hà kiểm tra giúp');
+    expect(result.caretPosition).toBe('Nhờ @Đặng Thị Thu Hà '.length);
   });
 });

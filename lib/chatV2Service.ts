@@ -68,6 +68,7 @@ export interface ChatV2Attachment {
   height?: number | null;
   thumbnailPath?: string | null;
   signedUrl?: string;
+  downloadUrl?: string;
 }
 
 export interface ChatV2Reaction {
@@ -123,6 +124,25 @@ export interface ChatV2QuickConfirmResponse {
   updatedAt?: string | null;
 }
 
+export interface ChatV2ReplyPreview {
+  messageId: string;
+  senderId: string;
+  senderName: string;
+  bodyPreview: string;
+  kind: ChatV2MessageKind;
+}
+
+export interface ChatV2Mention {
+  userId: string;
+  displayName: string;
+}
+
+export interface ChatV2NormalizedMessageMetadata {
+  payload: Record<string, any>;
+  replyPreview: ChatV2ReplyPreview | null;
+  mentions: ChatV2Mention[];
+}
+
 export interface ChatV2Message {
   id: string;
   conversationId: string;
@@ -132,6 +152,8 @@ export interface ChatV2Message {
   replyToMessageId?: string | null;
   metadata: Record<string, any>;
   payload: Record<string, any>;
+  replyPreview: ChatV2ReplyPreview | null;
+  mentions: ChatV2Mention[];
   editedAt?: string | null;
   deletedAt?: string | null;
   deletedBy?: string | null;
@@ -155,6 +177,7 @@ export interface ChatV2PendingAttachment {
   id: string;
   storagePath: string;
   fileName: string;
+  storageFileName: string;
   mimeType: string;
   sizeBytes: number;
 }
@@ -167,6 +190,9 @@ export interface ChatV2SendMessageInput {
   metadata?: Record<string, any>;
   attachments?: File[];
   checklistItems?: string[];
+  replyToMessageId?: string | null;
+  replyPreview?: ChatV2ReplyPreview | null;
+  mentions?: ChatV2Mention[];
 }
 
 export interface ChatV2RealtimeEvent {
@@ -175,6 +201,8 @@ export interface ChatV2RealtimeEvent {
   new: any;
   old: any;
 }
+
+export type ChatV2InboxSubscriptionScope = 'badge' | 'shell';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -252,6 +280,100 @@ const assertReady = () => {
 };
 
 const asNumber = (value: unknown) => (typeof value === 'number' ? value : Number(value || 0));
+
+const CHAT_V2_MESSAGE_KINDS: ChatV2MessageKind[] = ['text', 'image', 'file', 'poll', 'checklist', 'quick_confirm', 'system'];
+
+const normalizeReplyPreview = (value: any): ChatV2ReplyPreview | null => {
+  if (!value || typeof value !== 'object') return null;
+  const messageId = String(value.messageId || '').trim();
+  const senderId = String(value.senderId || '').trim();
+  const senderName = String(value.senderName || '').trim();
+  const bodyPreview = String(value.bodyPreview || '').trim();
+  const kind = CHAT_V2_MESSAGE_KINDS.includes(value.kind) ? value.kind : 'text';
+  if (!messageId || !senderId || !senderName) return null;
+  return {
+    messageId,
+    senderId,
+    senderName,
+    bodyPreview: bodyPreview.slice(0, 240),
+    kind,
+  };
+};
+
+const normalizeMentions = (value: any): ChatV2Mention[] => {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const mentions: ChatV2Mention[] = [];
+  for (const item of value) {
+    const userId = String(item?.userId || '').trim();
+    const displayName = String(item?.displayName || '').trim();
+    if (!userId || !displayName || seen.has(userId)) continue;
+    seen.add(userId);
+    mentions.push({ userId, displayName });
+  }
+  return mentions;
+};
+
+export const normalizeChatV2MessageMetadata = (
+  metadata: Record<string, any> = {},
+): ChatV2NormalizedMessageMetadata => {
+  const payload = metadata && typeof metadata === 'object' ? { ...metadata } : {};
+  const replyPreview = normalizeReplyPreview(payload.replyPreview);
+  const mentions = normalizeMentions(payload.mentions);
+  if (replyPreview) {
+    payload.replyPreview = replyPreview;
+  } else {
+    delete payload.replyPreview;
+  }
+  if (mentions.length > 0) {
+    payload.mentions = mentions;
+  } else {
+    delete payload.mentions;
+  }
+  return { payload, replyPreview, mentions };
+};
+
+export const getChatV2InboxChannelName = (
+  currentUserId: string,
+  scope: ChatV2InboxSubscriptionScope = 'shell',
+): string => `chat:v2:inbox:${scope}:${currentUserId}`;
+
+export const buildChatV2AttachmentUploadTarget = (input: {
+  conversationId: string;
+  messageId: string;
+  attachmentId: string;
+  originalFileName: string;
+}) => {
+  const fileName = input.originalFileName.trim() || 'attachment';
+  const storageFileName = sanitizeChatFileName(fileName);
+  return {
+    fileName,
+    storageFileName,
+    storagePath: `${input.conversationId}/${input.messageId}/${input.attachmentId}-${storageFileName}`,
+  };
+};
+
+export const insertChatV2Mention = (input: {
+  body: string;
+  selectionStart: number;
+  selectionEnd?: number;
+  displayName: string;
+}) => {
+  const body = input.body || '';
+  const cursor = Math.max(0, Math.min(input.selectionStart, body.length));
+  const atIndex = body.lastIndexOf('@', cursor);
+  const tokenStart = atIndex >= 0 && !/\s/.test(body.slice(atIndex, cursor)) ? atIndex : cursor;
+  let tokenEnd = cursor;
+  while (tokenEnd < body.length && !/\s/.test(body[tokenEnd])) tokenEnd += 1;
+  const mentionText = `@${input.displayName.trim()} `;
+  const prefix = body.slice(0, tokenStart);
+  const suffix = body.slice(tokenEnd).replace(/^\s+/, '');
+  const nextBody = `${prefix}${mentionText}${suffix}`;
+  return {
+    body: nextBody,
+    caretPosition: prefix.length + mentionText.length,
+  };
+};
 
 const mapParticipant = (row: any): ChatV2Participant => ({
   id: row.id,
@@ -362,6 +484,7 @@ const mapMessage = (
   currentUserId: string,
 ): ChatV2Message => {
   const metadata = row.metadata || {};
+  const normalizedMetadata = normalizeChatV2MessageMetadata(metadata);
   return {
     id: row.id,
     conversationId: row.conversation_id,
@@ -370,7 +493,9 @@ const mapMessage = (
     kind: row.kind || 'text',
     replyToMessageId: row.reply_to_message_id,
     metadata,
-    payload: metadata,
+    payload: normalizedMetadata.payload,
+    replyPreview: normalizedMetadata.replyPreview,
+    mentions: normalizedMetadata.mentions,
     editedAt: row.edited_at,
     deletedAt: row.deleted_at,
     deletedBy: row.deleted_by,
@@ -532,15 +657,20 @@ const sortConversations = (a: ChatV2Conversation, b: ChatV2Conversation) => {
 
 const signAttachment = async (attachment: ChatV2Attachment): Promise<ChatV2Attachment> => {
   if (!attachment.storagePath) return attachment;
-  const { data, error } = await supabase
-    .storage
-    .from(attachment.storageBucket || CHAT_V2_ATTACHMENT_BUCKET)
-    .createSignedUrl(attachment.storagePath, 60 * 60);
-  if (error) {
-    console.warn('Cannot sign chat attachment URL:', error);
+  const bucket = supabase.storage.from(attachment.storageBucket || CHAT_V2_ATTACHMENT_BUCKET);
+  const [
+    { data: previewData, error: previewError },
+    { data: downloadData, error: downloadError },
+  ] = await Promise.all([
+    bucket.createSignedUrl(attachment.storagePath, 60 * 60),
+    bucket.createSignedUrl(attachment.storagePath, 60 * 60, { download: attachment.fileName || 'attachment' }),
+  ]);
+  if (previewError) {
+    console.warn('Cannot sign chat attachment URL:', previewError);
     return attachment;
   }
-  return { ...attachment, signedUrl: data?.signedUrl };
+  if (downloadError) console.warn('Cannot sign chat attachment download URL:', downloadError);
+  return { ...attachment, signedUrl: previewData?.signedUrl, downloadUrl: downloadData?.signedUrl };
 };
 
 const groupByMessageId = <T extends { messageId: string }>(items: T[]): Map<string, T[]> => {
@@ -715,12 +845,16 @@ export const chatV2Service = {
     }
 
     const id = crypto.randomUUID();
-    const fileName = sanitizeChatFileName(file.name);
-    const storagePath = `${conversationId}/${messageId}/${id}-${fileName}`;
+    const target = buildChatV2AttachmentUploadTarget({
+      conversationId,
+      messageId,
+      attachmentId: id,
+      originalFileName: file.name,
+    });
     const { error } = await supabase
       .storage
       .from(CHAT_V2_ATTACHMENT_BUCKET)
-      .upload(storagePath, file, {
+      .upload(target.storagePath, file, {
         cacheControl: '3600',
         contentType: file.type || 'application/octet-stream',
         upsert: false,
@@ -730,8 +864,9 @@ export const chatV2Service = {
     return {
       file,
       id,
-      storagePath,
-      fileName,
+      storagePath: target.storagePath,
+      fileName: target.fileName,
+      storageFileName: target.storageFileName,
       mimeType: file.type || 'application/octet-stream',
       sizeBytes: file.size,
     };
@@ -760,6 +895,18 @@ export const chatV2Service = {
     }
 
     const normalizedPayload = { ...payload };
+    const replyPreview = normalizeReplyPreview(input.replyPreview);
+    const mentions = normalizeMentions(input.mentions);
+    if (input.replyToMessageId && replyPreview) {
+      normalizedPayload.replyPreview = replyPreview;
+    } else {
+      delete normalizedPayload.replyPreview;
+    }
+    if (mentions.length > 0) {
+      normalizedPayload.mentions = mentions;
+    } else if (input.mentions) {
+      delete normalizedPayload.mentions;
+    }
     if (kind === 'poll' || kind === 'quick_confirm') {
       normalizedPayload.options = normalizeOptions(payload.options);
       if (normalizedPayload.options.length < 2) throw new Error('Cần ít nhất 2 lựa chọn.');
@@ -783,6 +930,7 @@ export const chatV2Service = {
           sender_id: currentUserId,
           body,
           kind,
+          reply_to_message_id: input.replyToMessageId || null,
           metadata: normalizedPayload,
         });
       if (messageError) throw messageError;
@@ -843,27 +991,12 @@ export const chatV2Service = {
     if (memberIds.length < 2) throw new Error('Nhóm cần ít nhất 2 thành viên.');
 
     const groupName = (input.name || '').trim() || `Nhóm ${memberIds.length} thành viên`;
-    const { data: conversation, error: conversationError } = await supabase
-      .from('chat_v2_conversations')
-      .insert({
-        type: 'group',
-        name: groupName,
-        created_by: currentUserId,
-      })
-      .select('id')
-      .single();
-    if (conversationError) throw conversationError;
-
-    const { error: participantError } = await supabase
-      .from('chat_v2_participants')
-      .insert(memberIds.map(userId => ({
-        conversation_id: conversation.id,
-        user_id: userId,
-        role: userId === currentUserId ? 'owner' : 'member',
-        last_read_at: userId === currentUserId ? new Date().toISOString() : null,
-      })));
-    if (participantError) throw participantError;
-    return conversation.id;
+    const { data, error } = await supabase.rpc('chat_v2_create_group_conversation', {
+      p_name: groupName,
+      p_member_ids: memberIds.filter(userId => userId !== currentUserId),
+    });
+    if (error) throw error;
+    return data as string;
   },
 
   async markConversationRead(conversationId: string, messageId: string | null | undefined, currentUserId: string): Promise<void> {
@@ -1107,10 +1240,14 @@ export const chatV2Service = {
       .subscribe();
   },
 
-  subscribeToInbox(currentUserId: string, onChange: (event: ChatV2RealtimeEvent) => void): RealtimeChannel | null {
+  subscribeToInbox(
+    currentUserId: string,
+    onChange: (event: ChatV2RealtimeEvent) => void,
+    scope: ChatV2InboxSubscriptionScope = 'shell',
+  ): RealtimeChannel | null {
     if (!isSupabaseConfigured || !currentUserId) return null;
     return supabase
-      .channel(`chat:v2:inbox:${currentUserId}`)
+      .channel(getChatV2InboxChannelName(currentUserId, scope))
       .on('postgres_changes', {
         event: '*',
         schema: 'public',

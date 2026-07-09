@@ -9,8 +9,10 @@ import {
   chatV2Service,
   ChatV2ChecklistItem,
   ChatV2Conversation,
+  ChatV2Mention,
   ChatV2Message,
   ChatV2MessageCursor,
+  ChatV2ReplyPreview,
   ChatV2RealtimeEvent,
   ChatV2SendMessageInput,
 } from '../lib/chatV2Service';
@@ -54,7 +56,7 @@ export const useChatV2UnreadCount = (userId?: string) => {
 
   useEffect(() => {
     if (!userId) return;
-    const channel = chatV2Service.subscribeToInbox(userId, refresh);
+    const channel = chatV2Service.subscribeToInbox(userId, refresh, 'badge');
     return () => chatV2Service.unsubscribe(channel);
   }, [refresh, userId]);
 
@@ -200,8 +202,16 @@ export const useChatV2 = (currentUser: User, users: User[]) => {
     }
   }, [activeConversationId, currentUser?.id, mergeMessage, updateConversationPreview]);
 
-  const sendMessage = useCallback(async (body: string, attachments: File[] = []) => {
-    await sendStructuredMessage({ body, attachments });
+  const sendMessage = useCallback(async (
+    body: string,
+    attachments: File[] = [],
+    options: {
+      replyToMessageId?: string | null;
+      replyPreview?: ChatV2ReplyPreview | null;
+      mentions?: ChatV2Mention[];
+    } = {},
+  ) => {
+    await sendStructuredMessage({ body, attachments, ...options });
   }, [sendStructuredMessage]);
 
   const createDirectConversation = useCallback(async (targetUserId: string) => {
@@ -352,7 +362,7 @@ export const useChatV2 = (currentUser: User, users: User[]) => {
         return;
       }
       setConversations(prev => applyRealtimeInboxEvent(prev, row, currentUser.id));
-    });
+    }, 'shell');
     return () => chatV2Service.unsubscribe(channel);
   }, [currentUser?.id, loadConversations]);
 

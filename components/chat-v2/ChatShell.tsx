@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -8,6 +8,7 @@ import {
   BellOff,
   Check,
   ChevronUp,
+  CornerUpLeft,
   Crown,
   Download,
   Edit3,
@@ -35,14 +36,18 @@ import type { User } from '../../types';
 import { useChatV2 } from '../../hooks/useChatV2';
 import {
   CHAT_V2_REACTION_EMOJIS,
+  buildChatV2MessagePreview,
   ChatV2Attachment,
   ChatV2ChecklistItem,
   ChatV2Conversation,
+  ChatV2Mention,
   ChatV2Message,
   ChatV2MessageKind,
+  ChatV2ReplyPreview,
   formatFileSize,
   getChatV2ConversationTitle,
   getUserInitials,
+  insertChatV2Mention,
   isImageAttachment,
 } from '../../lib/chatV2Service';
 import { canAccessRoute } from '../../lib/routeAccess';
@@ -51,6 +56,20 @@ interface ChatShellProps {
   currentUser: User;
   users: User[];
 }
+
+type ChatV2SendOptions = {
+  replyToMessageId?: string | null;
+  replyPreview?: ChatV2ReplyPreview | null;
+  mentions?: ChatV2Mention[];
+};
+
+type ReplyDraft = {
+  messageId: string;
+  senderId: string;
+  senderName: string;
+  bodyPreview: string;
+  kind: ChatV2MessageKind;
+};
 
 const formatTime = (value?: string | null) => {
   if (!value) return '';
@@ -66,6 +85,67 @@ const canManageConversation = (conversation: ChatV2Conversation | null | undefin
   if (!conversation) return false;
   if (String(currentUser.role) === 'ADMIN') return true;
   return conversation.currentParticipant?.role === 'owner' || conversation.currentParticipant?.role === 'admin';
+};
+
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const ReplyQuote: React.FC<{ preview: ChatV2ReplyPreview | ReplyDraft | null; isMine?: boolean; onClear?: () => void }> = ({
+  preview,
+  isMine = false,
+  onClear,
+}) => {
+  if (!preview) return null;
+  return (
+    <div className={`mb-2 grid grid-cols-[1fr_auto] items-start gap-2 rounded-lg border-l-2 px-2 py-1.5 text-xs ${
+      isMine
+        ? 'border-white/60 bg-white/15 text-white/90'
+        : 'border-emerald-400 bg-emerald-50 text-slate-700 dark:bg-emerald-950/40 dark:text-slate-200'
+    }`}>
+      <div className="min-w-0">
+        <div className="truncate text-[11px] font-black">{preview.senderName}</div>
+        <div className={`truncate text-[11px] font-semibold ${isMine ? 'text-white/75' : 'text-slate-500 dark:text-slate-400'}`}>
+          {preview.bodyPreview || buildChatV2MessagePreview(preview.kind, '', {})}
+        </div>
+      </div>
+      {onClear && (
+        <button
+          type="button"
+          onClick={onClear}
+          title="Bỏ trích dẫn"
+          aria-label="Bỏ trích dẫn"
+          className="flex h-6 w-6 items-center justify-center rounded-md text-current opacity-70 hover:bg-black/10 hover:opacity-100 dark:hover:bg-white/10"
+        >
+          <X size={13} />
+        </button>
+      )}
+    </div>
+  );
+};
+
+const MessageText: React.FC<{ body: string; mentions: ChatV2Mention[] }> = ({ body, mentions }) => {
+  if (!body) return null;
+  const names = mentions
+    .map(mention => mention.displayName.trim())
+    .filter(Boolean)
+    .sort((a, b) => b.length - a.length);
+  if (names.length === 0) {
+    return <div className="whitespace-pre-wrap break-words text-sm leading-relaxed">{body}</div>;
+  }
+  const pattern = new RegExp(`@(${names.map(escapeRegExp).join('|')})`, 'g');
+  const parts: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(body)) !== null) {
+    if (match.index > lastIndex) parts.push(body.slice(lastIndex, match.index));
+    parts.push(
+      <span key={`${match[0]}-${match.index}`} className="rounded bg-amber-200/80 px-1 font-black text-amber-900 dark:bg-amber-500/25 dark:text-amber-100">
+        {match[0]}
+      </span>
+    );
+    lastIndex = pattern.lastIndex;
+  }
+  if (lastIndex < body.length) parts.push(body.slice(lastIndex));
+  return <div className="whitespace-pre-wrap break-words text-sm leading-relaxed">{parts}</div>;
 };
 
 const Avatar: React.FC<{ user?: User; label?: string; online?: boolean; size?: 'sm' | 'md' | 'lg' }> = ({
@@ -226,6 +306,7 @@ const ConversationList: React.FC<{
 
 const AttachmentView: React.FC<{ attachment: ChatV2Attachment }> = ({ attachment }) => {
   const href = attachment.signedUrl || '#';
+  const downloadHref = attachment.downloadUrl || attachment.signedUrl || '#';
   if (isImageAttachment(attachment) && attachment.signedUrl) {
     return (
       <a href={href} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-lg border border-slate-200 bg-slate-100 dark:border-slate-800 dark:bg-slate-900">
@@ -236,8 +317,8 @@ const AttachmentView: React.FC<{ attachment: ChatV2Attachment }> = ({ attachment
 
   return (
     <a
-      href={href}
-      target="_blank"
+      href={downloadHref}
+      download={attachment.fileName}
       rel="noreferrer"
       className="flex min-w-0 items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-700 transition hover:border-emerald-300 hover:text-emerald-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200"
     >
@@ -255,7 +336,7 @@ const AttachmentView: React.FC<{ attachment: ChatV2Attachment }> = ({ attachment
 
 const TextMessage: React.FC<{ message: ChatV2Message }> = ({ message }) => (
   <>
-    {message.body && <div className="whitespace-pre-wrap break-words text-sm leading-relaxed">{message.body}</div>}
+    {message.body && <MessageText body={message.body} mentions={message.mentions} />}
     {message.attachments.length > 0 && (
       <div className={`mt-2 grid gap-2 ${message.attachments.length > 1 ? 'sm:grid-cols-2' : ''}`}>
         {message.attachments.map(attachment => <AttachmentView key={attachment.id} attachment={attachment} />)}
@@ -415,14 +496,16 @@ const MessageRow: React.FC<{
   canDelete: boolean;
   onEdit: (message: ChatV2Message, body: string) => Promise<void>;
   onReaction: (message: ChatV2Message, emoji: string) => void;
+  onReply: (message: ChatV2Message) => void;
   onRecall: (message: ChatV2Message) => void;
   onPollVote: (message: ChatV2Message, optionId: string) => void;
   onChecklistToggle: (item: ChatV2ChecklistItem, nextDone: boolean) => void;
   onQuickConfirm: (message: ChatV2Message, optionId: string) => void;
-}> = ({ message, currentUser, users, canDelete, onEdit, onReaction, onRecall, onPollVote, onChecklistToggle, onQuickConfirm }) => {
+}> = ({ message, currentUser, users, canDelete, onEdit, onReaction, onReply, onRecall, onPollVote, onChecklistToggle, onQuickConfirm }) => {
   const sender = users.find(user => user.id === message.senderId);
   const isMine = message.senderId === currentUser.id;
   const [showTools, setShowTools] = useState(false);
+  const [showReactionPicker, setShowReactionPicker] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editDraft, setEditDraft] = useState(message.body);
   const [savingEdit, setSavingEdit] = useState(false);
@@ -454,7 +537,10 @@ const MessageRow: React.FC<{
     <div
       className={`group flex gap-2 ${isMine ? 'justify-end' : 'justify-start'}`}
       onMouseEnter={() => setShowTools(true)}
-      onMouseLeave={() => setShowTools(false)}
+      onMouseLeave={() => {
+        setShowTools(false);
+        setShowReactionPicker(false);
+      }}
     >
       {!isMine && <Avatar user={sender} label={sender?.name} size="sm" />}
       <div className={`flex max-w-[82%] flex-col ${isMine ? 'items-end' : 'items-start'} sm:max-w-[70%]`}>
@@ -502,15 +588,18 @@ const MessageRow: React.FC<{
               </div>
             </div>
           ) : (
-            <MessageRenderer
-              message={message}
-              currentUser={currentUser}
-              users={users}
-              isMine={isMine}
-              onPollVote={onPollVote}
-              onChecklistToggle={onChecklistToggle}
-              onQuickConfirm={onQuickConfirm}
-            />
+            <>
+              <ReplyQuote preview={message.replyPreview} isMine={isMine} />
+              <MessageRenderer
+                message={message}
+                currentUser={currentUser}
+                users={users}
+                isMine={isMine}
+                onPollVote={onPollVote}
+                onChecklistToggle={onChecklistToggle}
+                onQuickConfirm={onQuickConfirm}
+              />
+            </>
           )}
           <div className={`mt-1 text-right text-[10px] font-bold ${isMine ? 'text-emerald-100' : 'text-slate-400'}`}>
             {formatTime(message.createdAt)} {message.editedAt ? '· đã sửa' : ''}
@@ -534,16 +623,43 @@ const MessageRow: React.FC<{
           ))}
           {showTools && (
             <div className="flex items-center gap-1 rounded-full border border-slate-200 bg-white p-1 shadow-sm dark:border-slate-800 dark:bg-slate-950">
-              {CHAT_V2_REACTION_EMOJIS.slice(0, 4).map(emoji => (
+              <div className="relative">
                 <button
-                  key={emoji}
                   type="button"
-                  onClick={() => onReaction(message, emoji)}
-                  className="flex h-6 w-6 items-center justify-center rounded-full text-xs transition hover:bg-slate-100 dark:hover:bg-slate-900"
+                  onClick={() => setShowReactionPicker(prev => !prev)}
+                  title="Bày tỏ cảm xúc"
+                  aria-label="Bày tỏ cảm xúc"
+                  className="flex h-6 w-6 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-emerald-600 dark:hover:bg-slate-900"
                 >
-                  {emoji}
+                  <Smile size={13} />
                 </button>
-              ))}
+                {showReactionPicker && (
+                  <div className={`absolute bottom-8 z-30 flex items-center gap-1 rounded-full border border-slate-200 bg-white p-1 shadow-xl dark:border-slate-800 dark:bg-slate-950 ${isMine ? 'right-0' : 'left-0'}`}>
+                    {CHAT_V2_REACTION_EMOJIS.map(emoji => (
+                      <button
+                        key={emoji}
+                        type="button"
+                        onClick={() => {
+                          onReaction(message, emoji);
+                          setShowReactionPicker(false);
+                        }}
+                        className="flex h-7 w-7 items-center justify-center rounded-full text-sm transition hover:bg-slate-100 dark:hover:bg-slate-900"
+                      >
+                        {emoji}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => onReply(message)}
+                title="Trả lời"
+                aria-label="Trả lời"
+                className="flex h-6 w-6 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-emerald-600 dark:hover:bg-slate-900"
+              >
+                <CornerUpLeft size={13} />
+              </button>
               {isMine && canEditBody && !isEditing && (
                 <button
                   type="button"
@@ -678,26 +794,88 @@ const StructuredMessageModal: React.FC<{
 
 const MessageComposer: React.FC<{
   disabled: boolean;
-  onSend: (body: string, files: File[]) => Promise<void>;
+  currentUser: User;
+  conversation: ChatV2Conversation | null;
+  users: User[];
+  replyTo: ReplyDraft | null;
+  onCancelReply: () => void;
+  onSend: (body: string, files: File[], options?: ChatV2SendOptions) => Promise<void>;
   onSendStructured: (input: { kind: ChatV2MessageKind; payload: Record<string, any>; checklistItems?: string[] }) => Promise<void>;
   onTyping: (isTyping: boolean) => void;
-}> = ({ disabled, onSend, onSendStructured, onTyping }) => {
+}> = ({ disabled, currentUser, conversation, users, replyTo, onCancelReply, onSend, onSendStructured, onTyping }) => {
   const [body, setBody] = useState('');
   const [files, setFiles] = useState<File[]>([]);
+  const [mentions, setMentions] = useState<ChatV2Mention[]>([]);
+  const [selectionStart, setSelectionStart] = useState(0);
   const [showEmoji, setShowEmoji] = useState(false);
   const [structuredMode, setStructuredMode] = useState<Extract<ChatV2MessageKind, 'poll' | 'checklist' | 'quick_confirm'> | null>(null);
   const [showStructuredMenu, setShowStructuredMenu] = useState(false);
   const [sending, setSending] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const mentionableUsers = useMemo(() => {
+    const participantIds = new Set((conversation?.participants || [])
+      .map(participant => participant.userId)
+      .filter(userId => userId !== currentUser.id));
+    return users
+      .filter(user => participantIds.has(user.id) && user.isActive !== false)
+      .sort((a, b) => (a.name || a.email || '').localeCompare(b.name || b.email || '', 'vi'));
+  }, [conversation?.participants, currentUser.id, users]);
+
+  const mentionContext = useMemo(() => {
+    const cursor = Math.max(0, Math.min(selectionStart, body.length));
+    const atIndex = body.lastIndexOf('@', cursor);
+    if (atIndex < 0) return null;
+    const token = body.slice(atIndex + 1, cursor);
+    if (/\s/.test(token)) return null;
+    return { atIndex, query: token.toLowerCase() };
+  }, [body, selectionStart]);
+
+  const mentionMatches = useMemo(() => {
+    if (!mentionContext) return [];
+    return mentionableUsers
+      .filter(user => {
+        const label = `${user.name || ''} ${user.email || ''} ${user.username || ''}`.toLowerCase();
+        return !mentionContext.query || label.includes(mentionContext.query);
+      })
+      .slice(0, 6);
+  }, [mentionContext, mentionableUsers]);
+
+  const selectMention = (target: User) => {
+    const displayName = target.name || target.email || 'Người dùng';
+    const inserted = insertChatV2Mention({
+      body,
+      selectionStart,
+      displayName,
+    });
+    setBody(inserted.body);
+    setSelectionStart(inserted.caretPosition);
+    setMentions(prev => {
+      const withoutUser = prev.filter(item => item.userId !== target.id);
+      return [...withoutUser, { userId: target.id, displayName }];
+    });
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+      textareaRef.current?.setSelectionRange(inserted.caretPosition, inserted.caretPosition);
+    });
+  };
 
   const submit = async () => {
     if (sending || disabled) return;
     if (!body.trim() && files.length === 0) return;
     setSending(true);
     try {
-      await onSend(body, files);
+      const activeMentions = mentions.filter(mention => body.includes(`@${mention.displayName}`));
+      await onSend(body, files, {
+        replyToMessageId: replyTo?.messageId || null,
+        replyPreview: replyTo,
+        mentions: activeMentions,
+      });
       setBody('');
       setFiles([]);
+      setMentions([]);
+      onCancelReply();
       onTyping(false);
     } finally {
       setSending(false);
@@ -706,6 +884,7 @@ const MessageComposer: React.FC<{
 
   return (
     <div className="shrink-0 border-t border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
+      {replyTo && <ReplyQuote preview={replyTo} onClear={onCancelReply} />}
       {files.length > 0 && (
         <div className="mb-2 flex gap-2 overflow-x-auto pb-1">
           {files.map((file, index) => (
@@ -816,11 +995,16 @@ const MessageComposer: React.FC<{
           <Smile size={18} />
         </button>
         <textarea
+          ref={textareaRef}
           value={body}
           onChange={event => {
             setBody(event.target.value);
+            setSelectionStart(event.target.selectionStart);
             onTyping(Boolean(event.target.value.trim()));
           }}
+          onSelect={event => setSelectionStart(event.currentTarget.selectionStart)}
+          onClick={event => setSelectionStart(event.currentTarget.selectionStart)}
+          onKeyUp={event => setSelectionStart(event.currentTarget.selectionStart)}
           onKeyDown={event => {
             if (event.key === 'Enter' && !event.shiftKey) {
               event.preventDefault();
@@ -843,6 +1027,21 @@ const MessageComposer: React.FC<{
           <Send size={18} />
         </button>
       </div>
+      {mentionMatches.length > 0 && (
+        <div className="mt-2 max-h-44 overflow-y-auto rounded-lg border border-slate-200 bg-white p-1 shadow-lg dark:border-slate-800 dark:bg-slate-950">
+          {mentionMatches.map(target => (
+            <button
+              key={target.id}
+              type="button"
+              onClick={() => selectMention(target)}
+              className="grid w-full grid-cols-[auto_1fr] items-center gap-2 rounded-md px-2 py-2 text-left text-xs font-black text-slate-700 transition hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-900"
+            >
+              <Avatar user={target} size="sm" />
+              <span className="min-w-0 truncate">{target.name || target.email}</span>
+            </button>
+          ))}
+        </div>
+      )}
       {structuredMode && (
         <StructuredMessageModal
           mode={structuredMode}
@@ -872,7 +1071,7 @@ const MessagePane: React.FC<{
   loadingOlder: boolean;
   hasMore: boolean;
   onBack: () => void;
-  onSend: (body: string, files: File[]) => Promise<void>;
+  onSend: (body: string, files: File[], options?: ChatV2SendOptions) => Promise<void>;
   onSendStructured: (input: { kind: ChatV2MessageKind; payload: Record<string, any>; checklistItems?: string[] }) => Promise<void>;
   onLoadOlder: () => Promise<void>;
   onTyping: (isTyping: boolean) => void;
@@ -912,17 +1111,55 @@ const MessagePane: React.FC<{
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const previousScrollRef = useRef<{ conversationId?: string; firstId?: string; length: number }>({ length: 0 });
+  const olderScrollSnapshotRef = useRef<{ height: number; top: number } | null>(null);
+  const initialScrolledConversationRef = useRef<string | null>(null);
+  const [replyingTo, setReplyingTo] = useState<ReplyDraft | null>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    const scrollEl = scrollRef.current;
+    if (!scrollEl) return;
     const previous = previousScrollRef.current;
     const firstId = messages[0]?.id;
     const conversationChanged = previous.conversationId !== conversation?.id;
     const appendedAtBottom = previous.firstId === firstId && messages.length > previous.length;
-    if (conversationChanged || appendedAtBottom) {
-      scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: conversationChanged ? 'auto' : 'smooth' });
+    const olderSnapshot = olderScrollSnapshotRef.current;
+    if (olderSnapshot && !conversationChanged) {
+      scrollEl.scrollTop = scrollEl.scrollHeight - olderSnapshot.height + olderSnapshot.top;
+      olderScrollSnapshotRef.current = null;
+    } else if (conversation?.id && messages.length > 0 && initialScrolledConversationRef.current !== conversation.id) {
+      scrollEl.scrollTo({ top: scrollEl.scrollHeight, behavior: 'auto' });
+      initialScrolledConversationRef.current = conversation.id;
+    } else if (appendedAtBottom) {
+      scrollEl.scrollTo({ top: scrollEl.scrollHeight, behavior: 'smooth' });
     }
     previousScrollRef.current = { conversationId: conversation?.id, firstId, length: messages.length };
   }, [messages, conversation?.id]);
+
+  useEffect(() => {
+    setReplyingTo(null);
+  }, [conversation?.id]);
+
+  const loadOlderWithScrollLock = async () => {
+    const scrollEl = scrollRef.current;
+    if (scrollEl) {
+      olderScrollSnapshotRef.current = {
+        height: scrollEl.scrollHeight,
+        top: scrollEl.scrollTop,
+      };
+    }
+    await onLoadOlder();
+  };
+
+  const handleReply = (message: ChatV2Message) => {
+    const sender = users.find(user => user.id === message.senderId);
+    setReplyingTo({
+      messageId: message.id,
+      senderId: message.senderId,
+      senderName: sender?.name || sender?.email || 'Người dùng',
+      bodyPreview: buildChatV2MessagePreview(message.kind, message.body, message.payload),
+      kind: message.kind,
+    });
+  };
 
   if (!conversation) {
     return (
@@ -1020,7 +1257,7 @@ const MessagePane: React.FC<{
               <div className="flex justify-center">
                 <button
                   type="button"
-                  onClick={onLoadOlder}
+                  onClick={loadOlderWithScrollLock}
                   disabled={loadingOlder}
                   className="flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-600 transition hover:border-emerald-300 hover:text-emerald-700 disabled:opacity-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300"
                 >
@@ -1037,6 +1274,7 @@ const MessagePane: React.FC<{
                 canDelete={message.senderId === currentUser.id || canManage}
                 onEdit={onEditMessage}
                 onReaction={onReaction}
+                onReply={handleReply}
                 onPollVote={onPollVote}
                 onChecklistToggle={onChecklistToggle}
                 onQuickConfirm={onQuickConfirm}
@@ -1047,7 +1285,17 @@ const MessagePane: React.FC<{
         )}
       </div>
 
-      <MessageComposer disabled={!conversation} onSend={onSend} onSendStructured={onSendStructured} onTyping={onTyping} />
+      <MessageComposer
+        disabled={!conversation}
+        currentUser={currentUser}
+        conversation={conversation}
+        users={users}
+        replyTo={replyingTo}
+        onCancelReply={() => setReplyingTo(null)}
+        onSend={onSend}
+        onSendStructured={onSendStructured}
+        onTyping={onTyping}
+      />
     </section>
   );
 };
