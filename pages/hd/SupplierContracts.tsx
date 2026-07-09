@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Plus, Search, Filter, ChevronDown, Loader2, FileSignature,
   Building2, Edit2, Trash2, Eye, Upload, X, Download, File,
   AlertTriangle, CheckCircle, Clock, XCircle, FileText, Calendar,
-  DollarSign, User, Save, ChevronUp, Paperclip, ExternalLink
+  DollarSign, User, Save, ChevronUp, Paperclip, ExternalLink, QrCode
 } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from '../../lib/supabase';
 import { useApp } from '../../context/AppContext';
@@ -34,6 +34,7 @@ import {
 } from '../../lib/supplierDeliveryStatementService';
 import { supplierPayableService } from '../../lib/supplierPayableService';
 import { supplierPaymentBatchService } from '../../lib/supplierPaymentBatchService';
+import { buildDocumentTracePath } from '../../lib/documentTraceService';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 const formatCurrency = (v: number, currency = 'VND') =>
@@ -105,6 +106,7 @@ const SupplierContracts: React.FC = () => {
   const [suppliers, setSuppliers] = useState<BusinessPartner[]>([]);
   useModuleData('wms');
   const navigate = useNavigate();
+  const location = useLocation();
   const toast = useToast();
   const confirm = useConfirm();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -162,7 +164,7 @@ const SupplierContracts: React.FC = () => {
         guaranteeInfo: r.guarantee_info, purchaseOrderNumber: r.purchase_order_number,
         signedDate: r.signed_date, effectiveDate: r.effective_date, expiryDate: r.expiry_date,
         managedByUserId: r.managed_by_user_id, managedByName: r.managed_by_name,
-        status: r.status, note: r.note,
+        status: r.status, note: r.note, qrToken: r.qr_token || null,
         attachments: r.attachments || [],
         createdAt: r.created_at, updatedAt: r.updated_at,
       })));
@@ -171,6 +173,13 @@ const SupplierContracts: React.FC = () => {
   };
 
   useEffect(() => { fetchContracts(); }, []);
+
+  useEffect(() => {
+    const targetId = new URLSearchParams(location.search).get('supplierContractId');
+    if (!targetId || selectedContract?.id === targetId) return;
+    const target = contracts.find(contract => contract.id === targetId);
+    if (target) setSelectedContract(target);
+  }, [contracts, location.search, selectedContract?.id]);
 
   const loadSupplierContractLedger = useCallback(async (contract: SupplierContract) => {
     setLoadingContractLedger(true);
@@ -718,6 +727,15 @@ const SupplierContracts: React.FC = () => {
                       </div>
                     ))}
                   </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => navigate(buildDocumentTracePath('supplier_contract', selectedContract.id, selectedContract.qrToken))}
+                      className="inline-flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-black text-blue-700 hover:bg-blue-100 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-300"
+                    >
+                      <QrCode size={14} /> Truy vết
+                    </button>
+                  </div>
                   <div className="grid grid-cols-2 gap-4 text-sm">
                     {[
                       ['Nhà cung cấp', selectedContract.supplierName],
@@ -824,7 +842,16 @@ const SupplierContracts: React.FC = () => {
                           <p className="font-black text-slate-800 dark:text-white">{note.code}</p>
                           <p className="text-xs font-bold text-slate-400">Phiếu NCC {note.deliveryTicketNo} · {formatDate(note.deliveryDate)}</p>
                         </div>
-                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-black text-slate-600 dark:bg-slate-800 dark:text-slate-300">{note.status}</span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => navigate(buildDocumentTracePath('supplier_direct_delivery_note', note.id, note.qrToken))}
+                            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-black text-blue-700 hover:bg-blue-50 dark:text-blue-300 dark:hover:bg-blue-950/30"
+                          >
+                            <QrCode size={12} /> Trace
+                          </button>
+                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-black text-slate-600 dark:bg-slate-800 dark:text-slate-300">{note.status}</span>
+                        </div>
                       </div>
                       <p className="mt-2 text-right text-sm font-black text-blue-700 dark:text-blue-300">{formatCurrency(note.totalAmount, selectedContract.currency)}</p>
                     </div>
@@ -842,9 +869,18 @@ const SupplierContracts: React.FC = () => {
                           <p className="font-black text-slate-800 dark:text-white">{statement.code}</p>
                           <p className="text-xs font-bold text-slate-400">Kỳ {formatDate(statement.periodMonth)} · ngày {formatDate(statement.statementDate)}</p>
                         </div>
-                        <span className={`rounded-full px-2 py-0.5 text-xs font-black ${statement.status === 'posted' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
-                          {statement.status}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => navigate(buildDocumentTracePath('supplier_delivery_statement', statement.id, statement.qrToken))}
+                            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-black text-blue-700 hover:bg-blue-50 dark:text-blue-300 dark:hover:bg-blue-950/30"
+                          >
+                            <QrCode size={12} /> Trace
+                          </button>
+                          <span className={`rounded-full px-2 py-0.5 text-xs font-black ${statement.status === 'posted' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
+                            {statement.status}
+                          </span>
+                        </div>
                       </div>
                       <p className="mt-2 text-right text-sm font-black text-blue-700 dark:text-blue-300">{formatCurrency(statement.totalAmount, selectedContract.currency)}</p>
                     </div>
@@ -872,12 +908,21 @@ const SupplierContracts: React.FC = () => {
                     {contractPayables.length === 0 ? (
                       <p className="rounded-xl border border-dashed border-slate-200 py-6 text-center text-sm font-bold text-slate-400 dark:border-slate-800">Chưa ghi nhận AP theo HĐ này</p>
                     ) : contractPayables.map(doc => (
-                      <div key={doc.id} className="flex items-center justify-between rounded-xl border border-slate-200 p-3 dark:border-slate-800">
+                      <div key={doc.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 p-3 dark:border-slate-800">
                         <div>
                           <p className="font-black text-slate-800 dark:text-white">{doc.documentNo}</p>
                           <p className="text-xs font-bold text-slate-400">{formatDate(doc.documentDate)} · {doc.status}</p>
                         </div>
-                        <p className="font-black text-red-700">{formatCurrency(doc.outstandingAmount, selectedContract.currency)}</p>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => navigate(buildDocumentTracePath('supplier_payable_document', doc.id, doc.qrToken))}
+                            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-black text-blue-700 hover:bg-blue-50 dark:text-blue-300 dark:hover:bg-blue-950/30"
+                          >
+                            <QrCode size={12} /> Trace
+                          </button>
+                          <p className="font-black text-red-700">{formatCurrency(doc.outstandingAmount, selectedContract.currency)}</p>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -886,12 +931,21 @@ const SupplierContracts: React.FC = () => {
                     {contractPaymentBatches.length === 0 ? (
                       <p className="rounded-xl border border-dashed border-slate-200 py-6 text-center text-sm font-bold text-slate-400 dark:border-slate-800">Chưa có đợt thanh toán NCC</p>
                     ) : contractPaymentBatches.map(batch => (
-                      <div key={batch.id} className="flex items-center justify-between rounded-xl border border-slate-200 p-3 dark:border-slate-800">
+                      <div key={batch.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 p-3 dark:border-slate-800">
                         <div>
                           <p className="font-black text-slate-800 dark:text-white">{batch.code}</p>
                           <p className="text-xs font-bold text-slate-400">{formatDate(batch.paymentDate)} · {batch.status}</p>
                         </div>
-                        <p className="font-black text-emerald-700">{formatCurrency(batch.amount, selectedContract.currency)}</p>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => navigate(buildDocumentTracePath('supplier_payment_batch', batch.id, batch.qrToken))}
+                            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-black text-blue-700 hover:bg-blue-50 dark:text-blue-300 dark:hover:bg-blue-950/30"
+                          >
+                            <QrCode size={12} /> Trace
+                          </button>
+                          <p className="font-black text-emerald-700">{formatCurrency(batch.amount, selectedContract.currency)}</p>
+                        </div>
                       </div>
                     ))}
                   </div>

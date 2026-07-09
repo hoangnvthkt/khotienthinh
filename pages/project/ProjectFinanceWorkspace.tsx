@@ -14,6 +14,7 @@ import {
   Landmark,
   Loader2,
   Plus,
+  QrCode,
   ReceiptText,
   RefreshCcw,
   Search,
@@ -58,6 +59,7 @@ import {
 } from '../../lib/siteCashSettlementService';
 import { cashFundService } from '../../lib/cashFundService';
 import { paymentService } from '../../lib/projectService';
+import { buildDocumentTracePath } from '../../lib/documentTraceService';
 import { useApp } from '../../context/AppContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { useToast } from '../../context/ToastContext';
@@ -783,12 +785,14 @@ const SupplierPaymentBatchPanel = ({
   canManage,
   onCreate,
   onOpenDetail,
+  onOpenTrace,
 }: {
   batches: SupplierPaymentBatch[];
   loading: boolean;
   canManage?: boolean;
   onCreate: () => void;
   onOpenDetail: (batchId: string) => void;
+  onOpenTrace: (batch: SupplierPaymentBatch) => void;
 }) => (
   <section className="space-y-3">
     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -832,9 +836,14 @@ const SupplierPaymentBatchPanel = ({
                 <td className="px-3 py-3 text-right font-black text-emerald-700">{fmtMoney(batch.paymentAmount || batch.amount)}</td>
                 <td className="px-3 py-3 text-center"><span className={`inline-flex rounded-full border px-2 py-1 text-[10px] font-black ${statusTone(batch.status)}`}>{statusLabel(batch.status)}</span></td>
                 <td className="px-3 py-3 text-right">
-                  <button type="button" onClick={() => onOpenDetail(batch.id)} className="rounded-md px-2 py-1 text-[10px] font-black text-emerald-700 hover:bg-emerald-50">
-                    Chi tiết
-                  </button>
+                  <div className="flex justify-end gap-1">
+                    <button type="button" onClick={() => onOpenTrace(batch)} className="rounded-md px-2 py-1 text-[10px] font-black text-blue-700 hover:bg-blue-50">
+                      <QrCode size={11} className="inline" /> Truy vết
+                    </button>
+                    <button type="button" onClick={() => onOpenDetail(batch.id)} className="rounded-md px-2 py-1 text-[10px] font-black text-emerald-700 hover:bg-emerald-50">
+                      Chi tiết
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -851,12 +860,14 @@ const SiteCashSettlementPanel = ({
   canManage,
   onCreate,
   onOpenDetail,
+  onOpenTrace,
 }: {
   batches: SiteCashSettlementBatch[];
   loading: boolean;
   canManage?: boolean;
   onCreate: () => void;
   onOpenDetail: (batchId: string) => void;
+  onOpenTrace: (batch: SiteCashSettlementBatch) => void;
 }) => (
   <section className="space-y-3">
     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -902,9 +913,14 @@ const SiteCashSettlementPanel = ({
                 <td className="px-3 py-3 text-right font-black text-slate-800 dark:text-slate-100">{fmtMoney(batch.closingBalance || 0)}</td>
                 <td className="px-3 py-3 text-center"><span className={`inline-flex rounded-full border px-2 py-1 text-[10px] font-black ${statusTone(batch.status)}`}>{statusLabel(batch.status)}</span></td>
                 <td className="px-3 py-3 text-right">
-                  <button type="button" onClick={() => onOpenDetail(batch.id)} className="rounded-md px-2 py-1 text-[10px] font-black text-blue-700 hover:bg-blue-50">
-                    Chi tiết
-                  </button>
+                  <div className="flex justify-end gap-1">
+                    <button type="button" onClick={() => onOpenTrace(batch)} className="rounded-md px-2 py-1 text-[10px] font-black text-blue-700 hover:bg-blue-50">
+                      <QrCode size={11} className="inline" /> Truy vết
+                    </button>
+                    <button type="button" onClick={() => onOpenDetail(batch.id)} className="rounded-md px-2 py-1 text-[10px] font-black text-blue-700 hover:bg-blue-50">
+                      Chi tiết
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -926,6 +942,7 @@ const SiteCashSettlementDetailDrawer = ({
   onPost,
   onReverse,
   onOpenSource,
+  onOpenTrace,
   cashFunds,
   loadingCashFunds,
 }: {
@@ -941,6 +958,7 @@ const SiteCashSettlementDetailDrawer = ({
   onPost: () => void;
   onReverse: () => void;
   onOpenSource: (line: SiteCashSettlementLine) => void;
+  onOpenTrace: (batch: SiteCashSettlementBatch) => void;
 }) => {
   if (!state) return null;
   const batch = state.batch || null;
@@ -965,6 +983,15 @@ const SiteCashSettlementDetailDrawer = ({
               <X size={18} />
             </button>
           </div>
+          {batch && (
+            <button
+              type="button"
+              onClick={() => onOpenTrace(batch)}
+              className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-black text-blue-700 hover:bg-blue-100 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-300"
+            >
+              <QrCode size={14} /> Truy vết
+            </button>
+          )}
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50/70 p-5 dark:bg-slate-900/40">
           {state.loading && (
@@ -1140,11 +1167,13 @@ const SupplierPaymentBatchDetailDrawer = ({
   reversing,
   onClose,
   onReverse,
+  onOpenTrace,
 }: {
   state: SupplierPaymentBatchDetailState | null;
   reversing: boolean;
   onClose: () => void;
   onReverse: (batch: SupplierPaymentBatch) => void;
+  onOpenTrace: (batch: SupplierPaymentBatch) => void;
 }) => {
   if (!state) return null;
   const batch = state.batch || null;
@@ -1162,6 +1191,15 @@ const SupplierPaymentBatchDetailDrawer = ({
               <X size={18} />
             </button>
           </div>
+          {batch && (
+            <button
+              type="button"
+              onClick={() => onOpenTrace(batch)}
+              className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-black text-blue-700 hover:bg-blue-100 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-300"
+            >
+              <QrCode size={14} /> Truy vết
+            </button>
+          )}
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50/70 p-5 dark:bg-slate-900/40">
           {state.loading && (
@@ -1234,10 +1272,12 @@ const SupplierPayableDocumentsDrawer = ({
   state,
   onClose,
   onOpenDocumentSource,
+  onOpenTrace,
 }: {
   state: SupplierPayableDocumentDrawerState | null;
   onClose: () => void;
   onOpenDocumentSource: (document: SupplierPayableDocument) => void;
+  onOpenTrace: (document: SupplierPayableDocument) => void;
 }) => {
   if (!state) return null;
   const { row, documents, loading, error } = state;
@@ -1317,7 +1357,14 @@ const SupplierPayableDocumentsDrawer = ({
                       <div className="text-[10px] font-bold text-red-500">Còn {fmtMoney(document.outstandingAmount)}</div>
                     </div>
                   </div>
-                  <div className="mt-3 flex justify-end">
+                  <div className="mt-3 flex justify-end gap-1">
+                    <button
+                      type="button"
+                      onClick={() => onOpenTrace(document)}
+                      className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-black text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-950/30"
+                    >
+                      <QrCode size={11} /> Truy vết
+                    </button>
                     <button
                       type="button"
                       onClick={() => onOpenDocumentSource(document)}
@@ -1814,6 +1861,18 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
     }
     toast.info('Chưa có màn nguồn riêng', 'Chứng từ này chưa có màn chi tiết nguồn trong phiên bản hiện tại.');
   }, [openSourceRoute, toast]);
+
+  const openSupplierPayableDocumentTrace = useCallback((document: SupplierPayableDocument) => {
+    navigate(buildDocumentTracePath('supplier_payable_document', document.id, document.qrToken));
+  }, [navigate]);
+
+  const openSupplierPaymentBatchTrace = useCallback((batch: SupplierPaymentBatch) => {
+    navigate(buildDocumentTracePath('supplier_payment_batch', batch.id, batch.qrToken));
+  }, [navigate]);
+
+  const openSiteCashSettlementTrace = useCallback((batch: SiteCashSettlementBatch) => {
+    navigate(buildDocumentTracePath('site_cash_settlement_batch', batch.id, batch.qrToken));
+  }, [navigate]);
 
   const createDefaultSchedule = (type: PaymentSchedule['type']): PaymentSchedule => ({
     id: crypto.randomUUID(),
@@ -2705,6 +2764,7 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
                   canManage={canRecordPoPayment}
                   onCreate={() => openSupplierPaymentBatchForm()}
                   onOpenDetail={openSupplierPaymentBatchDetail}
+                  onOpenTrace={openSupplierPaymentBatchTrace}
                 />
               ) : (
                 <SiteCashSettlementPanel
@@ -2713,6 +2773,7 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
                   canManage={canManageFinance}
                   onCreate={() => void createSiteCashSettlementBatch()}
                   onOpenDetail={openSiteCashSettlementDetail}
+                  onOpenTrace={openSiteCashSettlementTrace}
                 />
               )}
             </section>
@@ -2803,6 +2864,7 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
         reversing={reversingSupplierPaymentBatch}
         onClose={() => setSupplierPaymentBatchDetail(null)}
         onReverse={reverseSupplierPaymentBatch}
+        onOpenTrace={openSupplierPaymentBatchTrace}
       />
       <SiteCashSettlementDetailDrawer
         state={siteCashSettlementDetail}
@@ -2817,11 +2879,13 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
         onPost={postSiteCashSettlement}
         onReverse={reverseSiteCashSettlement}
         onOpenSource={openSiteCashSettlementSource}
+        onOpenTrace={openSiteCashSettlementTrace}
       />
       <SupplierPayableDocumentsDrawer
         state={supplierPayableDrawer}
         onClose={() => setSupplierPayableDrawer(null)}
         onOpenDocumentSource={openSupplierPayableDocumentSource}
+        onOpenTrace={openSupplierPayableDocumentTrace}
       />
     </div>
   );

@@ -70,6 +70,7 @@ import { useConfirm, useReasonConfirm } from '../../context/ConfirmContext';
 import { useApp } from '../../context/AppContext';
 import { loadXlsx } from '../../lib/loadXlsx';
 import { buildPoReceiveUrl, createPoQrToken } from '../../lib/poQr';
+import { buildDocumentTracePath } from '../../lib/documentTraceService';
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
 import ExcelImportReviewModal from '../../components/ExcelImportReviewModal';
 import InventoryItemCombobox from '../../components/InventoryItemCombobox';
@@ -89,6 +90,7 @@ import { siteSmallToolService } from '../../lib/siteSmallToolService';
 import { supplierContractService } from '../../lib/hdService';
 import {
     calculateSupplierDirectDeliveryLineTotals,
+    isSupplierDirectDeliveryLineStatementReady,
     supplierContractLineService,
     supplierDeliveryStatementService,
     supplierDirectDeliveryService,
@@ -251,6 +253,72 @@ const SUPPLIER_DELIVERY_STATEMENT_STATUS: Record<SupplierDeliveryStatement['stat
     posted: { label: 'Đã ghi AP', tone: 'success' },
     cancelled: { label: 'Huỷ', tone: 'danger' },
     reversed: { label: 'Đã đảo', tone: 'warning' },
+};
+
+const SUPPLIER_DELIVERY_WMS_FLOW_MODE: Record<NonNullable<SupplierDirectDeliveryLine['wmsFlowMode']>, { label: string; badge: string }> = {
+    none: { label: 'Không qua kho', badge: 'border-slate-200 bg-slate-50 text-slate-600' },
+    direct_in_out: { label: 'Nhập-xuất thẳng', badge: 'border-indigo-200 bg-indigo-50 text-indigo-700' },
+};
+
+const SUPPLIER_DELIVERY_WMS_STATUS: Record<NonNullable<SupplierDirectDeliveryLine['wmsStatus']>, { label: string; badge: string }> = {
+    not_required: { label: 'Không qua kho', badge: 'border-slate-200 bg-slate-50 text-slate-600' },
+    import_pending: { label: 'Chờ nhập WMS', badge: 'border-amber-200 bg-amber-50 text-amber-700' },
+    imported: { label: 'Tồn chờ xuất dùng', badge: 'border-orange-200 bg-orange-50 text-orange-700' },
+    export_pending: { label: 'Chờ xác nhận xuất', badge: 'border-blue-200 bg-blue-50 text-blue-700' },
+    exported: { label: 'Đã xuất dùng', badge: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
+    blocked: { label: 'WMS bị khóa', badge: 'border-red-200 bg-red-50 text-red-700' },
+};
+
+type SupplierDeliveryWmsSummary = {
+    hasDirectLines: boolean;
+    readyForStatement: boolean;
+    canCreateImport: boolean;
+    label: string;
+    badge: string;
+    importTransactionIds: string[];
+    exportTransactionIds: string[];
+};
+
+const getSupplierDeliveryWmsSummary = (lines: SupplierDirectDeliveryLine[]): SupplierDeliveryWmsSummary => {
+    const directLines = lines.filter(line => (line.wmsFlowMode || 'none') === 'direct_in_out' && line.status !== 'rejected');
+    if (directLines.length === 0) {
+        return {
+            hasDirectLines: false,
+            readyForStatement: true,
+            canCreateImport: false,
+            label: SUPPLIER_DELIVERY_WMS_STATUS.not_required.label,
+            badge: SUPPLIER_DELIVERY_WMS_STATUS.not_required.badge,
+            importTransactionIds: [],
+            exportTransactionIds: [],
+        };
+    }
+
+    const importTransactionIds = Array.from(new Set(directLines.map(line => line.wmsImportTransactionId).filter(Boolean))) as string[];
+    const exportTransactionIds = Array.from(new Set(directLines.map(line => line.wmsExportTransactionId).filter(Boolean))) as string[];
+    const canCreateImport = directLines.some(line =>
+        (line.status === 'accepted' || line.status === 'adjusted')
+        && !line.wmsImportTransactionId,
+    );
+    const readyForStatement = directLines.every(line => line.wmsStatus === 'exported');
+    const statusOrder: Array<NonNullable<SupplierDirectDeliveryLine['wmsStatus']>> = [
+        'blocked',
+        'export_pending',
+        'imported',
+        'import_pending',
+        'exported',
+        'not_required',
+    ];
+    const displayStatus = statusOrder.find(status => directLines.some(line => (line.wmsStatus || 'not_required') === status)) || 'not_required';
+    const statusMeta = readyForStatement ? SUPPLIER_DELIVERY_WMS_STATUS.exported : SUPPLIER_DELIVERY_WMS_STATUS[displayStatus];
+    return {
+        hasDirectLines: true,
+        readyForStatement,
+        canCreateImport,
+        label: statusMeta.label,
+        badge: statusMeta.badge,
+        importTransactionIds,
+        exportTransactionIds,
+    };
 };
 
 const ACTIVE_REQUEST_BUDGET_STATUSES = new Set<RequestStatus | string>([
@@ -442,6 +510,11 @@ const createEmptySupplierDeliveryLine = (
         workBoqItemId: null,
         materialBudgetItemId: null,
         statementId: null,
+        wmsFlowMode: 'none',
+        targetWarehouseId: null,
+        wmsImportTransactionId: null,
+        wmsExportTransactionId: null,
+        wmsStatus: 'not_required',
         rejectionReason: null,
         note: null,
         quantityInput: '1',
@@ -452,6 +525,11 @@ const createEmptySupplierDeliveryLine = (
 
 const hydrateSupplierDeliveryFormLine = (line: SupplierDirectDeliveryLine): SupplierDirectDeliveryFormLine => ({
     ...line,
+    wmsFlowMode: line.wmsFlowMode || 'none',
+    targetWarehouseId: line.targetWarehouseId || null,
+    wmsImportTransactionId: line.wmsImportTransactionId || null,
+    wmsExportTransactionId: line.wmsExportTransactionId || null,
+    wmsStatus: line.wmsStatus || 'not_required',
     quantityInput: String(line.quantity || ''),
     unitPriceInput: String(line.unitPrice || ''),
     vatRateInput: String(line.vatRate || 0),
@@ -466,12 +544,18 @@ const normalizeSupplierDeliveryFormLine = (
     const quantity = Number(line.quantityInput ?? line.quantity ?? 0);
     const unitPrice = Number(line.unitPriceInput ?? line.unitPrice ?? 0);
     const vatRate = Number(line.vatRateInput ?? line.vatRate ?? 0);
+    const wmsFlowMode = line.wmsFlowMode || 'none';
     const totals = calculateSupplierDirectDeliveryLineTotals({ quantity, unitPrice, vatRate });
     return {
         ...line,
         deliveryNoteId,
         supplierContractId,
         lineNo: index + 1,
+        wmsFlowMode,
+        targetWarehouseId: wmsFlowMode === 'direct_in_out' ? line.targetWarehouseId || null : null,
+        wmsImportTransactionId: line.wmsImportTransactionId || null,
+        wmsExportTransactionId: line.wmsExportTransactionId || null,
+        wmsStatus: line.wmsStatus || 'not_required',
         quantity,
         unitPrice,
         vatRate,
@@ -704,6 +788,24 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             setSupplierContracts(supplierContractRows);
             setSupplierDeliveryNotes(supplierDeliveryRows);
             setSupplierDeliveryStatements(supplierStatementRows);
+            const supplierDeliveryLineEntries = await Promise.all(supplierDeliveryRows.map(async note => {
+                try {
+                    const detail = await supplierDirectDeliveryService.getDetail(note.id);
+                    return [note.id, detail.lines] as const;
+                } catch (error) {
+                    console.warn('Failed to load supplier delivery lines', error);
+                    return [note.id, note.lines || []] as const;
+                }
+            }));
+            setSupplierDeliveryLinesByNoteId(Object.fromEntries(supplierDeliveryLineEntries));
+            const supplierDeliveryWmsTransactionIds = Array.from(new Set(supplierDeliveryLineEntries.flatMap(([, lines]) =>
+                lines.flatMap(line => [line.wmsImportTransactionId, line.wmsExportTransactionId]).filter(Boolean),
+            ))) as string[];
+            if (supplierDeliveryWmsTransactionIds.length > 0) {
+                await refreshWmsRecords({ transactionIds: supplierDeliveryWmsTransactionIds }).catch(error => {
+                    console.warn('Failed to refresh supplier delivery WMS transactions', error);
+                });
+            }
             const scopedStockRows = stockPoRows.filter(po => !po.projectId && !po.constructionSiteId);
             const linkedPoIds = Array.from(new Set(linkRows.map(link => link.purchaseOrderId).filter(Boolean)));
             const linkedCompanyPoRows = await poService.listByIds(linkedPoIds)
@@ -756,6 +858,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     const [supplierContracts, setSupplierContracts] = useState<SupplierContract[]>([]);
     const [supplierContractLines, setSupplierContractLines] = useState<SupplierContractLine[]>([]);
     const [supplierDeliveryNotes, setSupplierDeliveryNotes] = useState<SupplierDirectDeliveryNote[]>([]);
+    const [supplierDeliveryLinesByNoteId, setSupplierDeliveryLinesByNoteId] = useState<Record<string, SupplierDirectDeliveryLine[]>>({});
     const [supplierDeliveryStatements, setSupplierDeliveryStatements] = useState<SupplierDeliveryStatement[]>([]);
     const [showSupplierDeliveryForm, setShowSupplierDeliveryForm] = useState(false);
     const [savingSupplierDelivery, setSavingSupplierDelivery] = useState(false);
@@ -988,6 +1091,16 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         setSdLines(prev => prev.map(line => line.id === lineId ? { ...line, ...patch } : line));
     };
 
+    const selectSupplierDeliveryInventoryItem = (lineId: string, itemId: string) => {
+        const inventory = inventoryItems.find(item => item.id === itemId);
+        updateSupplierDeliveryLine(lineId, {
+            itemId: inventory?.id || null,
+            skuSnapshot: inventory?.sku || null,
+            itemNameSnapshot: inventory?.name || '',
+            unitSnapshot: inventory?.purchaseUnit || inventory?.unit || '',
+        });
+    };
+
     const addSupplierDeliveryLine = (contractLine?: SupplierContractLine | null) => {
         setSdLines(prev => [...prev, createEmptySupplierDeliveryLine(sdId, sdSupplierContractId, prev.length + 1, contractLine)]);
     };
@@ -1019,6 +1132,14 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         );
         if (invalidLine) {
             toast.warning('Kiểm tra dòng giao nhận', 'Mỗi dòng cần tên vật tư, số lượng lớn hơn 0 và đơn giá hợp lệ.');
+            return;
+        }
+        const invalidWmsLine = normalizedLines.find(line =>
+            (line.wmsFlowMode || 'none') === 'direct_in_out'
+            && (!line.itemId || !line.targetWarehouseId)
+        );
+        if (invalidWmsLine) {
+            toast.warning('Thiếu dữ liệu WMS', 'Dòng nhập-xuất thẳng cần chọn mã vật tư WMS và kho nhập/xuất.');
             return;
         }
         const totals = normalizedLines.reduce((sum, line) => ({
@@ -1086,6 +1207,25 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         }
     };
 
+    const createSupplierDeliveryWmsImportDraft = async (note: SupplierDirectDeliveryNote) => {
+        if (!ensureCanManage('tạo WMS import từ phiếu giao HĐ')) return;
+        setSupplierDeliveryActionLoading(`wms:${note.id}`);
+        try {
+            const txs = await supplierDirectDeliveryService.createWmsImportDrafts(note.id, user?.id || '');
+            await refreshWmsRecords({
+                transactionIds: txs.map(tx => tx.id),
+                itemIds: Array.from(new Set(txs.flatMap(tx => tx.items.map(item => item.itemId)))),
+            });
+            toast.success('Đã tạo WMS import', `${note.code} đã có ${txs.length} phiếu nhập chờ thủ kho xác nhận.`);
+            await loadSupplyData();
+        } catch (error: any) {
+            logApiError('supplyChain.supplierDelivery.createWms', error);
+            toast.error('Không tạo được WMS import', getApiErrorMessage(error, 'Không thể tạo phiếu nhập WMS từ phiếu giao HĐ.'));
+        } finally {
+            setSupplierDeliveryActionLoading(null);
+        }
+    };
+
     const createAndPostSupplierDeliveryStatement = async (note: SupplierDirectDeliveryNote) => {
         if (!ensureCanManage('đối soát phiếu giao nhận theo HĐ')) return;
         setSupplierDeliveryActionLoading(`statement:${note.id}`);
@@ -1094,6 +1234,11 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             const acceptedLines = detail.lines.filter(line => line.status === 'accepted' || line.status === 'adjusted');
             if (acceptedLines.length === 0) {
                 toast.warning('Chưa có dòng được duyệt', 'Duyệt phiếu giao trước khi tạo đối soát/AP.');
+                return;
+            }
+            const blockedWmsLine = acceptedLines.find(line => !isSupplierDirectDeliveryLineStatementReady(line));
+            if (blockedWmsLine) {
+                toast.warning('Chưa hoàn tất WMS xuất dùng', `Dòng ${blockedWmsLine.itemNameSnapshot} cần phiếu xuất WMS COMPLETED trước khi đối soát/AP.`);
                 return;
             }
             const statementId = crypto.randomUUID();
@@ -1504,13 +1649,20 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             setDirectActionLoading(null);
         }
     };
-    const openDirectPurchaseWmsTransaction = (purchase: SiteDirectPurchase) => {
-        const tx = transactions.find(item => item.id === purchase.wmsTransactionId);
+    const openWmsTransactionById = (transactionId?: string | null) => {
+        if (!transactionId) return;
+        const tx = transactions.find(item => item.id === transactionId);
         if (!tx) {
             toast.info('Chưa tải phiếu WMS', 'Phiếu WMS có thể chưa nằm trong dữ liệu hiện tại. Vui lòng mở module Phiếu kho hoặc tải lại dữ liệu.');
             return;
         }
         setSelectedWmsTransaction(tx);
+    };
+    const openDocumentTrace = (path: string) => {
+        window.location.hash = path;
+    };
+    const openDirectPurchaseWmsTransaction = (purchase: SiteDirectPurchase) => {
+        openWmsTransactionById(purchase.wmsTransactionId);
     };
     const makePoDeliveryLineDraft = (
         batchId: string,
@@ -4989,7 +5141,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                         <h3 className="flex items-center gap-2 text-sm font-black text-slate-800 dark:text-slate-100">
                             <Truck size={16} className="text-blue-500" /> Gọi hàng HĐ NCC
                         </h3>
-                        <p className="mt-1 text-xs font-bold text-slate-500 dark:text-slate-400">Cát, đá, xi măng, bê tông giao tới công trường dùng ngay: không PO, không nhập kho, đối soát theo HĐ NCC rồi ghi AP.</p>
+                        <p className="mt-1 text-xs font-bold text-slate-500 dark:text-slate-400">Cát, đá, xi măng, bê tông giao tới công trường dùng ngay: không PO, có thể không qua kho hoặc nhập-xuất thẳng WMS, AP vẫn từ bảng đối soát HĐ NCC.</p>
                     </div>
                     {canManageTab && (
                         <button
@@ -5044,12 +5196,20 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                         const statements = statementsByDeliveryNoteId.get(note.id) || [];
                                         const postedStatement = statements.find(statement => statement.status === 'posted');
                                         const isBusy = supplierDeliveryActionLoading?.endsWith(`:${note.id}`);
+                                        const noteLines = supplierDeliveryLinesByNoteId[note.id] || note.lines || [];
+                                        const wmsSummary = getSupplierDeliveryWmsSummary(noteLines);
+                                        const canCreateWmsImport = canManageTab
+                                            && !postedStatement
+                                            && (note.status === 'accepted' || note.status === 'statemented')
+                                            && wmsSummary.canCreateImport;
+                                        const statementBlockedByWms = wmsSummary.hasDirectLines && !wmsSummary.readyForStatement;
                                         return (
                                             <tr key={note.id} className="hover:bg-blue-50/40 dark:hover:bg-slate-900/50">
                                                 <td className="px-4 py-3">
                                                     <div className="font-mono text-xs font-black text-slate-900 dark:text-white">{note.code}</div>
                                                     <div className="mt-1 flex flex-wrap items-center gap-1">
                                                         <StatusBadge status={note.status} label={statusCfg.label} tone={statusCfg.tone} showDot={false} />
+                                                        <span className={`rounded-full border px-2 py-0.5 text-[9px] font-black ${wmsSummary.badge}`}>{wmsSummary.label}</span>
                                                         {note.vehicleNo && <span className="rounded-full border border-slate-200 px-2 py-0.5 text-[9px] font-black text-slate-500">{note.vehicleNo}</span>}
                                                     </div>
                                                     <div className="mt-1 text-[10px] font-bold text-slate-400">{note.deliveryDate}</div>
@@ -5070,18 +5230,41 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                             <div className="mt-1 font-mono text-[10px] font-black text-emerald-700">{postedStatement.code}</div>
                                                         </div>
                                                     ) : (
-                                                        <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-black text-amber-700">Chưa đối soát</span>
+                                                        <div>
+                                                            <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-black text-amber-700">Chưa đối soát</span>
+                                                            {statementBlockedByWms && (
+                                                                <div className="mt-1 text-[10px] font-bold text-orange-600">Khóa AP đến khi WMS xuất dùng hoàn tất.</div>
+                                                            )}
+                                                        </div>
                                                     )}
                                                 </td>
                                                 <td className="px-4 py-3 text-right">
                                                     <div className="flex flex-wrap justify-end gap-1">
+                                                        <button type="button" onClick={() => openDocumentTrace(buildDocumentTracePath('supplier_direct_delivery_note', note.id, note.qrToken))} className="rounded-md px-2 py-1 text-[10px] font-black text-slate-700 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800">
+                                                            <QrCode size={11} className="inline" /> Truy vết
+                                                        </button>
                                                         {canManageTab && note.status !== 'accepted' && note.status !== 'statemented' && (
                                                             <button type="button" onClick={() => void approveSupplierDeliveryNote(note)} disabled={isBusy} className="rounded-md px-2 py-1 text-[10px] font-black text-emerald-700 hover:bg-emerald-50 disabled:opacity-50">
                                                                 {isBusy ? <Loader2 size={11} className="inline animate-spin" /> : <CheckCircle2 size={11} className="inline" />} Duyệt
                                                             </button>
                                                         )}
+                                                        {canCreateWmsImport && (
+                                                            <button type="button" onClick={() => void createSupplierDeliveryWmsImportDraft(note)} disabled={isBusy} className="rounded-md px-2 py-1 text-[10px] font-black text-indigo-700 hover:bg-indigo-50 disabled:opacity-50">
+                                                                {isBusy ? <Loader2 size={11} className="inline animate-spin" /> : <Truck size={11} className="inline" />} Tạo WMS nhập
+                                                            </button>
+                                                        )}
+                                                        {wmsSummary.importTransactionIds.map((transactionId, index) => (
+                                                            <button key={`import-${transactionId}`} type="button" onClick={() => openWmsTransactionById(transactionId)} className="rounded-md px-2 py-1 text-[10px] font-black text-blue-700 hover:bg-blue-50">
+                                                                <ExternalLink size={11} className="inline" /> Nhập {index + 1}
+                                                            </button>
+                                                        ))}
+                                                        {wmsSummary.exportTransactionIds.map((transactionId, index) => (
+                                                            <button key={`export-${transactionId}`} type="button" onClick={() => openWmsTransactionById(transactionId)} className="rounded-md px-2 py-1 text-[10px] font-black text-emerald-700 hover:bg-emerald-50">
+                                                                <ExternalLink size={11} className="inline" /> Xuất {index + 1}
+                                                            </button>
+                                                        ))}
                                                         {canManageTab && !postedStatement && (note.status === 'accepted' || note.status === 'statemented') && (
-                                                            <button type="button" onClick={() => void createAndPostSupplierDeliveryStatement(note)} disabled={isBusy} className="rounded-md px-2 py-1 text-[10px] font-black text-blue-700 hover:bg-blue-50 disabled:opacity-50">
+                                                            <button type="button" onClick={() => void createAndPostSupplierDeliveryStatement(note)} disabled={isBusy || statementBlockedByWms} title={statementBlockedByWms ? 'Còn dòng nhập-xuất thẳng chưa WMS export COMPLETED.' : 'Tạo đối soát HĐ NCC và ghi AP'} className="rounded-md px-2 py-1 text-[10px] font-black text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50">
                                                                 {isBusy ? <Loader2 size={11} className="inline animate-spin" /> : <FileText size={11} className="inline" />} Đối soát/AP
                                                             </button>
                                                         )}
@@ -5109,7 +5292,12 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                             </div>
                                             <StatusBadge status={statement.status} label={cfg.label} tone={cfg.tone} showDot={false} />
                                         </div>
-                                        <div className="mt-2 text-right text-sm font-black text-blue-700">{fmtMoney(statement.totalAmount)} đ</div>
+                                        <div className="mt-2 flex items-center justify-between gap-2">
+                                            <button type="button" onClick={() => openDocumentTrace(buildDocumentTracePath('supplier_delivery_statement', statement.id, statement.qrToken))} className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-black text-blue-700 hover:bg-blue-50 dark:text-blue-300 dark:hover:bg-blue-950/30">
+                                                <QrCode size={11} /> Truy vết
+                                            </button>
+                                            <div className="text-right text-sm font-black text-blue-700">{fmtMoney(statement.totalAmount)} đ</div>
+                                        </div>
                                     </div>
                                 );
                             })}
@@ -5806,11 +5994,11 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
 
             {showSupplierDeliveryForm && (
                 <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
-                    <div className="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-lg border border-border bg-card shadow-2xl">
+                    <div className="flex max-h-[92vh] w-full max-w-7xl flex-col overflow-hidden rounded-lg border border-border bg-card shadow-2xl">
                         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800">
                             <div>
                                 <h3 className="text-lg font-black text-slate-800 dark:text-slate-100">Tạo phiếu giao HĐ NCC</h3>
-                                <p className="text-xs font-bold text-slate-500 dark:text-slate-400">Vật tư giao tới công trường dùng ngay, không PO, không nhập kho.</p>
+                                <p className="text-xs font-bold text-slate-500 dark:text-slate-400">Vật tư giao tới công trường dùng ngay, không PO; dòng cần trace kho có thể đi nhập-xuất thẳng WMS.</p>
                             </div>
                             <button onClick={() => setShowSupplierDeliveryForm(false)} disabled={savingSupplierDelivery} className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 disabled:opacity-50 dark:hover:bg-slate-800">
                                 <X size={18} />
@@ -5887,26 +6075,74 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                     </div>
                                 </div>
                                 <div className="overflow-x-auto">
-                                    <table className="w-full min-w-[980px] text-left text-xs">
+                                    <table className="w-full min-w-[1320px] text-left text-xs">
                                         <thead className={procurementTableHeadClass}>
                                             <tr>
+                                                <th className="px-3 py-2 w-40">Luồng kho</th>
                                                 <th className="px-3 py-2">Vật tư</th>
-                                                <th className="px-3 py-2 text-right">SL</th>
-                                                <th className="px-3 py-2">ĐVT</th>
-                                                <th className="px-3 py-2 text-right">Đơn giá</th>
-                                                <th className="px-3 py-2 text-right">VAT %</th>
-                                                <th className="px-3 py-2 text-right">Thành tiền</th>
-                                                <th className="px-3 py-2"></th>
+                                                <th className="px-3 py-2 w-52">Kho</th>
+                                                <th className="px-3 py-2 w-24 text-right">SL</th>
+                                                <th className="px-3 py-2 w-24">ĐVT</th>
+                                                <th className="px-3 py-2 w-32 text-right">Đơn giá</th>
+                                                <th className="px-3 py-2 w-24 text-right">VAT %</th>
+                                                <th className="px-3 py-2 w-36 text-right">Thành tiền</th>
+                                                <th className="px-3 py-2 w-14"></th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                                             {sdLines.map((line, index) => {
                                                 const normalized = supplierDeliveryFormLines[index] || normalizeSupplierDeliveryFormLine(line, index, sdId, sdSupplierContractId);
+                                                const flowMode = line.wmsFlowMode || 'none';
+                                                const flowMeta = SUPPLIER_DELIVERY_WMS_FLOW_MODE[flowMode];
+                                                const isDirectInOut = flowMode === 'direct_in_out';
                                                 return (
                                                     <tr key={line.id}>
                                                         <td className="px-3 py-2">
-                                                            <input value={line.itemNameSnapshot} onChange={event => updateSupplierDeliveryLine(line.id, { itemNameSnapshot: event.target.value })} className={`${procurementInputClass} w-full`} placeholder="Cát, đá, xi măng, bê tông..." />
+                                                            <select
+                                                                value={flowMode}
+                                                                onChange={event => {
+                                                                    const nextMode = event.target.value as NonNullable<SupplierDirectDeliveryLine['wmsFlowMode']>;
+                                                                    updateSupplierDeliveryLine(line.id, {
+                                                                        wmsFlowMode: nextMode,
+                                                                        targetWarehouseId: nextMode === 'direct_in_out' ? line.targetWarehouseId || null : null,
+                                                                        wmsStatus: nextMode === 'direct_in_out' ? line.wmsStatus || 'not_required' : 'not_required',
+                                                                    });
+                                                                }}
+                                                                className={`${procurementInputClass} w-full`}
+                                                            >
+                                                                <option value="none">Không qua kho</option>
+                                                                <option value="direct_in_out">Nhập-xuất thẳng</option>
+                                                            </select>
+                                                            <span className={`mt-1 inline-flex rounded-full border px-2 py-0.5 text-[9px] font-black ${flowMeta.badge}`}>{flowMeta.label}</span>
+                                                        </td>
+                                                        <td className="px-3 py-2">
+                                                            {isDirectInOut ? (
+                                                                <>
+                                                                    <InventoryItemCombobox
+                                                                        value={line.itemId || ''}
+                                                                        items={inventoryItems}
+                                                                        onChange={selected => selectSupplierDeliveryInventoryItem(line.id, selected?.id || '')}
+                                                                        placeholder="Chọn mã WMS..."
+                                                                        className="w-full"
+                                                                    />
+                                                                    {line.skuSnapshot && <div className="mt-1 font-mono text-[10px] font-black text-indigo-600">{line.skuSnapshot}</div>}
+                                                                </>
+                                                            ) : (
+                                                                <input value={line.itemNameSnapshot} onChange={event => updateSupplierDeliveryLine(line.id, { itemNameSnapshot: event.target.value })} className={`${procurementInputClass} w-full`} placeholder="Cát, đá, xi măng, bê tông..." />
+                                                            )}
                                                             <input value={line.issueReason || ''} onChange={event => updateSupplierDeliveryLine(line.id, { issueReason: event.target.value })} className={`${procurementInputClass} mt-1 w-full`} placeholder="Lý do cấp, không bắt buộc" />
+                                                        </td>
+                                                        <td className="px-3 py-2">
+                                                            {isDirectInOut ? (
+                                                                <select value={line.targetWarehouseId || ''} onChange={event => updateSupplierDeliveryLine(line.id, { targetWarehouseId: event.target.value || null })} className={`${procurementInputClass} w-full`}>
+                                                                    <option value="">Chọn kho nhập/xuất</option>
+                                                                    {warehouses.map(warehouse => (
+                                                                        <option key={warehouse.id} value={warehouse.id}>{warehouse.name}</option>
+                                                                    ))}
+                                                                </select>
+                                                            ) : (
+                                                                <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-black text-slate-500">Không qua kho</span>
+                                                            )}
                                                         </td>
                                                         <td className="px-3 py-2">
                                                             <input type="number" min={0} step="any" value={line.quantityInput ?? ''} onChange={event => updateSupplierDeliveryLine(line.id, { quantityInput: event.target.value })} className={`${procurementInputClass} w-full text-right`} />

@@ -34,6 +34,7 @@ const RequestWorkflow = React.lazy(() => import('./pages/RequestWorkflow'));
 const MaterialCodeRequests = React.lazy(() => import('./pages/MaterialCodeRequests'));
 const Audit = React.lazy(() => import('./pages/Audit'));
 const Reports = React.lazy(() => import('./pages/Reports'));
+const DocumentTracePage = React.lazy(() => import('./pages/DocumentTracePage'));
 const MisaExport = React.lazy(() => import('./pages/MisaExport'));
 const ProjectDashboard = React.lazy(() => import('./pages/ProjectDashboard'));
 const PortfolioDashboard = React.lazy(() => import('./pages/PortfolioDashboard'));
@@ -277,6 +278,7 @@ const AppRoutes: React.FC = () => {
           <Route path="operations" element={<Operations />} />
           <Route path="audit" element={<Audit />} />
           <Route path="reports" element={<Reports />} />
+          <Route path="trace" element={<DocumentTracePage />} />
           <Route path="wf" element={<WorkflowInstances />} />
           <Route path="wf/instances/:id" element={<WorkflowInstanceDetail />} />
           <Route path="wf/dashboard" element={<WorkflowDashboard />} />

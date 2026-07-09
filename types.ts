@@ -2318,6 +2318,14 @@ export type SupplierDirectDeliveryNoteStatus =
   | 'rejected'
   | 'cancelled';
 export type SupplierDirectDeliveryLineStatus = 'pending' | 'accepted' | 'adjusted' | 'rejected';
+export type SupplierDirectDeliveryWmsFlowMode = 'none' | 'direct_in_out';
+export type SupplierDirectDeliveryWmsStatus =
+  | 'not_required'
+  | 'import_pending'
+  | 'imported'
+  | 'export_pending'
+  | 'exported'
+  | 'blocked';
 
 export interface SupplierDirectDeliveryNote {
   id: string;
@@ -2367,6 +2375,11 @@ export interface SupplierDirectDeliveryLine {
   workBoqItemId?: string | null;
   materialBudgetItemId?: string | null;
   statementId?: string | null;
+  wmsFlowMode?: SupplierDirectDeliveryWmsFlowMode;
+  targetWarehouseId?: string | null;
+  wmsImportTransactionId?: string | null;
+  wmsExportTransactionId?: string | null;
+  wmsStatus?: SupplierDirectDeliveryWmsStatus;
   rejectionReason?: string | null;
   note?: string | null;
   createdAt?: string;
@@ -2487,6 +2500,9 @@ export type DocumentTraceNodeType =
   | 'material_request'
   | 'purchase_order'
   | 'wms_transaction'
+  | 'supplier_contract'
+  | 'supplier_direct_delivery_note'
+  | 'supplier_delivery_statement'
   | 'supplier_payable_document'
   | 'supplier_payment_batch'
   | 'project_transaction'
@@ -2498,6 +2514,32 @@ export interface DocumentQrPayload {
   type: DocumentTraceNodeType;
   id: string;
   token: string;
+}
+
+export interface ProjectDocumentLink {
+  id: string;
+  sourceType: DocumentTraceNodeType | string;
+  sourceId: string;
+  targetType: DocumentTraceNodeType | string;
+  targetId: string;
+  projectId?: string | null;
+  relationType: string;
+  status: 'active' | 'reversed' | 'cancelled' | 'returned' | 'void' | string;
+  metadata?: Record<string, any>;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface DocumentTraceSeed {
+  type: DocumentTraceNodeType;
+  id: string;
+  token?: string | null;
+}
+
+export interface DocumentTraceResolveResult {
+  seed: DocumentTraceSeed;
+  node?: DocumentTraceNode | null;
+  graph?: DocumentTraceGraph;
 }
 
 export interface DocumentTraceNode {
@@ -2912,6 +2954,9 @@ export interface TransactionItem {
   materialIssueOrderId?: string;
   materialIssueLineId?: string;
   materialIssueReturnId?: string;
+  supplierDirectDeliveryNoteId?: string;
+  supplierDirectDeliveryLineId?: string;
+  supplierDeliveryWmsFlow?: SupplierDirectDeliveryWmsFlowMode;
   recipientType?: MaterialIssueRecipientType;
   recipientNameSnapshot?: string;
   varianceReason?: string;
@@ -5533,6 +5578,7 @@ export interface SupplierContract {
   managedByUserId?: string;
   managedByName?: string;
   status: HdContractStatus;
+  qrToken?: string | null;
   note?: string;
   attachments: ContractAttachment[];
   createdAt: string;

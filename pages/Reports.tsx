@@ -20,6 +20,7 @@ import {
   Package,
   PieChart,
   Printer,
+  QrCode,
   Search,
   Warehouse,
 } from 'lucide-react';
@@ -33,6 +34,7 @@ import {
 import { loadXlsx } from '../lib/loadXlsx';
 import { useModuleData } from '../hooks/useModuleData';
 import { useInventoryLedger } from '../hooks/useInventoryLedger';
+import { buildDocumentTracePath } from '../lib/documentTraceService';
 
 type ReportView = 'summary' | 'material_card' | 'warehouse_card' | 'history';
 
@@ -813,6 +815,14 @@ const Reports: React.FC = () => {
                 <pre className="mt-2 max-h-48 overflow-auto rounded-lg bg-white p-3 text-[11px] text-slate-600">{JSON.stringify(traceEntry.metadata || {}, null, 2)}</pre>
               </div>
               <div className="flex justify-end gap-2">
+                {['wms_transaction', 'purchase_order', 'material_request'].includes(traceEntry.sourceType) && (
+                  <button
+                    onClick={() => navigate(buildDocumentTracePath(traceEntry.sourceType as 'wms_transaction' | 'purchase_order' | 'material_request', traceEntry.sourceId))}
+                    className="inline-flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-black text-blue-700 hover:bg-blue-100"
+                  >
+                    <QrCode size={16} /> Trace graph
+                  </button>
+                )}
                 {traceEntry.sourceType === 'wms_transaction' && (
                   <button
                     onClick={() => openSourceDocument(traceEntry)}

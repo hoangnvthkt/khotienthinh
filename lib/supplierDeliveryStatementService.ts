@@ -7,7 +7,9 @@ import type {
   SupplierDirectDeliveryNote,
   SupplierDirectDeliveryNoteStatus,
   SupplierPayableDocument,
+  Transaction,
 } from '../types';
+import { TransactionStatus, TransactionType } from '../types';
 import { fromDb, toDb } from './dbMapping';
 import { supabase } from './supabase';
 
@@ -24,6 +26,7 @@ const numeric = (value: unknown) => {
 
 const quantity = (value: unknown) => Math.round(numeric(value) * 1_000_000) / 1_000_000;
 const money = (value: unknown) => Math.round(numeric(value) * 100) / 100;
+const newId = () => globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
 const compact = <T extends Record<string, any>>(value: T): T =>
   Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as T;
@@ -57,6 +60,12 @@ export const calculateSupplierDeliveryStatementTotals = (lines: SupplierDirectDe
   }, { grossAmount: 0, vatAmount: 0, totalAmount: 0 });
 };
 
+export const isSupplierDirectDeliveryLineStatementReady = (line: SupplierDirectDeliveryLine): boolean => {
+  if (!(line.status === 'accepted' || line.status === 'adjusted')) return false;
+  if ((line.wmsFlowMode || 'none') !== 'direct_in_out') return true;
+  return line.wmsStatus === 'exported';
+};
+
 const normalizeContractLine = (row: any): SupplierContractLine => ({
   ...(fromDb(row) as SupplierContractLine),
   unitPrice: money(row.unit_price),
@@ -84,6 +93,11 @@ const normalizeDeliveryLine = (row: any): SupplierDirectDeliveryLine => ({
   acceptedQuantity: quantity(row.accepted_quantity),
   acceptedAmount: money(row.accepted_amount),
   issueReason: row.issue_reason || null,
+  wmsFlowMode: row.wms_flow_mode || row.wmsFlowMode || 'none',
+  targetWarehouseId: row.target_warehouse_id ?? row.targetWarehouseId ?? null,
+  wmsImportTransactionId: row.wms_import_transaction_id ?? row.wmsImportTransactionId ?? null,
+  wmsExportTransactionId: row.wms_export_transaction_id ?? row.wmsExportTransactionId ?? null,
+  wmsStatus: row.wms_status || row.wmsStatus || 'not_required',
 });
 
 const normalizeStatement = (row: any): SupplierDeliveryStatement => ({
@@ -123,6 +137,8 @@ const deliveryLinePayload = (line: SupplierDirectDeliveryLine) => {
   return toDb(compact({
     ...line,
     ...totals,
+    wmsFlowMode: line.wmsFlowMode || 'none',
+    wmsStatus: line.wmsStatus || ((line.wmsFlowMode || 'none') === 'direct_in_out' ? 'not_required' : 'not_required'),
     acceptedQuantity: line.acceptedQuantity ?? 0,
     acceptedAmount: line.acceptedAmount ?? 0,
   }));
@@ -291,6 +307,96 @@ export const supplierDirectDeliveryService = {
     }
     return this.getDetail(id);
   },
+
+  async createWmsImportDrafts(id: string, actorId: string): Promise<Transaction[]> {
+    const { note, lines } = await this.getDetail(id);
+    const candidateLines = lines.filter(line =>
+      (line.wmsFlowMode || 'none') === 'direct_in_out'
+      && line.status !== 'rejected'
+      && !line.wmsImportTransactionId
+      && numeric(line.acceptedQuantity || line.quantity) > 0,
+    );
+    if (candidateLines.length === 0) {
+      throw new Error('Phiếu giao HĐ không có dòng nhập-xuất thẳng cần tạo WMS import.');
+    }
+
+    const invalidLine = candidateLines.find(line => !line.itemId || !line.targetWarehouseId);
+    if (invalidLine) {
+      throw new Error('Dòng nhập-xuất thẳng cần liên kết mã vật tư WMS và kho nhập/xuất.');
+    }
+
+    const linesByWarehouse = new Map<string, SupplierDirectDeliveryLine[]>();
+    candidateLines.forEach(line => {
+      const warehouseId = line.targetWarehouseId || '';
+      linesByWarehouse.set(warehouseId, [...(linesByWarehouse.get(warehouseId) || []), line]);
+    });
+
+    const transactions: Transaction[] = [];
+    let groupIndex = 0;
+    for (const [warehouseId, warehouseLines] of linesByWarehouse.entries()) {
+      groupIndex += 1;
+      const transactionId = `tx-supplier-delivery-${Date.now()}-${groupIndex}-${newId().slice(0, 8)}`;
+      const transaction: Transaction = {
+        id: transactionId,
+        type: TransactionType.IMPORT,
+        date: new Date().toISOString(),
+        items: warehouseLines.map(line => ({
+          itemId: line.itemId || '',
+          quantity: quantity(line.acceptedQuantity || line.quantity),
+          price: 0,
+          accountingQty: quantity(line.acceptedQuantity || line.quantity),
+          accountingUnit: line.unitSnapshot || undefined,
+          accountingPrice: 0,
+          supplierDirectDeliveryNoteId: id,
+          supplierDirectDeliveryLineId: line.id,
+          supplierDeliveryWmsFlow: 'direct_in_out' as const,
+        })).filter(item => item.itemId && item.quantity > 0),
+        targetWarehouseId: warehouseId,
+        supplierId: note.supplierId || undefined,
+        requesterId: actorId,
+        createdBy: actorId,
+        approverId: actorId,
+        status: TransactionStatus.PENDING,
+        relatedRequestId: `supplier-direct-delivery:${id}`,
+        note: `Nhập WMS từ phiếu giao HĐ ${note.code} - ${note.supplierNameSnapshot}`,
+      };
+
+      if (transaction.items.length === 0) {
+        throw new Error('Dòng nhập-xuất thẳng chưa có mã vật tư WMS hợp lệ.');
+      }
+
+      const { error: txError } = await supabase
+        .from('transactions')
+        .insert({
+          id: transaction.id,
+          type: transaction.type,
+          date: transaction.date,
+          items: transaction.items,
+          target_warehouse_id: transaction.targetWarehouseId,
+          supplier_id: transaction.supplierId,
+          requester_id: transaction.requesterId,
+          created_by: transaction.createdBy,
+          approver_id: transaction.approverId,
+          status: transaction.status,
+          note: transaction.note,
+          related_request_id: transaction.relatedRequestId,
+        });
+      if (txError) throw txError;
+
+      const { error: lineError } = await supabase
+        .from(DELIVERY_LINE_TABLE)
+        .update(toDb({
+          wmsImportTransactionId: transaction.id,
+          wmsStatus: 'import_pending',
+        }))
+        .in('id', warehouseLines.map(line => line.id));
+      if (lineError) throw lineError;
+
+      transactions.push(transaction);
+    }
+
+    return transactions;
+  },
 };
 
 export const supplierDeliveryStatementService = {
@@ -348,6 +454,10 @@ export const supplierDeliveryStatementService = {
 
   async upsert(statement: SupplierDeliveryStatement, deliveryLines: SupplierDirectDeliveryLine[] = []): Promise<SupplierDeliveryStatement> {
     const acceptedLines = deliveryLines.filter(line => line.status === 'accepted' || line.status === 'adjusted');
+    const blockedLine = acceptedLines.find(line => !isSupplierDirectDeliveryLineStatementReady(line));
+    if (blockedLine) {
+      throw new Error(`Dòng "${blockedLine.itemNameSnapshot}" cần WMS xuất dùng hoàn tất trước khi đối soát/AP.`);
+    }
     const { data, error } = await supabase
       .from(STATEMENT_TABLE)
       .upsert(statementPayload(statement, acceptedLines), { onConflict: 'id' })

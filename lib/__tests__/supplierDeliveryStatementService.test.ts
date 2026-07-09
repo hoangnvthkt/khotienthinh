@@ -20,6 +20,7 @@ vi.mock('../supabase', () => ({
 import {
   calculateSupplierDirectDeliveryLineTotals,
   calculateSupplierDeliveryStatementTotals,
+  isSupplierDirectDeliveryLineStatementReady,
   supplierDeliveryStatementService,
   supplierDirectDeliveryService,
 } from '../supplierDeliveryStatementService';
@@ -65,6 +66,11 @@ const deliveryLine = (patch: Partial<SupplierDirectDeliveryLine> = {}): Supplier
   materialBudgetItemId: null,
   note: null,
   createdAt: '2026-07-08T00:00:00.000Z',
+  wmsFlowMode: 'none',
+  wmsStatus: 'not_required',
+  targetWarehouseId: null,
+  wmsImportTransactionId: null,
+  wmsExportTransactionId: null,
   ...patch,
 });
 
@@ -150,6 +156,30 @@ describe('supplier delivery statement helpers', () => {
     expect(totals.totalAmount).toBe(20_295_000);
   });
 
+  it('requires direct-in-out delivery lines to be fully exported before statementing', () => {
+    expect(isSupplierDirectDeliveryLineStatementReady(deliveryLine({
+      status: 'accepted',
+      wmsFlowMode: 'none',
+      wmsStatus: 'not_required',
+    }))).toBe(true);
+
+    expect(isSupplierDirectDeliveryLineStatementReady(deliveryLine({
+      status: 'accepted',
+      wmsFlowMode: 'direct_in_out',
+      wmsStatus: 'export_pending',
+      itemId: 'item-1',
+      targetWarehouseId: 'wh-site',
+    }))).toBe(false);
+
+    expect(isSupplierDirectDeliveryLineStatementReady(deliveryLine({
+      status: 'adjusted',
+      wmsFlowMode: 'direct_in_out',
+      wmsStatus: 'exported',
+      itemId: 'item-1',
+      targetWarehouseId: 'wh-site',
+    }))).toBe(true);
+  });
+
   it('loads delivery note detail and maps snake case rows', async () => {
     supabaseMocks.from
       .mockReturnValueOnce(query({
@@ -196,6 +226,11 @@ describe('supplier delivery statement helpers', () => {
           accepted_amount: 0,
           status: 'pending',
           issue_reason: null,
+          wms_flow_mode: 'direct_in_out',
+          target_warehouse_id: 'wh-site',
+          wms_import_transaction_id: 'tx-import-1',
+          wms_export_transaction_id: 'tx-export-1',
+          wms_status: 'export_pending',
           created_at: '2026-07-08T00:00:00.000Z',
         }],
         error: null,
@@ -208,6 +243,11 @@ describe('supplier delivery statement helpers', () => {
     expect(detail.note.supplierContractId).toBe('contract-1');
     expect(detail.lines[0].quantity).toBe(12.5);
     expect(detail.lines[0].issueReason).toBeNull();
+    expect(detail.lines[0].wmsFlowMode).toBe('direct_in_out');
+    expect(detail.lines[0].targetWarehouseId).toBe('wh-site');
+    expect(detail.lines[0].wmsImportTransactionId).toBe('tx-import-1');
+    expect(detail.lines[0].wmsExportTransactionId).toBe('tx-export-1');
+    expect(detail.lines[0].wmsStatus).toBe('export_pending');
   });
 
   it('posts a delivery statement through the AP sync RPC and keeps contract metadata', async () => {
@@ -289,5 +329,166 @@ describe('supplier delivery statement helpers', () => {
     }), { onConflict: 'id' });
     expect(lineQuery.upsert).toHaveBeenCalled();
     expect(saved.id).toBe('statement-1');
+  });
+
+  it('rejects draft statements containing direct-in-out lines before WMS export is completed', async () => {
+    await expect(supplierDeliveryStatementService.upsert(statement(), [
+      deliveryLine({
+        status: 'accepted',
+        wmsFlowMode: 'direct_in_out',
+        wmsStatus: 'export_pending',
+        itemId: 'item-1',
+        targetWarehouseId: 'wh-site',
+        acceptedQuantity: 12.5,
+        acceptedAmount: 12_375_000,
+      }),
+    ])).rejects.toThrow('WMS xuất dùng');
+
+    expect(supabaseMocks.from).not.toHaveBeenCalled();
+  });
+
+  it('does not create WMS import drafts for non-WMS delivery lines', async () => {
+    supabaseMocks.from
+      .mockReturnValueOnce(query({ data: deliveryNote(), error: null }))
+      .mockReturnValueOnce(query({
+        data: [{
+          id: 'line-none',
+          delivery_note_id: 'note-1',
+          supplier_contract_id: 'contract-1',
+          line_no: 1,
+          item_name_snapshot: 'Cát vàng',
+          unit_snapshot: 'm3',
+          quantity: 8,
+          unit_price: 300000,
+          vat_rate: 8,
+          line_amount: 2400000,
+          vat_amount: 192000,
+          total_amount: 2592000,
+          accepted_quantity: 8,
+          accepted_amount: 2592000,
+          status: 'accepted',
+          wms_flow_mode: 'none',
+          wms_status: 'not_required',
+        }],
+        error: null,
+      }));
+
+    await expect(supplierDirectDeliveryService.createWmsImportDrafts('note-1', 'user-1'))
+      .rejects.toThrow('không có dòng nhập-xuất thẳng');
+
+    expect(supabaseMocks.from).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects direct-in-out WMS import drafts when item or warehouse is missing', async () => {
+    supabaseMocks.from
+      .mockReturnValueOnce(query({ data: deliveryNote(), error: null }))
+      .mockReturnValueOnce(query({
+        data: [{
+          id: 'line-missing-wms',
+          delivery_note_id: 'note-1',
+          supplier_contract_id: 'contract-1',
+          line_no: 1,
+          item_id: null,
+          item_name_snapshot: 'Bê tông M250',
+          unit_snapshot: 'm3',
+          quantity: 12.5,
+          unit_price: 900000,
+          vat_rate: 10,
+          line_amount: 11250000,
+          vat_amount: 1125000,
+          total_amount: 12375000,
+          accepted_quantity: 12.5,
+          accepted_amount: 12375000,
+          status: 'accepted',
+          wms_flow_mode: 'direct_in_out',
+          target_warehouse_id: null,
+          wms_status: 'not_required',
+        }],
+        error: null,
+      }));
+
+    await expect(supplierDirectDeliveryService.createWmsImportDrafts('note-1', 'user-1'))
+      .rejects.toThrow('mã vật tư WMS và kho nhập/xuất');
+
+    expect(supabaseMocks.from).toHaveBeenCalledTimes(2);
+  });
+
+  it('creates a pending WMS import draft for direct-in-out delivery lines grouped by warehouse', async () => {
+    const insertQuery = query({ data: null, error: null });
+    const updateQuery = query({ data: null, error: null });
+    supabaseMocks.from
+      .mockReturnValueOnce(query({ data: deliveryNote(), error: null }))
+      .mockReturnValueOnce(query({
+        data: [
+          {
+            id: 'line-1',
+            delivery_note_id: 'note-1',
+            supplier_contract_id: 'contract-1',
+            line_no: 1,
+            item_id: 'item-1',
+            sku_snapshot: 'BT-M250',
+            item_name_snapshot: 'Bê tông M250',
+            unit_snapshot: 'm3',
+            quantity: 12.5,
+            unit_price: 900000,
+            vat_rate: 10,
+            line_amount: 11250000,
+            vat_amount: 1125000,
+            total_amount: 12375000,
+            accepted_quantity: 12.5,
+            accepted_amount: 12375000,
+            status: 'accepted',
+            wms_flow_mode: 'direct_in_out',
+            target_warehouse_id: 'wh-site',
+            wms_status: 'not_required',
+          },
+          {
+            id: 'line-2',
+            delivery_note_id: 'note-1',
+            supplier_contract_id: 'contract-1',
+            line_no: 2,
+            item_id: 'item-2',
+            sku_snapshot: 'CAT-VANG',
+            item_name_snapshot: 'Cát vàng',
+            unit_snapshot: 'm3',
+            quantity: 8,
+            unit_price: 300000,
+            vat_rate: 8,
+            line_amount: 2400000,
+            vat_amount: 192000,
+            total_amount: 2592000,
+            accepted_quantity: 8,
+            accepted_amount: 2592000,
+            status: 'accepted',
+            wms_flow_mode: 'direct_in_out',
+            target_warehouse_id: 'wh-site',
+            wms_status: 'not_required',
+          },
+        ],
+        error: null,
+      }))
+      .mockReturnValueOnce(insertQuery)
+      .mockReturnValueOnce(updateQuery);
+
+    const transactions = await supplierDirectDeliveryService.createWmsImportDrafts('note-1', 'user-1');
+
+    expect(transactions).toHaveLength(1);
+    expect(insertQuery.insert).toHaveBeenCalledWith(expect.objectContaining({
+      id: transactions[0].id,
+      type: 'IMPORT',
+      status: 'PENDING',
+      target_warehouse_id: 'wh-site',
+      supplier_id: 'supplier-a',
+      related_request_id: 'supplier-direct-delivery:note-1',
+    }));
+    expect(insertQuery.insert.mock.calls[0][0].items).toEqual([
+      expect.objectContaining({ itemId: 'item-1', quantity: 12.5, price: 0, accountingPrice: 0, supplierDirectDeliveryLineId: 'line-1' }),
+      expect.objectContaining({ itemId: 'item-2', quantity: 8, price: 0, accountingPrice: 0, supplierDirectDeliveryLineId: 'line-2' }),
+    ]);
+    expect(updateQuery.update).toHaveBeenCalledWith(expect.objectContaining({
+      wms_import_transaction_id: transactions[0].id,
+      wms_status: 'import_pending',
+    }));
+    expect(updateQuery.in).toHaveBeenCalledWith('id', ['line-1', 'line-2']);
   });
 });
