@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useLayoutEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -31,45 +31,45 @@ import {
   UserPlus,
   Users,
   X,
+  Phone,
+  Video,
+  Star,
+  FolderOpen,
+  MessageSquare,
+  Link as LinkIcon,
+  HelpCircle
 } from 'lucide-react';
 import type { User } from '../../types';
-import { useChatV2 } from '../../hooks/useChatV2';
+import { useChatV2, useChatV2UnreadCount } from '../../hooks/useChatV2';
+import { useApp } from '../../context/AppContext';
+import { supabase } from '../../lib/supabase';
 import {
   CHAT_V2_REACTION_EMOJIS,
-  buildChatV2MessagePreview,
   ChatV2Attachment,
   ChatV2ChecklistItem,
   ChatV2Conversation,
-  ChatV2Mention,
   ChatV2Message,
   ChatV2MessageKind,
-  ChatV2ReplyPreview,
   formatFileSize,
   getChatV2ConversationTitle,
   getUserInitials,
-  insertChatV2Mention,
   isImageAttachment,
 } from '../../lib/chatV2Service';
-import { canAccessRoute } from '../../lib/routeAccess';
+
+const CHAT_V2_ATTACHMENT_BUCKET = 'chat-attachments';
 
 interface ChatShellProps {
   currentUser: User;
   users: User[];
 }
 
-type ChatV2SendOptions = {
-  replyToMessageId?: string | null;
-  replyPreview?: ChatV2ReplyPreview | null;
-  mentions?: ChatV2Mention[];
-};
-
-type ReplyDraft = {
+interface ReplyDraft {
   messageId: string;
   senderId: string;
   senderName: string;
   bodyPreview: string;
   kind: ChatV2MessageKind;
-};
+}
 
 const formatTime = (value?: string | null) => {
   if (!value) return '';
@@ -81,48 +81,37 @@ const formatTime = (value?: string | null) => {
   return date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
 };
 
+const escapeRegExp = (string: string) => {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+};
+
 const canManageConversation = (conversation: ChatV2Conversation | null | undefined, currentUser: User): boolean => {
   if (!conversation) return false;
   if (String(currentUser.role) === 'ADMIN') return true;
   return conversation.currentParticipant?.role === 'owner' || conversation.currentParticipant?.role === 'admin';
 };
 
-const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-const ReplyQuote: React.FC<{ preview: ChatV2ReplyPreview | ReplyDraft | null; isMine?: boolean; onClear?: () => void }> = ({
-  preview,
-  isMine = false,
-  onClear,
-}) => {
-  if (!preview) return null;
+const ReplyQuote: React.FC<{ preview: ReplyDraft; onClear: () => void }> = ({ preview, onClear }) => {
   return (
-    <div className={`mb-2 grid grid-cols-[1fr_auto] items-start gap-2 rounded-lg border-l-2 px-2 py-1.5 text-xs ${
-      isMine
-        ? 'border-white/60 bg-white/15 text-white/90'
-        : 'border-emerald-400 bg-emerald-50 text-slate-700 dark:bg-emerald-950/40 dark:text-slate-200'
-    }`}>
-      <div className="min-w-0">
-        <div className="truncate text-[11px] font-black">{preview.senderName}</div>
-        <div className={`truncate text-[11px] font-semibold ${isMine ? 'text-white/75' : 'text-slate-500 dark:text-slate-400'}`}>
-          {preview.bodyPreview || buildChatV2MessagePreview(preview.kind, '', {})}
-        </div>
+    <div className="mb-2 flex items-center justify-between gap-3 rounded-lg border-l-4 border-indigo-500 bg-slate-900/40 px-3 py-1.5 text-xs text-slate-300">
+      <div className="min-w-0 flex-1">
+        <span className="font-black text-indigo-400">Trả lời {preview.senderName}: </span>
+        <span className="truncate italic">{preview.bodyPreview}</span>
       </div>
-      {onClear && (
-        <button
-          type="button"
-          onClick={onClear}
-          title="Bỏ trích dẫn"
-          aria-label="Bỏ trích dẫn"
-          className="flex h-6 w-6 items-center justify-center rounded-md text-current opacity-70 hover:bg-black/10 hover:opacity-100 dark:hover:bg-white/10"
-        >
-          <X size={13} />
-        </button>
-      )}
+      <button
+        type="button"
+        onClick={onClear}
+        title="Bỏ trích dẫn"
+        aria-label="Bỏ trích dẫn"
+        className="flex h-5 w-5 items-center justify-center rounded-md text-current opacity-70 hover:bg-white/10 hover:opacity-100"
+      >
+        <X size={12} />
+      </button>
     </div>
   );
 };
 
-const MessageText: React.FC<{ body: string; mentions: ChatV2Mention[] }> = ({ body, mentions }) => {
+const MessageText: React.FC<{ body: string; mentions: { displayName: string }[] }> = ({ body, mentions }) => {
   if (!body) return null;
   const names = mentions
     .map(mention => mention.displayName.trim())
@@ -138,7 +127,7 @@ const MessageText: React.FC<{ body: string; mentions: ChatV2Mention[] }> = ({ bo
   while ((match = pattern.exec(body)) !== null) {
     if (match.index > lastIndex) parts.push(body.slice(lastIndex, match.index));
     parts.push(
-      <span key={`${match[0]}-${match.index}`} className="rounded bg-amber-200/80 px-1 font-black text-amber-900 dark:bg-amber-500/25 dark:text-amber-100">
+      <span key={`${match[0]}-${match.index}`} className="rounded bg-indigo-500/20 px-1 font-bold text-indigo-300">
         {match[0]}
       </span>
     );
@@ -157,161 +146,47 @@ const Avatar: React.FC<{ user?: User; label?: string; online?: boolean; size?: '
   const dims = size === 'lg' ? 'h-12 w-12 text-sm' : size === 'sm' ? 'h-8 w-8 text-[10px]' : 'h-10 w-10 text-xs';
   const name = user?.name || label || 'Tin nhắn';
   return (
-    <div className={`relative ${dims} shrink-0 overflow-hidden rounded-full bg-emerald-600 text-white shadow-sm`}>
+    <div className={`relative ${dims} shrink-0 overflow-hidden rounded-full bg-slate-700 text-white shadow-sm`}>
       {user?.avatar ? (
         <img src={user.avatar} alt={name} className="h-full w-full object-cover" />
       ) : (
-        <div className="flex h-full w-full items-center justify-center font-black">{getUserInitials(name)}</div>
+        <div className="flex h-full w-full items-center justify-center font-black bg-emerald-600">{getUserInitials(name)}</div>
       )}
       {online && (
-        <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white bg-emerald-400 dark:border-slate-950" />
+        <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-[#2b2d31] bg-[#23a55a]" />
       )}
     </div>
   );
 };
 
-const ConversationList: React.FC<{
-  conversations: ChatV2Conversation[];
-  activeConversationId: string | null;
-  currentUser: User;
-  users: User[];
-  onlineUserIds: Set<string>;
-  search: string;
-  onSearch: (value: string) => void;
-  onSelect: (conversationId: string) => void;
-  onNew: () => void;
-  loading: boolean;
-}> = ({
-  conversations,
-  activeConversationId,
-  currentUser,
-  users,
-  onlineUserIds,
-  search,
-  onSearch,
-  onSelect,
-  onNew,
-  loading,
+const AttachmentView: React.FC<{ attachment: ChatV2Attachment; messageCreatedAt?: string; messageMetadata?: Record<string, any> }> = ({
+  attachment,
+  messageCreatedAt,
+  messageMetadata,
 }) => {
-  const filtered = useMemo(() => {
-    const keyword = search.trim().toLowerCase();
-    if (!keyword) return conversations;
-    return conversations.filter(conversation => {
-      const title = getChatV2ConversationTitle(conversation, currentUser.id, users).toLowerCase();
-      const memberNames = conversation.participants
-        .map(participant => users.find(user => user.id === participant.userId)?.name || '')
-        .join(' ')
-        .toLowerCase();
-      return title.includes(keyword) || memberNames.includes(keyword);
-    });
-  }, [conversations, currentUser.id, search, users]);
-
-  return (
-    <aside className="flex h-full w-full flex-col border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950 lg:w-[340px]">
-      <div className="flex h-16 shrink-0 items-center justify-between border-b border-slate-200 px-4 dark:border-slate-800">
-        <div className="flex items-center gap-2">
-          <MessageCircle size={20} className="text-emerald-600" />
-          <div>
-            <div className="text-sm font-black text-slate-900 dark:text-white">Tin nhắn</div>
-            <div className="text-[11px] font-semibold text-slate-500">{conversations.length} hội thoại</div>
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={onNew}
-          title="Tạo hội thoại"
-          aria-label="Tạo hội thoại"
-          className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-600 text-white shadow-sm transition hover:bg-emerald-700"
-        >
-          <Plus size={18} />
-        </button>
-      </div>
-
-      <div className="border-b border-slate-200 p-3 dark:border-slate-800">
-        <div className="flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 text-slate-500 dark:border-slate-800 dark:bg-slate-900">
-          <Search size={16} />
-          <input
-            value={search}
-            onChange={event => onSearch(event.target.value)}
-            placeholder="Tìm kiếm"
-            className="h-full min-w-0 flex-1 bg-transparent text-sm font-semibold text-slate-800 outline-none placeholder:text-slate-400 dark:text-slate-100"
-          />
-        </div>
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        {loading && conversations.length === 0 ? (
-          <div className="space-y-2 p-3">
-            {[0, 1, 2, 3].map(item => (
-              <div key={item} className="h-16 animate-pulse rounded-lg bg-slate-100 dark:bg-slate-900" />
-            ))}
-          </div>
-        ) : filtered.length === 0 ? (
-          <div className="flex h-full flex-col items-center justify-center px-8 text-center">
-            <MessageCircle size={32} className="mb-3 text-slate-300" />
-            <div className="text-sm font-black text-slate-700 dark:text-slate-200">Chưa có hội thoại</div>
-          </div>
-        ) : (
-          <div className="p-2">
-            {filtered.map(conversation => {
-              const title = getChatV2ConversationTitle(conversation, currentUser.id, users);
-              const otherParticipant = conversation.participants.find(participant => participant.userId !== currentUser.id);
-              const otherUser = users.find(user => user.id === otherParticipant?.userId);
-              const isOnline = conversation.type === 'direct' && Boolean(otherParticipant && onlineUserIds.has(otherParticipant.userId));
-              const isActive = conversation.id === activeConversationId;
-              return (
-                <button
-                  key={conversation.id}
-                  type="button"
-                  onClick={() => onSelect(conversation.id)}
-                  className={`grid w-full grid-cols-[auto_1fr_auto] gap-3 rounded-lg px-3 py-3 text-left transition ${
-                    isActive
-                      ? 'bg-emerald-50 text-emerald-950 ring-1 ring-emerald-200 dark:bg-emerald-950/40 dark:text-white dark:ring-emerald-900'
-                      : 'text-slate-700 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-900'
-                  }`}
-                >
-                  {conversation.type === 'direct' ? (
-                    <Avatar user={otherUser} label={title} online={isOnline} />
-                  ) : (
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-800 text-white dark:bg-slate-700">
-                      <Users size={17} />
-                    </div>
-                  )}
-                  <div className="min-w-0">
-                    <div className="flex min-w-0 items-center gap-1.5">
-                      {conversation.currentParticipant?.isPinned && <Pin size={12} className="shrink-0 text-amber-500" />}
-                      <span className="truncate text-sm font-black">{title}</span>
-                    </div>
-                    <div className="mt-1 truncate text-xs font-semibold text-slate-500 dark:text-slate-500">
-                      {conversation.lastMessagePreview || ' '}
-                    </div>
-                  </div>
-                  <div className="flex flex-col items-end gap-2">
-                    <span className="text-[10px] font-bold text-slate-400">{formatTime(conversation.lastMessageAt || conversation.updatedAt)}</span>
-                    {conversation.unreadCount > 0 && (
-                      <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-black text-white">
-                        {conversation.unreadCount > 9 ? '9+' : conversation.unreadCount}
-                      </span>
-                    )}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    </aside>
-  );
-};
-
-const AttachmentView: React.FC<{ attachment: ChatV2Attachment }> = ({ attachment }) => {
   const href = attachment.signedUrl || '#';
   const downloadHref = attachment.downloadUrl || attachment.signedUrl || '#';
   if (isImageAttachment(attachment) && attachment.signedUrl) {
+    const dateStr = messageCreatedAt ? new Date(messageCreatedAt).toLocaleString('vi-VN', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    }) : '';
+    const location = messageMetadata?.location || 'KhoTienThinh GPS Verified';
     return (
-      <a href={href} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-lg border border-slate-200 bg-slate-100 dark:border-slate-800 dark:bg-slate-900">
-        <img src={attachment.signedUrl} alt={attachment.fileName} className="max-h-72 w-full object-cover" loading="lazy" />
-      </a>
+      <div className="relative overflow-hidden rounded-lg border border-slate-700 bg-[#2b2d31] group max-w-lg">
+        <a href={href} target="_blank" rel="noreferrer" className="block">
+          <img src={attachment.signedUrl} alt={attachment.fileName} className="max-h-[350px] w-full object-cover" loading="lazy" />
+        </a>
+        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent p-3 text-white text-[10px] font-medium pointer-events-none select-none flex flex-col justify-end leading-tight">
+          <div className="opacity-90">{dateStr}</div>
+          <div className="font-bold text-amber-300 mt-0.5">{location}</div>
+        </div>
+      </div>
     );
   }
 
@@ -320,16 +195,16 @@ const AttachmentView: React.FC<{ attachment: ChatV2Attachment }> = ({ attachment
       href={downloadHref}
       download={attachment.fileName}
       rel="noreferrer"
-      className="flex min-w-0 items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-700 transition hover:border-emerald-300 hover:text-emerald-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200"
+      className="flex min-w-0 items-center gap-3 rounded-lg border border-slate-700 bg-[#2b2d31] px-3 py-2 text-[#dbdee1] transition hover:border-emerald-600 hover:text-white max-w-md"
     >
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500 dark:bg-slate-900">
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-800 text-slate-400">
         <FileText size={18} />
       </div>
       <div className="min-w-0 flex-1">
-        <div className="truncate text-xs font-black">{attachment.fileName}</div>
-        <div className="text-[10px] font-bold text-slate-400">{formatFileSize(attachment.sizeBytes)}</div>
+        <div className="truncate text-xs font-bold">{attachment.fileName}</div>
+        <div className="text-[10px] text-slate-400 font-medium">{formatFileSize(attachment.sizeBytes)}</div>
       </div>
-      <Download size={16} className="shrink-0" />
+      <Download size={16} className="shrink-0 text-slate-400" />
     </a>
   );
 };
@@ -339,7 +214,14 @@ const TextMessage: React.FC<{ message: ChatV2Message }> = ({ message }) => (
     {message.body && <MessageText body={message.body} mentions={message.mentions} />}
     {message.attachments.length > 0 && (
       <div className={`mt-2 grid gap-2 ${message.attachments.length > 1 ? 'sm:grid-cols-2' : ''}`}>
-        {message.attachments.map(attachment => <AttachmentView key={attachment.id} attachment={attachment} />)}
+        {message.attachments.map(attachment => (
+          <AttachmentView
+            key={attachment.id}
+            attachment={attachment}
+            messageCreatedAt={message.createdAt}
+            messageMetadata={message.metadata}
+          />
+        ))}
       </div>
     )}
   </>
@@ -361,8 +243,8 @@ const PollMessage: React.FC<{
   const question = message.payload.question || message.payload.title || message.body || 'Bình chọn';
 
   return (
-    <div className="min-w-[240px] space-y-2">
-      <div className="text-sm font-black">{question}</div>
+    <div className="min-w-[240px] space-y-2 text-[#dbdee1]">
+      <div className="text-sm font-bold text-white">{question}</div>
       <div className="space-y-1.5">
         {options.map((option: { id: string; text: string }) => {
           const count = message.pollVotes.filter(vote => vote.optionId === option.id).length;
@@ -375,22 +257,22 @@ const PollMessage: React.FC<{
               onClick={() => onVote(message, option.id)}
               className={`w-full rounded-lg border px-3 py-2 text-left transition ${
                 selected
-                  ? isMine ? 'border-white/50 bg-white/15' : 'border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-100'
-                  : isMine ? 'border-white/20 bg-white/5 hover:bg-white/10' : 'border-slate-200 bg-slate-50 hover:border-emerald-300 dark:border-slate-800 dark:bg-slate-900'
+                  ? 'border-indigo-500 bg-indigo-500/25 text-white'
+                  : 'border-slate-700 bg-slate-800 hover:border-slate-500'
               }`}
             >
-              <div className="flex items-center justify-between gap-3 text-xs font-black">
+              <div className="flex items-center justify-between gap-3 text-xs font-bold">
                 <span className="min-w-0 break-words">{option.text}</span>
                 <span className="shrink-0">{count} · {pct}%</span>
               </div>
-              <div className={`mt-1 h-1.5 overflow-hidden rounded-full ${isMine ? 'bg-white/15' : 'bg-slate-200 dark:bg-slate-800'}`}>
-                <div className={`h-full rounded-full ${isMine ? 'bg-white/70' : 'bg-emerald-500'}`} style={{ width: `${pct}%` }} />
+              <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-900">
+                <div className="h-full rounded-full bg-indigo-500" style={{ width: `${pct}%` }} />
               </div>
             </button>
           );
         })}
       </div>
-      {message.payload.multiple && <div className={`text-[10px] font-bold ${isMine ? 'text-emerald-100' : 'text-slate-400'}`}>Cho phép chọn nhiều đáp án</div>}
+      {message.payload.multiple && <div className="text-[10px] text-slate-400 font-medium">Cho phép chọn nhiều đáp án</div>}
     </div>
   );
 };
@@ -403,8 +285,8 @@ const ChecklistMessage: React.FC<{
 }> = ({ message, users, isMine, onToggle }) => {
   const title = message.payload.title || message.body || 'Checklist';
   return (
-    <div className="min-w-[240px] space-y-2">
-      <div className="text-sm font-black">{title}</div>
+    <div className="min-w-[240px] space-y-2 text-[#dbdee1]">
+      <div className="text-sm font-bold text-white">{title}</div>
       <div className="space-y-1.5">
         {message.checklistItems.map(item => {
           const doneBy = users.find(user => user.id === item.doneBy);
@@ -413,17 +295,15 @@ const ChecklistMessage: React.FC<{
               key={item.id}
               type="button"
               onClick={() => onToggle(item, !item.isDone)}
-              className={`grid w-full grid-cols-[auto_1fr] gap-2 rounded-lg border px-3 py-2 text-left transition ${
-                isMine ? 'border-white/20 bg-white/5 hover:bg-white/10' : 'border-slate-200 bg-slate-50 hover:border-emerald-300 dark:border-slate-800 dark:bg-slate-900'
-              }`}
+              className="grid w-full grid-cols-[auto_1fr] gap-2 rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-left transition hover:border-slate-500"
             >
-              <span className={`mt-0.5 flex h-4 w-4 items-center justify-center rounded border ${item.isDone ? 'border-emerald-500 bg-emerald-500 text-white' : isMine ? 'border-white/50' : 'border-slate-300 dark:border-slate-700'}`}>
+              <span className={`mt-0.5 flex h-4 w-4 items-center justify-center rounded border ${item.isDone ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-slate-650'}`}>
                 {item.isDone && <Check size={12} />}
               </span>
               <span className="min-w-0">
-                <span className={`block break-words text-xs font-black ${item.isDone ? 'line-through opacity-70' : ''}`}>{item.content}</span>
+                <span className={`block break-words text-xs font-bold ${item.isDone ? 'line-through opacity-60' : ''}`}>{item.content}</span>
                 {item.isDone && (
-                  <span className={`mt-0.5 block text-[10px] font-bold ${isMine ? 'text-emerald-100' : 'text-slate-400'}`}>
+                  <span className="mt-0.5 block text-[10px] text-slate-400 font-medium">
                     {doneBy?.name || 'Đã tick'} {item.doneAt ? `· ${formatTime(item.doneAt)}` : ''}
                   </span>
                 )}
@@ -446,8 +326,8 @@ const QuickConfirmMessage: React.FC<{
   const title = message.payload.title || message.body || 'Xác nhận nhanh';
   const myResponse = message.quickConfirmResponses.find(response => response.userId === currentUser.id);
   return (
-    <div className="min-w-[240px] space-y-2">
-      <div className="text-sm font-black">{title}</div>
+    <div className="min-w-[240px] space-y-2 text-[#dbdee1]">
+      <div className="text-sm font-bold text-white">{title}</div>
       <div className="flex flex-wrap gap-1.5">
         {options.map((option: { id: string; text: string }) => {
           const count = message.quickConfirmResponses.filter(response => response.optionId === option.id).length;
@@ -457,10 +337,10 @@ const QuickConfirmMessage: React.FC<{
               key={option.id}
               type="button"
               onClick={() => onRespond(message, option.id)}
-              className={`rounded-lg border px-3 py-2 text-xs font-black transition ${
+              className={`rounded-lg border px-3 py-2 text-xs font-bold transition ${
                 selected
-                  ? isMine ? 'border-white/60 bg-white/20' : 'border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-100'
-                  : isMine ? 'border-white/20 bg-white/5 hover:bg-white/10' : 'border-slate-200 bg-slate-50 hover:border-emerald-300 dark:border-slate-800 dark:bg-slate-900'
+                  ? 'border-emerald-500 bg-emerald-500/25 text-white'
+                  : 'border-slate-700 bg-slate-800 hover:border-slate-500'
               }`}
             >
               {option.text} · {count}
@@ -493,23 +373,70 @@ const MessageRow: React.FC<{
   message: ChatV2Message;
   currentUser: User;
   users: User[];
+  conversation: ChatV2Conversation;
   canDelete: boolean;
   onEdit: (message: ChatV2Message, body: string) => Promise<void>;
   onReaction: (message: ChatV2Message, emoji: string) => void;
-  onReply: (message: ChatV2Message) => void;
   onRecall: (message: ChatV2Message) => void;
   onPollVote: (message: ChatV2Message, optionId: string) => void;
   onChecklistToggle: (item: ChatV2ChecklistItem, nextDone: boolean) => void;
   onQuickConfirm: (message: ChatV2Message, optionId: string) => void;
-}> = ({ message, currentUser, users, canDelete, onEdit, onReaction, onReply, onRecall, onPollVote, onChecklistToggle, onQuickConfirm }) => {
+  onReply: (message: ChatV2Message) => void;
+}> = ({
+  message,
+  currentUser,
+  users,
+  conversation,
+  canDelete,
+  onEdit,
+  onReaction,
+  onRecall,
+  onPollVote,
+  onChecklistToggle,
+  onQuickConfirm,
+  onReply,
+}) => {
   const sender = users.find(user => user.id === message.senderId);
   const isMine = message.senderId === currentUser.id;
   const [showTools, setShowTools] = useState(false);
-  const [showReactionPicker, setShowReactionPicker] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editDraft, setEditDraft] = useState(message.body);
   const [savingEdit, setSavingEdit] = useState(false);
+  const toolsHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const canEditBody = message.kind === 'text' || message.kind === 'image' || message.kind === 'file';
+
+  // Get username handle from sender's email or username
+  const handle = sender?.username || sender?.email?.split('@')[0] || 'user';
+
+  useEffect(() => {
+    return () => {
+      if (toolsHideTimerRef.current) clearTimeout(toolsHideTimerRef.current);
+    };
+  }, []);
+
+  const showInlineTools = () => {
+    if (toolsHideTimerRef.current) {
+      clearTimeout(toolsHideTimerRef.current);
+      toolsHideTimerRef.current = null;
+    }
+    setShowTools(true);
+  };
+
+  const scheduleHideInlineTools = () => {
+    if (toolsHideTimerRef.current) clearTimeout(toolsHideTimerRef.current);
+    toolsHideTimerRef.current = setTimeout(() => {
+      setShowTools(false);
+      toolsHideTimerRef.current = null;
+    }, 240);
+  };
+
+  // Get readers for this message
+  const readers = useMemo(() => {
+    return conversation.participants
+      .filter(p => p.lastReadMessageId === message.id && p.userId !== message.senderId)
+      .map(p => users.find(u => u.id === p.userId))
+      .filter(Boolean) as User[];
+  }, [conversation.participants, message.id, message.senderId, users]);
 
   const submitEdit = async () => {
     const nextBody = editDraft.trim();
@@ -526,70 +453,94 @@ const MessageRow: React.FC<{
   if (message.kind === 'system') {
     return (
       <div className="my-3 flex justify-center">
-        <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-bold text-slate-500 dark:bg-slate-900 dark:text-slate-400">
+        <span className="rounded-full bg-slate-800 px-3 py-1 text-[11px] font-bold text-slate-400 border border-slate-700/50">
           {message.body}
         </span>
       </div>
     );
   }
 
+  if (message.deletedAt) {
+    return (
+      <div className={`flex gap-3 my-2 ${isMine ? 'justify-end' : 'justify-start'}`}>
+        {!isMine && <Avatar user={sender} label={sender?.name} size="sm" />}
+        <div className={`flex flex-col ${isMine ? 'items-end' : 'items-start'}`}>
+          {!isMine && <div className="mb-0.5 px-1 text-[11px] font-bold text-slate-400">{sender?.name || 'Người dùng'}</div>}
+          <div className="rounded-2xl px-4 py-2 text-xs italic text-slate-500 bg-[#2b2d31] border border-slate-850">
+            Tin nhắn đã bị xoá
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
-      className={`group flex gap-2 ${isMine ? 'justify-end' : 'justify-start'}`}
-      onMouseEnter={() => setShowTools(true)}
-      onMouseLeave={() => {
-        setShowTools(false);
-        setShowReactionPicker(false);
-      }}
+      className={`group flex gap-3 relative my-3 ${isMine ? 'justify-end' : 'justify-start'}`}
+      onMouseEnter={showInlineTools}
+      onMouseLeave={scheduleHideInlineTools}
     >
       {!isMine && <Avatar user={sender} label={sender?.name} size="sm" />}
-      <div className={`flex max-w-[82%] flex-col ${isMine ? 'items-end' : 'items-start'} sm:max-w-[70%]`}>
-        {!isMine && <div className="mb-1 px-1 text-[11px] font-black text-slate-500">{sender?.name || 'Người dùng'}</div>}
-        <div className={`relative rounded-2xl px-3 py-2 shadow-sm ${
-          isMine
-            ? 'rounded-br-md bg-emerald-600 text-white'
-            : 'rounded-bl-md border border-slate-200 bg-white text-slate-800 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100'
-        }`}>
-          {isEditing ? (
-            <div className="space-y-2">
-              <textarea
-                value={editDraft}
-                onChange={event => setEditDraft(event.target.value)}
-                rows={2}
-                className={`w-full min-w-[220px] resize-none rounded-lg border px-3 py-2 text-sm font-semibold outline-none ${
-                  isMine
-                    ? 'border-white/30 bg-white/10 text-white placeholder:text-white/60'
-                    : 'border-slate-200 bg-slate-50 text-slate-900 dark:border-slate-800 dark:bg-slate-900 dark:text-white'
-                }`}
-              />
-              <div className="flex justify-end gap-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEditDraft(message.body);
-                    setIsEditing(false);
-                  }}
-                  title="Hủy sửa"
-                  aria-label="Hủy sửa"
-                  className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/10 text-current hover:bg-white/20"
-                >
-                  <X size={14} />
-                </button>
-                <button
-                  type="button"
-                  onClick={submitEdit}
-                  title="Lưu"
-                  aria-label="Lưu"
-                  disabled={savingEdit || !editDraft.trim()}
-                  className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/20 text-current hover:bg-white/30 disabled:opacity-50"
-                >
-                  <Check size={14} />
-                </button>
+      <div className={`flex max-w-[85%] flex-col ${isMine ? 'items-end' : 'items-start'} sm:max-w-[75%]`}>
+        {/* User Name & Handle */}
+        {!isMine && (
+          <div className="mb-1 flex items-center gap-1.5 px-1">
+            <span className="text-xs font-black text-white">{sender?.name || 'Người dùng'}</span>
+            <span className="text-[10px] font-medium text-slate-400">@{handle}</span>
+          </div>
+        )}
+
+        {/* Reply Preview Card inside Thread */}
+        {message.replyPreview && (
+          <div className="mb-1 flex items-center gap-1.5 rounded-lg bg-slate-900/40 px-2.5 py-1 text-[10px] text-slate-400 border border-slate-800 max-w-full">
+            <span className="font-bold text-indigo-400">@{message.replyPreview.senderName}:</span>
+            <span className="truncate italic">{message.replyPreview.bodyPreview}</span>
+          </div>
+        )}
+
+        <div className={`flex max-w-full items-center gap-2 ${isMine ? 'flex-row-reverse' : 'flex-row'}`}>
+          {/* Message bubble */}
+          <div className={`relative min-w-0 rounded-2xl px-4 py-2.5 shadow-sm border ${
+            isMine
+              ? 'rounded-br-sm bg-emerald-600 text-white border-emerald-600'
+              : 'rounded-bl-sm border-slate-700 bg-[#2b2d31] text-[#dbdee1]'
+          }`}>
+            {isEditing ? (
+              <div className="space-y-2">
+                <textarea
+                  value={editDraft}
+                  onChange={event => setEditDraft(event.target.value)}
+                  rows={2}
+                  className={`w-full min-w-[220px] resize-none rounded-lg border px-3 py-2 text-sm font-semibold outline-none ${
+                    isMine
+                      ? 'border-white/30 bg-white/10 text-white placeholder:text-white/60'
+                      : 'border-slate-700 bg-slate-800 text-[#dbdee1] placeholder:text-slate-550'
+                  }`}
+                />
+                <div className="flex justify-end gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditDraft(message.body);
+                      setIsEditing(false);
+                    }}
+                    title="Hủy sửa"
+                    className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/10 text-current hover:bg-white/25"
+                  >
+                    <X size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={submitEdit}
+                    title="Lưu"
+                    disabled={savingEdit || !editDraft.trim()}
+                    className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/20 text-current hover:bg-white/35 disabled:opacity-50"
+                  >
+                    <Check size={14} />
+                  </button>
+                </div>
               </div>
-            </div>
-          ) : (
-            <>
-              <ReplyQuote preview={message.replyPreview} isMine={isMine} />
+            ) : (
               <MessageRenderer
                 message={message}
                 currentUser={currentUser}
@@ -599,66 +550,45 @@ const MessageRow: React.FC<{
                 onChecklistToggle={onChecklistToggle}
                 onQuickConfirm={onQuickConfirm}
               />
-            </>
-          )}
-          <div className={`mt-1 text-right text-[10px] font-bold ${isMine ? 'text-emerald-100' : 'text-slate-400'}`}>
-            {formatTime(message.createdAt)} {message.editedAt ? '· đã sửa' : ''}
-          </div>
-        </div>
+            )}
 
-        <div className={`mt-1 flex flex-wrap items-center gap-1 ${isMine ? 'justify-end' : 'justify-start'}`}>
-          {message.reactionSummary.map(reaction => (
-            <button
-              key={reaction.emoji}
-              type="button"
-              onClick={() => onReaction(message, reaction.emoji)}
-              className={`h-7 rounded-full border px-2 text-xs font-black transition ${
-                reaction.reactedByMe
-                  ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
-                  : 'border-slate-200 bg-white text-slate-600 hover:border-emerald-300 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300'
-              }`}
-            >
-              {reaction.emoji} {reaction.count}
-            </button>
-          ))}
-          {showTools && (
-            <div className="flex items-center gap-1 rounded-full border border-slate-200 bg-white p-1 shadow-sm dark:border-slate-800 dark:bg-slate-950">
-              <div className="relative">
+            {/* Timestamp inside bubble */}
+            <div className={`mt-1 text-right text-[9px] font-bold ${isMine ? 'text-emerald-100/80' : 'text-slate-400'}`}>
+              {formatTime(message.createdAt)} {message.editedAt ? '· đã sửa' : ''}
+            </div>
+          </div>
+
+          {/* Inline tools */}
+          {showTools && !isEditing && (
+            <div className={`flex shrink-0 items-center gap-1 ${isMine ? 'flex-row-reverse' : 'flex-row'}`}>
+              <div className="group/reaction relative flex">
                 <button
                   type="button"
-                  onClick={() => setShowReactionPicker(prev => !prev)}
                   title="Bày tỏ cảm xúc"
-                  aria-label="Bày tỏ cảm xúc"
-                  className="flex h-6 w-6 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-emerald-600 dark:hover:bg-slate-900"
+                  className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-700 bg-[#2b2d31] text-slate-300 shadow-md transition hover:border-amber-400 hover:bg-slate-800 hover:text-white"
                 >
-                  <Smile size={13} />
+                  <Smile size={15} />
                 </button>
-                {showReactionPicker && (
-                  <div className={`absolute bottom-8 z-30 flex items-center gap-1 rounded-full border border-slate-200 bg-white p-1 shadow-xl dark:border-slate-800 dark:bg-slate-950 ${isMine ? 'right-0' : 'left-0'}`}>
-                    {CHAT_V2_REACTION_EMOJIS.map(emoji => (
-                      <button
-                        key={emoji}
-                        type="button"
-                        onClick={() => {
-                          onReaction(message, emoji);
-                          setShowReactionPicker(false);
-                        }}
-                        className="flex h-7 w-7 items-center justify-center rounded-full text-sm transition hover:bg-slate-100 dark:hover:bg-slate-900"
-                      >
-                        {emoji}
-                      </button>
-                    ))}
-                  </div>
-                )}
+                <div className={`pointer-events-none absolute bottom-full z-30 mb-0 flex gap-1 rounded-full border border-slate-700 bg-[#1e1f22] p-1.5 opacity-0 shadow-xl transition group-hover/reaction:pointer-events-auto group-hover/reaction:opacity-100 group-focus-within/reaction:pointer-events-auto group-focus-within/reaction:opacity-100 ${isMine ? 'right-0' : 'left-0'}`}>
+                  {CHAT_V2_REACTION_EMOJIS.map(emoji => (
+                    <button
+                      key={emoji}
+                      type="button"
+                      onClick={() => onReaction(message, emoji)}
+                      className="flex h-7 w-7 items-center justify-center rounded-full text-sm transition hover:bg-slate-700"
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
               </div>
               <button
                 type="button"
                 onClick={() => onReply(message)}
                 title="Trả lời"
-                aria-label="Trả lời"
-                className="flex h-6 w-6 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-emerald-600 dark:hover:bg-slate-900"
+                className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-700 bg-[#2b2d31] text-slate-300 shadow-md transition hover:border-indigo-400 hover:bg-slate-800 hover:text-white"
               >
-                <CornerUpLeft size={13} />
+                <CornerUpLeft size={15} />
               </button>
               {isMine && canEditBody && !isEditing && (
                 <button
@@ -668,26 +598,65 @@ const MessageRow: React.FC<{
                     setIsEditing(true);
                   }}
                   title="Sửa"
-                  aria-label="Sửa"
-                  className="flex h-6 w-6 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-emerald-600 dark:hover:bg-slate-900"
+                  className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-700 bg-[#2b2d31] text-slate-300 shadow-md transition hover:border-slate-500 hover:bg-slate-800 hover:text-white"
                 >
-                  <Edit3 size={13} />
+                  <Edit3 size={15} />
                 </button>
               )}
               {canDelete && (
                 <button
                   type="button"
                   onClick={() => onRecall(message)}
-                  title="Xóa"
-                  aria-label="Xóa"
-                  className="flex h-6 w-6 items-center justify-center rounded-full text-slate-400 transition hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40"
+                  title="Thu hồi"
+                  className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-700 bg-[#2b2d31] text-slate-300 shadow-md transition hover:border-red-500 hover:bg-slate-800 hover:text-red-400"
                 >
-                  <Trash2 size={13} />
+                  <Trash2 size={15} />
                 </button>
               )}
             </div>
           )}
         </div>
+
+        {message.reactionSummary.length > 0 && (
+          <div className={`mt-1.5 flex flex-wrap items-center gap-1.5 ${isMine ? 'justify-end' : 'justify-start'}`}>
+            {message.reactionSummary.map(reaction => (
+              <button
+                key={reaction.emoji}
+                type="button"
+                onClick={() => onReaction(message, reaction.emoji)}
+                className={`h-6 rounded-full border px-2 text-[10px] font-bold transition flex items-center gap-1 ${
+                  reaction.reactedByMe
+                    ? 'border-emerald-500 bg-emerald-500/10 text-emerald-400'
+                    : 'border-slate-700 bg-[#2b2d31] text-slate-400 hover:border-slate-500 hover:text-slate-200'
+                }`}
+              >
+                <span>{reaction.emoji}</span>
+                <span>{reaction.count}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Read receipts list */}
+        {readers.length > 0 && (
+          <div className="flex -space-x-1 overflow-hidden mt-1 justify-end select-none">
+            {readers.map(reader => (
+              <div
+                key={reader.id}
+                title={`Đã đọc bởi ${reader.name}`}
+                className="inline-block h-4 w-4 rounded-full ring-1 ring-[#313338] bg-slate-700 overflow-hidden"
+              >
+                {reader.avatar ? (
+                  <img src={reader.avatar} alt={reader.name} className="h-full w-full object-cover" />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center text-[7px] font-black bg-emerald-700 text-white">
+                    {getUserInitials(reader.name)}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -740,11 +709,11 @@ const StructuredMessageModal: React.FC<{
   };
 
   return (
-    <div className="fixed inset-0 z-[140] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-md overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950">
-        <div className="flex h-14 items-center justify-between border-b border-slate-200 px-4 dark:border-slate-800">
-          <div className="text-sm font-black text-slate-900 dark:text-white">{label}</div>
-          <button type="button" onClick={onClose} title="Đóng" aria-label="Đóng" className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-900">
+    <div className="fixed inset-0 z-[140] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+      <div className="w-full max-w-md overflow-hidden rounded-lg border border-slate-700 bg-[#2b2d31] shadow-2xl">
+        <div className="flex h-14 items-center justify-between border-b border-slate-700 px-4">
+          <div className="text-sm font-black text-white">{label}</div>
+          <button type="button" onClick={onClose} title="Đóng" className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white">
             <X size={18} />
           </button>
         </div>
@@ -753,37 +722,37 @@ const StructuredMessageModal: React.FC<{
             value={title}
             onChange={event => setTitle(event.target.value)}
             placeholder={mode === 'poll' ? 'Câu hỏi' : 'Tiêu đề'}
-            className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-900 outline-none focus:border-emerald-400 dark:border-slate-800 dark:bg-slate-900 dark:text-white"
+            className="h-10 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 text-sm font-semibold text-white outline-none focus:border-indigo-500"
           />
           {mode === 'checklist' ? (
             <textarea
               value={itemsText}
               onChange={event => setItemsText(event.target.value)}
               rows={6}
-              placeholder="Danh sách mục"
-              className="w-full resize-none rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-900 outline-none focus:border-emerald-400 dark:border-slate-800 dark:bg-slate-900 dark:text-white"
+              placeholder="Danh sách mục (mỗi dòng một mục)"
+              className="w-full resize-none rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm font-semibold text-white outline-none focus:border-indigo-500"
             />
           ) : (
             <textarea
               value={optionsText}
               onChange={event => setOptionsText(event.target.value)}
               rows={6}
-              placeholder="Danh sách lựa chọn"
-              className="w-full resize-none rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-900 outline-none focus:border-emerald-400 dark:border-slate-800 dark:bg-slate-900 dark:text-white"
+              placeholder="Danh sách lựa chọn (mỗi dòng một lựa chọn)"
+              className="w-full resize-none rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm font-semibold text-white outline-none focus:border-indigo-500"
             />
           )}
           {mode === 'poll' && (
-            <label className="flex items-center gap-2 text-xs font-black text-slate-600 dark:text-slate-300">
-              <input type="checkbox" checked={multiple} onChange={event => setMultiple(event.target.checked)} className="h-4 w-4 rounded border-slate-300 text-emerald-600" />
+            <label className="flex items-center gap-2 text-xs font-bold text-slate-350 cursor-pointer">
+              <input type="checkbox" checked={multiple} onChange={event => setMultiple(event.target.checked)} className="h-4 w-4 rounded border-slate-650 bg-slate-800 text-indigo-600 focus:ring-0" />
               Chọn nhiều đáp án
             </label>
           )}
         </div>
-        <div className="flex justify-end gap-2 border-t border-slate-200 p-4 dark:border-slate-800">
-          <button type="button" onClick={onClose} className="h-10 rounded-lg border border-slate-200 px-4 text-xs font-black text-slate-600 transition hover:bg-slate-50 dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-900">
+        <div className="flex justify-end gap-2 border-t border-slate-700 p-4">
+          <button type="button" onClick={onClose} className="h-10 rounded-lg border border-slate-700 px-4 text-xs font-bold text-slate-300 transition hover:bg-slate-800">
             Hủy
           </button>
-          <button type="button" onClick={submit} disabled={saving} className="h-10 rounded-lg bg-emerald-600 px-4 text-xs font-black text-white transition hover:bg-emerald-700 disabled:bg-slate-300 dark:disabled:bg-slate-800">
+          <button type="button" onClick={submit} disabled={saving} className="h-10 rounded-lg bg-emerald-600 px-4 text-xs font-bold text-white transition hover:bg-emerald-700 disabled:opacity-50">
             Gửi
           </button>
         </div>
@@ -794,71 +763,33 @@ const StructuredMessageModal: React.FC<{
 
 const MessageComposer: React.FC<{
   disabled: boolean;
-  currentUser: User;
-  conversation: ChatV2Conversation | null;
-  users: User[];
   replyTo: ReplyDraft | null;
   onCancelReply: () => void;
-  onSend: (body: string, files: File[], options?: ChatV2SendOptions) => Promise<void>;
+  onSend: (body: string, files: File[]) => Promise<void>;
   onSendStructured: (input: { kind: ChatV2MessageKind; payload: Record<string, any>; checklistItems?: string[] }) => Promise<void>;
   onTyping: (isTyping: boolean) => void;
-}> = ({ disabled, currentUser, conversation, users, replyTo, onCancelReply, onSend, onSendStructured, onTyping }) => {
+}> = ({ disabled, replyTo, onCancelReply, onSend, onSendStructured, onTyping }) => {
   const [body, setBody] = useState('');
   const [files, setFiles] = useState<File[]>([]);
-  const [mentions, setMentions] = useState<ChatV2Mention[]>([]);
-  const [selectionStart, setSelectionStart] = useState(0);
   const [showEmoji, setShowEmoji] = useState(false);
   const [structuredMode, setStructuredMode] = useState<Extract<ChatV2MessageKind, 'poll' | 'checklist' | 'quick_confirm'> | null>(null);
   const [showStructuredMenu, setShowStructuredMenu] = useState(false);
   const [sending, setSending] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [selectionStart, setSelectionStart] = useState<number | null>(null);
 
-  const mentionableUsers = useMemo(() => {
-    const participantIds = new Set((conversation?.participants || [])
-      .map(participant => participant.userId)
-      .filter(userId => userId !== currentUser.id));
-    return users
-      .filter(user => participantIds.has(user.id) && user.isActive !== false)
-      .sort((a, b) => (a.name || a.email || '').localeCompare(b.name || b.email || '', 'vi'));
-  }, [conversation?.participants, currentUser.id, users]);
-
-  const mentionContext = useMemo(() => {
-    const cursor = Math.max(0, Math.min(selectionStart, body.length));
-    const atIndex = body.lastIndexOf('@', cursor);
-    if (atIndex < 0) return null;
-    const token = body.slice(atIndex + 1, cursor);
-    if (/\s/.test(token)) return null;
-    return { atIndex, query: token.toLowerCase() };
-  }, [body, selectionStart]);
-
-  const mentionMatches = useMemo(() => {
-    if (!mentionContext) return [];
-    return mentionableUsers
-      .filter(user => {
-        const label = `${user.name || ''} ${user.email || ''} ${user.username || ''}`.toLowerCase();
-        return !mentionContext.query || label.includes(mentionContext.query);
-      })
-      .slice(0, 6);
-  }, [mentionContext, mentionableUsers]);
-
-  const selectMention = (target: User) => {
-    const displayName = target.name || target.email || 'Người dùng';
-    const inserted = insertChatV2Mention({
-      body,
-      selectionStart,
-      displayName,
-    });
-    setBody(inserted.body);
-    setSelectionStart(inserted.caretPosition);
-    setMentions(prev => {
-      const withoutUser = prev.filter(item => item.userId !== target.id);
-      return [...withoutUser, { userId: target.id, displayName }];
-    });
-    requestAnimationFrame(() => {
+  const insertEmoji = (emoji: string) => {
+    const start = selectionStart ?? body.length;
+    const nextBody = body.slice(0, start) + emoji + body.slice(start);
+    setBody(nextBody);
+    setShowEmoji(false);
+    onTyping(true);
+    const caret = start + emoji.length;
+    setTimeout(() => {
       textareaRef.current?.focus();
-      textareaRef.current?.setSelectionRange(inserted.caretPosition, inserted.caretPosition);
-    });
+      textareaRef.current?.setSelectionRange(caret, caret);
+    }, 50);
   };
 
   const submit = async () => {
@@ -866,15 +797,9 @@ const MessageComposer: React.FC<{
     if (!body.trim() && files.length === 0) return;
     setSending(true);
     try {
-      const activeMentions = mentions.filter(mention => body.includes(`@${mention.displayName}`));
-      await onSend(body, files, {
-        replyToMessageId: replyTo?.messageId || null,
-        replyPreview: replyTo,
-        mentions: activeMentions,
-      });
+      await onSend(body, files);
       setBody('');
       setFiles([]);
-      setMentions([]);
       onCancelReply();
       onTyping(false);
     } finally {
@@ -883,23 +808,22 @@ const MessageComposer: React.FC<{
   };
 
   return (
-    <div className="shrink-0 border-t border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
+    <div className="shrink-0 border-t border-slate-700 bg-[#313338] p-3">
       {replyTo && <ReplyQuote preview={replyTo} onClear={onCancelReply} />}
       {files.length > 0 && (
-        <div className="mb-2 flex gap-2 overflow-x-auto pb-1">
+        <div className="mb-2 flex gap-2 overflow-x-auto pb-1 select-none">
           {files.map((file, index) => (
-            <div key={`${file.name}-${index}`} className="flex h-11 max-w-[220px] shrink-0 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2 dark:border-slate-800 dark:bg-slate-900">
-              {file.type.startsWith('image/') ? <ImageIcon size={16} className="text-emerald-600" /> : <FileText size={16} className="text-slate-500" />}
+            <div key={`${file.name}-${index}`} className="flex h-11 max-w-[220px] shrink-0 items-center gap-2 rounded-lg border border-slate-700 bg-slate-800 px-2">
+              {file.type.startsWith('image/') ? <ImageIcon size={16} className="text-emerald-500" /> : <FileText size={16} className="text-slate-400" />}
               <div className="min-w-0 flex-1">
-                <div className="truncate text-xs font-black text-slate-700 dark:text-slate-100">{file.name}</div>
-                <div className="text-[10px] font-bold text-slate-400">{formatFileSize(file.size)}</div>
+                <div className="truncate text-xs font-bold text-slate-200">{file.name}</div>
+                <div className="text-[10px] font-medium text-slate-400">{formatFileSize(file.size)}</div>
               </div>
               <button
                 type="button"
                 onClick={() => setFiles(prev => prev.filter((_, itemIndex) => itemIndex !== index))}
                 title="Bỏ tệp"
-                aria-label="Bỏ tệp"
-                className="text-slate-400 hover:text-red-500"
+                className="text-slate-400 hover:text-red-400"
               >
                 <X size={14} />
               </button>
@@ -909,16 +833,13 @@ const MessageComposer: React.FC<{
       )}
 
       {showEmoji && (
-        <div className="mb-2 flex flex-wrap gap-1 rounded-lg border border-slate-200 bg-slate-50 p-2 dark:border-slate-800 dark:bg-slate-900">
+        <div className="mb-2 flex flex-wrap gap-1 rounded-lg border border-slate-700 bg-slate-800 p-2 max-h-36 overflow-y-auto">
           {CHAT_V2_REACTION_EMOJIS.map(emoji => (
             <button
               key={emoji}
               type="button"
-              onClick={() => {
-                setBody(prev => `${prev}${emoji}`);
-                setShowEmoji(false);
-              }}
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-base transition hover:bg-white dark:hover:bg-slate-950"
+              onClick={() => insertEmoji(emoji)}
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-base transition hover:bg-slate-700"
             >
               {emoji}
             </button>
@@ -942,9 +863,8 @@ const MessageComposer: React.FC<{
           type="button"
           onClick={() => fileInputRef.current?.click()}
           title="Đính kèm"
-          aria-label="Đính kèm"
           disabled={disabled || sending}
-          className="flex h-11 w-11 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:border-emerald-300 hover:text-emerald-700 disabled:opacity-50 dark:border-slate-800 dark:text-slate-400"
+          className="flex h-11 w-11 items-center justify-center rounded-lg border border-slate-700 text-slate-400 transition hover:border-slate-500 hover:text-white disabled:opacity-50"
         >
           <Paperclip size={18} />
         </button>
@@ -953,14 +873,13 @@ const MessageComposer: React.FC<{
             type="button"
             onClick={() => setShowStructuredMenu(prev => !prev)}
             title="Tạo nội dung"
-            aria-label="Tạo nội dung"
             disabled={disabled || sending}
-            className="flex h-11 w-11 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:border-emerald-300 hover:text-emerald-700 disabled:opacity-50 dark:border-slate-800 dark:text-slate-400"
+            className="flex h-11 w-11 items-center justify-center rounded-lg border border-slate-700 text-slate-400 transition hover:border-slate-500 hover:text-white disabled:opacity-50"
           >
             <Plus size={18} />
           </button>
           {showStructuredMenu && (
-            <div className="absolute bottom-12 left-0 z-20 w-44 overflow-hidden rounded-lg border border-slate-200 bg-white p-1 shadow-xl dark:border-slate-800 dark:bg-slate-950">
+            <div className="absolute bottom-12 left-0 z-20 w-44 overflow-hidden rounded-lg border border-slate-700 bg-slate-800 p-1 shadow-xl">
               {[
                 { mode: 'poll' as const, label: 'Bình chọn', icon: BarChart3 },
                 { mode: 'checklist' as const, label: 'Checklist', icon: ListChecks },
@@ -975,7 +894,7 @@ const MessageComposer: React.FC<{
                       setStructuredMode(item.mode);
                       setShowStructuredMenu(false);
                     }}
-                    className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-xs font-black text-slate-700 transition hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-900"
+                    className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs font-bold text-slate-200 transition hover:bg-slate-700"
                   >
                     <Icon size={15} /> {item.label}
                   </button>
@@ -988,9 +907,8 @@ const MessageComposer: React.FC<{
           type="button"
           onClick={() => setShowEmoji(prev => !prev)}
           title="Emoji"
-          aria-label="Emoji"
           disabled={disabled || sending}
-          className="flex h-11 w-11 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:border-emerald-300 hover:text-emerald-700 disabled:opacity-50 dark:border-slate-800 dark:text-slate-400"
+          className="flex h-11 w-11 items-center justify-center rounded-lg border border-slate-700 text-slate-400 transition hover:border-slate-500 hover:text-white disabled:opacity-50"
         >
           <Smile size={18} />
         </button>
@@ -1012,36 +930,20 @@ const MessageComposer: React.FC<{
             }
           }}
           rows={1}
-          placeholder="Nhập tin nhắn"
+          placeholder="Gõ và nhấn Enter để gửi tin nhắn"
           disabled={disabled || sending}
-          className="max-h-32 min-h-11 resize-none rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-emerald-400 disabled:opacity-50 dark:border-slate-800 dark:bg-slate-900 dark:text-white"
+          className="max-h-32 min-h-11 resize-none rounded-lg border border-slate-700 bg-slate-800 px-3 py-3 text-sm font-semibold text-[#dbdee1] outline-none transition focus:border-indigo-500/40 disabled:opacity-50"
         />
         <button
           type="button"
           onClick={submit}
           title="Gửi"
-          aria-label="Gửi"
           disabled={disabled || sending || (!body.trim() && files.length === 0)}
-          className="flex h-11 w-11 items-center justify-center rounded-lg bg-emerald-600 text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300 dark:disabled:bg-slate-800"
+          className="flex h-11 w-11 items-center justify-center rounded-lg bg-emerald-600 text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
         >
           <Send size={18} />
         </button>
       </div>
-      {mentionMatches.length > 0 && (
-        <div className="mt-2 max-h-44 overflow-y-auto rounded-lg border border-slate-200 bg-white p-1 shadow-lg dark:border-slate-800 dark:bg-slate-950">
-          {mentionMatches.map(target => (
-            <button
-              key={target.id}
-              type="button"
-              onClick={() => selectMention(target)}
-              className="grid w-full grid-cols-[auto_1fr] items-center gap-2 rounded-md px-2 py-2 text-left text-xs font-black text-slate-700 transition hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-900"
-            >
-              <Avatar user={target} size="sm" />
-              <span className="min-w-0 truncate">{target.name || target.email}</span>
-            </button>
-          ))}
-        </div>
-      )}
       {structuredMode && (
         <StructuredMessageModal
           mode={structuredMode}
@@ -1060,246 +962,6 @@ const MessageComposer: React.FC<{
   );
 };
 
-const MessagePane: React.FC<{
-  conversation: ChatV2Conversation | null;
-  messages: ChatV2Message[];
-  currentUser: User;
-  users: User[];
-  onlineUserIds: Set<string>;
-  typingUsers: Array<{ userId: string; name: string; at: number }>;
-  loading: boolean;
-  loadingOlder: boolean;
-  hasMore: boolean;
-  onBack: () => void;
-  onSend: (body: string, files: File[], options?: ChatV2SendOptions) => Promise<void>;
-  onSendStructured: (input: { kind: ChatV2MessageKind; payload: Record<string, any>; checklistItems?: string[] }) => Promise<void>;
-  onLoadOlder: () => Promise<void>;
-  onTyping: (isTyping: boolean) => void;
-  onEditMessage: (message: ChatV2Message, body: string) => Promise<void>;
-  onReaction: (message: ChatV2Message, emoji: string) => void;
-  onPollVote: (message: ChatV2Message, optionId: string) => void;
-  onChecklistToggle: (item: ChatV2ChecklistItem, nextDone: boolean) => void;
-  onQuickConfirm: (message: ChatV2Message, optionId: string) => void;
-  onRecall: (message: ChatV2Message) => void;
-  onTogglePinned: (conversation: ChatV2Conversation) => void;
-  onToggleMuted: (conversation: ChatV2Conversation) => void;
-  onOpenSettings: () => void;
-}> = ({
-  conversation,
-  messages,
-  currentUser,
-  users,
-  onlineUserIds,
-  typingUsers,
-  loading,
-  loadingOlder,
-  hasMore,
-  onBack,
-  onSend,
-  onSendStructured,
-  onLoadOlder,
-  onTyping,
-  onEditMessage,
-  onReaction,
-  onPollVote,
-  onChecklistToggle,
-  onQuickConfirm,
-  onRecall,
-  onTogglePinned,
-  onToggleMuted,
-  onOpenSettings,
-}) => {
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const previousScrollRef = useRef<{ conversationId?: string; firstId?: string; length: number }>({ length: 0 });
-  const olderScrollSnapshotRef = useRef<{ height: number; top: number } | null>(null);
-  const initialScrolledConversationRef = useRef<string | null>(null);
-  const [replyingTo, setReplyingTo] = useState<ReplyDraft | null>(null);
-
-  useLayoutEffect(() => {
-    const scrollEl = scrollRef.current;
-    if (!scrollEl) return;
-    const previous = previousScrollRef.current;
-    const firstId = messages[0]?.id;
-    const conversationChanged = previous.conversationId !== conversation?.id;
-    const appendedAtBottom = previous.firstId === firstId && messages.length > previous.length;
-    const olderSnapshot = olderScrollSnapshotRef.current;
-    if (olderSnapshot && !conversationChanged) {
-      scrollEl.scrollTop = scrollEl.scrollHeight - olderSnapshot.height + olderSnapshot.top;
-      olderScrollSnapshotRef.current = null;
-    } else if (conversation?.id && messages.length > 0 && initialScrolledConversationRef.current !== conversation.id) {
-      scrollEl.scrollTo({ top: scrollEl.scrollHeight, behavior: 'auto' });
-      initialScrolledConversationRef.current = conversation.id;
-    } else if (appendedAtBottom) {
-      scrollEl.scrollTo({ top: scrollEl.scrollHeight, behavior: 'smooth' });
-    }
-    previousScrollRef.current = { conversationId: conversation?.id, firstId, length: messages.length };
-  }, [messages, conversation?.id]);
-
-  useEffect(() => {
-    setReplyingTo(null);
-  }, [conversation?.id]);
-
-  const loadOlderWithScrollLock = async () => {
-    const scrollEl = scrollRef.current;
-    if (scrollEl) {
-      olderScrollSnapshotRef.current = {
-        height: scrollEl.scrollHeight,
-        top: scrollEl.scrollTop,
-      };
-    }
-    await onLoadOlder();
-  };
-
-  const handleReply = (message: ChatV2Message) => {
-    const sender = users.find(user => user.id === message.senderId);
-    setReplyingTo({
-      messageId: message.id,
-      senderId: message.senderId,
-      senderName: sender?.name || sender?.email || 'Người dùng',
-      bodyPreview: buildChatV2MessagePreview(message.kind, message.body, message.payload),
-      kind: message.kind,
-    });
-  };
-
-  if (!conversation) {
-    return (
-      <section className="hidden h-full min-w-0 flex-1 items-center justify-center bg-slate-50 dark:bg-slate-950 lg:flex">
-        <div className="text-center">
-          <MessageCircle size={42} className="mx-auto mb-3 text-slate-300" />
-          <div className="text-sm font-black text-slate-700 dark:text-slate-200">Chọn một hội thoại</div>
-        </div>
-      </section>
-    );
-  }
-
-  const title = getChatV2ConversationTitle(conversation, currentUser.id, users);
-  const otherParticipant = conversation.participants.find(participant => participant.userId !== currentUser.id);
-  const otherUser = users.find(user => user.id === otherParticipant?.userId);
-  const isDirectOnline = conversation.type === 'direct' && Boolean(otherParticipant && onlineUserIds.has(otherParticipant.userId));
-  const typingLabel = typingUsers.length > 0 ? `${typingUsers.map(user => user.name).join(', ')} đang nhập` : '';
-  const canManage = canManageConversation(conversation, currentUser);
-
-  return (
-    <section className="flex h-full min-w-0 flex-1 flex-col bg-slate-50 dark:bg-slate-950">
-      <header className="flex h-16 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-3 dark:border-slate-800 dark:bg-slate-950 sm:px-4">
-        <div className="flex min-w-0 items-center gap-3">
-          <button
-            type="button"
-            onClick={onBack}
-            title="Quay lại"
-            aria-label="Quay lại"
-            className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-900 lg:hidden"
-          >
-            <ArrowLeft size={18} />
-          </button>
-          {conversation.type === 'direct' ? (
-            <Avatar user={otherUser} label={title} online={isDirectOnline} />
-          ) : (
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-800 text-white dark:bg-slate-700">
-              <Users size={17} />
-            </div>
-          )}
-          <div className="min-w-0">
-            <div className="truncate text-sm font-black text-slate-900 dark:text-white">{title}</div>
-            <div className="truncate text-[11px] font-bold text-slate-500">
-              {typingLabel || `${conversation.participants.length} thành viên`}
-            </div>
-          </div>
-        </div>
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => onTogglePinned(conversation)}
-            title={conversation.currentParticipant?.isPinned ? 'Bỏ ghim' : 'Ghim'}
-            aria-label={conversation.currentParticipant?.isPinned ? 'Bỏ ghim' : 'Ghim'}
-            className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-emerald-700 dark:hover:bg-slate-900"
-          >
-            {conversation.currentParticipant?.isPinned ? <PinOff size={17} /> : <Pin size={17} />}
-          </button>
-          <button
-            type="button"
-            onClick={() => onToggleMuted(conversation)}
-            title={conversation.currentParticipant?.isMuted ? 'Bật thông báo' : 'Tắt thông báo'}
-            aria-label={conversation.currentParticipant?.isMuted ? 'Bật thông báo' : 'Tắt thông báo'}
-            className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-emerald-700 dark:hover:bg-slate-900"
-          >
-            {conversation.currentParticipant?.isMuted ? <BellOff size={17} /> : <Bell size={17} />}
-          </button>
-          <button
-            type="button"
-            onClick={onOpenSettings}
-            title="Quản lý"
-            aria-label="Quản lý"
-            className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 dark:hover:bg-slate-900"
-          >
-            <MoreHorizontal size={18} />
-          </button>
-        </div>
-      </header>
-
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-3 py-4 sm:px-6">
-        {loading && messages.length === 0 ? (
-          <div className="space-y-3">
-            {[0, 1, 2, 3].map(item => (
-              <div key={item} className={`h-12 animate-pulse rounded-2xl bg-slate-200 dark:bg-slate-900 ${item % 2 ? 'ml-auto w-1/2' : 'w-2/3'}`} />
-            ))}
-          </div>
-        ) : messages.length === 0 ? (
-          <div className="flex h-full items-center justify-center text-center">
-            <div>
-              <Heart size={34} className="mx-auto mb-3 text-slate-300" />
-              <div className="text-sm font-black text-slate-700 dark:text-slate-200">Bắt đầu cuộc trò chuyện</div>
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {hasMore && (
-              <div className="flex justify-center">
-                <button
-                  type="button"
-                  onClick={loadOlderWithScrollLock}
-                  disabled={loadingOlder}
-                  className="flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-600 transition hover:border-emerald-300 hover:text-emerald-700 disabled:opacity-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300"
-                >
-                  <ChevronUp size={15} /> {loadingOlder ? 'Đang tải' : 'Tải tin cũ hơn'}
-                </button>
-              </div>
-            )}
-            {messages.map(message => (
-              <MessageRow
-                key={message.id}
-                message={message}
-                currentUser={currentUser}
-                users={users}
-                canDelete={message.senderId === currentUser.id || canManage}
-                onEdit={onEditMessage}
-                onReaction={onReaction}
-                onReply={handleReply}
-                onPollVote={onPollVote}
-                onChecklistToggle={onChecklistToggle}
-                onQuickConfirm={onQuickConfirm}
-                onRecall={onRecall}
-              />
-            ))}
-          </div>
-        )}
-      </div>
-
-      <MessageComposer
-        disabled={!conversation}
-        currentUser={currentUser}
-        conversation={conversation}
-        users={users}
-        replyTo={replyingTo}
-        onCancelReply={() => setReplyingTo(null)}
-        onSend={onSend}
-        onSendStructured={onSendStructured}
-        onTyping={onTyping}
-      />
-    </section>
-  );
-};
-
 const NewChatModal: React.FC<{
   currentUser: User;
   users: User[];
@@ -1315,7 +977,7 @@ const NewChatModal: React.FC<{
   const availableUsers = useMemo(() => {
     const keyword = search.trim().toLowerCase();
     return users
-      .filter(user => user.id !== currentUser.id && user.isActive !== false && canAccessRoute(user, '/chat'))
+      .filter(user => user.id !== currentUser.id && user.isActive !== false)
       .filter(user => !keyword || `${user.name} ${user.email}`.toLowerCase().includes(keyword));
   }, [currentUser.id, search, users]);
 
@@ -1326,7 +988,7 @@ const NewChatModal: React.FC<{
       if (selectedIds.length === 1 && !groupName.trim()) {
         await onCreateDirect(selectedIds[0]);
       } else {
-        await onCreateGroup(groupName, selectedIds);
+        await onCreateGroup(groupName || 'Nhóm mới', selectedIds);
       }
       onClose();
     } finally {
@@ -1335,34 +997,33 @@ const NewChatModal: React.FC<{
   };
 
   return (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
-      <div className="flex max-h-[86dvh] w-full max-w-lg flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950">
-        <div className="flex h-14 shrink-0 items-center justify-between border-b border-slate-200 px-4 dark:border-slate-800">
-          <div className="text-sm font-black text-slate-900 dark:text-white">Tạo hội thoại</div>
+    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
+      <div className="flex max-h-[86dvh] w-full max-w-lg flex-col overflow-hidden rounded-lg border border-slate-700 bg-[#2b2d31] shadow-2xl">
+        <div className="flex h-14 shrink-0 items-center justify-between border-b border-slate-700 px-4">
+          <div className="text-sm font-black text-white">Tạo hội thoại</div>
           <button
             type="button"
             onClick={onClose}
             title="Đóng"
-            aria-label="Đóng"
-            className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-900"
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white"
           >
             <X size={18} />
           </button>
         </div>
-        <div className="shrink-0 space-y-3 border-b border-slate-200 p-4 dark:border-slate-800">
+        <div className="shrink-0 space-y-3 border-b border-slate-700 p-4">
           <input
             value={groupName}
             onChange={event => setGroupName(event.target.value)}
-            placeholder="Tên nhóm"
-            className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-900 outline-none focus:border-emerald-400 dark:border-slate-800 dark:bg-slate-900 dark:text-white"
+            placeholder="Tên nhóm (bắt buộc nếu tạo nhóm)"
+            className="h-10 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 text-sm font-semibold text-white outline-none focus:border-indigo-500"
           />
-          <div className="flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 text-slate-500 dark:border-slate-800 dark:bg-slate-900">
+          <div className="flex h-10 items-center gap-2 rounded-lg border border-slate-700 bg-slate-800 px-3 text-slate-400">
             <Search size={16} />
             <input
               value={search}
               onChange={event => setSearch(event.target.value)}
               placeholder="Tìm người dùng"
-              className="h-full min-w-0 flex-1 bg-transparent text-sm font-semibold text-slate-800 outline-none placeholder:text-slate-400 dark:text-slate-100"
+              className="h-full min-w-0 flex-1 bg-transparent text-sm font-semibold text-white outline-none placeholder:text-slate-500"
             />
           </div>
         </div>
@@ -1376,25 +1037,25 @@ const NewChatModal: React.FC<{
                 onClick={() => {
                   setSelectedIds(prev => checked ? prev.filter(id => id !== user.id) : [...prev, user.id]);
                 }}
-                className="grid w-full grid-cols-[auto_1fr_auto] items-center gap-3 rounded-lg px-3 py-2 text-left transition hover:bg-slate-50 dark:hover:bg-slate-900"
+                className="grid w-full grid-cols-[auto_1fr_auto] items-center gap-3 rounded-lg px-3 py-2 text-left transition hover:bg-slate-800"
               >
                 <Avatar user={user} size="sm" />
                 <div className="min-w-0">
-                  <div className="truncate text-sm font-black text-slate-800 dark:text-slate-100">{user.name}</div>
-                  <div className="truncate text-[11px] font-semibold text-slate-500">{user.email}</div>
+                  <div className="truncate text-sm font-bold text-white">{user.name}</div>
+                  <div className="truncate text-[10px] text-slate-400 font-medium">{user.email}</div>
                 </div>
-                <span className={`flex h-5 w-5 items-center justify-center rounded-md border ${checked ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 dark:border-slate-700'}`}>
+                <span className={`flex h-5 w-5 items-center justify-center rounded-md border ${checked ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-660 bg-slate-800'}`}>
                   {checked && <Check size={13} />}
                 </span>
               </button>
             );
           })}
         </div>
-        <div className="flex shrink-0 justify-end gap-2 border-t border-slate-200 p-4 dark:border-slate-800">
+        <div className="flex shrink-0 justify-end gap-2 border-t border-slate-700 p-4">
           <button
             type="button"
             onClick={onClose}
-            className="h-10 rounded-lg border border-slate-200 px-4 text-xs font-black text-slate-600 transition hover:bg-slate-50 dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-900"
+            className="h-10 rounded-lg border border-slate-700 px-4 text-xs font-bold text-slate-300 transition hover:bg-slate-800"
           >
             Hủy
           </button>
@@ -1402,7 +1063,7 @@ const NewChatModal: React.FC<{
             type="button"
             onClick={submit}
             disabled={selectedIds.length === 0 || saving}
-            className="h-10 rounded-lg bg-emerald-600 px-4 text-xs font-black text-white transition hover:bg-emerald-700 disabled:bg-slate-300 dark:disabled:bg-slate-800"
+            className="h-10 rounded-lg bg-emerald-600 px-4 text-xs font-bold text-white transition hover:bg-emerald-700 disabled:bg-slate-800 disabled:text-slate-500"
           >
             Tạo
           </button>
@@ -1446,7 +1107,7 @@ const GroupSettingsModal: React.FC<{
       return (roleRank[a.participant.role] ?? 3) - (roleRank[b.participant.role] ?? 3);
     });
   const availableUsers = users
-    .filter(user => user.isActive !== false && canAccessRoute(user, '/chat') && !activeParticipantIds.has(user.id))
+    .filter(user => user.isActive !== false && !activeParticipantIds.has(user.id))
     .filter(user => {
       const keyword = search.trim().toLowerCase();
       return !keyword || `${user.name} ${user.email}`.toLowerCase().includes(keyword);
@@ -1482,37 +1143,36 @@ const GroupSettingsModal: React.FC<{
   };
 
   return (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
-      <div className="flex max-h-[90dvh] w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950">
-        <div className="flex h-14 shrink-0 items-center justify-between border-b border-slate-200 px-4 dark:border-slate-800">
-          <div className="text-sm font-black text-slate-900 dark:text-white">Quản lý hội thoại</div>
+    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
+      <div className="flex max-h-[90dvh] w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-slate-700 bg-[#2b2d31] shadow-2xl">
+        <div className="flex h-14 shrink-0 items-center justify-between border-b border-slate-700 px-4">
+          <div className="text-sm font-black text-white">Quản lý hội thoại</div>
           <button
             type="button"
             onClick={onClose}
             title="Đóng"
-            aria-label="Đóng"
-            className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-900"
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white"
           >
             <X size={18} />
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        <div className="min-h-0 flex-1 overflow-y-auto p-4 space-y-4">
           {conversation.type === 'group' && (
-            <div className="mb-4 rounded-lg border border-slate-200 p-3 dark:border-slate-800">
-              <div className="mb-2 text-xs font-black uppercase text-slate-400">Tên nhóm</div>
+            <div className="rounded-lg border border-slate-700 bg-slate-900/20 p-3">
+              <div className="mb-2 text-[10px] font-black uppercase text-slate-400">Tên nhóm</div>
               <div className="grid grid-cols-[1fr_auto] gap-2">
                 <input
                   value={name}
                   onChange={event => setName(event.target.value)}
                   disabled={!canManage}
-                  className="h-10 min-w-0 rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-900 outline-none focus:border-emerald-400 disabled:opacity-60 dark:border-slate-800 dark:bg-slate-900 dark:text-white"
+                  className="h-10 min-w-0 rounded-lg border border-slate-700 bg-slate-800 px-3 text-sm font-semibold text-white outline-none focus:border-indigo-500 disabled:opacity-50"
                 />
                 <button
                   type="button"
                   onClick={saveName}
                   disabled={!canManage || saving || !name.trim() || name.trim() === (conversation.name || '').trim()}
-                  className="flex h-10 items-center gap-2 rounded-lg bg-emerald-600 px-3 text-xs font-black text-white transition hover:bg-emerald-700 disabled:bg-slate-300 dark:disabled:bg-slate-800"
+                  className="flex h-10 items-center gap-2 rounded-lg bg-emerald-600 px-3 text-xs font-bold text-white transition hover:bg-emerald-700 disabled:bg-slate-800 disabled:text-slate-500"
                 >
                   <Check size={15} /> Lưu
                 </button>
@@ -1521,22 +1181,22 @@ const GroupSettingsModal: React.FC<{
           )}
 
           {conversation.type === 'group' && canManage && (
-            <div className="mb-4 rounded-lg border border-slate-200 p-3 dark:border-slate-800">
-              <div className="mb-2 flex items-center gap-2 text-xs font-black uppercase text-slate-400">
+            <div className="rounded-lg border border-slate-700 bg-slate-900/20 p-3">
+              <div className="mb-2 flex items-center gap-2 text-[10px] font-black uppercase text-slate-400">
                 <UserPlus size={14} /> Thêm thành viên
               </div>
-              <div className="mb-2 flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 text-slate-500 dark:border-slate-800 dark:bg-slate-900">
+              <div className="mb-2 flex h-10 items-center gap-2 rounded-lg border border-slate-700 bg-slate-800 px-3 text-slate-400">
                 <Search size={16} />
                 <input
                   value={search}
                   onChange={event => setSearch(event.target.value)}
                   placeholder="Tìm người dùng"
-                  className="h-full min-w-0 flex-1 bg-transparent text-sm font-semibold text-slate-800 outline-none placeholder:text-slate-400 dark:text-slate-100"
+                  className="h-full min-w-0 flex-1 bg-transparent text-sm font-semibold text-white outline-none placeholder:text-slate-550"
                 />
               </div>
-              <div className="max-h-44 overflow-y-auto rounded-lg border border-slate-100 dark:border-slate-900">
+              <div className="max-h-44 overflow-y-auto rounded-lg border border-slate-700 divide-y divide-slate-700">
                 {availableUsers.length === 0 ? (
-                  <div className="p-3 text-xs font-semibold text-slate-400">Không còn người dùng phù hợp</div>
+                  <div className="p-3 text-xs font-bold text-slate-500">Không còn người dùng phù hợp</div>
                 ) : (
                   availableUsers.map(user => {
                     const checked = selectedIds.includes(user.id);
@@ -1545,14 +1205,14 @@ const GroupSettingsModal: React.FC<{
                         key={user.id}
                         type="button"
                         onClick={() => setSelectedIds(prev => checked ? prev.filter(id => id !== user.id) : [...prev, user.id])}
-                        className="grid w-full grid-cols-[auto_1fr_auto] items-center gap-3 px-3 py-2 text-left transition hover:bg-slate-50 dark:hover:bg-slate-900"
+                        className="grid w-full grid-cols-[auto_1fr_auto] items-center gap-3 px-3 py-2 text-left transition hover:bg-slate-800"
                       >
                         <Avatar user={user} size="sm" />
                         <div className="min-w-0">
-                          <div className="truncate text-sm font-black text-slate-800 dark:text-slate-100">{user.name}</div>
-                          <div className="truncate text-[11px] font-semibold text-slate-500">{user.email}</div>
+                          <div className="truncate text-sm font-bold text-white">{user.name}</div>
+                          <div className="truncate text-[10px] text-slate-400 font-medium">{user.email}</div>
                         </div>
-                        <span className={`flex h-5 w-5 items-center justify-center rounded-md border ${checked ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 dark:border-slate-700'}`}>
+                        <span className={`flex h-5 w-5 items-center justify-center rounded-md border ${checked ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-660 bg-slate-800'}`}>
                           {checked && <Check size={13} />}
                         </span>
                       </button>
@@ -1560,12 +1220,12 @@ const GroupSettingsModal: React.FC<{
                   })
                 )}
               </div>
-              <div className="mt-2 flex justify-end">
+              <div className="mt-2.5 flex justify-end">
                 <button
                   type="button"
                   onClick={addMembers}
                   disabled={selectedIds.length === 0 || saving}
-                  className="flex h-9 items-center gap-2 rounded-lg bg-emerald-600 px-3 text-xs font-black text-white transition hover:bg-emerald-700 disabled:bg-slate-300 dark:disabled:bg-slate-800"
+                  className="flex h-9 items-center gap-2 rounded-lg bg-emerald-600 px-3 text-xs font-bold text-white transition hover:bg-emerald-700 disabled:bg-slate-800 disabled:text-slate-500"
                 >
                   <UserPlus size={15} /> Thêm
                 </button>
@@ -1573,34 +1233,34 @@ const GroupSettingsModal: React.FC<{
             </div>
           )}
 
-          <div className="rounded-lg border border-slate-200 dark:border-slate-800">
-            <div className="border-b border-slate-200 px-3 py-2 text-xs font-black uppercase text-slate-400 dark:border-slate-800">
-              Thành viên
+          <div className="rounded-lg border border-slate-700">
+            <div className="border-b border-slate-700 bg-slate-900/30 px-3 py-2 text-[10px] font-black uppercase text-slate-400">
+              Thành viên ({activeMembers.length})
             </div>
-            <div className="divide-y divide-slate-100 dark:divide-slate-900">
+            <div className="divide-y divide-slate-700 max-h-60 overflow-y-auto">
               {activeMembers.map(({ participant, user }) => {
                 const isSelf = participant.userId === currentUser.id;
                 const canChangeRole = canManage && conversation.type === 'group' && participant.role !== 'owner' && !isSelf;
                 const canRemove = canManage && conversation.type === 'group' && participant.role !== 'owner' && !isSelf;
                 return (
-                  <div key={participant.userId} className="grid grid-cols-[auto_1fr_auto] items-center gap-3 px-3 py-3">
+                  <div key={participant.userId} className="grid grid-cols-[auto_1fr_auto] items-center gap-3 px-3 py-2.5">
                     <Avatar user={user} label={user?.name} size="sm" />
                     <div className="min-w-0">
                       <div className="flex min-w-0 items-center gap-2">
-                        <span className="truncate text-sm font-black text-slate-800 dark:text-slate-100">{user?.name || 'Người dùng'}</span>
+                        <span className="truncate text-sm font-bold text-white">{user?.name || 'Người dùng'}</span>
                         {participant.role === 'owner' && <Crown size={14} className="shrink-0 text-amber-500" />}
-                        {participant.role === 'admin' && <Shield size={14} className="shrink-0 text-emerald-600" />}
+                        {participant.role === 'admin' && <Shield size={14} className="shrink-0 text-indigo-400" />}
                       </div>
-                      <div className="truncate text-[11px] font-semibold text-slate-500">{user?.email || participant.userId}</div>
+                      <div className="truncate text-[10px] text-slate-400 font-medium">{user?.email || participant.userId}</div>
                     </div>
                     <div className="flex flex-wrap justify-end gap-1">
                       {canChangeRole && (
                         <button
                           type="button"
                           onClick={() => onSetMemberRole(conversation.id, participant.userId, participant.role === 'admin' ? 'member' : 'admin')}
-                          className="flex h-8 items-center gap-1 rounded-lg border border-slate-200 px-2 text-[11px] font-black text-slate-600 transition hover:border-emerald-300 hover:text-emerald-700 dark:border-slate-800 dark:text-slate-300"
+                          className="flex h-8 items-center gap-1 rounded-lg border border-slate-700 bg-slate-800 px-2 text-[10px] font-bold text-slate-300 hover:border-slate-500 hover:text-white transition"
                         >
-                          <Shield size={13} /> {participant.role === 'admin' ? 'Hạ quyền' : 'Quản trị'}
+                          <Shield size={12} /> {participant.role === 'admin' ? 'Hạ quyền' : 'Quản trị'}
                         </button>
                       )}
                       {canRemove && (
@@ -1611,9 +1271,9 @@ const GroupSettingsModal: React.FC<{
                               onRemoveMember(conversation.id, participant.userId);
                             }
                           }}
-                          className="flex h-8 items-center gap-1 rounded-lg border border-red-200 px-2 text-[11px] font-black text-red-600 transition hover:bg-red-50 dark:border-red-900/60 dark:hover:bg-red-950/40"
+                          className="flex h-8 items-center gap-1 rounded-lg border border-red-900/50 bg-red-950/20 px-2 text-[10px] font-bold text-red-400 hover:bg-red-950/40 hover:text-red-300 transition"
                         >
-                          <UserMinus size={13} /> Loại
+                          <UserMinus size={12} /> Loại
                         </button>
                       )}
                     </div>
@@ -1624,11 +1284,11 @@ const GroupSettingsModal: React.FC<{
           </div>
 
           {conversation.type === 'group' && canManage && (
-            <div className="mt-4 flex justify-end border-t border-slate-200 pt-4 dark:border-slate-800">
+            <div className="mt-4 flex justify-end border-t border-slate-700 pt-4">
               <button
                 type="button"
                 onClick={deleteGroup}
-                className="flex h-10 items-center gap-2 rounded-lg border border-red-200 px-3 text-xs font-black text-red-600 transition hover:bg-red-50 dark:border-red-900/60 dark:hover:bg-red-950/40"
+                className="flex h-10 items-center gap-2 rounded-lg border border-red-900/50 bg-red-955/20 px-3 text-xs font-bold text-red-400 hover:bg-red-955/40 hover:text-red-300 transition"
               >
                 <Trash2 size={15} /> Xóa nhóm
               </button>
@@ -1640,12 +1300,838 @@ const GroupSettingsModal: React.FC<{
   );
 };
 
+const ConversationList: React.FC<{
+  conversations: ChatV2Conversation[];
+  activeConversationId: string | null;
+  currentUser: User;
+  users: User[];
+  employees: any[];
+  onlineUserIds: Set<string>;
+  search: string;
+  onSearch: (value: string) => void;
+  onSelect: (conversationId: string) => void;
+  onNew: () => void;
+  loading: boolean;
+  showGroupsOnly: boolean;
+}> = ({
+  conversations,
+  activeConversationId,
+  currentUser,
+  users,
+  employees,
+  onlineUserIds,
+  search,
+  onSearch,
+  onSelect,
+  onNew,
+  loading,
+  showGroupsOnly,
+}) => {
+  const [collapsedPinned, setCollapsedPinned] = useState(false);
+  const [collapsedRecent, setCollapsedRecent] = useState(false);
+
+  // Helper to get display name
+  const getUserDisplayName = (userId: string, fallbackName: string) => {
+    const emp = employees.find(e => e.userId === userId);
+    return emp?.fullName || fallbackName;
+  };
+
+  const filtered = useMemo(() => {
+    const keyword = search.trim().toLowerCase();
+    let result = conversations;
+
+    if (showGroupsOnly) {
+      result = result.filter(c => c.type === 'group');
+    }
+
+    if (!keyword) return result;
+
+    return result.filter(conversation => {
+      const title = getChatV2ConversationTitle(conversation, currentUser.id, users).toLowerCase();
+      const memberNames = conversation.participants
+        .map(participant => getUserDisplayName(participant.userId, users.find(user => user.id === participant.userId)?.name || ''))
+        .join(' ')
+        .toLowerCase();
+      return title.includes(keyword) || memberNames.includes(keyword);
+    });
+  }, [conversations, currentUser.id, search, users, showGroupsOnly, employees]);
+
+  // Split into Pinned (ĐÁNH DẤU) and Unpinned (GẦN ĐÂY)
+  const pinnedConversations = useMemo(() => filtered.filter(c => c.currentParticipant?.isPinned), [filtered]);
+  const recentConversations = useMemo(() => filtered.filter(c => !c.currentParticipant?.isPinned), [filtered]);
+
+  // Logged in Employee Info
+  const loggedEmployee = employees.find(e => e.userId === currentUser.id);
+  const employeeName = loggedEmployee?.fullName || currentUser.name;
+  const usernameHandle = currentUser.username || currentUser.email.split('@')[0];
+
+  const renderConversationItem = (conversation: ChatV2Conversation) => {
+    const rawTitle = getChatV2ConversationTitle(conversation, currentUser.id, users);
+    // Resolve employee name for direct chat
+    let title = rawTitle;
+    if (conversation.type === 'direct') {
+      const otherPart = conversation.participants.find(p => p.userId !== currentUser.id);
+      if (otherPart) {
+        title = getUserDisplayName(otherPart.userId, rawTitle);
+      }
+    }
+
+    const otherParticipant = conversation.participants.find(participant => participant.userId !== currentUser.id);
+    const otherUser = users.find(user => user.id === otherParticipant?.userId);
+    const isOnline = conversation.type === 'direct' && Boolean(otherParticipant && onlineUserIds.has(otherParticipant.userId));
+    const isActive = conversation.id === activeConversationId;
+
+    // Last message sender resolved name
+    let lastMsgPreview = conversation.lastMessagePreview;
+    if (conversation.lastMessageSenderId && conversation.lastMessagePreview) {
+      const senderName = conversation.lastMessageSenderId === currentUser.id
+        ? 'Bạn'
+        : getUserDisplayName(conversation.lastMessageSenderId, users.find(u => u.id === conversation.lastMessageSenderId)?.name || 'Ai đó');
+
+      // If preview doesn't already start with the sender name, prefix it
+      if (!conversation.lastMessagePreview.startsWith(senderName) && !conversation.lastMessagePreview.includes(':')) {
+        lastMsgPreview = `${senderName}: ${conversation.lastMessagePreview}`;
+      }
+    }
+
+    return (
+      <button
+        key={conversation.id}
+        type="button"
+        onClick={() => onSelect(conversation.id)}
+        className={`grid w-full grid-cols-[auto_1fr_auto] gap-3 rounded-lg px-2 py-2.5 text-left transition select-none ${
+          isActive
+            ? 'bg-[#35373c] text-white font-bold'
+            : 'text-[#949ba4] hover:bg-[#2e3035] hover:text-[#dbdee1]'
+        }`}
+      >
+        {conversation.type === 'direct' ? (
+          <Avatar user={otherUser} label={title} online={isOnline} size="sm" />
+        ) : (
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-800 text-slate-350 animate-fade-in self-center">
+            <Users size={14} />
+          </div>
+        )}
+        <div className="min-w-0 self-center">
+          <div className="flex min-w-0 items-center gap-1">
+            {conversation.currentParticipant?.isPinned && <Pin size={11} className="shrink-0 text-amber-500" />}
+            <span className="truncate text-xs font-bold">{title}</span>
+          </div>
+          <div className="mt-0.5 truncate text-[10px] text-slate-500 leading-tight">
+            {lastMsgPreview || ' '}
+          </div>
+        </div>
+        <div className="flex flex-col items-end justify-center gap-1 select-none">
+          <span className="text-[9px] font-bold text-slate-500">{formatTime(conversation.lastMessageAt || conversation.updatedAt)}</span>
+          {conversation.unreadCount > 0 && (
+            <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-red-505 bg-red-500 px-1 text-[8px] font-black text-white ring-1 ring-red-400 animate-pulse">
+              {conversation.unreadCount > 9 ? '9+' : conversation.unreadCount}
+            </span>
+          )}
+        </div>
+      </button>
+    );
+  };
+
+  return (
+    <aside className="flex h-full w-full flex-col bg-[#2b2d31] border-r border-[#1f2023]/60 w-[280px]">
+      {/* Profile Header */}
+      <div className="flex h-16 shrink-0 items-center justify-between border-b border-[#1f2023]/60 px-4">
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="relative">
+            <Avatar size="sm" user={currentUser} label={employeeName} />
+            <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border border-[#2b2d31] bg-[#23a55a]" />
+          </div>
+          <div className="min-w-0 flex flex-col justify-center leading-tight">
+            <div className="text-xs font-black text-white truncate max-w-[140px]">{employeeName}</div>
+            <div className="text-[9px] font-semibold text-slate-400">@{usernameHandle}</div>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onNew}
+          title="Tạo cuộc hội thoại"
+          className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white transition"
+        >
+          <Plus size={16} />
+        </button>
+      </div>
+
+      {/* Search box */}
+      <div className="p-3 shrink-0">
+        <div className="flex h-9 items-center gap-2 rounded-lg bg-[#1e1f22] px-2.5 text-slate-400">
+          <Search size={14} />
+          <input
+            value={search}
+            onChange={event => onSearch(event.target.value)}
+            placeholder="Tìm kiếm (Ctrl + F)"
+            className="h-full min-w-0 flex-1 bg-transparent text-xs font-bold text-[#dbdee1] outline-none placeholder:text-slate-550"
+          />
+        </div>
+      </div>
+
+      {/* Scrollable conversation Lists */}
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-4 space-y-4">
+        {loading && conversations.length === 0 ? (
+          <div className="space-y-2.5 pt-2">
+            {[0, 1, 2, 3].map(item => (
+              <div key={item} className="h-12 animate-pulse rounded-lg bg-slate-800/40 border border-slate-800/20" />
+            ))}
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="flex h-40 flex-col items-center justify-center text-center px-4 select-none">
+            <MessageCircle size={28} className="mb-2 text-slate-650" />
+            <div className="text-xs font-bold text-slate-550">Chưa có hội thoại</div>
+          </div>
+        ) : (
+          <>
+            {/* Pinned Bookmarked section */}
+            {pinnedConversations.length > 0 && (
+              <div className="space-y-1">
+                <button
+                  type="button"
+                  onClick={() => setCollapsedPinned(!collapsedPinned)}
+                  className="flex w-full items-center justify-between text-[10px] font-black uppercase text-slate-450 tracking-wider px-2 py-1 select-none hover:text-white transition"
+                >
+                  <span>ĐÁNH DẤU ({pinnedConversations.length})</span>
+                  <ChevronIcon direction={collapsedPinned ? 'right' : 'down'} size={11} />
+                </button>
+                {!collapsedPinned && (
+                  <div className="space-y-0.5">
+                    {pinnedConversations.map(renderConversationItem)}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Recents section */}
+            {recentConversations.length > 0 && (
+              <div className="space-y-1">
+                <button
+                  type="button"
+                  onClick={() => setCollapsedRecent(!collapsedRecent)}
+                  className="flex w-full items-center justify-between text-[10px] font-black uppercase text-slate-455 text-slate-450 tracking-wider px-2 py-1 select-none hover:text-white transition"
+                >
+                  <span>GẦN ĐÂY ({recentConversations.length})</span>
+                  <ChevronIcon direction={collapsedRecent ? 'right' : 'down'} size={11} />
+                </button>
+                {!collapsedRecent && (
+                  <div className="space-y-0.5">
+                    {recentConversations.map(renderConversationItem)}
+                  </div>
+                )}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </aside>
+  );
+};
+
+const ChevronIcon: React.FC<{ direction: 'right' | 'down'; size?: number }> = ({ direction, size = 12 }) => {
+  if (direction === 'right') {
+    return (
+      <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <polyline points="9 18 15 12 9 6" />
+      </svg>
+    );
+  }
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="6 9 12 15 18 9" />
+    </svg>
+  );
+};
+
+const RightMediaSidebar: React.FC<{
+  activeConversationId: string;
+  activeTab: 'images' | 'docs' | 'links';
+  setActiveTab: (tab: 'images' | 'docs' | 'links') => void;
+  onClose: () => void;
+  messages: ChatV2Message[];
+}> = ({ activeConversationId, activeTab, setActiveTab, onClose, messages }) => {
+  const [attachments, setAttachments] = useState<ChatV2Attachment[]>([]);
+  const [links, setLinks] = useState<{ url: string; title: string; createdAt: string }[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!activeConversationId) return;
+
+    const loadAttachmentsAndLinks = async () => {
+      setLoading(true);
+      try {
+        // Fetch attachments
+        const { data: attRows, error: attError } = await supabase
+          .from('chat_v2_attachments')
+          .select('*')
+          .eq('conversation_id', activeConversationId)
+          .order('created_at', { ascending: false });
+
+        if (attError) throw attError;
+
+        // Sign URLs
+        const signedAtts = await Promise.all((attRows || []).map(async (row) => {
+          const attachment: ChatV2Attachment = {
+            id: row.id,
+            conversationId: row.conversation_id,
+            messageId: row.message_id,
+            uploadedBy: row.uploaded_by,
+            storageBucket: row.storage_bucket,
+            storagePath: row.storage_path,
+            fileName: row.file_name,
+            mimeType: row.mime_type,
+            sizeBytes: Number(row.size_bytes),
+            width: row.width,
+            height: row.height,
+            thumbnailPath: row.thumbnail_path,
+          };
+          const bucket = supabase.storage.from(attachment.storageBucket || CHAT_V2_ATTACHMENT_BUCKET);
+          const { data: previewData } = await bucket.createSignedUrl(attachment.storagePath, 60 * 60);
+          return { ...attachment, signedUrl: previewData?.signedUrl };
+        }));
+
+        setAttachments(signedAtts);
+
+        // Fetch messages with links
+        const { data: msgRows, error: msgError } = await supabase
+          .from('chat_v2_messages')
+          .select('body, created_at')
+          .eq('conversation_id', activeConversationId)
+          .is('deleted_at', null)
+          .like('body', '%http%');
+
+        if (msgError) throw msgError;
+
+        const urlRegex = /(https?:\/\/[^\s]+)/g;
+        const parsedLinks: typeof links = [];
+        (msgRows || []).forEach(msg => {
+          const urls = msg.body.match(urlRegex);
+          if (urls) {
+            urls.forEach((url: string) => {
+              parsedLinks.push({
+                url,
+                title: new URL(url).hostname || 'Liên kết',
+                createdAt: msg.created_at,
+              });
+            });
+          }
+        });
+        setLinks(parsedLinks);
+      } catch (err) {
+        console.warn('Failed to load attachments or links:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadAttachmentsAndLinks();
+  }, [activeConversationId, messages.length]);
+
+  // Filtering based on search query
+  const filteredImages = useMemo(() => {
+    return attachments
+      .filter(isImageAttachment)
+      .filter(att => !searchQuery || att.fileName.toLowerCase().includes(searchQuery.toLowerCase()));
+  }, [attachments, searchQuery]);
+
+  const filteredDocs = useMemo(() => {
+    return attachments
+      .filter(att => !isImageAttachment(att))
+      .filter(att => !searchQuery || att.fileName.toLowerCase().includes(searchQuery.toLowerCase()));
+  }, [attachments, searchQuery]);
+
+  const filteredLinks = useMemo(() => {
+    return links.filter(lnk => !searchQuery || lnk.url.toLowerCase().includes(searchQuery.toLowerCase()) || lnk.title.toLowerCase().includes(searchQuery.toLowerCase()));
+  }, [links, searchQuery]);
+
+  return (
+    <aside className="w-[300px] bg-[#2b2d31] border-l border-[#1f2023] flex flex-col h-full shrink-0">
+      {/* Tabs Header */}
+      <div className="flex h-16 shrink-0 items-center justify-between border-b border-[#1f2023]/60 px-3.5">
+        <div className="flex items-center gap-1 w-full mr-2">
+          <button
+            type="button"
+            onClick={() => setActiveTab('images')}
+            className={`flex-1 py-1.5 text-[10px] font-black rounded-md tracking-wide select-none ${
+              activeTab === 'images' ? 'bg-[#35373c] text-white' : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            Hình ảnh
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('docs')}
+            className={`flex-1 py-1.5 text-[10px] font-black rounded-md tracking-wide select-none ${
+              activeTab === 'docs' ? 'bg-[#35373c] text-white' : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            Tài liệu
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('links')}
+            className={`flex-1 py-1.5 text-[10px] font-black rounded-md tracking-wide select-none ${
+              activeTab === 'links' ? 'bg-[#35373c] text-white' : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            Liên kết
+          </button>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          title="Đóng sidebar"
+          className="text-slate-400 hover:text-white flex h-7 w-7 items-center justify-center rounded-lg hover:bg-slate-800 transition"
+        >
+          <X size={16} />
+        </button>
+      </div>
+
+      {/* Search Input inside sidebar */}
+      <div className="p-3 shrink-0">
+        <div className="flex h-8 items-center gap-2 rounded-lg bg-[#1e1f22] px-2 text-slate-400">
+          <Search size={13} />
+          <input
+            value={searchQuery}
+            onChange={event => setSearchQuery(event.target.value)}
+            placeholder="Nhập từ khóa và nhấn Enter"
+            className="h-full min-w-0 flex-1 bg-transparent text-[11px] font-bold text-white outline-none placeholder:text-slate-550"
+          />
+        </div>
+      </div>
+
+      {/* Content Area */}
+      <div className="min-h-0 flex-1 overflow-y-auto p-3">
+        {loading ? (
+          <div className="space-y-3 pt-4 select-none">
+            {[0, 1, 2].map(item => (
+              <div key={item} className="h-20 animate-pulse rounded-lg bg-slate-800/40" />
+            ))}
+          </div>
+        ) : activeTab === 'images' ? (
+          filteredImages.length === 0 ? (
+            <EmptyContent label="Không tìm thấy hình ảnh nào" />
+          ) : (
+            <div className="grid grid-cols-2 gap-2 select-none">
+              {filteredImages.map(img => (
+                <a
+                  key={img.id}
+                  href={img.signedUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="relative aspect-square overflow-hidden rounded-md border border-slate-700 bg-slate-850 group hover:border-slate-500 transition"
+                >
+                  <img src={img.signedUrl} alt={img.fileName} className="h-full w-full object-cover" />
+                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition flex items-end p-1.5 pointer-events-none">
+                    <span className="text-[8px] text-white font-medium truncate w-full">{img.fileName}</span>
+                  </div>
+                </a>
+              ))}
+            </div>
+          )
+        ) : activeTab === 'docs' ? (
+          filteredDocs.length === 0 ? (
+            <EmptyContent label="Không tìm thấy tài liệu nào" />
+          ) : (
+            <div className="space-y-1.5">
+              {filteredDocs.map(doc => (
+                <a
+                  key={doc.id}
+                  href={doc.downloadUrl || doc.signedUrl}
+                  download={doc.fileName}
+                  className="flex items-center gap-2.5 rounded-lg border border-slate-700 bg-slate-800/30 p-2 text-slate-300 hover:border-slate-500 hover:bg-slate-800 transition hover:text-white"
+                >
+                  <FileText size={16} className="shrink-0 text-slate-400" />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[10px] font-bold">{doc.fileName}</div>
+                    <div className="text-[9px] text-slate-500 font-medium">{formatFileSize(doc.sizeBytes)}</div>
+                  </div>
+                </a>
+              ))}
+            </div>
+          )
+        ) : (
+          filteredLinks.length === 0 ? (
+            <EmptyContent label="Không tìm thấy liên kết nào" />
+          ) : (
+            <div className="space-y-1.5">
+              {filteredLinks.map((lnk, index) => (
+                <a
+                  key={index}
+                  href={lnk.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center gap-2.5 rounded-lg border border-slate-700 bg-slate-800/30 p-2 text-slate-300 hover:border-slate-500 hover:bg-slate-800 transition hover:text-white"
+                >
+                  <LinkIcon size={14} className="shrink-0 text-slate-400" />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[10px] font-bold text-indigo-400">{lnk.url}</div>
+                    <div className="text-[9px] text-slate-500 font-medium truncate">{lnk.title}</div>
+                  </div>
+                </a>
+              ))}
+            </div>
+          )
+        )}
+      </div>
+    </aside>
+  );
+};
+
+const EmptyContent: React.FC<{ label: string }> = ({ label }) => (
+  <div className="flex h-40 flex-col items-center justify-center text-center p-4">
+    <FolderOpen size={24} className="mb-2 text-slate-600" />
+    <span className="text-[10px] font-bold text-slate-550">{label}</span>
+  </div>
+);
+
+const MessagePane: React.FC<{
+  conversation: ChatV2Conversation | null;
+  messages: ChatV2Message[];
+  currentUser: User;
+  users: User[];
+  employees: any[];
+  onlineUserIds: Set<string>;
+  typingUsers: Array<{ userId: string; name: string; at: number }>;
+  loading: boolean;
+  loadingOlder: boolean;
+  hasMore: boolean;
+  onBack: () => void;
+  onSend: (body: string, files: File[], options?: { replyToMessageId?: string | null; replyPreview?: any | null; mentions?: any[] }) => Promise<void>;
+  onSendStructured: (input: { kind: ChatV2MessageKind; payload: Record<string, any>; checklistItems?: string[] }) => Promise<void>;
+  onLoadOlder: () => Promise<void>;
+  onTyping: (isTyping: boolean) => void;
+  onEditMessage: (message: ChatV2Message, body: string) => Promise<void>;
+  onReaction: (message: ChatV2Message, emoji: string) => void;
+  onPollVote: (message: ChatV2Message, optionId: string) => void;
+  onChecklistToggle: (item: ChatV2ChecklistItem, nextDone: boolean) => void;
+  onQuickConfirm: (message: ChatV2Message, optionId: string) => void;
+  onRecall: (message: ChatV2Message) => void;
+  onTogglePinned: (conversation: ChatV2Conversation) => void;
+  onToggleMuted: (conversation: ChatV2Conversation) => void;
+  onOpenSettings: () => void;
+  // Side bar controls passed from shell
+  showRightSidebar: boolean;
+  setShowRightSidebar: (show: boolean) => void;
+  setActiveRightTab: (tab: 'images' | 'docs' | 'links') => void;
+}> = ({
+  conversation,
+  messages,
+  currentUser,
+  users,
+  employees,
+  onlineUserIds,
+  typingUsers,
+  loading,
+  loadingOlder,
+  hasMore,
+  onBack,
+  onSend,
+  onSendStructured,
+  onLoadOlder,
+  onTyping,
+  onEditMessage,
+  onReaction,
+  onPollVote,
+  onChecklistToggle,
+  onQuickConfirm,
+  onRecall,
+  onTogglePinned,
+  onToggleMuted,
+  onOpenSettings,
+  showRightSidebar,
+  setShowRightSidebar,
+  setActiveRightTab,
+}) => {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const previousScrollRef = useRef<{ conversationId?: string; firstId?: string; length: number }>({ length: 0 });
+  const olderScrollSnapshotRef = useRef<{ height: number; top: number } | null>(null);
+  const initialScrolledConversationRef = useRef<string | null>(null);
+  const [replyingTo, setReplyingTo] = useState<ReplyDraft | null>(null);
+
+  // Dynamic statistics counts for message & files
+  const [msgCount, setMsgCount] = useState(0);
+  const [fileCount, setFileCount] = useState(0);
+
+  useEffect(() => {
+    if (!conversation?.id) return;
+    const fetchCounts = async () => {
+      try {
+        const { count: mCount } = await supabase
+          .from('chat_v2_messages')
+          .select('*', { count: 'exact', head: true })
+          .eq('conversation_id', conversation.id)
+          .is('deleted_at', null);
+
+        setMsgCount(mCount || 0);
+
+        const { count: fCount } = await supabase
+          .from('chat_v2_attachments')
+          .select('*', { count: 'exact', head: true })
+          .eq('conversation_id', conversation.id);
+
+        setFileCount(fCount || 0);
+      } catch (e) {
+        console.warn('Failed to query message/file counts:', e);
+      }
+    };
+    fetchCounts();
+  }, [conversation?.id, messages.length]);
+
+  useLayoutEffect(() => {
+    const scrollEl = scrollRef.current;
+    if (!scrollEl) return;
+    const previous = previousScrollRef.current;
+    const firstId = messages[0]?.id;
+    const conversationChanged = previous.conversationId !== conversation?.id;
+    const appendedAtBottom = previous.firstId === firstId && messages.length > previous.length;
+    const olderSnapshot = olderScrollSnapshotRef.current;
+    if (olderSnapshot && !conversationChanged) {
+      scrollEl.scrollTop = scrollEl.scrollHeight - olderSnapshot.height + olderSnapshot.top;
+      olderScrollSnapshotRef.current = null;
+    } else if (conversation?.id && messages.length > 0 && initialScrolledConversationRef.current !== conversation.id) {
+      scrollEl.scrollTo({ top: scrollEl.scrollHeight, behavior: 'auto' });
+      initialScrolledConversationRef.current = conversation.id;
+    } else if (appendedAtBottom) {
+      scrollEl.scrollTo({ top: scrollEl.scrollHeight, behavior: 'smooth' });
+    }
+    previousScrollRef.current = { conversationId: conversation?.id, firstId, length: messages.length };
+  }, [messages, conversation?.id]);
+
+  useEffect(() => {
+    setReplyingTo(null);
+  }, [conversation?.id]);
+
+  const loadOlderWithScrollLock = async () => {
+    const scrollEl = scrollRef.current;
+    if (scrollEl) {
+      olderScrollSnapshotRef.current = {
+        height: scrollEl.scrollHeight,
+        top: scrollEl.scrollTop,
+      };
+    }
+    await onLoadOlder();
+  };
+
+  const handleReply = (message: ChatV2Message) => {
+    const sender = users.find(user => user.id === message.senderId);
+    // Resolve employee name
+    const senderName = sender ? (employees.find(e => e.userId === sender.id)?.fullName || sender.name || sender.email) : 'Người dùng';
+    setReplyingTo({
+      messageId: message.id,
+      senderId: message.senderId,
+      senderName,
+      bodyPreview: getMessageBodyPreview(message),
+      kind: message.kind,
+    });
+  };
+
+  const getMessageBodyPreview = (msg: ChatV2Message) => {
+    if (msg.kind === 'image') return 'Đã chia sẻ 1 ảnh';
+    if (msg.kind === 'file') return 'Đã đính kèm 1 tệp';
+    if (msg.kind === 'poll') return `Bình chọn: ${msg.payload?.title || 'Câu hỏi'}`;
+    if (msg.kind === 'checklist') return `Checklist: ${msg.payload?.title || 'Công việc'}`;
+    if (msg.kind === 'quick_confirm') return `Xác nhận nhanh: ${msg.payload?.title || 'Tiêu đề'}`;
+    return msg.body || 'Tin nhắn';
+  };
+
+  if (!conversation) {
+    return (
+      <section className="hidden h-full min-w-0 flex-1 items-center justify-center bg-[#313338] lg:flex border-r border-[#1f2023]/60">
+        <div className="text-center select-none">
+          <MessageCircle size={38} className="mx-auto mb-3 text-slate-650" />
+          <div className="text-xs font-black text-slate-500">Chọn một cuộc trò chuyện để bắt đầu</div>
+        </div>
+      </section>
+    );
+  }
+
+  // Resolve title
+  const rawTitle = getChatV2ConversationTitle(conversation, currentUser.id, users);
+  let title = rawTitle;
+  if (conversation.type === 'direct') {
+    const otherPart = conversation.participants.find(p => p.userId !== currentUser.id);
+    if (otherPart) {
+      const emp = employees.find(e => e.userId === otherPart.userId);
+      title = emp?.fullName || rawTitle;
+    }
+  }
+
+  const otherParticipant = conversation.participants.find(participant => participant.userId !== currentUser.id);
+  const otherUser = users.find(user => user.id === otherParticipant?.userId);
+  const isDirectOnline = conversation.type === 'direct' && Boolean(otherParticipant && onlineUserIds.has(otherParticipant.userId));
+  const typingLabel = typingUsers.length > 0 ? `${typingUsers.map(user => user.name).join(', ')} đang nhập...` : '';
+  const canManage = canManageConversation(conversation, currentUser);
+
+  return (
+    <section className="flex h-full min-w-0 flex-1 flex-col bg-[#313338] border-r border-[#1f2023]/60">
+      {/* Chat header */}
+      <header className="flex h-16 shrink-0 flex-col justify-center border-b border-[#1f2023]/60 bg-[#313338] px-4 shadow-[0_1px_2px_rgba(0,0,0,0.2)]">
+        <div className="flex items-center justify-between">
+          <div className="flex min-w-0 items-center gap-3">
+            <button
+              type="button"
+              onClick={onBack}
+              title="Quay lại"
+              className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-800 lg:hidden"
+            >
+              <ArrowLeft size={18} />
+            </button>
+            {conversation.type === 'direct' ? (
+              <Avatar user={otherUser} label={title} online={isDirectOnline} size="sm" />
+            ) : (
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-800 text-slate-350 self-center">
+                <Users size={14} />
+              </div>
+            )}
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5">
+                <div className="truncate text-xs font-black text-white">{title}</div>
+                {conversation.type === 'direct' && (
+                  <span className={`h-2 w-2 rounded-full ${isDirectOnline ? 'bg-[#23a55a]' : 'bg-slate-500'}`} />
+                )}
+              </div>
+              <div className="truncate text-[9px] font-bold text-slate-400 leading-none mt-1">
+                {typingLabel || (
+                  <span className="flex items-center gap-2 select-none">
+                    <span className="hover:text-white cursor-pointer transition">💬 Trò chuyện</span>
+                    <span>·</span>
+                    <span className="hover:text-white cursor-pointer transition">👥 {conversation.participants.length} thành viên</span>
+                    <span>·</span>
+                    <span className="hover:text-white cursor-pointer transition">📩 {msgCount} tin nhắn</span>
+                    <span>·</span>
+                    <span className="hover:text-white cursor-pointer transition" onClick={() => { setShowRightSidebar(true); setActiveRightTab('images'); }}>📁 {fileCount} file</span>
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Action triggers */}
+          <div className="flex items-center gap-1.5 select-none">
+            {/* Phone/Call shortcut */}
+            <button
+              type="button"
+              title="Gọi điện"
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500 hover:text-white transition"
+            >
+              <Phone size={14} />
+            </button>
+            <button
+              type="button"
+              onClick={() => onTogglePinned(conversation)}
+              title={conversation.currentParticipant?.isPinned ? 'Bỏ ghim' : 'Ghim'}
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-white"
+            >
+              {conversation.currentParticipant?.isPinned ? <PinOff size={15} /> : <Pin size={15} />}
+            </button>
+            <button
+              type="button"
+              onClick={() => onToggleMuted(conversation)}
+              title={conversation.currentParticipant?.isMuted ? 'Bật thông báo' : 'Tắt thông báo'}
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-white"
+            >
+              {conversation.currentParticipant?.isMuted ? <BellOff size={15} /> : <Bell size={15} />}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowRightSidebar(!showRightSidebar)}
+              title="Hình ảnh & Tệp đính kèm"
+              className={`flex h-8 w-8 items-center justify-center rounded-lg transition ${
+                showRightSidebar ? 'bg-[#35373c] text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+              }`}
+            >
+              <FolderOpen size={15} />
+            </button>
+            <button
+              type="button"
+              onClick={onOpenSettings}
+              title="Cấu hình nhóm"
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-white"
+            >
+              <MoreHorizontal size={16} />
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* Messages scrolling */}
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-3 space-y-2.5">
+        {loading && messages.length === 0 ? (
+          <div className="space-y-3">
+            {[0, 1, 2, 3].map(item => (
+              <div key={item} className={`h-11 animate-pulse rounded-2xl bg-slate-800/40 border border-slate-800/20 ${item % 2 ? 'ml-auto w-1/2' : 'w-2/3'}`} />
+            ))}
+          </div>
+        ) : messages.length === 0 ? (
+          <div className="flex h-full items-center justify-center text-center select-none animate-fade-in">
+            <div>
+              <Heart size={30} className="mx-auto mb-2 text-slate-650" />
+              <div className="text-xs font-bold text-slate-500">Bắt đầu cuộc trò chuyện ngày hôm nay</div>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {hasMore && (
+              <div className="flex justify-center select-none pt-1">
+                <button
+                  type="button"
+                  onClick={loadOlderWithScrollLock}
+                  disabled={loadingOlder}
+                  className="flex h-7 items-center gap-1 rounded-md border border-slate-700 bg-slate-800 px-2 text-[10px] font-bold text-slate-300 hover:border-slate-500 hover:bg-slate-750 disabled:opacity-50 transition"
+                >
+                  <ChevronUp size={13} /> {loadingOlder ? 'Đang tải...' : 'Tải tin nhắn cũ hơn'}
+                </button>
+              </div>
+            )}
+            {messages.map(message => (
+              <MessageRow
+                key={message.id}
+                message={message}
+                currentUser={currentUser}
+                users={users}
+                conversation={conversation}
+                canDelete={message.senderId === currentUser.id || canManage}
+                onEdit={onEditMessage}
+                onReaction={onReaction}
+                onPollVote={onPollVote}
+                onChecklistToggle={onChecklistToggle}
+                onQuickConfirm={onQuickConfirm}
+                onRecall={onRecall}
+                onReply={handleReply}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+
+      <MessageComposer
+        disabled={!conversation}
+        replyTo={replyingTo}
+        onCancelReply={() => setReplyingTo(null)}
+        onSend={(body, fFiles) => onSend(body, fFiles, { replyToMessageId: replyingTo?.messageId || null, replyPreview: replyingTo })}
+        onSendStructured={onSendStructured}
+        onTyping={onTyping}
+      />
+    </section>
+  );
+};
+
 const ChatShell: React.FC<ChatShellProps> = ({ currentUser, users }) => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [search, setSearch] = useState('');
   const [showNewChat, setShowNewChat] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showListOnMobile, setShowListOnMobile] = useState(true);
+
+  // Layout Sidebars Custom States
+  const [showGroupsOnly, setShowGroupsOnly] = useState(false);
+  const [showRightSidebar, setShowRightSidebar] = useState(true);
+  const [activeRightTab, setActiveRightTab] = useState<'images' | 'docs' | 'links'>('images');
+
+  const { employees } = useApp();
   const chat = useChatV2(currentUser, users);
   const selectedFromUrlRef = useRef<string | null>(null);
 
@@ -1663,29 +2149,98 @@ const ChatShell: React.FC<ChatShellProps> = ({ currentUser, users }) => {
     setShowListOnMobile(false);
   };
 
+  // Get total unread count
+  const totalUnreadCount = useChatV2UnreadCount(currentUser?.id);
+
   return (
-    <div className="h-[calc(100dvh-5rem)] min-h-[520px] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950 lg:h-[calc(100dvh-4rem)]">
-      <div className="flex h-full min-w-0">
-        <div className={`${showListOnMobile ? 'block' : 'hidden'} h-full w-full lg:block lg:w-auto`}>
+    <div className="h-[calc(100dvh-5rem)] min-h-[520px] overflow-hidden rounded-xl border border-slate-700 bg-[#1e1f22] text-[#dbdee1] shadow-2xl lg:h-[calc(100dvh-4rem)] flex">
+      {/* Column 1: Mini Sidebar (60px) */}
+      <div className="w-[60px] bg-[#1e1f22] flex flex-col items-center py-4 border-r border-[#111214]/65 justify-between shrink-0 select-none">
+        <div className="flex flex-col items-center gap-5 w-full">
+          {/* Logo */}
+          <div className="w-10 h-10 rounded-2xl bg-indigo-600 flex items-center justify-center text-white font-black text-sm shadow-md shadow-indigo-500/10 cursor-pointer hover:rounded-xl transition-all">
+            KT
+          </div>
+
+          {/* Unread badge message trigger */}
+          <button
+            type="button"
+            onClick={() => setShowGroupsOnly(false)}
+            title="Tất cả tin nhắn"
+            className="w-10 h-10 rounded-full bg-[#313338] hover:bg-[#35373c] flex items-center justify-center text-slate-355 text-slate-300 hover:text-white transition relative hover:rounded-xl group"
+          >
+            <MessageSquare size={18} />
+            {totalUnreadCount > 0 && (
+              <span className="absolute -top-1.5 -right-1 flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-red-500 px-1 text-[8px] font-black text-white ring-1 ring-red-400">
+                {totalUnreadCount > 99 ? '99+' : totalUnreadCount}
+              </span>
+            )}
+            <span className="absolute left-[66px] bg-slate-900 border border-slate-700 text-white text-[9px] font-bold py-1 px-2 rounded shadow-xl hidden group-hover:block whitespace-nowrap z-50">
+              Tất cả tin nhắn
+            </span>
+          </button>
+
+          {/* Group list toggle filter */}
+          <button
+            type="button"
+            onClick={() => setShowGroupsOnly(!showGroupsOnly)}
+            title="Nhóm chat"
+            className={`w-10 h-10 rounded-full flex items-center justify-center transition relative hover:rounded-xl group ${
+              showGroupsOnly ? 'bg-indigo-500 text-white rounded-xl' : 'bg-[#313338] text-slate-300 hover:bg-[#35373c] hover:text-white'
+            }`}
+          >
+            <Users size={18} />
+            <span className="absolute left-[66px] bg-slate-900 border border-slate-700 text-white text-[9px] font-bold py-1 px-2 rounded shadow-xl hidden group-hover:block whitespace-nowrap z-50">
+              Chỉ hiện nhóm chat
+            </span>
+          </button>
+        </div>
+
+        {/* Column 1 bottom actions */}
+        <div className="flex flex-col items-center gap-4 w-full">
+          {/* New Chat Modal (+) */}
+          <button
+            type="button"
+            onClick={() => setShowNewChat(true)}
+            title="Tạo hội thoại mới"
+            className="w-10 h-10 rounded-full bg-emerald-600/10 hover:bg-emerald-600 hover:text-white flex items-center justify-center text-emerald-400 transition hover:rounded-xl group"
+          >
+            <Plus size={18} />
+            <span className="absolute left-[66px] bg-slate-900 border border-slate-700 text-white text-[9px] font-bold py-1 px-2 rounded shadow-xl hidden group-hover:block whitespace-nowrap z-50">
+              Tạo hội thoại mới
+            </span>
+          </button>
+        </div>
+      </div>
+
+      {/* Main columns container */}
+      <div className="flex h-full min-w-0 flex-1">
+        {/* Column 2: Conversation sidebar */}
+        <div className={`${showListOnMobile ? 'block' : 'hidden'} h-full w-full lg:block lg:w-auto shrink-0`}>
           <ConversationList
             conversations={chat.conversations}
             activeConversationId={chat.activeConversationId}
             currentUser={currentUser}
             users={users}
+            employees={employees}
             onlineUserIds={chat.onlineUserIds}
             search={search}
             onSearch={setSearch}
             onSelect={handleSelect}
             onNew={() => setShowNewChat(true)}
             loading={chat.isLoadingConversations}
+            showGroupsOnly={showGroupsOnly}
           />
         </div>
+
+        {/* Column 3: Message pane (Central view) */}
         <div className={`${showListOnMobile ? 'hidden' : 'block'} h-full min-w-0 flex-1 lg:block`}>
           <MessagePane
             conversation={chat.activeConversation}
             messages={chat.messages}
             currentUser={currentUser}
             users={users}
+            employees={employees}
             onlineUserIds={chat.onlineUserIds}
             typingUsers={chat.typingUsers}
             loading={chat.isLoadingMessages}
@@ -1705,12 +2260,28 @@ const ChatShell: React.FC<ChatShellProps> = ({ currentUser, users }) => {
             onTogglePinned={chat.togglePinned}
             onToggleMuted={chat.toggleMuted}
             onOpenSettings={() => setShowSettings(true)}
+            showRightSidebar={showRightSidebar && chat.activeConversation !== null}
+            setShowRightSidebar={setShowRightSidebar}
+            setActiveRightTab={setActiveRightTab}
           />
         </div>
+
+        {/* Column 4: Right Media Sidebar (Images/Docs/Links) */}
+        {showRightSidebar && chat.activeConversation && (
+          <div className="hidden lg:block h-full">
+            <RightMediaSidebar
+              activeConversationId={chat.activeConversationId || ''}
+              activeTab={activeRightTab}
+              setActiveTab={setActiveRightTab}
+              onClose={() => setShowRightSidebar(false)}
+              messages={chat.messages}
+            />
+          </div>
+        )}
       </div>
 
       {chat.error && (
-        <div className="fixed bottom-5 left-1/2 z-[130] -translate-x-1/2 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-xs font-bold text-red-700 shadow-lg dark:border-red-900 dark:bg-red-950 dark:text-red-200">
+        <div className="fixed bottom-5 left-1/2 z-[130] -translate-x-1/2 rounded-lg border border-red-900 bg-red-950/90 px-4 py-2 text-xs font-bold text-red-200 shadow-xl backdrop-blur">
           {chat.error}
         </div>
       )}

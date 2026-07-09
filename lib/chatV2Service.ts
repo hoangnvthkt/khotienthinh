@@ -205,6 +205,7 @@ export interface ChatV2RealtimeEvent {
 export type ChatV2InboxSubscriptionScope = 'badge' | 'shell';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+let chatV2RealtimeSubscriptionCounter = 0;
 
 const CONVERSATION_COLUMNS = [
   'id',
@@ -336,7 +337,18 @@ export const normalizeChatV2MessageMetadata = (
 export const getChatV2InboxChannelName = (
   currentUserId: string,
   scope: ChatV2InboxSubscriptionScope = 'shell',
-): string => `chat:v2:inbox:${scope}:${currentUserId}`;
+  instanceId?: string,
+): string => `chat:v2:inbox:${scope}:${currentUserId}${instanceId ? `:${instanceId}` : ''}`;
+
+export const getChatV2ConversationChannelName = (
+  conversationId: string,
+  instanceId?: string,
+): string => `chat:v2:conversation:${conversationId}${instanceId ? `:${instanceId}` : ''}`;
+
+export const getChatV2RealtimeSubscriptionInstanceId = (): string => {
+  chatV2RealtimeSubscriptionCounter += 1;
+  return `sub-${Date.now().toString(36)}-${chatV2RealtimeSubscriptionCounter.toString(36)}`;
+};
 
 export const buildChatV2AttachmentUploadTarget = (input: {
   conversationId: string;
@@ -1193,6 +1205,7 @@ export const chatV2Service = {
 
   subscribeToConversation(conversationId: string, onChange: (event: ChatV2RealtimeEvent) => void): RealtimeChannel | null {
     if (!isSupabaseConfigured || !conversationId) return null;
+    const instanceId = getChatV2RealtimeSubscriptionInstanceId();
     const forward = (table: ChatV2RealtimeTable) => (payload: any) => onChange({
       table,
       eventType: payload.eventType,
@@ -1200,7 +1213,7 @@ export const chatV2Service = {
       old: payload.old,
     });
     return supabase
-      .channel(`chat:v2:conversation:${conversationId}`)
+      .channel(getChatV2ConversationChannelName(conversationId, instanceId))
       .on('postgres_changes', {
         event: '*',
         schema: 'public',
@@ -1246,8 +1259,9 @@ export const chatV2Service = {
     scope: ChatV2InboxSubscriptionScope = 'shell',
   ): RealtimeChannel | null {
     if (!isSupabaseConfigured || !currentUserId) return null;
+    const instanceId = getChatV2RealtimeSubscriptionInstanceId();
     return supabase
-      .channel(getChatV2InboxChannelName(currentUserId, scope))
+      .channel(getChatV2InboxChannelName(currentUserId, scope, instanceId))
       .on('postgres_changes', {
         event: '*',
         schema: 'public',

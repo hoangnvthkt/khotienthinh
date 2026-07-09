@@ -4,7 +4,9 @@ import {
   applyRealtimeMessageEvent,
   buildChatV2AttachmentUploadTarget,
   buildChatV2MessagePreview,
+  getChatV2ConversationChannelName,
   getChatV2InboxChannelName,
+  getChatV2RealtimeSubscriptionInstanceId,
   getChatV2ConversationTitle,
   inferMessageKindFromAttachments,
   insertChatV2Mention,
@@ -130,6 +132,17 @@ describe('chatV2Service helpers', () => {
   it('uses distinct inbox realtime topics for badge and chat shell subscriptions', () => {
     expect(getChatV2InboxChannelName('u1', 'badge')).toBe('chat:v2:inbox:badge:u1');
     expect(getChatV2InboxChannelName('u1', 'shell')).toBe('chat:v2:inbox:shell:u1');
+  });
+
+  it('creates unique realtime topic names for each chat subscription instance', () => {
+    const firstInstance = getChatV2RealtimeSubscriptionInstanceId();
+    const secondInstance = getChatV2RealtimeSubscriptionInstanceId();
+
+    expect(firstInstance).not.toBe(secondInstance);
+    expect(getChatV2InboxChannelName('u1', 'shell', firstInstance)).toBe(`chat:v2:inbox:shell:u1:${firstInstance}`);
+    expect(getChatV2InboxChannelName('u1', 'shell', secondInstance)).toBe(`chat:v2:inbox:shell:u1:${secondInstance}`);
+    expect(getChatV2ConversationChannelName('c1', firstInstance)).toBe(`chat:v2:conversation:c1:${firstInstance}`);
+    expect(getChatV2ConversationChannelName('c1', secondInstance)).toBe(`chat:v2:conversation:c1:${secondInstance}`);
   });
 
   it('normalizes reply preview and mentions from message metadata', () => {
