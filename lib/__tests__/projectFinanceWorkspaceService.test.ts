@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { ProjectTransaction, PurchaseOrder, SupplierPayableBalance } from '../../types';
 import {
   buildPurchaseOrderPayableRow,
+  buildProjectFinanceSummary,
   buildSupplierPayableRowFromBalance,
   calculatePoRecognizedPayable,
 } from '../projectFinanceWorkspaceService';
@@ -183,5 +184,39 @@ describe('projectFinanceWorkspaceService', () => {
       },
     });
     expect(row.sourceLabel).toBe('Mở PO');
+  });
+
+  it('does not double count site cash settlement cashflow when AP already recognized the cost', () => {
+    const balance: SupplierPayableBalance = {
+      id: 'balance-direct-purchase',
+      projectId: 'project-1',
+      constructionSiteId: 'site-1',
+      supplierId: 'supplier-small',
+      supplierNameSnapshot: 'Tạp hóa cô Lan',
+      currency: 'VND',
+      recognizedAmount: 16_500_000,
+      paidAmount: 16_500_000,
+      creditAmount: 0,
+      outstandingAmount: 0,
+      documentCount: 1,
+      latestDocumentDate: '2026-07-15',
+    };
+    const payable = buildSupplierPayableRowFromBalance(balance);
+
+    const summary = buildProjectFinanceSummary({
+      customerContracts: [],
+      costItems: [],
+      paymentCertificates: [],
+      schedules: [],
+      advances: [],
+      transactions: [
+        paymentTx('tx-settlement', 16_500_000, 'site_cash_settlement_batch:settlement-1', 'Hoàn ứng công trường'),
+      ],
+      payables: [payable],
+      receivables: [],
+    });
+
+    expect(summary.actualCost).toBe(16_500_000);
+    expect(summary.cashOut).toBe(16_500_000);
   });
 });

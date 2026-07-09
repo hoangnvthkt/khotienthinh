@@ -526,7 +526,7 @@ const buildAlerts = (input: {
   return alerts;
 };
 
-const buildSummary = (input: {
+export const buildProjectFinanceSummary = (input: {
   customerContracts: CustomerContract[];
   costItems: ProjectCostItem[];
   paymentCertificates: PaymentCertificate[];
@@ -547,7 +547,11 @@ const buildSummary = (input: {
     .reduce((sum, row) => sum + row.recognizedAmount, 0));
   const nonSupplierCashCost = sumTransactions(input.transactions, tx => {
     if (tx.type !== 'expense') return false;
-    return !(tx.category === 'materials' && String(tx.sourceRef || '').startsWith('supplier_payment_batch:'));
+    const sourceRef = String(tx.sourceRef || '');
+    return !(tx.category === 'materials' && (
+      sourceRef.startsWith('supplier_payment_batch:')
+      || sourceRef.startsWith('site_cash_settlement_batch:')
+    ));
   });
   const actualCost = money(supplierMaterialCost + nonSupplierCashCost);
   const cashOut = sumTransactions(input.transactions, tx => tx.type === 'expense');
@@ -638,7 +642,7 @@ export const projectFinanceWorkspaceService = {
     const payables = buildPayables(purchaseOrders, paymentCertificates, schedules, transactions, subcontractors, supplierPayableBalances);
     const receivables = buildReceivables(customerContracts, paymentCertificates, schedules, transactions);
     return {
-      summary: buildSummary({
+      summary: buildProjectFinanceSummary({
         customerContracts,
         costItems,
         paymentCertificates,

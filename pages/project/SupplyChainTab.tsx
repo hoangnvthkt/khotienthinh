@@ -4935,6 +4935,15 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                             <td className="px-4 py-3">
                                                 <div className="font-black text-slate-700 dark:text-slate-200">{purchase.supplierNameSnapshot}</div>
                                                 <div className="mt-1 text-[10px] font-bold text-slate-400">{DIRECT_PURCHASE_PAYMENT_SOURCE[purchase.paymentSource]}</div>
+                                                {['site_cash', 'staff_paid'].includes(purchase.paymentSource) && (
+                                                    <div className={`mt-1 inline-flex rounded-full border px-2 py-0.5 text-[9px] font-black ${
+                                                        purchase.siteCashSettlementId
+                                                            ? 'border-blue-200 bg-blue-50 text-blue-700'
+                                                            : 'border-amber-200 bg-amber-50 text-amber-700'
+                                                    }`}>
+                                                        {purchase.siteCashSettlementId ? 'Đã vào hoàn ứng' : 'Chờ hoàn ứng'}
+                                                    </div>
+                                                )}
                                             </td>
                                             <td className="px-4 py-3 text-right font-black text-orange-700 whitespace-nowrap">{fmtMoney(purchase.totalAmount)} đ</td>
                                             <td className="px-4 py-3">

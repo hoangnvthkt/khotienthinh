@@ -32,11 +32,14 @@ import {
   ProjectCostCategory,
   ProjectTransaction,
   ProjectTxType,
+  CashFund,
   SupplierPayableDocument,
   SupplierPaymentAllocation,
   SupplierPaymentAllocationMode,
   SupplierPaymentBatch,
   SupplierPaymentMethod,
+  SiteCashSettlementBatch,
+  SiteCashSettlementLine,
 } from '../../types';
 import {
   ProjectFinanceLedgerRow,
@@ -49,6 +52,11 @@ import {
 } from '../../lib/projectFinanceWorkspaceService';
 import { allocateSupplierPayment, assertSupplierPaymentBatchCanPost, supplierPaymentBatchService } from '../../lib/supplierPaymentBatchService';
 import { supplierPayableService } from '../../lib/supplierPayableService';
+import {
+  calculateSiteCashSettlementSummary,
+  siteCashSettlementService,
+} from '../../lib/siteCashSettlementService';
+import { cashFundService } from '../../lib/cashFundService';
 import { paymentService } from '../../lib/projectService';
 import { useApp } from '../../context/AppContext';
 import { useConfirm } from '../../context/ConfirmContext';
@@ -107,6 +115,14 @@ interface SupplierPayableDocumentDrawerState {
   error?: string | null;
 }
 
+interface SiteCashSettlementDetailState {
+  batchId: string;
+  batch?: SiteCashSettlementBatch | null;
+  lines: SiteCashSettlementLine[];
+  loading: boolean;
+  error?: string | null;
+}
+
 const tabs: Array<{ key: ProjectFinanceWorkspaceTab; label: string; icon: React.ElementType }> = [
   { key: 'overview', label: 'Tổng quan', icon: BarChart3 },
   { key: 'budget', label: 'Ngân sách', icon: Landmark },
@@ -139,6 +155,9 @@ const parseMoneyInput = (value: string): number => {
 
 const buildSupplierPaymentBatchCode = (paymentDate: string, batchId: string) =>
   `PAY-${(paymentDate || todayIso()).replaceAll('-', '')}-${batchId.slice(0, 8).toUpperCase()}`;
+
+const buildSiteCashSettlementCode = (periodMonth: string, batchId: string) =>
+  `HU-${(periodMonth || todayIso()).slice(0, 7).replace('-', '')}-${batchId.slice(0, 8).toUpperCase()}`;
 
 const paymentMilestoneOptions: Array<{ value: PaymentScheduleMilestoneType; label: string }> = [
   { value: 'advance', label: 'Tạm ứng' },
@@ -212,6 +231,11 @@ const statusLabel = (status: string) => {
     open: 'Đang mở',
     submitted: 'Đã trình',
     approved: 'Đã duyệt',
+    reviewing: 'Đang review',
+    accepted: 'Chấp nhận',
+    adjusted: 'Điều chỉnh',
+    rejected: 'Từ chối',
+    closed: 'Đã đóng',
     cancelled: 'Đã hủy',
     reversed: 'Đã đảo',
   };
@@ -219,9 +243,9 @@ const statusLabel = (status: string) => {
 };
 
 const statusTone = (status: string) => {
-  if (['paid', 'received', 'approved'].includes(status)) return 'bg-emerald-50 text-emerald-700 border-emerald-100';
-  if (['overdue', 'payable', 'receivable', 'open'].includes(status)) return 'bg-red-50 text-red-700 border-red-100';
-  if (['partial', 'waiting_receipt', 'pending', 'submitted'].includes(status)) return 'bg-amber-50 text-amber-700 border-amber-100';
+  if (['paid', 'received', 'approved', 'accepted', 'closed'].includes(status)) return 'bg-emerald-50 text-emerald-700 border-emerald-100';
+  if (['overdue', 'payable', 'receivable', 'open', 'rejected'].includes(status)) return 'bg-red-50 text-red-700 border-red-100';
+  if (['partial', 'waiting_receipt', 'pending', 'submitted', 'reviewing', 'adjusted'].includes(status)) return 'bg-amber-50 text-amber-700 border-amber-100';
   return 'bg-slate-50 text-slate-600 border-slate-100';
 };
 
@@ -821,6 +845,296 @@ const SupplierPaymentBatchPanel = ({
   </section>
 );
 
+const SiteCashSettlementPanel = ({
+  batches,
+  loading,
+  canManage,
+  onCreate,
+  onOpenDetail,
+}: {
+  batches: SiteCashSettlementBatch[];
+  loading: boolean;
+  canManage?: boolean;
+  onCreate: () => void;
+  onOpenDetail: (batchId: string) => void;
+}) => (
+  <section className="space-y-3">
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <h4 className="text-sm font-black text-slate-800 dark:text-white">Hoàn ứng công trường</h4>
+        <p className="mt-0.5 text-[11px] font-bold text-slate-400">Đối chiếu quỹ công trường, cá nhân ứng trước và các phiếu mua nóng.</p>
+      </div>
+      {canManage && (
+        <button type="button" onClick={onCreate} className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-xs font-black text-white hover:bg-blue-700">
+          <Plus size={14} /> Tạo bộ hoàn ứng
+        </button>
+      )}
+    </div>
+    {loading ? (
+      <div className="rounded-lg border border-slate-100 bg-white p-8 text-center text-sm font-bold text-slate-400 dark:border-slate-700 dark:bg-slate-900">
+        <Loader2 size={18} className="mx-auto mb-2 animate-spin text-blue-600" /> Đang tải bộ hoàn ứng...
+      </div>
+    ) : batches.length === 0 ? (
+      <EmptyState label="Chưa có bộ hoàn ứng công trường trong phạm vi này." />
+    ) : (
+      <div className="overflow-x-auto rounded-lg border border-slate-100 bg-white dark:border-slate-700 dark:bg-slate-900">
+        <table className="w-full min-w-[980px] text-left text-xs">
+          <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-wide text-slate-400 dark:bg-slate-800">
+            <tr>
+              <th className="px-3 py-2">Bộ hoàn ứng</th>
+              <th className="px-3 py-2">Kỳ</th>
+              <th className="px-3 py-2 text-right">Chi quỹ</th>
+              <th className="px-3 py-2 text-right">Cá nhân ứng</th>
+              <th className="px-3 py-2 text-right">Đã hoàn</th>
+              <th className="px-3 py-2 text-right">Tồn cuối</th>
+              <th className="px-3 py-2 text-center">Trạng thái</th>
+              <th className="px-3 py-2 text-right">Thao tác</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
+            {batches.map(batch => (
+              <tr key={batch.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/60">
+                <td className="px-3 py-3 font-mono font-black text-slate-800 dark:text-slate-100">{batch.code}</td>
+                <td className="px-3 py-3 font-bold text-slate-500">{fmtPeriodMonth(batch.periodMonth)}</td>
+                <td className="px-3 py-3 text-right font-black text-blue-700">{fmtMoney(batch.approvedSiteCashSpend || 0)}</td>
+                <td className="px-3 py-3 text-right font-bold text-amber-700">{fmtMoney(batch.approvedStaffPaidAmount || 0)}</td>
+                <td className="px-3 py-3 text-right font-bold text-emerald-700">{fmtMoney(batch.staffReimbursedAmount || 0)}</td>
+                <td className="px-3 py-3 text-right font-black text-slate-800 dark:text-slate-100">{fmtMoney(batch.closingBalance || 0)}</td>
+                <td className="px-3 py-3 text-center"><span className={`inline-flex rounded-full border px-2 py-1 text-[10px] font-black ${statusTone(batch.status)}`}>{statusLabel(batch.status)}</span></td>
+                <td className="px-3 py-3 text-right">
+                  <button type="button" onClick={() => onOpenDetail(batch.id)} className="rounded-md px-2 py-1 text-[10px] font-black text-blue-700 hover:bg-blue-50">
+                    Chi tiết
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )}
+  </section>
+);
+
+const SiteCashSettlementDetailDrawer = ({
+  state,
+  saving,
+  posting,
+  onClose,
+  onBatchChange,
+  onLineChange,
+  onSave,
+  onPost,
+  onReverse,
+  onOpenSource,
+  cashFunds,
+  loadingCashFunds,
+}: {
+  state: SiteCashSettlementDetailState | null;
+  saving: boolean;
+  posting: boolean;
+  cashFunds: CashFund[];
+  loadingCashFunds: boolean;
+  onClose: () => void;
+  onBatchChange: (batch: SiteCashSettlementBatch) => void;
+  onLineChange: (line: SiteCashSettlementLine) => void;
+  onSave: () => void;
+  onPost: () => void;
+  onReverse: () => void;
+  onOpenSource: (line: SiteCashSettlementLine) => void;
+}) => {
+  if (!state) return null;
+  const batch = state.batch || null;
+  const summary = batch ? calculateSiteCashSettlementSummary({
+    openingBalance: batch.openingBalance,
+    topupAmount: batch.topupAmount,
+    lines: state.lines,
+  }) : null;
+  const isLocked = batch ? ['approved', 'closed', 'reversed', 'cancelled'].includes(batch.status) : true;
+  const selectedCashFund = batch?.cashFundId ? cashFunds.find(fund => fund.id === batch.cashFundId) : null;
+  return (
+    <div className="fixed inset-0 z-[1000] flex justify-end bg-slate-950/40" onClick={event => event.target === event.currentTarget && onClose()}>
+      <div className="flex h-full w-full max-w-[920px] flex-col bg-white shadow-2xl dark:bg-slate-950">
+        <div className="border-b border-slate-100 px-5 py-4 dark:border-slate-800">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <div className="text-[11px] font-black uppercase tracking-wide text-blue-600">Hoàn ứng công trường</div>
+              <h3 className="mt-1 truncate text-base font-black text-slate-900 dark:text-white">{batch?.code || state.batchId}</h3>
+              <p className="mt-0.5 text-xs font-bold text-slate-500">{batch ? `${fmtPeriodMonth(batch.periodMonth)} • ${statusLabel(batch.status)}` : 'Đang tải...'}</p>
+            </div>
+            <button type="button" onClick={onClose} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800">
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50/70 p-5 dark:bg-slate-900/40">
+          {state.loading && (
+            <div className="flex items-center justify-center gap-2 rounded-lg border border-slate-100 bg-white p-8 text-sm font-bold text-slate-400 dark:border-slate-800 dark:bg-slate-950">
+              <Loader2 size={16} className="animate-spin text-blue-600" /> Đang tải bộ hoàn ứng...
+            </div>
+          )}
+          {!state.loading && state.error && <div className="rounded-lg border border-red-100 bg-red-50 p-4 text-sm font-bold text-red-700">{state.error}</div>}
+          {!state.loading && !state.error && batch && summary && (
+            <div className="space-y-4">
+              <div className="grid gap-3 md:grid-cols-5">
+                <label className="rounded-lg border border-slate-100 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
+                  <span className="text-[10px] font-black uppercase text-slate-400">Quỹ</span>
+                  <select
+                    disabled={isLocked || loadingCashFunds}
+                    value={batch.cashFundId || ''}
+                    onChange={event => onBatchChange({ ...batch, cashFundId: event.target.value || null })}
+                    className="mt-1 w-full bg-transparent text-xs font-black text-slate-800 outline-none dark:text-white"
+                  >
+                    <option value="">{loadingCashFunds ? 'Đang tải quỹ...' : 'Chưa chọn quỹ'}</option>
+                    {cashFunds.map(fund => <option key={fund.id} value={fund.id}>{fund.name}</option>)}
+                  </select>
+                  {selectedCashFund && <div className="mt-1 truncate text-[10px] font-bold text-slate-400">{fmtMoney(selectedCashFund.openingBalance)}</div>}
+                </label>
+                <label className="rounded-lg border border-slate-100 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
+                  <span className="text-[10px] font-black uppercase text-slate-400">Tồn đầu</span>
+                  <input
+                    disabled={isLocked}
+                    value={batch.openingBalance.toLocaleString('vi-VN')}
+                    onChange={event => onBatchChange({ ...batch, openingBalance: parseMoneyInput(event.target.value) })}
+                    className="mt-1 w-full bg-transparent text-sm font-black text-slate-800 outline-none dark:text-white"
+                  />
+                </label>
+                <label className="rounded-lg border border-slate-100 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
+                  <span className="text-[10px] font-black uppercase text-slate-400">Nạp thêm</span>
+                  <input
+                    disabled={isLocked}
+                    value={batch.topupAmount.toLocaleString('vi-VN')}
+                    onChange={event => onBatchChange({ ...batch, topupAmount: parseMoneyInput(event.target.value) })}
+                    className="mt-1 w-full bg-transparent text-sm font-black text-slate-800 outline-none dark:text-white"
+                  />
+                </label>
+                <div className="rounded-lg border border-slate-100 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
+                  <div className="text-[10px] font-black uppercase text-slate-400">Đã hoàn cá nhân</div>
+                  <div className="mt-1 text-sm font-black text-emerald-700">{fmtMoney(summary.staffReimbursedAmount)}</div>
+                </div>
+                <div className="rounded-lg border border-slate-100 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
+                  <div className="text-[10px] font-black uppercase text-slate-400">Tồn cuối</div>
+                  <div className={`mt-1 text-sm font-black ${summary.endingBalance < 0 ? 'text-red-600' : 'text-blue-700'}`}>{fmtMoney(summary.endingBalance)}</div>
+                </div>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-4">
+                <KpiCard label="Claim" value={summary.claimedAmount} icon={ReceiptText} tone="slate" />
+                <KpiCard label="Chi quỹ duyệt" value={summary.approvedSiteCashSpend} icon={Banknote} tone="blue" />
+                <KpiCard label="Cá nhân ứng duyệt" value={summary.approvedStaffPaidAmount} icon={WalletCards} tone="amber" />
+                <KpiCard label="Còn phải hoàn" value={summary.staffOutstandingAmount} icon={AlertTriangle} tone={summary.staffOutstandingAmount > 0 ? 'red' : 'green'} />
+              </div>
+
+              <div className="rounded-lg border border-slate-100 bg-white dark:border-slate-800 dark:bg-slate-950">
+                <div className="border-b border-slate-100 px-4 py-3 text-xs font-black text-slate-800 dark:border-slate-800 dark:text-slate-100">Dòng chứng từ</div>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[980px] text-left text-xs">
+                    <thead className="bg-slate-50 text-[10px] font-black uppercase text-slate-400 dark:bg-slate-900">
+                      <tr>
+                        <th className="px-3 py-2">Chứng từ</th>
+                        <th className="px-3 py-2">Nguồn tiền</th>
+                        <th className="px-3 py-2 text-right">Claim</th>
+                        <th className="px-3 py-2 text-right">Duyệt</th>
+                        <th className="px-3 py-2 text-right">Hoàn cá nhân</th>
+                        <th className="px-3 py-2 text-center">Trạng thái</th>
+                        <th className="px-3 py-2 text-right">Nguồn</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
+                      {state.lines.map(line => (
+                        <tr key={line.id}>
+                          <td className="px-3 py-3">
+                            <div className="font-mono font-black text-slate-800 dark:text-slate-100">{line.documentNoSnapshot || line.sourceId}</div>
+                            <div className="mt-0.5 text-[10px] font-bold text-slate-400">{line.supplierNameSnapshot || line.description || '-'}</div>
+                          </td>
+                          <td className="px-3 py-3 font-bold text-slate-500">
+                            {line.paymentSource === 'staff_paid' ? 'Cá nhân ứng trước' : line.paymentSource === 'site_cash' ? 'Quỹ công trường' : line.paymentSource || '-'}
+                          </td>
+                          <td className="px-3 py-3 text-right font-bold text-slate-700 dark:text-slate-200">{fmtMoney(line.claimedAmount)}</td>
+                          <td className="px-3 py-3 text-right">
+                            <input
+                              disabled={isLocked || line.status === 'rejected'}
+                              value={(line.approvedAmount || 0).toLocaleString('vi-VN')}
+                              onChange={event => {
+                                const approvedAmount = parseMoneyInput(event.target.value);
+                                onLineChange({
+                                  ...line,
+                                  approvedAmount,
+                                  fundSpendAmount: line.paymentSource === 'site_cash' ? approvedAmount : 0,
+                                  staffClaimAmount: line.paymentSource === 'staff_paid' ? Math.max(line.staffClaimAmount || 0, approvedAmount) : 0,
+                                  staffReimbursedAmount: line.paymentSource === 'staff_paid' ? Math.min(line.staffReimbursedAmount || 0, approvedAmount) : 0,
+                                });
+                              }}
+                              className="w-28 rounded-md border border-slate-200 bg-white px-2 py-1 text-right font-black text-blue-700 outline-none focus:border-blue-300 disabled:bg-slate-50 dark:border-slate-700 dark:bg-slate-900"
+                            />
+                          </td>
+                          <td className="px-3 py-3 text-right">
+                            <input
+                              disabled={isLocked || line.paymentSource !== 'staff_paid' || line.status === 'rejected'}
+                              value={(line.staffReimbursedAmount || 0).toLocaleString('vi-VN')}
+                              onChange={event => onLineChange({ ...line, staffReimbursedAmount: Math.min(parseMoneyInput(event.target.value), line.approvedAmount || 0) })}
+                              className="w-28 rounded-md border border-slate-200 bg-white px-2 py-1 text-right font-black text-emerald-700 outline-none focus:border-emerald-300 disabled:bg-slate-50 dark:border-slate-700 dark:bg-slate-900"
+                            />
+                          </td>
+                          <td className="px-3 py-3 text-center">
+                            <select
+                              disabled={isLocked}
+                              value={line.status}
+                              onChange={event => {
+                                const status = event.target.value as SiteCashSettlementLine['status'];
+                                onLineChange({
+                                  ...line,
+                                  status,
+                                  approvedAmount: status === 'rejected' ? 0 : line.approvedAmount,
+                                  fundSpendAmount: status === 'rejected' ? 0 : line.fundSpendAmount,
+                                  staffReimbursedAmount: status === 'rejected' ? 0 : line.staffReimbursedAmount,
+                                });
+                              }}
+                              className={`rounded-full border px-2 py-1 text-[10px] font-black outline-none ${statusTone(line.status)}`}
+                            >
+                              <option value="pending">Chờ review</option>
+                              <option value="accepted">Chấp nhận</option>
+                              <option value="adjusted">Điều chỉnh</option>
+                              <option value="rejected">Từ chối</option>
+                            </select>
+                          </td>
+                          <td className="px-3 py-3 text-right">
+                            <button type="button" onClick={() => onOpenSource(line)} className="rounded-md px-2 py-1 text-[10px] font-black text-blue-700 hover:bg-blue-50">
+                              <ExternalLink size={11} className="inline" /> Mở
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+        {batch && (
+          <div className="flex flex-wrap justify-end gap-2 border-t border-slate-100 px-5 py-4 dark:border-slate-800">
+            {!isLocked && (
+              <button type="button" onClick={onSave} disabled={saving} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-black text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+                {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Lưu nháp
+              </button>
+            )}
+            {!isLocked && (
+              <button type="button" onClick={onPost} disabled={posting} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-xs font-black text-white hover:bg-blue-700 disabled:opacity-50">
+                {posting ? <Loader2 size={14} className="animate-spin" /> : <CreditCard size={14} />} Duyệt hoàn ứng
+              </button>
+            )}
+            {['approved', 'closed'].includes(batch.status) && (
+              <button type="button" onClick={onReverse} disabled={posting} className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-xs font-black text-red-700 hover:bg-red-100 disabled:opacity-50">
+                {posting ? <Loader2 size={14} className="animate-spin" /> : <RefreshCcw size={14} />} Đảo hoàn ứng
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const SupplierPaymentBatchDetailDrawer = ({
   state,
   reversing,
@@ -1303,13 +1617,20 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
   const [poPaymentForm, setPoPaymentForm] = useState<PurchaseOrderPaymentForm | null>(null);
   const [savingPoPayment, setSavingPoPayment] = useState(false);
   const [supplierPayableDrawer, setSupplierPayableDrawer] = useState<SupplierPayableDocumentDrawerState | null>(null);
-  const [payablesView, setPayablesView] = useState<'documents' | 'payments'>('documents');
+  const [payablesView, setPayablesView] = useState<'documents' | 'payments' | 'settlements'>('documents');
   const [supplierPaymentBatches, setSupplierPaymentBatches] = useState<SupplierPaymentBatch[]>([]);
   const [loadingSupplierPaymentBatches, setLoadingSupplierPaymentBatches] = useState(false);
   const [supplierPaymentForm, setSupplierPaymentForm] = useState<SupplierPaymentBatchFormState | null>(null);
   const [savingSupplierPaymentBatch, setSavingSupplierPaymentBatch] = useState(false);
   const [supplierPaymentBatchDetail, setSupplierPaymentBatchDetail] = useState<SupplierPaymentBatchDetailState | null>(null);
   const [reversingSupplierPaymentBatch, setReversingSupplierPaymentBatch] = useState(false);
+  const [siteCashSettlementBatches, setSiteCashSettlementBatches] = useState<SiteCashSettlementBatch[]>([]);
+  const [loadingSiteCashSettlements, setLoadingSiteCashSettlements] = useState(false);
+  const [siteCashSettlementDetail, setSiteCashSettlementDetail] = useState<SiteCashSettlementDetailState | null>(null);
+  const [savingSiteCashSettlement, setSavingSiteCashSettlement] = useState(false);
+  const [postingSiteCashSettlement, setPostingSiteCashSettlement] = useState(false);
+  const [cashFunds, setCashFunds] = useState<CashFund[]>([]);
+  const [loadingCashFunds, setLoadingCashFunds] = useState(false);
   const canManageSchedules = canManageFinance || canManagePayment;
   const canManageLedger = canManageFinance;
   const canRecordPoPayment = canManageFinance;
@@ -1359,9 +1680,44 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
     }
   }, [constructionSiteId, projectId, toast]);
 
+  const loadSiteCashSettlements = useCallback(async () => {
+    setLoadingSiteCashSettlements(true);
+    try {
+      setSiteCashSettlementBatches(await siteCashSettlementService.listBatches({
+        projectId: projectId || null,
+        constructionSiteId,
+      }));
+    } catch (err: any) {
+      toast.error('Không tải được bộ hoàn ứng', err?.message || 'Vui lòng thử lại.');
+      setSiteCashSettlementBatches([]);
+    } finally {
+      setLoadingSiteCashSettlements(false);
+    }
+  }, [constructionSiteId, projectId, toast]);
+
+  const loadCashFunds = useCallback(async () => {
+    setLoadingCashFunds(true);
+    try {
+      setCashFunds(await cashFundService.listActive());
+    } catch (err: any) {
+      toast.error('Không tải được danh sách quỹ', err?.message || 'Vui lòng thử lại.');
+      setCashFunds([]);
+    } finally {
+      setLoadingCashFunds(false);
+    }
+  }, [toast]);
+
   useEffect(() => {
     if (activeTab === 'payables') void loadSupplierPaymentBatches();
   }, [activeTab, loadSupplierPaymentBatches]);
+
+  useEffect(() => {
+    if (activeTab === 'payables') void loadSiteCashSettlements();
+  }, [activeTab, loadSiteCashSettlements]);
+
+  useEffect(() => {
+    if (activeTab === 'payables') void loadCashFunds();
+  }, [activeTab, loadCashFunds]);
 
   const openTab = (tab: ProjectFinanceWorkspaceTab) => {
     setActiveTab(tab);
@@ -1804,6 +2160,167 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
     }
   };
 
+  const openSiteCashSettlementDetail = async (batchId: string) => {
+    setSiteCashSettlementDetail({ batchId, batch: null, lines: [], loading: true, error: null });
+    try {
+      const detail = await siteCashSettlementService.getBatchDetail(batchId);
+      setSiteCashSettlementDetail({ batchId, batch: detail.batch, lines: detail.lines, loading: false, error: null });
+    } catch (err: any) {
+      setSiteCashSettlementDetail({ batchId, batch: null, lines: [], loading: false, error: err?.message || 'Không tải được chi tiết hoàn ứng.' });
+    }
+  };
+
+  const createSiteCashSettlementBatch = async () => {
+    if (!canManageFinance) return;
+    const batchId = crypto.randomUUID();
+    const periodMonth = toPeriodMonth(todayIso());
+    const now = new Date().toISOString();
+    const batch: SiteCashSettlementBatch = {
+      id: batchId,
+      code: buildSiteCashSettlementCode(periodMonth, batchId),
+      projectId: projectId || null,
+      constructionSiteId,
+      periodMonth,
+      cashFundId: cashFunds[0]?.id || null,
+      openingBalance: 0,
+      topupAmount: 0,
+      acceptedSpendAmount: 0,
+      rejectedSpendAmount: 0,
+      approvedSiteCashSpend: 0,
+      approvedStaffPaidAmount: 0,
+      staffReimbursedAmount: 0,
+      staffOutstandingAmount: 0,
+      closingBalance: 0,
+      status: 'draft',
+      qrToken: `site_cash_settlement_${batchId.replaceAll('-', '')}`,
+      createdBy: user?.id || null,
+      createdAt: now,
+      updatedAt: now,
+      note: null,
+      metadata: {},
+    };
+    setSavingSiteCashSettlement(true);
+    try {
+      let lines = await siteCashSettlementService.buildDraftFromDirectPurchases({
+        settlementBatchId: batchId,
+        projectId: projectId || null,
+        constructionSiteId,
+        periodMonth,
+      });
+      lines = lines.map(line => ({
+        ...line,
+        status: 'pending',
+      }));
+      const saved = await siteCashSettlementService.upsert(batch, lines);
+      toast.success('Đã tạo bộ hoàn ứng', `${saved.code} có ${lines.length} dòng chờ review.`);
+      await loadSiteCashSettlements();
+      setPayablesView('settlements');
+      setSiteCashSettlementDetail({ batchId, batch: saved, lines, loading: false, error: null });
+    } catch (err: any) {
+      toast.error('Không tạo được bộ hoàn ứng', err?.message || 'Vui lòng thử lại.');
+    } finally {
+      setSavingSiteCashSettlement(false);
+    }
+  };
+
+  const updateSiteCashSettlementBatch = (batch: SiteCashSettlementBatch) => {
+    setSiteCashSettlementDetail(prev => prev ? { ...prev, batch } : prev);
+  };
+
+  const updateSiteCashSettlementLine = (line: SiteCashSettlementLine) => {
+    setSiteCashSettlementDetail(prev => prev ? {
+      ...prev,
+      lines: prev.lines.map(item => item.id === line.id ? line : item),
+    } : prev);
+  };
+
+  const saveSiteCashSettlementDraft = async () => {
+    const detail = siteCashSettlementDetail;
+    if (!detail?.batch) return;
+    setSavingSiteCashSettlement(true);
+    try {
+      const saved = await siteCashSettlementService.upsert(detail.batch, detail.lines);
+      const refreshed = await siteCashSettlementService.getBatchDetail(saved.id);
+      setSiteCashSettlementDetail({ batchId: saved.id, batch: refreshed.batch, lines: refreshed.lines, loading: false, error: null });
+      toast.success('Đã lưu bộ hoàn ứng', saved.code);
+      await loadSiteCashSettlements();
+    } catch (err: any) {
+      toast.error('Không lưu được hoàn ứng', err?.message || 'Vui lòng thử lại.');
+    } finally {
+      setSavingSiteCashSettlement(false);
+    }
+  };
+
+  const postSiteCashSettlement = async () => {
+    const detail = siteCashSettlementDetail;
+    if (!detail?.batch) return;
+    const summary = calculateSiteCashSettlementSummary({
+      openingBalance: detail.batch.openingBalance,
+      topupAmount: detail.batch.topupAmount,
+      lines: detail.lines,
+    });
+    if (summary.endingBalance < 0) {
+      toast.warning('Quỹ âm', 'Tồn cuối sau hoàn ứng đang âm, cần điều chỉnh tồn đầu/nạp thêm hoặc số duyệt.');
+      return;
+    }
+    if (detail.lines.some(line => line.status === 'pending')) {
+      toast.warning('Còn dòng chưa review', 'Mỗi dòng chứng từ cần được chấp nhận, điều chỉnh hoặc từ chối trước khi duyệt.');
+      return;
+    }
+    if (detail.lines.some(line => line.paymentSource === 'staff_paid' && (line.staffReimbursedAmount || 0) > (line.approvedAmount || 0))) {
+      toast.warning('Số hoàn cá nhân chưa hợp lệ', 'Số hoàn cá nhân không được vượt số đã duyệt.');
+      return;
+    }
+    setPostingSiteCashSettlement(true);
+    try {
+      await siteCashSettlementService.upsert(detail.batch, detail.lines);
+      const posted = await siteCashSettlementService.post(detail.batch.id, user?.id || null);
+      toast.success('Đã duyệt hoàn ứng', posted.code);
+      setSiteCashSettlementDetail(null);
+      await Promise.all([load(), loadSiteCashSettlements()]);
+    } catch (err: any) {
+      toast.error('Không duyệt được hoàn ứng', err?.message || 'Vui lòng thử lại.');
+    } finally {
+      setPostingSiteCashSettlement(false);
+    }
+  };
+
+  const reverseSiteCashSettlement = async () => {
+    const batch = siteCashSettlementDetail?.batch;
+    if (!batch) return;
+    const ok = await confirm({
+      title: 'Đảo bộ hoàn ứng',
+      targetName: batch.code,
+      warningText: 'Hệ thống sẽ tạo giao dịch đảo, hủy phiếu chi quỹ liên quan và mở lại link phiếu mua nóng.',
+      actionLabel: 'Đảo hoàn ứng',
+      countdownSeconds: 0,
+    });
+    if (!ok) return;
+    setPostingSiteCashSettlement(true);
+    try {
+      await siteCashSettlementService.reverse(batch.id, user?.id || null);
+      toast.success('Đã đảo bộ hoàn ứng', batch.code);
+      setSiteCashSettlementDetail(null);
+      await Promise.all([load(), loadSiteCashSettlements()]);
+    } catch (err: any) {
+      toast.error('Không đảo được hoàn ứng', err?.message || 'Vui lòng thử lại.');
+    } finally {
+      setPostingSiteCashSettlement(false);
+    }
+  };
+
+  const openSiteCashSettlementSource = (line: SiteCashSettlementLine) => {
+    if (line.sourceType === 'site_direct_purchase') {
+      openSourceRoute({
+        tab: 'material',
+        params: {
+          materialTab: 'direct',
+          siteDirectPurchaseId: line.sourceId,
+        },
+      });
+    }
+  };
+
   const openPoPayment = (row: ProjectFinancePayableRow) => {
     void openSupplierPaymentBatchForm(row);
   };
@@ -2146,6 +2663,13 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
                     >
                       Thanh toán NCC
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => setPayablesView('settlements')}
+                      className={`rounded-md px-3 py-1.5 text-xs font-black ${payablesView === 'settlements' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
+                    >
+                      Hoàn ứng
+                    </button>
                   </div>
                   {payablesView === 'documents' && canManageSchedules && (
                     <button type="button" onClick={() => openNewSchedule('payable')} className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-orange-500 px-3 py-2 text-xs font-black text-white hover:bg-orange-600">
@@ -2155,6 +2679,11 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
                   {payablesView === 'payments' && canRecordPoPayment && (
                     <button type="button" onClick={() => openSupplierPaymentBatchForm()} className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-black text-white hover:bg-emerald-700">
                       <Plus size={14} /> Tạo đợt thanh toán
+                    </button>
+                  )}
+                  {payablesView === 'settlements' && canManageFinance && (
+                    <button type="button" onClick={() => void createSiteCashSettlementBatch()} disabled={savingSiteCashSettlement} className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-xs font-black text-white hover:bg-blue-700 disabled:opacity-50">
+                      {savingSiteCashSettlement ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />} Tạo bộ hoàn ứng
                     </button>
                   )}
                 </div>
@@ -2169,13 +2698,21 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
                   onDeleteSchedule={deleteSchedule}
                   onPayPurchaseOrder={openPoPayment}
                 />
-              ) : (
+              ) : payablesView === 'payments' ? (
                 <SupplierPaymentBatchPanel
                   batches={supplierPaymentBatches}
                   loading={loadingSupplierPaymentBatches}
                   canManage={canRecordPoPayment}
                   onCreate={() => openSupplierPaymentBatchForm()}
                   onOpenDetail={openSupplierPaymentBatchDetail}
+                />
+              ) : (
+                <SiteCashSettlementPanel
+                  batches={siteCashSettlementBatches}
+                  loading={loadingSiteCashSettlements}
+                  canManage={canManageFinance}
+                  onCreate={() => void createSiteCashSettlementBatch()}
+                  onOpenDetail={openSiteCashSettlementDetail}
                 />
               )}
             </section>
@@ -2266,6 +2803,20 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
         reversing={reversingSupplierPaymentBatch}
         onClose={() => setSupplierPaymentBatchDetail(null)}
         onReverse={reverseSupplierPaymentBatch}
+      />
+      <SiteCashSettlementDetailDrawer
+        state={siteCashSettlementDetail}
+        saving={savingSiteCashSettlement}
+        posting={postingSiteCashSettlement}
+        cashFunds={cashFunds}
+        loadingCashFunds={loadingCashFunds}
+        onClose={() => setSiteCashSettlementDetail(null)}
+        onBatchChange={updateSiteCashSettlementBatch}
+        onLineChange={updateSiteCashSettlementLine}
+        onSave={saveSiteCashSettlementDraft}
+        onPost={postSiteCashSettlement}
+        onReverse={reverseSiteCashSettlement}
+        onOpenSource={openSiteCashSettlementSource}
       />
       <SupplierPayableDocumentsDrawer
         state={supplierPayableDrawer}

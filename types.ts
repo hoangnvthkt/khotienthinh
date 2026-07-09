@@ -2286,7 +2286,7 @@ export interface SiteSmallToolRecord {
   note?: string | null;
 }
 
-export type SiteCashSettlementBatchStatus = 'draft' | 'submitted' | 'reviewing' | 'approved' | 'closed' | 'cancelled';
+export type SiteCashSettlementBatchStatus = 'draft' | 'submitted' | 'reviewing' | 'approved' | 'closed' | 'cancelled' | 'reversed';
 export type SiteCashSettlementLineSourceType = 'site_direct_purchase' | 'cash_voucher' | 'manual_adjustment';
 export type SiteCashSettlementLineStatus = 'pending' | 'accepted' | 'adjusted' | 'rejected';
 
@@ -2429,8 +2429,15 @@ export interface SiteCashSettlementBatch {
   topupAmount: number;
   acceptedSpendAmount: number;
   rejectedSpendAmount: number;
+  approvedSiteCashSpend?: number;
+  approvedStaffPaidAmount?: number;
+  staffReimbursedAmount?: number;
+  staffOutstandingAmount?: number;
   closingBalance: number;
   status: SiteCashSettlementBatchStatus;
+  projectTransactionId?: string | null;
+  cashVoucherId?: string | null;
+  metadata?: Record<string, any>;
   qrToken?: string | null;
   createdBy?: string | null;
   approvedBy?: string | null;
@@ -2446,15 +2453,34 @@ export interface SiteCashSettlementLine {
   sourceType: SiteCashSettlementLineSourceType;
   sourceId: string;
   supplierId?: string | null;
+  supplierNameSnapshot?: string | null;
   documentNoSnapshot?: string | null;
   description?: string | null;
+  paymentSource?: SiteDirectPurchasePaymentSource | null;
+  purchaseDate?: string | null;
+  payerUserId?: string | null;
+  payerNameSnapshot?: string | null;
+  payableDocumentId?: string | null;
   claimedAmount: number;
   spendAmount?: number;
   approvedAmount: number;
+  fundSpendAmount?: number;
+  staffClaimAmount?: number;
+  staffReimbursedAmount?: number;
   status: SiteCashSettlementLineStatus;
   reviewNote?: string | null;
   note?: string | null;
   createdAt: string;
+}
+
+export interface CashFund {
+  id: string;
+  name: string;
+  currency: string;
+  openingBalance: number;
+  description?: string | null;
+  isActive: boolean;
+  createdAt?: string | null;
 }
 
 export type DocumentTraceNodeType =
