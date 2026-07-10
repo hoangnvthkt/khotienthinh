@@ -1,8 +1,18 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ProjectTransaction, PurchaseOrder, SupplierPayableBalance } from '../../types';
+import {
+  ProjectTransaction,
+  PurchaseOrder,
+  SupplierDeliveryStatement,
+  SupplierDirectDeliveryLine,
+  SupplierDirectDeliveryNote,
+  SupplierPayableBalance,
+  SupplierPayableDocument,
+  SupplierPaymentBatch,
+} from '../../types';
 import {
   buildPurchaseOrderPayableRow,
   buildProjectFinanceSummary,
+  buildProjectFinanceSupplierControlSummary,
   buildSupplierPayableRowFromBalance,
   calculatePoRecognizedPayable,
 } from '../projectFinanceWorkspaceService';
@@ -218,5 +228,202 @@ describe('projectFinanceWorkspaceService', () => {
 
     expect(summary.actualCost).toBe(16_500_000);
     expect(summary.cashOut).toBe(16_500_000);
+  });
+
+  it('builds supplier control summary from AP, payment batches, balances and direct delivery WMS state', () => {
+    const balances: SupplierPayableBalance[] = [
+      {
+        id: 'balance-a',
+        projectId: 'project-1',
+        constructionSiteId: 'site-1',
+        supplierId: 'supplier-a',
+        supplierNameSnapshot: 'NCC A',
+        currency: 'VND',
+        recognizedAmount: 100_000_000,
+        paidAmount: 30_000_000,
+        creditAmount: 5_000_000,
+        outstandingAmount: 65_000_000,
+        documentCount: 2,
+        oldestDueDate: '2026-07-01',
+        latestDocumentDate: '2026-07-08',
+        isOverdue: true,
+      },
+    ];
+    const documents: SupplierPayableDocument[] = [
+      {
+        id: 'ap-1',
+        projectId: 'project-1',
+        constructionSiteId: 'site-1',
+        supplierId: 'supplier-a',
+        supplierNameSnapshot: 'NCC A',
+        sourceType: 'supplier_delivery_statement',
+        sourceId: 'statement-1',
+        documentNo: 'AP-001',
+        documentDate: '2026-07-08',
+        currency: 'VND',
+        committedAmount: 70_000_000,
+        recognizedAmount: 70_000_000,
+        paidAmount: 10_000_000,
+        creditAmount: 0,
+        outstandingAmount: 60_000_000,
+        status: 'open',
+        qrToken: 'qr_ap_1',
+        createdAt: '2026-07-08T00:00:00.000Z',
+      },
+      {
+        id: 'ap-reversed',
+        projectId: 'project-1',
+        constructionSiteId: 'site-1',
+        supplierNameSnapshot: 'NCC B',
+        sourceType: 'manual_adjustment',
+        sourceId: 'manual-1',
+        documentNo: 'AP-REV',
+        documentDate: '2026-07-08',
+        currency: 'VND',
+        committedAmount: 1_000_000,
+        recognizedAmount: 1_000_000,
+        paidAmount: 0,
+        creditAmount: 0,
+        outstandingAmount: 1_000_000,
+        status: 'reversed',
+        createdAt: '2026-07-08T00:00:00.000Z',
+      },
+    ];
+    const paymentBatches: SupplierPaymentBatch[] = [
+      {
+        id: 'batch-paid',
+        code: 'PAY-001',
+        projectId: 'project-1',
+        constructionSiteId: 'site-1',
+        supplierId: 'supplier-a',
+        supplierNameSnapshot: 'NCC A',
+        paymentDate: '2026-07-09',
+        amount: 30_000_000,
+        paymentAmount: 30_000_000,
+        status: 'paid',
+        allocationMode: 'fifo',
+        qrToken: 'qr_pay_1',
+        createdAt: '2026-07-09T00:00:00.000Z',
+      },
+      {
+        id: 'batch-draft',
+        code: 'PAY-002',
+        projectId: 'project-1',
+        constructionSiteId: 'site-1',
+        supplierNameSnapshot: 'NCC A',
+        paymentDate: '2026-07-09',
+        amount: 40_000_000,
+        status: 'draft',
+        allocationMode: 'fifo',
+        createdAt: '2026-07-09T00:00:00.000Z',
+      },
+    ];
+    const directNotes: SupplierDirectDeliveryNote[] = [
+      {
+        id: 'note-1',
+        code: 'GH-001',
+        projectId: 'project-1',
+        constructionSiteId: 'site-1',
+        supplierContractId: 'contract-1',
+        supplierNameSnapshot: 'NCC A',
+        deliveryTicketNo: 'TICKET-1',
+        deliveryDate: '2026-07-08',
+        status: 'accepted',
+        grossAmount: 20_000_000,
+        vatAmount: 2_000_000,
+        totalAmount: 22_000_000,
+        qrToken: 'qr_note_1',
+        createdAt: '2026-07-08T00:00:00.000Z',
+      },
+    ];
+    const directLines: SupplierDirectDeliveryLine[] = [
+      {
+        id: 'line-1',
+        deliveryNoteId: 'note-1',
+        supplierContractId: 'contract-1',
+        lineNo: 1,
+        itemNameSnapshot: 'Cát vàng',
+        quantity: 10,
+        unitPrice: 1_000_000,
+        vatRate: 10,
+        lineAmount: 10_000_000,
+        vatAmount: 1_000_000,
+        totalAmount: 11_000_000,
+        acceptedQuantity: 10,
+        acceptedAmount: 10_000_000,
+        status: 'accepted',
+        wmsFlowMode: 'direct_in_out',
+        wmsStatus: 'export_pending',
+      },
+      {
+        id: 'line-blocked',
+        deliveryNoteId: 'note-1',
+        supplierContractId: 'contract-1',
+        lineNo: 2,
+        itemNameSnapshot: 'Đá 1x2',
+        quantity: 5,
+        unitPrice: 1_000_000,
+        vatRate: 10,
+        lineAmount: 5_000_000,
+        vatAmount: 500_000,
+        totalAmount: 5_500_000,
+        acceptedQuantity: 5,
+        acceptedAmount: 5_000_000,
+        status: 'accepted',
+        wmsFlowMode: 'direct_in_out',
+        wmsStatus: 'blocked',
+      },
+    ];
+    const statements: SupplierDeliveryStatement[] = [
+      {
+        id: 'statement-1',
+        code: 'DS-001',
+        projectId: 'project-1',
+        constructionSiteId: 'site-1',
+        supplierContractId: 'contract-1',
+        supplierNameSnapshot: 'NCC A',
+        periodMonth: '2026-07-01',
+        statementDate: '2026-07-09',
+        status: 'draft',
+        grossAmount: 20_000_000,
+        vatAmount: 2_000_000,
+        totalAmount: 22_000_000,
+        qrToken: 'qr_statement_1',
+        createdAt: '2026-07-09T00:00:00.000Z',
+      },
+    ];
+
+    const summary = buildProjectFinanceSupplierControlSummary({
+      supplierPayableBalances: balances,
+      supplierPayableDocuments: documents,
+      supplierPaymentBatches: paymentBatches,
+      supplierDeliveryStatements: statements,
+      supplierDirectDeliveryNotes: directNotes,
+      supplierDirectDeliveryLines: directLines,
+      transactions: [
+        paymentTx('tx-unmatched-batch', 7_000_000, 'supplier_payment_batch:legacy-batch'),
+        paymentTx('tx-wms', 999_999_999, 'wms_transaction:import-1', 'Phiếu nhập WMS không phải chi phí'),
+      ],
+    });
+
+    expect(summary.recognizedMaterialCost).toBe(100_000_000);
+    expect(summary.supplierPaidAmount).toBe(37_000_000);
+    expect(summary.supplierOutstanding).toBe(65_000_000);
+    expect(summary.apDocumentCount).toBe(1);
+    expect(summary.paymentBatchCount).toBe(2);
+    expect(summary.waitingStatementCount).toBe(2);
+    expect(summary.wmsPendingExportCount).toBe(1);
+    expect(summary.blockedCount).toBe(1);
+    expect(summary.issues).toHaveLength(3);
+    expect(summary.issues.map(issue => issue.id)).toEqual([
+      'wms-blocked:note-1',
+      'waiting-statement:statement-1',
+      'supplier-overdue:balance-a',
+    ]);
+    expect(summary.issues[0].trace).toEqual({
+      type: 'supplier_direct_delivery_note',
+      id: 'note-1',
+      qrToken: 'qr_note_1',
+    });
   });
 });

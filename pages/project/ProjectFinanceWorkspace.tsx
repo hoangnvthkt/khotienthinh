@@ -46,6 +46,8 @@ import {
   ProjectFinanceLedgerRow,
   ProjectFinancePayableRow,
   ProjectFinanceReceivableRow,
+  ProjectFinanceSupplierControlIssue,
+  ProjectFinanceSupplierControlSummary,
   ProjectFinanceSourceRoute,
   ProjectFinanceWorkspaceData,
   ProjectFinanceWorkspaceTab,
@@ -300,6 +302,196 @@ const KpiCard = ({
       <div className={`mt-2 text-lg font-black ${toneClass.split(' ')[0]}`}>{fmtMoney(value)}</div>
       {hint && <div className="mt-1 text-[11px] font-bold text-slate-400">{hint}</div>}
     </div>
+  );
+};
+
+const controlToneClass = (tone: 'slate' | 'green' | 'red' | 'blue' | 'amber') => ({
+  slate: 'text-slate-700 bg-slate-50',
+  green: 'text-emerald-700 bg-emerald-50',
+  red: 'text-red-700 bg-red-50',
+  blue: 'text-blue-700 bg-blue-50',
+  amber: 'text-amber-700 bg-amber-50',
+}[tone]);
+
+const FinanceControlMetric = ({
+  label,
+  value,
+  hint,
+  icon: Icon,
+  tone = 'slate',
+  money = false,
+  onClick,
+}: {
+  label: string;
+  value: number;
+  hint?: string;
+  icon: React.ElementType;
+  tone?: 'slate' | 'green' | 'red' | 'blue' | 'amber';
+  money?: boolean;
+  onClick?: () => void;
+}) => {
+  const toneClass = controlToneClass(tone);
+  const content = (
+    <>
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-[10px] font-black uppercase tracking-wide text-slate-400">{label}</div>
+        <span className={`flex h-7 w-7 items-center justify-center rounded-md ${toneClass}`}>
+          <Icon size={15} />
+        </span>
+      </div>
+      <div className={`mt-2 text-base font-black ${toneClass.split(' ')[0]}`}>
+        {money ? fmtMoney(value) : value.toLocaleString('vi-VN')}
+      </div>
+      {hint && <div className="mt-1 text-[11px] font-bold text-slate-400">{hint}</div>}
+    </>
+  );
+
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className="min-h-[96px] rounded-md bg-slate-50 p-3 text-left transition hover:bg-orange-50 dark:bg-slate-800/60 dark:hover:bg-slate-800"
+      >
+        {content}
+      </button>
+    );
+  }
+
+  return (
+    <div className="min-h-[96px] rounded-md bg-slate-50 p-3 dark:bg-slate-800/60">
+      {content}
+    </div>
+  );
+};
+
+const supplierControlIssueToneClass = (tone: ProjectFinanceSupplierControlIssue['tone']) => {
+  if (tone === 'danger') return 'border-red-100 bg-red-50 text-red-700';
+  if (tone === 'warning') return 'border-amber-100 bg-amber-50 text-amber-700';
+  return 'border-blue-100 bg-blue-50 text-blue-700';
+};
+
+const FinanceSupplierControlPanel = ({
+  summary,
+  onOpenPayables,
+  onOpenSupplierPayments,
+  onOpenMaterialDirect,
+  onOpenIssueSource,
+  onOpenTrace,
+}: {
+  summary: ProjectFinanceSupplierControlSummary;
+  onOpenPayables: () => void;
+  onOpenSupplierPayments: () => void;
+  onOpenMaterialDirect: () => void;
+  onOpenIssueSource: (route?: ProjectFinanceSourceRoute | null) => void;
+  onOpenTrace: (trace: NonNullable<ProjectFinanceSupplierControlIssue['trace']>) => void;
+}) => {
+  const issues = summary.issues.slice(0, 5);
+  const openDirect = summary.waitingStatementCount > 0 || summary.wmsPendingExportCount > 0 || summary.blockedCount > 0
+    ? onOpenMaterialDirect
+    : undefined;
+  return (
+    <section className="rounded-lg border border-slate-100 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h4 className="text-sm font-black text-slate-900 dark:text-white">Kiểm soát cung ứng - công nợ</h4>
+          <p className="mt-0.5 text-[11px] font-bold text-slate-400">AP, thanh toán NCC và trạng thái gọi hàng HĐ NCC.</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={onOpenPayables} className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-black text-orange-600 hover:bg-orange-50">
+            <ReceiptText size={13} /> AP
+          </button>
+          <button type="button" onClick={onOpenSupplierPayments} className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-black text-emerald-700 hover:bg-emerald-50">
+            <CreditCard size={13} /> Thanh toán NCC
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-6">
+        <FinanceControlMetric
+          label="Chi phí AP"
+          value={summary.recognizedMaterialCost}
+          hint={`${summary.apDocumentCount.toLocaleString('vi-VN')} AP`}
+          icon={ReceiptText}
+          tone="blue"
+          money
+          onClick={onOpenPayables}
+        />
+        <FinanceControlMetric
+          label="Đã thanh toán NCC"
+          value={summary.supplierPaidAmount}
+          hint={`${summary.paymentBatchCount.toLocaleString('vi-VN')} đợt`}
+          icon={CreditCard}
+          tone="green"
+          money
+          onClick={onOpenSupplierPayments}
+        />
+        <FinanceControlMetric
+          label="Công nợ NCC"
+          value={summary.supplierOutstanding}
+          icon={WalletCards}
+          tone={summary.supplierOutstanding > 0 ? 'amber' : 'green'}
+          money
+          onClick={onOpenPayables}
+        />
+        <FinanceControlMetric
+          label="Chờ đối soát/AP"
+          value={summary.waitingStatementCount}
+          icon={CalendarClock}
+          tone={summary.waitingStatementCount > 0 ? 'amber' : 'slate'}
+          onClick={openDirect}
+        />
+        <FinanceControlMetric
+          label="Chờ xuất dùng"
+          value={summary.wmsPendingExportCount}
+          icon={ArrowDownRight}
+          tone={summary.wmsPendingExportCount > 0 ? 'amber' : 'slate'}
+          onClick={openDirect}
+        />
+        <FinanceControlMetric
+          label="Bị chặn"
+          value={summary.blockedCount}
+          icon={AlertTriangle}
+          tone={summary.blockedCount > 0 ? 'red' : 'slate'}
+          onClick={openDirect}
+        />
+      </div>
+
+      {issues.length > 0 && (
+        <div className="mt-4 grid gap-2 lg:grid-cols-2">
+          {issues.map(issue => (
+            <div key={issue.id} className={`rounded-md border p-3 ${supplierControlIssueToneClass(issue.tone)}`}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 text-xs font-black"><AlertTriangle size={14} /> {issue.title}</div>
+                  <p className="mt-1 text-[11px] font-bold leading-5 opacity-85">{issue.message}</p>
+                </div>
+                <div className="flex shrink-0 gap-1">
+                  {issue.sourceRoute && (
+                    <button
+                      type="button"
+                      onClick={() => onOpenIssueSource(issue.sourceRoute)}
+                      className="inline-flex items-center gap-1 rounded-md bg-white/70 px-2 py-1 text-[10px] font-black hover:bg-white"
+                    >
+                      <ExternalLink size={11} /> Mở
+                    </button>
+                  )}
+                  {issue.trace && (
+                    <button
+                      type="button"
+                      onClick={() => onOpenTrace(issue.trace!)}
+                      className="inline-flex items-center gap-1 rounded-md bg-white/70 px-2 py-1 text-[10px] font-black hover:bg-white"
+                    >
+                      <QrCode size={11} /> Truy vết
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
   );
 };
 
@@ -1766,13 +1958,13 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
     if (activeTab === 'payables') void loadCashFunds();
   }, [activeTab, loadCashFunds]);
 
-  const openTab = (tab: ProjectFinanceWorkspaceTab) => {
+  const openTab = useCallback((tab: ProjectFinanceWorkspaceTab) => {
     setActiveTab(tab);
     const params = new URLSearchParams(location.search);
     params.set('tab', 'finance');
     params.set('financeTab', tab);
     navigate(`${location.pathname}?${params.toString()}`, { replace: true });
-  };
+  }, [location.pathname, location.search, navigate]);
 
   const openSourceRoute = useCallback((route?: ProjectFinanceSourceRoute | null, fallbackTab?: string) => {
     const params = new URLSearchParams(location.search);
@@ -1799,6 +1991,24 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
   const openSource = useCallback((tab: string) => {
     openSourceRoute(null, tab);
   }, [openSourceRoute]);
+
+  const openSupplierPaymentsTab = useCallback(() => {
+    setPayablesView('payments');
+    openTab('payables');
+  }, [openTab]);
+
+  const openMaterialDirectTab = useCallback(() => {
+    openSourceRoute({
+      tab: 'material',
+      params: {
+        materialTab: 'direct',
+      },
+    });
+  }, [openSourceRoute]);
+
+  const openSupplierControlTrace = useCallback((trace: NonNullable<ProjectFinanceSupplierControlIssue['trace']>) => {
+    navigate(buildDocumentTracePath(trace.type, trace.id, trace.qrToken));
+  }, [navigate]);
 
   const openPayableSource = useCallback(async (row: ProjectFinancePayableRow) => {
     if (row.sourceType !== 'supplier_payable') {
@@ -2650,10 +2860,10 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
                 <KpiCard label="Chi phí thực tế" value={summary.actualCost} icon={ArrowDownRight} tone="red" hint={`NS: ${fmtMoney(summary.budgetAmount)}`} />
                 <KpiCard label="Còn phải thu" value={summary.receivableOutstanding} icon={ArrowUpRight} tone="green" />
                 <KpiCard label="Còn phải trả" value={summary.payableOutstanding} icon={WalletCards} tone="amber" />
-                <KpiCard label="Dòng tiền ròng" value={summary.cashPosition} icon={Banknote} tone={summary.cashPosition >= 0 ? 'green' : 'red'} />
+                <KpiCard label="Tổng thu" value={summary.cashIn} icon={Banknote} tone="green" hint="Tiền đã thu" />
                 <KpiCard label="Doanh thu xác nhận" value={summary.certifiedRevenue} icon={ReceiptText} tone="blue" />
-                <KpiCard label="Tạm ứng còn treo" value={summary.advanceOutstanding} icon={CalendarClock} tone="amber" />
-                <KpiCard label="Biên tạm tính" value={summary.estimatedMargin} icon={BarChart3} tone={summary.estimatedMargin >= 0 ? 'green' : 'red'} />
+                <KpiCard label="Tạm ứng còn treo" value={summary.advanceOutstanding} icon={CalendarClock} tone="amber" hint="Chưa tất toán" />
+                <KpiCard label="Biên tạm tính" value={summary.estimatedMargin} icon={BarChart3} tone={summary.estimatedMargin >= 0 ? 'green' : 'red'} hint="Giá trị HĐ - chi phí" />
               </div>
 
               {summary.alerts.length > 0 && (
@@ -2670,6 +2880,15 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
                   ))}
                 </div>
               )}
+
+              <FinanceSupplierControlPanel
+                summary={summary.supplierControl}
+                onOpenPayables={() => openTab('payables')}
+                onOpenSupplierPayments={openSupplierPaymentsTab}
+                onOpenMaterialDirect={openMaterialDirectTab}
+                onOpenIssueSource={route => openSourceRoute(route)}
+                onOpenTrace={openSupplierControlTrace}
+              />
 
               <div className="grid gap-5 xl:grid-cols-2">
                 <section className="space-y-3">

@@ -10,8 +10,14 @@ import {
   ProjectCostItem,
   ProjectTransaction,
   PurchaseOrder,
+  DocumentTraceNodeType,
+  SupplierDeliveryStatement,
+  SupplierDirectDeliveryLine,
+  SupplierDirectDeliveryNote,
   SubcontractorContract,
   SupplierPayableBalance,
+  SupplierPayableDocument,
+  SupplierPaymentBatch,
 } from '../types';
 
 export type ProjectFinanceWorkspaceTab =
@@ -88,6 +94,31 @@ export interface ProjectFinanceLedgerRow {
   createdAt?: string | null;
 }
 
+export interface ProjectFinanceSupplierControlIssue {
+  id: string;
+  tone: 'info' | 'warning' | 'danger';
+  title: string;
+  message: string;
+  sourceRoute?: ProjectFinanceSourceRoute;
+  trace?: {
+    type: DocumentTraceNodeType;
+    id: string;
+    qrToken?: string | null;
+  };
+}
+
+export interface ProjectFinanceSupplierControlSummary {
+  recognizedMaterialCost: number;
+  supplierPaidAmount: number;
+  supplierOutstanding: number;
+  apDocumentCount: number;
+  paymentBatchCount: number;
+  waitingStatementCount: number;
+  wmsPendingExportCount: number;
+  blockedCount: number;
+  issues: ProjectFinanceSupplierControlIssue[];
+}
+
 export interface ProjectFinanceWorkspaceSummary {
   contractValue: number;
   budgetAmount: number;
@@ -108,6 +139,7 @@ export interface ProjectFinanceWorkspaceSummary {
   overdueReceivableCount: number;
   overduePayableCount: number;
   pendingPaymentCount: number;
+  supplierControl: ProjectFinanceSupplierControlSummary;
   alerts: Array<{
     id: string;
     tone: 'info' | 'warning' | 'danger';
@@ -323,6 +355,23 @@ const loadScopedPurchaseOrders = async (
   ]).filter(po => !po.archivedAt);
 };
 
+const loadSupplierDirectDeliveryLinesForNotes = async (
+  noteIds: string[],
+): Promise<SupplierDirectDeliveryLine[]> => {
+  const ids = Array.from(new Set(noteIds.filter(Boolean)));
+  if (ids.length === 0) return [];
+  const { data, error } = await supabase
+    .from('supplier_direct_delivery_lines')
+    .select('*')
+    .in('delivery_note_id', ids)
+    .order('line_no', { ascending: true });
+  if (error) {
+    if (error.code === '42P01') return [];
+    throw error;
+  }
+  return (data || []).map(fromDb) as SupplierDirectDeliveryLine[];
+};
+
 const buildPayables = (
   purchaseOrders: PurchaseOrder[],
   paymentCertificates: PaymentCertificate[],
@@ -526,6 +575,184 @@ const buildAlerts = (input: {
   return alerts;
 };
 
+const inactiveDocumentStatuses = new Set(['cancelled', 'canceled', 'reversed', 'void']);
+const wmsWaitingStatuses = new Set(['import_pending', 'imported', 'export_pending']);
+
+const emptySupplierControlSummary = (): ProjectFinanceSupplierControlSummary => ({
+  recognizedMaterialCost: 0,
+  supplierPaidAmount: 0,
+  supplierOutstanding: 0,
+  apDocumentCount: 0,
+  paymentBatchCount: 0,
+  waitingStatementCount: 0,
+  wmsPendingExportCount: 0,
+  blockedCount: 0,
+  issues: [],
+});
+
+const isActiveStatus = (status?: string | null) =>
+  !inactiveDocumentStatuses.has(String(status || '').toLowerCase());
+
+const supplierPaymentBatchIdFromRef = (sourceRef?: string | null) => {
+  const value = String(sourceRef || '');
+  if (!value.startsWith('supplier_payment_batch:')) return null;
+  return value.slice('supplier_payment_batch:'.length).split(/[:/]/)[0] || null;
+};
+
+const supplierDirectRoute = (params?: Record<string, string>): ProjectFinanceSourceRoute => ({
+  tab: 'material',
+  params: {
+    materialTab: 'direct',
+    ...params,
+  },
+});
+
+const supplierFinanceRoute = (financeTab: ProjectFinanceWorkspaceTab, params?: Record<string, string>): ProjectFinanceSourceRoute => ({
+  tab: 'finance',
+  params: {
+    financeTab,
+    ...params,
+  },
+});
+
+export const buildProjectFinanceSupplierControlSummary = (input: {
+  supplierPayableBalances?: SupplierPayableBalance[];
+  supplierPayableDocuments?: SupplierPayableDocument[];
+  supplierPaymentBatches?: SupplierPaymentBatch[];
+  supplierDeliveryStatements?: SupplierDeliveryStatement[];
+  supplierDirectDeliveryNotes?: SupplierDirectDeliveryNote[];
+  supplierDirectDeliveryLines?: SupplierDirectDeliveryLine[];
+  transactions?: ProjectTransaction[];
+  issueLimit?: number;
+}): ProjectFinanceSupplierControlSummary => {
+  const balances = input.supplierPayableBalances || [];
+  const documents = (input.supplierPayableDocuments || []).filter(document => isActiveStatus(document.status));
+  const paymentBatches = (input.supplierPaymentBatches || []).filter(batch => isActiveStatus(batch.status));
+  const paidBatches = paymentBatches.filter(batch => batch.status === 'paid');
+  const noteById = new Map((input.supplierDirectDeliveryNotes || []).map(note => [note.id, note]));
+  const statements = (input.supplierDeliveryStatements || []).filter(statement => isActiveStatus(statement.status));
+  const waitingStatements = statements.filter(statement => statement.status !== 'posted');
+  const activeDirectNotes = (input.supplierDirectDeliveryNotes || [])
+    .filter(note => isActiveStatus(note.status))
+    .filter(note => ['accepted', 'finance_review', 'site_confirmed'].includes(note.status));
+  const directLines = input.supplierDirectDeliveryLines || [];
+  const wmsPendingLines = directLines.filter(line =>
+    line.wmsFlowMode === 'direct_in_out' && wmsWaitingStatuses.has(String(line.wmsStatus || '')),
+  );
+  const wmsBlockedLines = directLines.filter(line =>
+    line.wmsFlowMode === 'direct_in_out' && line.wmsStatus === 'blocked',
+  );
+  const batchIds = new Set(paidBatches.map(batch => batch.id));
+  const batchTransactionIds = new Set(paidBatches.map(batch => batch.projectTransactionId).filter(Boolean));
+  const unmatchedSupplierPaymentTxAmount = sumTransactions(input.transactions || [], tx => {
+    if (tx.type !== 'expense') return false;
+    const batchId = supplierPaymentBatchIdFromRef(tx.sourceRef);
+    if (!batchId) return false;
+    return !batchIds.has(batchId) && !batchTransactionIds.has(tx.id);
+  });
+  const recognizedMaterialCost = balances.length > 0
+    ? money(balances.reduce((sum, balance) => sum + numeric(balance.recognizedAmount), 0))
+    : money(documents.reduce((sum, document) => sum + numeric(document.recognizedAmount), 0));
+  const supplierOutstanding = balances.length > 0
+    ? money(balances.reduce((sum, balance) => sum + numeric(balance.outstandingAmount), 0))
+    : money(documents.reduce((sum, document) => sum + numeric(document.outstandingAmount), 0));
+  const supplierPaidAmount = money(
+    paidBatches.reduce((sum, batch) => sum + numeric(batch.paymentAmount ?? batch.amount), 0) + unmatchedSupplierPaymentTxAmount,
+  );
+  const apDocumentCount = documents.length || balances.reduce((sum, balance) => sum + numeric(balance.documentCount), 0);
+  const waitingStatementCount = waitingStatements.length + activeDirectNotes.length;
+  const issueLimit = Math.max(0, input.issueLimit ?? 5);
+  const issues: ProjectFinanceSupplierControlIssue[] = [];
+  const issueIds = new Set<string>();
+  const deliveryNoteIssueIds = new Set<string>();
+  const pushIssue = (issue: ProjectFinanceSupplierControlIssue) => {
+    if (issueIds.has(issue.id) || issues.length >= issueLimit) return;
+    issueIds.add(issue.id);
+    issues.push(issue);
+  };
+
+  Array.from(new Set(wmsBlockedLines.map(line => line.deliveryNoteId))).forEach(noteId => {
+    const note = noteById.get(noteId);
+    deliveryNoteIssueIds.add(noteId);
+    pushIssue({
+      id: `wms-blocked:${noteId}`,
+      tone: 'danger',
+      title: 'WMS bị chặn',
+      message: `${note?.code || 'Phiếu giao HĐ NCC'} có dòng nhập-xuất thẳng bị chặn, cần tạo lại phiếu xuất hợp lệ trước khi đối soát/AP.`,
+      sourceRoute: supplierDirectRoute({ supplierDirectDeliveryNoteId: noteId }),
+      trace: {
+        type: 'supplier_direct_delivery_note',
+        id: noteId,
+        qrToken: note?.qrToken,
+      },
+    });
+  });
+
+  Array.from(new Set(wmsPendingLines.map(line => line.deliveryNoteId)))
+    .filter(noteId => !deliveryNoteIssueIds.has(noteId))
+    .forEach(noteId => {
+      const note = noteById.get(noteId);
+      deliveryNoteIssueIds.add(noteId);
+      pushIssue({
+        id: `wms-pending-export:${noteId}`,
+        tone: 'warning',
+        title: 'Tồn chờ xuất dùng',
+        message: `${note?.code || 'Phiếu giao HĐ NCC'} đã đi qua WMS nhưng chưa hoàn tất xuất dùng, chưa đủ điều kiện vào đối soát/AP.`,
+        sourceRoute: supplierDirectRoute({ supplierDirectDeliveryNoteId: noteId }),
+        trace: {
+          type: 'supplier_direct_delivery_note',
+          id: noteId,
+          qrToken: note?.qrToken,
+        },
+      });
+    });
+
+  waitingStatements.forEach(statement => {
+    pushIssue({
+      id: `waiting-statement:${statement.id}`,
+      tone: 'warning',
+      title: 'Bảng đối soát chưa post',
+      message: `${statement.code || 'Bảng đối soát HĐ NCC'} chưa post nên chưa ghi nhận AP.`,
+      sourceRoute: supplierDirectRoute({
+        supplierDeliveryStatementId: statement.id,
+        ...(statement.supplierContractId ? { supplierContractId: statement.supplierContractId } : {}),
+      }),
+      trace: {
+        type: 'supplier_delivery_statement',
+        id: statement.id,
+        qrToken: statement.qrToken,
+      },
+    });
+  });
+
+  balances
+    .filter(balance => balance.isOverdue && numeric(balance.outstandingAmount) > 0)
+    .forEach(balance => {
+      const id = balance.id || balance.supplierId || balance.supplierNameSnapshot;
+      pushIssue({
+        id: `supplier-overdue:${id}`,
+        tone: 'danger',
+        title: 'Công nợ NCC quá hạn',
+        message: `${balance.supplierNameSnapshot || 'Nhà cung cấp'} còn ${money(balance.outstandingAmount).toLocaleString('vi-VN')} đ phải trả quá hạn.`,
+        sourceRoute: supplierFinanceRoute('payables', {
+          ...(balance.supplierId ? { supplierId: balance.supplierId } : {}),
+        }),
+      });
+    });
+
+  return {
+    recognizedMaterialCost,
+    supplierPaidAmount,
+    supplierOutstanding,
+    apDocumentCount: money(apDocumentCount),
+    paymentBatchCount: paymentBatches.length,
+    waitingStatementCount,
+    wmsPendingExportCount: wmsPendingLines.length,
+    blockedCount: wmsBlockedLines.length,
+    issues,
+  };
+};
+
 export const buildProjectFinanceSummary = (input: {
   customerContracts: CustomerContract[];
   costItems: ProjectCostItem[];
@@ -535,6 +762,7 @@ export const buildProjectFinanceSummary = (input: {
   transactions: ProjectTransaction[];
   payables: ProjectFinancePayableRow[];
   receivables: ProjectFinanceReceivableRow[];
+  supplierControl?: ProjectFinanceSupplierControlSummary;
 }): ProjectFinanceWorkspaceSummary => {
   const rootCosts = input.costItems.filter(item => !item.parentId);
   const contractValue = money(input.customerContracts
@@ -595,6 +823,7 @@ export const buildProjectFinanceSummary = (input: {
     overdueReceivableCount,
     overduePayableCount,
     pendingPaymentCount,
+    supplierControl: input.supplierControl || emptySupplierControlSummary(),
     alerts: buildAlerts({
       budgetAmount,
       actualCost,
@@ -623,6 +852,10 @@ export const projectFinanceWorkspaceService = {
       costItems,
       purchaseOrders,
       supplierPayableBalances,
+      supplierPayableDocuments,
+      supplierPaymentBatches,
+      supplierDeliveryStatements,
+      supplierDirectDeliveryNotes,
       loadedTransactions,
     ] = await Promise.all([
       loadScopedRows<CustomerContract>('customer_contracts', projectId, constructionSiteId),
@@ -633,14 +866,30 @@ export const projectFinanceWorkspaceService = {
       loadScopedRows<ProjectCostItem>('project_cost_items', projectId, constructionSiteId, 'order'),
       loadScopedPurchaseOrders(projectId, constructionSiteId),
       loadScopedRows<SupplierPayableBalance>('supplier_payable_balances', projectId, constructionSiteId, 'latest_document_date'),
+      loadScopedRows<SupplierPayableDocument>('supplier_payable_documents', projectId, constructionSiteId, 'document_date'),
+      loadScopedRows<SupplierPaymentBatch>('supplier_payment_batches', projectId, constructionSiteId, 'payment_date'),
+      loadScopedRows<SupplierDeliveryStatement>('supplier_delivery_statements', projectId, constructionSiteId, 'statement_date'),
+      loadScopedRows<SupplierDirectDeliveryNote>('supplier_direct_delivery_notes', projectId, constructionSiteId, 'delivery_date'),
       input.transactions
         ? Promise.resolve(input.transactions)
         : loadScopedRows<ProjectTransaction>('project_transactions', projectId, constructionSiteId, 'date'),
     ]);
 
     const transactions = dedupeById(loadedTransactions);
+    const supplierDirectDeliveryLines = await loadSupplierDirectDeliveryLinesForNotes(
+      supplierDirectDeliveryNotes.map(note => note.id),
+    );
     const payables = buildPayables(purchaseOrders, paymentCertificates, schedules, transactions, subcontractors, supplierPayableBalances);
     const receivables = buildReceivables(customerContracts, paymentCertificates, schedules, transactions);
+    const supplierControl = buildProjectFinanceSupplierControlSummary({
+      supplierPayableBalances,
+      supplierPayableDocuments,
+      supplierPaymentBatches,
+      supplierDeliveryStatements,
+      supplierDirectDeliveryNotes,
+      supplierDirectDeliveryLines,
+      transactions,
+    });
     return {
       summary: buildProjectFinanceSummary({
         customerContracts,
@@ -651,6 +900,7 @@ export const projectFinanceWorkspaceService = {
         transactions,
         payables,
         receivables,
+        supplierControl,
       }),
       paymentSchedules: schedules,
       payables,
