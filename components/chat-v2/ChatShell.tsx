@@ -1886,14 +1886,14 @@ const MessagePane: React.FC<{
     const previous = previousScrollRef.current;
     const firstId = messages[0]?.id;
     const conversationChanged = previous.conversationId !== conversation?.id;
+    const loadedFirstTime = previous.conversationId === conversation?.id && previous.length === 0 && messages.length > 0;
     const appendedAtBottom = previous.firstId === firstId && messages.length > previous.length;
     const olderSnapshot = olderScrollSnapshotRef.current;
     if (olderSnapshot && !conversationChanged) {
       scrollEl.scrollTop = scrollEl.scrollHeight - olderSnapshot.height + olderSnapshot.top;
       olderScrollSnapshotRef.current = null;
-    } else if (conversation?.id && messages.length > 0 && initialScrolledConversationRef.current !== conversation.id) {
-      scrollEl.scrollTo({ top: scrollEl.scrollHeight, behavior: 'auto' });
-      initialScrolledConversationRef.current = conversation.id;
+    } else if (conversationChanged || loadedFirstTime) {
+      scrollEl.scrollTop = scrollEl.scrollHeight;
     } else if (appendedAtBottom) {
       scrollEl.scrollTo({ top: scrollEl.scrollHeight, behavior: 'smooth' });
     }
@@ -2128,7 +2128,7 @@ const ChatShell: React.FC<ChatShellProps> = ({ currentUser, users }) => {
 
   // Layout Sidebars Custom States
   const [showGroupsOnly, setShowGroupsOnly] = useState(false);
-  const [showRightSidebar, setShowRightSidebar] = useState(true);
+  const [showRightSidebar, setShowRightSidebar] = useState(false);
   const [activeRightTab, setActiveRightTab] = useState<'images' | 'docs' | 'links'>('images');
 
   const { employees } = useApp();

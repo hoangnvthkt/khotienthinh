@@ -5,11 +5,11 @@ import { FileSignature, Building2, Users, HardHat, Settings2, Handshake, Databas
 const HD_TABS = [
   { to: '/hd/overview', label: 'Tổng quan', icon: FileSignature, color: 'from-indigo-500 to-purple-600' },
   { to: '/hd/partners', label: 'Đối tác', icon: Handshake, color: 'from-sky-500 to-blue-600' },
-  { to: '/hd/contract-types', label: 'Loại HĐ', icon: Settings2, color: 'from-violet-500 to-purple-600' },
-  { to: '/hd/catalogs', label: 'Danh mục', icon: Database, color: 'from-emerald-500 to-green-600' },
   { to: '/hd/customer', label: 'Nhận thầu', icon: Users, color: 'from-emerald-500 to-teal-600' },
   { to: '/hd/supplier', label: 'Nhà cung cấp', icon: Building2, color: 'from-blue-500 to-indigo-600' },
   { to: '/hd/subcontractor', label: 'Thầu phụ', icon: HardHat, color: 'from-amber-500 to-orange-600' },
+  { to: '/hd/contract-types', label: 'Loại HĐ', icon: Settings2, color: 'from-violet-500 to-purple-600' },
+  { to: '/hd/catalogs', label: 'Danh mục', icon: Database, color: 'from-emerald-500 to-green-600' },
 ];
 
 const ContractLayout: React.FC = () => {
@@ -38,14 +38,13 @@ const ContractLayout: React.FC = () => {
               <NavLink
                 key={tab.to}
                 to={tab.to}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${
-                  isActive
-                    ? `bg-gradient-to-r ${tab.color} text-white shadow-md`
-                    : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200'
-                }`}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${isActive
+                  ? `bg-gradient-to-r ${tab.color} text-white shadow-md`
+                  : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200'
+                  }`}
               >
                 <Icon size={15} />
-                <span>HĐ {tab.label}</span>
+                <span>{tab.label}</span>
               </NavLink>
             );
           })}

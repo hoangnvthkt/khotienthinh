@@ -39,6 +39,21 @@ const isStaticAsset = (url) =>
   url.pathname === OFFLINE_URL ||
   url.pathname.match(/\.(css|js|png|jpg|jpeg|svg|gif|webp|woff2?|ttf|ico)$/);
 
+const normalizeNotificationUrl = (rawUrl = '/') => {
+  let url;
+  try {
+    url = new URL(rawUrl || '/', self.location.origin);
+  } catch {
+    return new URL('/', self.location.origin).href;
+  }
+
+  if (url.origin !== self.location.origin) return url.href;
+  if (url.hash.startsWith('#/')) return url.href;
+  if (isStaticAsset(url)) return url.href;
+
+  return new URL(`/#${url.pathname}${url.search}`, self.location.origin).href;
+};
+
 const cacheResponse = async (request, response) => {
   if (!shouldCacheResponse(response)) return;
   const cache = await caches.open(CACHE_NAME);
@@ -153,7 +168,7 @@ self.addEventListener('push', (event) => {
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
 
-  const urlToOpen = new URL(event.notification.data?.url || '/', self.location.origin).href;
+  const urlToOpen = normalizeNotificationUrl(event.notification.data?.url || '/');
 
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
