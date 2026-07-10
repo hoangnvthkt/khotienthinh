@@ -109,6 +109,7 @@ export interface ProjectFinanceSupplierControlIssue {
 
 export interface ProjectFinanceSupplierControlSummary {
   recognizedMaterialCost: number;
+  openingMaterialCost: number;
   supplierPaidAmount: number;
   supplierOutstanding: number;
   apDocumentCount: number;
@@ -580,6 +581,7 @@ const wmsWaitingStatuses = new Set(['import_pending', 'imported', 'export_pendin
 
 const emptySupplierControlSummary = (): ProjectFinanceSupplierControlSummary => ({
   recognizedMaterialCost: 0,
+  openingMaterialCost: 0,
   supplierPaidAmount: 0,
   supplierOutstanding: 0,
   apDocumentCount: 0,
@@ -650,9 +652,15 @@ export const buildProjectFinanceSupplierControlSummary = (input: {
     if (!batchId) return false;
     return !batchIds.has(batchId) && !batchTransactionIds.has(tx.id);
   });
-  const recognizedMaterialCost = balances.length > 0
+  const openingMaterialCost = sumTransactions(input.transactions || [], tx =>
+    tx.type === 'expense'
+    && tx.category === 'materials'
+    && String(tx.sourceRef || '').startsWith('opening_balance:'),
+  );
+  const supplierRecognizedMaterialCost = balances.length > 0
     ? money(balances.reduce((sum, balance) => sum + numeric(balance.recognizedAmount), 0))
     : money(documents.reduce((sum, document) => sum + numeric(document.recognizedAmount), 0));
+  const recognizedMaterialCost = money(supplierRecognizedMaterialCost + openingMaterialCost);
   const supplierOutstanding = balances.length > 0
     ? money(balances.reduce((sum, balance) => sum + numeric(balance.outstandingAmount), 0))
     : money(documents.reduce((sum, document) => sum + numeric(document.outstandingAmount), 0));
@@ -742,6 +750,7 @@ export const buildProjectFinanceSupplierControlSummary = (input: {
 
   return {
     recognizedMaterialCost,
+    openingMaterialCost,
     supplierPaidAmount,
     supplierOutstanding,
     apDocumentCount: money(apDocumentCount),

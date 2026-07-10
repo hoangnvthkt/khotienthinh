@@ -409,9 +409,9 @@ const FinanceSupplierControlPanel = ({
 
       <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-6">
         <FinanceControlMetric
-          label="Chi phí AP"
+          label="CP vật tư ghi nhận"
           value={summary.recognizedMaterialCost}
-          hint={`${summary.apDocumentCount.toLocaleString('vi-VN')} AP`}
+          hint={`${summary.apDocumentCount.toLocaleString('vi-VN')} AP${summary.openingMaterialCost > 0 ? ' + đầu kỳ' : ''}`}
           icon={ReceiptText}
           tone="blue"
           money

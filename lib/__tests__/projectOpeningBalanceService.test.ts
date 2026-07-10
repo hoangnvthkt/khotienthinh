@@ -106,6 +106,62 @@ describe('projectOpeningBalanceService accounting import', () => {
     });
   });
 
+  it('reconciles unit prices that Excel exposes one thousand times lower than the amount implies', async () => {
+    const rows = [
+      ['Mã hàng', 'Tên hàng', 'ĐVT', 'Nhập kho', '', '', 'Xuất kho', '', ''],
+      ['', '', '', 'Số lượng', 'Đơn giá', 'Thành tiền', 'Số lượng', 'Đơn giá', 'Thành tiền'],
+      ['VT0000852', 'Cọc ly tâm D400', 'Mét', '1.215,000', '343,00', '416.745.000', '1.215,000', '343,00', '416.745.000'],
+    ];
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(rows), 'Ke toan');
+    const output = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+    const file = new File([output], 'don-gia-bi-rut-nghin.xlsx', {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+
+    const result = await projectOpeningBalanceService.parseOpeningBalanceImport(file, {
+      defaultWarehouseId: 'wh-site',
+    });
+
+    expect(result.errors).toEqual([]);
+    expect(result.rows[0]).toMatchObject({
+      accountingCode: 'VT0000852',
+      purchasedQty: 1215,
+      issuedQty: 1215,
+      unitPrice: 343000,
+      purchasedAmount: 416745000,
+      issuedAmount: 416745000,
+    });
+  });
+
+  it('reconciles quantity values that formatted Excel cells expose one thousand times higher', async () => {
+    const rows = [
+      ['Mã hàng', 'Tên hàng', 'ĐVT', 'Nhập kho', '', '', 'Xuất kho', '', ''],
+      ['', '', '', 'Số lượng', 'Đơn giá', 'Thành tiền', 'Số lượng', 'Đơn giá', 'Thành tiền'],
+      ['VT0000852', 'Cọc ly tâm D400', 'Mét', '1.215.000', '343.000,00', '416.745.000', '1.215.000', '343.000,00', '416.745.000'],
+    ];
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(rows), 'Ke toan');
+    const output = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+    const file = new File([output], 'so-luong-bi-nhan-nghin.xlsx', {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+
+    const result = await projectOpeningBalanceService.parseOpeningBalanceImport(file, {
+      defaultWarehouseId: 'wh-site',
+    });
+
+    expect(result.errors).toEqual([]);
+    expect(result.rows[0]).toMatchObject({
+      accountingCode: 'VT0000852',
+      purchasedQty: 1215,
+      issuedQty: 1215,
+      unitPrice: 343000,
+      purchasedAmount: 416745000,
+      issuedAmount: 416745000,
+    });
+  });
+
   it('uses weighted remaining value when aggregating specs with different prices', async () => {
     const rows = [
       ['Mã hàng', 'Tên hàng', 'ĐVT', 'Nhập kho', '', '', 'Xuất kho', '', ''],
@@ -215,6 +271,123 @@ describe('projectOpeningBalanceService accounting import', () => {
       sku: 'VT0000852',
       accountingCode: 'VT0000852',
       name: 'Cọc ly tâm D400',
+    });
+    expect(result.updatedItems).toHaveLength(0);
+  });
+
+  it('rejects locking an opening balance without material detail lines', async () => {
+    await expect(projectOpeningBalanceService.lockOpeningBalance({
+      openingBalance: {
+        scopeKey: 'project-1_site-1_empty',
+        projectId: 'project-1',
+        constructionSiteId: 'site-1',
+        asOfDate: '2026-06-20',
+        contractValue: 2_000_000_000,
+        constructionProgressPercent: 40,
+        purchasedValue: 1_000_000_000,
+        issuedValue: 800_000_000,
+        usedValue: 800_000_000,
+        recognizedValue: 800_000_000,
+        status: 'draft',
+      },
+      lines: [],
+      existingItems: [],
+      actorUserId: 'user-1',
+    })).rejects.toThrow('Chưa có dòng vật tư đầu kỳ hợp lệ');
+  });
+
+  it('strips import preview-only fields before saving opening balance lines', async () => {
+    const result = await projectOpeningBalanceService.saveOpeningBalanceDraft({
+      openingBalance: {
+        scopeKey: 'project-1_site-1_strip',
+        projectId: 'project-1',
+        constructionSiteId: 'site-1',
+        asOfDate: '2026-06-20',
+        contractValue: 2_000_000_000,
+        constructionProgressPercent: 40,
+        purchasedValue: 4_802_000,
+        issuedValue: 4_802_000,
+        usedValue: 4_802_000,
+        recognizedValue: 4_802_000,
+        status: 'draft',
+      },
+      lines: [{
+        rowNumber: 3,
+        purchasedAmount: 4_802_000,
+        issuedAmount: 4_802_000,
+        errors: [],
+        warnings: ['Cảnh báo mềm'],
+        accountingCode: 'VT0000852',
+        sku: 'VT0000852',
+        itemName: 'Cọc ly tâm D400',
+        unit: 'Mét',
+        warehouseId: 'wh-site',
+        purchasedQty: 14,
+        issuedQty: 14,
+        usedQty: 14,
+        remainingQty: 0,
+        unitPrice: 343000,
+        remainingValue: 0,
+      } as any],
+    });
+
+    expect(result.lines).toHaveLength(1);
+    expect(result.lines[0]).not.toHaveProperty('rowNumber');
+    expect(result.lines[0]).not.toHaveProperty('purchasedAmount');
+    expect(result.lines[0]).not.toHaveProperty('issuedAmount');
+    expect(result.lines[0]).not.toHaveProperty('errors');
+    expect(result.lines[0]).not.toHaveProperty('warnings');
+  });
+
+  it('updates missing catalog prices from opening balance unit prices for existing items', async () => {
+    const result = await projectOpeningBalanceService.lockOpeningBalance({
+      openingBalance: {
+        scopeKey: 'project-1_site-1_price',
+        projectId: 'project-1',
+        constructionSiteId: 'site-1',
+        asOfDate: '2026-06-20',
+        contractValue: 2_000_000_000,
+        constructionProgressPercent: 40,
+        purchasedValue: 4_802_000,
+        issuedValue: 0,
+        usedValue: 0,
+        recognizedValue: 4_802_000,
+        status: 'draft',
+      },
+      lines: [{
+        accountingCode: 'VT0000852',
+        sku: 'VT0000852',
+        itemName: 'Cọc ly tâm D400',
+        unit: 'Mét',
+        warehouseId: 'wh-site',
+        purchasedQty: 14,
+        issuedQty: 0,
+        usedQty: 0,
+        remainingQty: 14,
+        unitPrice: 343000,
+        remainingValue: 4_802_000,
+      }],
+      existingItems: [{
+        id: 'item-existing',
+        sku: 'VT0000852',
+        accountingCode: 'VT0000852',
+        name: 'Cọc ly tâm D400',
+        category: 'Đầu kỳ',
+        unit: 'Mét',
+        priceIn: 0,
+        priceOut: 0,
+        minStock: 0,
+        stockByWarehouse: {},
+      }],
+      actorUserId: 'user-1',
+    });
+
+    expect(result.createdItems).toHaveLength(0);
+    expect(result.updatedItems).toHaveLength(1);
+    expect(result.updatedItems[0]).toMatchObject({
+      id: 'item-existing',
+      priceIn: 343000,
+      priceOut: 343000,
     });
   });
 });

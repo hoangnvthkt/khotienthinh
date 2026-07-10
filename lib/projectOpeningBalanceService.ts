@@ -42,6 +42,42 @@ const moneyOrZero = (value: unknown): number => {
   return parseVietnameseMoney(value);
 };
 
+const isThousandScale = (larger: number, smaller: number): boolean => {
+  if (larger <= 0 || smaller <= 0) return false;
+  const ratio = larger / smaller;
+  return ratio >= 999 && ratio <= 1001;
+};
+
+const reconcileAccountingQtyPrice = (
+  qty: number,
+  unitPrice: number,
+  amount: number,
+): { qty: number; unitPrice: number } => {
+  let nextQty = Math.max(0, Number(qty || 0));
+  let nextUnitPrice = Math.max(0, Number(unitPrice || 0));
+  const totalAmount = Math.max(0, Number(amount || 0));
+
+  if (totalAmount > 0 && nextQty > 0 && nextUnitPrice > 0) {
+    const impliedUnitPrice = totalAmount / nextQty;
+    const impliedQty = totalAmount / nextUnitPrice;
+
+    if (isThousandScale(impliedUnitPrice, nextUnitPrice)) {
+      nextUnitPrice = impliedUnitPrice;
+    } else if (isThousandScale(nextUnitPrice, impliedUnitPrice)) {
+      nextQty = impliedQty;
+    }
+  }
+
+  if (totalAmount > 0 && nextQty > 0 && nextUnitPrice <= 0) {
+    nextUnitPrice = totalAmount / nextQty;
+  }
+  if (totalAmount > 0 && nextUnitPrice > 0 && nextQty <= 0) {
+    nextQty = totalAmount / nextUnitPrice;
+  }
+
+  return { qty: nextQty, unitPrice: nextUnitPrice };
+};
+
 const clampPercent = (value: unknown): number => Math.min(100, Math.max(0, numberOrZero(value)));
 
 const cleanUndefined = <T extends Record<string, unknown>>(input: T): T =>
@@ -148,7 +184,9 @@ const normalizeLine = (line: ProjectOpeningBalanceLine): ProjectOpeningBalanceLi
   const unitPrice = Math.max(0, Number(line.unitPrice || 0));
   const remainingQty = Math.max(0, Number(line.remainingQty || 0));
   return {
-    ...line,
+    id: line.id,
+    openingBalanceId: line.openingBalanceId,
+    inventoryItemId: line.inventoryItemId || null,
     accountingCode: String(line.accountingCode || '').trim() || null,
     sku: String(line.sku || '').trim(),
     itemName: String(line.itemName || '').trim(),
@@ -160,6 +198,9 @@ const normalizeLine = (line: ProjectOpeningBalanceLine): ProjectOpeningBalanceLi
     remainingQty,
     unitPrice,
     remainingValue: Math.max(0, Number(line.remainingValue || remainingQty * unitPrice || 0)),
+    note: line.note || null,
+    createdAt: line.createdAt,
+    updatedAt: line.updatedAt,
   };
 };
 
@@ -324,10 +365,11 @@ const buildFinance = (
 const buildItemsForLines = (
   lines: ProjectOpeningBalanceLine[],
   existingItems: InventoryItem[],
-): { itemByLineKey: Map<string, InventoryItem>; createdItems: InventoryItem[] } => {
+): { itemByLineKey: Map<string, InventoryItem>; createdItems: InventoryItem[]; updatedItems: InventoryItem[] } => {
   const byId = new Map(existingItems.map(item => [item.id, item]));
   const bySku = new Map(existingItems.map(item => [item.sku.trim().toLowerCase(), item]));
   const createdItems: InventoryItem[] = [];
+  const updatedItems = new Map<string, InventoryItem>();
   const itemByLineKey = new Map<string, InventoryItem>();
 
   lines.forEach((line, index) => {
@@ -356,11 +398,20 @@ const buildItemsForLines = (
       createdItems.push(item);
       byId.set(item.id, item);
       bySku.set(item.sku.trim().toLowerCase(), item);
+    } else if (normalized.unitPrice > 0 && (Number(item.priceIn || 0) <= 0 || Number(item.priceOut || 0) <= 0)) {
+      item = {
+        ...item,
+        priceIn: Number(item.priceIn || 0) > 0 ? item.priceIn : normalized.unitPrice,
+        priceOut: Number(item.priceOut || 0) > 0 ? item.priceOut : normalized.unitPrice,
+      };
+      updatedItems.set(item.id, item);
+      byId.set(item.id, item);
+      bySku.set(item.sku.trim().toLowerCase(), item);
     }
     itemByLineKey.set(String(index), item);
   });
 
-  return { itemByLineKey, createdItems };
+  return { itemByLineKey, createdItems, updatedItems: Array.from(updatedItems.values()) };
 };
 
 interface ProjectOpeningBalanceImportOptions {
@@ -504,13 +555,20 @@ const parseAccountingOpeningRows = (
     const accountingCode = String(getMatrixCell(row, columns!.accountingCode) || '').trim();
     const itemName = String(getMatrixCell(row, columns!.itemName) || '').trim();
     const unit = String(getMatrixCell(row, columns!.unit) || '').trim() || 'Cái';
-    const importQty = numberOrZero(getMatrixCell(row, columns!.importQty));
-    const importUnitPrice = moneyOrZero(getMatrixCell(row, columns!.importUnitPrice));
-    const importAmount = moneyOrZero(getMatrixCell(row, columns!.importAmount)) || importQty * importUnitPrice;
-    const exportQty = numberOrZero(getMatrixCell(row, columns!.exportQty));
-    const exportUnitPrice = moneyOrZero(getMatrixCell(row, columns!.exportUnitPrice));
+    const rawImportQty = numberOrZero(getMatrixCell(row, columns!.importQty));
+    const rawImportUnitPrice = moneyOrZero(getMatrixCell(row, columns!.importUnitPrice));
+    const importAmount = moneyOrZero(getMatrixCell(row, columns!.importAmount)) || rawImportQty * rawImportUnitPrice;
+    const importReconciled = reconcileAccountingQtyPrice(rawImportQty, rawImportUnitPrice, importAmount);
+    const importQty = importReconciled.qty;
+    const importUnitPrice = importReconciled.unitPrice;
+
+    const rawExportQty = numberOrZero(getMatrixCell(row, columns!.exportQty));
+    const rawExportUnitPrice = moneyOrZero(getMatrixCell(row, columns!.exportUnitPrice));
     const exportAmount = moneyOrZero(getMatrixCell(row, columns!.exportAmount))
-      || exportQty * (exportUnitPrice || importUnitPrice);
+      || rawExportQty * (rawExportUnitPrice || importUnitPrice);
+    const exportReconciled = reconcileAccountingQtyPrice(rawExportQty, rawExportUnitPrice || importUnitPrice, exportAmount);
+    const exportQty = exportReconciled.qty;
+    const exportUnitPrice = exportReconciled.unitPrice;
     const unitPrice = importUnitPrice
       || (importQty > 0 ? importAmount / importQty : 0)
       || exportUnitPrice
@@ -694,6 +752,7 @@ export interface ProjectOpeningBalanceLockResult {
   materialProjectTransaction?: ProjectTransaction;
   stockTransactions: Transaction[];
   createdItems: InventoryItem[];
+  updatedItems: InventoryItem[];
 }
 
 export const projectOpeningBalanceService = {
@@ -793,13 +852,16 @@ export const projectOpeningBalanceService = {
     if (!balance.constructionSiteId && !balance.projectId) throw new Error('Thiếu dự án hoặc công trường.');
 
     const lines = input.lines.map(normalizeLine).filter(line => line.sku && line.itemName && line.warehouseId);
+    if (lines.length === 0) {
+      throw new Error('Chưa có dòng vật tư đầu kỳ hợp lệ. Vui lòng import Excel hoặc nhập ít nhất một dòng vật tư trước khi khóa.');
+    }
     const locked = await this.getLockedByScope(balance.scopeKey);
     if (locked && locked.id !== balance.id) {
       throw new Error('Dự án/công trường này đã có dữ liệu đầu kỳ đã khóa.');
     }
 
     const projectFinance = buildFinance(balance, input.existingFinance);
-    const { itemByLineKey, createdItems } = buildItemsForLines(lines, input.existingItems);
+    const { itemByLineKey, createdItems, updatedItems } = buildItemsForLines(lines, input.existingItems);
     const linesWithItems = lines.map((line, index) => {
       const item = itemByLineKey.get(String(index));
       return {
@@ -814,14 +876,20 @@ export const projectOpeningBalanceService = {
     const stockEntries = linesWithItems
       .map((line, index) => ({ line, index }))
       .filter(entry => entry.line.remainingQty > 0);
+    const openingDocumentEntries = stockEntries.length > 0
+      ? stockEntries
+      : linesWithItems
+        .map((line, index) => ({ line, index }))
+        .filter(({ line, index }) => Boolean(itemByLineKey.get(String(index)) || line.inventoryItemId));
     const stockTransactions: Transaction[] = [];
     let materialProjectTransaction: ProjectTransaction | undefined;
 
     if (isSupabaseConfigured) {
-      if (createdItems.length > 0) {
+      const itemsToUpsert = [...createdItems, ...updatedItems];
+      if (itemsToUpsert.length > 0) {
         const { error: itemError } = await supabase
           .from('items')
-          .upsert(createdItems.map(itemToDb), { onConflict: 'id' });
+          .upsert(itemsToUpsert.map(itemToDb), { onConflict: 'id' });
         if (itemError) throw itemError;
       }
 
@@ -864,12 +932,13 @@ export const projectOpeningBalanceService = {
       }
 
       const linesByWarehouse = new Map<string, Array<{ line: ProjectOpeningBalanceLine; index: number }>>();
-      stockEntries.forEach(({ line, index }) => {
+      openingDocumentEntries.forEach(({ line, index }) => {
         const list = linesByWarehouse.get(line.warehouseId) || [];
         list.push({ line, index });
         linesByWarehouse.set(line.warehouseId, list);
       });
 
+      const isEvidenceOnlyOpeningDocument = stockEntries.length === 0;
       for (const [warehouseId, warehouseEntries] of linesByWarehouse.entries()) {
         const tx: Transaction = {
           id: crypto.randomUUID(),
@@ -880,12 +949,14 @@ export const projectOpeningBalanceService = {
           createdBy: input.actorUserId,
           approverId: input.actorUserId,
           status: TransactionStatus.COMPLETED,
-          note: `Nhập tồn đầu kỳ dự án ${balance.scopeKey} (${balance.asOfDate})`,
+          note: isEvidenceOnlyOpeningDocument
+            ? `Chứng từ chốt đầu kỳ vật tư dự án ${balance.scopeKey} (${balance.asOfDate}) - không phát sinh tồn kho`
+            : `Nhập tồn đầu kỳ dự án ${balance.scopeKey} (${balance.asOfDate})`,
           items: warehouseEntries.map(({ line, index }) => {
             const item = itemByLineKey.get(String(index));
             return {
               itemId: item?.id || line.inventoryItemId || line.sku,
-              quantity: Number(line.remainingQty || 0),
+              quantity: isEvidenceOnlyOpeningDocument ? 0 : Number(line.remainingQty || 0),
               price: Number(line.unitPrice || 0),
             };
           }),
@@ -966,6 +1037,7 @@ export const projectOpeningBalanceService = {
         materialProjectTransaction,
         stockTransactions,
         createdItems,
+        updatedItems,
       };
     }
 
@@ -1002,6 +1074,7 @@ export const projectOpeningBalanceService = {
       materialProjectTransaction,
       stockTransactions,
       createdItems,
+      updatedItems,
     };
   },
 
@@ -1022,7 +1095,7 @@ export const projectOpeningBalanceService = {
     const buffer = await file.arrayBuffer();
     const workbook = XLSX.read(buffer, { type: 'array' });
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const matrix = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '', raw: false });
+    const matrix = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '', raw: true });
     const accountingResult = parseAccountingOpeningRows(matrix, options);
     if (accountingResult) return accountingResult;
     return parseLegacyOpeningRows(file, options);

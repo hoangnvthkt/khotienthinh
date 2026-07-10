@@ -426,4 +426,24 @@ describe('projectFinanceWorkspaceService', () => {
       qrToken: 'qr_note_1',
     });
   });
+
+  it('includes opening balance material expense in recognized material cost without increasing supplier debt', () => {
+    const summary = buildProjectFinanceSupplierControlSummary({
+      supplierPayableBalances: [{
+        id: 'balance-a',
+        supplierNameSnapshot: 'NCC A',
+        recognizedAmount: 100_000_000,
+        paidAmount: 40_000_000,
+        outstandingAmount: 60_000_000,
+        documentCount: 1,
+      } as SupplierPayableBalance],
+      transactions: [
+        paymentTx('tx-opening', 10_253_757_668, 'opening_balance:opening-1:materials', 'Chi phí vật tư đã sử dụng đầu kỳ'),
+      ],
+    });
+
+    expect(summary.openingMaterialCost).toBe(10_253_757_668);
+    expect(summary.recognizedMaterialCost).toBe(10_353_757_668);
+    expect(summary.supplierOutstanding).toBe(60_000_000);
+  });
 });

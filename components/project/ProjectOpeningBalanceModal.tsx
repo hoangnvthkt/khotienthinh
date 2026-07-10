@@ -189,6 +189,20 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
   const getIssuedAmount = (line: ProjectOpeningBalanceModalLine) =>
     Number(line.issuedAmount || 0) || Number(line.issuedQty || 0) * Number(line.unitPrice || 0);
 
+  const hasLineActivity = (line: ProjectOpeningBalanceModalLine) =>
+    Boolean(
+      line.sku
+      || line.accountingCode
+      || line.itemName
+      || Number(line.purchasedQty || 0) > 0
+      || Number(line.issuedQty || 0) > 0
+      || Number(line.usedQty || 0) > 0
+      || Number(line.remainingQty || 0) > 0
+      || getPurchasedAmount(line) > 0
+      || getIssuedAmount(line) > 0
+      || Number(line.remainingValue || 0) > 0
+    );
+
   const handleImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = '';
@@ -226,9 +240,11 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
     if (toMoney(contractValue) <= 0) return 'Tổng giá trị dự án phải lớn hơn 0.';
     if (toNumber(constructionProgress) < 0 || toNumber(constructionProgress) > 100) return 'Tiến độ thi công phải trong khoảng 0-100%.';
     const warehouseIds = new Set(warehouses.map(warehouse => warehouse.id));
-    const invalidLine = lines.find(line => line.remainingQty > 0 && (!line.sku || !line.itemName || !line.warehouseId));
-    if (invalidLine) return 'Dòng tồn kho có số lượng phải đủ mã vật tư, tên vật tư và kho.';
-    const invalidWarehouse = lines.find(line => line.remainingQty > 0 && !warehouseIds.has(line.warehouseId));
+    const activeLines = lines.filter(hasLineActivity);
+    if (activeLines.length === 0) return 'Chưa có dòng vật tư đầu kỳ. Vui lòng import Excel kế toán hoặc nhập dòng vật tư trước khi khóa.';
+    const invalidLine = activeLines.find(line => !line.sku || !line.itemName || !line.warehouseId);
+    if (invalidLine) return 'Mỗi dòng vật tư đầu kỳ phải đủ mã vật tư, tên vật tư và kho.';
+    const invalidWarehouse = activeLines.find(line => !warehouseIds.has(line.warehouseId));
     if (invalidWarehouse) return `Kho "${invalidWarehouse.warehouseId}" chưa tồn tại trong danh mục kho.`;
     return null;
   };
@@ -259,7 +275,7 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
       };
       const result = await projectOpeningBalanceService.lockOpeningBalance({
         openingBalance,
-        lines,
+        lines: lines.filter(hasLineActivity),
         existingItems: items,
         existingFinance: finance,
         actorUserId: user.id,
@@ -272,6 +288,7 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
         refreshWmsRecords({
           itemIds: [
             ...result.createdItems.map(item => item.id),
+            ...result.updatedItems.map(item => item.id),
             ...result.stockTransactions.flatMap(tx => (tx.items || []).map(item => item.itemId)),
           ],
           transactionIds: result.stockTransactions.map(tx => tx.id),
@@ -295,6 +312,12 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
   const steps = ['Mốc chốt', 'Giá trị & tiến độ', 'Vật tư tổng', 'Tồn kho', 'Rà soát'];
   const inputCls = 'w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold outline-none focus:ring-2 focus:ring-orange-500 bg-white';
   const labelCls = 'text-[10px] font-black text-slate-500 uppercase block mb-1';
+  const lockedPurchasedValue = Number(existingOpening?.purchasedValue || 0);
+  const lockedIssuedValue = Number(existingOpening?.issuedValue || existingOpening?.usedValue || 0);
+  const lockedRecognizedValue = Number(existingOpening?.recognizedValue || 0);
+  const lockedStockDocumentCount = (existingOpening?.stockTransactionIds || []).length;
+  const lockedLineCount = lines.filter(hasLineActivity).length;
+  const lockedRemainingLineCount = lines.filter(line => Number(line.remainingQty || 0) > 0).length;
 
   return (
     <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
@@ -341,6 +364,18 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
                 <div><span className="text-emerald-600 font-bold block">Giá trị dự án</span>{fmtFull(existingOpening?.contractValue || 0)}</div>
                 <div><span className="text-emerald-600 font-bold block">Tiến độ thi công</span>{existingOpening?.constructionProgressPercent || 0}%</div>
                 <div><span className="text-emerald-600 font-bold block">Tiến độ theo giá trị</span>{existingOpening?.contractValue ? Math.round(((existingOpening?.recognizedValue || 0) / existingOpening.contractValue) * 100) : 0}%</div>
+              </div>
+              <div className="mt-4 pt-4 border-t border-emerald-200 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
+                <div><span className="text-emerald-600 font-bold block">Tổng nhập tham chiếu</span>{fmtFull(lockedPurchasedValue)}</div>
+                <div><span className="text-emerald-600 font-bold block">Tổng xuất/đã dùng</span>{fmtFull(lockedIssuedValue)}</div>
+                <div><span className="text-emerald-600 font-bold block">Chi phí vật tư ghi nhận</span>{fmtFull(lockedRecognizedValue)}</div>
+                <div><span className="text-emerald-600 font-bold block">Chứng từ kho</span>{lockedStockDocumentCount > 0 ? `${lockedStockDocumentCount} chứng từ` : 'Chưa có'}</div>
+              </div>
+              <div className="mt-3 rounded-xl bg-white/60 px-3 py-2 text-xs font-bold text-emerald-700">
+                Dòng vật tư: {lockedLineCount} dòng. Dòng còn tồn: {lockedRemainingLineCount} dòng.
+                {lockedStockDocumentCount > 0
+                  ? ' Có thể tra chứng từ trong Kho/WMS -> Lịch sử kho / giao dịch kho.'
+                  : ' Bản chốt này chưa có chứng từ kho, cần tạo lại dấu vết đầu kỳ.'}
               </div>
             </div>
           ) : step === 0 ? (
@@ -405,7 +440,9 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
               <div className="flex items-center justify-between gap-2">
                 <div>
                   <div className="text-sm font-black text-slate-700">Tồn kho chi tiết</div>
-                  <div className="text-xs font-bold text-slate-400">{lines.length} dòng - tổng tồn {lineTotals.remainingQty.toLocaleString('vi-VN')} - {fmtFull(lineTotals.remainingValue)}</div>
+                  <div className="text-xs font-bold text-slate-400">
+                    {lines.filter(hasLineActivity).length} dòng vật tư - {lines.filter(line => Number(line.remainingQty || 0) > 0).length} dòng còn tồn - tổng tồn {lineTotals.remainingQty.toLocaleString('vi-VN')} - {fmtFull(lineTotals.remainingValue)}
+                  </div>
                 </div>
                 <div className="flex gap-2">
                   <button onClick={() => fileRef.current?.click()} className="px-3 py-2 rounded-xl text-xs font-black text-emerald-700 bg-emerald-50 border border-emerald-100 flex items-center gap-1.5">
@@ -489,11 +526,14 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
                 <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4"><div className="text-[10px] font-black uppercase text-slate-400">Giá trị dự án</div><div className="font-black text-slate-800">{fmtFull(toMoney(contractValue))}</div></div>
                 <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4"><div className="text-[10px] font-black uppercase text-slate-400">Tiến độ thi công</div><div className="font-black text-slate-800">{toNumber(constructionProgress)}%</div></div>
                 <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4"><div className="text-[10px] font-black uppercase text-slate-400">Recognized</div><div className="font-black text-slate-800">{fmtFull(recognizedValue)}</div></div>
-                <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4"><div className="text-[10px] font-black uppercase text-slate-400">Tồn chi tiết</div><div className="font-black text-slate-800">{lines.filter(line => line.remainingQty > 0).length} dòng</div></div>
+                <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4"><div className="text-[10px] font-black uppercase text-slate-400">Dòng vật tư import</div><div className="font-black text-slate-800">{lines.filter(hasLineActivity).length} dòng</div></div>
+              </div>
+              <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 text-sm font-bold text-slate-600">
+                Dòng còn tồn: <span className="font-black text-slate-900">{lines.filter(line => Number(line.remainingQty || 0) > 0).length}</span>. Nếu toàn bộ vật tư đã xuất hết, hệ thống vẫn ghi chi phí đầu kỳ và tạo chứng từ chốt đầu kỳ không làm thay đổi tồn kho.
               </div>
               <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-800 flex gap-2">
                 <AlertCircle size={18} className="shrink-0 mt-0.5" />
-                Sau khi khóa, phần mềm sẽ tạo chi phí vật tư đầu kỳ và phiếu điều chỉnh tồn kho. Không sửa trực tiếp bản đã khóa.
+                Sau khi khóa, phần mềm sẽ tạo chi phí vật tư đầu kỳ và chứng từ kho đầu kỳ để lưu dấu vết. Không sửa trực tiếp bản đã khóa.
               </div>
             </div>
           )}
