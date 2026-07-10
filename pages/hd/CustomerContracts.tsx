@@ -41,6 +41,14 @@ import { partnerService } from '../../lib/partnerService';
 import { contractGuaranteeService, contractTemplateService, contractTypeService } from '../../lib/contractMetadataService';
 import { projectMasterService } from '../../lib/projectMasterService';
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
+import ContractAttachmentDraftPicker from '../../components/hd/ContractAttachmentDraftPicker';
+import {
+  CONTRACT_ATTACHMENT_ACCEPT,
+  removeContractAttachmentPaths,
+  uploadContractAttachment,
+  uploadContractDraftAttachments,
+  type ContractAttachmentDraft,
+} from '../../lib/contractAttachmentService';
 
 const STATUS_CONFIG: Record<HdContractStatus, { label: string; color: string }> = {
   draft: { label: 'Nháp', color: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300' },
@@ -133,8 +141,6 @@ const formatCurrency = (value: number | string | undefined, currency = 'VND') =>
   new Intl.NumberFormat('vi-VN', { style: 'currency', currency, maximumFractionDigits: 0 }).format(Number(value || 0));
 
 const formatDate = (value?: string) => value ? new Date(value).toLocaleDateString('vi-VN') : '-';
-const sanitizeFileName = (name: string) =>
-  name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9._-]/g, '_');
 
 const calculateTotals = (form: ReceivedContractForm) => {
   const goodsAmount = Number(form.goodsAmount || 0);
@@ -184,8 +190,8 @@ const CustomerContracts: React.FC = () => {
   const [detailTab, setDetailTab] = useState<'info' | 'guarantees' | 'docs'>('info');
   const [guarantees, setGuarantees] = useState<ContractGuarantee[]>([]);
   const [guaranteeForm, setGuaranteeForm] = useState<Partial<ContractGuarantee> | null>(null);
-  const [uploadCategory, setUploadCategory] = useState<'contract' | 'other'>('contract');
   const [uploading, setUploading] = useState(false);
+  const [draftAttachments, setDraftAttachments] = useState<ContractAttachmentDraft[]>([]);
 
   const ownerPartners = useMemo(
     () => partners.filter(partner => partner.isActive && partner.classifications.includes('owner')),
@@ -263,6 +269,7 @@ const CustomerContracts: React.FC = () => {
     setEditingId(null);
     setForm(emptyForm());
     setActiveTemplate(null);
+    setDraftAttachments([]);
     setShowForm(false);
   };
 
@@ -270,6 +277,7 @@ const CustomerContracts: React.FC = () => {
     const next = emptyForm();
     next.contractTypeId = contractTypes[0]?.id || '';
     setEditingId(null);
+    setDraftAttachments([]);
     setForm(next);
     setShowForm(true);
   };
@@ -277,6 +285,7 @@ const CustomerContracts: React.FC = () => {
   const openEdit = (contract: CustomerContract) => {
     const customData = contract.customData || {};
     setEditingId(contract.id);
+    setDraftAttachments([]);
     setForm({
       code: contract.code || '',
       name: contract.name || '',
@@ -348,11 +357,21 @@ const CustomerContracts: React.FC = () => {
     const validation = validateForm();
     if (validation) return toast.error(validation);
     setSaving(true);
+    let uploadedDrafts: ContractAttachment[] = [];
     try {
       const project = projects.find(item => item.id === form.projectId);
       const contractType = contractTypes.find(item => item.id === form.contractTypeId);
       const owner = ownerPartners.find(item => item.id === form.ownerPartnerId);
       const existing = editingId ? contracts.find(item => item.id === editingId) : null;
+      const contractId = editingId || crypto.randomUUID();
+      uploadedDrafts = draftAttachments.length > 0
+        ? await uploadContractDraftAttachments({
+          contractType: 'customer',
+          contractId,
+          drafts: draftAttachments,
+          uploadedBy: user.name || user.username || '',
+        })
+        : [];
       const commercialData = {
         appendixNumber: form.appendixNumber,
         appendixName: form.appendixName,
@@ -370,7 +389,7 @@ const CustomerContracts: React.FC = () => {
         durationText: form.durationText,
       };
       const contract: CustomerContract = {
-        id: editingId || crypto.randomUUID(),
+        id: contractId,
         code: form.code.trim(),
         name: form.name.trim() || form.code.trim(),
         type: contractType?.code || 'construction',
@@ -412,7 +431,7 @@ const CustomerContracts: React.FC = () => {
         managedByName: existing?.managedByName || user.name || user.username,
         status: form.status,
         note: form.note || undefined,
-        attachments: existing?.attachments || [],
+        attachments: [...(existing?.attachments || []), ...uploadedDrafts],
         createdAt: existing?.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
@@ -423,6 +442,7 @@ const CustomerContracts: React.FC = () => {
       resetForm();
       await loadData();
     } catch (error: any) {
+      await removeContractAttachmentPaths(uploadedDrafts.map(attachment => attachment.storagePath));
       toast.error('Lỗi lưu HĐ nhận thầu', error?.message);
     } finally {
       setSaving(false);
@@ -446,8 +466,7 @@ const CustomerContracts: React.FC = () => {
     }
   };
 
-  const triggerUpload = (category: 'contract' | 'other') => {
-    setUploadCategory(category);
+  const triggerUpload = () => {
     fileInputRef.current?.click();
   };
 
@@ -455,28 +474,22 @@ const CustomerContracts: React.FC = () => {
     if (!selectedContract || !event.target.files?.length || !isSupabaseConfigured) return;
     const file = event.target.files[0];
     setUploading(true);
+    let uploadedAttachment: ContractAttachment | null = null;
     try {
-      const safeName = sanitizeFileName(file.name);
-      const path = `customer/${selectedContract.id}/${uploadCategory}/${Date.now()}_${safeName}`;
-      const { error } = await supabase.storage.from('contract-files').upload(path, file);
-      if (error) throw error;
-      const attachment: ContractAttachment = {
-        id: crypto.randomUUID(),
-        name: file.name,
-        fileName: safeName,
-        storagePath: path,
-        fileType: file.type || safeName.split('.').pop() || '',
-        fileSize: file.size,
-        category: uploadCategory,
-        uploadedAt: new Date().toISOString(),
+      uploadedAttachment = await uploadContractAttachment({
+        contractType: 'customer',
+        contractId: selectedContract.id,
+        file,
+        category: 'other',
         uploadedBy: user.name || user.username || '',
-      };
-      const attachments = [...(selectedContract.attachments || []), attachment];
+      });
+      const attachments = [...(selectedContract.attachments || []), uploadedAttachment];
       await customerContractService.updateAttachments(selectedContract.id, attachments);
       setSelectedContract({ ...selectedContract, attachments });
       setContracts(prev => prev.map(item => item.id === selectedContract.id ? { ...item, attachments } : item));
       toast.success('Upload file thành công');
     } catch (error: any) {
+      if (uploadedAttachment) await removeContractAttachmentPaths([uploadedAttachment.storagePath]);
       toast.error('Lỗi upload file', error?.message);
     } finally {
       setUploading(false);
@@ -736,6 +749,14 @@ const CustomerContracts: React.FC = () => {
                 )}
               </section>
 
+              <ContractAttachmentDraftPicker
+                drafts={draftAttachments}
+                onAddDrafts={drafts => setDraftAttachments(prev => [...prev, ...drafts])}
+                onRemoveDraft={draftId => setDraftAttachments(prev => prev.filter(draft => draft.id !== draftId))}
+                disabled={saving}
+                tone="emerald"
+              />
+
               <textarea
                 value={form.note}
                 onChange={e => setForm({ ...form, note: e.target.value })}
@@ -797,17 +818,11 @@ const CustomerContracts: React.FC = () => {
               )}
               {detailTab === 'docs' && (
                 <div className="space-y-4">
-                  <input ref={fileInputRef} type="file" className="hidden" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.xlsx,.xls" onChange={handleFileUpload} disabled={uploading} />
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <button onClick={() => triggerUpload('contract')} disabled={uploading} className="flex flex-col items-center justify-center gap-2 border-2 border-dashed border-emerald-200 dark:border-emerald-800 rounded-xl p-6 hover:border-emerald-400 hover:bg-emerald-50/50 dark:hover:bg-emerald-900/10 transition disabled:opacity-50">
-                      <Upload className="text-emerald-500" size={24} />
-                      <span className="text-sm font-bold text-slate-600 dark:text-slate-300">File hợp đồng</span>
-                    </button>
-                    <button onClick={() => triggerUpload('other')} disabled={uploading} className="flex flex-col items-center justify-center gap-2 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl p-6 hover:border-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition disabled:opacity-50">
-                      <Upload className="text-slate-500" size={24} />
-                      <span className="text-sm font-bold text-slate-600 dark:text-slate-300">Các file khác</span>
-                    </button>
-                  </div>
+                  <input ref={fileInputRef} type="file" className="hidden" accept={CONTRACT_ATTACHMENT_ACCEPT} onChange={handleFileUpload} disabled={uploading} />
+                  <button onClick={triggerUpload} disabled={uploading} className="flex w-full flex-col items-center justify-center gap-2 border-2 border-dashed border-emerald-200 dark:border-emerald-800 rounded-xl p-6 hover:border-emerald-400 hover:bg-emerald-50/50 dark:hover:bg-emerald-900/10 transition disabled:opacity-50">
+                    <Upload className="text-emerald-500" size={24} />
+                    <span className="text-sm font-bold text-slate-600 dark:text-slate-300">Tải tệp đính kèm</span>
+                  </button>
                   {uploading && <div className="text-sm text-emerald-600 font-bold flex items-center gap-2"><Loader2 className="animate-spin" size={14} />Đang upload...</div>}
                   {(selectedContract.attachments || []).length === 0 ? (
                     <p className="text-center text-sm text-slate-400 py-6">Chưa có tài liệu đính kèm</p>
@@ -819,7 +834,7 @@ const CustomerContracts: React.FC = () => {
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-bold text-slate-800 dark:text-white truncate">{attachment.name}</p>
                             <p className="text-xs text-slate-400">
-                              {attachment.category === 'contract' ? 'File hợp đồng' : 'File khác'} · {(attachment.fileSize / 1024).toFixed(0)} KB · {formatDate(attachment.uploadedAt)}
+                              Tệp đính kèm · {(attachment.fileSize / 1024).toFixed(0)} KB · {formatDate(attachment.uploadedAt)}
                             </p>
                           </div>
                           <button onClick={() => handleDownload(attachment)} className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg"><Download size={14} /></button>

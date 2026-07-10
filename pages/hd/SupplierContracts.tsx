@@ -35,6 +35,14 @@ import {
 import { supplierPayableService } from '../../lib/supplierPayableService';
 import { supplierPaymentBatchService } from '../../lib/supplierPaymentBatchService';
 import { buildDocumentTracePath } from '../../lib/documentTraceService';
+import ContractAttachmentDraftPicker from '../../components/hd/ContractAttachmentDraftPicker';
+import {
+  CONTRACT_ATTACHMENT_ACCEPT,
+  removeContractAttachmentPaths,
+  uploadContractAttachment,
+  uploadContractDraftAttachments,
+  type ContractAttachmentDraft,
+} from '../../lib/contractAttachmentService';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 const formatCurrency = (v: number, currency = 'VND') =>
@@ -51,9 +59,6 @@ const daysUntil = (d?: string) => {
   if (!d) return null;
   return Math.ceil((new Date(d).getTime() - Date.now()) / 86400000);
 };
-
-const sanitizeFileName = (name: string) =>
-  name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9._-]/g, '_');
 
 const STATUS_CONFIG: Record<HdContractStatus, { label: string; color: string }> = {
   draft:       { label: 'Nháp',           color: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300' },
@@ -138,6 +143,7 @@ const SupplierContracts: React.FC = () => {
   // Upload state
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
+  const [draftAttachments, setDraftAttachments] = useState<ContractAttachmentDraft[]>([]);
 
   // ── fetch ────────────────────────────────────────────────────────────────────
   const fetchContracts = async () => {
@@ -239,41 +245,55 @@ const SupplierContracts: React.FC = () => {
       return;
     }
     setSaving(true);
-    const project = projects.find(item => item.id === form.projectId);
-    const payload = {
-      id: editingId || crypto.randomUUID(),
-      code: form.code.trim(), name: form.name.trim(), type: form.type,
-      project_id: form.projectId || null,
-      construction_site_id: project?.constructionSiteId || form.constructionSiteId || null,
-      supplier_id: form.supplierId || null, supplier_name: form.supplierName || null,
-      supplier_representative: form.supplierRepresentative || null,
-      value: form.value, currency: form.currency,
-      payment_method: form.paymentMethod || null, payment_terms: form.paymentTerms || null,
-      guarantee_info: form.guaranteeInfo || null, purchase_order_number: form.purchaseOrderNumber || null,
-      signed_date: form.signedDate || null, effective_date: form.effectiveDate || null, expiry_date: form.expiryDate || null,
-      managed_by_user_id: form.managedByUserId || null, managed_by_name: form.managedByName || null,
-      status: form.status, note: form.note || null,
-      attachments: editingId ? (contracts.find(c => c.id === editingId)?.attachments || []) : [],
-      updated_at: new Date().toISOString(),
-    };
-
-    if (isSupabaseConfigured) {
-      try {
-        if (editingId) {
-          await supabase.from('supplier_contracts').update(payload).eq('id', editingId);
-        } else {
-          await supabase.from('supplier_contracts').insert({ ...payload, created_at: new Date().toISOString() });
-        }
-        await fetchContracts();
-        toast.success(editingId ? 'Cập nhật thành công' : 'Thêm hợp đồng NCC thành công', `HĐ ${payload.code} đã được lưu`);
-      } catch (e: any) {
-        toast.error('Lỗi lưu hợp đồng', e?.message);
+    let uploadedDrafts: ContractAttachment[] = [];
+    try {
+      if (!isSupabaseConfigured) throw new Error('Supabase chưa được cấu hình.');
+      const project = projects.find(item => item.id === form.projectId);
+      const contractId = editingId || crypto.randomUUID();
+      const existingAttachments = editingId ? (contracts.find(c => c.id === editingId)?.attachments || []) : [];
+      uploadedDrafts = draftAttachments.length > 0
+        ? await uploadContractDraftAttachments({
+          contractType: 'supplier',
+          contractId,
+          drafts: draftAttachments,
+          uploadedBy: user.name || user.email || '',
+        })
+        : [];
+      const payload = {
+        id: contractId,
+        code: form.code.trim(), name: form.name.trim(), type: form.type,
+        project_id: form.projectId || null,
+        construction_site_id: project?.constructionSiteId || form.constructionSiteId || null,
+        supplier_id: form.supplierId || null, supplier_name: form.supplierName || null,
+        supplier_representative: form.supplierRepresentative || null,
+        value: form.value, currency: form.currency,
+        payment_method: form.paymentMethod || null, payment_terms: form.paymentTerms || null,
+        guarantee_info: form.guaranteeInfo || null, purchase_order_number: form.purchaseOrderNumber || null,
+        signed_date: form.signedDate || null, effective_date: form.effectiveDate || null, expiry_date: form.expiryDate || null,
+        managed_by_user_id: form.managedByUserId || null, managed_by_name: form.managedByName || null,
+        status: form.status, note: form.note || null,
+        attachments: [...existingAttachments, ...uploadedDrafts],
+        updated_at: new Date().toISOString(),
+      };
+      if (editingId) {
+        const { error } = await supabase.from('supplier_contracts').update(payload).eq('id', editingId);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('supplier_contracts').insert({ ...payload, created_at: new Date().toISOString() });
+        if (error) throw error;
       }
+      await fetchContracts();
+      toast.success(editingId ? 'Cập nhật thành công' : 'Thêm hợp đồng NCC thành công', `HĐ ${payload.code} đã được lưu`);
+      setShowForm(false);
+      setEditingId(null);
+      setForm(EMPTY_FORM);
+      setDraftAttachments([]);
+    } catch (e: any) {
+      await removeContractAttachmentPaths(uploadedDrafts.map(attachment => attachment.storagePath));
+      toast.error('Lỗi lưu hợp đồng', e?.message);
+    } finally {
+      setSaving(false);
     }
-    setSaving(false);
-    setShowForm(false);
-    setEditingId(null);
-    setForm(EMPTY_FORM);
   };
 
   const handleSaveContractLine = async () => {
@@ -313,6 +333,7 @@ const SupplierContracts: React.FC = () => {
   };
 
   const handleEdit = (c: SupplierContract) => {
+    setDraftAttachments([]);
     setForm({
       code: c.code, name: c.name, type: c.type,
       projectId: c.projectId || '', constructionSiteId: c.constructionSiteId || '',
@@ -350,24 +371,28 @@ const SupplierContracts: React.FC = () => {
     setUploading(true);
     setUploadError('');
     const file = e.target.files[0];
-    const safeName = sanitizeFileName(file.name);
-    const path = `supplier/${selectedContract.id}/${Date.now()}_${safeName}`;
-    const { error } = await supabase.storage.from('contract-files').upload(path, file);
-    if (error) { setUploadError(error.message); setUploading(false); return; }
-
-    const attachment: ContractAttachment = {
-      id: crypto.randomUUID(), name: file.name, fileName: safeName,
-      storagePath: path, fileType: file.type || safeName.split('.').pop() || '',
-      fileSize: file.size, uploadedAt: new Date().toISOString(),
-      uploadedBy: user.name || user.email || '',
-    };
-    const newAttachments = [...(selectedContract.attachments || []), attachment];
-    await supabase.from('supplier_contracts')
-      .update({ attachments: newAttachments }).eq('id', selectedContract.id);
-    await fetchContracts();
-    setSelectedContract(prev => prev ? { ...prev, attachments: newAttachments } : prev);
-    setUploading(false);
-    if (fileInputRef.current) fileInputRef.current.value = '';
+    let uploadedAttachment: ContractAttachment | null = null;
+    try {
+      uploadedAttachment = await uploadContractAttachment({
+        contractType: 'supplier',
+        contractId: selectedContract.id,
+        file,
+        category: 'other',
+        uploadedBy: user.name || user.email || '',
+      });
+      const newAttachments = [...(selectedContract.attachments || []), uploadedAttachment];
+      const { error } = await supabase.from('supplier_contracts')
+        .update({ attachments: newAttachments }).eq('id', selectedContract.id);
+      if (error) throw error;
+      await fetchContracts();
+      setSelectedContract(prev => prev ? { ...prev, attachments: newAttachments } : prev);
+    } catch (error: any) {
+      if (uploadedAttachment) await removeContractAttachmentPaths([uploadedAttachment.storagePath]);
+      setUploadError(error?.message || 'Không upload được file.');
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
   };
 
   const handleDownload = async (att: ContractAttachment) => {
@@ -432,7 +457,7 @@ const SupplierContracts: React.FC = () => {
           ))}
         </select>
         <button
-          onClick={() => { setEditingId(null); setForm(EMPTY_FORM); setShowForm(true); }}
+          onClick={() => { setEditingId(null); setForm(EMPTY_FORM); setDraftAttachments([]); setShowForm(true); }}
           className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white text-sm font-bold rounded-xl shadow-md shadow-blue-500/20 hover:shadow-blue-500/40 transition-all"
         >
           <Plus size={15} /> Thêm hợp đồng
@@ -520,7 +545,7 @@ const SupplierContracts: React.FC = () => {
                   {editingId ? 'Sửa hợp đồng NCC' : 'Thêm hợp đồng NCC mới'}
                 </h3>
               </div>
-              <button onClick={() => setShowForm(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors">
+              <button onClick={() => { setShowForm(false); setDraftAttachments([]); }} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors">
                 <X size={20} />
               </button>
             </div>
@@ -661,10 +686,17 @@ const SupplierContracts: React.FC = () => {
                   className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-sm bg-white dark:bg-slate-800 dark:text-white outline-none resize-none"
                   placeholder="Ghi chú thêm..." />
               </div>
+              <ContractAttachmentDraftPicker
+                drafts={draftAttachments}
+                onAddDrafts={drafts => setDraftAttachments(prev => [...prev, ...drafts])}
+                onRemoveDraft={draftId => setDraftAttachments(prev => prev.filter(draft => draft.id !== draftId))}
+                disabled={saving}
+                tone="blue"
+              />
             </div>
 
             <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-800 flex gap-3">
-              <button onClick={() => setShowForm(false)}
+              <button onClick={() => { setShowForm(false); setDraftAttachments([]); }}
                 className="flex-1 py-2.5 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 rounded-xl font-bold text-sm hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
                 Hủy
               </button>
@@ -958,7 +990,7 @@ const SupplierContracts: React.FC = () => {
                     <Upload className="text-blue-400" size={24} />
                     <span className="text-sm font-bold text-slate-600 dark:text-slate-300">Kéo thả hoặc click để tải lên</span>
                     <span className="text-xs text-slate-400">PDF, DOCX, JPG, PNG — Tối đa 20MB</span>
-                    <input ref={fileInputRef} type="file" className="hidden" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.xlsx,.xls" onChange={handleFileUpload} disabled={uploading} />
+                    <input ref={fileInputRef} type="file" className="hidden" accept={CONTRACT_ATTACHMENT_ACCEPT} onChange={handleFileUpload} disabled={uploading} />
                     {uploading && <div className="flex items-center gap-2 text-blue-500 text-xs font-bold"><Loader2 size={14} className="animate-spin" />Đang tải lên...</div>}
                     {uploadError && <p className="text-xs text-red-500 font-bold">{uploadError}</p>}
                   </label>
