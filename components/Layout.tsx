@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Outlet, useNavigate } from 'react-router-dom';
+import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import CommandPalette from './CommandPalette';
 import QuickActionFab from './QuickActionFab';
@@ -33,6 +33,9 @@ const Layout: React.FC = () => {
   const { isDark, toggleTheme } = useTheme();
   const { isOnline, isSyncing, pendingCount, syncNow } = useOfflineSync();
   const navigate = useNavigate();
+  const { pathname } = useLocation();
+
+  const isChatRoute = pathname === '/chat';
 
   const lastActivityRef = useRef<number>(Date.now());
   const warningTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -214,7 +217,7 @@ const Layout: React.FC = () => {
           </div>
         </header>
 
-        <main className="flex-1 overflow-auto p-2 sm:p-4 md:p-8 pb-20 lg:pb-8 transparent">
+        <main className={isChatRoute ? "flex-1 overflow-hidden relative" : "flex-1 overflow-auto p-2 sm:p-4 md:p-8 pb-20 lg:pb-8 transparent"}>
           {isLoading || isRefreshing ? (
             <div className="h-full w-full flex flex-col items-center justify-center relative overflow-hidden">
               {/* Background animated particles */}
@@ -334,11 +337,17 @@ const Layout: React.FC = () => {
               `}</style>
             </div>
           ) : (
-            <div className="max-w-[1600px] mx-auto w-full">
+            isChatRoute ? (
               <React.Suspense fallback={<LoadingSpinner />}>
                 <Outlet />
               </React.Suspense>
-            </div>
+            ) : (
+              <div className="max-w-[1600px] mx-auto w-full">
+                <React.Suspense fallback={<LoadingSpinner />}>
+                  <Outlet />
+                </React.Suspense>
+              </div>
+            )
           )}
         </main>
         <BottomNav />
