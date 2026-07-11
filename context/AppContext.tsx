@@ -39,6 +39,10 @@ import {
   getRemoteInventoryItemDeleteBlockers,
 } from '../lib/inventoryItemDeleteGuard';
 import { createPerformanceTrace } from '../lib/performanceTrace';
+import {
+  normalizeProjectTransactionRow,
+  projectTransactionToDb,
+} from '../lib/projectTransactionMapping';
 
 interface AppSettings {
   name: string;
@@ -966,14 +970,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const normalizeProjectTransaction = (row: any): ProjectTransaction => ({
-    ...row,
-    projectId: row.projectId ?? row.project_id ?? null,
-    projectFinanceId: row.projectFinanceId ?? row.project_finance_id,
-    constructionSiteId: row.constructionSiteId ?? row.construction_site_id,
-    sourceRef: row.sourceRef ?? row.source_ref,
-    createdAt: row.createdAt ?? row.created_at,
-  });
+  const normalizeProjectTransaction = (row: any): ProjectTransaction => normalizeProjectTransactionRow(row);
 
   const normalizeProjectFinance = (row: any): ProjectFinance => ({
     ...row,
@@ -1005,16 +1002,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   };
 
-  const projectTransactionPayload = (tx: ProjectTransaction) => {
-    const { projectId, ...legacyPayload } = tx;
-    return {
-      ...legacyPayload,
-      project_id: tx.projectId || null,
-      project_finance_id: tx.projectFinanceId || null,
-      construction_site_id: tx.constructionSiteId || null,
-      source_ref: tx.sourceRef || null,
-    };
-  };
+  const projectTransactionPayload = (tx: ProjectTransaction) => projectTransactionToDb(tx);
 
   const requireModuleData = <T,>(module: AppModule, label: string, data: T | null | undefined): T => {
     if (data === null || data === undefined) {

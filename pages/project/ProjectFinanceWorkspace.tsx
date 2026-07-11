@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   AlertTriangle,
@@ -8,11 +8,13 @@ import {
   BarChart3,
   CalendarClock,
   CreditCard,
+  Download,
   Edit2,
   ExternalLink,
   FileText,
   Landmark,
   Loader2,
+  Paperclip,
   Plus,
   QrCode,
   ReceiptText,
@@ -20,17 +22,21 @@ import {
   Search,
   Save,
   Trash2,
+  Upload,
   WalletCards,
   X,
 } from 'lucide-react';
 import CostAnalysisPanel from '../../components/project/CostAnalysisPanel';
+import PartnerSearchSelect from '../../components/PartnerSearchSelect';
 import {
+  Attachment,
+  BusinessPartner,
   PaymentDossierStatus,
   PaymentQualityStatus,
   PaymentSchedule,
   PaymentScheduleMilestoneType,
   PaymentScheduleStatus,
-  ProjectCostCategory,
+  ContractCostItem,
   ProjectTransaction,
   ProjectTxType,
   CashFund,
@@ -60,8 +66,24 @@ import {
   siteCashSettlementService,
 } from '../../lib/siteCashSettlementService';
 import { cashFundService } from '../../lib/cashFundService';
+import { contractCostItemService } from '../../lib/contractMetadataService';
+import {
+  applyContractCostItemToTransaction,
+  buildContractCostItemOptions,
+  clearContractCostItemSnapshot,
+  inferProjectCostCategoryFromCostItem,
+  type ContractCostItemOption,
+} from '../../lib/contractCostItemOptions';
+import { loadXlsx } from '../../lib/loadXlsx';
+import { partnerService } from '../../lib/partnerService';
 import { paymentService } from '../../lib/projectService';
+import {
+  buildProjectTransactionsFromImportRows,
+  PROJECT_TRANSACTION_IMPORT_HEADERS,
+  PROJECT_TRANSACTION_IMPORT_SAMPLE_ROWS,
+} from '../../lib/projectTransactionImport';
 import { buildDocumentTracePath } from '../../lib/documentTraceService';
+import { supabase } from '../../lib/supabase';
 import { useApp } from '../../context/AppContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { useToast } from '../../context/ToastContext';
@@ -209,15 +231,6 @@ const txTypeOptions: Array<{ value: ProjectTxType; label: string }> = [
   { value: 'expense', label: 'Chi phí' },
   { value: 'revenue_received', label: 'Thu đã nhận' },
   { value: 'revenue_pending', label: 'Thu chờ nghiệm thu' },
-];
-
-const costCategoryOptions: Array<{ value: ProjectCostCategory; label: string }> = [
-  { value: 'materials', label: 'Vật tư' },
-  { value: 'labor', label: 'Nhân công' },
-  { value: 'subcontract', label: 'Thầu phụ' },
-  { value: 'machinery', label: 'Máy móc' },
-  { value: 'overhead', label: 'Quản lý chung' },
-  { value: 'other', label: 'Khác' },
 ];
 
 const statusLabel = (status: string) => {
@@ -545,7 +558,7 @@ const PaymentScheduleFormModal = ({
         <FieldLabel label="Mô tả">
           <input className={inputClass} value={form.description} onChange={event => onChange({ ...form, description: event.target.value })} placeholder="VD: Đợt 1 - tạm ứng 30%" />
         </FieldLabel>
-        <FieldLabel label="Đối tượng">
+        <FieldLabel label="Đối tác">
           <input className={inputClass} value={form.contactName || ''} onChange={event => onChange({ ...form, contactName: event.target.value })} placeholder="Tên CĐT/NTP/NCC" />
         </FieldLabel>
         <FieldLabel label="Giá trị">
@@ -604,70 +617,158 @@ const PaymentScheduleFormModal = ({
 const TransactionFormModal = ({
   form,
   saving,
+  costItemOptions,
+  partners,
+  pendingFiles,
   onChange,
+  onAddFiles,
+  onRemovePendingFile,
+  onRemoveAttachment,
   onClose,
   onSave,
 }: {
   form: ProjectTransaction;
   saving: boolean;
+  costItemOptions: ContractCostItemOption[];
+  partners: BusinessPartner[];
+  pendingFiles: File[];
   onChange: (next: ProjectTransaction) => void;
+  onAddFiles: (files: File[]) => void;
+  onRemovePendingFile: (index: number) => void;
+  onRemoveAttachment: (index: number) => void;
   onClose: () => void;
   onSave: () => void;
-}) => (
-  <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
-    <div className="w-full max-w-2xl rounded-xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900">
-      <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-4 dark:border-slate-800">
-        <div>
-          <div className="text-sm font-black text-slate-900 dark:text-white">Giao dịch tài chính</div>
-          <div className="mt-0.5 text-[11px] font-bold text-slate-400">Lưu vào sổ giao dịch công trình</div>
+}) => {
+  const isExpense = form.type === 'expense';
+  const handleTypeChange = (value: ProjectTxType) => {
+    onChange(value === 'expense'
+      ? { ...form, type: value }
+      : { ...form, type: value, ...clearContractCostItemSnapshot() });
+  };
+  const handleCostItemChange = (id: string) => {
+    const selected = costItemOptions.find(option => option.id === id)?.item;
+    onChange(selected
+      ? { ...applyContractCostItemToTransaction(form, selected), category: inferProjectCostCategoryFromCostItem(selected) }
+      : { ...form, ...clearContractCostItemSnapshot() });
+  };
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
+      <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+        <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-4 dark:border-slate-800">
+          <div>
+            <div className="text-sm font-black text-slate-900 dark:text-white">Giao dịch tài chính</div>
+            <div className="mt-0.5 text-[11px] font-bold text-slate-400">Lưu vào sổ giao dịch công trình</div>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-lg p-2 text-slate-400 hover:bg-slate-50 hover:text-slate-700 dark:hover:bg-slate-800">
+            <X size={16} />
+          </button>
         </div>
-        <button type="button" onClick={onClose} className="rounded-lg p-2 text-slate-400 hover:bg-slate-50 hover:text-slate-700 dark:hover:bg-slate-800">
-          <X size={16} />
-        </button>
-      </div>
-      <div className="grid gap-3 p-5 md:grid-cols-2">
-        <FieldLabel label="Loại giao dịch">
-          <select className={inputClass} value={form.type} onChange={event => onChange({ ...form, type: event.target.value as ProjectTxType })}>
-            {txTypeOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-          </select>
-        </FieldLabel>
-        <FieldLabel label="Nhóm chi phí">
-          <select className={inputClass} value={form.category} onChange={event => onChange({ ...form, category: event.target.value as ProjectCostCategory })}>
-            {costCategoryOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-          </select>
-        </FieldLabel>
-        <FieldLabel label="Ngày">
-          <input type="date" className={inputClass} value={form.date || todayIso()} onChange={event => onChange({ ...form, date: event.target.value })} />
-        </FieldLabel>
-        <FieldLabel label="Số tiền">
-          <input
-            className={inputClass}
-            inputMode="numeric"
-            value={form.amount ? Math.round(form.amount).toLocaleString('vi-VN') : ''}
-            onChange={event => onChange({ ...form, amount: parseMoneyInput(event.target.value) })}
-            placeholder="0"
-          />
-        </FieldLabel>
-        <div className="md:col-span-2">
-          <FieldLabel label="Nội dung">
-            <input className={inputClass} value={form.description} onChange={event => onChange({ ...form, description: event.target.value })} placeholder="VD: Chi phí phát sinh công trường" />
+        <div className="grid gap-3 p-5 md:grid-cols-2">
+          <FieldLabel label="Loại giao dịch">
+            <select className={inputClass} value={form.type} onChange={event => handleTypeChange(event.target.value as ProjectTxType)}>
+              {txTypeOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
           </FieldLabel>
-        </div>
-        <div className="md:col-span-2">
+          {isExpense && (
+            <div className="md:col-span-2">
+              <FieldLabel label="Khoản mục chi phí *">
+                <select className={inputClass} value={form.contractCostItemId || ''} onChange={event => handleCostItemChange(event.target.value)}>
+                  <option value="">Chọn khoản mục chi phí</option>
+                  {costItemOptions.map(option => (
+                    <option key={option.id} value={option.id}>{option.label}</option>
+                  ))}
+                </select>
+              </FieldLabel>
+            </div>
+          )}
+          <FieldLabel label="Ngày">
+            <input type="date" className={inputClass} value={form.date || todayIso()} onChange={event => onChange({ ...form, date: event.target.value })} />
+          </FieldLabel>
+          <FieldLabel label="Số tiền">
+            <input
+              className={inputClass}
+              inputMode="numeric"
+              value={form.amount ? Math.round(form.amount).toLocaleString('vi-VN') : ''}
+              onChange={event => onChange({ ...form, amount: parseMoneyInput(event.target.value) })}
+              placeholder="0"
+            />
+          </FieldLabel>
+          <div className="md:col-span-2">
+            <FieldLabel label="Nội dung">
+              <input className={inputClass} value={form.description} onChange={event => onChange({ ...form, description: event.target.value })} placeholder="VD: Chi phí phát sinh công trường" />
+            </FieldLabel>
+          </div>
+          <FieldLabel label="Đối tác">
+            <PartnerSearchSelect
+              value={form.counterpartyPartnerId || ''}
+              partners={partners}
+              legacyName={form.counterpartyName}
+              onChange={partner => onChange({
+                ...form,
+                counterpartyPartnerId: partner?.id || null,
+                counterpartyName: partner?.name || '',
+              })}
+              className="w-full"
+              inputClassName="rounded-lg py-2.5 text-sm"
+            />
+          </FieldLabel>
+          <FieldLabel label="Số hóa đơn/chứng từ">
+            <input className={inputClass} value={form.invoiceNo || ''} onChange={event => onChange({ ...form, invoiceNo: event.target.value })} placeholder="VD: HD-001, UNC-001" />
+          </FieldLabel>
+          <FieldLabel label="Ngày hóa đơn/chứng từ">
+            <input type="date" className={inputClass} value={form.invoiceDate || ''} onChange={event => onChange({ ...form, invoiceDate: event.target.value || null })} />
+          </FieldLabel>
           <FieldLabel label="Mã tham chiếu">
             <input className={inputClass} value={form.sourceRef || ''} onChange={event => onChange({ ...form, sourceRef: event.target.value })} placeholder="Số chứng từ, phiếu thu/chi..." />
           </FieldLabel>
+          <div className="md:col-span-2">
+            <FieldLabel label="Tệp đính kèm">
+              <label className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-slate-200 px-3 py-3 text-xs font-black text-slate-500 hover:border-orange-300 hover:bg-orange-50 dark:border-slate-700 dark:hover:bg-slate-800">
+                <Paperclip size={14} /> Chọn tệp đính kèm
+                <input
+                  type="file"
+                  multiple
+                  accept="image/*,.pdf,.doc,.docx,.xls,.xlsx"
+                  className="hidden"
+                  onChange={event => {
+                    onAddFiles(Array.from(event.target.files || []));
+                    event.target.value = '';
+                  }}
+                />
+              </label>
+            </FieldLabel>
+            {Boolean((form.attachments || []).length || pendingFiles.length) && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {(form.attachments || []).map((attachment, index) => (
+                  <span key={`${attachment.url}-${index}`} className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                    <FileText size={11} /> {attachment.name}
+                    <button type="button" onClick={() => onRemoveAttachment(index)} className="rounded p-0.5 text-slate-400 hover:bg-white hover:text-red-500 dark:hover:bg-slate-700">
+                      <X size={10} />
+                    </button>
+                  </span>
+                ))}
+                {pendingFiles.map((file, index) => (
+                  <span key={`${file.name}-${index}`} className="inline-flex items-center gap-1 rounded-md bg-orange-50 px-2 py-1 text-[10px] font-bold text-orange-700 dark:bg-orange-950/30 dark:text-orange-300">
+                    <Upload size={11} /> {file.name}
+                    <button type="button" onClick={() => onRemovePendingFile(index)} className="rounded p-0.5 text-orange-400 hover:bg-white hover:text-red-500 dark:hover:bg-slate-700">
+                      <X size={10} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 border-t border-slate-100 px-5 py-4 dark:border-slate-800">
+          <button type="button" onClick={onClose} className="rounded-lg border border-slate-200 px-4 py-2 text-xs font-black text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">Hủy</button>
+          <button type="button" onClick={onSave} disabled={saving} className="inline-flex items-center gap-1.5 rounded-lg bg-orange-500 px-4 py-2 text-xs font-black text-white hover:bg-orange-600 disabled:opacity-50">
+            {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Lưu
+          </button>
         </div>
       </div>
-      <div className="flex justify-end gap-2 border-t border-slate-100 px-5 py-4 dark:border-slate-800">
-        <button type="button" onClick={onClose} className="rounded-lg border border-slate-200 px-4 py-2 text-xs font-black text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">Hủy</button>
-        <button type="button" onClick={onSave} disabled={saving} className="inline-flex items-center gap-1.5 rounded-lg bg-orange-500 px-4 py-2 text-xs font-black text-white hover:bg-orange-600 disabled:opacity-50">
-          {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Lưu
-        </button>
-      </div>
     </div>
-  </div>
-);
+  );
+};
 
 const PurchaseOrderPaymentModal = ({
   form,
@@ -1599,7 +1700,7 @@ const PayablesTable = ({
         <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-wide text-slate-400 dark:bg-slate-800">
           <tr>
             <th className="px-3 py-2 whitespace-nowrap">Chứng từ</th>
-            <th className="px-3 py-2 whitespace-nowrap">Đối tượng</th>
+            <th className="px-3 py-2 whitespace-nowrap">Đối tác</th>
             <th className="px-3 py-2 text-right whitespace-nowrap">Cam kết</th>
             <th className="px-3 py-2 text-right whitespace-nowrap">Được ghi nhận</th>
             <th className="px-3 py-2 text-right whitespace-nowrap">Đã TT</th>
@@ -1745,17 +1846,30 @@ const LedgerTable = ({
   rows,
   canManage,
   onCreate,
+  onDownloadTemplate,
+  onImportClick,
   onEdit,
   onDelete,
 }: {
   rows: ProjectFinanceLedgerRow[];
   canManage?: boolean;
   onCreate?: () => void;
+  onDownloadTemplate?: () => void;
+  onImportClick?: () => void;
   onEdit?: (row: ProjectFinanceLedgerRow) => void;
   onDelete?: (row: ProjectFinanceLedgerRow) => void;
 }) => {
   const [search, setSearch] = useState('');
-  const filtered = rows.filter(row => [row.description, row.sourceRef, row.category, row.type].some(value => String(value || '').toLowerCase().includes(search.toLowerCase())));
+  const filtered = rows.filter(row => [
+    row.description,
+    row.sourceRef,
+    row.category,
+    row.type,
+    row.contractCostItemSymbolSnapshot,
+    row.contractCostItemNameSnapshot,
+    row.counterpartyName,
+    row.invoiceNo,
+  ].some(value => String(value || '').toLowerCase().includes(search.toLowerCase())));
   return (
     <div className="space-y-3">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -1769,18 +1883,27 @@ const LedgerTable = ({
           />
         </div>
         {canManage && (
-          <button type="button" onClick={onCreate} className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-orange-500 px-3 py-2 text-xs font-black text-white hover:bg-orange-600">
-            <Plus size={14} /> Thêm giao dịch
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={onDownloadTemplate} className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800">
+              <Download size={14} /> Tải mẫu
+            </button>
+            <button type="button" onClick={onImportClick} className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-xs font-black text-orange-700 hover:bg-orange-100 dark:border-orange-900 dark:bg-orange-950/30 dark:text-orange-300">
+              <Upload size={14} /> Import Excel
+            </button>
+            <button type="button" onClick={onCreate} className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-orange-500 px-3 py-2 text-xs font-black text-white hover:bg-orange-600">
+              <Plus size={14} /> Thêm giao dịch
+            </button>
+          </div>
         )}
       </div>
       {filtered.length === 0 ? <EmptyState label="Chưa có giao dịch tài chính phù hợp." /> : (
         <div className="overflow-x-auto rounded-lg border border-slate-100 bg-white dark:border-slate-700 dark:bg-slate-900">
-          <table className="w-full min-w-[650px] text-left">
+          <table className="w-full min-w-[780px] text-left">
             <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-wide text-slate-400 dark:bg-slate-800">
               <tr>
                 <th className="px-3 py-2 whitespace-nowrap">Ngày</th>
                 <th className="px-3 py-2 whitespace-nowrap">Nội dung</th>
+                <th className="px-3 py-2 whitespace-nowrap">Khoản mục</th>
                 <th className="px-3 py-2 whitespace-nowrap">Nguồn</th>
                 <th className="px-3 py-2 text-right whitespace-nowrap">Số tiền</th>
                 <th className="px-3 py-2 text-right whitespace-nowrap">Thao tác</th>
@@ -1792,7 +1915,19 @@ const LedgerTable = ({
                   <td className="px-3 py-3 font-bold text-slate-500 whitespace-nowrap">{fmtDate(row.date)}</td>
                   <td className="px-3 py-3">
                     <div className="font-black text-slate-800 dark:text-slate-100">{row.description}</div>
-                    <div className="mt-0.5 text-[10px] font-bold text-slate-400">{row.category} • {row.sourceRef || row.source}</div>
+                    <div className="mt-0.5 text-[10px] font-bold text-slate-400">
+                      {row.category} • {row.counterpartyName || row.sourceRef || row.source}
+                    </div>
+                  </td>
+                  <td className="px-3 py-3">
+                    {row.contractCostItemSymbolSnapshot || row.contractCostItemNameSnapshot ? (
+                      <div>
+                        <div className="font-black text-slate-700 dark:text-slate-200">{row.contractCostItemSymbolSnapshot || '-'}</div>
+                        <div className="mt-0.5 max-w-[180px] truncate text-[10px] font-bold text-slate-400">{row.contractCostItemNameSnapshot || '-'}</div>
+                      </div>
+                    ) : (
+                      <span className="text-[10px] font-bold text-slate-300">-</span>
+                    )}
                   </td>
                   <td className="px-3 py-3 font-bold text-slate-500 whitespace-nowrap">{row.source}</td>
                   <td className={`px-3 py-3 text-right font-black whitespace-nowrap ${row.type === 'expense' ? 'text-red-600' : 'text-emerald-700'}`}>
@@ -1837,10 +1972,12 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
   const confirm = useConfirm();
   const {
     addProjectTransaction,
+    addProjectTransactions,
     updateProjectTransaction,
     removeProjectTransaction,
     user,
   } = useApp();
+  const ledgerImportInputRef = useRef<HTMLInputElement>(null);
   const queryParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
   const [activeTab, setActiveTab] = useState<ProjectFinanceWorkspaceTab>(() => {
     const paramTab = queryParams.get('financeTab');
@@ -1849,9 +1986,12 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
   const [data, setData] = useState<ProjectFinanceWorkspaceData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [contractCostItems, setContractCostItems] = useState<ContractCostItem[]>([]);
+  const [partners, setPartners] = useState<BusinessPartner[]>([]);
   const [scheduleForm, setScheduleForm] = useState<PaymentSchedule | null>(null);
   const [savingSchedule, setSavingSchedule] = useState(false);
   const [transactionForm, setTransactionForm] = useState<ProjectTransaction | null>(null);
+  const [transactionFiles, setTransactionFiles] = useState<File[]>([]);
   const [savingTransaction, setSavingTransaction] = useState(false);
   const [poPaymentForm, setPoPaymentForm] = useState<PurchaseOrderPaymentForm | null>(null);
   const [savingPoPayment, setSavingPoPayment] = useState(false);
@@ -1879,6 +2019,7 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
       .sort((a, b) => b.outstandingAmount - a.outstandingAmount || a.counterpartyName.localeCompare(b.counterpartyName)),
     [data?.payables],
   );
+  const costItemOptions = useMemo(() => buildContractCostItemOptions(contractCostItems), [contractCostItems]);
 
   useEffect(() => {
     const paramTab = queryParams.get('financeTab');
@@ -1903,6 +2044,26 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
   }, [constructionSiteId, projectId, transactions]);
 
   useEffect(() => { load(); }, [load]);
+
+  const loadContractCostItems = useCallback(async () => {
+    try {
+      setContractCostItems(await contractCostItemService.list());
+    } catch (err: any) {
+      toast.error('Không tải được khoản mục chi phí', err?.message || 'Vui lòng kiểm tra danh mục /hd/catalogs.');
+    }
+  }, [toast]);
+
+  useEffect(() => { loadContractCostItems(); }, [loadContractCostItems]);
+
+  const loadPartners = useCallback(async () => {
+    try {
+      setPartners(await partnerService.list());
+    } catch (err: any) {
+      toast.error('Không tải được đối tác', err?.message || 'Vui lòng kiểm tra danh mục /hd/partners.');
+    }
+  }, [toast]);
+
+  useEffect(() => { loadPartners(); }, [loadPartners]);
 
   const loadSupplierPaymentBatches = useCallback(async () => {
     setLoadingSupplierPaymentBatches(true);
@@ -2712,7 +2873,91 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
     }
   };
 
+  const uploadTransactionFiles = async (files: File[]): Promise<Attachment[]> => {
+    if (files.length === 0) return [];
+    const uploaded: Attachment[] = [];
+    for (const file of files) {
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const path = `${projectId || constructionSiteId}/finance-transactions/${Date.now()}-${crypto.randomUUID()}-${safeName}`;
+      const { error } = await supabase.storage.from('project-attachments').upload(path, file, {
+        cacheControl: '3600',
+        upsert: false,
+        contentType: file.type || undefined,
+      });
+      if (error) throw error;
+      const { data: publicUrl } = supabase.storage.from('project-attachments').getPublicUrl(path);
+      uploaded.push({
+        name: file.name,
+        url: publicUrl.publicUrl,
+        fileType: file.type,
+      });
+    }
+    return uploaded;
+  };
+
+  const downloadBlob = (blob: Blob, fileName: string) => {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const downloadTransactionImportTemplate = async () => {
+    try {
+      const XLSX = await loadXlsx();
+      const rows = PROJECT_TRANSACTION_IMPORT_SAMPLE_ROWS.map(row => ({ ...row }));
+      const ws = XLSX.utils.json_to_sheet(rows, { header: [...PROJECT_TRANSACTION_IMPORT_HEADERS] });
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Giao dịch');
+      const wbOut = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      downloadBlob(new Blob([wbOut], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), 'Mau_import_giao_dich_tai_chinh.xlsx');
+    } catch (err: any) {
+      toast.error('Không tạo được file mẫu', err?.message || 'Vui lòng thử lại.');
+    }
+  };
+
+  const importLedgerTransactions = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    try {
+      const XLSX = await loadXlsx();
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(new Uint8Array(buffer), { type: 'array' });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' }) as Record<string, unknown>[];
+      const importCostItems = contractCostItems.length > 0 ? contractCostItems : await contractCostItemService.list();
+      const importPartners = partners.length > 0 ? partners : await partnerService.list();
+      if (contractCostItems.length === 0 && importCostItems.length > 0) setContractCostItems(importCostItems);
+      if (partners.length === 0 && importPartners.length > 0) setPartners(importPartners);
+      const result = buildProjectTransactionsFromImportRows(rows, {
+        projectId: projectId || null,
+        projectFinanceId: '',
+        constructionSiteId,
+        costItems: importCostItems,
+        partners: importPartners,
+        createdBy: user?.id,
+      });
+      if (result.transactions.length === 0) {
+        toast.warning('Không có giao dịch hợp lệ', `Bỏ qua ${result.skippedMissingCostItem} dòng chi phí chưa map được khoản mục.`);
+        return;
+      }
+      await addProjectTransactions(result.transactions);
+      const skippedText = result.skippedMissingCostItem > 0
+        ? ` Bỏ qua ${result.skippedMissingCostItem} dòng chi phí chưa map được khoản mục.`
+        : '';
+      toast.success(`Đã import ${result.transactions.length} giao dịch`, `${result.modeMessage}.${skippedText}`);
+    } catch (err: any) {
+      toast.error('Không import được giao dịch', err?.message || 'Vui lòng kiểm tra file Excel.');
+    }
+  };
+
   const openNewTransaction = () => {
+    setTransactionFiles([]);
     setTransactionForm({
       id: crypto.randomUUID(),
       projectId: projectId || null,
@@ -2725,6 +2970,11 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
       date: todayIso(),
       source: 'manual',
       sourceRef: '',
+      ...clearContractCostItemSnapshot(),
+      counterpartyPartnerId: null,
+      counterpartyName: '',
+      invoiceNo: '',
+      invoiceDate: null,
       attachments: [],
       createdBy: user?.id,
       createdAt: new Date().toISOString(),
@@ -2737,6 +2987,7 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
       return;
     }
     const source = transactions.find(item => item.id === row.id);
+    setTransactionFiles([]);
     setTransactionForm({
       id: row.id,
       projectId: projectId || source?.projectId || null,
@@ -2749,6 +3000,14 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
       date: row.date || todayIso(),
       source: 'manual',
       sourceRef: row.sourceRef || '',
+      contractCostItemId: source?.contractCostItemId || row.contractCostItemId || null,
+      contractCostItemSymbolSnapshot: source?.contractCostItemSymbolSnapshot || row.contractCostItemSymbolSnapshot || null,
+      contractCostItemNameSnapshot: source?.contractCostItemNameSnapshot || row.contractCostItemNameSnapshot || null,
+      costClassificationStatus: source?.costClassificationStatus || row.costClassificationStatus || 'unclassified',
+      counterpartyPartnerId: source?.counterpartyPartnerId || row.counterpartyPartnerId || null,
+      counterpartyName: source?.counterpartyName || row.counterpartyName || '',
+      invoiceNo: source?.invoiceNo || row.invoiceNo || '',
+      invoiceDate: source?.invoiceDate || row.invoiceDate || null,
       attachments: source?.attachments || [],
       createdBy: source?.createdBy || user?.id,
       createdAt: source?.createdAt || row.createdAt || new Date().toISOString(),
@@ -2765,18 +3024,34 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
       toast.warning('Thiếu số tiền', 'Nhập số tiền giao dịch lớn hơn 0.');
       return;
     }
+    const selectedCostItem = transactionForm.type === 'expense'
+      ? contractCostItems.find(item => item.status === 'active' && item.id === transactionForm.contractCostItemId)
+      : null;
+    if (transactionForm.type === 'expense' && !selectedCostItem) {
+      toast.warning('Vui lòng chọn khoản mục chi phí');
+      return;
+    }
     setSavingTransaction(true);
     try {
       const exists = transactions.some(item => item.id === transactionForm.id);
+      const uploadedAttachments = await uploadTransactionFiles(transactionFiles);
+      const normalizedTransaction = selectedCostItem
+        ? {
+            ...applyContractCostItemToTransaction(transactionForm, selectedCostItem),
+            category: inferProjectCostCategoryFromCostItem(selectedCostItem),
+          }
+        : { ...transactionForm, ...clearContractCostItemSnapshot(), category: 'other' as const };
       const next = {
-        ...transactionForm,
+        ...normalizedTransaction,
         projectId: projectId || null,
         constructionSiteId,
         source: 'manual' as const,
+        attachments: [...(normalizedTransaction.attachments || []), ...uploadedAttachments],
       };
       if (exists) await updateProjectTransaction(next);
       else await addProjectTransaction(next);
       setTransactionForm(null);
+      setTransactionFiles([]);
       toast.success('Đã lưu giao dịch');
     } catch (err: any) {
       toast.error('Không lưu được giao dịch', err?.message || 'Vui lòng thử lại.');
@@ -3033,6 +3308,8 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
               rows={data.ledger}
               canManage={canManageLedger}
               onCreate={openNewTransaction}
+              onDownloadTemplate={downloadTransactionImportTemplate}
+              onImportClick={() => ledgerImportInputRef.current?.click()}
               onEdit={openEditTransaction}
               onDelete={deleteTransaction}
             />
@@ -3052,11 +3329,30 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
         <TransactionFormModal
           form={transactionForm}
           saving={savingTransaction}
+          costItemOptions={costItemOptions}
+          partners={partners}
+          pendingFiles={transactionFiles}
           onChange={setTransactionForm}
-          onClose={() => setTransactionForm(null)}
+          onAddFiles={files => setTransactionFiles(prev => [...prev, ...files])}
+          onRemovePendingFile={index => setTransactionFiles(prev => prev.filter((_, currentIndex) => currentIndex !== index))}
+          onRemoveAttachment={index => setTransactionForm(prev => prev ? {
+            ...prev,
+            attachments: (prev.attachments || []).filter((_, currentIndex) => currentIndex !== index),
+          } : prev)}
+          onClose={() => {
+            setTransactionForm(null);
+            setTransactionFiles([]);
+          }}
           onSave={saveTransaction}
         />
       )}
+      <input
+        ref={ledgerImportInputRef}
+        type="file"
+        accept=".xlsx,.xls,.csv"
+        className="hidden"
+        onChange={importLedgerTransactions}
+      />
       {poPaymentForm && (
         <PurchaseOrderPaymentModal
           form={poPaymentForm}

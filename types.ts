@@ -447,6 +447,7 @@ export interface ProjectFinance {
 export type ProjectCostCategory = 'materials' | 'labor' | 'subcontract' | 'machinery' | 'overhead' | 'other';
 export type ProjectTxType = 'expense' | 'revenue_received' | 'revenue_pending';
 export type ProjectTxSource = 'manual' | 'import' | 'workflow';
+export type ProjectCostClassificationStatus = 'manual' | 'auto' | 'unclassified';
 
 export interface ProjectTransaction {
   id: string;
@@ -460,6 +461,14 @@ export interface ProjectTransaction {
   date: string;
   source: ProjectTxSource;
   sourceRef?: string;
+  contractCostItemId?: string | null;
+  contractCostItemSymbolSnapshot?: string | null;
+  contractCostItemNameSnapshot?: string | null;
+  costClassificationStatus?: ProjectCostClassificationStatus;
+  counterpartyPartnerId?: string | null;
+  counterpartyName?: string | null;
+  invoiceNo?: string | null;
+  invoiceDate?: string | null;
   attachments?: Attachment[];
   createdBy?: string;
   createdAt: string;

@@ -1,37 +1,14 @@
 import { ProjectCostCategory, ProjectTransaction, ProjectTxType } from '../types';
-import { fromDb } from './dbMapping';
+import {
+  normalizeProjectTransactionRow,
+  projectTransactionToDb,
+} from './projectTransactionMapping';
 import { supabase } from './supabase';
 
 const TABLE = 'project_transactions';
 
-const normalize = (row: any): ProjectTransaction => ({
-  ...fromDb(row),
-  projectId: row.project_id ?? row.projectId ?? null,
-  projectFinanceId: row.project_finance_id ?? row.projectFinanceId ?? '',
-  constructionSiteId: row.construction_site_id ?? row.constructionSiteId ?? '',
-  sourceRef: row.source_ref ?? row.sourceRef ?? undefined,
-  createdAt: row.created_at ?? row.createdAt,
-});
-
-const txPayload = (tx: ProjectTransaction) => ({
-  id: tx.id,
-  projectFinanceId: tx.projectFinanceId || '',
-  constructionSiteId: tx.constructionSiteId || '',
-  project_id: tx.projectId || null,
-  project_finance_id: tx.projectFinanceId || null,
-  construction_site_id: tx.constructionSiteId || null,
-  type: tx.type,
-  category: tx.category,
-  amount: tx.amount,
-  description: tx.description,
-  date: tx.date,
-  source: tx.source,
-  sourceRef: tx.sourceRef || null,
-  source_ref: tx.sourceRef || null,
-  attachments: tx.attachments || [],
-  createdBy: tx.createdBy || null,
-  createdAt: tx.createdAt,
-});
+const normalize = (row: any): ProjectTransaction => normalizeProjectTransactionRow(row);
+const txPayload = (tx: ProjectTransaction) => projectTransactionToDb(tx);
 
 export const projectTransactionService = {
   async findBySourceRef(sourceRef: string): Promise<ProjectTransaction | null> {

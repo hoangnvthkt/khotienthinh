@@ -9,6 +9,8 @@ import {
     ProjectTxType,
     ProjectTxSource,
     Attachment,
+    ContractCostItem,
+    BusinessPartner,
     ProjectProgressCalculationMode,
     ProjectGroup,
     ProjectTypeMaster,
@@ -22,6 +24,7 @@ import {
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { loadXlsx } from '../lib/loadXlsx';
 import ExcelImportReviewModal from '../components/ExcelImportReviewModal';
+import PartnerSearchSelect from '../components/PartnerSearchSelect';
 import { ExcelImportMode, ExcelImportPreview, applyImportChanges, buildImportPreview, getExcelCell, parseExcelRows } from '../lib/excelImport';
 import { useModuleData } from '../hooks/useModuleData';
 import { useWorkflow } from '../context/WorkflowContext';
@@ -34,6 +37,19 @@ import { projectMasterDataService } from '../lib/projectMasterDataService';
 import { projectPermissionTypeService, projectStaffService } from '../lib/projectStaffService';
 import { workGroupService } from '../lib/workGroupService';
 import { customerContractService } from '../lib/hdService';
+import { contractCostItemService } from '../lib/contractMetadataService';
+import {
+    buildContractCostItemOptions,
+    clearContractCostItemSnapshot,
+    getContractCostItemSnapshot,
+    inferProjectCostCategoryFromCostItem,
+} from '../lib/contractCostItemOptions';
+import { partnerService } from '../lib/partnerService';
+import {
+    buildProjectTransactionsFromImportRows,
+    PROJECT_TRANSACTION_IMPORT_HEADERS,
+    PROJECT_TRANSACTION_IMPORT_SAMPLE_ROWS,
+} from '../lib/projectTransactionImport';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
 import {
     PROJECT_TAB_PERMISSIONS,
@@ -389,10 +405,14 @@ const ProjectDashboard: React.FC = () => {
     const projectImportModeRef = useRef<ExcelImportMode>('create');
     // TX form state
     const [txType, setTxType] = useState<ProjectTxType>('expense');
-    const [txCategory, setTxCategory] = useState<ProjectCostCategory>('materials');
     const [txAmount, setTxAmount] = useState('');
     const [txDesc, setTxDesc] = useState('');
     const [txDate, setTxDate] = useState(new Date().toISOString().slice(0, 10));
+    const [txCostItemId, setTxCostItemId] = useState('');
+    const [txCounterpartyPartnerId, setTxCounterpartyPartnerId] = useState('');
+    const [txCounterpartyName, setTxCounterpartyName] = useState('');
+    const [txInvoiceNo, setTxInvoiceNo] = useState('');
+    const [txInvoiceDate, setTxInvoiceDate] = useState('');
     const [txFiles, setTxFiles] = useState<File[]>([]);
     const [uploading, setUploading] = useState(false);
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -430,6 +450,8 @@ const ProjectDashboard: React.FC = () => {
     const [projectTypes, setProjectTypes] = useState<ProjectTypeMaster[]>([]);
     const [projectSectors, setProjectSectors] = useState<ProjectSector[]>([]);
     const [customerContracts, setCustomerContracts] = useState<CustomerContract[]>([]);
+    const [contractCostItems, setContractCostItems] = useState<ContractCostItem[]>([]);
+    const [partners, setPartners] = useState<BusinessPartner[]>([]);
     const [projectMasterDataLoading, setProjectMasterDataLoading] = useState(false);
     const [workGroups, setWorkGroups] = useState<WorkGroupWithMembers[]>([]);
     const [workGroupsLoading, setWorkGroupsLoading] = useState(false);
@@ -716,6 +738,7 @@ const ProjectDashboard: React.FC = () => {
     const activeProjectTypes = useMemo(() => projectTypes.filter(item => item.isActive || item.id === projectForm.projectTypeId), [projectTypes, projectForm.projectTypeId]);
     const activeProjectSectors = useMemo(() => projectSectors.filter(item => item.isActive || item.id === projectForm.projectSectorId), [projectSectors, projectForm.projectSectorId]);
     const activeWorkflowTemplates = useMemo(() => workflowTemplates.filter(template => template.isActive || template.id === projectForm.workflowTemplateId), [workflowTemplates, projectForm.workflowTemplateId]);
+    const costItemOptions = useMemo(() => buildContractCostItemOptions(contractCostItems), [contractCostItems]);
 
     const effectiveSiteId = selectedProject?.constructionSiteId || selectedSiteId || null;
     const selectedSite = effectiveSiteId ? hrmConstructionSites.find(s => s.id === effectiveSiteId) || null : null;
@@ -810,6 +833,24 @@ const ProjectDashboard: React.FC = () => {
             setProjectFilters(prev => ({ ...prev, hidden: 'active' }));
         }
     }, [isAdmin, projectFilters.hidden]);
+
+    useEffect(() => {
+        let cancelled = false;
+        Promise.all([
+            contractCostItemService.list(),
+            partnerService.list(),
+        ])
+            .then(([items, partnerRows]) => {
+                if (cancelled) return;
+                setContractCostItems(items);
+                setPartners(partnerRows);
+            })
+            .catch(err => {
+                logApiError('ProjectDashboard.loadFinanceCatalogs', err);
+                toast.error('Không tải được danh mục tài chính', getApiErrorMessage(err, 'Vui lòng kiểm tra /hd/catalogs và /hd/partners.'));
+            });
+        return () => { cancelled = true; };
+    }, [toast]);
 
     const projectAdvancedFilterCount = useMemo(() => {
         let count = 0;
@@ -1430,6 +1471,23 @@ const ProjectDashboard: React.FC = () => {
         }
     };
 
+    const handleDownloadTransactionTemplate = async () => {
+        try {
+            const XLSX = await loadXlsx();
+            const rows = PROJECT_TRANSACTION_IMPORT_SAMPLE_ROWS.map(row => ({ ...row }));
+            const sheet = XLSX.utils.json_to_sheet(rows, { header: [...PROJECT_TRANSACTION_IMPORT_HEADERS] });
+            sheet['!cols'] = PROJECT_TRANSACTION_IMPORT_HEADERS.map(header => ({ wch: Math.max(18, header.length + 4) }));
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, sheet, 'Giao_dich');
+            const wbOut = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+            downloadBlob(new Blob([wbOut], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), 'Mau_import_giao_dich_tai_chinh.xlsx');
+            toast.success('Đã xuất mẫu giao dịch', 'File mẫu import giao dịch tài chính đã được tải về.');
+        } catch (error) {
+            logApiError('ProjectDashboard.downloadTransactionTemplate', error);
+            toast.error('Không thể xuất mẫu giao dịch', getApiErrorMessage(error, 'Không thể tạo file Excel mẫu giao dịch.'));
+        }
+    };
+
     const openProjectImport = (mode: ExcelImportMode) => {
         projectImportModeRef.current = mode;
         setProjectImportMode(mode);
@@ -1874,10 +1932,14 @@ const ProjectDashboard: React.FC = () => {
         if (!requireProjectTabManage('cashflow', 'sửa giao dịch dòng tiền')) return;
         setEditingTx(tx);
         setTxType(tx.type);
-        setTxCategory(tx.category);
         setTxAmount(String(tx.amount));
         setTxDesc(tx.description);
         setTxDate(tx.date);
+        setTxCostItemId(tx.contractCostItemId || '');
+        setTxCounterpartyPartnerId(tx.counterpartyPartnerId || '');
+        setTxCounterpartyName(tx.counterpartyName || '');
+        setTxInvoiceNo(tx.invoiceNo || '');
+        setTxInvoiceDate(tx.invoiceDate || '');
         setTxFiles([]);
         setExistingAttachments(tx.attachments || []);
         setShowTxForm(true);
@@ -1886,10 +1948,14 @@ const ProjectDashboard: React.FC = () => {
     const resetTxForm = () => {
         setEditingTx(null);
         setTxType('expense');
-        setTxCategory('materials');
         setTxAmount('');
         setTxDesc('');
         setTxDate(new Date().toISOString().slice(0, 10));
+        setTxCostItemId('');
+        setTxCounterpartyPartnerId('');
+        setTxCounterpartyName('');
+        setTxInvoiceNo('');
+        setTxInvoiceDate('');
         setTxFiles([]);
         setExistingAttachments([]);
         setShowTxForm(false);
@@ -1901,6 +1967,24 @@ const ProjectDashboard: React.FC = () => {
             toast.warning('Thiếu dữ liệu giao dịch', 'Vui lòng chọn dự án có công trường và nhập số tiền hợp lệ.');
             return;
         }
+        if (!txDesc.trim()) {
+            toast.warning('Thiếu nội dung', 'Nhập mô tả giao dịch trước khi lưu.');
+            return;
+        }
+        const selectedCostItem = txType === 'expense'
+            ? contractCostItems.find(item => item.status === 'active' && item.id === txCostItemId)
+            : null;
+        if (txType === 'expense' && !selectedCostItem) {
+            toast.warning('Vui lòng chọn khoản mục chi phí');
+            return;
+        }
+        const costItemSnapshot = selectedCostItem
+            ? getContractCostItemSnapshot(selectedCostItem)
+            : clearContractCostItemSnapshot();
+        const selectedPartner = txCounterpartyPartnerId
+            ? partners.find(partner => partner.id === txCounterpartyPartnerId)
+            : null;
+        const derivedCategory = selectedCostItem ? inferProjectCostCategoryFromCostItem(selectedCostItem) : 'other';
         setUploading(true);
         try {
             let financeId = selectedFinance?.id;
@@ -1916,10 +2000,15 @@ const ProjectDashboard: React.FC = () => {
                 const updated: ProjectTransaction = {
                     ...editingTx,
                     type: txType,
-                    category: txCategory,
+                    category: derivedCategory,
                     amount: Number(txAmount),
                     description: txDesc,
                     date: txDate,
+                    ...costItemSnapshot,
+                    counterpartyPartnerId: selectedPartner?.id || txCounterpartyPartnerId || null,
+                    counterpartyName: selectedPartner?.name || txCounterpartyName.trim() || null,
+                    invoiceNo: txInvoiceNo.trim() || null,
+                    invoiceDate: txInvoiceDate || null,
                     attachments: allAttachments,
                 };
                 await updateProjectTransaction(updated);
@@ -1931,11 +2020,16 @@ const ProjectDashboard: React.FC = () => {
                     projectFinanceId: financeId,
                     constructionSiteId: effectiveSiteId,
                     type: txType,
-                    category: txCategory,
+                    category: derivedCategory,
                     amount: Number(txAmount),
                     description: txDesc,
                     date: txDate,
                     source: 'manual',
+                    ...costItemSnapshot,
+                    counterpartyPartnerId: selectedPartner?.id || txCounterpartyPartnerId || null,
+                    counterpartyName: selectedPartner?.name || txCounterpartyName.trim() || null,
+                    invoiceNo: txInvoiceNo.trim() || null,
+                    invoiceDate: txInvoiceDate || null,
                     attachments: allAttachments,
                     createdBy: user.id,
                     createdAt: new Date().toISOString(),
@@ -1990,7 +2084,7 @@ const ProjectDashboard: React.FC = () => {
                 const rawRows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
                 console.log('[DA Import] Sheet:', wb.SheetNames[0], 'Total raw rows:', rawRows.length);
 
-                const headerKeywords = ['thành tiền', 'thanh tien', 'đơn giá', 'don gia', 'số tiền', 'so tien', 'amount', 'số lượng', 'so luong', 'tên hàng', 'ten hang', 'stt', 'hạng mục', 'mô tả', 'nội dung'];
+                const headerKeywords = ['thành tiền', 'thanh tien', 'đơn giá', 'don gia', 'số tiền', 'so tien', 'amount', 'số lượng', 'so luong', 'tên hàng', 'ten hang', 'stt', 'hạng mục', 'mô tả', 'nội dung', 'mã khoản mục', 'ma khoan muc', 'khoản mục chi phí', 'khoan muc chi phi', 'cost_item', 'cost item'];
                 let headerRowIdx = -1;
                 let headerCols: string[] = [];
                 for (let r = 0; r < Math.min(rawRows.length, 30); r++) {
@@ -2027,131 +2121,31 @@ const ProjectDashboard: React.FC = () => {
                     toast.warning('File rỗng', 'File không có dữ liệu giao dịch.');
                     return;
                 }
+                const importCostItems = contractCostItems.length > 0 ? contractCostItems : await contractCostItemService.list();
+                if (contractCostItems.length === 0 && importCostItems.length > 0) setContractCostItems(importCostItems);
+                const importPartners = partners.length > 0 ? partners : await partnerService.list();
+                if (partners.length === 0 && importPartners.length > 0) setPartners(importPartners);
+                const result = buildProjectTransactionsFromImportRows(rows, {
+                    projectId: selectedProject?.id || null,
+                    projectFinanceId: financeId!,
+                    constructionSiteId: effectiveSiteId,
+                    costItems: importCostItems,
+                    partners: importPartners,
+                    createdBy: user.id,
+                });
 
-                // Fuzzy column finder
-                const findCol = (row: any, patterns: string[]) => {
-                    const keys = Object.keys(row);
-                    for (const p of patterns) {
-                        const exact = keys.find(k => k.toLowerCase().trim() === p);
-                        if (exact) return row[exact];
-                    }
-                    for (const p of patterns) {
-                        const partial = keys.find(k => k.toLowerCase().trim().includes(p) || p.includes(k.toLowerCase().trim()));
-                        if (partial) return row[partial];
-                    }
-                    return undefined;
-                };
-
-                const catMap: Record<string, ProjectCostCategory> = {
-                    'vật tư': 'materials', 'vat tu': 'materials', 'materials': 'materials', 'vt': 'materials',
-                    'nhân công': 'labor', 'nhan cong': 'labor', 'labor': 'labor', 'nc': 'labor',
-                    'thầu phụ': 'subcontract', 'thau phu': 'subcontract', 'subcontract': 'subcontract', 'tp': 'subcontract',
-                    'máy móc': 'machinery', 'may moc': 'machinery', 'machinery': 'machinery', 'mm': 'machinery', 'máy': 'machinery',
-                    'quản lý chung': 'overhead', 'quan ly chung': 'overhead', 'overhead': 'overhead', 'qlc': 'overhead', 'quản lý': 'overhead',
-                    'phát sinh': 'other', 'phat sinh': 'other', 'other': 'other', 'khác': 'other', 'khac': 'other', 'ps': 'other',
-                };
-                const typeMap: Record<string, ProjectTxType> = {
-                    'chi phí': 'expense', 'chi phi': 'expense', 'expense': 'expense', 'chi': 'expense',
-                    'thu': 'revenue_received', 'doanh thu': 'revenue_received', 'revenue': 'revenue_received',
-                    'chờ thu': 'revenue_pending', 'cho thu': 'revenue_pending', 'pending': 'revenue_pending',
-                };
-
-                const parseDate = (val: any): string => {
-                    if (!val) return new Date().toISOString().slice(0, 10);
-                    if (typeof val === 'number') {
-                        // XLSX date serial number
-                        const d = new Date((val - 25569) * 86400 * 1000);
-                        return d.toISOString().slice(0, 10);
-                    }
-                    const s = String(val).trim();
-                    // Try DD/MM/YYYY
-                    const dmy = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
-                    if (dmy) return `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
-                    return s || new Date().toISOString().slice(0, 10);
-                };
-
-                const parseAmount = (val: any): number => {
-                    if (typeof val === 'number') return val;
-                    if (!val) return 0;
-                    // Remove currency symbols, dots as thousand separators, spaces
-                    const cleaned = String(val).replace(/[^\d,.-]/g, '').replace(/\./g, '').replace(',', '.');
-                    return Number(cleaned) || 0;
-                };
-
-                // Detect "total" summary rows vs detail rows
-                const totalKeywords = ['tổng số', 'tong so', 'tổng cộng', 'tong cong', 'tổng số tiền', 'tong so tien', 'total', 'tổng', 'tong', 'cộng', 'cong', 'sum', 'grand total', 'subtotal'];
-
-                const isTotalRow = (row: any): boolean => {
-                    // Check all string values in the row for total keywords
-                    for (const val of Object.values(row)) {
-                        if (typeof val === 'string') {
-                            const lower = val.toLowerCase().trim();
-                            if (totalKeywords.some(kw => lower === kw || lower.startsWith(kw + ' ') || lower.startsWith(kw + ':') || lower.startsWith(kw + '(') || lower.endsWith(' ' + kw) || lower.includes('tổng') || lower.includes('total'))) return true;
-                        }
-                    }
-                    return false;
-                };
-
-                const allParsed = rows.map((row, i) => {
-                    const rawAmount = findCol(row, ['thành tiền', 'thanh tien', 'số tiền', 'so tien', 'amount', 'tiền', 'tien', 'giá trị', 'gia tri', 'value', 'số tiền (vnđ)', 'money', 'đơn giá', 'don gia']);
-                    const rawCat = String(findCol(row, ['hạng mục', 'hang muc', 'category', 'loại chi phí', 'loai chi phi', 'mục', 'muc']) || 'other').toLowerCase().trim();
-                    const rawType = String(findCol(row, ['loại', 'loai', 'type', 'loại giao dịch']) || 'expense').toLowerCase().trim();
-                    const rawDesc = findCol(row, ['mô tả', 'mo ta', 'description', 'diễn giải', 'dien giai', 'nội dung', 'noi dung', 'ghi chú', 'ghi chu', 'note', 'tên hàng hóa', 'ten hang hoa', 'tên hàng', 'ten hang', 'hàng hóa', 'hang hoa']);
-                    const rawDate = findCol(row, ['ngày', 'ngay', 'date', 'ngày giao dịch', 'ngay giao dich']);
-                    const amount = parseAmount(rawAmount);
-                    const isTotal = isTotalRow(row);
-                    console.log(`[DA Import] Row ${i}: amount=${amount}, cat=${rawCat}, type=${rawType}, desc=${rawDesc}, isTotal=${isTotal}`);
-
-                    return {
-                        tx: {
-                            id: crypto.randomUUID(),
-                            projectId: selectedProject?.id || null,
-                            projectFinanceId: financeId!,
-                            constructionSiteId: effectiveSiteId,
-                            type: typeMap[rawType] || 'expense',
-                            category: catMap[rawCat] || 'other',
-                            amount,
-                            description: String(rawDesc || ''),
-                            date: parseDate(rawDate),
-                            source: 'import' as ProjectTxSource,
-                            createdBy: user.id,
-                            createdAt: new Date().toISOString(),
-                        } as ProjectTransaction,
-                        isTotal,
-                    };
-                }).filter(p => p.tx.amount > 0);
-
-                // If there are total rows → use only those (avoid double-counting with details)
-                const totalRows = allParsed.filter(p => p.isTotal);
-                const detailRows = allParsed.filter(p => !p.isTotal);
-                let txs: ProjectTransaction[];
-                let importMode: string;
-
-                if (totalRows.length > 0) {
-                    // Merge all total rows into ONE transaction
-                    const mergedAmount = totalRows.reduce((sum, p) => sum + p.tx.amount, 0);
-                    const mergedDesc = totalRows.map(p => p.tx.description).filter(Boolean).join('; ') || 'Tổng import từ Excel';
-                    const mergedTx: ProjectTransaction = {
-                        ...totalRows[0].tx,
-                        amount: mergedAmount,
-                        description: mergedDesc,
-                    };
-                    txs = [mergedTx];
-                    importMode = totalRows.length === 1
-                        ? `Tìm thấy 1 dòng tổng → import dòng tổng (bỏ ${detailRows.length} dòng chi tiết)`
-                        : `Tìm thấy ${totalRows.length} dòng tổng → cộng lại = ${mergedAmount.toLocaleString('vi-VN')}đ (bỏ ${detailRows.length} dòng chi tiết)`;
-                } else {
-                    txs = detailRows.map(p => p.tx);
-                    importMode = `Không có dòng tổng → import ${txs.length} dòng chi tiết`;
-                }
-                console.log(`[DA Import] Mode: ${importMode}`);
-
-                if (txs.length > 0) {
-                    await addProjectTransactions(txs);
-                    toast.success(`Import thành công ${txs.length} giao dịch`, importMode);
+                if (result.transactions.length > 0) {
+                    await addProjectTransactions(result.transactions);
+                    const skippedMessage = result.skippedMissingCostItem > 0
+                        ? ` Bỏ qua ${result.skippedMissingCostItem} dòng chi phí chưa map được khoản mục.`
+                        : '';
+                    toast.success(`Import thành công ${result.transactions.length} giao dịch`, `${result.modeMessage}.${skippedMessage}`);
                 } else {
                     const sampleKeys = rows.length > 0 ? Object.keys(rows[0]).join(', ') : 'N/A';
-                    toast.warning('Không tìm thấy giao dịch hợp lệ', `Cột trong file: ${sampleKeys}. Cần ít nhất cột Số tiền/Amount.`);
+                    const skippedMessage = result.skippedMissingCostItem > 0
+                        ? ` Đã bỏ qua ${result.skippedMissingCostItem} dòng chi phí chưa map được khoản mục.`
+                        : '';
+                    toast.warning('Không tìm thấy giao dịch hợp lệ', `Cột trong file: ${sampleKeys}. Cần ít nhất cột Số tiền/Amount.${skippedMessage}`);
                 }
             } catch (err: any) {
                 logApiError('ProjectDashboard.transactionImport', err);
@@ -2661,25 +2655,32 @@ const ProjectDashboard: React.FC = () => {
                             <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Loại giao dịch</label>
                             <div className="flex gap-2 overflow-x-auto [&::-webkit-scrollbar]:hidden">
                                 {Object.entries(TX_TYPE_CONFIG).map(([k, v]) => (
-                                    <button key={k} onClick={() => setTxType(k as ProjectTxType)}
+                                    <button key={k} onClick={() => {
+                                        const nextType = k as ProjectTxType;
+                                        setTxType(nextType);
+                                        if (nextType !== 'expense') setTxCostItemId('');
+                                    }}
                                         className={`shrink-0 px-3 whitespace-nowrap py-2 rounded-xl text-xs font-bold border transition-all ${txType === k ? 'bg-blue-50 border-blue-300 text-blue-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
                                         {v.label}
                                     </button>
                                 ))}
                             </div>
                         </div>
-                        {/* Category (only for expense) */}
                         {txType === 'expense' && (
                             <div>
-                                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Hạng mục chi phí</label>
-                                <div className="grid grid-cols-3 gap-2">
-                                    {Object.entries(CATEGORY_CONFIG).map(([k, v]) => (
-                                        <button key={k} onClick={() => setTxCategory(k as ProjectCostCategory)}
-                                            className={`py-2 px-2 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-1 ${txCategory === k ? 'bg-orange-50 border-orange-300 text-orange-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
-                                            <span>{v.icon}</span> {v.label}
-                                        </button>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Khoản mục chi phí *</label>
+                                <select
+                                    value={txCostItemId}
+                                    onChange={e => {
+                                        setTxCostItemId(e.target.value);
+                                    }}
+                                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none"
+                                >
+                                    <option value="">Chọn khoản mục chi phí</option>
+                                    {costItemOptions.map(option => (
+                                        <option key={option.id} value={option.id}>{option.label}</option>
                                     ))}
-                                </div>
+                                </select>
                             </div>
                         )}
                         {/* Amount + Date */}
@@ -2699,6 +2700,32 @@ const ProjectDashboard: React.FC = () => {
                         <div>
                             <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Mô tả</label>
                             <input value={txDesc} onChange={e => setTxDesc(e.target.value)} placeholder="VD: Thanh toán nhân công đợt 1..."
+                                className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Đối tác</label>
+                                <PartnerSearchSelect
+                                    value={txCounterpartyPartnerId}
+                                    partners={partners}
+                                    legacyName={txCounterpartyName}
+                                    onChange={partner => {
+                                        setTxCounterpartyPartnerId(partner?.id || '');
+                                        setTxCounterpartyName(partner?.name || '');
+                                    }}
+                                    className="w-full"
+                                    inputClassName="rounded-xl py-2.5 text-sm font-bold"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Số hóa đơn/chứng từ</label>
+                                <input value={txInvoiceNo} onChange={e => setTxInvoiceNo(e.target.value)} placeholder="HD-001, UNC-001..."
+                                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
+                            </div>
+                        </div>
+                        <div>
+                            <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Ngày hóa đơn/chứng từ</label>
+                            <input type="date" value={txInvoiceDate} onChange={e => setTxInvoiceDate(e.target.value)}
                                 className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
                         </div>
                         {/* Attachments */}
@@ -3038,6 +3065,10 @@ const ProjectDashboard: React.FC = () => {
                                             className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold text-emerald-600 bg-emerald-50 hover:bg-emerald-100 transition-all shrink-0">
                                             <Upload size={12} /> Import Excel
                                         </button>
+                                        <button onClick={handleDownloadTransactionTemplate}
+                                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold text-slate-700 bg-white hover:bg-slate-50 transition-all shrink-0">
+                                            <Download size={12} /> Mẫu import
+                                        </button>
                                     </>
                                 )}
                                 <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleImportExcel} />
@@ -3302,6 +3333,7 @@ const ProjectDashboard: React.FC = () => {
                                             const typeCfg = TX_TYPE_CONFIG[tx.type];
                                             const srcCfg = SOURCE_CONFIG[tx.source];
                                             const hasAttachments = tx.attachments && tx.attachments.length > 0;
+                                            const costItemLabel = [tx.contractCostItemSymbolSnapshot, tx.contractCostItemNameSnapshot].filter(Boolean).join(' - ');
                                             return (
                                                 <div key={tx.id} className="flex items-center justify-between px-4 py-3 hover:bg-slate-50/50 dark:hover:bg-slate-700/30 transition-colors group">
                                                     <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -3322,6 +3354,18 @@ const ProjectDashboard: React.FC = () => {
                                                                 <span className="text-slate-400 dark:text-slate-500">{tx.date}</span>
                                                                 <span className="text-slate-300 dark:text-slate-600">•</span>
                                                                 <span className="text-slate-400 dark:text-slate-500">{srcCfg?.icon} {srcCfg?.label}</span>
+                                                                {costItemLabel && (
+                                                                    <>
+                                                                        <span className="text-slate-300 dark:text-slate-600">•</span>
+                                                                        <span className="font-bold text-slate-500 dark:text-slate-400">{costItemLabel}</span>
+                                                                    </>
+                                                                )}
+                                                                {tx.counterpartyName && (
+                                                                    <>
+                                                                        <span className="text-slate-300 dark:text-slate-600">•</span>
+                                                                        <span className="text-slate-400 dark:text-slate-500">{tx.counterpartyName}</span>
+                                                                    </>
+                                                                )}
                                                             </div>
                                                             {hasAttachments && (
                                                                 <div className="flex gap-1.5 mt-1.5">

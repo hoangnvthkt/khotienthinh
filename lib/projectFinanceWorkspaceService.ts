@@ -91,6 +91,14 @@ export interface ProjectFinanceLedgerRow {
   description: string;
   source: ProjectTransaction['source'];
   sourceRef?: string | null;
+  contractCostItemId?: string | null;
+  contractCostItemSymbolSnapshot?: string | null;
+  contractCostItemNameSnapshot?: string | null;
+  costClassificationStatus?: ProjectTransaction['costClassificationStatus'];
+  counterpartyPartnerId?: string | null;
+  counterpartyName?: string | null;
+  invoiceNo?: string | null;
+  invoiceDate?: string | null;
   createdAt?: string | null;
 }
 
@@ -528,6 +536,14 @@ const buildLedgerRows = (transactions: ProjectTransaction[]): ProjectFinanceLedg
       description: tx.description,
       source: tx.source,
       sourceRef: tx.sourceRef || null,
+      contractCostItemId: tx.contractCostItemId || null,
+      contractCostItemSymbolSnapshot: tx.contractCostItemSymbolSnapshot || null,
+      contractCostItemNameSnapshot: tx.contractCostItemNameSnapshot || null,
+      costClassificationStatus: tx.costClassificationStatus || 'unclassified',
+      counterpartyPartnerId: tx.counterpartyPartnerId || null,
+      counterpartyName: tx.counterpartyName || null,
+      invoiceNo: tx.invoiceNo || null,
+      invoiceDate: tx.invoiceDate || null,
       createdAt: tx.createdAt,
     }));
 
