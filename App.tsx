@@ -1,6 +1,6 @@
 
 import React, { Suspense, useState, useEffect, useRef } from 'react';
-import { HashRouter as Router, Routes, Route, Navigate, useLocation, matchPath } from 'react-router-dom';
+import { HashRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Layout from './components/Layout';
 import LoadingSpinner from './components/LoadingSpinner';
 import Login from './pages/Login';
@@ -14,14 +14,13 @@ import { RequestProvider, useRequest } from './context/RequestContext';
 import { CelebrationProvider } from './components/Celebration';
 import ErrorBoundary from './components/ErrorBoundary';
 import ReleaseNotesModal from './components/ReleaseNotesModal';
-import { Role } from './types';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
 import { getProjectAllowedSubModuleRedirect, hasProjectTabPermissionRoute } from './lib/projectTabPermissions';
 import { createPerformanceTrace } from './lib/performanceTrace';
 import { isChatEnabled, isChatV2Enabled } from './lib/featureFlags';
 import { hasAnySettingsManagementFeature } from './lib/settingsPermissions';
 import { useLatestReleaseNotice } from './hooks/useLatestReleaseNotice';
-import { getRouteModuleKey, isAuthenticatedOpenRoute } from './lib/routeAccess';
+import { canAccessRoute, getRouteModuleKey } from './lib/routeAccess';
 
 // Lazy load all page components for code splitting
 const Dashboard = React.lazy(() => import('./pages/Dashboard'));
@@ -193,62 +192,15 @@ const SubModuleGuard: React.FC<{ children: React.ReactNode }> = ({ children }) =
   const { user } = useApp();
   const location = useLocation();
 
-  // Admin luôn có quyền truy cập
-  if (user.role === Role.ADMIN) return <>{children}</>;
-
-  // Với HashRouter, location.pathname là path thực (không có #)
-  // VD: /hrm/dashboard — không cần clean gì thêm
   const pathname = location.pathname;
-  if (isAuthenticatedOpenRoute(pathname)) return <>{children}</>;
+  if (canAccessRoute(user, pathname)) return <>{children}</>;
 
   const moduleKey = getRouteModuleKey(pathname);
-
-  if (!moduleKey) return <Navigate to="/" replace />;
-
-  // User không được phép dùng module này nói chung
-  const allowedModules = user.allowedModules;
-  const hasSubModuleGrant =
-    (user.allowedSubModules?.[moduleKey] || []).length > 0 ||
-    (user.adminSubModules?.[moduleKey] || []).length > 0 ||
-    (user.adminModules || []).includes(moduleKey);
-  if (allowedModules !== undefined && !allowedModules.includes(moduleKey) && !hasSubModuleGrant) {
-    return <Navigate to="/" replace />;
+  const allowedSubs = moduleKey ? user.allowedSubModules?.[moduleKey] || [] : [];
+  if (moduleKey === 'DA' && hasProjectTabPermissionRoute(allowedSubs)) {
+    return <Navigate to={getProjectAllowedSubModuleRedirect(allowedSubs)} replace />;
   }
-
-  // User bị giới hạn sub-route trong module
-  const hasSubModuleRestriction = Object.prototype.hasOwnProperty.call(user.allowedSubModules || {}, moduleKey);
-  const allowedSubs = user.allowedSubModules?.[moduleKey] || [];
-  const adminSubs = user.adminSubModules?.[moduleKey] || [];
-  const isLegacyModuleAdmin = (user.adminModules || []).includes(moduleKey);
-  const isAllowedSubRoute =
-    allowedSubs.includes(pathname) ||
-    adminSubs.includes(pathname) ||
-    isLegacyModuleAdmin ||
-    [...allowedSubs, ...adminSubs].some(routePattern =>
-      routePattern.includes(':') && matchPath({ path: routePattern, end: true }, pathname)
-    ) ||
-    (
-      moduleKey === 'WF' &&
-      pathname.startsWith('/wf/builder/') &&
-      (allowedSubs.includes('/wf/templates') || adminSubs.includes('/wf/templates') || isLegacyModuleAdmin)
-    );
-  if (hasSubModuleRestriction && allowedSubs.length === 0 && adminSubs.length === 0 && !isLegacyModuleAdmin) {
-    return <Navigate to="/" replace />;
-  }
-  if (hasSubModuleRestriction && !isAllowedSubRoute) {
-    const canOpenProjectShell =
-      moduleKey === 'DA' &&
-      pathname === '/da' &&
-      hasProjectTabPermissionRoute(allowedSubs);
-    if (!canOpenProjectShell) {
-      const redirectTo = moduleKey === 'DA'
-        ? getProjectAllowedSubModuleRedirect(allowedSubs)
-        : allowedSubs[0] || '/';
-      return <Navigate to={redirectTo} replace />;
-    }
-  }
-
-  return <>{children}</>;
+  return <Navigate to="/" replace />;
 };
 
 // Landing page wrapper kept for compatibility with older references.

@@ -11,7 +11,7 @@ import {
   Asset, AssetCategory, AssetAssignment, AssetMaintenance, AssetStatus, AssetLocationStock, AssetTransfer, AssetOrigin, AssetAttachment,
   AttendanceRecord, LeaveRequest, PayrollRecord, LaborContract, LeaveBalance, PayrollTemplate, HrmHoliday, HrmSalaryHistory,
   BudgetCategory, BudgetEntry, ExpenseRecord, AttendanceProposal, LeaveLog, LeaveApprover,
-  HrmShiftType, HrmEmployeeShift
+  HrmShiftType, HrmEmployeeShift, UserPermissionGrant
 } from '../types';
 import {
   MOCK_USERS, MOCK_WAREHOUSES, MOCK_WAREHOUSE_TYPES, MOCK_ITEMS,
@@ -39,6 +39,7 @@ import {
   getRemoteInventoryItemDeleteBlockers,
 } from '../lib/inventoryItemDeleteGuard';
 import { createPerformanceTrace } from '../lib/performanceTrace';
+import { canPerform } from '../lib/permissions/permissionService';
 
 interface AppSettings {
   name: string;
@@ -66,6 +67,39 @@ const mapUserFromDb = (row: any): User => ({
   allowedSubModules: row.allowed_sub_modules ?? row.allowedSubModules ?? undefined,
   adminSubModules: row.admin_sub_modules ?? row.adminSubModules ?? undefined,
   isActive: row.is_active ?? row.isActive,
+});
+
+const mapPermissionGrantFromDb = (row: any): UserPermissionGrant => ({
+  id: row.id,
+  userId: row.user_id ?? row.userId,
+  permissionCode: row.permission_code ?? row.permissionCode,
+  scopeType: row.scope_type ?? row.scopeType ?? 'global',
+  scopeId: row.scope_id ?? row.scopeId ?? '*',
+  isActive: row.is_active ?? row.isActive ?? true,
+  grantedBy: row.granted_by ?? row.grantedBy,
+  grantedAt: row.granted_at ?? row.grantedAt,
+  expiresAt: row.expires_at ?? row.expiresAt,
+});
+
+const loadUserPermissionGrants = async (userId?: string): Promise<UserPermissionGrant[]> => {
+  if (!isSupabaseConfigured || !userId) return [];
+  try {
+    const { data, error } = await supabase
+      .from('user_permission_grants')
+      .select('id,user_id,permission_code,scope_type,scope_id,is_active,granted_by,granted_at,expires_at')
+      .eq('user_id', userId)
+      .eq('is_active', true);
+    if (error) throw error;
+    return (data || []).map(mapPermissionGrantFromDb);
+  } catch (error: any) {
+    console.warn('Phase 1 permission grants unavailable, falling back to legacy permissions:', error?.message || error);
+    return [];
+  }
+};
+
+const hydrateUserPermissionGrants = async (mappedUser: User): Promise<User> => ({
+  ...mappedUser,
+  permissionGrants: await loadUserPermissionGrants(mappedUser.id),
 });
 
 const userToDbPayload = (data: User) => {
@@ -631,7 +665,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
 
         if (currentProfile) {
-          const mappedUser = mapUserFromDb(currentProfile);
+          const mappedUser = await hydrateUserPermissionGrants(mapUserFromDb(currentProfile));
           setUser(mappedUser);
           
           // Fetch all users list
@@ -1069,7 +1103,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
           setUsers(mappedUsers);
           const currentInList = mappedUsers.find((u: any) => (user.authId && u.authId === user.authId) || u.email === user.email);
-          if (currentInList) setUser(currentInList);
+          if (currentInList) setUser(prev => ({ ...currentInList, permissionGrants: prev.permissionGrants || [] }));
         }
       } else if (module === 'wms-core') {
         await loadWmsCoreData();
@@ -1585,8 +1619,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (userError || !userData) throw new Error('Lỗi lấy thông tin người dùng');
 
         trace.startStep('map user + localStorage');
-        const mappedUser = mapUserFromDb(userData);
-        setUser(mappedUser);
+          const mappedUser = await hydrateUserPermissionGrants(mapUserFromDb(userData));
+          setUser(mappedUser);
         
         // Fetch all users list
         const { data: allUsers, error: usersError } = await supabase
@@ -3520,8 +3554,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Helper: kiểm tra user có phải QTV ứng dụng của module không
   const isModuleAdmin = (moduleKey: string): boolean => {
-    if (user.role === Role.ADMIN) return true;
-    return (user.adminModules || []).includes(moduleKey);
+    const permissionModuleKey = moduleKey.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+    return canPerform(user, `system.${permissionModuleKey}.manage`);
   };
 
   // ==================== DIGITAL SIGNATURE ====================

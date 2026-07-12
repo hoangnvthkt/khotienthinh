@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { ProjectPermissionType, ProjectStaff, ProjectStaffPermission } from '../types';
+import { ProjectPermissionType, ProjectStaff, ProjectStaffPermission, UserPermissionGrant } from '../types';
 import { fromDb, toDb } from './dbMapping';
 import { auditService } from './auditService';
 
@@ -299,6 +299,40 @@ export const projectStaffService = {
       userId: grantedBy || 'system',
       userName: operatorName || 'System',
       description: `Cập nhật quyền nhân sự dự án (${oldPerms?.length || 0} → ${nextPermissionTypeIds.length} quyền)`,
+    });
+  },
+
+  /** Phase 2 PBAC v2: replace scoped project.* grants and let DB sync legacy generic permissions. */
+  async replaceProjectStaffPermissionGrants(
+    staffId: string,
+    grants: readonly UserPermissionGrant[],
+    grantedBy?: string,
+    operatorName?: string,
+  ): Promise<void> {
+    const payload = grants
+      .filter(grant => grant.isActive !== false && grant.permissionCode.startsWith('project.'))
+      .map(grant => ({
+        permission_code: grant.permissionCode,
+        scope_type: grant.scopeType,
+        scope_id: grant.scopeId,
+        is_active: grant.isActive ?? true,
+        expires_at: grant.expiresAt || null,
+      }));
+
+    const { error } = await supabase.rpc('replace_project_staff_permission_grants', {
+      p_staff_id: staffId,
+      p_grants: payload,
+    });
+    if (error) throw error;
+
+    await auditService.log({
+      tableName: 'user_permission_grants',
+      recordId: staffId,
+      action: 'UPDATE',
+      newData: { grants: payload.map(grant => grant.permission_code) },
+      userId: grantedBy || 'system',
+      userName: operatorName || 'System',
+      description: `Cập nhật quyền Project PBAC v2 (${payload.length} grant)`,
     });
   },
 

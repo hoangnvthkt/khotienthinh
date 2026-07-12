@@ -3,7 +3,7 @@ import {
   Users, Plus, Trash2, Edit2, Save, X, Shield, Search, UserPlus,
   ChevronDown, CheckCircle2, XCircle, Calendar, GripVertical
 } from 'lucide-react';
-import { ProjectStaff, ProjectPermissionType, HrmPosition } from '../../types';
+import { ProjectStaff, ProjectPermissionType, HrmPosition, UserPermissionGrant } from '../../types';
 import { projectStaffService, projectPermissionTypeService } from '../../lib/projectStaffService';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
@@ -11,6 +11,12 @@ import { useConfirm } from '../../context/ConfirmContext';
 import { supabase } from '../../lib/supabase';
 import { fromDb } from '../../lib/dbMapping';
 import PremiumMemberSelect, { MemberOption } from '../../components/common/PremiumMemberSelect';
+import PermissionDiffPreview from '../../components/permissions/PermissionDiffPreview';
+import PermissionMatrix from '../../components/permissions/PermissionMatrix';
+import { listUserPermissionGrants } from '../../lib/permissions/permissionAdminService';
+import { getAllPermissionActions } from '../../lib/permissions/permissionRegistry';
+import { legacyProjectCodeToPermissionCodes } from '../../lib/permissions/projectPermissionService';
+import { PermissionScope } from '../../lib/permissions/permissionTypes';
 
 interface Props {
   projectId: string;
@@ -36,6 +42,128 @@ const LEVEL_BG: Record<number, string> = {
   6: 'bg-slate-50 border-slate-100',
 };
 
+const LEGACY_PROJECT_PERMISSION_CODES = new Set(['view', 'edit', 'delete', 'submit', 'verify', 'confirm', 'approve', 'view_available_stock']);
+
+const PROJECT_PERMISSION_TEMPLATES = [
+  { key: 'viewer', label: 'Viewer' },
+  { key: 'field_engineer', label: 'Field engineer' },
+  { key: 'site_manager', label: 'Site manager' },
+  { key: 'qs', label: 'QS' },
+  { key: 'project_accountant', label: 'Kế toán dự án' },
+  { key: 'site_keeper', label: 'Thủ kho công trường' },
+  { key: 'qa_qc', label: 'QA/QC' },
+  { key: 'safety', label: 'An toàn' },
+  { key: 'project_manager', label: 'Project manager' },
+] as const;
+
+type ProjectPermissionTemplateKey = typeof PROJECT_PERMISSION_TEMPLATES[number]['key'];
+
+const allProjectActionCodes = (actions: readonly string[]) =>
+  getAllPermissionActions()
+    .filter(action => action.permissionCode.startsWith('project.') && actions.includes(action.action))
+    .map(action => action.permissionCode);
+
+const getTemplatePermissionCodes = (templateKey: ProjectPermissionTemplateKey): readonly string[] => {
+  switch (templateKey) {
+    case 'viewer':
+      return allProjectActionCodes(['view']);
+    case 'field_engineer':
+      return [
+        'project.daily_log.view',
+        'project.daily_log.create',
+        'project.daily_log.edit_own',
+        'project.daily_log.submit',
+        'project.material_request.view',
+        'project.material_request.create',
+        'project.material_request.submit',
+        'project.documents.view',
+        'project.documents.upload',
+      ];
+    case 'site_manager':
+      return [
+        ...allProjectActionCodes(['view']),
+        'project.daily_log.create',
+        'project.daily_log.edit_all',
+        'project.daily_log.verify',
+        'project.material_request.create',
+        'project.material_request.approve',
+        'project.weekly_progress.verify',
+        'project.safety.verify',
+      ];
+    case 'qs':
+      return [
+        'project.budget.view',
+        'project.budget.edit',
+        'project.quantity_acceptance.view',
+        'project.quantity_acceptance.create',
+        'project.quantity_acceptance.verify',
+        'project.payment.view',
+        'project.material_boq.view',
+        'project.material_boq.edit',
+      ];
+    case 'project_accountant':
+      return [
+        'project.payment.view',
+        'project.payment.verify',
+        'project.payment.confirm',
+        'project.payment.mark_paid',
+        'project.cashflow.view',
+        'project.cashflow.manage',
+        'project.budget.view',
+      ];
+    case 'site_keeper':
+      return [
+        'project.material_request.view',
+        'project.material_request.confirm',
+        'project.material_request.view_available_stock',
+        'project.material_po.view',
+        'project.material_po.receive',
+      ];
+    case 'qa_qc':
+      return [
+        'project.quality.view',
+        'project.quality.create',
+        'project.quality.edit_all',
+        'project.quality.submit',
+        'project.quality.return',
+        'project.quality.approve',
+      ];
+    case 'safety':
+      return [
+        'project.safety.view',
+        'project.safety.create',
+        'project.safety.edit_all',
+        'project.safety.verify',
+        'project.safety.approve',
+      ];
+    case 'project_manager':
+      return allProjectActionCodes(['view', 'create', 'edit', 'edit_own', 'edit_all', 'delete', 'delete_own', 'delete_all', 'submit', 'return', 'verify', 'confirm', 'approve', 'manage', 'grant_permissions']);
+    default:
+      return [];
+  }
+};
+
+const grantMatchesScope = (grant: UserPermissionGrant, scope: PermissionScope) =>
+  grant.permissionCode.startsWith('project.') &&
+  grant.scopeType === (scope.scopeType || 'project') &&
+  grant.scopeId === (scope.scopeId || '*');
+
+const buildScopedProjectGrants = (
+  userId: string,
+  permissionCodes: readonly string[],
+  scope: PermissionScope,
+): UserPermissionGrant[] =>
+  [...new Set(permissionCodes)]
+    .filter(permissionCode => permissionCode.startsWith('project.'))
+    .map(permissionCode => ({
+      id: `local-${userId}-${permissionCode}-${scope.scopeType || 'project'}-${scope.scopeId || '*'}`,
+      userId,
+      permissionCode,
+      scopeType: scope.scopeType || 'project',
+      scopeId: scope.scopeId || '*',
+      isActive: true,
+    }));
+
 const ProjectOrgTab: React.FC<Props> = ({ projectId, constructionSiteId, canManageTab = true }) => {
   const toast = useToast();
   const confirm = useConfirm();
@@ -55,7 +183,25 @@ const ProjectOrgTab: React.FC<Props> = ({ projectId, constructionSiteId, canMana
   const [fStartDate, setFStartDate] = useState(new Date().toISOString().slice(0, 10));
   const [fNote, setFNote] = useState('');
   const [fPermIds, setFPermIds] = useState<Set<string>>(new Set());
+  const [initialProjectGrants, setInitialProjectGrants] = useState<UserPermissionGrant[]>([]);
+  const [fProjectGrants, setFProjectGrants] = useState<UserPermissionGrant[]>([]);
+  const [grantLoading, setGrantLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+
+  const projectGrantScope = useMemo<PermissionScope>(
+    () => ({
+      scopeType: constructionSiteId ? 'construction_site' : 'project',
+      scopeId: constructionSiteId || projectId,
+    }),
+    [constructionSiteId, projectId],
+  );
+
+  const inheritedProjectPermissionCodes = useMemo(() => {
+    const legacyCodes = [...fPermIds]
+      .map(permissionTypeId => permTypes.find(permissionType => permissionType.id === permissionTypeId)?.code)
+      .filter((code): code is string => Boolean(code) && LEGACY_PROJECT_PERMISSION_CODES.has(code));
+    return [...new Set(legacyCodes.flatMap(code => legacyProjectCodeToPermissionCodes(code as any)))];
+  }, [fPermIds, permTypes]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -121,6 +267,9 @@ const ProjectOrgTab: React.FC<Props> = ({ projectId, constructionSiteId, canMana
     setFStartDate(new Date().toISOString().slice(0, 10));
     setFNote('');
     setFPermIds(new Set());
+    setInitialProjectGrants([]);
+    setFProjectGrants([]);
+    setGrantLoading(false);
     setSearchQuery('');
     setShowModal(false);
   };
@@ -148,6 +297,20 @@ const ProjectOrgTab: React.FC<Props> = ({ projectId, constructionSiteId, canMana
       (s.permissions || []).filter(p => p.isActive).map(p => p.permissionTypeId)
     ));
     setShowModal(true);
+    setGrantLoading(true);
+    listUserPermissionGrants(s.userId)
+      .then(grants => {
+        const scopedProjectGrants = grants.filter(grant => grantMatchesScope(grant, projectGrantScope));
+        setInitialProjectGrants(scopedProjectGrants);
+        setFProjectGrants(scopedProjectGrants);
+      })
+      .catch(error => {
+        console.warn('Failed to load project PBAC v2 grants', error);
+        toast.warning('Không tải được grant mới', 'Ma trận vẫn hiển thị quyền legacy/inherited hiện có.');
+        setInitialProjectGrants([]);
+        setFProjectGrants([]);
+      })
+      .finally(() => setGrantLoading(false));
   };
 
   const togglePerm = (ptId: string) => {
@@ -158,6 +321,37 @@ const ProjectOrgTab: React.FC<Props> = ({ projectId, constructionSiteId, canMana
       else next.add(ptId);
       return next;
     });
+  };
+
+  const normalizeProjectGrantsForTarget = useCallback((targetUserId: string, grants: readonly UserPermissionGrant[]) =>
+    grants
+      .filter(grant => grant.permissionCode.startsWith('project.'))
+      .map(grant => ({
+        ...grant,
+        userId: targetUserId,
+        scopeType: projectGrantScope.scopeType || 'project',
+        scopeId: projectGrantScope.scopeId || '*',
+        isActive: grant.isActive ?? true,
+      })),
+    [projectGrantScope],
+  );
+
+  const legacyPermissionTypeIdsToProjectGrants = useCallback((targetUserId: string, permissionTypeIds: readonly string[]) => {
+    const permissionCodes = permissionTypeIds.flatMap(permissionTypeId => {
+      const legacyCode = permTypes.find(permissionType => permissionType.id === permissionTypeId)?.code;
+      if (!legacyCode || !LEGACY_PROJECT_PERMISSION_CODES.has(legacyCode)) return [];
+      return legacyProjectCodeToPermissionCodes(legacyCode as any);
+    });
+    return buildScopedProjectGrants(targetUserId, permissionCodes, projectGrantScope);
+  }, [permTypes, projectGrantScope]);
+
+  const applyTemplate = (templateKey: ProjectPermissionTemplateKey) => {
+    const targetUserId = fUserId || editingStaff?.userId;
+    if (!targetUserId) {
+      toast.warning('Chưa chọn nhân viên', 'Chọn nhân viên trước khi áp dụng template quyền.');
+      return;
+    }
+    setFProjectGrants(buildScopedProjectGrants(targetUserId, getTemplatePermissionCodes(templateKey), projectGrantScope));
   };
 
   const handleSave = async () => {
@@ -173,21 +367,31 @@ const ProjectOrgTab: React.FC<Props> = ({ projectId, constructionSiteId, canMana
           startDate: fStartDate,
           note: fNote,
         }, currentUser?.id, currentUser?.name);
-        // Update permissions (replace all)
-        await projectStaffService.setPermissions(editingStaff.id, [...fPermIds], currentUser?.id, currentUser?.name);
+        await projectStaffService.replaceProjectStaffPermissionGrants(
+          editingStaff.id,
+          normalizeProjectGrantsForTarget(editingStaff.userId, fProjectGrants),
+          currentUser?.id,
+          currentUser?.name,
+        );
         toast.success('Đã cập nhật thành viên');
       } else {
-        await projectStaffService.add({
+        const staffId = await projectStaffService.add({
           projectId,
           constructionSiteId: constructionSiteId || null,
           userId: fUserId,
           positionId: fPositionId,
-          permissionTypeIds: [...fPermIds],
+          permissionTypeIds: [],
           startDate: fStartDate,
           note: fNote,
           grantedBy: currentUser?.id,
           operatorName: currentUser?.name,
         });
+        await projectStaffService.replaceProjectStaffPermissionGrants(
+          staffId,
+          normalizeProjectGrantsForTarget(fUserId, fProjectGrants),
+          currentUser?.id,
+          currentUser?.name,
+        );
         toast.success('Đã thêm thành viên mới');
       }
       await load();
@@ -239,7 +443,12 @@ const ProjectOrgTab: React.FC<Props> = ({ projectId, constructionSiteId, canMana
       ? currentPerms.filter(id => id !== ptId)
       : [...currentPerms, ptId];
     try {
-      await projectStaffService.setPermissions(s.id, newPerms, currentUser?.id, currentUser?.name);
+      await projectStaffService.replaceProjectStaffPermissionGrants(
+        s.id,
+        legacyPermissionTypeIdsToProjectGrants(s.userId, newPerms),
+        currentUser?.id,
+        currentUser?.name,
+      );
       await load();
       const perm = permTypes.find(pt => pt.id === ptId);
       toast.success(
@@ -382,7 +591,7 @@ const ProjectOrgTab: React.FC<Props> = ({ projectId, constructionSiteId, canMana
       {/* Modal — Add/Edit Staff */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => resetForm()}>
-          <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden" onClick={e => e.stopPropagation()}>
+          <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl w-full max-w-5xl mx-4 overflow-hidden" onClick={e => e.stopPropagation()}>
             {/* Modal header */}
             <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -453,27 +662,55 @@ const ProjectOrgTab: React.FC<Props> = ({ projectId, constructionSiteId, canMana
                 </div>
               </div>
 
-              {/* Permissions — tick tay */}
+              {/* Project PBAC v2 matrix */}
               <div>
                 <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider block mb-2">
-                  <Shield size={10} className="inline mr-1" />Quyền nghiệp vụ (tick từng quyền)
+                  <Shield size={10} className="inline mr-1" />Ma trận quyền Project PBAC v2
                 </label>
-                <div className="grid grid-cols-2 gap-2">
-                  {permTypes.map(pt => (
-                    <label key={pt.id}
-                      className={`flex items-center gap-2 p-3 rounded-xl border cursor-pointer transition-all ${
-                        fPermIds.has(pt.id)
-                          ? 'bg-emerald-50 border-emerald-200 dark:bg-emerald-900/20 dark:border-emerald-700'
-                          : 'bg-white border-slate-100 hover:border-slate-200 dark:bg-slate-700 dark:border-slate-600'
-                      }`}>
-                      <input type="checkbox" checked={fPermIds.has(pt.id)} onChange={() => togglePerm(pt.id)}
-                        className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" />
-                      <div>
-                        <div className="text-xs font-bold text-slate-700 dark:text-white">{pt.name}</div>
-                        <div className="text-[9px] text-slate-400">{pt.code}{pt.module ? ` (${pt.module})` : ''}</div>
-                      </div>
-                    </label>
+                <div className="mb-3 flex flex-wrap gap-1.5">
+                  {PROJECT_PERMISSION_TEMPLATES.map(template => (
+                    <button
+                      key={template.key}
+                      type="button"
+                      onClick={() => applyTemplate(template.key)}
+                      className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[10px] font-black text-slate-600 hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700"
+                    >
+                      {template.label}
+                    </button>
                   ))}
+                </div>
+                {fPermIds.size > 0 && (
+                  <div className="mb-3 rounded-lg border border-amber-100 bg-amber-50 px-3 py-2">
+                    <div className="mb-1 text-[10px] font-black uppercase text-amber-700">Legacy/inherited</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {[...fPermIds].map(permissionTypeId => {
+                        const permissionType = permTypes.find(pt => pt.id === permissionTypeId);
+                        if (!permissionType) return null;
+                        return (
+                          <span key={permissionTypeId} className="rounded bg-white px-2 py-1 text-[10px] font-bold text-amber-700 ring-1 ring-amber-100">
+                            {permissionType.code}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+                {grantLoading ? (
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-8 text-center text-xs font-bold text-slate-500">
+                    Đang tải grant mới...
+                  </div>
+                ) : (
+                  <PermissionMatrix
+                    applicationCodes={['project']}
+                    grants={fProjectGrants}
+                    inheritedPermissionCodes={inheritedProjectPermissionCodes}
+                    targetUserId={fUserId || editingStaff?.userId || ''}
+                    scope={projectGrantScope}
+                    onChange={setFProjectGrants}
+                  />
+                )}
+                <div className="mt-3">
+                  <PermissionDiffPreview before={initialProjectGrants} after={fProjectGrants} />
                 </div>
               </div>
             </div>

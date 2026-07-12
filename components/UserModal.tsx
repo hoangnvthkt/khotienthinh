@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { X, User as UserIcon, Mail, Phone, Shield, Building, Save, Package, Briefcase, GitBranch, BarChart3, Landmark, Loader2, Crown, Inbox, LayoutDashboard, MapPin, Users, Calendar, Clock, CalendarOff, DollarSign, FileSignature, FolderOpen, History, ArrowLeftRight, ClipboardCheck, FileSpreadsheet, FileText, Workflow, Layers, Repeat, Wrench, IdCard, CreditCard, Calculator, Bot, BrainCircuit, Copy, ClipboardPaste, Settings as SettingsIcon, ShoppingCart, MessageCircle, BellRing } from 'lucide-react';
-import { Role, User, Warehouse } from '../types';
+import { Role, User, UserPermissionGrant, Warehouse } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { useToast } from '../context/ToastContext';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
@@ -9,6 +9,12 @@ import { PROJECT_MATERIAL_TAB_PERMISSIONS, PROJECT_TAB_PERMISSIONS } from '../li
 import type { ProjectMaterialTabKey, ProjectOverviewTabKey } from '../lib/projectTabPermissions';
 import { getSettingsFeatureToken, SETTINGS_FEATURES, SETTINGS_MODULE_KEY } from '../lib/settingsPermissions';
 import { isChatEnabled } from '../lib/featureFlags';
+import PermissionDiffPreview from './permissions/PermissionDiffPreview';
+import PermissionMatrix from './permissions/PermissionMatrix';
+import PermissionScopePicker from './permissions/PermissionScopePicker';
+import { listUserPermissionGrants, replaceUserPermissionGrants } from '../lib/permissions/permissionAdminService';
+import { getInheritedPermissionCodes } from '../lib/permissions/permissionService';
+import { PermissionScope } from '../lib/permissions/permissionTypes';
 
 const PROJECT_TAB_PERMISSION_ICONS: Record<ProjectOverviewTabKey, any> = {
   executive: LayoutDashboard,
@@ -242,8 +248,29 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
   const [saving, setSaving] = useState(false);
   const [permissionClipboard, setPermissionClipboard] = useState<UserPermissionClipboard | null>(null);
   const [selectedPermissionSourceUserId, setSelectedPermissionSourceUserId] = useState('');
+  const [permissionGrants, setPermissionGrants] = useState<UserPermissionGrant[]>([]);
+  const [originalPermissionGrants, setOriginalPermissionGrants] = useState<UserPermissionGrant[]>([]);
+  const [permissionScope, setPermissionScope] = useState<PermissionScope>({ scopeType: 'global', scopeId: '*' });
 
   useEffect(() => {
+    let cancelled = false;
+    const seedGrants = userToEdit?.permissionGrants || [];
+    setPermissionGrants(seedGrants);
+    setOriginalPermissionGrants(seedGrants);
+    setPermissionScope({ scopeType: 'global', scopeId: '*' });
+
+    if (isOpen && userToEdit?.id && isSupabaseConfigured) {
+      listUserPermissionGrants(userToEdit.id)
+        .then(grants => {
+          if (cancelled) return;
+          setPermissionGrants(grants);
+          setOriginalPermissionGrants(grants);
+        })
+        .catch(error => {
+          console.warn('Unable to load Phase 1 user permission grants:', error?.message || error);
+        });
+    }
+
     if (userToEdit) {
       setFormData({ ...userToEdit, password: '', allowedModules: userToEdit.allowedModules || getLegacyAllowedModules(userToEdit), allowedSubModules: userToEdit.allowedSubModules || {}, adminModules: userToEdit.adminModules || [], adminSubModules: userToEdit.adminSubModules || {} });
     } else {
@@ -264,6 +291,9 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
     setErrors({});
     setPermissionClipboard(readPermissionClipboard());
     setSelectedPermissionSourceUserId('');
+    return () => {
+      cancelled = true;
+    };
   }, [userToEdit, isOpen]);
 
   const hasWmsAccess = formData.role === Role.ADMIN || formData.role === Role.WAREHOUSE_KEEPER || (formData.allowedModules || []).includes('WMS');
@@ -277,6 +307,13 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
       ? 'Admin toàn quyền'
       : `${permissionClipboard.allowedModules.length} module sử dụng, ${permissionClipboard.adminModules.length + countRoutePermissions(permissionClipboard.adminSubModules)} quyền quản trị`
     : '';
+  const inheritedPermissionCodes = useMemo(() => getInheritedPermissionCodes({
+    role: (formData.role || Role.EMPLOYEE) as Role,
+    allowedModules: formData.allowedModules,
+    allowedSubModules: formData.allowedSubModules,
+    adminModules: formData.adminModules,
+    adminSubModules: formData.adminSubModules,
+  } as User), [formData.role, formData.allowedModules, formData.allowedSubModules, formData.adminModules, formData.adminSubModules]);
 
   const buildPermissionClipboard = (source: Partial<User>, sourceName?: string, sourceId?: string): UserPermissionClipboard => ({
     version: 1,
@@ -438,7 +475,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
         }
       }
 
-      const finalUser: User = {
+      const baseUser: User = {
         id: userToEdit?.id || createdAuthUserId || crypto.randomUUID(),
         authId: userToEdit?.authId || createdAuthUserId,
         name: formData.name || '',
@@ -454,8 +491,21 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
         adminModules: formData.role === Role.ADMIN ? [] : (formData.adminModules || []),
         adminSubModules: formData.role === Role.ADMIN ? {} : (formData.adminSubModules || {}),
       };
+      const finalPermissionGrants = formData.role === Role.ADMIN
+        ? []
+        : permissionGrants.map(grant => ({
+          ...grant,
+          userId: baseUser.id,
+          scopeType: grant.scopeType || 'global',
+          scopeId: grant.scopeId || '*',
+          isActive: grant.isActive ?? true,
+        }));
+      const finalUser: User = { ...baseUser, permissionGrants: finalPermissionGrants };
 
       await onSave(finalUser);
+      if (isSupabaseConfigured) {
+        await replaceUserPermissionGrants(finalUser.id, finalPermissionGrants);
+      }
 
       if (!userToEdit) {
         toast.success('Đã thêm tài khoản hệ thống', 'Tài khoản đăng nhập đã được tạo tự động.');
@@ -477,7 +527,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-      <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden animate-in zoom-in duration-300 max-h-[90vh] flex flex-col">
+      <div className="bg-white rounded-2xl w-full max-w-5xl shadow-2xl overflow-hidden animate-in zoom-in duration-300 max-h-[90vh] flex flex-col">
         <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50 shrink-0">
           <h3 className="font-bold text-lg text-slate-800">
             {userToEdit ? 'Cập nhật tài khoản hệ thống' : 'Thêm tài khoản hệ thống'}
@@ -915,6 +965,23 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
                   );
                 })}
               </div>
+            </div>
+          )}
+
+          {formData.role !== Role.ADMIN && (
+            <div className="space-y-3">
+              <label className="text-xs font-bold text-blue-700 uppercase flex items-center">
+                <Shield size={12} className="mr-1" /> Nền tảng quyền mới
+              </label>
+              <PermissionScopePicker value={permissionScope} onChange={setPermissionScope} />
+              <PermissionMatrix
+                grants={permissionGrants}
+                inheritedPermissionCodes={inheritedPermissionCodes}
+                targetUserId={userToEdit?.id}
+                scope={permissionScope}
+                onChange={setPermissionGrants}
+              />
+              <PermissionDiffPreview before={originalPermissionGrants} after={permissionGrants} />
             </div>
           )}
 

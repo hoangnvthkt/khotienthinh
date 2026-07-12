@@ -74,6 +74,19 @@ export interface User {
   adminSubModules?: Record<string, string[]>; // Module key -> danh sách route sub-app có quyền CRUD (VD: { "HRM": ["/hrm/employees"] })
   signatureUrl?: string; // URL ảnh chữ ký số
   isActive?: boolean;
+  permissionGrants?: UserPermissionGrant[]; // Phase 1 permission framework grants
+}
+
+export interface UserPermissionGrant {
+  id?: string;
+  userId: string;
+  permissionCode: string;
+  scopeType: 'global' | 'own' | 'assigned' | 'project' | 'construction_site' | 'warehouse' | 'department';
+  scopeId: string;
+  isActive?: boolean;
+  grantedBy?: string;
+  grantedAt?: string;
+  expiresAt?: string;
 }
 
 export interface Warehouse {

@@ -5,6 +5,7 @@ import {
     type ProjectMaterialTabKey,
     type ProjectMaterialTabPermissionMap,
 } from '../../../lib/projectTabPermissions';
+import { canPerformProjectAction } from '../../../lib/permissions/projectPermissionService';
 import { projectStaffService } from '../../../lib/projectStaffService';
 
 export interface ProjectMaterialAccessState {
@@ -40,6 +41,10 @@ export const useProjectMaterialAccess = ({
     constructionSiteId,
     user,
 }: UseProjectMaterialAccessOptions): ProjectMaterialAccessState => {
+    const projectScope = useMemo(
+        () => ({ projectId, constructionSiteId }),
+        [constructionSiteId, projectId],
+    );
     const materialAccess = useMemo<ProjectMaterialTabPermissionMap>(() => {
         const hasScopedPermissions = Boolean(materialPermissions);
         return PROJECT_MATERIAL_TAB_PERMISSIONS.reduce<ProjectMaterialTabPermissionMap>((acc, tab) => {
@@ -68,7 +73,9 @@ export const useProjectMaterialAccess = ({
         let cancelled = false;
         const loadBoqPermissions = async () => {
             setBoqPbacLoaded(false);
-            if (user.role === Role.ADMIN || canManageBoq) {
+            const canEditByGrant = canPerformProjectAction(user, 'project.material_boq.edit', projectScope);
+            const canDeleteByGrant = canPerformProjectAction(user, 'project.material_boq.delete', projectScope);
+            if (user.role === Role.ADMIN || canManageBoq || (canEditByGrant && canDeleteByGrant)) {
                 if (!cancelled) {
                     setCanEditProjectBoq(true);
                     setCanDeleteProjectBoq(true);
@@ -99,8 +106,8 @@ export const useProjectMaterialAccess = ({
                             : Promise.resolve({ allowed: false }),
                 ]);
                 if (!cancelled) {
-                    setCanEditProjectBoq(editPerm.allowed);
-                    setCanDeleteProjectBoq(deletePerm.allowed);
+                    setCanEditProjectBoq(canEditByGrant || editPerm.allowed);
+                    setCanDeleteProjectBoq(canDeleteByGrant || deletePerm.allowed);
                 }
             } catch (error) {
                 console.warn('Failed to check project BOQ permissions', error);
@@ -114,12 +121,15 @@ export const useProjectMaterialAccess = ({
         };
         void loadBoqPermissions();
         return () => { cancelled = true; };
-    }, [canManageBoq, constructionSiteId, projectId, user.id, user.role]);
+    }, [canManageBoq, constructionSiteId, projectId, projectScope, user]);
 
     useEffect(() => {
         let cancelled = false;
         const loadProjectRequestPermissions = async () => {
-            if (user.role === Role.ADMIN || canManageRequest) {
+            const canSubmitByGrant = canPerformProjectAction(user, 'project.material_request.submit', projectScope);
+            const canApproveByGrant = canPerformProjectAction(user, 'project.material_request.approve', projectScope);
+            const canViewStockByGrant = canPerformProjectAction(user, 'project.material_request.view_available_stock', projectScope);
+            if (user.role === Role.ADMIN || canManageRequest || (canSubmitByGrant && canApproveByGrant && canViewStockByGrant)) {
                 if (!cancelled) {
                     setCanSubmitProjectRequest(true);
                     setCanApproveProjectRequest(true);
@@ -147,9 +157,9 @@ export const useProjectMaterialAccess = ({
                     checkPermission('view_available_stock'),
                 ]);
                 if (!cancelled) {
-                    setCanSubmitProjectRequest(submitPerm.allowed);
-                    setCanApproveProjectRequest(approvePerm.allowed);
-                    setCanViewAvailableStock(availableStockPerm.allowed);
+                    setCanSubmitProjectRequest(canSubmitByGrant || submitPerm.allowed);
+                    setCanApproveProjectRequest(canApproveByGrant || approvePerm.allowed);
+                    setCanViewAvailableStock(canViewStockByGrant || availableStockPerm.allowed);
                 }
             } catch (error) {
                 console.warn('Failed to check project material request permissions', error);
@@ -162,7 +172,7 @@ export const useProjectMaterialAccess = ({
         };
         void loadProjectRequestPermissions();
         return () => { cancelled = true; };
-    }, [canManageRequest, constructionSiteId, projectId, user.id, user.role]);
+    }, [canManageRequest, constructionSiteId, projectId, projectScope, user]);
 
     const visibleMaterialTabs = useMemo(
         () => PROJECT_MATERIAL_TAB_PERMISSIONS.filter(tab => materialAccess[tab.key as ProjectMaterialTabKey].canView),

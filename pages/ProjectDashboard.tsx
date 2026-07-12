@@ -38,17 +38,19 @@ import { getApiErrorMessage, logApiError } from '../lib/apiError';
 import {
     PROJECT_TAB_PERMISSIONS,
     PROJECT_MATERIAL_TAB_PERMISSIONS,
-    PROJECT_MATERIAL_TAB_ROUTE_BY_KEY,
     PROJECT_FINANCE_LEGACY_TAB_KEYS,
     PROJECT_TAB_ROUTE_BY_KEY,
-    LEGACY_PROJECT_SUPPLY_ROUTE,
-    hasProjectMaterialTabPermissionRoute,
-    hasProjectTabPermissionRoute,
     isProjectFinanceLegacyTabKey,
     isProjectOverviewTabKey,
     type ProjectMaterialTabPermissionMap,
     type ProjectOverviewTabKey,
 } from '../lib/projectTabPermissions';
+import {
+    canManageProjectMaterialTab as canManageProjectMaterialTabV2,
+    canManageProjectTab as canManageProjectTabV2,
+    canViewProjectMaterialTab as canViewProjectMaterialTabV2,
+    canViewProjectTab as canViewProjectTabV2,
+} from '../lib/permissions/projectPermissionService';
 import type { ProjectFinanceWorkspaceTab } from '../lib/projectFinanceWorkspaceService';
 import {
     BarChart3, TrendingUp, TrendingDown, DollarSign, Target, Percent,
@@ -438,64 +440,36 @@ const ProjectDashboard: React.FC = () => {
     const [quickCategoryForm, setQuickCategoryForm] = useState({ code: '', name: '', description: '' });
     const [activeSelectPopover, setActiveSelectPopover] = useState<{ field: string; type: 'user' | 'group' } | null>(null);
 
-    const canViewProjectTab = useCallback((tabKey: ProjectOverviewTabKey) => {
-        if (user.role === Role.ADMIN) return true;
-        if (user.allowedModules !== undefined && !user.allowedModules.includes('DA')) return false;
+    const projectPermissionScope = useMemo(
+        () => ({
+            projectId: selectedProjectId || undefined,
+            constructionSiteId: selectedSiteId || undefined,
+        }),
+        [selectedProjectId, selectedSiteId],
+    );
 
-        const hasDaSubModuleRestriction = Object.prototype.hasOwnProperty.call(user.allowedSubModules || {}, 'DA');
-        const allowedRoutes = user.allowedSubModules?.DA || [];
-        if (!hasDaSubModuleRestriction) return true;
-        if (allowedRoutes.length === 0) return false;
+    const canViewProjectTab = useCallback((tabKey: ProjectOverviewTabKey) =>
+        canViewProjectTabV2(user, tabKey, projectPermissionScope),
+        [projectPermissionScope, user],
+    );
 
-        const hasExplicitTabRoutes = hasProjectTabPermissionRoute(allowedRoutes);
-        if (!hasExplicitTabRoutes && allowedRoutes.includes('/da')) return true;
-        if (tabKey === 'material' && allowedRoutes.includes(LEGACY_PROJECT_SUPPLY_ROUTE)) return true;
-        if (tabKey === 'material' && (
-            hasProjectMaterialTabPermissionRoute(allowedRoutes) ||
-            hasProjectMaterialTabPermissionRoute(user.adminSubModules?.DA)
-        )) return true;
-        if (tabKey === 'finance') {
-            return [tabKey, ...PROJECT_FINANCE_LEGACY_TAB_KEYS].some(key => allowedRoutes.includes(PROJECT_TAB_ROUTE_BY_KEY[key]));
-        }
-        if (isProjectFinanceLegacyTabKey(tabKey) && allowedRoutes.includes(PROJECT_TAB_ROUTE_BY_KEY.finance)) return true;
-
-        return allowedRoutes.includes(PROJECT_TAB_ROUTE_BY_KEY[tabKey]);
-    }, [user.adminSubModules, user.allowedModules, user.allowedSubModules, user.role]);
-
-    const canManageProjectTab = useCallback((tabKey: ProjectOverviewTabKey) => {
-        if (user.role === Role.ADMIN) return true;
-        if ((user.adminModules || []).includes('DA')) return true;
-        const adminRoutes = user.adminSubModules?.DA || [];
-        if (tabKey === 'material' && user.adminSubModules?.DA?.includes(LEGACY_PROJECT_SUPPLY_ROUTE)) return true;
-        if (tabKey === 'finance') {
-            return [tabKey, ...PROJECT_FINANCE_LEGACY_TAB_KEYS].some(key => adminRoutes.includes(PROJECT_TAB_ROUTE_BY_KEY[key]));
-        }
-        if (isProjectFinanceLegacyTabKey(tabKey) && adminRoutes.includes(PROJECT_TAB_ROUTE_BY_KEY.finance)) return true;
-        return Boolean(adminRoutes.includes(PROJECT_TAB_ROUTE_BY_KEY[tabKey]));
-    }, [user.adminModules, user.adminSubModules, user.role]);
+    const canManageProjectTab = useCallback((tabKey: ProjectOverviewTabKey) =>
+        canManageProjectTabV2(user, tabKey, projectPermissionScope),
+        [projectPermissionScope, user],
+    );
 
     const materialTabPermissions = useMemo<ProjectMaterialTabPermissionMap>(() => {
-        const allowedRoutes = user.allowedSubModules?.DA || [];
-        const adminRoutes = user.adminSubModules?.DA || [];
-        const hasDaSubModuleRestriction = Object.prototype.hasOwnProperty.call(user.allowedSubModules || {}, 'DA');
         const canManageAllMaterial = canManageProjectTab('material');
-        const canViewAllMaterial = canManageAllMaterial
-            || user.role === Role.ADMIN
-            || !hasDaSubModuleRestriction
-            || (!hasProjectTabPermissionRoute(allowedRoutes) && allowedRoutes.includes('/da'))
-            || allowedRoutes.includes(PROJECT_TAB_ROUTE_BY_KEY.material)
-            || allowedRoutes.includes(LEGACY_PROJECT_SUPPLY_ROUTE);
 
         return PROJECT_MATERIAL_TAB_PERMISSIONS.reduce<ProjectMaterialTabPermissionMap>((acc, tab) => {
-            const route = PROJECT_MATERIAL_TAB_ROUTE_BY_KEY[tab.key];
-            const canManage = canManageAllMaterial || adminRoutes.includes(route);
+            const canManage = canManageAllMaterial || canManageProjectMaterialTabV2(user, tab.key, projectPermissionScope);
             acc[tab.key] = {
-                canView: canViewAllMaterial || canManage || allowedRoutes.includes(route),
+                canView: canManage || canViewProjectMaterialTabV2(user, tab.key, projectPermissionScope),
                 canManage,
             };
             return acc;
         }, {} as ProjectMaterialTabPermissionMap);
-    }, [canManageProjectTab, user.adminSubModules, user.allowedSubModules, user.role]);
+    }, [canManageProjectTab, projectPermissionScope, user]);
 
     const visibleOverviewTabs = useMemo(
         () => PROJECT_TAB_PERMISSIONS.filter(tab => !isProjectFinanceLegacyTabKey(tab.key) && canViewProjectTab(tab.key)),
