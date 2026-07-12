@@ -1,5 +1,4 @@
 import type { DailyLog, DailyLogVolume } from '../types';
-import type { ProjectPermissionCode } from './projectStaffService';
 
 export const DAILY_SUMMARY_SOURCE_TYPE = 'member_contributions';
 
@@ -147,10 +146,10 @@ interface CanReturnDailyLogSourceInput {
   sourceSummaryLog?: DailyLog | null;
   userId?: string | null;
   isAdmin: boolean;
-  permissions: Iterable<ProjectPermissionCode>;
+  permissions: Iterable<string>;
 }
 
-const hasPermission = (permissions: Iterable<ProjectPermissionCode>, code: ProjectPermissionCode): boolean =>
+const hasPermission = (permissions: Iterable<string>, code: string): boolean =>
   new Set(permissions).has(code);
 
 export const canReturnDailyLogSource = ({
@@ -162,10 +161,7 @@ export const canReturnDailyLogSource = ({
 }: CanReturnDailyLogSourceInput): boolean => {
   if (getDailyLogWorkflowStatus(sourceLog) !== 'submitted') return false;
 
-  const reviewPermission: ProjectPermissionCode = sourceLog.submittedToPermission === 'approve'
-    ? 'approve'
-    : 'verify';
-  if (!isAdmin && !hasPermission(permissions, reviewPermission)) return false;
+  if (!isAdmin && !hasPermission(permissions, 'project.daily_log.return')) return false;
 
   if (!isAdmin) {
     if (sourceLog.submittedToUserId && sourceLog.submittedToUserId !== userId) return false;

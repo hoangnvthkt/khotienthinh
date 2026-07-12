@@ -364,37 +364,6 @@ export const dailyLogService = {
         rejectionReason?: string | null;
         actorUserId?: string | null;
     }): Promise<void> {
-        if (input.status === 'rejected') {
-            const { data: current, error: currentError } = await supabase
-                .from('daily_logs')
-                .select('status, created_by_id, submitted_by_id, submitted_by')
-                .eq('id', input.logId)
-                .single();
-            if (currentError) throw currentError;
-            if (current?.status === 'verified') {
-                if (!input.rejectionReason?.trim()) {
-                    throw new Error('Vui lòng nhập lý do trả lại nhật ký.');
-                }
-                const { error: updateError } = await supabase
-                    .from('daily_logs')
-                    .update({
-                        status: 'rejected',
-                        verified: false,
-                        rejected_by: input.actorUserId || null,
-                        rejected_by_id: input.actorUserId || null,
-                        rejected_at: new Date().toISOString(),
-                        rejection_reason: input.rejectionReason,
-                        submitted_to_user_id: current.created_by_id || current.submitted_by_id || current.submitted_by || null,
-                        submitted_to_permission: 'edit',
-                        submission_note: input.rejectionReason,
-                        last_action_by: input.actorUserId || null,
-                        last_action_at: new Date().toISOString(),
-                    })
-                    .eq('id', input.logId);
-                if (updateError) throw updateError;
-                return;
-            }
-        }
         const { error } = await supabase.rpc('transition_daily_log_status', {
             p_log_id: input.logId,
             p_status: input.status,

@@ -3,6 +3,7 @@ import { fromDb, toDb } from './dbMapping';
 import { isSupabaseConfigured, supabase } from './supabase';
 
 type CategoryTable = 'project_groups' | 'project_types' | 'project_sectors';
+type CategoryKind = 'group' | 'type' | 'sector';
 
 type CategoryInput = {
   code?: string;
@@ -61,6 +62,12 @@ const mapCategory = <T extends ProjectMasterCategory>(row: any): T => ({
   isActive: row.is_active ?? row.isActive ?? true,
 }) as T;
 
+const categoryKindByTable: Record<CategoryTable, CategoryKind> = {
+  project_groups: 'group',
+  project_types: 'type',
+  project_sectors: 'sector',
+};
+
 const listCategories = async <T extends ProjectMasterCategory>(table: CategoryTable, fallback: T[]): Promise<T[]> => {
   if (!isSupabaseConfigured) return fallback;
   const { data, error } = await supabase
@@ -93,11 +100,10 @@ const createCategory = async <T extends ProjectMasterCategory>(table: CategoryTa
     } as T;
   }
 
-  const { data, error } = await supabase
-    .from(table)
-    .insert(cleanUndefined(toDb(item)))
-    .select('*')
-    .single();
+  const { data, error } = await supabase.rpc('upsert_project_category', {
+    p_category_kind: categoryKindByTable[table],
+    p_category: cleanUndefined(toDb(item)),
+  });
   if (error) throw error;
   return mapCategory<T>(data);
 };
@@ -105,31 +111,36 @@ const createCategory = async <T extends ProjectMasterCategory>(table: CategoryTa
 const updateCategory = async <T extends ProjectMasterCategory>(table: CategoryTable, item: T): Promise<T> => {
   if (!isSupabaseConfigured) return { ...item, updatedAt: new Date().toISOString() };
   const payload = cleanUndefined(toDb({
+    id: item.id,
     code: item.code?.trim() || normalizeCode(item.name),
     name: item.name.trim(),
     description: item.description?.trim() || null,
     sortOrder: item.sortOrder ?? 0,
     isActive: item.isActive,
   }));
-  const { data, error } = await supabase
-    .from(table)
-    .update(payload)
-    .eq('id', item.id)
-    .select('*')
-    .single();
+  const { data, error } = await supabase.rpc('upsert_project_category', {
+    p_category_kind: categoryKindByTable[table],
+    p_category: payload,
+  });
   if (error) throw error;
   return mapCategory<T>(data);
 };
 
 const archiveCategory = async (table: CategoryTable, id: string): Promise<void> => {
   if (!isSupabaseConfigured) return;
-  const { error } = await supabase.from(table).update({ is_active: false }).eq('id', id);
+  const { error } = await supabase.rpc('upsert_project_category', {
+    p_category_kind: categoryKindByTable[table],
+    p_category: { id, is_active: false },
+  });
   if (error) throw error;
 };
 
 const removeCategory = async (table: CategoryTable, id: string): Promise<void> => {
   if (!isSupabaseConfigured) return;
-  const { error } = await supabase.from(table).delete().eq('id', id);
+  const { error } = await supabase.rpc('delete_project_category', {
+    p_category_kind: categoryKindByTable[table],
+    p_category_id: id,
+  });
   if (error) throw error;
 };
 

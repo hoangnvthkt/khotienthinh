@@ -1,3 +1,5 @@
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { join, relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   getAllPermissionActions,
@@ -11,6 +13,21 @@ import {
   PROJECT_MATERIAL_TAB_PERMISSIONS,
   PROJECT_TAB_PERMISSIONS,
 } from '../projectTabPermissions';
+
+const scanFiles = (dir: string): string[] => {
+  const files: string[] = [];
+  for (const entry of readdirSync(dir)) {
+    const path = join(dir, entry);
+    const stat = statSync(path);
+    if (stat.isDirectory()) {
+      if (entry === '__tests__') continue;
+      files.push(...scanFiles(path));
+      continue;
+    }
+    if (/\.(ts|tsx)$/.test(entry)) files.push(path);
+  }
+  return files;
+};
 
 describe('permissionRegistry', () => {
   it('defines unique permission codes and module codes', () => {
@@ -78,6 +95,59 @@ describe('permissionRegistry', () => {
     ]));
   });
 
+  it('seeds the Phase 3 Project submodule permission surface', () => {
+    const moduleCodes = getPermissionModules().map(module => module.code);
+    const actionCodes = getAllPermissionActions().map(action => action.permissionCode);
+
+    expect(moduleCodes).toEqual(expect.arrayContaining([
+      'project.master',
+      'project.material_waste',
+      'project.contract_item',
+      'project.contract_variation',
+      'project.dashboard',
+    ]));
+
+    expect(actionCodes).toEqual(expect.arrayContaining([
+      'project.master.view',
+      'project.master.create',
+      'project.master.edit',
+      'project.master.hide',
+      'project.master.restore',
+      'project.master.manage_categories',
+      'project.daily_log.summarize',
+      'project.material_waste.record',
+      'project.material_waste.approve',
+      'project.contract_item.view',
+      'project.contract_item.edit',
+      'project.contract_variation.create',
+      'project.contract_variation.submit',
+      'project.contract_variation.verify',
+      'project.contract_variation.approve',
+      'project.gantt.create_task',
+      'project.gantt.edit_task',
+      'project.gantt.assign_task',
+      'project.gantt.submit_completion',
+      'project.gantt.verify_completion',
+      'project.weekly_progress.lock',
+      'project.quality.template_manage',
+      'project.quality.checklist_create',
+      'project.quality.checklist_edit_own',
+      'project.quality.checklist_edit_all',
+      'project.quality.delete',
+      'project.safety.worker_manage',
+      'project.safety.issue_close',
+      'project.safety.training_manage',
+      'project.safety.document_verify',
+      'project.documents.edit_metadata',
+      'project.documents.delete_own',
+      'project.documents.delete_all',
+      'project.documents.approve',
+      'project.dashboard.view_financials',
+      'project.dashboard.view_progress',
+      'project.dashboard.view_risk',
+    ]));
+  });
+
   it('maps every Project tab route to a project view permission', () => {
     const projectRoutes = [
       ...PROJECT_TAB_PERMISSIONS.map(tab => tab.route),
@@ -116,6 +186,66 @@ describe('permissionRegistry', () => {
 
     expect(routes.length).toBeGreaterThan(20);
     expect(new Set(routes).size).toBe(routes.length);
+  });
+
+  it('tracks the remaining legacy generic Project permission consumers during Phase 3 rollout', () => {
+    const allowedLegacyConsumers = new Set([
+      'components/project/BoqReconciliationPanel.tsx',
+      'components/project/ContractItemTable.tsx',
+      'components/project/ContractPaymentSchedulePanel.tsx',
+      'components/project/ContractVariationPanel.tsx',
+      'components/project/PaymentCertificatePanel.tsx',
+      'components/project/ProjectSubmissionDialog.tsx',
+      'components/project/QuantityAcceptancePanel.tsx',
+      'lib/approvalService.ts',
+      'lib/notificationAlertRules.ts',
+      'lib/permissions/projectPermissionService.ts',
+      'lib/projectStaffService.ts',
+      'pages/project/GanttTab.tsx',
+      'pages/project/PaymentWorkbenchTab.tsx',
+      'pages/project/ProjectOrgTab.tsx',
+      'pages/project/QualityTab.tsx',
+      'pages/settings/SettingsAlerts.tsx',
+    ]);
+    const legacyPattern = /ProjectPermissionCode|requireProjectPermission\(|checkPermission\(/;
+    const scannedRoots = ['components', 'lib', 'pages'];
+    const actualLegacyConsumers = scannedRoots
+      .flatMap(root => scanFiles(join(process.cwd(), root)))
+      .filter(file => legacyPattern.test(readFileSync(file, 'utf8')))
+      .map(file => relative(process.cwd(), file))
+      .sort();
+
+    expect(actualLegacyConsumers).toEqual([...allowedLegacyConsumers].sort());
+  });
+
+  it('keeps Daily Log on explicit project.daily_log actions after Phase 3.2', () => {
+    const dailyLogSource = readFileSync(join(process.cwd(), 'pages/project/DailyLogTab.tsx'), 'utf8');
+
+    expect(dailyLogSource).not.toContain('ProjectPermissionCode');
+    expect(dailyLogSource).not.toContain('checkPermission(');
+    expect(dailyLogSource).not.toContain('checkProjectPermission(');
+    expect(dailyLogSource).not.toContain('requireProjectPermission(');
+    expect(dailyLogSource).toContain('project.daily_log.summarize');
+  });
+
+  it('keeps Project Org permissions on the scoped matrix instead of legacy quick toggles', () => {
+    const projectOrgSource = readFileSync(join(process.cwd(), 'pages/project/ProjectOrgTab.tsx'), 'utf8');
+
+    expect(projectOrgSource).not.toContain('handleQuickTogglePerm');
+    expect(projectOrgSource).not.toContain('togglePerm');
+    expect(projectOrgSource).not.toContain('PROJECT_PERMISSION_TEMPLATES =');
+    expect(projectOrgSource).toContain('PermissionMatrix');
+    expect(projectOrgSource).toContain('canAssignStaff');
+    expect(projectOrgSource).toContain('canGrantPermissions');
+  });
+
+  it('seeds new project staff with scoped Project PBAC grants, not legacy permission type ids', () => {
+    const projectDashboardSource = readFileSync(join(process.cwd(), 'pages/ProjectDashboard.tsx'), 'utf8');
+
+    expect(projectDashboardSource).not.toContain('projectPermissionTypeService');
+    expect(projectDashboardSource).toContain('getProjectPermissionTemplateCodes');
+    expect(projectDashboardSource).toContain('replaceProjectStaffPermissionGrants');
+    expect(projectDashboardSource).toContain('permissionTypeIds: []');
   });
 
   it('exports immutable application definitions', () => {

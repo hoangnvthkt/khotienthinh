@@ -10,6 +10,7 @@ interface PermissionMatrixProps {
   applicationCodes?: readonly string[];
   targetUserId?: string;
   scope: PermissionScope;
+  disabled?: boolean;
   onChange: (grants: UserPermissionGrant[]) => void;
 }
 
@@ -22,6 +23,7 @@ const PermissionMatrix: React.FC<PermissionMatrixProps> = ({
   applicationCodes,
   targetUserId = '',
   scope,
+  disabled = false,
   onChange,
 }) => {
   const visibleApplications = useMemo(() => {
@@ -37,6 +39,7 @@ const PermissionMatrix: React.FC<PermissionMatrixProps> = ({
   const inheritedCodes = useMemo(() => new Set(inheritedPermissionCodes), [inheritedPermissionCodes]);
 
   const toggleGrant = (permissionCode: string, checked: boolean) => {
+    if (disabled) return;
     const currentKey = grantKey(permissionCode, scope);
     if (!checked) {
       onChange(grants.filter(grant =>
@@ -91,6 +94,7 @@ const PermissionMatrix: React.FC<PermissionMatrixProps> = ({
                         <input
                           type="checkbox"
                           checked={checked}
+                          disabled={disabled}
                           onChange={event => toggleGrant(action.permissionCode, event.target.checked)}
                           className="h-3.5 w-3.5 shrink-0 rounded accent-blue-600"
                         />

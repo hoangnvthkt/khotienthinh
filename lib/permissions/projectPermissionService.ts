@@ -101,6 +101,18 @@ export const canPerformProjectAction = (
   return hasExplicitProjectGrant(user, permissionCode, getProjectScope(scopeInput.projectId, scopeInput.constructionSiteId));
 };
 
+export const checkProjectAction = canPerformProjectAction;
+
+export const requireProjectAction = (
+  user: ProjectPermissionUser,
+  permissionCode: string,
+  scopeInput: { projectId?: string; constructionSiteId?: string | null },
+  actionLabel = 'thực hiện thao tác này',
+): void => {
+  if (checkProjectAction(user, permissionCode, scopeInput)) return;
+  throw new Error(`Bạn cần quyền "${permissionCode}" để ${actionLabel}.`);
+};
+
 const canOpenLegacyProjectRoute = (
   user: ProjectPermissionUser,
   route: string,

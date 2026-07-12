@@ -18,6 +18,7 @@ import {
     ProjectDeleteImpact,
     Role,
     CustomerContract,
+    UserPermissionGrant,
 } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { loadXlsx } from '../lib/loadXlsx';
@@ -31,7 +32,7 @@ import { taskService } from '../lib/projectService';
 import { calculateProjectProgress } from '../lib/projectScheduleRules';
 import { projectMasterService, type ProjectListSortKey } from '../lib/projectMasterService';
 import { projectMasterDataService } from '../lib/projectMasterDataService';
-import { projectPermissionTypeService, projectStaffService } from '../lib/projectStaffService';
+import { projectStaffService } from '../lib/projectStaffService';
 import { workGroupService } from '../lib/workGroupService';
 import { customerContractService } from '../lib/hdService';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
@@ -51,6 +52,7 @@ import {
     canViewProjectMaterialTab as canViewProjectMaterialTabV2,
     canViewProjectTab as canViewProjectTabV2,
 } from '../lib/permissions/projectPermissionService';
+import { getProjectPermissionTemplateCodes, type ProjectPermissionTemplateKey } from '../lib/permissions/projectPermissionTemplates';
 import type { ProjectFinanceWorkspaceTab } from '../lib/projectFinanceWorkspaceService';
 import {
     BarChart3, TrendingUp, TrendingDown, DollarSign, Target, Percent,
@@ -86,6 +88,36 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }
     paused: { label: 'Tạm dừng', color: 'text-amber-600', bg: 'bg-amber-50 border-amber-200' },
     completed: { label: 'Hoàn thành', color: 'text-violet-600', bg: 'bg-violet-50 border-violet-200' },
     cancelled: { label: 'Đã huỷ', color: 'text-slate-500', bg: 'bg-slate-50 border-slate-200' },
+};
+
+type SeedProjectRole = 'admin' | 'executor' | 'watcher';
+
+const seedProjectRoleTemplates: Record<SeedProjectRole, ProjectPermissionTemplateKey[]> = {
+    admin: ['project_manager', 'access_admin'],
+    executor: ['field_engineer'],
+    watcher: ['viewer'],
+};
+
+const getSeedProjectRoleGrantCodes = (role: SeedProjectRole): string[] =>
+    [...new Set(seedProjectRoleTemplates[role].flatMap(templateKey => getProjectPermissionTemplateCodes(templateKey)))];
+
+const buildSeedProjectRoleGrants = (
+    targetUserId: string,
+    role: SeedProjectRole,
+    project: Project,
+    grantedBy?: string,
+): UserPermissionGrant[] => {
+    const scopeType: UserPermissionGrant['scopeType'] = project.constructionSiteId ? 'construction_site' : 'project';
+    const scopeId = project.constructionSiteId || project.id;
+
+    return getSeedProjectRoleGrantCodes(role).map(permissionCode => ({
+        userId: targetUserId,
+        permissionCode,
+        scopeType,
+        scopeId,
+        isActive: true,
+        grantedBy,
+    }));
 };
 
 const PROJECT_LIST_PAGE_SIZE = 10;
@@ -1053,9 +1085,9 @@ const ProjectDashboard: React.FC = () => {
     const selectedProjectType = () => projectForm.projectTypeId ? projectTypeMap.get(projectForm.projectTypeId) : undefined;
 
     const seedProjectStaff = async (project: Project) => {
-        const roleRank: Record<'admin' | 'executor' | 'watcher', number> = { watcher: 1, executor: 2, admin: 3 };
-        const userRoles = new Map<string, 'admin' | 'executor' | 'watcher'>();
-        const mergeRole = (userId: string, role: 'admin' | 'executor' | 'watcher') => {
+        const roleRank: Record<SeedProjectRole, number> = { watcher: 1, executor: 2, admin: 3 };
+        const userRoles = new Map<string, SeedProjectRole>();
+        const mergeRole = (userId: string, role: SeedProjectRole) => {
             if (!userId) return;
             const current = userRoles.get(userId);
             if (!current || roleRank[role] > roleRank[current]) userRoles.set(userId, role);
@@ -1073,28 +1105,24 @@ const ProjectDashboard: React.FC = () => {
             throw new Error(`Các thành viên chưa có chức danh HRM: ${names}. Vui lòng chọn vị trí mặc định trong "Thông tin khác".`);
         }
 
-        const permissionTypes = await projectPermissionTypeService.list();
-        const permissionIdByCode = new Map(permissionTypes.map(permission => [permission.code, permission.id]));
-        const codeSets: Record<'admin' | 'executor' | 'watcher', string[]> = {
-            admin: ['view', 'edit', 'submit', 'verify', 'confirm', 'approve'],
-            executor: ['view', 'edit', 'submit'],
-            watcher: ['view'],
-        };
-
         for (const [userId, role] of userRoles.entries()) {
-            const permissionTypeIds = codeSets[role].map(code => permissionIdByCode.get(code)).filter(Boolean) as string[];
-            if (permissionTypeIds.length === 0) throw new Error('Chưa có dữ liệu quyền PBAC. Vui lòng kiểm tra migration project_permission_types.');
-            await projectStaffService.add({
+            const staffId = await projectStaffService.add({
                 projectId: project.id,
                 constructionSiteId: project.constructionSiteId || null,
                 userId,
                 positionId: employeeByUserId.get(userId)?.positionId || projectForm.defaultPositionId,
-                permissionTypeIds,
+                permissionTypeIds: [],
                 startDate: project.startDate || new Date().toISOString().slice(0, 10),
                 note: role === 'admin' ? 'Seed từ form tạo dự án: Quản trị dự án' : role === 'executor' ? 'Seed từ form tạo dự án: Thực hiện dự án' : 'Seed từ form tạo dự án: Người theo dõi',
                 grantedBy: user.id,
                 operatorName: user.name || user.username,
             });
+            await projectStaffService.replaceProjectStaffPermissionGrants(
+                staffId,
+                buildSeedProjectRoleGrants(userId, role, project, user.id),
+                user.id,
+                user.name || user.username,
+            );
         }
     };
 
@@ -1107,9 +1135,9 @@ const ProjectDashboard: React.FC = () => {
         String(value || '').split(/[;,]/).map(item => item.trim()).filter(Boolean);
 
     const seedImportedProjectStaff = async (project: Project, record: ProjectImportRecord) => {
-        const roleRank: Record<'admin' | 'executor' | 'watcher', number> = { watcher: 1, executor: 2, admin: 3 };
-        const userRoles = new Map<string, 'admin' | 'executor' | 'watcher'>();
-        const mergeRole = (rawValue: string, role: 'admin' | 'executor' | 'watcher') => {
+        const roleRank: Record<SeedProjectRole, number> = { watcher: 1, executor: 2, admin: 3 };
+        const userRoles = new Map<string, SeedProjectRole>();
+        const mergeRole = (rawValue: string, role: SeedProjectRole) => {
             const matchedUser = findImportUser(rawValue);
             if (!matchedUser) throw new Error(`Không tìm thấy user "${rawValue}" khi seed nhân sự dự án ${project.code}.`);
             const current = userRoles.get(matchedUser.id);
@@ -1121,33 +1149,29 @@ const ProjectDashboard: React.FC = () => {
         splitImportValues(record.adminImportUsers).forEach(value => mergeRole(value, 'admin'));
         if (userRoles.size === 0) return;
 
-        const permissionTypes = await projectPermissionTypeService.list();
-        const permissionIdByCode = new Map(permissionTypes.map(permission => [permission.code, permission.id]));
-        const codeSets: Record<'admin' | 'executor' | 'watcher', string[]> = {
-            admin: ['view', 'edit', 'submit', 'verify', 'confirm', 'approve'],
-            executor: ['view', 'edit', 'submit'],
-            watcher: ['view'],
-        };
-
         for (const [userId, role] of userRoles.entries()) {
             const positionId = employeeByUserId.get(userId)?.positionId || record.defaultPositionImportId;
             if (!positionId) {
                 const displayName = users.find(u => u.id === userId)?.name || users.find(u => u.id === userId)?.email || userId;
                 throw new Error(`User ${displayName} chưa có chức danh HRM. Vui lòng nhập cột "Vị trí mặc định".`);
             }
-            const permissionTypeIds = codeSets[role].map(code => permissionIdByCode.get(code)).filter(Boolean) as string[];
-            if (permissionTypeIds.length === 0) throw new Error('Chưa có dữ liệu quyền PBAC. Vui lòng kiểm tra migration project_permission_types.');
-            await projectStaffService.add({
+            const staffId = await projectStaffService.add({
                 projectId: project.id,
                 constructionSiteId: project.constructionSiteId || null,
                 userId,
                 positionId,
-                permissionTypeIds,
+                permissionTypeIds: [],
                 startDate: project.startDate || new Date().toISOString().slice(0, 10),
                 note: `Seed từ import Excel dự án: ${role}`,
                 grantedBy: user.id,
                 operatorName: user.name || user.username,
             });
+            await projectStaffService.replaceProjectStaffPermissionGrants(
+                staffId,
+                buildSeedProjectRoleGrants(userId, role, project, user.id),
+                user.id,
+                user.name || user.username,
+            );
         }
     };
 

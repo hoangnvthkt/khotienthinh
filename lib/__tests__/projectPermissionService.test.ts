@@ -4,8 +4,10 @@ import {
   canManageProjectTab,
   canPerformProjectAction,
   canViewProjectTab,
+  checkProjectAction,
   getProjectScope,
   legacyProjectCodeToPermissionCodes,
+  requireProjectAction,
 } from '../permissions/projectPermissionService';
 
 const user = (overrides: Partial<User> = {}): User => ({
@@ -70,6 +72,27 @@ describe('projectPermissionService', () => {
 
   it('allows ADMIN to perform project actions regardless of scope', () => {
     expect(canPerformProjectAction(user({ role: Role.ADMIN }), 'project.daily_log.approve', { projectId: 'project-1' })).toBe(true);
+  });
+
+  it('checks and requires explicit namespaced project actions without legacy fallback', () => {
+    const grantedUser = user({
+      adminModules: ['DA'],
+      permissionGrants: [{
+        id: 'grant-payment',
+        userId: 'user-1',
+        permissionCode: 'project.payment.mark_paid',
+        scopeType: 'project',
+        scopeId: 'project-1',
+        isActive: true,
+      }],
+    });
+
+    expect(checkProjectAction(grantedUser, 'project.payment.mark_paid', { projectId: 'project-1' })).toBe(true);
+    expect(checkProjectAction(grantedUser, 'project.payment.mark_paid', { projectId: 'project-2' })).toBe(false);
+    expect(checkProjectAction(grantedUser, 'project.payment.approve', { projectId: 'project-1' })).toBe(false);
+    expect(() => requireProjectAction(grantedUser, 'project.payment.mark_paid', { projectId: 'project-1' }, 'đánh dấu đã thanh toán')).not.toThrow();
+    expect(() => requireProjectAction(grantedUser, 'project.payment.approve', { projectId: 'project-1' }, 'duyệt thanh toán'))
+      .toThrow('Bạn cần quyền "project.payment.approve" để duyệt thanh toán.');
   });
 
   it('maps legacy project staff permission codes into namespaced Project PBAC v2 permissions', () => {
