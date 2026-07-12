@@ -280,6 +280,47 @@ export const supplierDirectDeliveryService = {
     return normalizeDeliveryNote(data);
   },
 
+  async deleteDraft(id: string): Promise<void> {
+    const { data, error } = await supabase
+      .from(DELIVERY_NOTE_TABLE)
+      .delete()
+      .eq('id', id)
+      .in('status', ['draft', 'submitted'])
+      .select('id');
+    if (error) throw error;
+    if ((data || []).length === 0) {
+      throw new Error('Chỉ xoá được phiếu giao HĐ còn nháp/chưa duyệt.');
+    }
+  },
+
+  async cancelApproval(id: string, reason?: string | null): Promise<SupplierDirectDeliveryNote> {
+    const { note, lines } = await this.getDetail(id);
+    if (note.status !== 'accepted') {
+      throw new Error('Chỉ hủy duyệt phiếu giao HĐ đang ở trạng thái đã duyệt.');
+    }
+    const hasWmsProgress = lines.some(line =>
+      Boolean(line.wmsImportTransactionId || line.wmsExportTransactionId)
+      || !['not_required', undefined, null].includes(line.wmsStatus as any),
+    );
+    if (hasWmsProgress) {
+      throw new Error('Phiếu giao HĐ đã phát sinh WMS, không thể hủy duyệt trực tiếp.');
+    }
+    const noteText = reason?.trim() ? `Hủy duyệt: ${reason.trim()}` : 'Hủy duyệt';
+    const { error: lineError } = await supabase
+      .from(DELIVERY_LINE_TABLE)
+      .update(toDb({
+        status: 'pending',
+        acceptedQuantity: 0,
+        acceptedAmount: 0,
+        rejectionReason: null,
+        note: noteText,
+      }))
+      .eq('delivery_note_id', id)
+      .in('status', ['accepted', 'adjusted']);
+    if (lineError) throw lineError;
+    return this.setStatus(id, 'draft');
+  },
+
   async reviewLines(
     id: string,
     reviews: Array<{

@@ -100,6 +100,7 @@ const query = (response: { data?: any; error?: any } = { data: [], error: null }
     in: vi.fn(() => api),
     limit: vi.fn(() => api),
     single: vi.fn(() => Promise.resolve(response)),
+    maybeSingle: vi.fn(() => Promise.resolve(response)),
     upsert: vi.fn(() => api),
     insert: vi.fn(() => Promise.resolve(response)),
     update: vi.fn(() => api),
@@ -175,6 +176,41 @@ describe('siteDirectPurchaseService persistence', () => {
     expect(detail.lines[0].lineType).toBe('stock_item');
   });
 
+  it('rolls back a newly inserted direct purchase header when line upsert fails', async () => {
+    const purchase: SiteDirectPurchase = {
+      id: 'direct-1',
+      code: 'MN-001',
+      projectId: 'project-1',
+      constructionSiteId: 'site-1',
+      supplierNameSnapshot: 'NCC A',
+      purchaseMode: 'immediate',
+      paymentSource: 'supplier_credit',
+      status: 'purchased',
+      grossAmount: 0,
+      vatAmount: 0,
+      totalAmount: 0,
+      createdAt: '2026-07-08T00:00:00.000Z',
+    };
+    const existingQuery = query({ data: null, error: null });
+    const purchaseUpsertQuery = query({ data: purchaseRow(), error: null });
+    const lineUpsertQuery = query({ data: null, error: { code: '23514', message: 'line constraint failed' } });
+    const deleteQuery = query({ data: null, error: null });
+    supabaseMocks.from
+      .mockReturnValueOnce(existingQuery)
+      .mockReturnValueOnce(purchaseUpsertQuery)
+      .mockReturnValueOnce(lineUpsertQuery)
+      .mockReturnValueOnce(deleteQuery);
+
+    await expect(siteDirectPurchaseService.upsert(purchase, [line()])).rejects.toMatchObject({
+      code: '23514',
+    });
+
+    expect(existingQuery.maybeSingle).toHaveBeenCalled();
+    expect(lineUpsertQuery.upsert).toHaveBeenCalled();
+    expect(deleteQuery.delete).toHaveBeenCalled();
+    expect(deleteQuery.eq).toHaveBeenCalledWith('id', 'direct-1');
+  });
+
   it('reviews direct purchase lines with accepted quantity and accepted amount snapshots', async () => {
     const updateQuery = query({ data: null, error: null });
     supabaseMocks.from
@@ -199,6 +235,109 @@ describe('siteDirectPurchaseService persistence', () => {
     }));
     expect(detail.lines[0].status).toBe('accepted');
     expect(detail.lines[0].acceptedAmount).toBe(1155000);
+  });
+
+  it('submits a direct purchase with an explicit approval recipient', async () => {
+    const updateQuery = query({
+      data: purchaseRow({
+        status: 'submitted',
+        submitted_to_user_id: 'approver-1',
+        submitted_to_name: 'Anh duyệt',
+        submitted_to_permission: 'approve',
+        submission_note: 'Duyệt gấp',
+        ever_submitted: true,
+        last_action_by: 'actor-1',
+      }),
+      error: null,
+    });
+    supabaseMocks.from.mockReturnValueOnce(updateQuery);
+
+    const saved = await siteDirectPurchaseService.submit('direct-1', {
+      userId: 'approver-1',
+      userIds: ['approver-1'],
+      name: 'Anh duyệt',
+      names: ['Anh duyệt'],
+      permissionCode: 'approve',
+      note: 'Duyệt gấp',
+    }, 'actor-1');
+
+    expect(updateQuery.update).toHaveBeenCalledWith(expect.objectContaining({
+      status: 'submitted',
+      submitted_to_user_id: 'approver-1',
+      submitted_to_name: 'Anh duyệt',
+      submitted_to_permission: 'approve',
+      submission_note: 'Duyệt gấp',
+      ever_submitted: true,
+      last_action_by: 'actor-1',
+    }));
+    expect(saved.status).toBe('submitted');
+    expect(saved.submittedToUserId).toBe('approver-1');
+    expect(saved.everSubmitted).toBe(true);
+  });
+
+  it('falls back to status-only submit when approval recipient columns are missing', async () => {
+    const missingColumnQuery = query({
+      data: null,
+      error: { code: '42703', message: 'column "submitted_to_user_id" does not exist' },
+    });
+    const fallbackQuery = query({ data: purchaseRow({ status: 'submitted' }), error: null });
+    supabaseMocks.from
+      .mockReturnValueOnce(missingColumnQuery)
+      .mockReturnValueOnce(fallbackQuery);
+
+    const saved = await siteDirectPurchaseService.submit('direct-1', {
+      userId: 'approver-1',
+      userIds: ['approver-1'],
+      name: 'Anh duyệt',
+      names: ['Anh duyệt'],
+      permissionCode: 'approve',
+    }, 'actor-1');
+
+    expect(missingColumnQuery.update).toHaveBeenCalledWith(expect.objectContaining({
+      submitted_to_user_id: 'approver-1',
+    }));
+    expect(fallbackQuery.update).toHaveBeenCalledWith({ status: 'submitted' });
+    expect(saved.status).toBe('submitted');
+  });
+
+  it('cancels purchase approval back to submitted before purchase execution', async () => {
+    const updateQuery = query({ data: purchaseRow({ status: 'submitted', note: 'Hủy duyệt: cần bổ sung báo giá' }), error: null });
+    supabaseMocks.from.mockReturnValueOnce(updateQuery);
+
+    const saved = await siteDirectPurchaseService.cancelApproval('direct-1', 'cần bổ sung báo giá');
+
+    expect(updateQuery.update).toHaveBeenCalledWith(expect.objectContaining({
+      status: 'submitted',
+      last_action_by: null,
+      submitted_to_permission: 'approve',
+    }));
+    expect(saved.status).toBe('submitted');
+  });
+
+  it('deletes an unsubmitted direct purchase that has no downstream documents', async () => {
+    const readQuery = query({
+      data: purchaseRow({ status: 'purchased', ever_submitted: false, wms_transaction_id: null, site_cash_settlement_id: null, po_id: null }),
+      error: null,
+    });
+    const deleteQuery = query({ data: [{ id: 'direct-1' }], error: null });
+    supabaseMocks.from
+      .mockReturnValueOnce(readQuery)
+      .mockReturnValueOnce(deleteQuery);
+
+    await siteDirectPurchaseService.deleteUnsubmitted('direct-1');
+
+    expect(readQuery.single).toHaveBeenCalled();
+    expect(deleteQuery.delete).toHaveBeenCalled();
+    expect(deleteQuery.eq).toHaveBeenCalledWith('id', 'direct-1');
+  });
+
+  it('blocks deleting direct purchases that were already submitted', async () => {
+    supabaseMocks.from.mockReturnValueOnce(query({
+      data: purchaseRow({ status: 'submitted', ever_submitted: true }),
+      error: null,
+    }));
+
+    await expect(siteDirectPurchaseService.deleteUnsubmitted('direct-1')).rejects.toThrow('đã gửi duyệt');
   });
 
   it('creates a pending WMS import draft for stock lines and links it to the direct purchase', async () => {

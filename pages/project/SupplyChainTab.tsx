@@ -131,6 +131,7 @@ import {
     hasRequestRowDefaultSupplierMismatch,
 } from '../../lib/purchaseOrderRequestCart';
 import { getPurchaseOrderUiPolicy, type PurchaseOrderUiAction } from '../../lib/purchaseOrderUiPolicy';
+import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 
 interface SupplyChainTabProps {
     constructionSiteId?: string;
@@ -439,6 +440,20 @@ const createEmptyDirectPurchaseLine = (
     quantityInput: '1',
     unitPriceInput: '',
     vatRateInput: '0',
+});
+
+const createDirectPurchaseLineFromInventoryItem = (
+    item: InventoryItem,
+    directPurchaseId = '',
+    lineNo = 1,
+): SiteDirectPurchaseFormLine => ({
+    ...createEmptyDirectPurchaseLine(directPurchaseId, lineNo, 'stock_item'),
+    itemId: item.id,
+    skuSnapshot: item.sku || null,
+    itemNameSnapshot: item.name || '',
+    unitSnapshot: item.purchaseUnit || item.unit || '',
+    unitPrice: Number(item.priceIn || 0),
+    unitPriceInput: item.priceIn ? String(item.priceIn) : '',
 });
 
 const hydrateDirectPurchaseFormLine = (line: SiteDirectPurchaseLine): SiteDirectPurchaseFormLine => ({
@@ -861,6 +876,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     const [supplierDeliveryLinesByNoteId, setSupplierDeliveryLinesByNoteId] = useState<Record<string, SupplierDirectDeliveryLine[]>>({});
     const [supplierDeliveryStatements, setSupplierDeliveryStatements] = useState<SupplierDeliveryStatement[]>([]);
     const [showSupplierDeliveryForm, setShowSupplierDeliveryForm] = useState(false);
+    const [editingSupplierDelivery, setEditingSupplierDelivery] = useState<SupplierDirectDeliveryNote | null>(null);
     const [savingSupplierDelivery, setSavingSupplierDelivery] = useState(false);
     const [supplierDeliveryActionLoading, setSupplierDeliveryActionLoading] = useState<string | null>(null);
     const [smallToolRecords, setSmallToolRecords] = useState<SiteSmallToolRecord[]>([]);
@@ -920,6 +936,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     const [poImportMode, setPoImportMode] = useState<ExcelImportMode>('create');
     const [poImportPreview, setPoImportPreview] = useState<ExcelImportPreview<PurchaseOrderItem> | null>(null);
     const [submittingPo, setSubmittingPo] = useState<PurchaseOrder | null>(null);
+    const [submittingDirectPurchase, setSubmittingDirectPurchase] = useState<SiteDirectPurchase | null>(null);
     const [printingPoId, setPrintingPoId] = useState<string | null>(null);
     const directPurchaseFileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -941,6 +958,9 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     const [uploadingDirectPurchaseFiles, setUploadingDirectPurchaseFiles] = useState(false);
     const [dpNote, setDpNote] = useState('');
     const [dpLines, setDpLines] = useState<SiteDirectPurchaseFormLine[]>([createEmptyDirectPurchaseLine()]);
+    const [showDirectPurchaseItemPicker, setShowDirectPurchaseItemPicker] = useState(false);
+    const [directPurchaseItemPickerQuery, setDirectPurchaseItemPickerQuery] = useState('');
+    const [selectedDirectPurchaseItemIds, setSelectedDirectPurchaseItemIds] = useState<string[]>([]);
     const [sdId, setSdId] = useState('');
     const [sdCode, setSdCode] = useState('');
     const [sdSupplierContractId, setSdSupplierContractId] = useState('');
@@ -1033,6 +1053,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
 
     const resetSupplierDeliveryForm = () => {
         const id = crypto.randomUUID();
+        setEditingSupplierDelivery(null);
         setSdId(id);
         setSdCode(buildSupplierDirectDeliveryCode(id));
         setSdSupplierContractId('');
@@ -1070,6 +1091,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             return;
         }
         const id = crypto.randomUUID();
+        setEditingSupplierDelivery(null);
         setSdId(id);
         setSdCode(buildSupplierDirectDeliveryCode(id));
         setSdSupplierContractId('');
@@ -1080,6 +1102,42 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         setSupplierContractLines([]);
         setSdLines([createEmptySupplierDeliveryLine(id)]);
         setShowSupplierDeliveryForm(true);
+    };
+
+    const openEditSupplierDelivery = async (note: SupplierDirectDeliveryNote) => {
+        if (!ensureCanManage('sửa phiếu giao nhận theo HĐ')) return;
+        if (!['draft', 'submitted'].includes(note.status)) {
+            toast.warning('Không thể sửa phiếu đã duyệt', 'Hãy hủy duyệt trước khi sửa phiếu giao HĐ.');
+            return;
+        }
+        setSupplierDeliveryActionLoading(`edit:${note.id}`);
+        try {
+            const detail = await supplierDirectDeliveryService.getDetail(note.id);
+            const hasWmsProgress = detail.lines.some(line => Boolean(line.wmsImportTransactionId || line.wmsExportTransactionId));
+            if (hasWmsProgress) {
+                toast.warning('Không thể sửa phiếu đã có WMS', 'Phiếu giao HĐ đã phát sinh WMS nên không sửa trực tiếp.');
+                return;
+            }
+            const contractLines = await supplierContractLineService.listByContract(detail.note.supplierContractId).catch(() => [] as SupplierContractLine[]);
+            setEditingSupplierDelivery(detail.note);
+            setSdId(detail.note.id);
+            setSdCode(detail.note.code);
+            setSdSupplierContractId(detail.note.supplierContractId);
+            setSdDeliveryTicketNo(detail.note.deliveryTicketNo);
+            setSdDeliveryDate(detail.note.deliveryDate || todayIsoDate());
+            setSdVehicleNo(detail.note.vehicleNo || '');
+            setSdNote(detail.note.note || '');
+            setSupplierContractLines(contractLines);
+            setSdLines(detail.lines.length > 0
+                ? detail.lines.map(hydrateSupplierDeliveryFormLine)
+                : [createEmptySupplierDeliveryLine(detail.note.id, detail.note.supplierContractId)]);
+            setShowSupplierDeliveryForm(true);
+        } catch (error: any) {
+            logApiError('supplyChain.supplierDelivery.edit', error);
+            toast.error('Không tải được phiếu giao HĐ', getApiErrorMessage(error, 'Không thể tải chi tiết phiếu giao HĐ.'));
+        } finally {
+            setSupplierDeliveryActionLoading(null);
+        }
     };
 
     const selectSupplierDeliveryContract = async (supplierContractId: string) => {
@@ -1105,7 +1163,19 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         setSdLines(prev => [...prev, createEmptySupplierDeliveryLine(sdId, sdSupplierContractId, prev.length + 1, contractLine)]);
     };
 
-    const removeSupplierDeliveryLine = (lineId: string) => {
+    const removeSupplierDeliveryLine = async (lineId: string) => {
+        if (sdLines.length <= 1) return;
+        const line = sdLines.find(item => item.id === lineId);
+        const ok = await confirm({
+            title: 'Xóa dòng giao nhận',
+            targetName: line?.itemNameSnapshot || 'Dòng giao nhận',
+            warningText: 'Dòng này sẽ bị xóa khỏi phiếu đang nhập. Thao tác chỉ lưu vào hệ thống khi bấm lưu/cập nhật phiếu.',
+            actionLabel: 'Xóa dòng',
+            cancelLabel: 'Giữ lại',
+            intent: 'danger',
+            countdownSeconds: 1,
+        });
+        if (!ok) return;
         setSdLines(prev => prev.length > 1 ? prev.filter(line => line.id !== lineId) : prev);
     };
 
@@ -1159,21 +1229,21 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             deliveryTicketNo: sdDeliveryTicketNo.trim(),
             deliveryDate: sdDeliveryDate || todayIsoDate(),
             vehicleNo: sdVehicleNo.trim() || null,
-            status: 'draft',
+            status: editingSupplierDelivery?.status || 'draft',
             grossAmount: Math.round(totals.grossAmount),
             vatAmount: Math.round(totals.vatAmount),
             totalAmount: Math.round(totals.totalAmount),
-            attachments: [],
-            qrToken: `qr_supplier_delivery_${sdId.replace(/-/g, '').slice(0, 16)}`,
-            createdBy: user?.id || null,
-            createdAt: new Date().toISOString(),
+            attachments: editingSupplierDelivery?.attachments || [],
+            qrToken: editingSupplierDelivery?.qrToken || `qr_supplier_delivery_${sdId.replace(/-/g, '').slice(0, 16)}`,
+            createdBy: editingSupplierDelivery?.createdBy || user?.id || null,
+            createdAt: editingSupplierDelivery?.createdAt || new Date().toISOString(),
             updatedAt: new Date().toISOString(),
             note: sdNote.trim() || null,
         };
         setSavingSupplierDelivery(true);
         try {
             const saved = await supplierDirectDeliveryService.upsert(note, normalizedLines);
-            toast.success('Đã tạo phiếu giao HĐ', `${saved.code} - ${fmtMoney(saved.totalAmount)} đ`);
+            toast.success(editingSupplierDelivery ? 'Đã cập nhật phiếu giao HĐ' : 'Đã tạo phiếu giao HĐ', `${saved.code} - ${fmtMoney(saved.totalAmount)} đ`);
             resetSupplierDeliveryForm();
             await loadSupplyData();
         } catch (error: any) {
@@ -1186,6 +1256,17 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
 
     const approveSupplierDeliveryNote = async (note: SupplierDirectDeliveryNote) => {
         if (!ensureCanManage('duyệt phiếu giao nhận theo HĐ')) return;
+        const ok = await confirm({
+            title: 'Duyệt thực nhận phiếu giao HĐ',
+            targetName: note.code,
+            subtitle: `${note.supplierNameSnapshot} • ${fmtMoney(note.totalAmount)} đ`,
+            warningText: 'Toàn bộ dòng giao nhận sẽ được chấp nhận theo số lượng/đơn giá hiện có. Nếu cần sửa, hãy kiểm tra lại trước khi duyệt.',
+            actionLabel: 'Duyệt thực nhận',
+            cancelLabel: 'Kiểm tra lại',
+            intent: 'success',
+            countdownSeconds: 1,
+        });
+        if (!ok) return;
         setSupplierDeliveryActionLoading(`approve:${note.id}`);
         try {
             const detail = await supplierDirectDeliveryService.getDetail(note.id);
@@ -1202,6 +1283,59 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         } catch (error: any) {
             logApiError('supplyChain.supplierDelivery.approve', error);
             toast.error('Không duyệt được phiếu giao HĐ', getApiErrorMessage(error, 'Không thể duyệt dòng giao nhận.'));
+        } finally {
+            setSupplierDeliveryActionLoading(null);
+        }
+    };
+
+    const cancelSupplierDeliveryApproval = async (note: SupplierDirectDeliveryNote) => {
+        if (!ensureCanManage('hủy duyệt phiếu giao nhận theo HĐ')) return;
+        const reason = await reasonConfirm({
+            title: 'Hủy duyệt phiếu giao HĐ',
+            targetName: note.code,
+            subtitle: `${note.supplierNameSnapshot} • ${fmtMoney(note.totalAmount)} đ`,
+            warningText: 'Phiếu sẽ trở về nháp, các dòng đã duyệt sẽ về trạng thái chờ duyệt. Chỉ thực hiện khi chưa phát sinh WMS/đối soát/AP.',
+            reasonLabel: 'Lý do hủy duyệt',
+            reasonPlaceholder: 'VD: Sai khối lượng thực nhận, cần bổ sung phiếu NCC...',
+            actionLabel: 'Hủy duyệt',
+            cancelLabel: 'Giữ đã duyệt',
+            intent: 'warning',
+        });
+        if (!reason) return;
+        setSupplierDeliveryActionLoading(`cancel:${note.id}`);
+        try {
+            const saved = await supplierDirectDeliveryService.cancelApproval(note.id, reason);
+            toast.success('Đã hủy duyệt phiếu giao HĐ', `${saved.code} đã trở về nháp.`);
+            await loadSupplyData();
+        } catch (error: any) {
+            logApiError('supplyChain.supplierDelivery.cancelApproval', error);
+            toast.error('Không hủy duyệt được phiếu giao HĐ', getApiErrorMessage(error, 'Không thể hủy duyệt phiếu đã phát sinh bước sau.'));
+        } finally {
+            setSupplierDeliveryActionLoading(null);
+        }
+    };
+
+    const deleteSupplierDeliveryNote = async (note: SupplierDirectDeliveryNote) => {
+        if (!ensureCanManage('xóa phiếu giao nhận theo HĐ')) return;
+        const ok = await confirm({
+            title: 'Xóa phiếu giao HĐ',
+            targetName: note.code,
+            subtitle: `${note.supplierNameSnapshot} • ${note.deliveryTicketNo}`,
+            warningText: 'Chỉ xóa được phiếu còn nháp/chưa duyệt và chưa phát sinh WMS/đối soát/AP. Dữ liệu đã xóa không thể khôi phục từ màn này.',
+            actionLabel: 'Xóa phiếu',
+            cancelLabel: 'Giữ lại',
+            intent: 'danger',
+            countdownSeconds: 2,
+        });
+        if (!ok) return;
+        setSupplierDeliveryActionLoading(`delete:${note.id}`);
+        try {
+            await supplierDirectDeliveryService.deleteDraft(note.id);
+            toast.success('Đã xóa phiếu giao HĐ', note.code);
+            await loadSupplyData();
+        } catch (error: any) {
+            logApiError('supplyChain.supplierDelivery.delete', error);
+            toast.error('Không xóa được phiếu giao HĐ', getApiErrorMessage(error, 'Không thể xóa phiếu đã duyệt hoặc đã phát sinh chứng từ.'));
         } finally {
             setSupplierDeliveryActionLoading(null);
         }
@@ -1367,7 +1501,56 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     const addDirectPurchaseLine = (lineType: SiteDirectPurchaseLineType) => {
         setDpLines(prev => [...prev, createEmptyDirectPurchaseLine(dpId, prev.length + 1, lineType)]);
     };
-    const removeDirectPurchaseLine = (lineId: string) => {
+    const toggleDirectPurchasePickerItem = (itemId: string) => {
+        setSelectedDirectPurchaseItemIds(prev => prev.includes(itemId)
+            ? prev.filter(id => id !== itemId)
+            : [...prev, itemId]);
+    };
+    const addSelectedDirectPurchaseInventoryItems = () => {
+        const selectedItems = selectedDirectPurchaseItemIds
+            .map(itemId => inventoryItems.find(item => item.id === itemId))
+            .filter(Boolean) as InventoryItem[];
+        if (selectedItems.length === 0) {
+            toast.warning('Chưa chọn vật tư', 'Tích ít nhất một mã vật tư tồn kho để thêm vào phiếu.');
+            return;
+        }
+        setDpLines(prev => {
+            const emptyStockIndex = prev.findIndex(line =>
+                line.lineType === 'stock_item'
+                && !line.itemId
+                && !String(line.itemNameSnapshot || '').trim()
+            );
+            const newLines = selectedItems.map((item, index) =>
+                createDirectPurchaseLineFromInventoryItem(item, dpId, prev.length + index + 1),
+            );
+            const merged = emptyStockIndex >= 0
+                ? prev.flatMap((line, index) => index === emptyStockIndex
+                    ? [{ ...newLines[0], id: line.id, directPurchaseId: line.directPurchaseId || dpId }, ...newLines.slice(1)]
+                    : [line])
+                : [...prev, ...newLines];
+            return merged.map((line, index) => ({ ...line, lineNo: index + 1 }));
+        });
+        if (!dpManualSupplierEnabled && !dpSupplierId) {
+            const supplierItem = selectedItems.find(item => item.supplierId && supplierById.has(item.supplierId));
+            if (supplierItem?.supplierId) setDpSupplierId(supplierItem.supplierId);
+        }
+        setSelectedDirectPurchaseItemIds([]);
+        setDirectPurchaseItemPickerQuery('');
+        setShowDirectPurchaseItemPicker(false);
+    };
+    const removeDirectPurchaseLine = async (lineId: string) => {
+        if (dpLines.length <= 1) return;
+        const line = dpLines.find(item => item.id === lineId);
+        const ok = await confirm({
+            title: 'Xóa dòng mua nóng',
+            targetName: line?.itemNameSnapshot || 'Dòng mua nóng',
+            warningText: 'Dòng này sẽ bị xóa khỏi phiếu đang nhập. Thao tác chỉ lưu vào hệ thống khi bấm lưu/cập nhật phiếu.',
+            actionLabel: 'Xóa dòng',
+            cancelLabel: 'Giữ lại',
+            intent: 'danger',
+            countdownSeconds: 1,
+        });
+        if (!ok) return;
         setDpLines(prev => prev.length > 1 ? prev.filter(line => line.id !== lineId) : prev);
     };
     const pickDirectPurchaseFiles = (accept: string) => {
@@ -1491,15 +1674,27 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             note: dpNote.trim() || null,
         };
         setSavingDirectPurchase(true);
+        let savedPurchase: SiteDirectPurchase | null = null;
         try {
-            const saved = await siteDirectPurchaseService.upsert(purchase, normalizedLines);
-            toast.success(editingDirectPurchase ? 'Đã cập nhật phiếu mua nóng' : 'Đã tạo phiếu mua nóng', `${saved.code} - ${fmtMoney(saved.totalAmount)} đ`);
-            setShowDirectPurchaseForm(false);
-            setEditingDirectPurchase(null);
-            await loadSupplyData();
+            savedPurchase = await siteDirectPurchaseService.upsert(purchase, normalizedLines);
         } catch (error: any) {
             logApiError('supplyChain.siteDirect.save', error);
             toast.error('Không lưu được phiếu mua nóng', getApiErrorMessage(error, 'Không thể lưu phiếu mua nóng.'));
+            setSavingDirectPurchase(false);
+            return;
+        }
+        if (!savedPurchase) {
+            setSavingDirectPurchase(false);
+            return;
+        }
+        toast.success(editingDirectPurchase ? 'Đã cập nhật phiếu mua nóng' : 'Đã tạo phiếu mua nóng', `${savedPurchase.code} - ${fmtMoney(savedPurchase.totalAmount)} đ`);
+        setShowDirectPurchaseForm(false);
+        setEditingDirectPurchase(null);
+        try {
+            await loadSupplyData();
+        } catch (error: any) {
+            logApiError('supplyChain.siteDirect.reloadAfterSave', error);
+            toast.warning('Đã lưu, chưa tải lại danh sách', getApiErrorMessage(error, 'Phiếu đã được lưu. Bấm tải lại hoặc reload nếu danh sách chưa cập nhật.'));
         } finally {
             setSavingDirectPurchase(false);
         }
@@ -1538,6 +1733,14 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         setSelectedDirectPurchase(detail);
         await loadSupplyData();
     };
+    const canDeleteDirectPurchaseDocument = (purchase: SiteDirectPurchase) =>
+        !purchase.everSubmitted
+        && !['submitted', 'approved_to_buy', 'finance_review', 'reconciled', 'closed'].includes(purchase.status)
+        && !purchase.wmsTransactionId
+        && !purchase.siteCashSettlementId
+        && !purchase.poId;
+    const canEditDirectPurchaseDocument = (purchase: SiteDirectPurchase) =>
+        canDeleteDirectPurchaseDocument(purchase) || purchase.status === 'draft';
     const updateSmallToolCustody = async (record: SiteSmallToolRecord) => {
         if (!ensureCanManage('cập nhật bàn giao CCDC nhỏ')) return;
         const holderName = window.prompt('Người/bộ phận đang giữ CCDC', record.holderNameSnapshot || '');
@@ -1580,6 +1783,19 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     };
     const updateDirectPurchaseStatus = async (purchase: SiteDirectPurchase, status: SiteDirectPurchaseStatus) => {
         if (!ensureCanManage('cập nhật trạng thái mua nóng')) return;
+        if (status === 'approved_to_buy') {
+            const ok = await confirm({
+                title: 'Duyệt mua nóng',
+                targetName: purchase.code,
+                subtitle: `${purchase.supplierNameSnapshot} • ${fmtMoney(purchase.totalAmount)} đ`,
+                warningText: 'Phiếu sẽ được phép mua. Sau bước này nếu cần sửa phải hủy duyệt trước khi đánh dấu đã mua/phát sinh WMS/AP.',
+                actionLabel: 'Duyệt mua',
+                cancelLabel: 'Kiểm tra lại',
+                intent: 'success',
+                countdownSeconds: 1,
+            });
+            if (!ok) return;
+        }
         setDirectActionLoading(`${status}:${purchase.id}`);
         try {
             const saved = status === 'approved_to_buy'
@@ -1596,9 +1812,107 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             setDirectActionLoading(null);
         }
     };
+    const cancelDirectPurchaseApproval = async (purchase: SiteDirectPurchase) => {
+        if (!ensureCanManage('hủy duyệt phiếu mua nóng')) return;
+        const reason = await reasonConfirm({
+            title: 'Hủy duyệt mua nóng',
+            targetName: purchase.code,
+            subtitle: `${purchase.supplierNameSnapshot} • ${fmtMoney(purchase.totalAmount)} đ`,
+            warningText: 'Phiếu sẽ quay về trạng thái đã trình để người duyệt kiểm tra lại. Chỉ hủy duyệt khi chưa đánh dấu đã mua/chưa phát sinh WMS/AP.',
+            reasonLabel: 'Lý do hủy duyệt',
+            reasonPlaceholder: 'VD: Cần bổ sung báo giá, sai nhà cung cấp, sai số lượng...',
+            actionLabel: 'Hủy duyệt',
+            cancelLabel: 'Giữ đã duyệt',
+            intent: 'warning',
+        });
+        if (!reason) return;
+        setDirectActionLoading(`cancel:${purchase.id}`);
+        try {
+            const saved = await siteDirectPurchaseService.cancelApproval(purchase.id, reason, user?.id || null);
+            toast.success('Đã hủy duyệt phiếu mua nóng', `${saved.code} đã quay về trạng thái đã trình.`);
+            await reloadSelectedDirectPurchase(purchase.id);
+        } catch (error: any) {
+            logApiError('supplyChain.siteDirect.cancelApproval', error);
+            toast.error('Không hủy duyệt được phiếu mua nóng', getApiErrorMessage(error, 'Không thể hủy duyệt phiếu đã phát sinh bước sau.'));
+        } finally {
+            setDirectActionLoading(null);
+        }
+    };
+    const deleteDirectPurchase = async (purchase: SiteDirectPurchase) => {
+        if (!ensureCanManage('xóa phiếu mua nóng')) return;
+        const ok = await confirm({
+            title: 'Xóa phiếu mua nóng',
+            targetName: purchase.code,
+            subtitle: `${purchase.supplierNameSnapshot} • ${fmtMoney(purchase.totalAmount)} đ`,
+            warningText: 'Chỉ xóa được phiếu chưa gửi duyệt và chưa phát sinh WMS/AP/hoàn ứng. Dữ liệu đã xóa không thể khôi phục từ màn này.',
+            actionLabel: 'Xóa phiếu',
+            cancelLabel: 'Giữ lại',
+            intent: 'danger',
+            countdownSeconds: 2,
+        });
+        if (!ok) return;
+        setDirectActionLoading(`delete:${purchase.id}`);
+        try {
+            await siteDirectPurchaseService.deleteUnsubmitted(purchase.id);
+            toast.success('Đã xóa phiếu mua nóng', purchase.code);
+            setSelectedDirectPurchase(null);
+            await loadSupplyData();
+        } catch (error: any) {
+            logApiError('supplyChain.siteDirect.delete', error);
+            toast.error('Không xóa được phiếu mua nóng', getApiErrorMessage(error, 'Không thể xóa phiếu đã gửi duyệt hoặc đã phát sinh chứng từ.'));
+        } finally {
+            setDirectActionLoading(null);
+        }
+    };
+    const submitDirectPurchaseForApproval = async (purchase: SiteDirectPurchase, target: ProjectSubmissionTarget) => {
+        if (!ensureCanManage('gửi duyệt phiếu mua nóng')) return;
+        setDirectActionLoading(`submitted:${purchase.id}`);
+        try {
+            const saved = await siteDirectPurchaseService.submit(purchase.id, target, user?.id || null);
+            await projectSubmissionService.notifyTarget({
+                target,
+                actorId: user?.id,
+                category: 'finance',
+                title: `Phiếu mua nóng ${purchase.code} chờ duyệt`,
+                message: `Bạn được chọn duyệt phiếu mua nóng ${purchase.code} của ${purchase.supplierNameSnapshot}.`,
+                sourceType: 'site_direct_purchase',
+                sourceId: purchase.id,
+                constructionSiteId: purchase.constructionSiteId || constructionSiteId,
+                link: '/da',
+                metadata: {
+                    projectId: purchase.projectId || projectId,
+                    totalAmount: purchase.totalAmount,
+                    supplierId: purchase.supplierId,
+                    supplierName: purchase.supplierNameSnapshot,
+                },
+            }).catch(error => console.warn('Cannot notify direct purchase recipient', error));
+            toast.success('Đã gửi duyệt phiếu mua nóng', `${saved.code} -> ${target.name || target.userId}`);
+            setSubmittingDirectPurchase(null);
+            await reloadSelectedDirectPurchase(purchase.id);
+        } catch (error: any) {
+            logApiError('supplyChain.siteDirect.submit', error);
+            toast.error('Không gửi duyệt được phiếu mua nóng', getApiErrorMessage(error, 'Không thể gửi phiếu tới người duyệt.'));
+            throw error;
+        } finally {
+            setDirectActionLoading(null);
+        }
+    };
     const reviewDirectPurchaseLine = async (line: SiteDirectPurchaseLine, status: 'accepted' | 'adjusted' | 'rejected') => {
         const detail = selectedDirectPurchase;
         if (!detail || !ensureCanManage('duyệt dòng mua nóng')) return;
+        if (status === 'accepted' || status === 'adjusted') {
+            const ok = await confirm({
+                title: status === 'accepted' ? 'Duyệt dòng mua nóng' : 'Duyệt điều chỉnh dòng mua nóng',
+                targetName: line.itemNameSnapshot || line.skuSnapshot || line.id,
+                subtitle: `${fmtQty(line.quantity)} ${line.unitSnapshot || ''} • ${fmtMoney(Number(line.lineAmount || 0) + Number(line.vatAmount || 0))} đ`,
+                warningText: 'Dòng được duyệt sẽ đủ điều kiện đi tiếp WMS/AP theo loại dòng. Kiểm tra lại số lượng, đơn giá và chứng từ trước khi xác nhận.',
+                actionLabel: 'Duyệt dòng',
+                cancelLabel: 'Kiểm tra lại',
+                intent: 'success',
+                countdownSeconds: 1,
+            });
+            if (!ok) return;
+        }
         setDirectActionLoading(`review:${line.id}`);
         try {
             await siteDirectPurchaseService.reviewLines(detail.purchase.id, [{
@@ -4645,6 +4959,20 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         () => calculateSiteDirectPurchaseTotals(directPurchaseFormLines),
         [directPurchaseFormLines],
     );
+    const filteredDirectPurchasePickerItems = useMemo(() => {
+        const keyword = directPurchaseItemPickerQuery.trim();
+        const selectedIds = new Set(dpLines.map(line => line.itemId).filter(Boolean) as string[]);
+        return inventoryItems
+            .filter(item => !selectedIds.has(item.id))
+            .filter(item => !keyword || matchesSearchQueryMultiple([
+                item.sku,
+                item.name,
+                item.category,
+                item.unit,
+                item.purchaseUnit,
+            ], keyword))
+            .slice(0, 80);
+    }, [directPurchaseItemPickerQuery, dpLines, inventoryItems]);
     const supplierDeliveryFormLines = useMemo(
         () => sdLines.map((line, index) => normalizeSupplierDeliveryFormLine(line, index, sdId, sdSupplierContractId)),
         [sdId, sdLines, sdSupplierContractId],
@@ -5119,9 +5447,14 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                     <button type="button" onClick={() => openDirectPurchaseDetail(purchase)} className="rounded-md px-2 py-1 text-[10px] font-black text-orange-700 hover:bg-orange-50">
                                                         <FileText size={11} className="inline" /> Chi tiết
                                                     </button>
-                                                    {canManageTab && (
+                                                    {canManageTab && canEditDirectPurchaseDocument(purchase) && (
                                                         <button type="button" onClick={() => openEditDirectPurchase(purchase)} disabled={isLoadingAction} className="rounded-md px-2 py-1 text-[10px] font-black text-blue-700 hover:bg-blue-50 disabled:opacity-50">
                                                             {isLoadingAction ? <Loader2 size={11} className="inline animate-spin" /> : <Edit2 size={11} className="inline" />} Sửa
+                                                        </button>
+                                                    )}
+                                                    {canManageTab && canDeleteDirectPurchaseDocument(purchase) && (
+                                                        <button type="button" onClick={() => void deleteDirectPurchase(purchase)} disabled={isLoadingAction} className="rounded-md px-2 py-1 text-[10px] font-black text-red-600 hover:bg-red-50 disabled:opacity-50">
+                                                            {isLoadingAction ? <Loader2 size={11} className="inline animate-spin" /> : <Trash2 size={11} className="inline" />} Xóa
                                                         </button>
                                                     )}
                                                 </div>
@@ -5171,6 +5504,9 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                         <div className="mt-1 text-lg font-black text-blue-700">{fmtMoney(supplierDeliveryNotes.reduce((sum, note) => sum + Number(note.totalAmount || 0), 0))} đ</div>
                     </div>
                 </div>
+                <div className="border-b border-slate-100 bg-blue-50/50 px-4 py-2 text-[11px] font-bold text-blue-800 dark:border-slate-800 dark:bg-blue-950/20 dark:text-blue-200">
+                    Người có quyền quản lý Cung ứng/Tài chính được duyệt thực nhận. Khi bấm duyệt, toàn bộ dòng phiếu giao được chấp nhận theo số lượng/đơn giá hiện có; dòng nhập-xuất thẳng vẫn phải hoàn tất WMS xuất dùng trước khi đối soát/AP.
+                </div>
                 {supplierDeliveryNotes.length === 0 ? (
                     <div className="p-4">
                         <EmptyState icon={<Truck size={18} />} title="Chưa có phiếu giao theo HĐ" message="Chọn HĐ NCC đã khai trong module HD, nhập phiếu giao từng chuyến và đối soát cuối kỳ để sinh AP." compact />
@@ -5203,6 +5539,15 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                             && (note.status === 'accepted' || note.status === 'statemented')
                                             && wmsSummary.canCreateImport;
                                         const statementBlockedByWms = wmsSummary.hasDirectLines && !wmsSummary.readyForStatement;
+                                        const hasWmsTransactions = wmsSummary.importTransactionIds.length > 0 || wmsSummary.exportTransactionIds.length > 0;
+                                        const canEditSupplierDelivery = canManageTab
+                                            && !postedStatement
+                                            && ['draft', 'submitted'].includes(note.status)
+                                            && !hasWmsTransactions;
+                                        const canCancelSupplierDeliveryApproval = canManageTab
+                                            && note.status === 'accepted'
+                                            && !postedStatement
+                                            && !hasWmsTransactions;
                                         return (
                                             <tr key={note.id} className="hover:bg-blue-50/40 dark:hover:bg-slate-900/50">
                                                 <td className="px-4 py-3">
@@ -5243,9 +5588,24 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                         <button type="button" onClick={() => openDocumentTrace(buildDocumentTracePath('supplier_direct_delivery_note', note.id, note.qrToken))} className="rounded-md px-2 py-1 text-[10px] font-black text-slate-700 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800">
                                                             <QrCode size={11} className="inline" /> Truy vết
                                                         </button>
-                                                        {canManageTab && note.status !== 'accepted' && note.status !== 'statemented' && (
-                                                            <button type="button" onClick={() => void approveSupplierDeliveryNote(note)} disabled={isBusy} className="rounded-md px-2 py-1 text-[10px] font-black text-emerald-700 hover:bg-emerald-50 disabled:opacity-50">
-                                                                {isBusy ? <Loader2 size={11} className="inline animate-spin" /> : <CheckCircle2 size={11} className="inline" />} Duyệt
+                                                        {canEditSupplierDelivery && (
+                                                            <button type="button" onClick={() => void openEditSupplierDelivery(note)} disabled={isBusy} className="rounded-md px-2 py-1 text-[10px] font-black text-blue-700 hover:bg-blue-50 disabled:opacity-50">
+                                                                {isBusy ? <Loader2 size={11} className="inline animate-spin" /> : <Edit2 size={11} className="inline" />} Sửa
+                                                            </button>
+                                                        )}
+                                                        {canEditSupplierDelivery && (
+                                                            <button type="button" onClick={() => void deleteSupplierDeliveryNote(note)} disabled={isBusy} className="rounded-md px-2 py-1 text-[10px] font-black text-red-600 hover:bg-red-50 disabled:opacity-50">
+                                                                {isBusy ? <Loader2 size={11} className="inline animate-spin" /> : <Trash2 size={11} className="inline" />} Xóa
+                                                            </button>
+                                                        )}
+                                                        {canManageTab && ['draft', 'submitted', 'site_confirmed', 'finance_review'].includes(note.status) && (
+                                                            <button type="button" onClick={() => void approveSupplierDeliveryNote(note)} disabled={isBusy} title="Duyệt thực nhận: chấp nhận toàn bộ dòng theo số lượng/giá hiện có; dòng nhập-xuất thẳng vẫn phải hoàn tất WMS export trước khi đối soát/AP." className="rounded-md px-2 py-1 text-[10px] font-black text-emerald-700 hover:bg-emerald-50 disabled:opacity-50">
+                                                                {isBusy ? <Loader2 size={11} className="inline animate-spin" /> : <CheckCircle2 size={11} className="inline" />} Duyệt thực nhận
+                                                            </button>
+                                                        )}
+                                                        {canCancelSupplierDeliveryApproval && (
+                                                            <button type="button" onClick={() => void cancelSupplierDeliveryApproval(note)} disabled={isBusy} className="rounded-md px-2 py-1 text-[10px] font-black text-amber-700 hover:bg-amber-50 disabled:opacity-50">
+                                                                {isBusy ? <Loader2 size={11} className="inline animate-spin" /> : <RefreshCcw size={11} className="inline" />} Hủy duyệt
                                                             </button>
                                                         )}
                                                         {canCreateWmsImport && (
@@ -5906,18 +6266,28 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                             </div>
                             <div className="flex flex-wrap gap-2 border-b border-slate-100 px-5 py-3 dark:border-slate-800">
                                 {canManageTab && purchase.status === 'draft' && (
-                                    <button type="button" onClick={() => updateDirectPurchaseStatus(purchase, 'submitted')} disabled={actionBusy} className="inline-flex items-center gap-1 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-[10px] font-black text-orange-700 hover:bg-orange-100 disabled:opacity-50">
-                                        <Send size={12} /> Trình duyệt
+                                    <button type="button" onClick={() => setSubmittingDirectPurchase(purchase)} disabled={actionBusy} title="Chọn đích danh người có quyền duyệt mua nóng." className="inline-flex items-center gap-1 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-[10px] font-black text-orange-700 hover:bg-orange-100 disabled:opacity-50">
+                                        <Send size={12} /> Gửi duyệt
                                     </button>
                                 )}
                                 {canManageTab && purchase.status === 'submitted' && (
-                                    <button type="button" onClick={() => updateDirectPurchaseStatus(purchase, 'approved_to_buy')} disabled={actionBusy} className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[10px] font-black text-emerald-700 hover:bg-emerald-100 disabled:opacity-50">
+                                    <button type="button" onClick={() => updateDirectPurchaseStatus(purchase, 'approved_to_buy')} disabled={actionBusy} title="Duyệt cho phép mua. Người thao tác cần có quyền quản lý Cung ứng/Tài chính trong dự án." className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[10px] font-black text-emerald-700 hover:bg-emerald-100 disabled:opacity-50">
                                         <CheckCircle2 size={12} /> Duyệt mua
                                     </button>
                                 )}
                                 {canManageTab && purchase.status === 'approved_to_buy' && (
                                     <button type="button" onClick={() => updateDirectPurchaseStatus(purchase, 'purchased')} disabled={actionBusy} className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-[10px] font-black text-blue-700 hover:bg-blue-100 disabled:opacity-50">
                                         <Package size={12} /> Đã mua
+                                    </button>
+                                )}
+                                {canManageTab && purchase.status === 'approved_to_buy' && (
+                                    <button type="button" onClick={() => void cancelDirectPurchaseApproval(purchase)} disabled={actionBusy} className="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[10px] font-black text-amber-700 hover:bg-amber-100 disabled:opacity-50">
+                                        <RefreshCcw size={12} /> Hủy duyệt
+                                    </button>
+                                )}
+                                {canManageTab && canDeleteDirectPurchaseDocument(purchase) && (
+                                    <button type="button" onClick={() => void deleteDirectPurchase(purchase)} disabled={actionBusy} className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[10px] font-black text-red-600 hover:bg-red-100 disabled:opacity-50">
+                                        <Trash2 size={12} /> Xóa phiếu
                                     </button>
                                 )}
                                 {canManageTab && hasStockLines && !purchase.wmsTransactionId && (
@@ -5937,6 +6307,15 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                 )}
                                 {actionBusy && <span className="inline-flex items-center gap-1 px-2 text-[10px] font-bold text-slate-400"><Loader2 size={12} className="animate-spin" /> Đang xử lý</span>}
                             </div>
+                            {purchase.status === 'submitted' && (
+                                <div className="border-b border-orange-100 bg-orange-50 px-5 py-2 text-[11px] font-bold text-orange-800 dark:border-orange-900/40 dark:bg-orange-950/20 dark:text-orange-200">
+                                    <span className="inline-flex items-center gap-1">
+                                        <Users size={12} /> Chờ duyệt mua:
+                                    </span>{' '}
+                                    <b>{purchase.submittedToName || purchase.submittedToUserId || 'chưa ghi người nhận trên dữ liệu cũ'}</b>
+                                    {purchase.submissionNote ? <span> • {purchase.submissionNote}</span> : null}
+                                </div>
+                            )}
                             <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50/70 p-5 dark:bg-slate-900/40">
                                 <div className="space-y-2">
                                     {lines.map(line => {
@@ -5971,7 +6350,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                         <div className="mt-2 flex flex-wrap justify-start gap-1 lg:justify-end">
                                                             {canManageTab && line.status !== 'accepted' && (
                                                                 <button type="button" onClick={() => reviewDirectPurchaseLine(line, 'accepted')} className="rounded-md px-2 py-1 text-[10px] font-black text-emerald-700 hover:bg-emerald-50">
-                                                                    Duyệt
+                                                                    Duyệt dòng
                                                                 </button>
                                                             )}
                                                             {canManageTab && line.status !== 'rejected' && (
@@ -5997,7 +6376,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     <div className="flex max-h-[92vh] w-full max-w-7xl flex-col overflow-hidden rounded-lg border border-border bg-card shadow-2xl">
                         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800">
                             <div>
-                                <h3 className="text-lg font-black text-slate-800 dark:text-slate-100">Tạo phiếu giao HĐ NCC</h3>
+                                <h3 className="text-lg font-black text-slate-800 dark:text-slate-100">{editingSupplierDelivery ? 'Sửa phiếu giao HĐ NCC' : 'Tạo phiếu giao HĐ NCC'}</h3>
                                 <p className="text-xs font-bold text-slate-500 dark:text-slate-400">Vật tư giao tới công trường dùng ngay, không PO; dòng cần trace kho có thể đi nhập-xuất thẳng WMS.</p>
                             </div>
                             <button onClick={() => setShowSupplierDeliveryForm(false)} disabled={savingSupplierDelivery} className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 disabled:opacity-50 dark:hover:bg-slate-800">
@@ -6072,6 +6451,14 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                         <button type="button" onClick={() => addSupplierDeliveryLine(null)} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[10px] font-black text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
                                             <Plus size={12} /> Dòng tự do
                                         </button>
+                                    </div>
+                                </div>
+                                <div className="grid gap-2 border-b border-slate-100 p-3 text-[11px] font-bold text-slate-600 dark:border-slate-800 dark:text-slate-300 md:grid-cols-2">
+                                    <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-800 dark:bg-slate-900/40">
+                                        <span className="font-black text-slate-800 dark:text-slate-100">Không qua kho:</span> không sinh phiếu WMS; sau khi duyệt thực nhận có thể đưa vào đối soát/AP.
+                                    </div>
+                                    <div className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-indigo-800 dark:border-indigo-900/40 dark:bg-indigo-950/20 dark:text-indigo-200">
+                                        <span className="font-black">Nhập-xuất thẳng:</span> bắt buộc chọn mã WMS và kho; hệ thống tạo nhập WMS rồi xuất dùng, AP chỉ mở khi xuất hoàn tất.
                                     </div>
                                 </div>
                                 <div className="overflow-x-auto">
@@ -6180,7 +6567,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                             <button type="button" onClick={() => setShowSupplierDeliveryForm(false)} disabled={savingSupplierDelivery} className="rounded-lg px-5 py-2.5 text-sm font-bold text-slate-600 transition hover:bg-slate-100 disabled:opacity-50 dark:text-slate-300 dark:hover:bg-slate-800">Huỷ</button>
                             <button type="button" onClick={saveSupplierDelivery} disabled={savingSupplierDelivery} className="inline-flex items-center gap-2 rounded-lg border border-blue-600 bg-blue-600 px-6 py-2.5 text-sm font-black text-white transition hover:bg-blue-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50">
                                 {savingSupplierDelivery ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-                                Lưu phiếu giao HĐ
+                                {editingSupplierDelivery ? 'Cập nhật phiếu giao HĐ' : 'Lưu phiếu giao HĐ'}
                             </button>
                         </div>
                     </div>
@@ -6416,6 +6803,17 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                 </table>
                             </div>
                             <div className="mt-3 flex flex-wrap gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setSelectedDirectPurchaseItemIds([]);
+                                        setDirectPurchaseItemPickerQuery('');
+                                        setShowDirectPurchaseItemPicker(true);
+                                    }}
+                                    className="inline-flex items-center gap-1 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-[10px] font-black text-sky-700 hover:bg-sky-100"
+                                >
+                                    <CheckCircle2 size={12} /> Chọn nhiều vật tư
+                                </button>
                                 <button type="button" onClick={() => addDirectPurchaseLine('stock_item')} className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-[10px] font-black text-blue-700 hover:bg-blue-100">
                                     <Package size={12} /> Thêm vật tư tồn kho
                                 </button>
@@ -6440,6 +6838,108 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                     Lưu phiếu mua nóng
                                 </button>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showDirectPurchaseItemPicker && (
+                <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-slate-950/45 px-4 py-6">
+                    <div className="flex max-h-[86vh] w-full max-w-4xl flex-col overflow-hidden rounded-lg border border-border bg-card shadow-2xl">
+                        <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-4 dark:border-slate-800">
+                            <div>
+                                <h3 className="text-base font-black text-slate-800 dark:text-slate-100">Chọn nhiều vật tư tồn kho</h3>
+                                <p className="text-xs font-bold text-slate-500 dark:text-slate-400">Các mã đã có trong phiếu được ẩn để tránh nhập trùng dòng.</p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setShowDirectPurchaseItemPicker(false)}
+                                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+                            >
+                                <X size={18} />
+                            </button>
+                        </div>
+                        <div className="border-b border-slate-100 p-4 dark:border-slate-800">
+                            <div className="relative">
+                                <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                                <input
+                                    value={directPurchaseItemPickerQuery}
+                                    onChange={event => setDirectPurchaseItemPickerQuery(event.target.value)}
+                                    className={`${procurementInputClass} w-full pl-9`}
+                                    placeholder="Tìm theo SKU, tên vật tư, nhóm, đơn vị..."
+                                />
+                            </div>
+                            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[11px] font-bold text-slate-500">
+                                <span>{selectedDirectPurchaseItemIds.length} vật tư đã chọn • {filteredDirectPurchasePickerItems.length} kết quả</span>
+                                <div className="flex flex-wrap gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setSelectedDirectPurchaseItemIds(prev => Array.from(new Set([
+                                            ...prev,
+                                            ...filteredDirectPurchasePickerItems.map(item => item.id),
+                                        ])))}
+                                        className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-1.5 text-[10px] font-black text-sky-700 hover:bg-sky-100"
+                                    >
+                                        Chọn tất cả đang lọc
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setSelectedDirectPurchaseItemIds([])}
+                                        className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[10px] font-black text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900"
+                                    >
+                                        Bỏ chọn
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="min-h-0 flex-1 overflow-y-auto p-4">
+                            {filteredDirectPurchasePickerItems.length === 0 ? (
+                                <div className="rounded-lg border border-dashed border-slate-200 p-6 text-center text-xs font-bold text-slate-400">
+                                    Không còn vật tư phù hợp để thêm.
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                                    {filteredDirectPurchasePickerItems.map(item => {
+                                        const checked = selectedDirectPurchaseItemIds.includes(item.id);
+                                        return (
+                                            <label
+                                                key={item.id}
+                                                className={`flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-2 text-xs transition ${checked ? 'border-sky-300 bg-sky-50' : 'border-slate-100 bg-white hover:border-sky-200 hover:bg-sky-50/50 dark:border-slate-800 dark:bg-slate-950'}`}
+                                            >
+                                                <input
+                                                    type="checkbox"
+                                                    checked={checked}
+                                                    onChange={() => toggleDirectPurchasePickerItem(item.id)}
+                                                    className="mt-1 accent-sky-600"
+                                                />
+                                                <span className="min-w-0">
+                                                    <span className="block truncate font-black text-slate-800 dark:text-slate-100">{item.sku} - {item.name}</span>
+                                                    <span className="mt-0.5 block truncate text-[10px] font-bold text-slate-400">
+                                                        {item.category || 'Chưa phân nhóm'} • {item.purchaseUnit || item.unit || '-'} • Giá nhập {fmtMoney(Number(item.priceIn || 0))} đ
+                                                    </span>
+                                                </span>
+                                            </label>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                        <div className="flex justify-end gap-2 border-t border-slate-100 px-5 py-4 dark:border-slate-800">
+                            <button
+                                type="button"
+                                onClick={() => setShowDirectPurchaseItemPicker(false)}
+                                className="rounded-lg px-5 py-2.5 text-sm font-bold text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+                            >
+                                Huỷ
+                            </button>
+                            <button
+                                type="button"
+                                onClick={addSelectedDirectPurchaseInventoryItems}
+                                disabled={selectedDirectPurchaseItemIds.length === 0}
+                                className="inline-flex items-center gap-2 rounded-lg border border-sky-600 bg-sky-600 px-5 py-2.5 text-sm font-black text-white hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                                <Plus size={16} /> Thêm {selectedDirectPurchaseItemIds.length} vật tư
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -7509,6 +8009,27 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     ]}
                     onCancel={() => setSubmittingPo(null)}
                     onConfirm={target => updatePoStatus(submittingPo.id, 'sent', target)}
+                />
+            )}
+            {submittingDirectPurchase && (
+                <ProjectSubmissionDialog
+                    title="Gửi duyệt mua nóng"
+                    actionLabel="Gửi duyệt"
+                    documentLabel="Mua nóng công trường"
+                    documentName={`${submittingDirectPurchase.code} • ${submittingDirectPurchase.supplierNameSnapshot}`}
+                    documentSubtitle={`Trạng thái hiện tại: ${DIRECT_PURCHASE_STATUS[submittingDirectPurchase.status]?.label || submittingDirectPurchase.status}`}
+                    projectId={submittingDirectPurchase.projectId || projectId}
+                    constructionSiteId={submittingDirectPurchase.constructionSiteId || constructionSiteId}
+                    recipientPermissionCodes={['approve']}
+                    recipientHint="Chọn đích danh người có quyền duyệt mua nóng/chứng từ công trường."
+                    details={[
+                        { label: 'Nhà cung cấp', value: submittingDirectPurchase.supplierNameSnapshot || '-' },
+                        { label: 'Tổng giá trị', value: `${fmtMoney(submittingDirectPurchase.totalAmount)} đ` },
+                        { label: 'Nguồn tiền', value: DIRECT_PURCHASE_PAYMENT_SOURCE[submittingDirectPurchase.paymentSource] },
+                        { label: 'Ngày mua', value: submittingDirectPurchase.purchaseDate || '-' },
+                    ]}
+                    onCancel={() => setSubmittingDirectPurchase(null)}
+                    onConfirm={target => submitDirectPurchaseForApproval(submittingDirectPurchase, target)}
                 />
             )}
             <TransactionDetailModal

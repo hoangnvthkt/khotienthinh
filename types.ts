@@ -2229,6 +2229,13 @@ export interface SiteDirectPurchase {
   siteCashSettlementId?: string | null;
   qrToken?: string | null;
   attachments?: Attachment[];
+  submittedToUserId?: string | null;
+  submittedToName?: string | null;
+  submittedToPermission?: string | null;
+  submissionNote?: string | null;
+  everSubmitted?: boolean;
+  lastActionBy?: string | null;
+  lastActionAt?: string | null;
   createdBy?: string | null;
   createdAt: string;
   updatedAt?: string;

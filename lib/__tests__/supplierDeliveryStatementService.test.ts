@@ -276,6 +276,69 @@ describe('supplier delivery statement helpers', () => {
     expect(posted.status).toBe('posted');
   });
 
+  it('deletes a draft supplier delivery note before downstream processing', async () => {
+    const deleteQuery = query({ data: [{ id: 'note-1' }], error: null });
+    supabaseMocks.from.mockReturnValueOnce(deleteQuery);
+
+    await supplierDirectDeliveryService.deleteDraft('note-1');
+
+    expect(deleteQuery.delete).toHaveBeenCalled();
+    expect(deleteQuery.eq).toHaveBeenCalledWith('id', 'note-1');
+    expect(deleteQuery.in).toHaveBeenCalledWith('status', ['draft', 'submitted']);
+  });
+
+  it('cancels supplier delivery approval and resets accepted lines to pending', async () => {
+    const noteQuery = query({ data: deliveryNote({ status: 'accepted' }), error: null });
+    const lineQuery = query({
+      data: [
+        {
+          id: 'line-1',
+          delivery_note_id: 'note-1',
+          supplier_contract_id: 'contract-1',
+          supplier_contract_line_id: 'contract-line-1',
+          line_no: 1,
+          item_name_snapshot: 'Bê tông M250',
+          unit_snapshot: 'm3',
+          quantity: 12.5,
+          unit_price: 900000,
+          vat_rate: 10,
+          line_amount: 11250000,
+          vat_amount: 1125000,
+          total_amount: 12375000,
+          accepted_quantity: 12.5,
+          accepted_amount: 12375000,
+          status: 'accepted',
+          issue_reason: null,
+          wms_flow_mode: 'none',
+          wms_status: 'not_required',
+          target_warehouse_id: null,
+          wms_import_transaction_id: null,
+          wms_export_transaction_id: null,
+          created_at: '2026-07-08T00:00:00.000Z',
+        },
+      ],
+      error: null,
+    });
+    const resetLineQuery = query({ data: null, error: null });
+    const statusQuery = query({ data: deliveryNote({ status: 'draft' }), error: null });
+    supabaseMocks.from
+      .mockReturnValueOnce(noteQuery)
+      .mockReturnValueOnce(lineQuery)
+      .mockReturnValueOnce(resetLineQuery)
+      .mockReturnValueOnce(statusQuery);
+
+    const saved = await supplierDirectDeliveryService.cancelApproval('note-1', 'sai khối lượng');
+
+    expect(resetLineQuery.update).toHaveBeenCalledWith(expect.objectContaining({
+      status: 'pending',
+      accepted_quantity: 0,
+      accepted_amount: 0,
+      note: 'Hủy duyệt: sai khối lượng',
+    }));
+    expect(statusQuery.update).toHaveBeenCalledWith({ status: 'draft' });
+    expect(saved.status).toBe('draft');
+  });
+
   it('syncs AP from a delivery statement source', async () => {
     supabaseMocks.rpc.mockResolvedValueOnce({
       data: {

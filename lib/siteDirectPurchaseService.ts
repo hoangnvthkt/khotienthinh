@@ -3,6 +3,7 @@ import type {
   SiteDirectPurchaseLine,
   SiteDirectPurchaseLineStatus,
   SiteDirectPurchaseStatus,
+  ProjectSubmissionTarget,
   SupplierPayableDocument,
   Transaction,
 } from '../types';
@@ -27,6 +28,14 @@ const isMissingDirectPurchaseTable = (error: any): boolean =>
   error?.code === '42P01'
   || String(error?.message || '').includes(PURCHASE_TABLE)
   || String(error?.message || '').includes(LINE_TABLE);
+
+const isMissingSubmissionTargetColumn = (error: any): boolean =>
+  error?.code === '42703'
+  || ['submitted_to_user_id', 'submitted_to_name', 'submitted_to_permission', 'submission_note', 'ever_submitted', 'last_action_by', 'last_action_at']
+    .some(column => String(error?.message || '').includes(column) || String(error?.details || '').includes(column));
+
+const compactObject = <T extends Record<string, any>>(value: T): Partial<T> =>
+  Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as Partial<T>;
 
 const completedWmsStatuses = new Set<string>([
   TransactionStatus.COMPLETED,
@@ -62,6 +71,7 @@ const normalizePurchase = (row: any): SiteDirectPurchase => ({
   vatAmount: money(row.vat_amount),
   totalAmount: money(row.total_amount),
   attachments: row.attachments || [],
+  everSubmitted: Boolean(row.ever_submitted ?? row.everSubmitted ?? false),
   note: row.note || null,
 });
 
@@ -100,6 +110,14 @@ const buildLinePayload = (line: SiteDirectPurchaseLine) => toDb({
 export const siteDirectPurchaseService = {
   async upsert(input: SiteDirectPurchase, lines: SiteDirectPurchaseLine[] = []): Promise<SiteDirectPurchase> {
     const totals = calculateSiteDirectPurchaseTotals(lines.length > 0 ? lines : input.lines || []);
+    const { data: existingPurchase, error: existingError } = await supabase
+      .from(PURCHASE_TABLE)
+      .select('id')
+      .eq('id', input.id)
+      .maybeSingle();
+    if (existingError && existingError.code !== 'PGRST116') throw existingError;
+    const isNewPurchase = !existingPurchase?.id;
+
     const { data, error } = await supabase
       .from(PURCHASE_TABLE)
       .upsert(toDb({ ...input, ...totals }), { onConflict: 'id' })
@@ -114,7 +132,16 @@ export const siteDirectPurchaseService = {
           ...line,
           directPurchaseId: line.directPurchaseId || input.id,
         })), { onConflict: 'id' });
-      if (lineError) throw lineError;
+      if (lineError) {
+        if (isNewPurchase) {
+          const { error: rollbackError } = await supabase
+            .from(PURCHASE_TABLE)
+            .delete()
+            .eq('id', input.id);
+          if (rollbackError) console.warn('Failed to rollback direct purchase header after line upsert error', rollbackError);
+        }
+        throw lineError;
+      }
     }
 
     return normalizePurchase(data);
@@ -178,10 +205,36 @@ export const siteDirectPurchaseService = {
     if ((data || []).length === 0) throw new Error('Chỉ xoá được phiếu mua nóng còn nháp hoặc đã huỷ.');
   },
 
-  async setStatus(id: string, status: SiteDirectPurchaseStatus): Promise<SiteDirectPurchase> {
+  async deleteUnsubmitted(id: string): Promise<void> {
+    const { data: purchase, error: readError } = await supabase
+      .from(PURCHASE_TABLE)
+      .select('id,status,ever_submitted,wms_transaction_id,site_cash_settlement_id,po_id')
+      .eq('id', id)
+      .single();
+    if (readError) throw readError;
+    const status = String(purchase?.status || '');
+    if (purchase?.ever_submitted || ['submitted', 'approved_to_buy'].includes(status)) {
+      throw new Error('Phiếu mua nóng đã gửi duyệt, không được xoá. Hãy hủy duyệt/hủy nghiệp vụ nếu cần giữ lịch sử.');
+    }
+    if (['finance_review', 'reconciled', 'closed'].includes(status)) {
+      throw new Error('Phiếu mua nóng đã phát sinh kiểm tra tài chính/AP, không thể xoá.');
+    }
+    if (purchase?.wms_transaction_id || purchase?.site_cash_settlement_id || purchase?.po_id) {
+      throw new Error('Phiếu mua nóng đã có chứng từ phát sinh sau, không thể xoá.');
+    }
     const { data, error } = await supabase
       .from(PURCHASE_TABLE)
-      .update(toDb({ status }))
+      .delete()
+      .eq('id', id)
+      .select('id');
+    if (error) throw error;
+    if ((data || []).length === 0) throw new Error('Không tìm thấy phiếu mua nóng để xoá.');
+  },
+
+  async setStatus(id: string, status: SiteDirectPurchaseStatus, patch: Partial<SiteDirectPurchase> = {}): Promise<SiteDirectPurchase> {
+    const { data, error } = await supabase
+      .from(PURCHASE_TABLE)
+      .update(toDb(compactObject({ ...patch, status })))
       .eq('id', id)
       .select('*')
       .single();
@@ -189,12 +242,35 @@ export const siteDirectPurchaseService = {
     return normalizePurchase(data);
   },
 
-  async submit(id: string): Promise<SiteDirectPurchase> {
-    return this.setStatus(id, 'submitted');
+  async submit(id: string, target?: ProjectSubmissionTarget | null, actorId?: string | null): Promise<SiteDirectPurchase> {
+    if (!target) return this.setStatus(id, 'submitted');
+    try {
+      return await this.setStatus(id, 'submitted', {
+        submittedToUserId: target.userId || null,
+        submittedToName: target.name || null,
+        submittedToPermission: target.permissionCode || 'approve',
+        submissionNote: target.note || null,
+        everSubmitted: true,
+        lastActionBy: actorId || null,
+        lastActionAt: new Date().toISOString(),
+      });
+    } catch (error) {
+      if (isMissingSubmissionTargetColumn(error)) return this.setStatus(id, 'submitted');
+      throw error;
+    }
   },
 
   async approveToBuy(id: string): Promise<SiteDirectPurchase> {
     return this.setStatus(id, 'approved_to_buy');
+  },
+
+  async cancelApproval(id: string, reason?: string | null, actorId?: string | null): Promise<SiteDirectPurchase> {
+    return this.setStatus(id, 'submitted', {
+      submittedToPermission: 'approve',
+      lastActionBy: actorId || null,
+      lastActionAt: new Date().toISOString(),
+      note: reason?.trim() ? `Hủy duyệt: ${reason.trim()}` : undefined,
+    });
   },
 
   async markPurchased(id: string, patch: Partial<SiteDirectPurchase> = {}): Promise<SiteDirectPurchase> {
