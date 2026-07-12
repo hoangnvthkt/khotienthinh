@@ -91,7 +91,7 @@ export const getProjectPermissionTemplateCodes = (templateKey: ProjectPermission
     case 'site_keeper':
       return [
         'project.material_request.view',
-        'project.material_request.confirm',
+        'project.material_request.confirm_fulfillment',
         'project.material_request.view_available_stock',
         'project.material_po.view',
         'project.material_po.receive',

@@ -54,7 +54,8 @@ type Props = {
   constructionSiteId?: string;
   currentUserId: string;
   currentUserName?: string;
-  canManage: boolean;
+  canCreate: boolean;
+  canApprove: boolean;
 };
 
 type DraftLine = Partial<CustomMaterialRequestLine> & {
@@ -387,7 +388,8 @@ export const CustomMaterialRequestTab: React.FC<Props> = ({
   constructionSiteId,
   currentUserId,
   currentUserName,
-  canManage,
+  canCreate,
+  canApprove,
 }) => {
   const toast = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -408,8 +410,8 @@ export const CustomMaterialRequestTab: React.FC<Props> = ({
     () => requests.find(request => request.id === selectedId) || null,
     [requests, selectedId],
   );
-  const canEdit = !selectedRequest || ['draft', 'returned'].includes(selectedRequest.status);
-  const canApprove = Boolean(selectedRequest && selectedRequest.status === 'submitted' && canManage);
+  const canEdit = canCreate && (!selectedRequest || ['draft', 'returned'].includes(selectedRequest.status));
+  const canApproveSelectedRequest = Boolean(selectedRequest && selectedRequest.status === 'submitted' && canApprove);
   const currentTemplate = normalizeCustomMaterialTemplateKey(form.templateKey);
   const isXaGoTemplate = currentTemplate === 'xa_go';
   const filteredRequests = useMemo(() => {
@@ -1007,7 +1009,7 @@ export const CustomMaterialRequestTab: React.FC<Props> = ({
                 className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-blue-600 px-3 text-xs font-black text-white hover:bg-blue-700 disabled:opacity-50">
                 <Send size={14} /> Gửi duyệt
               </button>
-              {canApprove && (
+              {canApproveSelectedRequest && (
                 <>
                   <button type="button" onClick={() => changeStatus('approved', 'Phòng vật tư duyệt phiếu')} disabled={saving}
                     className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 text-xs font-black text-white hover:bg-emerald-700">

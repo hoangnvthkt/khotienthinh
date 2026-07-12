@@ -1012,6 +1012,28 @@ export const poService = {
         if (patch.receivedTransactionIds) row.received_transaction_ids = patch.receivedTransactionIds;
         delete row.id;
         delete row.created_at;
+        const workflowColumns = new Set([
+            'status',
+            'submitted_to_user_id',
+            'submitted_to_name',
+            'submitted_to_permission',
+            'submission_note',
+            'verified_by_id',
+            'verified_at',
+            'approved_by_id',
+            'approved_at',
+            'received_transaction_ids',
+            'actual_delivery_date',
+        ]);
+        if (Object.keys(row).some(column => workflowColumns.has(column))) {
+            const { error } = await supabase.rpc('transition_project_purchase_order_status', {
+                p_po_id: id,
+                p_status: row.status || null,
+                p_patch: row,
+            });
+            if (error) throw error;
+            return;
+        }
         const { error } = await supabase
             .from('purchase_orders')
             .update(row)

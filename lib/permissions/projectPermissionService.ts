@@ -255,7 +255,7 @@ export const legacyProjectCodeToPermissionCodes = (code: LegacyProjectPermission
     case 'verify':
       return projectActionCodesByAction(['verify', 'return']);
     case 'confirm':
-      return projectActionCodesByAction(['confirm']);
+      return projectActionCodesByAction(['confirm', 'confirm_fulfillment']);
     case 'approve':
       return projectActionCodesByAction(['approve']);
     case 'view_available_stock':

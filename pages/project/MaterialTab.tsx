@@ -93,6 +93,24 @@ interface MaterialTabProps {
     materialPermissions?: ProjectMaterialTabPermissionMap;
 }
 
+const MATERIAL_REQUEST_APPROVE_PERMISSION = 'project.material_request.approve';
+const MATERIAL_REQUEST_RETURN_PERMISSION = 'project.material_request.return';
+const MATERIAL_REQUEST_SUBMIT_PERMISSION = 'project.material_request.submit';
+const MATERIAL_REQUEST_CONFIRM_PERMISSION = 'project.material_request.confirm_fulfillment';
+const MATERIAL_REQUEST_EDIT_OWN_PERMISSION = 'project.material_request.edit_own';
+
+const normalizeMaterialRequestPermissionCodes = (codes?: string[] | null): string[] => {
+    const normalized = (codes || []).map(code => {
+        if (code.startsWith('project.')) return code;
+        if (code === 'submit') return MATERIAL_REQUEST_SUBMIT_PERMISSION;
+        if (code === 'return' || code === 'reject' || code === 'rejected' || code === 'returned') return MATERIAL_REQUEST_RETURN_PERMISSION;
+        if (code === 'confirm' || code === 'confirm_fulfillment' || code === 'fulfill') return MATERIAL_REQUEST_CONFIRM_PERMISSION;
+        if (code === 'edit') return MATERIAL_REQUEST_EDIT_OWN_PERMISSION;
+        return MATERIAL_REQUEST_APPROVE_PERMISSION;
+    });
+    return [...new Set(normalized.length > 0 ? normalized : [MATERIAL_REQUEST_APPROVE_PERMISSION])];
+};
+
 const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId, project, projectFinance, siteName, siteWarehouseId, canManageTab = true, materialPermissions }) => {
     const location = useLocation();
     const { items: inventoryItems, requests: allRequests, warehouses, users, employees, orgUnits, user, transactions, hrmConstructionSites, loadModuleData, isModuleAdmin } = useApp();
@@ -111,16 +129,21 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     const {
         materialAccess,
         visibleMaterialTabs,
-        canManageBoq,
-        canManagePlanning,
-        canManageRequest,
-        canManagePo,
         boqPbacLoaded,
         canEditBoq,
         canDeleteBoq,
         canApproveProjectRequest,
         canViewAvailableStock,
         canCreateMaterialRequest,
+        canSubmitMaterialRequest,
+        canReturnMaterialRequest,
+        canConfirmFulfillment,
+        canEditPlanning,
+        canCreatePo,
+        canApprovePo,
+        canReceivePo,
+        canCreateCustomMaterial,
+        canApproveCustomMaterial,
     } = useProjectMaterialAccess({
         materialPermissions,
         canManageTab,
@@ -606,13 +629,13 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         return targetNodeId ? workflowNodeById.get(targetNodeId) || subject.currentNode || null : subject.currentNode || null;
     }, [requestWorkflowRuntimeContexts, runtimeNodeToWorkflowNode, workflowNodeById]);
     const getWorkflowNodePermissionCodes = useCallback((nodeId?: string | null): string[] => {
-        if (!nodeId) return ['approve'];
+        if (!nodeId) return [MATERIAL_REQUEST_APPROVE_PERMISSION];
         const runtimeNode = Object.values(requestWorkflowRuntimeContexts)
             .flatMap(context => context.nodes)
             .find(node => node.id === nodeId || node.templateNodeId === nodeId);
         const node = runtimeNode ? runtimeNodeToWorkflowNode(runtimeNode) : workflowNodeById.get(nodeId);
         const codes = node?.config?.eligiblePermissionCodes?.filter(Boolean);
-        return codes && codes.length > 0 ? codes : ['approve'];
+        return normalizeMaterialRequestPermissionCodes(codes);
     }, [requestWorkflowRuntimeContexts, runtimeNodeToWorkflowNode, workflowNodeById]);
     const getWorkflowAssigneeUserIds = useCallback((request: MaterialRequest) => {
         const subject = getRequestWorkflowSubject(request);
@@ -818,13 +841,13 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
 
     const ensureBoqPermission = (allowed: boolean, permissionCode: 'edit' | 'delete', action: string) => {
         if (allowed) return true;
-        if (!boqPbacLoaded && !canManageBoq) {
+        if (!boqPbacLoaded) {
             toast.info('Đang tải quyền', 'Vui lòng thử lại sau vài giây.');
             return false;
         }
         toast.warning(
             'Không có quyền BOQ',
-            `Bạn cần quyền dự án "${permissionCode}" hoặc quyền quản trị "Vật tư: BOQ" để ${action}.`,
+            `Bạn cần quyền dự án "project.material_boq.${permissionCode}" để ${action}.`,
         );
         return false;
     };
@@ -845,7 +868,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                 && getWorkflowAssigneeUserIds(request).includes(user.id);
         }
         return canManageProjectWorkflow(request)
-            || (canApproveProjectRequest && getWorkflowAssigneeUserIds(request).includes(user.id));
+            || ((canApproveProjectRequest || canReturnMaterialRequest || canConfirmFulfillment) && getWorkflowAssigneeUserIds(request).includes(user.id));
     };
 
     const canReassignProjectWorkflow = (request: MaterialRequest) =>
@@ -866,7 +889,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         if (toStage.startsWith('workflow:')) {
             if (fromStage === 'draft') {
                 return Boolean(workflowConfiguration?.valid)
-                    && canCreateMaterialRequest
+                    && canSubmitMaterialRequest
                     && (request.requesterId === user.id || user.role === Role.ADMIN);
             }
             return dynamicSubject?.status === 'RUNNING' && canActOnProjectRequest(request);
@@ -878,7 +901,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             return ['site_manager_review', 'material_department_review'].includes(fromStage) && canActOnProjectRequest(request);
         }
         if (fromStage === 'draft' && toStage === 'site_manager_review') {
-            return canCreateMaterialRequest && (request.requesterId === user.id || user.role === Role.ADMIN);
+            return canSubmitMaterialRequest && (request.requesterId === user.id || user.role === Role.ADMIN);
         }
         if (fromStage === 'site_manager_review' && toStage === 'material_department_review') {
             return canActOnProjectRequest(request);
@@ -1385,8 +1408,8 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                     name: userById.get(targetUserIds[0])?.name || targetUserIds[0],
                     names: targetUserIds.map(id => userById.get(id)?.name || id),
                     permissionCode: nextNode.type === WorkflowNodeType.END
-                        ? 'approve'
-                        : getWorkflowNodePermissionCodes(nextNode.id)[0] || 'approve',
+                        ? MATERIAL_REQUEST_CONFIRM_PERMISSION
+                        : getWorkflowNodePermissionCodes(nextNode.id)[0] || MATERIAL_REQUEST_APPROVE_PERMISSION,
                     note: context.comment,
                 }
                 : null;
@@ -1439,7 +1462,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                     || assigneeUserIds[0]
                     || '',
                 names: assigneeUserIds.map(id => userById.get(id)?.name || id),
-                permissionCode: getWorkflowNodePermissionCodes(targetNode?.id)[0] || 'approve',
+                permissionCode: getWorkflowNodePermissionCodes(targetNode?.id)[0] || MATERIAL_REQUEST_APPROVE_PERMISSION,
                 note: context.comment,
             };
             await performDynamicRequestTransition({
@@ -1471,7 +1494,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                 userIds: assigneeUserIds,
                 name: userById.get(assigneeUserIds[0] || '')?.name || assigneeUserIds[0] || '',
                 names: assigneeUserIds.map(id => userById.get(id)?.name || id),
-                permissionCode: getWorkflowNodePermissionCodes(context.subject.currentNodeId)[0] || 'approve',
+                permissionCode: getWorkflowNodePermissionCodes(context.subject.currentNodeId)[0] || MATERIAL_REQUEST_APPROVE_PERMISSION,
                 note: context.comment,
             };
             await performDynamicRequestTransition({
@@ -1538,7 +1561,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             status: isReturn ? RequestStatus.DRAFT : RequestStatus.REJECTED,
             action: isReturn ? 'RETURNED' : 'REJECTED',
             target: isReturn
-                ? { userId: request.requesterId, name: userById.get(request.requesterId)?.name || request.requesterId, permissionCode: 'edit', note }
+                ? { userId: request.requesterId, name: userById.get(request.requesterId)?.name || request.requesterId, permissionCode: MATERIAL_REQUEST_EDIT_OWN_PERMISSION, note }
                 : null,
             note,
             metadata: { fromStage: terminalTransition.fromStage, source: 'kanban_drag' },
@@ -2382,14 +2405,14 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     }, []);
 
     const handleCreatePlanningDraftPo = useCallback((draft: MaterialPlanningDraftPo) => {
-        if (!materialAccess.po.canView || !canManagePo) {
-            toast.warning('Không có quyền tạo PO', 'Bạn cần quyền quản trị Đơn hàng PO để tạo PO từ kế hoạch vật tư.');
+        if (!materialAccess.po.canView || !canCreatePo) {
+            toast.warning('Không có quyền tạo PO', 'Bạn cần quyền "project.material_po.create" để tạo PO từ kế hoạch vật tư.');
             return;
         }
         setPlanningDraftPo(draft);
         setPlanningDraftPoKey(prev => prev + 1);
         setActiveSubTab('po');
-    }, [canManagePo, materialAccess.po.canView, toast]);
+    }, [canCreatePo, materialAccess.po.canView, toast]);
 
     const materialTabLabels: Record<ProjectMaterialTabKey, string> = {
         summary: '🔗 Tổng hợp',
@@ -2411,7 +2434,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         waste: stats.overWaste,
         dashboard: 0,
     };
-    const canManageOpeningBalance = canManageTab && Boolean(project);
+    const canManageOpeningBalance = (user.role === Role.ADMIN || isGlobalWarehouseKeeper(user)) && Boolean(project);
 
     return (
         <div className="space-y-6">
@@ -2787,7 +2810,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                         constructionSiteId={constructionSiteId || null}
                         scopeKey={planningScopeKey}
                         siteWarehouseId={defaultSiteWarehouseId}
-                        canManage={canManagePlanning}
+                        canManage={canEditPlanning}
                         userId={user.id}
                         tasks={tasks}
                         workBoqItems={workBoqItems}
@@ -2848,7 +2871,8 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                     constructionSiteId={constructionSiteId}
                     currentUserId={user.id}
                     currentUserName={user.name || user.username}
-                    canManage={materialAccess.custom.canManage || canManageRequest || canManagePo || user.role === Role.ADMIN}
+                    canCreate={canCreateCustomMaterial}
+                    canApprove={canApproveCustomMaterial}
                 />
             )}
 
@@ -2857,7 +2881,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                     <SupplyChainTab
                         constructionSiteId={constructionSiteId}
                         projectId={projectId}
-                        canManageTab={canManagePo}
+                        canManageTab={canCreatePo || canApprovePo || canReceivePo}
                         initialDraftPo={planningDraftPo}
                         initialDraftPoKey={planningDraftPoKey}
                         deepLinkPoId={activePurchaseOrderDeepLinkId}
@@ -2887,8 +2911,8 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                         documentSubtitle={submissionTransition.subtitle}
                         projectId={projectId || undefined}
                         constructionSiteId={constructionSiteId || null}
-                        recipientPermissionCodes={submissionTransition.recipientPermissionCodes?.length ? submissionTransition.recipientPermissionCodes as any : ['approve']}
-                        recipientHint={submissionTransition.recipientHint || 'Chọn đích danh nhân sự dự án có quyền approve để xử lý bước tiếp theo.'}
+                        recipientPermissionCodes={submissionTransition.recipientPermissionCodes?.length ? submissionTransition.recipientPermissionCodes : [MATERIAL_REQUEST_APPROVE_PERMISSION]}
+                        recipientHint={submissionTransition.recipientHint || `Chọn đích danh nhân sự dự án có quyền ${MATERIAL_REQUEST_APPROVE_PERMISSION} để xử lý bước tiếp theo.`}
                         details={[
                             { label: 'Kho nhận', value: warehouses.find(w => w.id === submissionTransition.request.siteWarehouseId)?.name || submissionTransition.request.siteWarehouseId },
                             { label: 'Số dòng vật tư', value: `${submissionTransition.request.items.length} dòng` },
@@ -3117,7 +3141,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                         documentName={workflowActionTransition.request.code}
                         completionHandoff={{
                             required: true,
-                            eligiblePermissionCodes: ['approve'],
+                            eligiblePermissionCodes: [MATERIAL_REQUEST_CONFIRM_PERMISSION],
                             assigneeLabel: 'Người phụ trách tạo đợt cấp / đặt mua',
                             helperText: 'Workflow phê duyệt sẽ hoàn thành. Phiếu vật tư chuyển sang Chờ tạo đợt cấp và giao cho người được chọn để cấp hàng hoặc đặt mua.',
                         }}
