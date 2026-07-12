@@ -3,6 +3,17 @@ import { ROUTE_TO_MODULE } from '../constants/routes';
 import { hasProjectTabPermissionRoute } from './projectTabPermissions';
 import { Role, User } from '../types';
 
+const AUTHENTICATED_OPEN_ROUTE_PATTERNS = [
+  '/notifications',
+  '/my-profile',
+  '/employee-dashboard',
+  '/feedback',
+  '/leaderboard',
+  '/safety-card/:qrToken',
+  '/settings',
+  '/users',
+];
+
 export const normalizeRoutePath = (route: string): string => {
   const path = route.split('?')[0].split('#')[0].trim();
   return path || '/';
@@ -16,6 +27,16 @@ export const getRouteModuleKey = (route: string): string | undefined => {
     )?.[1];
 };
 
+export const isAuthenticatedOpenRoute = (route: string): boolean => {
+  const pathname = normalizeRoutePath(route);
+  return AUTHENTICATED_OPEN_ROUTE_PATTERNS.some(routePattern => {
+    if (routePattern.includes(':')) {
+      return !!matchPath({ path: routePattern, end: true }, pathname);
+    }
+    return routePattern === pathname;
+  });
+};
+
 export const canAccessRoute = (
   user: Pick<User, 'role' | 'allowedModules' | 'allowedSubModules' | 'adminModules' | 'adminSubModules'> | null | undefined,
   route?: string,
@@ -25,10 +46,10 @@ export const canAccessRoute = (
   if (user.role === Role.ADMIN) return true;
 
   const pathname = normalizeRoutePath(route);
-  if (pathname === '/settings' || pathname === '/users') return true;
+  if (isAuthenticatedOpenRoute(pathname)) return true;
 
   const moduleKey = getRouteModuleKey(pathname);
-  if (!moduleKey) return true;
+  if (!moduleKey) return false;
 
   const hasSubModuleGrant =
     (user.allowedSubModules?.[moduleKey] || []).length > 0 ||

@@ -16,12 +16,12 @@ import ErrorBoundary from './components/ErrorBoundary';
 import ReleaseNotesModal from './components/ReleaseNotesModal';
 import { Role } from './types';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
-import { ROUTE_TO_MODULE } from './constants/routes';
 import { getProjectAllowedSubModuleRedirect, hasProjectTabPermissionRoute } from './lib/projectTabPermissions';
 import { createPerformanceTrace } from './lib/performanceTrace';
 import { isChatEnabled, isChatV2Enabled } from './lib/featureFlags';
 import { hasAnySettingsManagementFeature } from './lib/settingsPermissions';
 import { useLatestReleaseNotice } from './hooks/useLatestReleaseNotice';
+import { getRouteModuleKey, isAuthenticatedOpenRoute } from './lib/routeAccess';
 
 // Lazy load all page components for code splitting
 const Dashboard = React.lazy(() => import('./pages/Dashboard'));
@@ -199,15 +199,11 @@ const SubModuleGuard: React.FC<{ children: React.ReactNode }> = ({ children }) =
   // Với HashRouter, location.pathname là path thực (không có #)
   // VD: /hrm/dashboard — không cần clean gì thêm
   const pathname = location.pathname;
-  if (pathname === '/settings' || pathname === '/users') return <>{children}</>;
+  if (isAuthenticatedOpenRoute(pathname)) return <>{children}</>;
 
-  const moduleKey = ROUTE_TO_MODULE[pathname] ||
-    Object.entries(ROUTE_TO_MODULE).find(([routePattern]) =>
-      routePattern.includes(':') && matchPath({ path: routePattern, end: true }, pathname)
-    )?.[1];
+  const moduleKey = getRouteModuleKey(pathname);
 
-  // Route không nằm trong map → không guard (settings, chat, profile...)
-  if (!moduleKey) return <>{children}</>;
+  if (!moduleKey) return <Navigate to="/" replace />;
 
   // User không được phép dùng module này nói chung
   const allowedModules = user.allowedModules;
