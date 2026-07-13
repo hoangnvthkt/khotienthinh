@@ -4051,7 +4051,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 <div class="approval-signatures">
                     <div><strong>BP Vật tư-TB</strong><span>${escapeHtml(user.name || '')}</span></div>
                     <div><strong>PT Phòng QLDA</strong><span>Lưu Công Danh</span></div>
-                    <div><strong>BP Kế hoạch</strong><span>Nguyễn Thành Đô</span></div>
+                    
                     <div><strong>Giám đốc vật tư</strong><span>Nguyễn Thị Mơ</span></div>
                     <div><strong>Tổng giám đốc</strong><span>Dương Xuân Thịnh</span></div>
                 </div>
@@ -5029,8 +5029,8 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             result = result.filter(po => {
                 const poNum = (po.poNumber || '').toLowerCase();
                 const vendor = (po.vendorName || '').toLowerCase();
-                const itemsMatch = po.items?.some(item => 
-                    (item.name || '').toLowerCase().includes(query) || 
+                const itemsMatch = po.items?.some(item =>
+                    (item.name || '').toLowerCase().includes(query) ||
                     (item.sku || '').toLowerCase().includes(query)
                 ) || false;
                 return poNum.includes(query) || vendor.includes(query) || itemsMatch;
@@ -5177,47 +5177,69 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             </div>
             {/* KPI */}
             {subTab === 'po' && (
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-                {[
-                    { 
-                        key: 'all', 
-                        label: 'Tổng đơn', 
-                        value: stats.totalPo, 
-                        icon: <ShoppingCart size={14} />, 
-                        tone: 'text-slate-800 dark:text-slate-100', 
-                        sub: `Tổng: ${fmt(stats.totalValue)} đ` 
-                    },
-                    { 
-                        key: 'in_transit', 
-                        label: 'Đang giao', 
-                        value: stats.inTransit, 
-                        icon: <Clock size={14} />, 
-                        tone: 'text-amber-600 dark:text-amber-400', 
-                        sub: 'Đơn hàng đang vận chuyển' 
-                    },
-                    { 
-                        key: 'delivered', 
-                        label: 'Đã giao', 
-                        value: stats.delivered, 
-                        icon: <Truck size={14} />, 
-                        tone: 'text-emerald-600 dark:text-emerald-400', 
-                        sub: 'Đơn hàng đã hoàn thành' 
-                    },
-                    { 
-                        key: 'partial', 
-                        label: 'Giao 1 phần', 
-                        value: stats.partial, 
-                        icon: <Package size={14} />, 
-                        tone: 'text-indigo-650 dark:text-indigo-400', 
-                        sub: 'Giao nhận một phần' 
-                    },
-                ].map(metric => {
-                    const isActive = poStatusFilter === metric.key;
-                    if (metric.key === 'all') {
+                <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                    {[
+                        {
+                            key: 'all',
+                            label: 'Tổng đơn',
+                            value: stats.totalPo,
+                            icon: <ShoppingCart size={14} />,
+                            tone: 'text-slate-800 dark:text-slate-100',
+                            sub: `Tổng: ${fmt(stats.totalValue)} đ`
+                        },
+                        {
+                            key: 'in_transit',
+                            label: 'Đang giao',
+                            value: stats.inTransit,
+                            icon: <Clock size={14} />,
+                            tone: 'text-amber-600 dark:text-amber-400',
+                            sub: 'Đơn hàng đang vận chuyển'
+                        },
+                        {
+                            key: 'delivered',
+                            label: 'Đã giao',
+                            value: stats.delivered,
+                            icon: <Truck size={14} />,
+                            tone: 'text-emerald-600 dark:text-emerald-400',
+                            sub: 'Đơn hàng đã hoàn thành'
+                        },
+                        {
+                            key: 'partial',
+                            label: 'Giao 1 phần',
+                            value: stats.partial,
+                            icon: <Package size={14} />,
+                            tone: 'text-indigo-650 dark:text-indigo-400',
+                            sub: 'Giao nhận một phần'
+                        },
+                    ].map(metric => {
+                        const isActive = poStatusFilter === metric.key;
+                        if (metric.key === 'all') {
+                            return (
+                                <div
+                                    key={metric.key}
+                                    className="text-left rounded-xl border border-border bg-card p-4 shadow-sm"
+                                >
+                                    <div className="mb-2 flex items-center justify-between">
+                                        <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                            <span className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+                                                {metric.icon}
+                                            </span>
+                                            {metric.label}
+                                        </div>
+                                    </div>
+                                    <div className={`text-2xl font-black ${metric.tone}`}>{metric.value}</div>
+                                    {metric.sub && <div className="mt-1 text-[10px] font-bold text-slate-500 dark:text-slate-400">{metric.sub}</div>}
+                                </div>
+                            );
+                        }
                         return (
-                            <div
+                            <button
                                 key={metric.key}
-                                className="text-left rounded-xl border border-border bg-card p-4 shadow-sm"
+                                type="button"
+                                onClick={() => {
+                                    setPoStatusFilter(prev => prev === metric.key ? 'all' : metric.key);
+                                }}
+                                className="text-left rounded-xl border border-border bg-card p-4 shadow-sm transition-all duration-200 hover:scale-[1.01] hover:shadow-md cursor-pointer hover:bg-slate-50/50 dark:hover:bg-slate-900/30"
                             >
                                 <div className="mb-2 flex items-center justify-between">
                                     <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">
@@ -5229,32 +5251,10 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                 </div>
                                 <div className={`text-2xl font-black ${metric.tone}`}>{metric.value}</div>
                                 {metric.sub && <div className="mt-1 text-[10px] font-bold text-slate-500 dark:text-slate-400">{metric.sub}</div>}
-                            </div>
+                            </button>
                         );
-                    }
-                    return (
-                        <button
-                            key={metric.key}
-                            type="button"
-                            onClick={() => {
-                                setPoStatusFilter(prev => prev === metric.key ? 'all' : metric.key);
-                            }}
-                            className="text-left rounded-xl border border-border bg-card p-4 shadow-sm transition-all duration-200 hover:scale-[1.01] hover:shadow-md cursor-pointer hover:bg-slate-50/50 dark:hover:bg-slate-900/30"
-                        >
-                            <div className="mb-2 flex items-center justify-between">
-                                <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                                    <span className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
-                                        {metric.icon}
-                                    </span>
-                                    {metric.label}
-                                </div>
-                            </div>
-                            <div className={`text-2xl font-black ${metric.tone}`}>{metric.value}</div>
-                            {metric.sub && <div className="mt-1 text-[10px] font-bold text-slate-500 dark:text-slate-400">{metric.sub}</div>}
-                        </button>
-                    );
-                })}
-            </div>
+                    })}
+                </div>
             )}
 
             {/* Vendor Tab */}
@@ -5332,476 +5332,475 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             )}
 
             {subTab === 'direct' && (
-            <div className="space-y-6">
-            <div className={procurementPanelClass}>
-                <div className="flex flex-col gap-3 border-b border-slate-100 p-4 dark:border-slate-800 lg:flex-row lg:items-center lg:justify-between">
-                    <div>
-                        <h3 className="flex items-center gap-2 text-sm font-black text-slate-800 dark:text-slate-100">
-                            <Package size={16} className="text-orange-500" /> Mua nóng công trường
-                        </h3>
-                        <p className="mt-1 text-xs font-bold text-slate-500 dark:text-slate-400">Phiếu mua trực tiếp tại công trường, nối WMS/AP nhưng không thay thế PO chuẩn.</p>
-                    </div>
-                    {canManageTab && (
-                        <div className="flex flex-wrap items-center gap-2">
-                            <button
-                                type="button"
-                                onClick={() => openCreateDirectPurchase('planned')}
-                                className="inline-flex min-h-9 items-center gap-1 whitespace-nowrap rounded-lg border border-orange-200 bg-orange-50 px-3 py-1.5 text-[10px] font-black text-orange-700 transition hover:bg-orange-100 active:scale-[0.98]"
-                            >
-                                <Send size={12} /> Đề xuất mua nóng
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => openCreateDirectPurchase('immediate')}
-                                className="inline-flex min-h-9 items-center gap-1 whitespace-nowrap rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-[10px] font-black text-rose-700 transition hover:bg-rose-100 active:scale-[0.98]"
-                            >
-                                <Plus size={12} /> Mua ngay
-                            </button>
+                <div className="space-y-6">
+                    <div className={procurementPanelClass}>
+                        <div className="flex flex-col gap-3 border-b border-slate-100 p-4 dark:border-slate-800 lg:flex-row lg:items-center lg:justify-between">
+                            <div>
+                                <h3 className="flex items-center gap-2 text-sm font-black text-slate-800 dark:text-slate-100">
+                                    <Package size={16} className="text-orange-500" /> Mua nóng công trường
+                                </h3>
+                                <p className="mt-1 text-xs font-bold text-slate-500 dark:text-slate-400">Phiếu mua trực tiếp tại công trường, nối WMS/AP nhưng không thay thế PO chuẩn.</p>
+                            </div>
+                            {canManageTab && (
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => openCreateDirectPurchase('planned')}
+                                        className="inline-flex min-h-9 items-center gap-1 whitespace-nowrap rounded-lg border border-orange-200 bg-orange-50 px-3 py-1.5 text-[10px] font-black text-orange-700 transition hover:bg-orange-100 active:scale-[0.98]"
+                                    >
+                                        <Send size={12} /> Đề xuất mua nóng
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => openCreateDirectPurchase('immediate')}
+                                        className="inline-flex min-h-9 items-center gap-1 whitespace-nowrap rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-[10px] font-black text-rose-700 transition hover:bg-rose-100 active:scale-[0.98]"
+                                    >
+                                        <Plus size={12} /> Mua ngay
+                                    </button>
+                                </div>
+                            )}
                         </div>
-                    )}
-                </div>
-                <div className="grid grid-cols-2 gap-2 border-b border-slate-100 bg-slate-50/50 p-4 text-xs dark:border-slate-800 dark:bg-slate-900/20 lg:grid-cols-4">
-                    <div className="rounded-lg border border-slate-100 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
-                        <div className="text-[10px] font-black uppercase text-slate-400">Tổng phiếu</div>
-                        <div className="mt-1 text-lg font-black text-slate-900 dark:text-white">{directPurchaseStats.total}</div>
-                    </div>
-                    <div className="rounded-lg border border-slate-100 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
-                        <div className="text-[10px] font-black uppercase text-slate-400">Giá trị</div>
-                        <div className="mt-1 text-lg font-black text-orange-700">{fmtMoney(directPurchaseStats.totalValue)} đ</div>
-                    </div>
-                    <div className="rounded-lg border border-slate-100 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
-                        <div className="text-[10px] font-black uppercase text-slate-400">Cần WMS/AP</div>
-                        <div className="mt-1 text-lg font-black text-amber-700">{directPurchaseStats.pendingWms}</div>
-                    </div>
-                    <div className="rounded-lg border border-slate-100 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
-                        <div className="text-[10px] font-black uppercase text-slate-400">Sẵn sàng review</div>
-                        <div className="mt-1 text-lg font-black text-emerald-700">{directPurchaseStats.payableReady}</div>
-                    </div>
-                </div>
-                {loadingDirectPurchases ? (
-                    <div className="flex items-center justify-center gap-2 p-8 text-sm font-bold text-slate-400">
-                        <Loader2 size={16} className="animate-spin text-orange-500" /> Đang tải phiếu mua nóng...
-                    </div>
-                ) : sortedDirectPurchases.length === 0 ? (
-                    <div className="p-4">
-                        <EmptyState icon={<Package size={18} />} title="Chưa có phiếu mua nóng" message="Tạo phiếu mua nóng khi công trường cần mua trực tiếp ngoài luồng PO chuẩn." compact />
-                    </div>
-                ) : (
-                    <div className="overflow-x-auto">
-                        <table className="w-full min-w-[980px] text-left text-xs">
-                            <thead className={procurementTableHeadClass}>
-                                <tr>
-                                    <th className="px-4 py-3">Phiếu</th>
-                                    <th className="px-4 py-3">NCC / Nguồn tiền</th>
-                                    <th className="px-4 py-3 text-right">Giá trị</th>
-                                    <th className="px-4 py-3">WMS</th>
-                                    <th className="px-4 py-3">AP</th>
-                                    <th className="px-4 py-3 text-right">Thao tác</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
-                                {sortedDirectPurchases.map(purchase => {
-                                    const statusCfg = DIRECT_PURCHASE_STATUS[purchase.status] || DIRECT_PURCHASE_STATUS.draft;
-                                    const modeCfg = DIRECT_PURCHASE_MODE[purchase.purchaseMode];
-                                    const wmsTx = purchase.wmsTransactionId ? transactions.find(tx => tx.id === purchase.wmsTransactionId) : null;
-                                    const isLoadingAction = directActionLoading?.endsWith(`:${purchase.id}`);
-                                    return (
-                                        <tr key={purchase.id} className="hover:bg-orange-50/40 dark:hover:bg-slate-900/50">
-                                            <td className="px-4 py-3">
-                                                <button type="button" onClick={() => openDirectPurchaseDetail(purchase)} className="font-mono text-xs font-black text-slate-900 hover:text-orange-700 dark:text-white">
-                                                    {purchase.code}
-                                                </button>
-                                                <div className="mt-1 flex flex-wrap items-center gap-1">
-                                                    <span className={`rounded-full border px-2 py-0.5 text-[9px] font-black ${modeCfg.tone}`}>{modeCfg.label}</span>
-                                                    <StatusBadge status={purchase.status} label={statusCfg.label} tone={statusCfg.tone} showDot={false} />
-                                                </div>
-                                                <div className="mt-1 text-[10px] font-bold text-slate-400">{purchase.purchaseDate || purchase.createdAt?.slice(0, 10) || '—'}</div>
-                                            </td>
-                                            <td className="px-4 py-3">
-                                                <div className="font-black text-slate-700 dark:text-slate-200">{purchase.supplierNameSnapshot}</div>
-                                                <div className="mt-1 text-[10px] font-bold text-slate-400">{DIRECT_PURCHASE_PAYMENT_SOURCE[purchase.paymentSource]}</div>
-                                                {['site_cash', 'staff_paid'].includes(purchase.paymentSource) && (
-                                                    <div className={`mt-1 inline-flex rounded-full border px-2 py-0.5 text-[9px] font-black ${
-                                                        purchase.siteCashSettlementId
-                                                            ? 'border-blue-200 bg-blue-50 text-blue-700'
-                                                            : 'border-amber-200 bg-amber-50 text-amber-700'
-                                                    }`}>
-                                                        {purchase.siteCashSettlementId ? 'Đã vào hoàn ứng' : 'Chờ hoàn ứng'}
-                                                    </div>
-                                                )}
-                                            </td>
-                                            <td className="px-4 py-3 text-right font-black text-orange-700 whitespace-nowrap">{fmtMoney(purchase.totalAmount)} đ</td>
-                                            <td className="px-4 py-3">
-                                                {purchase.wmsTransactionId ? (
-                                                    <button type="button" onClick={() => openDirectPurchaseWmsTransaction(purchase)} className="font-mono text-[10px] font-black text-blue-700 hover:underline">
-                                                        {purchase.wmsTransactionId.slice(-10)} {wmsTx?.status ? `• ${wmsTx.status}` : ''}
-                                                    </button>
-                                                ) : (
-                                                    <span className="text-[10px] font-bold text-slate-400">Chưa tạo</span>
-                                                )}
-                                            </td>
-                                            <td className="px-4 py-3">
-                                                {purchase.status === 'reconciled' || purchase.status === 'closed' ? (
-                                                    <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-black text-emerald-700">Đã ghi AP</span>
-                                                ) : (
-                                                    <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-black text-amber-700">Chưa ghi AP</span>
-                                                )}
-                                            </td>
-                                            <td className="px-4 py-3 text-right">
-                                                <div className="flex flex-wrap justify-end gap-1">
-                                                    <button type="button" onClick={() => openDirectPurchaseDetail(purchase)} className="rounded-md px-2 py-1 text-[10px] font-black text-orange-700 hover:bg-orange-50">
-                                                        <FileText size={11} className="inline" /> Chi tiết
-                                                    </button>
-                                                    {canManageTab && canEditDirectPurchaseDocument(purchase) && (
-                                                        <button type="button" onClick={() => openEditDirectPurchase(purchase)} disabled={isLoadingAction} className="rounded-md px-2 py-1 text-[10px] font-black text-blue-700 hover:bg-blue-50 disabled:opacity-50">
-                                                            {isLoadingAction ? <Loader2 size={11} className="inline animate-spin" /> : <Edit2 size={11} className="inline" />} Sửa
-                                                        </button>
-                                                    )}
-                                                    {canManageTab && canDeleteDirectPurchaseDocument(purchase) && (
-                                                        <button type="button" onClick={() => void deleteDirectPurchase(purchase)} disabled={isLoadingAction} className="rounded-md px-2 py-1 text-[10px] font-black text-red-600 hover:bg-red-50 disabled:opacity-50">
-                                                            {isLoadingAction ? <Loader2 size={11} className="inline animate-spin" /> : <Trash2 size={11} className="inline" />} Xóa
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            </td>
+                        <div className="grid grid-cols-2 gap-2 border-b border-slate-100 bg-slate-50/50 p-4 text-xs dark:border-slate-800 dark:bg-slate-900/20 lg:grid-cols-4">
+                            <div className="rounded-lg border border-slate-100 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
+                                <div className="text-[10px] font-black uppercase text-slate-400">Tổng phiếu</div>
+                                <div className="mt-1 text-lg font-black text-slate-900 dark:text-white">{directPurchaseStats.total}</div>
+                            </div>
+                            <div className="rounded-lg border border-slate-100 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
+                                <div className="text-[10px] font-black uppercase text-slate-400">Giá trị</div>
+                                <div className="mt-1 text-lg font-black text-orange-700">{fmtMoney(directPurchaseStats.totalValue)} đ</div>
+                            </div>
+                            <div className="rounded-lg border border-slate-100 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
+                                <div className="text-[10px] font-black uppercase text-slate-400">Cần WMS/AP</div>
+                                <div className="mt-1 text-lg font-black text-amber-700">{directPurchaseStats.pendingWms}</div>
+                            </div>
+                            <div className="rounded-lg border border-slate-100 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
+                                <div className="text-[10px] font-black uppercase text-slate-400">Sẵn sàng review</div>
+                                <div className="mt-1 text-lg font-black text-emerald-700">{directPurchaseStats.payableReady}</div>
+                            </div>
+                        </div>
+                        {loadingDirectPurchases ? (
+                            <div className="flex items-center justify-center gap-2 p-8 text-sm font-bold text-slate-400">
+                                <Loader2 size={16} className="animate-spin text-orange-500" /> Đang tải phiếu mua nóng...
+                            </div>
+                        ) : sortedDirectPurchases.length === 0 ? (
+                            <div className="p-4">
+                                <EmptyState icon={<Package size={18} />} title="Chưa có phiếu mua nóng" message="Tạo phiếu mua nóng khi công trường cần mua trực tiếp ngoài luồng PO chuẩn." compact />
+                            </div>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="w-full min-w-[980px] text-left text-xs">
+                                    <thead className={procurementTableHeadClass}>
+                                        <tr>
+                                            <th className="px-4 py-3">Phiếu</th>
+                                            <th className="px-4 py-3">NCC / Nguồn tiền</th>
+                                            <th className="px-4 py-3 text-right">Giá trị</th>
+                                            <th className="px-4 py-3">WMS</th>
+                                            <th className="px-4 py-3">AP</th>
+                                            <th className="px-4 py-3 text-right">Thao tác</th>
                                         </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
-                    </div>
-                )}
-            </div>
-
-            <div className={procurementPanelClass}>
-                <div className="flex flex-col gap-3 border-b border-slate-100 p-4 dark:border-slate-800 lg:flex-row lg:items-center lg:justify-between">
-                    <div>
-                        <h3 className="flex items-center gap-2 text-sm font-black text-slate-800 dark:text-slate-100">
-                            <Truck size={16} className="text-blue-500" /> Gọi hàng HĐ NCC
-                        </h3>
-                        <p className="mt-1 text-xs font-bold text-slate-500 dark:text-slate-400">Cát, đá, xi măng, bê tông giao tới công trường dùng ngay: không PO, có thể không qua kho hoặc nhập-xuất thẳng WMS, AP vẫn từ bảng đối soát HĐ NCC.</p>
-                    </div>
-                    {canManageTab && (
-                        <button
-                            type="button"
-                            onClick={openCreateSupplierDelivery}
-                            className="inline-flex min-h-9 items-center gap-1 whitespace-nowrap rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-[10px] font-black text-blue-700 transition hover:bg-blue-100 active:scale-[0.98]"
-                        >
-                            <Plus size={12} /> Tạo phiếu giao HĐ
-                        </button>
-                    )}
-                </div>
-                <div className="grid grid-cols-2 gap-2 border-b border-slate-100 bg-slate-50/50 p-4 text-xs dark:border-slate-800 dark:bg-slate-900/20 lg:grid-cols-4">
-                    <div className="rounded-lg border border-slate-100 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
-                        <div className="text-[10px] font-black uppercase text-slate-400">HĐ NCC</div>
-                        <div className="mt-1 text-lg font-black text-slate-900 dark:text-white">{supplierContracts.length}</div>
-                    </div>
-                    <div className="rounded-lg border border-slate-100 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
-                        <div className="text-[10px] font-black uppercase text-slate-400">Phiếu giao</div>
-                        <div className="mt-1 text-lg font-black text-blue-700">{supplierDeliveryNotes.length}</div>
-                    </div>
-                    <div className="rounded-lg border border-slate-100 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
-                        <div className="text-[10px] font-black uppercase text-slate-400">Đã đối soát</div>
-                        <div className="mt-1 text-lg font-black text-emerald-700">{supplierDeliveryStatements.filter(item => item.status === 'posted').length}</div>
-                    </div>
-                    <div className="rounded-lg border border-slate-100 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
-                        <div className="text-[10px] font-black uppercase text-slate-400">Giá trị giao</div>
-                        <div className="mt-1 text-lg font-black text-blue-700">{fmtMoney(supplierDeliveryNotes.reduce((sum, note) => sum + Number(note.totalAmount || 0), 0))} đ</div>
-                    </div>
-                </div>
-                <div className="border-b border-slate-100 bg-blue-50/50 px-4 py-2 text-[11px] font-bold text-blue-800 dark:border-slate-800 dark:bg-blue-950/20 dark:text-blue-200">
-                    Người có quyền quản lý Cung ứng/Tài chính được duyệt thực nhận. Khi bấm duyệt, toàn bộ dòng phiếu giao được chấp nhận theo số lượng/đơn giá hiện có; dòng nhập-xuất thẳng vẫn phải hoàn tất WMS xuất dùng trước khi đối soát/AP.
-                </div>
-                {supplierDeliveryNotes.length === 0 ? (
-                    <div className="p-4">
-                        <EmptyState icon={<Truck size={18} />} title="Chưa có phiếu giao theo HĐ" message="Chọn HĐ NCC đã khai trong module HD, nhập phiếu giao từng chuyến và đối soát cuối kỳ để sinh AP." compact />
-                    </div>
-                ) : (
-                    <div className="overflow-x-auto">
-                        <table className="w-full min-w-[1080px] text-left text-xs">
-                            <thead className={procurementTableHeadClass}>
-                                <tr>
-                                    <th className="px-4 py-3">Phiếu giao</th>
-                                    <th className="px-4 py-3">HĐ / NCC</th>
-                                    <th className="px-4 py-3">Phiếu NCC</th>
-                                    <th className="px-4 py-3 text-right">Giá trị</th>
-                                    <th className="px-4 py-3">Đối soát/AP</th>
-                                    <th className="px-4 py-3 text-right">Thao tác</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
-                                {[...supplierDeliveryNotes]
-                                    .sort((a, b) => String(b.deliveryDate || '').localeCompare(String(a.deliveryDate || '')))
-                                    .map(note => {
-                                        const statusCfg = SUPPLIER_DIRECT_DELIVERY_STATUS[note.status] || SUPPLIER_DIRECT_DELIVERY_STATUS.draft;
-                                        const statements = statementsByDeliveryNoteId.get(note.id) || [];
-                                        const postedStatement = statements.find(statement => statement.status === 'posted');
-                                        const isBusy = supplierDeliveryActionLoading?.endsWith(`:${note.id}`);
-                                        const noteLines = supplierDeliveryLinesByNoteId[note.id] || note.lines || [];
-                                        const wmsSummary = getSupplierDeliveryWmsSummary(noteLines);
-                                        const canCreateWmsImport = canManageTab
-                                            && !postedStatement
-                                            && (note.status === 'accepted' || note.status === 'statemented')
-                                            && wmsSummary.canCreateImport;
-                                        const statementBlockedByWms = wmsSummary.hasDirectLines && !wmsSummary.readyForStatement;
-                                        const hasWmsTransactions = wmsSummary.importTransactionIds.length > 0 || wmsSummary.exportTransactionIds.length > 0;
-                                        const canEditSupplierDelivery = canManageTab
-                                            && !postedStatement
-                                            && ['draft', 'submitted'].includes(note.status)
-                                            && !hasWmsTransactions;
-                                        const canCancelSupplierDeliveryApproval = canManageTab
-                                            && note.status === 'accepted'
-                                            && !postedStatement
-                                            && !hasWmsTransactions;
-                                        return (
-                                            <tr key={note.id} className="hover:bg-blue-50/40 dark:hover:bg-slate-900/50">
-                                                <td className="px-4 py-3">
-                                                    <div className="font-mono text-xs font-black text-slate-900 dark:text-white">{note.code}</div>
-                                                    <div className="mt-1 flex flex-wrap items-center gap-1">
-                                                        <StatusBadge status={note.status} label={statusCfg.label} tone={statusCfg.tone} showDot={false} />
-                                                        <span className={`rounded-full border px-2 py-0.5 text-[9px] font-black ${wmsSummary.badge}`}>{wmsSummary.label}</span>
-                                                        {note.vehicleNo && <span className="rounded-full border border-slate-200 px-2 py-0.5 text-[9px] font-black text-slate-500">{note.vehicleNo}</span>}
-                                                    </div>
-                                                    <div className="mt-1 text-[10px] font-bold text-slate-400">{note.deliveryDate}</div>
-                                                </td>
-                                                <td className="px-4 py-3">
-                                                    <div className="font-mono text-[10px] font-black text-blue-700">{note.supplierContractCode || note.supplierContractId}</div>
-                                                    <div className="mt-1 font-black text-slate-700 dark:text-slate-200">{note.supplierNameSnapshot}</div>
-                                                </td>
-                                                <td className="px-4 py-3">
-                                                    <div className="font-black text-slate-700 dark:text-slate-200">{note.deliveryTicketNo}</div>
-                                                    <div className="mt-1 text-[10px] font-bold text-slate-400">{note.note || 'Không bắt buộc lý do cấp'}</div>
-                                                </td>
-                                                <td className="px-4 py-3 text-right font-black text-blue-700 whitespace-nowrap">{fmtMoney(note.totalAmount)} đ</td>
-                                                <td className="px-4 py-3">
-                                                    {postedStatement ? (
-                                                        <div>
-                                                            <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-black text-emerald-700">Đã ghi AP</span>
-                                                            <div className="mt-1 font-mono text-[10px] font-black text-emerald-700">{postedStatement.code}</div>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
+                                        {sortedDirectPurchases.map(purchase => {
+                                            const statusCfg = DIRECT_PURCHASE_STATUS[purchase.status] || DIRECT_PURCHASE_STATUS.draft;
+                                            const modeCfg = DIRECT_PURCHASE_MODE[purchase.purchaseMode];
+                                            const wmsTx = purchase.wmsTransactionId ? transactions.find(tx => tx.id === purchase.wmsTransactionId) : null;
+                                            const isLoadingAction = directActionLoading?.endsWith(`:${purchase.id}`);
+                                            return (
+                                                <tr key={purchase.id} className="hover:bg-orange-50/40 dark:hover:bg-slate-900/50">
+                                                    <td className="px-4 py-3">
+                                                        <button type="button" onClick={() => openDirectPurchaseDetail(purchase)} className="font-mono text-xs font-black text-slate-900 hover:text-orange-700 dark:text-white">
+                                                            {purchase.code}
+                                                        </button>
+                                                        <div className="mt-1 flex flex-wrap items-center gap-1">
+                                                            <span className={`rounded-full border px-2 py-0.5 text-[9px] font-black ${modeCfg.tone}`}>{modeCfg.label}</span>
+                                                            <StatusBadge status={purchase.status} label={statusCfg.label} tone={statusCfg.tone} showDot={false} />
                                                         </div>
-                                                    ) : (
-                                                        <div>
-                                                            <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-black text-amber-700">Chưa đối soát</span>
-                                                            {statementBlockedByWms && (
-                                                                <div className="mt-1 text-[10px] font-bold text-orange-600">Khóa AP đến khi WMS xuất dùng hoàn tất.</div>
+                                                        <div className="mt-1 text-[10px] font-bold text-slate-400">{purchase.purchaseDate || purchase.createdAt?.slice(0, 10) || '—'}</div>
+                                                    </td>
+                                                    <td className="px-4 py-3">
+                                                        <div className="font-black text-slate-700 dark:text-slate-200">{purchase.supplierNameSnapshot}</div>
+                                                        <div className="mt-1 text-[10px] font-bold text-slate-400">{DIRECT_PURCHASE_PAYMENT_SOURCE[purchase.paymentSource]}</div>
+                                                        {['site_cash', 'staff_paid'].includes(purchase.paymentSource) && (
+                                                            <div className={`mt-1 inline-flex rounded-full border px-2 py-0.5 text-[9px] font-black ${purchase.siteCashSettlementId
+                                                                    ? 'border-blue-200 bg-blue-50 text-blue-700'
+                                                                    : 'border-amber-200 bg-amber-50 text-amber-700'
+                                                                }`}>
+                                                                {purchase.siteCashSettlementId ? 'Đã vào hoàn ứng' : 'Chờ hoàn ứng'}
+                                                            </div>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-4 py-3 text-right font-black text-orange-700 whitespace-nowrap">{fmtMoney(purchase.totalAmount)} đ</td>
+                                                    <td className="px-4 py-3">
+                                                        {purchase.wmsTransactionId ? (
+                                                            <button type="button" onClick={() => openDirectPurchaseWmsTransaction(purchase)} className="font-mono text-[10px] font-black text-blue-700 hover:underline">
+                                                                {purchase.wmsTransactionId.slice(-10)} {wmsTx?.status ? `• ${wmsTx.status}` : ''}
+                                                            </button>
+                                                        ) : (
+                                                            <span className="text-[10px] font-bold text-slate-400">Chưa tạo</span>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-4 py-3">
+                                                        {purchase.status === 'reconciled' || purchase.status === 'closed' ? (
+                                                            <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-black text-emerald-700">Đã ghi AP</span>
+                                                        ) : (
+                                                            <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-black text-amber-700">Chưa ghi AP</span>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-4 py-3 text-right">
+                                                        <div className="flex flex-wrap justify-end gap-1">
+                                                            <button type="button" onClick={() => openDirectPurchaseDetail(purchase)} className="rounded-md px-2 py-1 text-[10px] font-black text-orange-700 hover:bg-orange-50">
+                                                                <FileText size={11} className="inline" /> Chi tiết
+                                                            </button>
+                                                            {canManageTab && canEditDirectPurchaseDocument(purchase) && (
+                                                                <button type="button" onClick={() => openEditDirectPurchase(purchase)} disabled={isLoadingAction} className="rounded-md px-2 py-1 text-[10px] font-black text-blue-700 hover:bg-blue-50 disabled:opacity-50">
+                                                                    {isLoadingAction ? <Loader2 size={11} className="inline animate-spin" /> : <Edit2 size={11} className="inline" />} Sửa
+                                                                </button>
+                                                            )}
+                                                            {canManageTab && canDeleteDirectPurchaseDocument(purchase) && (
+                                                                <button type="button" onClick={() => void deleteDirectPurchase(purchase)} disabled={isLoadingAction} className="rounded-md px-2 py-1 text-[10px] font-black text-red-600 hover:bg-red-50 disabled:opacity-50">
+                                                                    {isLoadingAction ? <Loader2 size={11} className="inline animate-spin" /> : <Trash2 size={11} className="inline" />} Xóa
+                                                                </button>
                                                             )}
                                                         </div>
-                                                    )}
-                                                </td>
-                                                <td className="px-4 py-3 text-right">
-                                                    <div className="flex flex-wrap justify-end gap-1">
-                                                        <button type="button" onClick={() => openDocumentTrace(buildDocumentTracePath('supplier_direct_delivery_note', note.id, note.qrToken))} className="rounded-md px-2 py-1 text-[10px] font-black text-slate-700 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800">
-                                                            <QrCode size={11} className="inline" /> Truy vết
-                                                        </button>
-                                                        {canEditSupplierDelivery && (
-                                                            <button type="button" onClick={() => void openEditSupplierDelivery(note)} disabled={isBusy} className="rounded-md px-2 py-1 text-[10px] font-black text-blue-700 hover:bg-blue-50 disabled:opacity-50">
-                                                                {isBusy ? <Loader2 size={11} className="inline animate-spin" /> : <Edit2 size={11} className="inline" />} Sửa
-                                                            </button>
-                                                        )}
-                                                        {canEditSupplierDelivery && (
-                                                            <button type="button" onClick={() => void deleteSupplierDeliveryNote(note)} disabled={isBusy} className="rounded-md px-2 py-1 text-[10px] font-black text-red-600 hover:bg-red-50 disabled:opacity-50">
-                                                                {isBusy ? <Loader2 size={11} className="inline animate-spin" /> : <Trash2 size={11} className="inline" />} Xóa
-                                                            </button>
-                                                        )}
-                                                        {canManageTab && ['draft', 'submitted', 'site_confirmed', 'finance_review'].includes(note.status) && (
-                                                            <button type="button" onClick={() => void approveSupplierDeliveryNote(note)} disabled={isBusy} title="Duyệt thực nhận: chấp nhận toàn bộ dòng theo số lượng/giá hiện có; dòng nhập-xuất thẳng vẫn phải hoàn tất WMS export trước khi đối soát/AP." className="rounded-md px-2 py-1 text-[10px] font-black text-emerald-700 hover:bg-emerald-50 disabled:opacity-50">
-                                                                {isBusy ? <Loader2 size={11} className="inline animate-spin" /> : <CheckCircle2 size={11} className="inline" />} Duyệt thực nhận
-                                                            </button>
-                                                        )}
-                                                        {canCancelSupplierDeliveryApproval && (
-                                                            <button type="button" onClick={() => void cancelSupplierDeliveryApproval(note)} disabled={isBusy} className="rounded-md px-2 py-1 text-[10px] font-black text-amber-700 hover:bg-amber-50 disabled:opacity-50">
-                                                                {isBusy ? <Loader2 size={11} className="inline animate-spin" /> : <RefreshCcw size={11} className="inline" />} Hủy duyệt
-                                                            </button>
-                                                        )}
-                                                        {canCreateWmsImport && (
-                                                            <button type="button" onClick={() => void createSupplierDeliveryWmsImportDraft(note)} disabled={isBusy} className="rounded-md px-2 py-1 text-[10px] font-black text-indigo-700 hover:bg-indigo-50 disabled:opacity-50">
-                                                                {isBusy ? <Loader2 size={11} className="inline animate-spin" /> : <Truck size={11} className="inline" />} Tạo WMS nhập
-                                                            </button>
-                                                        )}
-                                                        {wmsSummary.importTransactionIds.map((transactionId, index) => (
-                                                            <button key={`import-${transactionId}`} type="button" onClick={() => openWmsTransactionById(transactionId)} className="rounded-md px-2 py-1 text-[10px] font-black text-blue-700 hover:bg-blue-50">
-                                                                <ExternalLink size={11} className="inline" /> Nhập {index + 1}
-                                                            </button>
-                                                        ))}
-                                                        {wmsSummary.exportTransactionIds.map((transactionId, index) => (
-                                                            <button key={`export-${transactionId}`} type="button" onClick={() => openWmsTransactionById(transactionId)} className="rounded-md px-2 py-1 text-[10px] font-black text-emerald-700 hover:bg-emerald-50">
-                                                                <ExternalLink size={11} className="inline" /> Xuất {index + 1}
-                                                            </button>
-                                                        ))}
-                                                        {canManageTab && !postedStatement && (note.status === 'accepted' || note.status === 'statemented') && (
-                                                            <button type="button" onClick={() => void createAndPostSupplierDeliveryStatement(note)} disabled={isBusy || statementBlockedByWms} title={statementBlockedByWms ? 'Còn dòng nhập-xuất thẳng chưa WMS export COMPLETED.' : 'Tạo đối soát HĐ NCC và ghi AP'} className="rounded-md px-2 py-1 text-[10px] font-black text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50">
-                                                                {isBusy ? <Loader2 size={11} className="inline animate-spin" /> : <FileText size={11} className="inline" />} Đối soát/AP
-                                                            </button>
-                                                        )}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+
+                    <div className={procurementPanelClass}>
+                        <div className="flex flex-col gap-3 border-b border-slate-100 p-4 dark:border-slate-800 lg:flex-row lg:items-center lg:justify-between">
+                            <div>
+                                <h3 className="flex items-center gap-2 text-sm font-black text-slate-800 dark:text-slate-100">
+                                    <Truck size={16} className="text-blue-500" /> Gọi hàng HĐ NCC
+                                </h3>
+                                <p className="mt-1 text-xs font-bold text-slate-500 dark:text-slate-400">Cát, đá, xi măng, bê tông giao tới công trường dùng ngay: không PO, có thể không qua kho hoặc nhập-xuất thẳng WMS, AP vẫn từ bảng đối soát HĐ NCC.</p>
+                            </div>
+                            {canManageTab && (
+                                <button
+                                    type="button"
+                                    onClick={openCreateSupplierDelivery}
+                                    className="inline-flex min-h-9 items-center gap-1 whitespace-nowrap rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-[10px] font-black text-blue-700 transition hover:bg-blue-100 active:scale-[0.98]"
+                                >
+                                    <Plus size={12} /> Tạo phiếu giao HĐ
+                                </button>
+                            )}
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 border-b border-slate-100 bg-slate-50/50 p-4 text-xs dark:border-slate-800 dark:bg-slate-900/20 lg:grid-cols-4">
+                            <div className="rounded-lg border border-slate-100 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
+                                <div className="text-[10px] font-black uppercase text-slate-400">HĐ NCC</div>
+                                <div className="mt-1 text-lg font-black text-slate-900 dark:text-white">{supplierContracts.length}</div>
+                            </div>
+                            <div className="rounded-lg border border-slate-100 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
+                                <div className="text-[10px] font-black uppercase text-slate-400">Phiếu giao</div>
+                                <div className="mt-1 text-lg font-black text-blue-700">{supplierDeliveryNotes.length}</div>
+                            </div>
+                            <div className="rounded-lg border border-slate-100 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
+                                <div className="text-[10px] font-black uppercase text-slate-400">Đã đối soát</div>
+                                <div className="mt-1 text-lg font-black text-emerald-700">{supplierDeliveryStatements.filter(item => item.status === 'posted').length}</div>
+                            </div>
+                            <div className="rounded-lg border border-slate-100 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
+                                <div className="text-[10px] font-black uppercase text-slate-400">Giá trị giao</div>
+                                <div className="mt-1 text-lg font-black text-blue-700">{fmtMoney(supplierDeliveryNotes.reduce((sum, note) => sum + Number(note.totalAmount || 0), 0))} đ</div>
+                            </div>
+                        </div>
+                        <div className="border-b border-slate-100 bg-blue-50/50 px-4 py-2 text-[11px] font-bold text-blue-800 dark:border-slate-800 dark:bg-blue-950/20 dark:text-blue-200">
+                            Người có quyền quản lý Cung ứng/Tài chính được duyệt thực nhận. Khi bấm duyệt, toàn bộ dòng phiếu giao được chấp nhận theo số lượng/đơn giá hiện có; dòng nhập-xuất thẳng vẫn phải hoàn tất WMS xuất dùng trước khi đối soát/AP.
+                        </div>
+                        {supplierDeliveryNotes.length === 0 ? (
+                            <div className="p-4">
+                                <EmptyState icon={<Truck size={18} />} title="Chưa có phiếu giao theo HĐ" message="Chọn HĐ NCC đã khai trong module HD, nhập phiếu giao từng chuyến và đối soát cuối kỳ để sinh AP." compact />
+                            </div>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="w-full min-w-[1080px] text-left text-xs">
+                                    <thead className={procurementTableHeadClass}>
+                                        <tr>
+                                            <th className="px-4 py-3">Phiếu giao</th>
+                                            <th className="px-4 py-3">HĐ / NCC</th>
+                                            <th className="px-4 py-3">Phiếu NCC</th>
+                                            <th className="px-4 py-3 text-right">Giá trị</th>
+                                            <th className="px-4 py-3">Đối soát/AP</th>
+                                            <th className="px-4 py-3 text-right">Thao tác</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
+                                        {[...supplierDeliveryNotes]
+                                            .sort((a, b) => String(b.deliveryDate || '').localeCompare(String(a.deliveryDate || '')))
+                                            .map(note => {
+                                                const statusCfg = SUPPLIER_DIRECT_DELIVERY_STATUS[note.status] || SUPPLIER_DIRECT_DELIVERY_STATUS.draft;
+                                                const statements = statementsByDeliveryNoteId.get(note.id) || [];
+                                                const postedStatement = statements.find(statement => statement.status === 'posted');
+                                                const isBusy = supplierDeliveryActionLoading?.endsWith(`:${note.id}`);
+                                                const noteLines = supplierDeliveryLinesByNoteId[note.id] || note.lines || [];
+                                                const wmsSummary = getSupplierDeliveryWmsSummary(noteLines);
+                                                const canCreateWmsImport = canManageTab
+                                                    && !postedStatement
+                                                    && (note.status === 'accepted' || note.status === 'statemented')
+                                                    && wmsSummary.canCreateImport;
+                                                const statementBlockedByWms = wmsSummary.hasDirectLines && !wmsSummary.readyForStatement;
+                                                const hasWmsTransactions = wmsSummary.importTransactionIds.length > 0 || wmsSummary.exportTransactionIds.length > 0;
+                                                const canEditSupplierDelivery = canManageTab
+                                                    && !postedStatement
+                                                    && ['draft', 'submitted'].includes(note.status)
+                                                    && !hasWmsTransactions;
+                                                const canCancelSupplierDeliveryApproval = canManageTab
+                                                    && note.status === 'accepted'
+                                                    && !postedStatement
+                                                    && !hasWmsTransactions;
+                                                return (
+                                                    <tr key={note.id} className="hover:bg-blue-50/40 dark:hover:bg-slate-900/50">
+                                                        <td className="px-4 py-3">
+                                                            <div className="font-mono text-xs font-black text-slate-900 dark:text-white">{note.code}</div>
+                                                            <div className="mt-1 flex flex-wrap items-center gap-1">
+                                                                <StatusBadge status={note.status} label={statusCfg.label} tone={statusCfg.tone} showDot={false} />
+                                                                <span className={`rounded-full border px-2 py-0.5 text-[9px] font-black ${wmsSummary.badge}`}>{wmsSummary.label}</span>
+                                                                {note.vehicleNo && <span className="rounded-full border border-slate-200 px-2 py-0.5 text-[9px] font-black text-slate-500">{note.vehicleNo}</span>}
+                                                            </div>
+                                                            <div className="mt-1 text-[10px] font-bold text-slate-400">{note.deliveryDate}</div>
+                                                        </td>
+                                                        <td className="px-4 py-3">
+                                                            <div className="font-mono text-[10px] font-black text-blue-700">{note.supplierContractCode || note.supplierContractId}</div>
+                                                            <div className="mt-1 font-black text-slate-700 dark:text-slate-200">{note.supplierNameSnapshot}</div>
+                                                        </td>
+                                                        <td className="px-4 py-3">
+                                                            <div className="font-black text-slate-700 dark:text-slate-200">{note.deliveryTicketNo}</div>
+                                                            <div className="mt-1 text-[10px] font-bold text-slate-400">{note.note || 'Không bắt buộc lý do cấp'}</div>
+                                                        </td>
+                                                        <td className="px-4 py-3 text-right font-black text-blue-700 whitespace-nowrap">{fmtMoney(note.totalAmount)} đ</td>
+                                                        <td className="px-4 py-3">
+                                                            {postedStatement ? (
+                                                                <div>
+                                                                    <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-black text-emerald-700">Đã ghi AP</span>
+                                                                    <div className="mt-1 font-mono text-[10px] font-black text-emerald-700">{postedStatement.code}</div>
+                                                                </div>
+                                                            ) : (
+                                                                <div>
+                                                                    <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-black text-amber-700">Chưa đối soát</span>
+                                                                    {statementBlockedByWms && (
+                                                                        <div className="mt-1 text-[10px] font-bold text-orange-600">Khóa AP đến khi WMS xuất dùng hoàn tất.</div>
+                                                                    )}
+                                                                </div>
+                                                            )}
+                                                        </td>
+                                                        <td className="px-4 py-3 text-right">
+                                                            <div className="flex flex-wrap justify-end gap-1">
+                                                                <button type="button" onClick={() => openDocumentTrace(buildDocumentTracePath('supplier_direct_delivery_note', note.id, note.qrToken))} className="rounded-md px-2 py-1 text-[10px] font-black text-slate-700 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800">
+                                                                    <QrCode size={11} className="inline" /> Truy vết
+                                                                </button>
+                                                                {canEditSupplierDelivery && (
+                                                                    <button type="button" onClick={() => void openEditSupplierDelivery(note)} disabled={isBusy} className="rounded-md px-2 py-1 text-[10px] font-black text-blue-700 hover:bg-blue-50 disabled:opacity-50">
+                                                                        {isBusy ? <Loader2 size={11} className="inline animate-spin" /> : <Edit2 size={11} className="inline" />} Sửa
+                                                                    </button>
+                                                                )}
+                                                                {canEditSupplierDelivery && (
+                                                                    <button type="button" onClick={() => void deleteSupplierDeliveryNote(note)} disabled={isBusy} className="rounded-md px-2 py-1 text-[10px] font-black text-red-600 hover:bg-red-50 disabled:opacity-50">
+                                                                        {isBusy ? <Loader2 size={11} className="inline animate-spin" /> : <Trash2 size={11} className="inline" />} Xóa
+                                                                    </button>
+                                                                )}
+                                                                {canManageTab && ['draft', 'submitted', 'site_confirmed', 'finance_review'].includes(note.status) && (
+                                                                    <button type="button" onClick={() => void approveSupplierDeliveryNote(note)} disabled={isBusy} title="Duyệt thực nhận: chấp nhận toàn bộ dòng theo số lượng/giá hiện có; dòng nhập-xuất thẳng vẫn phải hoàn tất WMS export trước khi đối soát/AP." className="rounded-md px-2 py-1 text-[10px] font-black text-emerald-700 hover:bg-emerald-50 disabled:opacity-50">
+                                                                        {isBusy ? <Loader2 size={11} className="inline animate-spin" /> : <CheckCircle2 size={11} className="inline" />} Duyệt thực nhận
+                                                                    </button>
+                                                                )}
+                                                                {canCancelSupplierDeliveryApproval && (
+                                                                    <button type="button" onClick={() => void cancelSupplierDeliveryApproval(note)} disabled={isBusy} className="rounded-md px-2 py-1 text-[10px] font-black text-amber-700 hover:bg-amber-50 disabled:opacity-50">
+                                                                        {isBusy ? <Loader2 size={11} className="inline animate-spin" /> : <RefreshCcw size={11} className="inline" />} Hủy duyệt
+                                                                    </button>
+                                                                )}
+                                                                {canCreateWmsImport && (
+                                                                    <button type="button" onClick={() => void createSupplierDeliveryWmsImportDraft(note)} disabled={isBusy} className="rounded-md px-2 py-1 text-[10px] font-black text-indigo-700 hover:bg-indigo-50 disabled:opacity-50">
+                                                                        {isBusy ? <Loader2 size={11} className="inline animate-spin" /> : <Truck size={11} className="inline" />} Tạo WMS nhập
+                                                                    </button>
+                                                                )}
+                                                                {wmsSummary.importTransactionIds.map((transactionId, index) => (
+                                                                    <button key={`import-${transactionId}`} type="button" onClick={() => openWmsTransactionById(transactionId)} className="rounded-md px-2 py-1 text-[10px] font-black text-blue-700 hover:bg-blue-50">
+                                                                        <ExternalLink size={11} className="inline" /> Nhập {index + 1}
+                                                                    </button>
+                                                                ))}
+                                                                {wmsSummary.exportTransactionIds.map((transactionId, index) => (
+                                                                    <button key={`export-${transactionId}`} type="button" onClick={() => openWmsTransactionById(transactionId)} className="rounded-md px-2 py-1 text-[10px] font-black text-emerald-700 hover:bg-emerald-50">
+                                                                        <ExternalLink size={11} className="inline" /> Xuất {index + 1}
+                                                                    </button>
+                                                                ))}
+                                                                {canManageTab && !postedStatement && (note.status === 'accepted' || note.status === 'statemented') && (
+                                                                    <button type="button" onClick={() => void createAndPostSupplierDeliveryStatement(note)} disabled={isBusy || statementBlockedByWms} title={statementBlockedByWms ? 'Còn dòng nhập-xuất thẳng chưa WMS export COMPLETED.' : 'Tạo đối soát HĐ NCC và ghi AP'} className="rounded-md px-2 py-1 text-[10px] font-black text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50">
+                                                                        {isBusy ? <Loader2 size={11} className="inline animate-spin" /> : <FileText size={11} className="inline" />} Đối soát/AP
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                        {supplierDeliveryStatements.length > 0 && (
+                            <div className="border-t border-slate-100 p-4 dark:border-slate-800">
+                                <div className="mb-3 text-xs font-black uppercase text-slate-400">Bảng đối soát HĐ NCC gần đây</div>
+                                <div className="grid gap-2 lg:grid-cols-2">
+                                    {[...supplierDeliveryStatements].slice(0, 4).map(statement => {
+                                        const cfg = SUPPLIER_DELIVERY_STATEMENT_STATUS[statement.status] || SUPPLIER_DELIVERY_STATEMENT_STATUS.draft;
+                                        return (
+                                            <div key={statement.id} className="rounded-lg border border-slate-100 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950">
+                                                <div className="flex items-start justify-between gap-2">
+                                                    <div>
+                                                        <div className="font-mono text-[10px] font-black text-blue-700">{statement.code}</div>
+                                                        <div className="mt-1 text-xs font-black text-slate-700 dark:text-slate-200">{statement.supplierContractCode || statement.supplierContractId} • {statement.supplierNameSnapshot}</div>
                                                     </div>
-                                                </td>
-                                            </tr>
+                                                    <StatusBadge status={statement.status} label={cfg.label} tone={cfg.tone} showDot={false} />
+                                                </div>
+                                                <div className="mt-2 flex items-center justify-between gap-2">
+                                                    <button type="button" onClick={() => openDocumentTrace(buildDocumentTracePath('supplier_delivery_statement', statement.id, statement.qrToken))} className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-black text-blue-700 hover:bg-blue-50 dark:text-blue-300 dark:hover:bg-blue-950/30">
+                                                        <QrCode size={11} /> Truy vết
+                                                    </button>
+                                                    <div className="text-right text-sm font-black text-blue-700">{fmtMoney(statement.totalAmount)} đ</div>
+                                                </div>
+                                            </div>
                                         );
                                     })}
-                            </tbody>
-                        </table>
+                                </div>
+                            </div>
+                        )}
                     </div>
-                )}
-                {supplierDeliveryStatements.length > 0 && (
-                    <div className="border-t border-slate-100 p-4 dark:border-slate-800">
-                        <div className="mb-3 text-xs font-black uppercase text-slate-400">Bảng đối soát HĐ NCC gần đây</div>
-                        <div className="grid gap-2 lg:grid-cols-2">
-                            {[...supplierDeliveryStatements].slice(0, 4).map(statement => {
-                                const cfg = SUPPLIER_DELIVERY_STATEMENT_STATUS[statement.status] || SUPPLIER_DELIVERY_STATEMENT_STATUS.draft;
-                                return (
-                                    <div key={statement.id} className="rounded-lg border border-slate-100 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950">
-                                        <div className="flex items-start justify-between gap-2">
-                                            <div>
-                                                <div className="font-mono text-[10px] font-black text-blue-700">{statement.code}</div>
-                                                <div className="mt-1 text-xs font-black text-slate-700 dark:text-slate-200">{statement.supplierContractCode || statement.supplierContractId} • {statement.supplierNameSnapshot}</div>
-                                            </div>
-                                            <StatusBadge status={statement.status} label={cfg.label} tone={cfg.tone} showDot={false} />
-                                        </div>
-                                        <div className="mt-2 flex items-center justify-between gap-2">
-                                            <button type="button" onClick={() => openDocumentTrace(buildDocumentTracePath('supplier_delivery_statement', statement.id, statement.qrToken))} className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-black text-blue-700 hover:bg-blue-50 dark:text-blue-300 dark:hover:bg-blue-950/30">
-                                                <QrCode size={11} /> Truy vết
-                                            </button>
-                                            <div className="text-right text-sm font-black text-blue-700">{fmtMoney(statement.totalAmount)} đ</div>
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    </div>
-                )}
-            </div>
 
-            <div className={procurementPanelClass}>
-                <div className="flex flex-col gap-3 border-b border-slate-100 p-4 dark:border-slate-800 lg:flex-row lg:items-center lg:justify-between">
-                    <div>
-                        <h3 className="flex items-center gap-2 text-sm font-black text-slate-800 dark:text-slate-100">
-                            <Wrench size={16} className="text-amber-500" /> CCDC nhỏ / Ngoài kho
-                        </h3>
-                        <p className="mt-1 text-xs font-bold text-slate-500 dark:text-slate-400">Theo dõi vật tư vụn và dụng cụ nhỏ không nhập WMS nhưng cần biết đang ở đâu, ai giữ.</p>
-                    </div>
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                        <div className="relative">
-                            <Search size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                            <input
-                                value={smallToolSearch}
-                                onChange={event => setSmallToolSearch(event.target.value)}
-                                className={`${procurementInputClass} min-h-9 w-full pl-8 sm:w-72`}
-                                placeholder="Tìm CCDC, người giữ, nguồn..."
-                            />
+                    <div className={procurementPanelClass}>
+                        <div className="flex flex-col gap-3 border-b border-slate-100 p-4 dark:border-slate-800 lg:flex-row lg:items-center lg:justify-between">
+                            <div>
+                                <h3 className="flex items-center gap-2 text-sm font-black text-slate-800 dark:text-slate-100">
+                                    <Wrench size={16} className="text-amber-500" /> CCDC nhỏ / Ngoài kho
+                                </h3>
+                                <p className="mt-1 text-xs font-bold text-slate-500 dark:text-slate-400">Theo dõi vật tư vụn và dụng cụ nhỏ không nhập WMS nhưng cần biết đang ở đâu, ai giữ.</p>
+                            </div>
+                            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                                <div className="relative">
+                                    <Search size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                                    <input
+                                        value={smallToolSearch}
+                                        onChange={event => setSmallToolSearch(event.target.value)}
+                                        className={`${procurementInputClass} min-h-9 w-full pl-8 sm:w-72`}
+                                        placeholder="Tìm CCDC, người giữ, nguồn..."
+                                    />
+                                </div>
+                                <select
+                                    value={smallToolStatusFilter}
+                                    onChange={event => setSmallToolStatusFilter(event.target.value as SiteSmallToolStatus | 'all')}
+                                    className={`${procurementInputClass} min-h-9`}
+                                >
+                                    {SMALL_TOOL_STATUS_OPTIONS.map(status => (
+                                        <option key={status} value={status}>{status === 'all' ? 'Tất cả trạng thái' : SMALL_TOOL_STATUS[status].label}</option>
+                                    ))}
+                                </select>
+                            </div>
                         </div>
-                        <select
-                            value={smallToolStatusFilter}
-                            onChange={event => setSmallToolStatusFilter(event.target.value as SiteSmallToolStatus | 'all')}
-                            className={`${procurementInputClass} min-h-9`}
-                        >
-                            {SMALL_TOOL_STATUS_OPTIONS.map(status => (
-                                <option key={status} value={status}>{status === 'all' ? 'Tất cả trạng thái' : SMALL_TOOL_STATUS[status].label}</option>
-                            ))}
-                        </select>
-                    </div>
-                </div>
-                <div className="grid grid-cols-2 gap-2 border-b border-slate-100 bg-slate-50/50 p-4 text-xs dark:border-slate-800 dark:bg-slate-900/20 lg:grid-cols-4">
-                    <div className="rounded-lg border border-slate-100 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
-                        <div className="text-[10px] font-black uppercase text-slate-400">Đang theo dõi</div>
-                        <div className="mt-1 text-lg font-black text-slate-900 dark:text-white">{smallToolStats.total}</div>
-                    </div>
-                    <div className="rounded-lg border border-slate-100 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
-                        <div className="text-[10px] font-black uppercase text-slate-400">Đang dùng</div>
-                        <div className="mt-1 text-lg font-black text-emerald-700">{smallToolStats.inUse}</div>
-                    </div>
-                    <div className="rounded-lg border border-slate-100 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
-                        <div className="text-[10px] font-black uppercase text-slate-400">Hỏng / mất</div>
-                        <div className="mt-1 text-lg font-black text-red-600">{smallToolStats.issueCount}</div>
-                    </div>
-                    <div className="rounded-lg border border-slate-100 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
-                        <div className="text-[10px] font-black uppercase text-slate-400">Giá trị snapshot</div>
-                        <div className="mt-1 text-lg font-black text-amber-700">{fmtMoney(smallToolStats.totalValue)} đ</div>
-                    </div>
-                </div>
-                {loadingSmallTools ? (
-                    <div className="flex items-center justify-center gap-2 p-8 text-sm font-bold text-slate-400">
-                        <Loader2 size={16} className="animate-spin text-amber-500" /> Đang tải sổ CCDC nhỏ...
-                    </div>
-                ) : filteredSmallToolRecords.length === 0 ? (
-                    <div className="p-4">
-                        <EmptyState icon={<Wrench size={18} />} title="Chưa có CCDC ngoài kho" message="Dòng mua nóng loại CCDC nhỏ sau khi được duyệt và ghi AP sẽ xuất hiện tại đây." compact />
-                    </div>
-                ) : (
-                    <div className="overflow-x-auto">
-                        <table className="w-full min-w-[1040px] text-left text-xs">
-                            <thead className={procurementTableHeadClass}>
-                                <tr>
-                                    <th className="px-4 py-3">CCDC</th>
-                                    <th className="px-4 py-3">Người / vị trí giữ</th>
-                                    <th className="px-4 py-3 text-right">SL</th>
-                                    <th className="px-4 py-3 text-right">Giá trị</th>
-                                    <th className="px-4 py-3">Nguồn</th>
-                                    <th className="px-4 py-3">Trạng thái</th>
-                                    <th className="px-4 py-3 text-right">Thao tác</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
-                                {filteredSmallToolRecords.map(record => {
-                                    const statusCfg = SMALL_TOOL_STATUS[record.status] || SMALL_TOOL_STATUS.stored;
-                                    const isBusy = smallToolActionLoading?.endsWith(`:${record.id}`);
-                                    return (
-                                        <tr key={record.id} className="hover:bg-amber-50/40 dark:hover:bg-slate-900/50">
-                                            <td className="px-4 py-3">
-                                                <div className="font-mono text-[10px] font-black text-slate-400">{record.code}</div>
-                                                <div className="mt-1 font-black text-slate-800 dark:text-slate-100">{record.itemNameSnapshot}</div>
-                                                <div className="mt-1 text-[10px] font-bold text-slate-400">{record.category || 'CCDC nhỏ'} • {record.supplierNameSnapshot || 'NCC viết tay'}</div>
-                                            </td>
-                                            <td className="px-4 py-3">
-                                                <div className="font-black text-slate-700 dark:text-slate-200">{record.holderNameSnapshot || 'Chưa rõ'}</div>
-                                                <div className="mt-1 text-[10px] font-bold text-slate-400">{record.locationNote || 'Chưa cập nhật vị trí'}</div>
-                                            </td>
-                                            <td className="px-4 py-3 text-right font-black text-slate-800 dark:text-slate-100 whitespace-nowrap">{fmtQty(record.quantity)} {record.unitSnapshot || ''}</td>
-                                            <td className="px-4 py-3 text-right font-black text-amber-700 whitespace-nowrap">{fmtMoney(record.totalAmount)} đ</td>
-                                            <td className="px-4 py-3">
-                                                <button type="button" onClick={() => void openDirectPurchaseDetailById(record.sourceId)} className="inline-flex items-center gap-1 font-mono text-[10px] font-black text-orange-700 hover:underline">
-                                                    <ExternalLink size={11} /> {record.sourceCode || record.sourceId.slice(0, 8)}
-                                                </button>
-                                                <div className="mt-1 text-[10px] font-bold text-slate-400">{record.purchaseDate || record.createdAt?.slice(0, 10) || '—'}</div>
-                                            </td>
-                                            <td className="px-4 py-3">
-                                                <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black ${statusCfg.badge}`}>{statusCfg.label}</span>
-                                            </td>
-                                            <td className="px-4 py-3 text-right">
-                                                <div className="flex flex-wrap justify-end gap-1">
-                                                    <button type="button" onClick={() => void updateSmallToolCustody(record)} disabled={isBusy} className="rounded-md px-2 py-1 text-[10px] font-black text-blue-700 hover:bg-blue-50 disabled:opacity-50">
-                                                        Bàn giao
-                                                    </button>
-                                                    {record.status !== 'stored' && (
-                                                        <button type="button" onClick={() => void updateSmallToolStatus(record, 'stored')} disabled={isBusy} className="rounded-md px-2 py-1 text-[10px] font-black text-slate-600 hover:bg-slate-50 disabled:opacity-50">
-                                                            Lưu kho
-                                                        </button>
-                                                    )}
-                                                    {record.status !== 'in_use' && (
-                                                        <button type="button" onClick={() => void updateSmallToolStatus(record, 'in_use')} disabled={isBusy} className="rounded-md px-2 py-1 text-[10px] font-black text-emerald-700 hover:bg-emerald-50 disabled:opacity-50">
-                                                            Đang dùng
-                                                        </button>
-                                                    )}
-                                                    <button type="button" onClick={() => void updateSmallToolStatus(record, 'damaged')} disabled={isBusy} className="rounded-md px-2 py-1 text-[10px] font-black text-orange-700 hover:bg-orange-50 disabled:opacity-50">
-                                                        Hỏng
-                                                    </button>
-                                                    <button type="button" onClick={() => void updateSmallToolStatus(record, 'lost')} disabled={isBusy} className="rounded-md px-2 py-1 text-[10px] font-black text-red-600 hover:bg-red-50 disabled:opacity-50">
-                                                        Mất
-                                                    </button>
-                                                    <button type="button" onClick={() => void updateSmallToolStatus(record, 'disposed')} disabled={isBusy} className="rounded-md px-2 py-1 text-[10px] font-black text-slate-500 hover:bg-slate-100 disabled:opacity-50">
-                                                        Thanh lý
-                                                    </button>
-                                                </div>
-                                            </td>
+                        <div className="grid grid-cols-2 gap-2 border-b border-slate-100 bg-slate-50/50 p-4 text-xs dark:border-slate-800 dark:bg-slate-900/20 lg:grid-cols-4">
+                            <div className="rounded-lg border border-slate-100 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
+                                <div className="text-[10px] font-black uppercase text-slate-400">Đang theo dõi</div>
+                                <div className="mt-1 text-lg font-black text-slate-900 dark:text-white">{smallToolStats.total}</div>
+                            </div>
+                            <div className="rounded-lg border border-slate-100 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
+                                <div className="text-[10px] font-black uppercase text-slate-400">Đang dùng</div>
+                                <div className="mt-1 text-lg font-black text-emerald-700">{smallToolStats.inUse}</div>
+                            </div>
+                            <div className="rounded-lg border border-slate-100 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
+                                <div className="text-[10px] font-black uppercase text-slate-400">Hỏng / mất</div>
+                                <div className="mt-1 text-lg font-black text-red-600">{smallToolStats.issueCount}</div>
+                            </div>
+                            <div className="rounded-lg border border-slate-100 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
+                                <div className="text-[10px] font-black uppercase text-slate-400">Giá trị snapshot</div>
+                                <div className="mt-1 text-lg font-black text-amber-700">{fmtMoney(smallToolStats.totalValue)} đ</div>
+                            </div>
+                        </div>
+                        {loadingSmallTools ? (
+                            <div className="flex items-center justify-center gap-2 p-8 text-sm font-bold text-slate-400">
+                                <Loader2 size={16} className="animate-spin text-amber-500" /> Đang tải sổ CCDC nhỏ...
+                            </div>
+                        ) : filteredSmallToolRecords.length === 0 ? (
+                            <div className="p-4">
+                                <EmptyState icon={<Wrench size={18} />} title="Chưa có CCDC ngoài kho" message="Dòng mua nóng loại CCDC nhỏ sau khi được duyệt và ghi AP sẽ xuất hiện tại đây." compact />
+                            </div>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="w-full min-w-[1040px] text-left text-xs">
+                                    <thead className={procurementTableHeadClass}>
+                                        <tr>
+                                            <th className="px-4 py-3">CCDC</th>
+                                            <th className="px-4 py-3">Người / vị trí giữ</th>
+                                            <th className="px-4 py-3 text-right">SL</th>
+                                            <th className="px-4 py-3 text-right">Giá trị</th>
+                                            <th className="px-4 py-3">Nguồn</th>
+                                            <th className="px-4 py-3">Trạng thái</th>
+                                            <th className="px-4 py-3 text-right">Thao tác</th>
                                         </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
+                                        {filteredSmallToolRecords.map(record => {
+                                            const statusCfg = SMALL_TOOL_STATUS[record.status] || SMALL_TOOL_STATUS.stored;
+                                            const isBusy = smallToolActionLoading?.endsWith(`:${record.id}`);
+                                            return (
+                                                <tr key={record.id} className="hover:bg-amber-50/40 dark:hover:bg-slate-900/50">
+                                                    <td className="px-4 py-3">
+                                                        <div className="font-mono text-[10px] font-black text-slate-400">{record.code}</div>
+                                                        <div className="mt-1 font-black text-slate-800 dark:text-slate-100">{record.itemNameSnapshot}</div>
+                                                        <div className="mt-1 text-[10px] font-bold text-slate-400">{record.category || 'CCDC nhỏ'} • {record.supplierNameSnapshot || 'NCC viết tay'}</div>
+                                                    </td>
+                                                    <td className="px-4 py-3">
+                                                        <div className="font-black text-slate-700 dark:text-slate-200">{record.holderNameSnapshot || 'Chưa rõ'}</div>
+                                                        <div className="mt-1 text-[10px] font-bold text-slate-400">{record.locationNote || 'Chưa cập nhật vị trí'}</div>
+                                                    </td>
+                                                    <td className="px-4 py-3 text-right font-black text-slate-800 dark:text-slate-100 whitespace-nowrap">{fmtQty(record.quantity)} {record.unitSnapshot || ''}</td>
+                                                    <td className="px-4 py-3 text-right font-black text-amber-700 whitespace-nowrap">{fmtMoney(record.totalAmount)} đ</td>
+                                                    <td className="px-4 py-3">
+                                                        <button type="button" onClick={() => void openDirectPurchaseDetailById(record.sourceId)} className="inline-flex items-center gap-1 font-mono text-[10px] font-black text-orange-700 hover:underline">
+                                                            <ExternalLink size={11} /> {record.sourceCode || record.sourceId.slice(0, 8)}
+                                                        </button>
+                                                        <div className="mt-1 text-[10px] font-bold text-slate-400">{record.purchaseDate || record.createdAt?.slice(0, 10) || '—'}</div>
+                                                    </td>
+                                                    <td className="px-4 py-3">
+                                                        <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black ${statusCfg.badge}`}>{statusCfg.label}</span>
+                                                    </td>
+                                                    <td className="px-4 py-3 text-right">
+                                                        <div className="flex flex-wrap justify-end gap-1">
+                                                            <button type="button" onClick={() => void updateSmallToolCustody(record)} disabled={isBusy} className="rounded-md px-2 py-1 text-[10px] font-black text-blue-700 hover:bg-blue-50 disabled:opacity-50">
+                                                                Bàn giao
+                                                            </button>
+                                                            {record.status !== 'stored' && (
+                                                                <button type="button" onClick={() => void updateSmallToolStatus(record, 'stored')} disabled={isBusy} className="rounded-md px-2 py-1 text-[10px] font-black text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+                                                                    Lưu kho
+                                                                </button>
+                                                            )}
+                                                            {record.status !== 'in_use' && (
+                                                                <button type="button" onClick={() => void updateSmallToolStatus(record, 'in_use')} disabled={isBusy} className="rounded-md px-2 py-1 text-[10px] font-black text-emerald-700 hover:bg-emerald-50 disabled:opacity-50">
+                                                                    Đang dùng
+                                                                </button>
+                                                            )}
+                                                            <button type="button" onClick={() => void updateSmallToolStatus(record, 'damaged')} disabled={isBusy} className="rounded-md px-2 py-1 text-[10px] font-black text-orange-700 hover:bg-orange-50 disabled:opacity-50">
+                                                                Hỏng
+                                                            </button>
+                                                            <button type="button" onClick={() => void updateSmallToolStatus(record, 'lost')} disabled={isBusy} className="rounded-md px-2 py-1 text-[10px] font-black text-red-600 hover:bg-red-50 disabled:opacity-50">
+                                                                Mất
+                                                            </button>
+                                                            <button type="button" onClick={() => void updateSmallToolStatus(record, 'disposed')} disabled={isBusy} className="rounded-md px-2 py-1 text-[10px] font-black text-slate-500 hover:bg-slate-100 disabled:opacity-50">
+                                                                Thanh lý
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
                     </div>
-                )}
-            </div>
 
-            </div>
+                </div>
             )}
 
             {/* PO Tab */}
