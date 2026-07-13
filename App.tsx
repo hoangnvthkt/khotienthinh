@@ -234,6 +234,7 @@ const AppRoutes: React.FC = () => {
           <Route path="wf/builder/:id" element={<WorkflowBuilder />} />
           <Route path="users" element={<Navigate to="/settings" replace />} />
           <Route path="settings" element={<Settings />} />
+          <Route path="settings/permission-health" element={<Settings />} />
           <Route path="misa-export" element={<MisaExport />} />
           <Route path="hrm/employees" element={<Employees />} />
           <Route path="hrm/dashboard" element={<HrmDashboard />} />

@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, User as UserIcon, Mail, Phone, Shield, Building, Save, Package, Briefcase, GitBranch, BarChart3, Landmark, Loader2, Crown, Inbox, LayoutDashboard, MapPin, Users, Calendar, Clock, CalendarOff, DollarSign, FileSignature, FolderOpen, History, ArrowLeftRight, ClipboardCheck, FileSpreadsheet, FileText, Workflow, Layers, Repeat, Wrench, IdCard, CreditCard, Calculator, Bot, BrainCircuit, Copy, ClipboardPaste, Settings as SettingsIcon, ShoppingCart, MessageCircle, BellRing } from 'lucide-react';
+import { X, User as UserIcon, Mail, Phone, Shield, ShieldCheck, Building, Save, Package, Briefcase, GitBranch, BarChart3, Landmark, Loader2, Crown, Inbox, LayoutDashboard, MapPin, Users, Calendar, Clock, CalendarOff, DollarSign, FileSignature, FolderOpen, History, ArrowLeftRight, ClipboardCheck, FileSpreadsheet, FileText, Workflow, Layers, Repeat, Wrench, IdCard, CreditCard, Calculator, Bot, BrainCircuit, Copy, ClipboardPaste, Settings as SettingsIcon, ShoppingCart, MessageCircle, BellRing } from 'lucide-react';
 import { Role, User, UserPermissionGrant, Warehouse } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { useToast } from '../context/ToastContext';
@@ -13,6 +13,7 @@ import PermissionDiffPreview from './permissions/PermissionDiffPreview';
 import PermissionMatrix from './permissions/PermissionMatrix';
 import PermissionScopePicker from './permissions/PermissionScopePicker';
 import { listUserPermissionGrants, replaceUserPermissionGrants } from '../lib/permissions/permissionAdminService';
+import { getPermissionApplications } from '../lib/permissions/permissionRegistry';
 import { getInheritedPermissionCodes } from '../lib/permissions/permissionService';
 import { PermissionScope } from '../lib/permissions/permissionTypes';
 
@@ -76,6 +77,7 @@ const SETTINGS_FEATURE_ICONS: Record<(typeof SETTINGS_FEATURES)[number]['id'], a
   'hrm-master-data': Briefcase,
   users: Users,
   alerts: BellRing,
+  'permission-health': ShieldCheck,
   'chibi-bot': Bot,
   'ai-learning': BrainCircuit,
   maintenance: Wrench,
@@ -251,6 +253,8 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
   const [permissionGrants, setPermissionGrants] = useState<UserPermissionGrant[]>([]);
   const [originalPermissionGrants, setOriginalPermissionGrants] = useState<UserPermissionGrant[]>([]);
   const [permissionScope, setPermissionScope] = useState<PermissionScope>({ scopeType: 'global', scopeId: '*' });
+  const [selectedPermissionApplicationCode, setSelectedPermissionApplicationCode] = useState('all');
+  const permissionApplicationOptions = useMemo(() => getPermissionApplications(), []);
 
   useEffect(() => {
     let cancelled = false;
@@ -258,6 +262,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
     setPermissionGrants(seedGrants);
     setOriginalPermissionGrants(seedGrants);
     setPermissionScope({ scopeType: 'global', scopeId: '*' });
+    setSelectedPermissionApplicationCode('all');
 
     if (isOpen && userToEdit?.id && isSupabaseConfigured) {
       listUserPermissionGrants(userToEdit.id)
@@ -973,10 +978,21 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
               <label className="text-xs font-bold text-blue-700 uppercase flex items-center">
                 <Shield size={12} className="mr-1" /> Nền tảng quyền mới
               </label>
+              <select
+                value={selectedPermissionApplicationCode}
+                onChange={event => setSelectedPermissionApplicationCode(event.target.value)}
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 outline-none focus:ring-2 focus:ring-blue-200"
+              >
+                <option value="all">Tất cả ứng dụng</option>
+                {permissionApplicationOptions.map(application => (
+                  <option key={application.code} value={application.code}>{application.label}</option>
+                ))}
+              </select>
               <PermissionScopePicker value={permissionScope} onChange={setPermissionScope} />
               <PermissionMatrix
                 grants={permissionGrants}
                 inheritedPermissionCodes={inheritedPermissionCodes}
+                applicationCodes={selectedPermissionApplicationCode === 'all' ? undefined : [selectedPermissionApplicationCode]}
                 targetUserId={userToEdit?.id}
                 scope={permissionScope}
                 onChange={setPermissionGrants}

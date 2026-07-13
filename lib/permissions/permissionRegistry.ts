@@ -4,6 +4,7 @@ import {
   PermissionApplicationDefinition,
   PermissionModuleDefinition,
 } from './permissionTypes';
+import { ERP_PERMISSION_APPLICATIONS } from './erpPermissionRegistry';
 import { PROJECT_PERMISSION_MODULES } from './projectPermissionRegistry';
 
 const moduleLabels: Record<string, string> = {
@@ -114,6 +115,7 @@ export const permissionRegistry = deepFreeze([
     sortOrder: 20,
     modules: PROJECT_PERMISSION_MODULES,
   },
+  ...ERP_PERMISSION_APPLICATIONS,
 ] satisfies readonly PermissionApplicationDefinition[]);
 
 export const getPermissionApplications = (): readonly PermissionApplicationDefinition[] => permissionRegistry;

@@ -10,7 +10,7 @@ import {
 } from './permissionRegistry';
 import { PermissionActionDefinition, PermissionScope } from './permissionTypes';
 
-const DEFAULT_SCOPE = { scopeType: 'global', scopeId: '*' };
+const DEFAULT_SCOPE: Required<PermissionScope> = { scopeType: 'global', scopeId: '*' };
 
 const routeMatches = (pattern: string, route: string): boolean =>
   pattern === route || (pattern.includes(':') && !!matchPath({ path: pattern, end: true }, route));
@@ -136,6 +136,17 @@ export const userHasPermissionGrant = (
     isGrantActive(grant) &&
     scopeMatches(grant, scope)
   ));
+
+export const isPermissionActionScopeAllowed = (
+  permissionCode: string,
+  scope?: PermissionScope,
+): boolean => {
+  const action = getPermissionActionByCode(permissionCode);
+  if (!action) return false;
+  const allowedScopes = action.scopeTypes?.length ? action.scopeTypes : ['global'];
+  const requestedScopeType = scope?.scopeType || DEFAULT_SCOPE.scopeType;
+  return allowedScopes.includes(requestedScopeType);
+};
 
 export const canPerform = (
   user: Pick<User, 'role' | 'allowedModules' | 'adminModules' | 'allowedSubModules' | 'adminSubModules' | 'permissionGrants'> | null | undefined,

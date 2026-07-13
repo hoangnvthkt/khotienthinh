@@ -3,6 +3,7 @@ import { ShieldCheck } from 'lucide-react';
 import { UserPermissionGrant } from '../../types';
 import { permissionRegistry } from '../../lib/permissions/permissionRegistry';
 import { PermissionScope } from '../../lib/permissions/permissionTypes';
+import { isPermissionActionScopeAllowed } from '../../lib/permissions/permissionService';
 
 interface PermissionMatrixProps {
   grants: readonly UserPermissionGrant[];
@@ -85,21 +86,23 @@ const PermissionMatrix: React.FC<PermissionMatrixProps> = ({
                     const explicit = explicitGrantKeys.has(currentKey);
                     const inherited = inheritedCodes.has(action.permissionCode);
                     const checked = explicit || inherited;
+                    const scopeAllowed = isPermissionActionScopeAllowed(action.permissionCode, scope);
                     return (
                       <label
                         key={action.permissionCode}
-                        className={`flex min-h-[42px] items-center gap-2 rounded-lg border px-2 py-1.5 text-[10px] font-bold transition ${checked ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'}`}
-                        title={action.permissionCode}
+                        className={`flex min-h-[42px] items-center gap-2 rounded-lg border px-2 py-1.5 text-[10px] font-bold transition ${checked ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'} ${!scopeAllowed ? 'opacity-45' : ''}`}
+                        title={scopeAllowed ? action.permissionCode : `${action.permissionCode} không hỗ trợ scope hiện tại`}
                       >
                         <input
                           type="checkbox"
                           checked={checked}
-                          disabled={disabled}
+                          disabled={disabled || !scopeAllowed}
                           onChange={event => toggleGrant(action.permissionCode, event.target.checked)}
                           className="h-3.5 w-3.5 shrink-0 rounded accent-blue-600"
                         />
                         <span className="min-w-0 flex-1 truncate">{action.label}</span>
                         {inherited && <span className="rounded bg-slate-200 px-1 py-0.5 text-[8px] font-black uppercase text-slate-500">Legacy</span>}
+                        {!scopeAllowed && <span className="rounded bg-slate-100 px-1 py-0.5 text-[8px] font-black uppercase text-slate-400">Scope</span>}
                       </label>
                     );
                   })}

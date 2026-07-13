@@ -1,5 +1,6 @@
 
 import React, { useMemo, useState, useEffect, useRef } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { Warehouse, WarehouseType, WarehouseTypeConfig, Supplier, ItemCategory, ItemUnit, LossReason, LOSS_REASON_LABELS, MaterialLossNorm, InventoryItem } from '../types';
 import {
@@ -7,7 +8,7 @@ import {
   HardHat, Briefcase, Tag, Ruler, Trash2, Edit2,
   Truck, User as UserIcon, Search, AlertCircle,
   Database, MapPinned, DollarSign, Calendar, Layers, GitBranch, Percent, TrendingDown, PenTool, Bot, FolderKanban,
-  Package, FileSpreadsheet, Upload, Download, Loader2, RefreshCcw, ClipboardCheck, BrainCircuit, Megaphone, BellRing
+  Package, FileSpreadsheet, Upload, Download, Loader2, RefreshCcw, ClipboardCheck, BrainCircuit, Megaphone, BellRing, ShieldCheck
 } from 'lucide-react';
 import MasterDataConfirmModal from '../components/MasterDataConfirmModal';
 import { RealtimeBadge } from '../components/OfflineIndicator';
@@ -27,6 +28,7 @@ import SettingsG8CostNormLibrary from './settings/SettingsG8CostNormLibrary';
 import SettingsAiLearning from './settings/SettingsAiLearning';
 import SettingsReleaseNotes from './settings/SettingsReleaseNotes';
 import SettingsAlerts from './settings/SettingsAlerts';
+import SettingsPermissionHealth from './settings/SettingsPermissionHealth';
 import { useModuleData } from '../hooks/useModuleData';
 import { useToast } from '../context/ToastContext';
 import { useAsyncAction } from '../hooks/useAsyncAction';
@@ -46,6 +48,7 @@ import {
   getLocalInventoryItemDeleteBlockers,
 } from '../lib/inventoryItemDeleteGuard';
 import { canAccessSettingsFeature, hasAnySettingsManagementFeature, type SettingsFeatureId } from '../lib/settingsPermissions';
+import { canPerform } from '../lib/permissions/permissionService';
 
 type MaterialCatalogForm = {
   sku: string;
@@ -94,6 +97,8 @@ const emptyWarehouseTypeForm = (): WarehouseTypeForm => ({
 });
 
 const Settings: React.FC = () => {
+  const location = useLocation();
+  const navigate = useNavigate();
   const {
     warehouses, warehouseTypes, addWarehouse, updateWarehouse, removeWarehouse, addWarehouseType, updateWarehouseType, removeWarehouseType, categories, units, suppliers,
     addCategory, updateCategory, removeCategory,
@@ -108,6 +113,7 @@ const Settings: React.FC = () => {
   } = useApp();
   const isSettingsAdmin = currentUser.role === Role.ADMIN;
   const hasSettingsManagementAccess = hasAnySettingsManagementFeature(currentUser);
+  const canViewPermissionHealth = canPerform(currentUser, 'system.settings.manage');
   const canOpenSettingsFeature = (featureId: SettingsFeatureId) => canAccessSettingsFeature(currentUser, featureId);
   useModuleData('admin', hasSettingsManagementAccess);
   useModuleData('wms', canOpenSettingsFeature('warehouses') || canOpenSettingsFeature('master-data') || canOpenSettingsFeature('loss-norms') || canOpenSettingsFeature('users'));
@@ -128,7 +134,7 @@ const Settings: React.FC = () => {
     logScope: 'settings.materialCatalog',
   });
 
-  const [activeTab, setActiveTab] = useState('general');
+  const [activeTab, setActiveTab] = useState(location.pathname === '/settings/permission-health' ? 'permission-health' : 'general');
   const [showSignaturePad, setShowSignaturePad] = useState(false);
   const [isWhModalOpen, setIsWhModalOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -952,12 +958,21 @@ const Settings: React.FC = () => {
     { id: 'hrm-master-data', label: 'Dữ liệu gốc HRM', icon: Briefcase },
     { id: 'users', label: 'Người dùng', icon: Users },
     { id: 'alerts', label: 'Cảnh báo', icon: BellRing, adminOnly: true },
+    { id: 'permission-health', label: 'Permission health', icon: ShieldCheck, healthOnly: true },
     { id: 'chibi-bot', label: 'Trợ lý ảo', icon: Bot },
     { id: 'ai-learning', label: 'AI Learning', icon: BrainCircuit },
     { id: 'account', label: 'Tài khoản', icon: UserIcon },
     { id: 'maintenance', label: 'Bảo trì', icon: AlertCircle },
-  ].filter(tab => tab.adminOnly ? isSettingsAdmin : canOpenSettingsFeature(tab.id as SettingsFeatureId));
+  ].filter(tab => tab.healthOnly ? canViewPermissionHealth : tab.adminOnly ? isSettingsAdmin : canOpenSettingsFeature(tab.id as SettingsFeatureId));
   const activeSettingsTab = tabs.some(tab => tab.id === activeTab) ? activeTab : 'account';
+  const handleSelectTab = (tabId: string) => {
+    setActiveTab(tabId);
+    if (tabId === 'permission-health') {
+      navigate('/settings/permission-health');
+    } else if (location.pathname === '/settings/permission-health') {
+      navigate('/settings');
+    }
+  };
 
   const filteredMaterialItems = useMemo(() => {
     const keyword = materialQuery.trim().toLowerCase();
@@ -973,6 +988,12 @@ const Settings: React.FC = () => {
       setActiveTab('account');
     }
   }, [activeTab, currentUser.role]);
+
+  useEffect(() => {
+    if (location.pathname === '/settings/permission-health') {
+      setActiveTab('permission-health');
+    }
+  }, [location.pathname]);
 
   return (
     <div className="space-y-6">
@@ -1014,7 +1035,7 @@ const Settings: React.FC = () => {
             {tabs.map((tab) => (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => handleSelectTab(tab.id)}
                 className={`w-full flex items-center px-4 py-3 rounded-xl text-sm font-bold transition-all
                   ${activeSettingsTab === tab.id
                     ? 'bg-primary text-white shadow-lg shadow-slate-900/20'
@@ -1913,6 +1934,10 @@ const Settings: React.FC = () => {
 
           {activeSettingsTab === 'alerts' && (
             <SettingsAlerts users={users} currentUserId={currentUser.id} />
+          )}
+
+          {activeSettingsTab === 'permission-health' && (
+            <SettingsPermissionHealth />
           )}
 
           {activeSettingsTab === 'account' && (

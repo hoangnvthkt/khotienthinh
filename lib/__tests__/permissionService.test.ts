@@ -4,6 +4,7 @@ import {
   canPerform,
   canViewModule,
   getInheritedPermissionCodes,
+  isPermissionActionScopeAllowed,
   userHasPermissionGrant,
 } from '../permissions/permissionService';
 
@@ -83,5 +84,13 @@ describe('permissionService', () => {
     expect(getInheritedPermissionCodes(user({ allowedModules: ['DA'], adminSubModules: { DA: ['/da/tabs/dailylog'] } }))).toEqual(
       expect.arrayContaining(['system.da.view', 'project.daily_log.manage'])
     );
+  });
+
+  it('checks whether a permission action can be granted for a selected scope', () => {
+    expect(isPermissionActionScopeAllowed('wms.inventory.view', { scopeType: 'warehouse', scopeId: 'wh-1' })).toBe(true);
+    expect(isPermissionActionScopeAllowed('wms.inventory.view', { scopeType: 'department', scopeId: 'dep-1' })).toBe(false);
+    expect(isPermissionActionScopeAllowed('analytics.export', { scopeType: 'global', scopeId: '*' })).toBe(true);
+    expect(isPermissionActionScopeAllowed('analytics.export', { scopeType: 'warehouse', scopeId: 'wh-1' })).toBe(false);
+    expect(isPermissionActionScopeAllowed('unknown.permission', { scopeType: 'global', scopeId: '*' })).toBe(false);
   });
 });

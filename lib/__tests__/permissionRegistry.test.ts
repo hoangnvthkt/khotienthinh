@@ -148,6 +148,71 @@ describe('permissionRegistry', () => {
     ]));
   });
 
+  it('seeds the Phase 4 ERP-wide domain permission surface', () => {
+    const applicationCodes = getPermissionApplications().map(app => app.code);
+    const moduleCodes = getPermissionModules().map(module => module.code);
+    const actionCodes = getAllPermissionActions().map(action => action.permissionCode);
+
+    expect(applicationCodes).toEqual(expect.arrayContaining([
+      'wms',
+      'hrm',
+      'expense',
+      'workflow',
+      'request',
+      'asset',
+      'contract',
+      'ai',
+      'storage',
+      'kb',
+      'analytics',
+    ]));
+
+    expect(moduleCodes).toEqual(expect.arrayContaining([
+      'wms.inventory',
+      'wms.request',
+      'wms.transaction',
+      'hrm.employee',
+      'hrm.attendance',
+      'expense.expense_record',
+      'workflow.template',
+      'request.instance',
+      'asset.assignment',
+      'contract.supplier',
+      'ai.report',
+      'analytics.dashboard',
+    ]));
+
+    expect(actionCodes).toEqual(expect.arrayContaining([
+      'wms.transaction.complete',
+      'wms.request.receive',
+      'hrm.payroll.manage',
+      'expense.expense_record.view_all',
+      'workflow.instance.act_assigned',
+      'request.category.manage',
+      'asset.audit.perform',
+      'contract.cost_library.view',
+      'ai.report.generate',
+      'storage.manage',
+      'kb.manage',
+      'analytics.export',
+    ]));
+  });
+
+  it('keeps Phase 4 domain modules scoped to their allowed operational scopes', () => {
+    const actionByCode = Object.fromEntries(
+      getAllPermissionActions().map(action => [action.permissionCode, action])
+    );
+
+    expect(actionByCode['wms.inventory.view'].scopeTypes).toEqual(expect.arrayContaining(['global', 'warehouse']));
+    expect(actionByCode['wms.request.create'].scopeTypes).toEqual(expect.arrayContaining(['global', 'own', 'assigned', 'warehouse']));
+    expect(actionByCode['hrm.employee.view'].scopeTypes).toEqual(expect.arrayContaining(['global', 'own', 'department', 'assigned']));
+    expect(actionByCode['expense.expense_record.edit_own'].scopeTypes).toEqual(expect.arrayContaining(['global', 'own', 'department']));
+    expect(actionByCode['workflow.instance.act_assigned'].scopeTypes).toEqual(expect.arrayContaining(['global', 'own', 'assigned']));
+    expect(actionByCode['asset.assignment.approve'].scopeTypes).toEqual(expect.arrayContaining(['global', 'warehouse', 'department', 'assigned']));
+    expect(actionByCode['contract.supplier.manage'].scopeTypes).toEqual(['global']);
+    expect(actionByCode['analytics.export'].scopeTypes).toEqual(['global']);
+  });
+
   it('maps every Project tab route to a project view permission', () => {
     const projectRoutes = [
       ...PROJECT_TAB_PERMISSIONS.map(tab => tab.route),
