@@ -5,6 +5,7 @@ import { EmptyState, StatusBadge, type ErpStatusTone } from '../../components/er
 import {
     calculateLineTotal,
     getComputedDimension,
+    formatPoApprovalLineDetails,
     formatSpecsSummary,
     formatPricingFormula,
     DEFAULT_SPEC_METADATA,
@@ -3930,6 +3931,9 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             const displayStockQty = itemHasConversion ? poLinePurchaseToStockQty(item, Number(qty || 0)) : qty;
             const displayPurchaseUnit = itemHasConversion ? purchaseUnit : '—';
             const displayPurchaseQty = itemHasConversion ? Number(qty || 0).toLocaleString('vi-VN') : '—';
+            const lineDetailsHtml = formatPoApprovalLineDetails(item)
+                .map(line => `<div class="approval-muted">${escapeHtml(line)}</div>`)
+                .join('');
 
             return `
                 <tr>
@@ -3938,6 +3942,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     <td>
                         <strong>${escapeHtml(item.name)}</strong>
                         ${item.workBoqItemName ? `<div class="approval-muted">${escapeHtml(item.workBoqItemName)}</div>` : ''}
+                        ${lineDetailsHtml}
                     </td>
                     <td class="approval-center">${escapeHtml(displayStockUnit)}</td>
                     <td class="approval-right">${Number(displayStockQty || 0).toLocaleString('vi-VN')}</td>
@@ -4041,7 +4046,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     </tfoot>
                 </table>
 
-
+                ${po.note ? `<div class="approval-note"><strong>Ghi chú đơn hàng:</strong> ${escapeHtml(po.note)}</div>` : ''}
 
                 <div class="approval-signatures">
                     <div><strong>BP Vật tư-TB</strong><span>${escapeHtml(user.name || '')}</span></div>

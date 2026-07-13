@@ -289,6 +289,48 @@ export function formatSpecsSummary(item: PurchaseOrderItem): string[] {
   return badges;
 }
 
+export function formatPoApprovalLineDetails(item: PurchaseOrderItem): string[] {
+  const detailLines: string[] = [];
+  const specParts: string[] = [];
+  const legacySpecification = String(item.specification || '').trim();
+
+  if (legacySpecification) {
+    specParts.push(legacySpecification);
+  }
+
+  const specs = (item as any).specs as Record<string, SpecValue> | undefined;
+  if (specs && Object.keys(specs).length > 0) {
+    Object.entries(specs)
+      .filter(([, spec]) => spec?.value !== undefined && spec.value !== null && String(spec.value).trim() !== '')
+      .sort(([keyA], [keyB]) => {
+        const indexA = SPEC_KEY_ORDER.indexOf(keyA);
+        const indexB = SPEC_KEY_ORDER.indexOf(keyB);
+        if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+        if (indexA !== -1) return -1;
+        if (indexB !== -1) return 1;
+        return keyA.localeCompare(keyB);
+      })
+      .forEach(([key, spec]) => {
+        const meta = DEFAULT_SPEC_METADATA[key];
+        const label = String(spec.label || meta?.label || key).trim();
+        const unit = String(spec.unit ?? meta?.unit ?? '').trim();
+        const value = String(spec.value).trim();
+        specParts.push([label, value, unit].filter(Boolean).join(' '));
+      });
+  }
+
+  if (specParts.length > 0) {
+    detailLines.push(`Quy cách: ${specParts.join('; ')}`);
+  }
+
+  const note = String(item.note || '').trim();
+  if (note) {
+    detailLines.push(`Ghi chú: ${note}`);
+  }
+
+  return detailLines;
+}
+
 /** Format pricing formula for display */
 export function formatPricingFormula(item: PurchaseOrderItem): string {
   const mode: PricingMode = (item as any).pricingMode || 'standard';
