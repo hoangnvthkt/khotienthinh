@@ -31,7 +31,7 @@ type ProjectPermissionUser = Pick<
   'role' | 'allowedModules' | 'adminModules' | 'allowedSubModules' | 'adminSubModules' | 'permissionGrants'
 > | null | undefined;
 
-type LegacyProjectPermissionCode =
+export type LegacyProjectPermissionCode =
   | 'view'
   | 'edit'
   | 'delete'
@@ -241,6 +241,47 @@ const projectActionCodesByAction = (actions: readonly string[]): readonly string
     .flatMap(module => module.actions)
     .filter(action => actions.includes(action.action))
     .map(action => action.permissionCode);
+
+export const projectPermissionCodeToLegacyProjectCode = (permissionCode: string): LegacyProjectPermissionCode | null => {
+  if (permissionCode === 'project.material_request.view_available_stock') return 'view_available_stock';
+
+  const action = getPermissionModules()
+    .filter(module => module.code.startsWith('project.'))
+    .flatMap(module => module.actions)
+    .find(candidate => candidate.permissionCode === permissionCode);
+
+  switch (action?.action) {
+    case 'view':
+      return 'view';
+    case 'create':
+    case 'edit':
+    case 'edit_own':
+    case 'edit_all':
+      return 'edit';
+    case 'delete':
+    case 'delete_own':
+    case 'delete_all':
+      return 'delete';
+    case 'submit':
+      return 'submit';
+    case 'verify':
+    case 'return':
+      return 'verify';
+    case 'confirm':
+    case 'confirm_fulfillment':
+    case 'mark_paid':
+      return 'confirm';
+    case 'approve':
+      return 'approve';
+    default:
+      return null;
+  }
+};
+
+export const getLegacyProjectCodesDerivedFromPermissionCodes = (
+  permissionCodes: readonly string[],
+): readonly LegacyProjectPermissionCode[] =>
+  [...new Set(permissionCodes.map(projectPermissionCodeToLegacyProjectCode).filter(Boolean))] as LegacyProjectPermissionCode[];
 
 export const legacyProjectCodeToPermissionCodes = (code: LegacyProjectPermissionCode): readonly string[] => {
   switch (code) {

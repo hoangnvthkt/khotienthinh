@@ -5,8 +5,10 @@ import {
   canPerformProjectAction,
   canViewProjectTab,
   checkProjectAction,
+  getLegacyProjectCodesDerivedFromPermissionCodes,
   getProjectScope,
   legacyProjectCodeToPermissionCodes,
+  projectPermissionCodeToLegacyProjectCode,
   requireProjectAction,
 } from '../permissions/projectPermissionService';
 
@@ -114,6 +116,21 @@ describe('projectPermissionService', () => {
       'project.material_request.view_available_stock',
     ]);
     expect(legacyProjectCodeToPermissionCodes('view')).not.toContain('project.daily_log.create');
+  });
+
+  it('detects legacy compatibility rows derived from Project PBAC v2 grants', () => {
+    expect(projectPermissionCodeToLegacyProjectCode('project.material_request.confirm_fulfillment')).toBe('confirm');
+    expect(projectPermissionCodeToLegacyProjectCode('project.material_request.view_available_stock')).toBe('view_available_stock');
+    expect(projectPermissionCodeToLegacyProjectCode('project.daily_log.return')).toBe('verify');
+    expect(projectPermissionCodeToLegacyProjectCode('project.org.grant_permissions')).toBeNull();
+
+    expect(getLegacyProjectCodesDerivedFromPermissionCodes([
+      'project.daily_log.view',
+      'project.daily_log.create',
+      'project.material_request.confirm_fulfillment',
+      'project.material_request.view_available_stock',
+      'project.org.grant_permissions',
+    ])).toEqual(['view', 'edit', 'confirm', 'view_available_stock']);
   });
 
   it('uses scoped grants and legacy route fallback for Project tab visibility', () => {

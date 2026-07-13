@@ -14,7 +14,11 @@ import PremiumMemberSelect, { MemberOption } from '../../components/common/Premi
 import PermissionDiffPreview from '../../components/permissions/PermissionDiffPreview';
 import PermissionMatrix from '../../components/permissions/PermissionMatrix';
 import { listUserPermissionGrants } from '../../lib/permissions/permissionAdminService';
-import { legacyProjectCodeToPermissionCodes } from '../../lib/permissions/projectPermissionService';
+import {
+  getLegacyProjectCodesDerivedFromPermissionCodes,
+  legacyProjectCodeToPermissionCodes,
+  type LegacyProjectPermissionCode,
+} from '../../lib/permissions/projectPermissionService';
 import {
   getProjectPermissionTemplateCodes,
   PROJECT_PERMISSION_TEMPLATES,
@@ -108,12 +112,31 @@ const ProjectOrgTab: React.FC<Props> = ({ projectId, constructionSiteId, canMana
     [constructionSiteId, projectId],
   );
 
+  const activeScopedProjectGrantCodes = useMemo(() => (
+    fProjectGrants
+      .filter(grant => grant.isActive !== false && grantMatchesScope(grant, projectGrantScope))
+      .map(grant => grant.permissionCode)
+  ), [fProjectGrants, projectGrantScope]);
+
+  const derivedLegacyProjectCodes = useMemo(
+    () => new Set(getLegacyProjectCodesDerivedFromPermissionCodes(activeScopedProjectGrantCodes)),
+    [activeScopedProjectGrantCodes],
+  );
+
+  const visibleLegacyPermissionTypes = useMemo(() => (
+    [...fPermIds]
+      .map(permissionTypeId => permTypes.find(permissionType => permissionType.id === permissionTypeId))
+      .filter((permissionType): permissionType is ProjectPermissionType =>
+        Boolean(permissionType) &&
+        LEGACY_PROJECT_PERMISSION_CODES.has(permissionType.code) &&
+        !derivedLegacyProjectCodes.has(permissionType.code as LegacyProjectPermissionCode)
+      )
+  ), [derivedLegacyProjectCodes, fPermIds, permTypes]);
+
   const inheritedProjectPermissionCodes = useMemo(() => {
-    const legacyCodes = [...fPermIds]
-      .map(permissionTypeId => permTypes.find(permissionType => permissionType.id === permissionTypeId)?.code)
-      .filter((code): code is string => Boolean(code) && LEGACY_PROJECT_PERMISSION_CODES.has(code));
-    return [...new Set(legacyCodes.flatMap(code => legacyProjectCodeToPermissionCodes(code as any)))];
-  }, [fPermIds, permTypes]);
+    const legacyCodes = visibleLegacyPermissionTypes.map(permissionType => permissionType.code);
+    return [...new Set(legacyCodes.flatMap(code => legacyProjectCodeToPermissionCodes(code as LegacyProjectPermissionCode)))];
+  }, [visibleLegacyPermissionTypes]);
 
   const canAssignStaff = canManageTab || capabilities.canAssignStaff;
   const canGrantPermissions = canManageTab || capabilities.canGrantPermissions;
@@ -390,7 +413,6 @@ const ProjectOrgTab: React.FC<Props> = ({ projectId, constructionSiteId, canMana
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {members.map(s => {
                 const isEnded = !!s.endDate;
-                const activePerms = (s.permissions || []).filter(p => p.isActive);
                 return (
                   <div key={s.id}
                     className={`relative bg-white dark:bg-slate-800 rounded-2xl border shadow-sm overflow-hidden transition-all hover:shadow-lg group ${
@@ -449,11 +471,6 @@ const ProjectOrgTab: React.FC<Props> = ({ projectId, constructionSiteId, canMana
                         <span className="rounded-lg border border-blue-100 bg-blue-50 px-2 py-1 text-[9px] font-black text-blue-700">
                           PBAC v2: mở ma trận để xem/sửa
                         </span>
-                        {activePerms.length > 0 && (
-                          <span className="rounded-lg border border-amber-100 bg-amber-50 px-2 py-1 text-[9px] font-black text-amber-700">
-                            Legacy inherited: {activePerms.length}
-                          </span>
-                        )}
                       </div>
 
                       {s.note && (
@@ -567,19 +584,15 @@ const ProjectOrgTab: React.FC<Props> = ({ projectId, constructionSiteId, canMana
                     </button>
                   ))}
                 </div>
-                {fPermIds.size > 0 && (
+                {visibleLegacyPermissionTypes.length > 0 && (
                   <div className="mb-3 rounded-lg border border-amber-100 bg-amber-50 px-3 py-2">
-                    <div className="mb-1 text-[10px] font-black uppercase text-amber-700">Legacy/inherited</div>
+                    <div className="mb-1 text-[10px] font-black uppercase text-amber-700">Legacy còn sót</div>
                     <div className="flex flex-wrap gap-1.5">
-                      {[...fPermIds].map(permissionTypeId => {
-                        const permissionType = permTypes.find(pt => pt.id === permissionTypeId);
-                        if (!permissionType) return null;
-                        return (
-                          <span key={permissionTypeId} className="rounded bg-white px-2 py-1 text-[10px] font-bold text-amber-700 ring-1 ring-amber-100">
-                            {permissionType.code}
-                          </span>
-                        );
-                      })}
+                      {visibleLegacyPermissionTypes.map(permissionType => (
+                        <span key={permissionType.id} className="rounded bg-white px-2 py-1 text-[10px] font-bold text-amber-700 ring-1 ring-amber-100">
+                          {permissionType.code}
+                        </span>
+                      ))}
                     </div>
                   </div>
                 )}
