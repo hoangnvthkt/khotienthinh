@@ -64,6 +64,8 @@ interface AppUserContext {
   isActive?: boolean | null;
   allowedModules?: string[] | null;
   adminModules?: string[] | null;
+  allowedSubModules?: Record<string, unknown> | null;
+  adminSubModules?: Record<string, unknown> | null;
   source: 'jwt' | 'body';
 }
 
@@ -474,6 +476,70 @@ function canUseCustomMaterialAssistant(actor: AppUserContext | null) {
   return ['DA', 'WMS', 'TENDER_AI'].some(moduleCode => allowedModules.includes(moduleCode) || adminModules.includes(moduleCode));
 }
 
+const GLOBAL_PERMISSION_LEGACY: Record<string, { moduleKey: string; route?: string; adminOnly?: boolean }> = {
+  'ai.assistant.use': { moduleKey: 'AI', route: '/ai' },
+};
+
+function normalizeSubModuleRoutes(value: unknown, moduleKey: string): string[] {
+  if (!value || typeof value !== 'object') return [];
+  const raw = (value as Record<string, unknown>)[moduleKey];
+  if (!Array.isArray(raw)) return [];
+  return raw.map(route => String(route || '').trim()).filter(Boolean);
+}
+
+function actorHasLegacyPermission(actor: AppUserContext, permissionCode: string) {
+  const legacy = GLOBAL_PERMISSION_LEGACY[permissionCode];
+  if (!legacy) return false;
+
+  const moduleKey = legacy.moduleKey.toUpperCase();
+  const allowedModules = normalizeStringArray(actor.allowedModules).map(m => m.toUpperCase());
+  const adminModules = normalizeStringArray(actor.adminModules).map(m => m.toUpperCase());
+  const allowedRoutes = normalizeSubModuleRoutes(actor.allowedSubModules, moduleKey);
+  const adminRoutes = normalizeSubModuleRoutes(actor.adminSubModules, moduleKey);
+
+  if (adminModules.includes(moduleKey)) return true;
+  if (legacy.adminOnly) return legacy.route ? adminRoutes.includes(legacy.route) : adminRoutes.length > 0;
+  if (allowedModules.includes(moduleKey)) return true;
+  if (!legacy.route) return allowedRoutes.length > 0 || adminRoutes.length > 0;
+  return allowedRoutes.includes(legacy.route) || adminRoutes.includes(legacy.route);
+}
+
+async function actorHasPermission(actor: AppUserContext | null, permissionCode: string) {
+  if (!actor || actor.isActive === false) return false;
+  if (String(actor.role || '').toUpperCase() === 'ADMIN') return true;
+
+  const { data, error } = await admin
+    .from('user_permission_grants')
+    .select('scope_type, scope_id, is_active, expires_at')
+    .eq('user_id', actor.id)
+    .eq('permission_code', permissionCode);
+
+  if (error) {
+    console.warn('permission grant lookup failed:', error.message);
+    return actorHasLegacyPermission(actor, permissionCode);
+  }
+
+  const now = Date.now();
+  const hasExplicitGrant = (data || []).some((grant: any) => {
+    if (grant.is_active === false) return false;
+    if (grant.expires_at && new Date(grant.expires_at).getTime() <= now) return false;
+    return grant.scope_type === 'global' || grant.scope_id === '*';
+  });
+
+  return hasExplicitGrant || actorHasLegacyPermission(actor, permissionCode);
+}
+
+async function requireAiAssistantUse(request: Request): Promise<{ actor?: AppUserContext; response?: Response }> {
+  const actor = await resolveActor(request);
+  if (!actor || actor.source !== 'jwt' || actor.isActive === false) {
+    return { response: jsonResponse({ error: 'Authentication required.' }, 401) };
+  }
+  if (!(await actorHasPermission(actor, 'ai.assistant.use'))) {
+    return { response: jsonResponse({ error: 'Missing permission: ai.assistant.use' }, 403) };
+  }
+  return { actor };
+}
+
 function getBearerToken(request: Request) {
   const auth = request.headers.get('authorization') || request.headers.get('Authorization') || '';
   const match = auth.match(/^Bearer\s+(.+)$/i);
@@ -486,7 +552,7 @@ async function findAppUserByAuthUser(authUser: any): Promise<AppUserContext | nu
   if (authUser.id) {
     const byAuthId = await admin
       .from('users')
-      .select('id, role, email, is_active, allowed_modules, admin_modules')
+      .select('id, role, email, is_active, allowed_modules, admin_modules, allowed_sub_modules, admin_sub_modules')
       .eq('auth_id', authUser.id)
       .maybeSingle();
 
@@ -498,6 +564,8 @@ async function findAppUserByAuthUser(authUser: any): Promise<AppUserContext | nu
         isActive: byAuthId.data.is_active,
         allowedModules: byAuthId.data.allowed_modules,
         adminModules: byAuthId.data.admin_modules,
+        allowedSubModules: byAuthId.data.allowed_sub_modules,
+        adminSubModules: byAuthId.data.admin_sub_modules,
         source: 'jwt',
       };
     }
@@ -506,7 +574,7 @@ async function findAppUserByAuthUser(authUser: any): Promise<AppUserContext | nu
   if (authUser.email) {
     const byEmail = await admin
       .from('users')
-      .select('id, role, email, is_active, allowed_modules, admin_modules')
+      .select('id, role, email, is_active, allowed_modules, admin_modules, allowed_sub_modules, admin_sub_modules')
       .ilike('email', authUser.email)
       .maybeSingle();
 
@@ -518,6 +586,8 @@ async function findAppUserByAuthUser(authUser: any): Promise<AppUserContext | nu
         isActive: byEmail.data.is_active,
         allowedModules: byEmail.data.allowed_modules,
         adminModules: byEmail.data.admin_modules,
+        allowedSubModules: byEmail.data.allowed_sub_modules,
+        adminSubModules: byEmail.data.admin_sub_modules,
         source: 'jwt',
       };
     }
@@ -541,7 +611,7 @@ async function resolveActor(request: Request, fallbackUserId?: string): Promise<
   if (fallbackUserId) {
     const { data } = await admin
       .from('users')
-      .select('id, role, email, is_active, allowed_modules, admin_modules')
+      .select('id, role, email, is_active, allowed_modules, admin_modules, allowed_sub_modules, admin_sub_modules')
       .eq('id', fallbackUserId)
       .maybeSingle();
 
@@ -553,6 +623,8 @@ async function resolveActor(request: Request, fallbackUserId?: string): Promise<
         isActive: data.is_active,
         allowedModules: data.allowed_modules,
         adminModules: data.admin_modules,
+        allowedSubModules: data.allowed_sub_modules,
+        adminSubModules: data.admin_sub_modules,
         source: 'body',
       };
     }
@@ -1808,8 +1880,10 @@ Deno.serve(async (request: Request) => {
 
     req = await request.json() as AssistantRequest;
     if (req.action === 'feedback') {
-      const actor = await resolveActor(request, req.userId);
-      return jsonResponse(await handleFeedback(req, actor));
+      const authorization = await requireAiAssistantUse(request);
+      if (authorization.response) return authorization.response;
+      const actor = authorization.actor || null;
+      return jsonResponse(await handleFeedback({ ...req, userId: actor?.id }, actor));
     }
     if (req.action === 'estimate_suggestion') {
       const actor = await resolveActor(request, req.userId);
@@ -1846,8 +1920,10 @@ Deno.serve(async (request: Request) => {
     const mode: AiMode = req.mode === 'knowledge' ? 'knowledge' : 'data';
     const history = (req.history || []).slice(-10);
     const selectedModel = req.model || null;
-    const actor = await resolveActor(request, req.userId);
-    const effectiveUserId = actor?.id || req.userId || null;
+    const authorization = await requireAiAssistantUse(request);
+    if (authorization.response) return authorization.response;
+    const actor = authorization.actor || null;
+    const effectiveUserId = actor?.id || null;
     activeUserId = effectiveUserId;
     activeMode = mode;
     activeQuestion = question;

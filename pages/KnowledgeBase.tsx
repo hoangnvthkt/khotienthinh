@@ -3,6 +3,7 @@ import { Upload, FileText, Trash2, RefreshCw, CheckCircle, AlertCircle, Clock, D
 import { supabase } from '../lib/supabase';
 import { useApp } from '../context/AppContext';
 import { matchesSearchQueryMultiple } from '../lib/searchUtils';
+import { getKnowledgeBaseCapabilities } from '../lib/permissions/globalModulePermissions';
 
 interface RagDocument {
   id: string;
@@ -22,6 +23,7 @@ interface RagDocument {
 
 const KnowledgeBase: React.FC = () => {
   const { user } = useApp();
+  const kbCapabilities = getKnowledgeBaseCapabilities(user);
   const [documents, setDocuments] = useState<RagDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -34,13 +36,18 @@ const KnowledgeBase: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<string>('all');
 
   const fetchDocuments = useCallback(async () => {
+    if (!kbCapabilities.canView) {
+      setDocuments([]);
+      setLoading(false);
+      return;
+    }
     const { data, error } = await supabase
       .from('rag_documents')
       .select('*')
       .order('created_at', { ascending: false });
     if (!error && data) setDocuments(data);
     setLoading(false);
-  }, []);
+  }, [kbCapabilities.canView]);
 
   useEffect(() => { fetchDocuments(); }, [fetchDocuments]);
 
@@ -53,6 +60,7 @@ const KnowledgeBase: React.FC = () => {
   }, [documents, fetchDocuments]);
 
   const uploadFile = async (file: File) => {
+    if (!kbCapabilities.canManage) return;
     const ext = file.name.split('.').pop()?.toLowerCase() || '';
     const allowed = ['pdf', 'docx', 'txt', 'doc', 'md', 'xlsx'];
     if (!allowed.includes(ext)) {
@@ -108,11 +116,13 @@ const KnowledgeBase: React.FC = () => {
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setDragOver(false);
+    if (!kbCapabilities.canManage) return;
     const files = Array.from(e.dataTransfer.files) as File[];
     files.forEach((f: File) => uploadFile(f));
   };
 
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!kbCapabilities.canManage) return;
     if (e.target.files) {
       Array.from(e.target.files).forEach((f: File) => uploadFile(f));
     }
@@ -120,6 +130,7 @@ const KnowledgeBase: React.FC = () => {
 
 
   const syncFromDocModules = async () => {
+    if (!kbCapabilities.canManage) return;
     setSyncing(true);
     try {
       // Sync from hrm_documents
@@ -184,6 +195,7 @@ const KnowledgeBase: React.FC = () => {
 
   const confirmDelete = async () => {
     if (!docToDelete) return;
+    if (!kbCapabilities.canManage) return;
     setIsDeleting(true);
     try {
       const doc = docToDelete;
@@ -205,6 +217,7 @@ const KnowledgeBase: React.FC = () => {
   };
 
   const reprocessDocument = async (doc: RagDocument) => {
+    if (!kbCapabilities.canManage) return;
     try {
       await supabase.from('rag_documents').update({ status: 'pending', error_message: null }).eq('id', doc.id);
       setDocuments(prev => prev.map(d => d.id === doc.id ? { ...d, status: 'processing' as const, error_message: null } : d));
@@ -216,6 +229,7 @@ const KnowledgeBase: React.FC = () => {
   };
 
   const resetStuckDocuments = async () => {
+    if (!kbCapabilities.canManage) return;
     setResetting(true);
     try {
       const { data } = await supabase.functions.invoke('process-document', {
@@ -276,7 +290,7 @@ const KnowledgeBase: React.FC = () => {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {stats.processing > 0 && (
+          {kbCapabilities.canManage && stats.processing > 0 && (
             <button
               onClick={resetStuckDocuments}
               disabled={resetting}
@@ -286,14 +300,14 @@ const KnowledgeBase: React.FC = () => {
               {resetting ? 'Đang khôi phục...' : 'Khôi phục file kẹt'}
             </button>
           )}
-          <button
+          {kbCapabilities.canManage && <button
             onClick={syncFromDocModules}
             disabled={syncing}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-violet-50 dark:bg-violet-500/10 border border-violet-200 dark:border-violet-500/30 text-sm font-bold text-violet-600 dark:text-violet-400 hover:bg-violet-100 dark:hover:bg-violet-500/20 transition-all disabled:opacity-50"
           >
             <RefreshCw size={16} className={syncing ? 'animate-spin' : ''} />
             {syncing ? 'Đang đồng bộ...' : 'Đồng bộ từ Hồ sơ'}
-          </button>
+          </button>}
         </div>
       </div>
 
@@ -320,7 +334,7 @@ const KnowledgeBase: React.FC = () => {
       </div>
 
       {/* Upload Zone */}
-      <div
+      {kbCapabilities.canManage && <div
         onDragOver={e => { e.preventDefault(); setDragOver(true); }}
         onDragLeave={() => setDragOver(false)}
         onDrop={handleDrop}
@@ -351,7 +365,7 @@ const KnowledgeBase: React.FC = () => {
             <p className="text-sm text-slate-400 mt-1">Hỗ trợ: PDF, DOCX, TXT, MD, XLSX • Tối đa 20MB/file</p>
           </>
         )}
-      </div>
+      </div>}
 
       {/* Search & Filter */}
       <div className="flex gap-3">
@@ -423,7 +437,7 @@ const KnowledgeBase: React.FC = () => {
 
                 {/* Actions */}
                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                  {doc.status === 'error' && (
+                  {kbCapabilities.canManage && doc.status === 'error' && (
                     <button
                       onClick={() => reprocessDocument(doc)}
                       className="p-2 rounded-lg hover:bg-blue-500/10 text-blue-500 transition-colors"
@@ -432,13 +446,13 @@ const KnowledgeBase: React.FC = () => {
                       <RefreshCw size={16} />
                     </button>
                   )}
-                  <button
+                  {kbCapabilities.canManage && <button
                     onClick={() => setDocToDelete(doc)}
                     className="p-2 rounded-lg hover:bg-red-500/10 text-red-500 transition-colors"
                     title="Xóa"
                   >
                     <Trash2 size={16} />
-                  </button>
+                  </button>}
                 </div>
               </div>
             );
@@ -447,7 +461,7 @@ const KnowledgeBase: React.FC = () => {
       )}
 
       {/* Delete Confirmation Modal */}
-      {docToDelete && (
+      {kbCapabilities.canManage && docToDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
           <div className="bg-white dark:bg-slate-800 rounded-2xl w-full max-w-md shadow-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
             <div className="p-6">

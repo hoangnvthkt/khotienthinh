@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { HardDrive, Cloud, Server, Maximize2, Minimize2, ExternalLink, RefreshCw, AlertTriangle } from 'lucide-react';
+import { useApp } from '../context/AppContext';
+import { getStorageCapabilities } from '../lib/permissions/globalModulePermissions';
 
 const TABS = [
   {
@@ -29,11 +31,15 @@ const TABS = [
 ] as const;
 
 const DataStorage: React.FC = () => {
+  const { user } = useApp();
+  const storageCapabilities = getStorageCapabilities(user);
   const [activeTab, setActiveTab] = useState<string>('google');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
 
   const currentTab = TABS.find(t => t.key === activeTab) || TABS[0];
+
+  if (!storageCapabilities.canView) return null;
 
   return (
     <div className={`${isFullscreen ? 'fixed inset-0 z-50 bg-white dark:bg-slate-900' : 'p-4 lg:p-6'} flex flex-col h-full`}>

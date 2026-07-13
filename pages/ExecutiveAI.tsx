@@ -9,6 +9,8 @@ import {
   Settings2, Trophy, Medal, Award, Calendar
 } from 'lucide-react';
 import { escapeHtml } from '../lib/safeHtml';
+import { supabase } from '../lib/supabase';
+import { getAiExecutiveCapabilities } from '../lib/permissions/globalModulePermissions';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
 
@@ -127,6 +129,7 @@ const ALERT_STYLES = {
 
 const ExecutiveAI: React.FC = () => {
   const { user } = useApp();
+  const executiveCapabilities = getAiExecutiveCapabilities(user);
   const navigate = useNavigate();
   const [data, setData] = useState<BriefResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -162,13 +165,22 @@ const ExecutiveAI: React.FC = () => {
   const selectAll = () => setSelectedModules(new Set(MODULE_OPTIONS.map(m => m.key)));
   const allSelected = selectedModules.size === MODULE_OPTIONS.length;
 
+  const buildFunctionHeaders = useCallback(async (): Promise<Record<string, string>> => {
+    const { data: { session } } = await supabase.auth.getSession();
+    return {
+      'Content-Type': 'application/json',
+      ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+    };
+  }, []);
+
   const generateBrief = async () => {
+    if (!executiveCapabilities.canView) return;
     setLoading(true);
     setError('');
     try {
       const resp = await fetch(`${SUPABASE_URL}/functions/v1/executive-brief`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await buildFunctionHeaders(),
         body: JSON.stringify({ userId: user.id, modules: Array.from(selectedModules) }),
       });
       const result = await resp.json();
@@ -183,21 +195,22 @@ const ExecutiveAI: React.FC = () => {
 
   // Ranking fetch
   const fetchRanking = useCallback(async (periodKey?: string) => {
+    if (!executiveCapabilities.canView) return;
     setRankingLoading(true);
     try {
       const p = PERIOD_PRESETS.find(pp => pp.key === (periodKey || rankPeriod)) || PERIOD_PRESETS[0];
       const resp = await fetch(`${SUPABASE_URL}/functions/v1/employee-ranking`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await buildFunctionHeaders(),
         body: JSON.stringify({ month: p.month, year: p.year }),
       });
       const result = await resp.json();
       if (!result.error) setRankingData(result);
     } catch {} finally { setRankingLoading(false); }
-  }, [rankPeriod]);
+  }, [buildFunctionHeaders, executiveCapabilities.canView, rankPeriod]);
 
   // Auto-fetch ranking when brief is loaded
-  useEffect(() => { if (data) fetchRanking(); }, [data]);
+  useEffect(() => { if (data && executiveCapabilities.canView) fetchRanking(); }, [data, executiveCapabilities.canView, fetchRanking]);
 
   // ===== AUTO-LOAD ON MOUNT + AUTO-REFRESH =====
   const generateBriefRef = useRef(generateBrief);
@@ -205,13 +218,13 @@ const ExecutiveAI: React.FC = () => {
 
   useEffect(() => {
     // Auto-load on mount
-    generateBriefRef.current();
+    if (executiveCapabilities.canView) generateBriefRef.current();
 
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
       if (countdownRef.current) clearInterval(countdownRef.current);
     };
-  }, []);
+  }, [executiveCapabilities.canView]);
 
   // Setup auto-refresh interval
   useEffect(() => {
@@ -219,7 +232,7 @@ const ExecutiveAI: React.FC = () => {
     if (intervalRef.current) clearInterval(intervalRef.current);
     if (countdownRef.current) clearInterval(countdownRef.current);
 
-    if (autoRefresh) {
+    if (autoRefresh && executiveCapabilities.canView) {
       setCountdown(REFRESH_INTERVAL);
       // Countdown timer
       countdownRef.current = setInterval(() => {
@@ -227,7 +240,7 @@ const ExecutiveAI: React.FC = () => {
       }, 1000);
       // Data refresh
       intervalRef.current = setInterval(() => {
-        generateBriefRef.current();
+        if (executiveCapabilities.canView) generateBriefRef.current();
         setCountdown(REFRESH_INTERVAL);
       }, REFRESH_INTERVAL * 1000);
     }
@@ -236,10 +249,11 @@ const ExecutiveAI: React.FC = () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
       if (countdownRef.current) clearInterval(countdownRef.current);
     };
-  }, [autoRefresh]);
+  }, [autoRefresh, executiveCapabilities.canView]);
 
   // Reset countdown on manual refresh
   const handleManualRefresh = () => {
+    if (!executiveCapabilities.canView) return;
     generateBrief();
     setCountdown(REFRESH_INTERVAL);
   };
@@ -268,6 +282,8 @@ const ExecutiveAI: React.FC = () => {
 
   // Filter KPIs by selected modules
   const visibleKpis = KPI_CONFIG.filter(k => selectedModules.has(KPI_MODULE_MAP[k.key]));
+
+  if (!executiveCapabilities.canView) return null;
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
@@ -302,7 +318,7 @@ const ExecutiveAI: React.FC = () => {
           )}
           <button
             onClick={handleManualRefresh}
-            disabled={loading}
+            disabled={loading || !executiveCapabilities.canView}
             className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 text-white font-black text-sm shadow-lg shadow-purple-500/20 hover:shadow-xl hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 disabled:hover:scale-100"
           >
             {loading ? (
