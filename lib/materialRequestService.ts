@@ -411,9 +411,15 @@ export const materialRequestService = {
           submission_note: input.note || null,
         };
 
-    const { data, error } = await supabase
-      .from('requests')
-      .update({
+    const { data, error } = await supabase.rpc('transition_project_material_request_status', {
+      p_request_id: input.request.id,
+      p_status: status,
+      p_action: input.action,
+      p_actor_user_id: input.actorUserId,
+      p_target_user_id: input.target?.userId || null,
+      p_target_permission: input.target?.permissionCode || null,
+      p_note: input.note || input.target?.note || null,
+      p_patch: {
         status,
         logs,
         ever_submitted: input.request.everSubmitted || input.action === 'SUBMITTED' || input.action === 'FORWARDED' || undefined,
@@ -425,10 +431,8 @@ export const materialRequestService = {
         workflow_step_sla_hours: workflowPatch.workflowStepSlaHours,
         workflow_step_actor_user_id: workflowPatch.workflowStepActorUserId,
         ...targetPatch,
-      })
-      .eq('id', input.request.id)
-      .select('*')
-      .single();
+      },
+    });
     if (error) throw error;
 
     const updatedRequest = mapMaterialRequestFromDb(data);

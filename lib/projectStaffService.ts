@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { ProjectPermissionType, ProjectStaff, ProjectStaffPermission } from '../types';
+import { ProjectPermissionType, ProjectStaff, ProjectStaffPermission, UserPermissionGrant } from '../types';
 import { fromDb, toDb } from './dbMapping';
 import { auditService } from './auditService';
 
@@ -47,6 +47,35 @@ const getPermissionDeniedMessage = (code: ProjectPermissionCode, actionLabel?: s
   const label = actionLabel || PROJECT_PERMISSION_LABELS[code];
   return `Bạn cần quyền "${code}" (${PROJECT_PERMISSION_LABELS[code]}) để ${label}.`;
 };
+
+type ProjectActionCheckInput = {
+  userId?: string;
+  projectId?: string;
+  constructionSiteId?: string | null;
+  permissionCode: string;
+};
+
+type ProjectActionRequireInput = ProjectActionCheckInput & {
+  actionLabel?: string;
+};
+
+export type ProjectOrgCapability = {
+  canView: boolean;
+  canAssignStaff: boolean;
+  canGrantPermissions: boolean;
+};
+
+type ProjectOrgCapabilityInput = {
+  userId?: string;
+  projectId?: string;
+  constructionSiteId?: string | null;
+};
+
+const getProjectActionDeniedMessage = (permissionCode: string, actionLabel?: string) =>
+  `Bạn cần quyền "${permissionCode}" để ${actionLabel || 'thực hiện thao tác này'}.`;
+
+const cleanUndefined = <T extends Record<string, any>>(value: T): T =>
+  Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined)) as T;
 
 const isMissingRpcError = (error: any) => {
   const msg = [error?.message, error?.details, error?.hint].filter(Boolean).join(' ');
@@ -174,27 +203,23 @@ export const projectStaffService = {
     grantedBy?: string;
     operatorName?: string;
   }): Promise<string> {
-    // Insert staff record
-    const { data, error } = await supabase.from(STAFF_TABLE).insert({
-      project_id: staff.projectId || null,
-      construction_site_id: staff.constructionSiteId || null,
-      user_id: staff.userId,
-      position_id: staff.positionId,
-      start_date: staff.startDate || new Date().toISOString().slice(0, 10),
-      note: staff.note || null,
-    }).select('id').single();
+    if (staff.permissionTypeIds.length > 0) {
+      throw new Error('Legacy project permission type ids are read-only in Phase 3. Use Project PBAC v2 grants instead.');
+    }
+
+    const { data, error } = await supabase.rpc('upsert_project_staff_assignment', {
+      p_staff: cleanUndefined(toDb({
+        projectId: staff.projectId || null,
+        constructionSiteId: staff.constructionSiteId || null,
+        userId: staff.userId,
+        positionId: staff.positionId,
+        startDate: staff.startDate || new Date().toISOString().slice(0, 10),
+        note: staff.note || null,
+      })),
+    });
     if (error) throw error;
 
-    const staffId = data.id;
-
-    try {
-      if (staff.permissionTypeIds.length > 0) {
-        await this.setPermissions(staffId, staff.permissionTypeIds, staff.grantedBy, staff.operatorName);
-      }
-    } catch (permErr) {
-      await supabase.from(STAFF_TABLE).delete().eq('id', staffId);
-      throw permErr;
-    }
+    const staffId = typeof data === 'string' ? data : data?.id;
 
     await auditService.log({
       tableName: 'project_staff',
@@ -216,24 +241,38 @@ export const projectStaffService = {
     note?: string;
     sortOrder?: number;
   }, operatorId?: string, operatorName?: string): Promise<void> {
-    const { data: old } = await supabase.from(STAFF_TABLE).select('*').eq('id', staffId).single();
+    const hasAssignmentUpdates =
+      updates.positionId !== undefined ||
+      updates.startDate !== undefined ||
+      updates.note !== undefined ||
+      updates.sortOrder !== undefined;
 
-    const dbData: any = { updated_at: new Date().toISOString() };
-    if (updates.positionId !== undefined) dbData.position_id = updates.positionId;
-    if (updates.startDate !== undefined) dbData.start_date = updates.startDate;
-    if (updates.endDate !== undefined) dbData.end_date = updates.endDate;
-    if (updates.note !== undefined) dbData.note = updates.note;
-    if (updates.sortOrder !== undefined) dbData.sort_order = updates.sortOrder;
+    if (hasAssignmentUpdates) {
+      const { error } = await supabase.rpc('upsert_project_staff_assignment', {
+        p_staff: cleanUndefined(toDb({
+          id: staffId,
+          positionId: updates.positionId,
+          startDate: updates.startDate,
+          note: updates.note,
+          sortOrder: updates.sortOrder,
+        })),
+      });
+      if (error) throw error;
+    }
 
-    const { error } = await supabase.from(STAFF_TABLE).update(dbData).eq('id', staffId);
-    if (error) throw error;
+    if (updates.endDate !== undefined) {
+      const { error } = await supabase.rpc('end_project_staff_assignment', {
+        p_staff_id: staffId,
+        p_end_date: updates.endDate,
+      });
+      if (error) throw error;
+    }
 
     await auditService.log({
       tableName: 'project_staff',
       recordId: staffId,
       action: 'UPDATE',
-      oldData: old || {},
-      newData: { ...old, ...dbData },
+      newData: updates,
       userId: operatorId || 'system',
       userName: operatorName || 'System',
       description: `Cập nhật nhân sự dự án`,
@@ -241,16 +280,15 @@ export const projectStaffService = {
   },
 
   async remove(staffId: string, operatorId?: string, operatorName?: string): Promise<void> {
-    const { data: old } = await supabase.from(STAFF_TABLE).select('*').eq('id', staffId).single();
-    // CASCADE sẽ xoá permissions
-    const { error } = await supabase.from(STAFF_TABLE).delete().eq('id', staffId);
+    const { error } = await supabase.rpc('remove_project_staff_assignment', {
+      p_staff_id: staffId,
+    });
     if (error) throw error;
 
     await auditService.log({
       tableName: 'project_staff',
       recordId: staffId,
       action: 'DELETE',
-      oldData: old || {},
       userId: operatorId || 'system',
       userName: operatorName || 'System',
       description: `Xoá nhân sự khỏi dự án`,
@@ -300,6 +338,115 @@ export const projectStaffService = {
       userName: operatorName || 'System',
       description: `Cập nhật quyền nhân sự dự án (${oldPerms?.length || 0} → ${nextPermissionTypeIds.length} quyền)`,
     });
+  },
+
+  /** Phase 2 PBAC v2: replace scoped project.* grants and let DB sync legacy generic permissions. */
+  async replaceProjectStaffPermissionGrants(
+    staffId: string,
+    grants: readonly UserPermissionGrant[],
+    grantedBy?: string,
+    operatorName?: string,
+  ): Promise<void> {
+    const payload = grants
+      .filter(grant => grant.isActive !== false && grant.permissionCode.startsWith('project.'))
+      .map(grant => ({
+        permission_code: grant.permissionCode,
+        scope_type: grant.scopeType,
+        scope_id: grant.scopeId,
+        is_active: grant.isActive ?? true,
+        expires_at: grant.expiresAt || null,
+      }));
+
+    const { error } = await supabase.rpc('replace_project_staff_permission_grants', {
+      p_staff_id: staffId,
+      p_grants: payload,
+    });
+    if (error) throw error;
+
+    await auditService.log({
+      tableName: 'user_permission_grants',
+      recordId: staffId,
+      action: 'UPDATE',
+      newData: { grants: payload.map(grant => grant.permission_code) },
+      userId: grantedBy || 'system',
+      userName: operatorName || 'System',
+      description: `Cập nhật quyền Project PBAC v2 (${payload.length} grant)`,
+    });
+  },
+
+  /** Phase 3 PBAC v2: check one explicit project.* action through the backend helper. */
+  async checkProjectAction(params: ProjectActionCheckInput): Promise<{ allowed: boolean }> {
+    if (!params.userId || !params.permissionCode?.startsWith('project.')) return { allowed: false };
+    if (!params.projectId && !params.constructionSiteId) return { allowed: false };
+
+    const { data, error } = await supabase.rpc('project_has_permission_v2', {
+      p_project_id: params.projectId || null,
+      p_construction_site_id: params.constructionSiteId || null,
+      p_permission_code: params.permissionCode,
+      p_user_id: params.userId,
+    });
+    if (error) throw error;
+    return { allowed: Boolean(data) };
+  },
+
+  async requireProjectAction(params: ProjectActionRequireInput): Promise<void> {
+    const result = await this.checkProjectAction(params);
+    if (!result.allowed) {
+      throw new Error(getProjectActionDeniedMessage(params.permissionCode, params.actionLabel));
+    }
+  },
+
+  async listProjectStaffWithPermissionCodes(
+    projectId: string | undefined,
+    constructionSiteId: string | null | undefined,
+    permissionCodes: string[],
+  ): Promise<ProjectStaff[]> {
+    const namespacedCodes = [...new Set(permissionCodes.filter(code => code.startsWith('project.')))];
+    if (!projectId && !constructionSiteId) return [];
+    if (namespacedCodes.length === 0) return [];
+
+    const { data, error } = await supabase.rpc('list_project_permission_recipients', {
+      p_project_id: projectId || null,
+      p_construction_site_id: constructionSiteId || null,
+      p_permission_codes: namespacedCodes,
+    });
+    if (error) throw error;
+
+    return (data || []).map((row: any) => ({
+      id: row.staff_id,
+      projectId: row.project_id ?? undefined,
+      constructionSiteId: row.construction_site_id ?? undefined,
+      userId: row.user_id,
+      userName: row.user_name,
+      positionId: row.position_id,
+      positionName: row.position_name,
+      permissions: (row.permission_codes || []).map((permissionCode: string): ProjectStaffPermission => ({
+        id: `${row.staff_id}-${permissionCode}`,
+        staffId: row.staff_id,
+        permissionTypeId: permissionCode,
+        permissionCode,
+        permissionName: permissionCode,
+        isActive: true,
+      })),
+    } as ProjectStaff));
+  },
+
+  async getProjectOrgCapabilities(params: ProjectOrgCapabilityInput): Promise<ProjectOrgCapability> {
+    if (!params.userId || (!params.projectId && !params.constructionSiteId)) {
+      return { canView: false, canAssignStaff: false, canGrantPermissions: false };
+    }
+
+    const [view, assignStaff, grantPermissions] = await Promise.all([
+      this.checkProjectAction({ ...params, permissionCode: 'project.org.view' }),
+      this.checkProjectAction({ ...params, permissionCode: 'project.org.assign_staff' }),
+      this.checkProjectAction({ ...params, permissionCode: 'project.org.grant_permissions' }),
+    ]);
+
+    return {
+      canView: view.allowed || assignStaff.allowed || grantPermissions.allowed,
+      canAssignStaff: assignStaff.allowed,
+      canGrantPermissions: grantPermissions.allowed,
+    };
   },
 
   /**

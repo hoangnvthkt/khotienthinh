@@ -380,11 +380,9 @@ export const projectMasterService = {
       source: 'manual',
     }));
 
-    const { data, error } = await supabase
-      .from(TABLE)
-      .insert(payload)
-      .select('*')
-      .single();
+    const { data, error } = await supabase.rpc('create_project', {
+      p_project: payload,
+    });
     if (error) throw error;
     return mapProject(data);
   },
@@ -417,12 +415,10 @@ export const projectMasterService = {
       ...(project.hiddenReason !== undefined ? { hiddenReason: project.hiddenReason || null } : {}),
     }));
 
-    const { data, error } = await supabase
-      .from(TABLE)
-      .update(payload)
-      .eq('id', project.id)
-      .select('*')
-      .single();
+    const { data, error } = await supabase.rpc('update_project', {
+      p_project_id: project.id,
+      p_project: payload,
+    });
     if (error) throw error;
     return mapProject(data);
   },
@@ -442,16 +438,14 @@ export const projectMasterService = {
       };
     }
 
-    const { data, error } = await supabase
-      .from(TABLE)
-      .update({
+    const { data, error } = await supabase.rpc('update_project', {
+      p_project_id: projectId,
+      p_project: {
         is_pinned: pinned,
         pinned_at: pinned ? new Date().toISOString() : null,
         pinned_by: pinned ? pinnedBy || null : null,
-      })
-      .eq('id', projectId)
-      .select('*')
-      .single();
+      },
+    });
     if (error) throw error;
     return mapProject(data);
   },
@@ -508,17 +502,13 @@ export const projectMasterService = {
       }
     }
 
-    const { data, error } = await supabase
-      .from(TABLE)
-      .update({
-        is_hidden: true,
-        hidden_at: new Date().toISOString(),
-        hidden_by: input.hiddenBy || null,
-        hidden_reason: input.reason.trim(),
-      })
-      .eq('id', projectId)
-      .select('*')
-      .single();
+    const { data, error } = await supabase.rpc('hide_project', {
+      p_project_id: projectId,
+      p_reason: input.reason.trim(),
+      p_hidden_by: input.hiddenBy || null,
+      p_force: Boolean(input.force),
+      p_construction_site_id: input.constructionSiteId || null,
+    });
     if (error) throw error;
     return mapProject(data);
   },
@@ -535,17 +525,9 @@ export const projectMasterService = {
         source: 'manual',
       };
     }
-    const { data, error } = await supabase
-      .from(TABLE)
-      .update({
-        is_hidden: false,
-        hidden_at: null,
-        hidden_by: null,
-        hidden_reason: null,
-      })
-      .eq('id', projectId)
-      .select('*')
-      .single();
+    const { data, error } = await supabase.rpc('restore_project', {
+      p_project_id: projectId,
+    });
     if (error) throw error;
     return mapProject(data);
   },

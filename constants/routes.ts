@@ -10,7 +10,7 @@ import { PROJECT_TAB_PERMISSIONS } from '../lib/projectTabPermissions';
  *  - hooks/usePermission.ts (canManage)
  *
  * Quy tắc:
- *  - Route nào không có trong map → guard bỏ qua (allow all)
+ *  - Route protected nào không có trong map/whitelist → guard chặn mặc định
  *  - Route dynamic dùng pattern của react-router-dom matchPath
  */
 export const ROUTE_TO_MODULE: Record<string, string> = {
@@ -74,6 +74,7 @@ export const ROUTE_TO_MODULE: Record<string, string> = {
   '/ep/:employeeId': 'EP',
 
   // ── HỢP ĐỒNG ──────────────────────────────────────────
+  '/hd':               'HD',
   '/hd/overview':      'HD',
   '/hd/partners':      'HD',
   '/hd/contract-types': 'HD',
@@ -95,12 +96,14 @@ export const ROUTE_TO_MODULE: Record<string, string> = {
 
   // ── ROUTE NHẠY CẢM / MODULE BỔ SUNG ───────────────────
   '/settings': 'SETTINGS',
+  '/settings/permission-health': 'SETTINGS',
   '/users': 'SETTINGS',
   '/storage': 'STORAGE',
   '/knowledge-base': 'KB',
   '/ai': 'AI',
   '/ai/executive': 'AI',
   '/ai/reports': 'AI',
+  '/trace': 'AUDIT_TRAIL',
   '/audit-trail': 'AUDIT_TRAIL',
   '/admin/activity': 'SETTINGS',
   '/analytics': 'ANALYTICS',

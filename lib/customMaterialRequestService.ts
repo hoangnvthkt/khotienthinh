@@ -535,46 +535,17 @@ export const customMaterialRequestService = {
   },
 
   async setStatus(id: string, status: CustomMaterialRequestStatus, actorUserId: string, note?: string | null): Promise<CustomMaterialRequest> {
-    const current = await this.getById(id);
-    if (!current) throw new Error('Không tìm thấy phiếu CMR.');
-    const now = new Date().toISOString();
-    const patch: Record<string, unknown> = { status, updatedBy: actorUserId };
-    if (status === 'submitted') patch.submittedAt = now;
-    if (status === 'approved') {
-      patch.approvedAt = now;
-      patch.approvedBy = actorUserId;
-    }
-    if (status === 'returned') {
-      patch.returnedAt = now;
-      patch.returnedBy = actorUserId;
-    }
-    if (status === 'rejected') {
-      patch.rejectedAt = now;
-      patch.rejectedBy = actorUserId;
-    }
-    if (status === 'cancelled') {
-      patch.cancelledAt = now;
-      patch.cancelledBy = actorUserId;
-    }
-    const { error } = await supabase.from(REQUEST_TABLE).update(toDb(patch)).eq('id', id);
+    const { data, error } = await supabase.rpc('transition_custom_material_request_status', {
+      p_request_id: id,
+      p_status: status,
+      p_actor_user_id: actorUserId,
+      p_note: note || null,
+    });
     if (error) throw error;
-
-    const nextLineStatus: Partial<Record<CustomMaterialRequestStatus, CustomMaterialLineStatus>> = {
-      submitted: 'submitted',
-      approved: 'approved',
-      rejected: 'cancelled',
-      cancelled: 'cancelled',
-    };
-    if (nextLineStatus[status]) {
-      const { error: lineError } = await supabase
-        .from(LINE_TABLE)
-        .update({ status: nextLineStatus[status] })
-        .eq('request_id', id)
-        .in('status', ['draft', 'submitted']);
-      if (lineError) throw lineError;
-    }
-    await createEvent(id, status, { fromStatus: current.status, toStatus: status, note });
-    return (await this.getById(id))!;
+    if (!data) throw new Error('Không tìm thấy phiếu CMR.');
+    const lines = Array.isArray(data.lines) ? data.lines.map((line: any) => mapLine(line)) : [];
+    const attachments = Array.isArray(data.attachments) ? data.attachments.map(mapAttachment) : [];
+    return mapRequest(data, lines, attachments);
   },
 
   submit(id: string, actorUserId: string, note?: string | null) {
@@ -988,7 +959,16 @@ export const customMaterialRequestService = {
     if (linkError) throw linkError;
     const lineError = lineUpdates.find(result => result.error)?.error;
     if (lineError) throw lineError;
-    await supabase.from(REQUEST_TABLE).update({ status: 'po_created' }).in('id', Array.from(new Set(validLines.map(item => item.request.id))));
+    await Promise.all(Array.from(new Set(validLines.map(item => item.request.id))).map(requestId =>
+      supabase.rpc('transition_custom_material_request_status', {
+        p_request_id: requestId,
+        p_status: 'po_created',
+        p_actor_user_id: input.actorUserId,
+        p_note: input.note || 'Tạo PO từ phiếu vật tư phi tiêu chuẩn',
+      }).then(({ error }) => {
+        if (error) throw error;
+      })
+    ));
     return po;
   },
 

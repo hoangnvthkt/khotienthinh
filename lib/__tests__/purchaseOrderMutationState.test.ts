@@ -89,6 +89,22 @@ describe('purchaseOrderMutationState', () => {
     expect(canUserMutatePurchaseOrder(item, user('other-1'))).toBe(false);
   });
 
+  it('allows scoped PO create/manage capabilities to mutate purchase orders', () => {
+    const item = po();
+    const otherUser = user('other-1');
+
+    expect(canUserMutatePurchaseOrder(item, otherUser, { canCreatePo: true } as any)).toBe(true);
+    expect(canUserMutatePurchaseOrder(item, otherUser, { canManagePo: true } as any)).toBe(true);
+  });
+
+  it('allows scoped PO delete/manage capabilities to remove purchase orders', () => {
+    const item = po({ status: 'draft', sourceMode: 'proactive_project' });
+    const otherUser = user('other-1');
+
+    expect(getPurchaseOrderRemovalBlockReason(item, otherUser, [], [], [], { canDeletePo: true } as any)).toBeNull();
+    expect(getPurchaseOrderRemovalBlockReason(item, otherUser, [], [], [], { canManagePo: true } as any)).toBeNull();
+  });
+
   it('marks cancelled/legacy-returned in-transit PO before receipt and blocks parent removal until failed delivery is deleted', () => {
     const item = po();
     const summary = summarizePurchaseOrderWork(item, [

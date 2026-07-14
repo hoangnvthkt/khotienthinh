@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { supabase } from '../lib/supabase';
 import { escapeHtml } from '../lib/safeHtml';
+import { getAiAssistantCapabilities } from '../lib/permissions/globalModulePermissions';
 import {
   Bot, Send, MessageCircle, Sparkles, Trash2, Plus, ChevronLeft,
   Database, Clock, Loader2, X, Code2, FileText, BookOpen, Menu, ArrowRight,
@@ -91,6 +92,7 @@ const MODE_CONFIG = {
 
 const AiAssistant: React.FC = () => {
   const { user } = useApp();
+  const aiCapabilities = getAiAssistantCapabilities(user);
   const [aiMode, setAiMode] = useState<AiMode>('data');
   const [selectedModel, setSelectedModel] = useState<string>(() => {
     return localStorage.getItem('selected_ai_model') || DEFAULT_AI_MODEL;
@@ -229,7 +231,7 @@ const AiAssistant: React.FC = () => {
 
   const sendMessage = async (text?: string) => {
     const question = (text || input).trim();
-    if (!question || loading) return;
+    if (!question || loading || !aiCapabilities.canUse) return;
     setInput('');
     setLoading(true);
 
@@ -606,6 +608,7 @@ const AiAssistant: React.FC = () => {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 w-full max-w-lg">
                 {cfg.suggestedQuestions.map((q, i) => (
                   <button key={i} onClick={() => sendMessage(q.text)}
+                    disabled={!aiCapabilities.canUse || loading}
                     className={`flex items-center gap-3 px-4 py-3.5 rounded-2xl bg-white dark:bg-slate-800 border text-left hover:shadow-lg hover:-translate-y-0.5 transition-all text-[13px] font-medium text-slate-600 dark:text-slate-300 group ${
                       aiMode === 'data'
                         ? 'border-slate-200 dark:border-slate-700 hover:border-violet-300 dark:hover:border-violet-600'
@@ -729,6 +732,7 @@ const AiAssistant: React.FC = () => {
                       <button
                         key={i}
                         onClick={() => sendMessage(suggestion)}
+                        disabled={!aiCapabilities.canUse || loading}
                         className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-left text-[12px] font-medium transition-all hover:shadow-md hover:-translate-y-px active:scale-[0.98] ${cfg.chipBg} ${cfg.chipText}`}
                       >
                         <ArrowRight size={11} className={`shrink-0 ${cfg.chipIcon}`} />
@@ -775,6 +779,7 @@ const AiAssistant: React.FC = () => {
                 ref={inputRef}
                 value={input}
                 onChange={e => setInput(e.target.value)}
+                disabled={!aiCapabilities.canUse}
                 onKeyDown={e => {
                   if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                     e.preventDefault();
@@ -789,7 +794,7 @@ const AiAssistant: React.FC = () => {
             </div>
             <button
               onClick={() => sendMessage()}
-              disabled={!input.trim() || loading}
+              disabled={!input.trim() || loading || !aiCapabilities.canUse}
               className={`w-11 h-11 rounded-xl bg-gradient-to-r ${cfg.gradient} flex items-center justify-center text-white shadow-lg ${cfg.shadow} disabled:opacity-40 disabled:shadow-none hover:shadow-xl hover:scale-105 transition-all active:scale-95 shrink-0`}
             >
               <Send size={17} />

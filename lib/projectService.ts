@@ -4,7 +4,7 @@ import {
     MaterialBudgetItem, ProjectMaterialRequest, ProjectVendor,
     PurchaseOrder, PaymentSchedule, ProjectBaseline, ProjectWorkBoqItem, PurchaseOrderRequestLineLink,
     PaymentDossierStatus, PaymentQualityStatus, PaymentScheduleMilestoneType, PurchaseOrderDeliveryRemovalResult, PurchaseOrderRemovalResult,
-    PurchaseOrderDeliveryBatch, PurchaseOrderDeliveryLine
+    PurchaseOrderDeliveryBatch, PurchaseOrderDeliveryLine, PurchaseOrderSupplementalApproval, ProjectSubmissionTarget
 } from '../types';
 import { auditService } from './auditService';
 import { dailyLogDetailService } from './dailyLogDetailService';
@@ -13,6 +13,7 @@ import { createPoQrToken } from './poQr';
 import { projectTransactionService } from './projectTransactionService';
 import { projectDocumentDependencyService } from './projectDocumentDependencyService';
 import { projectSubmissionService } from './projectSubmissionService';
+import type { PurchaseOrderSupplementalDraft } from './purchaseOrderReleaseApproval';
 
 // ==================== HELPER ====================
 // snake_case ↔ camelCase mapping
@@ -364,37 +365,6 @@ export const dailyLogService = {
         rejectionReason?: string | null;
         actorUserId?: string | null;
     }): Promise<void> {
-        if (input.status === 'rejected') {
-            const { data: current, error: currentError } = await supabase
-                .from('daily_logs')
-                .select('status, created_by_id, submitted_by_id, submitted_by')
-                .eq('id', input.logId)
-                .single();
-            if (currentError) throw currentError;
-            if (current?.status === 'verified') {
-                if (!input.rejectionReason?.trim()) {
-                    throw new Error('Vui lòng nhập lý do trả lại nhật ký.');
-                }
-                const { error: updateError } = await supabase
-                    .from('daily_logs')
-                    .update({
-                        status: 'rejected',
-                        verified: false,
-                        rejected_by: input.actorUserId || null,
-                        rejected_by_id: input.actorUserId || null,
-                        rejected_at: new Date().toISOString(),
-                        rejection_reason: input.rejectionReason,
-                        submitted_to_user_id: current.created_by_id || current.submitted_by_id || current.submitted_by || null,
-                        submitted_to_permission: 'edit',
-                        submission_note: input.rejectionReason,
-                        last_action_by: input.actorUserId || null,
-                        last_action_at: new Date().toISOString(),
-                    })
-                    .eq('id', input.logId);
-                if (updateError) throw updateError;
-                return;
-            }
-        }
         const { error } = await supabase.rpc('transition_daily_log_status', {
             p_log_id: input.logId,
             p_status: input.status,
@@ -737,6 +707,13 @@ const poRequestLineLinkToDb = (link: PurchaseOrderRequestLineLink): any => {
     return row;
 };
 
+const poSupplementalApprovalFromDb = (row: any): PurchaseOrderSupplementalApproval => ({
+    ...(fromDb(row) as PurchaseOrderSupplementalApproval),
+    previousApprovedAmount: Number(row.previous_approved_amount || 0),
+    requestedTotalAmount: Number(row.requested_total_amount || 0),
+    overAmount: Number(row.over_amount || 0),
+});
+
 const poDeliveryBatchToDb = (batch: PurchaseOrderDeliveryBatch): any => {
     const row = toDb({
         id: batch.id,
@@ -747,6 +724,7 @@ const poDeliveryBatchToDb = (batch: PurchaseOrderDeliveryBatch): any => {
         plannedDeliveryDate: batch.plannedDeliveryDate || null,
         status: batch.status || 'planned',
         fulfillmentBatchIds: batch.fulfillmentBatchIds || [],
+        supplementalApprovalId: batch.supplementalApprovalId || null,
         note: batch.note || null,
         createdBy: batch.createdBy || null,
     });
@@ -777,6 +755,7 @@ const poDeliveryLineToDb = (line: PurchaseOrderDeliveryLine): any => {
 const poDeliveryBatchFromRows = (batch: any, lineRows: any[]): PurchaseOrderDeliveryBatch => ({
     ...(fromDb(batch) as PurchaseOrderDeliveryBatch),
     fulfillmentBatchIds: batch.fulfillment_batch_ids || [],
+    supplementalApprovalId: batch.supplemental_approval_id || null,
     deliveryNo: Number(batch.delivery_no || 1),
     status: (batch.status || 'planned') as PurchaseOrderDeliveryBatch['status'],
     lines: lineRows.map(row => ({
@@ -1032,10 +1011,7 @@ export const poService = {
     async upsert(item: PurchaseOrder): Promise<void> {
         const { error } = await supabase
             .from('purchase_orders')
-            .upsert(poToDb({
-                ...item,
-                ...projectSubmissionService.actionMeta(undefined, poStatusMarksSubmitted(item.status)),
-            }), { onConflict: 'id' });
+            .upsert(poToDb(item), { onConflict: 'id' });
         if (error) throw error;
     },
     async updateStatus(id: string, patch: Partial<PurchaseOrder>): Promise<void> {
@@ -1043,6 +1019,28 @@ export const poService = {
         if (patch.receivedTransactionIds) row.received_transaction_ids = patch.receivedTransactionIds;
         delete row.id;
         delete row.created_at;
+        const workflowColumns = new Set([
+            'status',
+            'submitted_to_user_id',
+            'submitted_to_name',
+            'submitted_to_permission',
+            'submission_note',
+            'verified_by_id',
+            'verified_at',
+            'approved_by_id',
+            'approved_at',
+            'received_transaction_ids',
+            'actual_delivery_date',
+        ]);
+        if (Object.keys(row).some(column => workflowColumns.has(column))) {
+            const { error } = await supabase.rpc('transition_project_purchase_order_status', {
+                p_po_id: id,
+                p_status: row.status || null,
+                p_patch: row,
+            });
+            if (error) throw error;
+            return;
+        }
         const { error } = await supabase
             .from('purchase_orders')
             .update(row)
@@ -1163,6 +1161,74 @@ export const poService = {
     },
 };
 
+export const poSupplementalApprovalService = {
+    async listByPurchaseOrderIds(poIds: string[]): Promise<Record<string, PurchaseOrderSupplementalApproval[]>> {
+        const uniqueIds = Array.from(new Set(poIds.filter(Boolean)));
+        if (uniqueIds.length === 0) return {};
+
+        const { data, error } = await supabase
+            .from('purchase_order_supplemental_approvals')
+            .select('*')
+            .in('purchase_order_id', uniqueIds)
+            .order('created_at', { ascending: false });
+        if (error) {
+            if (error.code === '42P01') return {};
+            throw error;
+        }
+
+        return (data || []).reduce<Record<string, PurchaseOrderSupplementalApproval[]>>((acc, row) => {
+            const item = poSupplementalApprovalFromDb(row);
+            acc[item.purchaseOrderId] = [...(acc[item.purchaseOrderId] || []), item];
+            return acc;
+        }, {});
+    },
+
+    async syncPendingForPurchaseOrder(
+        po: PurchaseOrder,
+        drafts: PurchaseOrderSupplementalDraft[],
+        target?: ProjectSubmissionTarget | null,
+        actorUserId?: string | null,
+    ): Promise<void> {
+        if (drafts.length === 0) return;
+        const submissionPatch = projectSubmissionService.targetToUpdate(target);
+        const payload = drafts.map(draft => toDb({
+            purchaseOrderId: po.id,
+            deliveryBatchId: draft.deliveryBatchId,
+            projectId: po.projectId || null,
+            constructionSiteId: po.constructionSiteId || null,
+            previousApprovedAmount: draft.previousApprovedAmount,
+            requestedTotalAmount: draft.requestedTotalAmount,
+            overAmount: draft.overAmount,
+            status: 'pending',
+            requestedBy: actorUserId || null,
+            ...submissionPatch,
+        }));
+
+        const { error } = await supabase
+            .from('purchase_order_supplemental_approvals')
+            .upsert(payload, { onConflict: 'delivery_batch_id' });
+        if (error) throw error;
+    },
+
+    async approve(id: string, actorUserId?: string | null, note?: string | null): Promise<void> {
+        const { error } = await supabase.rpc('approve_purchase_order_supplemental_approval', {
+            p_approval_id: id,
+            p_actor_id: actorUserId || null,
+            p_note: note || null,
+        });
+        if (error) throw error;
+    },
+
+    async reject(id: string, actorUserId?: string | null, note?: string | null): Promise<void> {
+        const { error } = await supabase.rpc('reject_purchase_order_supplemental_approval', {
+            p_approval_id: id,
+            p_actor_id: actorUserId || null,
+            p_note: note || null,
+        });
+        if (error) throw error;
+    },
+};
+
 export const poDeliveryScheduleService = {
     async listByPurchaseOrderIds(poIds: string[]): Promise<Record<string, PurchaseOrderDeliveryBatch[]>> {
         const uniqueIds = Array.from(new Set(poIds.filter(Boolean)));
@@ -1211,7 +1277,7 @@ export const poDeliveryScheduleService = {
             if (existingError.code === '42P01') return;
             throw existingError;
         }
-        const lockedBatch = (existingRows || []).find(row => !['planned', 'cancelled'].includes(row.status));
+        const lockedBatch = (existingRows || []).find(row => !['planned', 'supplemental_pending', 'cancelled'].includes(row.status));
         if (lockedBatch) {
             throw new Error('PO đã có đợt giao tạo WMS/đã nhận nên không thể thay lịch giao từ form PO. Vui lòng huỷ hoặc xử lý đợt giao hiện tại trước.');
         }
@@ -1270,12 +1336,12 @@ export const poDeliveryScheduleService = {
             .from('purchase_order_delivery_batches')
             .delete()
             .eq('id', id)
-            .eq('status', 'planned')
+            .in('status', ['planned', 'supplemental_pending'])
             .select('id')
             .maybeSingle();
         if (error) throw error;
         if (!data) {
-            throw new Error('Chỉ xoá được đợt giao còn ở trạng thái kế hoạch và chưa tạo WMS/QR.');
+            throw new Error('Chỉ xoá được đợt giao còn ở trạng thái kế hoạch/chờ duyệt bổ sung và chưa tạo WMS/QR.');
         }
     },
 };

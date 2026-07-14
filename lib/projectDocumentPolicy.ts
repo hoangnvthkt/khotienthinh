@@ -1,5 +1,4 @@
 import { Role, User } from '../types';
-import { ProjectPermissionCode } from './projectStaffService';
 
 export type ProjectDocumentType =
   | 'daily_log'
@@ -58,7 +57,7 @@ export interface ProjectDocumentPolicyInput {
   documentType: ProjectDocumentType;
   status?: ProjectDocumentStatus | string | null;
   user?: User | null;
-  permissions?: Iterable<ProjectPermissionCode>;
+  permissions?: Iterable<string>;
   relatedUserIds?: Array<string | null | undefined>;
   currentHandlerIds?: Array<string | null | undefined>;
   dependencies?: ProjectDocumentDependencies | null;
@@ -77,7 +76,19 @@ const normalizeStatus = (status?: string | null): ProjectDocumentStatus => (
   (status || 'draft') as ProjectDocumentStatus
 );
 
-const hasPermission = (permissions: Iterable<ProjectPermissionCode> | undefined, code: ProjectPermissionCode) => {
+const DAILY_LOG_PERMISSIONS = {
+  create: 'project.daily_log.create',
+  editOwn: 'project.daily_log.edit_own',
+  editAll: 'project.daily_log.edit_all',
+  deleteOwn: 'project.daily_log.delete_own',
+  deleteAll: 'project.daily_log.delete_all',
+  submit: 'project.daily_log.submit',
+  return: 'project.daily_log.return',
+  verify: 'project.daily_log.verify',
+  approve: 'project.daily_log.approve',
+} as const;
+
+const hasPermission = (permissions: Iterable<string> | undefined, code: string) => {
   if (!permissions) return false;
   return new Set(permissions).has(code);
 };
@@ -90,7 +101,7 @@ const hasKnownHandler = (values?: Array<string | null | undefined>) => (
   !!values?.some(Boolean)
 );
 
-const hasAnyProjectPermission = (permissions: Iterable<ProjectPermissionCode> | undefined) => (
+const hasAnyProjectPermission = (permissions: Iterable<string> | undefined) => (
   !!permissions && Array.from(permissions).length > 0
 );
 
@@ -137,13 +148,17 @@ export function getProjectDocumentPolicy(input: ProjectDocumentPolicyInput): Pro
     if (dependencies.blockers.length > 0) {
       return deny(dependencies.blockers[0], dependencies.requiredRollbackSteps);
     }
-    if (!isAdmin && input.documentType === 'daily_log' && !hasPermission(input.permissions, 'edit') && !hasPermission(input.permissions, 'submit') && !hasPermission(input.permissions, 'verify')) {
-      return deny('Bạn cần quyền "edit", "submit" hoặc "verify" để chỉnh sửa nhật ký của mình.');
+    if (!isAdmin && input.documentType === 'daily_log') {
+      const canEditOwn = related && hasPermission(input.permissions, DAILY_LOG_PERMISSIONS.editOwn);
+      const canEditAll = hasPermission(input.permissions, DAILY_LOG_PERMISSIONS.editAll);
+      if (!canEditOwn && !canEditAll) {
+        return deny('Bạn cần quyền "project.daily_log.edit_own" hoặc "project.daily_log.edit_all" để chỉnh sửa nhật ký.');
+      }
     }
     if (!isAdmin && input.documentType !== 'daily_log' && !hasPermission(input.permissions, 'edit')) {
       return deny('Bạn cần quyền "edit" để chỉnh sửa phiếu này.');
     }
-    if (!isAdmin && relatedKnown && !related) {
+    if (!isAdmin && input.documentType !== 'daily_log' && relatedKnown && !related) {
       return deny('Chỉ người lập phiếu được chỉnh sửa khi phiếu ở nháp hoặc đã được trả lại về mình.');
     }
     return allow(isAdmin ? 'Admin chỉ nên chỉnh sửa khi phiếu đã được rollback/trả lại về trạng thái có thể sửa.' : undefined);
@@ -154,11 +169,12 @@ export function getProjectDocumentPolicy(input: ProjectDocumentPolicyInput): Pro
       if (dependencies.blockers.length > 0) {
         return deny(dependencies.blockers[0], dependencies.requiredRollbackSteps);
       }
-      if (!isAdmin && relatedKnown && !related) {
-        return deny('Chỉ người lập phiếu được xoá nhật ký khi phiếu ở nháp hoặc đã được trả lại.');
-      }
-      if (!isAdmin && !hasPermission(input.permissions, 'delete') && !hasPermission(input.permissions, 'edit') && !hasPermission(input.permissions, 'submit') && !hasPermission(input.permissions, 'verify')) {
-        return deny('Bạn cần quyền "delete", "edit", "submit" hoặc "verify" để xoá nhật ký của mình.');
+      if (!isAdmin) {
+        const canDeleteOwn = related && hasPermission(input.permissions, DAILY_LOG_PERMISSIONS.deleteOwn);
+        const canDeleteAll = hasPermission(input.permissions, DAILY_LOG_PERMISSIONS.deleteAll);
+        if (!canDeleteOwn && !canDeleteAll) {
+          return deny('Bạn cần quyền "project.daily_log.delete_own" hoặc "project.daily_log.delete_all" để xoá nhật ký.');
+        }
       }
       return allow();
     }
@@ -184,8 +200,9 @@ export function getProjectDocumentPolicy(input: ProjectDocumentPolicyInput): Pro
     if (dependencies.blockers.length > 0) {
       return deny(dependencies.blockers[0], dependencies.requiredRollbackSteps);
     }
-    if (!isAdmin && !hasPermission(input.permissions, 'submit')) {
-      return deny('Bạn cần quyền "submit" để gửi phiếu duyệt.');
+    const requiredSubmitPermission = input.documentType === 'daily_log' ? DAILY_LOG_PERMISSIONS.submit : 'submit';
+    if (!isAdmin && !hasPermission(input.permissions, requiredSubmitPermission)) {
+      return deny(`Bạn cần quyền "${requiredSubmitPermission}" để gửi phiếu duyệt.`);
     }
     return allow();
   }
@@ -200,14 +217,19 @@ export function getProjectDocumentPolicy(input: ProjectDocumentPolicyInput): Pro
     if (!canActOnCurrentStep) {
       return deny('Phiếu đang chờ người nhận xử lý hiện tại. Bạn chỉ được xem, không được trả lại thay người đó.');
     }
-    if (!isAdmin && !hasPermission(input.permissions, 'verify') && !hasPermission(input.permissions, 'approve') && !hasPermission(input.permissions, 'confirm')) {
+    if (!isAdmin && input.documentType === 'daily_log' && !hasPermission(input.permissions, DAILY_LOG_PERMISSIONS.return)) {
+      return deny('Bạn cần quyền "project.daily_log.return" để trả lại nhật ký.');
+    }
+    if (!isAdmin && input.documentType !== 'daily_log' && !hasPermission(input.permissions, 'verify') && !hasPermission(input.permissions, 'approve') && !hasPermission(input.permissions, 'confirm')) {
       return deny('Bạn cần quyền verify/approve/confirm phù hợp để trả lại phiếu.');
     }
     return allow();
   }
 
   if (input.action === 'verify' || input.action === 'approve' || input.action === 'confirm') {
-    const requiredPermission = input.action as ProjectPermissionCode;
+    const requiredPermission = input.documentType === 'daily_log'
+      ? `project.daily_log.${input.action}`
+      : input.action;
     if (!WAITING_STATUSES.has(status)) {
       return deny('Phiếu không ở trạng thái chờ xử lý bước hiện tại.');
     }

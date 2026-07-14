@@ -1,7 +1,6 @@
 import { useApp } from '../context/AppContext';
 import { Role } from '../types';
-import { ROUTE_TO_MODULE } from '../constants/routes';
-import { matchPath } from 'react-router-dom';
+import { canManageRoute } from '../lib/permissions/permissionService';
 
 
 /**
@@ -18,26 +17,7 @@ export function usePermission() {
   const isAdmin = user.role === Role.ADMIN;
 
   const canManage = (route: string): boolean => {
-    if (isAdmin) return true;
-
-    const moduleKey = ROUTE_TO_MODULE[route] ||
-      Object.entries(ROUTE_TO_MODULE).find(([routePattern]) =>
-        routePattern.includes(':') && matchPath({ path: routePattern, end: true }, route)
-      )?.[1];
-    if (!moduleKey) return false;
-
-    // Check old adminModules for backward compat
-    const oldAdminModules = user.adminModules || [];
-    if (oldAdminModules.includes(moduleKey)) return true;
-
-    // Check new adminSubModules
-    const adminSubs = user.adminSubModules?.[moduleKey];
-    if (adminSubs && adminSubs.length > 0 && adminSubs.some(adminRoute =>
-      adminRoute === route ||
-      (adminRoute.includes(':') && !!matchPath({ path: adminRoute, end: true }, route))
-    )) return true;
-
-    return false;
+    return canManageRoute(user, route);
   };
 
   return { canManage, isAdmin };

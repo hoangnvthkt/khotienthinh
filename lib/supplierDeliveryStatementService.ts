@@ -48,14 +48,25 @@ export const calculateSupplierDirectDeliveryLineTotals = (input: {
 export const calculateSupplierDeliveryStatementTotals = (lines: SupplierDirectDeliveryLine[]) => {
   const acceptedLines = lines.filter(line => line.status === 'accepted' || line.status === 'adjusted');
   return acceptedLines.reduce((totals, line) => {
-    const acceptedTotal = money(line.acceptedAmount || line.totalAmount || line.lineAmount + line.vatAmount);
-    const vatRate = numeric(line.vatRate);
-    const grossAmount = vatRate > 0 ? money(acceptedTotal / (1 + vatRate / 100)) : acceptedTotal;
-    const vatAmount = money(acceptedTotal - grossAmount);
+    const snapshotUnitPrice = (line as any).unitPriceSnapshot;
+    const snapshotVatRate = (line as any).vatRateSnapshot;
+    const hasPriceSnapshot = snapshotUnitPrice !== undefined || snapshotVatRate !== undefined;
+    const acceptedQuantity = quantity(line.acceptedQuantity || line.quantity);
+    const vatRate = numeric(hasPriceSnapshot ? snapshotVatRate : line.vatRate);
+    const grossAmount = hasPriceSnapshot
+      ? money(acceptedQuantity * numeric(snapshotUnitPrice))
+      : (() => {
+        const acceptedTotal = money(line.acceptedAmount || line.totalAmount || line.lineAmount + line.vatAmount);
+        return vatRate > 0 ? money(acceptedTotal / (1 + vatRate / 100)) : acceptedTotal;
+      })();
+    const vatAmount = hasPriceSnapshot ? money(grossAmount * vatRate / 100) : money(
+      money(line.acceptedAmount || line.totalAmount || line.lineAmount + line.vatAmount) - grossAmount,
+    );
+    const totalAmount = money(grossAmount + vatAmount);
     return {
       grossAmount: money(totals.grossAmount + grossAmount),
       vatAmount: money(totals.vatAmount + vatAmount),
-      totalAmount: money(totals.totalAmount + acceptedTotal),
+      totalAmount: money(totals.totalAmount + totalAmount),
     };
   }, { grossAmount: 0, vatAmount: 0, totalAmount: 0 });
 };
@@ -111,6 +122,8 @@ const normalizeStatement = (row: any): SupplierDeliveryStatement => ({
 
 const normalizeStatementLine = (row: any): SupplierDeliveryStatementLine => ({
   ...(fromDb(row) as SupplierDeliveryStatementLine),
+  unitPriceSnapshot: money(row.unit_price_snapshot),
+  vatRateSnapshot: numeric(row.vat_rate_snapshot),
   acceptedQuantity: quantity(row.accepted_quantity),
   acceptedAmount: money(row.accepted_amount),
   vatAmount: money(row.vat_amount),
@@ -233,40 +246,29 @@ export const supplierDirectDeliveryService = {
   },
 
   async upsert(note: SupplierDirectDeliveryNote, lines: SupplierDirectDeliveryLine[] = []): Promise<SupplierDirectDeliveryNote> {
-    const totals = lines.length > 0
-      ? lines.reduce((sum, line) => {
-        const lineTotals = calculateSupplierDirectDeliveryLineTotals(line);
-        return {
-          grossAmount: money(sum.grossAmount + lineTotals.lineAmount),
-          vatAmount: money(sum.vatAmount + lineTotals.vatAmount),
-          totalAmount: money(sum.totalAmount + lineTotals.totalAmount),
-        };
-      }, { grossAmount: 0, vatAmount: 0, totalAmount: 0 })
-      : {
-        grossAmount: note.grossAmount,
-        vatAmount: note.vatAmount,
-        totalAmount: note.totalAmount,
-      };
-
-    const { data, error } = await supabase
-      .from(DELIVERY_NOTE_TABLE)
-      .upsert(toDb(compact({ ...note, ...totals })), { onConflict: 'id' })
-      .select('*')
-      .single();
+    const { data, error } = await supabase.rpc('upsert_supplier_direct_delivery_note_with_lines', {
+      p_note: toDb(compact({
+        ...note,
+        grossAmount: 0,
+        vatAmount: 0,
+        totalAmount: 0,
+      })),
+      p_lines: lines.map(line => deliveryLinePayload({
+        ...line,
+        deliveryNoteId: line.deliveryNoteId || note.id,
+        supplierContractId: line.supplierContractId || note.supplierContractId,
+        unitPrice: 0,
+        vatRate: 0,
+        lineAmount: 0,
+        vatAmount: 0,
+        totalAmount: 0,
+        acceptedQuantity: 0,
+        acceptedAmount: 0,
+        status: 'pending',
+      })),
+    });
     if (error) throw error;
-
-    if (lines.length > 0) {
-      const { error: lineError } = await supabase
-        .from(DELIVERY_LINE_TABLE)
-        .upsert(lines.map(line => deliveryLinePayload({
-          ...line,
-          deliveryNoteId: line.deliveryNoteId || note.id,
-          supplierContractId: line.supplierContractId || note.supplierContractId,
-        })), { onConflict: 'id' });
-      if (lineError) throw lineError;
-    }
-
-    return normalizeDeliveryNote(data);
+    return normalizeDeliveryNote(Array.isArray(data) ? data[0] : data);
   },
 
   async setStatus(id: string, status: SupplierDirectDeliveryNoteStatus): Promise<SupplierDirectDeliveryNote> {
@@ -278,47 +280,6 @@ export const supplierDirectDeliveryService = {
       .single();
     if (error) throw error;
     return normalizeDeliveryNote(data);
-  },
-
-  async deleteDraft(id: string): Promise<void> {
-    const { data, error } = await supabase
-      .from(DELIVERY_NOTE_TABLE)
-      .delete()
-      .eq('id', id)
-      .in('status', ['draft', 'submitted'])
-      .select('id');
-    if (error) throw error;
-    if ((data || []).length === 0) {
-      throw new Error('Chỉ xoá được phiếu giao HĐ còn nháp/chưa duyệt.');
-    }
-  },
-
-  async cancelApproval(id: string, reason?: string | null): Promise<SupplierDirectDeliveryNote> {
-    const { note, lines } = await this.getDetail(id);
-    if (note.status !== 'accepted') {
-      throw new Error('Chỉ hủy duyệt phiếu giao HĐ đang ở trạng thái đã duyệt.');
-    }
-    const hasWmsProgress = lines.some(line =>
-      Boolean(line.wmsImportTransactionId || line.wmsExportTransactionId)
-      || !['not_required', undefined, null].includes(line.wmsStatus as any),
-    );
-    if (hasWmsProgress) {
-      throw new Error('Phiếu giao HĐ đã phát sinh WMS, không thể hủy duyệt trực tiếp.');
-    }
-    const noteText = reason?.trim() ? `Hủy duyệt: ${reason.trim()}` : 'Hủy duyệt';
-    const { error: lineError } = await supabase
-      .from(DELIVERY_LINE_TABLE)
-      .update(toDb({
-        status: 'pending',
-        acceptedQuantity: 0,
-        acceptedAmount: 0,
-        rejectionReason: null,
-        note: noteText,
-      }))
-      .eq('delivery_note_id', id)
-      .in('status', ['accepted', 'adjusted']);
-    if (lineError) throw lineError;
-    return this.setStatus(id, 'draft');
   },
 
   async reviewLines(
@@ -333,7 +294,7 @@ export const supplierDirectDeliveryService = {
     }>,
   ): Promise<{ note: SupplierDirectDeliveryNote; lines: SupplierDirectDeliveryLine[] }> {
     for (const review of reviews) {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from(DELIVERY_LINE_TABLE)
         .update(toDb({
           status: review.status,
@@ -343,10 +304,61 @@ export const supplierDirectDeliveryService = {
           note: review.reviewNote || null,
         }))
         .eq('id', review.lineId)
-        .eq('delivery_note_id', id);
+        .eq('delivery_note_id', id)
+        .select('id');
       if (error) throw error;
+      if ((data || []).length === 0) {
+        throw new Error('Không cập nhật được dòng giao HĐ NCC. Kiểm tra quyền hoặc trạng thái phiếu.');
+      }
     }
     return this.getDetail(id);
+  },
+
+  async record(id: string, actorId?: string | null): Promise<SupplierDirectDeliveryNote> {
+    const { data, error } = await supabase.rpc('record_supplier_direct_delivery_note', {
+      p_note_id: id,
+      p_actor_id: actorId || null,
+    });
+    if (error) throw error;
+
+    const recorded = normalizeDeliveryNote(Array.isArray(data) ? data[0] : data);
+    const detail = await this.getDetail(id);
+    const needsWmsImport = detail.lines.some(line =>
+      (line.wmsFlowMode || 'none') === 'direct_in_out'
+      && !line.wmsImportTransactionId
+      && numeric(line.acceptedQuantity || line.quantity) > 0,
+    );
+    if (needsWmsImport) {
+      try {
+        await this.createWmsImportDrafts(id, actorId || recorded.createdBy || '');
+      } catch (wmsError: any) {
+        const partialError = new Error(wmsError?.message || 'Không thể tạo phiếu nhập WMS sau khi ghi phiếu giao HĐ.') as Error & {
+          recordedNote?: SupplierDirectDeliveryNote;
+          wmsImportFailed?: boolean;
+          cause?: unknown;
+        };
+        partialError.recordedNote = recorded;
+        partialError.wmsImportFailed = true;
+        partialError.cause = wmsError;
+        throw partialError;
+      }
+    }
+    return recorded;
+  },
+
+  async unrecord(id: string): Promise<SupplierDirectDeliveryNote> {
+    const { data, error } = await supabase.rpc('unrecord_supplier_direct_delivery_note', {
+      p_note_id: id,
+    });
+    if (error) throw error;
+    return normalizeDeliveryNote(Array.isArray(data) ? data[0] : data);
+  },
+
+  async deleteDraft(id: string): Promise<void> {
+    const { error } = await supabase.rpc('delete_supplier_direct_delivery_note_v1', {
+      p_note_id: id,
+    });
+    if (error) throw error;
   },
 
   async createWmsImportDrafts(id: string, actorId: string): Promise<Transaction[]> {
@@ -393,11 +405,15 @@ export const supplierDirectDeliveryService = {
           supplierDeliveryWmsFlow: 'direct_in_out' as const,
         })).filter(item => item.itemId && item.quantity > 0),
         targetWarehouseId: warehouseId,
-        supplierId: note.supplierId || undefined,
         requesterId: actorId,
-        createdBy: actorId,
+        createdBy: actorId || null,
+        updatedBy: actorId || null,
+        businessPartnerId: note.supplierId || null,
+        businessPartnerNameSnapshot: note.supplierNameSnapshot || null,
         approverId: actorId,
         status: TransactionStatus.PENDING,
+        sourceType: 'supplier_direct_delivery_note',
+        sourceId: note.id,
         relatedRequestId: `supplier-direct-delivery:${id}`,
         note: `Nhập WMS từ phiếu giao HĐ ${note.code} - ${note.supplierNameSnapshot}`,
       };
@@ -414,11 +430,15 @@ export const supplierDirectDeliveryService = {
           date: transaction.date,
           items: transaction.items,
           target_warehouse_id: transaction.targetWarehouseId,
-          supplier_id: transaction.supplierId,
           requester_id: transaction.requesterId,
-          created_by: transaction.createdBy,
+          created_by: transaction.createdBy || null,
+          updated_by: transaction.updatedBy || null,
+          business_partner_id: transaction.businessPartnerId || null,
+          business_partner_name_snapshot: transaction.businessPartnerNameSnapshot || null,
           approver_id: transaction.approverId,
           status: transaction.status,
+          source_type: transaction.sourceType,
+          source_id: transaction.sourceId,
           note: transaction.note,
           related_request_id: transaction.relatedRequestId,
         });
@@ -510,9 +530,18 @@ export const supplierDeliveryStatementService = {
       const { error: lineError } = await supabase
         .from(STATEMENT_LINE_TABLE)
         .upsert(acceptedLines.map(line => {
-          const totalAmount = money(line.acceptedAmount || line.totalAmount);
-          const grossAmount = line.vatRate > 0 ? money(totalAmount / (1 + numeric(line.vatRate) / 100)) : totalAmount;
-          const vatAmount = money(totalAmount - grossAmount);
+          const acceptedQuantity = quantity(line.acceptedQuantity || line.quantity);
+          const unitPriceSnapshot = money((line as any).unitPriceSnapshot ?? line.unitPrice);
+          const vatRateSnapshot = numeric((line as any).vatRateSnapshot ?? line.vatRate);
+          const hasPriceSnapshot = (line as any).unitPriceSnapshot !== undefined || (line as any).vatRateSnapshot !== undefined;
+          const grossAmount = hasPriceSnapshot
+            ? money(acceptedQuantity * unitPriceSnapshot)
+            : (() => {
+              const totalAmount = money(line.acceptedAmount || line.totalAmount);
+              return vatRateSnapshot > 0 ? money(totalAmount / (1 + vatRateSnapshot / 100)) : totalAmount;
+            })();
+          const vatAmount = money(grossAmount * vatRateSnapshot / 100);
+          const totalAmount = money(grossAmount + vatAmount);
           return toDb(compact({
             statementId: statement.id,
             deliveryNoteId: line.deliveryNoteId,
@@ -520,7 +549,9 @@ export const supplierDeliveryStatementService = {
             supplierContractId: line.supplierContractId || statement.supplierContractId,
             itemNameSnapshot: line.itemNameSnapshot,
             unitSnapshot: line.unitSnapshot || null,
-            acceptedQuantity: line.acceptedQuantity || line.quantity,
+            unitPriceSnapshot,
+            vatRateSnapshot,
+            acceptedQuantity,
             acceptedAmount: grossAmount,
             vatAmount,
             totalAmount,

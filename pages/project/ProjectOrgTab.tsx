@@ -1,16 +1,30 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  Users, Plus, Trash2, Edit2, Save, X, Shield, Search, UserPlus,
-  ChevronDown, CheckCircle2, XCircle, Calendar, GripVertical
+  Users, Trash2, Edit2, Save, X, Shield, UserPlus,
+  XCircle, Calendar
 } from 'lucide-react';
-import { ProjectStaff, ProjectPermissionType, HrmPosition } from '../../types';
-import { projectStaffService, projectPermissionTypeService } from '../../lib/projectStaffService';
+import { ProjectStaff, ProjectPermissionType, HrmPosition, UserPermissionGrant } from '../../types';
+import { projectStaffService, projectPermissionTypeService, type ProjectOrgCapability } from '../../lib/projectStaffService';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { supabase } from '../../lib/supabase';
 import { fromDb } from '../../lib/dbMapping';
 import PremiumMemberSelect, { MemberOption } from '../../components/common/PremiumMemberSelect';
+import PermissionDiffPreview from '../../components/permissions/PermissionDiffPreview';
+import PermissionMatrix from '../../components/permissions/PermissionMatrix';
+import { listUserPermissionGrants } from '../../lib/permissions/permissionAdminService';
+import {
+  getLegacyProjectCodesDerivedFromPermissionCodes,
+  legacyProjectCodeToPermissionCodes,
+  type LegacyProjectPermissionCode,
+} from '../../lib/permissions/projectPermissionService';
+import {
+  getProjectPermissionTemplateCodes,
+  PROJECT_PERMISSION_TEMPLATES,
+  type ProjectPermissionTemplateKey,
+} from '../../lib/permissions/projectPermissionTemplates';
+import { PermissionScope } from '../../lib/permissions/permissionTypes';
 
 interface Props {
   projectId: string;
@@ -36,6 +50,35 @@ const LEVEL_BG: Record<number, string> = {
   6: 'bg-slate-50 border-slate-100',
 };
 
+const LEGACY_PROJECT_PERMISSION_CODES = new Set(['view', 'edit', 'delete', 'submit', 'verify', 'confirm', 'approve', 'view_available_stock']);
+
+const grantMatchesScope = (grant: UserPermissionGrant, scope: PermissionScope) =>
+  grant.permissionCode.startsWith('project.') &&
+  grant.scopeType === (scope.scopeType || 'project') &&
+  grant.scopeId === (scope.scopeId || '*');
+
+const buildScopedProjectGrants = (
+  userId: string,
+  permissionCodes: readonly string[],
+  scope: PermissionScope,
+): UserPermissionGrant[] =>
+  [...new Set(permissionCodes)]
+    .filter(permissionCode => permissionCode.startsWith('project.'))
+    .map(permissionCode => ({
+      id: `local-${userId}-${permissionCode}-${scope.scopeType || 'project'}-${scope.scopeId || '*'}`,
+      userId,
+      permissionCode,
+      scopeType: scope.scopeType || 'project',
+      scopeId: scope.scopeId || '*',
+      isActive: true,
+    }));
+
+const EMPTY_PROJECT_ORG_CAPABILITY: ProjectOrgCapability = {
+  canView: false,
+  canAssignStaff: false,
+  canGrantPermissions: false,
+};
+
 const ProjectOrgTab: React.FC<Props> = ({ projectId, constructionSiteId, canManageTab = true }) => {
   const toast = useToast();
   const confirm = useConfirm();
@@ -55,17 +98,67 @@ const ProjectOrgTab: React.FC<Props> = ({ projectId, constructionSiteId, canMana
   const [fStartDate, setFStartDate] = useState(new Date().toISOString().slice(0, 10));
   const [fNote, setFNote] = useState('');
   const [fPermIds, setFPermIds] = useState<Set<string>>(new Set());
+  const [initialProjectGrants, setInitialProjectGrants] = useState<UserPermissionGrant[]>([]);
+  const [fProjectGrants, setFProjectGrants] = useState<UserPermissionGrant[]>([]);
+  const [capabilities, setCapabilities] = useState<ProjectOrgCapability>(EMPTY_PROJECT_ORG_CAPABILITY);
+  const [grantLoading, setGrantLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+
+  const projectGrantScope = useMemo<PermissionScope>(
+    () => ({
+      scopeType: constructionSiteId ? 'construction_site' : 'project',
+      scopeId: constructionSiteId || projectId,
+    }),
+    [constructionSiteId, projectId],
+  );
+
+  const activeScopedProjectGrantCodes = useMemo(() => (
+    fProjectGrants
+      .filter(grant => grant.isActive !== false && grantMatchesScope(grant, projectGrantScope))
+      .map(grant => grant.permissionCode)
+  ), [fProjectGrants, projectGrantScope]);
+
+  const derivedLegacyProjectCodes = useMemo(
+    () => new Set(getLegacyProjectCodesDerivedFromPermissionCodes(activeScopedProjectGrantCodes)),
+    [activeScopedProjectGrantCodes],
+  );
+
+  const visibleLegacyPermissionTypes = useMemo(() => (
+    [...fPermIds]
+      .map(permissionTypeId => permTypes.find(permissionType => permissionType.id === permissionTypeId))
+      .filter((permissionType): permissionType is ProjectPermissionType =>
+        Boolean(permissionType) &&
+        LEGACY_PROJECT_PERMISSION_CODES.has(permissionType.code) &&
+        !derivedLegacyProjectCodes.has(permissionType.code as LegacyProjectPermissionCode)
+      )
+  ), [derivedLegacyProjectCodes, fPermIds, permTypes]);
+
+  const inheritedProjectPermissionCodes = useMemo(() => {
+    const legacyCodes = visibleLegacyPermissionTypes.map(permissionType => permissionType.code);
+    return [...new Set(legacyCodes.flatMap(code => legacyProjectCodeToPermissionCodes(code as LegacyProjectPermissionCode)))];
+  }, [visibleLegacyPermissionTypes]);
+
+  const canAssignStaff = canManageTab || capabilities.canAssignStaff;
+  const canGrantPermissions = canManageTab || capabilities.canGrantPermissions;
+  const canEditMember = canAssignStaff || canGrantPermissions;
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [staffData, permData] = await Promise.all([
+      const [staffData, permData, orgCapabilities] = await Promise.all([
         projectStaffService.listByProject(projectId, constructionSiteId || undefined),
         projectPermissionTypeService.list(),
+        currentUser?.id
+          ? projectStaffService.getProjectOrgCapabilities({
+            userId: currentUser.id,
+            projectId,
+            constructionSiteId: constructionSiteId || null,
+          })
+          : Promise.resolve(EMPTY_PROJECT_ORG_CAPABILITY),
       ]);
       setStaff(staffData);
       setPermTypes(permData.filter(p => p.isActive));
+      setCapabilities(orgCapabilities);
       const { data: positionRows, error: positionError } = await supabase
         .from('hrm_positions')
         .select('*')
@@ -79,7 +172,7 @@ const ProjectOrgTab: React.FC<Props> = ({ projectId, constructionSiteId, canMana
     } finally {
       setLoading(false);
     }
-  }, [projectId, constructionSiteId, hrmPositions, toast]);
+  }, [projectId, constructionSiteId, currentUser?.id, hrmPositions, toast]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -121,24 +214,27 @@ const ProjectOrgTab: React.FC<Props> = ({ projectId, constructionSiteId, canMana
     setFStartDate(new Date().toISOString().slice(0, 10));
     setFNote('');
     setFPermIds(new Set());
+    setInitialProjectGrants([]);
+    setFProjectGrants([]);
+    setGrantLoading(false);
     setSearchQuery('');
     setShowModal(false);
   };
 
-  const ensureCanManage = (action: string) => {
-    if (canManageTab) return true;
-    toast.warning('Không có quyền quản trị tab', `Bạn cần quyền quản trị "Tổ chức" để ${action}.`);
+  const ensureCapability = (allowed: boolean, permissionCode: string, action: string) => {
+    if (allowed) return true;
+    toast.warning('Không có quyền Tổ chức Dự Án', `Bạn cần quyền "${permissionCode}" để ${action}.`);
     return false;
   };
 
   const openAdd = () => {
-    if (!ensureCanManage('thêm thành viên dự án')) return;
+    if (!ensureCapability(canAssignStaff, 'project.org.assign_staff', 'thêm thành viên dự án')) return;
     resetForm();
     setShowModal(true);
   };
 
   const openEdit = (s: ProjectStaff) => {
-    if (!ensureCanManage('sửa thành viên dự án')) return;
+    if (!ensureCapability(canEditMember, 'project.org.assign_staff / project.org.grant_permissions', 'sửa thành viên dự án')) return;
     setEditingStaff(s);
     setFUserId(s.userId);
     setFPositionId(s.positionId);
@@ -148,46 +244,89 @@ const ProjectOrgTab: React.FC<Props> = ({ projectId, constructionSiteId, canMana
       (s.permissions || []).filter(p => p.isActive).map(p => p.permissionTypeId)
     ));
     setShowModal(true);
+    setGrantLoading(true);
+    listUserPermissionGrants(s.userId)
+      .then(grants => {
+        const scopedProjectGrants = grants.filter(grant => grantMatchesScope(grant, projectGrantScope));
+        setInitialProjectGrants(scopedProjectGrants);
+        setFProjectGrants(scopedProjectGrants);
+      })
+      .catch(error => {
+        console.warn('Failed to load project PBAC v2 grants', error);
+        toast.warning('Không tải được grant mới', 'Ma trận vẫn hiển thị quyền legacy/inherited hiện có.');
+        setInitialProjectGrants([]);
+        setFProjectGrants([]);
+      })
+      .finally(() => setGrantLoading(false));
   };
 
-  const togglePerm = (ptId: string) => {
-    if (!ensureCanManage('cập nhật quyền dự án')) return;
-    setFPermIds(prev => {
-      const next = new Set(prev);
-      if (next.has(ptId)) next.delete(ptId);
-      else next.add(ptId);
-      return next;
-    });
+  const normalizeProjectGrantsForTarget = useCallback((targetUserId: string, grants: readonly UserPermissionGrant[]) =>
+    grants
+      .filter(grant => grant.permissionCode.startsWith('project.'))
+      .map(grant => ({
+        ...grant,
+        userId: targetUserId,
+        scopeType: projectGrantScope.scopeType || 'project',
+        scopeId: projectGrantScope.scopeId || '*',
+        isActive: grant.isActive ?? true,
+      })),
+    [projectGrantScope],
+  );
+
+  const applyTemplate = (templateKey: ProjectPermissionTemplateKey) => {
+    if (!ensureCapability(canGrantPermissions, 'project.org.grant_permissions', 'áp dụng template quyền')) return;
+    const targetUserId = fUserId || editingStaff?.userId;
+    if (!targetUserId) {
+      toast.warning('Chưa chọn nhân viên', 'Chọn nhân viên trước khi áp dụng template quyền.');
+      return;
+    }
+    setFProjectGrants(buildScopedProjectGrants(targetUserId, getProjectPermissionTemplateCodes(templateKey), projectGrantScope));
   };
 
   const handleSave = async () => {
-    if (!ensureCanManage('lưu tổ chức dự án')) return;
+    if (!ensureCapability(canEditMember, 'project.org.assign_staff / project.org.grant_permissions', 'lưu tổ chức dự án')) return;
     if (!fUserId) { toast.warning('Thiếu', 'Vui lòng chọn nhân viên'); return; }
-    if (!fPositionId) { toast.warning('Thiếu', 'Vui lòng chọn vị trí'); return; }
+    if (canAssignStaff && !fPositionId) { toast.warning('Thiếu', 'Vui lòng chọn vị trí'); return; }
 
     try {
       if (editingStaff) {
-        // Update staff info
-        await projectStaffService.update(editingStaff.id, {
-          positionId: fPositionId,
-          startDate: fStartDate,
-          note: fNote,
-        }, currentUser?.id, currentUser?.name);
-        // Update permissions (replace all)
-        await projectStaffService.setPermissions(editingStaff.id, [...fPermIds], currentUser?.id, currentUser?.name);
+        if (canAssignStaff) {
+          await projectStaffService.update(editingStaff.id, {
+            positionId: fPositionId,
+            startDate: fStartDate,
+            note: fNote,
+          }, currentUser?.id, currentUser?.name);
+        }
+        if (canGrantPermissions) {
+          await projectStaffService.replaceProjectStaffPermissionGrants(
+            editingStaff.id,
+            normalizeProjectGrantsForTarget(editingStaff.userId, fProjectGrants),
+            currentUser?.id,
+            currentUser?.name,
+          );
+        }
         toast.success('Đã cập nhật thành viên');
       } else {
-        await projectStaffService.add({
+        if (!ensureCapability(canAssignStaff, 'project.org.assign_staff', 'thêm thành viên dự án')) return;
+        const staffId = await projectStaffService.add({
           projectId,
           constructionSiteId: constructionSiteId || null,
           userId: fUserId,
           positionId: fPositionId,
-          permissionTypeIds: [...fPermIds],
+          permissionTypeIds: [],
           startDate: fStartDate,
           note: fNote,
           grantedBy: currentUser?.id,
           operatorName: currentUser?.name,
         });
+        if (canGrantPermissions) {
+          await projectStaffService.replaceProjectStaffPermissionGrants(
+            staffId,
+            normalizeProjectGrantsForTarget(fUserId, fProjectGrants),
+            currentUser?.id,
+            currentUser?.name,
+          );
+        }
         toast.success('Đã thêm thành viên mới');
       }
       await load();
@@ -198,7 +337,7 @@ const ProjectOrgTab: React.FC<Props> = ({ projectId, constructionSiteId, canMana
   };
 
   const handleDelete = async (s: ProjectStaff) => {
-    if (!ensureCanManage('xoá thành viên dự án')) return;
+    if (!ensureCapability(canAssignStaff, 'project.org.assign_staff', 'xoá thành viên dự án')) return;
     const ok = await confirm({
       title: 'Xoá thành viên',
       targetName: `${s.userName} — ${s.positionName}`,
@@ -215,7 +354,7 @@ const ProjectOrgTab: React.FC<Props> = ({ projectId, constructionSiteId, canMana
   };
 
   const handleEndDate = async (s: ProjectStaff) => {
-    if (!ensureCanManage('kết thúc phân công')) return;
+    if (!ensureCapability(canAssignStaff, 'project.org.assign_staff', 'kết thúc phân công')) return;
     const ok = await confirm({
       title: 'Kết thúc phân công',
       targetName: `${s.userName} — ${s.positionName}`,
@@ -226,26 +365,6 @@ const ProjectOrgTab: React.FC<Props> = ({ projectId, constructionSiteId, canMana
       await projectStaffService.update(s.id, { endDate: new Date().toISOString().slice(0, 10) }, currentUser?.id, currentUser?.name);
       await load();
       toast.success('Đã cập nhật');
-    } catch (e: any) {
-      toast.error('Lỗi', e?.message);
-    }
-  };
-
-  // Quick inline permission toggle
-  const handleQuickTogglePerm = async (s: ProjectStaff, ptId: string) => {
-    if (!ensureCanManage('cấp hoặc gỡ quyền nghiệp vụ')) return;
-    const currentPerms = (s.permissions || []).filter(p => p.isActive).map(p => p.permissionTypeId);
-    const newPerms = currentPerms.includes(ptId)
-      ? currentPerms.filter(id => id !== ptId)
-      : [...currentPerms, ptId];
-    try {
-      await projectStaffService.setPermissions(s.id, newPerms, currentUser?.id, currentUser?.name);
-      await load();
-      const perm = permTypes.find(pt => pt.id === ptId);
-      toast.success(
-        currentPerms.includes(ptId) ? 'Đã gỡ quyền' : 'Đã cấp quyền',
-        `${s.userName || 'Thành viên'}${perm ? ` — ${perm.name}` : ''}`
-      );
     } catch (e: any) {
       toast.error('Lỗi', e?.message);
     }
@@ -264,7 +383,7 @@ const ProjectOrgTab: React.FC<Props> = ({ projectId, constructionSiteId, canMana
             <p className="text-xs text-slate-400">{staff.length} thành viên • {groupedStaff.length} cấp bậc</p>
           </div>
         </div>
-        {canManageTab && (
+        {canAssignStaff && (
           <button onClick={openAdd}
             className="flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-black text-white bg-gradient-to-r from-indigo-500 to-purple-600 shadow-lg shadow-indigo-500/25 hover:shadow-xl hover:scale-[1.02] transition-all">
             <UserPlus size={14} /> Thêm thành viên
@@ -294,7 +413,6 @@ const ProjectOrgTab: React.FC<Props> = ({ projectId, constructionSiteId, canMana
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {members.map(s => {
                 const isEnded = !!s.endDate;
-                const activePerms = (s.permissions || []).filter(p => p.isActive);
                 return (
                   <div key={s.id}
                     className={`relative bg-white dark:bg-slate-800 rounded-2xl border shadow-sm overflow-hidden transition-all hover:shadow-lg group ${
@@ -329,42 +447,30 @@ const ProjectOrgTab: React.FC<Props> = ({ projectId, constructionSiteId, canMana
                           )}
                         </div>
                         {/* Actions */}
-                        {canManageTab && (
+                        {canEditMember && (
                           <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                             <button onClick={() => openEdit(s)} className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 transition-colors" title="Sửa">
                               <Edit2 size={12} />
                             </button>
-                            {!isEnded && (
+                            {canAssignStaff && !isEnded && (
                               <button onClick={() => handleEndDate(s)} className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 hover:text-amber-600 hover:bg-amber-50 transition-colors" title="Kết thúc">
                                 <XCircle size={12} />
                               </button>
                             )}
-                            <button onClick={() => handleDelete(s)} className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 hover:text-red-600 hover:bg-red-50 transition-colors" title="Xoá">
-                              <Trash2 size={12} />
-                            </button>
+                            {canAssignStaff && (
+                              <button onClick={() => handleDelete(s)} className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 hover:text-red-600 hover:bg-red-50 transition-colors" title="Xoá">
+                                <Trash2 size={12} />
+                              </button>
+                            )}
                           </div>
                         )}
                       </div>
 
-                      {/* Permissions — inline toggles */}
+                      {/* Permission summary */}
                       <div className="mt-3 flex flex-wrap gap-1.5">
-                        {permTypes.map(pt => {
-                          const has = activePerms.some(p => p.permissionTypeId === pt.id);
-                          return (
-                            <button key={pt.id}
-                              onClick={() => handleQuickTogglePerm(s, pt.id)}
-                              disabled={!canManageTab}
-                              className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[9px] font-bold transition-all border ${
-                                has
-                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200 shadow-sm'
-                                  : `bg-white text-slate-300 border-slate-100 ${canManageTab ? 'hover:border-slate-200' : 'cursor-default'}`
-                              }`}
-                              title={pt.description || pt.name}>
-                              {has ? <CheckCircle2 size={9} /> : <XCircle size={9} />}
-                              {pt.code}
-                            </button>
-                          );
-                        })}
+                        <span className="rounded-lg border border-blue-100 bg-blue-50 px-2 py-1 text-[9px] font-black text-blue-700">
+                          PBAC v2: mở ma trận để xem/sửa
+                        </span>
                       </div>
 
                       {s.note && (
@@ -382,7 +488,7 @@ const ProjectOrgTab: React.FC<Props> = ({ projectId, constructionSiteId, canMana
       {/* Modal — Add/Edit Staff */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => resetForm()}>
-          <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden" onClick={e => e.stopPropagation()}>
+          <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl w-full max-w-5xl mx-4 overflow-hidden" onClick={e => e.stopPropagation()}>
             {/* Modal header */}
             <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -428,6 +534,7 @@ const ProjectOrgTab: React.FC<Props> = ({ projectId, constructionSiteId, canMana
               <div>
                 <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider block mb-1.5">Vị trí công việc *</label>
                 <select value={fPositionId} onChange={e => setFPositionId(e.target.value)}
+                  disabled={!canAssignStaff}
                   className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-400 dark:bg-slate-700 dark:border-slate-600">
                   <option value="">— Chọn vị trí —</option>
                   {sortedPositions.map(p => (
@@ -444,36 +551,68 @@ const ProjectOrgTab: React.FC<Props> = ({ projectId, constructionSiteId, canMana
                 <div>
                   <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider block mb-1.5">Ngày bắt đầu</label>
                   <input type="date" value={fStartDate} onChange={e => setFStartDate(e.target.value)}
+                    disabled={!canAssignStaff}
                     className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-400 dark:bg-slate-700 dark:border-slate-600" />
                 </div>
                 <div>
                   <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider block mb-1.5">Ghi chú</label>
                   <input value={fNote} onChange={e => setFNote(e.target.value)} placeholder="VD: Kiêm nhiệm"
+                    disabled={!canAssignStaff}
                     className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-400 dark:bg-slate-700 dark:border-slate-600" />
                 </div>
               </div>
 
-              {/* Permissions — tick tay */}
+              {/* Project PBAC v2 matrix */}
               <div>
                 <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider block mb-2">
-                  <Shield size={10} className="inline mr-1" />Quyền nghiệp vụ (tick từng quyền)
+                  <Shield size={10} className="inline mr-1" />Ma trận quyền Project PBAC v2
                 </label>
-                <div className="grid grid-cols-2 gap-2">
-                  {permTypes.map(pt => (
-                    <label key={pt.id}
-                      className={`flex items-center gap-2 p-3 rounded-xl border cursor-pointer transition-all ${
-                        fPermIds.has(pt.id)
-                          ? 'bg-emerald-50 border-emerald-200 dark:bg-emerald-900/20 dark:border-emerald-700'
-                          : 'bg-white border-slate-100 hover:border-slate-200 dark:bg-slate-700 dark:border-slate-600'
-                      }`}>
-                      <input type="checkbox" checked={fPermIds.has(pt.id)} onChange={() => togglePerm(pt.id)}
-                        className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" />
-                      <div>
-                        <div className="text-xs font-bold text-slate-700 dark:text-white">{pt.name}</div>
-                        <div className="text-[9px] text-slate-400">{pt.code}{pt.module ? ` (${pt.module})` : ''}</div>
-                      </div>
-                    </label>
+                <div className="mb-3 flex flex-wrap gap-1.5">
+                  {PROJECT_PERMISSION_TEMPLATES.map(template => (
+                    <button
+                      key={template.key}
+                      type="button"
+                      onClick={() => applyTemplate(template.key)}
+                      disabled={!canGrantPermissions}
+                      className={`rounded-lg border px-2.5 py-1.5 text-[10px] font-black ${
+                        canGrantPermissions
+                          ? 'border-slate-200 bg-white text-slate-600 hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700'
+                          : 'cursor-not-allowed border-slate-100 bg-slate-50 text-slate-300'
+                      }`}
+                    >
+                      {template.label}
+                    </button>
                   ))}
+                </div>
+                {visibleLegacyPermissionTypes.length > 0 && (
+                  <div className="mb-3 rounded-lg border border-amber-100 bg-amber-50 px-3 py-2">
+                    <div className="mb-1 text-[10px] font-black uppercase text-amber-700">Legacy còn sót</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {visibleLegacyPermissionTypes.map(permissionType => (
+                        <span key={permissionType.id} className="rounded bg-white px-2 py-1 text-[10px] font-bold text-amber-700 ring-1 ring-amber-100">
+                          {permissionType.code}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {grantLoading ? (
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-8 text-center text-xs font-bold text-slate-500">
+                    Đang tải grant mới...
+                  </div>
+                ) : (
+                  <PermissionMatrix
+                    applicationCodes={['project']}
+                    grants={fProjectGrants}
+                    inheritedPermissionCodes={inheritedProjectPermissionCodes}
+                    targetUserId={fUserId || editingStaff?.userId || ''}
+                    scope={projectGrantScope}
+                    disabled={!canGrantPermissions}
+                    onChange={setFProjectGrants}
+                  />
+                )}
+                <div className="mt-3">
+                  <PermissionDiffPreview before={initialProjectGrants} after={fProjectGrants} />
                 </div>
               </div>
             </div>

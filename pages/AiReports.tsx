@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { escapeHtml } from '../lib/safeHtml';
+import { getAiReportCapabilities } from '../lib/permissions/globalModulePermissions';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
@@ -48,6 +49,7 @@ const FREQ_LABELS: Record<string, string> = {
 
 const AiReports: React.FC = () => {
   const { user } = useApp();
+  const reportCapabilities = getAiReportCapabilities(user);
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState<string | null>(null);
@@ -58,6 +60,11 @@ const AiReports: React.FC = () => {
 
   // Load reports
   const loadReports = useCallback(async () => {
+    if (!reportCapabilities.canView) {
+      setReports([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     const { data } = await supabase
       .from('ai_scheduled_reports')
@@ -65,17 +72,23 @@ const AiReports: React.FC = () => {
       .order('created_at', { ascending: true });
     setReports(data || []);
     setLoading(false);
-  }, []);
+  }, [reportCapabilities.canView]);
 
   useEffect(() => { loadReports(); }, [loadReports]);
 
   // Generate report
   const generateReport = async (reportId: string) => {
+    if (!reportCapabilities.canGenerate) return;
     setGenerating(reportId);
     try {
+      const { data: { session } } = await supabase.auth.getSession();
       const resp = await fetch(`${SUPABASE_URL}/functions/v1/ai-scheduled-report`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': SUPABASE_KEY,
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
         body: JSON.stringify({ action: 'generate', reportId }),
       });
       const result = await resp.json();
@@ -94,6 +107,7 @@ const AiReports: React.FC = () => {
 
   // Load history
   const loadHistory = async (report: Report) => {
+    if (!reportCapabilities.canView) return;
     setSelectedReport(report);
     setHistoryLoading(true);
     const { data } = await supabase
@@ -184,7 +198,7 @@ const AiReports: React.FC = () => {
             </div>
             <button
               onClick={() => generateReport(selectedReport.id)}
-              disabled={generating === selectedReport.id}
+              disabled={generating === selectedReport.id || !reportCapabilities.canGenerate}
               className="px-4 py-2.5 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-xl text-xs font-black uppercase tracking-wider hover:shadow-lg transition-all active:scale-95 flex items-center gap-2 disabled:opacity-50"
             >
               {generating === selectedReport.id ? (
@@ -326,7 +340,7 @@ const AiReports: React.FC = () => {
                         </button>
                         <button
                           onClick={() => generateReport(report.id)}
-                          disabled={isGenerating}
+                          disabled={isGenerating || !reportCapabilities.canGenerate}
                           className="px-4 py-2 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-xl text-xs font-black uppercase tracking-wider hover:shadow-lg hover:shadow-indigo-500/20 transition-all active:scale-95 flex items-center gap-1.5 disabled:opacity-50"
                         >
                           {isGenerating ? (

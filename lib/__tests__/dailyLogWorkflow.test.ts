@@ -51,7 +51,7 @@ describe('daily log source workflow', () => {
       sourceSummaryLog: summaryLog({ status: 'rejected' }),
       userId: 'ktt-1',
       isAdmin: false,
-      permissions: new Set(['verify']),
+      permissions: new Set(['project.daily_log.return']),
     })).toBe(true);
   });
 
@@ -61,7 +61,7 @@ describe('daily log source workflow', () => {
       sourceSummaryLog: summaryLog({ status: 'submitted', submittedToPermission: 'approve' }),
       userId: 'ktt-1',
       isAdmin: false,
-      permissions: new Set(['verify']),
+      permissions: new Set(['project.daily_log.return']),
     })).toBe(false);
   });
 
@@ -71,7 +71,7 @@ describe('daily log source workflow', () => {
       sourceSummaryLog: null,
       userId: 'ktt-1',
       isAdmin: false,
-      permissions: new Set(['verify']),
+      permissions: new Set(['project.daily_log.return']),
     })).toBe(false);
   });
 

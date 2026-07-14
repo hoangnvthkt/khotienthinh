@@ -94,8 +94,9 @@ export type PurchaseOrderCockpitDrawerProps = {
   totalReceivedQty: number;
   completedReturnQty: number;
   pendingReturnQty: number;
-  canManageTab: boolean;
   canMutatePoDocument: boolean;
+  canReceivePo: boolean;
+  canDeletePo: boolean;
   poHasStockImpact: boolean;
   creatingDeliveryBatchId?: string | null;
   deletingDeliveryKey?: string | null;
@@ -133,8 +134,8 @@ const formatDate = (value?: string | null) => {
 
 const actionIcon = (action: PurchaseOrderUiAction) => {
   if (action.id === 'request_approval') return <Send size={14} />;
-  if (action.id === 'approve_po') return <CheckCircle2 size={14} />;
-  if (action.id === 'request_revision') return <RefreshCcw size={14} />;
+  if (action.id === 'approve_po' || action.id === 'approve_supplemental') return <CheckCircle2 size={14} />;
+  if (action.id === 'request_revision' || action.id === 'reject_supplemental') return <RefreshCcw size={14} />;
   if (action.id === 'create_delivery' || action.id === 'create_supplemental_delivery') return <Truck size={14} />;
   if (action.id === 'create_receipt') return <QrCode size={14} />;
   if (action.id === 'open_wms_transaction') return <ShieldCheck size={14} />;
@@ -163,6 +164,7 @@ const actionClass = (action: PurchaseOrderUiAction, primary = false) => {
 
 const normalizeDeliveryTimelineStatus = (status?: string | null): PurchaseOrderDeliveryBatch['status'] => {
   if (status === 'received') return 'received';
+  if (status === 'supplemental_pending') return 'supplemental_pending';
   if (status === 'wms_pending' || status === 'issued' || status === 'variance_pending') return 'wms_pending';
   if (status === 'cancelled' || status === 'returned') return 'cancelled';
   return 'planned';
@@ -171,6 +173,7 @@ const normalizeDeliveryTimelineStatus = (status?: string | null): PurchaseOrderD
 const deliveryStatusView = (status?: string | null) => {
   const normalizedStatus = normalizeDeliveryTimelineStatus(status);
   if (normalizedStatus === 'received') return { label: 'Đã nhập kho', className: 'border-emerald-200 bg-emerald-50 text-emerald-700' };
+  if (normalizedStatus === 'supplemental_pending') return { label: 'Chờ duyệt bổ sung', className: 'border-amber-200 bg-amber-50 text-amber-700' };
   if (normalizedStatus === 'wms_pending') return { label: 'Chờ kho duyệt', className: 'border-amber-200 bg-amber-50 text-amber-700' };
   if (normalizedStatus === 'cancelled') return { label: 'Từ chối', className: 'border-rose-200 bg-rose-50 text-rose-700' };
   return { label: 'Kế hoạch', className: 'border-blue-200 bg-blue-50 text-blue-700' };
@@ -223,8 +226,9 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
   totalReceivedQty,
   completedReturnQty,
   pendingReturnQty,
-  canManageTab,
   canMutatePoDocument,
+  canReceivePo,
+  canDeletePo,
   poHasStockImpact,
   creatingDeliveryBatchId,
   deletingDeliveryKey,
@@ -656,7 +660,7 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
                         const printPoKey = `${po.id}:${printGroup.key}:purchase_order`;
                         const printApprovalKey = `${po.id}:${printGroup.key}:approval_request`;
                         const normalizedStatus = normalizeDeliveryTimelineStatus(group.status);
-                        const canEditPlannedBatch = !!batch && canMutatePoDocument && batch.status === 'planned' && !poHasStockImpact;
+                        const canEditPlannedBatch = !!batch && canMutatePoDocument && ['planned', 'supplemental_pending'].includes(batch.status) && !poHasStockImpact;
                         const isDeletingBatch = batch
                           ? deletingDeliveryKey === `batch:${batch.id}`
                           : deletingDeliveryKey === `group:${printGroup.key}`;
@@ -712,7 +716,7 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
                                     </button>
                                   </>
                                 )}
-                                {batch && canManageTab && po.sourceMode === 'from_request' && ['confirmed', 'in_transit'].includes(po.status) && batch.status === 'planned' && (
+                                {batch && canReceivePo && po.sourceMode === 'from_request' && ['confirmed', 'in_transit'].includes(po.status) && batch.status === 'planned' && (
                                   <button type="button" onClick={() => void onCreateDeliveryReceipt(batch)} disabled={creatingDeliveryBatchId === batch.id} className="inline-flex h-9 items-center gap-1 rounded-lg bg-indigo-600 px-3 text-[10px] font-black text-white hover:bg-indigo-700 disabled:opacity-60">
                                     {creatingDeliveryBatchId === batch.id ? <Loader2 size={13} className="animate-spin" /> : <QrCode size={13} />} Tạo WMS
                                   </button>
@@ -722,7 +726,7 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
                                     <ShieldCheck size={13} /> Mở WMS
                                   </button>
                                 )}
-                                {canMutatePoDocument && normalizedStatus === 'cancelled' && (
+                                {canDeletePo && normalizedStatus === 'cancelled' && (
                                   <button type="button" onClick={() => batch ? void onRemoveFailedDeliveryBatch(batch) : void onRemoveFailedDeliveryGroup(printGroup)} disabled={isDeletingBatch} className="inline-flex h-9 items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 text-[10px] font-black text-red-700 hover:bg-red-100 disabled:opacity-60">
                                     {isDeletingBatch ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />} Xóa đợt bị từ chối
                                   </button>

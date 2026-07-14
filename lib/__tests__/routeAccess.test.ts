@@ -32,3 +32,28 @@ describe('chat route access', () => {
   });
 });
 
+describe('phase 0 route containment', () => {
+  it('maps the document trace route to AUDIT_TRAIL', () => {
+    expect(getRouteModuleKey('/trace')).toBe('AUDIT_TRAIL');
+  });
+
+  it('maps the contract shell route to HD', () => {
+    expect(getRouteModuleKey('/hd')).toBe('HD');
+  });
+
+  it('blocks unknown protected routes for non-admin users', () => {
+    expect(canAccessRoute(user(['HRM']), '/not-declared-yet')).toBe(false);
+  });
+
+  it('keeps authenticated-open profile routes available', () => {
+    expect(canAccessRoute(user([]), '/my-profile')).toBe(true);
+  });
+
+  it('keeps the authenticated home route available', () => {
+    expect(canAccessRoute(user([]), '/')).toBe(true);
+  });
+
+  it('keeps legacy profiles without an allowedModules list working for mapped routes', () => {
+    expect(canAccessRoute(user(undefined), '/hd')).toBe(true);
+  });
+});

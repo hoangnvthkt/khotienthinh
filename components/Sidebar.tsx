@@ -19,9 +19,9 @@ import { useChat } from '../context/ChatContext';
 import { useChatV2UnreadCount } from '../hooks/useChatV2';
 import { Role, TransactionStatus, RequestStatus } from '../types';
 import { canApproveMaterialRequest, canApproveWmsTransaction, canExportMaterialRequest, canReceiveMaterialRequest, canReceiveWmsTransaction, isWarehouseKeeper } from '../lib/wmsPermissions';
-import { hasProjectTabPermissionRoute } from '../lib/projectTabPermissions';
 import { isChatEnabled, isChatV2Enabled } from '../lib/featureFlags';
 import { canAccessRoute } from '../lib/routeAccess';
+import { canViewModule } from '../lib/permissions/permissionService';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -99,14 +99,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
 
   // Filter modules by user permissions, then sort by saved order
   const userModules = useMemo(() => {
-    let mods = (user.role === Role.ADMIN || user.allowedModules === undefined)
-      ? [...MODULE_CONFIG]
-      : MODULE_CONFIG.filter(m =>
-        user.allowedModules!.includes(m.key) ||
-        (user.adminModules || []).includes(m.key) ||
-        (user.allowedSubModules?.[m.key] || []).length > 0 ||
-        (user.adminSubModules?.[m.key] || []).length > 0
-      );
+    let mods = MODULE_CONFIG.filter(m => canViewModule(user, m.key));
     const order = getSavedOrder();
     if (order.length > 0) {
       mods = [...mods].sort((a, b) => {
@@ -119,7 +112,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
       });
     }
     return mods;
-  }, [user.role, user.allowedModules, user.allowedSubModules, user.adminModules, user.adminSubModules]);
+  }, [user]);
 
   const [orderedModules, setOrderedModules] = useState(userModules);
   // Sync when userModules changes
@@ -287,15 +280,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
 
     // Role filter (e.g., Admin-only items)
     if (item.roles && !item.roles.includes(user.role) && !hasExplicitRouteGrant) return false;
-    // Sub-module filter: if allowedSubModules is configured for this module, only show allowed routes
-    if (user.role !== Role.ADMIN && activeModule) {
-      const hasSubModuleRestriction = Object.prototype.hasOwnProperty.call(user.allowedSubModules || {}, activeModule.key);
-      if (hasSubModuleRestriction && !hasExplicitRouteGrant) {
-        if (activeModule.key === 'DA' && item.to === '/da' && hasProjectTabPermissionRoute(subModules)) return true;
-        return false;
-      }
-    }
-    return true;
+    return canAccessRoute(user, item.to);
   });
   const assignedWh = warehouses.find(w => w.id === user.assignedWarehouseId);
 

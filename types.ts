@@ -74,6 +74,19 @@ export interface User {
   adminSubModules?: Record<string, string[]>; // Module key -> danh sách route sub-app có quyền CRUD (VD: { "HRM": ["/hrm/employees"] })
   signatureUrl?: string; // URL ảnh chữ ký số
   isActive?: boolean;
+  permissionGrants?: UserPermissionGrant[]; // Phase 1 permission framework grants
+}
+
+export interface UserPermissionGrant {
+  id?: string;
+  userId: string;
+  permissionCode: string;
+  scopeType: 'global' | 'own' | 'assigned' | 'project' | 'construction_site' | 'warehouse' | 'department';
+  scopeId: string;
+  isActive?: boolean;
+  grantedBy?: string;
+  grantedAt?: string;
+  expiresAt?: string;
 }
 
 export interface Warehouse {
@@ -2439,6 +2452,8 @@ export interface SupplierDeliveryStatementLine {
   supplierContractId: string;
   itemNameSnapshot: string;
   unitSnapshot?: string | null;
+  unitPriceSnapshot?: number;
+  vatRateSnapshot?: number;
   acceptedQuantity: number;
   acceptedAmount: number;
   vatAmount: number;
@@ -2609,6 +2624,8 @@ export interface PurchaseOrder extends ProjectSubmissionFields {
   poNumber: string;          // PO-001
   items: PurchaseOrderItem[];
   totalAmount: number;
+  approvedTotalAmount?: number;
+  supplementalApprovalStatus?: 'none' | 'pending' | 'approved' | 'rejected';
   vatRate?: number;
   orderDate: string;
   expectedDeliveryDate?: string;
@@ -2644,7 +2661,30 @@ export interface PurchaseOrderDeliveryRemovalResult {
   poNumber: string;
 }
 
-export type PurchaseOrderDeliveryBatchStatus = 'planned' | 'wms_pending' | 'received' | 'cancelled';
+export type PurchaseOrderDeliveryBatchStatus = 'planned' | 'supplemental_pending' | 'wms_pending' | 'received' | 'cancelled';
+
+export type PurchaseOrderSupplementalApprovalStatus = 'pending' | 'approved' | 'rejected';
+
+export interface PurchaseOrderSupplementalApproval extends ProjectSubmissionFields {
+  id: string;
+  purchaseOrderId: string;
+  deliveryBatchId: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  previousApprovedAmount: number;
+  requestedTotalAmount: number;
+  overAmount: number;
+  status: PurchaseOrderSupplementalApprovalStatus;
+  note?: string | null;
+  decisionNote?: string | null;
+  requestedBy?: string | null;
+  approvedBy?: string | null;
+  approvedAt?: string | null;
+  rejectedBy?: string | null;
+  rejectedAt?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
 
 export interface PurchaseOrderDeliveryLine {
   id: string;
@@ -2670,6 +2710,7 @@ export interface PurchaseOrderDeliveryBatch {
   plannedDeliveryDate?: string | null;
   status: PurchaseOrderDeliveryBatchStatus;
   fulfillmentBatchIds?: string[];
+  supplementalApprovalId?: string | null;
   note?: string | null;
   createdBy?: string | null;
   createdAt?: string;
@@ -3164,10 +3205,15 @@ export interface Transaction {
   targetWarehouseId?: string; // For Import/Transfer
   supplierId?: string; // For Import
   requesterId: string; // User requesting
-  createdBy?: string;
+  createdBy?: string | null;
+  updatedBy?: string | null;
+  businessPartnerId?: string | null;
+  businessPartnerNameSnapshot?: string | null;
   approverId?: string; // User approving
   status: TransactionStatus;
   note?: string;
+  sourceType?: string | null;
+  sourceId?: string | null;
   relatedRequestId?: string; // Link to MaterialRequest
   pendingItems?: InventoryItem[]; // Full metadata for new items created during bulk import
 }

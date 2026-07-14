@@ -7,7 +7,7 @@ import { supabase } from '../../lib/supabase';
 import { dailyLogService, taskService, workBoqService } from '../../lib/projectService';
 import { contractLaborCatalogService, contractMachineCatalogService } from '../../lib/contractMetadataService';
 import { partnerService } from '../../lib/partnerService';
-import { ProjectPermissionCode, projectStaffService } from '../../lib/projectStaffService';
+import { projectStaffService } from '../../lib/projectStaffService';
 import { notificationService } from '../../lib/notificationService';
 import { delayEventService } from '../../lib/projectScheduleForecastService';
 import { projectDocumentActionLogService } from '../../lib/projectDocumentActionLogService';
@@ -93,13 +93,29 @@ const SOURCE_REVIEW_STATE_ORDER: Record<DailyLogSourceReviewState, number> = {
 
 const DAILY_SUMMARY_SOURCE_TYPE = 'member_contributions';
 
-const DAILY_LOG_STATUS_PERMISSION: Partial<Record<DailyLogStatus, ProjectPermissionCode>> = {
-    submitted: 'submit',
-    verified: 'verify',
-    rejected: 'verify',
+const DAILY_LOG_ACTION = {
+    view: 'project.daily_log.view',
+    create: 'project.daily_log.create',
+    editOwn: 'project.daily_log.edit_own',
+    editAll: 'project.daily_log.edit_all',
+    deleteOwn: 'project.daily_log.delete_own',
+    deleteAll: 'project.daily_log.delete_all',
+    submit: 'project.daily_log.submit',
+    return: 'project.daily_log.return',
+    verify: 'project.daily_log.verify',
+    approve: 'project.daily_log.approve',
+    summarize: 'project.daily_log.summarize',
+} as const;
+
+type DailyLogActionCode = typeof DAILY_LOG_ACTION[keyof typeof DAILY_LOG_ACTION];
+
+const DAILY_LOG_STATUS_PERMISSION: Partial<Record<DailyLogStatus, DailyLogActionCode>> = {
+    submitted: DAILY_LOG_ACTION.submit,
+    verified: DAILY_LOG_ACTION.verify,
+    rejected: DAILY_LOG_ACTION.return,
 };
 
-const ALL_DAILY_LOG_PERMISSION_CODES: ProjectPermissionCode[] = ['view', 'edit', 'delete', 'submit', 'verify', 'approve'];
+const ALL_DAILY_LOG_PERMISSION_CODES: DailyLogActionCode[] = Object.values(DAILY_LOG_ACTION);
 
 const toDateKey = (date: Date): string => {
     const y = date.getFullYear();
@@ -851,8 +867,8 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     const [approverOptions, setApproverOptions] = useState<ProjectStaff[]>([]);
     const [selectedApprover, setSelectedApprover] = useState<ProjectStaff | null>(null);
 
-    // ── PBAC: Load user permissions ──
-    const [userPerms, setUserPerms] = useState<Set<ProjectPermissionCode>>(new Set());
+    // ── PBAC v2: Load explicit Daily Log actions ──
+    const [dailyLogPerms, setDailyLogPerms] = useState<Set<DailyLogActionCode>>(new Set());
     const [pbacLoaded, setPbacLoaded] = useState(false);
 
     useEffect(() => {
@@ -880,20 +896,16 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
 
     useEffect(() => {
         setPbacLoaded(false);
-        setUserPerms(new Set());
+        setDailyLogPerms(new Set());
         if (!effectiveId) return;
         const loadPerms = async () => {
             try {
-                // Check if PBAC is configured for this site/project
-                const hasStaff = projectId
-                    ? await projectStaffService.hasProjectStaff(projectId, constructionSiteId)
-                    : constructionSiteId
-                        ? await projectStaffService.hasSiteStaff(constructionSiteId)
-                        : false;
-
-                if (!hasStaff || !user?.id) {
-                    // No PBAC setup → grant all permissions (backward compatible)
-                    setUserPerms(new Set(ALL_DAILY_LOG_PERMISSION_CODES));
+                if (user?.role === 'ADMIN') {
+                    setDailyLogPerms(new Set(ALL_DAILY_LOG_PERMISSION_CODES));
+                    setPbacLoaded(true);
+                    return;
+                }
+                if (!user?.id) {
                     setPbacLoaded(true);
                     return;
                 }
@@ -901,41 +913,62 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                 const permsToCheck = ALL_DAILY_LOG_PERMISSION_CODES;
                 const results = await Promise.all(
                     permsToCheck.map(async code => {
-                        const r = projectId
-                            ? await projectStaffService.checkProjectPermission(user.id, projectId, code, constructionSiteId)
-                            : constructionSiteId
-                                ? await projectStaffService.checkPermission(user.id, constructionSiteId, code)
-                                : { allowed: false };
+                        const r = await projectStaffService.checkProjectAction({
+                            userId: user.id,
+                            projectId: projectId || null,
+                            constructionSiteId: constructionSiteId || null,
+                            permissionCode: code,
+                        });
                         return { code, allowed: r.allowed };
                     })
                 );
-                setUserPerms(new Set(results.filter(r => r.allowed).map(r => r.code)));
+                setDailyLogPerms(new Set(results.filter(r => r.allowed).map(r => r.code)));
             } catch (err) {
                 console.warn('PBAC load failed', err);
-                setUserPerms(new Set());
+                setDailyLogPerms(new Set());
             } finally {
                 setPbacLoaded(true);
             }
         };
         loadPerms();
-    }, [effectiveId, user?.id, constructionSiteId, projectId]);
+    }, [effectiveId, user?.id, user?.role, constructionSiteId, projectId]);
 
-    const ensureDailyLogPermission = useCallback((code: ProjectPermissionCode, actionLabel: string) => {
+    const hasDailyLogAction = useCallback((code: DailyLogActionCode) => (
+        user?.role === 'ADMIN' || dailyLogPerms.has(code)
+    ), [dailyLogPerms, user?.role]);
+
+    const ensureDailyLogAction = useCallback((code: DailyLogActionCode, actionLabel: string) => {
         if (user?.role === 'ADMIN') return true;
-        if (!canManageTab && code !== 'view') {
-            toast.error('Không có quyền quản trị tab', 'Bạn cần quyền quản trị "Nhật ký" để thay đổi nhật ký.');
-            return false;
-        }
         if (!pbacLoaded) {
             toast.info('Đang tải quyền', 'Vui lòng thử lại sau vài giây.');
             return false;
         }
-        if (!userPerms.has(code)) {
+        if (!dailyLogPerms.has(code)) {
             toast.error('Không có quyền', `Bạn cần quyền "${code}" để ${actionLabel}.`);
             return false;
         }
         return true;
-    }, [canManageTab, pbacLoaded, toast, user?.role, userPerms]);
+    }, [dailyLogPerms, pbacLoaded, toast, user?.role]);
+
+    const requireDailyLogAction = useCallback(async (code: DailyLogActionCode, actionLabel: string) => {
+        if (!ensureDailyLogAction(code, actionLabel)) return false;
+        if (user?.role === 'ADMIN') return true;
+        if (!user?.id) return false;
+
+        try {
+            await projectStaffService.requireProjectAction({
+                userId: user.id,
+                projectId: projectId || null,
+                constructionSiteId: constructionSiteId || null,
+                permissionCode: code,
+                actionLabel,
+            });
+            return true;
+        } catch (err: any) {
+            toast.error('Không có quyền', err?.message || `Bạn cần quyền "${code}" để ${actionLabel}.`);
+            return false;
+        }
+    }, [constructionSiteId, ensureDailyLogAction, projectId, toast, user?.id, user?.role]);
 
     const reloadDailyLogRecords = useCallback(async () => {
         if (!effectiveId) return;
@@ -1052,49 +1085,31 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
             || (!!user.name && log.createdBy === user.name);
     }, [user?.id, user?.name]);
 
-    const hasDailyLogWritePermission = useCallback(() => (
-        isAdminUser || userPerms.has('edit') || userPerms.has('submit') || userPerms.has('verify')
-    ), [isAdminUser, userPerms]);
+    const getDailyLogEditAction = useCallback((log: DailyLog): DailyLogActionCode => (
+        isDailyLogOwner(log) ? DAILY_LOG_ACTION.editOwn : DAILY_LOG_ACTION.editAll
+    ), [isDailyLogOwner]);
 
-    const ensureDailyLogWritePermission = useCallback((actionLabel: string) => {
-        if (user?.role === 'ADMIN') return true;
-        if (!canManageTab) {
-            toast.error('Không có quyền quản trị tab', 'Bạn cần quyền quản trị "Nhật ký" để thay đổi nhật ký.');
-            return false;
-        }
-        if (!pbacLoaded) {
-            toast.info('Đang tải quyền', 'Vui lòng thử lại sau vài giây.');
-            return false;
-        }
-        if (!hasDailyLogWritePermission()) {
-            toast.error('Không có quyền', `Bạn cần quyền "edit", "submit" hoặc "verify" để ${actionLabel}.`);
-            return false;
-        }
-        return true;
-    }, [canManageTab, hasDailyLogWritePermission, pbacLoaded, toast, user?.role]);
-
-    const ensureDailyLogDeletePermission = useCallback((actionLabel: string) => {
-        if (user?.role === 'ADMIN') return true;
-        if (!canManageTab) {
-            toast.error('Không có quyền quản trị tab', 'Bạn cần quyền quản trị "Nhật ký" để thay đổi nhật ký.');
-            return false;
-        }
-        if (!pbacLoaded) {
-            toast.info('Đang tải quyền', 'Vui lòng thử lại sau vài giây.');
-            return false;
-        }
-        if (!hasDailyLogWritePermission() && !userPerms.has('delete')) {
-            toast.error('Không có quyền', `Bạn cần quyền "delete", "edit", "submit" hoặc "verify" để ${actionLabel}.`);
-            return false;
-        }
-        return true;
-    }, [canManageTab, hasDailyLogWritePermission, pbacLoaded, toast, user?.role, userPerms]);
+    const getDailyLogDeleteAction = useCallback((log: DailyLog): DailyLogActionCode => (
+        isDailyLogOwner(log) ? DAILY_LOG_ACTION.deleteOwn : DAILY_LOG_ACTION.deleteAll
+    ), [isDailyLogOwner]);
 
     const canEditDailyLog = useCallback((log: DailyLog) => {
         const editableStatus = ['draft', 'rejected'].includes(getLogStatus(log));
         if (isAdminUser) return editableStatus;
-        return canManageTab && hasDailyLogWritePermission() && isDailyLogOwner(log) && editableStatus;
-    }, [canManageTab, hasDailyLogWritePermission, isAdminUser, isDailyLogOwner]);
+        return editableStatus && hasDailyLogAction(getDailyLogEditAction(log));
+    }, [getDailyLogEditAction, hasDailyLogAction, isAdminUser]);
+
+    const canDeleteDailyLog = useCallback((log: DailyLog) => {
+        const editableStatus = ['draft', 'rejected'].includes(getLogStatus(log));
+        if (isAdminUser) return editableStatus;
+        return editableStatus && hasDailyLogAction(getDailyLogDeleteAction(log));
+    }, [getDailyLogDeleteAction, hasDailyLogAction, isAdminUser]);
+
+    const canSubmitDailyLog = useCallback((log: DailyLog) => {
+        const editableStatus = ['draft', 'rejected'].includes(getLogStatus(log));
+        if (isAdminUser) return editableStatus;
+        return editableStatus && isDailyLogOwner(log) && hasDailyLogAction(DAILY_LOG_ACTION.submit);
+    }, [hasDailyLogAction, isAdminUser, isDailyLogOwner]);
 
     const resetForm = () => {
         if (savingLogRef.current) return;
@@ -1171,7 +1186,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     }, [logs, targetDailyLogId]);
 
     const openCreateForDate = (date: string) => {
-        if (!ensureDailyLogWritePermission('ghi nhật ký')) return;
+        if (!ensureDailyLogAction(DAILY_LOG_ACTION.create, 'ghi nhật ký')) return;
         resetForm();
         setDayLogPicker(null);
         setFDate(date);
@@ -1225,7 +1240,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
 
     const loadApproverOptions = useCallback(async () => {
         try {
-            const rows = await projectStaffService.listProjectStaffWithPermissions(projectId, constructionSiteId, ['approve']);
+            const rows = await projectStaffService.listProjectStaffWithPermissionCodes(projectId, constructionSiteId, [DAILY_LOG_ACTION.approve]);
             const options = uniqueStaffByUser(rows)
                 .filter(staff => staff.userId !== user?.id)
                 .sort((a, b) =>
@@ -1244,7 +1259,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     }, [constructionSiteId, projectId, user?.id]);
 
     const openSummaryForDate = useCallback(async (date: string) => {
-        if (!ensureDailyLogPermission('verify', 'tổng hợp nhật ký')) return;
+        if (!(await requireDailyLogAction(DAILY_LOG_ACTION.summarize, 'tổng hợp nhật ký'))) return;
         const dayLogs = logs.filter(log => log.date === date);
         const existingSummary = dayLogs.find(isSummaryDailyLog);
         const id = existingSummary?.id || crypto.randomUUID();
@@ -1262,7 +1277,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         setSelectedSummaryLegacyLogIds(existingSummary ? metadataLegacyLogIds : []);
         setSummarySourceSnapshots(existingSummary ? metadataSourceSnapshots : {});
         await loadApproverOptions();
-    }, [ensureDailyLogPermission, loadApproverOptions, logs]);
+    }, [loadApproverOptions, logs, requireDailyLogAction]);
 
     const closeSummary = (force = false) => {
         if (!force && summarySaving) return;
@@ -1308,6 +1323,8 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
 
     const saveSummary = async (submitNow = false) => {
         if (!summaryDate || !summaryLogId) return;
+        if (!(await requireDailyLogAction(DAILY_LOG_ACTION.summarize, 'lưu bản tổng hợp'))) return;
+        if (submitNow && !(await requireDailyLogAction(DAILY_LOG_ACTION.submit, 'gửi bản tổng hợp'))) return;
         if (!summaryDescription.trim() && summaryPhotos.length === 0) {
             toast.warning('Thiếu nội dung tổng hợp', 'Vui lòng nhập nội dung hoặc chọn ảnh từ báo cáo thành viên.');
             return;
@@ -1485,7 +1502,8 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     const handleSave = async () => {
         if (savingLogRef.current) return;
         if (!fDate || !fDesc) return;
-        if (!ensureDailyLogWritePermission(editing ? 'cập nhật nhật ký' : 'tạo nhật ký')) return;
+        const requiredAction = editing ? getDailyLogEditAction(editing) : DAILY_LOG_ACTION.create;
+        if (!(await requireDailyLogAction(requiredAction, editing ? 'cập nhật nhật ký' : 'tạo nhật ký'))) return;
         if (editing && !canEditDailyLog(editing)) {
             toast.error('Phiếu đã khoá', 'Nhật ký đã gửi đi chỉ được sửa khi bị trả lại.');
             return;
@@ -1497,7 +1515,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                 documentType: 'daily_log',
                 status: getLogStatus(editing),
                 user,
-                permissions: userPerms,
+                permissions: dailyLogPerms,
                 dependencies: deps,
                 relatedUserIds: [editing.createdById, editing.submittedById, editing.submittedBy],
                 documentLabel: new Date(editing.date).toLocaleDateString('vi-VN'),
@@ -1594,14 +1612,13 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     const handleStatusChange = async (log: DailyLog, status: DailyLogStatus, requestedVerifier?: ProjectStaff, rejectionReason?: string): Promise<boolean> => {
         if (!beginStatusAction(log.id)) return false;
         // ── PBAC Check ──
-        const reviewPermission = log.submittedToPermission === 'approve' && (status === 'verified' || status === 'rejected')
-            ? 'approve'
+        const requiredAction = log.submittedToPermission === 'approve' && status === 'verified'
+            ? DAILY_LOG_ACTION.approve
             : DAILY_LOG_STATUS_PERMISSION[status];
-        const permCode = reviewPermission as ProjectPermissionCode | undefined;
-        if (permCode && !ensureDailyLogPermission(
-            permCode,
+        if (requiredAction && !(await requireDailyLogAction(
+            requiredAction,
             status === 'submitted' ? 'gửi nhật ký' : status === 'verified' ? 'xác nhận nhật ký' : 'trả lại nhật ký',
-        )) {
+        ))) {
             endStatusAction(log.id);
             return false;
         }
@@ -1611,13 +1628,17 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                 if (!requestedVerifier?.userId) {
                     throw new Error('Vui lòng chọn người xác nhận từ Tổ chức dự án.');
                 }
-                const permissionCheck = projectId
-                    ? await projectStaffService.checkProjectPermission(requestedVerifier.userId, projectId, 'verify', constructionSiteId)
-                    : constructionSiteId
-                        ? await projectStaffService.checkPermission(requestedVerifier.userId, constructionSiteId, 'verify')
-                        : { allowed: false };
+                const targetPermission = log.submittedToPermission === 'approve'
+                    ? DAILY_LOG_ACTION.approve
+                    : DAILY_LOG_ACTION.verify;
+                const permissionCheck = await projectStaffService.checkProjectAction({
+                    userId: requestedVerifier.userId,
+                    projectId: projectId || null,
+                    constructionSiteId: constructionSiteId || null,
+                    permissionCode: targetPermission,
+                });
                 if (!permissionCheck.allowed) {
-                    throw new Error(`${requestedVerifier.userName || 'Người được chọn'} chưa có quyền verify trong Tổ chức dự án.`);
+                    throw new Error(`${requestedVerifier.userName || 'Người được chọn'} chưa có quyền "${targetPermission}" trong Tổ chức dự án.`);
                 }
             }
             if (status === 'submitted' || status === 'verified') {
@@ -1627,7 +1648,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                     documentType: 'daily_log',
                     status: getLogStatus(log),
                     user,
-                    permissions: userPerms,
+                    permissions: dailyLogPerms,
                     relatedUserIds: [log.createdById, log.submittedById, log.submittedBy],
                     currentHandlerIds: [log.requestedVerifierId, log.submittedToUserId],
                     everSubmitted: log.everSubmitted,
@@ -1657,7 +1678,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                     documentType: 'daily_log',
                     status: getLogStatus(log),
                     user,
-                    permissions: userPerms,
+                    permissions: dailyLogPerms,
                     relatedUserIds: [log.createdById, log.submittedById, log.submittedBy],
                     currentHandlerIds: [log.requestedVerifierId, log.submittedToUserId],
                     reason: rejectionReason,
@@ -1798,9 +1819,9 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     }, [verifierOptions, verifierSearch]);
 
     const openSubmitVerifierPicker = async (log: DailyLog) => {
-        if (!ensureDailyLogPermission('submit', 'gửi nhật ký')) return;
-        if (!canEditDailyLog(log)) {
-            toast.error('Phiếu đã khoá', 'Chỉ người lập được gửi lại nhật ký nháp hoặc bị trả lại.');
+        if (!(await requireDailyLogAction(DAILY_LOG_ACTION.submit, 'gửi nhật ký'))) return;
+        if (!canSubmitDailyLog(log)) {
+            toast.error('Phiếu đã khoá', 'Chỉ người lập có quyền submit được gửi nhật ký nháp hoặc bị trả lại.');
             return;
         }
         setSubmitTarget(log);
@@ -1809,7 +1830,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         setVerifierOptions([]);
         setLoadingVerifiers(true);
         try {
-            const rows = await projectStaffService.listProjectStaffWithPermissions(projectId, constructionSiteId, ['verify']);
+            const rows = await projectStaffService.listProjectStaffWithPermissionCodes(projectId, constructionSiteId, [DAILY_LOG_ACTION.verify]);
             const options = uniqueStaffByUser(rows)
                 .sort((a, b) =>
                     (a.positionLevel || 99) - (b.positionLevel || 99)
@@ -1817,7 +1838,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                 );
             setVerifierOptions(options);
             if (options.length === 0) {
-                toast.warning('Chưa có người xác nhận phù hợp', 'Tổ chức dự án chưa có người được cấp quyền verify.');
+                toast.warning('Chưa có người xác nhận phù hợp', 'Tổ chức dự án chưa có người được cấp quyền project.daily_log.verify.');
             }
         } catch (error: any) {
             toast.error('Không thể tải người xác nhận', error?.message || 'Vui lòng kiểm tra Tổ chức dự án.');
@@ -1846,9 +1867,13 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     };
 
     const handleDelete = async (id: string) => {
-        if (!ensureDailyLogDeletePermission('xoá nhật ký')) return;
         const log = logs.find(l => l.id === id);
         if (!log) return;
+        if (!(await requireDailyLogAction(getDailyLogDeleteAction(log), 'xoá nhật ký'))) return;
+        if (!canDeleteDailyLog(log)) {
+            toast.error('Không thể xoá nhật ký', 'Chỉ nhật ký nháp/bị trả lại và đúng quyền xoá owner/all mới được xoá.');
+            return;
+        }
         const deps = await projectDocumentDependencyService.getDailyLogDependencies(log);
         const status = getLogStatus(log);
         const policy = getProjectDocumentPolicy({
@@ -1856,7 +1881,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
             documentType: 'daily_log',
             status,
             user,
-            permissions: userPerms,
+            permissions: dailyLogPerms,
             dependencies: deps,
             relatedUserIds: [log.createdById, log.submittedById, log.submittedBy],
             everSubmitted: log.everSubmitted,
@@ -1992,19 +2017,19 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
 
     const getSummarySourceLogs = useCallback((dayLogs: DailyLog[]) => {
         return getDailyLogSummarySourceLogs(dayLogs, {
-            canReviewSources: isAdminUser || userPerms.has('verify'),
+            canReviewSources: hasDailyLogAction(DAILY_LOG_ACTION.summarize),
             currentUserId: user?.id,
             sourceSummaryLogIds: sourceSummaryByLogId.keys(),
         });
-    }, [isAdminUser, sourceSummaryByLogId, user?.id, userPerms]);
+    }, [hasDailyLogAction, sourceSummaryByLogId, user?.id]);
 
     const canReviewDailyLog = useCallback((log: DailyLog) => canReturnDailyLogSource({
         sourceLog: log,
         sourceSummaryLog: sourceSummaryByLogId.get(log.id) || null,
         userId: user?.id,
         isAdmin: isAdminUser,
-        permissions: userPerms,
-    }), [isAdminUser, sourceSummaryByLogId, user?.id, userPerms]);
+        permissions: dailyLogPerms,
+    }), [dailyLogPerms, isAdminUser, sourceSummaryByLogId, user?.id]);
 
     const dayRows = useMemo(() => {
         const dates = new Set<string>();
@@ -2077,13 +2102,11 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     const canSubmitViewingLog = !!viewingLog
         && ['draft', 'rejected'].includes(viewingLogStatus)
         && canModifyViewingSource
-        && canEditDailyLog(viewingLog)
-        && (isAdminUser || userPerms.has('submit'));
+        && canSubmitDailyLog(viewingLog);
     const canDeleteViewingLog = !!viewingLog
         && ['draft', 'rejected'].includes(viewingLogStatus)
         && canModifyViewingSource
-        && (isAdminUser || (canManageTab && isDailyLogOwner(viewingLog)))
-        && (isAdminUser || hasDailyLogWritePermission() || userPerms.has('delete'));
+        && canDeleteDailyLog(viewingLog);
     const activeSummaryLegacyLogs = useMemo(() => {
         if (!summaryDate) return [];
         return [...getSummarySourceLogs(logs.filter(log => log.date === summaryDate))]
@@ -2224,8 +2247,8 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                 {availableMonths.map(m => <option key={m} value={m}>{m}</option>)}
                             </select>
                         )}
-                        <button onClick={() => { if (!ensureDailyLogWritePermission('ghi nhật ký')) return; resetForm(); setShowForm(true); }}
-                            disabled={!canManageTab || (pbacLoaded && !hasDailyLogWritePermission())}
+                        <button onClick={() => { if (!ensureDailyLogAction(DAILY_LOG_ACTION.create, 'ghi nhật ký')) return; resetForm(); setShowForm(true); }}
+                            disabled={pbacLoaded && !hasDailyLogAction(DAILY_LOG_ACTION.create)}
                             className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-teal-600 bg-teal-50 border border-teal-200 hover:bg-teal-100 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
                             <Plus size={12} /> Ghi nhật ký chi tiết
                         </button>
@@ -2463,10 +2486,9 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                 && officialLog.summarySourceType === DAILY_SUMMARY_SOURCE_TYPE
                                 && ['draft', 'rejected'].includes(getLogStatus(officialLog));
                             const hasSummary = officialLog?.summarySourceType === DAILY_SUMMARY_SOURCE_TYPE;
-                            const canSummarizeDay = canManageTab
-                                && (isAdminUser || userPerms.has('verify'))
+                            const canSummarizeDay = hasDailyLogAction(DAILY_LOG_ACTION.summarize)
                                 && ((!hasSummary && sourceReportsReady) || summaryEditable);
-                            const canReportDay = canManageTab && hasDailyLogWritePermission();
+                            const canReportDay = hasDailyLogAction(DAILY_LOG_ACTION.create);
                             const contributorNames = row.legacyReports.map(getLegacyDailyLogSourceName);
 
                             return (

@@ -9,7 +9,7 @@ const toNumber = (value: unknown) => {
 const usesDeliveryScheduleForDisplay = (
   po: PurchaseOrder,
   deliveryBatches: PurchaseOrderDeliveryBatch[] = [],
-) => deliveryBatches.length > 0 || po.sourceMode === 'from_request';
+) => deliveryBatches.length > 0 || (po.sourceMode === 'from_request' && po.approvedTotalAmount == null);
 
 export const getPurchaseOrderDisplayLineAmount = (
   po: PurchaseOrder,

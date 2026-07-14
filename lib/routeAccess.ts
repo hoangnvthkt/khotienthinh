@@ -1,7 +1,19 @@
 import { matchPath } from 'react-router-dom';
 import { ROUTE_TO_MODULE } from '../constants/routes';
-import { hasProjectTabPermissionRoute } from './projectTabPermissions';
 import { Role, User } from '../types';
+import { canViewRoute } from './permissions/permissionService';
+
+const AUTHENTICATED_OPEN_ROUTE_PATTERNS = [
+  '/',
+  '/notifications',
+  '/my-profile',
+  '/employee-dashboard',
+  '/feedback',
+  '/leaderboard',
+  '/safety-card/:qrToken',
+  '/settings',
+  '/users',
+];
 
 export const normalizeRoutePath = (route: string): string => {
   const path = route.split('?')[0].split('#')[0].trim();
@@ -16,8 +28,18 @@ export const getRouteModuleKey = (route: string): string | undefined => {
     )?.[1];
 };
 
+export const isAuthenticatedOpenRoute = (route: string): boolean => {
+  const pathname = normalizeRoutePath(route);
+  return AUTHENTICATED_OPEN_ROUTE_PATTERNS.some(routePattern => {
+    if (routePattern.includes(':')) {
+      return !!matchPath({ path: routePattern, end: true }, pathname);
+    }
+    return routePattern === pathname;
+  });
+};
+
 export const canAccessRoute = (
-  user: Pick<User, 'role' | 'allowedModules' | 'allowedSubModules' | 'adminModules' | 'adminSubModules'> | null | undefined,
+  user: Pick<User, 'role' | 'allowedModules' | 'allowedSubModules' | 'adminModules' | 'adminSubModules' | 'permissionGrants'> | null | undefined,
   route?: string,
 ): boolean => {
   if (!route) return true;
@@ -25,35 +47,10 @@ export const canAccessRoute = (
   if (user.role === Role.ADMIN) return true;
 
   const pathname = normalizeRoutePath(route);
-  if (pathname === '/settings' || pathname === '/users') return true;
+  if (isAuthenticatedOpenRoute(pathname)) return true;
 
   const moduleKey = getRouteModuleKey(pathname);
-  if (!moduleKey) return true;
+  if (!moduleKey) return false;
 
-  const hasSubModuleGrant =
-    (user.allowedSubModules?.[moduleKey] || []).length > 0 ||
-    (user.adminSubModules?.[moduleKey] || []).length > 0 ||
-    (user.adminModules || []).includes(moduleKey);
-  if (user.allowedModules !== undefined && !user.allowedModules.includes(moduleKey) && !hasSubModuleGrant) {
-    return false;
-  }
-
-  const hasSubModuleRestriction = Object.prototype.hasOwnProperty.call(user.allowedSubModules || {}, moduleKey);
-  const allowedSubs = user.allowedSubModules?.[moduleKey] || [];
-  const adminSubs = user.adminSubModules?.[moduleKey] || [];
-  const isLegacyModuleAdmin = (user.adminModules || []).includes(moduleKey);
-  if (!hasSubModuleRestriction) return true;
-  if (allowedSubs.length === 0 && adminSubs.length === 0 && !isLegacyModuleAdmin) return false;
-
-  if (allowedSubs.includes(pathname) || adminSubs.includes(pathname) || isLegacyModuleAdmin) return true;
-  if (
-    moduleKey === 'WF' &&
-    pathname.startsWith('/wf/builder/') &&
-    (allowedSubs.includes('/wf/templates') || adminSubs.includes('/wf/templates') || isLegacyModuleAdmin)
-  ) return true;
-  if (moduleKey === 'DA' && pathname === '/da' && hasProjectTabPermissionRoute(allowedSubs)) return true;
-
-  return [...allowedSubs, ...adminSubs].some(allowedRoute =>
-    allowedRoute.includes(':') && !!matchPath({ path: allowedRoute, end: true }, pathname)
-  );
+  return canViewRoute(user, pathname);
 };

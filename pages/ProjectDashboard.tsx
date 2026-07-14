@@ -20,6 +20,7 @@ import {
     ProjectDeleteImpact,
     Role,
     CustomerContract,
+    UserPermissionGrant,
 } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { loadXlsx } from '../lib/loadXlsx';
@@ -34,7 +35,7 @@ import { taskService } from '../lib/projectService';
 import { calculateProjectProgress } from '../lib/projectScheduleRules';
 import { projectMasterService, type ProjectListSortKey } from '../lib/projectMasterService';
 import { projectMasterDataService } from '../lib/projectMasterDataService';
-import { projectPermissionTypeService, projectStaffService } from '../lib/projectStaffService';
+import { projectStaffService } from '../lib/projectStaffService';
 import { workGroupService } from '../lib/workGroupService';
 import { customerContractService } from '../lib/hdService';
 import { contractCostItemService } from '../lib/contractMetadataService';
@@ -54,17 +55,20 @@ import { getApiErrorMessage, logApiError } from '../lib/apiError';
 import {
     PROJECT_TAB_PERMISSIONS,
     PROJECT_MATERIAL_TAB_PERMISSIONS,
-    PROJECT_MATERIAL_TAB_ROUTE_BY_KEY,
     PROJECT_FINANCE_LEGACY_TAB_KEYS,
     PROJECT_TAB_ROUTE_BY_KEY,
-    LEGACY_PROJECT_SUPPLY_ROUTE,
-    hasProjectMaterialTabPermissionRoute,
-    hasProjectTabPermissionRoute,
     isProjectFinanceLegacyTabKey,
     isProjectOverviewTabKey,
     type ProjectMaterialTabPermissionMap,
     type ProjectOverviewTabKey,
 } from '../lib/projectTabPermissions';
+import {
+    canManageProjectMaterialTab as canManageProjectMaterialTabV2,
+    canManageProjectTab as canManageProjectTabV2,
+    canViewProjectMaterialTab as canViewProjectMaterialTabV2,
+    canViewProjectTab as canViewProjectTabV2,
+} from '../lib/permissions/projectPermissionService';
+import { getProjectPermissionTemplateCodes, type ProjectPermissionTemplateKey } from '../lib/permissions/projectPermissionTemplates';
 import type { ProjectFinanceWorkspaceTab } from '../lib/projectFinanceWorkspaceService';
 import {
     BarChart3, TrendingUp, TrendingDown, DollarSign, Target, Percent,
@@ -100,6 +104,36 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }
     paused: { label: 'Tạm dừng', color: 'text-amber-600', bg: 'bg-amber-50 border-amber-200' },
     completed: { label: 'Hoàn thành', color: 'text-violet-600', bg: 'bg-violet-50 border-violet-200' },
     cancelled: { label: 'Đã huỷ', color: 'text-slate-500', bg: 'bg-slate-50 border-slate-200' },
+};
+
+type SeedProjectRole = 'admin' | 'executor' | 'watcher';
+
+const seedProjectRoleTemplates: Record<SeedProjectRole, ProjectPermissionTemplateKey[]> = {
+    admin: ['project_manager', 'access_admin'],
+    executor: ['field_engineer'],
+    watcher: ['viewer'],
+};
+
+const getSeedProjectRoleGrantCodes = (role: SeedProjectRole): string[] =>
+    [...new Set(seedProjectRoleTemplates[role].flatMap(templateKey => getProjectPermissionTemplateCodes(templateKey)))];
+
+const buildSeedProjectRoleGrants = (
+    targetUserId: string,
+    role: SeedProjectRole,
+    project: Project,
+    grantedBy?: string,
+): UserPermissionGrant[] => {
+    const scopeType: UserPermissionGrant['scopeType'] = project.constructionSiteId ? 'construction_site' : 'project';
+    const scopeId = project.constructionSiteId || project.id;
+
+    return getSeedProjectRoleGrantCodes(role).map(permissionCode => ({
+        userId: targetUserId,
+        permissionCode,
+        scopeType,
+        scopeId,
+        isActive: true,
+        grantedBy,
+    }));
 };
 
 const PROJECT_LIST_PAGE_SIZE = 10;
@@ -460,64 +494,36 @@ const ProjectDashboard: React.FC = () => {
     const [quickCategoryForm, setQuickCategoryForm] = useState({ code: '', name: '', description: '' });
     const [activeSelectPopover, setActiveSelectPopover] = useState<{ field: string; type: 'user' | 'group' } | null>(null);
 
-    const canViewProjectTab = useCallback((tabKey: ProjectOverviewTabKey) => {
-        if (user.role === Role.ADMIN) return true;
-        if (user.allowedModules !== undefined && !user.allowedModules.includes('DA')) return false;
+    const projectPermissionScope = useMemo(
+        () => ({
+            projectId: selectedProjectId || undefined,
+            constructionSiteId: selectedSiteId || undefined,
+        }),
+        [selectedProjectId, selectedSiteId],
+    );
 
-        const hasDaSubModuleRestriction = Object.prototype.hasOwnProperty.call(user.allowedSubModules || {}, 'DA');
-        const allowedRoutes = user.allowedSubModules?.DA || [];
-        if (!hasDaSubModuleRestriction) return true;
-        if (allowedRoutes.length === 0) return false;
+    const canViewProjectTab = useCallback((tabKey: ProjectOverviewTabKey) =>
+        canViewProjectTabV2(user, tabKey, projectPermissionScope),
+        [projectPermissionScope, user],
+    );
 
-        const hasExplicitTabRoutes = hasProjectTabPermissionRoute(allowedRoutes);
-        if (!hasExplicitTabRoutes && allowedRoutes.includes('/da')) return true;
-        if (tabKey === 'material' && allowedRoutes.includes(LEGACY_PROJECT_SUPPLY_ROUTE)) return true;
-        if (tabKey === 'material' && (
-            hasProjectMaterialTabPermissionRoute(allowedRoutes) ||
-            hasProjectMaterialTabPermissionRoute(user.adminSubModules?.DA)
-        )) return true;
-        if (tabKey === 'finance') {
-            return [tabKey, ...PROJECT_FINANCE_LEGACY_TAB_KEYS].some(key => allowedRoutes.includes(PROJECT_TAB_ROUTE_BY_KEY[key]));
-        }
-        if (isProjectFinanceLegacyTabKey(tabKey) && allowedRoutes.includes(PROJECT_TAB_ROUTE_BY_KEY.finance)) return true;
-
-        return allowedRoutes.includes(PROJECT_TAB_ROUTE_BY_KEY[tabKey]);
-    }, [user.adminSubModules, user.allowedModules, user.allowedSubModules, user.role]);
-
-    const canManageProjectTab = useCallback((tabKey: ProjectOverviewTabKey) => {
-        if (user.role === Role.ADMIN) return true;
-        if ((user.adminModules || []).includes('DA')) return true;
-        const adminRoutes = user.adminSubModules?.DA || [];
-        if (tabKey === 'material' && user.adminSubModules?.DA?.includes(LEGACY_PROJECT_SUPPLY_ROUTE)) return true;
-        if (tabKey === 'finance') {
-            return [tabKey, ...PROJECT_FINANCE_LEGACY_TAB_KEYS].some(key => adminRoutes.includes(PROJECT_TAB_ROUTE_BY_KEY[key]));
-        }
-        if (isProjectFinanceLegacyTabKey(tabKey) && adminRoutes.includes(PROJECT_TAB_ROUTE_BY_KEY.finance)) return true;
-        return Boolean(adminRoutes.includes(PROJECT_TAB_ROUTE_BY_KEY[tabKey]));
-    }, [user.adminModules, user.adminSubModules, user.role]);
+    const canManageProjectTab = useCallback((tabKey: ProjectOverviewTabKey) =>
+        canManageProjectTabV2(user, tabKey, projectPermissionScope),
+        [projectPermissionScope, user],
+    );
 
     const materialTabPermissions = useMemo<ProjectMaterialTabPermissionMap>(() => {
-        const allowedRoutes = user.allowedSubModules?.DA || [];
-        const adminRoutes = user.adminSubModules?.DA || [];
-        const hasDaSubModuleRestriction = Object.prototype.hasOwnProperty.call(user.allowedSubModules || {}, 'DA');
         const canManageAllMaterial = canManageProjectTab('material');
-        const canViewAllMaterial = canManageAllMaterial
-            || user.role === Role.ADMIN
-            || !hasDaSubModuleRestriction
-            || (!hasProjectTabPermissionRoute(allowedRoutes) && allowedRoutes.includes('/da'))
-            || allowedRoutes.includes(PROJECT_TAB_ROUTE_BY_KEY.material)
-            || allowedRoutes.includes(LEGACY_PROJECT_SUPPLY_ROUTE);
 
         return PROJECT_MATERIAL_TAB_PERMISSIONS.reduce<ProjectMaterialTabPermissionMap>((acc, tab) => {
-            const route = PROJECT_MATERIAL_TAB_ROUTE_BY_KEY[tab.key];
-            const canManage = canManageAllMaterial || adminRoutes.includes(route);
+            const canManage = canManageAllMaterial || canManageProjectMaterialTabV2(user, tab.key, projectPermissionScope);
             acc[tab.key] = {
-                canView: canViewAllMaterial || canManage || allowedRoutes.includes(route),
+                canView: canManage || canViewProjectMaterialTabV2(user, tab.key, projectPermissionScope),
                 canManage,
             };
             return acc;
         }, {} as ProjectMaterialTabPermissionMap);
-    }, [canManageProjectTab, user.adminSubModules, user.allowedSubModules, user.role]);
+    }, [canManageProjectTab, projectPermissionScope, user]);
 
     const visibleOverviewTabs = useMemo(
         () => PROJECT_TAB_PERMISSIONS.filter(tab => !isProjectFinanceLegacyTabKey(tab.key) && canViewProjectTab(tab.key)),
@@ -1120,9 +1126,9 @@ const ProjectDashboard: React.FC = () => {
     const selectedProjectType = () => projectForm.projectTypeId ? projectTypeMap.get(projectForm.projectTypeId) : undefined;
 
     const seedProjectStaff = async (project: Project) => {
-        const roleRank: Record<'admin' | 'executor' | 'watcher', number> = { watcher: 1, executor: 2, admin: 3 };
-        const userRoles = new Map<string, 'admin' | 'executor' | 'watcher'>();
-        const mergeRole = (userId: string, role: 'admin' | 'executor' | 'watcher') => {
+        const roleRank: Record<SeedProjectRole, number> = { watcher: 1, executor: 2, admin: 3 };
+        const userRoles = new Map<string, SeedProjectRole>();
+        const mergeRole = (userId: string, role: SeedProjectRole) => {
             if (!userId) return;
             const current = userRoles.get(userId);
             if (!current || roleRank[role] > roleRank[current]) userRoles.set(userId, role);
@@ -1140,28 +1146,24 @@ const ProjectDashboard: React.FC = () => {
             throw new Error(`Các thành viên chưa có chức danh HRM: ${names}. Vui lòng chọn vị trí mặc định trong "Thông tin khác".`);
         }
 
-        const permissionTypes = await projectPermissionTypeService.list();
-        const permissionIdByCode = new Map(permissionTypes.map(permission => [permission.code, permission.id]));
-        const codeSets: Record<'admin' | 'executor' | 'watcher', string[]> = {
-            admin: ['view', 'edit', 'submit', 'verify', 'confirm', 'approve'],
-            executor: ['view', 'edit', 'submit'],
-            watcher: ['view'],
-        };
-
         for (const [userId, role] of userRoles.entries()) {
-            const permissionTypeIds = codeSets[role].map(code => permissionIdByCode.get(code)).filter(Boolean) as string[];
-            if (permissionTypeIds.length === 0) throw new Error('Chưa có dữ liệu quyền PBAC. Vui lòng kiểm tra migration project_permission_types.');
-            await projectStaffService.add({
+            const staffId = await projectStaffService.add({
                 projectId: project.id,
                 constructionSiteId: project.constructionSiteId || null,
                 userId,
                 positionId: employeeByUserId.get(userId)?.positionId || projectForm.defaultPositionId,
-                permissionTypeIds,
+                permissionTypeIds: [],
                 startDate: project.startDate || new Date().toISOString().slice(0, 10),
                 note: role === 'admin' ? 'Seed từ form tạo dự án: Quản trị dự án' : role === 'executor' ? 'Seed từ form tạo dự án: Thực hiện dự án' : 'Seed từ form tạo dự án: Người theo dõi',
                 grantedBy: user.id,
                 operatorName: user.name || user.username,
             });
+            await projectStaffService.replaceProjectStaffPermissionGrants(
+                staffId,
+                buildSeedProjectRoleGrants(userId, role, project, user.id),
+                user.id,
+                user.name || user.username,
+            );
         }
     };
 
@@ -1174,9 +1176,9 @@ const ProjectDashboard: React.FC = () => {
         String(value || '').split(/[;,]/).map(item => item.trim()).filter(Boolean);
 
     const seedImportedProjectStaff = async (project: Project, record: ProjectImportRecord) => {
-        const roleRank: Record<'admin' | 'executor' | 'watcher', number> = { watcher: 1, executor: 2, admin: 3 };
-        const userRoles = new Map<string, 'admin' | 'executor' | 'watcher'>();
-        const mergeRole = (rawValue: string, role: 'admin' | 'executor' | 'watcher') => {
+        const roleRank: Record<SeedProjectRole, number> = { watcher: 1, executor: 2, admin: 3 };
+        const userRoles = new Map<string, SeedProjectRole>();
+        const mergeRole = (rawValue: string, role: SeedProjectRole) => {
             const matchedUser = findImportUser(rawValue);
             if (!matchedUser) throw new Error(`Không tìm thấy user "${rawValue}" khi seed nhân sự dự án ${project.code}.`);
             const current = userRoles.get(matchedUser.id);
@@ -1188,33 +1190,29 @@ const ProjectDashboard: React.FC = () => {
         splitImportValues(record.adminImportUsers).forEach(value => mergeRole(value, 'admin'));
         if (userRoles.size === 0) return;
 
-        const permissionTypes = await projectPermissionTypeService.list();
-        const permissionIdByCode = new Map(permissionTypes.map(permission => [permission.code, permission.id]));
-        const codeSets: Record<'admin' | 'executor' | 'watcher', string[]> = {
-            admin: ['view', 'edit', 'submit', 'verify', 'confirm', 'approve'],
-            executor: ['view', 'edit', 'submit'],
-            watcher: ['view'],
-        };
-
         for (const [userId, role] of userRoles.entries()) {
             const positionId = employeeByUserId.get(userId)?.positionId || record.defaultPositionImportId;
             if (!positionId) {
                 const displayName = users.find(u => u.id === userId)?.name || users.find(u => u.id === userId)?.email || userId;
                 throw new Error(`User ${displayName} chưa có chức danh HRM. Vui lòng nhập cột "Vị trí mặc định".`);
             }
-            const permissionTypeIds = codeSets[role].map(code => permissionIdByCode.get(code)).filter(Boolean) as string[];
-            if (permissionTypeIds.length === 0) throw new Error('Chưa có dữ liệu quyền PBAC. Vui lòng kiểm tra migration project_permission_types.');
-            await projectStaffService.add({
+            const staffId = await projectStaffService.add({
                 projectId: project.id,
                 constructionSiteId: project.constructionSiteId || null,
                 userId,
                 positionId,
-                permissionTypeIds,
+                permissionTypeIds: [],
                 startDate: project.startDate || new Date().toISOString().slice(0, 10),
                 note: `Seed từ import Excel dự án: ${role}`,
                 grantedBy: user.id,
                 operatorName: user.name || user.username,
             });
+            await projectStaffService.replaceProjectStaffPermissionGrants(
+                staffId,
+                buildSeedProjectRoleGrants(userId, role, project, user.id),
+                user.id,
+                user.name || user.username,
+            );
         }
     };
 

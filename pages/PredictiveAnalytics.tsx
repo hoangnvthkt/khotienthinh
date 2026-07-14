@@ -13,6 +13,7 @@ import {
   StockForecast, BudgetBurndown, Anomaly
 } from '../lib/predictiveService';
 import { useModuleData } from '../hooks/useModuleData';
+import { getAnalyticsCapabilities } from '../lib/permissions/globalModulePermissions';
 
 // ══════════════════════════════════════════
 //  PREDICTIVE ANALYTICS PAGE
@@ -21,7 +22,8 @@ import { useModuleData } from '../hooks/useModuleData';
 type TabType = 'stock' | 'budget' | 'anomalies';
 
 const PredictiveAnalytics: React.FC = () => {
-  const { items, transactions, projectFinances, constructionSites } = useApp();
+  const { items, transactions, projectFinances, constructionSites, user } = useApp();
+  const analyticsCapabilities = getAnalyticsCapabilities(user);
   useModuleData('wms');
   useModuleData('da');
   const [tab, setTab] = useState<TabType>('stock');
@@ -56,6 +58,8 @@ const PredictiveAnalytics: React.FC = () => {
     { id: 'budget', label: 'Ngân sách dự án', icon: <Briefcase size={16} />, badge: kpis.budgetWarning },
     { id: 'anomalies', label: 'Bất thường', icon: <Activity size={16} />, badge: kpis.highAnomalies },
   ];
+
+  if (!analyticsCapabilities.canView) return null;
 
   return (
     <div className="space-y-6 pb-24">

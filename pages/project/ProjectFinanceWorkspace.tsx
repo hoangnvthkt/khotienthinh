@@ -1997,6 +1997,7 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
   const [savingPoPayment, setSavingPoPayment] = useState(false);
   const [supplierPayableDrawer, setSupplierPayableDrawer] = useState<SupplierPayableDocumentDrawerState | null>(null);
   const [payablesView, setPayablesView] = useState<'documents' | 'payments' | 'settlements'>('documents');
+  const [ledgerView, setLedgerView] = useState<'paid' | 'received'>('paid');
   const [supplierPaymentBatches, setSupplierPaymentBatches] = useState<SupplierPaymentBatch[]>([]);
   const [loadingSupplierPaymentBatches, setLoadingSupplierPaymentBatches] = useState(false);
   const [supplierPaymentForm, setSupplierPaymentForm] = useState<SupplierPaymentBatchFormState | null>(null);
@@ -2020,6 +2021,23 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
     [data?.payables],
   );
   const costItemOptions = useMemo(() => buildContractCostItemOptions(contractCostItems), [contractCostItems]);
+  const openPayableRows = useMemo(
+    () => (data?.payables || []).filter(row => Number(row.outstandingAmount || 0) > 0),
+    [data?.payables],
+  );
+  const openReceivableRows = useMemo(
+    () => (data?.receivables || []).filter(row => Number(row.outstandingAmount || 0) > 0),
+    [data?.receivables],
+  );
+  const paidLedgerRows = useMemo(
+    () => (data?.ledger || []).filter(row => row.type === 'expense'),
+    [data?.ledger],
+  );
+  const receivedLedgerRows = useMemo(
+    () => (data?.ledger || []).filter(row => row.type === 'revenue_received'),
+    [data?.ledger],
+  );
+  const visibleLedgerRows = ledgerView === 'paid' ? paidLedgerRows : receivedLedgerRows;
 
   useEffect(() => {
     const paramTab = queryParams.get('financeTab');
@@ -3172,7 +3190,7 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
                     <button onClick={() => openTab('payables')} className="text-xs font-black text-orange-600">Xem tất cả</button>
                   </div>
                   <PayablesTable
-                    rows={data.payables.slice(0, 5)}
+                    rows={openPayableRows.slice(0, 5)}
                     canManage={false}
                     onOpenSource={openPayableSource}
                   />
@@ -3183,7 +3201,7 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
                     <button onClick={() => openTab('receivables')} className="text-xs font-black text-orange-600">Xem tất cả</button>
                   </div>
                   <ReceivablesTable
-                    rows={data.receivables.slice(0, 5)}
+                    rows={openReceivableRows.slice(0, 5)}
                     canManage={false}
                     onOpenSource={openSource}
                   />
@@ -3243,7 +3261,7 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
               </div>
               {payablesView === 'documents' ? (
                 <PayablesTable
-                  rows={data.payables}
+                  rows={openPayableRows}
                   canManage={canManageSchedules}
                   canRecordPoPayment={canRecordPoPayment}
                   onOpenSource={openPayableSource}
@@ -3286,7 +3304,7 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
                 )}
               </div>
               <ReceivablesTable
-                rows={data.receivables}
+                rows={openReceivableRows}
                 canManage={canManageSchedules}
                 onOpenSource={openSource}
                 onEditSchedule={openEditSchedule}
@@ -3304,15 +3322,39 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
             />
           )}
           {activeTab === 'ledger' && (
-            <LedgerTable
-              rows={data.ledger}
-              canManage={canManageLedger}
-              onCreate={openNewTransaction}
-              onDownloadTemplate={downloadTransactionImportTemplate}
-              onImportClick={() => ledgerImportInputRef.current?.click()}
-              onEdit={openEditTransaction}
-              onDelete={deleteTransaction}
-            />
+            <section className="space-y-3">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h4 className="text-sm font-black text-slate-800 dark:text-white">Sổ giao dịch</h4>
+                  <p className="mt-0.5 text-[11px] font-bold text-slate-400">Giao dịch đã hoàn tất, tách riêng tiền đã trả và tiền đã thu.</p>
+                </div>
+                <div className="inline-flex rounded-lg border border-slate-200 bg-white p-1 dark:border-slate-700 dark:bg-slate-900">
+                  <button
+                    type="button"
+                    onClick={() => setLedgerView('paid')}
+                    className={`rounded-md px-3 py-1.5 text-xs font-black ${ledgerView === 'paid' ? 'bg-red-600 text-white' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
+                  >
+                    Đã trả
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLedgerView('received')}
+                    className={`rounded-md px-3 py-1.5 text-xs font-black ${ledgerView === 'received' ? 'bg-emerald-600 text-white' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
+                  >
+                    Đã thu
+                  </button>
+                </div>
+              </div>
+              <LedgerTable
+                rows={visibleLedgerRows}
+                canManage={canManageLedger}
+                onCreate={openNewTransaction}
+                onDownloadTemplate={downloadTransactionImportTemplate}
+                onImportClick={() => ledgerImportInputRef.current?.click()}
+                onEdit={openEditTransaction}
+                onDelete={deleteTransaction}
+              />
+            </section>
           )}
         </>
       )}

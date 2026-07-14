@@ -17,7 +17,7 @@ interface Props {
   details?: DetailRow[];
   projectId?: string;
   constructionSiteId?: string | null;
-  recipientPermissionCodes: ProjectPermissionCode[];
+  recipientPermissionCodes: string[];
   recipientHint?: string;
   onCancel: () => void;
   onConfirm: (target: ProjectSubmissionTarget) => Promise<void> | void;
@@ -25,6 +25,9 @@ interface Props {
 
 const permissionLabel = (code: string) =>
   PROJECT_PERMISSION_LABELS[code as ProjectPermissionCode] || code;
+
+const hasNamespacedPermissionCodes = (codes: string[]) =>
+  codes.some(code => code.startsWith('project.'));
 
 const staffPermissionText = (staff: ProjectStaff) =>
   (staff.permissions || [])
@@ -57,8 +60,10 @@ const ProjectSubmissionDialog: React.FC<Props> = ({
     let alive = true;
     setLoading(true);
     setError(null);
-    projectStaffService
-      .listProjectStaffWithPermissions(projectId, constructionSiteId, recipientPermissionCodes)
+    const listRecipients = hasNamespacedPermissionCodes(recipientPermissionCodes)
+      ? projectStaffService.listProjectStaffWithPermissionCodes(projectId, constructionSiteId, recipientPermissionCodes)
+      : projectStaffService.listProjectStaffWithPermissions(projectId, constructionSiteId, recipientPermissionCodes);
+    listRecipients
       .then(rows => {
         if (!alive) return;
         setRecipients(rows);

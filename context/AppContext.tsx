@@ -11,7 +11,7 @@ import {
   Asset, AssetCategory, AssetAssignment, AssetMaintenance, AssetStatus, AssetLocationStock, AssetTransfer, AssetOrigin, AssetAttachment,
   AttendanceRecord, LeaveRequest, PayrollRecord, LaborContract, LeaveBalance, PayrollTemplate, HrmHoliday, HrmSalaryHistory,
   BudgetCategory, BudgetEntry, ExpenseRecord, AttendanceProposal, LeaveLog, LeaveApprover,
-  HrmShiftType, HrmEmployeeShift
+  HrmShiftType, HrmEmployeeShift, UserPermissionGrant
 } from '../types';
 import {
   MOCK_USERS, MOCK_WAREHOUSES, MOCK_WAREHOUSE_TYPES, MOCK_ITEMS,
@@ -43,6 +43,7 @@ import {
   normalizeProjectTransactionRow,
   projectTransactionToDb,
 } from '../lib/projectTransactionMapping';
+import { canPerform } from '../lib/permissions/permissionService';
 
 interface AppSettings {
   name: string;
@@ -70,6 +71,39 @@ const mapUserFromDb = (row: any): User => ({
   allowedSubModules: row.allowed_sub_modules ?? row.allowedSubModules ?? undefined,
   adminSubModules: row.admin_sub_modules ?? row.adminSubModules ?? undefined,
   isActive: row.is_active ?? row.isActive,
+});
+
+const mapPermissionGrantFromDb = (row: any): UserPermissionGrant => ({
+  id: row.id,
+  userId: row.user_id ?? row.userId,
+  permissionCode: row.permission_code ?? row.permissionCode,
+  scopeType: row.scope_type ?? row.scopeType ?? 'global',
+  scopeId: row.scope_id ?? row.scopeId ?? '*',
+  isActive: row.is_active ?? row.isActive ?? true,
+  grantedBy: row.granted_by ?? row.grantedBy,
+  grantedAt: row.granted_at ?? row.grantedAt,
+  expiresAt: row.expires_at ?? row.expiresAt,
+});
+
+const loadUserPermissionGrants = async (userId?: string): Promise<UserPermissionGrant[]> => {
+  if (!isSupabaseConfigured || !userId) return [];
+  try {
+    const { data, error } = await supabase
+      .from('user_permission_grants')
+      .select('id,user_id,permission_code,scope_type,scope_id,is_active,granted_by,granted_at,expires_at')
+      .eq('user_id', userId)
+      .eq('is_active', true);
+    if (error) throw error;
+    return (data || []).map(mapPermissionGrantFromDb);
+  } catch (error: any) {
+    console.warn('Phase 1 permission grants unavailable, falling back to legacy permissions:', error?.message || error);
+    return [];
+  }
+};
+
+const hydrateUserPermissionGrants = async (mappedUser: User): Promise<User> => ({
+  ...mappedUser,
+  permissionGrants: await loadUserPermissionGrants(mappedUser.id),
 });
 
 const userToDbPayload = (data: User) => {
@@ -319,7 +353,13 @@ const mapTransactionFromDb = (t: any): Transaction => ({
   targetWarehouseId: t.target_warehouse_id,
   supplierId: t.supplier_id,
   requesterId: t.requester_id,
+  createdBy: t.created_by ?? t.createdBy ?? null,
+  updatedBy: t.updated_by ?? t.updatedBy ?? null,
+  businessPartnerId: t.business_partner_id ?? t.businessPartnerId ?? null,
+  businessPartnerNameSnapshot: t.business_partner_name_snapshot ?? t.businessPartnerNameSnapshot ?? null,
   approverId: t.approver_id,
+  sourceType: t.source_type ?? t.sourceType ?? null,
+  sourceId: t.source_id ?? t.sourceId ?? null,
   relatedRequestId: t.related_request_id,
   pendingItems: t.pending_items,
 });
@@ -635,7 +675,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
 
         if (currentProfile) {
-          const mappedUser = mapUserFromDb(currentProfile);
+          const mappedUser = await hydrateUserPermissionGrants(mapUserFromDb(currentProfile));
           setUser(mappedUser);
           
           // Fetch all users list
@@ -717,9 +757,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const unsubTx = realtimeService.on('transactions', (event) => {
       if (event.eventType === 'INSERT' || event.eventType === 'UPDATE') {
         const t = event.newRecord;
-        const mapped = {
-          ...t, sourceWarehouseId: t.source_warehouse_id, targetWarehouseId: t.target_warehouse_id, supplierId: t.supplier_id, requesterId: t.requester_id, approverId: t.approver_id, relatedRequestId: t.related_request_id, pendingItems: t.pending_items
-        };
+        const mapped = mapTransactionFromDb(t);
         setTransactions(prev => {
           const exists = prev.find(tx => tx.id === mapped.id);
           if (exists) return prev.map(tx => tx.id === mapped.id ? mapped : tx);
@@ -1057,7 +1095,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
           setUsers(mappedUsers);
           const currentInList = mappedUsers.find((u: any) => (user.authId && u.authId === user.authId) || u.email === user.email);
-          if (currentInList) setUser(currentInList);
+          if (currentInList) setUser(prev => ({ ...currentInList, permissionGrants: prev.permissionGrants || [] }));
         }
       } else if (module === 'wms-core') {
         await loadWmsCoreData();
@@ -1349,6 +1387,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           id: data.id, type: data.type, date: data.date, items: data.items,
           source_warehouse_id: data.sourceWarehouseId, target_warehouse_id: data.targetWarehouseId,
           supplier_id: data.supplierId, requester_id: data.requesterId, approver_id: data.approverId,
+          created_by: data.createdBy || null, updated_by: data.updatedBy || null,
+          business_partner_id: data.businessPartnerId || null,
+          business_partner_name_snapshot: data.businessPartnerNameSnapshot || null,
+          source_type: data.sourceType || null, source_id: data.sourceId || null,
           status: data.status, note: data.note, related_request_id: data.relatedRequestId, pending_items: data.pendingItems
         };
       } else if (table === 'warehouses') {
@@ -1573,8 +1615,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (userError || !userData) throw new Error('Lỗi lấy thông tin người dùng');
 
         trace.startStep('map user + localStorage');
-        const mappedUser = mapUserFromDb(userData);
-        setUser(mappedUser);
+          const mappedUser = await hydrateUserPermissionGrants(mapUserFromDb(userData));
+          setUser(mappedUser);
         
         // Fetch all users list
         const { data: allUsers, error: usersError } = await supabase
@@ -3508,8 +3550,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Helper: kiểm tra user có phải QTV ứng dụng của module không
   const isModuleAdmin = (moduleKey: string): boolean => {
-    if (user.role === Role.ADMIN) return true;
-    return (user.adminModules || []).includes(moduleKey);
+    const permissionModuleKey = moduleKey.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+    return canPerform(user, `system.${permissionModuleKey}.manage`);
   };
 
   // ==================== DIGITAL SIGNATURE ====================

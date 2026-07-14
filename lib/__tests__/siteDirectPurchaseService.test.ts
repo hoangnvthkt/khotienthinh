@@ -68,6 +68,35 @@ const purchaseRow = (patch: Record<string, any> = {}) => ({
   ...patch,
 });
 
+const purchase = (patch: Partial<SiteDirectPurchase> = {}): SiteDirectPurchase => ({
+  id: 'direct-1',
+  code: 'MN-001',
+  projectId: 'project-1',
+  constructionSiteId: 'site-1',
+  supplierId: 'supplier-a',
+  supplierNameSnapshot: 'NCC A',
+  purchaseMode: 'immediate',
+  paymentSource: 'supplier_credit',
+  targetWarehouseId: 'wh-1',
+  status: 'purchased',
+  purchaseDate: '2026-07-08',
+  invoiceNumber: 'INV-001',
+  invoiceDate: '2026-07-08',
+  grossAmount: 1000000,
+  vatAmount: 100000,
+  totalAmount: 1100000,
+  poId: null,
+  wmsTransactionId: null,
+  siteCashSettlementId: null,
+  qrToken: 'qr-1',
+  attachments: [],
+  createdBy: 'user-1',
+  createdAt: '2026-07-08T00:00:00.000Z',
+  updatedAt: '2026-07-08T00:00:00.000Z',
+  note: 'Mua nóng',
+  ...patch,
+});
+
 const lineRow = (patch: Record<string, any> = {}) => ({
   id: 'line-1',
   direct_purchase_id: 'direct-1',
@@ -176,43 +205,73 @@ describe('siteDirectPurchaseService persistence', () => {
     expect(detail.lines[0].lineType).toBe('stock_item');
   });
 
-  it('rolls back a newly inserted direct purchase header when line upsert fails', async () => {
-    const purchase: SiteDirectPurchase = {
-      id: 'direct-1',
-      code: 'MN-001',
-      projectId: 'project-1',
-      constructionSiteId: 'site-1',
-      supplierNameSnapshot: 'NCC A',
-      purchaseMode: 'immediate',
-      paymentSource: 'supplier_credit',
-      status: 'purchased',
-      grossAmount: 0,
-      vatAmount: 0,
-      totalAmount: 0,
-      createdAt: '2026-07-08T00:00:00.000Z',
-    };
-    const existingQuery = query({ data: null, error: null });
-    const purchaseUpsertQuery = query({ data: purchaseRow(), error: null });
-    const lineUpsertQuery = query({ data: null, error: { code: '23514', message: 'line constraint failed' } });
-    const deleteQuery = query({ data: null, error: null });
-    supabaseMocks.from
-      .mockReturnValueOnce(existingQuery)
-      .mockReturnValueOnce(purchaseUpsertQuery)
-      .mockReturnValueOnce(lineUpsertQuery)
-      .mockReturnValueOnce(deleteQuery);
+  it('saves direct purchase header and lines through one atomic RPC', async () => {
+    supabaseMocks.rpc.mockResolvedValueOnce({ data: purchaseRow(), error: null });
 
-    await expect(siteDirectPurchaseService.upsert(purchase, [line()])).rejects.toMatchObject({
-      code: '23514',
+    const saved = await siteDirectPurchaseService.upsert(purchase(), [line()]);
+
+    expect(supabaseMocks.rpc).toHaveBeenCalledWith('upsert_site_direct_purchase_with_lines', {
+      p_purchase: expect.objectContaining({
+        id: 'direct-1',
+        gross_amount: 1050000,
+        vat_amount: 105000,
+        total_amount: 1155000,
+      }),
+      p_lines: [
+        expect.objectContaining({
+          id: 'line-1',
+          direct_purchase_id: 'direct-1',
+          line_amount: 1050000,
+          vat_amount: 105000,
+        }),
+      ],
     });
+    expect(supabaseMocks.from).not.toHaveBeenCalledWith('site_direct_purchases');
+    expect(supabaseMocks.from).not.toHaveBeenCalledWith('site_direct_purchase_lines');
+    expect(saved.id).toBe('direct-1');
+  });
 
-    expect(existingQuery.maybeSingle).toHaveBeenCalled();
-    expect(lineUpsertQuery.upsert).toHaveBeenCalled();
-    expect(deleteQuery.delete).toHaveBeenCalled();
-    expect(deleteQuery.eq).toHaveBeenCalledWith('id', 'direct-1');
+  it('auto-syncs AP after saving an expense-only direct purchase', async () => {
+    const expenseLine = line({
+      id: 'line-expense',
+      lineType: 'expense_only',
+      itemId: null,
+      quantity: 1,
+      unitPrice: 500000,
+      vatRate: 0,
+      lineAmount: 500000,
+      vatAmount: 0,
+    });
+    supabaseMocks.rpc
+      .mockResolvedValueOnce({ data: purchaseRow({ target_warehouse_id: null, gross_amount: 500000, vat_amount: 0, total_amount: 500000 }), error: null })
+      .mockResolvedValueOnce({
+        data: {
+          id: 'ap-1',
+          source_type: 'site_direct_purchase',
+          source_id: 'direct-1',
+          recognized_amount: 500000,
+          paid_amount: 0,
+          credit_amount: 0,
+          outstanding_amount: 500000,
+          currency: 'VND',
+          status: 'open',
+        },
+        error: null,
+      });
+    supabaseMocks.from
+      .mockReturnValueOnce(query({ data: purchaseRow({ target_warehouse_id: null }), error: null }))
+      .mockReturnValueOnce(query({ data: [lineRow({ id: 'line-expense', line_type: 'expense_only', item_id: null, status: 'accepted', accepted_quantity: 1, accepted_amount: 500000, line_amount: 500000, vat_amount: 0 })], error: null }));
+
+    await siteDirectPurchaseService.upsert(purchase({ targetWarehouseId: null }), [expenseLine]);
+
+    expect(supabaseMocks.rpc).toHaveBeenNthCalledWith(1, 'upsert_site_direct_purchase_with_lines', expect.any(Object));
+    expect(supabaseMocks.rpc).toHaveBeenNthCalledWith(2, 'sync_supplier_payable_from_site_direct_purchase', {
+      p_direct_purchase_id: 'direct-1',
+    });
   });
 
   it('reviews direct purchase lines with accepted quantity and accepted amount snapshots', async () => {
-    const updateQuery = query({ data: null, error: null });
+    const updateQuery = query({ data: [{ id: 'line-1' }], error: null });
     supabaseMocks.from
       .mockReturnValueOnce(updateQuery)
       .mockReturnValueOnce(query({ data: purchaseRow({ status: 'finance_review' }), error: null }))
@@ -357,9 +416,16 @@ describe('siteDirectPurchaseService persistence', () => {
       type: 'IMPORT',
       status: 'PENDING',
       target_warehouse_id: 'wh-1',
-      supplier_id: 'supplier-a',
+      created_by: 'user-1',
+      updated_by: 'user-1',
+      business_partner_id: 'supplier-a',
+      business_partner_name_snapshot: 'NCC A',
+      source_type: 'site_direct_purchase',
+      source_id: 'direct-1',
       related_request_id: 'direct-purchase:direct-1',
     }));
+    const insertPayload = insertQuery.insert.mock.calls[0][0];
+    expect(insertPayload).not.toHaveProperty('supplier_id');
     expect(updateQuery.update).toHaveBeenCalledWith(expect.objectContaining({
       wms_transaction_id: transaction.id,
       status: 'purchased',

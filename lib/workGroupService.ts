@@ -114,11 +114,9 @@ export const workGroupService = {
       };
     }
 
-    const { data, error } = await supabase
-      .from(GROUP_TABLE)
-      .insert(payload)
-      .select('*')
-      .single();
+    const { data, error } = await supabase.rpc('upsert_work_group', {
+      p_work_group: payload,
+    });
     if (error) throw error;
     return mapGroup(data);
   },
@@ -126,25 +124,29 @@ export const workGroupService = {
   async updateGroup(group: WorkGroup): Promise<WorkGroup> {
     if (!isSupabaseConfigured) return { ...group, updatedAt: new Date().toISOString() };
 
-    const { data, error } = await supabase
-      .from(GROUP_TABLE)
-      .update(groupPayload(group))
-      .eq('id', group.id)
-      .select('*')
-      .single();
+    const { data, error } = await supabase.rpc('upsert_work_group', {
+      p_work_group: cleanUndefined({
+        id: group.id,
+        ...groupPayload(group),
+      }),
+    });
     if (error) throw error;
     return mapGroup(data);
   },
 
   async archiveGroup(groupId: string): Promise<void> {
     if (!isSupabaseConfigured) return;
-    const { error } = await supabase.from(GROUP_TABLE).update({ is_active: false }).eq('id', groupId);
+    const { error } = await supabase.rpc('upsert_work_group', {
+      p_work_group: { id: groupId, is_active: false },
+    });
     if (error) throw error;
   },
 
   async removeGroup(groupId: string): Promise<void> {
     if (!isSupabaseConfigured) return;
-    const { error } = await supabase.from(GROUP_TABLE).delete().eq('id', groupId);
+    const { error } = await supabase.rpc('delete_work_group', {
+      p_work_group_id: groupId,
+    });
     if (error) throw error;
   },
 

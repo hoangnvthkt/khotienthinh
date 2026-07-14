@@ -1,12 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+const supabaseMock = vi.hoisted(() => ({
+  from: vi.fn(),
+  rpc: vi.fn(),
+}));
+
 let dailyLogRows: any[] = [];
 let blockDelete = false;
+let dailyLogUpdatePayloads: any[] = [];
 
 class MockQuery {
-  private operation: 'select' | 'delete' = 'select';
+  private operation: 'select' | 'delete' | 'update' = 'select';
   private filters: Record<string, any> = {};
   private selectedColumns = '*';
+  private updatePayload: Record<string, any> | null = null;
 
   constructor(private readonly tableName: string) {}
 
@@ -17,6 +24,12 @@ class MockQuery {
 
   delete() {
     this.operation = 'delete';
+    return this;
+  }
+
+  update(payload: Record<string, any>) {
+    this.operation = 'update';
+    this.updatePayload = payload;
     return this;
   }
 
@@ -58,14 +71,22 @@ class MockQuery {
       const data = this.selectedColumns === 'id' ? rows.map(row => ({ id: row.id })) : rows;
       return { data, error: null };
     }
+    if (this.operation === 'update') {
+      const rows = this.rows();
+      dailyLogUpdatePayloads.push(this.updatePayload);
+      dailyLogRows = dailyLogRows.map(row => (
+        rows.some(match => match.id === row.id)
+          ? { ...row, ...this.updatePayload }
+          : row
+      ));
+      return { data: rows, error: null };
+    }
     return { data: this.rows(), error: null };
   }
 }
 
 vi.mock('../supabase', () => ({
-  supabase: {
-    from: vi.fn((tableName: string) => new MockQuery(tableName)),
-  },
+  supabase: supabaseMock,
 }));
 
 vi.mock('../dailyLogDetailService', () => ({
@@ -78,6 +99,34 @@ vi.mock('../dailyLogDetailService', () => ({
 beforeEach(() => {
   dailyLogRows = [];
   blockDelete = false;
+  dailyLogUpdatePayloads = [];
+  supabaseMock.from.mockImplementation((tableName: string) => new MockQuery(tableName));
+  supabaseMock.rpc.mockResolvedValue({ data: null, error: null });
+});
+
+describe('dailyLogService.updateStatus', () => {
+  it('routes rejected verified logs through transition_daily_log_status instead of direct table update', async () => {
+    dailyLogRows = [{ id: 'log-1', status: 'verified', created_by_id: 'owner-1' }];
+
+    const { dailyLogService } = await import('../projectService');
+
+    await expect(dailyLogService.updateStatus({
+      logId: 'log-1',
+      status: 'rejected',
+      rejectionReason: 'Cần bổ sung ảnh hiện trường',
+      actorUserId: 'reviewer-1',
+    })).resolves.toBeUndefined();
+
+    expect(supabaseMock.rpc).toHaveBeenCalledWith('transition_daily_log_status', {
+      p_log_id: 'log-1',
+      p_status: 'rejected',
+      p_requested_verifier_id: null,
+      p_requested_verifier_name: null,
+      p_rejection_reason: 'Cần bổ sung ảnh hiện trường',
+    });
+    expect(dailyLogUpdatePayloads).toEqual([]);
+    expect(dailyLogRows[0].status).toBe('verified');
+  });
 });
 
 describe('dailyLogService.remove', () => {

@@ -69,6 +69,10 @@ describe('purchaseOrderAmount', () => {
     expect(getPurchaseOrderDisplayAmount(po, [])).toBe(0);
   });
 
+  it('keeps the approved master PO amount for request POs that intentionally have no schedule yet', () => {
+    expect(getPurchaseOrderDisplayAmount({ ...po, approvedTotalAmount: 1660000 }, [])).toBe(1660000);
+  });
+
   it('returns zero when every delivery batch is cancelled', () => {
     const amount = getPurchaseOrderDisplayAmount(po, [
       deliveryBatch('batch-1', 10, 100000, 'cancelled'),
@@ -84,6 +88,16 @@ describe('purchaseOrderAmount', () => {
       unitPrice: 0,
       totalAmount: 0,
       scheduledQty: 0,
+    });
+  });
+
+  it('keeps master line price and total for request POs with approved total and no schedule yet', () => {
+    const lineAmount = getPurchaseOrderDisplayLineAmount({ ...po, approvedTotalAmount: 1660000 }, po.items[0], []);
+
+    expect(lineAmount).toEqual({
+      unitPrice: 103750,
+      totalAmount: 1660000,
+      scheduledQty: 16,
     });
   });
 
