@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { PurchaseOrder, PurchaseOrderDeliveryBatch } from '../../types';
-import { getPurchaseOrderDisplayAmount, getPurchaseOrderDisplayLineAmount } from '../purchaseOrderAmount';
+import {
+  buildPurchaseOrderPrintLineAmounts,
+  getPurchaseOrderDisplayAmount,
+  getPurchaseOrderDisplayLineAmount,
+} from '../purchaseOrderAmount';
 
 const po: PurchaseOrder = {
   id: 'po-102',
@@ -98,5 +102,83 @@ describe('purchaseOrderAmount', () => {
 
   it('falls back to saved PO amount when there is no delivery schedule', () => {
     expect(getPurchaseOrderDisplayAmount({ ...po, sourceMode: 'proactive_project' }, [])).toBe(1660000);
+  });
+
+  it('builds printable line amounts from active delivery schedules instead of saved PO item totals', () => {
+    const steelPo: PurchaseOrder = {
+      ...po,
+      id: 'po-118',
+      poNumber: 'PO-118',
+      vatRate: 10,
+      items: [
+        {
+          lineId: 'd10',
+          itemId: 'item-d10',
+          sku: 'VT0000825',
+          name: 'Thep XD D10',
+          unit: 'kg',
+          qty: 59238.200002,
+          unitPrice: 14850,
+        },
+        {
+          lineId: 'wire',
+          itemId: 'item-wire',
+          sku: 'VT0000834',
+          name: 'Thep buoc 1 ly',
+          unit: 'kg',
+          qty: 1200,
+          unitPrice: 17500,
+        },
+      ],
+      totalAmount: 900687270,
+      sourceMode: 'from_request',
+    };
+    const schedule: PurchaseOrderDeliveryBatch[] = [
+      {
+        id: 'batch-1',
+        purchaseOrderId: steelPo.id,
+        deliveryNo: 1,
+        plannedDeliveryDate: '2026-07-14',
+        status: 'planned',
+        lines: [
+          {
+            id: 'batch-1-d10',
+            deliveryBatchId: 'batch-1',
+            purchaseOrderId: steelPo.id,
+            purchaseOrderLineId: 'd10',
+            itemId: 'item-d10',
+            plannedQty: 35088,
+            deliveryUnitPrice: 14850,
+          },
+          {
+            id: 'batch-1-wire',
+            deliveryBatchId: 'batch-1',
+            purchaseOrderId: steelPo.id,
+            purchaseOrderLineId: 'wire',
+            itemId: 'item-wire',
+            plannedQty: 1200,
+            deliveryUnitPrice: 17500,
+          },
+        ],
+      },
+    ];
+
+    const lines = buildPurchaseOrderPrintLineAmounts(steelPo, schedule);
+
+    expect(lines).toEqual([
+      expect.objectContaining({
+        lineKey: 'd10',
+        scheduledQty: 35088,
+        unitPrice: 14850,
+        totalAmount: 521056800,
+      }),
+      expect.objectContaining({
+        lineKey: 'wire',
+        scheduledQty: 1200,
+        unitPrice: 17500,
+        totalAmount: 21000000,
+      }),
+    ]);
+    expect(lines.reduce((sum: number, line: { totalAmount: number }) => sum + line.totalAmount, 0)).toBe(542056800);
   });
 });
