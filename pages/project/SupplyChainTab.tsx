@@ -124,7 +124,11 @@ import {
 } from '../../lib/purchaseOrderDeliveryDraft';
 import { buildPurchaseOrderListSummary } from '../../lib/purchaseOrderDisplay';
 import { getPurchaseOrderDemandStats } from '../../lib/purchaseOrderDemand';
-import { getPurchaseOrderDisplayAmount } from '../../lib/purchaseOrderAmount';
+import {
+    buildPurchaseOrderPrintLineAmounts,
+    getPurchaseOrderDisplayAmount,
+    getPurchaseOrderPrintAmount,
+} from '../../lib/purchaseOrderAmount';
 import {
     appendRequestRowsToPoItems,
     buildPurchaseOrderRequestLineLinks,
@@ -370,6 +374,7 @@ type PoApprovalDeliveryBatch = {
     lines: Array<{
         purchaseOrderLineId: string;
         plannedQty: number;
+        unitPrice?: number | null;
     }>;
 };
 
@@ -3877,6 +3882,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             lines: group.lines.map(line => ({
                 purchaseOrderLineId: line.poLineId || line.itemId,
                 plannedQty: Number(line.issuedQty || 0),
+                unitPrice: Number(line.deliveryUnitPrice || 0),
             })).filter(line => line.purchaseOrderLineId && line.plannedQty > 0),
         })).filter(batch => batch.lines.length > 0);
 
@@ -3890,6 +3896,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             .map(item => ({
                 purchaseOrderLineId: item.lineId || item.itemId,
                 plannedQty: Number(item.qty || 0),
+                unitPrice: Number(item.unitPrice || 0),
             }))
             .filter(line => line.purchaseOrderLineId && line.plannedQty > 0),
     }].filter(batch => batch.lines.length > 0);
@@ -3909,15 +3916,22 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             return hasPurchaseUnitConversion(conversionSource);
         });
 
-        const totalAmount = po.items.reduce((sum, item) => sum + calculateLineTotal(item), 0);
+        const itemByLineId = new Map(po.items.map(item => [item.lineId || item.itemId, item]));
+        const hasDeliveryBatchLines = deliveryBatches.some(batch => batch.lines.length > 0);
+        const totalAmount = Math.round(hasDeliveryBatchLines
+            ? deliveryBatches.reduce((sum, batch) => sum + batch.lines.reduce((batchSum, line) => {
+                const item = itemByLineId.get(line.purchaseOrderLineId);
+                const unitPrice = Number(line.unitPrice ?? item?.unitPrice ?? 0);
+                return batchSum + Number(line.plannedQty || 0) * unitPrice;
+            }, 0), 0)
+            : po.items.reduce((sum, item) => sum + calculateLineTotal(item), 0));
         const vatRate = normalizeVatRate(po.vatRate);
         const vatAmount = calculateVatAmount(totalAmount, vatRate);
         const paymentTotal = totalAmount + vatAmount;
         const approvalQrHtml = qrSvg
             ? `<div class="approval-qr-wrap"><div class="approval-qr-box">${qrSvg}<span>QR nhận hàng</span></div></div>`
             : '';
-        const itemByLineId = new Map(po.items.map(item => [item.lineId || item.itemId, item]));
-        const buildItemRow = (item: PurchaseOrderItem, index: number, qty: number) => {
+        const buildItemRow = (item: PurchaseOrderItem, index: number, qty: number, unitPriceOverride?: number | null) => {
             const stockUnit = getPoLineStockUnit(item);
             const purchaseUnit = getPoLinePurchaseUnit(item);
             const conversionSource = {
@@ -3935,6 +3949,9 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 .map(line => `<div class="approval-muted">${escapeHtml(line)}</div>`)
                 .join('');
 
+            const displayUnitPrice = Number(unitPriceOverride ?? item.unitPrice ?? 0);
+            const lineAmount = Math.round(Number(qty || 0) * displayUnitPrice);
+
             return `
                 <tr>
                     <td class="approval-center">${index + 1}</td>
@@ -3950,8 +3967,8 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     <td class="approval-center">${escapeHtml(displayPurchaseUnit)}</td>
                     <td class="approval-right">${displayPurchaseQty}</td>
                     ` : ''}
-                    <td class="approval-right">${Number(item.unitPrice || 0).toLocaleString('vi-VN')}</td>
-                    <td class="approval-right">${Number((qty || 0) * Number(item.unitPrice || 0)).toLocaleString('vi-VN')}</td>
+                    <td class="approval-right">${displayUnitPrice.toLocaleString('vi-VN')}</td>
+                    <td class="approval-right">${lineAmount.toLocaleString('vi-VN')}</td>
                 </tr>
             `;
         };
@@ -3963,7 +3980,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 const lineRows = batch.lines
                     .map(line => {
                         const item = itemByLineId.get(line.purchaseOrderLineId);
-                        return item ? buildItemRow(item, batchIndex + 1, Number(line.plannedQty || 0)) : '';
+                        return item ? buildItemRow(item, batchIndex + 1, Number(line.plannedQty || 0), line.unitPrice) : '';
                     })
                     .join('');
                 return `
@@ -4059,7 +4076,12 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         `;
     };
 
-    const buildPoPrintSection = (printablePo: PurchaseOrder, qrSvg: string, pageBreak = false) => {
+    const buildPoPrintSection = (
+        printablePo: PurchaseOrder,
+        qrSvg: string,
+        pageBreak = false,
+        deliveryBatches: PurchaseOrderDeliveryBatch[] = [],
+    ) => {
         const targetWh = warehouses.find(w => w.id === printablePo.targetWarehouseId);
 
         const poHasConversion = printablePo.items.some(item => {
@@ -4103,6 +4125,9 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             return k;
         };
 
+        const printLineAmounts = buildPurchaseOrderPrintLineAmounts(printablePo, deliveryBatches);
+        const printLineAmountByKey = new Map(printLineAmounts.map(line => [line.lineKey, line]));
+
         const headersHtml = `
             <th class="center" style="width: 36px;">STT</th>
             <th style="width: 85px;">Mã hàng hoá</th>
@@ -4119,6 +4144,11 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         `;
 
         const rowsHtml = printablePo.items.map((item, index) => {
+            const lineKey = item.lineId || item.itemId;
+            const printLineAmount = printLineAmountByKey.get(lineKey);
+            const printQty = printLineAmount?.scheduledQty ?? Number(item.qty || 0);
+            const printUnitPrice = printLineAmount?.unitPrice ?? Number(item.unitPrice || 0);
+            const printLineTotal = printLineAmount?.totalAmount ?? calculateLineTotal(item);
             const specCells = uniqueSpecKeys.map(k => {
                 const val = item.specs?.[k]?.value;
                 return `<td class="center font-semibold bg-slate-50/20">${val !== undefined && val !== null && val !== '' ? escapeHtml(val) : '—'}</td>`;
@@ -4147,9 +4177,9 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             const itemHasConversion = hasPurchaseUnitConversion(conversionSource);
 
             const displayStockUnit = itemHasConversion ? stockUnit : purchaseUnit;
-            const displayStockQty = itemHasConversion ? poLinePurchaseToStockQty(item, Number(item.qty || 0)) : (item.qty || 0);
+            const displayStockQty = itemHasConversion ? poLinePurchaseToStockQty(item, printQty) : printQty;
             const displayPurchaseUnit = itemHasConversion ? purchaseUnit : '—';
-            const displayPurchaseQty = itemHasConversion ? Number(item.qty || 0).toLocaleString('vi-VN') : '—';
+            const displayPurchaseQty = itemHasConversion ? Number(printQty || 0).toLocaleString('vi-VN') : '—';
 
             return `
                 <tr>
@@ -4167,13 +4197,13 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     <td class="center" style="font-weight: 500;">${escapeHtml(displayPurchaseUnit)}</td>
                     <td class="right font-mono">${displayPurchaseQty}</td>
                     ` : ''}
-                    <td class="right font-mono">${Number(item.unitPrice || 0).toLocaleString('vi-VN')}</td>
-                    <td class="right font-mono" style="font-weight: bold; color: #0f172a;">${Number(calculateLineTotal(item)).toLocaleString('vi-VN')} đ</td>
+                    <td class="right font-mono">${Number(printUnitPrice || 0).toLocaleString('vi-VN')}</td>
+                    <td class="right font-mono" style="font-weight: bold; color: #0f172a;">${Number(printLineTotal || 0).toLocaleString('vi-VN')} đ</td>
                 </tr>
             `;
         }).join('');
 
-        const totalAmount = printablePo.items.reduce((sum, item) => sum + calculateLineTotal(item), 0);
+        const totalAmount = getPurchaseOrderPrintAmount(printablePo, deliveryBatches);
         const vatRate = normalizeVatRate(printablePo.vatRate);
         const vatAmount = calculateVatAmount(totalAmount, vatRate);
         const paymentTotal = totalAmount + vatAmount;
@@ -4699,7 +4729,10 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 }
                 const receiveUrl = buildPoReceiveUrl(printablePo.qrToken!);
                 const qrSvg = renderToStaticMarkup(<QRCodeSVG value={receiveUrl} size={90} level="H" includeMargin />);
-                html = buildPoPrintHtml(printablePo.poNumber, buildPoPrintSection(printablePo, qrSvg));
+                html = buildPoPrintHtml(
+                    printablePo.poNumber,
+                    buildPoPrintSection(printablePo, qrSvg, false, poDeliveryBatchesByPo[po.id] || []),
+                );
             }
 
             writePoPrintWindow(printWindow, html);
@@ -4753,7 +4786,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 const sections = printableOrders.map((po, index) => {
                     const receiveUrl = buildPoReceiveUrl(po.qrToken!);
                     const qrSvg = renderToStaticMarkup(<QRCodeSVG value={receiveUrl} size={90} level="H" includeMargin />);
-                    return buildPoPrintSection(po, qrSvg, index > 0);
+                    return buildPoPrintSection(po, qrSvg, index > 0, poDeliveryBatchesByPo[po.id] || []);
                 }).join('');
                 html = buildPoPrintHtml(printableOrders[0].procurementGroupNo || 'Nhóm PO', sections);
             }

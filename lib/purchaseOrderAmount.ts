@@ -63,3 +63,59 @@ export const getPurchaseOrderDisplayAmount = (
     return sum + plannedQty * unitPrice;
   }, 0));
 };
+
+export type PurchaseOrderPrintLineAmount = {
+  item: PurchaseOrderItem;
+  lineKey: string;
+  scheduledQty: number;
+  unitPrice: number;
+  totalAmount: number;
+};
+
+export const buildPurchaseOrderPrintLineAmounts = (
+  po: PurchaseOrder,
+  deliveryBatches: PurchaseOrderDeliveryBatch[] = [],
+): PurchaseOrderPrintLineAmount[] => {
+  const activeLines = deliveryBatches
+    .filter(batch => batch.status !== 'cancelled')
+    .flatMap(batch => batch.lines || [])
+    .filter(line => toNumber(line.plannedQty) > 0);
+  const hasActiveSchedule = activeLines.length > 0;
+
+  return (po.items || []).map(item => {
+    const lineKey = item.lineId || item.itemId;
+    if (!hasActiveSchedule) {
+      return {
+        item,
+        lineKey,
+        scheduledQty: toNumber(item.qty),
+        unitPrice: toNumber(item.unitPrice),
+        totalAmount: Math.round(calculateLineTotal(item)),
+      };
+    }
+
+    const matchingLines = activeLines.filter(line => line.purchaseOrderLineId === lineKey);
+    const scheduledQty = matchingLines.reduce((sum, line) => sum + toNumber(line.plannedQty), 0);
+    const totalAmount = Math.round(matchingLines.reduce((sum, line) => {
+      const plannedQty = toNumber(line.plannedQty);
+      const unitPrice = toNumber(line.deliveryUnitPrice ?? item.unitPrice);
+      return sum + plannedQty * unitPrice;
+    }, 0));
+    const unitPrice = scheduledQty > 0 ? Math.round((totalAmount / scheduledQty) * 100000) / 100000 : 0;
+
+    return {
+      item,
+      lineKey,
+      scheduledQty,
+      unitPrice,
+      totalAmount,
+    };
+  });
+};
+
+export const getPurchaseOrderPrintAmount = (
+  po: PurchaseOrder,
+  deliveryBatches: PurchaseOrderDeliveryBatch[] = [],
+): number =>
+  buildPurchaseOrderPrintLineAmounts(po, deliveryBatches)
+    .reduce((sum, line) => sum + line.totalAmount, 0);
