@@ -144,6 +144,18 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         canReceivePo,
         canDeletePo,
         canManagePoPermission,
+        canViewDirectPurchase,
+        canCreateDirectPurchase,
+        canEditDirectPurchase,
+        canDeleteDirectPurchase,
+        canRecordDirectPurchaseAp,
+        canViewSupplierDelivery,
+        canCreateSupplierDelivery,
+        canEditSupplierDelivery,
+        canDeleteSupplierDelivery,
+        canRecordSupplierDelivery,
+        canUnrecordSupplierDelivery,
+        canReconcileSupplierDelivery,
         canCreateCustomMaterial,
         canApproveCustomMaterial,
     } = useProjectMaterialAccess({
@@ -2883,13 +2895,29 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                     <SupplyChainTab
                         constructionSiteId={constructionSiteId}
                         projectId={projectId}
-                        canManageTab={canCreatePo || canApprovePo || canReceivePo || canDeletePo || canManagePoPermission}
+                        canManageTab={canCreatePo || canApprovePo || canReceivePo || canDeletePo || canManagePoPermission || canCreateDirectPurchase || canEditDirectPurchase || canDeleteDirectPurchase || canRecordDirectPurchaseAp || canCreateSupplierDelivery || canEditSupplierDelivery || canDeleteSupplierDelivery || canRecordSupplierDelivery || canUnrecordSupplierDelivery || canReconcileSupplierDelivery}
                         poCapabilities={{
                             canCreatePo,
                             canApprovePo,
                             canReceivePo,
                             canDeletePo,
                             canManagePo: canManagePoPermission,
+                        }}
+                        directPurchaseCapabilities={{
+                            canViewDirectPurchase,
+                            canCreateDirectPurchase,
+                            canEditDirectPurchase,
+                            canDeleteDirectPurchase,
+                            canRecordDirectPurchaseAp,
+                        }}
+                        supplierDeliveryCapabilities={{
+                            canViewSupplierDelivery,
+                            canCreateSupplierDelivery,
+                            canEditSupplierDelivery,
+                            canDeleteSupplierDelivery,
+                            canRecordSupplierDelivery,
+                            canUnrecordSupplierDelivery,
+                            canReconcileSupplierDelivery,
                         }}
                         initialDraftPo={planningDraftPo}
                         initialDraftPoKey={planningDraftPoKey}

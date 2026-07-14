@@ -37,6 +37,18 @@ export interface ProjectMaterialAccessState {
     canReceivePo: boolean;
     canDeletePo: boolean;
     canManagePoPermission: boolean;
+    canViewDirectPurchase: boolean;
+    canCreateDirectPurchase: boolean;
+    canEditDirectPurchase: boolean;
+    canDeleteDirectPurchase: boolean;
+    canRecordDirectPurchaseAp: boolean;
+    canViewSupplierDelivery: boolean;
+    canCreateSupplierDelivery: boolean;
+    canEditSupplierDelivery: boolean;
+    canDeleteSupplierDelivery: boolean;
+    canRecordSupplierDelivery: boolean;
+    canUnrecordSupplierDelivery: boolean;
+    canReconcileSupplierDelivery: boolean;
     canCreateCustomMaterial: boolean;
     canApproveCustomMaterial: boolean;
     canRecordWaste: boolean;
@@ -120,7 +132,19 @@ export const useProjectMaterialAccess = ({
             planning: materialCapabilities.canViewPlanning,
             request: materialCapabilities.canViewMaterialRequest,
             custom: materialCapabilities.canViewCustomMaterial,
-            po: materialCapabilities.canViewPo,
+            po: materialCapabilities.canViewPo
+                || materialCapabilities.canViewDirectPurchase
+                || materialCapabilities.canCreateDirectPurchase
+                || materialCapabilities.canEditDirectPurchase
+                || materialCapabilities.canDeleteDirectPurchase
+                || materialCapabilities.canRecordDirectPurchaseAp
+                || materialCapabilities.canViewSupplierDelivery
+                || materialCapabilities.canCreateSupplierDelivery
+                || materialCapabilities.canEditSupplierDelivery
+                || materialCapabilities.canDeleteSupplierDelivery
+                || materialCapabilities.canRecordSupplierDelivery
+                || materialCapabilities.canUnrecordSupplierDelivery
+                || materialCapabilities.canReconcileSupplierDelivery,
             waste: materialCapabilities.canViewWaste,
             dashboard: materialCapabilities.canViewMaterialSummary,
         };
@@ -180,6 +204,18 @@ export const useProjectMaterialAccess = ({
         canReceivePo: materialCapabilities.canReceivePo,
         canDeletePo: materialCapabilities.canDeletePo,
         canManagePoPermission: materialCapabilities.canManagePo,
+        canViewDirectPurchase: materialCapabilities.canViewDirectPurchase,
+        canCreateDirectPurchase: materialCapabilities.canCreateDirectPurchase,
+        canEditDirectPurchase: materialCapabilities.canEditDirectPurchase,
+        canDeleteDirectPurchase: materialCapabilities.canDeleteDirectPurchase,
+        canRecordDirectPurchaseAp: materialCapabilities.canRecordDirectPurchaseAp,
+        canViewSupplierDelivery: materialCapabilities.canViewSupplierDelivery,
+        canCreateSupplierDelivery: materialCapabilities.canCreateSupplierDelivery,
+        canEditSupplierDelivery: materialCapabilities.canEditSupplierDelivery,
+        canDeleteSupplierDelivery: materialCapabilities.canDeleteSupplierDelivery,
+        canRecordSupplierDelivery: materialCapabilities.canRecordSupplierDelivery,
+        canUnrecordSupplierDelivery: materialCapabilities.canUnrecordSupplierDelivery,
+        canReconcileSupplierDelivery: materialCapabilities.canReconcileSupplierDelivery,
         canCreateCustomMaterial: materialCapabilities.canCreateCustomMaterial,
         canApproveCustomMaterial: materialCapabilities.canApproveCustomMaterial,
         canRecordWaste: materialCapabilities.canRecordWaste,

@@ -1,106 +1,189 @@
 # HANDOFF_SUMMARY
 
 ## 1. Mục tiêu ban đầu
-- Xây luồng kế toán/cung ứng khép kín cho: công nợ NCC, thanh toán theo đợt, mua nóng công trường, CCDC nhỏ/ngoài kho, hoàn ứng quỹ công trường, và chuẩn bị QR/truy vết chứng từ.
-- Nguyên tắc xuyên suốt: WMS quản tồn kho, AP subledger quản công nợ NCC, payment/cash/project transaction quản dòng tiền.
+- Sửa và đổi luồng `Mua nóng công trường`, `Gọi hàng HĐ NCC`, AP và sổ tài chính theo hướng:
+  - Thủ kho chỉ nhập số lượng/kho/SL-CL.
+  - Kế toán nhập giá/VAT ở bước đối soát/AP.
+  - Bỏ duyệt/gửi duyệt phiếu giao HĐ NCC, dùng `Ghi/Bỏ ghi`.
+  - Tab Phải trả/Phải thu chỉ hiển thị khoản còn outstanding.
+  - Sổ giao dịch tách `Đã trả` và `Đã thu`.
+  - Vòng dữ liệu cuối cùng vẫn phải thể hiện được chi phí.
 
 ## 2. Việc đã hoàn thành
-- Phase 1-2: AP subledger và thanh toán NCC theo đợt đã có service/UI/RPC, AP là nguồn công nợ chính.
-- Phase 3: `Mua nóng công trường` đã có service/UI, hỗ trợ NCC viết tay, file/hình ảnh, line `stock_item | expense_only`.
-- Phase 3.5: thêm `small_tool` và sổ CCDC nhỏ/ngoài kho.
-- Phase 3.6: thêm luồng `Gọi hàng HĐ NCC`: lấy HĐ từ module HD, tạo phiếu giao, đối soát, sinh AP từ bảng đối soát.
-- Phase 4: hoàn ứng/quỹ công trường đã implement, migration đã apply lên Supabase cloud.
-- Test cloud Phase 4 đã chạy bằng transaction rollback: site cash 360k + staff paid approved 200k/reimbursed 150k, post/reverse đều đúng số, không để lại dữ liệu test.
-- Ý tưởng mới đã chốt ở mức thiết kế: `Phiếu giao HĐ NCC` có thể link mã WMS, nhập kho rồi tạo phiếu xuất dùng ngay để net tồn = 0 nhưng vẫn có chứng từ nhập/xuất.
+- Tạo migration `supabase/migrations/20260714063446_supplier_ap_recording_flow_v1.sql`.
+- Migration đã được apply lên Supabase cloud bằng Postgres direct/session pooler, không dùng `supabase db push`.
+- Đã repair migration history cloud cho version `20260714063446`.
+- Thêm RPC atomic cho:
+  - `upsert_site_direct_purchase_with_lines`
+  - `delete_site_direct_purchase_v1`
+  - `upsert_supplier_direct_delivery_note_with_lines`
+  - `record_supplier_direct_delivery_note`
+  - `unrecord_supplier_direct_delivery_note`
+  - `delete_supplier_direct_delivery_note_v1`
+- Thêm permission actions cho mua nóng và phiếu giao HĐ NCC.
+- Sửa service mua nóng và phiếu giao HĐ NCC gọi RPC atomic.
+- UI `SupplyChainTab` đã có các thao tác chính: `Ghi`, `Bỏ ghi`, `Xóa`, `Chi tiết`, `Tạo WMS nhập`, `Đối soát/AP`.
+- Đối soát HĐ NCC chuyển giá/VAT sang bước kế toán nhập ở statement.
+- Finance workspace đã lọc Phải trả/Phải thu theo outstanding và tách ledger `Đã trả`/`Đã thu`.
+- Sửa bug UI hiển thị sai `Nhập-xuất thẳng` thành `Không qua kho` bằng helper `supplierDeliveryWmsSummary`.
+- Sửa WMS import payload trước mắt:
+  - Không gửi cột `created_by` vào bảng `transactions` vì schema hiện chưa có cột này.
+  - Không gửi `supplier_id` legacy vào `transactions` vì bảng `suppliers` không còn là chuẩn; chuẩn mới là `business_partners`.
 
 ## 3. File đã thay đổi
-- Đã nằm trong codebase/commit gần nhất:
-  - `types.ts`
-  - `pages/project/SupplyChainTab.tsx`
-  - `pages/project/ProjectFinanceWorkspace.tsx`
-  - `pages/hd/SupplierContracts.tsx`
-  - `lib/supplierPayableService.ts`
-  - `lib/supplierPaymentBatchService.ts`
-  - `lib/siteDirectPurchaseService.ts`
-  - `lib/siteSmallToolService.ts`
-  - `lib/siteCashSettlementService.ts`
-  - `lib/cashFundService.ts`
-  - `lib/supplierDeliveryStatementService.ts`
-  - `lib/projectFinanceWorkspaceService.ts`
-  - `supabase/migrations/20260707071817_supplier_ap_payment_site_cash_qr_v1.sql`
-  - `supabase/migrations/20260708162411_supplier_contract_direct_delivery_v1.sql`
-  - `supabase/migrations/20260708170426_site_small_tools_v1.sql`
-  - `supabase/migrations/20260709053843_site_cash_settlement_posting_v1.sql`
-  - các test tương ứng trong `lib/__tests__/`.
-- Workspace hiện đang dirty nhưng KHÔNG thuộc task này:
-  - `components/chat-v2/ChatShell.tsx`
-  - `lib/chatV2Service.ts`
-  - `lib/__tests__/chatV2Service.test.ts`
+- `supabase/migrations/20260714063446_supplier_ap_recording_flow_v1.sql`
+- `types.ts`
+- `hooks/project/material/useProjectMaterialAccess.ts`
+- `lib/permissions/projectMaterialPermissions.ts`
+- `lib/siteDirectPurchaseService.ts`
+- `lib/supplierDeliveryStatementService.ts`
+- `lib/supplierDeliveryWmsSummary.ts`
+- `lib/__tests__/siteDirectPurchaseService.test.ts`
+- `lib/__tests__/supplierDeliveryStatementService.test.ts`
+- `lib/__tests__/supplierDeliveryWmsSummary.test.ts`
+- `pages/project/MaterialTab.tsx`
+- `pages/project/SupplyChainTab.tsx`
+- `pages/project/ProjectFinanceWorkspace.tsx`
+- `HANDOFF_SUMMARY.md`
+
+File cần đọc tiếp trước khi làm:
+- `pages/project/SupplyChainTab.tsx`
+- `lib/supplierDeliveryStatementService.ts`
+- `lib/siteDirectPurchaseService.ts`
+- `lib/supplierDeliveryWmsSummary.ts`
+- `supabase/migrations/20260714063446_supplier_ap_recording_flow_v1.sql`
+- `types.ts`
+- `lib/permissions/projectMaterialPermissions.ts`
+- `hooks/project/material/useProjectMaterialAccess.ts`
+- `pages/project/ProjectFinanceWorkspace.tsx`
+- `docs/security/permission-refactor-roadmap.md`
 
 ## 4. Quyết định kỹ thuật quan trọng
-- AP không sinh trực tiếp từ WMS; AP sinh từ PO, mua nóng, hoặc bảng đối soát HĐ NCC tùy nghiệp vụ.
-- Với `Gọi hàng HĐ NCC`, AP phải sinh từ `supplier_delivery_statement`, không sinh từ `supplier_direct_delivery_note`.
-- Với hoàn ứng quỹ/cá nhân ứng trước, RPC post sẽ sync AP mua nóng rồi credit AP để NCC không còn outstanding sai.
-- Project transaction từ `supplier_payment_batch:*` và `site_cash_settlement_batch:*` chỉ phản ánh cashflow, không được cộng trùng vào actual material cost.
-- `site_cash` và `staff_paid` đi vào hoàn ứng; `supplier_credit` đi theo thanh toán NCC/AP.
-- Ý tưởng mới: với cát/đá/xi/bê tông dùng ngay, vẫn tạo WMS nhập và WMS xuất dùng ngay; AP vẫn từ đối soát HĐ NCC.
-- WMS xuất dùng ngay nên là phiếu xuất nháp do hệ thống tạo, thủ kho xác nhận; không tự complete hoàn toàn.
+- `business_partners` là bảng chuẩn cho NCC/khách hàng/đối tác. `suppliers` là legacy, không dùng cho flow mới.
+- Không sinh AP từ WMS. AP HĐ NCC phải sinh từ `supplier_delivery_statement`.
+- WMS chỉ phản ánh nhập/xuất/tồn và phục vụ truy vết số lượng.
+- Phiếu giao HĐ NCC:
+  - `draft` thì sửa/xóa được theo quyền.
+  - `Ghi` thì khóa số lượng.
+  - `Bỏ ghi` chỉ được khi chưa có WMS/AP.
+  - Đã có WMS hoặc AP thì không sửa phiếu nguồn trực tiếp.
+- `Ghi` hiện vẫn gồm 2 bước ở frontend: RPC ghi phiếu trước, sau đó tạo WMS import nếu dòng là `direct_in_out`. Đây chưa phải mô hình atomic cuối cùng.
+- Việc bỏ `created_by`/`supplier_id` khỏi WMS insert chỉ là fix tránh lỗi schema/FK hiện tại; không phải quyết định bỏ audit.
+- Chuẩn cần đi tiếp: `transactions` phải có audit và partner chuẩn:
+  - `created_by`
+  - `updated_by`
+  - `business_partner_id`
+  - `business_partner_name_snapshot`
+  - `source_type`
+  - `source_id`
 
 ## 5. Lỗi / vấn đề còn tồn tại
-- Chưa implement Phase 4.7: `Gọi hàng HĐ NCC nhập-xuất thẳng WMS`.
-- Chưa implement Phase 5: QR/trace graph đầy đủ.
-- `SupplyChainTab.tsx` đang rất lớn, dễ đụng lỗi khi thêm UI mới.
-- Current dirty files về chat-v2 chưa rõ chủ sở hữu; không liên quan task cung ứng/tài chính.
-- `supabase db push` không dùng được trực tiếp vì remote có nhiều migration history cũ không có trong local; lần trước đã apply migration bằng `npx supabase db query --linked --file ...` rồi `migration repair`.
+- Bảng `transactions` chưa có `created_by`, nên WMS transaction chưa lưu rõ người tạo riêng ở cấp giao dịch kho.
+- Bảng `transactions` chưa có `business_partner_id`, nên WMS transaction chưa ghi trực tiếp NCC chuẩn từ `business_partners`.
+- `transactions.supplier_id` vẫn FK sang bảng legacy `suppliers`; không được dùng cho flow mới.
+- `Ghi` phiếu giao HĐ NCC chưa atomic với tạo WMS import. Nếu WMS fail sau khi RPC ghi phiếu thành công, UI có thể báo lỗi dù trạng thái DB đã `accepted`.
+- Phiếu cloud `GHHD-20260714-126346` đã `accepted`, line đã `accepted_quantity = 1`, nhưng chưa có WMS transaction.
+- Nút `Sửa phiếu` cho phiếu giao HĐ NCC chưa được implement.
+- Full `npm test` trước đó có 2 lỗi baseline không liên quan:
+  - `lib/__tests__/dailyLogWorkflow.test.ts`
+  - `lib/__tests__/phase5PermissionHardening.test.ts`
+- Code local đã sửa nhưng chưa có deploy/cloud frontend mới trong phiên này.
 
 ## 6. Rủi ro cần chú ý
-- Không được cộng trùng chi phí: WMS nhập/xuất chỉ trace số lượng, AP mới là nguồn ghi nhận chi phí/công nợ.
-- Nếu WMS nhập xong chưa xuất, phải có trạng thái/cảnh báo `Tồn chờ xuất dùng`.
-- Nếu xuất dùng ngay fail hoặc bị hủy, không được post đối soát/AP như đã hoàn tất kho.
-- Với hàng dùng ngay từ HĐ NCC, không quay lại tạo PO.
-- Cần giữ link chứng từ theo cả chiều xuôi và ngược: HĐ -> phiếu giao -> WMS nhập -> WMS xuất -> đối soát -> AP -> payment.
+- Không được drop bảng `suppliers` ngay nếu chưa audit dữ liệu và FK toàn hệ thống.
+- Không được ghi `business_partners.id` vào `transactions.supplier_id` vì sẽ vi phạm FK legacy.
+- Không được mất audit người tạo; nếu WMS cần biết ai tạo thì phải thêm schema đúng, không nhét cột không tồn tại.
+- Không được cộng chi phí từ WMS. Chi phí lấy từ AP/recognized amount.
+- Không được đổi luồng HĐ NCC quay lại PO.
+- Không được reintroduce duyệt/gửi duyệt cho phiếu giao HĐ NCC.
+- Không được chạy `supabase db push`.
+- Không được reapply migration `20260714063446` lên cloud nếu không thay đổi có chủ đích; version này đã được apply và repair history.
+- Worktree đang dirty; không revert file người khác/chưa hiểu nguồn gốc.
 
 ## 7. Việc cần làm tiếp theo
-1. Tạo spec/plan Phase 4.7: `Gọi hàng HĐ NCC nhập-xuất thẳng WMS`.
-2. Thiết kế DB fields cho `supplier_direct_delivery_lines`:
-   - `item_id` / `sku_snapshot` / `item_name_snapshot`
-   - `wms_flow_mode`: `none | direct_in_out`
-   - `wms_import_transaction_id`
-   - `wms_export_transaction_id`
-   - `target_warehouse_id`
-   - trạng thái kho: `not_required | import_pending | imported | export_pending | exported`.
-3. Service: tạo WMS import từ phiếu giao HĐ, sau khi import `COMPLETED` tạo WMS export draft.
-4. UI: trong `Tạo phiếu giao HĐ NCC`, cột vật tư link mã WMS; chọn mode `Không qua kho` hoặc `Nhập-xuất thẳng`.
-5. Guard đối soát: dòng `direct_in_out` chỉ được đưa vào statement/AP khi WMS import và export đã hoàn tất.
-6. Sau Phase 4.7, làm Phase 5 QR/trace graph cho toàn chuỗi.
+1. Tạo migration mới bằng `supabase migration new ...`, không tự đặt tên file thủ công.
+2. Migration cần bổ sung audit/partner/source cho `public.transactions`:
+   - `created_by uuid references public.users(id)`
+   - `updated_by uuid references public.users(id)`
+   - `business_partner_id uuid references public.business_partners(id)`
+   - `business_partner_name_snapshot text`
+   - `source_type text`
+   - `source_id text`
+3. Cập nhật WMS insert trong:
+   - `lib/supplierDeliveryStatementService.ts`
+   - `lib/siteDirectPurchaseService.ts`
+   - các service WMS/PO khác nếu còn ghi `supplier_id` legacy.
+4. Với phiếu giao HĐ NCC, WMS import phải ghi:
+   - `created_by = user hiện tại`
+   - `business_partner_id = note.supplierId`
+   - `business_partner_name_snapshot = note.supplierNameSnapshot`
+   - `source_type = supplier_direct_delivery_note`
+   - `source_id = note.id`
+5. Làm `Ghi + tạo WMS` atomic hơn:
+   - hoặc đưa tạo WMS import vào RPC/security definer;
+   - hoặc tách UI thành `Ghi số lượng` thành công riêng và `Tạo WMS` riêng, không báo `Không ghi được` khi chỉ fail WMS.
+6. Thêm nút `Sửa` phiếu giao HĐ NCC:
+   - chỉ hiện khi `draft/cancelled` và chưa WMS/AP;
+   - nếu `accepted` nhưng chưa WMS/AP thì phải `Bỏ ghi` trước khi sửa.
+7. Apply migration cloud chỉ khi user yêu cầu rõ. Nếu apply cloud, dùng direct SQL/`db query`, không dùng `db push`.
 
 ## 8. Lệnh đã chạy và kết quả
-- `npm run test`: 40 files, 214 tests passed.
-- `npm run lint`: passed.
-- `npm run build`: passed, chỉ có warning chunk size của Vite.
-- `git diff --check`: clean tại thời điểm trước khi commit Phase 4.
-- `npx supabase db query --linked --file supabase/migrations/20260709053843_site_cash_settlement_posting_v1.sql`: applied cloud.
-- `npx supabase migration repair --linked --status applied 20260709053843 -p "$SUPABASE_DB_PASSWORD"`: remote migration history repaired.
-- Cloud rollback test Phase 4: passed, không còn dữ liệu test `CODX/HU-CODX`.
+- `npm test -- lib/__tests__/supplierDeliveryWmsSummary.test.ts lib/__tests__/supplierDeliveryStatementService.test.ts lib/__tests__/siteDirectPurchaseService.test.ts`
+  - Kết quả: passed, 30 tests.
+- `npm run lint`
+  - Kết quả: passed.
+- `npm run build`
+  - Kết quả: passed, chỉ có warning chunk size của Vite.
+- Apply migration cloud:
+  - Dùng Node `pg` kết nối session pooler Supabase, chạy `supabase/migrations/20260714063446_supplier_ap_recording_flow_v1.sql` trong transaction.
+  - Kết quả: commit thành công.
+- `npx supabase migration repair --db-url ... --status applied 20260714063446`
+  - Kết quả: migration history cloud đã repaired.
+- Verify cloud sau migration:
+  - `site_purchase_rpc = true`
+  - `supplier_delivery_record_rpc = true`
+  - `statement_price_snapshot = true`
+  - `supplier_reconcile_permission = true`
+  - `migration_version = 20260714063446`
+- Debug cloud phiếu `GHHD-20260714-126346`:
+  - Note status: `accepted`.
+  - Line status: `accepted`.
+  - `accepted_quantity = 1`.
+  - Chưa có WMS transaction.
+  - Payload WMS cũ fail `42703` vì `transactions.created_by` không tồn tại.
+  - Payload bỏ `created_by` nhưng còn `supplier_id` fail `23503` vì FK sang `suppliers`.
+  - Payload bỏ cả `created_by` và `supplier_id` insert giả lập rollback thành công.
 
 ## 9. Các phần KHÔNG được tự ý thay đổi
-- Không đổi hướng `Gọi hàng HĐ NCC` sang PO.
-- Không sinh AP từ WMS nhập/xuất.
-- Không bỏ yêu cầu thủ kho xác nhận phiếu xuất dùng ngay.
-- Không xóa/đảo migration đã apply cloud.
-- Không chạy `supabase db push --include-all`.
-- Không sửa/revert 3 file chat-v2 đang dirty nếu không có yêu cầu riêng.
-- Không refactor lớn `SupplyChainTab.tsx` ngoài phạm vi Phase 4.7/5.
+- Không dùng lại bảng `suppliers` làm chuẩn NCC.
+- Không ghi `business_partners.id` vào cột `transactions.supplier_id`.
+- Không drop bảng `suppliers` khi chưa có migration/data audit riêng.
+- Không đổi AP sang sinh từ WMS.
+- Không đổi `Gọi hàng HĐ NCC` thành PO.
+- Không bật lại duyệt/gửi duyệt cho phiếu giao HĐ NCC.
+- Không sửa lớn `SupplyChainTab.tsx` ngoài phạm vi task tiếp theo.
+- Không revert các thay đổi hiện có trong worktree.
+- Không chạy `supabase db push`.
+- Không reapply migration đã apply cloud nếu chưa kiểm tra migration history.
 
 ## 10. Prompt đề xuất để bắt đầu phiên Codex mới
 ```text
-Tiếp tục từ HANDOFF_SUMMARY.md.
-Hãy tạo spec/plan Phase 4.7 cho nghiệp vụ "Gọi hàng HĐ NCC nhập-xuất thẳng WMS":
-- Phiếu giao HĐ NCC vẫn lấy HĐ từ module HD.
-- Cột vật tư link mã WMS.
-- Dòng có mode không qua kho hoặc nhập-xuất thẳng.
-- Nhập WMS xong hệ thống tạo phiếu xuất nháp, thủ kho xác nhận.
-- AP vẫn sinh từ bảng đối soát HĐ NCC, không sinh từ WMS.
-- Phải review luồng xuôi/ngược, trạng thái kho, tồn, công nợ, cashflow, và chống cộng trùng.
-Không đụng các file chat-v2 đang dirty.
+Tiếp tục từ HANDOFF_SUMMARY.md trong repo /Users/admin/khotienthinh.
+
+Nhiệm vụ tiếp theo:
+1. Đọc các file được liệt kê ở mục 3 và mục 7.
+2. Tạo migration mới bằng `supabase migration new ...` để bổ sung audit/partner/source cho `public.transactions`:
+   - created_by
+   - updated_by
+   - business_partner_id
+   - business_partner_name_snapshot
+   - source_type
+   - source_id
+3. Cập nhật các WMS insert để dùng `business_partners`, không dùng `suppliers`.
+4. Đảm bảo phiếu PO/mua nóng/GHHD có đủ: ngày giờ tạo, ai tạo, kho nhập/xuất, partner chuẩn, trạng thái bước, quyền theo trạng thái.
+5. Không sinh AP từ WMS. AP vẫn từ đối soát/AP.
+6. Không chạy `supabase db push`.
+7. Viết test trước, chạy test/lint/build sau khi sửa.
+
+Lưu ý: migration `20260714063446_supplier_ap_recording_flow_v1.sql` đã apply cloud và đã repair history, không apply lại nếu chưa có lý do rõ ràng.
 ```

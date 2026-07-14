@@ -349,7 +349,13 @@ const mapTransactionFromDb = (t: any): Transaction => ({
   targetWarehouseId: t.target_warehouse_id,
   supplierId: t.supplier_id,
   requesterId: t.requester_id,
+  createdBy: t.created_by ?? t.createdBy ?? null,
+  updatedBy: t.updated_by ?? t.updatedBy ?? null,
+  businessPartnerId: t.business_partner_id ?? t.businessPartnerId ?? null,
+  businessPartnerNameSnapshot: t.business_partner_name_snapshot ?? t.businessPartnerNameSnapshot ?? null,
   approverId: t.approver_id,
+  sourceType: t.source_type ?? t.sourceType ?? null,
+  sourceId: t.source_id ?? t.sourceId ?? null,
   relatedRequestId: t.related_request_id,
   pendingItems: t.pending_items,
 });
@@ -747,9 +753,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const unsubTx = realtimeService.on('transactions', (event) => {
       if (event.eventType === 'INSERT' || event.eventType === 'UPDATE') {
         const t = event.newRecord;
-        const mapped = {
-          ...t, sourceWarehouseId: t.source_warehouse_id, targetWarehouseId: t.target_warehouse_id, supplierId: t.supplier_id, requesterId: t.requester_id, approverId: t.approver_id, relatedRequestId: t.related_request_id, pendingItems: t.pending_items
-        };
+        const mapped = mapTransactionFromDb(t);
         setTransactions(prev => {
           const exists = prev.find(tx => tx.id === mapped.id);
           if (exists) return prev.map(tx => tx.id === mapped.id ? mapped : tx);
@@ -1395,6 +1399,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           id: data.id, type: data.type, date: data.date, items: data.items,
           source_warehouse_id: data.sourceWarehouseId, target_warehouse_id: data.targetWarehouseId,
           supplier_id: data.supplierId, requester_id: data.requesterId, approver_id: data.approverId,
+          created_by: data.createdBy || null, updated_by: data.updatedBy || null,
+          business_partner_id: data.businessPartnerId || null,
+          business_partner_name_snapshot: data.businessPartnerNameSnapshot || null,
+          source_type: data.sourceType || null, source_id: data.sourceId || null,
           status: data.status, note: data.note, related_request_id: data.relatedRequestId, pending_items: data.pendingItems
         };
       } else if (table === 'warehouses') {

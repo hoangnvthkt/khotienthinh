@@ -100,24 +100,28 @@ const buildLinePayload = (line: SiteDirectPurchaseLine) => toDb({
 export const siteDirectPurchaseService = {
   async upsert(input: SiteDirectPurchase, lines: SiteDirectPurchaseLine[] = []): Promise<SiteDirectPurchase> {
     const totals = calculateSiteDirectPurchaseTotals(lines.length > 0 ? lines : input.lines || []);
-    const { data, error } = await supabase
-      .from(PURCHASE_TABLE)
-      .upsert(toDb({ ...input, ...totals }), { onConflict: 'id' })
-      .select('*')
-      .single();
+    const linePayloads = lines.map(line => buildLinePayload({
+      ...line,
+      directPurchaseId: line.directPurchaseId || input.id,
+    }));
+    const { data, error } = await supabase.rpc('upsert_site_direct_purchase_with_lines', {
+      p_purchase: toDb({ ...input, ...totals }),
+      p_lines: linePayloads,
+    });
     if (error) throw error;
 
-    if (lines.length > 0) {
-      const { error: lineError } = await supabase
-        .from(LINE_TABLE)
-        .upsert(lines.map(line => buildLinePayload({
-          ...line,
-          directPurchaseId: line.directPurchaseId || input.id,
-        })), { onConflict: 'id' });
-      if (lineError) throw lineError;
+    const saved = normalizePurchase(Array.isArray(data) ? data[0] : data);
+    const activeLines = lines.filter(line => line.status !== 'rejected');
+    const hasStockLine = activeLines.some(line => line.lineType === 'stock_item');
+    const hasRecognizableNonStockLine = activeLines.some(line =>
+      line.lineType === 'expense_only' || line.lineType === 'small_tool',
+    );
+
+    if (hasRecognizableNonStockLine && !hasStockLine) {
+      await this.syncPayable(saved.id);
     }
 
-    return normalizePurchase(data);
+    return saved;
   },
 
   async list(input: {
@@ -168,14 +172,10 @@ export const siteDirectPurchaseService = {
   },
 
   async deleteDraft(id: string): Promise<void> {
-    const { data, error } = await supabase
-      .from(PURCHASE_TABLE)
-      .delete()
-      .eq('id', id)
-      .in('status', ['draft', 'cancelled'])
-      .select('id');
+    const { error } = await supabase.rpc('delete_site_direct_purchase_v1', {
+      p_direct_purchase_id: id,
+    });
     if (error) throw error;
-    if ((data || []).length === 0) throw new Error('Chỉ xoá được phiếu mua nóng còn nháp hoặc đã huỷ.');
   },
 
   async setStatus(id: string, status: SiteDirectPurchaseStatus): Promise<SiteDirectPurchase> {
@@ -230,12 +230,16 @@ export const siteDirectPurchaseService = {
         rejectionReason: review.status === 'rejected' ? review.rejectionReason || review.reviewNote || 'Không được duyệt' : null,
         note: review.reviewNote || null,
       });
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from(LINE_TABLE)
         .update(payload)
         .eq('id', review.lineId)
-        .eq('direct_purchase_id', id);
+        .eq('direct_purchase_id', id)
+        .select('id');
       if (error) throw error;
+      if ((data || []).length === 0) {
+        throw new Error('Không cập nhật được dòng mua nóng. Kiểm tra quyền hoặc trạng thái phiếu.');
+      }
     }
     return this.getDetail(id);
   },
@@ -274,11 +278,15 @@ export const siteDirectPurchaseService = {
         accountingPrice: money(line.unitPrice),
       })).filter(item => item.itemId && item.quantity > 0),
       targetWarehouseId: purchase.targetWarehouseId,
-      supplierId: purchase.supplierId || undefined,
       requesterId: actorId,
-      createdBy: actorId,
+      createdBy: actorId || null,
+      updatedBy: actorId || null,
+      businessPartnerId: purchase.supplierId || null,
+      businessPartnerNameSnapshot: purchase.supplierNameSnapshot || null,
       approverId: actorId,
       status: TransactionStatus.PENDING,
+      sourceType: 'site_direct_purchase',
+      sourceId: purchase.id,
       relatedRequestId: `direct-purchase:${id}`,
       note: `Mua nóng ${purchase.code} - ${purchase.supplierNameSnapshot}`,
     };
@@ -293,11 +301,15 @@ export const siteDirectPurchaseService = {
         date: transaction.date,
         items: transaction.items,
         target_warehouse_id: transaction.targetWarehouseId,
-        supplier_id: transaction.supplierId,
         requester_id: transaction.requesterId,
-        created_by: transaction.createdBy,
+        created_by: transaction.createdBy || null,
+        updated_by: transaction.updatedBy || null,
+        business_partner_id: transaction.businessPartnerId || null,
+        business_partner_name_snapshot: transaction.businessPartnerNameSnapshot || null,
         approver_id: transaction.approverId,
         status: transaction.status,
+        source_type: transaction.sourceType,
+        source_id: transaction.sourceId,
         note: transaction.note,
         related_request_id: transaction.relatedRequestId,
       });

@@ -23,6 +23,18 @@ export const PROJECT_MATERIAL_ACTION_CODES = Object.freeze([
   'project.material_po.receive',
   'project.material_po.delete',
   'project.material_po.manage',
+  'project.material_direct_purchase.view',
+  'project.material_direct_purchase.create',
+  'project.material_direct_purchase.edit',
+  'project.material_direct_purchase.delete',
+  'project.material_direct_purchase.record_ap',
+  'project.material_supplier_delivery.view',
+  'project.material_supplier_delivery.create',
+  'project.material_supplier_delivery.edit',
+  'project.material_supplier_delivery.delete',
+  'project.material_supplier_delivery.record',
+  'project.material_supplier_delivery.unrecord',
+  'project.material_supplier_delivery.reconcile',
   'project.material_waste.view',
   'project.material_waste.record',
   'project.material_waste.approve',
@@ -55,6 +67,18 @@ export type ProjectMaterialCapability = {
   canReceivePo: boolean;
   canDeletePo: boolean;
   canManagePo: boolean;
+  canViewDirectPurchase: boolean;
+  canCreateDirectPurchase: boolean;
+  canEditDirectPurchase: boolean;
+  canDeleteDirectPurchase: boolean;
+  canRecordDirectPurchaseAp: boolean;
+  canViewSupplierDelivery: boolean;
+  canCreateSupplierDelivery: boolean;
+  canEditSupplierDelivery: boolean;
+  canDeleteSupplierDelivery: boolean;
+  canRecordSupplierDelivery: boolean;
+  canUnrecordSupplierDelivery: boolean;
+  canReconcileSupplierDelivery: boolean;
   canViewWaste: boolean;
   canRecordWaste: boolean;
   canApproveWaste: boolean;
@@ -80,6 +104,10 @@ export const getProjectMaterialCapabilities = (
   const canManagePo = can('project.material_po.manage');
   const canPo = (code: Extract<ProjectMaterialActionCode, `project.material_po.${string}`>) =>
     canManagePo || can(code);
+  const canDirectPurchase = (code: Extract<ProjectMaterialActionCode, `project.material_direct_purchase.${string}`>) =>
+    can(code);
+  const canSupplierDelivery = (code: Extract<ProjectMaterialActionCode, `project.material_supplier_delivery.${string}`>) =>
+    can(code);
 
   return {
     canViewMaterialSummary: can('project.material.view'),
@@ -106,6 +134,18 @@ export const getProjectMaterialCapabilities = (
     canReceivePo: canPo('project.material_po.receive'),
     canDeletePo: canPo('project.material_po.delete'),
     canManagePo,
+    canViewDirectPurchase: canDirectPurchase('project.material_direct_purchase.view'),
+    canCreateDirectPurchase: canDirectPurchase('project.material_direct_purchase.create'),
+    canEditDirectPurchase: canDirectPurchase('project.material_direct_purchase.edit'),
+    canDeleteDirectPurchase: canDirectPurchase('project.material_direct_purchase.delete'),
+    canRecordDirectPurchaseAp: canDirectPurchase('project.material_direct_purchase.record_ap'),
+    canViewSupplierDelivery: canSupplierDelivery('project.material_supplier_delivery.view'),
+    canCreateSupplierDelivery: canSupplierDelivery('project.material_supplier_delivery.create'),
+    canEditSupplierDelivery: canSupplierDelivery('project.material_supplier_delivery.edit'),
+    canDeleteSupplierDelivery: canSupplierDelivery('project.material_supplier_delivery.delete'),
+    canRecordSupplierDelivery: canSupplierDelivery('project.material_supplier_delivery.record'),
+    canUnrecordSupplierDelivery: canSupplierDelivery('project.material_supplier_delivery.unrecord'),
+    canReconcileSupplierDelivery: canSupplierDelivery('project.material_supplier_delivery.reconcile'),
     canViewWaste: can('project.material_waste.view'),
     canRecordWaste: can('project.material_waste.record'),
     canApproveWaste: can('project.material_waste.approve'),

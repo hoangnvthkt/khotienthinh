@@ -2436,6 +2436,8 @@ export interface SupplierDeliveryStatementLine {
   supplierContractId: string;
   itemNameSnapshot: string;
   unitSnapshot?: string | null;
+  unitPriceSnapshot?: number;
+  vatRateSnapshot?: number;
   acceptedQuantity: number;
   acceptedAmount: number;
   vatAmount: number;
@@ -3187,10 +3189,15 @@ export interface Transaction {
   targetWarehouseId?: string; // For Import/Transfer
   supplierId?: string; // For Import
   requesterId: string; // User requesting
-  createdBy?: string;
+  createdBy?: string | null;
+  updatedBy?: string | null;
+  businessPartnerId?: string | null;
+  businessPartnerNameSnapshot?: string | null;
   approverId?: string; // User approving
   status: TransactionStatus;
   note?: string;
+  sourceType?: string | null;
+  sourceId?: string | null;
   relatedRequestId?: string; // Link to MaterialRequest
   pendingItems?: InventoryItem[]; // Full metadata for new items created during bulk import
 }

@@ -276,6 +276,131 @@ describe('supplier delivery statement helpers', () => {
     expect(posted.status).toBe('posted');
   });
 
+  it('saves supplier delivery note and lines through one atomic RPC', async () => {
+    supabaseMocks.rpc.mockResolvedValueOnce({
+      data: {
+        id: 'note-1',
+        code: 'GN-HDNCC-001',
+        project_id: 'project-1',
+        construction_site_id: 'site-1',
+        supplier_contract_id: 'contract-1',
+        supplier_contract_code: 'HD-NCC-001',
+        supplier_id: 'supplier-a',
+        supplier_name_snapshot: 'NCC A',
+        delivery_ticket_no: 'BBG-001',
+        delivery_date: '2026-07-08',
+        status: 'draft',
+        gross_amount: 0,
+        vat_amount: 0,
+        total_amount: 0,
+        attachments: [],
+        qr_token: 'qr-note-1',
+        created_by: 'user-1',
+        created_at: '2026-07-08T00:00:00.000Z',
+        updated_at: '2026-07-08T00:00:00.000Z',
+        note: null,
+      },
+      error: null,
+    });
+
+    const saved = await supplierDirectDeliveryService.upsert(deliveryNote({ grossAmount: 0, vatAmount: 0, totalAmount: 0 }), [
+      deliveryLine({ unitPrice: 0, vatRate: 0, lineAmount: 0, vatAmount: 0, totalAmount: 0 }),
+    ]);
+
+    expect(supabaseMocks.rpc).toHaveBeenCalledWith('upsert_supplier_direct_delivery_note_with_lines', {
+      p_note: expect.objectContaining({
+        id: 'note-1',
+        gross_amount: 0,
+        vat_amount: 0,
+        total_amount: 0,
+      }),
+      p_lines: [
+        expect.objectContaining({
+          id: 'line-1',
+          delivery_note_id: 'note-1',
+          unit_price: 0,
+          vat_rate: 0,
+          total_amount: 0,
+        }),
+      ],
+    });
+    expect(supabaseMocks.from).not.toHaveBeenCalledWith('supplier_direct_delivery_notes');
+    expect(supabaseMocks.from).not.toHaveBeenCalledWith('supplier_direct_delivery_lines');
+    expect(saved.id).toBe('note-1');
+  });
+
+  it('records and unreccords supplier delivery notes through RPC actions', async () => {
+    supabaseMocks.rpc
+      .mockResolvedValueOnce({ data: { ...deliveryNote({ status: 'accepted' }), status: 'accepted' }, error: null })
+      .mockResolvedValueOnce({ data: { ...deliveryNote({ status: 'draft' }), status: 'draft' }, error: null });
+    supabaseMocks.from
+      .mockReturnValueOnce(query({ data: deliveryNote({ status: 'accepted' }), error: null }))
+      .mockReturnValueOnce(query({ data: [deliveryLine({ status: 'accepted', wmsFlowMode: 'none' })], error: null }));
+
+    const recorded = await supplierDirectDeliveryService.record('note-1', 'user-1');
+    const unrecorded = await supplierDirectDeliveryService.unrecord('note-1');
+
+    expect(supabaseMocks.rpc).toHaveBeenNthCalledWith(1, 'record_supplier_direct_delivery_note', {
+      p_note_id: 'note-1',
+      p_actor_id: 'user-1',
+    });
+    expect(supabaseMocks.rpc).toHaveBeenNthCalledWith(2, 'unrecord_supplier_direct_delivery_note', {
+      p_note_id: 'note-1',
+    });
+    expect(recorded.status).toBe('accepted');
+    expect(unrecorded.status).toBe('draft');
+  });
+
+  it('marks record as partial success when WMS import creation fails after RPC record succeeds', async () => {
+    supabaseMocks.rpc.mockResolvedValueOnce({
+      data: { ...deliveryNote({ status: 'accepted' }), status: 'accepted' },
+      error: null,
+    });
+    supabaseMocks.from
+      .mockReturnValueOnce(query({ data: deliveryNote({ status: 'accepted' }), error: null }))
+      .mockReturnValueOnce(query({
+        data: [{
+          id: 'line-1',
+          delivery_note_id: 'note-1',
+          supplier_contract_id: 'contract-1',
+          line_no: 1,
+          item_id: 'item-1',
+          item_name_snapshot: 'Bê tông M250',
+          unit_snapshot: 'm3',
+          quantity: 1,
+          accepted_quantity: 1,
+          status: 'accepted',
+          wms_flow_mode: 'direct_in_out',
+          target_warehouse_id: 'wh-site',
+          wms_status: 'not_required',
+        }],
+        error: null,
+      }))
+      .mockReturnValueOnce(query({ data: null, error: { message: 'transactions.created_by missing' } }));
+
+    try {
+      await supplierDirectDeliveryService.record('note-1', 'user-1');
+      throw new Error('Expected record to throw partial WMS error');
+    } catch (error: any) {
+      expect(error.wmsImportFailed).toBe(true);
+      expect(error.recordedNote).toEqual(expect.objectContaining({
+        id: 'note-1',
+        status: 'accepted',
+      }));
+      expect(error.message).toContain('transactions.created_by missing');
+    }
+  });
+
+  it('deletes editable supplier delivery notes through RPC', async () => {
+    supabaseMocks.rpc.mockResolvedValueOnce({ data: null, error: null });
+
+    await supplierDirectDeliveryService.deleteDraft('note-1');
+
+    expect(supabaseMocks.rpc).toHaveBeenCalledWith('delete_supplier_direct_delivery_note_v1', {
+      p_note_id: 'note-1',
+    });
+  });
+
   it('syncs AP from a delivery statement source', async () => {
     supabaseMocks.rpc.mockResolvedValueOnce({
       data: {
@@ -329,6 +454,44 @@ describe('supplier delivery statement helpers', () => {
     }), { onConflict: 'id' });
     expect(lineQuery.upsert).toHaveBeenCalled();
     expect(saved.id).toBe('statement-1');
+  });
+
+  it('stores accountant unit price and VAT snapshots on statement lines', async () => {
+    const statementQuery = query({ data: statement({ grossAmount: 11250000, vatAmount: 1125000, totalAmount: 12375000 }), error: null });
+    const lineQuery = query({ data: [], error: null });
+    supabaseMocks.from
+      .mockReturnValueOnce(statementQuery)
+      .mockReturnValueOnce(lineQuery);
+
+    await supplierDeliveryStatementService.upsert(statement(), [
+      deliveryLine({
+        status: 'accepted',
+        unitPrice: 0,
+        vatRate: 0,
+        acceptedQuantity: 12.5,
+        acceptedAmount: 0,
+        lineAmount: 0,
+        vatAmount: 0,
+        totalAmount: 0,
+        unitPriceSnapshot: 900000,
+        vatRateSnapshot: 10,
+      } as SupplierDirectDeliveryLine & { unitPriceSnapshot: number; vatRateSnapshot: number }),
+    ]);
+
+    expect(statementQuery.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      gross_amount: 11250000,
+      vat_amount: 1125000,
+      total_amount: 12375000,
+    }), { onConflict: 'id' });
+    expect(lineQuery.upsert).toHaveBeenCalledWith([
+      expect.objectContaining({
+        unit_price_snapshot: 900000,
+        vat_rate_snapshot: 10,
+        accepted_amount: 11250000,
+        vat_amount: 1125000,
+        total_amount: 12375000,
+      }),
+    ], { onConflict: 'statement_id,delivery_line_id' });
   });
 
   it('rejects draft statements containing direct-in-out lines before WMS export is completed', async () => {
@@ -478,9 +641,16 @@ describe('supplier delivery statement helpers', () => {
       type: 'IMPORT',
       status: 'PENDING',
       target_warehouse_id: 'wh-site',
-      supplier_id: 'supplier-a',
+      created_by: 'user-1',
+      updated_by: 'user-1',
+      business_partner_id: 'supplier-a',
+      business_partner_name_snapshot: 'NCC A',
+      source_type: 'supplier_direct_delivery_note',
+      source_id: 'note-1',
       related_request_id: 'supplier-direct-delivery:note-1',
     }));
+    const insertPayload = insertQuery.insert.mock.calls[0][0];
+    expect(insertPayload).not.toHaveProperty('supplier_id');
     expect(insertQuery.insert.mock.calls[0][0].items).toEqual([
       expect.objectContaining({ itemId: 'item-1', quantity: 12.5, price: 0, accountingPrice: 0, supplierDirectDeliveryLineId: 'line-1' }),
       expect.objectContaining({ itemId: 'item-2', quantity: 8, price: 0, accountingPrice: 0, supplierDirectDeliveryLineId: 'line-2' }),
