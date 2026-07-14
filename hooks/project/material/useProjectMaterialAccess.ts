@@ -35,6 +35,8 @@ export interface ProjectMaterialAccessState {
     canCreatePo: boolean;
     canApprovePo: boolean;
     canReceivePo: boolean;
+    canDeletePo: boolean;
+    canManagePoPermission: boolean;
     canCreateCustomMaterial: boolean;
     canApproveCustomMaterial: boolean;
     canRecordWaste: boolean;
@@ -176,6 +178,8 @@ export const useProjectMaterialAccess = ({
         canCreatePo: materialCapabilities.canCreatePo,
         canApprovePo: materialCapabilities.canApprovePo,
         canReceivePo: materialCapabilities.canReceivePo,
+        canDeletePo: materialCapabilities.canDeletePo,
+        canManagePoPermission: materialCapabilities.canManagePo,
         canCreateCustomMaterial: materialCapabilities.canCreateCustomMaterial,
         canApproveCustomMaterial: materialCapabilities.canApproveCustomMaterial,
         canRecordWaste: materialCapabilities.canRecordWaste,

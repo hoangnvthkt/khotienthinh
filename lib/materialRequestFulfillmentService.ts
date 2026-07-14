@@ -1472,6 +1472,9 @@ export const materialRequestFulfillmentService = {
     if (!po.targetWarehouseId) {
       throw new Error('PO chưa có kho nhận nên không thể tạo phiếu nhận cho đợt giao.');
     }
+    if (deliveryBatch.status === 'supplemental_pending') {
+      throw new Error('Đợt mua đang chờ duyệt bổ sung nên chưa thể tạo WMS/QR.');
+    }
     if (deliveryBatch.status !== 'planned') {
       const { data: existingRows, error: existingError } = await supabase
         .from(BATCH_TABLE)

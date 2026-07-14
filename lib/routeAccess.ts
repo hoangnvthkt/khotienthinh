@@ -4,6 +4,7 @@ import { Role, User } from '../types';
 import { canViewRoute } from './permissions/permissionService';
 
 const AUTHENTICATED_OPEN_ROUTE_PATTERNS = [
+  '/',
   '/notifications',
   '/my-profile',
   '/employee-dashboard',

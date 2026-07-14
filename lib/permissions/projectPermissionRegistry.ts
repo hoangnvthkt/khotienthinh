@@ -195,6 +195,7 @@ export const PROJECT_PERMISSION_MODULES: readonly PermissionModuleDefinition[] =
     ['create', 'Tạo', 20],
     ['approve', 'Duyệt', 30],
     ['receive', 'Nhận hàng', 40],
+    ['delete', 'Xóa', 45],
     ['manage', 'Quản trị', 50],
   ])),
   moduleDefinition('project.material_waste', 'Hao hụt vật tư', [PROJECT_MATERIAL_TAB_ROUTE_BY_KEY.waste], 85, actionSet('project.material_waste', PROJECT_MATERIAL_TAB_ROUTE_BY_KEY.waste, [

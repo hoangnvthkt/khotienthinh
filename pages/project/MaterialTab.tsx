@@ -142,6 +142,8 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         canCreatePo,
         canApprovePo,
         canReceivePo,
+        canDeletePo,
+        canManagePoPermission,
         canCreateCustomMaterial,
         canApproveCustomMaterial,
     } = useProjectMaterialAccess({
@@ -2881,7 +2883,14 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                     <SupplyChainTab
                         constructionSiteId={constructionSiteId}
                         projectId={projectId}
-                        canManageTab={canCreatePo || canApprovePo || canReceivePo}
+                        canManageTab={canCreatePo || canApprovePo || canReceivePo || canDeletePo || canManagePoPermission}
+                        poCapabilities={{
+                            canCreatePo,
+                            canApprovePo,
+                            canReceivePo,
+                            canDeletePo,
+                            canManagePo: canManagePoPermission,
+                        }}
                         initialDraftPo={planningDraftPo}
                         initialDraftPoKey={planningDraftPoKey}
                         deepLinkPoId={activePurchaseOrderDeepLinkId}

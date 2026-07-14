@@ -20,6 +20,8 @@ declare
     'project.material_po.create',
     'project.material_po.approve',
     'project.material_po.receive',
+    'project.material_po.delete',
+    'project.material_po.manage',
     'project.custom_material.create',
     'project.custom_material.approve',
     'project.material_waste.record',
@@ -74,6 +76,8 @@ create temp table phase3_material_smoke_ids (
   po_creator_id uuid not null,
   po_approver_id uuid not null,
   po_receiver_id uuid not null,
+  po_delete_id uuid not null,
+  po_manager_id uuid not null,
   custom_creator_id uuid not null,
   custom_approver_id uuid not null,
   nogrant_id uuid not null
@@ -87,6 +91,8 @@ values (
   'phase3-material-nostaff-' || gen_random_uuid()::text,
   'phase3-material-site-' || gen_random_uuid()::text,
   'phase3-material-wh-' || gen_random_uuid()::text,
+  gen_random_uuid(),
+  gen_random_uuid(),
   gen_random_uuid(),
   gen_random_uuid(),
   gen_random_uuid(),
@@ -114,6 +120,8 @@ cross join lateral (
     (s.po_creator_id, 'phase3-material-po-creator'),
     (s.po_approver_id, 'phase3-material-po-approver'),
     (s.po_receiver_id, 'phase3-material-po-receiver'),
+    (s.po_delete_id, 'phase3-material-po-delete'),
+    (s.po_manager_id, 'phase3-material-po-manager'),
     (s.custom_creator_id, 'phase3-material-custom-creator'),
     (s.custom_approver_id, 'phase3-material-custom-approver'),
     (s.nogrant_id, 'phase3-material-nogrant')
@@ -147,6 +155,8 @@ cross join lateral (
     (s.po_creator_id),
     (s.po_approver_id),
     (s.po_receiver_id),
+    (s.po_delete_id),
+    (s.po_manager_id),
     (s.custom_creator_id),
     (s.custom_approver_id),
     (s.nogrant_id)
@@ -163,6 +173,8 @@ union all select fulfiller_id, 'project.material_request.confirm_fulfillment', '
 union all select po_creator_id, 'project.material_po.create', 'project', project_id, true from phase3_material_smoke_ids
 union all select po_approver_id, 'project.material_po.approve', 'project', project_id, true from phase3_material_smoke_ids
 union all select po_receiver_id, 'project.material_po.receive', 'project', project_id, true from phase3_material_smoke_ids
+union all select po_delete_id, 'project.material_po.delete', 'project', project_id, true from phase3_material_smoke_ids
+union all select po_manager_id, 'project.material_po.manage', 'project', project_id, true from phase3_material_smoke_ids
 union all select custom_creator_id, 'project.custom_material.create', 'project', project_id, true from phase3_material_smoke_ids
 union all select custom_approver_id, 'project.custom_material.approve', 'project', project_id, true from phase3_material_smoke_ids;
 
@@ -177,7 +189,12 @@ on conflict (code) do nothing;
 insert into app_private.purchase_order_number_registry(po_number)
 values
   ('PO-20269301'),
-  ('PO-20269302')
+  ('PO-20269302'),
+  ('PO-20269303'),
+  ('PO-20269304'),
+  ('PO-20269305'),
+  ('PO-20269306'),
+  ('PO-20269307')
 on conflict (po_number) do nothing;
 
 insert into public.requests(
@@ -207,6 +224,18 @@ from phase3_material_smoke_ids
 union all
 select 'phase3-po-receive', project_id, site_id, 'phase3-vendor', 'NCC Smoke', 'PO-20269302', '[]'::jsonb,
        0, current_date::text, 'confirmed', 'proactive_project', warehouse_id, po_creator_id::text, now()
+from phase3_material_smoke_ids
+union all
+select 'phase3-po-manage', project_id, site_id, 'phase3-vendor', 'NCC Smoke', 'PO-20269303', '[]'::jsonb,
+       0, current_date::text, 'draft', 'proactive_project', warehouse_id, po_creator_id::text, now()
+from phase3_material_smoke_ids
+union all
+select 'phase3-po-delete', project_id, site_id, 'phase3-vendor', 'NCC Smoke', 'PO-20269304', '[]'::jsonb,
+       0, current_date::text, 'draft', 'proactive_project', warehouse_id, po_creator_id::text, now()
+from phase3_material_smoke_ids
+union all
+select 'phase3-po-create-delete-deny', project_id, site_id, 'phase3-vendor', 'NCC Smoke', 'PO-20269305', '[]'::jsonb,
+       0, current_date::text, 'draft', 'proactive_project', warehouse_id, po_approver_id::text, now()
 from phase3_material_smoke_ids;
 
 insert into public.custom_material_requests (
@@ -334,6 +363,21 @@ begin
   if not v_blocked and v_updated > 0 then
     raise exception 'Direct PO status update was not blocked';
   end if;
+
+  v_blocked := false;
+  v_updated := 0;
+  begin
+    update public.purchase_orders
+    set last_action_at = coalesce(last_action_at, now()) + interval '1 second'
+    where id = 'phase3-po-approve';
+    get diagnostics v_updated = row_count;
+  exception
+    when others then
+      v_blocked := true;
+  end;
+  if not v_blocked and v_updated > 0 then
+    raise exception 'Direct PO workflow metadata update was not blocked';
+  end if;
 end $$;
 
 select public.transition_project_purchase_order_status(
@@ -364,6 +408,110 @@ select public.transition_project_purchase_order_status(
   'delivered',
   jsonb_build_object('status','delivered','received_transaction_ids',jsonb_build_array('phase3-tx'))
 );
+
+select pg_temp.phase3_material_smoke_set_user(po_creator_id)
+from phase3_material_smoke_ids;
+
+insert into public.purchase_orders(
+  id, project_id, construction_site_id, vendor_id, vendor_name, po_number, items,
+  total_amount, order_date, status, source_mode, target_warehouse_id, created_by_id, created_at
+)
+select 'phase3-po-create-save', project_id, site_id, 'phase3-vendor', 'NCC Smoke', 'PO-20269307', '[]'::jsonb,
+       0, current_date::text, 'draft', 'proactive_project', warehouse_id, po_creator_id::text, now()
+from phase3_material_smoke_ids;
+
+do $$
+begin
+  begin
+    perform public.transition_project_purchase_order_status(
+      'phase3-po-create-save',
+      'delivered',
+      jsonb_build_object('status','delivered','received_transaction_ids',jsonb_build_array('phase3-create-tx'))
+    );
+    raise exception 'project.material_po.create incorrectly allowed receive';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  begin
+    perform public.remove_purchase_order_v1('phase3-po-create-delete-deny');
+    raise exception 'project.material_po.create incorrectly allowed deleting another user PO';
+  exception
+    when insufficient_privilege then null;
+  end;
+end $$;
+
+select pg_temp.phase3_material_smoke_set_user(po_delete_id)
+from phase3_material_smoke_ids;
+
+do $$
+declare
+  v_action text;
+begin
+  select r.action
+  into v_action
+  from public.remove_purchase_order_v1('phase3-po-delete') r;
+
+  if v_action <> 'deleted' then
+    raise exception 'project.material_po.delete did not delete removable draft PO';
+  end if;
+end $$;
+
+select pg_temp.phase3_material_smoke_set_user(po_manager_id)
+from phase3_material_smoke_ids;
+
+do $$
+declare
+  v_seen integer := 0;
+  v_updated integer := 0;
+  v_action text;
+begin
+  select count(*)
+  into v_seen
+  from public.purchase_orders
+  where id = 'phase3-po-manage';
+
+  if v_seen <> 1 then
+    raise exception 'project.material_po.manage did not imply PO view';
+  end if;
+
+  insert into public.purchase_orders(
+    id, project_id, construction_site_id, vendor_id, vendor_name, po_number, items,
+    total_amount, order_date, status, source_mode, target_warehouse_id, created_by_id, created_at
+  )
+  select 'phase3-po-manage-created', project_id, site_id, 'phase3-vendor', 'NCC Smoke', 'PO-20269306', '[]'::jsonb,
+         0, current_date::text, 'draft', 'proactive_project', warehouse_id, po_manager_id::text, now()
+  from phase3_material_smoke_ids;
+
+  update public.purchase_orders
+  set note = 'manager content update'
+  where id = 'phase3-po-manage';
+  get diagnostics v_updated = row_count;
+
+  if v_updated <> 1 then
+    raise exception 'project.material_po.manage did not imply PO content update';
+  end if;
+
+  perform public.transition_project_purchase_order_status(
+    'phase3-po-manage',
+    'confirmed',
+    jsonb_build_object('status','confirmed')
+  );
+
+  perform public.transition_project_purchase_order_status(
+    'phase3-po-manage',
+    'delivered',
+    jsonb_build_object('status','delivered','received_transaction_ids',jsonb_build_array('phase3-manage-tx'))
+  );
+
+  select r.action
+  into v_action
+  from public.remove_purchase_order_v1('phase3-po-manage-created') r;
+
+  if v_action <> 'deleted' then
+    raise exception 'project.material_po.manage did not imply PO delete';
+  end if;
+end $$;
 
 select pg_temp.phase3_material_smoke_set_user(custom_approver_id)
 from phase3_material_smoke_ids;

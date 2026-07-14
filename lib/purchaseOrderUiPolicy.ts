@@ -8,6 +8,8 @@ export type PurchaseOrderUiActionId =
   | 'request_approval'
   | 'approve_po'
   | 'request_revision'
+  | 'approve_supplemental'
+  | 'reject_supplemental'
   | 'create_delivery'
   | 'create_receipt'
   | 'create_supplemental_delivery'
@@ -34,6 +36,7 @@ export interface PurchaseOrderUiAction {
   disabledReason?: string | null;
   deliveryBatchId?: string;
   transactionId?: string;
+  supplementalApprovalId?: string;
 }
 
 export interface PurchaseOrderUiAlert {
@@ -54,6 +57,11 @@ export interface PurchaseOrderUiPolicyInput {
   deliveryBatches?: PurchaseOrderDeliveryBatch[];
   supplierReturnableQty?: number;
   canManageTab?: boolean;
+  canCreatePo?: boolean;
+  canApprovePo?: boolean;
+  canReceivePo?: boolean;
+  canDeletePo?: boolean;
+  canManagePo?: boolean;
   canRunRestrictedPoActions?: boolean;
   canMutatePoDocument?: boolean;
   editBlockReason?: string | null;
@@ -62,6 +70,8 @@ export interface PurchaseOrderUiPolicyInput {
   isRejectedBeforeReceipt?: boolean;
   groupSize?: number;
   pendingWmsTransactionId?: string | null;
+  pendingSupplementalApprovalId?: string | null;
+  supplementalOverAmount?: number;
   recognizedPayableAmount?: number;
   supplierPayableStatus?: 'none' | 'draft' | 'open' | 'payable' | 'partial' | 'paid' | 'cancelled' | 'reversed';
 }
@@ -78,10 +88,13 @@ const hasOpenReceiptNeed = (receiptStats?: PurchaseOrderReceiptStats) =>
   Number(receiptStats?.remainingQty || 0) > 0;
 
 const hasActiveDeliveryBatch = (deliveryBatches: PurchaseOrderDeliveryBatch[]) =>
-  deliveryBatches.some(batch => ['planned', 'wms_pending'].includes(batch.status));
+  deliveryBatches.some(batch => ['planned', 'supplemental_pending', 'wms_pending'].includes(batch.status));
 
 const firstPlannedBatch = (deliveryBatches: PurchaseOrderDeliveryBatch[]) =>
   deliveryBatches.find(batch => batch.status === 'planned');
+
+const hasSupplementalPendingBatch = (deliveryBatches: PurchaseOrderDeliveryBatch[]) =>
+  deliveryBatches.some(batch => batch.status === 'supplemental_pending');
 
 const canCreateDeliveryDraft = (
   status: POStatus,
@@ -99,6 +112,11 @@ export const getPurchaseOrderUiPolicy = ({
   deliveryBatches = [],
   supplierReturnableQty = 0,
   canManageTab = false,
+  canCreatePo = false,
+  canApprovePo = false,
+  canReceivePo = false,
+  canDeletePo = false,
+  canManagePo = false,
   canRunRestrictedPoActions = false,
   canMutatePoDocument = false,
   editBlockReason = null,
@@ -107,11 +125,21 @@ export const getPurchaseOrderUiPolicy = ({
   isRejectedBeforeReceipt = false,
   groupSize = 1,
   pendingWmsTransactionId = null,
+  pendingSupplementalApprovalId = null,
+  supplementalOverAmount = 0,
   recognizedPayableAmount = 0,
   supplierPayableStatus = 'none',
 }: PurchaseOrderUiPolicyInput): PurchaseOrderUiPolicy => {
   const isCompanyConsolidatedPo = po.sourceMode === 'company_consolidated';
+  const mayApprovePo = canManagePo || canApprovePo || canManageTab;
+  const mayReceivePo = canManagePo || canReceivePo || canManageTab;
+  const mayEditPo = canManagePo || canCreatePo || canMutatePoDocument;
+  const mayDeletePo = canManagePo || canDeletePo || canMutatePoDocument;
+  const mayReturnSupplier = canManagePo || canRunRestrictedPoActions;
   const plannedBatch = firstPlannedBatch(deliveryBatches);
+  const hasPendingSupplemental = Boolean(pendingSupplementalApprovalId)
+    || po.supplementalApprovalStatus === 'pending'
+    || hasSupplementalPendingBatch(deliveryBatches);
   const secondaryActions: PurchaseOrderUiAction[] = [];
   const menuActions: PurchaseOrderUiAction[] = [];
   const alerts: PurchaseOrderUiAlert[] = [];
@@ -134,18 +162,34 @@ export const getPurchaseOrderUiPolicy = ({
     alerts.push({ id: 'rejected_before_receipt', label: 'Đợt giao bị từ chối', tone: 'danger' });
   }
 
-  if (!isCompanyConsolidatedPo && canManageTab) {
-    if (po.status === 'draft') {
+  if (!isCompanyConsolidatedPo) {
+    if (hasPendingSupplemental && mayApprovePo && pendingSupplementalApprovalId) {
+      primaryAction = {
+        id: 'approve_supplemental',
+        label: supplementalOverAmount > 0
+          ? `Duyệt bổ sung ${supplementalOverAmount.toLocaleString('vi-VN')} đ`
+          : 'Duyệt bổ sung',
+        intent: 'warning',
+        supplementalApprovalId: pendingSupplementalApprovalId,
+      };
+      secondaryActions.push({
+        id: 'reject_supplemental',
+        label: 'Từ chối bổ sung',
+        intent: 'neutral',
+        supplementalApprovalId: pendingSupplementalApprovalId,
+      });
+      nextStep = 'Đợt mua đang vượt giá trị PO tổng đã duyệt. Duyệt bổ sung để mở tạo WMS/QR.';
+    } else if (po.status === 'draft' && mayApprovePo) {
       primaryAction = { id: 'request_approval', label: 'Đề nghị duyệt', intent: 'warning' };
       nextStep = 'Chọn người xác nhận và gửi PO vào luồng duyệt.';
-    } else if (po.status === 'sent') {
+    } else if (po.status === 'sent' && mayApprovePo) {
       primaryAction = { id: 'approve_po', label: 'Duyệt PO', intent: 'success' };
       secondaryActions.push({ id: 'request_revision', label: 'Yêu cầu chỉnh sửa', intent: 'neutral' });
       nextStep = 'Kiểm tra thông tin đặt hàng rồi duyệt hoặc yêu cầu chỉnh sửa.';
-    } else if (po.status === 'confirmed' && canCreateDeliveryDraft(po.status, deliveryBatches, receiptStats, isCompanyConsolidatedPo)) {
+    } else if (po.status === 'confirmed' && mayReceivePo && canCreateDeliveryDraft(po.status, deliveryBatches, receiptStats, isCompanyConsolidatedPo)) {
       primaryAction = { id: 'create_delivery', label: 'Tạo đợt giao', intent: 'primary' };
       nextStep = 'Lập đợt giao để chuyển PO sang bước thực hiện giao nhận.';
-    } else if (po.status === 'in_transit') {
+    } else if (po.status === 'in_transit' && mayReceivePo) {
       if (po.sourceMode === 'from_request' && plannedBatch) {
         primaryAction = {
           id: 'create_receipt',
@@ -157,10 +201,12 @@ export const getPurchaseOrderUiPolicy = ({
       } else if (canCreateDeliveryDraft(po.status, deliveryBatches, receiptStats, isCompanyConsolidatedPo)) {
         primaryAction = { id: 'create_supplemental_delivery', label: 'Tạo đợt giao bổ sung', intent: 'primary' };
         nextStep = 'PO còn thiếu số lượng, hãy lập đợt giao tiếp theo.';
+      } else if (hasPendingSupplemental) {
+        nextStep = 'Đợt mua đang chờ duyệt bổ sung nên chưa thể tạo WMS/QR.';
       } else {
         nextStep = 'Theo dõi phiếu WMS/QR và ghi nhận thực nhận khi kho xử lý.';
       }
-    } else if (po.status === 'partial') {
+    } else if (po.status === 'partial' && mayReceivePo) {
       if (canCreateDeliveryDraft(po.status, deliveryBatches, receiptStats, isCompanyConsolidatedPo)) {
         primaryAction = { id: 'create_supplemental_delivery', label: 'Tạo đợt giao bổ sung', intent: 'primary' };
       }
@@ -170,7 +216,7 @@ export const getPurchaseOrderUiPolicy = ({
       nextStep = hasOpenReceiptNeed(receiptStats)
         ? 'PO còn thiếu số lượng, tạo giao bổ sung hoặc kết thúc thiếu nếu không tiếp tục nhận.'
         : 'Đối chiếu chứng từ nhận hàng và hoàn tất PO khi đủ điều kiện.';
-    } else if (po.status === 'delivered') {
+    } else if (po.status === 'delivered' && mayReceivePo) {
       primaryAction = { id: 'close_po', label: 'Đóng PO', intent: 'neutral' };
       secondaryActions.push({ id: 'print_purchase_order', label: 'In chứng từ', intent: 'neutral' });
       nextStep = 'PO đã giao đủ, kiểm tra chứng từ rồi đóng đơn.';
@@ -212,7 +258,7 @@ export const getPurchaseOrderUiPolicy = ({
     nextStep = 'Công nợ NCC đã thanh toán, còn lại in chứng từ và tra cứu lịch sử.';
   }
 
-  if (canRunRestrictedPoActions && ['partial', 'delivered', 'closed'].includes(po.status) && supplierReturnableQty > 0) {
+  if (mayReturnSupplier && ['partial', 'delivered', 'closed'].includes(po.status) && supplierReturnableQty > 0) {
     const action: PurchaseOrderUiAction = {
       id: 'supplier_return',
       label: po.status === 'closed' ? 'Tạo phiếu hoàn NCC' : 'Trả hàng NCC',
@@ -235,26 +281,32 @@ export const getPurchaseOrderUiPolicy = ({
     );
   }
 
-  if (canMutatePoDocument) {
-    menuActions.push(
-      {
-        id: 'edit_po',
-        label: 'Sửa PO',
-        intent: 'neutral',
-        disabled: Boolean(editBlockReason || hasStockImpact),
-        disabledReason: editBlockReason || (hasStockImpact ? 'PO đã phát sinh nhập kho/hoàn kho nên không thể sửa.' : null),
-      },
-      {
-        id: 'remove_po',
-        label: hasStockImpact ? 'Lưu trữ PO' : 'Xoá PO',
-        intent: 'danger',
-        disabled: Boolean(removalBlockReason),
-        disabledReason: removalBlockReason,
-      },
-    );
+  if (mayEditPo || mayDeletePo) {
+    if (mayEditPo) {
+      menuActions.push(
+        {
+          id: 'edit_po',
+          label: 'Sửa PO',
+          intent: 'neutral',
+          disabled: Boolean(editBlockReason || hasStockImpact),
+          disabledReason: editBlockReason || (hasStockImpact ? 'PO đã phát sinh nhập kho/hoàn kho nên không thể sửa.' : null),
+        },
+      );
+    }
+    if (mayDeletePo) {
+      menuActions.push(
+        {
+          id: 'remove_po',
+          label: hasStockImpact ? 'Lưu trữ PO' : 'Xoá PO',
+          intent: 'danger',
+          disabled: Boolean(removalBlockReason),
+          disabledReason: removalBlockReason,
+        },
+      );
+    }
   }
 
-  if (canRunRestrictedPoActions && ['partial', 'delivered', 'closed'].includes(po.status) && supplierReturnableQty > 0) {
+  if (mayReturnSupplier && ['partial', 'delivered', 'closed'].includes(po.status) && supplierReturnableQty > 0) {
     menuActions.push({
       id: 'supplier_return',
       label: po.status === 'closed' ? 'Tạo phiếu hoàn NCC' : 'Trả hàng NCC',

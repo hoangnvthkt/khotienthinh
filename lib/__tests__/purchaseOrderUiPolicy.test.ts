@@ -84,6 +84,16 @@ describe('purchaseOrderUiPolicy', () => {
     expect(policy.primaryAction?.label).toBe('Tạo đợt giao');
   });
 
+  it('allows PO receive capability to create delivery without legacy manage access', () => {
+    const policy = getPurchaseOrderUiPolicy(baseInput({
+      po: makePo({ status: 'confirmed' }),
+      canManageTab: false,
+      canReceivePo: true,
+    } as any));
+
+    expect(policy.primaryAction?.id).toBe('create_delivery');
+  });
+
   it('maps in-transit purchase orders with a planned batch to a WMS receipt action', () => {
     const policy = getPurchaseOrderUiPolicy(baseInput({
       po: makePo({ status: 'in_transit', sourceMode: 'from_request' }),
@@ -93,6 +103,32 @@ describe('purchaseOrderUiPolicy', () => {
     expect(policy.primaryAction?.id).toBe('create_receipt');
     expect(policy.primaryAction?.label).toBe('Tạo phiếu nhận WMS');
     expect(policy.primaryAction?.deliveryBatchId).toBe('batch-1');
+  });
+
+  it('blocks WMS receipt action for supplemental-pending purchase batches', () => {
+    const policy = getPurchaseOrderUiPolicy(baseInput({
+      po: makePo({ status: 'in_transit', sourceMode: 'from_request' }),
+      deliveryBatches: [plannedBatch({ status: 'supplemental_pending' as any })],
+      canReceivePo: true,
+    }));
+
+    expect(policy.primaryAction?.id).not.toBe('create_receipt');
+    expect(policy.nextStep).toContain('chờ duyệt bổ sung');
+  });
+
+  it('shows supplemental approval action for PO approvers when a release is pending extra approval', () => {
+    const policy = getPurchaseOrderUiPolicy(baseInput({
+      po: makePo({ status: 'in_transit', sourceMode: 'from_request', supplementalApprovalStatus: 'pending' as any }),
+      deliveryBatches: [plannedBatch({ status: 'supplemental_pending' as any })],
+      canManageTab: false,
+      canApprovePo: true,
+      canReceivePo: false,
+      pendingSupplementalApprovalId: 'supp-1',
+      supplementalOverAmount: 14000,
+    } as any));
+
+    expect(policy.primaryAction?.id).toBe('approve_supplemental');
+    expect(policy.primaryAction?.label).toContain('Duyệt bổ sung');
   });
 
   it('maps WMS pending purchase orders to open the related WMS transaction when available', () => {
@@ -166,6 +202,28 @@ describe('purchaseOrderUiPolicy', () => {
 
     expect(policy.menuActions.find(action => action.id === 'edit_po')?.disabled).toBe(true);
     expect(policy.menuActions.find(action => action.id === 'remove_po')?.disabled).toBe(true);
+  });
+
+  it('shows edit action from PO create capability without creator fallback', () => {
+    const policy = getPurchaseOrderUiPolicy(baseInput({
+      po: makePo({ status: 'draft' }),
+      canManageTab: false,
+      canMutatePoDocument: false,
+      canCreatePo: true,
+    } as any));
+
+    expect(policy.menuActions.find(action => action.id === 'edit_po')?.disabled).toBeFalsy();
+  });
+
+  it('shows remove action from PO delete capability without creator fallback', () => {
+    const policy = getPurchaseOrderUiPolicy(baseInput({
+      po: makePo({ status: 'draft' }),
+      canManageTab: false,
+      canMutatePoDocument: false,
+      canDeletePo: true,
+    } as any));
+
+    expect(policy.menuActions.find(action => action.id === 'remove_po')?.disabled).toBeFalsy();
   });
 
   it('keeps history as a secondary menu action for quick audit access', () => {

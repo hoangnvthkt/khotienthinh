@@ -2606,6 +2606,8 @@ export interface PurchaseOrder extends ProjectSubmissionFields {
   poNumber: string;          // PO-001
   items: PurchaseOrderItem[];
   totalAmount: number;
+  approvedTotalAmount?: number;
+  supplementalApprovalStatus?: 'none' | 'pending' | 'approved' | 'rejected';
   vatRate?: number;
   orderDate: string;
   expectedDeliveryDate?: string;
@@ -2641,7 +2643,30 @@ export interface PurchaseOrderDeliveryRemovalResult {
   poNumber: string;
 }
 
-export type PurchaseOrderDeliveryBatchStatus = 'planned' | 'wms_pending' | 'received' | 'cancelled';
+export type PurchaseOrderDeliveryBatchStatus = 'planned' | 'supplemental_pending' | 'wms_pending' | 'received' | 'cancelled';
+
+export type PurchaseOrderSupplementalApprovalStatus = 'pending' | 'approved' | 'rejected';
+
+export interface PurchaseOrderSupplementalApproval extends ProjectSubmissionFields {
+  id: string;
+  purchaseOrderId: string;
+  deliveryBatchId: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  previousApprovedAmount: number;
+  requestedTotalAmount: number;
+  overAmount: number;
+  status: PurchaseOrderSupplementalApprovalStatus;
+  note?: string | null;
+  decisionNote?: string | null;
+  requestedBy?: string | null;
+  approvedBy?: string | null;
+  approvedAt?: string | null;
+  rejectedBy?: string | null;
+  rejectedAt?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
 
 export interface PurchaseOrderDeliveryLine {
   id: string;
@@ -2667,6 +2692,7 @@ export interface PurchaseOrderDeliveryBatch {
   plannedDeliveryDate?: string | null;
   status: PurchaseOrderDeliveryBatchStatus;
   fulfillmentBatchIds?: string[];
+  supplementalApprovalId?: string | null;
   note?: string | null;
   createdBy?: string | null;
   createdAt?: string;

@@ -11,6 +11,12 @@ const PENDING_FULFILLMENT_STATUSES = new Set(['issued', 'variance_pending']);
 const LOCKED_SCHEDULE_STATUSES = new Set(['wms_pending']);
 const FAILED_SCHEDULE_STATUSES = new Set(['cancelled']);
 
+export type PurchaseOrderMutationCapabilities = {
+  canCreatePo?: boolean;
+  canDeletePo?: boolean;
+  canManagePo?: boolean;
+};
+
 const hasAnyReceivedQty = (batch: MaterialRequestFulfillmentBatch): boolean =>
   (batch.lines || []).some(line => Number(line.receivedQty || 0) > 0);
 
@@ -36,8 +42,29 @@ export const isPurchaseOrderCreator = (po: PurchaseOrder, user?: User | null): b
   return creatorId === user.id || creatorId === user.authId;
 };
 
-export const canUserMutatePurchaseOrder = (po: PurchaseOrder, user?: User | null): boolean =>
-  Boolean(user && (isAdmin(user) || isPurchaseOrderCreator(po, user)));
+export const canUserMutatePurchaseOrder = (
+  po: PurchaseOrder,
+  user?: User | null,
+  capabilities: PurchaseOrderMutationCapabilities = {},
+): boolean =>
+  Boolean(user && (
+    capabilities.canManagePo ||
+    capabilities.canCreatePo ||
+    isAdmin(user) ||
+    isPurchaseOrderCreator(po, user)
+  ));
+
+export const canUserRemovePurchaseOrder = (
+  po: PurchaseOrder,
+  user?: User | null,
+  capabilities: PurchaseOrderMutationCapabilities = {},
+): boolean =>
+  Boolean(user && (
+    capabilities.canManagePo ||
+    capabilities.canDeletePo ||
+    isAdmin(user) ||
+    isPurchaseOrderCreator(po, user)
+  ));
 
 export const purchaseOrderHasStockImpact = (
   po: PurchaseOrder,
@@ -107,9 +134,10 @@ export const getPurchaseOrderRemovalBlockReason = (
   fulfillmentBatches: MaterialRequestFulfillmentBatch[] = [],
   scheduleBatches: PurchaseOrderDeliveryBatch[] = [],
   _supplierReturns: PurchaseOrderSupplierReturn[] = [],
+  capabilities: PurchaseOrderMutationCapabilities = {},
 ): string | null => {
-  if (!canUserMutatePurchaseOrder(po, user)) {
-    return 'Chỉ Admin hoặc người tạo PO được sửa/xoá phiếu này.';
+  if (!canUserRemovePurchaseOrder(po, user, capabilities)) {
+    return 'Bạn cần quyền xoá PO, quyền quản trị PO, hoặc là người tạo PO để xoá/lưu trữ phiếu này.';
   }
   const work = summarizePurchaseOrderWork(po, fulfillmentBatches, scheduleBatches);
   if (work.hasPendingWork) {
@@ -117,6 +145,27 @@ export const getPurchaseOrderRemovalBlockReason = (
   }
   if (work.hasFailedDeliveryWork) {
     return 'PO còn đợt giao bị từ chối. Vui lòng xoá các đợt giao thất bại trước khi xoá PO.';
+  }
+  return null;
+};
+
+export const getPurchaseOrderEditBlockReason = (
+  po: PurchaseOrder,
+  user?: User | null,
+  fulfillmentBatches: MaterialRequestFulfillmentBatch[] = [],
+  scheduleBatches: PurchaseOrderDeliveryBatch[] = [],
+  _supplierReturns: PurchaseOrderSupplierReturn[] = [],
+  capabilities: PurchaseOrderMutationCapabilities = {},
+): string | null => {
+  if (!canUserMutatePurchaseOrder(po, user, capabilities)) {
+    return 'Bạn cần quyền tạo/sửa PO, quyền quản trị PO, hoặc là người tạo PO để sửa phiếu này.';
+  }
+  const work = summarizePurchaseOrderWork(po, fulfillmentBatches, scheduleBatches);
+  if (work.hasPendingWork) {
+    return 'PO đang có đợt giao/giao dịch chờ xử lý. Vui lòng huỷ hoặc xử lý xong trước.';
+  }
+  if (work.hasFailedDeliveryWork) {
+    return 'PO còn đợt giao bị từ chối. Vui lòng xoá các đợt giao thất bại trước khi sửa PO.';
   }
   return null;
 };

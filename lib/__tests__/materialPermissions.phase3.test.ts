@@ -19,6 +19,8 @@ describe('Phase 3.3 Material permission capabilities', () => {
       'project.material_request.view_available_stock',
       'project.custom_material.approve',
       'project.material_po.receive',
+      'project.material_po.delete',
+      'project.material_po.manage',
       'project.material_waste.approve',
     ]));
   });
@@ -47,6 +49,19 @@ describe('Phase 3.3 Material permission capabilities', () => {
     expect(caps.canApproveMaterialRequest).toBe(true);
     expect(caps.canApprovePo).toBe(true);
     expect(caps.canReceivePo).toBe(false);
+    expect(caps.canDeletePo).toBe(false);
+    expect(caps.canManagePo).toBe(false);
+  });
+
+  it('lets PO manage imply every PO action', () => {
+    const caps = capabilitiesFor(['project.material_po.manage']);
+
+    expect(caps.canViewPo).toBe(true);
+    expect(caps.canCreatePo).toBe(true);
+    expect(caps.canApprovePo).toBe(true);
+    expect(caps.canReceivePo).toBe(true);
+    expect(caps.canDeletePo).toBe(true);
+    expect(caps.canManagePo).toBe(true);
   });
 
   it('requires the dedicated available-stock action for stock exposure', () => {

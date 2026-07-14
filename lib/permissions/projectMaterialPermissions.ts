@@ -21,6 +21,8 @@ export const PROJECT_MATERIAL_ACTION_CODES = Object.freeze([
   'project.material_po.create',
   'project.material_po.approve',
   'project.material_po.receive',
+  'project.material_po.delete',
+  'project.material_po.manage',
   'project.material_waste.view',
   'project.material_waste.record',
   'project.material_waste.approve',
@@ -51,6 +53,8 @@ export type ProjectMaterialCapability = {
   canCreatePo: boolean;
   canApprovePo: boolean;
   canReceivePo: boolean;
+  canDeletePo: boolean;
+  canManagePo: boolean;
   canViewWaste: boolean;
   canRecordWaste: boolean;
   canApproveWaste: boolean;
@@ -73,6 +77,9 @@ export const getProjectMaterialCapabilities = (
 ): ProjectMaterialCapability => {
   const can = (code: ProjectMaterialActionCode) =>
     Boolean(options.isAdmin) || hasPermission(grantedPermissions, code);
+  const canManagePo = can('project.material_po.manage');
+  const canPo = (code: Extract<ProjectMaterialActionCode, `project.material_po.${string}`>) =>
+    canManagePo || can(code);
 
   return {
     canViewMaterialSummary: can('project.material.view'),
@@ -93,10 +100,12 @@ export const getProjectMaterialCapabilities = (
     canViewCustomMaterial: can('project.custom_material.view'),
     canCreateCustomMaterial: can('project.custom_material.create'),
     canApproveCustomMaterial: can('project.custom_material.approve'),
-    canViewPo: can('project.material_po.view'),
-    canCreatePo: can('project.material_po.create'),
-    canApprovePo: can('project.material_po.approve'),
-    canReceivePo: can('project.material_po.receive'),
+    canViewPo: canPo('project.material_po.view'),
+    canCreatePo: canPo('project.material_po.create'),
+    canApprovePo: canPo('project.material_po.approve'),
+    canReceivePo: canPo('project.material_po.receive'),
+    canDeletePo: canPo('project.material_po.delete'),
+    canManagePo,
     canViewWaste: can('project.material_waste.view'),
     canRecordWaste: can('project.material_waste.record'),
     canApproveWaste: can('project.material_waste.approve'),

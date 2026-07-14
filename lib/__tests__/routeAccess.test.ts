@@ -49,6 +49,10 @@ describe('phase 0 route containment', () => {
     expect(canAccessRoute(user([]), '/my-profile')).toBe(true);
   });
 
+  it('keeps the authenticated home route available', () => {
+    expect(canAccessRoute(user([]), '/')).toBe(true);
+  });
+
   it('keeps legacy profiles without an allowedModules list working for mapped routes', () => {
     expect(canAccessRoute(user(undefined), '/hd')).toBe(true);
   });
