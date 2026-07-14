@@ -21,6 +21,9 @@ dist-ssr
 # Supabase local/link metadata
 supabase/.temp/
 
+# Local isolated development worktrees
+.worktrees/
+
 # Private keys and local credentials
 *.pem
 *.key
