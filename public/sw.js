@@ -1,5 +1,5 @@
-// Vioo Service Worker v10 - PWA shell + Web Push notifications
-const CACHE_NAME = 'vioo-v10';
+// Vioo Service Worker v11 - PWA shell + Web Push notifications
+const CACHE_NAME = 'vioo-v11';
 const OFFLINE_URL = '/offline.html';
 
 const PRECACHE_URLS = [
@@ -30,7 +30,23 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-const shouldCacheResponse = (response) => response && response.ok && response.type !== 'opaque';
+const getExpectedAssetContentType = (url) => {
+  const path = url.pathname.toLowerCase();
+  if (/\.(m?js)$/.test(path)) return /(?:application|text)\/(?:javascript|ecmascript)\b/i;
+  if (/\.css$/.test(path)) return /text\/css\b/i;
+  if (/\.json$/.test(path)) return /(?:application|text)\/(?:json|manifest\+json)\b/i;
+  if (/\.(png|jpg|jpeg|svg|gif|webp|ico)$/.test(path)) return /image\//i;
+  if (/\.(woff2?|ttf)$/.test(path)) return /(?:font\/|application\/(?:font-|octet-stream))/i;
+  if (/\.html$/.test(path) || path === '/') return /text\/html\b/i;
+  return null;
+};
+
+const shouldCacheResponse = (request, response) => {
+  if (!response || !response.ok || response.type === 'opaque') return false;
+  const expectedContentType = getExpectedAssetContentType(new URL(request.url));
+  if (!expectedContentType) return true;
+  return expectedContentType.test(response.headers.get('content-type') || '');
+};
 
 const isStaticAsset = (url) =>
   url.pathname === '/' ||
@@ -55,7 +71,7 @@ const normalizeNotificationUrl = (rawUrl = '/') => {
 };
 
 const cacheResponse = async (request, response) => {
-  if (!shouldCacheResponse(response)) return;
+  if (!shouldCacheResponse(request, response)) return;
   const cache = await caches.open(CACHE_NAME);
   await cache.put(request, response.clone());
 };
@@ -81,8 +97,8 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       caches.match(event.request).then((cached) => {
         if (cached) return cached;
-        return fetch(event.request).then((response) => {
-          cacheResponse(event.request, response);
+        return fetch(event.request).then(async (response) => {
+          await cacheResponse(event.request, response);
           return response;
         });
       })

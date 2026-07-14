@@ -36,13 +36,21 @@ const verifyVercelSpaRewrite = () => {
   }
 
   const rewrites = Array.isArray(config.rewrites) ? config.rewrites : [];
+  const hasExtensionSafeFallback = rewrites.some((rewrite) =>
+    rewrite.source === '/:path((?!.*\\.[^/]+$).*)' &&
+    (rewrite.destination === '/' || rewrite.destination === '/index.html')
+  );
   const hasSpaFallback = rewrites.some((rewrite) =>
     (rewrite.source === '/(.*)' || rewrite.source === '/:path*') &&
     (rewrite.destination === '/' || rewrite.destination === '/index.html')
-  );
+  ) || hasExtensionSafeFallback;
 
   if (!hasSpaFallback) {
     failures.push('vercel.json must rewrite all SPA routes to / or /index.html');
+  }
+
+  if (!hasExtensionSafeFallback) {
+    failures.push('vercel.json SPA fallback must not rewrite file-like asset URLs to HTML');
   }
 };
 

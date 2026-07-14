@@ -1,5 +1,6 @@
 
 import React, { Component, ErrorInfo, ReactNode } from 'react';
+import { isRecoverableAssetLoadError } from '../lib/assetLoadRecovery';
 
 interface Props {
     children: ReactNode;
@@ -17,11 +18,7 @@ interface State {
 
 const getRecoveryConfig = (error: Error) => {
     const message = error.message || '';
-    const isChunkLoadError =
-        error.name === 'ChunkLoadError' ||
-        message.includes('Failed to fetch dynamically imported module') ||
-        message.includes('Importing a module script failed') ||
-        message.includes('error loading dynamically imported module');
+    const isChunkLoadError = isRecoverableAssetLoadError(error);
 
     if (isChunkLoadError) {
         return {

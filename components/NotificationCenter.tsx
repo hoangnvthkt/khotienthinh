@@ -104,7 +104,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId, enabled
     // Realtime subscription
     useEffect(() => {
         if (!isActive) return;
-        const channel = notificationService.subscribe((n) => {
+        const stop = notificationService.subscribe((n) => {
             setNotifications(prev => {
                 if (prev.some(item => item.id === n.id)) return prev;
                 return [n, ...prev].slice(0, 50);
@@ -137,7 +137,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId, enabled
             }
 
         }, userId);
-        return () => { notificationService.unsubscribe(channel); };
+        return stop;
     }, [isActive, userId, applyUnreadCount]);
 
     useEffect(() => {

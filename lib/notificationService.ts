@@ -74,6 +74,107 @@ const toCamel = (row: any): AppNotification => ({
   expiresAt: row.expires_at,
 });
 
+type NotificationRealtimeListener = (notification: AppNotification) => void;
+
+type NotificationRealtimeSubscription = {
+  userId?: string;
+  channel: RealtimeChannel | null;
+  listeners: Set<NotificationRealtimeListener>;
+  releaseTimer?: ReturnType<typeof setTimeout>;
+  isRemoving: boolean;
+};
+
+const notificationRealtimeSubscriptions = new Map<string, NotificationRealtimeSubscription>();
+
+const notificationRealtimeKey = (userId?: string) => userId || 'global';
+
+const openNotificationRealtimeChannel = (
+  key: string,
+  subscription: NotificationRealtimeSubscription,
+) => {
+  const channel = supabase.channel(`notifications:${key}`);
+  const options = subscription.userId
+    ? { event: 'INSERT' as const, schema: 'public', table: 'notifications', filter: `user_id=eq.${subscription.userId}` }
+    : { event: 'INSERT' as const, schema: 'public', table: 'notifications' };
+
+  subscription.channel = channel;
+  subscription.isRemoving = false;
+  channel
+    .on('postgres_changes', options, (payload) => {
+      const notification = toCamel(payload.new);
+      if (notification.userId && notification.userId !== subscription.userId) return;
+      if (notification.category === 'inventory') return;
+      subscription.listeners.forEach(listener => listener(notification));
+    })
+    .subscribe();
+};
+
+const scheduleNotificationRealtimeRelease = (
+  key: string,
+  subscription: NotificationRealtimeSubscription,
+) => {
+  if (subscription.releaseTimer || subscription.isRemoving) return;
+
+  subscription.releaseTimer = setTimeout(() => {
+    subscription.releaseTimer = undefined;
+    if (subscription.listeners.size > 0 || notificationRealtimeSubscriptions.get(key) !== subscription) return;
+
+    const channel = subscription.channel;
+    if (!channel) {
+      notificationRealtimeSubscriptions.delete(key);
+      return;
+    }
+
+    subscription.isRemoving = true;
+    void supabase.removeChannel(channel)
+      .catch(error => console.warn('Notification realtime cleanup failed:', error))
+      .finally(() => {
+        if (notificationRealtimeSubscriptions.get(key) !== subscription) return;
+        if (subscription.listeners.size === 0) {
+          notificationRealtimeSubscriptions.delete(key);
+          return;
+        }
+        openNotificationRealtimeChannel(key, subscription);
+      });
+  }, 0);
+};
+
+const subscribeToNotificationRealtime = (
+  callback: NotificationRealtimeListener,
+  userId?: string,
+) => {
+  const key = notificationRealtimeKey(userId);
+  let subscription = notificationRealtimeSubscriptions.get(key);
+  if (!subscription) {
+    subscription = {
+      userId,
+      channel: null,
+      listeners: new Set(),
+      isRemoving: false,
+    };
+    notificationRealtimeSubscriptions.set(key, subscription);
+    openNotificationRealtimeChannel(key, subscription);
+  }
+
+  if (subscription.releaseTimer) {
+    clearTimeout(subscription.releaseTimer);
+    subscription.releaseTimer = undefined;
+  }
+
+  const listener: NotificationRealtimeListener = notification => callback(notification);
+  subscription.listeners.add(listener);
+
+  let isSubscribed = true;
+  return () => {
+    if (!isSubscribed) return;
+    isSubscribed = false;
+    subscription.listeners.delete(listener);
+    if (subscription.listeners.size === 0) {
+      scheduleNotificationRealtimeRelease(key, subscription);
+    }
+  };
+};
+
 const compareNotificationRows = (a: any, b: any): number => {
   const byDate = new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
   if (byDate !== 0) return byDate;
@@ -984,25 +1085,13 @@ export const notificationService = {
     return notifyAlertWithRule(rule, input);
   },
 
-  /** Subscribe to realtime notifications */
-  subscribe(callback: (n: AppNotification) => void, userId?: string): RealtimeChannel {
-    const channel = supabase.channel(`notifications:${userId || 'global'}`);
-    const options = userId
-      ? { event: 'INSERT' as const, schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` }
-      : { event: 'INSERT' as const, schema: 'public', table: 'notifications' };
-
-    return channel
-      .on('postgres_changes', options, (payload) => {
-        const notification = toCamel(payload.new);
-        if (notification.userId && notification.userId !== userId) return;
-        if (notification.category === 'inventory') return;
-        callback(notification);
-      })
-      .subscribe();
+  /** Subscribe to realtime notifications without duplicating a topic across responsive views. */
+  subscribe(callback: NotificationRealtimeListener, userId?: string): () => void {
+    return subscribeToNotificationRealtime(callback, userId);
   },
 
   /** Unsubscribe */
-  unsubscribe(channel?: RealtimeChannel) {
-    if (channel) supabase.removeChannel(channel);
+  unsubscribe(stop?: () => void) {
+    stop?.();
   },
 };
