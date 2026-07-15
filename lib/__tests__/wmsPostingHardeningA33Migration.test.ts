@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 const migration = () => {
   const files = require('node:fs').readdirSync(join(process.cwd(), 'supabase', 'migrations')) as string[];
-  const file = files.filter((name) => name > '20260715160000_wms_history_delete_hardening.sql').sort().at(-1);
+  const file = files.find((name) => name === '20260715170000_wms_posting_lock_hardening.sql');
   if (!file) throw new Error('A3.3 migration missing');
   return readFileSync(join(process.cwd(), 'supabase', 'migrations', file), 'utf8');
 };
