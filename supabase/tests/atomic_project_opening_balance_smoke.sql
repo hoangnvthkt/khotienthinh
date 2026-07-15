@@ -449,6 +449,22 @@ revoke all on function pg_temp.revoke_atomic_opening_catalog_permission(uuid)
 grant execute on function pg_temp.revoke_atomic_opening_catalog_permission(uuid)
   to authenticated;
 
+create or replace function pg_temp.atomic_opening_provenance_error(
+  p_transaction_id text
+)
+returns text
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select app_private.project_opening_transaction_provenance_error(p_transaction_id);
+$$;
+
+revoke all on function pg_temp.atomic_opening_provenance_error(text) from public;
+grant execute on function pg_temp.atomic_opening_provenance_error(text)
+  to authenticated;
+
 set local role authenticated;
 
 select set_config('request.jwt.claim.email', admin_email, true)
@@ -592,6 +608,7 @@ declare
   v_identity_command jsonb;
   v_count integer;
   v_stock numeric;
+  v_provenance_error text;
   v_before_updated_at timestamptz;
   v_after_updated_at timestamptz;
 begin
@@ -828,6 +845,16 @@ begin
     and transaction_row.source_id like fixture.balance_id::text || ':%';
   if v_count <> 1 then
     raise exception 'zero quantity line unexpectedly posted to WMS';
+  end if;
+
+  select pg_temp.atomic_opening_provenance_error(transaction_row.id)
+  into v_provenance_error
+  from public.transactions transaction_row
+  where transaction_row.source_type = 'project_opening_balance'
+    and transaction_row.source_id like fixture.balance_id::text || ':%';
+  if v_provenance_error is not null then
+    raise exception 'deterministic opening transaction provenance failed: %',
+      v_provenance_error;
   end if;
 
   select (item.stock_by_warehouse->>fixture.warehouse_a_id)::numeric

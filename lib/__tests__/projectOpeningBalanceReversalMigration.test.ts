@@ -36,6 +36,12 @@ const artifact = (relativePath: string): string => {
   return existsSync(path) ? readFileSync(path, 'utf8') : '';
 };
 
+const interfaceDefinition = (source: string, name: string): string => {
+  const match = new RegExp(`export\\s+interface\\s+${name}\\s*\\{([\\s\\S]*?)\\n\\}`, 'i').exec(source);
+  if (!match) throw new Error(`Missing ${name}`);
+  return match[0];
+};
+
 describe('controlled project opening-balance reversal migration contract', () => {
   it('is forward-only and stores immutable command, finance, and compensation evidence', () => {
     const { file, sql } = reversalMigration();
@@ -73,6 +79,31 @@ describe('controlled project opening-balance reversal migration contract', () =>
     expect(command).toContain('app_private.wms_has_action');
     expect(sql).toMatch(/revoke\s+all\s+on\s+function\s+public\.reverse_project_opening_balance\s*\(\s*jsonb\s*\)\s+from\s+public\s*,\s*anon\s*,\s*authenticated\s*,\s*service_role/i);
     expect(sql).toMatch(/grant\s+execute\s+on\s+function\s+public\.reverse_project_opening_balance\s*\(\s*jsonb\s*\)\s+to\s+authenticated/i);
+  });
+
+  it('does not let own or assigned actor identity widen warehouse-scoped PBAC', () => {
+    const { sql } = reversalMigration();
+    const command = functionDefinition(sql, 'public.reverse_project_opening_balance');
+
+    expect(command).toMatch(/app_private\.wms_has_action\s*\(\s*'wms\.transaction\.create'\s*,\s*null\s*,\s*v_warehouse_id\s*,\s*null\s*,\s*null\s*,\s*v_actor\s*\)/i);
+    expect(command).toMatch(/app_private\.wms_has_action\s*\(\s*'wms\.transaction\.complete'\s*,\s*null\s*,\s*v_warehouse_id\s*,\s*null\s*,\s*null\s*,\s*v_actor\s*\)/i);
+    expect(command).not.toMatch(/app_private\.wms_has_action\s*\(\s*'wms\.transaction\.(?:create|complete)'\s*,\s*null\s*,\s*v_warehouse_id\s*,\s*v_actor\s*,\s*v_actor\s*,\s*v_actor\s*\)/i);
+  });
+
+  it('locks every affected warehouse in sorted order and revalidates the locked set before posting', () => {
+    const { sql } = reversalMigration();
+    const command = functionDefinition(sql, 'public.reverse_project_opening_balance');
+    const lockHelper = functionDefinition(sql, 'app_private.lock_project_opening_reversal_warehouses');
+    const firstPermission = command.search(/app_private\.wms_has_action/i);
+    const firstLock = command.search(/app_private\.lock_project_opening_reversal_warehouses/i);
+    const lockCalls = command.match(/app_private\.lock_project_opening_reversal_warehouses\s*\(/gi) || [];
+
+    expect(lockHelper).toMatch(/from\s+public\.warehouses\s+warehouse/i);
+    expect(lockHelper).toMatch(/order\s+by\s+warehouse\.id[\s\S]+for\s+update(?:\s+of\s+warehouse)?/i);
+    expect(firstLock).toBeGreaterThan(-1);
+    expect(firstPermission).toBeGreaterThan(firstLock);
+    expect(lockCalls).toHaveLength(2);
+    expect(command).toMatch(/locked warehouse set changed|warehouse set changed while locked/i);
   });
 
   it('serializes scope, command, source and transaction identities before sorted item locks', () => {
@@ -171,6 +202,46 @@ describe('controlled project opening-balance reversal migration contract', () =>
     expect(sql).toMatch(/create\s+trigger\s+trg_guard_project_opening_reversal_material_source[\s\S]+before\s+insert\s+or\s+update\s+or\s+delete/i);
     expect(sql).toMatch(/tg_op\s*=\s*'DELETE'[\s\S]+project opening reversal material evidence is immutable/i);
     expect(sql).toMatch(/create\s+unique\s+index[\s\S]+on\s+public\.transactions\s*\(\s*source_type\s*,\s*source_id\s*\)[\s\S]+where\s+source_type\s*=\s*'project_opening_balance_reversal'/i);
+  });
+
+  it('protects both material source aliases and the original positive evidence', () => {
+    const { sql } = reversalMigration();
+    const command = functionDefinition(sql, 'public.reverse_project_opening_balance');
+    const guard = functionDefinition(sql, 'app_private.guard_project_opening_reversal_material_source');
+    const preflight = artifact('supabase/perf/project_opening_balance_reversal_preflight.sql');
+
+    expect(guard).toMatch(/old\.source_ref\s+like\s+'opening_balance:%:materials'[\s\S]+old\."sourceRef"\s+like\s+'opening_balance:%:materials'/i);
+    expect(guard).toMatch(/old\.source_ref\s+like\s+'opening_balance_reversal:%:materials'[\s\S]+old\."sourceRef"\s+like\s+'opening_balance_reversal:%:materials'/i);
+    expect(guard).toMatch(/new\.source_ref\s+is\s+distinct\s+from\s+new\."sourceRef"[\s\S]+material source aliases must match/i);
+    expect(guard).toContain('app_private.project_opening_call_contexts');
+    expect(guard).toMatch(/pg_backend_pid\s*\(\s*\)[\s\S]+txid_current\s*\(\s*\)/i);
+    expect(sql).toMatch(/create\s+unique\s+index[\s\S]+on\s+public\.project_transactions\s*\(\s*\(\s*coalesce\s*\(\s*source_ref\s*,\s*"sourceRef"\s*\)\s*\)\s*\)[\s\S]+opening_balance_reversal:%:materials/i);
+    expect(command).toMatch(/v_original_material\.source_ref[\s\S]+v_original_material\."sourceRef"[\s\S]+opening_balance:/i);
+    expect(command).toMatch(/project_transaction\.source_ref\s*=\s*v_material_source_ref[\s\S]+project_transaction\."sourceRef"\s*=\s*v_material_source_ref/i);
+    expect(preflight).toMatch(/material_source_alias_mismatch/i);
+    expect(preflight).toMatch(/source_ref[\s\S]+"sourceRef"/i);
+  });
+
+  it('validates finance status against the ProjectStatus domain and uses exact client snapshot keys', () => {
+    const { sql } = reversalMigration();
+    const command = functionDefinition(sql, 'public.reverse_project_opening_balance');
+    const service = artifact('lib/projectOpeningBalanceService.ts');
+    const expectedSnapshot = interfaceDefinition(service, 'ProjectOpeningBalanceFinanceSnapshot');
+    const correctedSnapshot = interfaceDefinition(service, 'ProjectOpeningBalanceCorrectedFinanceSnapshot');
+
+    expect(command).toMatch(/v_expected_status\s*=\s*any\s*\(\s*array\s*\[\s*'planning'\s*,\s*'active'\s*,\s*'paused'\s*,\s*'completed'\s*\]/i);
+    expect(command).toMatch(/v_corrected_status\s*=\s*any\s*\(\s*array\s*\[\s*'planning'\s*,\s*'active'\s*,\s*'paused'\s*,\s*'completed'\s*\]/i);
+    for (const definition of [expectedSnapshot, correctedSnapshot]) {
+      expect(definition).toMatch(/projectId:\s*string\s*\|\s*null\s*;/i);
+      expect(definition).toMatch(/constructionSiteId:\s*string\s*\|\s*null\s*;/i);
+      expect(definition).toMatch(/status:\s*ProjectStatus\s*;/i);
+      expect(definition).toMatch(/notes:\s*string\s*\|\s*null\s*;/i);
+      expect(definition).not.toMatch(/projectId\?\s*:/i);
+      expect(definition).not.toMatch(/constructionSiteId\?\s*:/i);
+      expect(definition).not.toMatch(/notes\?\s*:/i);
+    }
+    expect(expectedSnapshot).toMatch(/updatedAt:\s*string\s*;/i);
+    expect(correctedSnapshot).not.toMatch(/updatedAt\s*:/i);
   });
 
   it('ships a read-only preflight and rollback-only runtime smoke with the critical cases', () => {

@@ -359,6 +359,7 @@ describe('project opening balance atomic posting command', () => {
         contractValue: 1_000,
         progressPercent: 25,
         status: 'active',
+        notes: null,
         updatedAt: '2026-07-15T03:00:00.000Z',
       },
       correctedFinanceSnapshot: {
@@ -368,6 +369,7 @@ describe('project opening balance atomic posting command', () => {
         contractValue: 950,
         progressPercent: 20,
         status: 'active',
+        notes: null,
       },
     });
 
@@ -421,6 +423,7 @@ describe('project opening balance atomic posting command', () => {
         contractValue: 1_000,
         progressPercent: 25,
         status: 'active',
+        notes: null,
         updatedAt: '2026-07-15T03:00:00.000Z',
       },
       correctedFinanceSnapshot: {
@@ -430,8 +433,39 @@ describe('project opening balance atomic posting command', () => {
         contractValue: 950,
         progressPercent: 20,
         status: 'active',
+        notes: null,
       },
     })).rejects.toThrow('lý do');
+
+    expect(mocks.rpc).not.toHaveBeenCalled();
+    expect(mocks.from).not.toHaveBeenCalled();
+  });
+
+  it('rejects finance statuses outside the shared ProjectStatus domain before RPC', async () => {
+    await expect(projectOpeningBalanceService.voidOpeningBalance({
+      commandId,
+      openingBalanceId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      reason: 'Điều chỉnh trạng thái sai',
+      expectedFinanceSnapshot: {
+        id: existingFinance.id,
+        projectId: 'project-1',
+        constructionSiteId: 'site-1',
+        contractValue: 1_000,
+        progressPercent: 25,
+        status: 'archived',
+        notes: null,
+        updatedAt: '2026-07-15T03:00:00.000Z',
+      },
+      correctedFinanceSnapshot: {
+        id: existingFinance.id,
+        projectId: 'project-1',
+        constructionSiteId: 'site-1',
+        contractValue: 950,
+        progressPercent: 20,
+        status: 'active',
+        notes: null,
+      },
+    } as any)).rejects.toThrow('trạng thái');
 
     expect(mocks.rpc).not.toHaveBeenCalled();
     expect(mocks.from).not.toHaveBeenCalled();

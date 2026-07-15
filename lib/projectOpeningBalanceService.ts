@@ -4,6 +4,7 @@ import {
   ProjectOpeningBalance,
   ProjectOpeningBalanceImportRow,
   ProjectOpeningBalanceLine,
+  ProjectStatus,
   ProjectTransaction,
   Transaction,
 } from '../types';
@@ -709,23 +710,23 @@ export interface ProjectOpeningBalanceLockResult {
 
 export interface ProjectOpeningBalanceFinanceSnapshot {
   id: string;
-  projectId?: string | null;
-  constructionSiteId?: string | null;
+  projectId: string | null;
+  constructionSiteId: string | null;
   contractValue: number;
   progressPercent: number;
-  status: string;
-  notes?: string | null;
+  status: ProjectStatus;
+  notes: string | null;
   updatedAt: string;
 }
 
 export interface ProjectOpeningBalanceCorrectedFinanceSnapshot {
   id: string;
-  projectId?: string | null;
-  constructionSiteId?: string | null;
+  projectId: string | null;
+  constructionSiteId: string | null;
   contractValue: number;
   progressPercent: number;
-  status: string;
-  notes?: string | null;
+  status: ProjectStatus;
+  notes: string | null;
 }
 
 export interface ProjectOpeningBalanceReversalCommand {
@@ -824,6 +825,18 @@ const validateReversalFinanceSnapshot = (
   snapshot: ProjectOpeningBalanceFinanceSnapshot | ProjectOpeningBalanceCorrectedFinanceSnapshot,
   label: string,
 ): void => {
+  const requiredKeys = [
+    'id',
+    'projectId',
+    'constructionSiteId',
+    'contractValue',
+    'progressPercent',
+    'status',
+    'notes',
+  ] as const;
+  if (!snapshot || requiredKeys.some(key => !Object.prototype.hasOwnProperty.call(snapshot, key))) {
+    throw new Error(`${label} thiếu trường bắt buộc.`);
+  }
   if (!snapshot || !String(snapshot.id || '').trim()) {
     throw new Error(`${label} thiếu mã tài chính dự án.`);
   }
@@ -834,8 +847,14 @@ const validateReversalFinanceSnapshot = (
       || snapshot.progressPercent < 0 || snapshot.progressPercent > 100) {
     throw new Error(`${label} có tiến độ không hợp lệ.`);
   }
-  if (!String(snapshot.status || '').trim()) {
-    throw new Error(`${label} thiếu trạng thái tài chính.`);
+  const acceptedStatuses: ReadonlySet<ProjectStatus> = new Set([
+    'planning',
+    'active',
+    'paused',
+    'completed',
+  ]);
+  if (!acceptedStatuses.has(snapshot.status)) {
+    throw new Error(`${label} có trạng thái tài chính không hợp lệ.`);
   }
 };
 
@@ -1073,11 +1092,22 @@ export const projectOpeningBalanceService = {
       openingBalanceId,
       reason,
       expectedFinanceSnapshot: cleanUndefined({
-        ...input.expectedFinanceSnapshot,
+        id: input.expectedFinanceSnapshot.id,
+        projectId: input.expectedFinanceSnapshot.projectId,
+        constructionSiteId: input.expectedFinanceSnapshot.constructionSiteId,
+        contractValue: input.expectedFinanceSnapshot.contractValue,
+        progressPercent: input.expectedFinanceSnapshot.progressPercent,
+        status: input.expectedFinanceSnapshot.status,
         notes: input.expectedFinanceSnapshot.notes ?? null,
+        updatedAt: input.expectedFinanceSnapshot.updatedAt,
       }),
       correctedFinanceSnapshot: cleanUndefined({
-        ...input.correctedFinanceSnapshot,
+        id: input.correctedFinanceSnapshot.id,
+        projectId: input.correctedFinanceSnapshot.projectId,
+        constructionSiteId: input.correctedFinanceSnapshot.constructionSiteId,
+        contractValue: input.correctedFinanceSnapshot.contractValue,
+        progressPercent: input.correctedFinanceSnapshot.progressPercent,
+        status: input.correctedFinanceSnapshot.status,
         notes: input.correctedFinanceSnapshot.notes ?? null,
       }),
     }));

@@ -120,14 +120,80 @@ findings as (
   union all
 
   select
+    'material_source_alias_mismatch',
+    null::uuid,
+    pg_catalog.jsonb_build_object(
+      'projectTransactionId', project_transaction.id,
+      'source_ref', project_transaction.source_ref,
+      'sourceRef', project_transaction."sourceRef"
+    )
+  from public.project_transactions project_transaction
+  where (
+    coalesce(project_transaction.source_ref like 'opening_balance:%:materials', false)
+    or coalesce(project_transaction."sourceRef" like 'opening_balance:%:materials', false)
+    or coalesce(project_transaction.source_ref like 'opening_balance_reversal:%:materials', false)
+    or coalesce(project_transaction."sourceRef" like 'opening_balance_reversal:%:materials', false)
+  )
+    and project_transaction.source_ref is distinct from project_transaction."sourceRef"
+
+  union all
+
+  select
+    'missing_lineage_original_material_source',
+    opening.id,
+    pg_catalog.jsonb_build_object(
+      'projectTransactionId', project_transaction.id,
+      'source_ref', project_transaction.source_ref,
+      'sourceRef', project_transaction."sourceRef"
+    )
+  from locked_opening opening
+  left join public.project_transactions project_transaction
+    on project_transaction.id = opening.material_project_transaction_id
+   and project_transaction.source_ref = 'opening_balance:' || opening.id::text || ':materials'
+   and project_transaction."sourceRef" = 'opening_balance:' || opening.id::text || ':materials'
+   and project_transaction.type = 'expense'
+   and project_transaction.category = 'materials'
+   and project_transaction.amount = opening.recognized_value
+  where opening.recognized_value > 0
+    and project_transaction.id is null
+
+  union all
+
+  select
+    'duplicate_reversal_material_source',
+    null::uuid,
+    pg_catalog.jsonb_build_object(
+      'sourceRef', duplicate_source.effective_source_ref,
+      'projectTransactionIds', duplicate_source.project_transaction_ids
+    )
+  from (
+    select
+      coalesce(project_transaction.source_ref, project_transaction."sourceRef")
+        as effective_source_ref,
+      pg_catalog.array_agg(project_transaction.id order by project_transaction.id)
+        as project_transaction_ids
+    from public.project_transactions project_transaction
+    where coalesce(project_transaction.source_ref, project_transaction."sourceRef")
+      like 'opening_balance:%:materials'
+       or coalesce(project_transaction.source_ref, project_transaction."sourceRef")
+      like 'opening_balance_reversal:%:materials'
+    group by coalesce(project_transaction.source_ref, project_transaction."sourceRef")
+    having pg_catalog.count(*) > 1
+  ) duplicate_source
+
+  union all
+
+  select
     'reserved_material_reversal_source_without_command_lineage',
     null::uuid,
     pg_catalog.jsonb_build_object(
       'projectTransactionId', project_transaction.id,
-      'sourceRef', project_transaction.source_ref
+      'source_ref', project_transaction.source_ref,
+      'sourceRef', project_transaction."sourceRef"
     )
   from public.project_transactions project_transaction
   where project_transaction.source_ref like 'opening_balance_reversal:%:materials'
+     or project_transaction."sourceRef" like 'opening_balance_reversal:%:materials'
 )
 select issue_type, opening_balance_id, evidence
 from findings

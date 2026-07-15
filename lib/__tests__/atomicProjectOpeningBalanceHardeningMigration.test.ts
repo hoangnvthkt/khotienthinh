@@ -90,6 +90,38 @@ describe('atomic project opening-balance forward hardening migration', () => {
     expect(sql).toMatch(/create\s+unique\s+index[\s\S]+on\s+public\.transactions\s*\(\s*source_type\s*,\s*source_id\s*\)[\s\S]+where\s+source_type\s*=\s*'project_opening_balance'/i);
   });
 
+  it('locks transaction DML and fails closed unless every legacy reserved source proves deterministic provenance', () => {
+    const { sql } = forwardHardeningMigration();
+    const provenance = functionDefinition(
+      sql,
+      'app_private.project_opening_transaction_provenance_error',
+    );
+    const transactionLock = sql.search(
+      /lock\s+table\s+public\.transactions\s+in\s+share\s+row\s+exclusive\s+mode/i,
+    );
+    const legacyPreflight = sql.search(/project[\s_-]+opening[\s_-]+transaction[\s_-]+provenance[\s_-]+preflight/i);
+    const sourceIndex = sql.search(/create\s+unique\s+index\s+transactions_project_opening_source_uidx/i);
+
+    expect(transactionLock).toBeGreaterThan(-1);
+    expect(legacyPreflight).toBeGreaterThan(transactionLock);
+    expect(sourceIndex).toBeGreaterThan(legacyPreflight);
+    expect(provenance).toMatch(/source_id[\s\S]+uuid[\s\S]+target_warehouse_id/i);
+    expect(provenance).toMatch(/opening-balance:[\s\S]+sha256_text/i);
+    expect(provenance).toContain("'project_opening_balance'");
+    expect(provenance).toContain("'wf001-opening-v1'");
+    expect(provenance).toMatch(/status::text\s*<>\s*'COMPLETED'/i);
+    expect(provenance).toMatch(/type::text\s*<>\s*'ADJUSTMENT'/i);
+    expect(provenance).toMatch(/source_warehouse_id\s+is\s+not\s+null/i);
+    expect(provenance).toContain('app_private.wms_transaction_intent');
+    expect(provenance).toMatch(/sha256_text[\s\S]+posting_request_hash/i);
+    expect(provenance).toMatch(/project_opening_balances[\s\S]+status\s*=\s*'locked'/i);
+    expect(provenance).toMatch(/stock_transaction_ids[\s\S]+jsonb_build_array/i);
+    expect(provenance).toMatch(/project_opening_balance_lines[\s\S]+remaining_qty\s*>\s*0/i);
+    expect(provenance).toMatch(/jsonb_array_elements[\s\S]+itemId[\s\S]+quantity[\s\S]+unit/i);
+    expect(provenance).toMatch(/inventory_transactions[\s\S]+inventory_ledger_entries/i);
+    expect(sql).toMatch(/project[\s_-]+opening[\s_-]+transaction[\s_-]+provenance[\s_-]+preflight[\s\S]+project_opening_transaction_provenance_error[\s\S]+raise\s+exception/i);
+  });
+
   it('checks catalog PBAC only when the opening command actually mutates an item', () => {
     const { sql } = forwardHardeningMigration();
     const guard = functionDefinition(sql, 'app_private.guard_project_opening_catalog_write');
@@ -112,8 +144,7 @@ describe('atomic project opening-balance forward hardening migration', () => {
     expect(wrapper).toMatch(/security\s+definer/i);
     expect(wrapper).toMatch(/set\s+search_path\s*=\s*''/i);
     expect(wrapper).toContain('public.current_app_user_id()');
-    expect(wrapper).toMatch(/from\s+public\.projects[\s\S]+construction_site_id/i);
-    expect(wrapper).toMatch(/from\s+public\.hrm_construction_sites/i);
+    expect(wrapper).toContain('app_private.lock_project_opening_authoritative_scope');
     expect(wrapper).toContain('app_private.normalize_project_opening_scope_key');
     expect(wrapper).toMatch(/scopeKey[\s\S]+authoritative|authoritative[\s\S]+scopeKey/i);
     expect(wrapper).toContain("'wms.transaction.create'");
@@ -123,6 +154,28 @@ describe('atomic project opening-balance forward hardening migration', () => {
     expect(wrapper).toMatch(/project_opening_call_contexts/i);
     expect(wrapper).toMatch(/lock_project_opening_balance_v1\s*\(\s*v_[A-Za-z0-9_]+\s*\)/i);
     expect(sql).toMatch(/grant\s+execute\s+on\s+function\s+public\.lock_project_opening_balance\s*\(\s*jsonb\s*\)\s+to\s+authenticated/i);
+  });
+
+  it('holds authoritative project and site row locks through the core call and revalidates before return', () => {
+    const { sql } = forwardHardeningMigration();
+    const scopeLock = functionDefinition(
+      sql,
+      'app_private.lock_project_opening_authoritative_scope',
+    );
+    const transition = functionDefinition(sql, 'app_private.validate_project_opening_lock');
+    const wrapper = functionDefinition(sql, 'public.lock_project_opening_balance');
+    const coreCall = wrapper.search(/lock_project_opening_balance_v1\s*\(/i);
+    const firstScopeLock = wrapper.search(/lock_project_opening_authoritative_scope\s*\(/i);
+    const secondScopeLock = wrapper.indexOf('lock_project_opening_authoritative_scope', firstScopeLock + 1);
+
+    expect(scopeLock).toMatch(/from\s+public\.projects[\s\S]+for\s+(?:no\s+key\s+)?update/i);
+    expect(scopeLock).toMatch(/from\s+public\.hrm_construction_sites[\s\S]+for\s+(?:no\s+key\s+)?update/i);
+    expect(scopeLock).toMatch(/project-site mismatch|project[\s_-]+site[\s_-]+mismatch/i);
+    expect(transition).toContain('app_private.lock_project_opening_authoritative_scope');
+    expect(firstScopeLock).toBeGreaterThan(-1);
+    expect(coreCall).toBeGreaterThan(firstScopeLock);
+    expect(secondScopeLock).toBeGreaterThan(coreCall);
+    expect(wrapper).toMatch(/authoritative[\s_-]+scope[\s_-]+changed|revalidat/i);
   });
 
   it('preflights and uniquely indexes authoritative locked project/site scope', () => {
@@ -163,6 +216,9 @@ describe('atomic project opening-balance forward hardening migration', () => {
     expect(preflight).toMatch(/project[\s_-]+site[\s_-]+mismatch/i);
     expect(preflight).toMatch(/line[\s_-]+identity[\s_-]+coherence/i);
     expect(preflight).toMatch(/set\s+transaction\s+read\s+only/i);
+    expect(preflight).toMatch(/project[\s_-]+opening[\s_-]+transaction[\s_-]+provenance/i);
+    expect(preflight).toMatch(/do\s+\$atomic_project_opening_balance_preflight_assertions\$[\s\S]+raise\s+exception/i);
+    expect(preflight.search(/raise\s+exception/i)).toBeLessThan(preflight.search(/rollback\s*;/i));
 
     expect(smoke).toMatch(/legacy nullable finance/i);
     expect(smoke).toMatch(/semantic finance update[\s\S]+updatedAt/i);

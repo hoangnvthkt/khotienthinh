@@ -230,3 +230,80 @@ The final full repository run is green: 76/76 files and 431/431 tests.
   five-second lock timeout. A busy deployment may need a quiet write window and
   a safe retry; no partial migration state is committed on timeout.
 - `supabase/.temp/cli-latest` is intentionally excluded from staging and commit.
+
+## Final hardening and reversal review addendum (2026-07-15)
+
+The last confirmed review wave was completed without changing either historical
+base migration. The forward hardening migration now validates full immutable
+WMS/inventory provenance, freezes all evidence tables during grandfathering,
+locks and revalidates the authoritative project/site scope, and makes the
+operator preflight fail closed on deployment blockers while keeping nullable
+legacy-finance findings diagnostic.
+
+The controlled reversal migration now:
+
+- passes `NULL` requester/assigned identities to both warehouse PBAC checks, so
+  `own` and `assigned` grants cannot widen a warehouse-scoped capability;
+- locks affected warehouse rows in ascending ID order, compares the locked
+  cardinality to authoritative positive lines, and repeats the same lock
+  primitive immediately before compensation/posting;
+- treats `source_ref` and `"sourceRef"` as one reserved material identity,
+  rejects mismatches, protects both the original positive expense and reversal
+  expense as immutable, and admits a future original insert only under the
+  protected opening-command backend/XID context;
+- validates both finance statuses against the shared
+  `planning | active | paused | completed` domain, while the client snapshot
+  interfaces and serialized command use exactly the server-required keys.
+
+Additional owned files in this review wave:
+
+- `lib/__tests__/projectOpeningBalanceReversalMigration.test.ts`
+- `supabase/migrations/20260715150000_project_opening_balance_reversal.sql`
+- `supabase/perf/project_opening_balance_reversal_preflight.sql`
+
+Fresh RED evidence before the reversal implementation:
+
+```text
+npx vitest run \
+  lib/__tests__/projectOpeningBalanceReversalMigration.test.ts \
+  lib/__tests__/projectOpeningBalancePosting.test.ts
+
+2 files executed; 5 failed / 23 passed (28 total)
+Failures: own/assigned PBAC arguments; missing sorted warehouse lock/recheck;
+dual-alias/original material evidence; server/client finance domain and exact
+keys; invalid client finance status reaching RPC.
+```
+
+Fresh final GREEN evidence:
+
+```text
+npx vitest run \
+  lib/__tests__/projectOpeningBalanceReversalMigration.test.ts \
+  lib/__tests__/projectOpeningBalancePosting.test.ts
+2 files passed; 28/28 tests passed
+
+npx vitest run \
+  lib/__tests__/atomicProjectOpeningBalanceMigration.test.ts \
+  lib/__tests__/atomicProjectOpeningBalanceHardeningMigration.test.ts \
+  lib/__tests__/projectOpeningBalanceReversalMigration.test.ts \
+  lib/__tests__/projectOpeningBalancePosting.test.ts
+4 files passed; 50/50 tests passed
+
+node /tmp/wf001-pglite/a31-check.mjs
+A3.1 PGlite runtime checks passed
+
+node /tmp/wf001-pglite/a31-smoke.mjs
+A3.1 rollback-only SQL smoke passed in PGlite
+
+node /tmp/wf001-pglite/a31-reversal-check.mjs
+A3.1 controlled reversal PGlite checks passed
+
+npm run lint
+tsc exited 0
+
+git diff --check
+exit 0
+```
+
+No files were staged or committed. The pre-existing
+`supabase/.temp/cli-latest` worktree change was not touched.

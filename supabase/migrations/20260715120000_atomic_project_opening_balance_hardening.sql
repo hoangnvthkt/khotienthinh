@@ -103,24 +103,320 @@ revoke truncate on table app_private.project_opening_call_contexts
 comment on table app_private.project_opening_call_contexts is
   'Per-backend/per-XID opening-command capabilities. The public wrapper creates and removes them; ALWAYS triggers consume only their presence.';
 
--- Duplicate project opening transaction source preflight. Existing reserved
--- sources must already have trustworthy provenance before uniqueness is added.
-do $duplicate_project_opening_transaction_source_preflight$
+-- Freeze every table that contributes evidence before grandfathering the
+-- formerly-unreserved source namespace. In particular, the transaction lock
+-- closes the validation-to-index/trigger DML race.
+lock table public.transactions in share row exclusive mode;
+lock table
+  public.project_opening_balances,
+  public.project_opening_balance_lines,
+  public.inventory_transactions,
+  public.inventory_ledger_entries
+in share row exclusive mode;
+
+create or replace function app_private.project_opening_transaction_provenance_error(
+  p_transaction_id text
+)
+returns text
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+declare
+  v_transaction public.transactions%rowtype;
+  v_opening public.project_opening_balances%rowtype;
+  v_inventory_transaction public.inventory_transactions%rowtype;
+  v_opening_id uuid;
+  v_warehouse_id text;
+  v_expected_transaction_id text;
+  v_expected_hash text;
+  v_inventory_transaction_count bigint;
+begin
+  select transaction_row.*
+  into v_transaction
+  from public.transactions transaction_row
+  where transaction_row.id = p_transaction_id;
+  if not found then
+    return 'transaction row is missing';
+  end if;
+
+  if v_transaction.source_type is distinct from 'project_opening_balance' then
+    return 'source_type is not project_opening_balance';
+  end if;
+  if pg_catalog.char_length(coalesce(v_transaction.source_id, '')) <= 37
+     or pg_catalog.substr(v_transaction.source_id, 37, 1) <> ':' then
+    return 'source_id is not canonical <opening_uuid>:<warehouse_id>';
+  end if;
+  begin
+    v_opening_id := pg_catalog.left(v_transaction.source_id, 36)::uuid;
+  exception
+    when invalid_text_representation then
+      return 'source_id opening identity is not a UUID';
+  end;
+  v_warehouse_id := pg_catalog.substr(v_transaction.source_id, 38);
+  if nullif(pg_catalog.btrim(v_warehouse_id), '') is null
+     or v_transaction.source_id is distinct from
+       v_opening_id::text || ':' || v_warehouse_id
+     or v_transaction.target_warehouse_id is distinct from v_warehouse_id then
+    return 'source_id is not canonical for its target_warehouse_id';
+  end if;
+
+  v_expected_transaction_id := 'opening-balance:' || v_opening_id::text || ':'
+    || pg_catalog.left(app_private.sha256_text(v_warehouse_id), 16);
+  if v_transaction.id is distinct from v_expected_transaction_id then
+    return 'transaction id is not the deterministic opening identity';
+  end if;
+  if v_transaction.type::text <> 'ADJUSTMENT'
+     or v_transaction.status::text <> 'COMPLETED'
+     or v_transaction.source_warehouse_id is not null
+     or v_transaction.target_warehouse_id is distinct from v_warehouse_id then
+    return 'transaction is not a completed target-only ADJUSTMENT';
+  end if;
+  if v_transaction.posting_engine_version is distinct from 'wf001-opening-v1' then
+    return 'posting engine is not wf001-opening-v1';
+  end if;
+  v_expected_hash := app_private.sha256_text(
+    app_private.wms_transaction_intent(v_transaction)::text
+  );
+  if v_transaction.posting_request_hash is distinct from v_expected_hash then
+    return 'posting_request_hash does not match the persisted WMS intent';
+  end if;
+
+  select opening.*
+  into v_opening
+  from public.project_opening_balances opening
+  where opening.id = v_opening_id
+    and opening.status = 'locked';
+  if not found then
+    return 'linked opening is missing or is not locked';
+  end if;
+  if v_opening.posting_engine_version is distinct from 'wf001-opening-v1'
+     or not coalesce(v_opening.stock_transaction_ids, '[]'::jsonb)
+       @> pg_catalog.jsonb_build_array(v_transaction.id) then
+    return 'locked opening does not contain this transaction identity';
+  end if;
+
+  if not exists (
+    select 1
+    from public.project_opening_balance_lines opening_line
+    where opening_line.opening_balance_id = v_opening_id
+      and opening_line.warehouse_id = v_warehouse_id
+      and opening_line.remaining_qty > 0
+  ) then
+    return 'opening has no authoritative positive line for the target warehouse';
+  end if;
+  if exists (
+    select 1
+    from public.project_opening_balance_lines opening_line
+    left join public.items item on item.id = opening_line.inventory_item_id
+    where opening_line.opening_balance_id = v_opening_id
+      and opening_line.warehouse_id = v_warehouse_id
+      and opening_line.remaining_qty > 0
+      and (
+        opening_line.inventory_item_id is null
+        or item.id is null
+        or not app_private.quantity_units_are_equivalent(opening_line.unit, item.unit)
+      )
+  ) then
+    return 'positive opening line item/unit identity is not authoritative';
+  end if;
+
+  if pg_catalog.jsonb_typeof(v_transaction.items) <> 'array'
+     or pg_catalog.jsonb_array_length(v_transaction.items) = 0 then
+    return 'transaction items are not a non-empty array';
+  end if;
+  if exists (
+    select 1
+    from pg_catalog.jsonb_array_elements(v_transaction.items) transaction_item(value)
+    left join public.items item on item.id = transaction_item.value->>'itemId'
+    where pg_catalog.jsonb_typeof(transaction_item.value) <> 'object'
+       or nullif(pg_catalog.btrim(transaction_item.value->>'lineId'), '') is null
+       or nullif(pg_catalog.btrim(transaction_item.value->>'itemId'), '') is null
+       or pg_catalog.jsonb_typeof(transaction_item.value->'quantity') <> 'number'
+       or case
+            when pg_catalog.jsonb_typeof(transaction_item.value->'quantity') = 'number'
+              then (transaction_item.value->>'quantity')::numeric <= 0
+            else true
+          end
+       or item.id is null
+       or not app_private.quantity_units_are_equivalent(
+         item.unit,
+         transaction_item.value->>'unit'
+       )
+       or not app_private.quantity_units_are_equivalent(
+         item.unit,
+         transaction_item.value->>'unitSnapshot'
+       )
+  ) then
+    return 'transaction item/quantity/unit identity is malformed';
+  end if;
+  if exists (
+    select transaction_item.value->>'lineId'
+    from pg_catalog.jsonb_array_elements(v_transaction.items) transaction_item(value)
+    group by transaction_item.value->>'lineId'
+    having pg_catalog.count(*) > 1
+  ) then
+    return 'transaction line identities are not unique';
+  end if;
+
+  if exists (
+    with expected as (
+      select opening_line.inventory_item_id as item_id,
+             pg_catalog.sum(opening_line.remaining_qty) as quantity
+      from public.project_opening_balance_lines opening_line
+      where opening_line.opening_balance_id = v_opening_id
+        and opening_line.warehouse_id = v_warehouse_id
+        and opening_line.remaining_qty > 0
+      group by opening_line.inventory_item_id
+    ), actual as (
+      select transaction_item.value->>'itemId' as item_id,
+             pg_catalog.sum((transaction_item.value->>'quantity')::numeric) as quantity
+      from pg_catalog.jsonb_array_elements(v_transaction.items) transaction_item(value)
+      group by transaction_item.value->>'itemId'
+    )
+    select 1
+    from expected
+    full join actual using (item_id)
+    where expected.item_id is null
+       or actual.item_id is null
+       or expected.quantity is distinct from actual.quantity
+  ) then
+    return 'transaction item/quantity aggregate differs from positive opening lines';
+  end if;
+
+  select pg_catalog.count(*)
+  into v_inventory_transaction_count
+  from public.inventory_transactions inventory_transaction
+  where inventory_transaction.source_type = 'wms_transaction'
+    and inventory_transaction.source_id = v_transaction.id;
+  if v_inventory_transaction_count <> 1 then
+    return 'completed transaction does not have exactly one inventory ledger header';
+  end if;
+  select inventory_transaction.*
+  into v_inventory_transaction
+  from public.inventory_transactions inventory_transaction
+  where inventory_transaction.source_type = 'wms_transaction'
+    and inventory_transaction.source_id = v_transaction.id;
+  if v_inventory_transaction.status is distinct from 'posted'
+     or v_inventory_transaction.transaction_type is distinct from 'adjustment_in'
+     or v_inventory_transaction.source_code is distinct from v_transaction.id then
+    return 'inventory ledger header is not the posted opening adjustment';
+  end if;
+
+  if exists (
+    select 1
+    from public.inventory_ledger_entries ledger
+    left join public.items item on item.id = ledger.material_id
+    where ledger.inventory_transaction_id = v_inventory_transaction.id
+      and (
+        ledger.source_type is distinct from 'wms_transaction'
+        or ledger.source_id is distinct from v_transaction.id
+        or ledger.source_code is distinct from v_transaction.id
+        or ledger.transaction_type is distinct from 'adjustment_in'
+        or ledger.warehouse_id is distinct from v_warehouse_id
+        or ledger.movement_direction is distinct from 'in'
+        or ledger.quantity_in <= 0
+        or ledger.quantity_out <> 0
+        or item.id is null
+        or not app_private.quantity_units_are_equivalent(item.unit, ledger.unit)
+      )
+  ) then
+    return 'inventory ledger rows have inconsistent source/warehouse/quantity/unit identity';
+  end if;
+  if exists (
+    with expected as (
+      select opening_line.inventory_item_id as item_id,
+             pg_catalog.sum(opening_line.remaining_qty) as quantity
+      from public.project_opening_balance_lines opening_line
+      where opening_line.opening_balance_id = v_opening_id
+        and opening_line.warehouse_id = v_warehouse_id
+        and opening_line.remaining_qty > 0
+      group by opening_line.inventory_item_id
+    ), ledger_actual as (
+      select ledger.material_id as item_id,
+             pg_catalog.sum(ledger.quantity_in) as quantity
+      from public.inventory_ledger_entries ledger
+      where ledger.inventory_transaction_id = v_inventory_transaction.id
+      group by ledger.material_id
+    )
+    select 1
+    from expected
+    full join ledger_actual using (item_id)
+    where expected.item_id is null
+       or ledger_actual.item_id is null
+       or expected.quantity is distinct from ledger_actual.quantity
+  ) then
+    return 'inventory ledger item/quantity aggregate differs from positive opening lines';
+  end if;
+  if exists (
+    select 1
+    from pg_catalog.jsonb_array_elements(v_transaction.items) transaction_item(value)
+    where not exists (
+      select 1
+      from public.inventory_ledger_entries ledger
+      where ledger.inventory_transaction_id = v_inventory_transaction.id
+        and ledger.source_line_id = transaction_item.value->>'lineId'
+        and ledger.material_id = transaction_item.value->>'itemId'
+        and ledger.quantity_in = (transaction_item.value->>'quantity')::numeric
+        and app_private.quantity_units_are_equivalent(
+          transaction_item.value->>'unit',
+          ledger.unit
+        )
+    )
+  ) or exists (
+    select 1
+    from public.inventory_ledger_entries ledger
+    where ledger.inventory_transaction_id = v_inventory_transaction.id
+      and not exists (
+        select 1
+        from pg_catalog.jsonb_array_elements(v_transaction.items) transaction_item(value)
+        where transaction_item.value->>'lineId' = ledger.source_line_id
+          and transaction_item.value->>'itemId' = ledger.material_id
+          and (transaction_item.value->>'quantity')::numeric = ledger.quantity_in
+          and app_private.quantity_units_are_equivalent(
+            transaction_item.value->>'unit',
+            ledger.unit
+          )
+      )
+  ) then
+    return 'transaction item identities do not match inventory ledger lines';
+  end if;
+
+  return null;
+exception
+  when invalid_text_representation or numeric_value_out_of_range then
+    return 'reserved opening provenance contains malformed numeric or UUID evidence';
+end;
+$$;
+
+revoke all on function app_private.project_opening_transaction_provenance_error(text)
+  from public, anon, authenticated, service_role;
+
+-- Project opening transaction provenance preflight. Existing reserved sources
+-- must prove the complete deterministic opening/transaction/ledger chain before
+-- uniqueness and the owner-only trigger are installed.
+do $project_opening_transaction_provenance_preflight$
 declare
   v_invalid text;
   v_duplicates text;
 begin
-  select pg_catalog.string_agg(transaction_row.id, ', ' order by transaction_row.id)
+  select pg_catalog.string_agg(
+    transaction_row.id || ': ' || provenance.error,
+    ', ' order by transaction_row.id
+  )
   into v_invalid
   from public.transactions transaction_row
+  cross join lateral (
+    select app_private.project_opening_transaction_provenance_error(
+      transaction_row.id
+    ) as error
+  ) provenance
   where transaction_row.source_type = 'project_opening_balance'
-    and (
-      nullif(pg_catalog.btrim(transaction_row.source_id), '') is null
-      or transaction_row.posting_engine_version is distinct from 'wf001-opening-v1'
-    );
+    and provenance.error is not null;
 
   if v_invalid is not null then
-    raise exception 'invalid project opening transaction source preflight failed: %', v_invalid
+    raise exception 'project opening transaction provenance preflight failed: %', v_invalid
       using errcode = '23514';
   end if;
 
@@ -142,7 +438,7 @@ begin
       using errcode = '23505';
   end if;
 end;
-$duplicate_project_opening_transaction_source_preflight$;
+$project_opening_transaction_provenance_preflight$;
 
 create unique index transactions_project_opening_source_uidx
   on public.transactions(source_type, source_id)
@@ -313,6 +609,73 @@ $$;
 revoke all on function app_private.project_opening_authoritative_scope_key(text, text)
   from public, anon, authenticated, service_role;
 
+create or replace function app_private.lock_project_opening_authoritative_scope(
+  p_project_id text,
+  p_construction_site_id text
+)
+returns text
+language plpgsql
+volatile
+security definer
+set search_path = ''
+as $$
+declare
+  v_project_id text := nullif(pg_catalog.btrim(p_project_id), '');
+  v_requested_site_id text := nullif(pg_catalog.btrim(p_construction_site_id), '');
+  v_requested_site_uuid uuid;
+  v_authoritative_site_uuid uuid;
+  v_locked_site_uuid uuid;
+begin
+  if v_project_id is null and v_requested_site_id is null then
+    raise exception 'authoritative opening scope requires a project or construction site'
+      using errcode = '23514';
+  end if;
+  if v_requested_site_id is not null then
+    begin
+      v_requested_site_uuid := v_requested_site_id::uuid;
+    exception
+      when invalid_text_representation then
+        raise exception 'authoritative opening construction site is not a UUID: %',
+          v_requested_site_id using errcode = '22023';
+    end;
+  end if;
+
+  if v_project_id is not null then
+    select project_row.construction_site_id
+    into v_authoritative_site_uuid
+    from public.projects project_row
+    where project_row.id = v_project_id
+    for update;
+    if not found then
+      raise exception 'authoritative opening project does not exist: %', v_project_id
+        using errcode = '23503';
+    end if;
+    if v_requested_site_uuid is distinct from v_authoritative_site_uuid then
+      raise exception 'authoritative opening project-site mismatch'
+        using errcode = '23514';
+    end if;
+  else
+    v_authoritative_site_uuid := v_requested_site_uuid;
+  end if;
+
+  if v_authoritative_site_uuid is not null then
+    select site_row.id
+    into v_locked_site_uuid
+    from public.hrm_construction_sites site_row
+    where site_row.id = v_authoritative_site_uuid
+    for update;
+    if not found then
+      raise exception 'authoritative opening construction site does not exist: %',
+        v_authoritative_site_uuid using errcode = '23503';
+    end if;
+  end if;
+  return v_authoritative_site_uuid::text;
+end;
+$$;
+
+revoke all on function app_private.lock_project_opening_authoritative_scope(text, text)
+  from public, anon, authenticated, service_role;
+
 -- Authoritative locked-scope preflight. Reject stale/spoofed scope keys and
 -- project-site mismatch rows before replacing the legacy scope-key index.
 do $authoritative_locked_scope_preflight$
@@ -469,7 +832,7 @@ security definer
 set search_path = ''
 as $$
 declare
-  v_project_site_id uuid;
+  v_project_site_id text;
 begin
   if not (old.status is distinct from 'locked' and new.status = 'locked') then
     return new;
@@ -481,28 +844,14 @@ begin
       using errcode = '23514';
   end if;
 
-  if nullif(pg_catalog.btrim(new.project_id), '') is not null then
-    select project_row.construction_site_id
-    into v_project_site_id
-    from public.projects project_row
-    where project_row.id = pg_catalog.btrim(new.project_id);
-    if not found then
-      raise exception 'authoritative opening project does not exist: %', new.project_id
-        using errcode = '23503';
-    end if;
-    if v_project_site_id::text
-       is distinct from nullif(pg_catalog.btrim(new.construction_site_id), '') then
-      raise exception 'authoritative opening project-site mismatch'
-        using errcode = '23514';
-    end if;
-  elsif not exists (
-    select 1
-    from public.hrm_construction_sites site_row
-    where site_row.id::text = pg_catalog.btrim(new.construction_site_id)
-  ) then
-    raise exception 'authoritative opening construction site does not exist: %',
-      new.construction_site_id
-      using errcode = '23503';
+  v_project_site_id := app_private.lock_project_opening_authoritative_scope(
+    new.project_id,
+    new.construction_site_id
+  );
+  if v_project_site_id is distinct from
+     nullif(pg_catalog.btrim(new.construction_site_id), '') then
+    raise exception 'authoritative opening project-site mismatch after row locking'
+      using errcode = '23514';
   end if;
 
   if app_private.normalize_project_opening_scope_key(new.scope_key)
@@ -614,7 +963,6 @@ declare
   v_project_id text;
   v_requested_site_id text;
   v_requested_site_uuid uuid;
-  v_project_site_uuid uuid;
   v_construction_site_id text;
   v_authoritative_scope_key text;
   v_supplied_scope_key text;
@@ -684,32 +1032,10 @@ begin
     end;
   end if;
 
-  if v_project_id is not null then
-    select project_row.construction_site_id
-    into v_project_site_uuid
-    from public.projects project_row
-    where project_row.id = v_project_id;
-    if not found then
-      raise exception 'opening project does not exist: %', v_project_id
-        using errcode = '23503';
-    end if;
-    if v_requested_site_id is not null
-       and v_requested_site_uuid is distinct from v_project_site_uuid then
-      raise exception 'opening project-site mismatch'
-        using errcode = '23514';
-    end if;
-    v_construction_site_id := v_project_site_uuid::text;
-  else
-    select site_row.id
-    into v_requested_site_uuid
-    from public.hrm_construction_sites site_row
-    where site_row.id = v_requested_site_uuid;
-    if not found then
-      raise exception 'opening construction site does not exist: %', v_requested_site_id
-        using errcode = '23503';
-    end if;
-    v_construction_site_id := v_requested_site_uuid::text;
-  end if;
+  v_construction_site_id := app_private.lock_project_opening_authoritative_scope(
+    v_project_id,
+    v_requested_site_id
+  );
 
   v_authoritative_scope_key := app_private.project_opening_authoritative_scope_key(
     v_project_id,
@@ -784,6 +1110,14 @@ begin
   );
 
   v_result := public.lock_project_opening_balance_v1(v_canonical_command);
+
+  if app_private.lock_project_opening_authoritative_scope(
+       v_project_id,
+       v_construction_site_id
+     ) is distinct from v_construction_site_id then
+    raise exception 'authoritative scope changed during opening command revalidation'
+      using errcode = '40001';
+  end if;
 
   delete from app_private.project_opening_call_contexts call_context
   where call_context.backend_pid = pg_catalog.pg_backend_pid()

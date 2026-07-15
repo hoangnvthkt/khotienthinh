@@ -12,7 +12,8 @@ begin
      or pg_catalog.to_regprocedure('app_private.project_has_permission_v2(text,text,text,uuid)') is null
      or pg_catalog.to_regprocedure('app_private.wms_has_action(text,text,text,uuid,uuid,uuid)') is null
      or pg_catalog.to_regprocedure('app_private.authorize_project_opening_write(uuid,jsonb,jsonb)') is null
-     or pg_catalog.to_regprocedure('app_private.wms_transaction_intent(public.transactions)') is null then
+     or pg_catalog.to_regprocedure('app_private.wms_transaction_intent(public.transactions)') is null
+     or pg_catalog.to_regclass('app_private.project_opening_call_contexts') is null then
     raise exception 'controlled project opening reversal prerequisites are missing'
       using errcode = '55000';
   end if;
@@ -358,6 +359,92 @@ $$;
 revoke all on function app_private.authorize_project_opening_reversal_material(text,text,text,uuid,numeric)
   from public, anon, authenticated, service_role;
 
+-- Freeze both sides of the material lineage while grandfathered rows are
+-- validated and the effective dual-alias source identity becomes unique.
+lock table public.project_transactions in share row exclusive mode;
+lock table public.project_opening_balances in share row exclusive mode;
+
+do $project_opening_material_source_preflight$
+begin
+  if exists (
+    select 1
+    from public.project_transactions project_transaction
+    where (
+      coalesce(project_transaction.source_ref like 'opening_balance:%:materials', false)
+      or coalesce(project_transaction."sourceRef" like 'opening_balance:%:materials', false)
+      or coalesce(project_transaction.source_ref like 'opening_balance_reversal:%:materials', false)
+      or coalesce(project_transaction."sourceRef" like 'opening_balance_reversal:%:materials', false)
+    )
+      and project_transaction.source_ref is distinct from project_transaction."sourceRef"
+  ) then
+    raise exception 'reserved project opening material source aliases must match before reversal deployment'
+      using errcode = '55000';
+  end if;
+
+  if exists (
+    select 1
+    from public.project_transactions project_transaction
+    left join public.project_opening_balances opening
+      on opening.material_project_transaction_id = project_transaction.id
+     and opening.status = 'locked'
+     and opening.posting_engine_version = 'wf001-opening-v1'
+    where project_transaction.source_ref like 'opening_balance:%:materials'
+      and (
+        opening.id is null
+        or project_transaction.id is distinct from 'opening-material:' || opening.id::text
+        or project_transaction.source_ref is distinct from
+          'opening_balance:' || opening.id::text || ':materials'
+        or project_transaction.type is distinct from 'expense'
+        or project_transaction.category is distinct from 'materials'
+        or project_transaction.amount is distinct from opening.recognized_value
+        or project_transaction.amount <= 0
+        or coalesce(project_transaction.project_finance_id, project_transaction."projectFinanceId")
+          is distinct from opening.project_finance_id
+        or project_transaction.project_id is distinct from opening.project_id
+        or project_transaction.construction_site_id is distinct from opening.construction_site_id
+      )
+  ) then
+    raise exception 'existing project opening material source has invalid positive lineage'
+      using errcode = '55000';
+  end if;
+
+  if exists (
+    select 1
+    from public.project_transactions project_transaction
+    where project_transaction.source_ref like 'opening_balance_reversal:%:materials'
+      and (
+        project_transaction.type is distinct from 'expense'
+        or project_transaction.category is distinct from 'materials'
+        or project_transaction.amount >= 0
+      )
+  ) then
+    raise exception 'existing project opening reversal material source has invalid negative lineage'
+      using errcode = '55000';
+  end if;
+
+  if exists (
+    select coalesce(project_transaction.source_ref, project_transaction."sourceRef")
+    from public.project_transactions project_transaction
+    where coalesce(project_transaction.source_ref, project_transaction."sourceRef")
+      like 'opening_balance:%:materials'
+       or coalesce(project_transaction.source_ref, project_transaction."sourceRef")
+      like 'opening_balance_reversal:%:materials'
+    group by coalesce(project_transaction.source_ref, project_transaction."sourceRef")
+    having pg_catalog.count(*) > 1
+  ) then
+    raise exception 'duplicate project opening material source identity exists'
+      using errcode = '23505';
+  end if;
+end;
+$project_opening_material_source_preflight$;
+
+create unique index if not exists project_transactions_opening_material_source_uidx
+  on public.project_transactions ((coalesce(source_ref, "sourceRef")))
+  where coalesce(source_ref like 'opening_balance:%:materials', false)
+     or coalesce("sourceRef" like 'opening_balance:%:materials', false)
+     or coalesce(source_ref like 'opening_balance_reversal:%:materials', false)
+     or coalesce("sourceRef" like 'opening_balance_reversal:%:materials', false);
+
 create or replace function app_private.guard_project_opening_reversal_material_source()
 returns trigger
 language plpgsql
@@ -370,39 +457,120 @@ declare
   v_source_ref text;
   v_project_finance_id text;
   v_actor uuid := public.current_app_user_id();
+  v_opening_id uuid;
+  v_has_context boolean := false;
+  v_old_is_original boolean := false;
+  v_old_is_reversal boolean := false;
+  v_new_is_original boolean := false;
+  v_new_is_reversal boolean := false;
 begin
   if tg_op = 'DELETE' then
-    v_source_ref := coalesce(old.source_ref, old."sourceRef");
-    if v_source_ref like 'opening_balance_reversal:%:materials' then
+    v_old_is_original := coalesce(old.source_ref like 'opening_balance:%:materials', false)
+      or coalesce(old."sourceRef" like 'opening_balance:%:materials', false);
+    v_old_is_reversal := coalesce(old.source_ref like 'opening_balance_reversal:%:materials', false)
+      or coalesce(old."sourceRef" like 'opening_balance_reversal:%:materials', false);
+    if v_old_is_original or v_old_is_reversal then
       raise exception 'project opening reversal material evidence is immutable'
         using errcode = '55000';
     end if;
     return old;
   end if;
 
-  v_source_ref := coalesce(new.source_ref, new."sourceRef");
+  v_new_is_original := coalesce(new.source_ref like 'opening_balance:%:materials', false)
+    or coalesce(new."sourceRef" like 'opening_balance:%:materials', false);
+  v_new_is_reversal := coalesce(new.source_ref like 'opening_balance_reversal:%:materials', false)
+    or coalesce(new."sourceRef" like 'opening_balance_reversal:%:materials', false);
+  if (v_new_is_original or v_new_is_reversal)
+     and new.source_ref is distinct from new."sourceRef" then
+    raise exception 'project opening material source aliases must match'
+      using errcode = '22023';
+  end if;
+
   if tg_op = 'UPDATE' then
-    if coalesce(old.source_ref, old."sourceRef") like 'opening_balance_reversal:%:materials'
+    v_old_is_original := coalesce(old.source_ref like 'opening_balance:%:materials', false)
+      or coalesce(old."sourceRef" like 'opening_balance:%:materials', false);
+    v_old_is_reversal := coalesce(old.source_ref like 'opening_balance_reversal:%:materials', false)
+      or coalesce(old."sourceRef" like 'opening_balance_reversal:%:materials', false);
+    if (v_old_is_original or v_old_is_reversal)
        and pg_catalog.to_jsonb(old) is distinct from pg_catalog.to_jsonb(new) then
       raise exception 'project opening reversal material evidence is immutable'
         using errcode = '55000';
     end if;
-    if v_source_ref not like 'opening_balance_reversal:%:materials' then
+    if not (v_new_is_original or v_new_is_reversal) then
       return new;
     end if;
-    raise exception 'project opening reversal material source cannot be reassigned'
+    raise exception 'project opening material source cannot be reassigned'
       using errcode = '55000';
   end if;
-  if v_source_ref not like 'opening_balance_reversal:%:materials' then
+  if not (v_new_is_original or v_new_is_reversal) then
     return new;
   end if;
 
+  v_source_ref := new.source_ref;
   v_project_finance_id := coalesce(new.project_finance_id, new."projectFinanceId");
+
+  if v_new_is_original then
+    begin
+      v_opening_id := pg_catalog.split_part(v_source_ref, ':', 2)::uuid;
+    exception
+      when invalid_text_representation then
+        raise exception 'reserved project opening material source contains an invalid opening identity'
+          using errcode = '22023';
+    end;
+    if v_source_ref is distinct from 'opening_balance:' || v_opening_id::text || ':materials'
+       or new.id is distinct from 'opening-material:' || v_opening_id::text
+       or new.type is distinct from 'expense'
+       or new.category is distinct from 'materials'
+       or new.amount <= 0
+       or new.source is distinct from 'import'
+       or new."createdBy" is distinct from v_actor::text
+       or new.project_finance_id is distinct from new."projectFinanceId"
+       or nullif(v_project_finance_id, '') is null then
+      raise exception 'reserved project opening material source requires the controlled positive expense path'
+        using errcode = '42501';
+    end if;
+
+    select true
+    into v_has_context
+    from app_private.project_opening_call_contexts call_context
+    where call_context.backend_pid = pg_catalog.pg_backend_pid()
+      and call_context.transaction_xid = pg_catalog.txid_current()
+      and call_context.actor_id = v_actor
+      and exists (
+        select 1
+        from public.project_opening_balances opening
+        join public.project_finances finance on finance.id = v_project_finance_id
+        where opening.id = v_opening_id
+          and opening.status = 'draft'
+          and opening.recognized_value = new.amount
+          and opening.created_by = v_actor::text
+          and opening.project_id is not distinct from new.project_id
+          and opening.construction_site_id is not distinct from new.construction_site_id
+          and finance.project_id is not distinct from opening.project_id
+          and nullif(coalesce(finance.construction_site_id, finance."constructionSiteId"), '')
+            is not distinct from opening.construction_site_id
+      )
+      and not exists (
+        select 1
+        from public.project_opening_balance_lines line
+        where line.opening_balance_id = v_opening_id
+          and line.remaining_qty > 0
+          and not (line.warehouse_id = any(call_context.target_warehouse_ids))
+      )
+    limit 1
+    for update;
+
+    if not coalesce(v_has_context, false) then
+      raise exception 'reserved project opening material source requires an active opening command capability'
+        using errcode = '42501';
+    end if;
+    return new;
+  end if;
+
   if new.type is distinct from 'expense'
      or new.category is distinct from 'materials'
      or new.amount >= 0
-     or new."createdBy" is distinct from v_actor::text
-     or new.source_ref is distinct from new."sourceRef" then
+     or new."createdBy" is distinct from v_actor::text then
     raise exception 'reserved opening reversal material source requires a controlled negative expense'
       using errcode = '42501';
   end if;
@@ -556,6 +724,34 @@ $$;
 revoke all on function app_private.project_opening_reversal_finance_snapshot(public.project_finances)
   from public, anon, authenticated, service_role;
 
+-- A single lock primitive keeps permission checks and posting on the same
+-- sorted warehouse row set. Missing or archived rows are detected by the
+-- caller by comparing the returned cardinality with the authoritative lines.
+create or replace function app_private.lock_project_opening_reversal_warehouses(
+  p_opening_balance_id uuid
+)
+returns setof text
+language sql
+volatile
+security definer
+set search_path = ''
+as $$
+  select warehouse.id
+  from public.warehouses warehouse
+  join (
+    select distinct line.warehouse_id
+    from public.project_opening_balance_lines line
+    where line.opening_balance_id = p_opening_balance_id
+      and line.remaining_qty > 0
+  ) affected_warehouse on affected_warehouse.warehouse_id = warehouse.id
+  where not coalesce(warehouse.is_archived, false)
+  order by warehouse.id
+  for update of warehouse;
+$$;
+
+revoke all on function app_private.lock_project_opening_reversal_warehouses(uuid)
+  from public, anon, authenticated, service_role;
+
 create or replace function public.reverse_project_opening_balance(
   p_command jsonb
 )
@@ -628,6 +824,8 @@ declare
   v_available_qty numeric;
   v_lineage_count bigint;
   v_warehouse_count bigint;
+  v_locked_warehouse_count bigint;
+  v_revalidated_warehouse_count bigint;
   v_saved_result jsonb;
   v_now timestamptz;
   v_record record;
@@ -716,6 +914,15 @@ begin
     raise exception 'project opening reversal finance snapshot is incomplete or outside the accepted range'
       using errcode = '22023';
   end if;
+  if not (v_expected_status = any(array[
+       'planning', 'active', 'paused', 'completed'
+     ]::text[]))
+     or not (v_corrected_status = any(array[
+       'planning', 'active', 'paused', 'completed'
+     ]::text[])) then
+    raise exception 'project opening reversal finance status is outside the ProjectStatus domain'
+      using errcode = '22023';
+  end if;
   if v_expected_finance_id is distinct from v_corrected_finance_id
      or v_expected_project_id is distinct from v_corrected_project_id
      or v_expected_site_id is distinct from v_corrected_site_id then
@@ -800,36 +1007,37 @@ begin
 
   -- Every affected warehouse must still exist and the current actor must hold
   -- both create and complete capabilities, including on exact command replay.
+  select pg_catalog.count(distinct line.warehouse_id)
+  into v_warehouse_count
+  from public.project_opening_balance_lines line
+  where line.opening_balance_id = v_opening.id
+    and line.remaining_qty > 0;
+  v_locked_warehouse_count := 0;
   for v_warehouse_id in
-    select distinct line.warehouse_id
-    from public.project_opening_balance_lines line
-    where line.opening_balance_id = v_opening.id
-      and line.remaining_qty > 0
-    order by line.warehouse_id
+    select locked_warehouse.warehouse_id
+    from app_private.lock_project_opening_reversal_warehouses(v_opening.id)
+      as locked_warehouse(warehouse_id)
   loop
-    if not exists (
-      select 1 from public.warehouses warehouse
-      where warehouse.id = v_warehouse_id
-        and not coalesce(warehouse.is_archived, false)
-    ) then
-      raise exception 'opening reversal warehouse does not exist or is archived: %', v_warehouse_id
-        using errcode = '23503';
-    end if;
+    v_locked_warehouse_count := v_locked_warehouse_count + 1;
     if not app_private.wms_has_action(
       'wms.transaction.create', null, v_warehouse_id,
-      v_actor, v_actor, v_actor
+      null, null, v_actor
     ) then
       raise exception 'wms.transaction.create is required for %', v_warehouse_id
         using errcode = '42501';
     end if;
     if not app_private.wms_has_action(
       'wms.transaction.complete', null, v_warehouse_id,
-      v_actor, v_actor, v_actor
+      null, null, v_actor
     ) then
       raise exception 'wms.transaction.complete is required for %', v_warehouse_id
         using errcode = '42501';
     end if;
   end loop;
+  if v_locked_warehouse_count is distinct from v_warehouse_count then
+    raise exception 'opening reversal warehouse set changed while locked or contains a missing/archived warehouse'
+      using errcode = '40001';
+  end if;
 
   select * into v_command_result
   from app_private.project_opening_reversal_results command_result
@@ -1224,6 +1432,17 @@ begin
     end if;
   end loop;
 
+  -- Re-run the same sorted lock primitive immediately before finance/material
+  -- compensation and WMS posting. The locks acquired above are still held;
+  -- any cardinality drift is therefore corruption or an invalid warehouse set.
+  select pg_catalog.count(*)
+  into v_revalidated_warehouse_count
+  from app_private.lock_project_opening_reversal_warehouses(v_opening.id);
+  if v_revalidated_warehouse_count is distinct from v_warehouse_count then
+    raise exception 'locked warehouse set changed before reversal posting'
+      using errcode = '40001';
+  end if;
+
   select * into v_finance
   from public.project_finances finance
   where finance.id = v_opening.project_finance_id
@@ -1280,6 +1499,8 @@ begin
        or coalesce(v_original_material.project_finance_id, v_original_material."projectFinanceId")
          is distinct from v_opening.project_finance_id
        or v_original_material.source_ref is distinct from
+         'opening_balance:' || v_opening.id::text || ':materials'
+       or v_original_material."sourceRef" is distinct from
          'opening_balance:' || v_opening.id::text || ':materials' then
       raise exception 'project opening material expense lineage is incomplete; use reconciliation'
         using errcode = '55000';
@@ -1291,6 +1512,7 @@ begin
       select 1 from public.project_transactions project_transaction
       where project_transaction.id = v_reversal_material_id
          or project_transaction.source_ref = v_material_source_ref
+         or project_transaction."sourceRef" = v_material_source_ref
     ) then
       raise exception 'project opening material reversal identity already exists without a command result; use reconciliation'
         using errcode = '55000';
