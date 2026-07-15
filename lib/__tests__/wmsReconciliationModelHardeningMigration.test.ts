@@ -24,6 +24,75 @@ const loadHardeningMigration = (): { file: string; sql: string } => {
   };
 };
 
+const unquoteSqlText = (value: string): string => value.replace(/''/g, "'");
+
+const parseSqlTextArray = (value: string): string[] => Array.from(
+  value.matchAll(/'((?:''|[^'])*)'/g),
+  match => unquoteSqlText(match[1]),
+);
+
+interface PermissionModuleSeed {
+  applicationCode: string;
+  code: string;
+  label: string;
+  routes: string[];
+  legacyModuleKey: string;
+  sortOrder: number;
+}
+
+interface PermissionActionSeed {
+  moduleCode: string;
+  action: string;
+  permissionCode: string;
+  label: string;
+  scopeTypes: string[];
+  legacyModuleKey: string;
+  legacyRoute: string;
+  legacyAdminOnly: boolean;
+  sortOrder: number;
+}
+
+const parseReconciliationModuleSeed = (sql: string): PermissionModuleSeed => {
+  const seedBlock = sql.match(
+    /insert\s+into\s+public\.permission_modules\s*\([\s\S]*?\)\s*values\s*\(\s*'((?:''|[^'])*)'\s*,\s*'wms\.reconciliation'\s*,\s*'((?:''|[^'])*)'\s*,\s*array\[([^\]]*)\]::text\[\]\s*,\s*'((?:''|[^'])*)'\s*,\s*(\d+)\s*\)\s*on\s+conflict/i,
+  );
+
+  expect(seedBlock, 'reconciliation module SQL seed is missing or malformed').not.toBeNull();
+  if (!seedBlock) throw new Error('reconciliation module SQL seed is missing or malformed');
+
+  return {
+    applicationCode: unquoteSqlText(seedBlock[1]),
+    code: 'wms.reconciliation',
+    label: unquoteSqlText(seedBlock[2]),
+    routes: parseSqlTextArray(seedBlock[3]),
+    legacyModuleKey: unquoteSqlText(seedBlock[4]),
+    sortOrder: Number(seedBlock[5]),
+  };
+};
+
+const parseReconciliationActionSeeds = (sql: string): PermissionActionSeed[] => {
+  const seedBlock = sql.match(
+    /insert\s+into\s+public\.permission_actions\s*\([\s\S]*?\)\s*values([\s\S]*?)on\s+conflict\s*\(permission_code\)/i,
+  );
+
+  expect(seedBlock, 'reconciliation action SQL seed block is missing').not.toBeNull();
+  if (!seedBlock) throw new Error('reconciliation action SQL seed block is missing');
+
+  const tuplePattern = /\(\s*'wms\.reconciliation'\s*,\s*'((?:''|[^'])*)'\s*,\s*'((?:''|[^'])*)'\s*,\s*'((?:''|[^'])*)'\s*,\s*array\[([^\]]*)\]::text\[\]\s*,\s*'((?:''|[^'])*)'\s*,\s*'((?:''|[^'])*)'\s*,\s*(true|false)\s*,\s*(\d+)\s*\)/gi;
+
+  return Array.from(seedBlock[1].matchAll(tuplePattern), match => ({
+    moduleCode: 'wms.reconciliation',
+    action: unquoteSqlText(match[1]),
+    permissionCode: unquoteSqlText(match[2]),
+    label: unquoteSqlText(match[3]),
+    scopeTypes: parseSqlTextArray(match[4]),
+    legacyModuleKey: unquoteSqlText(match[5]),
+    legacyRoute: unquoteSqlText(match[6]),
+    legacyAdminOnly: match[7].toLowerCase() === 'true',
+    sortOrder: Number(match[8]),
+  }));
+};
+
 describe('WMS reconciliation model hardening migration', () => {
   it('is forward-only and alters every reconciliation table after the foundation migration', () => {
     const { file, sql } = loadHardeningMigration();
@@ -126,29 +195,69 @@ describe('WMS reconciliation model hardening migration', () => {
   });
 
   it('keeps frontend permission registry in parity with database permission seeds', () => {
+    const { sql } = loadHardeningMigration();
     const wms = ERP_PERMISSION_APPLICATIONS.find(application => application.code === 'wms');
     const reconciliation = wms?.modules.find(module => module.code === 'wms.reconciliation');
 
     expect(reconciliation).toBeDefined();
-    expect(reconciliation).toMatchObject({
-      label: 'Đối soát tồn kho',
-      legacyModuleKey: 'WMS',
-      routes: ['/wms/reconciliation'],
-      sortOrder: 35,
-    });
-    expect(reconciliation?.actions.map(action => ({
+    if (!wms || !reconciliation) throw new Error('frontend reconciliation permission module is missing');
+
+    expect({
+      applicationCode: wms.code,
+      code: reconciliation.code,
+      label: reconciliation.label,
+      routes: [...(reconciliation.routes || [])],
+      legacyModuleKey: reconciliation.legacyModuleKey,
+      sortOrder: reconciliation.sortOrder,
+    }).toEqual(parseReconciliationModuleSeed(sql));
+
+    const sqlActions = parseReconciliationActionSeeds(sql);
+    expect(sqlActions).toHaveLength(6);
+    expect(sqlActions.map(seed => seed.action)).toEqual([
+      'view',
+      'generate',
+      'approve_cache',
+      'approve_business',
+      'apply',
+      'rollback',
+    ]);
+    expect(reconciliation.actions.map(action => ({
+      moduleCode: reconciliation.code,
       action: action.action,
       permissionCode: action.permissionCode,
+      label: action.label,
+      scopeTypes: [...(action.scopeTypes || [])],
+      legacyModuleKey: action.legacyModuleKey,
       legacyRoute: action.legacyRoute,
-      scopeTypes: action.scopeTypes,
+      legacyAdminOnly: action.legacyAdminOnly,
       sortOrder: action.sortOrder,
-    }))).toEqual([
-      { action: 'view', permissionCode: 'wms.reconciliation.view', legacyRoute: '/wms/reconciliation', scopeTypes: ['global', 'warehouse'], sortOrder: 10 },
-      { action: 'generate', permissionCode: 'wms.reconciliation.generate', legacyRoute: '/wms/reconciliation', scopeTypes: ['global', 'warehouse'], sortOrder: 20 },
-      { action: 'approve_cache', permissionCode: 'wms.reconciliation.approve_cache', legacyRoute: '/wms/reconciliation', scopeTypes: ['global', 'warehouse'], sortOrder: 30 },
-      { action: 'approve_business', permissionCode: 'wms.reconciliation.approve_business', legacyRoute: '/wms/reconciliation', scopeTypes: ['global', 'warehouse'], sortOrder: 40 },
-      { action: 'apply', permissionCode: 'wms.reconciliation.apply', legacyRoute: '/wms/reconciliation', scopeTypes: ['global', 'warehouse'], sortOrder: 50 },
-      { action: 'rollback', permissionCode: 'wms.reconciliation.rollback', legacyRoute: '/wms/reconciliation', scopeTypes: ['global', 'warehouse'], sortOrder: 60 },
-    ]);
+    }))).toEqual(sqlActions);
+  });
+
+  it('detects permission tuple drift in SQL rather than comparing duplicate frontend expectations', () => {
+    const { sql } = loadHardeningMigration();
+    const driftedSql = sql.replace(
+      "'approve_cache', 'wms.reconciliation.approve_cache', 'Duyệt sửa cache'",
+      "'approve_cache', 'wms.reconciliation.approve_cache', 'DRIFTED LABEL'",
+    );
+    const reconciliation = ERP_PERMISSION_APPLICATIONS
+      .find(application => application.code === 'wms')
+      ?.modules.find(module => module.code === 'wms.reconciliation');
+
+    expect(driftedSql).not.toBe(sql);
+    expect(reconciliation).toBeDefined();
+    if (!reconciliation) throw new Error('frontend reconciliation permission module is missing');
+
+    expect(parseReconciliationActionSeeds(driftedSql)).not.toEqual(reconciliation.actions.map(action => ({
+      moduleCode: reconciliation.code,
+      action: action.action,
+      permissionCode: action.permissionCode,
+      label: action.label,
+      scopeTypes: [...(action.scopeTypes || [])],
+      legacyModuleKey: action.legacyModuleKey,
+      legacyRoute: action.legacyRoute,
+      legacyAdminOnly: action.legacyAdminOnly,
+      sortOrder: action.sortOrder,
+    })));
   });
 });
