@@ -3,7 +3,8 @@
 -- finance update, WMS movement, and injected failure trigger is rolled back.
 -- Coverage: success + exact retry, conflicting retry, zero quantity evidence,
 -- multi-warehouse posting all-or-nothing, ambiguous item resolution,
--- stale/locked scope, finance staleness, and permission denial.
+-- stale/locked scope, finance staleness, authoritative scope, source
+-- reservation, line identity coherence, and least-privilege PBAC personas.
 
 begin;
 
@@ -24,7 +25,22 @@ create temp table atomic_opening_fixture (
   second_admin_email text not null,
   denied_id uuid not null,
   denied_email text not null,
+  pbac_id uuid not null,
+  pbac_email text not null,
+  own_only_id uuid not null,
+  own_only_email text not null,
+  catalog_id uuid not null,
+  catalog_email text not null,
   construction_site_id text not null,
+  finance_site_id text not null,
+  ambiguous_site_id text not null,
+  rollback_site_id text not null,
+  permission_site_id text not null,
+  pbac_site_id text not null,
+  catalog_site_id text not null,
+  identity_site_id text not null,
+  mismatch_site_id text not null,
+  project_id text not null,
   warehouse_a_id text not null,
   warehouse_b_id text not null,
   warehouse_fail_id text not null,
@@ -46,7 +62,22 @@ select
   'atomic-opening-admin-2-' || seed.token || '@vioo.local',
   gen_random_uuid(),
   'atomic-opening-denied-' || seed.token || '@vioo.local',
-  'atomic-opening-site-' || seed.token,
+  gen_random_uuid(),
+  'atomic-opening-pbac-' || seed.token || '@vioo.local',
+  gen_random_uuid(),
+  'atomic-opening-own-only-' || seed.token || '@vioo.local',
+  gen_random_uuid(),
+  'atomic-opening-catalog-' || seed.token || '@vioo.local',
+  gen_random_uuid()::text,
+  gen_random_uuid()::text,
+  gen_random_uuid()::text,
+  gen_random_uuid()::text,
+  gen_random_uuid()::text,
+  gen_random_uuid()::text,
+  gen_random_uuid()::text,
+  gen_random_uuid()::text,
+  gen_random_uuid()::text,
+  'atomic-opening-project-' || seed.token,
   'atomic-opening-a-' || seed.token,
   'atomic-opening-b-' || seed.token,
   'atomic-opening-z-fail-' || seed.token,
@@ -63,6 +94,33 @@ from (
 ) seed;
 
 grant select on table atomic_opening_fixture to authenticated;
+grant select on table atomic_opening_fixture to service_role;
+
+insert into public.hrm_construction_sites (id, name)
+select site_id::uuid, 'Atomic Opening ' || site_kind || ' Site'
+from atomic_opening_fixture fixture
+cross join lateral (
+  values
+    (fixture.construction_site_id, 'Primary'),
+    (fixture.finance_site_id, 'Finance'),
+    (fixture.ambiguous_site_id, 'Ambiguous'),
+    (fixture.rollback_site_id, 'Rollback'),
+    (fixture.permission_site_id, 'Permission'),
+    (fixture.pbac_site_id, 'PBAC'),
+    (fixture.catalog_site_id, 'Catalog'),
+    (fixture.identity_site_id, 'Identity'),
+    (fixture.mismatch_site_id, 'Mismatch')
+) site(site_id, site_kind);
+
+insert into public.projects (id, code, name, status, construction_site_id, source)
+select
+  fixture.project_id,
+  'ATOMIC-' || left(fixture.token, 20),
+  'Atomic Opening Project',
+  'active',
+  fixture.construction_site_id::uuid,
+  'manual'
+from atomic_opening_fixture fixture;
 
 insert into public.users (
   id,
@@ -114,6 +172,91 @@ select
   '{}'::jsonb,
   '{}'::jsonb
 from atomic_opening_fixture fixture;
+
+insert into public.users (
+  id,
+  name,
+  email,
+  username,
+  role,
+  is_active,
+  allowed_modules,
+  admin_modules,
+  allowed_sub_modules,
+  admin_sub_modules
+)
+select
+  fixture.pbac_id,
+  'Atomic Opening PBAC User',
+  fixture.pbac_email,
+  fixture.pbac_email,
+  'EMPLOYEE'::public.user_role,
+  true,
+  '{}'::text[],
+  '{}'::text[],
+  '{}'::jsonb,
+  '{}'::jsonb
+from atomic_opening_fixture fixture
+union all
+select
+  fixture.own_only_id,
+  'Atomic Opening Own-only User',
+  fixture.own_only_email,
+  fixture.own_only_email,
+  'EMPLOYEE'::public.user_role,
+  true,
+  '{}'::text[],
+  '{}'::text[],
+  '{}'::jsonb,
+  '{}'::jsonb
+from atomic_opening_fixture fixture
+union all
+select
+  fixture.catalog_id,
+  'Atomic Opening Catalog User',
+  fixture.catalog_email,
+  fixture.catalog_email,
+  'EMPLOYEE'::public.user_role,
+  true,
+  '{}'::text[],
+  '{}'::text[],
+  '{}'::jsonb,
+  '{}'::jsonb
+from atomic_opening_fixture fixture;
+
+insert into public.user_permission_grants (
+  user_id,
+  permission_code,
+  scope_type,
+  scope_id,
+  is_active
+)
+select persona.user_id, permission.permission_code, permission.scope_type, permission.scope_id, true
+from atomic_opening_fixture fixture
+cross join lateral (
+  values
+    (fixture.pbac_id),
+    (fixture.catalog_id)
+) persona(user_id)
+cross join lateral (
+  values
+    ('project.budget.manage', 'global', '*'),
+    ('wms.transaction.create', 'warehouse', fixture.warehouse_a_id),
+    ('wms.transaction.complete', 'warehouse', fixture.warehouse_a_id),
+    ('wms.transaction.create', 'warehouse', fixture.warehouse_b_id)
+) permission(permission_code, scope_type, scope_id)
+union all
+select fixture.catalog_id, 'wms.master_data.manage', 'global', '*', true
+from atomic_opening_fixture fixture
+union all
+select fixture.own_only_id, permission.permission_code, permission.scope_type, permission.scope_id, true
+from atomic_opening_fixture fixture
+cross join lateral (
+  values
+    ('project.budget.manage', 'global', '*'),
+    ('wms.transaction.create', 'own', fixture.own_only_id::text),
+    ('wms.transaction.complete', 'assigned', fixture.own_only_id::text)
+) permission(permission_code, scope_type, scope_id);
 
 insert into public.warehouses (id, name, address, type)
 select warehouse_a_id, 'Atomic Opening Warehouse A', 'Smoke only', 'SITE'::public.warehouse_type
@@ -272,6 +415,40 @@ revoke all on function pg_temp.mutate_atomic_opening_replay_dependencies(text, t
 grant execute on function pg_temp.mutate_atomic_opening_replay_dependencies(text, text)
   to authenticated;
 
+-- Rollback-only helper used to prove an exact retry does not require catalog
+-- permission after the original command performed its catalog mutation.
+create or replace function pg_temp.revoke_atomic_opening_catalog_permission(
+  p_user_id uuid
+)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if not exists (
+    select 1
+    from pg_temp.atomic_opening_fixture fixture
+    where fixture.catalog_id = p_user_id
+  ) then
+    raise exception 'catalog smoke helper only accepts its fixture user'
+      using errcode = '42501';
+  end if;
+
+  delete from public.user_permission_grants permission_grant
+  where permission_grant.user_id = p_user_id
+    and permission_grant.permission_code in (
+      'wms.inventory.edit',
+      'wms.master_data.manage'
+    );
+end;
+$$;
+
+revoke all on function pg_temp.revoke_atomic_opening_catalog_permission(uuid)
+  from public;
+grant execute on function pg_temp.revoke_atomic_opening_catalog_permission(uuid)
+  to authenticated;
+
 set local role authenticated;
 
 select set_config('request.jwt.claim.email', admin_email, true)
@@ -305,6 +482,28 @@ begin
   ) then
     raise exception 'authenticated can mint a project opening write authorization';
   end if;
+  if has_function_privilege(
+    'authenticated',
+    'public.lock_project_opening_balance_v1(jsonb)',
+    'EXECUTE'
+  ) or has_function_privilege(
+    'service_role',
+    'public.lock_project_opening_balance_v1(jsonb)',
+    'EXECUTE'
+  ) then
+    raise exception 'an API role can execute the revoked opening implementation';
+  end if;
+  if has_table_privilege(
+    'authenticated',
+    'app_private.project_opening_call_contexts',
+    'INSERT'
+  ) or has_table_privilege(
+    'service_role',
+    'app_private.project_opening_call_contexts',
+    'INSERT'
+  ) then
+    raise exception 'an API role can mint an opening call context';
+  end if;
   if has_table_privilege('authenticated', 'public.project_opening_balances', 'TRUNCATE')
      or has_table_privilege('service_role', 'public.project_opening_balances', 'TRUNCATE')
      or has_table_privilege('authenticated', 'public.project_opening_balance_lines', 'TRUNCATE')
@@ -320,6 +519,63 @@ begin
   ) then
     raise exception 'opening-balance guard is not ENABLE ALWAYS';
   end if;
+  if not exists (
+    select 1
+    from pg_catalog.pg_trigger trigger_row
+    where trigger_row.tgrelid = 'public.transactions'::regclass
+      and trigger_row.tgname = 'trg_guard_project_opening_transaction_source'
+      and trigger_row.tgenabled = 'A'
+  ) or not exists (
+    select 1
+    from pg_catalog.pg_trigger trigger_row
+    where trigger_row.tgrelid = 'public.items'::regclass
+      and trigger_row.tgname = 'trg_guard_project_opening_catalog_write'
+      and trigger_row.tgenabled = 'A'
+  ) then
+    raise exception 'an opening hardening guard is not ENABLE ALWAYS';
+  end if;
+
+  -- Direct authenticated writes cannot claim the reserved opening source.
+  begin
+    insert into public.transactions (
+      id,
+      type,
+      date,
+      items,
+      target_warehouse_id,
+      requester_id,
+      approver_id,
+      status,
+      pending_items,
+      created_by,
+      updated_by,
+      source_type,
+      source_id,
+      posting_engine_version
+    )
+    values (
+      'atomic-opening-direct-auth-' || fixture.token,
+      'ADJUSTMENT'::public.transaction_type,
+      pg_catalog.now(),
+      '[]'::jsonb,
+      fixture.warehouse_a_id,
+      fixture.admin_id,
+      fixture.admin_id,
+      'PENDING'::public.transaction_status,
+      '[]'::jsonb,
+      fixture.admin_id,
+      fixture.admin_id,
+      'project_opening_balance',
+      gen_random_uuid()::text,
+      'wf001-opening-v1'
+    );
+    raise exception 'direct authenticated reserved opening source unexpectedly succeeded';
+  exception
+    when others then
+      if sqlstate <> '42501' or position('reserved opening source' in lower(sqlerrm)) = 0 then
+        raise;
+      end if;
+  end;
 end;
 $security_surface$;
 
@@ -333,8 +589,11 @@ declare
   v_retry jsonb;
   v_finance_snapshot jsonb;
   v_rollback_command jsonb;
+  v_identity_command jsonb;
   v_count integer;
   v_stock numeric;
+  v_before_updated_at timestamptz;
+  v_after_updated_at timestamptz;
 begin
   select * into strict fixture from atomic_opening_fixture;
   select item.sku into strict v_sku
@@ -374,10 +633,81 @@ begin
   v_command := pg_temp.atomic_opening_command(
     fixture.command_id,
     fixture.balance_id,
-    '  Atomic Opening Scope ' || fixture.token || '  ',
+    fixture.construction_site_id,
     fixture.construction_site_id,
     v_lines
   );
+
+  -- Authoritative scope rejects a spoofed scopeKey even when the site exists.
+  begin
+    perform public.lock_project_opening_balance(
+      pg_temp.atomic_opening_command(
+        gen_random_uuid(),
+        gen_random_uuid(),
+        'spoofed-authoritative-scope-' || fixture.token,
+        fixture.construction_site_id,
+        pg_catalog.jsonb_build_array(v_lines->0)
+      )
+    );
+    raise exception 'authoritative scope mismatch unexpectedly succeeded';
+  exception
+    when others then
+      if sqlstate <> '23514' or position('authoritative' in lower(sqlerrm)) = 0 then
+        raise;
+      end if;
+  end;
+
+  -- A project must exist and its canonical site must match the request.
+  begin
+    perform public.lock_project_opening_balance(
+      pg_catalog.jsonb_set(
+        pg_temp.atomic_opening_command(
+          gen_random_uuid(),
+          gen_random_uuid(),
+          fixture.project_id || '_' || fixture.mismatch_site_id,
+          fixture.mismatch_site_id,
+          pg_catalog.jsonb_build_array(v_lines->0)
+        ),
+        '{openingBalance,projectId}',
+        pg_catalog.to_jsonb(fixture.project_id)
+      )
+    );
+    raise exception 'project-site mismatch unexpectedly succeeded';
+  exception
+    when others then
+      if sqlstate <> '23514' or position('project-site mismatch' in lower(sqlerrm)) = 0 then
+        raise;
+      end if;
+  end;
+
+  -- The generic post_wms_transaction engine cannot claim the reserved opening
+  -- source even for a fully privileged actor.
+  begin
+    perform public.post_wms_transaction(pg_catalog.jsonb_build_object(
+      'id', 'atomic-opening-generic-source-' || fixture.token,
+      'type', 'ADJUSTMENT',
+      'date', pg_catalog.now(),
+      'items', pg_catalog.jsonb_build_array(pg_catalog.jsonb_build_object(
+        'lineId', 'generic-source-line',
+        'itemId', fixture.item_id,
+        'quantity', 1,
+        'price', 10,
+        'unit', 'kg'
+      )),
+      'targetWarehouseId', fixture.warehouse_a_id,
+      'requesterId', fixture.admin_id,
+      'status', 'COMPLETED',
+      'sourceType', 'project_opening_balance',
+      'sourceId', gen_random_uuid()::text,
+      'pendingItems', '[]'::jsonb
+    ));
+    raise exception 'generic post_wms_transaction reserved opening source unexpectedly succeeded';
+  exception
+    when others then
+      if sqlstate <> '42501' or position('reserved opening source' in lower(sqlerrm)) = 0 then
+        raise;
+      end if;
+  end;
 
   -- Non-finite quantity NaN is rejected before any document or WMS write.
   begin
@@ -385,7 +715,7 @@ begin
       pg_temp.atomic_opening_command(
         gen_random_uuid(),
         gen_random_uuid(),
-        'atomic-opening-non-finite-quantity-' || fixture.token,
+        fixture.construction_site_id,
         fixture.construction_site_id,
         pg_catalog.jsonb_build_array(
           (v_lines->0) || pg_catalog.jsonb_build_object('remainingQty', 'NaN')
@@ -400,13 +730,59 @@ begin
       end if;
   end;
 
+  -- Intra-command item identity collision: two new-item lines sharing one SKU
+  -- but conflicting accounting codes must fail at draft-to-locked validation.
+  v_identity_command := pg_temp.atomic_opening_command(
+    gen_random_uuid(),
+    gen_random_uuid(),
+    fixture.identity_site_id,
+    fixture.identity_site_id,
+    pg_catalog.jsonb_build_array(
+      pg_catalog.jsonb_build_object(
+        'sku', 'IDENTITY-' || left(fixture.token, 14),
+        'accountingCode', 'IDENTITY-A-' || left(fixture.token, 10),
+        'itemName', 'Identity collision A',
+        'unit', 'kg',
+        'warehouseId', fixture.warehouse_a_id,
+        'purchasedQty', '1',
+        'issuedQty', '0',
+        'usedQty', '0',
+        'remainingQty', '1',
+        'unitPrice', '10',
+        'remainingValue', '10'
+      ),
+      pg_catalog.jsonb_build_object(
+        'sku', lower('IDENTITY-' || left(fixture.token, 14)),
+        'accountingCode', 'IDENTITY-B-' || left(fixture.token, 10),
+        'itemName', 'Identity collision B',
+        'unit', 'kg',
+        'warehouseId', fixture.warehouse_a_id,
+        'purchasedQty', '1',
+        'issuedQty', '0',
+        'usedQty', '0',
+        'remainingQty', '1',
+        'unitPrice', '10',
+        'remainingValue', '10'
+      )
+    )
+  );
+  begin
+    perform public.lock_project_opening_balance(v_identity_command);
+    raise exception 'intra-command item identity collision unexpectedly succeeded';
+  exception
+    when others then
+      if sqlstate <> '23514' or position('identity coherence' in lower(sqlerrm)) = 0 then
+        raise;
+      end if;
+  end;
+
   -- Non-finite value Infinity is rejected at the same SQL trust boundary.
   begin
     perform public.lock_project_opening_balance(
       pg_temp.atomic_opening_command(
         gen_random_uuid(),
         gen_random_uuid(),
-        'atomic-opening-non-finite-value-' || fixture.token,
+        fixture.construction_site_id,
         fixture.construction_site_id,
         pg_catalog.jsonb_build_array(
           (v_lines->0) || pg_catalog.jsonb_build_object('remainingValue', 'Infinity')
@@ -460,6 +836,30 @@ begin
   where item.id = fixture.item_id;
   if v_stock <> 1.25 then
     raise exception 'positive opening quantity did not post exactly once: %', v_stock;
+  end if;
+
+  -- Legacy nullable finance fields are hardened, and a semantic finance update
+  -- must advance updatedAt even when the caller does not touch that column.
+  if exists (
+    select 1
+    from information_schema.columns column_row
+    where column_row.table_schema = 'public'
+      and column_row.table_name = 'project_finances'
+      and column_row.column_name in ('contractValue', 'progressPercent', 'updatedAt')
+      and column_row.is_nullable <> 'NO'
+  ) then
+    raise exception 'legacy nullable finance hardening is missing';
+  end if;
+  select finance."updatedAt"
+  into v_before_updated_at
+  from public.project_finances finance
+  where finance.id = v_first->'project_finance'->>'id';
+  update public.project_finances finance
+  set notes = pg_catalog.concat_ws(E'\n', finance.notes, 'semantic finance update smoke')
+  where finance.id = v_first->'project_finance'->>'id'
+  returning finance."updatedAt" into v_after_updated_at;
+  if v_after_updated_at <= v_before_updated_at then
+    raise exception 'semantic finance update did not advance updatedAt';
   end if;
 
   -- Conflicting retry with the same command ID must fail closed.
@@ -554,8 +954,8 @@ begin
       pg_temp.atomic_opening_command(
         gen_random_uuid(),
         gen_random_uuid(),
-        'atomic-opening-finance-stale-' || fixture.token,
-        fixture.construction_site_id,
+        fixture.finance_site_id,
+        fixture.finance_site_id,
         pg_catalog.jsonb_build_array(v_lines->0),
         v_finance_snapshot->>'id',
         v_finance_snapshot
@@ -589,8 +989,8 @@ begin
       pg_temp.atomic_opening_command(
         gen_random_uuid(),
         gen_random_uuid(),
-        'atomic-opening-ambiguous-' || fixture.token,
-        fixture.construction_site_id,
+        fixture.ambiguous_site_id,
+        fixture.ambiguous_site_id,
         pg_catalog.jsonb_build_array(
           pg_catalog.jsonb_build_object(
             'sku', 'AMB-' || left(fixture.token, 16),
@@ -620,8 +1020,8 @@ begin
   v_rollback_command := pg_temp.atomic_opening_command(
     fixture.rollback_command_id,
     fixture.rollback_balance_id,
-    'atomic-opening-rollback-' || fixture.token,
-    fixture.construction_site_id,
+    fixture.rollback_site_id,
+    fixture.rollback_site_id,
     pg_catalog.jsonb_build_array(
       (v_lines->0) || pg_catalog.jsonb_build_object(
         'warehouseId', fixture.warehouse_b_id,
@@ -633,9 +1033,7 @@ begin
         'remainingQty', '0.75',
         'remainingValue', '7.5'
       )
-    ),
-    v_finance_snapshot->>'id',
-    v_finance_snapshot
+    )
   );
   begin
     perform public.lock_project_opening_balance(v_rollback_command);
@@ -668,7 +1066,7 @@ begin
     raise exception 'multi-warehouse all-or-nothing command left stock behind: %', v_stock;
   end if;
 
-  -- A regular active user has neither project budget nor WMS completion rights.
+  -- A regular active user is rejected by the wrapper's strict create check.
   perform set_config('request.jwt.claim.email', fixture.denied_email, true);
   perform set_config('request.jwt.claim.sub', fixture.denied_id::text, true);
   perform set_config(
@@ -685,21 +1083,275 @@ begin
       pg_temp.atomic_opening_command(
         gen_random_uuid(),
         gen_random_uuid(),
-        'atomic-opening-permission-denial-' || fixture.token,
-        fixture.construction_site_id,
+        fixture.permission_site_id,
+        fixture.permission_site_id,
         pg_catalog.jsonb_build_array(v_lines->0)
       )
     );
     raise exception 'permission denial command unexpectedly succeeded';
   exception
     when others then
-      if sqlstate <> '42501' or position('project.budget.manage' in lower(sqlerrm)) = 0 then
+      if sqlstate <> '42501' or position('wms.transaction.create' in lower(sqlerrm)) = 0 then
         raise;
       end if;
   end;
 end;
 $atomic_command_checks$;
 
+do $least_privilege_pbac_checks$
+declare
+  fixture atomic_opening_fixture%rowtype;
+  v_sku text;
+  v_existing_line jsonb;
+  v_pbac_command jsonb;
+  v_catalog_command jsonb;
+  v_first jsonb;
+  v_retry jsonb;
+  v_catalog_sku text;
+begin
+  select * into strict fixture from atomic_opening_fixture;
+  select item.sku into strict v_sku
+  from public.items item
+  where item.id = fixture.item_id;
+
+  v_existing_line := pg_catalog.jsonb_build_object(
+    'inventoryItemId', fixture.item_id,
+    'accountingCode', '152-' || left(fixture.token, 16),
+    'sku', v_sku,
+    'itemName', 'PBAC existing priced item',
+    'unit', 'kg',
+    'warehouseId', fixture.warehouse_a_id,
+    'purchasedQty', '0.25',
+    'issuedQty', '0',
+    'usedQty', '0',
+    'remainingQty', '0.25',
+    'unitPrice', '10',
+    'remainingValue', '2.5'
+  );
+
+  -- Own/assigned-only grants are not sufficient: strict calls deliberately
+  -- pass requester and assigned user as NULL. Missing wms.transaction.create.
+  perform set_config('request.jwt.claim.email', fixture.own_only_email, true);
+  perform set_config('request.jwt.claim.sub', fixture.own_only_id::text, true);
+  perform set_config(
+    'request.jwt.claims',
+    pg_catalog.jsonb_build_object(
+      'email', fixture.own_only_email,
+      'sub', fixture.own_only_id::text,
+      'role', 'authenticated'
+    )::text,
+    true
+  );
+  begin
+    perform public.lock_project_opening_balance(
+      pg_temp.atomic_opening_command(
+        gen_random_uuid(),
+        gen_random_uuid(),
+        fixture.permission_site_id,
+        fixture.permission_site_id,
+        pg_catalog.jsonb_build_array(v_existing_line)
+      )
+    );
+    raise exception 'own-only WMS grants unexpectedly passed strict create';
+  exception
+    when others then
+      if sqlstate <> '42501' or position('wms.transaction.create' in lower(sqlerrm)) = 0 then
+        raise;
+      end if;
+  end;
+
+  -- Warehouse-scoped create+complete on the one target is sufficient. This
+  -- existing priced item succeeds without catalog permission.
+  perform set_config('request.jwt.claim.email', fixture.pbac_email, true);
+  perform set_config('request.jwt.claim.sub', fixture.pbac_id::text, true);
+  perform set_config(
+    'request.jwt.claims',
+    pg_catalog.jsonb_build_object(
+      'email', fixture.pbac_email,
+      'sub', fixture.pbac_id::text,
+      'role', 'authenticated'
+    )::text,
+    true
+  );
+  v_pbac_command := pg_temp.atomic_opening_command(
+    gen_random_uuid(),
+    gen_random_uuid(),
+    fixture.pbac_site_id,
+    fixture.pbac_site_id,
+    pg_catalog.jsonb_build_array(v_existing_line)
+  );
+  v_first := public.lock_project_opening_balance(v_pbac_command);
+  v_retry := public.lock_project_opening_balance(v_pbac_command);
+  if v_first is distinct from v_retry then
+    raise exception 'least-privilege exact retry changed its result';
+  end if;
+
+  -- A warehouse grant for A cannot cover B. The persona has create on B but
+  -- is missing wms.transaction.complete on B.
+  begin
+    perform public.lock_project_opening_balance(
+      pg_temp.atomic_opening_command(
+        gen_random_uuid(),
+        gen_random_uuid(),
+        fixture.permission_site_id,
+        fixture.permission_site_id,
+        pg_catalog.jsonb_build_array(
+          v_existing_line,
+          v_existing_line || pg_catalog.jsonb_build_object(
+            'warehouseId', fixture.warehouse_b_id
+          )
+        )
+      )
+    );
+    raise exception 'one warehouse grant unexpectedly covered a second warehouse';
+  exception
+    when others then
+      if sqlstate <> '42501' or position('wms.transaction.complete' in lower(sqlerrm)) = 0 then
+        raise;
+      end if;
+  end;
+
+  v_catalog_sku := 'CATALOG-' || left(fixture.token, 14);
+  v_catalog_command := pg_temp.atomic_opening_command(
+    gen_random_uuid(),
+    gen_random_uuid(),
+    fixture.catalog_site_id,
+    fixture.catalog_site_id,
+    pg_catalog.jsonb_build_array(pg_catalog.jsonb_build_object(
+      'sku', v_catalog_sku,
+      'accountingCode', 'CATALOG-' || left(fixture.token, 10),
+      'itemName', 'Catalog permission smoke item',
+      'unit', 'kg',
+      'warehouseId', fixture.warehouse_a_id,
+      'purchasedQty', '1',
+      'issuedQty', '0',
+      'usedQty', '0',
+      'remainingQty', '1',
+      'unitPrice', '10',
+      'remainingValue', '10'
+    ))
+  );
+
+  -- A real new-item write fails atomically with missing catalog permission.
+  begin
+    perform public.lock_project_opening_balance(v_catalog_command);
+    raise exception 'missing catalog permission unexpectedly created an item';
+  exception
+    when others then
+      if sqlstate <> '42501' or position('catalog permission' in lower(sqlerrm)) = 0 then
+        raise;
+      end if;
+  end;
+  if exists (
+    select 1 from public.items item
+    where pg_catalog.lower(pg_catalog.btrim(item.sku)) = pg_catalog.lower(v_catalog_sku)
+  ) or exists (
+    select 1 from public.project_opening_balances opening
+    where opening.construction_site_id = fixture.catalog_site_id
+  ) then
+    raise exception 'missing catalog permission did not roll back atomically';
+  end if;
+
+  -- With catalog permission the same command succeeds. Removing that grant
+  -- afterward must not break an exact retry because no catalog write occurs.
+  perform set_config('request.jwt.claim.email', fixture.catalog_email, true);
+  perform set_config('request.jwt.claim.sub', fixture.catalog_id::text, true);
+  perform set_config(
+    'request.jwt.claims',
+    pg_catalog.jsonb_build_object(
+      'email', fixture.catalog_email,
+      'sub', fixture.catalog_id::text,
+      'role', 'authenticated'
+    )::text,
+    true
+  );
+  v_first := public.lock_project_opening_balance(v_catalog_command);
+  perform pg_temp.revoke_atomic_opening_catalog_permission(fixture.catalog_id);
+  v_retry := public.lock_project_opening_balance(v_catalog_command);
+  if v_first is distinct from v_retry then
+    raise exception 'exact retry after catalog permission removal changed its result';
+  end if;
+end;
+$least_privilege_pbac_checks$;
+
+reset role;
+
+-- Direct owner and service-role SQL still cannot claim the reserved opening
+-- source without the wrapper's protected backend/XID capability.
+do $direct_owner_reserved_source_check$
+declare
+  fixture atomic_opening_fixture%rowtype;
+begin
+  select * into strict fixture from atomic_opening_fixture;
+  begin
+    insert into public.transactions (
+      id, type, date, items, target_warehouse_id,
+      requester_id, approver_id, status, pending_items,
+      created_by, updated_by, source_type, source_id, posting_engine_version
+    )
+    values (
+      'atomic-opening-direct-owner-' || fixture.token,
+      'ADJUSTMENT'::public.transaction_type,
+      pg_catalog.now(),
+      '[]'::jsonb,
+      fixture.warehouse_a_id,
+      fixture.admin_id,
+      fixture.admin_id,
+      'PENDING'::public.transaction_status,
+      '[]'::jsonb,
+      fixture.admin_id,
+      fixture.admin_id,
+      'project_opening_balance',
+      gen_random_uuid()::text,
+      'wf001-opening-v1'
+    );
+    raise exception 'direct owner reserved opening source unexpectedly succeeded';
+  exception
+    when others then
+      if sqlstate <> '42501' or position('reserved opening source' in lower(sqlerrm)) = 0 then
+        raise;
+      end if;
+  end;
+end;
+$direct_owner_reserved_source_check$;
+
+set local role service_role;
+do $direct_service_reserved_source_check$
+declare
+  fixture atomic_opening_fixture%rowtype;
+begin
+  select * into strict fixture from atomic_opening_fixture;
+  begin
+    insert into public.transactions (
+      id, type, date, items, target_warehouse_id,
+      requester_id, approver_id, status, pending_items,
+      created_by, updated_by, source_type, source_id, posting_engine_version
+    )
+    values (
+      'atomic-opening-direct-service-' || fixture.token,
+      'ADJUSTMENT'::public.transaction_type,
+      pg_catalog.now(),
+      '[]'::jsonb,
+      fixture.warehouse_a_id,
+      fixture.admin_id,
+      fixture.admin_id,
+      'PENDING'::public.transaction_status,
+      '[]'::jsonb,
+      fixture.admin_id,
+      fixture.admin_id,
+      'project_opening_balance',
+      gen_random_uuid()::text,
+      'wf001-opening-v1'
+    );
+    raise exception 'direct service reserved opening source unexpectedly succeeded';
+  exception
+    when others then
+      if sqlstate <> '42501' or position('reserved opening source' in lower(sqlerrm)) = 0 then
+        raise;
+      end if;
+  end;
+end;
+$direct_service_reserved_source_check$;
 reset role;
 
 -- Owner/BYPASSRLS writes must still pass the ENABLE ALWAYS exact-image guard.

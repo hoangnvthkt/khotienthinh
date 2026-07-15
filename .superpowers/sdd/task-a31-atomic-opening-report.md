@@ -15,15 +15,44 @@ child lines are immutable through `ENABLE ALWAYS` guards, and API roles cannot
 truncate the protected tables.
 
 Configured voiding is deliberately fail-closed: the former direct status update
-is rejected before any database call. A controlled reversal RPC is still an A3
-follow-up and is not claimed as completed by this task.
+is rejected before any database call. Controlled reversal is owned by its
+separately ordered migration and is not claimed by this hardening addendum.
+
+### Forward-only hardening addendum (20260715120000)
+
+The reviewed `20260715102000` migration remains immutable. A new forward-only
+migration renames its RPC body to the fully revoked
+`lock_project_opening_balance_v1(jsonb)` implementation and exposes a thin
+same-signature wrapper. The wrapper preserves the JWT-derived actor, derives the
+canonical project/site scope, requires strict `wms.transaction.create` and
+`wms.transaction.complete` for every target warehouse with requester/assigned
+fallback disabled, and establishes a protected backend/XID capability for the
+old atomic body.
+
+The hardening also:
+
+- backfills nullable finance concurrency fields, makes them defaulted and
+  non-null, and advances `updatedAt` monotonically on semantic changes through
+  an `ENABLE ALWAYS` trigger;
+- reserves `project_opening_balance` WMS sources to the wrapper capability and
+  `wf001-opening-v1`, with a partial source-identity unique index;
+- enforces existing project/canonical HRM-site identity and replaces the
+  client-supplied scope-key uniqueness boundary with the authoritative locked
+  `(project_id, construction_site_id)` pair;
+- validates SKU/accounting/unit/item coherence, including two colliding new
+  item lines in one command, at every transition into `locked`;
+- checks `wms.inventory.edit OR wms.master_data.manage` only when the core
+  actually inserts an item or changes a price, so exact replay and an existing
+  priced item do not over-require catalog permission.
 
 ## Owned changes
 
 - `lib/projectOpeningBalanceService.ts`
 - `lib/__tests__/projectOpeningBalancePosting.test.ts`
 - `lib/__tests__/atomicProjectOpeningBalanceMigration.test.ts`
+- `lib/__tests__/atomicProjectOpeningBalanceHardeningMigration.test.ts`
 - `supabase/migrations/20260715102000_atomic_project_opening_balance.sql`
+- `supabase/migrations/20260715120000_atomic_project_opening_balance_hardening.sql`
 - `supabase/perf/atomic_project_opening_balance_preflight.sql`
 - `supabase/tests/atomic_project_opening_balance_smoke.sql`
 - `.superpowers/sdd/task-a31-atomic-opening-report.md`
@@ -138,6 +167,11 @@ attempted a direct table update
 npm test -- --run lib/__tests__/atomicProjectOpeningBalanceMigration.test.ts
 2/12 failed: runtime function had no bounded lock timeout and smoke lacked the
 new non-finite/line-update-delete assertions
+
+# Forward-hardening contract before the new migration/artifacts
+npx vitest run lib/__tests__/atomicProjectOpeningBalanceHardeningMigration.test.ts
+7/7 failed: no finance hardening, protected source reservation, authoritative
+scope/index, lock-time line coherence, strict PBAC wrapper, or extended smoke
 ```
 
 GREEN evidence (fresh final runs):
@@ -161,6 +195,9 @@ A3.1 PGlite runtime checks passed
 node /tmp/wf001-pglite/a31-smoke.mjs
 A3.1 rollback-only SQL smoke passed in PGlite
 
+npx vitest run lib/__tests__/atomicProjectOpeningBalanceHardeningMigration.test.ts
+1 file passed; 8 tests passed
+
 npm run lint
 tsc exited 0
 
@@ -177,11 +214,19 @@ The final full repository run is green: 76/76 files and 431/431 tests.
 ## Operational notes
 
 - The SQL smoke is rollback-only and intended for a disposable migrated
-  PostgreSQL/PGlite database. It covers success/exact retry, conflicting retry,
-  zero evidence, cross-actor replay, stale locked scope, stale finance,
-  stable replay after finance/item mutation, `NaN`/infinity rejection,
-  ambiguous catalog matches, permission denial, direct-lock bypass, balance and
-  line insert/update/delete immutability, and injected second-warehouse rollback.
+  PostgreSQL/PGlite database. In addition to the original cases, it covers
+  nullable-finance hardening and semantic timestamps, authoritative scope and
+  project/site mismatch, generic/direct/service-role reserved-source denial,
+  intra-command item identity collision, strict own/assigned and multi-warehouse
+  PBAC denial, existing priced-item success without catalog permission,
+  catalog-mutation rollback, and exact retry after catalog permission removal.
 - The preflight is explicitly read-only and inlines the normalization expression
   so it can run before the migration creates the helper.
+- Deployment was not applied to the linked project. The migration intentionally
+  aborts if preflight finds invalid reserved sources, non-authoritative locked
+  scope, duplicate authoritative pairs, or incoherent locked lines; operators
+  must reconcile those rows rather than bypassing the checks.
+- Finance locking and non-concurrent index creation use the migration's
+  five-second lock timeout. A busy deployment may need a quiet write window and
+  a safe retry; no partial migration state is committed on timeout.
 - `supabase/.temp/cli-latest` is intentionally excluded from staging and commit.
