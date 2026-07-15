@@ -101,6 +101,107 @@ begin
 end;
 $$;
 
+create temporary table reconciliation_smoke_context (
+  actor_id uuid not null,
+  auth_id uuid not null,
+  run_id uuid
+) on commit drop;
+
+insert into reconciliation_smoke_context (actor_id, auth_id)
+select user_row.id, user_row.auth_id
+from public.users user_row
+where coalesce(user_row.is_active, false)
+  and user_row.auth_id is not null
+order by user_row.id
+limit 1;
+
+do $$
+begin
+  if not exists (select 1 from reconciliation_smoke_context) then
+    raise exception 'B2a smoke requires one active application user with auth_id'
+      using errcode = 'P0002';
+  end if;
+end;
+$$;
+
+insert into public.user_permission_grants (
+  user_id, permission_code, scope_type, scope_id, is_active, granted_by
+)
+select context.actor_id, permission.permission_code, 'global', '*', true, context.actor_id
+from reconciliation_smoke_context context
+cross join (
+  values ('wms.reconciliation.generate'), ('wms.reconciliation.view')
+) as permission(permission_code)
+on conflict (user_id, permission_code, scope_type, scope_id)
+do update set is_active = true, expires_at = null;
+
+update app_private.wms_reconciliation_settings
+set value = true
+where key = 'scan_enabled';
+
+grant select, update on table reconciliation_smoke_context to authenticated;
+
+select pg_catalog.set_config(
+  'request.jwt.claim.sub',
+  (select auth_id::text from reconciliation_smoke_context),
+  true
+);
+select pg_catalog.set_config(
+  'request.jwt.claims',
+  pg_catalog.jsonb_build_object(
+    'sub', (select auth_id::text from reconciliation_smoke_context),
+    'role', 'authenticated'
+  )::text,
+  true
+);
+select pg_catalog.set_config(
+  'app.actor_id',
+  (select actor_id::text from reconciliation_smoke_context),
+  true
+);
+
+set local role authenticated;
+do $$
+declare
+  v_run jsonb;
+  v_scan jsonb;
+  v_verified jsonb;
+  v_scan_step integer;
+begin
+  v_run := public.create_wms_reconciliation_run(
+    '{"warehouseIds":["*"]}'::jsonb,
+    pg_catalog.now(),
+    'smoke'
+  );
+  update reconciliation_smoke_context
+  set run_id = (v_run ->> 'id')::uuid;
+
+  for v_scan_step in 1..9 loop
+    v_scan := public.scan_wms_reconciliation_run(
+      (select run_id from reconciliation_smoke_context),
+      500
+    );
+    if (v_scan ->> 'processed')::integer <> 0 then
+      raise exception 'B2a shell scan unexpectedly processed source rows';
+    end if;
+  end loop;
+
+  if v_scan ->> 'status' <> 'scanned'
+     or not coalesce((v_scan ->> 'complete')::boolean, false) then
+    raise exception 'B2a scan lifecycle did not complete after nine phases: %', v_scan;
+  end if;
+
+  v_verified := public.verify_wms_reconciliation_run(
+    (select run_id from reconciliation_smoke_context)
+  );
+  if v_verified ->> 'status' <> 'verified'
+     or v_verified ->> 'verifiedAt' is null then
+    raise exception 'B2a empty run did not verify successfully: %', v_verified;
+  end if;
+end;
+$$;
+reset role;
+
 do $$
 declare
   v_default text;

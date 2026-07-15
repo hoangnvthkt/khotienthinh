@@ -37,8 +37,8 @@ const publicRpcs = [
   'create_wms_reconciliation_run(jsonb,timestamptz,text)',
   'scan_wms_reconciliation_run(uuid,integer)',
   'verify_wms_reconciliation_run(uuid)',
-  'list_wms_reconciliation_runs(jsonb,integer,timestamptz)',
-  'get_wms_reconciliation_workspace(uuid)',
+  'list_wms_reconciliation_runs(jsonb,integer,jsonb)',
+  'get_wms_reconciliation_workspace(uuid,jsonb,jsonb,jsonb,integer)',
 ];
 
 const phases = [
@@ -165,6 +165,18 @@ describe('WMS reconciliation B2a read foundation migration', () => {
     expect(body).toMatch(/status\s*=\s*'scanned'/i);
   });
 
+  it('validates every private phase result before advancing the run cursor', () => {
+    const { sql } = loadMigration();
+    const body = functionBody(sql, 'public.scan_wms_reconciliation_run');
+
+    expect(body).toMatch(/jsonb_typeof\s*\(\s*v_result\s*\)\s*<>\s*'object'/i);
+    expect(body).toMatch(/jsonb_typeof\s*\(\s*v_result\s*->\s*'cursor'\s*\)\s*<>\s*'object'/i);
+    expect(body).toMatch(/v_result\s*->\s*'cursor'\s*->>\s*'phase'[\s\S]*v_phase/i);
+    expect(body).toMatch(/v_processed\s*<\s*0/i);
+    expect(body).toMatch(/v_processed\s*>\s*p_batch_size/i);
+    expect(body).toMatch(/errcode\s*=\s*'55000'/i);
+  });
+
   it('verifies by ordered finding hash and remains read-only to WMS source tables', () => {
     const { sql } = loadMigration();
     const body = functionBody(sql, 'public.verify_wms_reconciliation_run');
@@ -174,6 +186,8 @@ describe('WMS reconciliation B2a read foundation migration', () => {
     expect(body).toMatch(/order\s+by/i);
     expect(body).toMatch(/run_hash/i);
     expect(body).toMatch(/verification_pending/i);
+    expect(body).toMatch(/when\s+v_verification_pending\s*>\s*0\s+or\s+v_stale_count\s*>\s*0[\s\S]*'scanned'/i);
+    expect(body).toMatch(/verified_at\s*=\s*case[\s\S]*then\s+null/i);
 
     for (const relation of [
       'transactions', 'inventory_transactions', 'inventory_ledger_entries',
@@ -191,12 +205,67 @@ describe('WMS reconciliation B2a read foundation migration', () => {
     expect(listBody).toMatch(/p_limit\s+(?:not\s+between\s+1\s+and\s+\d+|<\s*1|>\s*\d+)/i);
     expect(listBody).toMatch(/wms\.reconciliation\.view/i);
     expect(listBody).toMatch(/app_private\.can_view_wms_reconciliation_scope/i);
-    expect(listBody).toMatch(/created_at\s*</i);
+    expect(listBody).toMatch(/p_before\s*->>\s*'createdAt'/i);
+    expect(listBody).toMatch(/p_before\s*->>\s*'id'/i);
+    expect(listBody).toMatch(/run\.created_at\s*<\s*v_before_created_at[\s\S]*run\.created_at\s*=\s*v_before_created_at[\s\S]*run\.id\s*<\s*v_before_id/i);
+    expect(listBody).toMatch(/'nextBefore'[\s\S]*'createdAt'[\s\S]*'id'/i);
     expect(workspaceBody).toMatch(/wms\.reconciliation\.view/i);
     expect(workspaceBody).toMatch(/app_private\.require_wms_reconciliation_permission/i);
-    expect(workspaceBody).toMatch(/limit\s+500/i);
+    for (const cursor of ['p_findings_after', 'p_actions_after', 'p_approvals_after']) {
+      expect(sql).toMatch(new RegExp(`function\\s+public\\.get_wms_reconciliation_workspace\\s*\\([\\s\\S]*${cursor}\\s+jsonb`, 'i'));
+    }
+    expect(workspaceBody).toMatch(/p_page_size\s+(?:not\s+between\s+1\s+and\s+500|<\s*1|>\s*500)/i);
+    expect(workspaceBody).toMatch(/'nextFindingsAfter'/i);
+    expect(workspaceBody).toMatch(/'nextActionsAfter'/i);
+    expect(workspaceBody).toMatch(/'nextApprovalsAfter'/i);
+    expect(workspaceBody).toMatch(/scan_enabled/i);
+    expect(workspaceBody).toMatch(/apply_enabled/i);
+    expect(workspaceBody).toMatch(/rollback_enabled/i);
     expect(workspaceBody).toMatch(/app_private\.wms_reconciliation_decimal_text\s*\(\s*finding\.(?:before_qty|expected_qty|delta_qty)/i);
     expect(workspaceBody).toMatch(/app_private\.canonicalize_wms_reconciliation_json_numbers/i);
+  });
+
+  it('freezes hashes for every phase and the recheck algorithm', () => {
+    const { sql } = loadMigration();
+    const body = functionBody(sql, 'public.create_wms_reconciliation_run');
+
+    for (const phase of phases) {
+      expect(body).toContain(`app_private.scan_wms_reconciliation_phase_${phase}`);
+    }
+    expect(body).toContain('app_private.recheck_wms_reconciliation_finding');
+  });
+
+  it('captures coherent composite high-water rows under one database snapshot', () => {
+    const { sql } = loadMigration();
+    const body = functionBody(sql, 'public.create_wms_reconciliation_run');
+
+    expect(body).toMatch(/pg_catalog\.pg_current_snapshot\s*\(\s*\)/i);
+    expect(body).toMatch(/order\s+by\s+header\.created_at\s+desc\s*,\s*header\.id\s+desc[\s\S]*limit\s+1/i);
+    expect(body).toMatch(/order\s+by\s+entry\.created_at\s+desc\s*,\s*entry\.id\s+desc[\s\S]*limit\s+1/i);
+    expect(body).not.toMatch(/max\s*\(\s*(?:header|entry)\.id::text\s*\)/i);
+    expect(body).toMatch(/'createdAt'[\s\S]*'id'/i);
+  });
+
+  it('preflights all scanner source fields, relation kinds, primary keys and identity indexes', () => {
+    const { sql } = loadMigration();
+    const preflight = functionBody(sql, 'app_private.preflight_wms_reconciliation_catalog');
+
+    for (const required of [
+      'transaction_type', 'movement_direction', 'material_id', 'warehouse_id',
+      'transaction_date', 'source_line_id', 'scope_key', 'project_id',
+      'construction_site_id', 'lot_no', 'batch_no', 'serial_no',
+      'purchase_unit', 'purchase_conversion_factor', 'as_of_date',
+      'lock_command_id', 'lock_request_hash', 'posting_engine_version',
+      'material_request_id', 'request_line_id', 'purchase_order_line_id',
+      'stock_unit', 'purchase_order_supplier_return_lines',
+    ]) {
+      expect(preflight).toContain(required);
+    }
+    expect(preflight).toMatch(/pg_catalog\.pg_class/i);
+    expect(preflight).toMatch(/relkind/i);
+    expect(preflight).toMatch(/pg_catalog\.pg_index/i);
+    expect(preflight).toMatch(/indisprimary/i);
+    expect(preflight).toMatch(/indisunique/i);
   });
 
   it('hardens all RPC and private ACLs with empty search paths', () => {
@@ -228,6 +297,10 @@ describe('WMS reconciliation B2a read foundation migration', () => {
     expect(smoke).toMatch(/p_batch_size|501/i);
     expect(smoke).toMatch(/source_snapshot/i);
     expect(smoke).toMatch(/inventory_ledger_entries/i);
+    expect(smoke).toMatch(/create_wms_reconciliation_run/i);
+    expect(smoke).toMatch(/for\s+v_scan_step\s+in\s+1\.\.9/i);
+    expect(smoke).toMatch(/scan_wms_reconciliation_run/i);
+    expect(smoke).toMatch(/verify_wms_reconciliation_run/i);
 
     const preflight = stripSqlComments(fs.readFileSync(preflightPath, 'utf8'));
     expect(preflight).toMatch(/pg_catalog\.pg_proc/i);
