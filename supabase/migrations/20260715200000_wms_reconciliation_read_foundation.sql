@@ -360,6 +360,7 @@ declare
   v_required record;
   v_required_relation record;
   v_required_index record;
+  v_required_not_null record;
   v_actual_type text;
   v_actual_type_oid oid;
   v_expected_type_oid oid;
@@ -602,6 +603,67 @@ begin
     end if;
   end loop;
 
+  for v_required_not_null in
+    select *
+    from (values
+      ('public', 'transactions', 'id'),
+      ('public', 'transactions', 'type'),
+      ('public', 'transactions', 'status'),
+      ('public', 'transactions', 'date'),
+      ('public', 'transactions', 'items'),
+      ('public', 'inventory_transactions', 'id'),
+      ('public', 'inventory_transactions', 'source_type'),
+      ('public', 'inventory_transactions', 'source_id'),
+      ('public', 'inventory_transactions', 'posted_at'),
+      ('public', 'inventory_transactions', 'created_at'),
+      ('public', 'inventory_ledger_entries', 'id'),
+      ('public', 'inventory_ledger_entries', 'inventory_transaction_id'),
+      ('public', 'inventory_ledger_entries', 'entry_no'),
+      ('public', 'inventory_ledger_entries', 'material_id'),
+      ('public', 'inventory_ledger_entries', 'warehouse_id'),
+      ('public', 'inventory_ledger_entries', 'quantity_in'),
+      ('public', 'inventory_ledger_entries', 'quantity_out'),
+      ('public', 'inventory_ledger_entries', 'created_at'),
+      ('public', 'inventory_balances', 'id'),
+      ('public', 'inventory_balances', 'material_id'),
+      ('public', 'inventory_balances', 'warehouse_id'),
+      ('public', 'inventory_balances', 'on_hand_qty'),
+      ('public', 'project_opening_balances', 'id'),
+      ('public', 'project_opening_balances', 'as_of_date'),
+      ('public', 'project_opening_balances', 'status'),
+      ('public', 'project_opening_balances', 'stock_transaction_ids'),
+      ('public', 'project_opening_balance_lines', 'id'),
+      ('public', 'project_opening_balance_lines', 'opening_balance_id'),
+      ('public', 'project_opening_balance_lines', 'unit'),
+      ('public', 'project_opening_balance_lines', 'warehouse_id'),
+      ('public', 'project_opening_balance_lines', 'remaining_qty'),
+      ('app_private', 'inventory_audit_command_results', 'command_id'),
+      ('app_private', 'inventory_audit_command_results', 'request_hash'),
+      ('app_private', 'inventory_audit_command_results', 'actor_id'),
+      ('app_private', 'inventory_audit_command_results', 'warehouse_id'),
+      ('app_private', 'inventory_audit_command_results', 'result'),
+      ('app_private', 'inventory_audit_command_results', 'created_at')
+    ) as required_not_null(schema_name, table_name, column_name)
+  loop
+    if not exists (
+      select 1
+      from pg_catalog.pg_attribute attribute
+      where attribute.attrelid = pg_catalog.to_regclass(
+          pg_catalog.format('%I.%I', v_required_not_null.schema_name, v_required_not_null.table_name)
+        )
+        and attribute.attname = v_required_not_null.column_name
+        and attribute.attnum > 0
+        and not attribute.attisdropped
+        and attribute.attnotnull
+    ) then
+      raise exception 'required reconciliation source column must be NOT NULL: %.%.%',
+        v_required_not_null.schema_name,
+        v_required_not_null.table_name,
+        v_required_not_null.column_name
+        using errcode = '55000';
+    end if;
+  end loop;
+
   for v_required_relation in
     select *
     from (values
@@ -652,6 +714,54 @@ begin
     ) then
       raise exception 'reconciliation source primary key is missing: %.%',
         v_required_relation.schema_name, v_required_relation.table_name
+        using errcode = '55000';
+    end if;
+  end loop;
+
+  for v_required_index in
+    select *
+    from (values
+      ('public.transactions', array['id']::text[]),
+      ('public.items', array['id']::text[]),
+      ('public.warehouses', array['id']::text[]),
+      ('public.requests', array['id']::text[]),
+      ('public.purchase_orders', array['id']::text[]),
+      ('public.audit_sessions', array['id']::text[]),
+      ('public.inventory_transactions', array['id']::text[]),
+      ('public.inventory_ledger_entries', array['id']::text[]),
+      ('public.inventory_balances', array['id']::text[]),
+      ('public.project_opening_balances', array['id']::text[]),
+      ('public.project_opening_balance_lines', array['id']::text[]),
+      ('public.material_request_fulfillment_batches', array['id']::text[]),
+      ('public.material_request_fulfillment_lines', array['id']::text[]),
+      ('public.purchase_order_delivery_batches', array['id']::text[]),
+      ('public.purchase_order_delivery_lines', array['id']::text[]),
+      ('public.purchase_order_supplier_return_lines', array['id']::text[]),
+      ('public.loss_norms', array['id']::text[]),
+      ('public.categories', array['id']::text[]),
+      ('app_private.inventory_audit_command_results', array['command_id']::text[])
+    ) as required_primary_key(relation_name, key_columns)
+  loop
+    v_relation_oid := pg_catalog.to_regclass(v_required_index.relation_name)::oid;
+    if not exists (
+      select 1
+      from pg_catalog.pg_index source_index
+      where source_index.indrelid = v_relation_oid
+        and source_index.indisprimary
+        and source_index.indnkeyatts = pg_catalog.cardinality(v_required_index.key_columns)
+        and (
+          select pg_catalog.array_agg(attribute.attname::text order by key_column.ordinality)
+          from pg_catalog.unnest(source_index.indkey) with ordinality
+            as key_column(attnum, ordinality)
+          join pg_catalog.pg_attribute attribute
+            on attribute.attrelid = source_index.indrelid
+           and attribute.attnum = key_column.attnum
+          where key_column.ordinality <= source_index.indnkeyatts
+        ) = v_required_index.key_columns
+    ) then
+      raise exception 'required reconciliation primary identity is missing: % (%)',
+        v_required_index.relation_name,
+        pg_catalog.array_to_string(v_required_index.key_columns, ',')
         using errcode = '55000';
     end if;
   end loop;
@@ -1267,6 +1377,7 @@ begin
      or not ((v_result -> 'cursor') ? 'lastKey')
      or v_result -> 'cursor' ->> 'phase' is distinct from v_phase
      or pg_catalog.jsonb_typeof(v_result -> 'processed') <> 'number'
+     or v_result ->> 'processed' !~ '^[0-9]+$'
      or pg_catalog.jsonb_typeof(v_result -> 'complete') <> 'boolean' then
     raise exception 'invalid reconciliation phase result for %', v_phase
       using errcode = '55000';
@@ -1380,12 +1491,17 @@ begin
         set status = 'stale'
         where finding.id = v_finding.id
           and finding.status <> 'stale';
-        v_stale_count := v_stale_count + 1;
       end if;
     else
       v_verification_pending := v_verification_pending + 1;
     end if;
   end loop;
+
+  select pg_catalog.count(*)::integer
+  into v_stale_count
+  from public.wms_reconciliation_findings finding
+  where finding.run_id = v_run.id
+    and finding.status = 'stale';
 
   select app_private.sha256_text(coalesce(
     pg_catalog.string_agg(
@@ -1457,6 +1573,8 @@ begin
   if p_before is not null then
     if pg_catalog.jsonb_typeof(p_before) <> 'object'
        or not (p_before ?& array['createdAt', 'id'])
+       or pg_catalog.jsonb_typeof(p_before -> 'createdAt') <> 'string'
+       or pg_catalog.jsonb_typeof(p_before -> 'id') <> 'string'
        or exists (
          select 1 from pg_catalog.jsonb_object_keys(p_before) cursor_key(key)
          where key not in ('createdAt', 'id')
@@ -1612,6 +1730,8 @@ begin
   if p_findings_after is not null then
     if pg_catalog.jsonb_typeof(p_findings_after) <> 'object'
        or not (p_findings_after ?& array['createdAt', 'id'])
+       or pg_catalog.jsonb_typeof(p_findings_after -> 'createdAt') <> 'string'
+       or pg_catalog.jsonb_typeof(p_findings_after -> 'id') <> 'string'
        or exists (
          select 1 from pg_catalog.jsonb_object_keys(p_findings_after) cursor_key(key)
          where key not in ('createdAt', 'id')
@@ -1636,6 +1756,8 @@ begin
   if p_actions_after is not null then
     if pg_catalog.jsonb_typeof(p_actions_after) <> 'object'
        or not (p_actions_after ?& array['createdAt', 'id'])
+       or pg_catalog.jsonb_typeof(p_actions_after -> 'createdAt') <> 'string'
+       or pg_catalog.jsonb_typeof(p_actions_after -> 'id') <> 'string'
        or exists (
          select 1 from pg_catalog.jsonb_object_keys(p_actions_after) cursor_key(key)
          where key not in ('createdAt', 'id')
@@ -1660,6 +1782,8 @@ begin
   if p_approvals_after is not null then
     if pg_catalog.jsonb_typeof(p_approvals_after) <> 'object'
        or not (p_approvals_after ?& array['createdAt', 'id'])
+       or pg_catalog.jsonb_typeof(p_approvals_after -> 'createdAt') <> 'string'
+       or pg_catalog.jsonb_typeof(p_approvals_after -> 'id') <> 'string'
        or exists (
          select 1 from pg_catalog.jsonb_object_keys(p_approvals_after) cursor_key(key)
          where key not in ('createdAt', 'id')
