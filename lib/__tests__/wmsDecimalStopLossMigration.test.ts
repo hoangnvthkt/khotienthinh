@@ -75,14 +75,15 @@ describe('WMS decimal stop-loss migration contract', () => {
     expect(definition).toContain('v_request_reserved');
     expect(definition).toContain('v_available := greatest(0, v_on_hand - v_reserved);');
     expect(definition).toContain("jsonb_array_elements(coalesce(v_tx.pending_items, '[]'::jsonb))");
-    expect(definition).toContain('approver_id = p_approver_id');
+    expect(definition).toContain('p_approver_id is distinct from v_user.id');
+    expect(definition).toContain('approver_id = v_user.id');
   });
 
   it('denies direct stock helper execution while retaining authenticated outer RPC access', () => {
     const { migrationSql } = readLatestProcessTransactionStatusDefinition();
 
     expect(migrationSql).toMatch(
-      /revoke\s+execute\s+on\s+function\s+public\.apply_stock_change\s*\(\s*text\s*,\s*text\s*,\s*numeric\s*\)\s+from\s+public\s*,\s*anon\s*,\s*authenticated\s*;/i,
+      /revoke\s+(?:all|execute)\s+on\s+function\s+public\.apply_stock_change\s*\(\s*text\s*,\s*text\s*,\s*numeric\s*\)\s+from\s+public\s*,\s*anon\s*,\s*authenticated(?:\s*,\s*service_role)?\s*;/i,
     );
     expect(migrationSql).not.toMatch(
       /grant\s+execute\s+on\s+function\s+public\.apply_stock_change\s*\(\s*text\s*,\s*text\s*,\s*numeric\s*\)/i,

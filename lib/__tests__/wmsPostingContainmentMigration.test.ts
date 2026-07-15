@@ -169,8 +169,8 @@ describe('WMS posting-path containment migration contract', () => {
       'post_wms_transaction',
     );
     const { sql } = latestMigrationMatching(
-      /posting_request_hash/i,
-      'WMS posting request hash',
+      /create\s+or\s+replace\s+function\s+public\.post_wms_transaction\s*\(/i,
+      'post_wms_transaction owner migration',
     );
 
     expect(sql).toMatch(/add\s+column\s+if\s+not\s+exists\s+posting_request_hash\s+text/i);
@@ -199,8 +199,8 @@ describe('WMS posting-path containment migration contract', () => {
       'enrich_inventory_ledger_entry_metadata',
     );
     const { sql } = latestMigrationMatching(
-      /posting_engine_version/i,
-      'posting metadata enrichment',
+      /create\s+or\s+replace\s+function\s+app_private\.enrich_inventory_transaction_metadata\s*\(/i,
+      'posting metadata enrichment owner migration',
     );
 
     for (const definition of [headerMetadata, entryMetadata]) {
