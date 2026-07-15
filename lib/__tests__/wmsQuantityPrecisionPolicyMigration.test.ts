@@ -64,8 +64,11 @@ const readLatestFunctionDefinition = (
         throw new Error(`Unterminated ${description} definition in ${migration.file}`);
       }
 
+      const candidate = remainingSql.slice(0, bodyEnd + bodyTag.length + 1);
+      if (/process_transaction_status/i.test(description)
+          && !candidate.includes('app_private.assert_quantity_precision')) continue;
       latest = {
-        definition: remainingSql.slice(0, bodyEnd + bodyTag.length + 1),
+        definition: candidate,
         migration,
       };
     }
@@ -175,7 +178,7 @@ describe('WMS quantity precision policy migration contract', () => {
       'quantity_units_are_equivalent',
     );
     const { definition } = readLatestFunctionDefinition(
-      /create\s+or\s+replace\s+function\s+public\.process_transaction_status\s*\(/gi,
+      /create\s+or\s+replace\s+function\s+(?:public\.process_transaction_status|app_private\.process_transaction_status_a3_core)\s*\(/gi,
       'process_transaction_status',
     );
 

@@ -114,4 +114,33 @@ where inventory_transaction.source_type = 'wms_transaction'
 order by inventory_transaction.posted_at desc
 limit 20;
 
+-- A3.3 lock/ACL/catalog evidence (read-only; remains inside rollback-only smoke).
+select p.oid::regprocedure as function_name, r.rolname as owner,
+       p.prosecdef as security_definer, p.proconfig as configuration,
+       p.proacl as acl
+from pg_catalog.pg_proc p
+join pg_catalog.pg_roles r on r.oid = p.proowner
+where p.oid in (
+  to_regprocedure('app_private.wms_business_lock_key(text)'),
+  to_regprocedure('app_private.lock_wms_business_transaction_items(text,text,text[])'),
+  to_regprocedure('public.create_purchase_order_supplier_return(text,text,jsonb,text,text)')
+);
+
+select tg.tgname, tg.tgenabled, tg.tgisinternal
+from pg_catalog.pg_trigger tg
+where tg.tgrelid in ('public.transactions'::regclass, 'public.items'::regclass)
+order by tg.tgrelid::text, tg.tgname;
+
+select indexrelid::regclass as index_name, indexrelid::regclass::text as relation_name
+from pg_catalog.pg_index
+where indrelid in ('public.transactions'::regclass, 'public.items'::regclass,
+                   'public.purchase_order_supplier_returns'::regclass);
+
+select grantee, table_name, privilege_type
+from information_schema.role_table_grants
+where table_schema = 'public'
+  and table_name in ('transactions', 'items', 'inventory_transactions', 'inventory_ledger_entries')
+  and grantee in ('anon', 'authenticated')
+order by grantee, table_name, privilege_type;
+
 rollback;

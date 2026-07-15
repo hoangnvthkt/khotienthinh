@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const PROCESS_TRANSACTION_STATUS_PATTERN =
-  /create\s+or\s+replace\s+function\s+public\.process_transaction_status\s*\(/gi;
+  /create\s+or\s+replace\s+function\s+(?:public\.process_transaction_status|app_private\.process_transaction_status_a3_core)\s*\(/gi;
 
 const readLatestProcessTransactionStatusDefinition = (): {
   definition: string;
@@ -27,8 +27,10 @@ const readLatestProcessTransactionStatusDefinition = (): {
         throw new Error(`Unterminated process_transaction_status definition in ${file}`);
       }
 
+      const candidate = migrationSql.slice(start, end + '\n$$;'.length);
+      if (!candidate.includes('v_qty numeric') || !candidate.includes('app_private.wms_has_action')) continue;
       latest = {
-        definition: migrationSql.slice(start, end + '\n$$;'.length),
+        definition: candidate,
         migrationSql,
       };
     }

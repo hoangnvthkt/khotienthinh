@@ -39,7 +39,10 @@ const latestFunction = (pattern: RegExp, description: string): string => {
       const start = bodyTag.index + bodyTag[0].length;
       const end = remaining.indexOf(`${bodyTag[1]};`, start);
       if (end === -1) throw new Error(`Unterminated ${description} in ${migration.file}`);
-      result = remaining.slice(0, end + bodyTag[1].length + 1);
+      const candidate = remaining.slice(0, end + bodyTag[1].length + 1);
+      if (/process_transaction_status/i.test(description)
+          && !candidate.includes('app_private.assert_quantity_precision')) continue;
+      result = candidate;
     }
   }
 
@@ -129,7 +132,7 @@ describe('WMS posting-path containment migration contract', () => {
 
   it('locks item rows in stable order, creates empty pending caches, and preserves idempotence', () => {
     const process = latestFunction(
-      /create\s+or\s+replace\s+function\s+public\.process_transaction_status\s*\(/gi,
+      /create\s+or\s+replace\s+function\s+(?:public\.process_transaction_status|app_private\.process_transaction_status_a3_core)\s*\(/gi,
       'process_transaction_status',
     );
 
@@ -149,7 +152,7 @@ describe('WMS posting-path containment migration contract', () => {
 
   it('allows only canonical forward status commands and binds the approver to the authenticated actor', () => {
     const process = latestFunction(
-      /create\s+or\s+replace\s+function\s+public\.process_transaction_status\s*\(/gi,
+      /create\s+or\s+replace\s+function\s+(?:public\.process_transaction_status|app_private\.process_transaction_status_a3_core)\s*\(/gi,
       'process_transaction_status',
     );
 
