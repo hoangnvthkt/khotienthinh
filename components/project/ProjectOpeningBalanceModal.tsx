@@ -12,41 +12,114 @@ import {
 } from '../../types';
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
 import {
-  formatVietnameseMoney,
-  formatVietnameseNumber,
   normalizeLookupText,
-  parseVietnameseMoney,
-  parseVietnameseNumber,
   SITE_WAREHOUSE_STOP_WORDS,
 } from '../../lib/projectMaterialTabUtils';
+import {
+  formatCurrencyVi,
+  formatViDecimal,
+  formatViPercent,
+  formatViQuantity,
+  type DecimalPolicy,
+} from '../../lib/locale/decimal';
+import {
+  inspectLocalizedNumberDraft,
+  localizedNumberValidationMessage,
+} from '../../lib/locale/inputDraft';
+import {
+  LocalizedMoneyInput,
+  LocalizedNumberInput,
+} from '../common/LocalizedNumberInput';
 import { getProjectScopeKey } from '../../lib/projectWeeklyProgressService';
 import {
   calculateOpeningRecognizedValue,
   projectOpeningBalanceService,
   ProjectOpeningBalanceLockResult,
 } from '../../lib/projectOpeningBalanceService';
+import {
+  clearProjectOpeningBalanceCommandId,
+  getOrCreateProjectOpeningBalanceCommandId,
+} from '../../lib/projectOpeningBalanceCommand';
 
-const fmtFull = (n: number) => `${Math.round(Number(n || 0)).toLocaleString('vi-VN')} đ`;
-const toNumber = (value: string | number): number => parseVietnameseNumber(value);
-const toMoney = (value: string | number): number => parseVietnameseMoney(value);
-const fmtInput = (value: unknown, maximumFractionDigits = 6) => formatVietnameseNumber(value, maximumFractionDigits);
-const fmtMoneyInput = (value: unknown) => formatVietnameseMoney(value);
+const QUANTITY_POLICY: DecimalPolicy = {
+  kind: 'quantity',
+  maxFractionDigits: 6,
+  min: 0,
+  allowNegative: false,
+};
+const UNIT_PRICE_POLICY: DecimalPolicy = {
+  kind: 'currency',
+  maxFractionDigits: 6,
+  min: 0,
+  allowNegative: false,
+};
+const PERCENT_POLICY: DecimalPolicy = {
+  kind: 'percent',
+  maxFractionDigits: 2,
+  min: 0,
+  max: 100,
+  allowNegative: false,
+};
+const VND_TOTAL_POLICY: DecimalPolicy = {
+  kind: 'vnd',
+  maxFractionDigits: 0,
+  min: 0,
+  allowNegative: false,
+};
 
-type ProjectOpeningBalanceModalLine = ProjectOpeningBalanceLine & Pick<ProjectOpeningBalanceImportRow, 'purchasedAmount' | 'issuedAmount'>;
+const fmtFull = (value: number) => formatCurrencyVi(value, 'VND');
+const formatInitialDraft = (value: unknown): string => {
+  if (value === null || value === undefined || value === '') return '';
+  if (typeof value !== 'number' && typeof value !== 'string') return '';
+  // Keep unexpected source precision visible so policy validation can reject it.
+  return formatViDecimal(value, { maximumFractionDigits: 20 });
+};
+
+type EditableLineNumberKey = 'purchasedQty' | 'issuedQty' | 'usedQty' | 'remainingQty' | 'unitPrice';
+type ProjectOpeningBalanceModalLine = Omit<ProjectOpeningBalanceLine, EditableLineNumberKey> &
+  Pick<ProjectOpeningBalanceImportRow, 'rowNumber' | 'purchasedAmount' | 'issuedAmount' | 'errors' | 'warnings'> & {
+    [Key in EditableLineNumberKey]: string;
+  };
+
+const toDraftLine = (line: ProjectOpeningBalanceImportRow | ProjectOpeningBalanceLine): ProjectOpeningBalanceModalLine => ({
+  ...line,
+  purchasedQty: formatInitialDraft(line.purchasedQty),
+  issuedQty: formatInitialDraft(line.issuedQty),
+  usedQty: formatInitialDraft(line.usedQty),
+  remainingQty: formatInitialDraft(line.remainingQty),
+  unitPrice: formatInitialDraft(line.unitPrice),
+});
+
+const readDraftNumber = (draft: string, policy: DecimalPolicy): number => {
+  const result = inspectLocalizedNumberDraft(draft, policy);
+  return result.ok === true ? result.value ?? 0 : 0;
+};
 
 const emptyLine = (warehouseId = ''): ProjectOpeningBalanceModalLine => ({
   sku: '',
   itemName: '',
   unit: 'Cái',
   warehouseId,
-  purchasedQty: 0,
-  issuedQty: 0,
-  usedQty: 0,
-  remainingQty: 0,
-  unitPrice: 0,
+  purchasedQty: '',
+  issuedQty: '',
+  usedQty: '',
+  remainingQty: '',
+  unitPrice: '',
   remainingValue: 0,
   note: '',
 });
+
+type PreparedLockInput =
+  | { ok: false; error: string }
+  | {
+      ok: true;
+      contractValue: number;
+      constructionProgress: number;
+      purchasedValue: number;
+      issuedValue: number;
+      usedValue: number;
+      lines: ProjectOpeningBalanceLine[];
+    };
 
 interface ProjectOpeningBalanceModalProps {
   open: boolean;
@@ -72,9 +145,6 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
     items,
     warehouses,
     user,
-    addProjectFinance,
-    updateProjectFinance,
-    addProjectTransaction,
     loadModuleData,
     refreshWmsRecords,
   } = useApp();
@@ -106,8 +176,8 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [existingOpening, setExistingOpening] = useState<ProjectOpeningBalance | null>(null);
   const [asOfDate, setAsOfDate] = useState('2026-06-20');
-  const [contractValue, setContractValue] = useState(String(finance?.contractValue || ''));
-  const [constructionProgress, setConstructionProgress] = useState(String(finance?.progressPercent || ''));
+  const [contractValue, setContractValue] = useState(formatInitialDraft(finance?.contractValue));
+  const [constructionProgress, setConstructionProgress] = useState(formatInitialDraft(finance?.progressPercent));
   const [purchasedValue, setPurchasedValue] = useState('');
   const [issuedValue, setIssuedValue] = useState('');
   const [usedValue, setUsedValue] = useState('');
@@ -118,8 +188,8 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
   useEffect(() => {
     if (!open) return;
     setStep(0);
-    setContractValue(finance?.contractValue ? fmtMoneyInput(finance.contractValue) : '');
-    setConstructionProgress(finance?.progressPercent ? fmtInput(finance.progressPercent, 2) : '');
+    setContractValue(formatInitialDraft(finance?.contractValue));
+    setConstructionProgress(formatInitialDraft(finance?.progressPercent));
     setAsOfDate('2026-06-20');
     setImportMessages({ errors: [], warnings: [] });
     setLines([emptyLine(defaultWarehouseId)]);
@@ -130,15 +200,15 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
         setExistingOpening(balance);
         if (!balance) return;
         setAsOfDate(balance.asOfDate);
-        setContractValue(balance.contractValue ? fmtMoneyInput(balance.contractValue) : '');
-        setConstructionProgress(balance.constructionProgressPercent ? fmtInput(balance.constructionProgressPercent, 2) : '');
-        setPurchasedValue(balance.purchasedValue ? fmtMoneyInput(balance.purchasedValue) : '');
-        setIssuedValue(balance.issuedValue ? fmtMoneyInput(balance.issuedValue) : '');
-        setUsedValue(balance.usedValue ? fmtMoneyInput(balance.usedValue) : '');
+        setContractValue(formatInitialDraft(balance.contractValue));
+        setConstructionProgress(formatInitialDraft(balance.constructionProgressPercent));
+        setPurchasedValue(formatInitialDraft(balance.purchasedValue));
+        setIssuedValue(formatInitialDraft(balance.issuedValue));
+        setUsedValue(formatInitialDraft(balance.usedValue));
         setNote(balance.note || '');
         if (balance.id) {
           const savedLines = await projectOpeningBalanceService.listLines(balance.id);
-          if (!cancelled && savedLines.length > 0) setLines(savedLines);
+          if (!cancelled && savedLines.length > 0) setLines(savedLines.map(toDraftLine));
         }
       })
       .catch(() => setExistingOpening(null));
@@ -146,24 +216,29 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
   }, [defaultWarehouseId, finance?.contractValue, finance?.progressPercent, open, scopeKey]);
 
   const locked = existingOpening?.status === 'locked';
-  const recognizedValue = calculateOpeningRecognizedValue(toMoney(purchasedValue), toMoney(issuedValue), toMoney(usedValue));
-  const valueProgress = toMoney(contractValue) > 0 ? Math.min(100, Math.round((recognizedValue / toMoney(contractValue)) * 100)) : 0;
+  const purchasedValuePreview = readDraftNumber(purchasedValue, VND_TOTAL_POLICY);
+  const issuedValuePreview = readDraftNumber(issuedValue, VND_TOTAL_POLICY);
+  const usedValuePreview = readDraftNumber(usedValue, VND_TOTAL_POLICY);
+  const contractValuePreview = readDraftNumber(contractValue, VND_TOTAL_POLICY);
+  const constructionProgressPreview = readDraftNumber(constructionProgress, PERCENT_POLICY);
+  const recognizedValue = calculateOpeningRecognizedValue(
+    purchasedValuePreview,
+    issuedValuePreview,
+    usedValuePreview,
+  );
+  const valueProgress = contractValuePreview > 0
+    ? Math.min(100, Math.round((recognizedValue / contractValuePreview) * 100))
+    : 0;
   const lineTotals = useMemo(() => lines.reduce((acc, line) => {
-    const unitPrice = Number(line.unitPrice || 0);
-    acc.remainingValue += Number(line.remainingValue || Number(line.remainingQty || 0) * unitPrice || 0);
-    acc.remainingQty += Number(line.remainingQty || 0);
+    const remainingQty = readDraftNumber(line.remainingQty, QUANTITY_POLICY);
+    const unitPrice = readDraftNumber(line.unitPrice, UNIT_PRICE_POLICY);
+    acc.remainingValue += remainingQty * unitPrice;
+    acc.remainingQty += remainingQty;
     return acc;
   }, { remainingQty: 0, remainingValue: 0 }), [lines]);
 
   const updateLine = (index: number, patch: Partial<ProjectOpeningBalanceModalLine>) => {
-    setLines(prev => prev.map((line, i) => {
-      if (i !== index) return line;
-      const next = { ...line, ...patch };
-      if (patch.remainingQty !== undefined || patch.unitPrice !== undefined) {
-        next.remainingValue = Number(next.remainingQty || 0) * Number(next.unitPrice || 0);
-      }
-      return next;
-    }));
+    setLines(prev => prev.map((line, i) => (i === index ? { ...line, ...patch } : line)));
   };
 
   const resolveWarehouseId = (raw: string): string => {
@@ -174,33 +249,28 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
     return found?.id || raw || defaultWarehouseId;
   };
 
-  const formatInputOnBlur = (value: string, setter: (next: string) => void, maximumFractionDigits = 2) => {
-    if (!String(value || '').trim()) return;
-    setter(formatVietnameseNumber(value, maximumFractionDigits));
-  };
-
-  const formatMoneyOnBlur = (value: string, setter: (next: string) => void) => {
-    if (!String(value || '').trim()) return;
-    setter(fmtMoneyInput(value));
-  };
-
   const getPurchasedAmount = (line: ProjectOpeningBalanceModalLine) =>
-    Number(line.purchasedAmount || 0) || Number(line.purchasedQty || 0) * Number(line.unitPrice || 0);
+    (typeof line.purchasedAmount === 'number' && Number.isFinite(line.purchasedAmount) ? line.purchasedAmount : 0)
+      || readDraftNumber(line.purchasedQty, QUANTITY_POLICY) * readDraftNumber(line.unitPrice, UNIT_PRICE_POLICY);
   const getIssuedAmount = (line: ProjectOpeningBalanceModalLine) =>
-    Number(line.issuedAmount || 0) || Number(line.issuedQty || 0) * Number(line.unitPrice || 0);
+    (typeof line.issuedAmount === 'number' && Number.isFinite(line.issuedAmount) ? line.issuedAmount : 0)
+      || readDraftNumber(line.issuedQty, QUANTITY_POLICY) * readDraftNumber(line.unitPrice, UNIT_PRICE_POLICY);
+  const getRemainingAmount = (line: ProjectOpeningBalanceModalLine) =>
+    readDraftNumber(line.remainingQty, QUANTITY_POLICY) * readDraftNumber(line.unitPrice, UNIT_PRICE_POLICY);
 
   const hasLineActivity = (line: ProjectOpeningBalanceModalLine) =>
     Boolean(
       line.sku
       || line.accountingCode
       || line.itemName
-      || Number(line.purchasedQty || 0) > 0
-      || Number(line.issuedQty || 0) > 0
-      || Number(line.usedQty || 0) > 0
-      || Number(line.remainingQty || 0) > 0
+      || line.purchasedQty.trim()
+      || line.issuedQty.trim()
+      || line.usedQty.trim()
+      || line.remainingQty.trim()
+      || line.unitPrice.trim()
       || getPurchasedAmount(line) > 0
       || getIssuedAmount(line) > 0
-      || Number(line.remainingValue || 0) > 0
+      || getRemainingAmount(line) > 0
     );
 
   const handleImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -212,7 +282,7 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
         existingItems: items,
         defaultWarehouseId,
       });
-      const nextLines = parsed.rows.map(row => ({
+      const nextLines = parsed.rows.map(row => toDraftLine({
         ...row,
         warehouseId: resolveWarehouseId(row.warehouseId || ''),
       }));
@@ -223,9 +293,9 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
         return;
       }
       setLines(validLines);
-      setPurchasedValue(fmtMoneyInput(parsed.totals.purchasedValue || 0));
-      setIssuedValue(fmtMoneyInput(parsed.totals.issuedValue || 0));
-      setUsedValue(fmtMoneyInput(parsed.totals.usedValue || parsed.totals.issuedValue || 0));
+      setPurchasedValue(formatInitialDraft(parsed.totals.purchasedValue || 0));
+      setIssuedValue(formatInitialDraft(parsed.totals.issuedValue || 0));
+      setUsedValue(formatInitialDraft(parsed.totals.usedValue || parsed.totals.issuedValue || 0));
       setImportMessages({ errors: parsed.errors, warnings: parsed.warnings });
       toast.success('Đã đọc file đầu kỳ', `${validLines.length} dòng vật tư được đưa vào bảng rà soát.`);
     } catch (error: any) {
@@ -234,56 +304,145 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
     }
   };
 
-  const validate = (): string | null => {
-    if (!constructionSiteId) return 'Dự án cần liên kết công trường trước khi nhập đầu kỳ.';
-    if (!asOfDate) return 'Thiếu ngày chốt đầu kỳ.';
-    if (toMoney(contractValue) <= 0) return 'Tổng giá trị dự án phải lớn hơn 0.';
-    if (toNumber(constructionProgress) < 0 || toNumber(constructionProgress) > 100) return 'Tiến độ thi công phải trong khoảng 0-100%.';
+  const prepareLockInput = (): PreparedLockInput => {
+    if (!constructionSiteId) return { ok: false, error: 'Dự án cần liên kết công trường trước khi nhập đầu kỳ.' };
+    if (!asOfDate) return { ok: false, error: 'Thiếu ngày chốt đầu kỳ.' };
+
+    const parseField = (
+      draft: string,
+      policy: DecimalPolicy,
+      label: string,
+      allowEmpty = true,
+    ): { ok: true; value: number } | { ok: false; error: string } => {
+      const result = inspectLocalizedNumberDraft(draft, policy, { allowEmpty });
+      if (result.ok === false) {
+        return { ok: false, error: `${label}: ${localizedNumberValidationMessage(result)}` };
+      }
+      return { ok: true, value: result.value ?? 0 };
+    };
+
+    const parsedContractValue = parseField(contractValue, VND_TOTAL_POLICY, 'Tổng giá trị dự án', false);
+    if (parsedContractValue.ok === false) return parsedContractValue;
+    if (parsedContractValue.value <= 0) {
+      return { ok: false, error: 'Tổng giá trị dự án phải lớn hơn 0.' };
+    }
+    const parsedConstructionProgress = parseField(
+      constructionProgress,
+      PERCENT_POLICY,
+      'Tiến độ thi công',
+    );
+    if (parsedConstructionProgress.ok === false) return parsedConstructionProgress;
+    const parsedPurchasedValue = parseField(purchasedValue, VND_TOTAL_POLICY, 'Giá trị vật tư đã mua');
+    if (parsedPurchasedValue.ok === false) return parsedPurchasedValue;
+    const parsedIssuedValue = parseField(issuedValue, VND_TOTAL_POLICY, 'Giá trị đã xuất/cấp');
+    if (parsedIssuedValue.ok === false) return parsedIssuedValue;
+    const parsedUsedValue = parseField(usedValue, VND_TOTAL_POLICY, 'Giá trị đã sử dụng');
+    if (parsedUsedValue.ok === false) return parsedUsedValue;
+
     const warehouseIds = new Set(warehouses.map(warehouse => warehouse.id));
-    const activeLines = lines.filter(hasLineActivity);
-    if (activeLines.length === 0) return 'Chưa có dòng vật tư đầu kỳ. Vui lòng import Excel kế toán hoặc nhập dòng vật tư trước khi khóa.';
-    const invalidLine = activeLines.find(line => !line.sku || !line.itemName || !line.warehouseId);
-    if (invalidLine) return 'Mỗi dòng vật tư đầu kỳ phải đủ mã vật tư, tên vật tư và kho.';
-    const invalidWarehouse = activeLines.find(line => !warehouseIds.has(line.warehouseId));
-    if (invalidWarehouse) return `Kho "${invalidWarehouse.warehouseId}" chưa tồn tại trong danh mục kho.`;
-    return null;
+    const activeLines = lines
+      .map((line, index) => ({ line, index }))
+      .filter(({ line }) => hasLineActivity(line));
+    if (activeLines.length === 0) {
+      return {
+        ok: false,
+        error: 'Chưa có dòng vật tư đầu kỳ. Vui lòng import Excel kế toán hoặc nhập dòng vật tư trước khi khóa.',
+      };
+    }
+
+    const preparedLines: ProjectOpeningBalanceLine[] = [];
+    for (const { line, index } of activeLines) {
+      const rowLabel = `Dòng ${index + 1}`;
+      if (!line.sku || !line.itemName || !line.warehouseId) {
+        return { ok: false, error: `${rowLabel}: phải đủ mã vật tư, tên vật tư và kho.` };
+      }
+      if (!warehouseIds.has(line.warehouseId)) {
+        return { ok: false, error: `${rowLabel}: kho "${line.warehouseId}" chưa tồn tại trong danh mục kho.` };
+      }
+
+      const purchasedQty = parseField(line.purchasedQty, QUANTITY_POLICY, `${rowLabel} - số lượng đã mua`);
+      if (purchasedQty.ok === false) return purchasedQty;
+      const issuedQty = parseField(line.issuedQty, QUANTITY_POLICY, `${rowLabel} - số lượng đã xuất`);
+      if (issuedQty.ok === false) return issuedQty;
+      const usedQty = parseField(line.usedQty, QUANTITY_POLICY, `${rowLabel} - số lượng đã dùng`);
+      if (usedQty.ok === false) return usedQty;
+      const remainingQty = parseField(line.remainingQty, QUANTITY_POLICY, `${rowLabel} - số lượng tồn`);
+      if (remainingQty.ok === false) return remainingQty;
+      const unitPrice = parseField(line.unitPrice, UNIT_PRICE_POLICY, `${rowLabel} - đơn giá`);
+      if (unitPrice.ok === false) return unitPrice;
+
+      preparedLines.push({
+        id: line.id,
+        openingBalanceId: line.openingBalanceId,
+        inventoryItemId: line.inventoryItemId,
+        accountingCode: line.accountingCode,
+        sku: line.sku,
+        itemName: line.itemName,
+        unit: line.unit,
+        warehouseId: line.warehouseId,
+        purchasedQty: purchasedQty.value,
+        issuedQty: issuedQty.value,
+        usedQty: usedQty.value,
+        remainingQty: remainingQty.value,
+        unitPrice: unitPrice.value,
+        remainingValue: remainingQty.value * unitPrice.value,
+        note: line.note,
+        createdAt: line.createdAt,
+        updatedAt: line.updatedAt,
+      });
+    }
+
+    return {
+      ok: true,
+      contractValue: parsedContractValue.value,
+      constructionProgress: parsedConstructionProgress.value,
+      purchasedValue: parsedPurchasedValue.value,
+      issuedValue: parsedIssuedValue.value,
+      usedValue: parsedUsedValue.value,
+      lines: preparedLines,
+    };
   };
 
   const handleLock = async () => {
-    const error = validate();
-    if (error) {
-      toast.warning('Chưa đủ dữ liệu đầu kỳ', error);
+    const prepared = prepareLockInput();
+    if (prepared.ok === false) {
+      toast.warning('Chưa đủ dữ liệu đầu kỳ', prepared.error);
       return;
     }
     setLoading(true);
     try {
+      const preparedRecognizedValue = calculateOpeningRecognizedValue(
+        prepared.purchasedValue,
+        prepared.issuedValue,
+        prepared.usedValue,
+      );
       const openingBalance: ProjectOpeningBalance = {
         id: existingOpening?.status === 'draft' ? existingOpening.id : undefined,
         scopeKey,
         projectId: project.id,
         constructionSiteId,
         asOfDate,
-        contractValue: toMoney(contractValue),
-        constructionProgressPercent: toNumber(constructionProgress),
-        purchasedValue: toMoney(purchasedValue),
-        issuedValue: toMoney(issuedValue),
-        usedValue: toMoney(usedValue),
-        recognizedValue,
+        contractValue: prepared.contractValue,
+        constructionProgressPercent: prepared.constructionProgress,
+        purchasedValue: prepared.purchasedValue,
+        issuedValue: prepared.issuedValue,
+        usedValue: prepared.usedValue,
+        recognizedValue: preparedRecognizedValue,
         status: 'draft',
         note: note.trim() || null,
         createdBy: user.id,
       };
+      const commandId = getOrCreateProjectOpeningBalanceCommandId(scopeKey, user.id);
       const result = await projectOpeningBalanceService.lockOpeningBalance({
+        commandId,
         openingBalance,
-        lines: lines.filter(hasLineActivity),
+        lines: prepared.lines,
         existingItems: items,
         existingFinance: finance,
         actorUserId: user.id,
       });
 
-      if (finance) await updateProjectFinance(result.projectFinance);
-      else await addProjectFinance(result.projectFinance);
-      if (result.materialProjectTransaction) await addProjectTransaction(result.materialProjectTransaction);
+      clearProjectOpeningBalanceCommandId(scopeKey, user.id, commandId);
       await Promise.all([
         refreshWmsRecords({
           itemIds: [
@@ -317,7 +476,9 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
   const lockedRecognizedValue = Number(existingOpening?.recognizedValue || 0);
   const lockedStockDocumentCount = (existingOpening?.stockTransactionIds || []).length;
   const lockedLineCount = lines.filter(hasLineActivity).length;
-  const lockedRemainingLineCount = lines.filter(line => Number(line.remainingQty || 0) > 0).length;
+  const lockedRemainingLineCount = lines.filter(
+    line => readDraftNumber(line.remainingQty, QUANTITY_POLICY) > 0,
+  ).length;
 
   return (
     <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
@@ -362,8 +523,8 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
               <div className="mt-2 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
                 <div><span className="text-emerald-600 font-bold block">Ngày chốt</span>{existingOpening?.asOfDate}</div>
                 <div><span className="text-emerald-600 font-bold block">Giá trị dự án</span>{fmtFull(existingOpening?.contractValue || 0)}</div>
-                <div><span className="text-emerald-600 font-bold block">Tiến độ thi công</span>{existingOpening?.constructionProgressPercent || 0}%</div>
-                <div><span className="text-emerald-600 font-bold block">Tiến độ theo giá trị</span>{existingOpening?.contractValue ? Math.round(((existingOpening?.recognizedValue || 0) / existingOpening.contractValue) * 100) : 0}%</div>
+                <div><span className="text-emerald-600 font-bold block">Tiến độ thi công</span>{formatViPercent(existingOpening?.constructionProgressPercent || 0)}</div>
+                <div><span className="text-emerald-600 font-bold block">Tiến độ theo giá trị</span>{formatViPercent(existingOpening?.contractValue ? Math.round(((existingOpening?.recognizedValue || 0) / existingOpening.contractValue) * 100) : 0)}</div>
               </div>
               <div className="mt-4 pt-4 border-t border-emerald-200 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
                 <div><span className="text-emerald-600 font-bold block">Tổng nhập tham chiếu</span>{fmtFull(lockedPurchasedValue)}</div>
@@ -397,11 +558,26 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
             <div className="grid md:grid-cols-2 gap-4">
               <div>
                 <label className={labelCls}>Tổng giá trị dự án / hợp đồng</label>
-                <input type="text" inputMode="decimal" value={contractValue} onChange={e => setContractValue(e.target.value)} onBlur={() => formatMoneyOnBlur(contractValue, setContractValue)} className={inputCls} placeholder="0" />
+                <LocalizedMoneyInput
+                  value={contractValue}
+                  onDraftChange={(draft) => setContractValue(draft)}
+                  allowEmpty={false}
+                  min={0}
+                  className={inputCls}
+                  placeholder="0"
+                  aria-label="Tổng giá trị dự án / hợp đồng"
+                />
               </div>
               <div>
                 <label className={labelCls}>Tiến độ thi công hiện tại (%)</label>
-                <input type="text" inputMode="decimal" value={constructionProgress} onChange={e => setConstructionProgress(e.target.value)} onBlur={() => formatInputOnBlur(constructionProgress, setConstructionProgress, 2)} className={inputCls} placeholder="0" />
+                <LocalizedNumberInput
+                  value={constructionProgress}
+                  policy={PERCENT_POLICY}
+                  onDraftChange={(draft) => setConstructionProgress(draft)}
+                  className={inputCls}
+                  placeholder="0"
+                  aria-label="Tiến độ thi công hiện tại"
+                />
               </div>
               <div className="md:col-span-2 rounded-2xl border border-slate-100 bg-slate-50 p-4 text-sm font-bold text-slate-500">
                 Tiến độ này là số chốt ban đầu. Sau khi triển khai, tab Gantt/tiến độ tuần sẽ tiếp tục cập nhật tiến độ thi công.
@@ -411,15 +587,36 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
             <div className="grid md:grid-cols-3 gap-4">
               <div>
                 <label className={labelCls}>Giá trị vật tư đã mua</label>
-                <input type="text" inputMode="decimal" value={purchasedValue} onChange={e => setPurchasedValue(e.target.value)} onBlur={() => formatMoneyOnBlur(purchasedValue, setPurchasedValue)} className={inputCls} placeholder="0" />
+                <LocalizedMoneyInput
+                  value={purchasedValue}
+                  onDraftChange={(draft) => setPurchasedValue(draft)}
+                  min={0}
+                  className={inputCls}
+                  placeholder="0"
+                  aria-label="Giá trị vật tư đã mua"
+                />
               </div>
               <div>
                 <label className={labelCls}>Giá trị đã xuất/cấp</label>
-                <input type="text" inputMode="decimal" value={issuedValue} onChange={e => setIssuedValue(e.target.value)} onBlur={() => formatMoneyOnBlur(issuedValue, setIssuedValue)} className={inputCls} placeholder="0" />
+                <LocalizedMoneyInput
+                  value={issuedValue}
+                  onDraftChange={(draft) => setIssuedValue(draft)}
+                  min={0}
+                  className={inputCls}
+                  placeholder="0"
+                  aria-label="Giá trị đã xuất/cấp"
+                />
               </div>
               <div>
                 <label className={labelCls}>Giá trị đã sử dụng</label>
-                <input type="text" inputMode="decimal" value={usedValue} onChange={e => setUsedValue(e.target.value)} onBlur={() => formatMoneyOnBlur(usedValue, setUsedValue)} className={inputCls} placeholder="0" />
+                <LocalizedMoneyInput
+                  value={usedValue}
+                  onDraftChange={(draft) => setUsedValue(draft)}
+                  min={0}
+                  className={inputCls}
+                  placeholder="0"
+                  aria-label="Giá trị đã sử dụng"
+                />
               </div>
               <div className="md:col-span-3 grid md:grid-cols-3 gap-3">
                 <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4">
@@ -441,7 +638,7 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
                 <div>
                   <div className="text-sm font-black text-slate-700">Tồn kho chi tiết</div>
                   <div className="text-xs font-bold text-slate-400">
-                    {lines.filter(hasLineActivity).length} dòng vật tư - {lines.filter(line => Number(line.remainingQty || 0) > 0).length} dòng còn tồn - tổng tồn {lineTotals.remainingQty.toLocaleString('vi-VN')} - {fmtFull(lineTotals.remainingValue)}
+                    {lines.filter(hasLineActivity).length} dòng vật tư - {lines.filter(line => readDraftNumber(line.remainingQty, QUANTITY_POLICY) > 0).length} dòng còn tồn - tổng tồn {formatViQuantity(lineTotals.remainingQty)} - {fmtFull(lineTotals.remainingValue)}
                   </div>
                 </div>
                 <div className="flex gap-2">
@@ -505,12 +702,29 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
                         </td>
                         {(['purchasedQty', 'issuedQty', 'usedQty', 'remainingQty', 'unitPrice'] as const).map(key => (
                           <td key={key} className="p-2">
-                            <input type="text" inputMode="decimal" value={key === 'unitPrice' ? fmtMoneyInput(line[key]) : fmtInput(line[key], 6)} onChange={e => updateLine(index, { [key]: key === 'unitPrice' ? toMoney(e.target.value) : toNumber(e.target.value) })} className={`${key === 'unitPrice' ? 'w-32' : 'w-24'} px-2 py-1.5 rounded-lg border border-slate-200 text-right tabular-nums`} />
+                            {key === 'unitPrice' ? (
+                              <LocalizedMoneyInput
+                                value={line[key]}
+                                maxFractionDigits={6}
+                                min={0}
+                                onDraftChange={(draft) => updateLine(index, { [key]: draft } as Partial<ProjectOpeningBalanceModalLine>)}
+                                className="w-32 px-2 py-1.5 rounded-lg border border-slate-200 text-right tabular-nums"
+                                aria-label={`Dòng ${index + 1} - đơn giá`}
+                              />
+                            ) : (
+                              <LocalizedNumberInput
+                                value={line[key]}
+                                policy={QUANTITY_POLICY}
+                                onDraftChange={(draft) => updateLine(index, { [key]: draft } as Partial<ProjectOpeningBalanceModalLine>)}
+                                className="w-24 px-2 py-1.5 rounded-lg border border-slate-200 text-right tabular-nums"
+                                aria-label={`Dòng ${index + 1} - ${key}`}
+                              />
+                            )}
                           </td>
                         ))}
                         <td className="p-2 text-right font-black text-slate-700 tabular-nums whitespace-nowrap">{fmtFull(getPurchasedAmount(line))}</td>
                         <td className="p-2 text-right font-black text-slate-700 tabular-nums whitespace-nowrap">{fmtFull(getIssuedAmount(line))}</td>
-                        <td className="p-2 text-right font-black text-slate-700 tabular-nums whitespace-nowrap">{fmtFull(line.remainingValue || 0)}</td>
+                        <td className="p-2 text-right font-black text-slate-700 tabular-nums whitespace-nowrap">{fmtFull(getRemainingAmount(line))}</td>
                         <td className="p-2 text-center">
                           <button onClick={() => setLines(prev => prev.filter((_, i) => i !== index))} className="w-7 h-7 rounded-lg text-red-500 hover:bg-red-50"><Trash2 size={14} className="mx-auto" /></button>
                         </td>
@@ -523,13 +737,13 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
           ) : (
             <div className="space-y-4">
               <div className="grid md:grid-cols-4 gap-3">
-                <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4"><div className="text-[10px] font-black uppercase text-slate-400">Giá trị dự án</div><div className="font-black text-slate-800">{fmtFull(toMoney(contractValue))}</div></div>
-                <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4"><div className="text-[10px] font-black uppercase text-slate-400">Tiến độ thi công</div><div className="font-black text-slate-800">{toNumber(constructionProgress)}%</div></div>
+                <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4"><div className="text-[10px] font-black uppercase text-slate-400">Giá trị dự án</div><div className="font-black text-slate-800">{fmtFull(contractValuePreview)}</div></div>
+                <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4"><div className="text-[10px] font-black uppercase text-slate-400">Tiến độ thi công</div><div className="font-black text-slate-800">{formatViPercent(constructionProgressPreview, 2)}</div></div>
                 <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4"><div className="text-[10px] font-black uppercase text-slate-400">Recognized</div><div className="font-black text-slate-800">{fmtFull(recognizedValue)}</div></div>
                 <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4"><div className="text-[10px] font-black uppercase text-slate-400">Dòng vật tư import</div><div className="font-black text-slate-800">{lines.filter(hasLineActivity).length} dòng</div></div>
               </div>
               <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 text-sm font-bold text-slate-600">
-                Dòng còn tồn: <span className="font-black text-slate-900">{lines.filter(line => Number(line.remainingQty || 0) > 0).length}</span>. Nếu toàn bộ vật tư đã xuất hết, hệ thống vẫn ghi chi phí đầu kỳ và tạo chứng từ chốt đầu kỳ không làm thay đổi tồn kho.
+                Dòng còn tồn: <span className="font-black text-slate-900">{lines.filter(line => readDraftNumber(line.remainingQty, QUANTITY_POLICY) > 0).length}</span>. Nếu toàn bộ vật tư đã xuất hết, hệ thống vẫn ghi chi phí đầu kỳ và tạo chứng từ chốt đầu kỳ không làm thay đổi tồn kho.
               </div>
               <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-800 flex gap-2">
                 <AlertCircle size={18} className="shrink-0 mt-0.5" />
