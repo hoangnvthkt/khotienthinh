@@ -242,6 +242,23 @@ describe('project opening balance atomic posting command', () => {
     expect(mocks.weeklySnapshot).toHaveBeenCalledTimes(1);
   });
 
+  it('returns the committed lock with a warning when the derived weekly snapshot fails', async () => {
+    mocks.rpc.mockResolvedValueOnce({ data: rpcResult(), error: null });
+    mocks.weeklySnapshot.mockRejectedValueOnce(new Error('weekly snapshot unavailable'));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    const result = await projectOpeningBalanceService.lockOpeningBalance(makeInput(1.25));
+
+    expect(result.openingBalance.status).toBe('locked');
+    expect(result.warnings).toEqual([
+      'Dữ liệu đầu kỳ đã được khóa nhưng snapshot tiến độ tuần chưa cập nhật.',
+    ]);
+    expect(warn).toHaveBeenCalledWith(
+      'project opening balance weekly snapshot failed after commit',
+      'weekly snapshot unavailable',
+    );
+  });
+
   it('preserves stock-by-warehouse identifiers as opaque map keys', async () => {
     mocks.rpc.mockResolvedValueOnce({
       data: rpcResult({

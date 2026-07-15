@@ -442,21 +442,36 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
         actorUserId: user.id,
       });
 
+      // The authoritative atomic RPC has succeeded. From this point onward,
+      // derived-cache or UI refresh failures must not be reported as a failed
+      // lock or cause a new command to be submitted.
       clearProjectOpeningBalanceCommandId(scopeKey, user.id, commandId);
-      await Promise.all([
-        refreshWmsRecords({
-          itemIds: [
-            ...result.createdItems.map(item => item.id),
-            ...result.updatedItems.map(item => item.id),
-            ...result.stockTransactions.flatMap(tx => (tx.items || []).map(item => item.itemId)),
-          ],
-          transactionIds: result.stockTransactions.map(tx => tx.id),
-        }),
-        loadModuleData('da', true),
-      ]);
       setExistingOpening(result.openingBalance);
-      await onApplied?.(result);
       toast.success('Đã khóa dữ liệu đầu kỳ', 'Dashboard, tồn kho và tiến độ theo giá trị đã nhận số đầu kỳ.');
+      if (result.warnings?.length) {
+        toast.warning('Đã khóa, còn dữ liệu dẫn xuất cần đồng bộ', result.warnings.join(' '));
+      }
+
+      try {
+        await Promise.all([
+          refreshWmsRecords({
+            itemIds: [
+              ...result.createdItems.map(item => item.id),
+              ...result.updatedItems.map(item => item.id),
+              ...result.stockTransactions.flatMap(tx => (tx.items || []).map(item => item.itemId)),
+            ],
+            transactionIds: result.stockTransactions.map(tx => tx.id),
+          }),
+          loadModuleData('da', true),
+        ]);
+        await onApplied?.(result);
+      } catch (postCommitError: any) {
+        logApiError('ProjectOpeningBalanceModal.postCommitRefresh', postCommitError);
+        toast.warning(
+          'Dữ liệu đã được khóa an toàn',
+          'Giao diện chưa tải lại đầy đủ. Vui lòng mở lại trang để nhận dữ liệu mới nhất.',
+        );
+      }
       onClose();
     } catch (error: any) {
       logApiError('ProjectOpeningBalanceModal.lock', error);

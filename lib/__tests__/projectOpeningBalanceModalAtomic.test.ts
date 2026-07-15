@@ -17,6 +17,9 @@ describe('ProjectOpeningBalanceModal atomic lock boundary', () => {
     const clearConfirmedCommand = source.lastIndexOf('clearProjectOpeningBalanceCommandId');
     expect(rpcAwait).toBeGreaterThan(-1);
     expect(clearConfirmedCommand).toBeGreaterThan(rpcAwait);
+    expect(source).toContain('ProjectOpeningBalanceModal.postCommitRefresh');
+    expect(source).toContain('Dữ liệu đã được khóa an toàn');
+    expect(source).toContain('result.warnings');
   });
 
   it('does not persist finance or material transactions again after the atomic RPC', () => {

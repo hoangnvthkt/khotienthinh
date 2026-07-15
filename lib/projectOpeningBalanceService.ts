@@ -704,6 +704,7 @@ export interface ProjectOpeningBalanceLockResult {
   stockTransactions: Transaction[];
   createdItems: InventoryItem[];
   updatedItems: InventoryItem[];
+  warnings?: string[];
 }
 
 const mapLockResult = (value: any): ProjectOpeningBalanceLockResult => {
@@ -867,25 +868,35 @@ export const projectOpeningBalanceService = {
       if (error) throw error;
 
       const result = mapLockResult(data);
-      await projectWeeklyProgressService.upsertSnapshot({
-        scopeKey: result.openingBalance.scopeKey,
-        projectId: result.openingBalance.projectId,
-        constructionSiteId: result.openingBalance.constructionSiteId,
-        weekStart: getWeekStart(result.openingBalance.asOfDate),
-        constructionProgressPercent: result.openingBalance.constructionProgressPercent,
-        valueMetric: {
-          contractTotalValue: result.openingBalance.contractValue,
-          purchasedValue: result.openingBalance.purchasedValue,
-          issuedValue: result.openingBalance.issuedValue,
-          actualProductionValue: result.openingBalance.recognizedValue,
-          recognizedValue: result.openingBalance.recognizedValue,
-          valueProgressPercent: result.openingBalance.contractValue > 0
-            ? Math.min(100, Math.round((result.openingBalance.recognizedValue / result.openingBalance.contractValue) * 100))
-            : 0,
-        },
-        progressMode: 'opening_balance',
-        calculatedAt: new Date().toISOString(),
-      });
+      try {
+        await projectWeeklyProgressService.upsertSnapshot({
+          scopeKey: result.openingBalance.scopeKey,
+          projectId: result.openingBalance.projectId,
+          constructionSiteId: result.openingBalance.constructionSiteId,
+          weekStart: getWeekStart(result.openingBalance.asOfDate),
+          constructionProgressPercent: result.openingBalance.constructionProgressPercent,
+          valueMetric: {
+            contractTotalValue: result.openingBalance.contractValue,
+            purchasedValue: result.openingBalance.purchasedValue,
+            issuedValue: result.openingBalance.issuedValue,
+            actualProductionValue: result.openingBalance.recognizedValue,
+            recognizedValue: result.openingBalance.recognizedValue,
+            valueProgressPercent: result.openingBalance.contractValue > 0
+              ? Math.min(100, Math.round((result.openingBalance.recognizedValue / result.openingBalance.contractValue) * 100))
+              : 0,
+          },
+          progressMode: 'opening_balance',
+          calculatedAt: new Date().toISOString(),
+        });
+      } catch (snapshotError: any) {
+        console.warn(
+          'project opening balance weekly snapshot failed after commit',
+          snapshotError?.message || snapshotError,
+        );
+        result.warnings = [
+          'Dữ liệu đầu kỳ đã được khóa nhưng snapshot tiến độ tuần chưa cập nhật.',
+        ];
+      }
       return result;
     }
 
