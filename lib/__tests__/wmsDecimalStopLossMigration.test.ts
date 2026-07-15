@@ -48,10 +48,11 @@ describe('WMS decimal stop-loss migration contract', () => {
     expect(definition).toMatch(/\bv_qty\s+numeric\s*;/i);
     expect(definition).not.toMatch(/\bv_qty\s+integer\s*;/i);
     expect(definition).not.toMatch(/\bv_qty\s*:=\s*[^;]*::integer\s*;/i);
-    expect(definition).toMatch(
+    expect(definition).toContain('app_private.assert_quantity_precision');
+    expect(definition).not.toMatch(
       /\bv_qty\s*<>\s*round\s*\(\s*v_qty\s*,\s*4\s*\)/i,
     );
-    expect(definition).toMatch(/raise\s+exception\s+'[^']*4 fractional digits[^']*'/i);
+    expect(definition).not.toMatch(/raise\s+exception\s+'[^']*4 fractional digits[^']*'/i);
   });
 
   it('keeps the Phase 4 PBAC, reservation, transition, and security contract', () => {
