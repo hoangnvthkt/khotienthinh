@@ -6,8 +6,6 @@ import {
   ProjectOpeningBalanceLine,
   ProjectTransaction,
   Transaction,
-  TransactionStatus,
-  TransactionType,
 } from '../types';
 import { fromDb, toDb } from './dbMapping';
 import { getExcelCell, parseExcelRows } from './excelImport';
@@ -82,6 +80,43 @@ const clampPercent = (value: unknown): number => Math.min(100, Math.max(0, numbe
 
 const cleanUndefined = <T extends Record<string, unknown>>(input: T): T =>
   Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined)) as T;
+
+const canonicalDecimalString = (value: number): string => {
+  if (!Number.isFinite(value)) {
+    throw new Error('Dữ liệu đầu kỳ chứa giá trị số không hợp lệ.');
+  }
+  if (Object.is(value, -0)) return '0';
+
+  const text = String(value);
+  if (!/[eE]/.test(text)) return text;
+
+  const [coefficient, exponentText] = text.toLowerCase().split('e');
+  const exponent = Number(exponentText);
+  const sign = coefficient.startsWith('-') ? '-' : '';
+  const unsigned = coefficient.replace(/^[+-]/, '');
+  const [integerPart, fractionPart = ''] = unsigned.split('.');
+  const digits = `${integerPart}${fractionPart}`;
+  const decimalIndex = integerPart.length + exponent;
+
+  if (decimalIndex <= 0) {
+    return `${sign}0.${'0'.repeat(-decimalIndex)}${digits}`;
+  }
+  if (decimalIndex >= digits.length) {
+    return `${sign}${digits}${'0'.repeat(decimalIndex - digits.length)}`;
+  }
+  return `${sign}${digits.slice(0, decimalIndex)}.${digits.slice(decimalIndex)}`;
+};
+
+const canonicalizeCommandNumbers = (value: unknown): any => {
+  if (typeof value === 'number') return canonicalDecimalString(value);
+  if (Array.isArray(value)) return value.map(canonicalizeCommandNumbers);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, nested]) => [key, canonicalizeCommandNumbers(nested)]),
+    );
+  }
+  return value;
+};
 
 export const calculateOpeningRecognizedValue = (
   purchasedValue: number,
@@ -234,90 +269,6 @@ const lineToDb = (line: ProjectOpeningBalanceLine, openingBalanceId: string): Re
   delete payload.updated_at;
   return payload;
 };
-
-const itemToDb = (item: InventoryItem): Record<string, unknown> => ({
-  id: item.id,
-  sku: item.sku,
-  accounting_code: item.accountingCode || null,
-  name: item.name,
-  category: item.category || 'Đầu kỳ',
-  unit: item.unit || 'Cái',
-  purchase_unit: item.purchaseUnit || null,
-  purchase_conversion_factor: Number(item.purchaseConversionFactor || 1),
-  price_in: Number(item.priceIn || 0),
-  price_out: Number(item.priceOut || 0),
-  min_stock: Number(item.minStock || 0),
-  supplier_id: item.supplierId || null,
-  image_url: item.imageUrl || null,
-  stock_by_warehouse: item.stockByWarehouse || {},
-  location: item.location || null,
-});
-
-const transactionToDb = (tx: Transaction): Record<string, unknown> => ({
-  id: tx.id,
-  type: tx.type,
-  date: tx.date,
-  items: tx.items || [],
-  source_warehouse_id: tx.sourceWarehouseId || null,
-  target_warehouse_id: tx.targetWarehouseId || null,
-  supplier_id: tx.supplierId || null,
-  requester_id: tx.requesterId,
-  approver_id: tx.approverId || null,
-  status: tx.status,
-  note: tx.note || null,
-  related_request_id: tx.relatedRequestId || null,
-  pending_items: tx.pendingItems || [],
-});
-
-const projectTransactionToDb = (tx: ProjectTransaction): Record<string, unknown> => ({
-  id: tx.id,
-  projectFinanceId: tx.projectFinanceId || '',
-  constructionSiteId: tx.constructionSiteId || '',
-  project_id: tx.projectId || null,
-  project_finance_id: tx.projectFinanceId || null,
-  construction_site_id: tx.constructionSiteId || null,
-  type: tx.type,
-  category: tx.category,
-  amount: tx.amount,
-  description: tx.description,
-  date: tx.date,
-  source: tx.source,
-  sourceRef: tx.sourceRef || null,
-  source_ref: tx.sourceRef || null,
-  attachments: tx.attachments || [],
-  createdBy: tx.createdBy || null,
-  createdAt: tx.createdAt,
-});
-
-const projectFinanceToDb = (finance: ProjectFinance): Record<string, unknown> => ({
-  id: finance.id,
-  constructionSiteId: finance.constructionSiteId,
-  project_id: finance.projectId || null,
-  construction_site_id: finance.constructionSiteId,
-  contractValue: Number(finance.contractValue || 0),
-  contractSignDate: finance.contractSignDate || null,
-  estimatedEndDate: finance.estimatedEndDate || null,
-  budgetMaterials: Number(finance.budgetMaterials || 0),
-  budgetLabor: Number(finance.budgetLabor || 0),
-  budgetSubcontract: Number(finance.budgetSubcontract || 0),
-  budgetMachinery: Number(finance.budgetMachinery || 0),
-  budgetOverhead: Number(finance.budgetOverhead || 0),
-  actualMaterials: Number(finance.actualMaterials || 0),
-  actualLabor: Number(finance.actualLabor || 0),
-  actualSubcontract: Number(finance.actualSubcontract || 0),
-  actualMachinery: Number(finance.actualMachinery || 0),
-  actualOverhead: Number(finance.actualOverhead || 0),
-  revenueReceived: Number(finance.revenueReceived || 0),
-  revenuePending: Number(finance.revenuePending || 0),
-  progressPercent: clampPercent(finance.progressPercent),
-  actual_production_value: Number(finance.actualProductionValue || 0),
-  actual_production_updated_at: finance.actualProductionUpdatedAt || null,
-  actual_production_updated_by: finance.actualProductionUpdatedBy || null,
-  actual_production_note: finance.actualProductionNote || null,
-  status: finance.status,
-  notes: finance.notes || null,
-  updatedAt: finance.updatedAt,
-});
 
 const defaultFinance = (balance: ProjectOpeningBalance, financeId?: string): ProjectFinance => ({
   id: financeId || crypto.randomUUID(),
@@ -755,6 +706,46 @@ export interface ProjectOpeningBalanceLockResult {
   updatedItems: InventoryItem[];
 }
 
+const mapLockResult = (value: any): ProjectOpeningBalanceLockResult => {
+  if (!value || typeof value !== 'object') {
+    throw new Error('Lệnh khóa đầu kỳ không trả về kết quả hợp lệ.');
+  }
+
+  const field = (snakeCase: string, camelCase: string): any =>
+    value[snakeCase] ?? value[camelCase];
+  const mapRow = <T>(row: any): T => fromDb(row) as T;
+  const mapInventoryItem = (row: any): InventoryItem => {
+    const source = row && typeof row === 'object' ? row : {};
+    const stockByWarehouse = source.stock_by_warehouse ?? source.stockByWarehouse ?? {};
+    const rowWithoutOpaqueMap = { ...source };
+    delete rowWithoutOpaqueMap.stock_by_warehouse;
+    delete rowWithoutOpaqueMap.stockByWarehouse;
+    return {
+      ...mapRow<InventoryItem>(rowWithoutOpaqueMap),
+      // Warehouse ids are opaque identifiers, not database column names.
+      stockByWarehouse: { ...stockByWarehouse },
+    };
+  };
+
+  const openingBalance = field('opening_balance', 'openingBalance');
+  const projectFinance = field('project_finance', 'projectFinance');
+  if (!openingBalance || !projectFinance) {
+    throw new Error('Lệnh khóa đầu kỳ trả về thiếu chứng từ bắt buộc.');
+  }
+
+  return {
+    openingBalance: mapRow<ProjectOpeningBalance>(openingBalance),
+    lines: (field('lines', 'lines') || []).map(mapRow<ProjectOpeningBalanceLine>),
+    projectFinance: mapRow<ProjectFinance>(projectFinance),
+    materialProjectTransaction: field('material_project_transaction', 'materialProjectTransaction')
+      ? mapRow<ProjectTransaction>(field('material_project_transaction', 'materialProjectTransaction'))
+      : undefined,
+    stockTransactions: (field('stock_transactions', 'stockTransactions') || []).map(mapRow<Transaction>),
+    createdItems: (field('created_items', 'createdItems') || []).map(mapInventoryItem),
+    updatedItems: (field('updated_items', 'updatedItems') || []).map(mapInventoryItem),
+  };
+};
+
 export const projectOpeningBalanceService = {
   async getOpeningBalanceByScope(scopeKey: string): Promise<ProjectOpeningBalance | null> {
     if (!isSupabaseConfigured || !scopeKey) return null;
@@ -841,6 +832,7 @@ export const projectOpeningBalanceService = {
   },
 
   async lockOpeningBalance(input: {
+    commandId?: string;
     openingBalance: ProjectOpeningBalance;
     lines: ProjectOpeningBalanceLine[];
     existingItems: InventoryItem[];
@@ -855,9 +847,46 @@ export const projectOpeningBalanceService = {
     if (lines.length === 0) {
       throw new Error('Chưa có dòng vật tư đầu kỳ hợp lệ. Vui lòng import Excel hoặc nhập ít nhất một dòng vật tư trước khi khóa.');
     }
-    const locked = await this.getLockedByScope(balance.scopeKey);
-    if (locked && locked.id !== balance.id) {
-      throw new Error('Dự án/công trường này đã có dữ liệu đầu kỳ đã khóa.');
+
+    if (isSupabaseConfigured) {
+      const command = {
+        commandId: input.commandId || crypto.randomUUID(),
+        openingBalance: canonicalizeCommandNumbers(cleanUndefined({
+          ...balance,
+          scopeKey: balance.scopeKey.trim(),
+        })),
+        lines: lines.map(line => canonicalizeCommandNumbers(cleanUndefined({ ...line }))),
+        projectFinanceId: input.existingFinance?.id || null,
+        financeSnapshot: input.existingFinance
+          ? canonicalizeCommandNumbers(cleanUndefined({ ...input.existingFinance }))
+          : null,
+      };
+      const { data, error } = await supabase.rpc('lock_project_opening_balance', {
+        p_command: command,
+      });
+      if (error) throw error;
+
+      const result = mapLockResult(data);
+      await projectWeeklyProgressService.upsertSnapshot({
+        scopeKey: result.openingBalance.scopeKey,
+        projectId: result.openingBalance.projectId,
+        constructionSiteId: result.openingBalance.constructionSiteId,
+        weekStart: getWeekStart(result.openingBalance.asOfDate),
+        constructionProgressPercent: result.openingBalance.constructionProgressPercent,
+        valueMetric: {
+          contractTotalValue: result.openingBalance.contractValue,
+          purchasedValue: result.openingBalance.purchasedValue,
+          issuedValue: result.openingBalance.issuedValue,
+          actualProductionValue: result.openingBalance.recognizedValue,
+          recognizedValue: result.openingBalance.recognizedValue,
+          valueProgressPercent: result.openingBalance.contractValue > 0
+            ? Math.min(100, Math.round((result.openingBalance.recognizedValue / result.openingBalance.contractValue) * 100))
+            : 0,
+        },
+        progressMode: 'opening_balance',
+        calculatedAt: new Date().toISOString(),
+      });
+      return result;
     }
 
     const projectFinance = buildFinance(balance, input.existingFinance);
@@ -873,173 +902,8 @@ export const projectOpeningBalanceService = {
         accountingCode: line.accountingCode || item?.accountingCode || null,
       };
     });
-    const stockEntries = linesWithItems
-      .map((line, index) => ({ line, index }))
-      .filter(entry => entry.line.remainingQty > 0);
-    const openingDocumentEntries = stockEntries.length > 0
-      ? stockEntries
-      : linesWithItems
-        .map((line, index) => ({ line, index }))
-        .filter(({ line, index }) => Boolean(itemByLineKey.get(String(index)) || line.inventoryItemId));
     const stockTransactions: Transaction[] = [];
     let materialProjectTransaction: ProjectTransaction | undefined;
-
-    if (isSupabaseConfigured) {
-      const itemsToUpsert = [...createdItems, ...updatedItems];
-      if (itemsToUpsert.length > 0) {
-        const { error: itemError } = await supabase
-          .from('items')
-          .upsert(itemsToUpsert.map(itemToDb), { onConflict: 'id' });
-        if (itemError) throw itemError;
-      }
-
-      const saved = await this.saveOpeningBalanceDraft({ openingBalance: balance, lines: linesWithItems });
-      const openingId = saved.openingBalance.id;
-      if (!openingId) throw new Error('Không tạo được bản đầu kỳ.');
-
-      const { error: financeError } = await supabase
-        .from('project_finances')
-        .upsert(projectFinanceToDb(projectFinance), { onConflict: 'id' });
-      if (financeError) throw financeError;
-
-      const allItemIds = [...new Set(linesWithItems.map(line => line.inventoryItemId).filter(Boolean) as string[])];
-      const { data: itemRows, error: itemReadError } = allItemIds.length > 0
-        ? await supabase.from('items').select('*').in('id', allItemIds)
-        : { data: [], error: null } as any;
-      if (itemReadError) throw itemReadError;
-
-      const dbItemById = new Map<string, any>((itemRows || []).map((row: any) => [row.id, row]));
-      const stockDeltaByItem = new Map<string, Record<string, number>>();
-      stockEntries.forEach(({ line, index }) => {
-        const item = itemByLineKey.get(String(index));
-        if (!item) return;
-        const byWarehouse = stockDeltaByItem.get(item.id) || {};
-        byWarehouse[line.warehouseId] = (byWarehouse[line.warehouseId] || 0) + line.remainingQty;
-        stockDeltaByItem.set(item.id, byWarehouse);
-      });
-
-      for (const [itemId, deltaByWarehouse] of stockDeltaByItem.entries()) {
-        const dbItem = dbItemById.get(itemId);
-        const current = { ...(dbItem?.stock_by_warehouse || {}) };
-        Object.entries(deltaByWarehouse).forEach(([warehouseId, qty]) => {
-          current[warehouseId] = Number(current[warehouseId] || 0) + Number(qty || 0);
-        });
-        const { error: stockError } = await supabase
-          .from('items')
-          .update({ stock_by_warehouse: current })
-          .eq('id', itemId);
-        if (stockError) throw stockError;
-      }
-
-      const linesByWarehouse = new Map<string, Array<{ line: ProjectOpeningBalanceLine; index: number }>>();
-      openingDocumentEntries.forEach(({ line, index }) => {
-        const list = linesByWarehouse.get(line.warehouseId) || [];
-        list.push({ line, index });
-        linesByWarehouse.set(line.warehouseId, list);
-      });
-
-      const isEvidenceOnlyOpeningDocument = stockEntries.length === 0;
-      for (const [warehouseId, warehouseEntries] of linesByWarehouse.entries()) {
-        const tx: Transaction = {
-          id: crypto.randomUUID(),
-          type: TransactionType.ADJUSTMENT,
-          date: balance.asOfDate,
-          targetWarehouseId: warehouseId,
-          requesterId: input.actorUserId || '',
-          createdBy: input.actorUserId,
-          approverId: input.actorUserId,
-          status: TransactionStatus.COMPLETED,
-          note: isEvidenceOnlyOpeningDocument
-            ? `Chứng từ chốt đầu kỳ vật tư dự án ${balance.scopeKey} (${balance.asOfDate}) - không phát sinh tồn kho`
-            : `Nhập tồn đầu kỳ dự án ${balance.scopeKey} (${balance.asOfDate})`,
-          items: warehouseEntries.map(({ line, index }) => {
-            const item = itemByLineKey.get(String(index));
-            return {
-              itemId: item?.id || line.inventoryItemId || line.sku,
-              quantity: isEvidenceOnlyOpeningDocument ? 0 : Number(line.remainingQty || 0),
-              price: Number(line.unitPrice || 0),
-            };
-          }),
-        };
-        const { error: txError } = await supabase.from('transactions').insert(transactionToDb(tx));
-        if (txError) throw txError;
-        stockTransactions.push(tx);
-      }
-
-      const materialExpenseValue = accountingExpenseValue(balance);
-      if (materialExpenseValue > 0) {
-        const sourceRef = `opening_balance:${openingId}:materials`;
-        const tx: ProjectTransaction = {
-          id: crypto.randomUUID(),
-          projectId: balance.projectId || null,
-          projectFinanceId: projectFinance.id,
-          constructionSiteId: balance.constructionSiteId || '',
-          type: 'expense',
-          category: 'materials',
-          amount: materialExpenseValue,
-          description: `Chi phí vật tư đã sử dụng đầu kỳ đến ${balance.asOfDate}`,
-          date: balance.asOfDate,
-          source: 'import',
-          sourceRef,
-          attachments: [],
-          createdBy: input.actorUserId,
-          createdAt: new Date().toISOString(),
-        };
-        const { data: txData, error: projectTxError } = await supabase
-          .from('project_transactions')
-          .upsert(projectTransactionToDb(tx), { onConflict: 'source_ref' })
-          .select()
-          .single();
-        if (projectTxError) throw projectTxError;
-        materialProjectTransaction = txData ? fromDb(txData) as ProjectTransaction : tx;
-      }
-
-      const stockTransactionIds = stockTransactions.map(tx => tx.id);
-      const { data: lockedRow, error: lockError } = await supabase
-        .from(BALANCE_TABLE)
-        .update({
-          status: 'locked',
-          locked_by: input.actorUserId || null,
-          locked_at: new Date().toISOString(),
-          stock_transaction_ids: stockTransactionIds,
-          material_project_transaction_id: materialProjectTransaction?.id || null,
-        })
-        .eq('id', openingId)
-        .select()
-        .single();
-      if (lockError) throw lockError;
-
-      await projectWeeklyProgressService.upsertSnapshot({
-        scopeKey: balance.scopeKey,
-        projectId: balance.projectId,
-        constructionSiteId: balance.constructionSiteId,
-        weekStart: getWeekStart(balance.asOfDate),
-        constructionProgressPercent: balance.constructionProgressPercent,
-        valueMetric: {
-          contractTotalValue: balance.contractValue,
-          purchasedValue: balance.purchasedValue,
-          issuedValue: balance.issuedValue,
-          actualProductionValue: balance.recognizedValue,
-          recognizedValue: balance.recognizedValue,
-          valueProgressPercent: balance.contractValue > 0
-            ? Math.min(100, Math.round((balance.recognizedValue / balance.contractValue) * 100))
-            : 0,
-        },
-        progressMode: 'opening_balance',
-        calculatedAt: new Date().toISOString(),
-      });
-
-      const savedLines = await this.listLines(openingId);
-      return {
-        openingBalance: mapBalance(lockedRow),
-        lines: savedLines,
-        projectFinance,
-        materialProjectTransaction,
-        stockTransactions,
-        createdItems,
-        updatedItems,
-      };
-    }
 
     const materialExpenseValue = accountingExpenseValue(balance);
     if (materialExpenseValue > 0) {
@@ -1080,11 +944,9 @@ export const projectOpeningBalanceService = {
 
   async voidOpeningBalance(openingBalanceId: string): Promise<void> {
     if (!isSupabaseConfigured || !openingBalanceId) return;
-    const { error } = await supabase
-      .from(BALANCE_TABLE)
-      .update({ status: 'void', updated_at: new Date().toISOString() })
-      .eq('id', openingBalanceId);
-    if (error) throw error;
+    throw new Error(
+      'Voiding atomic opening balances requires a controlled reversal and is temporarily unavailable.',
+    );
   },
 
   async parseOpeningBalanceImport(
