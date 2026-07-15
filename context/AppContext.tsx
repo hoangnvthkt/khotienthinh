@@ -2174,44 +2174,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const clearTransactionHistory = async () => {
-    setTransactions([]);
-    if (isSupabaseConfigured) {
-      const { error } = await supabase.from('transactions').delete().gt('id', '0');
-      if (error) console.error("Error clearing transactions:", error);
-    }
+    throw new Error(
+      'WMS destructive maintenance is disabled. Posted history must be corrected with a reversal or reconciliation.',
+    );
   };
 
   const clearAllData = async () => {
-    if (!isSupabaseConfigured) {
-      setItems([]);
-      setTransactions([]);
-      setActivities([]);
-      setRequests([]);
-      return;
-    }
-
-    try {
-      setIsLoading(true);
-      // Delete all data from principal tables
-      await Promise.all([
-        supabase.from('items').delete().neq('id', '0'),
-        supabase.from('transactions').delete().neq('id', '0'),
-        supabase.from('activities').delete().neq('id', '0'),
-        supabase.from('requests').delete().neq('id', '0')
-      ]);
-
-      setItems([]);
-      setTransactions([]);
-      setActivities([]);
-      setRequests([]);
-
-      logActivity('SYSTEM', 'Xóa dữ liệu', 'Toàn bộ dữ liệu vật tư và giao dịch đã được xóa sạch trên Cloud', 'DANGER');
-    } catch (error) {
-      logApiError('clearAllData', error);
-      throw error;
-    } finally {
-      setIsLoading(false);
-    }
+    throw new Error(
+      'WMS destructive maintenance is disabled. Use an approved archival, reversal, or reconciliation workflow.',
+    );
   };
 
   const addWarehouse = (w: Warehouse) => {
