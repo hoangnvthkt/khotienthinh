@@ -280,10 +280,158 @@ describe('project opening balance atomic posting command', () => {
     expect(result.updatedItems[0].stockByWarehouse).not.toHaveProperty('zoneA');
   });
 
-  it('explicitly disables configured voiding until a controlled reversal command exists', async () => {
-    await expect(projectOpeningBalanceService.voidOpeningBalance(
-      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-    )).rejects.toThrow('controlled reversal');
+  it('voids through one typed controlled-reversal RPC with canonical finance snapshots', async () => {
+    mocks.rpc.mockResolvedValueOnce({
+      data: {
+        opening_balance: {
+          ...rpcResult().opening_balance,
+          status: 'void',
+          reversal_command_id: commandId,
+          reversal_reason: 'Điều chỉnh số dư đầu kỳ sai',
+          reversed_by: 'user-1',
+          reversed_at: '2026-07-15T04:00:00.000Z',
+          reversal_stock_transaction_ids: ['opening-reversal:aaaaaaaa:warehouse-1'],
+          reversal_material_project_transaction_id: 'opening-material-reversal:aaaaaaaa',
+        },
+        project_finance: {
+          ...rpcResult().project_finance,
+          contractValue: 950,
+          progressPercent: 20,
+          notes: 'Đã hiệu chỉnh đầu kỳ',
+          updatedAt: '2026-07-15T04:00:00.000Z',
+        },
+        finance_before: {
+          id: existingFinance.id,
+          projectId: 'project-1',
+          constructionSiteId: 'site-1',
+          contractValue: 1000,
+          progressPercent: 25,
+          status: 'active',
+          notes: 'Sau khóa đầu kỳ',
+          updatedAt: '2026-07-15T03:00:00.000Z',
+        },
+        finance_after: {
+          id: existingFinance.id,
+          projectId: 'project-1',
+          constructionSiteId: 'site-1',
+          contractValue: 950,
+          progressPercent: 20,
+          status: 'active',
+          notes: 'Đã hiệu chỉnh đầu kỳ',
+          updatedAt: '2026-07-15T04:00:00.000Z',
+        },
+        compensating_stock_transactions: [{
+          ...rpcResult().stock_transactions[0],
+          id: 'opening-reversal:aaaaaaaa:warehouse-1',
+          items: [{ itemId: existingItem.id, quantity: -1.25, price: 10, unit: 'Kg' }],
+          source_type: 'project_opening_balance_reversal',
+          source_id: 'aaaaaaaa:warehouse-1',
+        }],
+        compensating_material_project_transaction: {
+          ...rpcResult().material_project_transaction,
+          id: 'opening-material-reversal:aaaaaaaa',
+          amount: -40,
+          source_ref: 'opening_balance_reversal:aaaaaaaa:materials',
+        },
+        stock_transaction_map: [{
+          originalTransactionId: 'opening-balance:aaaaaaaa:warehouse-1',
+          compensatingTransactionId: 'opening-reversal:aaaaaaaa:warehouse-1',
+        }],
+        reversal: {
+          commandId,
+          requestHash: 'hash-1',
+          actorId: 'user-1',
+          reason: 'Điều chỉnh số dư đầu kỳ sai',
+          reversedAt: '2026-07-15T04:00:00.000Z',
+        },
+      },
+      error: null,
+    });
+
+    const result = await projectOpeningBalanceService.voidOpeningBalance({
+      commandId,
+      openingBalanceId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      reason: '  Điều chỉnh số dư đầu kỳ sai  ',
+      expectedFinanceSnapshot: {
+        id: existingFinance.id,
+        projectId: 'project-1',
+        constructionSiteId: 'site-1',
+        contractValue: 1_000,
+        progressPercent: 25,
+        status: 'active',
+        updatedAt: '2026-07-15T03:00:00.000Z',
+      },
+      correctedFinanceSnapshot: {
+        id: existingFinance.id,
+        projectId: 'project-1',
+        constructionSiteId: 'site-1',
+        contractValue: 950,
+        progressPercent: 20,
+        status: 'active',
+      },
+    });
+
+    expect(mocks.rpc).toHaveBeenCalledTimes(1);
+    expect(mocks.rpc).toHaveBeenCalledWith('reverse_project_opening_balance', {
+      p_command: {
+        commandId,
+        openingBalanceId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        reason: 'Điều chỉnh số dư đầu kỳ sai',
+        expectedFinanceSnapshot: expect.objectContaining({
+          contractValue: '1000',
+          progressPercent: '25',
+          notes: null,
+          updatedAt: '2026-07-15T03:00:00.000Z',
+        }),
+        correctedFinanceSnapshot: expect.objectContaining({
+          contractValue: '950',
+          progressPercent: '20',
+          notes: null,
+        }),
+      },
+    });
+    expect(mocks.from).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      openingBalance: { status: 'void' },
+      projectFinance: { contractValue: 950 },
+      financeBefore: { contractValue: 1_000 },
+      financeAfter: { contractValue: 950 },
+      compensatingStockTransactions: [{
+        sourceType: 'project_opening_balance_reversal',
+        items: [{ quantity: -1.25 }],
+      }],
+      compensatingMaterialProjectTransaction: { amount: -40 },
+      stockTransactionMap: [{
+        originalTransactionId: 'opening-balance:aaaaaaaa:warehouse-1',
+        compensatingTransactionId: 'opening-reversal:aaaaaaaa:warehouse-1',
+      }],
+      reversal: { commandId, actorId: 'user-1' },
+    });
+  });
+
+  it('rejects an incomplete reversal command before any network mutation', async () => {
+    await expect(projectOpeningBalanceService.voidOpeningBalance({
+      commandId,
+      openingBalanceId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      reason: '   ',
+      expectedFinanceSnapshot: {
+        id: existingFinance.id,
+        projectId: 'project-1',
+        constructionSiteId: 'site-1',
+        contractValue: 1_000,
+        progressPercent: 25,
+        status: 'active',
+        updatedAt: '2026-07-15T03:00:00.000Z',
+      },
+      correctedFinanceSnapshot: {
+        id: existingFinance.id,
+        projectId: 'project-1',
+        constructionSiteId: 'site-1',
+        contractValue: 950,
+        progressPercent: 20,
+        status: 'active',
+      },
+    })).rejects.toThrow('lý do');
 
     expect(mocks.rpc).not.toHaveBeenCalled();
     expect(mocks.from).not.toHaveBeenCalled();

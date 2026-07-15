@@ -707,6 +707,55 @@ export interface ProjectOpeningBalanceLockResult {
   warnings?: string[];
 }
 
+export interface ProjectOpeningBalanceFinanceSnapshot {
+  id: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  contractValue: number;
+  progressPercent: number;
+  status: string;
+  notes?: string | null;
+  updatedAt: string;
+}
+
+export interface ProjectOpeningBalanceCorrectedFinanceSnapshot {
+  id: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  contractValue: number;
+  progressPercent: number;
+  status: string;
+  notes?: string | null;
+}
+
+export interface ProjectOpeningBalanceReversalCommand {
+  commandId?: string;
+  openingBalanceId: string;
+  reason: string;
+  expectedFinanceSnapshot: ProjectOpeningBalanceFinanceSnapshot;
+  correctedFinanceSnapshot: ProjectOpeningBalanceCorrectedFinanceSnapshot;
+}
+
+export interface ProjectOpeningBalanceReversalResult {
+  openingBalance: ProjectOpeningBalance;
+  projectFinance: ProjectFinance;
+  financeBefore: ProjectOpeningBalanceFinanceSnapshot;
+  financeAfter: ProjectOpeningBalanceFinanceSnapshot;
+  compensatingStockTransactions: Transaction[];
+  compensatingMaterialProjectTransaction?: ProjectTransaction;
+  stockTransactionMap: Array<{
+    originalTransactionId: string;
+    compensatingTransactionId: string;
+  }>;
+  reversal: {
+    commandId: string;
+    requestHash: string;
+    actorId: string;
+    reason: string;
+    reversedAt: string;
+  };
+}
+
 const mapLockResult = (value: any): ProjectOpeningBalanceLockResult => {
   if (!value || typeof value !== 'object') {
     throw new Error('Lệnh khóa đầu kỳ không trả về kết quả hợp lệ.');
@@ -745,6 +794,49 @@ const mapLockResult = (value: any): ProjectOpeningBalanceLockResult => {
     createdItems: (field('created_items', 'createdItems') || []).map(mapInventoryItem),
     updatedItems: (field('updated_items', 'updatedItems') || []).map(mapInventoryItem),
   };
+};
+
+const mapReversalResult = (value: any): ProjectOpeningBalanceReversalResult => {
+  if (!value || typeof value !== 'object') {
+    throw new Error('Lệnh hoàn nguyên đầu kỳ không trả về kết quả hợp lệ.');
+  }
+
+  const mapped = fromDb(value) as any;
+  if (!mapped.openingBalance || !mapped.projectFinance
+      || !mapped.financeBefore || !mapped.financeAfter || !mapped.reversal) {
+    throw new Error('Lệnh hoàn nguyên đầu kỳ trả về thiếu chứng cứ bắt buộc.');
+  }
+
+  return {
+    openingBalance: mapped.openingBalance as ProjectOpeningBalance,
+    projectFinance: mapped.projectFinance as ProjectFinance,
+    financeBefore: mapped.financeBefore as ProjectOpeningBalanceFinanceSnapshot,
+    financeAfter: mapped.financeAfter as ProjectOpeningBalanceFinanceSnapshot,
+    compensatingStockTransactions: (mapped.compensatingStockTransactions || []) as Transaction[],
+    compensatingMaterialProjectTransaction:
+      mapped.compensatingMaterialProjectTransaction as ProjectTransaction | undefined,
+    stockTransactionMap: (mapped.stockTransactionMap || []) as ProjectOpeningBalanceReversalResult['stockTransactionMap'],
+    reversal: mapped.reversal as ProjectOpeningBalanceReversalResult['reversal'],
+  };
+};
+
+const validateReversalFinanceSnapshot = (
+  snapshot: ProjectOpeningBalanceFinanceSnapshot | ProjectOpeningBalanceCorrectedFinanceSnapshot,
+  label: string,
+): void => {
+  if (!snapshot || !String(snapshot.id || '').trim()) {
+    throw new Error(`${label} thiếu mã tài chính dự án.`);
+  }
+  if (!Number.isFinite(snapshot.contractValue) || snapshot.contractValue < 0) {
+    throw new Error(`${label} có giá trị hợp đồng không hợp lệ.`);
+  }
+  if (!Number.isFinite(snapshot.progressPercent)
+      || snapshot.progressPercent < 0 || snapshot.progressPercent > 100) {
+    throw new Error(`${label} có tiến độ không hợp lệ.`);
+  }
+  if (!String(snapshot.status || '').trim()) {
+    throw new Error(`${label} thiếu trạng thái tài chính.`);
+  }
 };
 
 export const projectOpeningBalanceService = {
@@ -953,11 +1045,47 @@ export const projectOpeningBalanceService = {
     };
   },
 
-  async voidOpeningBalance(openingBalanceId: string): Promise<void> {
-    if (!isSupabaseConfigured || !openingBalanceId) return;
-    throw new Error(
-      'Voiding atomic opening balances requires a controlled reversal and is temporarily unavailable.',
-    );
+  async voidOpeningBalance(
+    input: ProjectOpeningBalanceReversalCommand,
+  ): Promise<ProjectOpeningBalanceReversalResult> {
+    if (!isSupabaseConfigured) {
+      throw new Error('Hoàn nguyên số dư đầu kỳ cần kết nối máy chủ để đảm bảo giao dịch nguyên tử.');
+    }
+    const openingBalanceId = String(input?.openingBalanceId || '').trim();
+    const reason = String(input?.reason || '').trim();
+    if (!openingBalanceId) throw new Error('Thiếu chứng từ đầu kỳ cần hoàn nguyên.');
+    if (!reason) throw new Error('Cần nhập lý do hoàn nguyên số dư đầu kỳ.');
+    validateReversalFinanceSnapshot(input.expectedFinanceSnapshot, 'Snapshot tài chính hiện tại');
+    validateReversalFinanceSnapshot(input.correctedFinanceSnapshot, 'Snapshot tài chính hiệu chỉnh');
+    if (!input.expectedFinanceSnapshot.updatedAt) {
+      throw new Error('Snapshot tài chính hiện tại thiếu phiên bản updatedAt.');
+    }
+    if (input.expectedFinanceSnapshot.id !== input.correctedFinanceSnapshot.id
+        || (input.expectedFinanceSnapshot.projectId || null)
+          !== (input.correctedFinanceSnapshot.projectId || null)
+        || (input.expectedFinanceSnapshot.constructionSiteId || null)
+          !== (input.correctedFinanceSnapshot.constructionSiteId || null)) {
+      throw new Error('Hai snapshot tài chính phải cùng dự án, công trường và bản ghi.');
+    }
+
+    const command = canonicalizeCommandNumbers(cleanUndefined({
+      commandId: input.commandId || crypto.randomUUID(),
+      openingBalanceId,
+      reason,
+      expectedFinanceSnapshot: cleanUndefined({
+        ...input.expectedFinanceSnapshot,
+        notes: input.expectedFinanceSnapshot.notes ?? null,
+      }),
+      correctedFinanceSnapshot: cleanUndefined({
+        ...input.correctedFinanceSnapshot,
+        notes: input.correctedFinanceSnapshot.notes ?? null,
+      }),
+    }));
+    const { data, error } = await supabase.rpc('reverse_project_opening_balance', {
+      p_command: command,
+    });
+    if (error) throw error;
+    return mapReversalResult(data);
   },
 
   async parseOpeningBalanceImport(
