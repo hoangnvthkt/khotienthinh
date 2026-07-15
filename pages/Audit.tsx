@@ -5,19 +5,49 @@ import { useToast } from '../context/ToastContext';
 import {
   ClipboardCheck, Search, QrCode, Save, AlertCircle,
   CheckCircle2, History, Warehouse as WarehouseIcon,
-  ArrowRight, Package, Info, TrendingDown, AlertTriangle, ShieldAlert,
+  Package, AlertTriangle, ShieldAlert,
   Download, Eye, Calendar, FileSpreadsheet, ChevronLeft
 } from 'lucide-react';
-import { TransactionType, TransactionStatus, InventoryItem, Role, LossReason, LOSS_REASON_LABELS, AuditSession, AuditSessionItem } from '../types';
+import { InventoryItem, Role, LossReason, LOSS_REASON_LABELS, AuditSession } from '../types';
 import { loadXlsx } from '../lib/loadXlsx';
 import { useModuleData } from '../hooks/useModuleData';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
 import { matchesSearchQueryMultiple } from '../lib/searchUtils';
+import { LocalizedNumberInput } from '../components/common/LocalizedNumberInput';
+import {
+  formatCurrencyVi,
+  formatViPercent,
+  formatViQuantity,
+  toCanonicalDecimal,
+  type DecimalPolicy,
+} from '../lib/locale/decimal';
+import { inspectLocalizedNumberDraft } from '../lib/locale/inputDraft';
+import { inventoryAuditService } from '../lib/inventoryAuditService';
+import {
+  clearInventoryAuditCommandId,
+  getOrCreateInventoryAuditCommand,
+} from '../lib/inventoryAuditCommand';
 
 const ScannerModal = React.lazy(() => import('../components/ScannerModal'));
 
+const AUDIT_QUANTITY_POLICY: DecimalPolicy = {
+  kind: 'quantity',
+  maxFractionDigits: 6,
+  min: 0,
+  allowNegative: false,
+};
+
 const Audit: React.FC = () => {
-  const { items, warehouses, user, addTransaction, lossNorms, categories, auditSessions, addAuditSession } = useApp();
+  const {
+    items,
+    warehouses,
+    user,
+    lossNorms,
+    categories,
+    auditSessions,
+    loadModuleData,
+    refreshWmsRecords,
+  } = useApp();
   useModuleData('wms');
   const toast = useToast();
   const [selectedWhId, setSelectedWhId] = useState<string>(user.assignedWarehouseId || '');
@@ -29,7 +59,7 @@ const Audit: React.FC = () => {
   const [viewingSession, setViewingSession] = useState<AuditSession | null>(null);
 
   // State for audit session
-  const [auditData, setAuditData] = useState<Record<string, number>>({});
+  const [auditData, setAuditData] = useState<Record<string, string>>({});
   const [auditReasons, setAuditReasons] = useState<Record<string, LossReason>>({});
   const [auditNotes, setAuditNotes] = useState<Record<string, string>>({});
   const [isSaving, setIsSaving] = useState(false);
@@ -44,8 +74,7 @@ const Audit: React.FC = () => {
   }, [items, searchTerm, selectedWhId]);
 
   const handleUpdateActual = (itemId: string, value: string) => {
-    const numValue = parseInt(value);
-    if (isNaN(numValue)) {
+    if (!value.trim()) {
       const newData = { ...auditData };
       delete newData[itemId];
       setAuditData(newData);
@@ -56,7 +85,7 @@ const Audit: React.FC = () => {
       delete newNotes[itemId];
       setAuditNotes(newNotes);
     } else {
-      setAuditData(prev => ({ ...prev, [itemId]: numValue }));
+      setAuditData(prev => ({ ...prev, [itemId]: value }));
     }
   };
 
@@ -75,123 +104,95 @@ const Audit: React.FC = () => {
 
   const isReadOnly = user.role !== Role.ADMIN && !user.assignedWarehouseId;
 
+  const parsedAuditData = useMemo(() => Object.fromEntries(
+    Object.entries(auditData).map(([itemId, draft]) => [
+      itemId,
+      inspectLocalizedNumberDraft(draft, AUDIT_QUANTITY_POLICY, { allowEmpty: false }),
+    ]),
+  ), [auditData]);
+
+  const invalidAuditInputs = useMemo(
+    () => Object.values(parsedAuditData).filter(result => result.ok === false).length,
+    [parsedAuditData],
+  );
+
   const unreasonedDiscrepancies = useMemo(() => {
     let count = 0;
-    Object.entries(auditData).forEach(([itemId, actual]) => {
+    Object.entries(parsedAuditData).forEach(([itemId, parsed]) => {
+      if (parsed.ok === false) return;
       const item = items.find(i => i.id === itemId);
       const system = item?.stockByWarehouse[selectedWhId] || 0;
-      if (actual !== system && !auditReasons[itemId]) count++;
+      if (parsed.value !== system && !auditReasons[itemId]) count++;
     });
     return count;
-  }, [auditData, auditReasons, items, selectedWhId]);
+  }, [auditReasons, items, parsedAuditData, selectedWhId]);
 
   const handleSaveAudit = async () => {
     if (!selectedWhId || Object.keys(auditData).length === 0 || isReadOnly) return;
 
+    if (invalidAuditInputs > 0) {
+      toast.error('Số lượng không hợp lệ', `Còn ${invalidAuditInputs} số lượng chưa đúng định dạng 1.234,56.`);
+      return;
+    }
     if (unreasonedDiscrepancies > 0) {
       toast.error('Thiếu nguyên nhân', `Còn ${unreasonedDiscrepancies} vật tư chênh lệch chưa chọn nguyên nhân.`);
       return;
     }
 
     setIsSaving(true);
-    const now = new Date().toISOString();
-    const txId = `adj-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-
-    // Build audit session items
-    const sessionItems: AuditSessionItem[] = Object.entries(auditData).map(([itemId, actual]) => {
-      const item = items.find(i => i.id === itemId)!;
-      const system = item.stockByWarehouse[selectedWhId] || 0;
-      const delta = (actual as number) - system;
-      const isLoss = delta < 0;
-      let exceedsNorm = false;
-      let lossPercent = 0;
-      let normPercent: number | undefined;
-
-      if (isLoss && system > 0) {
-        lossPercent = (Math.abs(delta) / system) * 100;
-        const norm = getAllowedLoss(item);
-        if (norm) {
-          normPercent = norm.percentage;
-          exceedsNorm = lossPercent > norm.percentage;
-        }
-      }
-
-      return {
-        itemId,
-        itemName: item.name,
-        sku: item.sku,
-        unit: item.unit || '',
-        systemStock: system,
-        actualStock: actual as number,
-        delta,
-        lossReason: auditReasons[itemId] || undefined,
-        note: auditNotes[itemId] || undefined,
-        exceedsNorm,
-        lossPercent: isLoss ? lossPercent : undefined,
-        normPercent,
-        lossValue: isLoss ? Math.abs(delta) * (item.priceIn || 0) : 0
-      };
-    });
-
-    const whName = warehouses.find(w => w.id === selectedWhId)?.name || '';
-
-    // Compute stats
-    const totalDiscrepancies = sessionItems.filter(i => i.delta !== 0).length;
-    const totalExceedNorm = sessionItems.filter(i => i.exceedsNorm).length;
-    const totalLossValue = sessionItems.reduce((sum, i) => sum + (i.lossValue || 0), 0);
-
+    const { commandId, auditedAt } = getOrCreateInventoryAuditCommand(selectedWhId, user.id);
     try {
-      // Save audit session
-      const session: AuditSession = {
-        id: `audit-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+      const result = await inventoryAuditService.post({
+        commandId,
         warehouseId: selectedWhId,
-        warehouseName: whName,
-        date: now,
-        auditorId: user.id,
-        auditorName: user.name || user.username,
-        items: sessionItems,
-        totalItems: sessionItems.length,
-        totalDiscrepancies,
-        totalExceedNorm,
-        totalLossValue,
-        transactionId: txId
-      };
-      await addAuditSession(session);
-
-      // Create adjustment transaction
-      const transactionItems = sessionItems.map(si => ({
-        itemId: si.itemId,
-        quantity: si.delta,
-        price: items.find(i => i.id === si.itemId)?.priceIn || 0
-      }));
-
-      const reasonDetails = sessionItems
-        .filter(si => si.lossReason)
-        .map(si => `${si.itemName}: ${LOSS_REASON_LABELS[si.lossReason!]}${si.note ? ` - ${si.note}` : ''}`)
-        .join('; ');
-
-      await addTransaction({
-        id: txId,
-        type: TransactionType.ADJUSTMENT,
-        date: now,
-        items: transactionItems,
-        targetWarehouseId: selectedWhId,
-        requesterId: user.id,
-        approverId: user.id,
-        status: TransactionStatus.COMPLETED,
-        note: `Kiểm kê tại ${whName}${reasonDetails ? `. Chi tiết: ${reasonDetails}` : ''}`
+        auditedAt,
+        observations: Object.entries(parsedAuditData).map(([itemId, parsed]) => {
+          if (parsed.ok === false) {
+            throw new Error(`Số lượng thực tế của vật tư ${itemId} không hợp lệ.`);
+          }
+          const item = items.find(candidate => candidate.id === itemId);
+          if (!item) throw new Error(`Không tìm thấy vật tư ${itemId}.`);
+          const expectedSystemQty = item.stockByWarehouse[selectedWhId] || 0;
+          return {
+            itemId,
+            actualQty: parsed.canonical,
+            expectedSystemQty: toCanonicalDecimal(expectedSystemQty, AUDIT_QUANTITY_POLICY),
+            lossReason: auditReasons[itemId] || null,
+            note: auditNotes[itemId]?.trim() || null,
+          };
+        }),
       });
 
-      setIsSaving(false);
+      // The authoritative database transaction has committed. UI refreshes
+      // below are derived and must never turn success into a retry with a new id.
+      clearInventoryAuditCommandId(selectedWhId, user.id, commandId);
       setShowSuccess(true);
       setAuditData({});
       setAuditReasons({});
       setAuditNotes({});
+      setViewingSession(result.auditSession);
       toast.success('Kiểm kê thành công', 'Dữ liệu đã lưu. Xem tại tab "Lịch sử kiểm kê".');
+
+      try {
+        await Promise.all([
+          refreshWmsRecords({
+            itemIds: result.updatedItems.map(item => item.id),
+            transactionIds: result.stockTransaction ? [result.stockTransaction.id] : [],
+          }),
+          loadModuleData('wms', true),
+        ]);
+      } catch (postCommitError: any) {
+        logApiError('audit.postCommitRefresh', postCommitError);
+        toast.warning(
+          'Dữ liệu kiểm kê đã được ghi nhận an toàn',
+          'Giao diện chưa tải lại đầy đủ. Vui lòng mở lại trang để nhận dữ liệu mới nhất.',
+        );
+      }
       setTimeout(() => setShowSuccess(false), 3000);
     } catch (err: any) {
       logApiError('audit.save', err);
       toast.error('Không thể lưu kiểm kê', getApiErrorMessage(err, 'Không thể lưu phiên kiểm kê lên Supabase.'));
+    } finally {
       setIsSaving(false);
     }
   };
@@ -208,7 +209,7 @@ const Audit: React.FC = () => {
       ['Tổng vật tư kiểm:', session.totalItems],
       ['Chênh lệch:', session.totalDiscrepancies],
       ['Vượt định mức:', session.totalExceedNorm],
-      ['Tổng giá trị hao hụt:', session.totalLossValue.toLocaleString('vi-VN') + ' đ'],
+      ['Tổng giá trị hao hụt:', formatCurrencyVi(session.totalLossValue)],
       [],
       ['STT', 'Mã SKU', 'Tên vật tư', 'ĐVT', 'Tồn HT', 'Thực tế', 'Chênh lệch', '% Hao hụt', '% Định mức', 'Vượt ĐM', 'Nguyên nhân', 'Ghi chú', 'Giá trị hao hụt']
     ];
@@ -222,8 +223,8 @@ const Audit: React.FC = () => {
         item.systemStock as any,
         item.actualStock as any,
         item.delta as any,
-        item.lossPercent !== undefined ? `${item.lossPercent.toFixed(1)}%` : '',
-        item.normPercent !== undefined ? `${item.normPercent}%` : '',
+        item.lossPercent !== undefined ? formatViPercent(item.lossPercent, 2) : '',
+        item.normPercent !== undefined ? formatViPercent(item.normPercent, 2) : '',
         item.exceedsNorm ? 'CÓ' : '',
         item.lossReason ? LOSS_REASON_LABELS[item.lossReason] : '',
         item.note || '',
@@ -277,10 +278,12 @@ const Audit: React.FC = () => {
     let exceedNorm = 0;
     let totalLossValue = 0;
 
-    Object.entries(auditData).forEach(([itemId, actual]) => {
+    Object.entries(parsedAuditData).forEach(([itemId, parsed]) => {
+      if (parsed.ok === false) return;
       const item = items.find(i => i.id === itemId);
       const system = item?.stockByWarehouse[selectedWhId] || 0;
-      const diff = (actual as number) - system;
+      const actual = parsed.value;
+      const diff = actual - system;
       if (actual !== system) {
         discrepancies++;
         if (diff < 0) {
@@ -295,7 +298,7 @@ const Audit: React.FC = () => {
     });
 
     return { itemsAudited, discrepancies, exceedNorm, totalLossValue };
-  }, [auditData, items, selectedWhId, lossNorms]);
+  }, [auditData, items, parsedAuditData, selectedWhId, lossNorms]);
 
   // ==================== SESSION DETAIL VIEW ====================
   if (viewingSession) {
@@ -330,7 +333,7 @@ const Audit: React.FC = () => {
           </div>
           <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
             <div className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Giá trị hao hụt</div>
-            <div className="text-2xl font-black text-red-600 mt-1">{viewingSession.totalLossValue.toLocaleString('vi-VN')}đ</div>
+            <div className="text-2xl font-black text-red-600 mt-1">{formatCurrencyVi(viewingSession.totalLossValue)}</div>
           </div>
         </div>
 
@@ -362,19 +365,19 @@ const Audit: React.FC = () => {
                       <div className="font-black text-sm text-slate-800">{item.itemName}</div>
                       <div className="text-[10px] font-bold text-slate-400 font-mono">{item.sku}</div>
                     </td>
-                    <td className="p-4 text-center font-black text-slate-500">{item.systemStock}</td>
-                    <td className="p-4 text-center font-black text-slate-800">{item.actualStock}</td>
+                    <td className="p-4 text-center font-black text-slate-500">{formatViQuantity(item.systemStock)}</td>
+                    <td className="p-4 text-center font-black text-slate-800">{formatViQuantity(item.actualStock)}</td>
                     <td className="p-4 text-center">
                       <span className={`font-black text-sm ${item.delta === 0 ? 'text-slate-400' : item.delta > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                        {item.delta > 0 ? `+${item.delta}` : item.delta}
+                        {item.delta > 0 ? `+${formatViQuantity(item.delta)}` : formatViQuantity(item.delta)}
                       </span>
                     </td>
                     <td className="p-4 text-center">
                       {item.lossPercent !== undefined ? (
                         <div>
-                          <span className="font-bold text-sm text-red-600">{item.lossPercent.toFixed(1)}%</span>
+                          <span className="font-bold text-sm text-red-600">{formatViPercent(item.lossPercent, 2)}</span>
                           {item.normPercent !== undefined && (
-                            <span className={`text-[9px] font-bold ml-1 ${item.exceedsNorm ? 'text-red-500' : 'text-emerald-500'}`}>/ {item.normPercent}%</span>
+                            <span className={`text-[9px] font-bold ml-1 ${item.exceedsNorm ? 'text-red-500' : 'text-emerald-500'}`}>/ {formatViPercent(item.normPercent, 2)}</span>
                           )}
                         </div>
                       ) : (
@@ -432,10 +435,21 @@ const Audit: React.FC = () => {
           </div>
           {activeView === 'audit' && !isReadOnly && (
             <button
-              disabled={Object.keys(auditData).length === 0 || isSaving || unreasonedDiscrepancies > 0}
+              disabled={
+                Object.keys(auditData).length === 0
+                || isSaving
+                || invalidAuditInputs > 0
+                || unreasonedDiscrepancies > 0
+              }
               onClick={handleSaveAudit}
               className="flex items-center px-6 py-2.5 bg-accent text-white rounded-xl hover:bg-blue-700 transition font-black uppercase text-[10px] tracking-widest shadow-lg shadow-blue-500/20 disabled:opacity-50 disabled:shadow-none"
-              title={unreasonedDiscrepancies > 0 ? `Còn ${unreasonedDiscrepancies} vật tư chưa chọn nguyên nhân` : ''}
+              title={
+                invalidAuditInputs > 0
+                  ? `Còn ${invalidAuditInputs} số lượng sai định dạng`
+                  : unreasonedDiscrepancies > 0
+                    ? `Còn ${unreasonedDiscrepancies} vật tư chưa chọn nguyên nhân`
+                    : ''
+              }
             >
               {isSaving ? 'Đang lưu...' : <><Save size={16} className="mr-2" /> Hoàn tất</>}
             </button>
@@ -510,7 +524,7 @@ const Audit: React.FC = () => {
                       </td>
                       <td className="p-4 text-right">
                         <span className={`font-black text-sm ${session.totalLossValue > 0 ? 'text-red-600' : 'text-slate-400'}`}>
-                          {session.totalLossValue > 0 ? session.totalLossValue.toLocaleString('vi-VN') + 'đ' : '0'}
+                          {session.totalLossValue > 0 ? formatCurrencyVi(session.totalLossValue) : '0'}
                         </span>
                       </td>
                       <td className="p-4 text-center">
@@ -541,6 +555,12 @@ const Audit: React.FC = () => {
       {/* ==================== AUDIT TAB ==================== */}
       {activeView === 'audit' && (
         <>
+          {invalidAuditInputs > 0 && (
+            <div className="bg-red-50 border border-red-200 p-4 rounded-xl flex items-center gap-3 text-red-700">
+              <AlertCircle size={20} />
+              <p className="text-sm font-bold">Có {invalidAuditInputs} số lượng sai định dạng 1.234,56.</p>
+            </div>
+          )}
           {unreasonedDiscrepancies > 0 && (
             <div className="bg-amber-50 border border-amber-200 p-4 rounded-xl flex items-center gap-3 text-amber-700">
               <AlertTriangle size={20} />
@@ -592,7 +612,7 @@ const Audit: React.FC = () => {
                   {stats.totalLossValue > 0 && (
                     <div className="flex justify-between items-center text-xs pt-2 border-t border-slate-50">
                       <span className="text-slate-500 font-medium">Giá trị hao hụt:</span>
-                      <span className="font-black text-red-600">{stats.totalLossValue.toLocaleString('vi-VN')}đ</span>
+                      <span className="font-black text-red-600">{formatCurrencyVi(stats.totalLossValue)}</span>
                     </div>
                   )}
                 </div>
@@ -665,11 +685,14 @@ const Audit: React.FC = () => {
                       <tbody className="divide-y divide-slate-100">
                         {filteredItems.map(item => {
                           const systemStock = item.stockByWarehouse[selectedWhId] || 0;
-                          const actualStock = auditData[item.id];
-                          const hasInput = actualStock !== undefined;
-                          const diff = hasInput ? actualStock - systemStock : 0;
-                          const hasDiscrepancy = hasInput && diff !== 0;
-                          const isLoss = hasInput && diff < 0;
+                          const actualDraft = auditData[item.id] ?? '';
+                          const actualResult = parsedAuditData[item.id];
+                          const hasInput = Object.prototype.hasOwnProperty.call(auditData, item.id);
+                          const hasValidInput = hasInput && actualResult?.ok === true;
+                          const actualStock = hasValidInput ? actualResult.value : 0;
+                          const diff = hasValidInput ? actualStock - systemStock : 0;
+                          const hasDiscrepancy = hasValidInput && diff !== 0;
+                          const isLoss = hasValidInput && diff < 0;
 
                           const norm = getAllowedLoss(item);
                           let exceedsNorm = false;
@@ -687,25 +710,33 @@ const Audit: React.FC = () => {
                                 <div className="font-black text-slate-800 text-sm">{item.name}</div>
                                 <div className="text-[10px] font-bold text-slate-400 font-mono">{item.sku}</div>
                               </td>
-                              <td className="p-4 text-center font-black text-slate-500">{systemStock}</td>
+                              <td className="p-4 text-center font-black text-slate-500">{formatViQuantity(systemStock)}</td>
                               <td className="p-4 text-center">
-                                <input type="number" min="0" placeholder={isReadOnly ? "Chỉ xem" : "Nhập..."} value={actualStock === undefined ? '' : actualStock} onChange={(e) => handleUpdateActual(item.id, e.target.value)} disabled={isReadOnly}
-                                  className="w-24 px-3 py-2 text-center border border-slate-200 rounded-lg font-black text-slate-800 focus:ring-2 focus:ring-accent outline-none disabled:bg-slate-50 disabled:text-slate-400" />
+                                <LocalizedNumberInput
+                                  value={actualDraft}
+                                  policy={AUDIT_QUANTITY_POLICY}
+                                  allowEmpty
+                                  placeholder={isReadOnly ? 'Chỉ xem' : 'Nhập...'}
+                                  onDraftChange={(draft) => handleUpdateActual(item.id, draft)}
+                                  disabled={isReadOnly}
+                                  aria-label={`Số lượng thực tế ${item.name}`}
+                                  className="w-24 px-3 py-2 text-center border border-slate-200 rounded-lg font-black text-slate-800 focus:ring-2 focus:ring-accent outline-none disabled:bg-slate-50 disabled:text-slate-400"
+                                />
                               </td>
                               <td className="p-4 text-center">
-                                {hasInput ? (
+                                {hasValidInput ? (
                                   <div>
                                     <span className={`font-black text-sm ${diff === 0 ? 'text-slate-400' : diff > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                                      {diff > 0 ? `+${diff}` : diff}
+                                      {diff > 0 ? `+${formatViQuantity(diff)}` : formatViQuantity(diff)}
                                     </span>
                                     {isLoss && systemStock > 0 && (
                                       <div className="text-[9px] font-bold text-slate-400 mt-0.5">
-                                        {lossPercent.toFixed(1)}%
-                                        {norm && <span className={exceedsNorm ? ' text-red-500' : ' text-emerald-500'}> / {norm.percentage}%</span>}
+                                        {formatViPercent(lossPercent, 2)}
+                                        {norm && <span className={exceedsNorm ? ' text-red-500' : ' text-emerald-500'}> / {formatViPercent(norm.percentage, 2)}</span>}
                                       </div>
                                     )}
                                   </div>
-                                ) : <span className="text-slate-200">-</span>}
+                                ) : hasInput ? <span className="text-red-500 text-[10px] font-bold">Sai định dạng</span> : <span className="text-slate-200">-</span>}
                               </td>
                               <td className="p-4">
                                 {hasDiscrepancy ? (
@@ -723,7 +754,7 @@ const Audit: React.FC = () => {
                                 ) : hasInput ? <span className="text-[10px] text-slate-300 italic">Khớp</span> : null}
                               </td>
                               <td className="p-4">
-                                {hasInput ? (
+                                {hasValidInput ? (
                                   exceedsNorm ? <span className="flex items-center text-[10px] font-black text-red-600 uppercase"><ShieldAlert size={12} className="mr-1" /> Vượt ĐM</span>
                                     : diff === 0 ? <span className="flex items-center text-[10px] font-black text-emerald-600 uppercase"><CheckCircle2 size={12} className="mr-1" /> Khớp</span>
                                       : <span className="flex items-center text-[10px] font-black text-orange-600 uppercase"><AlertCircle size={12} className="mr-1" /> Lệch</span>
