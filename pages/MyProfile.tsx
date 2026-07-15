@@ -73,7 +73,7 @@ const MyProfile: React.FC = () => {
         user, employees, hrmAreas, hrmOffices, hrmEmployeeTypes,
         hrmPositions, hrmSalaryPolicies, hrmWorkSchedules, hrmConstructionSites,
         orgUnits, assets, assetAssignments, assetCategories,
-        setUser, updateEmployee, updateUser, replaceEmployeeLocal,
+        updateEmployee, updateUser, replaceEmployeeLocal,
     } = useApp();
     useModuleData('hrm');
     useModuleData('ts');
@@ -107,7 +107,7 @@ const MyProfile: React.FC = () => {
                 const updatedEmployee = await employeeSelfService.updateMyProfile({ avatarUrl: url });
                 if (updatedEmployee) {
                     replaceEmployeeLocal(updatedEmployee);
-                    setUser({ ...linkedUser, avatar: url });
+                    await updateUser({ ...linkedUser, avatar: url });
                 } else {
                     await updateEmployee({ ...employee, avatarUrl: url });
                     await updateUser({ ...linkedUser, avatar: url });
@@ -178,7 +178,7 @@ const MyProfile: React.FC = () => {
                 }
             }
             if (updatedEmployee) {
-                setUser({
+                await updateUser({
                     ...linkedUser,
                     name: editForm.fullName,
                     phone: editForm.phone,

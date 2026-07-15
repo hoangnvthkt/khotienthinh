@@ -1,18 +1,17 @@
 
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useApp } from '../context/AppContext';
-import { Lock, User as UserIcon, AlertCircle, Info, Eye, EyeOff, Zap } from 'lucide-react';
-import { xpService } from '../lib/xpService';
+import { Lock, Mail, AlertCircle, Info, Eye, EyeOff, Zap } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
 import { createPerformanceTrace } from '../lib/performanceTrace';
+import { useAuth } from '../context/AuthContext';
 
 const Login: React.FC = () => {
   const navigate = useNavigate();
-  const { login } = useApp();
+  const { login } = useAuth();
   const toast = useToast();
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [showForgotMsg, setShowForgotMsg] = useState(false);
@@ -28,29 +27,18 @@ const Login: React.FC = () => {
     e.preventDefault();
     const trace = createPerformanceTrace('login-submit', {
       firstLoginInTab: !sessionStorage.getItem('vioo:login:seen-in-tab'),
-      hasSavedUser: !!localStorage.getItem('vioo_user'),
     });
     setError('');
     setIsLoading(true);
     let success = false;
 
     try {
-      const loggedUser = await trace.step('appContext.login()', () => login(username, password), {
-        usernameMode: username.includes('@') ? 'email' : 'username',
-      });
-      if (loggedUser) {
-        success = true;
-        // Award daily login XP (fire-and-forget)
-        xpService.awardXP(loggedUser.id, 'daily_login').catch(() => { });
-        trace.startStep('navigate:/');
-        navigate('/');
-        trace.endStep('navigate:/');
-        sessionStorage.setItem('vioo:login:seen-in-tab', '1');
-      } else {
-        const message = 'Tên đăng nhập hoặc mật khẩu không chính xác.';
-        setError(message);
-        toast.error('Đăng nhập thất bại', message);
-      }
+      await trace.step('authContext.login()', () => login(email, password));
+      success = true;
+      trace.startStep('navigate:/');
+      navigate('/');
+      trace.endStep('navigate:/');
+      sessionStorage.setItem('vioo:login:seen-in-tab', '1');
     } catch (err: any) {
       logApiError('login', err);
       const message = getApiErrorMessage(err, 'Thông tin đăng nhập không hợp lệ hoặc lỗi kết nối.');
@@ -103,17 +91,17 @@ const Login: React.FC = () => {
           )}
 
           <div className="login-field">
-            <label className="login-label">Tên đăng nhập</label>
+            <label className="login-label">Email</label>
             <div className="login-input-wrapper">
-              <UserIcon className="login-input-icon" size={18} />
+              <Mail className="login-input-icon" size={18} />
               <input
-                type="text"
+                type="email"
                 required
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 className="login-input"
-                placeholder="Nhập tên đăng nhập..."
-                autoComplete="username"
+                placeholder="Nhập email..."
+                autoComplete="email"
               />
             </div>
           </div>

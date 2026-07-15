@@ -11,7 +11,7 @@ import {
   Asset, AssetCategory, AssetAssignment, AssetMaintenance, AssetStatus, AssetLocationStock, AssetTransfer, AssetOrigin, AssetAttachment,
   AttendanceRecord, LeaveRequest, PayrollRecord, LaborContract, LeaveBalance, PayrollTemplate, HrmHoliday, HrmSalaryHistory,
   BudgetCategory, BudgetEntry, ExpenseRecord, AttendanceProposal, LeaveLog, LeaveApprover,
-  HrmShiftType, HrmEmployeeShift, UserPermissionGrant
+  HrmShiftType, HrmEmployeeShift
 } from '../types';
 import {
   MOCK_USERS, MOCK_WAREHOUSES, MOCK_WAREHOUSE_TYPES, MOCK_ITEMS,
@@ -44,6 +44,8 @@ import {
   projectTransactionToDb,
 } from '../lib/projectTransactionMapping';
 import { canPerform } from '../lib/permissions/permissionService';
+import { useAuth } from './AuthContext';
+import { mapUserProfileRow as mapUserFromDb, serializeMockUser } from './authState';
 
 interface AppSettings {
   name: string;
@@ -55,56 +57,6 @@ type WmsRecordRefreshOptions = {
   transactionIds?: Array<string | null | undefined>;
   requestIds?: Array<string | null | undefined>;
 };
-
-const normalizeDbRole = (role: any): Role => {
-  if (role === 'KEEPER') return Role.WAREHOUSE_KEEPER;
-  return role as Role;
-};
-
-const mapUserFromDb = (row: any): User => ({
-  ...row,
-  authId: row.auth_id ?? row.authId,
-  role: normalizeDbRole(row.role),
-  assignedWarehouseId: row.assigned_warehouse_id ?? row.assignedWarehouseId,
-  allowedModules: row.allowed_modules ?? row.allowedModules ?? undefined,
-  adminModules: row.admin_modules ?? row.adminModules ?? undefined,
-  allowedSubModules: row.allowed_sub_modules ?? row.allowedSubModules ?? undefined,
-  adminSubModules: row.admin_sub_modules ?? row.adminSubModules ?? undefined,
-  isActive: row.is_active ?? row.isActive,
-});
-
-const mapPermissionGrantFromDb = (row: any): UserPermissionGrant => ({
-  id: row.id,
-  userId: row.user_id ?? row.userId,
-  permissionCode: row.permission_code ?? row.permissionCode,
-  scopeType: row.scope_type ?? row.scopeType ?? 'global',
-  scopeId: row.scope_id ?? row.scopeId ?? '*',
-  isActive: row.is_active ?? row.isActive ?? true,
-  grantedBy: row.granted_by ?? row.grantedBy,
-  grantedAt: row.granted_at ?? row.grantedAt,
-  expiresAt: row.expires_at ?? row.expiresAt,
-});
-
-const loadUserPermissionGrants = async (userId?: string): Promise<UserPermissionGrant[]> => {
-  if (!isSupabaseConfigured || !userId) return [];
-  try {
-    const { data, error } = await supabase
-      .from('user_permission_grants')
-      .select('id,user_id,permission_code,scope_type,scope_id,is_active,granted_by,granted_at,expires_at')
-      .eq('user_id', userId)
-      .eq('is_active', true);
-    if (error) throw error;
-    return (data || []).map(mapPermissionGrantFromDb);
-  } catch (error: any) {
-    console.warn('Phase 1 permission grants unavailable, falling back to legacy permissions:', error?.message || error);
-    return [];
-  }
-};
-
-const hydrateUserPermissionGrants = async (mappedUser: User): Promise<User> => ({
-  ...mappedUser,
-  permissionGrants: await loadUserPermissionGrants(mappedUser.id),
-});
 
 const userToDbPayload = (data: User) => {
   const payload: any = {
@@ -147,14 +99,10 @@ const REALTIME_TABLES_BY_MODULE: Partial<Record<AppModule, string[]>> = {
 };
 
 interface AppContextType {
-  user: User;
+  readonly user: User;
   users: User[];
   appSettings: AppSettings;
   theme: 'light' | 'dark';
-  setUser: (user: User) => void;
-  switchUser: (user: User) => void;
-  login: (username: string, password: string) => Promise<User | null>;
-  logout: () => void;
   addUser: (user: User) => Promise<void>;
   updateUser: (user: User) => Promise<void>;
   removeUser: (userId: string) => Promise<void>;
@@ -446,14 +394,12 @@ const assetToDbPayload = (data: Asset) => ({
 });
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User>(() => {
-    const saved = localStorage.getItem('vioo_user');
-    return saved ? JSON.parse(saved) : MOCK_USERS[0];
-  });
+  const { user: authenticatedUser, refreshProfile } = useAuth();
+  if (!authenticatedUser) throw new Error('AppProvider requires an authenticated user');
+  const user = authenticatedUser;
   const [users, setUsers] = useState<User[]>(() => {
     if (!isSupabaseConfigured) return MOCK_USERS;
-    const saved = localStorage.getItem('vioo_user');
-    return saved ? [JSON.parse(saved)] : [];
+    return [user];
   });
   const [appSettings, setAppSettings] = useState<AppSettings>({ name: 'Vioo', logo: '' });
   const [items, setItems] = useState<InventoryItem[]>(() => isSupabaseConfigured ? [] : MOCK_ITEMS);
@@ -519,7 +465,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   ]);
 
   const [isLoading, setIsLoading] = useState(isSupabaseConfigured);
-  const [isRefreshing, setIsRefreshing] = useState(false);
+  const isRefreshing = false;
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [systemSlowMessage, setSystemSlowMessage] = useState<string | null>(null);
   const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>('disconnected');
@@ -531,6 +477,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const inflightModuleLoadsRef = useRef<Partial<Record<AppModule, Promise<void>>>>({});
   const realtimeTablesRef = useRef<Set<string>>(new Set());
   const slowMessageTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  useEffect(() => {
+    setUsers(previous => {
+      const exists = previous.some(candidate => candidate.id === user.id);
+      return exists
+        ? previous.map(candidate => candidate.id === user.id ? user : candidate)
+        : [user, ...previous];
+    });
+  }, [user]);
 
   const setModuleStatus = useCallback((module: AppModule, status: ModuleLoadStatus, error?: string) => {
     setModuleLoadState(prev => ({ ...prev, [module]: status }));
@@ -549,14 +504,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     loadedModulesRef.current.add(module);
     setModuleStatus(module, 'loaded');
   }, [setModuleStatus]);
-
-  const resetModuleLoadCache = useCallback(() => {
-    loadedModulesRef.current.clear();
-    inflightModuleLoadsRef.current = {};
-    setModuleLoadState(createModuleLoadState());
-    setModuleLoadedAt({});
-    setModuleLoadErrors({});
-  }, []);
 
   const clearSystemSlowMessageSoon = useCallback((delay = 1200) => {
     if (slowMessageTimeoutRef.current) clearTimeout(slowMessageTimeoutRef.current);
@@ -617,95 +564,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const fetchData = async () => {
       const trace = createPerformanceTrace('app-bootstrap', {
-        hasSavedUser: !!localStorage.getItem('vioo_user'),
-        currentUserEmail: user.email,
+        currentUserId: user.id,
       });
       let success = false;
       try {
         setIsLoading(true);
-
-        const fetchTable = async (table: string, query: any = supabase.from(table).select('*')) => {
-          try {
-            const { data, error } = await query;
-            if (error) {
-              if (isTransientSupabaseError(error)) showSystemSlowMessage();
-              console.warn(`Error fetching ${table}:`, error.message);
-              return null;
-            }
-            return data;
-          } catch (e) {
-            if (isTransientSupabaseError(e)) showSystemSlowMessage();
-            console.warn(`Exception fetching ${table}:`, e);
-            return null;
-          }
-        };
-
-        const [settingsData, authResult] = await trace.step(
-          'fetch app_settings + auth user',
-          () => Promise.all([
-            fetchTable('app_settings', supabase.from('app_settings').select('*').maybeSingle()),
-            supabase.auth.getUser(),
-          ])
+        const { data: settingsData, error: settingsError } = await trace.step(
+          'fetch app_settings',
+          () => supabase.from('app_settings').select('*').maybeSingle(),
         );
-
-        trace.startStep('map settings/current user');
+        if (settingsError) throw settingsError;
         if (settingsData) setAppSettings(settingsData);
-
-        const authUserId = authResult.data?.user?.id || user.authId;
-        let currentProfile: any = null;
-
-        if (authUserId) {
-          const { data, error } = await supabase
-            .from('users')
-            .select('*')
-            .eq('auth_id', authUserId)
-            .maybeSingle();
-          if (error && !isTransientSupabaseError(error)) console.warn('Error fetching current user by auth_id:', error.message);
-          currentProfile = data;
-        }
-
-        if (!currentProfile && user.email) {
-          const { data, error } = await supabase
-            .from('users')
-            .select('*')
-            .eq('email', user.email)
-            .maybeSingle();
-          if (error && !isTransientSupabaseError(error)) console.warn('Error fetching current user by email:', error.message);
-          currentProfile = data;
-        }
-
-        if (currentProfile) {
-          const mappedUser = await hydrateUserPermissionGrants(mapUserFromDb(currentProfile));
-          setUser(mappedUser);
-          
-          // Fetch all users list
-          const { data: allUsers, error: usersError } = await supabase
-            .from('users')
-            .select('*');
-          if (usersError) {
-            console.warn('Error fetching all users list:', usersError.message);
-            setUsers(prev => {
-              const exists = prev.some(u => u.id === mappedUser.id);
-              return exists ? prev.map(u => u.id === mappedUser.id ? mappedUser : u) : [mappedUser, ...prev];
-            });
-          } else if (allUsers) {
-            setUsers(allUsers.map(mapUserFromDb));
-          } else {
-            setUsers(prev => {
-              const exists = prev.some(u => u.id === mappedUser.id);
-              return exists ? prev.map(u => u.id === mappedUser.id ? mappedUser : u) : [mappedUser, ...prev];
-            });
-          }
-          
-          const { avatar, ...userForStorage } = mappedUser;
-          localStorage.setItem('vioo_user', JSON.stringify(userForStorage));
-          setConnectionError(null);
-        }
-        if (settingsData || currentProfile) clearSystemSlowMessageSoon();
-
-        // Module-specific data is loaded lazily via loadModuleData().
-        // Bootstrap intentionally keeps only profile/permissions + app settings.
-        trace.endStep('map settings/current user', { matchedCurrentUser: !!currentProfile });
+        setConnectionError(null);
+        clearSystemSlowMessageSoon();
         success = true;
       } catch (error: any) {
         console.error('Error fetching data from Supabase:', error);
@@ -955,16 +826,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [setActiveRealtimeModules]);
 
   useEffect(() => {
-    if (!isSupabaseConfigured) return;
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED' || event === 'SIGNED_OUT') {
-        resetModuleLoadCache();
-      }
-    });
-    return () => subscription.unsubscribe();
-  }, [resetModuleLoadCache]);
-
-  useEffect(() => {
     if (!isSupabaseConfigured || !user?.id) return;
 
     let heartbeatCount = 0;
@@ -1093,9 +954,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             }
             mappedUsers.forEach((u: any) => { if (sigMap.has(u.id)) u.signatureUrl = sigMap.get(u.id); });
           }
-          setUsers(mappedUsers);
-          const currentInList = mappedUsers.find((u: any) => (user.authId && u.authId === user.authId) || u.email === user.email);
-          if (currentInList) setUser(prev => ({ ...currentInList, permissionGrants: prev.permissionGrants || [] }));
+          setUsers(mappedUsers.map(candidate => candidate.id === user.id
+            ? { ...candidate, permissionGrants: user.permissionGrants || [] }
+            : candidate));
         }
       } else if (module === 'wms-core') {
         await loadWmsCoreData();
@@ -1548,150 +1409,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     syncToSupabase('activities', newActivity);
   };
 
-  const login = async (username: string, password: string): Promise<User | null> => {
-    if (isSupabaseConfigured) {
-      const trace = createPerformanceTrace('supabase-login', {
-        usernameMode: username.includes('@') ? 'email' : 'username',
-      });
-      let success = false;
-      try {
-        // Here we map username to an email format for supabase auth if no actual email string was provided
-        // Since Supabase requires an email for signInWithPassword by default, we'll try querying the user first, or logging in by email.
-        // Assuming the `username` field might actually be an email, or if it's strictly a username, they must login with email under the hood
-        // For Vioo we can fetch the user by username to get the email, then login.
-
-        let loginEmail = username;
-        if (!username.includes('@')) {
-          const { data: rpcEmail, error: rpcError } = await trace.step(
-            'lookup_login_email rpc',
-            () => supabase.rpc('lookup_login_email', { p_username: username })
-          );
-          if (!rpcError && rpcEmail) {
-            loginEmail = rpcEmail;
-          } else {
-            if (rpcError && isTransientSupabaseError(rpcError)) {
-              throw new Error('Hệ thống đang chậm, đang thử kết nối lại. Anh thử đăng nhập lại sau vài giây.');
-            }
-            const { data, error } = await trace.step(
-              'lookup user email fallback',
-              () => supabase.from('users').select('email').eq('username', username).single()
-            );
-            if (error && isTransientSupabaseError(error)) {
-              throw new Error('Hệ thống đang chậm, đang thử kết nối lại. Anh thử đăng nhập lại sau vài giây.');
-            }
-            if (error || !data) throw new Error('Không tìm thấy tài khoản');
-            loginEmail = data.email;
-          }
-        }
-
-        const { data: authData, error: authError } = await trace.step(
-          'supabase.auth.signInWithPassword',
-          () => supabase.auth.signInWithPassword({
-            email: loginEmail,
-            password
-          })
-        );
-
-        if (authError) throw authError;
-
-        // Fetch user profile
-        const byAuth = await trace.step(
-          'fetch profile by auth_id',
-          () => supabase
-            .from('users')
-            .select('*')
-            .eq('auth_id', authData.user.id)
-            .maybeSingle()
-        );
-        const { data: userData, error: userError } = byAuth.data
-          ? byAuth
-          : await trace.step(
-            'fetch profile by email fallback',
-            () => supabase.from('users').select('*').eq('email', loginEmail).single()
-          );
-        if (userError && isTransientSupabaseError(userError)) {
-          throw new Error('Đăng nhập đã xác thực, nhưng hệ thống đang chậm khi tải hồ sơ. Anh thử lại sau vài giây.');
-        }
-        if (userError || !userData) throw new Error('Lỗi lấy thông tin người dùng');
-
-        trace.startStep('map user + localStorage');
-          const mappedUser = await hydrateUserPermissionGrants(mapUserFromDb(userData));
-          setUser(mappedUser);
-        
-        // Fetch all users list
-        const { data: allUsers, error: usersError } = await supabase
-          .from('users')
-          .select('*');
-        if (usersError) {
-          console.warn('Error fetching all users list during login:', usersError.message);
-          setUsers(prev => {
-            const exists = prev.some(u => u.id === mappedUser.id);
-            return exists ? prev.map(u => u.id === mappedUser.id ? mappedUser : u) : [mappedUser, ...prev];
-          });
-        } else if (allUsers) {
-          setUsers(allUsers.map(mapUserFromDb));
-        } else {
-          setUsers(prev => {
-            const exists = prev.some(u => u.id === mappedUser.id);
-            return exists ? prev.map(u => u.id === mappedUser.id ? mappedUser : u) : [mappedUser, ...prev];
-          });
-        }
-        const { avatar, ...userForStorage } = mappedUser;
-        localStorage.setItem('vioo_user', JSON.stringify(userForStorage));
-        localStorage.removeItem('vioo_explicit_logout_at');
-        resetModuleLoadCache();
-        userActivityService.startSession(mappedUser).catch(err => {
-          console.warn('User session telemetry start failed:', err);
-        });
-        trace.endStep('map user + localStorage');
-        success = true;
-        return mappedUser;
-
-      } catch (err: any) {
-        console.error('Login error:', err);
-        throw err;
-      } finally {
-        trace.finish({ success });
-      }
-    } else {
-      // Fallback to local mock auth
-      const foundUser = users.find(u => (u.username === username || u.email === username) && u.password === password);
-      if (foundUser) {
-        setUser(foundUser);
-        const { avatar, ...userForStorage } = foundUser;
-        localStorage.setItem('vioo_user', JSON.stringify(userForStorage));
-        return foundUser;
-      }
-      return null;
-    }
-  };
-
-  const logout = () => {
-    const logoutUserId = user?.id;
-    localStorage.setItem('vioo_explicit_logout_at', String(Date.now()));
-    localStorage.removeItem('vioo_user');
-    resetModuleLoadCache();
-    const signOut = () => supabase.auth.signOut().catch(err => console.warn('Supabase signOut failed:', err));
-    if (isSupabaseConfigured && logoutUserId) {
-      userActivityService.endSession(logoutUserId, 'logout')
-        .catch(err => console.warn('User session telemetry end failed:', err))
-        .finally(signOut);
-    } else {
-      signOut();
-    }
-    // We don't set user to null because the app expects a user object. 
-    // We'll handle redirection in App.tsx
-  };
-
-  const switchUser = (newUser: User) => {
-    resetModuleLoadCache();
-    setIsRefreshing(true);
-    setTimeout(() => {
-      setUser(newUser);
-      setIsRefreshing(false);
-    }, 500);
-  };
-
   const addUser = async (u: User) => {
     const nextUser = { ...u, isActive: u.isActive ?? true };
 
@@ -1725,8 +1442,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         throw new Error('Không thể cập nhật người dùng trên Supabase. Dữ liệu local chưa được thay đổi.');
       }
     }
-    setUsers(prev => prev.map(item => item.id === u.id ? u : item));
-    if (user.id === u.id) setUser(u);
+    let nextUser = u;
+    if (user.id === u.id) {
+      if (!isSupabaseConfigured && typeof window !== 'undefined') {
+        window.localStorage.setItem('vioo_mock_user', serializeMockUser(u));
+      }
+      nextUser = await refreshProfile();
+    }
+    setUsers(prev => prev.map(item => item.id === u.id ? nextUser : item));
     logActivity('SYSTEM', 'Cập nhật người dùng', `Đã cập nhật thông tin người dùng: ${u.name}`, 'INFO');
   };
 
@@ -3577,7 +3300,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const { data: urlData } = supabase.storage.from('workflow-templates').getPublicUrl(path);
       const publicUrl = urlData?.publicUrl ? `${urlData.publicUrl}?t=${Date.now()}` : '';
       setUsers(prev => prev.map(u => u.id === userId ? { ...u, signatureUrl: publicUrl } : u));
-      if (user.id === userId) setUser(prev => ({ ...prev, signatureUrl: publicUrl }));
+      if (user.id === userId) await refreshProfile();
       return true;
     } catch (err) { console.error('Save signature error:', err); return false; }
   };
@@ -3589,7 +3312,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const { error } = await supabase.from('user_signatures').delete().eq('user_id', userId);
       if (error) { console.error('Delete signature error:', error); return false; }
       setUsers(prev => prev.map(u => u.id === userId ? { ...u, signatureUrl: undefined } : u));
-      if (user.id === userId) setUser(prev => ({ ...prev, signatureUrl: undefined }));
+      if (user.id === userId) await refreshProfile();
       return true;
     } catch (err) { console.error('Delete signature error:', err); return false; }
   };
@@ -3599,7 +3322,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   return (
     <AppContext.Provider value={{
-      user, users, appSettings, theme, setUser, switchUser, addUser, updateUser, removeUser, items, warehouses, warehouseTypes, suppliers, transactions, requests, activities,
+      user, users, appSettings, theme, addUser, updateUser, removeUser, items, warehouses, warehouseTypes, suppliers, transactions, requests, activities,
       categories, units, employees,
       hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules, hrmConstructionSites, constructionSites: hrmConstructionSites,
       shiftTypes, employeeShifts,
@@ -3621,7 +3344,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       addAssetAssignment, addAssetMaintenance, updateAssetMaintenance, addAssetTransfer, transferAssetStock,
       isModuleAdmin, loadModuleData, moduleLoadState, moduleLoadedAt, moduleLoadErrors, setActiveRealtimeModules, refreshWmsRecords,
       saveSignature, deleteSignature,
-      login, logout, isLoading, isRefreshing, connectionError, systemSlowMessage, realtimeStatus, lastRealtimeEvent
+      isLoading, isRefreshing, connectionError, systemSlowMessage, realtimeStatus, lastRealtimeEvent
     }}>
       {children}
     </AppContext.Provider>

@@ -22,6 +22,7 @@ import { canApproveMaterialRequest, canApproveWmsTransaction, canExportMaterialR
 import { isChatEnabled, isChatV2Enabled } from '../lib/featureFlags';
 import { canAccessRoute } from '../lib/routeAccess';
 import { canViewModule } from '../lib/permissions/permissionService';
+import { useAuth } from '../context/AuthContext';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -55,12 +56,23 @@ type SidebarView = 'home' | 'apps' | AppKey;
 const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollapsed }) => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, logout, warehouses, transactions, requests, appSettings, items, realtimeStatus, lastRealtimeEvent, connectionError } = useApp();
+  const { user, warehouses, transactions, requests, appSettings, items, realtimeStatus, lastRealtimeEvent, connectionError } = useApp();
+  const { logout } = useAuth();
   const { isDark, toggleTheme } = useTheme();
   const { totalUnread } = useChat();
   const canUseChat = isChatEnabled && canAccessRoute(user, '/chat');
   const chatV2Unread = useChatV2UnreadCount(canUseChat && isChatV2Enabled ? user?.id : undefined);
   const chatUnread = isChatV2Enabled ? chatV2Unread : totalUnread;
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } catch (error) {
+      console.warn('Logout failed:', error);
+    } finally {
+      navigate('/login');
+    }
+  };
 
   // Detect if we're inside a module from URL
   const detectAppFromUrl = (): AppKey | null => {
@@ -339,7 +351,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
                 <NotificationCenter userId={user?.id} mode="desktop" />
               </div>
               <button
-                onClick={() => { logout(); navigate('/login'); }}
+                onClick={() => void handleLogout()}
                 className="flex-1 flex items-center justify-center gap-2 py-2 bg-red-500/10 text-red-400 border border-red-500/20 rounded-lg text-[11px] font-black uppercase tracking-wider hover:bg-red-500 hover:text-white hover:border-red-500 transition-all whitespace-nowrap"
               >
                 <LogOut size={13} /> Đăng xuất
@@ -358,7 +370,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
             <div className={`hidden lg:flex items-center justify-center w-9 h-9 rounded-lg border transition-all ${isDark ? 'bg-slate-800/50 border-white/10' : 'bg-white/50 border-white/60'}`}>
               <NotificationCenter userId={user?.id} mode="desktop" />
             </div>
-            <button onClick={() => { logout(); navigate('/login'); }}
+            <button onClick={() => void handleLogout()}
               className="flex items-center justify-center w-9 h-9 rounded-lg bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500 hover:text-white transition-all" title="Đăng xuất">
               <LogOut size={14} />
             </button>

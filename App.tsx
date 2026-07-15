@@ -1,5 +1,5 @@
 
-import React, { Suspense, useState, useEffect, useRef } from 'react';
+import React, { Suspense, useEffect, useRef } from 'react';
 import { HashRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Layout from './components/Layout';
 import LoadingSpinner from './components/LoadingSpinner';
@@ -14,13 +14,18 @@ import { RequestProvider, useRequest } from './context/RequestContext';
 import { CelebrationProvider } from './components/Celebration';
 import ErrorBoundary from './components/ErrorBoundary';
 import ReleaseNotesModal from './components/ReleaseNotesModal';
-import { supabase, isSupabaseConfigured } from './lib/supabase';
 import { getProjectAllowedSubModuleRedirect, hasProjectTabPermissionRoute } from './lib/projectTabPermissions';
-import { createPerformanceTrace } from './lib/performanceTrace';
 import { isChatEnabled, isChatV2Enabled } from './lib/featureFlags';
 import { hasAnySettingsManagementFeature } from './lib/settingsPermissions';
 import { useLatestReleaseNotice } from './hooks/useLatestReleaseNotice';
 import { canAccessRoute, getRouteModuleKey } from './lib/routeAccess';
+import {
+  AuthProvider,
+  AuthenticatedBoundary,
+  AuthRecoveryScreen,
+  useAuth,
+} from './context/AuthContext';
+import { selectApplicationShell } from './context/authState';
 
 // Lazy load all page components for code splitting
 const Dashboard = React.lazy(() => import('./pages/Dashboard'));
@@ -128,63 +133,6 @@ const ContractWorkspacePage = React.lazy(() => import('./pages/hd/ContractWorksp
 const TenderAiLayout = React.lazy(() => import('./pages/tender-ai/TenderAiLayout'));
 const TenderBoqAnalyzer = React.lazy(() => import('./pages/tender-ai/TenderBoqAnalyzer'));
 
-// ── T1: ProtectedRoute — verify Supabase session thực sự ─────────────────────
-// Khi Supabase được cấu hình: check session JWT từ Supabase Auth.
-// Fallback mock mode (isSupabaseConfigured = false): dùng localStorage.
-const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [authState, setAuthState] = useState<'loading' | 'ok' | 'no'>(
-    isSupabaseConfigured ? 'loading' : (!!localStorage.getItem('vioo_user') ? 'ok' : 'no')
-  );
-
-  useEffect(() => {
-    if (!isSupabaseConfigured) return; // Mock mode — đã xử lý ở initialState
-    const clearCachedUser = () => {
-      localStorage.removeItem('vioo_user');
-    };
-
-    // Kiểm tra session hiện tại ngay khi mount
-    const trace = createPerformanceTrace('protected-route-session-check', {
-      path: window.location.hash || window.location.pathname,
-      hasSavedUser: !!localStorage.getItem('vioo_user'),
-    });
-    supabase.auth.getSession()
-      .then(async ({ data: { session } }) => {
-        if (!session) {
-          clearCachedUser();
-          trace.finish({ hasSession: false, hasVerifiedUser: false });
-          setAuthState('no');
-          return;
-        }
-        const { data, error } = await supabase.auth.getUser();
-        if (error || !data.user) throw error || new Error('No verified Supabase user');
-        trace.finish({ hasSession: true, hasVerifiedUser: true });
-        setAuthState('ok');
-      })
-      .catch(error => {
-        console.warn('Supabase session check failed, forcing login:', error);
-        clearCachedUser();
-        trace.finish({ hasSession: false, hasVerifiedUser: false, error: error?.message || 'session check failed' });
-        setAuthState('no');
-      });
-
-    // Lắng nghe thay đổi: logout từ tab khác, token hết hạn
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (session) {
-        setAuthState('ok');
-        return;
-      }
-      clearCachedUser();
-      setAuthState('no');
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
-
-  if (authState === 'loading') return <LoadingSpinner />;
-  if (authState === 'no') return <Navigate to="/login" replace />;
-  return <>{children}</>;
-};
-
 // ── T2: SubModuleGuard — check phân quyền sub-module ─────────────────────────
 // Dùng ROUTE_TO_MODULE từ constants/routes.ts (T3).
 // Chỉ block user EMPLOYEE có allowedSubModules bị giới hạn.
@@ -212,8 +160,7 @@ const AppRoutes: React.FC = () => {
   return (
     <Suspense fallback={<LoadingSpinner />}>
       <Routes>
-        <Route path="/login" element={<Login />} />
-        <Route path="/" element={<ProtectedRoute><SubModuleGuard><Layout /></SubModuleGuard></ProtectedRoute>}>
+        <Route path="/" element={<SubModuleGuard><Layout /></SubModuleGuard>}>
           <Route index element={<Home />} />
           <Route path="notifications" element={<Notifications />} />
           <Route path="my-profile" element={<MyProfile />} />
@@ -491,30 +438,54 @@ const normalizeDirectHashRoute = () => {
 
 normalizeDirectHashRoute();
 
+const PublicLoginRoute: React.FC = () => {
+  const { status, error, retry, logout } = useAuth();
+  if (status === 'authenticated') return <Navigate to="/" replace />;
+  if (status === 'anonymous') return <Login />;
+  if (status === 'error') {
+    return <AuthRecoveryScreen error={error} retry={retry} logout={logout} />;
+  }
+  return <LoadingSpinner />;
+};
+
+export const AuthenticatedApplication: React.FC = () => (
+  <AuthenticatedBoundary>
+    <ConfirmProvider>
+      <AppProvider>
+        <WorkflowProvider>
+          <RequestProvider>
+            <ChatProvider>
+              <CelebrationProvider>
+                <RouteErrorBoundary>
+                  <AppDataWarmup />
+                  <ReleaseNoticeHost />
+                  <AppRoutes />
+                </RouteErrorBoundary>
+              </CelebrationProvider>
+            </ChatProvider>
+          </RequestProvider>
+        </WorkflowProvider>
+      </AppProvider>
+    </ConfirmProvider>
+  </AuthenticatedBoundary>
+);
+
+const ApplicationRouter: React.FC = () => {
+  const { pathname } = useLocation();
+  const shell = selectApplicationShell(pathname);
+  return shell === 'public_login' ? <PublicLoginRoute /> : <AuthenticatedApplication />;
+};
+
 const App: React.FC = () => {
   return (
     <ErrorBoundary>
       <ThemeProvider>
         <ToastProvider>
-          <ConfirmProvider>
-            <AppProvider>
-              <WorkflowProvider>
-                <RequestProvider>
-                  <ChatProvider>
-                    <CelebrationProvider>
-                      <Router>
-                        <RouteErrorBoundary>
-                          <AppDataWarmup />
-                          <ReleaseNoticeHost />
-                          <AppRoutes />
-                        </RouteErrorBoundary>
-                      </Router>
-                    </CelebrationProvider>
-                  </ChatProvider>
-                </RequestProvider>
-              </WorkflowProvider>
-            </AppProvider>
-          </ConfirmProvider>
+          <AuthProvider>
+            <Router>
+              <ApplicationRouter />
+            </Router>
+          </AuthProvider>
         </ToastProvider>
       </ThemeProvider>
     </ErrorBoundary>

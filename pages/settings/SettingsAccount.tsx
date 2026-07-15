@@ -7,19 +7,20 @@ import { getApiErrorMessage, logApiError } from '../../lib/apiError';
 import { webPushService } from '../../lib/webPushService';
 import { pwaService, PWAStatus } from '../../lib/pwaService';
 import { notificationSoundService } from '../../lib/notificationSoundService';
+import { useAuth } from '../../context/AuthContext';
 
 interface SettingsAccountProps {
   currentUser: User;
   updateUser: (u: User) => void | Promise<void>;
-  logout: () => void;
   avatarInputRef: React.RefObject<HTMLInputElement>;
   handleAvatarUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
   avatarUploading?: boolean;
 }
 
 const SettingsAccount: React.FC<SettingsAccountProps> = ({
-  currentUser, updateUser, logout, avatarInputRef, handleAvatarUpload, avatarUploading = false
+  currentUser, updateUser, avatarInputRef, handleAvatarUpload, avatarUploading = false
 }) => {
+  const { logout } = useAuth();
   const toast = useToast();
   const [passwords, setPasswords] = React.useState({ current: '', new: '', confirm: '' });
   const [passError, setPassError] = React.useState('');
@@ -400,7 +401,9 @@ const SettingsAccount: React.FC<SettingsAccountProps> = ({
           <h3 className="text-sm font-bold text-slate-800 mb-2">Đăng xuất</h3>
           <p className="text-xs text-slate-500 mb-4">Kết thúc phiên làm việc hiện tại trên thiết bị này.</p>
           <button
-            onClick={() => { logout(); window.location.href = '/login'; }}
+            onClick={() => void logout()
+              .catch(error => console.warn('Logout failed:', error))
+              .finally(() => { window.location.href = '/login'; })}
             className="px-6 py-3 bg-red-50 text-red-600 border border-red-100 rounded-xl font-bold hover:bg-red-600 hover:text-white transition"
           >
             Đăng xuất ngay
