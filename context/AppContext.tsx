@@ -1379,7 +1379,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           purchase_conversion_factor: Number(data.purchaseConversionFactor || 1),
           price_in: data.priceIn, price_out: data.priceOut, min_stock: data.minStock,
           default_lead_time_days: data.defaultLeadTimeDays ?? 7,
-          supplier_id: data.supplierId, image_url: data.imageUrl, stock_by_warehouse: data.stockByWarehouse,
+          supplier_id: data.supplierId, image_url: data.imageUrl,
           location: data.location ?? null
         };
       } else if (table === 'transactions') {
@@ -1879,7 +1879,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, []);
 
-  const applyStockChange = async (
+  const applyLocalStockProjection = (
     tx: Transaction,
     options: { excludeRequestId?: string; excludeTransactionId?: string; actionLabel?: string } = {},
   ) => {
@@ -1888,7 +1888,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       excludeRequestId: options.excludeRequestId,
       excludeTransactionId: options.excludeTransactionId,
     });
-    const changedItems: InventoryItem[] = [];
     const baseItems = tx.pendingItems?.length
       ? [
           ...items,
@@ -1921,14 +1920,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
 
       const updatedItem = { ...item, stockByWarehouse: newStock };
-      changedItems.push(updatedItem);
       return updatedItem;
     });
-
-    for (const item of changedItems) {
-      const synced = await syncToSupabase('items', item);
-      if (!synced) throw new Error(`Không thể cập nhật tồn kho cho vật tư "${item.name}".`);
-    }
 
     setItems(nextItems);
   };
@@ -1940,29 +1933,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     if (isSupabaseConfigured) {
-      const shouldProcessCompletedViaRpc = isImmediateCompleted && tx.type !== TransactionType.ADJUSTMENT;
-      const initialTx = shouldProcessCompletedViaRpc ? { ...tx, status: TransactionStatus.PENDING } : tx;
-      const synced = await syncToSupabase('transactions', initialTx);
-      if (!synced) {
-        throw new Error('Không thể lưu phiếu kho lên Supabase.');
-      }
-
-      let storedTx = initialTx;
+      const shouldProcessCompletedViaRpc = isImmediateCompleted;
+      let storedTx = tx;
       if (shouldProcessCompletedViaRpc) {
-        const { data, error } = await supabase.rpc('process_transaction_status', {
-          p_transaction_id: tx.id,
-          p_status: TransactionStatus.COMPLETED,
-          p_approver_id: tx.approverId || user.id,
+        const { data, error } = await supabase.rpc('post_wms_transaction', {
+          p_transaction: tx,
         });
         if (error) {
-          await supabase.from('transactions').delete().eq('id', tx.id).eq('status', TransactionStatus.PENDING);
-          logApiError('addTransaction.process_transaction_status', error);
+          logApiError('addTransaction.post_wms_transaction', error);
           throw error;
         }
         storedTx = data ? mapTransactionFromDb(data) : tx;
         await refreshWmsRecords({ itemIds: getTransactionItemIds(storedTx, tx) });
-      } else if (isImmediateCompleted) {
-        await applyStockChange(tx);
+      } else {
+        const synced = await syncToSupabase('transactions', tx);
+        if (!synced) {
+          throw new Error('Không thể lưu phiếu kho lên Supabase.');
+        }
       }
 
       setTransactions(prev => [storedTx, ...prev.filter(existing => existing.id !== storedTx.id)]);
@@ -1980,7 +1967,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     logActivity('TRANSACTION', `Tạo phiếu ${tx.type}`, `Phiếu mã ${tx.id.slice(-6)} đã được tạo`, 'INFO', whId);
-    if (tx.status === TransactionStatus.COMPLETED) await applyStockChange(tx);
+    if (tx.status === TransactionStatus.COMPLETED) applyLocalStockProjection(tx);
     setTransactions(prev => [tx, ...prev]);
     if (!isSupabaseConfigured) syncToSupabase('transactions', tx);
   };
@@ -2114,7 +2101,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         logActivity('TRANSACTION', `Cập nhật phiếu`, `Phiếu mã ${tx.id.slice(-6)} chuyển sang ${status}`, status === TransactionStatus.COMPLETED ? 'SUCCESS' : 'INFO', whId);
         if (status === TransactionStatus.COMPLETED) {
-          void applyStockChange(updatedTx, { excludeTransactionId: id });
+          applyLocalStockProjection(updatedTx, { excludeTransactionId: id });
           void syncFulfillmentBatchFromCompletedTransaction(updatedTx, approverId || user.id);
         }
         syncToSupabase('transactions', updatedTx);
@@ -2177,7 +2164,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addItems(selectedPendingItems);
       }
       if (nextStatus === TransactionStatus.COMPLETED) {
-        await applyStockChange(updatedTx, { excludeTransactionId: id });
+        applyLocalStockProjection(updatedTx, { excludeTransactionId: id });
       }
       setTransactions(prev => prev.map(item => item.id === id ? { ...updatedTx, pendingItems: [] } : item));
     }
