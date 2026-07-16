@@ -167,8 +167,10 @@ export const createUserSessionTelemetryRuntime = (
       clearListeners();
       // Local logout owns the stored UUID until endSession captures it. A later
       // React unmount must not turn that ordered shutdown into remote cleanup.
-      if (stopReason === 'local_logout' && reason !== 'local_logout') return;
+      // Authoritative remote auth loss is terminal and must cancel local close.
+      if (stopReason === 'local_logout' && reason === 'unmount') return;
       stopReason = reason;
+      if (reason === 'remote_auth_loss') endAbandoned = true;
       if (reason !== 'local_logout') service.clearStoredSessionId(activeUser.id);
     },
 

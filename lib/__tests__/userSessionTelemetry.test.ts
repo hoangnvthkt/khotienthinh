@@ -223,6 +223,24 @@ describe('user activity service UUID and storage boundary', () => {
     expect(storage.getItem(`vioo_user_session_id:${USER_ID}`)).toBe(SESSION_ID);
   });
 
+  it('does not turn a shared invalid stored UUID result into a replacement session', async () => {
+    const client = new FakeSupabaseClient((operation) => (
+      operation.table === 'user_sessions' && operation.kind === 'insert'
+        ? { data: { id: NEW_SESSION_ID }, error: null }
+        : { data: null, error: null }
+    ));
+    const { service, storage } = makeService(client);
+    storage.setItem(`vioo_user_session_id:${USER_ID}`, 'u1');
+
+    await expect(Promise.all([
+      service.ensureSession(user),
+      service.ensureSession(user),
+    ])).resolves.toEqual([null, null]);
+
+    expect(client.operations).toHaveLength(0);
+    expect(storage.getItem(`vioo_user_session_id:${USER_ID}`)).toBeNull();
+  });
+
   it('removes only app-owned telemetry keys and never a Supabase auth token', () => {
     const client = new FakeSupabaseClient(() => ({ data: null, error: null }));
     const { service, storage } = makeService(client);
@@ -319,6 +337,58 @@ describe('ensureSession', () => {
 
     expect(storage.getItem(`vioo_user_session_id:${USER_ID}`)).toBe(SESSION_ID);
     expect(client.operations.filter(operation => operation.kind === 'insert')).toHaveLength(0);
+  });
+
+  it('starts one valid generation after a StrictMode-like remount joins an abandoned start', async () => {
+    let resolveFirstInsert!: (result: QueryResult) => void;
+    const firstInsert = new Promise<QueryResult>((resolve) => {
+      resolveFirstInsert = resolve;
+    });
+    let sessionInsertCount = 0;
+    const client = new FakeSupabaseClient((operation) => {
+      if (operation.table === 'user_sessions' && operation.kind === 'insert') {
+        sessionInsertCount += 1;
+        return sessionInsertCount === 1
+          ? firstInsert
+          : { data: { id: NEW_SESSION_ID }, error: null };
+      }
+      if (operation.table === 'user_sessions' && operation.kind === 'select') {
+        return { data: { login_at: '2026-07-15T00:00:00.000Z' }, error: null };
+      }
+      return { data: null, error: null };
+    });
+    const { service, storage } = makeService(client);
+    const firstEnvironment = createEnvironment();
+    const nextEnvironment = createEnvironment();
+    const firstRuntime = createUserSessionTelemetryRuntime({
+      status: 'authenticated',
+      session: makeSession(),
+      user,
+    }, service, firstEnvironment.environment)!;
+    const nextRuntime = createUserSessionTelemetryRuntime({
+      status: 'authenticated',
+      session: makeSession(),
+      user,
+    }, service, nextEnvironment.environment)!;
+
+    const abandonedStart = firstRuntime.start();
+    await Promise.resolve();
+    firstRuntime.stop('unmount');
+    const validStart = nextRuntime.start();
+    await Promise.resolve();
+    expect(sessionInsertCount).toBe(1);
+
+    resolveFirstInsert({ data: { id: SESSION_ID }, error: null });
+    await Promise.all([abandonedStart, validStart]);
+
+    expect(sessionInsertCount).toBe(2);
+    expect(storage.getItem(`vioo_user_session_id:${USER_ID}`)).toBe(NEW_SESSION_ID);
+    expect(client.operations.filter(operation => (
+      operation.table === 'user_session_events'
+      && operation.kind === 'insert'
+      && (operation.payload as { event_type?: string }).event_type === 'login'
+    ))).toHaveLength(1);
+    nextRuntime.stop('unmount');
   });
 });
 
@@ -542,6 +612,34 @@ describe('telemetry runtime identity and lifecycle', () => {
     expect(events).toEqual(['stop:remote_auth_loss', 'clear']);
   });
 
+  it('lets remote auth loss override local logout while React unmount preserves it', async () => {
+    const service: UserSessionTelemetryService = {
+      ensureSession: vi.fn(async () => SESSION_ID),
+      heartbeat: vi.fn(async () => undefined),
+      endSession: vi.fn(async () => undefined),
+      clearStoredSessionId: vi.fn(),
+    };
+    const { environment } = createEnvironment();
+    const runtime = createUserSessionTelemetryRuntime({
+      status: 'authenticated',
+      session: makeSession(),
+      user,
+    }, service, environment)!;
+    await runtime.start();
+    const operationGuard = vi.mocked(service.ensureSession).mock.calls[0][1]!;
+
+    runtime.stop('local_logout');
+    runtime.stop('unmount');
+    expect(operationGuard()).toBe(true);
+
+    runtime.stop('remote_auth_loss');
+    expect(operationGuard()).toBe(false);
+    await runtime.end();
+
+    expect(service.endSession).not.toHaveBeenCalled();
+    expect(service.clearStoredSessionId).toHaveBeenCalledWith(USER_ID);
+  });
+
   it('orders local logout as stop, best-effort end, auth signout, then app-key cleanup', async () => {
     const events: string[] = [];
     const lifecycle = new UserSessionTelemetryLifecycle();
@@ -595,6 +693,137 @@ describe('telemetry runtime identity and lifecycle', () => {
     });
 
     expect(events).toEqual(['stop:local_logout', 'abandon', 'signOut', 'clear']);
+  });
+
+  it('releases and idempotently abandons a pending local end after timeout', async () => {
+    let resolveEnd!: () => void;
+    const completion = new Promise<void>((resolve) => {
+      resolveEnd = resolve;
+    });
+    const abandonEnd = vi.fn();
+    const lifecycle = new UserSessionTelemetryLifecycle();
+    lifecycle.register({
+      userId: USER_ID,
+      stop: vi.fn(),
+      end: () => completion,
+      abandonEnd,
+    });
+
+    const pendingEnd = lifecycle.stopAndEnd(USER_ID);
+    pendingEnd.abandon();
+    pendingEnd.abandon();
+    lifecycle.handleRemoteAuthLoss(vi.fn());
+
+    expect(abandonEnd).toHaveBeenCalledTimes(1);
+    resolveEnd();
+    await pendingEnd.completion;
+  });
+
+  it('abandons an old pending local end before registering a replacement runtime', async () => {
+    let resolveEnd!: () => void;
+    const completion = new Promise<void>((resolve) => {
+      resolveEnd = resolve;
+    });
+    const abandonEnd = vi.fn();
+    const lifecycle = new UserSessionTelemetryLifecycle();
+    lifecycle.register({
+      userId: USER_ID,
+      stop: vi.fn(),
+      end: () => completion,
+      abandonEnd,
+    });
+    const pendingEnd = lifecycle.stopAndEnd(USER_ID);
+
+    lifecycle.register({
+      userId: USER_ID,
+      stop: vi.fn(),
+      end: async () => undefined,
+      abandonEnd: vi.fn(),
+    });
+    resolveEnd();
+    await pendingEnd.completion;
+
+    expect(abandonEnd).toHaveBeenCalledTimes(1);
+  });
+
+  it('reuses the same pending local end for a repeated logout of the same user', async () => {
+    let resolveEnd!: () => void;
+    const completion = new Promise<void>((resolve) => {
+      resolveEnd = resolve;
+    });
+    const end = vi.fn(() => completion);
+    const lifecycle = new UserSessionTelemetryLifecycle();
+    lifecycle.register({
+      userId: USER_ID,
+      stop: vi.fn(),
+      end,
+      abandonEnd: vi.fn(),
+    });
+
+    const firstPendingEnd = lifecycle.stopAndEnd(USER_ID);
+    const repeatedPendingEnd = lifecycle.stopAndEnd(USER_ID);
+
+    expect(repeatedPendingEnd).toBe(firstPendingEnd);
+    expect(end).toHaveBeenCalledTimes(1);
+    resolveEnd();
+    await firstPendingEnd.completion;
+  });
+
+  it('abandons a pending local end when remote auth loss wins before it settles', async () => {
+    let resolveInsert!: (result: QueryResult) => void;
+    const pendingInsert = new Promise<QueryResult>((resolve) => {
+      resolveInsert = resolve;
+    });
+    const client = new FakeSupabaseClient((operation) => {
+      if (operation.table === 'user_sessions' && operation.kind === 'insert') {
+        return pendingInsert;
+      }
+      if (operation.table === 'user_sessions' && operation.kind === 'select') {
+        return { data: { login_at: '2026-07-15T00:00:00.000Z' }, error: null };
+      }
+      return { data: null, error: null };
+    });
+    const { service, storage } = makeService(client);
+    const setItem = vi.spyOn(storage, 'setItem');
+    const { environment } = createEnvironment();
+    const runtime = createUserSessionTelemetryRuntime({
+      status: 'authenticated',
+      session: makeSession(),
+      user,
+    }, service, environment)!;
+    const starting = runtime.start();
+    await Promise.resolve();
+
+    const lifecycle = new UserSessionTelemetryLifecycle();
+    lifecycle.register({
+      userId: USER_ID,
+      stop: reason => runtime.stop(reason),
+      end: () => runtime.end(),
+      abandonEnd: () => runtime.abandonEnd(),
+    });
+    const signOut = vi.fn(async () => undefined);
+    const logout = performLocalTelemetryLogout({
+      lifecycle,
+      userId: USER_ID,
+      shouldEndServerSession: true,
+      telemetryEndTimeoutMs: 1_000,
+      signOut,
+      clearAppOwnedStorage: () => service.clearAllStoredSessionIds(),
+    });
+
+    lifecycle.handleRemoteAuthLoss(() => service.clearAllStoredSessionIds());
+    resolveInsert({ data: { id: SESSION_ID }, error: null });
+    await Promise.all([starting, logout]);
+
+    expect(signOut).toHaveBeenCalledTimes(1);
+    expect(client.operations).toEqual([
+      expect.objectContaining({ table: 'user_sessions', kind: 'insert' }),
+    ]);
+    expect(setItem).not.toHaveBeenCalledWith(
+      `vioo_user_session_id:${USER_ID}`,
+      SESSION_ID,
+    );
+    expect(storage.getItem(`vioo_user_session_id:${USER_ID}`)).toBeNull();
   });
 
   it('abandons a late ensure result after logout timeout without a post-signout DB end call', async () => {

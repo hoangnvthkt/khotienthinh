@@ -277,6 +277,11 @@ type StoredSessionRead =
   | { kind: 'invalid' }
   | { kind: 'valid'; sessionId: string };
 
+interface InFlightSessionStart {
+  completion: Promise<string | null>;
+  operationGuard?: UserActivityOperationGuard;
+}
+
 const getDefaultStorage = (): Storage | null => {
   if (typeof window === 'undefined') return null;
   try {
@@ -292,7 +297,7 @@ export const createUserActivityService = (
   const client = dependencies.supabaseClient ?? supabase;
   const resolveStorage = dependencies.getStorage ?? getDefaultStorage;
   const resolveDeviceMetadata = dependencies.getDeviceMetadata ?? getDeviceMetadata;
-  const inFlightStarts = new Map<string, Promise<string | null>>();
+  const inFlightStarts = new Map<string, InFlightSessionStart>();
 
   const storage = (): Storage | null => {
     try {
@@ -425,44 +430,61 @@ export const createUserActivityService = (
       || !isOperationAllowed(operationGuard)
     ) return null;
     const inFlightKey = `${user.id}:${user.authId}`;
-    const existing = inFlightStarts.get(inFlightKey);
-    if (existing) {
-      const sessionId = await existing;
-      return isOperationAllowed(operationGuard) ? sessionId : null;
-    }
+    const ensureGeneration = async (retryAfterSharedNull: boolean): Promise<string | null> => {
+      const existing = inFlightStarts.get(inFlightKey);
+      if (existing) {
+        const sessionId = await existing.completion;
+        if (!isOperationAllowed(operationGuard)) return null;
+        const existingGenerationWasAbandoned = !isOperationAllowed(existing.operationGuard);
+        if (
+          sessionId
+          || !retryAfterSharedNull
+          || !existingGenerationWasAbandoned
+        ) return sessionId;
 
-    const operation = (async () => {
-      if (!isOperationAllowed(operationGuard)) return null;
-      const stored = readStoredSession(user.id);
-      if (stored.kind === 'invalid') return null;
-      if (stored.kind === 'missing') return service.startSession(user, operationGuard);
+        // A remounted runtime can join a generation whose own guard was already
+        // cancelled. Once that tracked generation settles and removes itself,
+        // give the current valid guard exactly one chance to create/resume.
+        return ensureGeneration(false);
+      }
 
-      const { data, error } = await client
-        .from('user_sessions')
-        .select('id')
-        .eq('id', stored.sessionId)
-        .eq('user_id', user.id)
-        .eq('auth_id', user.authId)
-        .eq('status', 'active')
-        .maybeSingle();
-      if (!isOperationAllowed(operationGuard)) return null;
+      const operation = (async () => {
+        if (!isOperationAllowed(operationGuard)) return null;
+        const stored = readStoredSession(user.id);
+        if (stored.kind === 'invalid') return null;
+        if (stored.kind === 'missing') return service.startSession(user, operationGuard);
 
-      // An error is an unknown server state. Preserve the key and never insert a
-      // replacement, otherwise a transient 42501/network error can duplicate rows.
-      if (error) throw error;
-      if (data?.id === stored.sessionId) return stored.sessionId;
+        const { data, error } = await client
+          .from('user_sessions')
+          .select('id')
+          .eq('id', stored.sessionId)
+          .eq('user_id', user.id)
+          .eq('auth_id', user.authId)
+          .eq('status', 'active')
+          .maybeSingle();
+        if (!isOperationAllowed(operationGuard)) return null;
 
-      // A successful empty result definitively proves the stored UUID is stale.
-      if (!isOperationAllowed(operationGuard)) return null;
-      service.clearStoredSessionId(user.id);
-      return service.startSession(user, operationGuard);
-    })();
+        // An error is an unknown server state. Preserve the key and never insert a
+        // replacement, otherwise a transient 42501/network error can duplicate rows.
+        if (error) throw error;
+        if (data?.id === stored.sessionId) return stored.sessionId;
 
-    const tracked = operation.finally(() => {
-      if (inFlightStarts.get(inFlightKey) === tracked) inFlightStarts.delete(inFlightKey);
-    });
-    inFlightStarts.set(inFlightKey, tracked);
-    return tracked;
+        // A successful empty result definitively proves the stored UUID is stale.
+        if (!isOperationAllowed(operationGuard)) return null;
+        service.clearStoredSessionId(user.id);
+        return service.startSession(user, operationGuard);
+      })();
+
+      let trackedEntry!: InFlightSessionStart;
+      const tracked = operation.finally(() => {
+        if (inFlightStarts.get(inFlightKey) === trackedEntry) inFlightStarts.delete(inFlightKey);
+      });
+      trackedEntry = { completion: tracked, operationGuard };
+      inFlightStarts.set(inFlightKey, trackedEntry);
+      return tracked;
+    };
+
+    return ensureGeneration(true);
   },
 
   async heartbeat(

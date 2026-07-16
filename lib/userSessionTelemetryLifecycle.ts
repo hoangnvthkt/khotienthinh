@@ -22,10 +22,17 @@ export interface PendingTelemetryEnd {
   abandon(): void;
 }
 
+interface OwnedPendingTelemetryEnd {
+  userId: string;
+  handle: PendingTelemetryEnd;
+}
+
 export class UserSessionTelemetryLifecycle {
   private active: ActiveUserSessionTelemetry | null = null;
+  private pendingLocalEnd: OwnedPendingTelemetryEnd | null = null;
 
   register(telemetry: ActiveUserSessionTelemetry): () => void {
+    this.pendingLocalEnd?.handle.abandon();
     this.active?.stop('unmount');
     this.active = telemetry;
     return () => {
@@ -40,19 +47,44 @@ export class UserSessionTelemetryLifecycle {
   }
 
   stopAndEnd(userId: string): PendingTelemetryEnd {
+    if (this.pendingLocalEnd?.userId === userId) {
+      return this.pendingLocalEnd.handle;
+    }
+    this.pendingLocalEnd?.handle.abandon();
     const telemetry = this.active;
     this.active = null;
     telemetry?.stop('local_logout');
     if (telemetry?.userId !== userId) {
       return { completion: Promise.resolve(), abandon: () => undefined };
     }
-    return {
-      completion: telemetry.end(),
-      abandon: () => telemetry.abandonEnd(),
+    let settled = false;
+    let abandoned = false;
+    const completion = telemetry.end();
+    const releasePendingEnd = () => {
+      if (this.pendingLocalEnd?.handle === pendingEnd) this.pendingLocalEnd = null;
     };
+    const pendingEnd: PendingTelemetryEnd = {
+      completion,
+      abandon: () => {
+        if (settled || abandoned) return;
+        abandoned = true;
+        releasePendingEnd();
+        telemetry.abandonEnd();
+      },
+    };
+    this.pendingLocalEnd = { userId, handle: pendingEnd };
+    const clearPendingEnd = () => {
+      settled = true;
+      releasePendingEnd();
+    };
+    void pendingEnd.completion.then(clearPendingEnd, clearPendingEnd);
+    return pendingEnd;
   }
 
   handleRemoteAuthLoss(clearAppOwnedStorage: () => void): void {
+    const pendingEnd = this.pendingLocalEnd;
+    this.pendingLocalEnd = null;
+    pendingEnd?.handle.abandon();
     this.stop('remote_auth_loss');
     clearAppOwnedStorage();
   }
