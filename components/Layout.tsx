@@ -16,6 +16,7 @@ import { useTheme } from '../context/ThemeContext';
 import { useOfflineSync } from '../hooks/useOfflineSync';
 import { RefreshCw, Menu, AlertTriangle, ExternalLink, Moon, Sun } from 'lucide-react';
 import { Role } from '../types';
+import { useAuth } from '../context/AuthContext';
 
 const SESSION_TIMEOUT_MS = 12 * 60 * 60 * 1000; // 12 tiếng làm việc (tránh tự động logout trong ngày)
 const WARN_BEFORE_MS = 5 * 60 * 1000; // Cảnh báo 5 phút trước
@@ -29,7 +30,8 @@ const Layout: React.FC = () => {
   const [sessionWarning, setSessionWarning] = useState(false);
   const [countdown, setCountdown] = useState(300); // 5 minutes in seconds
 
-  const { isRefreshing, appSettings, isLoading, connectionError, systemSlowMessage, logout, user, employees } = useApp();
+  const { isRefreshing, appSettings, isLoading, connectionError, systemSlowMessage, user, employees } = useApp();
+  const { logout } = useAuth();
   const { isDark, toggleTheme } = useTheme();
   const { isOnline, isSyncing, pendingCount, syncNow } = useOfflineSync();
   const navigate = useNavigate();
@@ -43,6 +45,15 @@ const Layout: React.FC = () => {
   const countdownRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
 
   const appInitials = appSettings.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase();
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+      navigate('/login');
+    } catch (error) {
+      console.warn('Logout failed:', error);
+    }
+  };
 
   // Session timeout logic
   const resetTimers = () => {
@@ -59,8 +70,7 @@ const Layout: React.FC = () => {
         setCountdown(prev => {
           if (prev <= 1) {
             clearInterval(countdownRef.current);
-            logout();
-            navigate('/login');
+            void handleLogout();
             return 0;
           }
           return prev - 1;
@@ -69,8 +79,7 @@ const Layout: React.FC = () => {
     }, SESSION_TIMEOUT_MS - WARN_BEFORE_MS);
 
     logoutTimerRef.current = setTimeout(() => {
-      logout();
-      navigate('/login');
+      void handleLogout();
     }, SESSION_TIMEOUT_MS);
   };
 
@@ -174,7 +183,7 @@ const Layout: React.FC = () => {
                 Tiếp tục làm việc
               </button>
               <button
-                onClick={() => { logout(); navigate('/login'); }}
+                onClick={() => void handleLogout()}
                 className="flex-1 py-3 bg-muted text-foreground rounded-xl font-black text-xs uppercase tracking-widest hover:bg-muted/80 transition"
               >
                 Đăng xuất

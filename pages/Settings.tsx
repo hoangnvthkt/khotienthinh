@@ -105,7 +105,7 @@ const Settings: React.FC = () => {
     addUnit, updateUnit, removeUnit,
     addSupplier, updateSupplier, removeSupplier,
     appSettings, updateAppSettings, clearAllData, connectionError,
-    users, addUser, updateUser, removeUser, user: currentUser, logout, isLoading, realtimeStatus, lastRealtimeEvent,
+    users, addUser, updateUser, removeUser, user: currentUser, isLoading, realtimeStatus, lastRealtimeEvent,
     hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules, hrmConstructionSites,
     addHrmItem, updateHrmItem, removeHrmItem,
     items, addItem, updateItem, removeItem, transactions, requests, lossNorms, addLossNorm, updateLossNorm, removeLossNorm,
@@ -1945,7 +1945,6 @@ const Settings: React.FC = () => {
               <SettingsAccount
                 currentUser={currentUser}
                 updateUser={updateUser}
-                logout={logout}
                 avatarInputRef={avatarInputRef}
                 handleAvatarUpload={handleAvatarUpload}
                 avatarUploading={avatarUploading}

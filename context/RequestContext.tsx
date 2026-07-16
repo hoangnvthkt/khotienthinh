@@ -4,7 +4,6 @@ import { supabase } from '../lib/supabase';
 import { RequestCategory, RequestInstance, RequestLog, RQStatus, RequestApprover, RequestPrintTemplate } from '../types';
 import { notificationService } from '../lib/notificationService';
 import { auditService } from '../lib/auditService';
-import { xpService } from '../lib/xpService';
 
 interface RequestContextType {
     categories: RequestCategory[];
@@ -470,9 +469,6 @@ export const RequestProvider: React.FC<{ children: React.ReactNode }> = ({ child
             description: `Tạo phiếu yêu cầu: ${data.title} (${code})`,
         });
 
-        // 🎮 XP: Award for creating request
-        xpService.awardXP(data.userId, 'create_rq').catch(() => {});
-
         // 🔔 Notify first approver when new request is created
         try {
             const approversList = approvers;
@@ -591,9 +587,6 @@ export const RequestProvider: React.FC<{ children: React.ReactNode }> = ({ child
             userName: userId,
             description: `${allApproved ? 'Duyệt hoàn tất' : `Duyệt bước ${stepOrder}`} phiếu "${req.title}" (${req.code})`,
         });
-
-        // 🎮 XP: Award for approving request
-        xpService.awardXP(userId, 'approve_rq').catch(() => {});
 
         // 🔔 Notify: creator + next approver
         try {

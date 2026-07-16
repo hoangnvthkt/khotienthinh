@@ -904,7 +904,302 @@ Verification sau khi tạo tài liệu:
 - `test -f docs/security/permission-audit.md && wc -l docs/security/permission-audit.md`: file tồn tại, 915 dòng tại thời điểm kiểm.
 - `npm run lint`: pass, `tsc` exit 0.
 
-## 17. Kết luận
+## 17. Runbook triển khai hotfix Supabase Cloud
+
+Phần này là checkpoint vận hành cho ba migration mới. Migration
+`20260715173948_revoke_legacy_login_lookup.sql` đã được **chuẩn bị nhưng chưa
+được phép áp dụng**. Chỉ chạy migration đó sau khi email-only frontend đã ổn
+định production đủ **24 clean hours**. Việc tạo artifact trong repository không
+đồng nghĩa với phê duyệt triển khai Cloud.
+
+Các nguyên tắc bất biến:
+
+- Do not use `supabase db push` khi migration history remote đang drift.
+- Do not mass-repair lịch sử migration cũ. Chỉ repair đúng timestamp mới, từng
+  migration một, sau khi SQL và dữ liệu đã verify thành công.
+- Never grant `anon` để chữa regression. Với login cũ, không regrant
+  `lookup_login_email` cho `PUBLIC`, `anon` hoặc `authenticated`.
+- Không đưa database URL, access token hay service-role key vào command history
+  hoặc file trong repository.
+
+### 17.1 Preflight identity — bắt buộc zero exceptions
+
+Cloud identity phải là `auth.users.id → public.users.auth_id → public.users.id`.
+Mỗi active Auth user phải có exactly one active profile; profile active không
+được trỏ tới Auth user đã xóa. Chạy hai query read-only sau và sửa mọi row trả về
+trước khi bỏ email fallback:
+
+```sql
+-- Active Auth user thiếu profile hoặc có nhiều profile active.
+with active_auth as (
+  select id
+  from auth.users
+  where deleted_at is null
+)
+select
+  auth_user.id as auth_user_id,
+  count(app_user.id) as active_profile_count,
+  array_agg(app_user.id order by app_user.id)
+    filter (where app_user.id is not null) as profile_ids
+from active_auth auth_user
+left join public.users app_user
+  on app_user.auth_id = auth_user.id
+ and app_user.is_active is true
+group by auth_user.id
+having count(app_user.id) <> 1
+order by auth_user.id;
+
+-- Profile active thiếu auth_id, trỏ tới Auth user không tồn tại hoặc đã xóa.
+select
+  app_user.id as profile_id,
+  app_user.auth_id,
+  auth_user.deleted_at
+from public.users app_user
+left join auth.users auth_user on auth_user.id = app_user.auth_id
+where app_user.is_active is true
+  and (
+    app_user.auth_id is null
+    or auth_user.id is null
+    or auth_user.deleted_at is not null
+  )
+order by app_user.id;
+```
+
+Gate đạt khi cả hai query trả zero rows và ba tài khoản canary đã được đối chiếu
+ID trực tiếp, không đối chiếu bằng email/username.
+
+### 17.2 Snapshot và reconciliation theo repair batch
+
+Trước Wave 1, xuất kết quả read-only của function body và ACL ra kho vận hành
+được mã hóa (ngoài repository):
+
+```sql
+select
+  function_row.oid::regprocedure as function_signature,
+  pg_catalog.pg_get_userbyid(function_row.proowner) as owner,
+  function_row.proacl as acl,
+  pg_catalog.pg_get_functiondef(function_row.oid) as definition
+from pg_catalog.pg_proc function_row
+join pg_catalog.pg_namespace function_schema
+  on function_schema.oid = function_row.pronamespace
+where function_schema.nspname in ('public', 'app_private')
+  and (
+    function_row.proname in (
+      'get_material_request_workflow_board',
+      'get_project_material_request_board',
+      'lookup_login_email',
+      'award_my_daily_xp',
+      'award_my_daily_xp_impl'
+    )
+    or function_row.prosrc ilike '%user_xp%'
+    or function_row.prosrc ilike '%xp_events%'
+  )
+order by function_row.oid::regprocedure::text;
+```
+
+Migration XP tự snapshot toàn bộ source rows của `user_xp`, `xp_events` cùng
+function definitions, policy, constraint, index và ACL vào
+`app_private.xp_repair_archive` trước rewrite. Trong dry-run, chạy query dưới đây
+trước `ROLLBACK`; sau real-run, chạy lại sau `COMMIT`. Mỗi lần phải xác định một
+`repair_batch_id` duy nhất và đối chiếu inventory:
+
+```sql
+with latest_batch as (
+  select repair_batch_id
+  from app_private.xp_repair_archive
+  group by repair_batch_id
+  order by max(archived_at) desc
+  limit 1
+)
+select
+  archive.repair_batch_id,
+  archive.source_table,
+  count(*) as archived_rows,
+  min(archive.archived_at) as first_archived_at,
+  max(archive.archived_at) as last_archived_at
+from app_private.xp_repair_archive archive
+join latest_batch using (repair_batch_id)
+group by archive.repair_batch_id, archive.source_table
+order by archive.source_table;
+```
+
+Kết quả phải có catalog rows `catalog.pg_proc`, `catalog.pg_class`,
+`catalog.pg_policy`, `catalog.pg_attribute`, `catalog.pg_constraint`,
+`catalog.pg_index`, `catalog.acl`; source row counts của `public.user_xp` và
+`public.xp_events` phải khớp snapshot pre-repair (zero là hợp lệ nếu source thật
+sự rỗng). Không xóa archive sau nghiệm thu.
+
+Reconciliation dữ liệu sau repair phải trả zero rows:
+
+```sql
+-- Profile total phải bằng tổng event còn lại.
+select profile.user_id, profile.total_xp, coalesce(sum(event.xp_amount), 0) as event_total
+from public.user_xp profile
+left join public.xp_events event on event.user_id = profile.user_id
+group by profile.user_id, profile.total_xp
+having profile.total_xp <> coalesce(sum(event.xp_amount), 0);
+
+-- Không còn daily duplicate theo ngày nghiệp vụ Asia/Ho_Chi_Minh.
+select
+  user_id,
+  event_type,
+  (created_at at time zone 'Asia/Ho_Chi_Minh')::date as business_day,
+  count(*)
+from public.xp_events
+where event_type in ('daily_login', 'daily_checkin')
+group by user_id, event_type, business_day
+having count(*) > 1;
+```
+
+### 17.3 Quy trình bắt buộc cho từng migration mới
+
+Chạy từng file riêng bằng `psql -v ON_ERROR_STOP=1`; không ghép cả wave thành
+một transaction. Dry-run phải là transaction bên ngoài file migration:
+
+```sql
+BEGIN;
+SET LOCAL lock_timeout = '5s';
+\i supabase/migrations/<new_timestamp>_<migration_name>.sql
+-- Chạy catalog/body/ACL/data verification tương ứng ngay tại đây.
+ROLLBACK;
+```
+
+Sau khi dry-run và verification đều sạch, chạy thật trong a separate real
+transaction:
+
+```sql
+BEGIN;
+SET LOCAL lock_timeout = '5s';
+\i supabase/migrations/<new_timestamp>_<migration_name>.sql
+-- Lặp lại verification. Chỉ COMMIT nếu mọi gate đều đạt; nếu không, ROLLBACK.
+COMMIT;
+```
+
+Chạy lại verification read-only sau commit. Chỉ khi kết quả sau commit đạt gate
+mới đánh dấu đúng **một** timestamp:
+
+```bash
+npx supabase migration repair <new_timestamp> --status applied
+```
+
+Không chạy lệnh repair trước verification, không dùng nó cho các timestamp drift
+cũ, và không chạy migration delayed ở Wave 1 hoặc Wave 2.
+
+### 17.4 Wave 1 — DB hotfix/hardening
+
+Thứ tự bắt buộc:
+
+1. `20260715163726_fix_material_request_workflow_board_template_source.sql`.
+2. `20260715170312_repair_and_harden_daily_xp.sql`.
+3. Verify catalog, function body, ACL và data reconciliation; sau đó theo dõi
+   Postgres logs trong 30 phút. Chưa chạy migration revoke login.
+
+Các check tối thiểu:
+
+```sql
+-- Board dùng workflow instance làm nguồn chuẩn và không còn cột ws lỗi.
+select
+  pg_catalog.pg_get_functiondef(
+    'public.get_material_request_workflow_board(text,text,jsonb,integer,text)'::regprocedure
+  ) like '%coalesce(wi.template_id, r.workflow_template_id)%' as uses_instance_template,
+  pg_catalog.pg_get_functiondef(
+    'public.get_material_request_workflow_board(text,text,jsonb,integer,text)'::regprocedure
+  ) not like '%ws.workflow_template_id%' as removes_missing_column;
+
+-- ACL phải fail-closed với anon/PUBLIC và đúng với caller tin cậy.
+select
+  has_function_privilege('anon',
+    'public.get_material_request_workflow_board(text,text,jsonb,integer,text)',
+    'EXECUTE') as anon_inner,
+  has_function_privilege('anon',
+    'public.get_project_material_request_board(text,text,jsonb,integer,text)',
+    'EXECUTE') as anon_wrapper,
+  has_function_privilege('authenticated',
+    'public.award_my_daily_xp(text,uuid)', 'EXECUTE') as authenticated_xp,
+  has_function_privilege('anon',
+    'public.award_my_daily_xp(text,uuid)', 'EXECUTE') as anon_xp;
+```
+
+Expected: `uses_instance_template=true`, `removes_missing_column=true`, cả ba cột
+`anon_* = false`, và `authenticated_xp=true`. Chạy thêm SQL smoke của workflow
+và daily XP trên isolated/local DB trước Cloud; không ghi “pass” nếu smoke chưa
+thực sự chạy.
+
+### 17.5 Wave 2 — Vercel Preview canary rồi production
+
+Dùng ba account thật đã pass identity preflight: admin, normal user và HR
+check-in user. Trên Vercel Preview, kiểm lần lượt:
+
+1. Email login, reload hard, token refresh và recovery khi profile không hợp lệ.
+2. Logout nhiều tab; tab còn lại phải dừng heartbeat/domain side effects ngay.
+3. Camera check-in tạo attendance rồi daily XP một lần; reload/call lại không
+   tạo duplicate.
+4. Workflow board hiển thị đúng template và mở detail bình thường.
+5. PWA update từ bản cũ sang Preview, đóng/mở lại app và xác minh auth state.
+6. Logged-out `/login` không phát request tới session, XP, workflow hoặc domain
+   tables.
+
+Chỉ promote production sau **30 clean minutes** không có bốn lỗi mục 17.6.
+Theo dõi production liên tục; chỉ sau **24 clean hours** của email-only frontend
+mới dry-run, apply, verify và repair timestamp
+`20260715173948_revoke_legacy_login_lookup.sql` theo mục 17.3.
+
+Sau migration delayed, check này phải trả `false` cho cả ba caller. `PUBLIC` là
+pseudo-role nên phải đọc ACL catalog (`grantee = 0`), không truyền chuỗi
+`PUBLIC` vào `has_function_privilege`:
+
+```sql
+with lookup_function as (
+  select function_row.oid, function_row.proacl, function_row.proowner
+  from pg_catalog.pg_proc function_row
+  where function_row.oid = 'public.lookup_login_email(text)'::regprocedure
+)
+select
+  coalesce(bool_or(
+    privilege_row.grantee = 0
+    and privilege_row.privilege_type = 'EXECUTE'
+  ), false) as public_execute,
+  has_function_privilege('anon', 'public.lookup_login_email(text)', 'EXECUTE') as anon_execute,
+  has_function_privilege('authenticated', 'public.lookup_login_email(text)', 'EXECUTE') as authenticated_execute
+from lookup_function
+cross join lateral pg_catalog.aclexplode(
+  coalesce(
+    lookup_function.proacl,
+    pg_catalog.acldefault('f', lookup_function.proowner)
+  )
+) privilege_row;
+```
+
+### 17.6 Nghiệm thu
+
+Chỉ đóng incident khi tất cả gate cùng đạt:
+
+- Postgres logs zero occurrences trong 24 giờ của:
+  - `42501 permission denied for table user_sessions`
+  - `22P02 invalid input syntax for type uuid: "u1"`
+  - `42703 column ws.workflow_template_id does not exist`
+  - `23505 user_xp_user_id_key`
+- Logged-out `/login` phát sinh zero domain calls.
+- Workflow board và HR check-in hoạt động trên canary và production.
+- Không có duplicate `daily_login`/`daily_checkin` sau cutoff.
+- Mọi `user_xp.total_xp` khớp tổng `xp_events`; archive batch truy vết được.
+- `anon` không execute session, XP hoặc workflow RPC nhạy cảm.
+
+### 17.7 Rollback/fix-forward
+
+- Frontend: rollback về previous Vercel deployment, nhưng không hồi sinh username
+  lookup hoặc mock user trên Cloud.
+- Workflow: tạo compensating migration mới dùng `r.workflow_template_id` làm
+  fallback tạm và vẫn giữ ACL đã harden; không restore function lỗi cũ.
+- XP: **disable award** bằng revoke RPC rồi **fix-forward**. Không mở direct
+  writes. Chỉ restore archived data khi có phê duyệt riêng và `repair_batch_id`
+  cụ thể.
+- Legacy login revoke: sửa email-only flow theo hướng fix-forward; không regrant
+  `PUBLIC`, `anon` hay `authenticated` cho RPC cũ.
+- Không dùng rollback để mass-repair migration history. Never grant `anon` trong
+  bất kỳ nhánh xử lý regression nào.
+
+## 18. Kết luận
 
 Hệ thống đã có nhiều nỗ lực hardening nghiêm túc, đặc biệt ở WMS transaction, Project material request, Project document workflow và Daily Log. Tuy nhiên, hiện có ba vấn đề kiến trúc cần xử lý trước khi mở rộng thêm quyền:
 

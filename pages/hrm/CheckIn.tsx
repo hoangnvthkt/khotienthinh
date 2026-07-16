@@ -334,12 +334,14 @@ const CheckIn: React.FC = () => {
         imageBlob,
       });
 
+      if (action === 'check_in') {
+        xpService.awardDailyXP('daily_checkin', saved.id).catch(() => { });
+      }
       setLastSavedRecord(saved);
       await loadModuleData('hrm', true);
 
       if (action === 'check_in') {
         setLastAction(`Da check-in luc ${timeLocal()} (${saved.eventCount || currentEventCount + 1}/6)`);
-        xpService.awardXP(currentEmployee!.id, 'daily_checkin').catch(() => { });
         celebrate({
           variant: 'checkin',
           title: 'Check-in thành công',

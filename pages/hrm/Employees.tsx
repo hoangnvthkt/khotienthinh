@@ -18,7 +18,7 @@ import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 import { employeeSelfService } from '../../lib/employeeSelfService';
 
 const Employees: React.FC = () => {
-    const { employees, users, addEmployee, updateEmployee, replaceEmployeeLocal, removeEmployee, addHrmItem, hrmAreas, hrmOffices, hrmPositions, hrmConstructionSites, orgUnits, user, setUser } = useApp();
+    const { employees, users, addEmployee, updateEmployee, updateUser, replaceEmployeeLocal, removeEmployee, addHrmItem, hrmAreas, hrmOffices, hrmPositions, hrmConstructionSites, orgUnits, user } = useApp();
     const { canManage } = usePermission();
     const canCRUD = canManage('/hrm/employees');
     useModuleData('hrm');
@@ -93,7 +93,7 @@ const Employees: React.FC = () => {
         const updatedEmployee = await employeeSelfService.updateMyProfile(patch);
         if (updatedEmployee) {
             replaceEmployeeLocal(updatedEmployee);
-            setUser({
+            await updateUser({
                 ...user,
                 name: updatedEmployee.fullName || user.name,
                 phone: updatedEmployee.phone,
@@ -103,7 +103,7 @@ const Employees: React.FC = () => {
         }
 
         await updateEmployee(nextEmployee);
-        setUser({
+        await updateUser({
             ...user,
             name: nextEmployee.fullName || user.name,
             phone: nextEmployee.phone,

@@ -22,11 +22,75 @@ declare
   v_return_transaction_id text := 'tx-smoke-return-' || gen_random_uuid()::text;
   v_batch_id uuid := gen_random_uuid();
   v_subject public.workflow_subjects%rowtype;
+  v_board jsonb;
+  v_board_card jsonb;
+  v_instance_template_id uuid;
   v_configuration jsonb;
   v_dependency jsonb;
   v_denied boolean;
   v_sla_assignment_id uuid;
 begin
+  if pg_catalog.has_function_privilege(
+    'anon',
+    'public.get_material_request_workflow_board(text,text,jsonb,integer,text)',
+    'EXECUTE'
+  ) or pg_catalog.has_function_privilege(
+    'anon',
+    'public.get_project_material_request_board(text,text,jsonb,integer,text)',
+    'EXECUTE'
+  ) then
+    raise exception 'anon unexpectedly has execute access to a material request board RPC';
+  end if;
+
+  if exists (
+    select 1
+    from (
+      values
+        ('public.get_material_request_workflow_board(text,text,jsonb,integer,text)'::regprocedure),
+        ('public.get_project_material_request_board(text,text,jsonb,integer,text)'::regprocedure)
+    ) as target(function_oid)
+    join pg_catalog.pg_proc function_definition
+      on function_definition.oid = target.function_oid
+    cross join lateral pg_catalog.aclexplode(
+      coalesce(
+        function_definition.proacl,
+        pg_catalog.acldefault('f', function_definition.proowner)
+      )
+    ) function_privilege
+    where function_privilege.grantee = 0
+      and function_privilege.privilege_type = 'EXECUTE'
+  ) then
+    raise exception 'PUBLIC unexpectedly has execute access to a material request board RPC';
+  end if;
+
+  if not (
+    pg_catalog.has_function_privilege(
+      'authenticated',
+      'public.get_material_request_workflow_board(text,text,jsonb,integer,text)',
+      'EXECUTE'
+    ) and pg_catalog.has_function_privilege(
+      'authenticated',
+      'public.get_project_material_request_board(text,text,jsonb,integer,text)',
+      'EXECUTE'
+    )
+  ) then
+    raise exception 'authenticated is missing execute access to a material request board RPC';
+  end if;
+
+  if not (
+    pg_catalog.has_function_privilege(
+      'service_role',
+      'public.get_material_request_workflow_board(text,text,jsonb,integer,text)',
+      'EXECUTE'
+    ) and pg_catalog.has_function_privilege(
+      'service_role',
+      'public.get_project_material_request_board(text,text,jsonb,integer,text)',
+      'EXECUTE'
+    )
+  ) then
+    raise exception 'service_role is missing execute access to a material request board RPC';
+  end if;
+
   select u.id, u.auth_id
     into v_admin_id, v_admin_auth_id
   from public.users u
@@ -146,6 +210,42 @@ begin
      or v_subject.current_instance_node_id is null then
     raise exception 'start workflow did not create the expected assignment pool/runtime node';
   end if;
+
+  update public.requests
+  set workflow_template_id = null
+  where id = v_request_id;
+
+  v_board := public.get_project_material_request_board(
+    v_project_id,
+    v_site_id,
+    jsonb_build_object('search', v_request_id),
+    10,
+    null
+  );
+
+  select card.value
+  into v_board_card
+  from jsonb_array_elements(coalesce(v_board -> 'cards', '[]'::jsonb)) card(value)
+  where card.value ->> 'id' = v_request_id
+  limit 1;
+
+  if v_board_card is null then
+    raise exception 'workflow board omitted the material request after clearing its request template field: %', v_board;
+  end if;
+
+  select workflow_instance.template_id
+  into v_instance_template_id
+  from public.workflow_instances workflow_instance
+  where workflow_instance.id = v_subject.workflow_instance_id;
+
+  if v_instance_template_id is null
+     or (v_board_card #>> '{subject,workflowTemplateId}') is distinct from v_instance_template_id::text then
+    raise exception 'workflow board did not use the workflow instance template: %', v_board_card;
+  end if;
+
+  update public.requests
+  set workflow_template_id = v_template_id
+  where id = v_request_id;
 
   if not exists (
     select 1

@@ -9,7 +9,6 @@ import {
 } from '../types';
 import { notificationService } from '../lib/notificationService';
 import { auditService } from '../lib/auditService';
-import { xpService } from '../lib/xpService';
 import { normalizeStepAssigneeIds } from '../lib/workflowAssignmentResolver';
 
 interface WorkflowContextType {
@@ -461,9 +460,6 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             description: `Tạo phiếu quy trình: ${title} (${code})`,
         });
 
-        // 🎮 XP: Award for creating workflow
-        xpService.awardXP(userId, 'create_workflow').catch(() => {});
-
         // 🔔 Notify assignees when new WF instance is created
         if (data && firstTaskNodeId) {
             const firstNode = templateNodes.find(n => n.id === firstTaskNodeId);
@@ -605,11 +601,6 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             userName: userId,
             description: `${actionLabels[action] || action} phiếu "${freshInstance.title || ''}" (${freshInstance.code || ''})`,
         });
-
-        // 🎮 XP: Award for approving workflow
-        if (action === 'APPROVED') {
-            xpService.awardXP(userId, 'approve_workflow').catch(() => {});
-        }
 
         // 🔔 Push notifications for workflow actions
         try {
