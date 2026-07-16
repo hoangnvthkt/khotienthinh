@@ -826,6 +826,65 @@ describe('telemetry runtime identity and lifecycle', () => {
     expect(storage.getItem(`vioo_user_session_id:${USER_ID}`)).toBeNull();
   });
 
+  it('terminally cancels a pending start before signout when server-end authority is expired', async () => {
+    let resolveInsert!: (result: QueryResult) => void;
+    const pendingInsert = new Promise<QueryResult>((resolve) => {
+      resolveInsert = resolve;
+    });
+    const client = new FakeSupabaseClient((operation) => (
+      operation.table === 'user_sessions' && operation.kind === 'insert'
+        ? pendingInsert
+        : { data: null, error: null }
+    ));
+    const { service, storage } = makeService(client);
+    const setItem = vi.spyOn(storage, 'setItem');
+    storage.setItem('sb-project-auth-token', 'keep-secret');
+    setItem.mockClear();
+    const expiredSession = makeSession({ expires_at: 1 });
+    const { environment } = createEnvironment();
+    const runtime = createUserSessionTelemetryRuntime({
+      status: 'authenticated',
+      session: expiredSession,
+      user,
+    }, service, environment)!;
+    const starting = runtime.start();
+    await Promise.resolve();
+    const lifecycle = new UserSessionTelemetryLifecycle();
+    lifecycle.register({
+      userId: USER_ID,
+      stop: reason => runtime.stop(reason),
+      end: () => runtime.end(),
+      abandonEnd: () => runtime.abandonEnd(),
+    });
+    const signOut = vi.fn(async () => undefined);
+
+    await performLocalTelemetryLogout({
+      lifecycle,
+      userId: USER_ID,
+      shouldEndServerSession: shouldEndTelemetrySessionOnServer(
+        'authenticated',
+        user,
+        expiredSession,
+      ),
+      signOut,
+      clearAppOwnedStorage: () => service.clearAllStoredSessionIds(),
+    });
+    expect(signOut).toHaveBeenCalledTimes(1);
+
+    resolveInsert({ data: { id: SESSION_ID }, error: null });
+    await starting;
+
+    expect(client.operations).toEqual([
+      expect.objectContaining({ table: 'user_sessions', kind: 'insert' }),
+    ]);
+    expect(setItem).not.toHaveBeenCalledWith(
+      `vioo_user_session_id:${USER_ID}`,
+      SESSION_ID,
+    );
+    expect(storage.getItem(`vioo_user_session_id:${USER_ID}`)).toBeNull();
+    expect(storage.getItem('sb-project-auth-token')).toBe('keep-secret');
+  });
+
   it('abandons a late ensure result after logout timeout without a post-signout DB end call', async () => {
     let resolveEnsure!: (sessionId: string) => void;
     const ensurePending = new Promise<string>((resolve) => {

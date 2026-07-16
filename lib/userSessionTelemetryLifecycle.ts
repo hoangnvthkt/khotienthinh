@@ -81,11 +81,15 @@ export class UserSessionTelemetryLifecycle {
     return pendingEnd;
   }
 
-  handleRemoteAuthLoss(clearAppOwnedStorage: () => void): void {
+  cancelWithoutServerEnd(): void {
     const pendingEnd = this.pendingLocalEnd;
     this.pendingLocalEnd = null;
     pendingEnd?.handle.abandon();
     this.stop('remote_auth_loss');
+  }
+
+  handleRemoteAuthLoss(clearAppOwnedStorage: () => void): void {
+    this.cancelWithoutServerEnd();
     clearAppOwnedStorage();
   }
 }
@@ -129,7 +133,7 @@ export const performLocalTelemetryLogout = async ({
   const pendingEnd = shouldEndServerSession && isUuid(userId)
     ? lifecycle.stopAndEnd(userId)
     : (
-      lifecycle.stop('local_logout'),
+      lifecycle.cancelWithoutServerEnd(),
       { completion: Promise.resolve(), abandon: () => undefined }
     );
 
