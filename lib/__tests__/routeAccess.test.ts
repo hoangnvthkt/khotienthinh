@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Role, User } from '../../types';
-import { canAccessRoute, getRouteModuleKey } from '../routeAccess';
+import { canAccessRoute, getRouteModuleKey, isAuthenticatedOpenRoute } from '../routeAccess';
 
 const user = (allowedModules?: string[]): User => ({
   id: 'user-1',
@@ -55,5 +55,11 @@ describe('phase 0 route containment', () => {
 
   it('keeps legacy profiles without an allowedModules list working for mapped routes', () => {
     expect(canAccessRoute(user(undefined), '/hd')).toBe(true);
+  });
+
+  it('treats a QR route as authenticated navigation, not a public capability grant', () => {
+    const safetyCardRoute = '/safety-card/forwarded-token';
+    expect(isAuthenticatedOpenRoute(safetyCardRoute)).toBe(true);
+    expect(canAccessRoute(null, safetyCardRoute)).toBe(false);
   });
 });

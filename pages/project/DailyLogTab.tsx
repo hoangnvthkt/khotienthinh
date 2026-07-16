@@ -13,6 +13,7 @@ import { delayEventService } from '../../lib/projectScheduleForecastService';
 import { projectDocumentActionLogService } from '../../lib/projectDocumentActionLogService';
 import { projectDocumentDependencyService } from '../../lib/projectDocumentDependencyService';
 import { formatPolicyMessage, getProjectDocumentPolicy } from '../../lib/projectDocumentPolicy';
+import { subjectAuthorizationService, type DailyLogResponsibilityTarget } from '../../lib/subjectAuthorizationService';
 import { useVoiceInput } from '../../hooks/useVoiceInput';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm, useReasonConfirm } from '../../context/ConfirmContext';
@@ -26,7 +27,6 @@ import {
     buildDailyLogSummaryVolumes,
     canReturnDailyLogSource,
     getDailyLogSummarySourceLogs,
-    getDefaultDailyLogSummaryApprover,
     getDailyLogSourceReviewState,
     getDailyLogSummarySourceSnapshots,
     isDailyLogSummaryEditable,
@@ -849,10 +849,8 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     const [busyLogIds, setBusyLogIds] = useState<Set<string>>(new Set());
     const [highlightLogId, setHighlightLogId] = useState<string | null>(null);
     const [submitTarget, setSubmitTarget] = useState<DailyLog | null>(null);
-    const [verifierOptions, setVerifierOptions] = useState<ProjectStaff[]>([]);
-    const [selectedVerifier, setSelectedVerifier] = useState<ProjectStaff | null>(null);
-    const [verifierSearch, setVerifierSearch] = useState('');
-    const [loadingVerifiers, setLoadingVerifiers] = useState(false);
+    const [resolvedSubmitTarget, setResolvedSubmitTarget] = useState<DailyLogResponsibilityTarget | null>(null);
+    const [resolvingSubmitTarget, setResolvingSubmitTarget] = useState(false);
     const [siteStaff, setSiteStaff] = useState<ProjectStaff[]>([]);
     const [summaryDate, setSummaryDate] = useState<string | null>(null);
     const [summarySaving, setSummarySaving] = useState(false);
@@ -864,8 +862,6 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     const [summaryPhotos, setSummaryPhotos] = useState<DailyLogPhoto[]>([]);
     const [selectedSummaryLegacyLogIds, setSelectedSummaryLegacyLogIds] = useState<string[]>([]);
     const [summarySourceSnapshots, setSummarySourceSnapshots] = useState<Record<string, DailyLogSummarySourceSnapshot>>({});
-    const [approverOptions, setApproverOptions] = useState<ProjectStaff[]>([]);
-    const [selectedApprover, setSelectedApprover] = useState<ProjectStaff | null>(null);
 
     // ── PBAC v2: Load explicit Daily Log actions ──
     const [dailyLogPerms, setDailyLogPerms] = useState<Set<DailyLogActionCode>>(new Set());
@@ -1238,26 +1234,6 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         }
     };
 
-    const loadApproverOptions = useCallback(async () => {
-        try {
-            const rows = await projectStaffService.listProjectStaffWithPermissionCodes(projectId, constructionSiteId, [DAILY_LOG_ACTION.approve]);
-            const options = uniqueStaffByUser(rows)
-                .filter(staff => staff.userId !== user?.id)
-                .sort((a, b) =>
-                    (a.positionLevel || 99) - (b.positionLevel || 99)
-                    || (a.userName || '').localeCompare(b.userName || '', 'vi')
-                );
-            setApproverOptions(options);
-            setSelectedApprover(getDefaultDailyLogSummaryApprover(options));
-            return options;
-        } catch (err: any) {
-            console.warn('Cannot load daily log approvers', err?.message || err);
-            setApproverOptions([]);
-            setSelectedApprover(null);
-            return [] as ProjectStaff[];
-        }
-    }, [constructionSiteId, projectId, user?.id]);
-
     const openSummaryForDate = useCallback(async (date: string) => {
         if (!(await requireDailyLogAction(DAILY_LOG_ACTION.summarize, 'tổng hợp nhật ký'))) return;
         const dayLogs = logs.filter(log => log.date === date);
@@ -1276,8 +1252,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         setSummaryPhotos(existingSummary?.photos || []);
         setSelectedSummaryLegacyLogIds(existingSummary ? metadataLegacyLogIds : []);
         setSummarySourceSnapshots(existingSummary ? metadataSourceSnapshots : {});
-        await loadApproverOptions();
-    }, [loadApproverOptions, logs, requireDailyLogAction]);
+    }, [logs, requireDailyLogAction]);
 
     const closeSummary = (force = false) => {
         if (!force && summarySaving) return;
@@ -1289,7 +1264,6 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         setSummaryPhotos([]);
         setSelectedSummaryLegacyLogIds([]);
         setSummarySourceSnapshots({});
-        setSelectedApprover(null);
     };
 
     const includeLegacyLogInSummary = (log: DailyLog) => {
@@ -1327,10 +1301,6 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         if (submitNow && !(await requireDailyLogAction(DAILY_LOG_ACTION.submit, 'gửi bản tổng hợp'))) return;
         if (!summaryDescription.trim() && summaryPhotos.length === 0) {
             toast.warning('Thiếu nội dung tổng hợp', 'Vui lòng nhập nội dung hoặc chọn ảnh từ báo cáo thành viên.');
-            return;
-        }
-        if (submitNow && approverOptions.length > 0 && !selectedApprover) {
-            toast.warning('Chọn CHT duyệt', 'Vui lòng chọn người có quyền approve.');
             return;
         }
         const selectedLegacyLogs = selectedSummaryLegacyLogIds
@@ -1418,32 +1388,34 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
             };
             await dailyLogService.upsert(item);
             if (submitNow) {
-                const targetApproverId = selectedApprover?.userId || user?.id;
-                const targetApproverName = selectedApprover?.userName || user?.name || user?.username || user?.id;
+                const targetApprover = await subjectAuthorizationService.getDailyLogResponsibilityTarget(summaryLogId);
                 await dailyLogService.updateStatus({
                     logId: summaryLogId,
                     status: 'submitted',
-                    requestedVerifierId: targetApproverId || undefined,
-                    requestedVerifierName: targetApproverName || undefined,
                     actorUserId: user?.id,
                 });
-                if (targetApproverId) {
-                    await notificationService.notifyProjectUsers({
-                        recipientIds: [targetApproverId],
-                        actorId: user?.id,
-                        type: 'info',
-                        category: 'progress',
-                        title: 'Nhật ký ngày chờ CHT duyệt',
-                        message: `Nhật ký tổng hợp ngày ${new Date(`${summaryDate}T00:00:00`).toLocaleDateString('vi-VN')} đang chờ duyệt`,
-                        severity: 'info',
-                        icon: '✅',
-                        link: buildDailyLogLink(summaryLogId),
-                        sourceType: 'dailylog_summary_submitted',
-                        sourceId: `dailylog_summary_${summaryLogId}_${Date.now()}`,
-                        constructionSiteId: constructionSiteId || undefined,
-                        metadata: { logId: summaryLogId, date: summaryDate, projectId, constructionSiteId },
-                    }).catch(err => console.warn('Cannot notify approver', err?.message || err));
-                }
+                await notificationService.notifyProjectUsers({
+                    recipientIds: [targetApprover.userId],
+                    actorId: user?.id,
+                    type: 'info',
+                    category: 'progress',
+                    title: 'Nhật ký ngày chờ CHT duyệt',
+                    message: `Nhật ký tổng hợp ngày ${new Date(`${summaryDate}T00:00:00`).toLocaleDateString('vi-VN')} đang chờ duyệt`,
+                    severity: 'info',
+                    icon: '✅',
+                    link: buildDailyLogLink(summaryLogId),
+                    sourceType: 'dailylog_summary_submitted',
+                    sourceId: `dailylog_summary_${summaryLogId}_${targetApprover.userId}_${Date.now()}`,
+                    constructionSiteId: constructionSiteId || undefined,
+                    metadata: {
+                        logId: summaryLogId,
+                        date: summaryDate,
+                        projectId,
+                        constructionSiteId,
+                        assignmentResponsibility: targetApprover.responsibility,
+                        assignmentUserId: targetApprover.userId,
+                    },
+                }).catch(err => console.warn('Cannot notify responsibility assignee', err?.message || err));
             }
             await reloadDailyLogRecords();
             toast.success(submitNow ? 'Đã gửi CHT duyệt' : 'Đã lưu bản tổng hợp');
@@ -1609,7 +1581,12 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         setBusyLogIds(new Set(statusBusyRef.current));
     };
 
-    const handleStatusChange = async (log: DailyLog, status: DailyLogStatus, requestedVerifier?: ProjectStaff, rejectionReason?: string): Promise<boolean> => {
+    const handleStatusChange = async (
+        log: DailyLog,
+        status: DailyLogStatus,
+        responsibilityTarget?: DailyLogResponsibilityTarget,
+        rejectionReason?: string,
+    ): Promise<boolean> => {
         if (!beginStatusAction(log.id)) return false;
         // ── PBAC Check ──
         const requiredAction = log.submittedToPermission === 'approve' && status === 'verified'
@@ -1624,22 +1601,20 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         }
 
         try {
+            const subjectAction: 'submit' | 'verify' | 'approve' | 'return' = status === 'submitted'
+                ? 'submit'
+                : status === 'rejected'
+                    ? 'return'
+                    : log.submittedToPermission === 'approve'
+                        ? 'approve'
+                        : 'verify';
+            if (!(await subjectAuthorizationService.canAct('daily_log', log.id, subjectAction))) {
+                throw new Error('Bạn không có quyền, phạm vi hoặc assignment đang hiệu lực để xử lý nhật ký này.');
+            }
+
             if (status === 'submitted') {
-                if (!requestedVerifier?.userId) {
-                    throw new Error('Vui lòng chọn người xác nhận từ Tổ chức dự án.');
-                }
-                const targetPermission = log.submittedToPermission === 'approve'
-                    ? DAILY_LOG_ACTION.approve
-                    : DAILY_LOG_ACTION.verify;
-                const permissionCheck = await projectStaffService.checkProjectAction({
-                    userId: requestedVerifier.userId,
-                    projectId: projectId || null,
-                    constructionSiteId: constructionSiteId || null,
-                    permissionCode: targetPermission,
-                });
-                if (!permissionCheck.allowed) {
-                    throw new Error(`${requestedVerifier.userName || 'Người được chọn'} chưa có quyền "${targetPermission}" trong Tổ chức dự án.`);
-                }
+                responsibilityTarget = responsibilityTarget
+                    || await subjectAuthorizationService.getDailyLogResponsibilityTarget(log.id);
             }
             if (status === 'submitted' || status === 'verified') {
                 const reviewAction = status === 'verified' && log.submittedToPermission === 'approve' ? 'approve' : 'verify';
@@ -1707,8 +1682,6 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
             await dailyLogService.updateStatus({
                 logId: log.id,
                 status,
-                requestedVerifierId: status === 'submitted' ? requestedVerifier?.userId : undefined,
-                requestedVerifierName: status === 'submitted' ? (requestedVerifier?.userName || requestedVerifier?.userId) : undefined,
                 rejectionReason: status === 'rejected' ? rejectionReason : undefined,
                 actorUserId: user?.id,
             });
@@ -1741,7 +1714,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
             // Notify if submitted
             if (status === 'submitted') {
                 try {
-                    const recipientId = requestedVerifier?.userId;
+                    const recipientId = responsibilityTarget?.userId;
                     const notifiedIds = await notificationService.notifyProjectUsers({
                         recipientIds: [recipientId],
                         actorId: user?.id,
@@ -1761,12 +1734,12 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                             projectId,
                             constructionSiteId,
                             submittedBy: user?.name,
-                            requestedVerifierId: recipientId,
-                            requestedVerifierName: requestedVerifier?.userName,
+                            assignmentUserId: recipientId,
+                            assignmentResponsibility: responsibilityTarget?.responsibility,
                         },
                     });
                     if (recipientId !== user?.id && (!recipientId || !notifiedIds.includes(recipientId))) {
-                        throw new Error('Không tạo được thông báo cho người xác nhận đã chọn.');
+                        throw new Error('Không tạo được thông báo cho người nhận được hệ thống phân công.');
                     }
                 } catch (err) {
                     throw err;
@@ -1809,61 +1782,43 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         }
     };
 
-    const filteredVerifierOptions = useMemo(() => {
-        const keyword = verifierSearch.trim().toLowerCase();
-        if (!keyword) return verifierOptions;
-        return verifierOptions.filter(staff =>
-            [staff.userName, staff.positionName, staff.userId]
-                .some(value => (value || '').toLowerCase().includes(keyword))
-        );
-    }, [verifierOptions, verifierSearch]);
-
-    const openSubmitVerifierPicker = async (log: DailyLog) => {
+    const openSubmitAssignmentConfirmation = async (log: DailyLog) => {
         if (!(await requireDailyLogAction(DAILY_LOG_ACTION.submit, 'gửi nhật ký'))) return;
         if (!canSubmitDailyLog(log)) {
             toast.error('Phiếu đã khoá', 'Chỉ người lập có quyền submit được gửi nhật ký nháp hoặc bị trả lại.');
             return;
         }
-        setSubmitTarget(log);
-        setVerifierSearch('');
-        setSelectedVerifier(null);
-        setVerifierOptions([]);
-        setLoadingVerifiers(true);
-        try {
-            const rows = await projectStaffService.listProjectStaffWithPermissionCodes(projectId, constructionSiteId, [DAILY_LOG_ACTION.verify]);
-            const options = uniqueStaffByUser(rows)
-                .sort((a, b) =>
-                    (a.positionLevel || 99) - (b.positionLevel || 99)
-                    || (a.userName || '').localeCompare(b.userName || '', 'vi')
-                );
-            setVerifierOptions(options);
-            if (options.length === 0) {
-                toast.warning('Chưa có người xác nhận phù hợp', 'Tổ chức dự án chưa có người được cấp quyền project.daily_log.verify.');
-            }
-        } catch (error: any) {
-            toast.error('Không thể tải người xác nhận', error?.message || 'Vui lòng kiểm tra Tổ chức dự án.');
-            setSubmitTarget(null);
-        } finally {
-            setLoadingVerifiers(false);
-        }
-    };
-
-    const closeSubmitVerifierPicker = () => {
-        if (submitTarget && busyLogIds.has(submitTarget.id)) return;
-        setSubmitTarget(null);
-        setVerifierOptions([]);
-        setSelectedVerifier(null);
-        setVerifierSearch('');
-    };
-
-    const confirmSubmitWithVerifier = async () => {
-        if (!submitTarget) return;
-        if (!selectedVerifier) {
-            toast.warning('Chọn người xác nhận', 'Vui lòng chọn một người có quyền verify trong Tổ chức dự án.');
+        if (!(await subjectAuthorizationService.canAct('daily_log', log.id, 'submit'))) {
+            toast.error('Không thể gửi nhật ký', 'Bạn không có quyền hoặc điều kiện workflow hợp lệ để gửi nhật ký này.');
             return;
         }
-        const ok = await handleStatusChange(submitTarget, 'submitted', selectedVerifier);
-        if (ok) closeSubmitVerifierPicker();
+        setSubmitTarget(log);
+        setResolvedSubmitTarget(null);
+        setResolvingSubmitTarget(true);
+        try {
+            setResolvedSubmitTarget(await subjectAuthorizationService.getDailyLogResponsibilityTarget(log.id));
+        } catch (error: any) {
+            toast.error('Chưa xác định được người chịu trách nhiệm', error?.message || 'Vui lòng cấu hình responsibility slot trong Tổ chức dự án.');
+            setSubmitTarget(null);
+        } finally {
+            setResolvingSubmitTarget(false);
+        }
+    };
+
+    const closeSubmitAssignmentConfirmation = () => {
+        if (submitTarget && busyLogIds.has(submitTarget.id)) return;
+        setSubmitTarget(null);
+        setResolvedSubmitTarget(null);
+    };
+
+    const confirmSubmitWithAssignment = async () => {
+        if (!submitTarget) return;
+        if (!resolvedSubmitTarget) {
+            toast.warning('Đang xác định người nhận', 'Hệ thống chưa resolve được responsibility assignment.');
+            return;
+        }
+        const ok = await handleStatusChange(submitTarget, 'submitted', resolvedSubmitTarget);
+        if (ok) closeSubmitAssignmentConfirmation();
     };
 
     const handleDelete = async (id: string) => {
@@ -2753,13 +2708,9 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                     </div>
                                     <div>
                                         <label className="mb-1 block text-[10px] font-black uppercase text-muted-foreground">CHT duyệt</label>
-                                        <select value={selectedApprover?.userId || ''} onChange={e => setSelectedApprover(approverOptions.find(staff => staff.userId === e.target.value) || null)}
-                                            className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm font-bold outline-none focus:ring-2 focus:ring-teal-400">
-                                            <option value="">Không chọn</option>
-                                            {approverOptions.map(staff => (
-                                                <option key={staff.userId} value={staff.userId || ''}>{staff.userName || staff.userId}</option>
-                                            ))}
-                                        </select>
+                                        <div className="w-full rounded-xl border border-teal-200 bg-teal-50 px-3 py-2 text-sm font-bold text-teal-800">
+                                            Tự động theo responsibility slot khi gửi
+                                        </div>
                                     </div>
                                 </div>
                                 <div className="mt-4">
@@ -2855,65 +2806,45 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
             )}
 
             {submitTarget && (
-                <div className="fixed inset-0 z-[998] flex items-center justify-center bg-black/30 backdrop-blur-sm px-4" onClick={e => e.target === e.currentTarget && closeSubmitVerifierPicker()}>
+                <div className="fixed inset-0 z-[998] flex items-center justify-center bg-black/30 backdrop-blur-sm px-4" onClick={e => e.target === e.currentTarget && closeSubmitAssignmentConfirmation()}>
                     <div className="w-full max-w-lg rounded-2xl bg-card border border-border overflow-hidden">
                         <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
                             <div>
                                 <p className="text-sm font-black text-slate-800 flex items-center gap-2">
-                                    <UserCheck size={16} className="text-amber-500" /> Chọn người xác nhận
+                                    <UserCheck size={16} className="text-amber-500" /> Xác nhận gửi nhật ký
                                 </p>
-                                <p className="text-[10px] font-bold text-slate-400">Nguồn dữ liệu: Dự án &gt; Tổ chức, chỉ hiện người có quyền verify.</p>
+                                <p className="text-[10px] font-bold text-slate-400">Người nhận được hệ thống phân công theo responsibility slot, không theo link hoặc danh sách quyền chung.</p>
                             </div>
-                            <button onClick={closeSubmitVerifierPicker} disabled={busyLogIds.has(submitTarget.id)}
+                            <button onClick={closeSubmitAssignmentConfirmation} disabled={busyLogIds.has(submitTarget.id)}
                                 className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-400 hover:bg-slate-100 transition-colors disabled:opacity-50">
                                 <X size={16} />
                             </button>
                         </div>
-                        <div className="p-5 space-y-3">
-                            <input
-                                value={verifierSearch}
-                                onChange={e => setVerifierSearch(e.target.value)}
-                                placeholder="Gõ tên, chức danh hoặc mã người dùng..."
-                                className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-amber-400"
-                                autoFocus
-                            />
-                            <div className="max-h-[320px] overflow-y-auto rounded-2xl border border-slate-100">
-                                {loadingVerifiers ? (
-                                    <div className="p-8 text-center text-xs font-bold text-slate-400">
-                                        <Loader2 size={16} className="inline animate-spin mr-2" />Đang tải Tổ chức dự án...
+                        <div className="p-5">
+                            {resolvingSubmitTarget ? (
+                                <div className="rounded-2xl border border-slate-100 p-8 text-center text-xs font-bold text-slate-400">
+                                    <Loader2 size={16} className="inline animate-spin mr-2" />Đang xác định người chịu trách nhiệm...
+                                </div>
+                            ) : resolvedSubmitTarget ? (
+                                <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                                    <div className="text-[10px] font-black uppercase text-amber-700">Người nhận</div>
+                                    <div className="mt-1 text-base font-black text-foreground">{resolvedSubmitTarget.name}</div>
+                                    <div className="mt-1 text-xs font-bold text-amber-700">
+                                        {resolvedSubmitTarget.responsibility === 'current_approver' ? 'Người duyệt hiện tại' : 'Người xác nhận hiện tại'} · {resolvedSubmitTarget.scopeType}
                                     </div>
-                                ) : filteredVerifierOptions.length === 0 ? (
-                                    <div className="p-8 text-center text-xs font-bold text-slate-400">
-                                        Không có người xác nhận phù hợp.
-                                    </div>
-                                ) : filteredVerifierOptions.map(staff => {
-                                    const selected = selectedVerifier?.userId === staff.userId;
-                                    return (
-                                        <button
-                                            key={staff.userId}
-                                            type="button"
-                                            onClick={() => setSelectedVerifier(staff)}
-                                            className={`w-full px-4 py-3 text-left border-b border-slate-100 last:border-b-0 transition-colors ${selected ? 'bg-amber-50' : 'hover:bg-slate-50'
-                                                }`}
-                                        >
-                                            <div className="flex items-center justify-between gap-3">
-                                                <div className="min-w-0">
-                                                    <div className="text-sm font-black text-foreground truncate">{staff.userName || staff.userId}</div>
-                                                    <div className="text-[11px] font-bold text-muted-foreground truncate">{staff.positionName || 'Thành viên dự án'} • quyền verify</div>
-                                                </div>
-                                                {selected && <CheckCircle2 size={16} className="text-amber-500 shrink-0" />}
-                                            </div>
-                                        </button>
-                                    );
-                                })}
-                            </div>
+                                </div>
+                            ) : (
+                                <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-4 text-sm font-bold text-destructive">
+                                    Chưa xác định được người chịu trách nhiệm. Vui lòng kiểm tra responsibility slot trong Tổ chức dự án.
+                                </div>
+                            )}
                         </div>
                         <div className="px-5 py-4 border-t border-slate-100 flex justify-end gap-3">
-                            <button onClick={closeSubmitVerifierPicker} disabled={busyLogIds.has(submitTarget.id)}
+                            <button onClick={closeSubmitAssignmentConfirmation} disabled={busyLogIds.has(submitTarget.id)}
                                 className="px-4 py-2 rounded-xl text-sm font-medium text-muted-foreground hover:bg-muted disabled:opacity-50">
                                 Huỷ
                             </button>
-                            <button onClick={confirmSubmitWithVerifier} disabled={!selectedVerifier || loadingVerifiers || busyLogIds.has(submitTarget.id)}
+                            <button onClick={confirmSubmitWithAssignment} disabled={!resolvedSubmitTarget || resolvingSubmitTarget || busyLogIds.has(submitTarget.id)}
                                 className="px-5 py-2 rounded-xl text-sm font-bold text-white bg-amber-500 hover:bg-amber-600 disabled:opacity-50 flex items-center gap-2">
                                 {busyLogIds.has(submitTarget.id) ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
                                 Gửi xác nhận
@@ -3006,7 +2937,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                     }}
                     onSubmit={() => {
                         setViewLogId(null);
-                        openSubmitVerifierPicker(viewingLog);
+                        openSubmitAssignmentConfirmation(viewingLog);
                     }}
                     onDelete={() => {
                         setViewLogId(null);

@@ -4,6 +4,8 @@ Ngày lập: 2026-07-12
 Nguồn đầu vào: `docs/security/permission-audit.md`  
 Mục tiêu: đưa hệ thống phân quyền từ mô hình lai/rải rác hiện tại sang mô hình nhất quán theo `Ứng dụng -> Module -> Hành động -> Phạm vi`, ưu tiên vá Critical trước, sau đó chuẩn hóa nền tảng dùng chung, rồi refactor module Dự án và từng module con.
 
+Kiến trúc đích chi tiết cho toàn ERP được chuẩn hóa trong `docs/security/principal-permission-scope-assignment-workflow-notification-architecture.md`. Roadmap này là kế hoạch triển khai theo phase; tài liệu kiến trúc đó là luật nền về Principal, Permission, Scope, Assignment, Workflow và Notification.
+
 ## 1. Nguyên tắc triển khai
 
 1. Backend là nguồn quyết định cuối cùng.
