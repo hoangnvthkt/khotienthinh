@@ -5,6 +5,7 @@ import type {
   UserAccountOperationResult,
 } from '../types';
 import { isSupabaseConfigured, supabase } from './supabase';
+import { getLegacyModuleAssignmentCount } from './permissions/permissionService';
 import { readFunctionInvokeErrorMessage } from './userAccountCreation';
 
 export interface UserAccountLifecycleCommand {
@@ -52,7 +53,7 @@ export const normalizeUserAccountLifecyclePreview = (
 });
 
 export const getUserAccountLifecyclePreview = async (
-  target: Pick<User, 'id' | 'authId' | 'permissionGrants' | 'allowedModules' | 'adminModules' | 'accountStatus' | 'accountOperationStatus' | 'accountOperationAction'>,
+  target: User,
 ): Promise<UserAccountLifecyclePreview> => {
   if (!isSupabaseConfigured) {
     return normalizeUserAccountLifecyclePreview({
@@ -62,7 +63,7 @@ export const getUserAccountLifecyclePreview = async (
       operationAction: target.accountOperationAction,
       hasAuthIdentity: true,
       directGrants: target.permissionGrants?.filter(grant => grant.isActive !== false).length || 0,
-      legacyModules: (target.allowedModules?.length || 0) + (target.adminModules?.length || 0),
+      legacyModules: getLegacyModuleAssignmentCount(target),
       projectStaffAssignments: 0,
       responsibilitySlots: 0,
       runtimeAssignments: 0,

@@ -4,6 +4,7 @@ import {
   canPerform,
   canViewModule,
   getInheritedPermissionCodes,
+  getLegacyModuleAssignmentCount,
   isPermissionActionScopeAllowed,
   userHasPermissionGrant,
 } from '../permissions/permissionService';
@@ -84,6 +85,13 @@ describe('permissionService', () => {
     expect(getInheritedPermissionCodes(user({ allowedModules: ['DA'], adminSubModules: { DA: ['/da/tabs/dailylog'] } }))).toEqual(
       expect.arrayContaining(['system.da.view', 'project.daily_log.manage'])
     );
+  });
+
+  it('counts legacy module assignments behind the permission boundary', () => {
+    expect(getLegacyModuleAssignmentCount(user({
+      allowedModules: ['WMS', 'DA'],
+      adminModules: ['HRM'],
+    }))).toBe(3);
   });
 
   it('checks whether a permission action can be granted for a selected scope', () => {

@@ -39,6 +39,10 @@ const hasLegacyModuleView = (user: Pick<User, 'allowedModules' | 'adminModules'>
 const hasLegacyModuleManage = (user: Pick<User, 'adminModules'>, legacyModuleKey: string): boolean =>
   (user.adminModules || []).includes(legacyModuleKey);
 
+export const getLegacyModuleAssignmentCount = (
+  user: Pick<User, 'allowedModules' | 'adminModules'>,
+): number => (user.allowedModules?.length || 0) + (user.adminModules?.length || 0);
+
 const hasLegacyRouteGrant = (
   routesByModule: Record<string, string[]> | undefined,
   legacyModuleKey: string,
