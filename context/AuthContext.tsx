@@ -12,6 +12,7 @@ import { Navigate } from 'react-router-dom';
 import { AlertTriangle, LogOut, RefreshCw } from 'lucide-react';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { MOCK_USERS } from '../constants';
+import { clearAppOwnedAuthStorage } from '../lib/authStorage';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { userActivityService } from '../lib/userActivityService';
 import {
@@ -76,6 +77,15 @@ export const AuthGateView: React.FC<AuthGateViewProps> = ({
 };
 
 const MOCK_STORAGE_KEY = 'vioo_mock_user';
+
+const getBrowserLocalStorage = (): Storage | null => {
+  if (typeof window === 'undefined') return null;
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+};
 
 const loadStoredMockUser = (): User | null => {
   if (isSupabaseConfigured || typeof window === 'undefined') return null;
@@ -158,7 +168,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const handleRemoteAuthLoss = useCallback(() => {
     userSessionTelemetryLifecycle.handleRemoteAuthLoss(() => {
-      userActivityService.clearAllStoredSessionIds();
+      if (isSupabaseConfigured) {
+        clearAppOwnedAuthStorage(getBrowserLocalStorage());
+      } else {
+        // Loading a valid persisted mock identity is not an auth-loss event.
+        // Keep that identity across refresh while still removing stale telemetry.
+        userActivityService.clearAllStoredSessionIds();
+      }
     });
   }, []);
 
@@ -328,8 +344,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           });
         },
         clearAppOwnedStorage: () => {
-          userActivityService.clearAllStoredSessionIds();
-          if (typeof window !== 'undefined') window.localStorage.removeItem(MOCK_STORAGE_KEY);
+          clearAppOwnedAuthStorage(getBrowserLocalStorage());
         },
       });
       authEpochRef.current.acceptAuthoritativeNoSession();

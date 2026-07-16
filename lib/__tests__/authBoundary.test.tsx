@@ -21,9 +21,34 @@ import {
   type AuthProfileGateway,
 } from '../../context/authState';
 import { AuthGateView } from '../../context/AuthContext';
+import { clearAppOwnedAuthStorage } from '../authStorage';
 
 const AUTH_ID = '11111111-1111-4111-8111-111111111111';
 const PROFILE_ID = '22222222-2222-4222-8222-222222222222';
+
+class MemoryAuthStorage implements Pick<Storage, 'length' | 'key' | 'removeItem'> {
+  private readonly values = new Map<string, string>();
+
+  constructor(entries: Array<[string, string]>) {
+    entries.forEach(([key, value]) => this.values.set(key, value));
+  }
+
+  get length(): number {
+    return this.values.size;
+  }
+
+  key(index: number): string | null {
+    return [...this.values.keys()][index] ?? null;
+  }
+
+  removeItem(key: string): void {
+    this.values.delete(key);
+  }
+
+  getItem(key: string): string | null {
+    return this.values.get(key) ?? null;
+  }
+}
 
 const makeSession = (accessToken = 'access-token'): Session => ({
   access_token: accessToken,
@@ -308,6 +333,48 @@ describe('fail-closed auth state', () => {
 });
 
 describe('authenticated provider architecture', () => {
+  it('clears only app-owned auth state and preserves Supabase/device preferences', () => {
+    const storage = new MemoryAuthStorage([
+      ['vioo_user', '{"id":"legacy-profile"}'],
+      ['vioo_explicit_logout_at', '123'],
+      ['vioo_mock_user', '{"id":"u1"}'],
+      ['vioo:user-permission-clipboard', '{"role":"ADMIN"}'],
+      ['vioo_user_session_id:11111111-1111-4111-8111-111111111111', 'session-1'],
+      ['vioo_user_session_id:u1', 'legacy-session'],
+      ['sb-project-auth-token', 'supabase-owned'],
+      ['vioo_theme', 'dark'],
+      ['sidebar_collapsed', 'true'],
+      ['pwa_was_installed', 'true'],
+      ['chibibot_chat_user-1', '[{"text":"keep-device-history"}]'],
+    ]);
+
+    clearAppOwnedAuthStorage(storage);
+
+    for (const key of [
+      'vioo_user',
+      'vioo_explicit_logout_at',
+      'vioo_mock_user',
+      'vioo:user-permission-clipboard',
+      'vioo_user_session_id:11111111-1111-4111-8111-111111111111',
+      'vioo_user_session_id:u1',
+    ]) {
+      expect(storage.getItem(key), `${key} must be removed`).toBeNull();
+    }
+    expect(storage.getItem('sb-project-auth-token')).toBe('supabase-owned');
+    expect(storage.getItem('vioo_theme')).toBe('dark');
+    expect(storage.getItem('sidebar_collapsed')).toBe('true');
+    expect(storage.getItem('pwa_was_installed')).toBe('true');
+    expect(storage.getItem('chibibot_chat_user-1')).toContain('keep-device-history');
+  });
+
+  it('uses the centralized auth-storage cleanup for local and remote auth loss', () => {
+    const authSource = readFileSync(join(process.cwd(), 'context', 'AuthContext.tsx'), 'utf8');
+
+    expect(authSource).toContain("import { clearAppOwnedAuthStorage } from '../lib/authStorage';");
+    expect(authSource.match(/clearAppOwnedAuthStorage\(/g)).toHaveLength(2);
+    expect(authSource).not.toMatch(/localStorage\.clear\(|removeItem\([^)]*sb-/);
+  });
+
   it('does not render domain children before authenticated status', () => {
     let domainMounts = 0;
     const DomainProbe = () => {
