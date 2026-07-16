@@ -16,6 +16,7 @@ import { listUserPermissionGrants, replaceUserPermissionGrants } from '../lib/pe
 import { getPermissionApplications } from '../lib/permissions/permissionRegistry';
 import { getInheritedPermissionCodes } from '../lib/permissions/permissionService';
 import { PermissionScope } from '../lib/permissions/permissionTypes';
+import { buildCreateUserFunctionPayload, readFunctionInvokeErrorMessage } from '../lib/userAccountCreation';
 
 const PROJECT_TAB_PERMISSION_ICONS: Record<ProjectOverviewTabKey, any> = {
   executive: LayoutDashboard,
@@ -425,21 +426,35 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
           if (!session) throw new Error('Phiên đăng nhập hết hạn, vui lòng đăng nhập lại');
 
           const response = await supabase.functions.invoke('create-user', {
-            body: {
+            body: buildCreateUserFunctionPayload({
               email: formData.email,
               password: formData.password,
-            },
+              profile: {
+                name: formData.name || '',
+                username: formData.username || '',
+                phone: formData.phone || '',
+                role: formData.role as Role,
+                avatar: formData.avatar || `https://i.pravatar.cc/150?u=${formData.email}`,
+                assignedWarehouseId: hasWmsAccess ? formData.assignedWarehouseId || undefined : undefined,
+                allowedModules: formData.role === Role.ADMIN ? ALL_MODULES.map(m => m.key) : (formData.allowedModules || []),
+                allowedSubModules: formData.role === Role.ADMIN ? {} : (formData.allowedSubModules || {}),
+                adminModules: formData.role === Role.ADMIN ? [] : (formData.adminModules || []),
+                adminSubModules: formData.role === Role.ADMIN ? {} : (formData.adminSubModules || {}),
+                isActive: true,
+              },
+            }),
           });
 
           if (response.error) {
-            throw new Error(response.error.message || 'Lỗi gọi Edge Function create-user');
+            const message = await readFunctionInvokeErrorMessage(response.error);
+            throw new Error(message || response.error.message || 'Lỗi gọi Edge Function create-user');
           }
 
           const result = response.data;
           if (result.error) {
             throw new Error(result.error);
           }
-          createdAuthUserId = result.userId || result.user?.id || result.id;
+          createdAuthUserId = result.profileId || result.userId || result.user?.id || result.id;
         } catch (authErr: any) {
           setSaving(false);
           logApiError('userModal.createAuthUser', authErr);

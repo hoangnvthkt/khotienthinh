@@ -85,6 +85,28 @@ Quy tắc cho `internal_deep_link` và `notification_action_link`:
 
 `public_capability_link` chỉ được tạo khi module khai báo rõ token model, dữ liệu allowlist, thời hạn, revoke, audit và policy delivery. Token phải có entropy đủ cao, được lưu/đối chiếu an toàn, không dùng làm khóa gọi workflow mutation và không trả toàn bộ row ERP. QR Safety Card là case cần audit theo chuẩn này; route có `qrToken` không tự động trở thành public capability link chỉ vì có token trong URL.
 
+### 2.2 Auth Account Creation Critical Path
+
+Tạo tài khoản đăng nhập mới là critical path của hệ thống. Không được xem đây là chức năng phụ của màn hình Settings/User Management; đây là điều kiện nền để vận hành ERP.
+
+Mọi thay đổi có thể chạm tới các thành phần sau phải cảnh báo ngay trong review, kế hoạch migration và ghi chú apply:
+
+- `auth.users`, trigger trên `auth.users`, hoặc function sync từ Supabase Auth sang app profile.
+- `public.users`, RLS/policy/trigger/guard trên `public.users`.
+- `app_private.prevent_users_privilege_self_update()`, `public.sync_auth_user_profile()`, `public.current_app_user_id()`, `public.is_admin()`.
+- Edge Functions `create-user`, `reset-password`, hoặc bất kỳ luồng nào dùng `service_role`.
+- Permission containment thay đổi quyền insert/update/delete profile user.
+
+Checklist bắt buộc trước khi kết luận an toàn:
+
+1. Chạy smoke test qua Supabase Auth Admin API thật để tạo một user tạm bằng email unique.
+2. Chạy tiếp upsert profile qua Data API bằng `service_role`, giống đường đi của Edge Function `create-user`.
+3. Dọn sạch Auth user và `public.users` profile test, rồi query lại xác nhận không còn dữ liệu thừa.
+4. Không dùng SQL insert trực tiếp bằng role `postgres` làm bằng chứng duy nhất, vì role này có `BYPASSRLS` và không mô phỏng đúng `supabase_auth_admin`/PostgREST service-role runtime.
+5. Nếu Auth trả `Database error creating new user`, phải tra `auth_logs` và `postgres_logs`; message API chỉ là vỏ bọc, lỗi thật thường nằm ở trigger/constraint/privilege trong Postgres.
+
+Sự cố ngày 2026-07-16: guard `app_private.prevent_users_privilege_self_update()` chặn internal update phát sinh từ Supabase Auth khi tạo user. GoTrue chạy dưới `supabase_auth_admin`, trigger sync gọi update `public.users`, nhưng guard không nhận diện đây là luồng nội bộ đáng tin nên raise `Only admins can update other user rows` (`SQLSTATE 42501`). Supabase Auth bọc lỗi đó thành `Database error creating new user`. Migration `20260716103946_allow_auth_profile_sync_guard_bypass.sql` sửa guard để cho phép `session_user = 'supabase_auth_admin'` và `auth.role() = 'service_role'`, trong khi vẫn giữ chặn user thường tự sửa trường phân quyền.
+
 ## 3. Mô hình khái niệm
 
 ### 3.1 Principal
