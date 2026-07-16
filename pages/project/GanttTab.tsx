@@ -52,6 +52,7 @@ import {
     getWeekStart,
     projectWeeklyProgressService,
 } from '../../lib/projectWeeklyProgressService';
+import { formatLocaleDecimalInput, parseNonNegativeLocaleNumber } from '../../lib/localeNumberInput';
 
 interface GanttTabProps {
     constructionSiteId?: string;
@@ -178,10 +179,7 @@ const parseWeeklyProgressPercent = (value: unknown): number => {
 };
 
 const parseNonNegativeNumber = (value: unknown): number => {
-    const raw = typeof value === 'string' ? value.replace(',', '.').trim() : value;
-    const n = Number(raw || 0);
-    if (!Number.isFinite(n) || n < 0) return 0;
-    return n;
+    return parseNonNegativeLocaleNumber(value);
 };
 
 const formatNumberInput = (value: number, fractionDigits = 3): string => {
@@ -1102,7 +1100,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
         }
         const remaining = getRemainingCompletionQuantity(task);
         setCompletionModalTask(task);
-        setCompletionQty(String(remaining > 0 ? remaining : 1));
+        setCompletionQty(formatLocaleDecimalInput(remaining > 0 ? remaining : 1));
         setCompletionNote('');
         setCompletionFiles([]);
     }, [childCountByTaskId, ensureProjectPermission, getRemainingCompletionQuantity, toast, user?.id]);
@@ -1338,7 +1336,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
         setFCostPerDay(String(t.estimatedCostPerDay || 0));
         setFContractItemIds(taskContractLinks[t.id] || []);
         setFWbsCode(t.wbsCode || ''); setFFallbackUnit(t.fallbackUnit || '');
-        setFProvisionalQuantity(String(t.provisionalQuantity || 0));
+        setFProvisionalQuantity(formatLocaleDecimalInput(t.provisionalQuantity || 0));
         setFActualStart(t.actualStartDate || ''); setFActualEnd(t.actualEndDate || '');
         setFWatchers(t.watchers || []);
         setShowForm(true);
@@ -1353,7 +1351,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
         setFNotes(t.notes || ''); setFColor(t.color || '');
         setFWbsCode(getNextWbsCode(tasks, t.parentId));
         setFFallbackUnit(t.fallbackUnit || '');
-        setFProvisionalQuantity(String(t.provisionalQuantity || 0));
+        setFProvisionalQuantity(formatLocaleDecimalInput(t.provisionalQuantity || 0));
         setFResourceCount(String(t.resourceCount ?? 1));
         setFResourceType(t.resourceType || 'worker');
         setFWatchers([]);
@@ -2534,8 +2532,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                         {baselines.length > 0 && (
                             <button onClick={() => setShowBaselinePanel(v => !v)}
                                 className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all whitespace-nowrap shrink-0 ${showBaselinePanel
-                                        ? 'border-sky-400 bg-sky-50 dark:bg-sky-900/20 text-sky-700'
-                                        : 'border-border dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
+                                    ? 'border-sky-400 bg-sky-50 dark:bg-sky-900/20 text-sky-700'
+                                    : 'border-border dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
                                     }`}
                                 title="So sánh kế hoạch vs thực tế">
                                 <BarChart3 size={13} /> So sánh BL
@@ -2543,8 +2541,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                         )}
                         <button onClick={() => setShowForecastPanel(v => !v)}
                             className={`relative flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all whitespace-nowrap shrink-0 ${showForecastPanel
-                                    ? 'border-red-400 bg-red-50 dark:bg-red-900/20 text-red-700'
-                                    : 'border-border dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
+                                ? 'border-red-400 bg-red-50 dark:bg-red-900/20 text-red-700'
+                                : 'border-border dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
                                 }`}
                             title="Dự báo tác động chậm tiến độ">
                             <AlertTriangle size={13} /> Dự báo
@@ -2904,8 +2902,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                                                 <span className="text-[10px] font-bold text-emerald-600">✔ Đúng hạn</span>
                                                             ) : (
                                                                 <span className={`inline-flex items-center gap-0.5 text-[10px] font-black px-2 py-0.5 rounded-full ${isDelayed
-                                                                        ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                                                                        : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                                                                    ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                                                                    : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
                                                                     }`}>
                                                                     {isDelayed ? '⏰' : '⚡'} {isDelayed ? '+' : ''}{endDelta} ngày
                                                                 </span>
@@ -3100,9 +3098,9 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                 {/* Table Top Scrollbar or Spacer */}
                                 {(viewMode === 'table' || viewMode === 'split') && (
                                     showTableTopScroll ? (
-                                        <div 
-                                            ref={tableTopScrollRef} 
-                                            onScroll={handleTableTopScroll} 
+                                        <div
+                                            ref={tableTopScrollRef}
+                                            onScroll={handleTableTopScroll}
                                             className="overflow-x-auto overflow-y-hidden top-scrollbar"
                                             style={{ width: viewMode === 'split' ? `${splitTableWidth}px` : '100%' }}
                                         >
@@ -3121,9 +3119,9 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                 {/* Gantt Top Scrollbar or Spacer */}
                                 {(viewMode === 'gantt' || viewMode === 'split') && (
                                     showGanttTopScroll ? (
-                                        <div 
-                                            ref={ganttTopScrollRef} 
-                                            onScroll={handleGanttTopScroll} 
+                                        <div
+                                            ref={ganttTopScrollRef}
+                                            onScroll={handleGanttTopScroll}
                                             className="overflow-x-auto overflow-y-hidden flex-1 top-scrollbar"
                                         >
                                             <div style={{ width: ganttScrollWidth, height: '1px' }} />
@@ -3233,642 +3231,642 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                                 </th>
                                             </tr>
                                         </thead>
-                                    <tbody>
-	                                        {taskTree.map(({ task, level, hasChildren }, idx) => {
-	                                            const status = getStatus(task);
-	                                            const linkedIds = taskContractLinks[task.id] || [];
-	                                            const { derivedStart, derivedEnd } = deriveActualDates(task, dailyLogs, linkedIds);
-	                                            const unitLabel = getTaskUnit(task, linkedIds, contractItems);
-	                                            const unitTitle = getTaskUnitTitle(task, linkedIds, contractItems);
-	                                            const rowHasChildren = hasChildren || !!childCountByTaskId.get(task.id);
-	                                            const progressReadOnly = rowHasChildren || task.progressMode === 'weekly_report' || task.progressMode === 'daily_log' || task.progressMode === 'completion_request' || task.progressMode === 'children_auto' || task.progressMode === 'derived_from_acceptance';
-	                                            const isFocusedTask = task.id === focusTaskId;
-	                                            const isSplitOrTable = viewMode === 'split' || viewMode === 'table';
-	                                            return (
-	                                                <tr key={task.id}
-	                                                    id={`gantt-task-row-${task.id}`}
-	                                                    style={{ height: `${ROW_HEIGHT}px` }}
-	                                                    className={`border-b border-slate-50 dark:border-slate-700/50 hover:bg-orange-50/30 dark:hover:bg-slate-700/30 group transition-colors ${status === 'overdue' ? 'bg-red-50/20' : status === 'pending_gate' ? 'bg-amber-50/20' : ''} ${isFocusedTask ? 'bg-orange-100/80 dark:bg-orange-900/30 ring-2 ring-orange-400/60' : ''}`}>
-                                                    {/* STT */}
-                                                    {viewMode === 'table' && (
-                                                        <td className="px-2 py-2.5 text-center text-muted-foreground font-bold">{idx + 1}</td>
-                                                    )}
-                                                    {/* Mã WBS */}
-                                                    {(viewMode === 'table' || viewMode === 'split') && (
-                                                        <td className={`px-2 py-2.5 ${viewMode === 'split' ? '' : 'hidden sm:table-cell'}`}>
-                                                            {task.wbsCode ? (
-                                                                <span className="text-indigo-600 dark:text-indigo-400 font-bold font-mono">{task.wbsCode}</span>
-                                                            ) : (
-                                                                <span className="text-slate-300">–</span>
-                                                            )}
-                                                        </td>
-                                                    )}
-                                                    {/* Name */}
-                                                    <td className={`px-3 ${isSplitOrTable ? 'py-0' : 'py-2.5'} overflow-hidden whitespace-nowrap`}
-                                                        style={{ height: isSplitOrTable ? `${ROW_HEIGHT}px` : undefined }}>
-                                                        <div className="flex items-center gap-1 min-w-0 h-full" style={{ paddingLeft: isSplitOrTable ? `${level * 16}px` : 0 }}>
-                                                            {isSplitOrTable && hasChildren ? (
-                                                                <button onClick={() => toggleCollapse(task.id)} className="w-5 h-5 flex items-center justify-center text-muted-foreground hover:text-orange-500 shrink-0 rounded hover:bg-orange-50 transition-colors">
-                                                                    {collapsedParents.has(task.id) ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
-                                                                </button>
-                                                            ) : isSplitOrTable ? (
-                                                                <span className="w-5 shrink-0" />
-                                                            ) : null}
-                                                            {task.isMilestone && <Flag size={11} className="text-red-500 shrink-0" />}
-                                                            <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: task.color || COLORS[idx % COLORS.length] }} />
-                                                            <span className="font-bold text-foreground dark:text-slate-200 truncate cursor-pointer hover:text-orange-600 transition-colors"
-                                                                onClick={() => openEdit(task)} title={task.name}>
-                                                                {task.name}
-                                                            </span>
-                                                            {(task.watchers || []).length > 0 && (
-                                                                <span title={`Theo dõi: ${getWatcherNames(task.watchers)}`} className="inline-flex shrink-0">
-                                                                    <Eye size={11} className="text-blue-400" />
-                                                                </span>
-                                                            )}
-                                                        </div>
+                                        <tbody>
+                                            {taskTree.map(({ task, level, hasChildren }, idx) => {
+                                                const status = getStatus(task);
+                                                const linkedIds = taskContractLinks[task.id] || [];
+                                                const { derivedStart, derivedEnd } = deriveActualDates(task, dailyLogs, linkedIds);
+                                                const unitLabel = getTaskUnit(task, linkedIds, contractItems);
+                                                const unitTitle = getTaskUnitTitle(task, linkedIds, contractItems);
+                                                const rowHasChildren = hasChildren || !!childCountByTaskId.get(task.id);
+                                                const progressReadOnly = rowHasChildren || task.progressMode === 'weekly_report' || task.progressMode === 'daily_log' || task.progressMode === 'completion_request' || task.progressMode === 'children_auto' || task.progressMode === 'derived_from_acceptance';
+                                                const isFocusedTask = task.id === focusTaskId;
+                                                const isSplitOrTable = viewMode === 'split' || viewMode === 'table';
+                                                return (
+                                                    <tr key={task.id}
+                                                        id={`gantt-task-row-${task.id}`}
+                                                        style={{ height: `${ROW_HEIGHT}px` }}
+                                                        className={`border-b border-slate-50 dark:border-slate-700/50 hover:bg-orange-50/30 dark:hover:bg-slate-700/30 group transition-colors ${status === 'overdue' ? 'bg-red-50/20' : status === 'pending_gate' ? 'bg-amber-50/20' : ''} ${isFocusedTask ? 'bg-orange-100/80 dark:bg-orange-900/30 ring-2 ring-orange-400/60' : ''}`}>
+                                                        {/* STT */}
                                                         {viewMode === 'table' && (
-                                                            <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[9px] font-bold text-muted-foreground md:hidden">
-                                                                {task.wbsCode && <span>WBS {task.wbsCode}</span>}
-                                                                {task.assignee && <span>{task.assignee}</span>}
-                                                                <span>{fmtShort(task.startDate)}→{fmtShort(task.endDate)}</span>
-                                                                {unitLabel !== '–' && <span>{unitLabel}</span>}
-                                                                {(task.provisionalQuantity || 0) > 0 && <span>KL {formatQuantity(task.provisionalQuantity)}</span>}
-                                                                <span>NC {formatQuantity(task.resourceCount ?? 1)}</span>
-                                                                {(task.watchers || []).length > 0 && <span>{task.watchers?.length} theo dõi</span>}
-                                                            </div>
+                                                            <td className="px-2 py-2.5 text-center text-muted-foreground font-bold">{idx + 1}</td>
                                                         )}
-                                                    </td>
-                                                    {/* Status */}
-                                                    {viewMode === 'split' && (
-                                                        <td className="px-2 py-0 overflow-hidden whitespace-nowrap" style={{ maxWidth: "95px", height: `${ROW_HEIGHT}px` }}>
-                                                            <div className="flex items-center h-full">
-                                                                <StatusBadge status={status} />
-                                                            </div>
-                                                        </td>
-                                                    )}
-                                                    {/* Assignee */}
-                                                    {viewMode === 'table' && (
-                                                        <td className="hidden md:table-cell px-2 py-2.5">
-                                                            {task.assignee ? (
-                                                                <span className="inline-flex items-center gap-1 text-slate-600 dark:text-slate-300 font-medium">
-                                                                    <User size={10} className="text-muted-foreground" /> {task.assignee}
+                                                        {/* Mã WBS */}
+                                                        {(viewMode === 'table' || viewMode === 'split') && (
+                                                            <td className={`px-2 py-2.5 ${viewMode === 'split' ? '' : 'hidden sm:table-cell'}`}>
+                                                                {task.wbsCode ? (
+                                                                    <span className="text-indigo-600 dark:text-indigo-400 font-bold font-mono">{task.wbsCode}</span>
+                                                                ) : (
+                                                                    <span className="text-slate-300">–</span>
+                                                                )}
+                                                            </td>
+                                                        )}
+                                                        {/* Name */}
+                                                        <td className={`px-3 ${isSplitOrTable ? 'py-0' : 'py-2.5'} overflow-hidden whitespace-nowrap`}
+                                                            style={{ height: isSplitOrTable ? `${ROW_HEIGHT}px` : undefined }}>
+                                                            <div className="flex items-center gap-1 min-w-0 h-full" style={{ paddingLeft: isSplitOrTable ? `${level * 16}px` : 0 }}>
+                                                                {isSplitOrTable && hasChildren ? (
+                                                                    <button onClick={() => toggleCollapse(task.id)} className="w-5 h-5 flex items-center justify-center text-muted-foreground hover:text-orange-500 shrink-0 rounded hover:bg-orange-50 transition-colors">
+                                                                        {collapsedParents.has(task.id) ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+                                                                    </button>
+                                                                ) : isSplitOrTable ? (
+                                                                    <span className="w-5 shrink-0" />
+                                                                ) : null}
+                                                                {task.isMilestone && <Flag size={11} className="text-red-500 shrink-0" />}
+                                                                <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: task.color || COLORS[idx % COLORS.length] }} />
+                                                                <span className="font-bold text-foreground dark:text-slate-200 truncate cursor-pointer hover:text-orange-600 transition-colors"
+                                                                    onClick={() => openEdit(task)} title={task.name}>
+                                                                    {task.name}
                                                                 </span>
-                                                            ) : (
-                                                                <span className="text-slate-300">—</span>
-                                                            )}
-                                                        </td>
-                                                    )}
-                                                    {/* Duration */}
-                                                    {viewMode === 'table' && (
-                                                        <td className="hidden lg:table-cell px-2 py-2.5 text-center font-bold text-muted-foreground">{task.duration}</td>
-                                                    )}
-                                                    {/* Planned Dates */}
-                                                    <td className={`${viewMode === 'table' ? 'hidden sm:table-cell' : ''} px-2 ${isSplitOrTable ? 'py-0' : 'py-2.5'} text-muted-foreground font-medium whitespace-nowrap`}
-                                                        style={{ height: isSplitOrTable ? `${ROW_HEIGHT}px` : undefined }}>
-                                                        <div className="flex items-center h-full">
-                                                            {fmtShort(task.startDate)}
-                                                        </div>
-                                                    </td>
-                                                    <td className={`${viewMode === 'table' ? 'hidden sm:table-cell' : ''} px-2 ${isSplitOrTable ? 'py-0' : 'py-2.5'} text-muted-foreground font-medium whitespace-nowrap`}
-                                                        style={{ height: isSplitOrTable ? `${ROW_HEIGHT}px` : undefined }}>
-                                                        <div className="flex items-center h-full">
-                                                            {fmtShort(task.endDate)}
-                                                        </div>
-                                                    </td>
-                                                    {/* Actual Dates (table mode only) */}
-                                                    {viewMode === 'table' && (
-                                                        <>
-                                                            <td className="hidden lg:table-cell px-2 py-2.5 text-emerald-600 font-medium" title={task.actualStartDate ? "Nhập tay" : derivedStart ? "Tính tự động" : ""}>
-                                                                {derivedStart ? fmtShort(derivedStart) : <span className="text-slate-300">–</span>}
-                                                            </td>
-                                                            <td className="hidden lg:table-cell px-2 py-2.5 text-emerald-600 font-medium" title={task.actualEndDate ? "Nhập tay" : derivedEnd ? "Tính tự động" : ""}>
-                                                                {derivedEnd ? fmtShort(derivedEnd) : <span className="text-slate-300">–</span>}
-                                                            </td>
-                                                            <td className="hidden lg:table-cell px-2 py-2.5 text-slate-600 font-bold">
-                                                                {formatQuantity(task.provisionalQuantity)}
-                                                            </td>
-                                                            <td className="hidden lg:table-cell px-2 py-2.5 text-slate-600 font-bold">
-                                                                {formatQuantity(task.resourceCount ?? 1)}
-                                                            </td>
-                                                        </>
-                                                    )}
-                                                    {/* Progress */}
-                                                    <td className={`px-2 ${isSplitOrTable ? 'py-0' : 'py-2.5'} overflow-hidden whitespace-nowrap`}
-                                                        style={{ height: isSplitOrTable ? `${ROW_HEIGHT}px` : undefined }}>
-                                                        <div className="flex items-center h-full">
-                                                            <ProgressCell value={task.progress} onChange={v => updateProgress(task.id, v)} disabled={progressReadOnly} hint={getProgressHint(task, rowHasChildren)} />
-                                                        </div>
-                                                    </td>
-                                                    <td className={`px-2 ${isSplitOrTable ? 'py-0' : 'py-2.5'} overflow-hidden whitespace-nowrap`}
-                                                        style={{ height: isSplitOrTable ? `${ROW_HEIGHT}px` : undefined }}
-                                                        title={`Sản lượng thực tế: ${formatMoneyShort(valueProgressMetric.actualProductionValue)} / ${formatMoneyShort(valueProgressMetric.contractTotalValue)}`}>
-                                                        <div className="flex flex-col justify-center h-full gap-1">
-                                                            <div className="flex items-center gap-1.5">
-                                                                <div className="flex-1 h-1.5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
-                                                                    <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${clampProgress(valueProgressMetric.valueProgressPercent)}%` }} />
-                                                                </div>
-                                                                <span className="text-[11px] font-black text-emerald-600 w-8 text-right">{valueProgressMetric.valueProgressPercent}%</span>
+                                                                {(task.watchers || []).length > 0 && (
+                                                                    <span title={`Theo dõi: ${getWatcherNames(task.watchers)}`} className="inline-flex shrink-0">
+                                                                        <Eye size={11} className="text-blue-400" />
+                                                                    </span>
+                                                                )}
                                                             </div>
                                                             {viewMode === 'table' && (
-                                                                <div className="text-[9px] font-bold text-muted-foreground truncate">
-                                                                    {formatMoneyShort(valueProgressMetric.actualProductionValue)}
+                                                                <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[9px] font-bold text-muted-foreground md:hidden">
+                                                                    {task.wbsCode && <span>WBS {task.wbsCode}</span>}
+                                                                    {task.assignee && <span>{task.assignee}</span>}
+                                                                    <span>{fmtShort(task.startDate)}→{fmtShort(task.endDate)}</span>
+                                                                    {unitLabel !== '–' && <span>{unitLabel}</span>}
+                                                                    {(task.provisionalQuantity || 0) > 0 && <span>KL {formatQuantity(task.provisionalQuantity)}</span>}
+                                                                    <span>NC {formatQuantity(task.resourceCount ?? 1)}</span>
+                                                                    {(task.watchers || []).length > 0 && <span>{task.watchers?.length} theo dõi</span>}
                                                                 </div>
                                                             )}
-                                                        </div>
-                                                    </td>
-                                                    {/* Unit (table mode only) */}
-                                                    {viewMode === 'table' && (
-                                                        <td className="hidden xl:table-cell px-2 py-2.5 text-muted-foreground font-medium" title={unitTitle}>
-                                                            {unitLabel}
                                                         </td>
-                                                    )}
-                                                    {/* Status */}
-                                                    {viewMode === 'table' && (
-                                                        <td className="px-2 py-0 overflow-hidden" style={{ maxWidth: "96px" }}><StatusBadge status={status} /></td>
-                                                    )}
-                                                    {/* Actions */}
-                                                    <td className={`px-2 ${isSplitOrTable ? 'py-0' : 'py-2.5'} overflow-hidden whitespace-nowrap`}
-                                                        style={{ height: isSplitOrTable ? `${ROW_HEIGHT}px` : undefined }}>
-                                                        <div className="flex items-center justify-center gap-0.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity h-full">
-                                                            <button onClick={() => openEdit(task)} title="Sửa"
-                                                                className="w-6 h-6 rounded-lg flex items-center justify-center text-muted-foreground hover:text-blue-600 hover:bg-blue-50 transition-colors">
-                                                                <Edit2 size={12} />
-                                                            </button>
-                                                            <button onClick={() => duplicateTask(task)} title="Nhân bản"
-                                                                className="w-6 h-6 rounded-lg flex items-center justify-center text-muted-foreground hover:text-violet-600 hover:bg-violet-50 transition-colors">
-                                                                <Copy size={12} />
-                                                            </button>
-                                                            <button onClick={() => openAdd(task.id)} title="Thêm hạng mục con"
-                                                                className="w-6 h-6 rounded-lg flex items-center justify-center text-muted-foreground hover:text-emerald-600 hover:bg-emerald-50 transition-colors">
-                                                                <Plus size={12} />
-                                                            </button>
-                                                            <button onClick={() => setDeleteTarget(task)} title="Xoá"
-                                                                className="w-6 h-6 rounded-lg flex items-center justify-center text-muted-foreground hover:text-red-600 hover:bg-red-50 transition-colors">
-                                                                <Trash2 size={12} />
-                                                            </button>
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            );
-                                        })}
-                                    </tbody>
-                                </table>
-                                {filteredTasks.length === 0 && tasks.length > 0 && (
-                                    <div className="p-8 text-center">
-                                        <Search size={24} className="mx-auto mb-2 text-slate-200" />
-                                        <p className="text-xs font-bold text-muted-foreground">Không tìm thấy hạng mục phù hợp</p>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-
-                        {viewMode === 'split' && (
-                            <div
-                                className="hidden lg:flex w-1.5 hover:w-2 bg-slate-100 hover:bg-orange-400 dark:bg-slate-800 dark:hover:bg-orange-500 cursor-col-resize self-stretch transition-all items-center justify-center group relative z-30 shrink-0 border-x border-border/50 dark:border-slate-700/50"
-                                onMouseDown={e => {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    const startX = e.clientX;
-                                    const startWidth = splitTableWidth;
-
-                                    const onMouseMove = (moveEvent: MouseEvent) => {
-                                        const deltaX = moveEvent.clientX - startX;
-                                        // Restrict width to reasonable bounds (e.g. between 250px and 900px)
-                                        const newWidth = Math.max(250, Math.min(900, startWidth + deltaX));
-                                        setSplitTableWidth(newWidth);
-                                    };
-
-                                    const onMouseUp = () => {
-                                        document.removeEventListener('mousemove', onMouseMove);
-                                        document.removeEventListener('mouseup', onMouseUp);
-                                        document.body.style.cursor = '';
-                                    };
-
-                                    document.body.style.cursor = 'col-resize';
-                                    document.addEventListener('mousemove', onMouseMove);
-                                    document.addEventListener('mouseup', onMouseUp);
-                                }}
-                            >
-                                <div className="w-[2px] h-6 rounded-full bg-slate-300 dark:bg-slate-600 group-hover:bg-white transition-colors" />
-                            </div>
-                        )}
-
-                        {/* ====== GANTT VIEW ====== */}
-                        {(viewMode === 'gantt' || viewMode === 'split') && (
-                            <div 
-                                ref={ganttScrollRef}
-                                onScroll={handleGanttScroll}
-                                className="flex-1 overflow-auto relative"
-                            >
-                                <div className="relative" style={{ width: `${ganttOffset + (totalDays + 1) * zoom}px`, minWidth: '100%' }}>
-                                    {/* Month + day headers */}
-                                    <div className="sticky top-0 z-30 border-b border-border dark:border-slate-700 bg-slate-50 dark:bg-slate-800" style={{ height: `${GANTT_HEADER_HEIGHT}px` }}>
-                                        {viewMode === 'gantt' && (
-                                            <div className="absolute left-0 top-0 bottom-0 z-30 w-[140px] shrink-0 bg-slate-100 dark:bg-slate-800 border-r border-border dark:border-slate-700/80 px-2.5 flex items-center font-black text-muted-foreground dark:text-muted-foreground uppercase tracking-wider text-[9px] select-none shadow-[2px_0_5px_rgba(0,0,0,0.02)]">
-                                                Hạng mục
-                                            </div>
-                                        )}
-                                        {months.map((m, i) => (
-                                            <div key={i} className="absolute top-0 h-[30px] flex items-center justify-center border-r border-border dark:border-slate-700"
-                                                style={{ left: `${ganttOffset + m.startDay * zoom}px`, width: `${m.days * zoom}px` }}>
-                                                <span className="text-[9px] font-black text-muted-foreground uppercase tracking-wider px-2 truncate text-center w-full">{m.label}</span>
-                                            </div>
-                                        ))}
-                                        <div className="absolute left-0 right-0 top-[30px] h-[34px] border-t border-border dark:border-slate-700">
-                                            {days.map(day => {
-                                                const showLabel = zoom >= 26 || day.startDay % Math.ceil(28 / zoom) === 0;
-                                                return (
-                                                    <div key={day.date}
-                                                        className={`absolute top-0 h-full border-r border-border dark:border-slate-700 flex items-center justify-center ${day.isWeekend ? 'bg-slate-100/60 dark:bg-slate-800/40' : ''}`}
-                                                        style={{ left: `${ganttOffset + day.startDay * zoom}px`, width: `${zoom}px` }}>
-                                                        {showLabel && <span className="text-[8px] font-bold text-muted-foreground whitespace-nowrap">{day.label}</span>}
-                                                    </div>
+                                                        {/* Status */}
+                                                        {viewMode === 'split' && (
+                                                            <td className="px-2 py-0 overflow-hidden whitespace-nowrap" style={{ maxWidth: "95px", height: `${ROW_HEIGHT}px` }}>
+                                                                <div className="flex items-center h-full">
+                                                                    <StatusBadge status={status} />
+                                                                </div>
+                                                            </td>
+                                                        )}
+                                                        {/* Assignee */}
+                                                        {viewMode === 'table' && (
+                                                            <td className="hidden md:table-cell px-2 py-2.5">
+                                                                {task.assignee ? (
+                                                                    <span className="inline-flex items-center gap-1 text-slate-600 dark:text-slate-300 font-medium">
+                                                                        <User size={10} className="text-muted-foreground" /> {task.assignee}
+                                                                    </span>
+                                                                ) : (
+                                                                    <span className="text-slate-300">—</span>
+                                                                )}
+                                                            </td>
+                                                        )}
+                                                        {/* Duration */}
+                                                        {viewMode === 'table' && (
+                                                            <td className="hidden lg:table-cell px-2 py-2.5 text-center font-bold text-muted-foreground">{task.duration}</td>
+                                                        )}
+                                                        {/* Planned Dates */}
+                                                        <td className={`${viewMode === 'table' ? 'hidden sm:table-cell' : ''} px-2 ${isSplitOrTable ? 'py-0' : 'py-2.5'} text-muted-foreground font-medium whitespace-nowrap`}
+                                                            style={{ height: isSplitOrTable ? `${ROW_HEIGHT}px` : undefined }}>
+                                                            <div className="flex items-center h-full">
+                                                                {fmtShort(task.startDate)}
+                                                            </div>
+                                                        </td>
+                                                        <td className={`${viewMode === 'table' ? 'hidden sm:table-cell' : ''} px-2 ${isSplitOrTable ? 'py-0' : 'py-2.5'} text-muted-foreground font-medium whitespace-nowrap`}
+                                                            style={{ height: isSplitOrTable ? `${ROW_HEIGHT}px` : undefined }}>
+                                                            <div className="flex items-center h-full">
+                                                                {fmtShort(task.endDate)}
+                                                            </div>
+                                                        </td>
+                                                        {/* Actual Dates (table mode only) */}
+                                                        {viewMode === 'table' && (
+                                                            <>
+                                                                <td className="hidden lg:table-cell px-2 py-2.5 text-emerald-600 font-medium" title={task.actualStartDate ? "Nhập tay" : derivedStart ? "Tính tự động" : ""}>
+                                                                    {derivedStart ? fmtShort(derivedStart) : <span className="text-slate-300">–</span>}
+                                                                </td>
+                                                                <td className="hidden lg:table-cell px-2 py-2.5 text-emerald-600 font-medium" title={task.actualEndDate ? "Nhập tay" : derivedEnd ? "Tính tự động" : ""}>
+                                                                    {derivedEnd ? fmtShort(derivedEnd) : <span className="text-slate-300">–</span>}
+                                                                </td>
+                                                                <td className="hidden lg:table-cell px-2 py-2.5 text-slate-600 font-bold">
+                                                                    {formatQuantity(task.provisionalQuantity)}
+                                                                </td>
+                                                                <td className="hidden lg:table-cell px-2 py-2.5 text-slate-600 font-bold">
+                                                                    {formatQuantity(task.resourceCount ?? 1)}
+                                                                </td>
+                                                            </>
+                                                        )}
+                                                        {/* Progress */}
+                                                        <td className={`px-2 ${isSplitOrTable ? 'py-0' : 'py-2.5'} overflow-hidden whitespace-nowrap`}
+                                                            style={{ height: isSplitOrTable ? `${ROW_HEIGHT}px` : undefined }}>
+                                                            <div className="flex items-center h-full">
+                                                                <ProgressCell value={task.progress} onChange={v => updateProgress(task.id, v)} disabled={progressReadOnly} hint={getProgressHint(task, rowHasChildren)} />
+                                                            </div>
+                                                        </td>
+                                                        <td className={`px-2 ${isSplitOrTable ? 'py-0' : 'py-2.5'} overflow-hidden whitespace-nowrap`}
+                                                            style={{ height: isSplitOrTable ? `${ROW_HEIGHT}px` : undefined }}
+                                                            title={`Sản lượng thực tế: ${formatMoneyShort(valueProgressMetric.actualProductionValue)} / ${formatMoneyShort(valueProgressMetric.contractTotalValue)}`}>
+                                                            <div className="flex flex-col justify-center h-full gap-1">
+                                                                <div className="flex items-center gap-1.5">
+                                                                    <div className="flex-1 h-1.5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+                                                                        <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${clampProgress(valueProgressMetric.valueProgressPercent)}%` }} />
+                                                                    </div>
+                                                                    <span className="text-[11px] font-black text-emerald-600 w-8 text-right">{valueProgressMetric.valueProgressPercent}%</span>
+                                                                </div>
+                                                                {viewMode === 'table' && (
+                                                                    <div className="text-[9px] font-bold text-muted-foreground truncate">
+                                                                        {formatMoneyShort(valueProgressMetric.actualProductionValue)}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </td>
+                                                        {/* Unit (table mode only) */}
+                                                        {viewMode === 'table' && (
+                                                            <td className="hidden xl:table-cell px-2 py-2.5 text-muted-foreground font-medium" title={unitTitle}>
+                                                                {unitLabel}
+                                                            </td>
+                                                        )}
+                                                        {/* Status */}
+                                                        {viewMode === 'table' && (
+                                                            <td className="px-2 py-0 overflow-hidden" style={{ maxWidth: "96px" }}><StatusBadge status={status} /></td>
+                                                        )}
+                                                        {/* Actions */}
+                                                        <td className={`px-2 ${isSplitOrTable ? 'py-0' : 'py-2.5'} overflow-hidden whitespace-nowrap`}
+                                                            style={{ height: isSplitOrTable ? `${ROW_HEIGHT}px` : undefined }}>
+                                                            <div className="flex items-center justify-center gap-0.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity h-full">
+                                                                <button onClick={() => openEdit(task)} title="Sửa"
+                                                                    className="w-6 h-6 rounded-lg flex items-center justify-center text-muted-foreground hover:text-blue-600 hover:bg-blue-50 transition-colors">
+                                                                    <Edit2 size={12} />
+                                                                </button>
+                                                                <button onClick={() => duplicateTask(task)} title="Nhân bản"
+                                                                    className="w-6 h-6 rounded-lg flex items-center justify-center text-muted-foreground hover:text-violet-600 hover:bg-violet-50 transition-colors">
+                                                                    <Copy size={12} />
+                                                                </button>
+                                                                <button onClick={() => openAdd(task.id)} title="Thêm hạng mục con"
+                                                                    className="w-6 h-6 rounded-lg flex items-center justify-center text-muted-foreground hover:text-emerald-600 hover:bg-emerald-50 transition-colors">
+                                                                    <Plus size={12} />
+                                                                </button>
+                                                                <button onClick={() => setDeleteTarget(task)} title="Xoá"
+                                                                    className="w-6 h-6 rounded-lg flex items-center justify-center text-muted-foreground hover:text-red-600 hover:bg-red-50 transition-colors">
+                                                                    <Trash2 size={12} />
+                                                                </button>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
                                                 );
                                             })}
+                                        </tbody>
+                                    </table>
+                                    {filteredTasks.length === 0 && tasks.length > 0 && (
+                                        <div className="p-8 text-center">
+                                            <Search size={24} className="mx-auto mb-2 text-slate-200" />
+                                            <p className="text-xs font-bold text-muted-foreground">Không tìm thấy hạng mục phù hợp</p>
                                         </div>
-                                        {todayOffset >= 0 && todayOffset <= totalDays && (
-                                            <div className="absolute top-0 h-full w-[2px] bg-red-500 z-10" style={{ left: `${ganttOffset + todayOffset * zoom}px` }}>
-                                                <div className="absolute top-0 left-1/2 -translate-x-1/2 px-1.5 py-0.5 rounded-b bg-red-500 text-white text-[8px] font-bold whitespace-nowrap">
-                                                    Hôm nay
+                                    )}
+                                </div>
+                            )}
+
+                            {viewMode === 'split' && (
+                                <div
+                                    className="hidden lg:flex w-1.5 hover:w-2 bg-slate-100 hover:bg-orange-400 dark:bg-slate-800 dark:hover:bg-orange-500 cursor-col-resize self-stretch transition-all items-center justify-center group relative z-30 shrink-0 border-x border-border/50 dark:border-slate-700/50"
+                                    onMouseDown={e => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        const startX = e.clientX;
+                                        const startWidth = splitTableWidth;
+
+                                        const onMouseMove = (moveEvent: MouseEvent) => {
+                                            const deltaX = moveEvent.clientX - startX;
+                                            // Restrict width to reasonable bounds (e.g. between 250px and 900px)
+                                            const newWidth = Math.max(250, Math.min(900, startWidth + deltaX));
+                                            setSplitTableWidth(newWidth);
+                                        };
+
+                                        const onMouseUp = () => {
+                                            document.removeEventListener('mousemove', onMouseMove);
+                                            document.removeEventListener('mouseup', onMouseUp);
+                                            document.body.style.cursor = '';
+                                        };
+
+                                        document.body.style.cursor = 'col-resize';
+                                        document.addEventListener('mousemove', onMouseMove);
+                                        document.addEventListener('mouseup', onMouseUp);
+                                    }}
+                                >
+                                    <div className="w-[2px] h-6 rounded-full bg-slate-300 dark:bg-slate-600 group-hover:bg-white transition-colors" />
+                                </div>
+                            )}
+
+                            {/* ====== GANTT VIEW ====== */}
+                            {(viewMode === 'gantt' || viewMode === 'split') && (
+                                <div
+                                    ref={ganttScrollRef}
+                                    onScroll={handleGanttScroll}
+                                    className="flex-1 overflow-auto relative"
+                                >
+                                    <div className="relative" style={{ width: `${ganttOffset + (totalDays + 1) * zoom}px`, minWidth: '100%' }}>
+                                        {/* Month + day headers */}
+                                        <div className="sticky top-0 z-30 border-b border-border dark:border-slate-700 bg-slate-50 dark:bg-slate-800" style={{ height: `${GANTT_HEADER_HEIGHT}px` }}>
+                                            {viewMode === 'gantt' && (
+                                                <div className="absolute left-0 top-0 bottom-0 z-30 w-[140px] shrink-0 bg-slate-100 dark:bg-slate-800 border-r border-border dark:border-slate-700/80 px-2.5 flex items-center font-black text-muted-foreground dark:text-muted-foreground uppercase tracking-wider text-[9px] select-none shadow-[2px_0_5px_rgba(0,0,0,0.02)]">
+                                                    Hạng mục
                                                 </div>
+                                            )}
+                                            {months.map((m, i) => (
+                                                <div key={i} className="absolute top-0 h-[30px] flex items-center justify-center border-r border-border dark:border-slate-700"
+                                                    style={{ left: `${ganttOffset + m.startDay * zoom}px`, width: `${m.days * zoom}px` }}>
+                                                    <span className="text-[9px] font-black text-muted-foreground uppercase tracking-wider px-2 truncate text-center w-full">{m.label}</span>
+                                                </div>
+                                            ))}
+                                            <div className="absolute left-0 right-0 top-[30px] h-[34px] border-t border-border dark:border-slate-700">
+                                                {days.map(day => {
+                                                    const showLabel = zoom >= 26 || day.startDay % Math.ceil(28 / zoom) === 0;
+                                                    return (
+                                                        <div key={day.date}
+                                                            className={`absolute top-0 h-full border-r border-border dark:border-slate-700 flex items-center justify-center ${day.isWeekend ? 'bg-slate-100/60 dark:bg-slate-800/40' : ''}`}
+                                                            style={{ left: `${ganttOffset + day.startDay * zoom}px`, width: `${zoom}px` }}>
+                                                            {showLabel && <span className="text-[8px] font-bold text-muted-foreground whitespace-nowrap">{day.label}</span>}
+                                                        </div>
+                                                    );
+                                                })}
                                             </div>
-                                        )}
-                                    </div>
-
-                                    <div className="absolute left-0 pointer-events-none z-0" style={{ top: `${GANTT_HEADER_HEIGHT}px`, height: `${taskTree.length * ROW_HEIGHT}px`, width: `${ganttOffset + (totalDays + 1) * zoom}px` }}>
-                                        {days.map(day => (
-                                            <div key={`grid-${day.date}`}
-                                                className={`absolute top-0 h-full border-r border-border/70 dark:border-slate-700/60 ${day.isWeekend ? 'bg-slate-100/45 dark:bg-slate-800/30' : ''}`}
-                                                style={{ left: `${ganttOffset + day.startDay * zoom}px`, width: `${zoom}px` }} />
-                                        ))}
-                                    </div>
-
-                                    {/* Task bars + Baseline shadows + Critical Path + GĐ2: Ghost + Gate Block */}
-                                    {taskTree.map(({ task, level, hasChildren }, idx) => {
-                                        const left = ganttOffset + daysBetween(timelineStart, task.startDate) * zoom;
-                                        const displayDuration = Math.max(task.duration || 0, daysBetween(task.startDate, task.endDate));
-                                        const width = Math.max((displayDuration || 1) * zoom, zoom);
-                                        const isPointMilestone = task.isMilestone && (displayDuration <= 0 || task.startDate === task.endDate);
-                                        const color = task.color || COLORS[idx % COLORS.length];
-                                        const status = getStatus(task);
-                                        const isCrit = criticalPathResult?.criticalPath.includes(task.id);
-                                        const scheduleInfo = criticalPathResult?.taskSchedule.get(task.id);
-                                        const floatVal = scheduleInfo?.float ?? 0;
-                                        const baselineTask = baselineMap.get(task.id);
-                                        const forecastTask = scheduleForecast.forecastTaskMap.get(task.id);
-                                        const forecastMeta = scheduleForecast.taskForecastMeta.get(task.id);
-                                        const hasForecastShift = !!forecastTask && (forecastTask.startDate !== task.startDate || forecastTask.endDate !== task.endDate);
-                                        const delayDays = getDelayDays(task);
-	                                        const isGateBlocked = gateBlockedIds.has(task.id);
-	                                        const isDragging = draggingTaskId === task.id;
-	                                        const isRippling = draggingTaskId !== null && draggingTaskId !== task.id;
-	                                        const isFocusedTask = task.id === focusTaskId;
-
-                                        // GĐ3: Tìm ảnh mới nhất từ daily logs của task này
-                                        const latestPhotoLog = getTaskRelatedPhotoLog(task, dailyLogs);
-                                        const latestPhoto = latestPhotoLog?.photos?.[0];
-
-                                        // Baseline shadow position
-                                        const blLeft = baselineTask ? ganttOffset + daysBetween(timelineStart, baselineTask.startDate) * zoom : 0;
-                                        const blWidth = baselineTask ? Math.max(baselineTask.duration * zoom, zoom) : 0;
-                                        const forecastLeft = forecastTask ? ganttOffset + daysBetween(timelineStart, forecastTask.startDate) * zoom : 0;
-                                        const forecastDuration = forecastTask ? Math.max(forecastTask.duration || 0, daysBetween(forecastTask.startDate, forecastTask.endDate)) : 0;
-                                        const forecastWidth = forecastTask ? Math.max((forecastDuration || 1) * zoom, zoom) : 0;
-
-                                        return (
-	                                            <div key={task.id} className={`w-full relative border-b border-slate-50 dark:border-slate-700/50 ${isFocusedTask ? 'bg-orange-100/50 dark:bg-orange-900/20' : ''}`} style={{ height: `${ROW_HEIGHT}px` }}>
-                                                {viewMode === 'gantt' && (
-                                                    <div className="absolute left-0 top-0 bottom-0 z-20 w-[140px] shrink-0 bg-card/95 border-r border-border px-2 flex items-center gap-1 shadow-[2px_0_5px_rgba(0,0,0,0.02)] select-none overflow-hidden"
-                                                        style={{ paddingLeft: `${8 + level * 8}px` }}>
-                                                        {hasChildren ? (
-                                                            <button onClick={() => toggleCollapse(task.id)} className="w-3.5 h-3.5 flex items-center justify-center text-muted-foreground hover:text-orange-500 shrink-0">
-                                                                {collapsedParents.has(task.id) ? <ChevronRight size={10} /> : <ChevronDown size={10} />}
-                                                            </button>
-                                                        ) : <span className="w-3.5 shrink-0" />}
-                                                        {task.isMilestone && <Flag size={9} className="text-red-500 shrink-0" />}
-                                                        <span className="truncate font-black text-foreground dark:text-slate-200 flex-1 text-[10px]" title={task.name}>{task.name}</span>
-                                                        <span className="text-[9px] font-bold text-muted-foreground shrink-0">{task.progress}%</span>
+                                            {todayOffset >= 0 && todayOffset <= totalDays && (
+                                                <div className="absolute top-0 h-full w-[2px] bg-red-500 z-10" style={{ left: `${ganttOffset + todayOffset * zoom}px` }}>
+                                                    <div className="absolute top-0 left-1/2 -translate-x-1/2 px-1.5 py-0.5 rounded-b bg-red-500 text-white text-[8px] font-bold whitespace-nowrap">
+                                                        Hôm nay
                                                     </div>
-                                                )}
+                                                </div>
+                                            )}
+                                        </div>
 
-                                                {todayOffset >= 0 && todayOffset <= totalDays && (
-                                                    <div className="absolute top-0 h-full w-[2px] bg-red-500/10 z-0" style={{ left: `${ganttOffset + todayOffset * zoom}px` }} />
-                                                )}
+                                        <div className="absolute left-0 pointer-events-none z-0" style={{ top: `${GANTT_HEADER_HEIGHT}px`, height: `${taskTree.length * ROW_HEIGHT}px`, width: `${ganttOffset + (totalDays + 1) * zoom}px` }}>
+                                            {days.map(day => (
+                                                <div key={`grid-${day.date}`}
+                                                    className={`absolute top-0 h-full border-r border-border/70 dark:border-slate-700/60 ${day.isWeekend ? 'bg-slate-100/45 dark:bg-slate-800/30' : ''}`}
+                                                    style={{ left: `${ganttOffset + day.startDay * zoom}px`, width: `${zoom}px` }} />
+                                            ))}
+                                        </div>
 
-                                                {/* GĐ1: Baseline Shadow Bar */}
-                                                {baselineTask && blWidth > 0 && (
-                                                    <div className="absolute top-[10px] h-[16px] rounded bg-slate-300/30 dark:bg-slate-500/20 z-[1] pointer-events-none border border-dashed border-slate-300/50"
-                                                        style={{ left: `${blLeft}px`, width: `${blWidth}px` }}
-                                                        title={`Baseline: ${fmtShort(baselineTask.startDate)} → ${fmtShort(baselineTask.endDate)}`} />
-                                                )}
+                                        {/* Task bars + Baseline shadows + Critical Path + GĐ2: Ghost + Gate Block */}
+                                        {taskTree.map(({ task, level, hasChildren }, idx) => {
+                                            const left = ganttOffset + daysBetween(timelineStart, task.startDate) * zoom;
+                                            const displayDuration = Math.max(task.duration || 0, daysBetween(task.startDate, task.endDate));
+                                            const width = Math.max((displayDuration || 1) * zoom, zoom);
+                                            const isPointMilestone = task.isMilestone && (displayDuration <= 0 || task.startDate === task.endDate);
+                                            const color = task.color || COLORS[idx % COLORS.length];
+                                            const status = getStatus(task);
+                                            const isCrit = criticalPathResult?.criticalPath.includes(task.id);
+                                            const scheduleInfo = criticalPathResult?.taskSchedule.get(task.id);
+                                            const floatVal = scheduleInfo?.float ?? 0;
+                                            const baselineTask = baselineMap.get(task.id);
+                                            const forecastTask = scheduleForecast.forecastTaskMap.get(task.id);
+                                            const forecastMeta = scheduleForecast.taskForecastMeta.get(task.id);
+                                            const hasForecastShift = !!forecastTask && (forecastTask.startDate !== task.startDate || forecastTask.endDate !== task.endDate);
+                                            const delayDays = getDelayDays(task);
+                                            const isGateBlocked = gateBlockedIds.has(task.id);
+                                            const isDragging = draggingTaskId === task.id;
+                                            const isRippling = draggingTaskId !== null && draggingTaskId !== task.id;
+                                            const isFocusedTask = task.id === focusTaskId;
 
-                                                {hasForecastShift && forecastTask && forecastWidth > 0 && (
-                                                    <div className="absolute top-[34px] h-[6px] rounded-full bg-red-400/20 border border-red-400/60 z-[3] pointer-events-none"
-                                                        style={{ left: `${forecastLeft}px`, width: `${forecastWidth}px` }}
-                                                        title={`Forecast: ${fmtShort(forecastTask.startDate)} → ${fmtShort(forecastTask.endDate)}${forecastMeta ? ` | +${forecastMeta.deltaDays} ngày` : ''}`} />
-                                                )}
+                                            // GĐ3: Tìm ảnh mới nhất từ daily logs của task này
+                                            const latestPhotoLog = getTaskRelatedPhotoLog(task, dailyLogs);
+                                            const latestPhoto = latestPhotoLog?.photos?.[0];
 
-                                                {/* GĐ2: Ghost Bar — fixed at original position during drag */}
-                                                {dragGhost && dragGhost.taskId === task.id && (
-                                                    <div className="absolute top-[8px] h-[20px] rounded-lg z-[2] pointer-events-none border-2 border-dashed"
-                                                        style={{
-                                                            left: `${ganttOffset + dragGhost.origLeft}px`,
-                                                            width: `${dragGhost.origWidth}px`,
-                                                            borderColor: `${color}60`,
-                                                            backgroundColor: `${color}10`,
-                                                            opacity: 0.35,
-                                                        }} />
-                                                )}
+                                            // Baseline shadow position
+                                            const blLeft = baselineTask ? ganttOffset + daysBetween(timelineStart, baselineTask.startDate) * zoom : 0;
+                                            const blWidth = baselineTask ? Math.max(baselineTask.duration * zoom, zoom) : 0;
+                                            const forecastLeft = forecastTask ? ganttOffset + daysBetween(timelineStart, forecastTask.startDate) * zoom : 0;
+                                            const forecastDuration = forecastTask ? Math.max(forecastTask.duration || 0, daysBetween(forecastTask.startDate, forecastTask.endDate)) : 0;
+                                            const forecastWidth = forecastTask ? Math.max((forecastDuration || 1) * zoom, zoom) : 0;
 
-                                                {isPointMilestone ? (
-                                                    <div className="absolute top-1/2 -translate-y-1/2 z-10" style={{ left: `${left}px` }}>
-                                                        <div className={`w-4 h-4 rotate-45 rounded-sm shadow-md ${isCrit ? 'ring-2 ring-red-500 ring-offset-1' : ''}`} style={{ backgroundColor: color }} />
-                                                    </div>
-                                                ) : (
-                                                    <div className={`absolute top-[6px] h-[24px] rounded-lg shadow-sm cursor-pointer group/bar z-10 ${isDragging ? 'shadow-lg scale-y-[1.2] z-30' : 'hover:scale-y-[1.15] hover:shadow-md'
-                                                        } ${isCrit ? 'ring-2 ring-red-500/70 ring-offset-1' : ''
-                                                        } ${status === 'overdue' ? 'ring-1 ring-red-400 ring-offset-1' : ''
-                                                        } ${status === 'pending_gate' ? 'ring-1 ring-amber-400 ring-offset-1' : ''
-                                                        } ${isGateBlocked ? 'opacity-40 grayscale' : ''
-                                                        } ${isRippling ? 'transition-[left,width] duration-300 ease-out' : 'transition-all'}`}
-                                                        style={{
-                                                            left: `${left}px`, width: `${width}px`,
-                                                            backgroundColor: isGateBlocked ? '#e2e8f0' : `${color}20`,
-                                                            border: `2px solid ${isGateBlocked ? '#94a3b8' : (isCrit ? '#ef4444' : color)}`,
-                                                        }}
-                                                        title={`${task.name}: ${task.progress}% (${fmtShort(task.startDate)} → ${fmtShort(task.endDate)})${isCrit ? ' ⚡ Đường găng' : ''}${floatVal > 0 ? ` | Float: ${floatVal}d` : ''}${delayDays > 0 ? ` | Trễ: ${delayDays}d` : ''}${isGateBlocked ? ' 🔒 Chờ nghiệm thu' : ''}`}
-                                                        onClick={() => openEdit(task)}
-                                                        onMouseEnter={(e) => {
-                                                            if (latestPhoto) {
-                                                                setPhotoTooltip({ x: e.clientX, y: e.clientY, photoUrl: latestPhoto.url, date: latestPhotoLog!.date, taskName: task.name });
-                                                            }
-                                                        }}
-                                                        onMouseLeave={() => setPhotoTooltip(null)}
-                                                        onMouseMove={(e) => {
-                                                            if (latestPhoto) {
-                                                                setPhotoTooltip({ x: e.clientX, y: e.clientY, photoUrl: latestPhoto.url, date: latestPhotoLog!.date, taskName: task.name });
-                                                            }
-                                                        }}>
-                                                        <div className="absolute inset-0 rounded-md transition-all" style={{ width: `${task.progress}%`, backgroundColor: isGateBlocked ? '#94a3b8' : (isCrit ? '#ef4444' : color), opacity: 0.65 }} />
-                                                        {width > 50 && (
-                                                            <span className="absolute inset-0 flex items-center px-2 text-[9px] font-bold truncate z-10"
-                                                                style={{ color: task.progress > 50 ? '#fff' : (isGateBlocked ? '#64748b' : (isCrit ? '#ef4444' : color)) }}>
-                                                                {isGateBlocked && '🔒 '}{task.isMilestone && <Flag size={9} className="mr-1 shrink-0" />}{task.name}
-                                                            </span>
-                                                        )}
-                                                        {/* GĐ2: Drag delta indicator */}
-                                                        {isDragging && dragGhost && dragGhost.deltaDays !== 0 && (
-                                                            <span className={`absolute -top-5 left-1/2 -translate-x-1/2 text-[9px] font-black px-1.5 py-0.5 rounded-full whitespace-nowrap z-30 shadow-sm ${dragGhost.deltaDays > 0 ? 'bg-orange-100 text-orange-700 border border-orange-300' : 'bg-emerald-100 text-emerald-700 border border-emerald-300'
-                                                                }`}>
-                                                                {dragGhost.deltaDays > 0 ? '+' : ''}{dragGhost.deltaDays}d
-                                                            </span>
-                                                        )}
-                                                        {/* GĐ2: Weather warning on drag target end date */}
-                                                        {isDragging && dragGhost?.weatherWarn && (
-                                                            <span className="absolute -bottom-5 right-0 text-[8px] font-bold text-amber-700 bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded-full whitespace-nowrap z-30 animate-pulse shadow-sm">
-                                                                {WEATHER_ICONS[dragGhost.weatherWarn] || '⚠️'} {dragGhost.weatherWarn === 'storm' ? 'Bão!' : 'Mưa!'}
-                                                            </span>
-                                                        )}
-                                                        {/* Float badge */}
-                                                        {!isDragging && floatVal > 0 && width > 60 && (
-                                                            <span className="absolute -top-3.5 right-0 text-[8px] font-bold text-emerald-500 bg-emerald-50 dark:bg-emerald-900/30 px-1 rounded"
-                                                                title={`Float: ${floatVal} ngày dự phòng`}>
-                                                                +{floatVal}d
-                                                            </span>
-                                                        )}
-                                                        {/* Delay badge */}
-                                                        {!isDragging && delayDays > 0 && (
-                                                            <span className="absolute -top-3.5 left-0 text-[8px] font-bold text-red-500 bg-red-50 dark:bg-red-900/30 px-1 rounded animate-pulse">
-                                                                -{delayDays}d
-                                                            </span>
-                                                        )}
-                                                        {!isDragging && hasForecastShift && forecastMeta && (
-                                                            <span className="absolute -bottom-3.5 right-0 text-[8px] font-black text-red-600 bg-red-50 dark:bg-red-900/30 px-1 rounded border border-red-100">
-                                                                forecast +{forecastMeta.deltaDays}d
-                                                            </span>
-                                                        )}
-                                                        {/* GĐ2: Gate State Machine Badge */}
-                                                        {task.progress >= 100 && task.gateStatus !== 'approved' && (
-                                                            <button
-                                                                className={`absolute -bottom-5 left-1/2 -translate-x-1/2 flex items-center gap-0.5 text-[7px] font-bold px-1.5 py-0.5 rounded-full border whitespace-nowrap z-20 hover:scale-110 transition-all shadow-sm ${task.gateStatus === 'pending'
-                                                                    ? 'text-amber-700 bg-amber-50 border-amber-300 animate-pulse'
-                                                                    : task.gateStatus === 'rejected'
-                                                                        ? 'text-red-600 bg-red-50 border-red-300'
-                                                                        : 'text-slate-600 bg-white border-slate-300'
-                                                                    }`}
-                                                                onClick={e => { e.stopPropagation(); setGateModalTask(task); }}
-                                                                title="Mở quy trình nghiệm thu">
-                                                                {task.gateStatus === 'pending' && <><Clock size={6} className="inline" /> Chờ duyệt</>}
-                                                                {task.gateStatus === 'rejected' && <><AlertTriangle size={6} className="inline" /> Từ chối</>}
-                                                                {(!task.gateStatus || task.gateStatus === 'none') && <><Shield size={6} className="inline" /> Nghiệm thu</>}
-                                                            </button>
-                                                        )}
-                                                        {task.gateStatus === 'approved' && (
-                                                            <button
-                                                                className="absolute -bottom-3.5 left-1/2 -translate-x-1/2 flex items-center gap-0.5 text-[7px] font-bold text-emerald-600 whitespace-nowrap z-20 hover:underline"
-                                                                onClick={e => { e.stopPropagation(); setGateModalTask(task); }}
-                                                                title="Xem chi tiết nghiệm thu">
-                                                                <CheckCircle2 size={8} className="inline" /> Đã duyệt
-                                                            </button>
-                                                        )}
-                                                        {/* GĐ2: Gate-blocked indicator */}
-                                                        {isGateBlocked && (
-                                                            <span className="absolute -bottom-3.5 left-1/2 -translate-x-1/2 text-[7px] font-bold text-muted-foreground bg-slate-100 px-1.5 rounded-full whitespace-nowrap z-20 border border-border">
-                                                                <Lock size={7} className="inline mr-0.5" />Chờ gate
-                                                            </span>
-                                                        )}
-                                                        {/* Drag handle — resize bar end date with ripple + ghost + weather */}
-                                                        <div className="absolute right-0 top-0 h-full w-3 cursor-col-resize opacity-0 group-hover/bar:opacity-100 flex items-center justify-center"
-                                                            onMouseDown={e => {
-                                                                e.stopPropagation();
-                                                                e.preventDefault();
-                                                                setDraggingTaskId(task.id);
-                                                                const startX = e.clientX;
-                                                                const origEnd = task.endDate;
-                                                                const origLeft = left;
-                                                                const origWidth = width;
-                                                                setDragGhost({ taskId: task.id, origLeft, origWidth, deltaDays: 0, weatherWarn: null });
-                                                                const onMove = (me: MouseEvent) => {
-                                                                    const dx = me.clientX - startX;
-                                                                    const daysDelta = Math.round(dx / zoom);
-                                                                    const newEnd = addDays(origEnd, daysDelta);
-                                                                    // Check weather warning for outdoor tasks
-                                                                    let weatherWarn: string | null = null;
-                                                                    if (task.resourceType !== 'machine') {
-                                                                        const endW = weatherMap.get(newEnd);
-                                                                        if (endW === 'rainy' || endW === 'storm') weatherWarn = endW;
-                                                                    }
-                                                                    setDragGhost({ taskId: task.id, origLeft, origWidth, deltaDays: daysDelta, weatherWarn });
-                                                                    if (daysDelta !== 0 && newEnd > task.startDate) {
-                                                                        handleBarDragMove(task.id, newEnd);
-                                                                    }
-                                                                };
-                                                                const onUp = (me: MouseEvent) => {
-                                                                    window.removeEventListener('mousemove', onMove);
-                                                                    window.removeEventListener('mouseup', onUp);
-                                                                    const dx = me.clientX - startX;
-                                                                    const daysDelta = Math.round(dx / zoom);
-                                                                    if (daysDelta !== 0) {
+                                            return (
+                                                <div key={task.id} className={`w-full relative border-b border-slate-50 dark:border-slate-700/50 ${isFocusedTask ? 'bg-orange-100/50 dark:bg-orange-900/20' : ''}`} style={{ height: `${ROW_HEIGHT}px` }}>
+                                                    {viewMode === 'gantt' && (
+                                                        <div className="absolute left-0 top-0 bottom-0 z-20 w-[140px] shrink-0 bg-card/95 border-r border-border px-2 flex items-center gap-1 shadow-[2px_0_5px_rgba(0,0,0,0.02)] select-none overflow-hidden"
+                                                            style={{ paddingLeft: `${8 + level * 8}px` }}>
+                                                            {hasChildren ? (
+                                                                <button onClick={() => toggleCollapse(task.id)} className="w-3.5 h-3.5 flex items-center justify-center text-muted-foreground hover:text-orange-500 shrink-0">
+                                                                    {collapsedParents.has(task.id) ? <ChevronRight size={10} /> : <ChevronDown size={10} />}
+                                                                </button>
+                                                            ) : <span className="w-3.5 shrink-0" />}
+                                                            {task.isMilestone && <Flag size={9} className="text-red-500 shrink-0" />}
+                                                            <span className="truncate font-black text-foreground dark:text-slate-200 flex-1 text-[10px]" title={task.name}>{task.name}</span>
+                                                            <span className="text-[9px] font-bold text-muted-foreground shrink-0">{task.progress}%</span>
+                                                        </div>
+                                                    )}
+
+                                                    {todayOffset >= 0 && todayOffset <= totalDays && (
+                                                        <div className="absolute top-0 h-full w-[2px] bg-red-500/10 z-0" style={{ left: `${ganttOffset + todayOffset * zoom}px` }} />
+                                                    )}
+
+                                                    {/* GĐ1: Baseline Shadow Bar */}
+                                                    {baselineTask && blWidth > 0 && (
+                                                        <div className="absolute top-[10px] h-[16px] rounded bg-slate-300/30 dark:bg-slate-500/20 z-[1] pointer-events-none border border-dashed border-slate-300/50"
+                                                            style={{ left: `${blLeft}px`, width: `${blWidth}px` }}
+                                                            title={`Baseline: ${fmtShort(baselineTask.startDate)} → ${fmtShort(baselineTask.endDate)}`} />
+                                                    )}
+
+                                                    {hasForecastShift && forecastTask && forecastWidth > 0 && (
+                                                        <div className="absolute top-[34px] h-[6px] rounded-full bg-red-400/20 border border-red-400/60 z-[3] pointer-events-none"
+                                                            style={{ left: `${forecastLeft}px`, width: `${forecastWidth}px` }}
+                                                            title={`Forecast: ${fmtShort(forecastTask.startDate)} → ${fmtShort(forecastTask.endDate)}${forecastMeta ? ` | +${forecastMeta.deltaDays} ngày` : ''}`} />
+                                                    )}
+
+                                                    {/* GĐ2: Ghost Bar — fixed at original position during drag */}
+                                                    {dragGhost && dragGhost.taskId === task.id && (
+                                                        <div className="absolute top-[8px] h-[20px] rounded-lg z-[2] pointer-events-none border-2 border-dashed"
+                                                            style={{
+                                                                left: `${ganttOffset + dragGhost.origLeft}px`,
+                                                                width: `${dragGhost.origWidth}px`,
+                                                                borderColor: `${color}60`,
+                                                                backgroundColor: `${color}10`,
+                                                                opacity: 0.35,
+                                                            }} />
+                                                    )}
+
+                                                    {isPointMilestone ? (
+                                                        <div className="absolute top-1/2 -translate-y-1/2 z-10" style={{ left: `${left}px` }}>
+                                                            <div className={`w-4 h-4 rotate-45 rounded-sm shadow-md ${isCrit ? 'ring-2 ring-red-500 ring-offset-1' : ''}`} style={{ backgroundColor: color }} />
+                                                        </div>
+                                                    ) : (
+                                                        <div className={`absolute top-[6px] h-[24px] rounded-lg shadow-sm cursor-pointer group/bar z-10 ${isDragging ? 'shadow-lg scale-y-[1.2] z-30' : 'hover:scale-y-[1.15] hover:shadow-md'
+                                                            } ${isCrit ? 'ring-2 ring-red-500/70 ring-offset-1' : ''
+                                                            } ${status === 'overdue' ? 'ring-1 ring-red-400 ring-offset-1' : ''
+                                                            } ${status === 'pending_gate' ? 'ring-1 ring-amber-400 ring-offset-1' : ''
+                                                            } ${isGateBlocked ? 'opacity-40 grayscale' : ''
+                                                            } ${isRippling ? 'transition-[left,width] duration-300 ease-out' : 'transition-all'}`}
+                                                            style={{
+                                                                left: `${left}px`, width: `${width}px`,
+                                                                backgroundColor: isGateBlocked ? '#e2e8f0' : `${color}20`,
+                                                                border: `2px solid ${isGateBlocked ? '#94a3b8' : (isCrit ? '#ef4444' : color)}`,
+                                                            }}
+                                                            title={`${task.name}: ${task.progress}% (${fmtShort(task.startDate)} → ${fmtShort(task.endDate)})${isCrit ? ' ⚡ Đường găng' : ''}${floatVal > 0 ? ` | Float: ${floatVal}d` : ''}${delayDays > 0 ? ` | Trễ: ${delayDays}d` : ''}${isGateBlocked ? ' 🔒 Chờ nghiệm thu' : ''}`}
+                                                            onClick={() => openEdit(task)}
+                                                            onMouseEnter={(e) => {
+                                                                if (latestPhoto) {
+                                                                    setPhotoTooltip({ x: e.clientX, y: e.clientY, photoUrl: latestPhoto.url, date: latestPhotoLog!.date, taskName: task.name });
+                                                                }
+                                                            }}
+                                                            onMouseLeave={() => setPhotoTooltip(null)}
+                                                            onMouseMove={(e) => {
+                                                                if (latestPhoto) {
+                                                                    setPhotoTooltip({ x: e.clientX, y: e.clientY, photoUrl: latestPhoto.url, date: latestPhotoLog!.date, taskName: task.name });
+                                                                }
+                                                            }}>
+                                                            <div className="absolute inset-0 rounded-md transition-all" style={{ width: `${task.progress}%`, backgroundColor: isGateBlocked ? '#94a3b8' : (isCrit ? '#ef4444' : color), opacity: 0.65 }} />
+                                                            {width > 50 && (
+                                                                <span className="absolute inset-0 flex items-center px-2 text-[9px] font-bold truncate z-10"
+                                                                    style={{ color: task.progress > 50 ? '#fff' : (isGateBlocked ? '#64748b' : (isCrit ? '#ef4444' : color)) }}>
+                                                                    {isGateBlocked && '🔒 '}{task.isMilestone && <Flag size={9} className="mr-1 shrink-0" />}{task.name}
+                                                                </span>
+                                                            )}
+                                                            {/* GĐ2: Drag delta indicator */}
+                                                            {isDragging && dragGhost && dragGhost.deltaDays !== 0 && (
+                                                                <span className={`absolute -top-5 left-1/2 -translate-x-1/2 text-[9px] font-black px-1.5 py-0.5 rounded-full whitespace-nowrap z-30 shadow-sm ${dragGhost.deltaDays > 0 ? 'bg-orange-100 text-orange-700 border border-orange-300' : 'bg-emerald-100 text-emerald-700 border border-emerald-300'
+                                                                    }`}>
+                                                                    {dragGhost.deltaDays > 0 ? '+' : ''}{dragGhost.deltaDays}d
+                                                                </span>
+                                                            )}
+                                                            {/* GĐ2: Weather warning on drag target end date */}
+                                                            {isDragging && dragGhost?.weatherWarn && (
+                                                                <span className="absolute -bottom-5 right-0 text-[8px] font-bold text-amber-700 bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded-full whitespace-nowrap z-30 animate-pulse shadow-sm">
+                                                                    {WEATHER_ICONS[dragGhost.weatherWarn] || '⚠️'} {dragGhost.weatherWarn === 'storm' ? 'Bão!' : 'Mưa!'}
+                                                                </span>
+                                                            )}
+                                                            {/* Float badge */}
+                                                            {!isDragging && floatVal > 0 && width > 60 && (
+                                                                <span className="absolute -top-3.5 right-0 text-[8px] font-bold text-emerald-500 bg-emerald-50 dark:bg-emerald-900/30 px-1 rounded"
+                                                                    title={`Float: ${floatVal} ngày dự phòng`}>
+                                                                    +{floatVal}d
+                                                                </span>
+                                                            )}
+                                                            {/* Delay badge */}
+                                                            {!isDragging && delayDays > 0 && (
+                                                                <span className="absolute -top-3.5 left-0 text-[8px] font-bold text-red-500 bg-red-50 dark:bg-red-900/30 px-1 rounded animate-pulse">
+                                                                    -{delayDays}d
+                                                                </span>
+                                                            )}
+                                                            {!isDragging && hasForecastShift && forecastMeta && (
+                                                                <span className="absolute -bottom-3.5 right-0 text-[8px] font-black text-red-600 bg-red-50 dark:bg-red-900/30 px-1 rounded border border-red-100">
+                                                                    forecast +{forecastMeta.deltaDays}d
+                                                                </span>
+                                                            )}
+                                                            {/* GĐ2: Gate State Machine Badge */}
+                                                            {task.progress >= 100 && task.gateStatus !== 'approved' && (
+                                                                <button
+                                                                    className={`absolute -bottom-5 left-1/2 -translate-x-1/2 flex items-center gap-0.5 text-[7px] font-bold px-1.5 py-0.5 rounded-full border whitespace-nowrap z-20 hover:scale-110 transition-all shadow-sm ${task.gateStatus === 'pending'
+                                                                        ? 'text-amber-700 bg-amber-50 border-amber-300 animate-pulse'
+                                                                        : task.gateStatus === 'rejected'
+                                                                            ? 'text-red-600 bg-red-50 border-red-300'
+                                                                            : 'text-slate-600 bg-white border-slate-300'
+                                                                        }`}
+                                                                    onClick={e => { e.stopPropagation(); setGateModalTask(task); }}
+                                                                    title="Mở quy trình nghiệm thu">
+                                                                    {task.gateStatus === 'pending' && <><Clock size={6} className="inline" /> Chờ duyệt</>}
+                                                                    {task.gateStatus === 'rejected' && <><AlertTriangle size={6} className="inline" /> Từ chối</>}
+                                                                    {(!task.gateStatus || task.gateStatus === 'none') && <><Shield size={6} className="inline" /> Nghiệm thu</>}
+                                                                </button>
+                                                            )}
+                                                            {task.gateStatus === 'approved' && (
+                                                                <button
+                                                                    className="absolute -bottom-3.5 left-1/2 -translate-x-1/2 flex items-center gap-0.5 text-[7px] font-bold text-emerald-600 whitespace-nowrap z-20 hover:underline"
+                                                                    onClick={e => { e.stopPropagation(); setGateModalTask(task); }}
+                                                                    title="Xem chi tiết nghiệm thu">
+                                                                    <CheckCircle2 size={8} className="inline" /> Đã duyệt
+                                                                </button>
+                                                            )}
+                                                            {/* GĐ2: Gate-blocked indicator */}
+                                                            {isGateBlocked && (
+                                                                <span className="absolute -bottom-3.5 left-1/2 -translate-x-1/2 text-[7px] font-bold text-muted-foreground bg-slate-100 px-1.5 rounded-full whitespace-nowrap z-20 border border-border">
+                                                                    <Lock size={7} className="inline mr-0.5" />Chờ gate
+                                                                </span>
+                                                            )}
+                                                            {/* Drag handle — resize bar end date with ripple + ghost + weather */}
+                                                            <div className="absolute right-0 top-0 h-full w-3 cursor-col-resize opacity-0 group-hover/bar:opacity-100 flex items-center justify-center"
+                                                                onMouseDown={e => {
+                                                                    e.stopPropagation();
+                                                                    e.preventDefault();
+                                                                    setDraggingTaskId(task.id);
+                                                                    const startX = e.clientX;
+                                                                    const origEnd = task.endDate;
+                                                                    const origLeft = left;
+                                                                    const origWidth = width;
+                                                                    setDragGhost({ taskId: task.id, origLeft, origWidth, deltaDays: 0, weatherWarn: null });
+                                                                    const onMove = (me: MouseEvent) => {
+                                                                        const dx = me.clientX - startX;
+                                                                        const daysDelta = Math.round(dx / zoom);
                                                                         const newEnd = addDays(origEnd, daysDelta);
-                                                                        if (newEnd > task.startDate) {
-                                                                            handleBarDragEnd(task.id, newEnd);
+                                                                        // Check weather warning for outdoor tasks
+                                                                        let weatherWarn: string | null = null;
+                                                                        if (task.resourceType !== 'machine') {
+                                                                            const endW = weatherMap.get(newEnd);
+                                                                            if (endW === 'rainy' || endW === 'storm') weatherWarn = endW;
+                                                                        }
+                                                                        setDragGhost({ taskId: task.id, origLeft, origWidth, deltaDays: daysDelta, weatherWarn });
+                                                                        if (daysDelta !== 0 && newEnd > task.startDate) {
+                                                                            handleBarDragMove(task.id, newEnd);
+                                                                        }
+                                                                    };
+                                                                    const onUp = (me: MouseEvent) => {
+                                                                        window.removeEventListener('mousemove', onMove);
+                                                                        window.removeEventListener('mouseup', onUp);
+                                                                        const dx = me.clientX - startX;
+                                                                        const daysDelta = Math.round(dx / zoom);
+                                                                        if (daysDelta !== 0) {
+                                                                            const newEnd = addDays(origEnd, daysDelta);
+                                                                            if (newEnd > task.startDate) {
+                                                                                handleBarDragEnd(task.id, newEnd);
+                                                                            } else {
+                                                                                setDraggingTaskId(null);
+                                                                                setDragGhost(null);
+                                                                            }
                                                                         } else {
                                                                             setDraggingTaskId(null);
                                                                             setDragGhost(null);
                                                                         }
-                                                                    } else {
-                                                                        setDraggingTaskId(null);
-                                                                        setDragGhost(null);
-                                                                    }
-                                                                };
-                                                                window.addEventListener('mousemove', onMove);
-                                                                window.addEventListener('mouseup', onUp);
-                                                            }}>
-                                                            <div className="w-1 h-3 rounded bg-white/80" />
+                                                                    };
+                                                                    window.addEventListener('mousemove', onMove);
+                                                                    window.addEventListener('mouseup', onUp);
+                                                                }}>
+                                                                <div className="w-1 h-3 rounded bg-white/80" />
+                                                            </div>
                                                         </div>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        );
-                                    })}
-
-                                    {/* GĐ1: SVG Dependency Arrows */}
-                                    <svg className="absolute top-0 left-0 w-full h-full pointer-events-none z-20" style={{ height: `${taskTree.length * ROW_HEIGHT + GANTT_HEADER_HEIGHT}px` }}>
-                                        <defs>
-                                            <marker id="dep-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-                                                <path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8" />
-                                            </marker>
-                                            <marker id="dep-arrow-crit" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-                                                <path d="M 0 0 L 10 5 L 0 10 z" fill="#ef4444" />
-                                            </marker>
-                                        </defs>
-                                        {taskTree.map(({ task }, idx) => {
-                                            if (!task.dependencies || task.dependencies.length === 0) return null;
-                                            const succY = GANTT_HEADER_HEIGHT + idx * ROW_HEIGHT + ROW_HEIGHT / 2; // center of this row
-                                            const succLeft = ganttOffset + daysBetween(timelineStart, task.startDate) * zoom;
-                                            const succWidth = Math.max((Math.max(task.duration || 0, daysBetween(task.startDate, task.endDate)) || 1) * zoom, zoom);
-
-                                            return task.dependencies.map(dep => {
-                                                const predIdx = taskTree.findIndex(t => t.task.id === dep.taskId);
-                                                if (predIdx < 0) return null;
-                                                const predTask = taskTree[predIdx].task;
-                                                const predY = GANTT_HEADER_HEIGHT + predIdx * ROW_HEIGHT + ROW_HEIGHT / 2;
-                                                const predRight = ganttOffset + daysBetween(timelineStart, predTask.endDate) * zoom;
-                                                const predLeft = ganttOffset + daysBetween(timelineStart, predTask.startDate) * zoom;
-
-                                                const isBothCrit = criticalPathResult?.criticalPath.includes(task.id) && criticalPathResult?.criticalPath.includes(dep.taskId);
-
-                                                // Arrow points based on dependency type
-                                                let x1: number, x2: number;
-                                                if (dep.type === 'FS') { x1 = predRight; x2 = succLeft; }
-                                                else if (dep.type === 'SS') { x1 = predLeft; x2 = succLeft; }
-                                                else if (dep.type === 'FF') { x1 = predRight; x2 = succLeft + succWidth; }
-                                                else { x1 = predLeft; x2 = succLeft + succWidth; }
-
-                                                // Draw an L-shaped path
-                                                const midX = (x1 + x2) / 2;
-                                                const path = `M ${x1} ${predY} L ${midX} ${predY} L ${midX} ${succY} L ${x2} ${succY}`;
-
-                                                return (
-                                                    <path key={`${dep.taskId}-${task.id}`} d={path}
-                                                        stroke={isBothCrit ? '#ef4444' : '#94a3b8'}
-                                                        strokeWidth={isBothCrit ? 2 : 1.5}
-                                                        fill="none"
-                                                        strokeDasharray={dep.type !== 'FS' ? '4 2' : undefined}
-                                                        markerEnd={`url(#${isBothCrit ? 'dep-arrow-crit' : 'dep-arrow'})`}
-                                                        opacity={0.7} />
-                                                );
-                                            });
-                                        })}
-                                    </svg>
-
-                                    {/* GĐ2: Weather Overlay */}
-                                    <div className="absolute top-0 left-0 h-full w-full pointer-events-none z-[5]">
-                                        {Array.from({ length: totalDays + 1 }, (_, i) => {
-                                            const d = addDays(timelineStart, i);
-                                            const w = weatherMap.get(d);
-                                            if (!w || w === 'sunny' || w === 'cloudy') return null;
-                                            return (
-                                                <div key={i} className={`absolute top-0 h-full ${WEATHER_COLORS[w] || ''} pointer-events-auto`}
-                                                    style={{ left: `${ganttOffset + i * zoom}px`, width: `${zoom}px`, borderLeft: `2px solid ${w === 'storm' ? '#fca5a5' : '#93c5fd'}` }}
-                                                    title={`Thời tiết ngày ${d}: ${WEATHER_ICONS[w] || ''} ${w === 'rainy' ? 'Mưa' : 'Bão'} (Nguy cơ chậm tiến độ)`}>
-                                                    <span className="absolute top-1 left-1/2 -translate-x-1/2 text-[10px] drop-shadow">{WEATHER_ICONS[w]}</span>
+                                                    )}
                                                 </div>
                                             );
                                         })}
-                                    </div>
-                                </div>
 
-                                {/* GĐ2: Workload Histogram — Enhanced */}
-                                {showWorkload && workloadData.length > 0 && (() => {
-                                    // Dynamic threshold from daily_logs max worker_count
-                                    const maxLogged = Math.max(1, ...dailyLogs.map(l => l.workerCount || 0));
-                                    const threshold = maxLogged > 0 ? maxLogged : Math.ceil(Math.max(1, ...workloadData.map(d => d.total)) * 0.75);
-                                    const maxVal = Math.max(threshold + 2, ...workloadData.map(d => d.total));
+                                        {/* GĐ1: SVG Dependency Arrows */}
+                                        <svg className="absolute top-0 left-0 w-full h-full pointer-events-none z-20" style={{ height: `${taskTree.length * ROW_HEIGHT + GANTT_HEADER_HEIGHT}px` }}>
+                                            <defs>
+                                                <marker id="dep-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                                                    <path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8" />
+                                                </marker>
+                                                <marker id="dep-arrow-crit" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                                                    <path d="M 0 0 L 10 5 L 0 10 z" fill="#ef4444" />
+                                                </marker>
+                                            </defs>
+                                            {taskTree.map(({ task }, idx) => {
+                                                if (!task.dependencies || task.dependencies.length === 0) return null;
+                                                const succY = GANTT_HEADER_HEIGHT + idx * ROW_HEIGHT + ROW_HEIGHT / 2; // center of this row
+                                                const succLeft = ganttOffset + daysBetween(timelineStart, task.startDate) * zoom;
+                                                const succWidth = Math.max((Math.max(task.duration || 0, daysBetween(task.startDate, task.endDate)) || 1) * zoom, zoom);
 
-                                    return (
-                                        <div className="border-t-2 border-border dark:border-slate-700 pt-2 pb-1 w-full">
-                                            <div className="px-2 mb-1 flex items-center gap-3 flex-wrap">
-                                                <span className="text-[9px] font-black text-muted-foreground uppercase tracking-wider">📊 Phân bổ nguồn lực</span>
-                                                <span className="flex items-center gap-1 text-[8px] text-blue-500"><span className="w-2 h-2 rounded bg-blue-400" /> Nhân công</span>
-                                                <span className="flex items-center gap-1 text-[8px] text-amber-500"><span className="w-2 h-2 rounded bg-amber-400" /> Máy</span>
-                                                <span className="flex items-center gap-1 text-[8px] text-violet-500"><span className="w-2 h-2 rounded bg-violet-400" /> Chuyên gia</span>
-                                                <span className="flex items-center gap-1 text-[8px] text-red-400"><span className="w-2 h-[1px] bg-red-400 border-t border-dashed border-red-400" style={{ width: '10px' }} /> Ngưỡng: {threshold} người</span>
-                                            </div>
-                                            <div className="relative h-20 w-full">
-                                                {workloadData.map((d, i) => {
-                                                    const dayOffset = daysBetween(timelineStart, d.date);
-                                                    if (dayOffset < 0 || dayOffset > totalDays) return null;
-                                                    const barH = (d.total / maxVal) * 72;
-                                                    const wH = (d.workers / maxVal) * 72;
-                                                    const mH = (d.machines / maxVal) * 72;
-                                                    const sH = (d.specialists / maxVal) * 72;
-                                                    const isOverload = d.total > threshold;
+                                                return task.dependencies.map(dep => {
+                                                    const predIdx = taskTree.findIndex(t => t.task.id === dep.taskId);
+                                                    if (predIdx < 0) return null;
+                                                    const predTask = taskTree[predIdx].task;
+                                                    const predY = GANTT_HEADER_HEIGHT + predIdx * ROW_HEIGHT + ROW_HEIGHT / 2;
+                                                    const predRight = ganttOffset + daysBetween(timelineStart, predTask.endDate) * zoom;
+                                                    const predLeft = ganttOffset + daysBetween(timelineStart, predTask.startDate) * zoom;
+
+                                                    const isBothCrit = criticalPathResult?.criticalPath.includes(task.id) && criticalPathResult?.criticalPath.includes(dep.taskId);
+
+                                                    // Arrow points based on dependency type
+                                                    let x1: number, x2: number;
+                                                    if (dep.type === 'FS') { x1 = predRight; x2 = succLeft; }
+                                                    else if (dep.type === 'SS') { x1 = predLeft; x2 = succLeft; }
+                                                    else if (dep.type === 'FF') { x1 = predRight; x2 = succLeft + succWidth; }
+                                                    else { x1 = predLeft; x2 = succLeft + succWidth; }
+
+                                                    // Draw an L-shaped path
+                                                    const midX = (x1 + x2) / 2;
+                                                    const path = `M ${x1} ${predY} L ${midX} ${predY} L ${midX} ${succY} L ${x2} ${succY}`;
+
                                                     return (
-                                                        <div key={i}
-                                                            className={`absolute bottom-0 group/wbar cursor-default ${isOverload ? 'z-[2]' : ''}`}
-                                                            style={{ left: `${ganttOffset + dayOffset * zoom}px`, width: `${Math.max(zoom - 1, 2)}px` }}>
-                                                            <div className={`flex flex-col-reverse rounded-t-sm ${isOverload ? 'animate-pulse' : ''}`} style={{ height: `${barH}px` }}>
-                                                                {wH > 0 && <div className={`rounded-t-sm ${isOverload ? 'bg-red-400/80' : 'bg-blue-400/60'}`} style={{ height: `${wH}px` }} />}
-                                                                {mH > 0 && <div className={isOverload ? 'bg-red-300/80' : 'bg-amber-400/60'} style={{ height: `${mH}px` }} />}
-                                                                {sH > 0 && <div className={`rounded-t-sm ${isOverload ? 'bg-red-500/80' : 'bg-violet-400/60'}`} style={{ height: `${sH}px` }} />}
-                                                            </div>
-                                                            {/* Hover tooltip */}
-                                                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 opacity-0 group-hover/wbar:opacity-100 pointer-events-none transition-opacity z-30">
-                                                                <div className="bg-slate-800 text-white text-[8px] px-2 py-1 rounded-lg shadow-lg whitespace-nowrap font-medium">
-                                                                    <div className="font-bold text-[9px] mb-0.5">{fmtShort(d.date)}</div>
-                                                                    <div>👷 {d.workers} CN • 🔧 {d.machines} Máy • 🧑‍🔬 {d.specialists} CG</div>
-                                                                    <div className="font-bold mt-0.5">Tổng: {d.total}{isOverload ? ' ⚠️ QUÁ TẢI' : ''}</div>
+                                                        <path key={`${dep.taskId}-${task.id}`} d={path}
+                                                            stroke={isBothCrit ? '#ef4444' : '#94a3b8'}
+                                                            strokeWidth={isBothCrit ? 2 : 1.5}
+                                                            fill="none"
+                                                            strokeDasharray={dep.type !== 'FS' ? '4 2' : undefined}
+                                                            markerEnd={`url(#${isBothCrit ? 'dep-arrow-crit' : 'dep-arrow'})`}
+                                                            opacity={0.7} />
+                                                    );
+                                                });
+                                            })}
+                                        </svg>
+
+                                        {/* GĐ2: Weather Overlay */}
+                                        <div className="absolute top-0 left-0 h-full w-full pointer-events-none z-[5]">
+                                            {Array.from({ length: totalDays + 1 }, (_, i) => {
+                                                const d = addDays(timelineStart, i);
+                                                const w = weatherMap.get(d);
+                                                if (!w || w === 'sunny' || w === 'cloudy') return null;
+                                                return (
+                                                    <div key={i} className={`absolute top-0 h-full ${WEATHER_COLORS[w] || ''} pointer-events-auto`}
+                                                        style={{ left: `${ganttOffset + i * zoom}px`, width: `${zoom}px`, borderLeft: `2px solid ${w === 'storm' ? '#fca5a5' : '#93c5fd'}` }}
+                                                        title={`Thời tiết ngày ${d}: ${WEATHER_ICONS[w] || ''} ${w === 'rainy' ? 'Mưa' : 'Bão'} (Nguy cơ chậm tiến độ)`}>
+                                                        <span className="absolute top-1 left-1/2 -translate-x-1/2 text-[10px] drop-shadow">{WEATHER_ICONS[w]}</span>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+
+                                    {/* GĐ2: Workload Histogram — Enhanced */}
+                                    {showWorkload && workloadData.length > 0 && (() => {
+                                        // Dynamic threshold from daily_logs max worker_count
+                                        const maxLogged = Math.max(1, ...dailyLogs.map(l => l.workerCount || 0));
+                                        const threshold = maxLogged > 0 ? maxLogged : Math.ceil(Math.max(1, ...workloadData.map(d => d.total)) * 0.75);
+                                        const maxVal = Math.max(threshold + 2, ...workloadData.map(d => d.total));
+
+                                        return (
+                                            <div className="border-t-2 border-border dark:border-slate-700 pt-2 pb-1 w-full">
+                                                <div className="px-2 mb-1 flex items-center gap-3 flex-wrap">
+                                                    <span className="text-[9px] font-black text-muted-foreground uppercase tracking-wider">📊 Phân bổ nguồn lực</span>
+                                                    <span className="flex items-center gap-1 text-[8px] text-blue-500"><span className="w-2 h-2 rounded bg-blue-400" /> Nhân công</span>
+                                                    <span className="flex items-center gap-1 text-[8px] text-amber-500"><span className="w-2 h-2 rounded bg-amber-400" /> Máy</span>
+                                                    <span className="flex items-center gap-1 text-[8px] text-violet-500"><span className="w-2 h-2 rounded bg-violet-400" /> Chuyên gia</span>
+                                                    <span className="flex items-center gap-1 text-[8px] text-red-400"><span className="w-2 h-[1px] bg-red-400 border-t border-dashed border-red-400" style={{ width: '10px' }} /> Ngưỡng: {threshold} người</span>
+                                                </div>
+                                                <div className="relative h-20 w-full">
+                                                    {workloadData.map((d, i) => {
+                                                        const dayOffset = daysBetween(timelineStart, d.date);
+                                                        if (dayOffset < 0 || dayOffset > totalDays) return null;
+                                                        const barH = (d.total / maxVal) * 72;
+                                                        const wH = (d.workers / maxVal) * 72;
+                                                        const mH = (d.machines / maxVal) * 72;
+                                                        const sH = (d.specialists / maxVal) * 72;
+                                                        const isOverload = d.total > threshold;
+                                                        return (
+                                                            <div key={i}
+                                                                className={`absolute bottom-0 group/wbar cursor-default ${isOverload ? 'z-[2]' : ''}`}
+                                                                style={{ left: `${ganttOffset + dayOffset * zoom}px`, width: `${Math.max(zoom - 1, 2)}px` }}>
+                                                                <div className={`flex flex-col-reverse rounded-t-sm ${isOverload ? 'animate-pulse' : ''}`} style={{ height: `${barH}px` }}>
+                                                                    {wH > 0 && <div className={`rounded-t-sm ${isOverload ? 'bg-red-400/80' : 'bg-blue-400/60'}`} style={{ height: `${wH}px` }} />}
+                                                                    {mH > 0 && <div className={isOverload ? 'bg-red-300/80' : 'bg-amber-400/60'} style={{ height: `${mH}px` }} />}
+                                                                    {sH > 0 && <div className={`rounded-t-sm ${isOverload ? 'bg-red-500/80' : 'bg-violet-400/60'}`} style={{ height: `${sH}px` }} />}
+                                                                </div>
+                                                                {/* Hover tooltip */}
+                                                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 opacity-0 group-hover/wbar:opacity-100 pointer-events-none transition-opacity z-30">
+                                                                    <div className="bg-slate-800 text-white text-[8px] px-2 py-1 rounded-lg shadow-lg whitespace-nowrap font-medium">
+                                                                        <div className="font-bold text-[9px] mb-0.5">{fmtShort(d.date)}</div>
+                                                                        <div>👷 {d.workers} CN • 🔧 {d.machines} Máy • 🧑‍🔬 {d.specialists} CG</div>
+                                                                        <div className="font-bold mt-0.5">Tổng: {d.total}{isOverload ? ' ⚠️ QUÁ TẢI' : ''}</div>
+                                                                    </div>
                                                                 </div>
                                                             </div>
-                                                        </div>
-                                                    );
-                                                })}
-                                                {/* Dynamic threshold line */}
-                                                <div className="absolute right-0 border-t-2 border-dashed border-red-400/60 dark:border-red-600/60"
-                                                    style={{ bottom: `${(threshold / maxVal) * 72}px`, left: `${ganttOffset}px` }}>
-                                                    <span className="absolute right-1 -top-3 text-[7px] font-bold text-red-400 bg-white dark:bg-slate-800 px-1 rounded">
-                                                        ⚠️ Quá tải ({threshold})
-                                                    </span>
+                                                        );
+                                                    })}
+                                                    {/* Dynamic threshold line */}
+                                                    <div className="absolute right-0 border-t-2 border-dashed border-red-400/60 dark:border-red-600/60"
+                                                        style={{ bottom: `${(threshold / maxVal) * 72}px`, left: `${ganttOffset}px` }}>
+                                                        <span className="absolute right-1 -top-3 text-[7px] font-bold text-red-400 bg-white dark:bg-slate-800 px-1 rounded">
+                                                            ⚠️ Quá tải ({threshold})
+                                                        </span>
+                                                    </div>
+                                                    {/* Overload count summary */}
+                                                    {(() => {
+                                                        const overloadDays = workloadData.filter(d => d.total > threshold).length;
+                                                        return overloadDays > 0 ? (
+                                                            <div className="absolute top-0 text-[8px] font-bold text-red-500 bg-red-50 dark:bg-red-900/20 px-1.5 py-0.5 rounded-b shadow-sm animate-pulse"
+                                                                style={{ left: `${ganttOffset + 4}px` }}>
+                                                                🔴 {overloadDays} ngày quá tải
+                                                            </div>
+                                                        ) : null;
+                                                    })()}
                                                 </div>
-                                                {/* Overload count summary */}
-                                                {(() => {
-                                                    const overloadDays = workloadData.filter(d => d.total > threshold).length;
-                                                    return overloadDays > 0 ? (
-                                                        <div className="absolute top-0 text-[8px] font-bold text-red-500 bg-red-50 dark:bg-red-900/20 px-1.5 py-0.5 rounded-b shadow-sm animate-pulse"
-                                                            style={{ left: `${ganttOffset + 4}px` }}>
-                                                            🔴 {overloadDays} ngày quá tải
-                                                        </div>
-                                                    ) : null;
-                                                })()}
                                             </div>
-                                        </div>
-                                    );
-                                })()}
-                            </div>
-                        )}
+                                        );
+                                    })()}
+                                </div>
+                            )}
+                        </div>
                     </div>
-                </div>
                 )}
             </div>
 
@@ -3990,8 +3988,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                             <div className="space-y-2">
                                 {aiInsights.map((insight, i) => (
                                     <div key={i} className={`flex items-start gap-3 p-3 rounded-xl border ${insight.severity === 'high' ? 'bg-red-50/50 dark:bg-red-900/10 border-red-200 dark:border-red-800' :
-                                            insight.severity === 'medium' ? 'bg-amber-50/50 dark:bg-amber-900/10 border-amber-200 dark:border-amber-800' :
-                                                'bg-slate-50 dark:bg-slate-700/30 border-border dark:border-slate-600'
+                                        insight.severity === 'medium' ? 'bg-amber-50/50 dark:bg-amber-900/10 border-amber-200 dark:border-amber-800' :
+                                            'bg-slate-50 dark:bg-slate-700/30 border-border dark:border-slate-600'
                                         }`}>
                                         <span className="text-lg shrink-0 mt-0.5">{insight.icon}</span>
                                         <div className="flex-1 min-w-0">
@@ -3999,8 +3997,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                             <p className="text-[10px] text-muted-foreground dark:text-muted-foreground mt-0.5 leading-relaxed">{insight.desc}</p>
                                         </div>
                                         <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full shrink-0 ${insight.severity === 'high' ? 'bg-red-100 text-red-600' :
-                                                insight.severity === 'medium' ? 'bg-amber-100 text-amber-600' :
-                                                    'bg-slate-100 text-muted-foreground'
+                                            insight.severity === 'medium' ? 'bg-amber-100 text-amber-600' :
+                                                'bg-slate-100 text-muted-foreground'
                                             }`}>{insight.severity === 'high' ? 'Cao' : insight.severity === 'medium' ? 'TB' : 'Thấp'}</span>
                                     </div>
                                 ))}
@@ -4045,7 +4043,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                 </div>
                                 <div>
                                     <label className="text-[10px] font-bold text-muted-foreground dark:text-muted-foreground uppercase block mb-1.5">KL tạm tính</label>
-                                    <input type="number" min={0} step="0.001" value={fProvisionalQuantity} onChange={e => setFProvisionalQuantity(e.target.value)} placeholder="0"
+                                    <input type="text" inputMode="decimal" value={fProvisionalQuantity} onChange={e => setFProvisionalQuantity(e.target.value)} placeholder="0"
                                         className="w-full px-3.5 py-2.5 rounded-xl border border-border dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-orange-500 outline-none" />
                                 </div>
                                 <div>
@@ -4331,7 +4329,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
 
                             <div>
                                 <label className="text-[10px] font-bold text-muted-foreground uppercase block mb-1.5">Khối lượng hoàn thành</label>
-                                <input type="number" min={0} step="0.001" value={completionQty} onChange={e => setCompletionQty(e.target.value)}
+                                <input type="text" inputMode="decimal" value={completionQty} onChange={e => setCompletionQty(e.target.value)}
                                     className="w-full px-3.5 py-2.5 rounded-xl border border-border dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-amber-500 outline-none" />
                             </div>
                             <div>

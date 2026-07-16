@@ -619,10 +619,12 @@ const sameWorkBoqMetadata = (a: ProjectWorkBoqItem, b: ProjectWorkBoqItem): bool
     normalizeText(a.wbsCode) === normalizeText(b.wbsCode) &&
     normalizeText(a.name) === normalizeText(b.name) &&
     normalizeText(a.parentId) === normalizeText(b.parentId) &&
+    normalizeText(a.unit) === normalizeText(b.unit) &&
+    Number(a.plannedQty || 0) === Number(b.plannedQty || 0) &&
     Number(a.sortOrder || 0) === Number(b.sortOrder || 0) &&
     a.syncStatus === b.syncStatus;
 
-const buildWorkBoqRowsFromTasks = (
+export const buildWorkBoqRowsFromTasks = (
     projectIdOrSiteId: string,
     constructionSiteId: string | null | undefined,
     tasks: ProjectTask[],
@@ -655,10 +657,10 @@ const buildWorkBoqRowsFromTasks = (
                 parentId,
                 wbsCode: task.wbsCode || null,
                 name: task.name,
-                unit: existing?.unit ?? task.fallbackUnit ?? '',
-                plannedQty: existing?.plannedQty ?? task.provisionalQuantity ?? 0,
+                unit: task.fallbackUnit || existing?.unit || '',
+                plannedQty: task.provisionalQuantity ?? existing?.plannedQty ?? 0,
                 unitPrice: existing?.unitPrice ?? 0,
-                totalAmount: (existing?.plannedQty ?? task.provisionalQuantity ?? 0) * (existing?.unitPrice ?? 0),
+                totalAmount: (task.provisionalQuantity ?? existing?.plannedQty ?? 0) * (existing?.unitPrice ?? 0),
                 sortOrder: task.order ?? index,
                 syncStatus: 'synced',
                 notes: existing?.notes || null,

@@ -1982,7 +1982,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             title: 'Đồng bộ với tiến độ',
             targetName: 'BOQ triển khai',
             subtitle: summarizeSync(preview),
-            warningText: 'Hệ thống chỉ cập nhật mã WBS, tên, cấp cha và thứ tự. KL, đơn giá và vật tư đã nhập tay sẽ được giữ nguyên.',
+            warningText: 'Hệ thống cập nhật mã WBS, tên, cấp cha, đơn vị và KL chính theo Tiến độ. Đơn giá, vật tư và ghi chú BOQ được giữ nguyên.',
             confirmText: 'Đồng bộ',
             intent: 'success',
             countdownSeconds: 0,
