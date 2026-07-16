@@ -26,6 +26,7 @@ import {
   useAuth,
 } from './context/AuthContext';
 import { selectApplicationShell } from './context/authState';
+import { UserSessionTelemetryHost } from './hooks/useUserSessionTelemetry';
 
 // Lazy load all page components for code splitting
 const Dashboard = React.lazy(() => import('./pages/Dashboard'));
@@ -450,6 +451,7 @@ const PublicLoginRoute: React.FC = () => {
 
 export const AuthenticatedApplication: React.FC = () => (
   <AuthenticatedBoundary>
+    <UserSessionTelemetryHost />
     <ConfirmProvider>
       <AppProvider>
         <WorkflowProvider>

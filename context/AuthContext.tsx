@@ -13,8 +13,15 @@ import { AlertTriangle, LogOut, RefreshCw } from 'lucide-react';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { MOCK_USERS } from '../constants';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { userActivityService } from '../lib/userActivityService';
+import {
+  performLocalTelemetryLogout,
+  shouldEndTelemetrySessionOnServer,
+  userSessionTelemetryLifecycle,
+} from '../lib/userSessionTelemetryLifecycle';
 import type { User } from '../types';
 import {
+  AuthoritativeAuthEpoch,
   AuthAttemptCoordinator,
   AuthResolutionError,
   authReducer,
@@ -24,7 +31,10 @@ import {
   parseStoredMockUser,
   resolveCandidateSession,
   serializeMockUser,
+  shouldRefreshCurrentProfile,
   shouldRevalidateInBackground,
+  signOutAndConfirmLocalSessionCleared,
+  type AuthEpochSnapshot,
   type AuthFailure,
   type AuthProfileGateway,
   type AuthState,
@@ -139,59 +149,86 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [state, dispatch] = useReducer(authReducer, undefined, createInitialAuthState);
   const stateRef = useRef<AuthState>(state);
   const attemptsRef = useRef(new AuthAttemptCoordinator());
+  const authEpochRef = useRef(new AuthoritativeAuthEpoch());
 
-  useEffect(() => {
-    stateRef.current = state;
-  }, [state]);
+  const dispatchAuth = useCallback((action: Parameters<typeof authReducer>[1]) => {
+    stateRef.current = authReducer(stateRef.current, action);
+    dispatch(action);
+  }, []);
+
+  const handleRemoteAuthLoss = useCallback(() => {
+    userSessionTelemetryLifecycle.handleRemoteAuthLoss(() => {
+      userActivityService.clearAllStoredSessionIds();
+    });
+  }, []);
 
   const commitCandidateSession = useCallback(async (
     session: Session,
     attempt: number,
+    authEpoch: AuthEpochSnapshot,
     showLoading = true,
   ): Promise<User> => {
-    if (!attemptsRef.current.isCurrent(attempt)) {
+    if (
+      !attemptsRef.current.isCurrent(attempt)
+      || !authEpochRef.current.canResolve(authEpoch)
+    ) {
       throw new Error('Auth verification was superseded by a newer auth event');
     }
-    if (showLoading) dispatch({ type: 'VERIFYING_SESSION', session });
+    if (showLoading) dispatchAuth({ type: 'VERIFYING_SESSION', session });
     try {
       const user = await resolveCandidateSession(session, authGateway);
-      if (!attemptsRef.current.isCurrent(attempt)) {
+      if (
+        !attemptsRef.current.isCurrent(attempt)
+        || !authEpochRef.current.canResolve(authEpoch)
+      ) {
         throw new Error('Auth verification was superseded by a newer auth event');
       }
-      dispatch({ type: 'AUTHENTICATED', session, user });
+      dispatchAuth({ type: 'AUTHENTICATED', session, user });
       return user;
     } catch (error) {
-      if (attemptsRef.current.isCurrent(attempt)) {
-        dispatch({ type: 'FAILED', error: toAuthFailure(error) });
+      if (
+        attemptsRef.current.isCurrent(attempt)
+        && authEpochRef.current.canResolve(authEpoch)
+      ) {
+        handleRemoteAuthLoss();
+        dispatchAuth({ type: 'FAILED', error: toAuthFailure(error) });
       }
       throw error;
     }
-  }, []);
+  }, [dispatchAuth, handleRemoteAuthLoss]);
 
   const loadCurrentSession = useCallback(async (): Promise<void> => {
     if (!isSupabaseConfigured) {
       const mockUser = loadStoredMockUser();
-      if (mockUser) dispatch({ type: 'AUTHENTICATED', session: null, user: mockUser });
-      else dispatch({ type: 'NO_SESSION' });
+      handleRemoteAuthLoss();
+      if (mockUser) dispatchAuth({ type: 'AUTHENTICATED', session: null, user: mockUser });
+      else dispatchAuth({ type: 'NO_SESSION' });
       return;
     }
 
-    const attempt = attemptsRef.current.begin();
+    const requestEpoch = authEpochRef.current.version;
     try {
       const { data, error } = await supabase.auth.getSession();
-      if (!attemptsRef.current.isCurrent(attempt)) return;
+      if (!authEpochRef.current.isVersion(requestEpoch)) return;
       if (error) throw error;
       if (!data.session) {
-        dispatch({ type: 'NO_SESSION' });
+        authEpochRef.current.acceptAuthoritativeNoSession();
+        attemptsRef.current.begin();
+        handleRemoteAuthLoss();
+        dispatchAuth({ type: 'NO_SESSION' });
         return;
       }
-      await commitCandidateSession(data.session, attempt);
+      const authEpoch = authEpochRef.current.acceptAuthoritativeSession(data.session.access_token);
+      const attempt = attemptsRef.current.begin();
+      await commitCandidateSession(data.session, attempt, authEpoch);
     } catch (error) {
-      if (attemptsRef.current.isCurrent(attempt)) {
-        dispatch({ type: 'FAILED', error: toAuthFailure(error) });
+      if (authEpochRef.current.isVersion(requestEpoch)) {
+        attemptsRef.current.begin();
+        handleRemoteAuthLoss();
+        dispatchAuth({ type: 'FAILED', error: toAuthFailure(error) });
       }
     }
-  }, [commitCandidateSession]);
+  }, [commitCandidateSession, dispatchAuth, handleRemoteAuthLoss]);
 
   useEffect(() => {
     if (!isSupabaseConfigured) {
@@ -202,10 +239,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const scheduledVerifications = new Set<ReturnType<typeof setTimeout>>();
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_OUT' || !session) {
+        authEpochRef.current.observeAuthEvent(null);
         attemptsRef.current.begin();
-        dispatch({ type: 'NO_SESSION' });
+        handleRemoteAuthLoss();
+        dispatchAuth({ type: 'NO_SESSION' });
         return;
       }
+
+      const authEpoch = authEpochRef.current.observeAuthEvent(session.access_token);
+      if (!authEpoch) return;
 
       if (
         stateRef.current.status === 'authenticated'
@@ -218,7 +260,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const showLoading = !shouldRevalidateInBackground(stateRef.current, session);
       const timeoutId = globalThis.setTimeout(() => {
         scheduledVerifications.delete(timeoutId);
-        void commitCandidateSession(session, attempt, showLoading).catch(() => undefined);
+        void commitCandidateSession(session, attempt, authEpoch, showLoading).catch(() => undefined);
       }, 0);
       scheduledVerifications.add(timeoutId);
     });
@@ -231,7 +273,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       scheduledVerifications.clear();
       subscription.unsubscribe();
     };
-  }, [commitCandidateSession, loadCurrentSession]);
+  }, [commitCandidateSession, dispatchAuth, handleRemoteAuthLoss, loadCurrentSession]);
 
   const login = useCallback(async (email: string, password: string): Promise<User> => {
     const normalizedEmail = email.trim().toLowerCase();
@@ -246,7 +288,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         window.localStorage.setItem(MOCK_STORAGE_KEY, serializeMockUser(mockUser));
       }
       attemptsRef.current.begin();
-      dispatch({ type: 'AUTHENTICATED', session: null, user: mockUser });
+      dispatchAuth({ type: 'AUTHENTICATED', session: null, user: mockUser });
       return mockUser;
     }
 
@@ -257,25 +299,55 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (error) throw error;
     if (!data.session) throw new Error('Supabase không trả về phiên đăng nhập.');
 
+    const authEpoch = authEpochRef.current.acceptAuthoritativeSession(data.session.access_token);
     const attempt = attemptsRef.current.begin();
-    return commitCandidateSession(data.session, attempt);
-  }, [commitCandidateSession]);
+    return commitCandidateSession(data.session, attempt, authEpoch);
+  }, [commitCandidateSession, dispatchAuth]);
 
   const logout = useCallback(async (): Promise<void> => {
+    const authState = stateRef.current;
+    const shouldEndServerSession = shouldEndTelemetrySessionOnServer(
+      authState.status,
+      authState.user,
+      authState.session,
+    );
+    authEpochRef.current.beginLogoutIntent();
     attemptsRef.current.begin();
-    dispatch({ type: 'SIGNING_OUT' });
-    if (typeof window !== 'undefined') window.localStorage.removeItem(MOCK_STORAGE_KEY);
+    dispatchAuth({ type: 'SIGNING_OUT' });
 
     try {
-      if (isSupabaseConfigured) {
-        const { error } = await supabase.auth.signOut();
-        if (error) throw error;
-      }
-    } finally {
+      await performLocalTelemetryLogout({
+        lifecycle: userSessionTelemetryLifecycle,
+        userId: authState.user?.id,
+        shouldEndServerSession,
+        signOut: async () => {
+          if (!isSupabaseConfigured) return;
+          await signOutAndConfirmLocalSessionCleared({
+            signOut: () => supabase.auth.signOut(),
+            getSession: () => supabase.auth.getSession(),
+          });
+        },
+        clearAppOwnedStorage: () => {
+          userActivityService.clearAllStoredSessionIds();
+          if (typeof window !== 'undefined') window.localStorage.removeItem(MOCK_STORAGE_KEY);
+        },
+      });
+      authEpochRef.current.acceptAuthoritativeNoSession();
       attemptsRef.current.begin();
-      dispatch({ type: 'NO_SESSION' });
+      dispatchAuth({ type: 'NO_SESSION' });
+    } catch (cause) {
+      attemptsRef.current.begin();
+      dispatchAuth({
+        type: 'FAILED',
+        error: {
+          code: 'sign_out_failed',
+          message: 'Không thể đăng xuất an toàn. Phiên cục bộ vẫn được giữ; vui lòng thử lại.',
+          cause,
+        },
+      });
+      throw cause;
     }
-  }, []);
+  }, [dispatchAuth]);
 
   const retry = useCallback(async (): Promise<void> => {
     await loadCurrentSession();
@@ -285,15 +357,65 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!isSupabaseConfigured) {
       const mockUser = loadStoredMockUser() || stateRef.current.user;
       if (!mockUser) throw new Error('Không có hồ sơ mock đang đăng nhập.');
-      dispatch({ type: 'AUTHENTICATED', session: null, user: mockUser });
+      dispatchAuth({ type: 'AUTHENTICATED', session: null, user: mockUser });
       return mockUser;
     }
 
     const session = stateRef.current.session;
     if (!session) throw new Error('Không có phiên đăng nhập để tải lại hồ sơ.');
+    const authEpoch = authEpochRef.current.captureCandidate(session.access_token);
+    if (!authEpoch) {
+      throw new Error('Auth refresh was superseded by a newer auth event');
+    }
     const attempt = attemptsRef.current.begin();
-    return commitCandidateSession(session, attempt, false);
-  }, [commitCandidateSession]);
+    return commitCandidateSession(session, attempt, authEpoch, false);
+  }, [commitCandidateSession, dispatchAuth]);
+
+  useEffect(() => {
+    const profileId = state.user?.id;
+    if (
+      !isSupabaseConfigured
+      || state.status !== 'authenticated'
+      || !profileId
+    ) {
+      return undefined;
+    }
+
+    let scheduledRefresh: ReturnType<typeof setTimeout> | null = null;
+    const scheduleProfileRefresh = (payload: {
+      eventType?: string;
+      new?: { id?: unknown };
+      old?: { id?: unknown };
+    }) => {
+      if (!shouldRefreshCurrentProfile(payload, profileId)) return;
+      if (scheduledRefresh) globalThis.clearTimeout(scheduledRefresh);
+      scheduledRefresh = globalThis.setTimeout(() => {
+        scheduledRefresh = null;
+        void refreshProfile().catch(() => undefined);
+      }, 0);
+    };
+    const channel = supabase
+      .channel(`auth-current-profile:${profileId}`)
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'users',
+        filter: `id=eq.${profileId}`,
+      }, scheduleProfileRefresh)
+      // Supabase Realtime cannot filter DELETE events. Subscribe without a
+      // server filter, then accept only the exact old primary key locally.
+      .on('postgres_changes', {
+        event: 'DELETE',
+        schema: 'public',
+        table: 'users',
+      }, scheduleProfileRefresh)
+      .subscribe();
+
+    return () => {
+      if (scheduledRefresh) globalThis.clearTimeout(scheduledRefresh);
+      void supabase.removeChannel(channel);
+    };
+  }, [refreshProfile, state.status, state.user?.id]);
 
   const value = useMemo<AuthContextValue>(() => ({
     status: state.status,

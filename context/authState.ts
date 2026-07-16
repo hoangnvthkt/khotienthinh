@@ -17,7 +17,8 @@ export interface AuthFailure {
     | 'profile_inactive'
     | 'profile_mismatch'
     | 'invalid_profile_id'
-    | 'profile_load_failed';
+    | 'profile_load_failed'
+    | 'sign_out_failed';
   message: string;
   cause?: unknown;
 }
@@ -79,6 +80,118 @@ export class AuthAttemptCoordinator {
     return attempt === this.currentAttempt;
   }
 }
+
+export interface AuthEpochSnapshot {
+  epoch: number;
+  accessToken: string;
+}
+
+export class AuthoritativeAuthEpoch {
+  private epoch = 0;
+  private latestAuthEventToken: string | null | undefined;
+  private logoutIntent = false;
+
+  get version(): number {
+    return this.epoch;
+  }
+
+  isVersion(version: number): boolean {
+    return version === this.epoch;
+  }
+
+  acceptAuthoritativeSession(accessToken: string): AuthEpochSnapshot {
+    this.epoch += 1;
+    this.logoutIntent = false;
+    this.latestAuthEventToken = accessToken;
+    return { epoch: this.epoch, accessToken };
+  }
+
+  acceptAuthoritativeNoSession(): void {
+    this.epoch += 1;
+    this.logoutIntent = false;
+    this.latestAuthEventToken = null;
+  }
+
+  observeAuthEvent(accessToken: string | null): AuthEpochSnapshot | null {
+    this.epoch += 1;
+    if (this.logoutIntent && accessToken !== null) {
+      // A refresh/sign-in event emitted after a failed logout must not resurrect
+      // the protected tree until an explicit retry or a new login is verified.
+      return null;
+    }
+    this.logoutIntent = false;
+    this.latestAuthEventToken = accessToken;
+    return accessToken === null
+      ? null
+      : { epoch: this.epoch, accessToken };
+  }
+
+  beginLogoutIntent(): void {
+    this.epoch += 1;
+    this.logoutIntent = true;
+  }
+
+  captureCandidate(accessToken: string): AuthEpochSnapshot | null {
+    if (
+      this.logoutIntent
+      || this.latestAuthEventToken === null
+      || (
+        this.latestAuthEventToken !== undefined
+        && this.latestAuthEventToken !== accessToken
+      )
+    ) {
+      return null;
+    }
+    return { epoch: this.epoch, accessToken };
+  }
+
+  canResolve(snapshot: AuthEpochSnapshot): boolean {
+    return (
+      !this.logoutIntent
+      && snapshot.epoch === this.epoch
+      && this.latestAuthEventToken !== null
+      && (
+        this.latestAuthEventToken === undefined
+        || this.latestAuthEventToken === snapshot.accessToken
+      )
+    );
+  }
+}
+
+interface SupportedSignOutGateway {
+  signOut(): Promise<{ error: unknown | null }>;
+  getSession(): Promise<{
+    data: { session: Session | null };
+    error: unknown | null;
+  }>;
+}
+
+export const signOutAndConfirmLocalSessionCleared = async (
+  gateway: SupportedSignOutGateway,
+): Promise<void> => {
+  let signOutError: unknown | null = null;
+  try {
+    ({ error: signOutError } = await gateway.signOut());
+  } catch (cause) {
+    signOutError = cause;
+  }
+
+  const { data, error: sessionError } = await gateway.getSession();
+  if (sessionError) throw sessionError;
+  if (data.session) {
+    if (signOutError) throw signOutError;
+    throw new Error('Supabase local session is still present after signout');
+  }
+};
+
+export const shouldRefreshCurrentProfile = (
+  payload: { eventType?: string; new?: { id?: unknown }; old?: { id?: unknown } },
+  profileId: string,
+): boolean => {
+  if (payload.eventType === 'UPDATE') return payload.new?.id === profileId;
+  if (payload.eventType === 'DELETE') return payload.old?.id === profileId;
+  return false;
+};
 
 export const authenticateMockUser = (
   configured: boolean,

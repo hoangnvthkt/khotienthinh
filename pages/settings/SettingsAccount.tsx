@@ -402,8 +402,8 @@ const SettingsAccount: React.FC<SettingsAccountProps> = ({
           <p className="text-xs text-slate-500 mb-4">Kết thúc phiên làm việc hiện tại trên thiết bị này.</p>
           <button
             onClick={() => void logout()
-              .catch(error => console.warn('Logout failed:', error))
-              .finally(() => { window.location.href = '/login'; })}
+              .then(() => { window.location.href = '/login'; })
+              .catch(error => console.warn('Logout failed:', error))}
             className="px-6 py-3 bg-red-50 text-red-600 border border-red-100 rounded-xl font-bold hover:bg-red-600 hover:text-white transition"
           >
             Đăng xuất ngay

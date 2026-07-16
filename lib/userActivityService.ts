@@ -103,10 +103,16 @@ export interface UserActivitySummary {
 
 const SESSION_KEY_PREFIX = 'vioo_user_session_id:';
 const ONLINE_WINDOW_MS = 5 * 60 * 1000;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const SESSION_EVENT_TYPES = new Set<UserSessionEventType>(['login', 'logout', 'heartbeat', 'timeout']);
 
 const hasWindow = () => typeof window !== 'undefined' && typeof navigator !== 'undefined';
 
 const getSessionKey = (userId: string) => `${SESSION_KEY_PREFIX}${userId}`;
+
+const isUuid = (value: unknown): value is string => (
+  typeof value === 'string' && UUID_PATTERN.test(value)
+);
 
 const nowIso = () => new Date().toISOString();
 
@@ -201,20 +207,181 @@ const mapDelivery = (row: any): NotificationDelivery => ({
   } : null,
 });
 
-export const userActivityService = {
+interface DeviceMetadata {
+  userAgent: string | null;
+  deviceType: string | null;
+  platform: string | null;
+  url: string | null;
+}
+
+export interface UserActivityServiceDependencies {
+  supabaseClient?: any;
+  getStorage?: () => Storage | null;
+  getDeviceMetadata?: () => DeviceMetadata;
+}
+
+export type UserActivityOperationGuard = () => boolean;
+
+export interface UserActivityService {
+  getStoredSessionId(userId: string): string | null;
+  clearStoredSessionId(userId: string): void;
+  clearAllStoredSessionIds(): void;
+  startSession(user: User, operationGuard?: UserActivityOperationGuard): Promise<string | null>;
+  ensureSession(user: User, operationGuard?: UserActivityOperationGuard): Promise<string | null>;
+  heartbeat(
+    userId: string,
+    sessionId?: string | null,
+    recordEvent?: boolean,
+    operationGuard?: UserActivityOperationGuard,
+  ): Promise<void>;
+  endSession(
+    userId: string,
+    eventType?: 'logout' | 'timeout',
+    operationGuard?: UserActivityOperationGuard,
+  ): Promise<void>;
+  recordEvent(
+    sessionId: string | null,
+    userId: string,
+    eventType: UserSessionEventType,
+    metadata?: Record<string, any>,
+    operationGuard?: UserActivityOperationGuard,
+  ): Promise<void>;
+  timeoutStaleSessions(timeoutMinutes?: number): Promise<number>;
+  listSessions(options?: {
+    status?: UserSessionStatus | 'all';
+    userId?: string;
+    from?: string;
+    to?: string;
+    limit?: number;
+  }): Promise<UserSession[]>;
+  listPushSubscriptions(options?: { activeOnly?: boolean; limit?: number }): Promise<PushSubscriptionAdminRow[]>;
+  listDeliveries(options?: {
+    status?: NotificationDelivery['status'] | 'all';
+    channel?: string;
+    userId?: string;
+    from?: string;
+    to?: string;
+    limit?: number;
+  }): Promise<NotificationDelivery[]>;
+  retryWebPush(notificationId: string, subscriptionId?: string | null): Promise<any>;
+  sendTestPushToSubscription(subscriptionId: string): Promise<any>;
+  buildSummary(
+    sessions: UserSession[],
+    subscriptions: PushSubscriptionAdminRow[],
+    deliveries: NotificationDelivery[],
+  ): UserActivitySummary;
+}
+
+type StoredSessionRead =
+  | { kind: 'missing' }
+  | { kind: 'invalid' }
+  | { kind: 'valid'; sessionId: string };
+
+const getDefaultStorage = (): Storage | null => {
+  if (typeof window === 'undefined') return null;
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+};
+
+export const createUserActivityService = (
+  dependencies: UserActivityServiceDependencies = {},
+): UserActivityService => {
+  const client = dependencies.supabaseClient ?? supabase;
+  const resolveStorage = dependencies.getStorage ?? getDefaultStorage;
+  const resolveDeviceMetadata = dependencies.getDeviceMetadata ?? getDeviceMetadata;
+  const inFlightStarts = new Map<string, Promise<string | null>>();
+
+  const storage = (): Storage | null => {
+    try {
+      return resolveStorage();
+    } catch {
+      return null;
+    }
+  };
+
+  const removeSessionKey = (userId: string) => {
+    try {
+      storage()?.removeItem(getSessionKey(userId));
+    } catch {
+      // Telemetry storage is best effort and must never block auth cleanup.
+    }
+  };
+
+  const readStoredSession = (userId: string): StoredSessionRead => {
+    if (!isUuid(userId)) return { kind: 'invalid' };
+    let storedSessionId: string | null = null;
+    try {
+      storedSessionId = storage()?.getItem(getSessionKey(userId)) ?? null;
+    } catch {
+      return { kind: 'missing' };
+    }
+    if (!storedSessionId) return { kind: 'missing' };
+    if (!isUuid(storedSessionId)) {
+      removeSessionKey(userId);
+      return { kind: 'invalid' };
+    }
+    return { kind: 'valid', sessionId: storedSessionId };
+  };
+
+  const requireOptionalUuid = (value: string | null | undefined, label: string) => {
+    if (value != null && !isUuid(value)) {
+      throw new TypeError(`${label} must be a valid UUID`);
+    }
+  };
+
+  const isOperationAllowed = (operationGuard?: UserActivityOperationGuard): boolean => {
+    if (!operationGuard) return true;
+    try {
+      return operationGuard();
+    } catch {
+      return false;
+    }
+  };
+
+  const service: UserActivityService = {
   getStoredSessionId(userId: string): string | null {
-    if (!hasWindow()) return null;
-    return localStorage.getItem(getSessionKey(userId));
+    const stored = readStoredSession(userId);
+    return stored.kind === 'valid' ? stored.sessionId : null;
   },
 
-  async startSession(user: User): Promise<string | null> {
-    if (!user?.id) return null;
-    const device = getDeviceMetadata();
-    const { data, error } = await supabase
+  clearStoredSessionId(userId: string): void {
+    if (!isUuid(userId)) return;
+    removeSessionKey(userId);
+  },
+
+  clearAllStoredSessionIds(): void {
+    const target = storage();
+    if (!target) return;
+    const ownedKeys: string[] = [];
+    try {
+      for (let index = 0; index < target.length; index += 1) {
+        const key = target.key(index);
+        if (key?.startsWith(SESSION_KEY_PREFIX)) ownedKeys.push(key);
+      }
+      for (const key of ownedKeys) target.removeItem(key);
+    } catch {
+      // Never broaden cleanup to localStorage.clear() or Supabase-owned sb-* keys.
+    }
+  },
+
+  async startSession(
+    user: User,
+    operationGuard?: UserActivityOperationGuard,
+  ): Promise<string | null> {
+    if (
+      !isUuid(user?.id)
+      || !isUuid(user?.authId)
+      || !isOperationAllowed(operationGuard)
+    ) return null;
+    const device = resolveDeviceMetadata();
+    const { data, error } = await client
       .from('user_sessions')
       .insert({
         user_id: user.id,
-        auth_id: user.authId || null,
+        auth_id: user.authId,
         user_agent: device.userAgent,
         device_type: device.deviceType,
         platform: device.platform,
@@ -222,33 +389,106 @@ export const userActivityService = {
       })
       .select('id')
       .single();
+    if (!isOperationAllowed(operationGuard)) return null;
     if (error) throw error;
 
-    const sessionId = data?.id || null;
-    if (sessionId && hasWindow()) localStorage.setItem(getSessionKey(user.id), sessionId);
+    const sessionId = isUuid(data?.id) ? data.id : null;
+    if (!sessionId || !isOperationAllowed(operationGuard)) return null;
+    try {
+      storage()?.setItem(getSessionKey(user.id), sessionId);
+    } catch {
+      // The server session remains valid even if local persistence is unavailable.
+    }
+    if (!isOperationAllowed(operationGuard)) {
+      service.clearStoredSessionId(user.id);
+      return null;
+    }
 
-    if (sessionId) {
-      await this.recordEvent(sessionId, user.id, 'login', { platform: device.platform, deviceType: device.deviceType });
+    await service.recordEvent(sessionId, user.id, 'login', {
+      platform: device.platform,
+      deviceType: device.deviceType,
+    }, operationGuard);
+    if (!isOperationAllowed(operationGuard)) {
+      service.clearStoredSessionId(user.id);
+      return null;
     }
     return sessionId;
   },
 
-  async heartbeat(userId: string, sessionId?: string | null, recordEvent = false): Promise<void> {
-    const activeSessionId = sessionId || this.getStoredSessionId(userId);
-    if (!userId || !activeSessionId) return;
+  async ensureSession(
+    user: User,
+    operationGuard?: UserActivityOperationGuard,
+  ): Promise<string | null> {
+    if (
+      !isUuid(user?.id)
+      || !isUuid(user?.authId)
+      || !isOperationAllowed(operationGuard)
+    ) return null;
+    const inFlightKey = `${user.id}:${user.authId}`;
+    const existing = inFlightStarts.get(inFlightKey);
+    if (existing) {
+      const sessionId = await existing;
+      return isOperationAllowed(operationGuard) ? sessionId : null;
+    }
+
+    const operation = (async () => {
+      if (!isOperationAllowed(operationGuard)) return null;
+      const stored = readStoredSession(user.id);
+      if (stored.kind === 'invalid') return null;
+      if (stored.kind === 'missing') return service.startSession(user, operationGuard);
+
+      const { data, error } = await client
+        .from('user_sessions')
+        .select('id')
+        .eq('id', stored.sessionId)
+        .eq('user_id', user.id)
+        .eq('auth_id', user.authId)
+        .eq('status', 'active')
+        .maybeSingle();
+      if (!isOperationAllowed(operationGuard)) return null;
+
+      // An error is an unknown server state. Preserve the key and never insert a
+      // replacement, otherwise a transient 42501/network error can duplicate rows.
+      if (error) throw error;
+      if (data?.id === stored.sessionId) return stored.sessionId;
+
+      // A successful empty result definitively proves the stored UUID is stale.
+      if (!isOperationAllowed(operationGuard)) return null;
+      service.clearStoredSessionId(user.id);
+      return service.startSession(user, operationGuard);
+    })();
+
+    const tracked = operation.finally(() => {
+      if (inFlightStarts.get(inFlightKey) === tracked) inFlightStarts.delete(inFlightKey);
+    });
+    inFlightStarts.set(inFlightKey, tracked);
+    return tracked;
+  },
+
+  async heartbeat(
+    userId: string,
+    sessionId?: string | null,
+    recordEvent = false,
+    operationGuard?: UserActivityOperationGuard,
+  ): Promise<void> {
+    if (!isUuid(userId) || !isOperationAllowed(operationGuard)) return;
+    if (sessionId != null && !isUuid(sessionId)) return;
+    const activeSessionId = sessionId ?? service.getStoredSessionId(userId);
+    if (!isUuid(activeSessionId)) return;
 
     const now = nowIso();
-    const { data: session, error: sessionError } = await supabase
+    const { data: session, error: sessionError } = await client
       .from('user_sessions')
       .select('login_at')
       .eq('id', activeSessionId)
       .eq('user_id', userId)
       .eq('status', 'active')
       .maybeSingle();
+    if (!isOperationAllowed(operationGuard)) return;
     if (sessionError) throw sessionError;
     if (!session?.login_at) return;
 
-    const { error } = await supabase
+    const { error } = await client
       .from('user_sessions')
       .update({
         last_seen_at: now,
@@ -258,58 +498,106 @@ export const userActivityService = {
       .eq('id', activeSessionId)
       .eq('user_id', userId)
       .eq('status', 'active');
+    if (!isOperationAllowed(operationGuard)) return;
     if (error) throw error;
 
     if (recordEvent) {
-      await this.recordEvent(activeSessionId, userId, 'heartbeat', { at: now });
+      await service.recordEvent(
+        activeSessionId,
+        userId,
+        'heartbeat',
+        { at: now },
+        operationGuard,
+      );
     }
   },
 
-  async endSession(userId: string, eventType: 'logout' | 'timeout' = 'logout'): Promise<void> {
-    const sessionId = this.getStoredSessionId(userId);
-    if (!userId || !sessionId) return;
-    const endedAt = nowIso();
+  async endSession(
+    userId: string,
+    eventType: 'logout' | 'timeout' = 'logout',
+    operationGuard?: UserActivityOperationGuard,
+  ): Promise<void> {
+    if (
+      !isUuid(userId)
+      || (eventType !== 'logout' && eventType !== 'timeout')
+    ) return;
+    if (!isOperationAllowed(operationGuard)) {
+      service.clearStoredSessionId(userId);
+      return;
+    }
+    const stored = readStoredSession(userId);
+    if (stored.kind !== 'valid') return;
+    const sessionId = stored.sessionId;
 
-    const { data: session } = await supabase
-      .from('user_sessions')
-      .select('login_at')
-      .eq('id', sessionId)
-      .eq('user_id', userId)
-      .maybeSingle();
+    try {
+      const endedAt = nowIso();
+      const { data: session, error: sessionError } = await client
+        .from('user_sessions')
+        .select('login_at')
+        .eq('id', sessionId)
+        .eq('user_id', userId)
+        .eq('status', 'active')
+        .maybeSingle();
+      if (!isOperationAllowed(operationGuard)) return;
+      if (sessionError) throw sessionError;
+      if (!session?.login_at) return;
 
-    const durationSeconds = session?.login_at
-      ? Math.max(0, Math.floor((Date.now() - new Date(session.login_at).getTime()) / 1000))
-      : 0;
+      const durationSeconds = Math.max(
+        0,
+        Math.floor((Date.now() - new Date(session.login_at).getTime()) / 1000),
+      );
+      const { error } = await client
+        .from('user_sessions')
+        .update({
+          logout_at: endedAt,
+          last_seen_at: endedAt,
+          duration_seconds: durationSeconds,
+          status: eventType,
+          updated_at: endedAt,
+        })
+        .eq('id', sessionId)
+        .eq('user_id', userId)
+        .eq('status', 'active');
+      if (!isOperationAllowed(operationGuard)) return;
+      if (error) throw error;
 
-    const { error } = await supabase
-      .from('user_sessions')
-      .update({
-        logout_at: endedAt,
-        last_seen_at: endedAt,
-        duration_seconds: durationSeconds,
-        status: eventType,
-        updated_at: endedAt,
-      })
-      .eq('id', sessionId)
-      .eq('user_id', userId);
-    if (error) throw error;
-
-    await this.recordEvent(sessionId, userId, eventType, { at: endedAt });
-    if (hasWindow()) localStorage.removeItem(getSessionKey(userId));
+      await service.recordEvent(
+        sessionId,
+        userId,
+        eventType,
+        { at: endedAt },
+        operationGuard,
+      );
+    } finally {
+      service.clearStoredSessionId(userId);
+    }
   },
 
-  async recordEvent(sessionId: string | null, userId: string, eventType: UserSessionEventType, metadata: Record<string, any> = {}) {
-    const { error } = await supabase.from('user_session_events').insert({
+  async recordEvent(
+    sessionId: string | null,
+    userId: string,
+    eventType: UserSessionEventType,
+    metadata: Record<string, any> = {},
+    operationGuard?: UserActivityOperationGuard,
+  ): Promise<void> {
+    if (
+      !isUuid(sessionId)
+      || !isUuid(userId)
+      || !SESSION_EVENT_TYPES.has(eventType)
+      || !isOperationAllowed(operationGuard)
+    ) return;
+    const { error } = await client.from('user_session_events').insert({
       session_id: sessionId,
       user_id: userId,
       event_type: eventType,
       metadata,
     });
+    if (!isOperationAllowed(operationGuard)) return;
     if (error) throw error;
   },
 
   async timeoutStaleSessions(timeoutMinutes = 5): Promise<number> {
-    const { data, error } = await supabase.rpc('timeout_stale_user_sessions', { p_timeout_minutes: timeoutMinutes });
+    const { data, error } = await client.rpc('timeout_stale_user_sessions', { p_timeout_minutes: timeoutMinutes });
     if (error) throw error;
     return Number(data || 0);
   },
@@ -321,7 +609,8 @@ export const userActivityService = {
     to?: string;
     limit?: number;
   } = {}): Promise<UserSession[]> {
-    let query = supabase
+    requireOptionalUuid(options.userId, 'userId');
+    let query = client
       .from('user_sessions')
       .select('*, users:user_id(id,name,email,avatar,role)')
       .order('last_seen_at', { ascending: false })
@@ -338,7 +627,7 @@ export const userActivityService = {
   },
 
   async listPushSubscriptions(options: { activeOnly?: boolean; limit?: number } = {}): Promise<PushSubscriptionAdminRow[]> {
-    let query = supabase
+    let query = client
       .from('web_push_subscriptions')
       .select('*, users:user_id(id,name,email,avatar,role)')
       .order('updated_at', { ascending: false })
@@ -358,7 +647,8 @@ export const userActivityService = {
     to?: string;
     limit?: number;
   } = {}): Promise<NotificationDelivery[]> {
-    let query = supabase
+    requireOptionalUuid(options.userId, 'userId');
+    let query = client
       .from('notification_deliveries')
       .select('*, users:user_id(id,name,email,avatar,role), notifications:notification_id(id,title,message,priority,created_at), web_push_subscriptions:subscription_id(id,platform,device_type,browser,is_standalone_pwa,is_active,last_used_at,endpoint)')
       .order('created_at', { ascending: false })
@@ -376,7 +666,9 @@ export const userActivityService = {
   },
 
   async retryWebPush(notificationId: string, subscriptionId?: string | null) {
-    const { data, error } = await supabase.functions.invoke('send-web-push', {
+    requireOptionalUuid(notificationId, 'notificationId');
+    requireOptionalUuid(subscriptionId, 'subscriptionId');
+    const { data, error } = await client.functions.invoke('send-web-push', {
       body: { notificationId, subscriptionId: subscriptionId || undefined },
     });
     if (error) throw error;
@@ -384,7 +676,8 @@ export const userActivityService = {
   },
 
   async sendTestPushToSubscription(subscriptionId: string) {
-    const { data, error } = await supabase.functions.invoke('send-web-push', {
+    requireOptionalUuid(subscriptionId, 'subscriptionId');
+    const { data, error } = await client.functions.invoke('send-web-push', {
       body: { subscriptionId, test: true },
     });
     if (error) throw error;
@@ -411,4 +704,9 @@ export const userActivityService = {
       pushSentToday: deliveries.filter(delivery => delivery.status === 'sent' && delivery.createdAt >= start).length,
     };
   },
+  };
+
+  return service;
 };
+
+export const userActivityService = createUserActivityService();

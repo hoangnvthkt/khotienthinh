@@ -49,10 +49,9 @@ const Layout: React.FC = () => {
   const handleLogout = async () => {
     try {
       await logout();
+      navigate('/login');
     } catch (error) {
       console.warn('Logout failed:', error);
-    } finally {
-      navigate('/login');
     }
   };
 

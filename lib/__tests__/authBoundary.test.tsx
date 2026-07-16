@@ -6,6 +6,7 @@ import type { Session, User as SupabaseUser } from '@supabase/supabase-js';
 import { describe, expect, it, vi } from 'vitest';
 import { Role, type User, type UserPermissionGrant } from '../../types';
 import {
+  AuthoritativeAuthEpoch,
   AuthAttemptCoordinator,
   authReducer,
   authenticateMockUser,
@@ -14,7 +15,9 @@ import {
   resolveCandidateSession,
   serializeMockUser,
   selectApplicationShell,
+  shouldRefreshCurrentProfile,
   shouldRevalidateInBackground,
+  signOutAndConfirmLocalSessionCleared,
   type AuthProfileGateway,
 } from '../../context/authState';
 import { AuthGateView } from '../../context/AuthContext';
@@ -85,6 +88,7 @@ describe('fail-closed auth state', () => {
 
     expect(gateway.verifySession).toHaveBeenCalledWith(session);
     expect(gateway.loadActiveProfileByAuthId).toHaveBeenCalledWith(AUTH_ID);
+    expect(gateway.loadActiveProfileByAuthId).toHaveBeenCalledTimes(1);
     expect(user).toMatchObject({
       id: PROFILE_ID,
       authId: AUTH_ID,
@@ -151,6 +155,94 @@ describe('fail-closed auth state', () => {
     expect(attempts.isCurrent(signOutAttempt)).toBe(true);
     expect(signedOutState.status).toBe('anonymous');
     expect(signedOutState.user).toBeNull();
+  });
+
+  it('gives synchronous auth events priority over stale refresh work', () => {
+    const epochs = new AuthoritativeAuthEpoch();
+    const oldTokenWork = epochs.acceptAuthoritativeSession('old-token');
+    const refreshedTokenWork = epochs.observeAuthEvent('refreshed-token');
+
+    expect(refreshedTokenWork).not.toBeNull();
+    expect(epochs.canResolve(oldTokenWork)).toBe(false);
+    expect(epochs.captureCandidate('old-token')).toBeNull();
+    expect(epochs.canResolve(refreshedTokenWork!)).toBe(true);
+
+    epochs.observeAuthEvent(null);
+    expect(epochs.captureCandidate('refreshed-token')).toBeNull();
+  });
+
+  it('keeps a failed logout tombstone from being resurrected by automatic events, while a reload can recover the persisted session', () => {
+    const currentPage = new AuthoritativeAuthEpoch();
+    currentPage.acceptAuthoritativeSession('access-token');
+    currentPage.beginLogoutIntent();
+
+    expect(currentPage.observeAuthEvent('refreshed-after-failure')).toBeNull();
+    expect(currentPage.captureCandidate('access-token')).toBeNull();
+
+    const reloadedPage = new AuthoritativeAuthEpoch();
+    const reloadWork = reloadedPage.acceptAuthoritativeSession('access-token');
+    expect(reloadedPage.canResolve(reloadWork)).toBe(true);
+  });
+
+  it('does not report signout success until Supabase confirms its local session is gone', async () => {
+    const networkError = new Error('logout network failure');
+    const getSession = vi.fn(async () => ({ data: { session: makeSession() }, error: null }));
+
+    await expect(signOutAndConfirmLocalSessionCleared({
+      signOut: vi.fn(async () => ({ error: networkError })),
+      getSession,
+    })).rejects.toBe(networkError);
+    expect(getSession).toHaveBeenCalledTimes(1);
+
+    await expect(signOutAndConfirmLocalSessionCleared({
+      signOut: vi.fn(async () => ({ error: networkError })),
+      getSession: vi.fn(async () => ({ data: { session: null }, error: null })),
+    })).resolves.toBeUndefined();
+
+    const throwingSignOut = vi.fn(async (): Promise<{ error: null }> => {
+      throw networkError;
+    });
+    await expect(signOutAndConfirmLocalSessionCleared({
+      signOut: throwingSignOut,
+      getSession: vi.fn(async () => ({ data: { session: makeSession() }, error: null })),
+    })).rejects.toBe(networkError);
+    await expect(signOutAndConfirmLocalSessionCleared({
+      signOut: throwingSignOut,
+      getSession: vi.fn(async () => ({ data: { session: null }, error: null })),
+    })).resolves.toBeUndefined();
+
+    await expect(signOutAndConfirmLocalSessionCleared({
+      signOut: vi.fn(async () => ({ error: null })),
+      getSession,
+    })).rejects.toThrow(/local session/i);
+
+    await expect(signOutAndConfirmLocalSessionCleared({
+      signOut: vi.fn(async () => ({ error: null })),
+      getSession: vi.fn(async () => ({ data: { session: null }, error: null })),
+    })).resolves.toBeUndefined();
+  });
+
+  it('recognizes only UPDATE or DELETE events for the exact current profile', () => {
+    expect(shouldRefreshCurrentProfile({
+      eventType: 'UPDATE',
+      new: { id: PROFILE_ID },
+      old: {},
+    }, PROFILE_ID)).toBe(true);
+    expect(shouldRefreshCurrentProfile({
+      eventType: 'DELETE',
+      new: {},
+      old: { id: PROFILE_ID },
+    }, PROFILE_ID)).toBe(true);
+    expect(shouldRefreshCurrentProfile({
+      eventType: 'UPDATE',
+      new: { id: '33333333-3333-4333-8333-333333333333' },
+      old: {},
+    }, PROFILE_ID)).toBe(false);
+    expect(shouldRefreshCurrentProfile({
+      eventType: 'INSERT',
+      new: { id: PROFILE_ID },
+      old: {},
+    }, PROFILE_ID)).toBe(false);
   });
 
   it('permits mock credentials only when Supabase is unconfigured and only by email', () => {
@@ -294,5 +386,24 @@ describe('authenticated provider architecture', () => {
     expect(loginSource).toContain('useAuth()');
     expect(loginSource).toContain('type="email"');
     expect(loginSource).not.toMatch(/xpService\.awardXP|usernameMode|Tên đăng nhập/);
+  });
+
+  it('watches the exact current profile independently and navigates only after resolved logout', () => {
+    const authSource = readFileSync(join(process.cwd(), 'context', 'AuthContext.tsx'), 'utf8');
+    const sidebarSource = readFileSync(join(process.cwd(), 'components', 'Sidebar.tsx'), 'utf8');
+    const layoutSource = readFileSync(join(process.cwd(), 'components', 'Layout.tsx'), 'utf8');
+    const settingsSource = readFileSync(join(process.cwd(), 'pages', 'settings', 'SettingsAccount.tsx'), 'utf8');
+
+    expect(authSource).toContain("table: 'users'");
+    expect(authSource).toContain('filter: `id=eq.${profileId}`');
+    expect(authSource).toContain("event: 'UPDATE'");
+    expect(authSource).toContain("event: 'DELETE'");
+    expect(authSource).not.toContain("event: '*',\n        schema: 'public',\n        table: 'users'");
+    expect(authSource).toContain('shouldRefreshCurrentProfile');
+    expect(authSource).toContain('refreshProfile');
+    expect(authSource).not.toContain('stateRef.current = state;');
+    expect(sidebarSource).not.toMatch(/finally\s*\{[^}]*navigate\(['"]\/login/);
+    expect(layoutSource).not.toMatch(/finally\s*\{[^}]*navigate\(['"]\/login/);
+    expect(settingsSource).not.toMatch(/\.finally\([^)]*(?:href|location)/);
   });
 });
