@@ -71,7 +71,6 @@ const userToDbPayload = (data: User) => {
     admin_modules: data.adminModules ?? null,
     allowed_sub_modules: data.allowedSubModules ?? null,
     admin_sub_modules: data.adminSubModules ?? null,
-    is_active: data.isActive ?? true,
   };
   if (data.authId !== undefined) payload.auth_id = data.authId || null;
   return payload;

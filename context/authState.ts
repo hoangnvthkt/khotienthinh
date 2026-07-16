@@ -287,6 +287,15 @@ export const mapUserProfileRow = (row: any): User => ({
   allowedSubModules: row.allowed_sub_modules ?? row.allowedSubModules ?? undefined,
   adminSubModules: row.admin_sub_modules ?? row.adminSubModules ?? undefined,
   isActive: row.is_active ?? row.isActive,
+  accountStatus: row.account_status ?? row.accountStatus ?? (row.is_active === false ? 'DISABLED' : 'ACTIVE'),
+  accountOperationStatus: row.account_operation_status ?? row.accountOperationStatus ?? 'IDLE',
+  accountOperationAction: row.account_operation_action ?? row.accountOperationAction ?? undefined,
+  disabledAt: row.disabled_at ?? row.disabledAt ?? undefined,
+  disabledBy: row.disabled_by ?? row.disabledBy ?? undefined,
+  disabledReason: row.disabled_reason ?? row.disabledReason ?? undefined,
+  reactivatedAt: row.reactivated_at ?? row.reactivatedAt ?? undefined,
+  reactivatedBy: row.reactivated_by ?? row.reactivatedBy ?? undefined,
+  reactivationReason: row.reactivation_reason ?? row.reactivationReason ?? undefined,
 });
 
 export class AuthResolutionError extends Error {

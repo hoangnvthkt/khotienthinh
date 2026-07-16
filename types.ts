@@ -57,6 +57,51 @@ export interface WarehouseTypeConfig {
   updatedAt?: string;
 }
 
+export type UserAccountStatus = 'ACTIVE' | 'DISABLED';
+
+export type UserAccountLifecycleAction = 'DISABLE' | 'REACTIVATE';
+
+export type UserAccountOperationStatus = 'IDLE' | 'PENDING' | 'AUTH_RETRY';
+
+export interface UserAccountLifecyclePreview {
+  targetUserId: string;
+  accountStatus: UserAccountStatus;
+  operationStatus: UserAccountOperationStatus;
+  operationAction?: UserAccountLifecycleAction | null;
+  hasAuthIdentity: boolean;
+  directGrants: number;
+  legacyModules: number;
+  projectStaffAssignments: number;
+  responsibilitySlots: number;
+  runtimeAssignments: number;
+  needsReassignment: number;
+}
+
+export interface UserAccountRevocationSummary {
+  directGrants: number;
+  projectPermissions: number;
+  projectStaffAssignments: number;
+  responsibilitySlots: number;
+  runtimeAssignments: number;
+  needsReassignment: number;
+}
+
+export interface UserAccountOperationResult {
+  operationId: string;
+  idempotencyKey: string;
+  targetUserId: string;
+  requestedBy: string;
+  action: UserAccountLifecycleAction;
+  status: 'PREPARED' | 'DB_APPLIED' | 'AUTH_RETRY' | 'COMPLETED';
+  reason: string;
+  authId?: string | null;
+  revocationSummary?: UserAccountRevocationSummary | null;
+  lastError?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  completedAt?: string | null;
+}
+
 export interface User {
   id: string;
   authId?: string; // Supabase Auth user id
@@ -74,6 +119,15 @@ export interface User {
   adminSubModules?: Record<string, string[]>; // Module key -> danh sách route sub-app có quyền CRUD (VD: { "HRM": ["/hrm/employees"] })
   signatureUrl?: string; // URL ảnh chữ ký số
   isActive?: boolean;
+  accountStatus?: UserAccountStatus;
+  accountOperationStatus?: UserAccountOperationStatus;
+  accountOperationAction?: UserAccountLifecycleAction;
+  disabledAt?: string;
+  disabledBy?: string;
+  disabledReason?: string;
+  reactivatedAt?: string;
+  reactivatedBy?: string;
+  reactivationReason?: string;
   permissionGrants?: UserPermissionGrant[]; // Phase 1 permission framework grants
 }
 
