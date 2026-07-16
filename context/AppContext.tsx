@@ -11,7 +11,7 @@ import {
   Asset, AssetCategory, AssetAssignment, AssetMaintenance, AssetStatus, AssetLocationStock, AssetTransfer, AssetOrigin, AssetAttachment,
   AttendanceRecord, LeaveRequest, PayrollRecord, LaborContract, LeaveBalance, PayrollTemplate, HrmHoliday, HrmSalaryHistory,
   BudgetCategory, BudgetEntry, ExpenseRecord, AttendanceProposal, LeaveLog, LeaveApprover,
-  HrmShiftType, HrmEmployeeShift
+  HrmShiftType, HrmEmployeeShift, UserAccountOperationResult
 } from '../types';
 import {
   MOCK_USERS, MOCK_WAREHOUSES, MOCK_WAREHOUSE_TYPES, MOCK_ITEMS,
@@ -43,6 +43,7 @@ import {
   projectTransactionToDb,
 } from '../lib/projectTransactionMapping';
 import { canPerform } from '../lib/permissions/permissionService';
+import { executeUserAccountLifecycle } from '../lib/userAccountLifecycleService';
 import { useAuth } from './AuthContext';
 import { mapUserProfileRow as mapUserFromDb, serializeMockUser } from './authState';
 
@@ -103,7 +104,8 @@ interface AppContextType {
   theme: 'light' | 'dark';
   addUser: (user: User) => Promise<void>;
   updateUser: (user: User) => Promise<void>;
-  removeUser: (userId: string) => Promise<void>;
+  disableUserAccount: (userId: string, reason: string) => Promise<UserAccountOperationResult>;
+  reactivateUserAccount: (userId: string, reason: string, newPassword: string) => Promise<UserAccountOperationResult>;
   items: InventoryItem[];
   warehouses: Warehouse[];
   warehouseTypes: WarehouseTypeConfig[];
@@ -1424,19 +1426,92 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     logActivity('SYSTEM', 'Cập nhật người dùng', `Đã cập nhật thông tin người dùng: ${u.name}`, 'INFO');
   };
 
-  const removeUser = async (id: string) => {
-    const u = users.find(user => user.id === id);
+  const refreshManagedUser = async (id: string): Promise<User> => {
+    if (!isSupabaseConfigured) {
+      const local = users.find(candidate => candidate.id === id);
+      if (!local) throw new Error('Không tìm thấy tài khoản.');
+      return local;
+    }
+
+    const { data, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', id)
+      .single();
+    if (error) throw error;
+    return mapUserFromDb(data);
+  };
+
+  const disableUserAccount = async (id: string, reason: string) => {
+    const target = users.find(candidate => candidate.id === id);
+    if (!target) throw new Error('Không tìm thấy tài khoản cần vô hiệu hóa.');
+
     try {
-      if (isSupabaseConfigured) {
-        const { data, error } = await supabase.from('users').delete().eq('id', id).select('id').maybeSingle();
-        if (error) throw error;
-        if (!data) throw new Error('Không có bản ghi người dùng nào bị xoá trên Supabase.');
-      }
-      setUsers(prev => prev.filter(u => u.id !== id));
-      if (u) logActivity('SYSTEM', 'Xóa người dùng', `Đã xóa người dùng: ${u.name}`, 'DANGER');
-    } catch (error) {
-      console.error('Error deleting user from Supabase:', error);
-      throw error;
+      const result = await executeUserAccountLifecycle({
+        action: 'DISABLE',
+        targetUserId: id,
+        reason,
+        idempotencyKey: crypto.randomUUID(),
+      });
+      logActivity('SYSTEM', 'Vô hiệu hóa tài khoản', `Đã vô hiệu hóa tài khoản: ${target.name}`, 'DANGER');
+      return result;
+    } finally {
+      const refreshed = isSupabaseConfigured
+        ? await refreshManagedUser(id)
+        : {
+          ...target,
+          role: Role.EMPLOYEE,
+          assignedWarehouseId: undefined,
+          allowedModules: [],
+          adminModules: [],
+          allowedSubModules: {},
+          adminSubModules: {},
+          permissionGrants: [],
+          isActive: false,
+          accountStatus: 'DISABLED' as const,
+          accountOperationStatus: 'IDLE' as const,
+          accountOperationAction: undefined,
+          disabledReason: reason.trim(),
+          disabledAt: new Date().toISOString(),
+        };
+      setUsers(previous => previous.map(candidate => candidate.id === id ? refreshed : candidate));
+    }
+  };
+
+  const reactivateUserAccount = async (id: string, reason: string, newPassword: string) => {
+    const target = users.find(candidate => candidate.id === id);
+    if (!target) throw new Error('Không tìm thấy tài khoản cần khôi phục.');
+
+    try {
+      const result = await executeUserAccountLifecycle({
+        action: 'REACTIVATE',
+        targetUserId: id,
+        reason,
+        newPassword,
+        idempotencyKey: crypto.randomUUID(),
+      });
+      logActivity('SYSTEM', 'Khôi phục tài khoản', `Đã khôi phục tài khoản: ${target.name}`, 'SUCCESS');
+      return result;
+    } finally {
+      const refreshed = isSupabaseConfigured
+        ? await refreshManagedUser(id)
+        : {
+          ...target,
+          role: Role.EMPLOYEE,
+          assignedWarehouseId: undefined,
+          allowedModules: [],
+          adminModules: [],
+          allowedSubModules: {},
+          adminSubModules: {},
+          permissionGrants: [],
+          isActive: true,
+          accountStatus: 'ACTIVE' as const,
+          accountOperationStatus: 'IDLE' as const,
+          accountOperationAction: undefined,
+          reactivationReason: reason.trim(),
+          reactivatedAt: new Date().toISOString(),
+        };
+      setUsers(previous => previous.map(candidate => candidate.id === id ? refreshed : candidate));
     }
   };
 
@@ -3293,7 +3368,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   return (
     <AppContext.Provider value={{
-      user, users, appSettings, theme, addUser, updateUser, removeUser, items, warehouses, warehouseTypes, suppliers, transactions, requests, activities,
+      user, users, appSettings, theme, addUser, updateUser, disableUserAccount, reactivateUserAccount, items, warehouses, warehouseTypes, suppliers, transactions, requests, activities,
       categories, units, employees,
       hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules, hrmConstructionSites, constructionSites: hrmConstructionSites,
       shiftTypes, employeeShifts,

@@ -2,27 +2,43 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { Role, User } from '../types';
-import { Mail, Shield, MapPin, MoreVertical, Plus, Phone, Trash2 } from 'lucide-react';
+import { Mail, Shield, MapPin, MoreVertical, Plus, Phone, RotateCcw, UserX } from 'lucide-react';
 import UserModal from '../components/UserModal';
-import DeleteUserModal from '../components/DeleteUserModal';
+import UserAccountStatusModal from '../components/UserAccountStatusModal';
 import { useModuleData } from '../hooks/useModuleData';
 import { useToast } from '../context/ToastContext';
 import { useAsyncAction } from '../hooks/useAsyncAction';
 
 const UserManagement: React.FC = () => {
-  const { users, warehouses, addUser, updateUser, removeUser, user: currentUser } = useApp();
+  const {
+    users,
+    warehouses,
+    addUser,
+    updateUser,
+    disableUserAccount,
+    reactivateUserAccount,
+    user: currentUser,
+  } = useApp();
   useModuleData('wms');
   const toast = useToast();
-  const { loading: deletingUserLoading, run: runDeleteUser } = useAsyncAction({
-    successTitle: 'Đã xoá tài khoản',
-    errorTitle: 'Không thể xoá tài khoản',
-    fallbackError: 'Không thể xoá người dùng trên Supabase.',
-    logScope: 'userManagement.deleteUser',
+  const { loading: accountStatusLoading, run: runAccountStatusUpdate } = useAsyncAction({
+    successTitle: 'Đã cập nhật trạng thái tài khoản',
+    errorTitle: 'Không thể cập nhật trạng thái tài khoản',
+    fallbackError: 'Không thể cập nhật trạng thái tài khoản trên Supabase.',
+    logScope: 'userManagement.accountStatus',
   });
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
-  const [deletingUser, setDeletingUser] = useState<User | null>(null);
+  const [accountTargetId, setAccountTargetId] = useState<string | null>(null);
+  const [accountAction, setAccountAction] = useState<'DISABLE' | 'REACTIVATE'>('DISABLE');
+  const [accountFilter, setAccountFilter] = useState<'all' | 'active' | 'disabled'>('all');
+  const accountTarget = users.find(candidate => candidate.id === accountTargetId) || null;
+  const visibleUsers = users.filter(candidate => {
+    const disabled = candidate.accountStatus === 'DISABLED' || candidate.isActive === false;
+    if (accountFilter === 'active') return !disabled;
+    if (accountFilter === 'disabled') return disabled;
+    return true;
+  });
 
   const handleAddUser = () => {
     setEditingUser(null);
@@ -34,26 +50,34 @@ const UserManagement: React.FC = () => {
     setIsModalOpen(true);
   };
 
-  const handleDeleteClick = (user: User) => {
-    if (user.id === currentUser.id) {
-      toast.warning('Không thể tự xoá', 'Bạn không thể xoá tài khoản đang đăng nhập.');
+  const openAccountAction = (target: User, action: 'DISABLE' | 'REACTIVATE') => {
+    if (target.id === currentUser.id) {
+      toast.warning('Không thể tự vô hiệu hóa', 'Bạn không thể thay đổi trạng thái tài khoản đang đăng nhập.');
       return;
     }
-    setDeletingUser(user);
-    setIsDeleteModalOpen(true);
+    setAccountTargetId(target.id);
+    setAccountAction(
+      target.accountOperationStatus !== 'IDLE' && target.accountOperationAction
+        ? target.accountOperationAction
+        : action,
+    );
   };
 
-  const handleConfirmDelete = async () => {
-    if (deletingUser) {
-      const deleted = await runDeleteUser(async () => {
-        await removeUser(deletingUser.id);
-        return true;
-      });
-      if (deleted) {
-        setIsDeleteModalOpen(false);
-        setDeletingUser(null);
+  const handleAccountAction = async (input: { reason: string; newPassword?: string }) => {
+    if (!accountTarget) return;
+    const completed = await runAccountStatusUpdate(async () => {
+      const result = accountAction === 'DISABLE'
+        ? await disableUserAccount(accountTarget.id, input.reason)
+        : await reactivateUserAccount(accountTarget.id, input.reason, input.newPassword || '');
+      if ((result.revocationSummary?.needsReassignment || 0) > 0) {
+        toast.warning(
+          'Cần phân công lại trách nhiệm',
+          `${result.revocationSummary?.needsReassignment} trách nhiệm đã được đóng an toàn.`,
+        );
       }
-    }
+      return true;
+    });
+    if (completed) setAccountTargetId(null);
   };
 
   const handleSaveUser = async (userData: User) => {
@@ -94,12 +118,13 @@ const UserManagement: React.FC = () => {
         users={users}
       />
 
-      <DeleteUserModal 
-        isOpen={isDeleteModalOpen}
-        onClose={() => setIsDeleteModalOpen(false)}
-        onConfirm={handleConfirmDelete}
-        targetUser={deletingUser}
-        isDeleting={deletingUserLoading}
+      <UserAccountStatusModal
+        isOpen={Boolean(accountTarget)}
+        action={accountAction}
+        targetUser={accountTarget}
+        onClose={() => setAccountTargetId(null)}
+        onConfirm={handleAccountAction}
+        isSaving={accountStatusLoading}
       />
 
       <div className="flex justify-between items-center">
@@ -115,9 +140,31 @@ const UserManagement: React.FC = () => {
         </button>
       </div>
 
+      <div className="flex w-fit rounded-lg border border-slate-200 bg-white p-1">
+        {([
+          ['all', 'Tất cả'],
+          ['active', 'Đang hoạt động'],
+          ['disabled', 'Đã vô hiệu hóa'],
+        ] as const).map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            onClick={() => setAccountFilter(value)}
+            className={`rounded-md px-3 py-1.5 text-xs font-bold transition ${accountFilter === value ? 'bg-slate-800 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {users.map((u) => {
+        {visibleUsers.map((u) => {
           const assignedWarehouse = warehouses.find(w => w.id === u.assignedWarehouseId);
+          const disabled = u.accountStatus === 'DISABLED' || u.isActive === false;
+          const lifecycleAction = u.accountOperationStatus !== 'IDLE' && u.accountOperationAction
+            ? u.accountOperationAction
+            : disabled ? 'REACTIVATE' : 'DISABLE';
+          const isReactivate = lifecycleAction === 'REACTIVATE';
           return (
             <div key={u.id} className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden group hover:border-accent/50 transition-all">
                <div className="p-6">
@@ -150,6 +197,15 @@ const UserManagement: React.FC = () => {
                   
                   <div className="mb-4">
                      {getRoleBadge(u.role)}
+                     <span className={`ml-2 rounded-full px-2 py-0.5 text-[10px] font-bold ${disabled ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                       {disabled ? 'Đã vô hiệu hóa' : 'Đang hoạt động'}
+                     </span>
+                     {u.accountOperationStatus === 'PENDING' && (
+                       <span className="ml-2 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700">Đang đồng bộ Auth</span>
+                     )}
+                     {u.accountOperationStatus === 'AUTH_RETRY' && (
+                       <span className="ml-2 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700">Cần thử lại đồng bộ đăng nhập</span>
+                     )}
                   </div>
 
                   <div className="pt-4 border-t border-slate-50 space-y-2">
@@ -170,14 +226,20 @@ const UserManagement: React.FC = () => {
                      Sửa
                   </button>
                   <button 
-                    onClick={() => handleDeleteClick(u)}
+                    type="button"
+                    disabled={u.id === currentUser.id}
+                    onClick={() => openAccountAction(u, lifecycleAction)}
                     className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all shadow-sm border
                       ${u.id === currentUser.id 
                         ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed' 
-                        : 'bg-white text-red-600 border-red-100 hover:bg-red-600 hover:text-white'
+                        : isReactivate
+                          ? 'bg-white text-emerald-600 border-emerald-100 hover:bg-emerald-600 hover:text-white'
+                          : 'bg-white text-red-600 border-red-100 hover:bg-red-600 hover:text-white'
                       }`}
                   >
-                     Xoá
+                     {isReactivate
+                       ? <><RotateCcw size={14} className="mr-1 inline" /> Khôi phục</>
+                       : <><UserX size={14} className="mr-1 inline" /> Vô hiệu hóa</>}
                   </button>
                   <button className="flex-1 py-2 text-xs font-bold text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-100 transition-all shadow-sm">
                      Nhật ký

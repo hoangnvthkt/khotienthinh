@@ -105,7 +105,7 @@ const Settings: React.FC = () => {
     addUnit, updateUnit, removeUnit,
     addSupplier, updateSupplier, removeSupplier,
     appSettings, updateAppSettings, clearAllData, connectionError,
-    users, addUser, updateUser, removeUser, user: currentUser, isLoading, realtimeStatus, lastRealtimeEvent,
+    users, addUser, updateUser, disableUserAccount, reactivateUserAccount, user: currentUser, isLoading, realtimeStatus, lastRealtimeEvent,
     hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules, hrmConstructionSites,
     addHrmItem, updateHrmItem, removeHrmItem,
     items, addItem, updateItem, removeItem, transactions, requests, lossNorms, addLossNorm, updateLossNorm, removeLossNorm,
@@ -122,11 +122,11 @@ const Settings: React.FC = () => {
   useModuleData('ex', isSettingsAdmin);
   useModuleData('da', canOpenSettingsFeature('project-master-data') || canOpenSettingsFeature('g8-cost-norms') || canOpenSettingsFeature('inspection-templates') || canOpenSettingsFeature('work-groups'));
   const toast = useToast();
-  const { loading: deletingUserLoading, run: runDeleteUser } = useAsyncAction({
-    successTitle: 'Đã xoá tài khoản',
-    errorTitle: 'Không thể xoá tài khoản',
-    fallbackError: 'Không thể xoá người dùng trên Supabase.',
-    logScope: 'settings.deleteUser',
+  const { loading: accountStatusLoading, run: runAccountStatusUpdate } = useAsyncAction({
+    successTitle: 'Đã cập nhật trạng thái tài khoản',
+    errorTitle: 'Không thể cập nhật trạng thái tài khoản',
+    fallbackError: 'Không thể cập nhật trạng thái tài khoản trên Supabase.',
+    logScope: 'settings.accountStatus',
   });
   const { loading: materialSaving, run: runMaterialAction } = useAsyncAction({
     errorTitle: 'Không thể lưu danh mục vật tư',
@@ -144,9 +144,10 @@ const Settings: React.FC = () => {
 
   // User Management States
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
-  const [isUserDeleteModalOpen, setIsUserDeleteModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
-  const [deletingUser, setDeletingUser] = useState<User | null>(null);
+  const [accountTargetId, setAccountTargetId] = useState<string | null>(null);
+  const [accountAction, setAccountAction] = useState<'DISABLE' | 'REACTIVATE'>('DISABLE');
+  const accountTarget = users.find(candidate => candidate.id === accountTargetId) || null;
 
   // States for Safety Modal
   const [confirmModal, setConfirmModal] = useState<{
@@ -903,26 +904,34 @@ const Settings: React.FC = () => {
     setIsUserModalOpen(true);
   };
 
-  const handleDeleteUserClick = (u: User) => {
-    if (u.id === currentUser.id) {
-      toast.warning('Không thể tự xoá', 'Bạn không thể xoá tài khoản đang đăng nhập.');
+  const openAccountAction = (target: User, action: 'DISABLE' | 'REACTIVATE') => {
+    if (target.id === currentUser.id) {
+      toast.warning('Không thể tự vô hiệu hóa', 'Bạn không thể thay đổi trạng thái tài khoản đang đăng nhập.');
       return;
     }
-    setDeletingUser(u);
-    setIsUserDeleteModalOpen(true);
+    setAccountTargetId(target.id);
+    setAccountAction(
+      target.accountOperationStatus !== 'IDLE' && target.accountOperationAction
+        ? target.accountOperationAction
+        : action,
+    );
   };
 
-  const handleConfirmDeleteUser = async () => {
-    if (deletingUser) {
-      const deleted = await runDeleteUser(async () => {
-        await removeUser(deletingUser.id);
-        return true;
-      });
-      if (deleted) {
-        setIsUserDeleteModalOpen(false);
-        setDeletingUser(null);
+  const handleAccountAction = async (input: { reason: string; newPassword?: string }) => {
+    if (!accountTarget) return;
+    const completed = await runAccountStatusUpdate(async () => {
+      const result = accountAction === 'DISABLE'
+        ? await disableUserAccount(accountTarget.id, input.reason)
+        : await reactivateUserAccount(accountTarget.id, input.reason, input.newPassword || '');
+      if ((result.revocationSummary?.needsReassignment || 0) > 0) {
+        toast.warning(
+          'Cần phân công lại trách nhiệm',
+          `${result.revocationSummary?.needsReassignment} trách nhiệm đã được đóng an toàn.`,
+        );
       }
-    }
+      return true;
+    });
+    if (completed) setAccountTargetId(null);
   };
 
   const handleSaveUser = async (userData: User) => {
@@ -1921,14 +1930,15 @@ const Settings: React.FC = () => {
             <SettingsUsers
               users={users} currentUser={currentUser} warehouses={warehouses}
               isUserModalOpen={isUserModalOpen} setIsUserModalOpen={setIsUserModalOpen}
-              isUserDeleteModalOpen={isUserDeleteModalOpen} setIsUserDeleteModalOpen={setIsUserDeleteModalOpen}
-              editingUser={editingUser} deletingUser={deletingUser}
+              editingUser={editingUser}
+              accountTarget={accountTarget} accountAction={accountAction}
+              closeAccountAction={() => setAccountTargetId(null)}
+              openAccountAction={openAccountAction}
+              handleAccountAction={handleAccountAction}
               handleAddUser={handleAddUser} handleEditUser={handleEditUser}
-              handleDeleteUserClick={handleDeleteUserClick}
-              handleConfirmDeleteUser={handleConfirmDeleteUser}
               handleSaveUser={handleSaveUser}
               getRoleBadge={getRoleBadge}
-              isDeletingUser={deletingUserLoading}
+              isSavingAccount={accountStatusLoading}
             />
           )}
 
