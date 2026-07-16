@@ -1,4 +1,8 @@
-import { createClient } from '@supabase/supabase-js';
+import {
+  EdgeAuthorizationError,
+  getAdminClient,
+  requireActiveAdmin,
+} from '../_shared/adminAuthorization.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -12,48 +16,13 @@ const json = (body: unknown, status = 200) =>
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   });
 
-const getAdminClient = () => {
-  const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
-  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
-  if (!supabaseUrl || !serviceRoleKey) {
-    throw new Error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
-  }
-
-  return createClient(supabaseUrl, serviceRoleKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-};
-
-const requireAdmin = async (req: Request, admin: ReturnType<typeof getAdminClient>) => {
-  const authHeader = req.headers.get('Authorization') || '';
-  const token = authHeader.replace(/^Bearer\s+/i, '');
-  if (!token) throw new Error('Missing authorization token');
-
-  const { data: authData, error: authError } = await admin.auth.getUser(token);
-  if (authError || !authData.user) throw new Error('Invalid authorization token');
-
-  const filters = [`auth_id.eq.${authData.user.id}`];
-  if (authData.user.email) filters.push(`email.eq.${authData.user.email}`);
-
-  const { data: appUser, error: appUserError } = await admin
-    .from('users')
-    .select('id, role, email, auth_id')
-    .or(filters.join(','))
-    .limit(1)
-    .maybeSingle();
-  if (appUserError) throw appUserError;
-  if (appUser?.role !== 'ADMIN') throw new Error('Admin permission required');
-
-  return { authUser: authData.user, appUser };
-};
-
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
 
   try {
     const admin = getAdminClient();
-    await requireAdmin(req, admin);
+    await requireActiveAdmin(req, admin);
 
     const body = await req.json();
     const email = String(body.email || '').trim().toLowerCase();
@@ -99,7 +68,6 @@ Deno.serve(async (req) => {
         admin_modules: profile.adminModules || null,
         allowed_sub_modules: profile.allowedSubModules || null,
         admin_sub_modules: profile.adminSubModules || null,
-        is_active: profile.isActive ?? true,
       };
 
       const { error: profileError } = await admin.from('users').upsert(payload).select('id').single();
@@ -112,8 +80,10 @@ Deno.serve(async (req) => {
 
     return json({ userId: data.user.id, profileId, user: { id: data.user.id, email: data.user.email } });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    const status = message.includes('permission') || message.includes('authorization') ? 403 : 400;
-    return json({ error: message }, status);
+    const status = error instanceof EdgeAuthorizationError ? error.status : 400;
+    const publicMessage = error instanceof EdgeAuthorizationError
+      ? error.message
+      : 'Không thể xử lý yêu cầu tài khoản.';
+    return json({ error: publicMessage }, status);
   }
 });
