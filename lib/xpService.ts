@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { isSupabaseConfigured, supabase } from './supabase';
 
 // ══════════════════════════════════════════
 //  XP SERVICE — Gamification Engine
@@ -32,6 +32,15 @@ export interface XPEvent {
   description: string;
   metadata: Record<string, any>;
   createdAt: string;
+}
+
+export type DailyXPEventType = 'daily_login' | 'daily_checkin';
+
+export interface XPAwardResult {
+  awarded: boolean;
+  xpGained: number;
+  profile: UserXP;
+  newBadges: Badge[];
 }
 
 // ═════════ XP Rules ═════════
@@ -88,107 +97,48 @@ export const BADGE_DEFS: Record<string, { name: string; icon: string; descriptio
   level_10: { name: 'Bất khả chiến bại', icon: '🏆', description: 'Đạt Level 10', condition: (u) => u.level >= 10 },
 };
 
-const computeLevel = (totalXp: number): number => {
-  let lvl = 1;
-  for (const l of LEVELS) {
-    if (totalXp >= l.minXp) lvl = l.level;
-  }
-  return lvl;
-};
-
 export const xpService = {
-  /** Get or create user XP profile */
-  async getProfile(userId: string): Promise<UserXP> {
+  /** Read an XP profile. Profile creation happens only inside authoritative server RPCs. */
+  async getProfile(userId: string): Promise<UserXP | null> {
     const { data, error } = await supabase
       .from('user_xp')
       .select('*')
       .eq('user_id', userId)
-      .single();
+      .maybeSingle();
 
-    if (data) {
-      return {
-        id: data.id,
-        userId: data.user_id,
-        totalXp: data.total_xp,
-        level: data.level,
-        streakDays: data.streak_days,
-        lastActiveDate: data.last_active_date,
-        badges: data.badges || [],
-        createdAt: data.created_at,
-        updatedAt: data.updated_at,
-      };
-    }
+    if (error) throw error;
+    if (!data) return null;
 
-    // Create new profile
-    const { data: newData, error: newErr } = await supabase
-      .from('user_xp')
-      .insert({ user_id: userId })
-      .select()
-      .single();
-
-    if (newErr) throw newErr;
     return {
-      id: newData.id,
-      userId: newData.user_id,
-      totalXp: 0,
-      level: 1,
-      streakDays: 0,
-      lastActiveDate: null,
-      badges: [],
-      createdAt: newData.created_at,
-      updatedAt: newData.updated_at,
+      id: data.id,
+      userId: data.user_id,
+      totalXp: data.total_xp,
+      level: data.level,
+      streakDays: data.streak_days,
+      lastActiveDate: data.last_active_date,
+      badges: data.badges || [],
+      createdAt: data.created_at,
+      updatedAt: data.updated_at,
     };
   },
 
-  /** Award XP for an action */
-  async awardXP(userId: string, eventType: string, customDescription?: string): Promise<{ xpGained: number; newLevel: number; levelUp: boolean; newBadges: Badge[] }> {
-    const rule = XP_RULES[eventType];
-    if (!rule) return { xpGained: 0, newLevel: 1, levelUp: false, newBadges: [] };
-
-    const profile = await this.getProfile(userId);
-    const newTotalXp = profile.totalXp + rule.xp;
-    const newLevel = computeLevel(newTotalXp);
-    const levelUp = newLevel > profile.level;
-
-    // Update streak
-    const today = new Date().toISOString().split('T')[0];
-    let streakDays = profile.streakDays;
-    if (profile.lastActiveDate !== today) {
-      const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
-      streakDays = profile.lastActiveDate === yesterday ? streakDays + 1 : 1;
+  /** Award daily XP atomically. The server derives actor, amount and idempotency. */
+  async awardDailyXP(
+    eventType: DailyXPEventType,
+    sourceId?: string,
+  ): Promise<XPAwardResult> {
+    if (!isSupabaseConfigured) {
+      throw new Error('Supabase is not configured; daily XP awards are disabled in mock mode.');
     }
 
-    // Check new badges
-    const updatedProfile = { ...profile, totalXp: newTotalXp, level: newLevel, streakDays };
-    const newBadges: Badge[] = [];
-    const existingBadgeIds = (profile.badges || []).map((b: Badge) => b.id);
-    for (const [id, def] of Object.entries(BADGE_DEFS)) {
-      if (!existingBadgeIds.includes(id) && def.condition(updatedProfile)) {
-        const badge: Badge = { id, name: def.name, icon: def.icon, description: def.description, earnedAt: new Date().toISOString() };
-        newBadges.push(badge);
-      }
-    }
-    const allBadges = [...(profile.badges || []), ...newBadges];
-
-    // Save to DB
-    await supabase.from('user_xp').update({
-      total_xp: newTotalXp,
-      level: newLevel,
-      streak_days: streakDays,
-      last_active_date: today,
-      badges: allBadges,
-      updated_at: new Date().toISOString(),
-    }).eq('user_id', userId);
-
-    // Log XP event
-    await supabase.from('xp_events').insert({
-      user_id: userId,
-      event_type: eventType,
-      xp_amount: rule.xp,
-      description: customDescription || rule.label,
+    const { data, error } = await supabase.rpc('award_my_daily_xp', {
+      p_event_type: eventType,
+      p_source_id: sourceId ?? null,
     });
 
-    return { xpGained: rule.xp, newLevel, levelUp, newBadges };
+    if (error) throw error;
+    if (!data) throw new Error('Daily XP RPC returned no award result.');
+    return data as XPAwardResult;
   },
 
   /** Get recent XP events */
