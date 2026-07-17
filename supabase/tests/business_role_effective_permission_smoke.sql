@@ -195,14 +195,24 @@ begin
     raise exception 'Governance direct-mutation ACL contract failed';
   end if;
 
-  if not exists (
+  if to_regprocedure('app_private.resolve_effective_permission_sources(uuid,text,text,text,timestamp with time zone)') is null then
+    if not exists (
+      select 1
+      from pg_policy policy_row
+      where policy_row.polrelid = v_assignment_table
+        and policy_row.polname = 'principal_role_assignments_self_select'
+        and policy_row.polcmd = 'r'
+    ) then
+      raise exception 'Business Role self-select policy contract failed';
+    end if;
+  elsif not exists (
     select 1
     from pg_policy policy_row
     where policy_row.polrelid = v_assignment_table
-      and policy_row.polname = 'principal_role_assignments_self_select'
+      and policy_row.polname = 'principal_role_assignments_authorized_select'
       and policy_row.polcmd = 'r'
   ) then
-    raise exception 'Business Role self-select policy contract failed';
+    raise exception 'Business Role authorized-select policy contract failed';
   end if;
 
   if not exists (
@@ -294,3 +304,635 @@ end;
 $$;
 
 select 'business_role_foundation_smoke_passed' as checkpoint;
+
+do $$
+begin
+  if to_regprocedure('app_private.resolve_effective_permission_sources(uuid,text,text,text,timestamp with time zone)') is null
+    or to_regprocedure('public.get_effective_permission_sources(uuid)') is null
+  then
+    raise exception 'Effective permission resolver function contract failed';
+  end if;
+
+  if has_function_privilege(
+    'anon',
+    'public.get_effective_permission_sources(uuid)',
+    'EXECUTE'
+  ) then
+    raise exception 'Anonymous role can execute effective source RPC';
+  end if;
+
+  if has_function_privilege(
+    'authenticated',
+    'app_private.resolve_effective_permission_sources(uuid,text,text,text,timestamp with time zone)',
+    'EXECUTE'
+  ) then
+    raise exception 'Authenticated role can execute raw effective source resolver';
+  end if;
+end;
+$$;
+
+create temporary table phase2_role_smoke_ids (
+  target_id uuid not null,
+  legacy_target_id uuid not null,
+  admin_id uuid not null,
+  mirror_admin_id uuid not null,
+  permission_admin_id uuid not null,
+  auditor_id uuid not null,
+  unrelated_id uuid not null,
+  inactive_id uuid not null,
+  project_item_role_id uuid not null,
+  item_wildcard_role_id uuid not null,
+  target_email text not null,
+  legacy_target_email text not null,
+  admin_email text not null,
+  mirror_admin_email text not null,
+  permission_admin_email text not null,
+  auditor_email text not null,
+  unrelated_email text not null,
+  inactive_email text not null
+) on commit drop;
+
+grant select on phase2_role_smoke_ids to authenticated, service_role;
+
+insert into phase2_role_smoke_ids (
+  target_id,
+  legacy_target_id,
+  admin_id,
+  mirror_admin_id,
+  permission_admin_id,
+  auditor_id,
+  unrelated_id,
+  inactive_id,
+  project_item_role_id,
+  item_wildcard_role_id,
+  target_email,
+  legacy_target_email,
+  admin_email,
+  mirror_admin_email,
+  permission_admin_email,
+  auditor_email,
+  unrelated_email,
+  inactive_email
+)
+select
+  gen_random_uuid(),
+  gen_random_uuid(),
+  gen_random_uuid(),
+  gen_random_uuid(),
+  gen_random_uuid(),
+  gen_random_uuid(),
+  gen_random_uuid(),
+  gen_random_uuid(),
+  gen_random_uuid(),
+  gen_random_uuid(),
+  'phase2-role-target-' || gen_random_uuid()::text || '@vioo.local',
+  'phase2-role-legacy-' || gen_random_uuid()::text || '@vioo.local',
+  'phase2-role-admin-' || gen_random_uuid()::text || '@vioo.local',
+  'phase2-role-mirror-' || gen_random_uuid()::text || '@vioo.local',
+  'phase2-role-permission-admin-' || gen_random_uuid()::text || '@vioo.local',
+  'phase2-role-auditor-' || gen_random_uuid()::text || '@vioo.local',
+  'phase2-role-unrelated-' || gen_random_uuid()::text || '@vioo.local',
+  'phase2-role-inactive-' || gen_random_uuid()::text || '@vioo.local';
+
+insert into public.users (
+  id,
+  name,
+  email,
+  username,
+  role,
+  is_active,
+  account_status,
+  allowed_modules,
+  admin_modules,
+  allowed_sub_modules,
+  admin_sub_modules
+)
+select target_id, 'Phase 2 Role Target', target_email, 'phase2-role-target',
+       'EMPLOYEE'::public.user_role, true, 'ACTIVE', '{}'::text[], '{}'::text[], '{}'::jsonb, '{}'::jsonb
+from phase2_role_smoke_ids
+union all
+select legacy_target_id, 'Phase 2 Legacy Target', legacy_target_email, 'phase2-role-legacy',
+       'EMPLOYEE'::public.user_role, true, 'ACTIVE', array['DA']::text[], '{}'::text[], '{}'::jsonb, '{}'::jsonb
+from phase2_role_smoke_ids
+union all
+select admin_id, 'Phase 2 Compatibility Admin', admin_email, 'phase2-role-admin',
+       'ADMIN'::public.user_role, true, 'ACTIVE', array['DA']::text[], array['DA','SETTINGS']::text[], '{}'::jsonb, '{}'::jsonb
+from phase2_role_smoke_ids
+union all
+select mirror_admin_id, 'Phase 2 Mirror Admin', mirror_admin_email, 'phase2-role-mirror',
+       'ADMIN'::public.user_role, true, 'ACTIVE', '{}'::text[], '{}'::text[], '{}'::jsonb, '{}'::jsonb
+from phase2_role_smoke_ids
+union all
+select permission_admin_id, 'Phase 2 Permission Admin', permission_admin_email, 'phase2-role-permission-admin',
+       'EMPLOYEE'::public.user_role, true, 'ACTIVE', '{}'::text[], '{}'::text[], '{}'::jsonb, '{}'::jsonb
+from phase2_role_smoke_ids
+union all
+select auditor_id, 'Phase 2 Auditor', auditor_email, 'phase2-role-auditor',
+       'EMPLOYEE'::public.user_role, true, 'ACTIVE', '{}'::text[], '{}'::text[], '{}'::jsonb, '{}'::jsonb
+from phase2_role_smoke_ids
+union all
+select unrelated_id, 'Phase 2 Unrelated', unrelated_email, 'phase2-role-unrelated',
+       'EMPLOYEE'::public.user_role, true, 'ACTIVE', '{}'::text[], '{}'::text[], '{}'::jsonb, '{}'::jsonb
+from phase2_role_smoke_ids
+union all
+select inactive_id, 'Phase 2 Inactive', inactive_email, 'phase2-role-inactive',
+       'EMPLOYEE'::public.user_role, false, 'DISABLED', '{}'::text[], '{}'::text[], '{}'::jsonb, '{}'::jsonb
+from phase2_role_smoke_ids;
+
+insert into public.role_permission_templates (
+  id,
+  code,
+  name,
+  description,
+  is_active,
+  is_system
+)
+select project_item_role_id,
+       'PHASE2_SMOKE_PROJECT_ITEM_' || replace(left(project_item_role_id::text, 8), '-', ''),
+       'Phase 2 project item smoke role',
+       'Assignment wildcard intersected by a concrete role item',
+       true,
+       false
+from phase2_role_smoke_ids
+union all
+select item_wildcard_role_id,
+       'PHASE2_SMOKE_ITEM_WILDCARD_' || replace(left(item_wildcard_role_id::text, 8), '-', ''),
+       'Phase 2 item wildcard smoke role',
+       'Role item wildcard intersected by a concrete assignment',
+       true,
+       false
+from phase2_role_smoke_ids;
+
+insert into public.role_permission_template_items (
+  template_id,
+  permission_code,
+  scope_type,
+  scope_id,
+  sort_order
+)
+select project_item_role_id, 'project.daily_log.approve', 'project', 'project-1', 10
+from phase2_role_smoke_ids
+union all
+select item_wildcard_role_id, 'project.daily_log.approve', 'project', '*', 10
+from phase2_role_smoke_ids;
+
+insert into public.principal_role_assignments (
+  principal_type,
+  principal_id,
+  role_template_id,
+  scope_type,
+  scope_id,
+  starts_at,
+  status,
+  assigned_reason
+)
+select 'user', target_id, project_item_role_id, 'project', '*', now(), 'ACTIVE',
+       'Test concrete item under wildcard assignment'
+from phase2_role_smoke_ids
+union all
+select 'user', target_id, item_wildcard_role_id, 'project', 'project-1', now(), 'ACTIVE',
+       'Test wildcard item under concrete assignment'
+from phase2_role_smoke_ids
+union all
+select 'user', mirror_admin_id, role_row.id, 'global', '*', now(), 'ACTIVE',
+       'Test System Admin profile mirror behavior'
+from phase2_role_smoke_ids
+join public.role_permission_templates role_row on role_row.code = 'SYSTEM_ADMIN'
+union all
+select 'user', permission_admin_id, role_row.id, 'global', '*', now(), 'ACTIVE',
+       'Test explicit Permission Admin behavior'
+from phase2_role_smoke_ids
+join public.role_permission_templates role_row on role_row.code = 'PERMISSION_ADMIN'
+union all
+select 'user', auditor_id, role_row.id, 'global', '*', now(), 'ACTIVE',
+       'Test explicit Auditor read behavior'
+from phase2_role_smoke_ids
+join public.role_permission_templates role_row on role_row.code = 'AUDITOR';
+
+do $$
+begin
+  if not app_private.has_permission(
+    (select admin_id from phase2_role_smoke_ids),
+    'project.daily_log.approve',
+    'project',
+    'project-1'
+  ) then
+    raise exception 'Compatibility flags disabled changed System Admin business behavior';
+  end if;
+
+  if not app_private.has_permission(
+    (select admin_id from phase2_role_smoke_ids),
+    'system.authorization.manage_roles',
+    'global',
+    '*'
+  ) then
+    raise exception 'Compatibility flags disabled changed legacy governance behavior';
+  end if;
+
+  if app_private.has_permission(
+    (select target_id from phase2_role_smoke_ids),
+    'project.daily_log.approve',
+    'project',
+    'project-1'
+  ) then
+    raise exception 'Business Role source activated before resolver flag';
+  end if;
+end;
+$$;
+
+update app_private.permission_hardening_settings
+set value = 'true'::jsonb,
+    updated_at = now()
+where key in (
+  'business_role_resolver_enabled',
+  'legacy_governance_fallback_disabled',
+  'system_admin_business_approval_bypass_disabled'
+);
+
+do $$
+declare
+  v_target_id uuid := (select target_id from phase2_role_smoke_ids);
+begin
+  if (
+    select count(*)
+    from app_private.resolve_effective_permission_sources(
+      v_target_id,
+      'project.daily_log.approve',
+      'project',
+      'project-1',
+      now()
+    ) source_row
+    where source_row.source_type = 'ROLE'
+      and source_row.scope_type = 'project'
+      and source_row.scope_id = 'project-1'
+  ) <> 2 then
+    raise exception 'Role scope intersection did not preserve both narrow operands';
+  end if;
+
+  if exists (
+    select 1
+    from app_private.resolve_effective_permission_sources(
+      v_target_id,
+      'project.daily_log.approve',
+      'project',
+      'project-1',
+      now()
+    ) source_row
+    where source_row.source_type <> 'ROLE'
+  ) then
+    raise exception 'Role-only permission resolved from another source';
+  end if;
+
+  if app_private.has_permission(
+    v_target_id,
+    'project.daily_log.approve',
+    'project',
+    'project-2'
+  ) then
+    raise exception 'Role scope intersection widened to another project';
+  end if;
+
+  if app_private.has_permission(
+    v_target_id,
+    'project.daily_log.create',
+    'project',
+    'project-1'
+  ) then
+    raise exception 'Adjacent permission existed before direct grant';
+  end if;
+end;
+$$;
+
+insert into public.user_permission_grants (
+  user_id,
+  permission_code,
+  scope_type,
+  scope_id,
+  is_active,
+  granted_at,
+  grant_reason
+)
+select target_id, 'project.daily_log.create', 'project', 'project-1', true, now(),
+       'Test adjacent direct grant source'
+from phase2_role_smoke_ids;
+
+do $$
+declare
+  v_target_id uuid := (select target_id from phase2_role_smoke_ids);
+begin
+  if not app_private.has_permission(
+    v_target_id,
+    'project.daily_log.create',
+    'project',
+    'project-1'
+  ) then
+    raise exception 'Matching direct permission did not resolve';
+  end if;
+
+  if app_private.has_permission(
+    v_target_id,
+    'project.daily_log.create',
+    'project',
+    'project-2'
+  ) then
+    raise exception 'Direct permission widened to another project';
+  end if;
+
+  if not exists (
+    select 1
+    from app_private.resolve_effective_permission_sources(
+      v_target_id,
+      'project.daily_log.create',
+      'project',
+      'project-1',
+      now()
+    ) source_row
+    where source_row.source_type = 'DIRECT'
+  ) then
+    raise exception 'Direct permission source explanation missing';
+  end if;
+end;
+$$;
+
+do $$
+begin
+  if app_private.has_permission(
+    (select admin_id from phase2_role_smoke_ids),
+    'project.daily_log.approve', 'project', 'project-1'
+  ) then
+    raise exception 'System Admin retained automatic business approval';
+  end if;
+
+  if not app_private.has_permission(
+    (select admin_id from phase2_role_smoke_ids),
+    'system.settings.manage', 'global', '*'
+  ) then
+    raise exception 'System Admin lost technical settings access';
+  end if;
+
+  if app_private.has_permission(
+    (select admin_id from phase2_role_smoke_ids),
+    'system.authorization.manage_roles', 'global', '*'
+  ) or app_private.has_permission(
+    (select admin_id from phase2_role_smoke_ids),
+    'system.authorization.manage_grants', 'global', '*'
+  ) then
+    raise exception 'Legacy governance cutoff did not remove implicit admin authority';
+  end if;
+
+  if not app_private.has_permission(
+    (select permission_admin_id from phase2_role_smoke_ids),
+    'system.authorization.manage_roles', 'global', '*'
+  ) or not app_private.has_permission(
+    (select permission_admin_id from phase2_role_smoke_ids),
+    'system.authorization.manage_grants', 'global', '*'
+  ) then
+    raise exception 'Explicit Permission Admin source did not resolve';
+  end if;
+end;
+$$;
+
+do $$
+begin
+  if not app_private.has_permission(
+    (select legacy_target_id from phase2_role_smoke_ids),
+    'project.daily_log.view', 'project', 'project-legacy'
+  ) or not app_private.has_permission(
+    (select legacy_target_id from phase2_role_smoke_ids),
+    'project.daily_log.view', 'warehouse', 'warehouse-legacy'
+  ) then
+    raise exception 'Global legacy source stopped covering scoped compatibility callers';
+  end if;
+
+  if exists (
+    select 1
+    from app_private.resolve_effective_permission_sources(
+      (select inactive_id from phase2_role_smoke_ids),
+      null,
+      null,
+      null,
+      now()
+    )
+  ) then
+    raise exception 'Inactive target resolved permission sources';
+  end if;
+end;
+$$;
+
+insert into public.user_permission_grants (
+  user_id,
+  permission_code,
+  scope_type,
+  scope_id,
+  is_active,
+  granted_at,
+  grant_reason
+)
+select mirror_admin_id, 'system.settings.manage', 'global', '*', true, now(),
+       'Test identity direct source rejection'
+from phase2_role_smoke_ids;
+
+do $$
+declare
+  v_mirror_admin_id uuid := (select mirror_admin_id from phase2_role_smoke_ids);
+begin
+  if not exists (
+    select 1
+    from app_private.resolve_effective_permission_sources(
+      v_mirror_admin_id,
+      'system.settings.manage',
+      'global',
+      '*',
+      now()
+    ) source_row
+    where source_row.source_type = 'ROLE'
+      and source_row.source_code = 'SYSTEM_ADMIN'
+  ) then
+    raise exception 'System Admin profile mirror did not resolve identity permission';
+  end if;
+
+  if exists (
+    select 1
+    from app_private.resolve_effective_permission_sources(
+      v_mirror_admin_id,
+      'system.settings.manage',
+      'global',
+      '*',
+      now()
+    ) source_row
+    where source_row.source_type = 'DIRECT'
+  ) then
+    raise exception 'Direct System Admin identity permission was accepted';
+  end if;
+end;
+$$;
+
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+set role service_role;
+select set_config('app.account_lifecycle_command', 'on', true);
+
+update public.users
+set role = 'EMPLOYEE'::public.user_role
+where id = (select mirror_admin_id from phase2_role_smoke_ids);
+
+reset role;
+select set_config('app.account_lifecycle_command', '', true);
+select set_config('request.jwt.claims', '{}'::jsonb::text, true);
+
+do $$
+begin
+  if exists (
+    select 1
+    from app_private.resolve_effective_permission_sources(
+      (select mirror_admin_id from phase2_role_smoke_ids),
+      'system.settings.manage',
+      'global',
+      '*',
+      now()
+    ) source_row
+    where source_row.source_type in ('ROLE', 'DIRECT')
+  ) then
+    raise exception 'Stale System Admin mirror or direct grant survived profile demotion';
+  end if;
+end;
+$$;
+
+set role authenticated;
+
+select set_config(
+  'request.jwt.claims',
+  jsonb_build_object(
+    'role', 'authenticated',
+    'email', (select target_email from phase2_role_smoke_ids),
+    'sub', gen_random_uuid()::text
+  )::text,
+  true
+);
+
+do $$
+begin
+  perform public.get_effective_permission_sources(
+    (select target_id from phase2_role_smoke_ids)
+  );
+end;
+$$;
+
+select set_config(
+  'request.jwt.claims',
+  jsonb_build_object(
+    'role', 'authenticated',
+    'email', (select permission_admin_email from phase2_role_smoke_ids),
+    'sub', gen_random_uuid()::text
+  )::text,
+  true
+);
+
+do $$
+begin
+  perform public.get_effective_permission_sources(
+    (select target_id from phase2_role_smoke_ids)
+  );
+end;
+$$;
+
+select set_config(
+  'request.jwt.claims',
+  jsonb_build_object(
+    'role', 'authenticated',
+    'email', (select auditor_email from phase2_role_smoke_ids),
+    'sub', gen_random_uuid()::text
+  )::text,
+  true
+);
+
+do $$
+begin
+  perform public.get_effective_permission_sources(
+    (select target_id from phase2_role_smoke_ids)
+  );
+end;
+$$;
+
+select set_config(
+  'request.jwt.claims',
+  jsonb_build_object(
+    'role', 'authenticated',
+    'email', (select unrelated_email from phase2_role_smoke_ids),
+    'sub', gen_random_uuid()::text
+  )::text,
+  true
+);
+
+do $$
+declare
+  v_denied boolean := false;
+begin
+  begin
+    perform public.get_effective_permission_sources(
+      (select target_id from phase2_role_smoke_ids)
+    );
+  exception
+    when insufficient_privilege then
+      v_denied := true;
+  end;
+
+  if not v_denied then
+    raise exception 'Unrelated caller read another principal authorization sources';
+  end if;
+end;
+$$;
+
+reset role;
+
+delete from public.user_permission_grants
+where user_id in (
+  select target_id from phase2_role_smoke_ids
+  union all
+  select mirror_admin_id from phase2_role_smoke_ids
+);
+
+delete from public.principal_role_assignments
+where principal_id in (
+  select target_id from phase2_role_smoke_ids
+  union all
+  select mirror_admin_id from phase2_role_smoke_ids
+  union all
+  select permission_admin_id from phase2_role_smoke_ids
+  union all
+  select auditor_id from phase2_role_smoke_ids
+);
+
+delete from public.role_permission_template_items
+where template_id in (
+  select project_item_role_id from phase2_role_smoke_ids
+  union all
+  select item_wildcard_role_id from phase2_role_smoke_ids
+);
+
+delete from public.role_permission_templates
+where id in (
+  select project_item_role_id from phase2_role_smoke_ids
+  union all
+  select item_wildcard_role_id from phase2_role_smoke_ids
+);
+
+delete from public.users
+where id in (
+  select target_id from phase2_role_smoke_ids
+  union all
+  select legacy_target_id from phase2_role_smoke_ids
+  union all
+  select admin_id from phase2_role_smoke_ids
+  union all
+  select mirror_admin_id from phase2_role_smoke_ids
+  union all
+  select permission_admin_id from phase2_role_smoke_ids
+  union all
+  select auditor_id from phase2_role_smoke_ids
+  union all
+  select unrelated_id from phase2_role_smoke_ids
+  union all
+  select inactive_id from phase2_role_smoke_ids
+);
+
+select 'business_role_effective_permission_smoke_passed' as checkpoint;

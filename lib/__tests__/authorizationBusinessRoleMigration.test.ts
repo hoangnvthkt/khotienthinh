@@ -9,6 +9,14 @@ const files = readdirSync(dir)
 const sql = files.length === 1 ? readFileSync(join(dir, files[0]), 'utf8') : '';
 const normalized = sql.replace(/\s+/g, ' ').trim();
 
+const resolverFiles = readdirSync(dir)
+  .filter(file => file.endsWith('_authorization_effective_permission_resolver.sql'))
+  .sort();
+const resolverSql = resolverFiles.length === 1
+  ? readFileSync(join(dir, resolverFiles[0]), 'utf8')
+  : '';
+const resolverNormalized = resolverSql.replace(/\s+/g, ' ').trim();
+
 describe('authorization Business Role foundation migration', () => {
   it('has one forward migration with risk metadata', () => {
     expect(files).toHaveLength(1);
@@ -52,5 +60,41 @@ describe('authorization Business Role foundation migration', () => {
     ]) {
       expect(sql).toContain(`'${code}'`);
     }
+  });
+});
+
+describe('authorization effective permission resolver migration', () => {
+  it('adds one private source resolver behind the existing boolean facade', () => {
+    expect(resolverFiles).toHaveLength(1);
+    expect(resolverNormalized).toMatch(/create or replace function app_private\.resolve_effective_permission_sources\(/i);
+    expect(resolverNormalized).toMatch(/source_type text/i);
+    expect(resolverSql).toContain("'ROLE'");
+    expect(resolverSql).toContain("'DIRECT'");
+    expect(resolverSql).toContain("'LEGACY'");
+    expect(resolverNormalized).toMatch(/create or replace function app_private\.has_permission\(/i);
+    expect(resolverNormalized).not.toMatch(/where u\.role = 'ADMIN'\s*\)\s*or exists/i);
+  });
+
+  it('uses explicit rollout flags for resolver, governance separation and business approval', () => {
+    expect(resolverSql).toContain("'business_role_resolver_enabled'");
+    expect(resolverSql).toContain("'legacy_governance_fallback_disabled'");
+    expect(resolverSql).toContain("'system_admin_business_approval_bypass_disabled'");
+    expect(resolverNormalized).toMatch(/user_row\.role = 'ADMIN'.*system\.authorization.*legacy_governance_fallback_disabled/is);
+    expect(resolverNormalized).toMatch(/user_row\.role = 'ADMIN'.*system_admin_business_approval_bypass_disabled/is);
+    expect(resolverNormalized).toMatch(/user_row\.role = 'ADMIN'.*action_row\.is_business_approval/is);
+  });
+
+  it('keeps System Admin identity permission bound to its profile mirror', () => {
+    expect(resolverNormalized).toMatch(/system\.settings\.manage.*role_template\.code = 'SYSTEM_ADMIN'.*user_row\.role = 'ADMIN'/is);
+    expect(resolverNormalized).toMatch(/direct_sources.*grant_row\.permission_code <> 'system\.settings\.manage'/is);
+  });
+
+  it('keeps the public explanation RPC actor-derived and read-only', () => {
+    expect(resolverNormalized).toMatch(/v_actor_user_id uuid := public\.current_app_user_id\(\)/i);
+    expect(resolverNormalized).toMatch(/create or replace function app_private\.get_effective_permission_sources_authorized\(/i);
+    expect(resolverNormalized).toMatch(/create or replace function public\.get_effective_permission_sources/i);
+    expect(resolverNormalized).toMatch(/create or replace function public\.get_effective_permission_sources\(.*?security invoker/is);
+    expect(resolverNormalized).toMatch(/revoke all on function app_private\.resolve_effective_permission_sources\(uuid,text,text,text,timestamptz\) from public, anon, authenticated/i);
+    expect(resolverNormalized).not.toMatch(/get_effective_permission_sources\([^)]*p_actor/i);
   });
 });
