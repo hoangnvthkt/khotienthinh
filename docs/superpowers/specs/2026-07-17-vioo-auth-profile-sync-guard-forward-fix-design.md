@@ -1,7 +1,7 @@
 # Thiết kế forward-fix cho Auth profile sync guard
 
 Ngày: 2026-07-17
-Trạng thái: Operator-approved direction; chờ duyệt văn bản
+Trạng thái: Approved
 Phạm vi: Khôi phục luồng tạo Supabase Auth user mà không mở rộng quyền cập nhật `public.users`
 
 ## 1. Vấn đề đã xác nhận
