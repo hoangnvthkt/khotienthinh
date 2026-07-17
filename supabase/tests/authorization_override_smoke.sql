@@ -377,6 +377,26 @@ begin
   if not v_denied then
     raise exception 'Changed payload reused an override idempotency key';
   end if;
+
+  v_denied := false;
+  begin
+    perform public.record_authorization_override(
+      'WORKFLOW_CONTROLLED_EXCEPTION',
+      'workflow_subject',
+      'workflow-42',
+      'project',
+      'project-42',
+      'Controlled exception monitored by an independent auditor',
+      (select auditor_id from phase2_override_smoke_ids),
+      null,
+      v_key
+    );
+  exception
+    when unique_violation then v_denied := true;
+  end;
+  if not v_denied then
+    raise exception 'Null replay field reused an override idempotency key';
+  end if;
 end;
 $$;
 

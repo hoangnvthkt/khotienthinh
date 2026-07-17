@@ -115,15 +115,15 @@ begin
   for update;
 
   if v_existing.id is not null then
-    if v_existing.actor_user_id <> v_actor_user_id
-      or v_existing.rule_code <> v_rule_code
-      or v_existing.subject_type <> v_subject_type
-      or v_existing.subject_id <> v_subject_id
-      or v_existing.scope_type <> v_scope_type
-      or v_existing.scope_id <> v_scope_id
-      or v_existing.reason <> v_reason
-      or v_existing.control_owner_user_id <> p_control_owner_user_id
-      or v_existing.expires_at <> p_expires_at
+    if v_existing.actor_user_id is distinct from v_actor_user_id
+      or v_existing.rule_code is distinct from v_rule_code
+      or v_existing.subject_type is distinct from v_subject_type
+      or v_existing.subject_id is distinct from v_subject_id
+      or v_existing.scope_type is distinct from v_scope_type
+      or v_existing.scope_id is distinct from v_scope_id
+      or v_existing.reason is distinct from v_reason
+      or v_existing.control_owner_user_id is distinct from p_control_owner_user_id
+      or v_existing.expires_at is distinct from p_expires_at
     then
       raise exception 'Idempotency key is already used for another override command'
         using errcode = '23505';
