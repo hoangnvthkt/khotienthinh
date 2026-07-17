@@ -72,8 +72,35 @@ describe('projectPermissionService', () => {
     expect(canPerformProjectAction(grantedUser, 'project.daily_log.approve', { projectId: 'project-1' })).toBe(false);
   });
 
-  it('allows ADMIN to perform project actions regardless of scope', () => {
-    expect(canPerformProjectAction(user({ role: Role.ADMIN }), 'project.daily_log.approve', { projectId: 'project-1' })).toBe(true);
+  it('keeps offline ADMIN compatibility for non-approval project actions only', () => {
+    const admin = user({ role: Role.ADMIN });
+    expect(canPerformProjectAction(admin, 'project.daily_log.view', { projectId: 'project-1' })).toBe(true);
+    expect(canPerformProjectAction(admin, 'project.daily_log.approve', { projectId: 'project-1' })).toBe(false);
+  });
+
+  it('denies System Admin business approval when effective sources are authoritative', () => {
+    expect(canPerformProjectAction(user({
+      role: Role.ADMIN,
+      effectivePermissions: [],
+    }), 'project.daily_log.approve', { projectId: 'project-1' })).toBe(false);
+  });
+
+  it('uses scoped Business Role sources for project and construction-site checks', () => {
+    const roleUser = user({
+      effectivePermissions: [{
+        permissionCode: 'project.daily_log.approve',
+        sourceType: 'ROLE', sourceId: 'assignment-1',
+        sourceCode: 'PROJECT_APPROVER', sourceLabel: 'Project Approver',
+        scopeType: 'project', scopeId: 'project-1',
+        riskLevel: 'sensitive', isBusinessApproval: true, metadata: {},
+      }],
+    });
+
+    expect(canPerformProjectAction(roleUser, 'project.daily_log.approve', { projectId: 'project-1' })).toBe(true);
+    expect(canPerformProjectAction(roleUser, 'project.daily_log.approve', {
+      projectId: 'project-1', constructionSiteId: 'site-1',
+    })).toBe(true);
+    expect(canPerformProjectAction(roleUser, 'project.daily_log.approve', { projectId: 'project-2' })).toBe(false);
   });
 
   it('checks and requires explicit namespaced project actions without legacy fallback', () => {

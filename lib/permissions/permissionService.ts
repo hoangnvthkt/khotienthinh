@@ -1,5 +1,6 @@
 import { matchPath } from 'react-router-dom';
 import { Role, User, UserPermissionGrant } from '../../types';
+import type { EffectivePermissionSource } from './authorizationGovernanceTypes';
 import {
   getAllPermissionActions,
   getPermissionActionByCode,
@@ -30,6 +31,54 @@ const scopeMatches = (grant: UserPermissionGrant, scope?: PermissionScope): bool
   if (grant.scopeType !== requested.scopeType) return false;
   return grant.scopeId === '*' || grant.scopeId === requested.scopeId;
 };
+
+const effectiveSourceIsCurrent = (
+  source: EffectivePermissionSource,
+  now = new Date(),
+): boolean => {
+  const startsAt = source.startsAt !== undefined && source.startsAt !== null
+    ? new Date(source.startsAt).getTime()
+    : null;
+  const expiresAt = source.expiresAt !== undefined && source.expiresAt !== null
+    ? new Date(source.expiresAt).getTime()
+    : null;
+  if (startsAt !== null && (!Number.isFinite(startsAt) || startsAt > now.getTime())) return false;
+  if (expiresAt !== null && (!Number.isFinite(expiresAt) || expiresAt <= now.getTime())) return false;
+  return true;
+};
+
+const effectiveSourceMatches = (
+  source: EffectivePermissionSource,
+  permissionCode: string,
+  scope?: PermissionScope,
+  now = new Date(),
+): boolean => {
+  if (source.permissionCode !== permissionCode || !effectiveSourceIsCurrent(source, now)) return false;
+  return scopeMatches({
+    userId: '',
+    permissionCode: source.permissionCode,
+    scopeType: source.scopeType,
+    scopeId: source.scopeId,
+    isActive: true,
+  }, scope);
+};
+
+export const userHasEffectivePermission = (
+  user: Pick<User, 'effectivePermissions'> | null | undefined,
+  permissionCode: string,
+  scope?: PermissionScope,
+): boolean => Boolean(user?.effectivePermissions?.some(source =>
+  effectiveSourceMatches(source, permissionCode, scope)
+));
+
+const userHasEffectivePermissionForNavigation = (
+  user: Pick<User, 'effectivePermissions'>,
+  permissionCode: string,
+  scope?: PermissionScope,
+): boolean => Boolean(user.effectivePermissions?.some(source => {
+  if (!effectiveSourceIsCurrent(source) || source.permissionCode !== permissionCode) return false;
+  return scope ? effectiveSourceMatches(source, permissionCode, scope) : true;
+}));
 
 const hasLegacyModuleView = (user: Pick<User, 'allowedModules' | 'adminModules'>, legacyModuleKey: string): boolean => {
   if (user.allowedModules === undefined) return true;
@@ -124,11 +173,18 @@ const canManageLegacyRoute = (
     adminSubs.includes('/wf/templates');
 };
 
-const hasAnyActiveProjectGrant = (user: Pick<User, 'permissionGrants'> | null | undefined): boolean =>
-  Boolean(user?.permissionGrants?.some(grant =>
-    grant.permissionCode.startsWith('project.') &&
-    isGrantActive(grant)
+const hasAnyActiveProjectGrant = (
+  user: Pick<User, 'permissionGrants' | 'effectivePermissions'> | null | undefined,
+): boolean => {
+  if (user?.effectivePermissions !== undefined) {
+    return user.effectivePermissions.some(source =>
+      source.permissionCode.startsWith('project.') && effectiveSourceIsCurrent(source)
+    );
+  }
+  return Boolean(user?.permissionGrants?.some(grant =>
+    grant.permissionCode.startsWith('project.') && isGrantActive(grant)
   ));
+};
 
 export const userHasPermissionGrant = (
   user: Pick<User, 'permissionGrants'> | null | undefined,
@@ -153,28 +209,47 @@ export const isPermissionActionScopeAllowed = (
 };
 
 export const canPerform = (
-  user: Pick<User, 'role' | 'allowedModules' | 'adminModules' | 'allowedSubModules' | 'adminSubModules' | 'permissionGrants'> | null | undefined,
+  user: Pick<User, 'role' | 'allowedModules' | 'adminModules' | 'allowedSubModules' | 'adminSubModules' | 'permissionGrants' | 'effectivePermissions'> | null | undefined,
   permissionCode: string,
   scope?: PermissionScope,
 ): boolean => {
   if (!user) return false;
-  if (user.role === Role.ADMIN) return true;
+  if (user.effectivePermissions !== undefined) {
+    return userHasEffectivePermission(user, permissionCode, scope);
+  }
   if (userHasPermissionGrant(user, permissionCode, scope)) return true;
 
   const action = getPermissionActionByCode(permissionCode);
   if (!action) return false;
+  if (user.role === Role.ADMIN) return action.isBusinessApproval !== true;
   return hasLegacyPermission(user, action);
 };
 
+const moduleMatchesIdentifier = (moduleCode: string, legacyModuleKey: string | undefined, identifier: string): boolean =>
+  moduleCode === identifier || legacyModuleKey === identifier;
+
+const canViewModuleFromEffectiveSources = (
+  user: Pick<User, 'effectivePermissions'>,
+  moduleCodeOrLegacyKey: string,
+  scope?: PermissionScope,
+): boolean => getPermissionModules()
+  .filter(module => moduleMatchesIdentifier(module.code, module.legacyModuleKey, moduleCodeOrLegacyKey))
+  .some(module => module.actions.some(action =>
+    userHasEffectivePermissionForNavigation(user, action.permissionCode, scope)
+  ));
+
 export const canViewModule = (
-  user: Pick<User, 'role' | 'allowedModules' | 'adminModules' | 'allowedSubModules' | 'adminSubModules' | 'permissionGrants'> | null | undefined,
+  user: Parameters<typeof canPerform>[0],
   moduleCodeOrLegacyKey: string,
   scope?: PermissionScope,
 ): boolean => {
+  if (!user) return false;
+  if (user.effectivePermissions !== undefined) {
+    return canViewModuleFromEffectiveSources(user, moduleCodeOrLegacyKey, scope);
+  }
   if (moduleCodeOrLegacyKey === 'DA' && hasAnyActiveProjectGrant(user)) return true;
   const viewAction = getPrimaryViewPermissionForModule(moduleCodeOrLegacyKey);
   if (viewAction) return canPerform(user, viewAction.permissionCode, scope);
-  if (!user) return false;
   if (user.role === Role.ADMIN) return true;
   return hasLegacyModuleView(user, moduleCodeOrLegacyKey);
 };
@@ -191,6 +266,19 @@ export const canViewRoute = (
   scope?: PermissionScope,
 ): boolean => {
   if (!user) return false;
+  if (user.effectivePermissions !== undefined) {
+    return getPermissionModules().some(module => module.actions.some(action => {
+      if (!userHasEffectivePermissionForNavigation(user, action.permissionCode, scope)) return false;
+      const moduleRoutes = module.routes || [];
+      const moduleRouteMatches = moduleRoutes.some(moduleRoute => routeMatches(moduleRoute, route));
+      const actionRoute = action.legacyRoute;
+      if (actionRoute && routeMatches(actionRoute, route)) return true;
+      if (actionRoute && (actionRoute === route || actionRoute.startsWith(`${route}/`))) return true;
+      if (!moduleRouteMatches) return false;
+      if (!actionRoute || moduleRoutes.length === 1) return true;
+      return route.startsWith(`${actionRoute}/`);
+    }));
+  }
   if (user.role === Role.ADMIN) return true;
   if (route === '/da' && hasAnyActiveProjectGrant(user)) return true;
 
@@ -213,6 +301,15 @@ export const canManageRoute = (
   scope?: PermissionScope,
 ): boolean => {
   if (!user) return false;
+  if (user.effectivePermissions !== undefined) {
+    return getPermissionModules().some(module => {
+      const moduleRouteMatches = (module.routes || []).some(moduleRoute => routeMatches(moduleRoute, route));
+      return moduleRouteMatches && module.actions.some(action =>
+        action.action === 'manage' &&
+        userHasEffectivePermissionForNavigation(user, action.permissionCode, scope)
+      );
+    });
+  }
   if (user.role === Role.ADMIN) return true;
 
   const routeModules = getPermissionModules().filter(module =>

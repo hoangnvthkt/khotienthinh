@@ -3247,7 +3247,7 @@ Stop after Tasks 3–7 and review the complete database boundary before frontend
 - Consumes: DB return fields and risk classification from Tasks 1–7.
 - Produces: stable TypeScript types, registry metadata and `User.effectivePermissions` hydration target.
 
-- [ ] **Step 1: Write failing risk/type tests**
+- [x] **Step 1: Write failing risk/type tests**
 
 ```ts
 import { describe, expect, it } from 'vitest';
@@ -3300,7 +3300,7 @@ For the current registry, iterate every action and assert its four metadata fiel
 
 In `userAccountLifecycleService.test.ts`, import a new `normalizeUserAccountOperationResult`, add `businessRoleAssignments: '2'` to both the raw preview and raw result `revocationSummary` fixtures, and expect normalized numeric value `2`. This is the first task that stages that frontend assertion, so the task begins RED and ends green without committing a deliberately failing test.
 
-- [ ] **Step 2: Run focused tests and observe RED**
+- [x] **Step 2: Run focused tests and observe RED**
 
 ```bash
 npm test -- \
@@ -3311,7 +3311,7 @@ npm test -- \
 
 Expected: FAIL because the classifier/types and lifecycle role count are absent.
 
-- [ ] **Step 3: Add the governance domain types**
+- [x] **Step 3: Add the governance domain types**
 
 ```ts
 import type { PermissionRiskLevel, PermissionScopeType } from './permissionTypes';
@@ -3473,7 +3473,7 @@ export interface AuthorizationOverrideInput {
 }
 ```
 
-- [ ] **Step 4: Add deterministic risk classification matching the migration**
+- [x] **Step 4: Add deterministic risk classification matching the migration**
 
 ```ts
 import type { PermissionRiskLevel } from './permissionTypes';
@@ -3535,7 +3535,7 @@ directGrantRequiresExpiry?: boolean;
 
 `PermissionRiskLevel` lives in the foundational permission-types module, so governance types import it one way and no circular type dependency is introduced.
 
-- [ ] **Step 5: Attach metadata at registry construction points**
+- [x] **Step 5: Attach metadata at registry construction points**
 
 In each action factory, spread the classifier result:
 
@@ -3558,7 +3558,7 @@ Export/test `isIdentityBoundPermission(code)` from the same module. Governance r
 
 Add `system.authorization` to the static registry with the six permission codes seeded in Task 1. Do not derive governance actions from `ROUTE_TO_MODULE`; define them explicitly so they remain present even if the Settings route map changes.
 
-- [ ] **Step 6: Add effective sources and role counts to root user/lifecycle types**
+- [x] **Step 6: Add effective sources and role counts to root user/lifecycle types**
 
 At the top of `types.ts`:
 
@@ -3580,7 +3580,7 @@ businessRoleAssignments: number;
 
 Normalize the preview field with the existing safe numeric `count(...)` helper. Add `normalizeUserAccountOperationResult(...)` so `executeUserAccountLifecycle` normalizes every revocation-summary count—including `businessRoleAssignments`—before returning instead of casting the Edge Function JSON directly. The offline fallback preview must return `businessRoleAssignments: 0`; never infer an assignment count from legacy `role` or from the number of effective permission-source rows.
 
-- [ ] **Step 7: Run focused tests and commit**
+- [x] **Step 7: Run focused tests and commit**
 
 ```bash
 npm test -- \
@@ -3630,7 +3630,7 @@ Expected: focused tests and TypeScript PASS.
 - Consumes: Task 8 domain types and public Phase 2 RPCs.
 - Produces: actor-free RPC payload builders, current-user source hydration and source-authoritative client UX checks.
 
-- [ ] **Step 1: Write failing service payload and mapping tests**
+- [x] **Step 1: Write failing service payload and mapping tests**
 
 ```ts
 import { describe, expect, it } from 'vitest';
@@ -3705,7 +3705,7 @@ describe('authorization governance service contracts', () => {
 
 Mock Supabase and add one service assertion that `previewDirectGrantReplacement` makes exactly one `preview_direct_grant_replacement` RPC with the same normalized active multi-scope payload builder used by the mutation and no actor field; omitted/inactive drafts mean revoke in both calls.
 
-- [ ] **Step 2: Add failing permission semantics tests**
+- [x] **Step 2: Add failing permission semantics tests**
 
 Add fixtures with `effectivePermissions` in `permissionService.test.ts`; import `canViewRoute` alongside the existing permission helpers and assert:
 
@@ -3808,7 +3808,7 @@ expect(canAccessRoute(approver, '/da/tabs/dailylog')).toBe(true);
 
 Add equivalent `canPerformProjectAction` role-source and System Admin negative cases.
 
-- [ ] **Step 3: Run focused tests and observe RED**
+- [x] **Step 3: Run focused tests and observe RED**
 
 ```bash
 npm test -- \
@@ -3820,7 +3820,7 @@ npm test -- \
 
 Expected: FAIL because service, hydration and effective-source semantics are absent.
 
-- [ ] **Step 4: Implement source mapping and actor-free payload builders**
+- [x] **Step 4: Implement source mapping and actor-free payload builders**
 
 `authorizationGovernanceService.ts` must export:
 
@@ -3904,7 +3904,7 @@ recordAuthorizationOverride(input: AuthorizationOverrideInput): Promise<string>
 
 Each mutation method calls exactly one RPC, throws on Supabase error, and never retries internally. `listPermissionAuditEvents` performs a bounded, newest-first read (default/max `100`) from `permission_audit_events`; RLS—not a client filter—decides visibility. `listOverridableSodRules` selects only active `REQUIRE_OVERRIDE` + `overridable=true` rows and maps a safe typed subset; table RLS still authorizes the read. `previewBusinessRoleAssignment` delegates role-item scope intersection to the dedicated backend RPC; the client never flattens a role to permission codes. `previewDirectGrantReplacement` sends the complete normalized grant draft to its dedicated backend preview RPC, which may evaluate multiple scopes internally but remains one browser request. Idempotency retry remains an explicit caller action using the same key.
 
-- [ ] **Step 5: Upgrade the direct-grant admin service to the V2 RPC**
+- [x] **Step 5: Upgrade the direct-grant admin service to the V2 RPC**
 
 ```ts
 export interface ReplaceDirectGrantsOptions {
@@ -3939,7 +3939,7 @@ export const replaceUserPermissionGrants = async (
 };
 ```
 
-- [ ] **Step 6: Hydrate effective sources after verified active-profile resolution**
+- [x] **Step 6: Hydrate effective sources after verified active-profile resolution**
 
 Extend `AuthProfileGateway`:
 
@@ -3962,7 +3962,7 @@ In `AuthContext.tsx`, implement the gateway through `public.get_effective_permis
 
 Update `authBoundary.test.tsx` so the gateway returns a source fixture and the resolved user includes it. Add a failure case where `loadEffectivePermissionSources` rejects and authentication fails closed.
 
-- [ ] **Step 7: Make effective sources authoritative in client checks**
+- [x] **Step 7: Make effective sources authoritative in client checks**
 
 Add these helpers in `permissionService.ts`:
 
@@ -4004,7 +4004,7 @@ Apply the same authoritative-first rule to `canViewModule`, `canViewRoute`, `can
 
 For route/module visibility, use the permission registry's action-to-route/module mapping: a currently valid effective source may reveal its action's matching `legacyRoute`/registered route and the minimum parent shell needed to reach it, but never a sibling permission module's route. Fall back to module-wide visibility only when the module has one route or the action has no finer route mapping. When navigation asks without a concrete business scope, visibility may match a source in any scope; when a scope is supplied it must match normally. Backend action checks always require the exact requested scope. Never require `allowedModules`/`allowedSubModules` when authoritative sources are present, and never treat route visibility as backend action permission. This directly closes the known “new permission works only when legacy module is also checked” dependency without performing Phase 3 legacy cutover.
 
-- [ ] **Step 8: Run focused and route regression tests**
+- [x] **Step 8: Run focused and route regression tests**
 
 ```bash
 npm test -- \
@@ -4021,7 +4021,7 @@ npm run lint
 
 Expected: all focused tests and TypeScript PASS. Update existing admin test expectations only for business approvals; do not broadly weaken non-approval compatibility tests.
 
-- [ ] **Step 9: Commit Task 9**
+- [x] **Step 9: Commit Task 9**
 
 ```bash
 git add \

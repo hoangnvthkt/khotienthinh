@@ -1,5 +1,6 @@
 import { UserPermissionGrant } from '../../types';
 import { isSupabaseConfigured, supabase } from '../supabase';
+import type { SodWarningAcceptanceInput } from './authorizationGovernanceTypes';
 
 const mapPermissionGrantFromDb = (row: any): UserPermissionGrant => ({
   id: row.id,
@@ -25,24 +26,34 @@ export const listUserPermissionGrants = async (userId: string): Promise<UserPerm
   return (data || []).map(mapPermissionGrantFromDb);
 };
 
+export interface ReplaceDirectGrantsOptions {
+  reason: string;
+  warningAcceptances: SodWarningAcceptanceInput[];
+}
+
+export const buildDirectGrantReplacementPayload = (
+  grants: readonly UserPermissionGrant[],
+) => grants.filter(grant => grant.isActive !== false).map(grant => ({
+  permission_code: grant.permissionCode,
+  scope_type: grant.scopeType || 'global',
+  scope_id: grant.scopeId || '*',
+  is_active: true,
+  expires_at: grant.expiresAt || null,
+}));
+
 export const replaceUserPermissionGrants = async (
   userId: string,
   grants: readonly UserPermissionGrant[],
+  options: ReplaceDirectGrantsOptions,
 ): Promise<void> => {
   if (!isSupabaseConfigured || !userId) return;
-  const payload = grants
-    .filter(grant => grant.isActive !== false)
-    .map(grant => ({
-      permission_code: grant.permissionCode,
-      scope_type: grant.scopeType || 'global',
-      scope_id: grant.scopeId || '*',
-      is_active: grant.isActive ?? true,
-      expires_at: grant.expiresAt || null,
-    }));
+  const payload = buildDirectGrantReplacementPayload(grants);
 
-  const { error } = await supabase.rpc('replace_user_permission_grants', {
+  const { error } = await supabase.rpc('replace_user_permission_grants_v2', {
     p_user_id: userId,
     p_grants: payload,
+    p_reason: options.reason.trim(),
+    p_warning_acceptances: options.warningAcceptances,
   });
   if (error) throw error;
 };

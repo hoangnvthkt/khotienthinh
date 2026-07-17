@@ -524,7 +524,10 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
 
       await onSave(finalUser);
       if (isSupabaseConfigured) {
-        await replaceUserPermissionGrants(finalUser.id, finalPermissionGrants);
+        await replaceUserPermissionGrants(finalUser.id, finalPermissionGrants, {
+          reason: 'Cập nhật quyền trực tiếp từ màn hình quản trị người dùng',
+          warningAcceptances: [],
+        });
       }
 
       if (!userToEdit) {
