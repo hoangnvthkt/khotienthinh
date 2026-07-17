@@ -17,6 +17,14 @@ const commandsSql = commandsFiles.length === 1
   : '';
 const commandsNormalized = commandsSql.replace(/\s+/g, ' ').trim();
 
+const overrideFiles = readdirSync(dir)
+  .filter(file => file.endsWith('_authorization_override_evidence.sql'))
+  .sort();
+const overrideSql = overrideFiles.length === 1
+  ? readFileSync(join(dir, overrideFiles[0]), 'utf8')
+  : '';
+const overrideNormalized = overrideSql.replace(/\s+/g, ' ').trim();
+
 describe('minimal SoD registry migration', () => {
   it('creates one typed, seed-controlled registry without a policy DSL', () => {
     expect(sodFiles).toHaveLength(1);
@@ -51,5 +59,22 @@ describe('governance command SoD integration', () => {
     expect(commandsNormalized).toMatch(/app_private\.evaluate_authorization_change_set/i);
     expect(commandsNormalized).toMatch(/authorization_sod_warning_acceptances/i);
     expect(commandsNormalized).not.toMatch(/grant execute on function app_private\.assert_and_record_sod_warnings[^;]+authenticated/i);
+  });
+});
+
+describe('authorization override evidence migration', () => {
+  it('records only controlled overrides through an idempotent actor-derived command', () => {
+    expect(overrideFiles).toHaveLength(1);
+    expect(overrideNormalized).toMatch(/create table public\.authorization_override_events/i);
+    expect(overrideNormalized).toMatch(/idempotency_key uuid not null unique/i);
+    expect(overrideNormalized).toMatch(/pg_advisory_xact_lock/i);
+    expect(overrideNormalized).toMatch(/create or replace function app_private\.record_authorization_override_impl/i);
+    expect(overrideNormalized).toMatch(/create or replace function public\.record_authorization_override/i);
+    expect(overrideNormalized).toMatch(/create or replace function public\.record_authorization_override\(.*?security invoker/is);
+    expect(overrideNormalized).toMatch(/system\.authorization\.override/i);
+    expect(overrideNormalized).toMatch(/insert into public\.permission_audit_events/i);
+    expect(overrideNormalized).toMatch(/insert into public\.notifications/i);
+    expect(overrideNormalized).toMatch(/effect = 'REQUIRE_OVERRIDE'.*overridable/is);
+    expect(overrideNormalized).not.toMatch(/effect = 'DENY'.*record_authorization_override/is);
   });
 });
