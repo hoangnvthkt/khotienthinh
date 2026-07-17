@@ -4,10 +4,13 @@ import { UserPermissionGrant } from '../../types';
 import { permissionRegistry } from '../../lib/permissions/permissionRegistry';
 import { PermissionScope } from '../../lib/permissions/permissionTypes';
 import { isPermissionActionScopeAllowed } from '../../lib/permissions/permissionService';
+import type { EffectivePermissionSource } from '../../lib/permissions/authorizationGovernanceTypes';
+import { buildPermissionSourceBadges } from '../../lib/permissions/authorizationGovernanceViewModel';
+import { isIdentityBoundPermission } from '../../lib/permissions/permissionRisk';
 
 interface PermissionMatrixProps {
   grants: readonly UserPermissionGrant[];
-  inheritedPermissionCodes: readonly string[];
+  effectiveSources: readonly EffectivePermissionSource[];
   applicationCodes?: readonly string[];
   targetUserId?: string;
   scope: PermissionScope;
@@ -20,7 +23,7 @@ const grantKey = (permissionCode: string, scope: PermissionScope) =>
 
 const PermissionMatrix: React.FC<PermissionMatrixProps> = ({
   grants,
-  inheritedPermissionCodes,
+  effectiveSources,
   applicationCodes,
   targetUserId = '',
   scope,
@@ -37,7 +40,26 @@ const PermissionMatrix: React.FC<PermissionMatrixProps> = ({
       .filter(grant => grant.isActive !== false)
       .map(grant => `${grant.permissionCode}::${grant.scopeType || 'global'}::${grant.scopeId || '*'}`)
   ), [grants]);
-  const inheritedCodes = useMemo(() => new Set(inheritedPermissionCodes), [inheritedPermissionCodes]);
+
+  const sourceIsCurrent = (source: EffectivePermissionSource) => {
+    const now = Date.now();
+    const startsAt = source.startsAt !== undefined && source.startsAt !== null
+      ? new Date(source.startsAt).getTime()
+      : null;
+    const expiresAt = source.expiresAt !== undefined && source.expiresAt !== null
+      ? new Date(source.expiresAt).getTime()
+      : null;
+    return (startsAt === null || (Number.isFinite(startsAt) && startsAt <= now)) &&
+      (expiresAt === null || (Number.isFinite(expiresAt) && expiresAt > now));
+  };
+
+  const sourceCoversScope = (source: EffectivePermissionSource) => {
+    const scopeType = scope.scopeType || 'global';
+    const scopeId = scope.scopeId || '*';
+    return source.scopeType === 'global' || (
+      source.scopeType === scopeType && (source.scopeId === '*' || source.scopeId === scopeId)
+    );
+  };
 
   const toggleGrant = (permissionCode: string, checked: boolean) => {
     if (disabled) return;
@@ -84,24 +106,41 @@ const PermissionMatrix: React.FC<PermissionMatrixProps> = ({
                   {module.actions.map(action => {
                     const currentKey = grantKey(action.permissionCode, scope);
                     const explicit = explicitGrantKeys.has(currentKey);
-                    const inherited = inheritedCodes.has(action.permissionCode);
-                    const checked = explicit || inherited;
+                    const sources = effectiveSources.filter(source =>
+                      source.permissionCode === action.permissionCode &&
+                      sourceIsCurrent(source) &&
+                      sourceCoversScope(source)
+                    );
+                    const effective = sources.length > 0;
                     const scopeAllowed = isPermissionActionScopeAllowed(action.permissionCode, scope);
+                    const identityBound = isIdentityBoundPermission(action.permissionCode);
                     return (
                       <label
                         key={action.permissionCode}
-                        className={`flex min-h-[42px] items-center gap-2 rounded-lg border px-2 py-1.5 text-[10px] font-bold transition ${checked ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'} ${!scopeAllowed ? 'opacity-45' : ''}`}
-                        title={scopeAllowed ? action.permissionCode : `${action.permissionCode} không hỗ trợ scope hiện tại`}
+                        className={`flex min-h-[48px] items-start gap-2 rounded-lg border px-2 py-1.5 text-[10px] font-bold transition ${explicit ? 'border-blue-300 bg-blue-50 text-blue-700' : effective ? 'border-violet-200 bg-violet-50/60 text-violet-700' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'} ${!scopeAllowed || identityBound ? 'opacity-55' : ''}`}
+                        title={!scopeAllowed ? `${action.permissionCode} không hỗ trợ scope hiện tại` : identityBound ? 'Quyền định danh chỉ do hệ thống quản lý' : action.permissionCode}
                       >
                         <input
                           type="checkbox"
-                          checked={checked}
-                          disabled={disabled || !scopeAllowed}
+                          checked={explicit}
+                          disabled={disabled || !scopeAllowed || identityBound}
                           onChange={event => toggleGrant(action.permissionCode, event.target.checked)}
-                          className="h-3.5 w-3.5 shrink-0 rounded accent-blue-600"
+                          className="mt-0.5 h-3.5 w-3.5 shrink-0 rounded accent-blue-600"
                         />
-                        <span className="min-w-0 flex-1 truncate">{action.label}</span>
-                        {inherited && <span className="rounded bg-slate-200 px-1 py-0.5 text-[8px] font-black uppercase text-slate-500">Legacy</span>}
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate">{action.label}</span>
+                          {effective && (
+                            <span className="mt-1 flex flex-wrap gap-1">
+                              {buildPermissionSourceBadges(sources).map(badge => (
+                                <span key={badge.key} className="rounded bg-white/80 px-1 py-0.5 text-[8px] font-black text-violet-600 ring-1 ring-violet-100">
+                                  {badge.label}
+                                </span>
+                              ))}
+                            </span>
+                          )}
+                        </span>
+                        {action.riskLevel === 'sensitive' && <span className="rounded bg-rose-100 px-1 py-0.5 text-[8px] font-black uppercase text-rose-600">Nhạy cảm</span>}
+                        {action.riskLevel === 'important' && <span className="rounded bg-amber-100 px-1 py-0.5 text-[8px] font-black uppercase text-amber-600">Quan trọng</span>}
                         {!scopeAllowed && <span className="rounded bg-slate-100 px-1 py-0.5 text-[8px] font-black uppercase text-slate-400">Scope</span>}
                       </label>
                     );

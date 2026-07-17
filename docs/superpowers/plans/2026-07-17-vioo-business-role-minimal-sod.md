@@ -4061,7 +4061,7 @@ git commit -m "feat(authz): hydrate effective permission sources"
 - Consumes: Task 9 service/domain types.
 - Produces: presentational components with direct-grant checkbox state separated from effective-source state.
 
-- [ ] **Step 1: Write failing view-model tests**
+- [x] **Step 1: Write failing view-model tests**
 
 ```ts
 import { describe, expect, it } from 'vitest';
@@ -4127,7 +4127,7 @@ describe('authorization governance view model', () => {
 });
 ```
 
-- [ ] **Step 2: Run the view-model test and observe RED**
+- [x] **Step 2: Run the view-model test and observe RED**
 
 ```bash
 npm test -- lib/__tests__/authorizationGovernanceViewModel.test.ts
@@ -4135,7 +4135,7 @@ npm test -- lib/__tests__/authorizationGovernanceViewModel.test.ts
 
 Expected: FAIL because the view model does not exist.
 
-- [ ] **Step 3: Implement pure grouping, badge and validation helpers**
+- [x] **Step 3: Implement pure grouping, badge and validation helpers**
 
 ```ts
 export const sourceKey = (source: EffectivePermissionSource): string =>
@@ -4184,7 +4184,7 @@ export const buildEffectivePermissionRows = (
 
 `validateSodWarningAcceptances(decision, acceptances, now)` keys both sides by `(ruleCode,scopeType,scopeId)`, requires exactly one acceptance per warning, rejects missing/duplicate/invented keys, short reason/controls, empty owner and non-future expiry, and returns only generic Vietnamese validation messages. Actor/target independence remains backend-enforced; the UI additionally excludes those known IDs from choices.
 
-- [ ] **Step 4: Make PermissionMatrix direct-state and source-state distinct**
+- [x] **Step 4: Make PermissionMatrix direct-state and source-state distinct**
 
 Change props to:
 
@@ -4228,7 +4228,7 @@ const effective = sources.length > 0;
 
 Unchecking a direct checkbox removes only the direct draft. Role/Legacy badges remain visible, so the UI never implies that inherited permission disappeared.
 
-- [ ] **Step 5: Implement EffectivePermissionSourceList**
+- [x] **Step 5: Implement EffectivePermissionSourceList**
 
 Props:
 
@@ -4241,7 +4241,7 @@ interface EffectivePermissionSourceListProps {
 
 Group by permission code and render permission label/code, source badge, scope, effective start and expiry. Render `Không có quyền hiệu lực` for an empty list. Expired sources should not normally be returned, but if supplied by a test/admin history view label them `Đã hết hạn` rather than effective.
 
-- [ ] **Step 6: Implement BusinessRoleEditor and assignment panel**
+- [x] **Step 6: Implement BusinessRoleEditor and assignment panel**
 
 `BusinessRoleEditor` props:
 
@@ -4295,7 +4295,7 @@ interface PrincipalDirectGrantPanelProps {
 
 It owns scope selection, sensitive expiry, reason, full-draft backend preview and `SodWarningPanel`, but contains no profile/role/email/password fields. Bind preview/acceptances to a canonical full-draft hash (sorted permission/scope/expiry keys plus target); any draft change clears both and disables Save until a new preview and complete `validateSodWarningAcceptances` pass. It is the primary direct-grant UI for a non-`ADMIN` Permission Admin; `UserModal` reuses the same view-model/service contract only for actors who also have account-profile access.
 
-- [ ] **Step 7: Implement SoDWarningPanel and override dialog**
+- [x] **Step 7: Implement SoDWarningPanel and override dialog**
 
 `SodWarningPanel` renders one form per backend warning and requires:
 
@@ -4315,7 +4315,7 @@ const [idempotencyKey] = useState(() => crypto.randomUUID());
 
 Retry retains that key. Closing must unmount the dialog (or explicitly regenerate on the next open), so reopening creates a new command. The dialog only lists `REQUIRE_OVERRIDE` rules and displays a generic safe failure through `getApiErrorMessage`; it never renders raw `details`, `hint`, SQL or Auth identifiers. Task 10 builds the reusable component, but Phase 4 is the first phase allowed to mount it from a real locked workflow subject.
 
-- [ ] **Step 8: Make PermissionDiffPreview source-aware**
+- [x] **Step 8: Make PermissionDiffPreview source-aware**
 
 Keep added/removed counts limited to direct grants and add a separate line:
 
@@ -4325,7 +4325,7 @@ Keep added/removed counts limited to direct grants and add a separate line:
 
 Do not include inherited sources in direct `+/-` totals.
 
-- [ ] **Step 9: Run focused tests, lint and build**
+- [x] **Step 9: Run focused tests, lint and build**
 
 ```bash
 npm test -- lib/__tests__/authorizationGovernanceViewModel.test.ts
@@ -4335,7 +4335,7 @@ npm run build
 
 Expected: PASS; Vite may emit the already-known chunk-size warning but exits `0`.
 
-- [ ] **Step 10: Commit Task 10**
+- [x] **Step 10: Commit Task 10**
 
 ```bash
 git add \

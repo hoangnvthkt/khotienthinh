@@ -1009,13 +1009,13 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
               <PermissionScopePicker value={permissionScope} onChange={setPermissionScope} />
               <PermissionMatrix
                 grants={permissionGrants}
-                inheritedPermissionCodes={inheritedPermissionCodes}
+                effectiveSources={[]}
                 applicationCodes={selectedPermissionApplicationCode === 'all' ? undefined : [selectedPermissionApplicationCode]}
                 targetUserId={userToEdit?.id}
                 scope={permissionScope}
                 onChange={setPermissionGrants}
               />
-              <PermissionDiffPreview before={originalPermissionGrants} after={permissionGrants} />
+              <PermissionDiffPreview before={originalPermissionGrants} after={permissionGrants} effectiveSources={[]} />
             </div>
           )}
 

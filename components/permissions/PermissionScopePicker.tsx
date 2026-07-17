@@ -14,12 +14,14 @@ const SCOPE_OPTIONS: Array<{ value: PermissionScopeType; label: string }> = [
 interface PermissionScopePickerProps {
   value: PermissionScope;
   onChange: (value: PermissionScope) => void;
+  disabled?: boolean;
 }
 
-const PermissionScopePicker: React.FC<PermissionScopePickerProps> = ({ value, onChange }) => (
+const PermissionScopePicker: React.FC<PermissionScopePickerProps> = ({ value, onChange, disabled = false }) => (
   <div className="grid grid-cols-1 gap-2 sm:grid-cols-[180px_1fr]">
     <select
       value={value.scopeType || 'global'}
+      disabled={disabled}
       onChange={event => onChange({
         scopeType: event.target.value as PermissionScopeType,
         scopeId: event.target.value === 'global' ? '*' : value.scopeId || '*',
@@ -34,7 +36,7 @@ const PermissionScopePicker: React.FC<PermissionScopePickerProps> = ({ value, on
       type="text"
       value={value.scopeId || '*'}
       onChange={event => onChange({ scopeType: value.scopeType || 'global', scopeId: event.target.value || '*' })}
-      disabled={(value.scopeType || 'global') === 'global'}
+      disabled={disabled || (value.scopeType || 'global') === 'global'}
       className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 outline-none focus:ring-2 focus:ring-blue-200 disabled:bg-slate-50 disabled:text-slate-400"
       placeholder="scope id"
     />
