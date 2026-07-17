@@ -7,6 +7,8 @@ begin
     or to_regprocedure('public.revoke_business_role_assignment(uuid,text)') is null
     or to_regprocedure('public.list_authorization_principals()') is null
     or to_regprocedure('public.set_authorization_rollout_flags(boolean,boolean,boolean,text)') is null
+    or to_regprocedure('public.preview_direct_grant_replacement(uuid,jsonb)') is null
+    or to_regprocedure('public.replace_user_permission_grants_v2(uuid,jsonb,text,jsonb)') is null
   then
     raise exception 'Authorization governance command contract failed';
   end if;
@@ -549,6 +551,317 @@ begin
   end;
   if not v_denied then
     raise exception 'SYSTEM_ADMIN was assigned to a non-ADMIN profile';
+  end if;
+end;
+$$;
+
+do $$
+declare
+  v_target_id uuid := (select target_id from phase2_governance_smoke_ids);
+  v_denied boolean;
+  v_before_audit_count bigint;
+begin
+  v_denied := false;
+  begin
+    perform public.preview_direct_grant_replacement(
+      v_target_id,
+      jsonb_build_array(jsonb_build_object(
+        'permission_code', 'unknown.permission',
+        'scope_type', 'global',
+        'scope_id', '*',
+        'is_active', true
+      ))
+    );
+  exception
+    when check_violation then v_denied := true;
+  end;
+  if not v_denied then
+    raise exception 'Unknown direct permission was accepted';
+  end if;
+
+  v_denied := false;
+  begin
+    perform public.preview_direct_grant_replacement(
+      v_target_id,
+      jsonb_build_array(jsonb_build_object(
+        'permission_code', 'project.material_po.create',
+        'scope_type', 'warehouse',
+        'scope_id', 'warehouse-1',
+        'is_active', true
+      ))
+    );
+  exception
+    when check_violation then v_denied := true;
+  end;
+  if not v_denied then
+    raise exception 'Unsupported direct grant scope was accepted';
+  end if;
+
+  v_denied := false;
+  begin
+    perform public.preview_direct_grant_replacement(
+      v_target_id,
+      jsonb_build_array(jsonb_build_object(
+        'permission_code', 'system.settings.manage',
+        'scope_type', 'global',
+        'scope_id', '*',
+        'is_active', true
+      ))
+    );
+  exception
+    when insufficient_privilege then v_denied := true;
+  end;
+  if not v_denied then
+    raise exception 'Direct system.settings.manage was accepted';
+  end if;
+
+  v_denied := false;
+  begin
+    perform public.preview_direct_grant_replacement(
+      v_target_id,
+      jsonb_build_array(jsonb_build_object(
+        'permission_code', 'project.material_po.approve',
+        'scope_type', 'project',
+        'scope_id', 'project-1',
+        'is_active', true,
+        'expires_at', null
+      ))
+    );
+  exception
+    when check_violation then v_denied := true;
+  end;
+  if not v_denied then
+    raise exception 'Sensitive direct grant without expiry was accepted';
+  end if;
+
+  perform public.replace_user_permission_grants_v2(
+    v_target_id,
+    jsonb_build_array(jsonb_build_object(
+      'permission_code', 'project.material_po.create',
+      'scope_type', 'project',
+      'scope_id', 'project-1',
+      'is_active', true,
+      'expires_at', null
+    )),
+    'Create direct PO permission for history smoke test',
+    '[]'::jsonb
+  );
+
+  select count(*)
+  into v_before_audit_count
+  from public.permission_audit_events event_row
+  where event_row.target_user_id = v_target_id
+    and event_row.event_type = 'direct_permission_grants_changed';
+
+  perform public.replace_user_permission_grants_v2(
+    v_target_id,
+    jsonb_build_array(jsonb_build_object(
+      'permission_code', 'project.material_po.create',
+      'scope_type', 'project',
+      'scope_id', 'project-1',
+      'is_active', true,
+      'expires_at', null
+    )),
+    '',
+    '[]'::jsonb
+  );
+
+  if (
+    select count(*)
+    from public.permission_audit_events event_row
+    where event_row.target_user_id = v_target_id
+      and event_row.event_type = 'direct_permission_grants_changed'
+  ) <> v_before_audit_count then
+    raise exception 'Exact direct grant no-op created an audit event';
+  end if;
+
+  v_denied := false;
+  begin
+    perform public.replace_user_permission_grants_v2(
+      v_target_id,
+      '[]'::jsonb,
+      'short',
+      '[]'::jsonb
+    );
+  exception
+    when invalid_parameter_value then v_denied := true;
+  end;
+  if not v_denied then
+    raise exception 'Revoke-only direct change accepted a short reason';
+  end if;
+
+  perform public.replace_user_permission_grants_v2(
+    v_target_id,
+    '[]'::jsonb,
+    'Revoke direct PO permission while retaining history',
+    '[]'::jsonb
+  );
+
+  if not exists (
+    select 1
+    from public.user_permission_grants grant_row
+    where grant_row.user_id = v_target_id
+      and grant_row.permission_code = 'project.material_po.create'
+      and not grant_row.is_active
+      and grant_row.revoked_at is not null
+      and grant_row.revoked_reason is not null
+  ) then
+    raise exception 'Direct grant revoke history was not retained';
+  end if;
+
+  perform public.replace_user_permission_grants_v2(
+    v_target_id,
+    jsonb_build_array(jsonb_build_object(
+      'permission_code', 'project.material_po.create',
+      'scope_type', 'project',
+      'scope_id', 'project-1',
+      'is_active', true,
+      'expires_at', null
+    )),
+    'Reactivate the retained direct grant history row',
+    '[]'::jsonb
+  );
+
+  if not exists (
+    select 1
+    from public.user_permission_grants grant_row
+    where grant_row.user_id = v_target_id
+      and grant_row.permission_code = 'project.material_po.create'
+      and grant_row.is_active
+      and grant_row.revoked_at is null
+      and grant_row.revoked_by is null
+      and grant_row.revoked_reason is null
+  ) then
+    raise exception 'Direct grant reactivation did not clear revoke metadata';
+  end if;
+end;
+$$;
+
+do $$
+declare
+  v_actor_id uuid := (select permission_admin_id from phase2_governance_smoke_ids);
+  v_denied boolean := false;
+begin
+  begin
+    perform public.replace_user_permission_grants_v2(
+      v_actor_id,
+      jsonb_build_array(jsonb_build_object(
+        'permission_code', 'project.payment.approve',
+        'scope_type', 'global',
+        'scope_id', '*',
+        'is_active', true,
+        'expires_at', now() + interval '7 days'
+      )),
+      'Permission Admin sensitive self grant is forbidden',
+      '[]'::jsonb
+    );
+  exception
+    when insufficient_privilege then v_denied := true;
+  end;
+  if not v_denied then
+    raise exception 'Permission Admin sensitive direct self-grant succeeded';
+  end if;
+end;
+$$;
+
+do $$
+declare
+  v_target_id uuid := (select target_id from phase2_governance_smoke_ids);
+  v_payload jsonb := jsonb_build_array(
+    jsonb_build_object(
+      'permission_code', 'project.material_po.create',
+      'scope_type', 'project',
+      'scope_id', 'project-2',
+      'is_active', true,
+      'expires_at', null
+    ),
+    jsonb_build_object(
+      'permission_code', 'project.material_po.approve',
+      'scope_type', 'project',
+      'scope_id', 'project-2',
+      'is_active', true,
+      'expires_at', now() + interval '7 days'
+    )
+  );
+  v_preview jsonb;
+  v_denied boolean;
+begin
+  v_preview := public.preview_direct_grant_replacement(v_target_id, v_payload);
+  if jsonb_array_length(v_preview -> 'warnings') <> 1
+    or v_preview #>> '{warnings,0,ruleCode}' <> 'PO_CREATE_APPROVE'
+    or v_preview #>> '{warnings,0,scopeId}' <> 'project-2'
+  then
+    raise exception 'Direct grant warning preview contract failed';
+  end if;
+
+  v_denied := false;
+  begin
+    perform public.replace_user_permission_grants_v2(
+      v_target_id,
+      v_payload,
+      'Direct maker checker pair requires acceptance',
+      '[]'::jsonb
+    );
+  exception
+    when invalid_parameter_value then v_denied := true;
+  end;
+  if not v_denied then
+    raise exception 'Direct warning pair succeeded without acceptance';
+  end if;
+
+  perform public.replace_user_permission_grants_v2(
+    v_target_id,
+    v_payload,
+    'Direct maker checker pair with independent controls',
+    jsonb_build_array(jsonb_build_object(
+      'ruleCode', 'PO_CREATE_APPROVE',
+      'scopeType', 'project',
+      'scopeId', 'project-2',
+      'reason', 'Independent control owner reviews all affected orders',
+      'controlOwnerUserId', (select auditor_id from phase2_governance_smoke_ids),
+      'compensatingControls', 'Daily exception report is reviewed and retained',
+      'expiresAt', (now() + interval '3 days')::text
+    ))
+  );
+
+  if not exists (
+    select 1
+    from public.authorization_sod_warning_acceptances acceptance_row
+    where acceptance_row.target_user_id = v_target_id
+      and acceptance_row.command_type = 'REPLACE_DIRECT_GRANTS'
+      and acceptance_row.rule_code = 'PO_CREATE_APPROVE'
+      and acceptance_row.scope_type = 'project'
+      and acceptance_row.scope_id = 'project-2'
+  ) then
+    raise exception 'Direct warning acceptance was not recorded';
+  end if;
+
+  v_denied := false;
+  begin
+    perform public.replace_user_permission_grants(
+      v_target_id,
+      jsonb_build_array(
+        jsonb_build_object(
+          'permission_code', 'project.material_po.create',
+          'scope_type', 'project',
+          'scope_id', 'project-3',
+          'is_active', true,
+          'expires_at', null
+        ),
+        jsonb_build_object(
+          'permission_code', 'project.material_po.approve',
+          'scope_type', 'project',
+          'scope_id', 'project-3',
+          'is_active', true,
+          'expires_at', now() + interval '7 days'
+        )
+      )
+    );
+  exception
+    when invalid_parameter_value then v_denied := true;
+  end;
+  if not v_denied then
+    raise exception 'Compatibility wrapper bypassed warning acceptance';
   end if;
 end;
 $$;

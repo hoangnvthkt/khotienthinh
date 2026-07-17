@@ -127,4 +127,12 @@ describe('authorization governance commands migration', () => {
     expect(commandsNormalized).not.toMatch(/create or replace function public\.[^(]+\([^)]*p_actor_user_id/i);
   });
 
+  it('governs direct grants without delete/reinsert history loss', () => {
+    expect(commandsNormalized).toMatch(/create or replace function public\.replace_user_permission_grants_v2/i);
+    expect(commandsNormalized).toMatch(/create or replace function public\.preview_direct_grant_replacement/i);
+    expect(commandsNormalized).toMatch(/set is_active = false.*revoked_at.*revoked_reason/is);
+    expect(commandsNormalized).not.toMatch(/delete from public\.user_permission_grants/i);
+    expect(commandsNormalized).toMatch(/direct_grant_requires_expiry/i);
+    expect(commandsNormalized).toMatch(/app_private\.assert_and_record_sod_warnings/i);
+  });
 });
