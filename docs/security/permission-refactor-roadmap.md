@@ -1,5 +1,24 @@
 # Roadmap refactor phân quyền ERP VIOO
 
+> **Program phase alignment — 2026-07-17:** The Approved source of truth for
+> program phases and exit gates is
+> `docs/superpowers/specs/2026-07-16-vioo-authorization-governance-migration-design.md`.
+> Historical headings such as “Phase 2 Project PBAC” in this document describe
+> already-delivered technical waves; they are not the current program Phase 2.
+> Current program Phase 2 is Business Role + Minimal SoD and is implemented by
+> `docs/superpowers/plans/2026-07-17-vioo-business-role-minimal-sod.md`.
+
+| Current program phase | Relationship to the historical implementation waves below |
+| --- | --- |
+| Phase 0 — Security Baseline | Consolidates historical Phase 0 containment and the security parts of historical Phase 1. |
+| Phase 1 — Identity and Account Lifecycle | Added by the approved program design; it is not represented by a standalone historical wave here. |
+| Phase 2 — Business Role and Minimal SoD | Extends the common permission foundation begun in historical Phase 1; it is not historical “Phase 2 Project PBAC”. |
+| Phase 3 — Controlled Legacy Migration | Continues the adapter/cutover work begun across historical Phase 1 and historical Phase 5 cleanup. |
+| Phase 4 — Daily Log Golden Pilot | Selects Daily Log from historical Phase 3 as the golden production pilot. |
+| Phase 5 — Project High-Risk Modules | Reframes historical Phase 2 Project PBAC and the remaining high-risk Project work in historical Phase 3. |
+| Phase 6 — ERP Rollout Waves | Supersedes historical Phase 4 rollout to other modules. |
+| Phase 7 — Legacy Retirement and Operations | Supersedes historical Phase 5 cleanup and hardening. |
+
 Ngày lập: 2026-07-12  
 Nguồn đầu vào: `docs/security/permission-audit.md`  
 Mục tiêu: đưa hệ thống phân quyền từ mô hình lai/rải rác hiện tại sang mô hình nhất quán theo `Ứng dụng -> Module -> Hành động -> Phạm vi`, ưu tiên vá Critical trước, sau đó chuẩn hóa nền tảng dùng chung, rồi refactor module Dự án và từng module con.
