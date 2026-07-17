@@ -52,8 +52,11 @@ const BusinessRoleEditor: React.FC<BusinessRoleEditorProps> = ({
   }, [role]);
 
   const editableActions = useMemo(
-    () => permissionActions.filter(action => !isIdentityBoundPermission(action.permissionCode)),
-    [permissionActions],
+    () => permissionActions.filter(action =>
+      !isIdentityBoundPermission(action.permissionCode) ||
+      Boolean(role?.isSystem && role.items.some(item => item.permissionCode === action.permissionCode))
+    ),
+    [permissionActions, role],
   );
   const currentItemsKey = canonicalItems(items);
   const originalItemsKey = canonicalItems(role?.items || []);
@@ -92,6 +95,8 @@ const BusinessRoleEditor: React.FC<BusinessRoleEditorProps> = ({
     try {
       await onPreview(items);
       setPreviewedItemsKey(canonicalItems(items));
+    } catch {
+      setValidationMessage('Không thể preview tác động Business Role. Vui lòng thử lại.');
     } finally {
       setBusy(null);
     }
@@ -121,6 +126,8 @@ const BusinessRoleEditor: React.FC<BusinessRoleEditorProps> = ({
         items,
         reason: reason.trim(),
       });
+    } catch {
+      setValidationMessage('Không thể lưu Business Role. Backend đã từ chối thay đổi.');
     } finally {
       setBusy(null);
     }

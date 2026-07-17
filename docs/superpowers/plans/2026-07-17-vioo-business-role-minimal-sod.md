@@ -4369,7 +4369,7 @@ git commit -m "feat(authz): add source-aware governance controls"
 - Consumes: Tasks 9–10 service/components.
 - Produces: a permission-gated governance tab; source-aware user direct-grant editing; no misleading combined profile/permission save before Phase 3.
 
-- [ ] **Step 1: Write the failing UI integration contract**
+- [x] **Step 1: Write the failing UI integration contract**
 
 ```ts
 import { readFileSync } from 'node:fs';
@@ -4413,7 +4413,7 @@ describe('authorization admin UI contract', () => {
 });
 ```
 
-- [ ] **Step 2: Run the contract and observe RED**
+- [x] **Step 2: Run the contract and observe RED**
 
 ```bash
 npm test -- lib/__tests__/authorizationAdminUiContract.test.ts
@@ -4421,7 +4421,7 @@ npm test -- lib/__tests__/authorizationAdminUiContract.test.ts
 
 Expected: FAIL because the page/integration is absent.
 
-- [ ] **Step 3: Build the governance settings page**
+- [x] **Step 3: Build the governance settings page**
 
 `SettingsAuthorizationGovernance.tsx` must:
 
@@ -4452,7 +4452,7 @@ if (!canPerform(currentUser, 'system.authorization.view')) {
 }
 ```
 
-- [ ] **Step 4: Add the permission-gated Settings tab**
+- [x] **Step 4: Add the permission-gated Settings tab**
 
 In `Settings.tsx`:
 
@@ -4476,7 +4476,7 @@ Render:
 
 Update the filter so `authorizationOnly` uses `canViewAuthorizationGovernance`. Do not load the broad `admin` module merely to populate this page; its principal directory comes from the minimal RPC.
 
-- [ ] **Step 5: Load target effective sources in UserModal**
+- [x] **Step 5: Load target effective sources in UserModal**
 
 Add state:
 
@@ -4494,7 +4494,7 @@ Pass `effectiveSources` to `PermissionMatrix` and `PermissionDiffPreview`. Remov
 
 Remove target-role shortcuts around the new permission UI: do not hide the matrix merely because `formData.role === Role.ADMIN`, and do not coerce an Admin target's direct draft to `[]`. `Role.ADMIN` remains identity/compatibility metadata; an Admin receives business authority only from an explicit governed `ROLE`/`DIRECT` source after cutover.
 
-- [ ] **Step 6: Add expiry, reason and backend SoD preview for direct changes**
+- [x] **Step 6: Add expiry, reason and backend SoD preview for direct changes**
 
 For active direct grants classified sensitive, render a `datetime-local` expiry input and write ISO time to `grant.expiresAt`. Render one shared reason textarea. On every explicit Preview click send the complete draft to the shared backend evaluator:
 
@@ -4508,7 +4508,7 @@ setAuthorizationDecision(decision);
 
 If `hardDenies.length > 0`, disable Save. If warnings exist, render `SodWarningPanel` and require acknowledgements for the exact returned codes.
 
-- [ ] **Step 7: Split profile save and direct permission save**
+- [x] **Step 7: Split profile save and direct permission save**
 
 Remove the direct-grant RPC call from `handleSubmit`. Profile save continues to update identity/profile only.
 
@@ -4573,11 +4573,11 @@ const handleSaveDirectPermissions = async () => {
 
 Render a distinct `Lưu phân quyền` button. For new users, disable the matrix/save and explain that the account must be created first. This consciously avoids claiming combined atomic save before Phase 3.
 
-- [ ] **Step 8: Pass current user identity only for UI validation, never RPC actor**
+- [x] **Step 8: Pass current user identity only for UI validation, never RPC actor**
 
 Add `currentUserId` and `canManageDirectGrants` to `UserModal` props through `SettingsUsers`. Derive the latter with `canPerform(currentUser, 'system.authorization.manage_grants')`; use `currentUserId` only to remove the current user from control-owner choices and show a self-grant warning. Hide/disable direct preview/save unless `canManageDirectGrants`; do not include either UI prop in any RPC payload, because the backend still derives and authorizes the actor.
 
-- [ ] **Step 9: Run UI contracts and full frontend verification**
+- [x] **Step 9: Run UI contracts and full frontend verification**
 
 ```bash
 npm test -- \
@@ -4594,7 +4594,7 @@ git diff --check
 
 Expected: tests, TypeScript and build PASS; no combined-save contract remains.
 
-- [ ] **Step 10: Commit Task 11**
+- [x] **Step 10: Commit Task 11**
 
 ```bash
 git add \

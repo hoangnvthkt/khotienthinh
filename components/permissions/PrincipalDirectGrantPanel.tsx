@@ -107,6 +107,8 @@ const PrincipalDirectGrantPanel: React.FC<PrincipalDirectGrantPanelProps> = ({
       const nextDecision = await onPreview(drafts);
       setDecision(nextDecision);
       setPreviewedDraftKey(buildDirectGrantDraftKey(principal.userId, drafts));
+    } catch {
+      setMessage('Không thể preview direct grant. Vui lòng thử lại.');
     } finally {
       setBusy(null);
     }
@@ -135,6 +137,8 @@ const PrincipalDirectGrantPanel: React.FC<PrincipalDirectGrantPanelProps> = ({
     setMessage('');
     try {
       await onSave(drafts, reason.trim(), acceptances);
+    } catch {
+      setMessage('Không thể lưu direct grant. Backend đã từ chối thay đổi.');
     } finally {
       setBusy(null);
     }

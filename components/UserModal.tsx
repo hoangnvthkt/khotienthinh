@@ -12,9 +12,18 @@ import { isChatEnabled } from '../lib/featureFlags';
 import PermissionDiffPreview from './permissions/PermissionDiffPreview';
 import PermissionMatrix from './permissions/PermissionMatrix';
 import PermissionScopePicker from './permissions/PermissionScopePicker';
+import SodWarningPanel from './permissions/SodWarningPanel';
 import { listUserPermissionGrants, replaceUserPermissionGrants } from '../lib/permissions/permissionAdminService';
-import { getPermissionApplications } from '../lib/permissions/permissionRegistry';
-import { getInheritedPermissionCodes } from '../lib/permissions/permissionService';
+import { getAllPermissionActions, getPermissionApplications } from '../lib/permissions/permissionRegistry';
+import { authorizationGovernanceService } from '../lib/permissions/authorizationGovernanceService';
+import type {
+  AuthorizationDecision,
+  AuthorizationPrincipal,
+  EffectivePermissionSource,
+  SodWarningAcceptanceInput,
+} from '../lib/permissions/authorizationGovernanceTypes';
+import { validateDirectGrantDrafts, validateSodWarningAcceptances } from '../lib/permissions/authorizationGovernanceViewModel';
+import { isIdentityBoundPermission } from '../lib/permissions/permissionRisk';
 import { PermissionScope } from '../lib/permissions/permissionTypes';
 import { buildCreateUserFunctionPayload, readFunctionInvokeErrorMessage } from '../lib/userAccountCreation';
 
@@ -169,6 +178,8 @@ interface UserModalProps {
   userToEdit?: User | null;
   warehouses: Warehouse[];
   users?: User[];
+  currentUserId?: string;
+  canManageDirectGrants?: boolean;
 }
 
 type UserPermissionClipboard = {
@@ -209,7 +220,28 @@ const readPermissionClipboard = (): UserPermissionClipboard | null => {
 const countRoutePermissions = (value?: Record<string, string[]>) =>
   Object.values(value || {}).reduce((sum, routes) => sum + routes.length, 0);
 
-const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEdit, warehouses, users = [] }) => {
+const toLocalDateTime = (value?: string) => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return '';
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+};
+
+const toIsoDateTime = (value: string) => {
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? date.toISOString() : undefined;
+};
+
+const UserModal: React.FC<UserModalProps> = ({
+  isOpen,
+  onClose,
+  onSave,
+  userToEdit,
+  warehouses,
+  users = [],
+  currentUserId,
+  canManageDirectGrants = false,
+}) => {
   const toast = useToast();
   const ALL_MODULES = [
     { key: 'WMS', label: 'KHO - Vật tư', icon: Package, color: 'text-emerald-600 bg-emerald-50 border-emerald-200 dark:bg-emerald-900/30 dark:border-emerald-700' },
@@ -253,27 +285,62 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
   const [selectedPermissionSourceUserId, setSelectedPermissionSourceUserId] = useState('');
   const [permissionGrants, setPermissionGrants] = useState<UserPermissionGrant[]>([]);
   const [originalPermissionGrants, setOriginalPermissionGrants] = useState<UserPermissionGrant[]>([]);
+  const [effectiveSources, setEffectiveSources] = useState<EffectivePermissionSource[]>([]);
+  const [permissionChangeReason, setPermissionChangeReason] = useState('');
+  const [authorizationDecision, setAuthorizationDecision] = useState<AuthorizationDecision | null>(null);
+  const [warningAcceptances, setWarningAcceptances] = useState<SodWarningAcceptanceInput[]>([]);
+  const [savingPermissions, setSavingPermissions] = useState(false);
+  const [previewingPermissions, setPreviewingPermissions] = useState(false);
+  const [permissionSourceLoadFailed, setPermissionSourceLoadFailed] = useState(false);
   const [permissionScope, setPermissionScope] = useState<PermissionScope>({ scopeType: 'global', scopeId: '*' });
   const [selectedPermissionApplicationCode, setSelectedPermissionApplicationCode] = useState('all');
   const permissionApplicationOptions = useMemo(() => getPermissionApplications(), []);
+  const configurablePermissionActions = useMemo(
+    () => getAllPermissionActions().filter(action => !isIdentityBoundPermission(action.permissionCode)),
+    [],
+  );
+  const riskByPermissionCode = useMemo(
+    () => new Map(configurablePermissionActions.map(action => [action.permissionCode, action.riskLevel || 'normal'] as const)),
+    [configurablePermissionActions],
+  );
+  const controlOwners = useMemo<AuthorizationPrincipal[]>(() => users.map(candidate => ({
+    userId: candidate.id,
+    name: candidate.name,
+    email: candidate.email,
+    accountStatus: candidate.accountStatus === 'DISABLED' || candidate.isActive === false ? 'DISABLED' : 'ACTIVE',
+  })), [users]);
 
   useEffect(() => {
     let cancelled = false;
     const seedGrants = userToEdit?.permissionGrants || [];
     setPermissionGrants(seedGrants);
     setOriginalPermissionGrants(seedGrants);
+    setEffectiveSources(userToEdit?.effectivePermissions || []);
+    setPermissionChangeReason('');
+    setAuthorizationDecision(null);
+    setWarningAcceptances([]);
+    setSavingPermissions(false);
+    setPreviewingPermissions(false);
+    setPermissionSourceLoadFailed(false);
     setPermissionScope({ scopeType: 'global', scopeId: '*' });
     setSelectedPermissionApplicationCode('all');
 
-    if (isOpen && userToEdit?.id && isSupabaseConfigured) {
-      listUserPermissionGrants(userToEdit.id)
-        .then(grants => {
+    if (canManageDirectGrants && isOpen && userToEdit?.id && isSupabaseConfigured) {
+      Promise.all([
+        listUserPermissionGrants(userToEdit.id),
+        authorizationGovernanceService.listEffectivePermissionSources(userToEdit.id),
+      ])
+        .then(([grants, sources]) => {
           if (cancelled) return;
           setPermissionGrants(grants);
           setOriginalPermissionGrants(grants);
+          setEffectiveSources(sources);
         })
         .catch(error => {
-          console.warn('Unable to load Phase 1 user permission grants:', error?.message || error);
+          if (cancelled) return;
+          setPermissionSourceLoadFailed(true);
+          logApiError('userModal.loadAuthorizationSources', error);
+          toast.error('Không tải được nguồn quyền', getApiErrorMessage(error, 'Direct grant đã bị khóa để tránh dùng dữ liệu phân quyền không đầy đủ.'));
         });
     }
 
@@ -300,7 +367,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
     return () => {
       cancelled = true;
     };
-  }, [userToEdit, isOpen]);
+  }, [canManageDirectGrants, userToEdit, isOpen, toast]);
 
   const hasWmsAccess = formData.role === Role.ADMIN || formData.role === Role.WAREHOUSE_KEEPER || (formData.allowedModules || []).includes('WMS');
   const permissionSourceUsers = useMemo(
@@ -313,14 +380,6 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
       ? 'Admin toàn quyền'
       : `${permissionClipboard.allowedModules.length} module sử dụng, ${permissionClipboard.adminModules.length + countRoutePermissions(permissionClipboard.adminSubModules)} quyền quản trị`
     : '';
-  const inheritedPermissionCodes = useMemo(() => getInheritedPermissionCodes({
-    role: (formData.role || Role.EMPLOYEE) as Role,
-    allowedModules: formData.allowedModules,
-    allowedSubModules: formData.allowedSubModules,
-    adminModules: formData.adminModules,
-    adminSubModules: formData.adminSubModules,
-  } as User), [formData.role, formData.allowedModules, formData.allowedSubModules, formData.adminModules, formData.adminSubModules]);
-
   const buildPermissionClipboard = (source: Partial<User>, sourceName?: string, sourceId?: string): UserPermissionClipboard => ({
     version: 1,
     sourceUserId: sourceId,
@@ -496,6 +555,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
       }
 
       const baseUser: User = {
+        ...(userToEdit || {}),
         id: userToEdit?.id || createdAuthUserId || crypto.randomUUID(),
         authId: userToEdit?.authId || createdAuthUserId,
         name: formData.name || '',
@@ -511,24 +571,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
         adminModules: formData.role === Role.ADMIN ? [] : (formData.adminModules || []),
         adminSubModules: formData.role === Role.ADMIN ? {} : (formData.adminSubModules || {}),
       };
-      const finalPermissionGrants = formData.role === Role.ADMIN
-        ? []
-        : permissionGrants.map(grant => ({
-          ...grant,
-          userId: baseUser.id,
-          scopeType: grant.scopeType || 'global',
-          scopeId: grant.scopeId || '*',
-          isActive: grant.isActive ?? true,
-        }));
-      const finalUser: User = { ...baseUser, permissionGrants: finalPermissionGrants };
-
-      await onSave(finalUser);
-      if (isSupabaseConfigured) {
-        await replaceUserPermissionGrants(finalUser.id, finalPermissionGrants, {
-          reason: 'Cập nhật quyền trực tiếp từ màn hình quản trị người dùng',
-          warningAcceptances: [],
-        });
-      }
+      await onSave(baseUser);
 
       if (!userToEdit) {
         toast.success('Đã thêm tài khoản hệ thống', 'Tài khoản đăng nhập đã được tạo tự động.');
@@ -543,6 +586,102 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
       toast.error('Không thể lưu tài khoản', getApiErrorMessage(err, 'Không thể lưu tài khoản hệ thống.'));
     } finally {
       setSaving(false);
+    }
+  };
+
+  const updateDirectGrantDraft = (next: UserPermissionGrant[]) => {
+    setPermissionGrants(next);
+    setAuthorizationDecision(null);
+    setWarningAcceptances([]);
+  };
+
+  const sensitiveDirectGrants = permissionGrants.filter(grant =>
+    grant.isActive !== false && riskByPermissionCode.get(grant.permissionCode) === 'sensitive'
+  );
+  const warningAcceptanceErrors = authorizationDecision
+    ? validateSodWarningAcceptances(authorizationDecision, warningAcceptances, new Date())
+    : [];
+
+  const handlePreviewDirectPermissions = async () => {
+    if (!userToEdit?.id || permissionSourceLoadFailed) {
+      toast.warning('Chưa thể preview phân quyền', userToEdit?.id
+        ? 'Nguồn quyền hiệu lực chưa được tải đầy đủ.'
+        : 'Hãy tạo tài khoản trước khi phân quyền.');
+      return;
+    }
+    setPreviewingPermissions(true);
+    try {
+      const decision = await authorizationGovernanceService.previewDirectGrantReplacement(
+        userToEdit.id,
+        permissionGrants,
+      );
+      setAuthorizationDecision(decision);
+      setWarningAcceptances([]);
+    } catch (error) {
+      logApiError('userModal.previewDirectPermissions', error);
+      toast.error('Không thể preview phân quyền', getApiErrorMessage(error, 'Backend đã từ chối preview thay đổi phân quyền.'));
+    } finally {
+      setPreviewingPermissions(false);
+    }
+  };
+
+  const handleSaveDirectPermissions = async () => {
+    if (!userToEdit?.id) {
+      toast.warning('Hãy tạo tài khoản trước', 'Phân quyền chỉ được lưu sau khi tài khoản ứng dụng tồn tại.');
+      return;
+    }
+    if (permissionSourceLoadFailed) {
+      toast.warning('Chưa thể lưu phân quyền', 'Nguồn quyền hiệu lực chưa được tải đầy đủ.');
+      return;
+    }
+    const validationErrors = validateDirectGrantDrafts(
+      originalPermissionGrants,
+      permissionGrants,
+      riskByPermissionCode,
+      new Date(),
+      permissionChangeReason,
+    );
+    if (validationErrors.length > 0) {
+      toast.warning('Chưa thể lưu phân quyền', validationErrors[0]);
+      return;
+    }
+    setSavingPermissions(true);
+    try {
+      const decision = await authorizationGovernanceService.previewDirectGrantReplacement(
+        userToEdit.id,
+        permissionGrants,
+      );
+      setAuthorizationDecision(decision);
+      if (decision.hardDenies.length > 0) throw new Error('Thay đổi vi phạm quy tắc SoD bắt buộc.');
+      const acceptanceErrors = validateSodWarningAcceptances(
+        decision,
+        warningAcceptances,
+        new Date(),
+      );
+      if (acceptanceErrors.length > 0) {
+        toast.warning('Thiếu kiểm soát SoD', acceptanceErrors[0]);
+        return;
+      }
+      await replaceUserPermissionGrants(userToEdit.id, permissionGrants, {
+        reason: permissionChangeReason,
+        warningAcceptances,
+      });
+      const [direct, sources] = await Promise.all([
+        listUserPermissionGrants(userToEdit.id),
+        authorizationGovernanceService.listEffectivePermissionSources(userToEdit.id),
+      ]);
+      setPermissionGrants(direct);
+      setOriginalPermissionGrants(direct);
+      setEffectiveSources(sources);
+      setAuthorizationDecision(null);
+      setWarningAcceptances([]);
+      setPermissionChangeReason('');
+      toast.success('Đã lưu phân quyền', 'Nguồn quyền hiệu lực đã được tải lại từ backend.');
+    } catch (error) {
+      logApiError('userModal.saveDirectPermissions', error);
+      toast.error('Không thể lưu phân quyền', getApiErrorMessage(error, 'Backend đã từ chối thay đổi phân quyền.'));
+    } finally {
+      setSavingPermissions(false);
     }
   };
 
@@ -903,7 +1042,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
           </div>
 
           {/* App Admin Permissions — sub-module level */}
-          {formData.role !== Role.ADMIN && (
+          {formData.role === Role.ADMIN ? null : (
             <div className="space-y-2">
               <label className="text-xs font-bold text-amber-600 uppercase flex items-center">
                 <Crown size={12} className="mr-1" /> Quản trị Sub-module
@@ -991,14 +1130,25 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
             </div>
           )}
 
-          {formData.role !== Role.ADMIN && (
-            <div className="space-y-3">
+          {canManageDirectGrants && (
+            <div className="space-y-3 rounded-2xl border border-blue-100 bg-blue-50/30 p-4">
               <label className="text-xs font-bold text-blue-700 uppercase flex items-center">
-                <Shield size={12} className="mr-1" /> Nền tảng quyền mới
+                <Shield size={12} className="mr-1" /> Direct grant được quản trị
               </label>
+              <p className="text-[10px] font-semibold text-slate-500">Checkbox chỉ sửa direct grant. Quyền từ Business Role/Legacy vẫn hiển thị bằng badge và không bị gỡ theo.</p>
+              {!userToEdit && (
+                <div className="rounded-lg border border-amber-100 bg-amber-50 p-3 text-xs font-bold text-amber-700">Hãy tạo tài khoản trước. Phân quyền được lưu bằng thao tác riêng sau khi tài khoản ứng dụng tồn tại.</div>
+              )}
+              {permissionSourceLoadFailed && (
+                <div className="rounded-lg border border-rose-100 bg-rose-50 p-3 text-xs font-bold text-rose-700">Nguồn quyền hiệu lực chưa tải đủ; chức năng lưu direct grant đã bị khóa.</div>
+              )}
+              {userToEdit?.id === currentUserId && (
+                <div className="rounded-lg border border-amber-100 bg-amber-50 p-3 text-xs font-bold text-amber-700">Bạn đang sửa quyền của chính mình. Backend sẽ từ chối mọi self-grant làm tăng quyền.</div>
+              )}
               <select
                 value={selectedPermissionApplicationCode}
                 onChange={event => setSelectedPermissionApplicationCode(event.target.value)}
+                disabled={!userToEdit || permissionSourceLoadFailed || savingPermissions}
                 className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 outline-none focus:ring-2 focus:ring-blue-200"
               >
                 <option value="all">Tất cả ứng dụng</option>
@@ -1006,16 +1156,79 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
                   <option key={application.code} value={application.code}>{application.label}</option>
                 ))}
               </select>
-              <PermissionScopePicker value={permissionScope} onChange={setPermissionScope} />
+              <PermissionScopePicker value={permissionScope} onChange={setPermissionScope} disabled={!userToEdit || permissionSourceLoadFailed || savingPermissions} />
               <PermissionMatrix
                 grants={permissionGrants}
-                effectiveSources={[]}
+                effectiveSources={effectiveSources}
                 applicationCodes={selectedPermissionApplicationCode === 'all' ? undefined : [selectedPermissionApplicationCode]}
                 targetUserId={userToEdit?.id}
                 scope={permissionScope}
-                onChange={setPermissionGrants}
+                disabled={!userToEdit || permissionSourceLoadFailed || savingPermissions}
+                onChange={updateDirectGrantDraft}
               />
-              <PermissionDiffPreview before={originalPermissionGrants} after={permissionGrants} effectiveSources={[]} />
+              {sensitiveDirectGrants.length > 0 && (
+                <div className="space-y-2 rounded-xl border border-rose-100 bg-rose-50/60 p-3">
+                  <div className="text-[10px] font-black uppercase text-rose-700">Hạn bắt buộc cho quyền nhạy cảm</div>
+                  {sensitiveDirectGrants.map(grant => (
+                    <label key={`${grant.permissionCode}-${grant.scopeType}-${grant.scopeId}`} className="grid items-center gap-2 text-[10px] font-bold text-slate-600 sm:grid-cols-[1fr_220px]">
+                      <span>{grant.permissionCode} · {grant.scopeType}/{grant.scopeId}</span>
+                      <input
+                        type="datetime-local"
+                        value={toLocalDateTime(grant.expiresAt)}
+                        disabled={!userToEdit || permissionSourceLoadFailed || savingPermissions}
+                        onChange={event => updateDirectGrantDraft(permissionGrants.map(candidate => candidate === grant ? {
+                          ...candidate,
+                          expiresAt: toIsoDateTime(event.target.value),
+                        } : candidate))}
+                        className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold disabled:bg-slate-50"
+                      />
+                    </label>
+                  ))}
+                </div>
+              )}
+              <textarea
+                value={permissionChangeReason}
+                onChange={event => setPermissionChangeReason(event.target.value)}
+                disabled={!userToEdit || permissionSourceLoadFailed || savingPermissions}
+                rows={2}
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-blue-200 disabled:bg-slate-50"
+                placeholder="Lý do thay đổi phân quyền (ít nhất 10 ký tự khi có thay đổi)"
+              />
+              <PermissionDiffPreview before={originalPermissionGrants} after={permissionGrants} effectiveSources={effectiveSources} />
+              {authorizationDecision?.hardDenies.length ? (
+                <div className="space-y-1 rounded-lg border border-rose-100 bg-rose-50 p-3 text-xs font-bold text-rose-700">
+                  {authorizationDecision.hardDenies.map(finding => <div key={`${finding.ruleCode}-${finding.scopeType}-${finding.scopeId}`}>{finding.message}</div>)}
+                </div>
+              ) : null}
+              {authorizationDecision && (
+                <SodWarningPanel
+                  warnings={authorizationDecision.warnings}
+                  acceptances={warningAcceptances}
+                  controlOwners={controlOwners}
+                  currentUserId={currentUserId}
+                  affectedPrincipalId={userToEdit?.id}
+                  disabled={!userToEdit || permissionSourceLoadFailed || savingPermissions}
+                  onChange={setWarningAcceptances}
+                />
+              )}
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={handlePreviewDirectPermissions}
+                  disabled={!userToEdit || permissionSourceLoadFailed || previewingPermissions || savingPermissions}
+                  className="rounded-lg border border-blue-200 bg-white px-4 py-2 text-xs font-black text-blue-700 disabled:opacity-50"
+                >
+                  {previewingPermissions ? 'Đang preview...' : 'Preview phân quyền'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveDirectPermissions}
+                  disabled={!userToEdit || permissionSourceLoadFailed || savingPermissions || previewingPermissions || !authorizationDecision || authorizationDecision.hardDenies.length > 0 || warningAcceptanceErrors.length > 0}
+                  className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-xs font-black text-white disabled:opacity-50"
+                >
+                  {savingPermissions ? <><Loader2 size={14} className="animate-spin" /> Đang lưu phân quyền...</> : <><Save size={14} /> Lưu phân quyền</>}
+                </button>
+              </div>
             </div>
           )}
 

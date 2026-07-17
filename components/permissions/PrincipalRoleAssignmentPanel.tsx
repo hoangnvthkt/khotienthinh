@@ -72,6 +72,8 @@ const PrincipalRoleAssignmentPanel: React.FC<PrincipalRoleAssignmentPanelProps> 
     try {
       await onPreview(roleId, scope);
       setPreviewedDraftKey(currentDraftKey);
+    } catch {
+      setMessage('Không thể preview phân công Business Role. Vui lòng thử lại.');
     } finally {
       setBusy(null);
     }
@@ -111,6 +113,8 @@ const PrincipalRoleAssignmentPanel: React.FC<PrincipalRoleAssignmentPanelProps> 
       setPreviewedDraftKey(null);
       setAcceptances([]);
       setReason('');
+    } catch {
+      setMessage('Không thể phân công Business Role. Backend đã từ chối thay đổi.');
     } finally {
       setBusy(null);
     }
@@ -127,6 +131,8 @@ const PrincipalRoleAssignmentPanel: React.FC<PrincipalRoleAssignmentPanelProps> 
     try {
       await onRevoke(assignmentId, revokeReason);
       setRevokeReasons(current => ({ ...current, [assignmentId]: '' }));
+    } catch {
+      setMessage('Không thể thu hồi Business Role. Backend đã từ chối thay đổi.');
     } finally {
       setBusy(null);
     }
