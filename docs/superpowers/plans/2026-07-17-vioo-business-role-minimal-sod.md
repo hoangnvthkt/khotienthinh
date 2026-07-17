@@ -4622,6 +4622,22 @@ Before any Cloud mutation, review the Phase 2 tree end to end:
 - disabling an account revokes Business Roles and reactivation restores none;
 - current production behavior remains unchanged while all three rollout flags are false.
 
+> **Checkpoint C review — PASS (`2026-07-17`):** Tasks 8–11 passed the
+> complete repository suite (168 files / 984 tests), TypeScript and the Vite
+> production build. Effective `ROLE`/`DIRECT` sources authorize without legacy
+> module arrays; adjacent actions and scopes remain denied; inherited sources
+> render as non-removable badges; profile and direct-permission saves are
+> separate; and every browser mutation payload remains actor-free. Capability
+> review confirmed `manage_roles`, `manage_grants`, `audit` and `override` are
+> independently gated, while scoped `manage_scopes` exposes no global control
+> in Phase 2. Lifecycle coverage still revokes Business Role assignments on
+> disable and never restores them on reactivation. Checkpoint B's linked-Cloud
+> rollback evidence continues to prove all three rollout flags default off and
+> leaves no persisted candidate schema/data. No Critical or Important finding
+> remains open. Visual click-through was unavailable because this session had
+> no browser runtime; static UI contracts, TypeScript and production build
+> completed successfully instead. No Cloud mutation occurred.
+
 ---
 
 ### Task 12: Align the program roadmap and run complete local/rollback verification
