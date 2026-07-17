@@ -17,6 +17,14 @@ const resolverSql = resolverFiles.length === 1
   : '';
 const resolverNormalized = resolverSql.replace(/\s+/g, ' ').trim();
 
+const commandsFiles = readdirSync(dir)
+  .filter(file => file.endsWith('_authorization_governance_commands.sql'))
+  .sort();
+const commandsSql = commandsFiles.length === 1
+  ? readFileSync(join(dir, commandsFiles[0]), 'utf8')
+  : '';
+const commandsNormalized = commandsSql.replace(/\s+/g, ' ').trim();
+
 describe('authorization Business Role foundation migration', () => {
   it('has one forward migration with risk metadata', () => {
     expect(files).toHaveLength(1);
@@ -97,4 +105,26 @@ describe('authorization effective permission resolver migration', () => {
     expect(resolverNormalized).toMatch(/revoke all on function app_private\.resolve_effective_permission_sources\(uuid,text,text,text,timestamptz\) from public, anon, authenticated/i);
     expect(resolverNormalized).not.toMatch(/get_effective_permission_sources\([^)]*p_actor/i);
   });
+});
+
+describe('authorization governance commands migration', () => {
+  it('exposes actor-derived governed role commands with locked audited mutations', () => {
+    expect(commandsFiles).toHaveLength(1);
+    expect(commandsNormalized).toMatch(/v_actor_user_id uuid := public\.current_app_user_id\(\)/i);
+    expect(commandsNormalized).toMatch(/create or replace function public\.assign_business_role/i);
+    expect(commandsNormalized).toMatch(/create or replace function public\.revoke_business_role_assignment/i);
+    expect(commandsNormalized).toMatch(/create or replace function app_private\.assert_rollout_operator_continuity/i);
+    expect(commandsNormalized).toMatch(/create trigger trg_users_guard_rollout_operator_transition/i);
+    expect(commandsNormalized).toMatch(/create or replace function public\.save_business_role/i);
+    expect(commandsNormalized).toMatch(/create or replace function public\.preview_business_role_change/i);
+    expect(commandsNormalized).toMatch(/create or replace function public\.preview_business_role_assignment/i);
+    expect(commandsNormalized).toMatch(/create or replace function app_private\.list_authorization_principals_impl/i);
+    expect(commandsNormalized).toMatch(/create or replace function app_private\.set_authorization_rollout_flags_impl/i);
+    expect(commandsNormalized).toMatch(/create or replace function public\.list_authorization_principals\(\).*?security invoker/is);
+    expect(commandsNormalized).toMatch(/create or replace function public\.set_authorization_rollout_flags\(.*?security invoker/is);
+    expect(commandsNormalized).toMatch(/for update/i);
+    expect(commandsNormalized).toMatch(/insert into public\.permission_audit_events/i);
+    expect(commandsNormalized).not.toMatch(/create or replace function public\.[^(]+\([^)]*p_actor_user_id/i);
+  });
+
 });

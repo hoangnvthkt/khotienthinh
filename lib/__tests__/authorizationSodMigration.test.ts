@@ -9,6 +9,14 @@ const sodFiles = readdirSync(dir)
 const sodSql = sodFiles.length === 1 ? readFileSync(join(dir, sodFiles[0]), 'utf8') : '';
 const normalized = sodSql.replace(/\s+/g, ' ').trim();
 
+const commandsFiles = readdirSync(dir)
+  .filter(file => file.endsWith('_authorization_governance_commands.sql'))
+  .sort();
+const commandsSql = commandsFiles.length === 1
+  ? readFileSync(join(dir, commandsFiles[0]), 'utf8')
+  : '';
+const commandsNormalized = commandsSql.replace(/\s+/g, ' ').trim();
+
 describe('minimal SoD registry migration', () => {
   it('creates one typed, seed-controlled registry without a policy DSL', () => {
     expect(sodFiles).toHaveLength(1);
@@ -33,5 +41,15 @@ describe('minimal SoD registry migration', () => {
     expect(normalized).toMatch(/v_actor_user_id uuid := public\.current_app_user_id\(\)/i);
     expect(normalized).toMatch(/p_actor_user_id is distinct from public\.current_app_user_id\(\)/i);
     expect(normalized).toMatch(/create or replace function app_private\.assert_subject_sod/i);
+  });
+});
+
+describe('governance command SoD integration', () => {
+  it('keeps warning evidence behind the governed command seam', () => {
+    expect(commandsFiles).toHaveLength(1);
+    expect(commandsNormalized).toMatch(/create or replace function app_private\.assert_and_record_sod_warnings/i);
+    expect(commandsNormalized).toMatch(/app_private\.evaluate_authorization_change_set/i);
+    expect(commandsNormalized).toMatch(/authorization_sod_warning_acceptances/i);
+    expect(commandsNormalized).not.toMatch(/grant execute on function app_private\.assert_and_record_sod_warnings[^;]+authenticated/i);
   });
 });
