@@ -375,6 +375,9 @@ $$;
 revoke all on function public.get_effective_permission_sources(uuid) from public, anon;
 grant execute on function public.get_effective_permission_sources(uuid) to authenticated;
 
+create index if not exists permission_audit_events_actor_idx
+  on public.permission_audit_events (actor_user_id, created_at desc);
+
 drop policy if exists principal_role_assignments_self_select on public.principal_role_assignments;
 create policy principal_role_assignments_authorized_select
 on public.principal_role_assignments for select

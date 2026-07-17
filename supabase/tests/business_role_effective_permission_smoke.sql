@@ -234,6 +234,36 @@ begin
   ) then
     raise exception 'Business Role principal lookup index contract failed';
   end if;
+
+  if not exists (
+    select 1
+    from pg_indexes index_row
+    where index_row.schemaname = 'public'
+      and index_row.tablename = 'principal_role_assignments'
+      and index_row.indexname = 'principal_role_assignments_assigned_by_idx'
+  ) then
+    raise exception 'Business Role assigned-by FK index contract failed';
+  end if;
+
+  if not exists (
+    select 1
+    from pg_indexes index_row
+    where index_row.schemaname = 'public'
+      and index_row.tablename = 'principal_role_assignments'
+      and index_row.indexname = 'principal_role_assignments_revoked_by_idx'
+  ) then
+    raise exception 'Business Role revoked-by FK index contract failed';
+  end if;
+
+  if not exists (
+    select 1
+    from pg_indexes index_row
+    where index_row.schemaname = 'public'
+      and index_row.tablename = 'permission_audit_events'
+      and index_row.indexname = 'permission_audit_events_actor_idx'
+  ) then
+    raise exception 'Permission audit actor RLS index contract failed';
+  end if;
 end;
 $$;
 
@@ -494,6 +524,14 @@ select 'user', target_id, item_wildcard_role_id, 'project', 'project-1', now(), 
        'Test wildcard item under concrete assignment'
 from phase2_role_smoke_ids
 union all
+select 'user', target_id, item_wildcard_role_id, 'project', 'project-expired',
+       now() - interval '2 days', 'ACTIVE', 'Test expired Business Role assignment'
+from phase2_role_smoke_ids
+union all
+select 'user', target_id, item_wildcard_role_id, 'project', 'project-revoked',
+       now() - interval '2 days', 'ACTIVE', 'Test revoked Business Role assignment'
+from phase2_role_smoke_ids
+union all
 select 'user', mirror_admin_id, role_row.id, 'global', '*', now(), 'ACTIVE',
        'Test System Admin profile mirror behavior'
 from phase2_role_smoke_ids
@@ -508,6 +546,20 @@ select 'user', auditor_id, role_row.id, 'global', '*', now(), 'ACTIVE',
        'Test explicit Auditor read behavior'
 from phase2_role_smoke_ids
 join public.role_permission_templates role_row on role_row.code = 'AUDITOR';
+
+update public.principal_role_assignments
+set expires_at = now() - interval '1 day'
+where principal_id = (select target_id from phase2_role_smoke_ids)
+  and scope_type = 'project'
+  and scope_id = 'project-expired';
+
+update public.principal_role_assignments
+set status = 'REVOKED',
+    revoked_at = now(),
+    revoked_reason = 'Revoked Business Role smoke fixture'
+where principal_id = (select target_id from phase2_role_smoke_ids)
+  and scope_type = 'project'
+  and scope_id = 'project-revoked';
 
 do $$
 begin
@@ -594,6 +646,24 @@ begin
 
   if app_private.has_permission(
     v_target_id,
+    'project.daily_log.approve',
+    'project',
+    'project-expired'
+  ) then
+    raise exception 'Expired Business Role assignment remained effective';
+  end if;
+
+  if app_private.has_permission(
+    v_target_id,
+    'project.daily_log.approve',
+    'project',
+    'project-revoked'
+  ) then
+    raise exception 'Revoked Business Role assignment remained effective';
+  end if;
+
+  if app_private.has_permission(
+    v_target_id,
     'project.daily_log.create',
     'project',
     'project-1'
@@ -614,7 +684,18 @@ insert into public.user_permission_grants (
 )
 select target_id, 'project.daily_log.create', 'project', 'project-1', true, now(),
        'Test adjacent direct grant source'
+from phase2_role_smoke_ids
+union all
+select target_id, 'project.daily_log.create', 'project', 'project-expired', true,
+       now() - interval '2 days', 'Test expired direct grant source'
 from phase2_role_smoke_ids;
+
+update public.user_permission_grants
+set expires_at = now() - interval '1 day'
+where user_id = (select target_id from phase2_role_smoke_ids)
+  and permission_code = 'project.daily_log.create'
+  and scope_type = 'project'
+  and scope_id = 'project-expired';
 
 do $$
 declare
@@ -636,6 +717,15 @@ begin
     'project-2'
   ) then
     raise exception 'Direct permission widened to another project';
+  end if;
+
+  if app_private.has_permission(
+    v_target_id,
+    'project.daily_log.create',
+    'project',
+    'project-expired'
+  ) then
+    raise exception 'Expired direct permission remained effective';
   end if;
 
   if not exists (
@@ -814,6 +904,14 @@ begin
   perform public.get_effective_permission_sources(
     (select target_id from phase2_role_smoke_ids)
   );
+
+  if (
+    select count(*)
+    from public.principal_role_assignments assignment_row
+    where assignment_row.principal_id = (select target_id from phase2_role_smoke_ids)
+  ) < 1 then
+    raise exception 'Principal could not read own Business Role assignments';
+  end if;
 end;
 $$;
 
@@ -832,6 +930,14 @@ begin
   perform public.get_effective_permission_sources(
     (select target_id from phase2_role_smoke_ids)
   );
+
+  if (
+    select count(*)
+    from public.principal_role_assignments assignment_row
+    where assignment_row.principal_id = (select target_id from phase2_role_smoke_ids)
+  ) < 1 then
+    raise exception 'Permission Admin RLS read did not resolve without recursion';
+  end if;
 end;
 $$;
 
@@ -850,6 +956,14 @@ begin
   perform public.get_effective_permission_sources(
     (select target_id from phase2_role_smoke_ids)
   );
+
+  if (
+    select count(*)
+    from public.principal_role_assignments assignment_row
+    where assignment_row.principal_id = (select target_id from phase2_role_smoke_ids)
+  ) < 1 then
+    raise exception 'Auditor RLS read did not resolve without recursion';
+  end if;
 end;
 $$;
 
@@ -878,6 +992,14 @@ begin
 
   if not v_denied then
     raise exception 'Unrelated caller read another principal authorization sources';
+  end if;
+
+  if exists (
+    select 1
+    from public.principal_role_assignments assignment_row
+    where assignment_row.principal_id = (select target_id from phase2_role_smoke_ids)
+  ) then
+    raise exception 'Unrelated caller read another principal role assignment through RLS';
   end if;
 end;
 $$;

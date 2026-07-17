@@ -70,6 +70,14 @@ create index principal_role_assignments_role_effective_idx
 create index principal_role_assignments_scope_idx
   on public.principal_role_assignments (scope_type, scope_id, status);
 
+create index principal_role_assignments_assigned_by_idx
+  on public.principal_role_assignments (assigned_by)
+  where assigned_by is not null;
+
+create index principal_role_assignments_revoked_by_idx
+  on public.principal_role_assignments (revoked_by)
+  where revoked_by is not null;
+
 create or replace function app_private.guard_principal_role_assignment_principal()
 returns trigger
 language plpgsql
