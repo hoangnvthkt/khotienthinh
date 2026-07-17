@@ -1,4 +1,3 @@
-
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useRequest } from '../../context/RequestContext';
@@ -56,7 +55,7 @@ const FileFieldInput: React.FC<{
 
     if (disabled && value?.fileName) {
         return (
-            <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 dark:bg-slate-800/50 rounded-xl text-sm">
+            <div className="flex items-center gap-2 px-3 py-2 bg-slate-550 dark:bg-slate-800/50 rounded-xl text-sm">
                 <Paperclip size={14} className="text-rose-400" />
                 <span className="font-medium text-slate-700 dark:text-slate-300 flex-1 truncate">{value.fileName}</span>
                 <span className="text-[10px] text-slate-400">({(value.fileSize / 1024).toFixed(1)} KB)</span>
@@ -103,9 +102,9 @@ const ApprovalProgress: React.FC<{ approvers: RequestApprover[]; users: any[] }>
                         {idx > 0 && <ArrowRight size={10} className="text-slate-300 shrink-0" />}
                         <div className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold transition-all ${
                             isApproved ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' :
-                            isRejected ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' :
+                            isRejected ? 'bg-red-100 text-red-750 dark:bg-red-900/30 dark:text-red-300' :
                             isCurrent ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 ring-1 ring-amber-300 animate-pulse' :
-                            'bg-slate-100 text-slate-400 dark:bg-slate-700 dark:text-slate-500'
+                            'bg-slate-100 text-slate-450 dark:bg-slate-700 dark:text-slate-500'
                         }`} title={step.comment || ''}>
                             {isApproved ? <CheckCircle size={10} /> : isRejected ? <XCircle size={10} /> : <Clock size={10} />}
                             <span>B{step.order}: {u?.name || 'N/A'}</span>
@@ -208,6 +207,17 @@ const RequestList: React.FC = () => {
         }
         return list;
     }, [requests, activeTab, filterStatus, searchTerm, user, categories]);
+
+    const activeRequestId = useMemo(() => {
+        if (expandedId && filteredRequests.some(r => r.id === expandedId)) {
+            return expandedId;
+        }
+        return filteredRequests[0]?.id || null;
+    }, [expandedId, filteredRequests]);
+
+    const activeRequest = useMemo(() => {
+        return requests.find(r => r.id === activeRequestId) || null;
+    }, [requests, activeRequestId]);
 
     const handleCreate = async () => {
         if (!selectedCategoryId || !newTitle.trim() || approverList.length === 0) return;
@@ -423,11 +433,11 @@ const RequestList: React.FC = () => {
                 </span>
             );
         }
-        return <span className="text-sm text-slate-700 dark:text-slate-300">{String(value)}</span>;
+        return <span className="text-sm text-slate-700 dark:text-slate-350">{String(value)}</span>;
     };
 
     return (
-        <div className="space-y-6">
+        <div className={viewMode === 'list' ? "h-full w-full flex bg-slate-100 dark:bg-slate-950 overflow-hidden relative select-none" : "space-y-6 p-4 sm:p-6 md:p-8"}>
             {/* Toast */}
             {toast && (
                 <div className={`fixed top-6 right-6 z-[60] px-5 py-3.5 rounded-xl shadow-2xl font-bold text-sm flex items-center gap-2 animate-fade-in-down ${toast.type === 'success' ? 'bg-emerald-500 text-white' : 'bg-red-500 text-white'}`}>
@@ -437,74 +447,563 @@ const RequestList: React.FC = () => {
                 </div>
             )}
 
-            {/* Header */}
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                <div>
-                    <h1 className="text-2xl font-bold text-slate-800 dark:text-white flex items-center gap-2">
-                        <Inbox className="text-accent" size={28} /> Phiếu yêu cầu
-                    </h1>
-                    <p className="text-sm text-slate-500 dark:text-slate-400">Tạo và theo dõi các phiếu yêu cầu.</p>
-                </div>
-                <div className="flex items-center gap-2">
-                    <div className="flex bg-white/50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
-                        <button onClick={() => setViewMode('list')}
-                            className={`px-3 py-2 flex items-center gap-1.5 text-xs font-bold transition ${viewMode === 'list' ? 'bg-accent text-white' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700'}`}>
-                            <ListIcon size={14} /> Danh sách
-                        </button>
-                        <button onClick={() => setViewMode('board')}
-                            className={`px-3 py-2 flex items-center gap-1.5 text-xs font-bold transition ${viewMode === 'board' ? 'bg-accent text-white' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700'}`}>
-                            <LayoutGrid size={14} /> Bảng
-                        </button>
-                    </div>
-                    <button onClick={() => setShowCreateModal(true)} disabled={activeCategories.length === 0}
-                        className="flex items-center px-4 py-2.5 bg-accent text-white rounded-xl hover:bg-emerald-600 transition font-bold shadow-lg shadow-emerald-500/20 disabled:opacity-50">
-                        <Plus size={18} className="mr-2" /> Tạo phiếu mới
-                    </button>
-                </div>
-            </div>
-
-            {/* Tabs & Filters */}
-            <div className="glass-card p-4 rounded-xl space-y-3">
-                <div className="flex gap-2">
-                    {([
-                        { id: 'mine', label: 'Phiếu của tôi', icon: User },
-                        { id: 'pending', label: 'Chờ tôi duyệt', icon: Clock },
-                        ...(user.role === Role.ADMIN ? [{ id: 'all', label: 'Tất cả', icon: Inbox }] : []),
-                    ] as { id: string; label: string; icon: any }[]).map(tab => (
-                        <button key={tab.id} onClick={() => setActiveTab(tab.id as any)}
-                            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition ${activeTab === tab.id
-                                ? 'bg-accent text-white shadow-md'
-                                : 'bg-white/50 dark:bg-slate-800/50 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-white dark:hover:bg-slate-700'
-                                }`}>
-                            <tab.icon size={15} /> {tab.label}
-                            {tab.id === 'pending' && (() => {
-                                const cnt = requests.filter(r => canApprove(r)).length;
-                                return cnt > 0 ? <span className="bg-red-500 text-white px-1.5 py-0.5 rounded-full text-[10px] font-black">{cnt}</span> : null;
-                            })()}
-                        </button>
-                    ))}
-                </div>
-                <div className="flex flex-col md:flex-row gap-3">
-                    <div className="flex-1 relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
-                        <input type="text" placeholder="Tìm theo mã hoặc tiêu đề..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
-                            className="w-full pl-10 pr-4 py-2.5 bg-white/50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-accent text-sm" />
-                    </div>
-                    <div className="flex gap-1.5 overflow-x-auto">
-                        {['ALL', ...Object.keys(STATUS_MAP)].map(s => (
-                            <button key={s} onClick={() => setFilterStatus(s)}
-                                className={`px-3 py-1.5 rounded-lg text-[10px] font-bold whitespace-nowrap transition ${filterStatus === s
-                                    ? 'bg-slate-800 dark:bg-slate-200 text-white dark:text-slate-800'
-                                    : 'bg-slate-100 dark:bg-slate-700 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-600'
-                                    }`}>
-                                {s === 'ALL' ? 'Tất cả' : STATUS_MAP[s as RQStatus].label}
+            {/* ==================== LIST VIEW (3-PANEL WORKSPACE) ==================== */}
+            {viewMode === 'list' && (
+                <>
+                    {/* PANEL 1: Categories & Status Sidebar (Width: 260px) */}
+                    <aside className="w-[260px] bg-slate-50 border-r border-slate-200 dark:bg-[#2b2d31] dark:border-slate-800 flex flex-col h-full shrink-0">
+                        {/* Title Header */}
+                        <div className="flex h-16 shrink-0 items-center justify-between border-b border-slate-200 dark:border-slate-800 px-4">
+                            <div className="flex items-center gap-2 min-w-0">
+                                <Inbox className="text-accent shrink-0" size={18} />
+                                <span className="text-sm font-black text-slate-800 dark:text-white truncate">Đề xuất & Phê duyệt</span>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setSelectedCategoryId('');
+                                    setNewTitle('');
+                                    setNewDesc('');
+                                    setNewPriority('medium');
+                                    setCustomFormData({});
+                                    setNewDueDate('');
+                                    setApproverList([]);
+                                    setShowCreateModal(true);
+                                }}
+                                disabled={activeCategories.length === 0}
+                                title="Tạo đề xuất mới"
+                                className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent text-white hover:bg-emerald-600 transition disabled:opacity-50"
+                            >
+                                <Plus size={16} />
                             </button>
-                        ))}
-                    </div>
-                </div>
-            </div>
+                        </div>
 
-            {/* ==================== BOARD VIEW ==================== */}
+                        {/* View Tabs */}
+                        <div className="p-3 shrink-0 space-y-1">
+                            {([
+                                { id: 'mine', label: 'Phiếu của tôi', icon: User },
+                                { id: 'pending', label: 'Chờ tôi duyệt', icon: Clock },
+                                ...(user.role === Role.ADMIN ? [{ id: 'all', label: 'Tất cả đề xuất', icon: Inbox }] : []),
+                            ] as { id: string; label: string; icon: any }[]).map(tab => {
+                                const Icon = tab.icon;
+                                const isActive = activeTab === tab.id;
+                                const pendingCountVal = tab.id === 'pending' ? requests.filter(r => canApprove(r)).length : 0;
+                                return (
+                                    <button
+                                        key={tab.id}
+                                        onClick={() => { setActiveTab(tab.id as any); setExpandedId(null); }}
+                                        className={`flex items-center justify-between w-full px-3 py-2 rounded-xl text-xs font-bold transition select-none ${
+                                            isActive
+                                                ? 'bg-indigo-50 dark:bg-[#35373c] text-indigo-650 dark:text-white font-black'
+                                                : 'text-slate-600 dark:text-[#949ba4] hover:bg-slate-200/60 dark:hover:bg-[#2e3035] hover:text-slate-900 dark:hover:text-[#dbdee1]'
+                                        }`}
+                                    >
+                                        <div className="flex items-center gap-2 min-w-0">
+                                            <Icon size={14} className="shrink-0" />
+                                            <span className="truncate">{tab.label}</span>
+                                        </div>
+                                        {pendingCountVal > 0 && (
+                                            <span className="bg-red-500 text-white px-1.5 py-0.5 rounded-full text-[9px] font-black shrink-0">
+                                                {pendingCountVal}
+                                            </span>
+                                        )}
+                                    </button>
+                                );
+                            })}
+                        </div>
+
+                        {/* Status Filters */}
+                        <div className="px-3 pb-3 border-b border-slate-200 dark:border-slate-800 shrink-0 space-y-1">
+                            <p className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider px-2 py-1 select-none">Trạng thái</p>
+                            <button
+                                onClick={() => setFilterStatus('ALL')}
+                                className={`w-full px-3 py-1.5 rounded-lg text-left text-[11px] font-bold transition flex items-center justify-between ${
+                                    filterStatus === 'ALL'
+                                        ? 'bg-slate-200/60 dark:bg-slate-800 text-slate-900 dark:text-white'
+                                        : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800/40 hover:text-slate-800 dark:hover:text-slate-300'
+                                }`}
+                            >
+                                <span>Tất cả</span>
+                                <span className="text-[9px] opacity-60">({requests.filter(r => activeTab === 'all' || (activeTab === 'mine' && r.createdBy === user.id) || (activeTab === 'pending' && canApprove(r))).length})</span>
+                            </button>
+                            {Object.entries(STATUS_MAP).map(([s, config]) => {
+                                const count = requests.filter(r => {
+                                    let matchTab = true;
+                                    if (activeTab === 'mine') matchTab = r.createdBy === user.id;
+                                    else if (activeTab === 'pending') matchTab = canApprove(r);
+                                    return matchTab && r.status === s;
+                                }).length;
+                                return (
+                                    <button
+                                        key={s}
+                                        onClick={() => setFilterStatus(s)}
+                                        className={`w-full px-3 py-1.5 rounded-lg text-left text-[11px] font-bold transition flex items-center justify-between ${
+                                            filterStatus === s
+                                                ? 'bg-slate-200/60 dark:bg-slate-800 text-slate-900 dark:text-white'
+                                                : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800/40 hover:text-slate-800 dark:hover:text-slate-300'
+                                        }`}
+                                    >
+                                        <span className="truncate">{config.label}</span>
+                                        {count > 0 && <span className="text-[9px] opacity-60">({count})</span>}
+                                    </button>
+                                );
+                            })}
+                        </div>
+
+                        {/* Categories List */}
+                        <div className="flex-1 overflow-y-auto p-3 space-y-1">
+                            <div className="flex items-center justify-between text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider px-2 py-1 select-none">
+                                <span>Nhóm đề xuất</span>
+                            </div>
+                            {activeCategories.map(cat => {
+                                const count = requests.filter(r => {
+                                    let matchTab = true;
+                                    if (activeTab === 'mine') matchTab = r.createdBy === user.id;
+                                    else if (activeTab === 'pending') matchTab = canApprove(r);
+                                    let matchStatus = filterStatus === 'ALL' ? true : r.status === filterStatus;
+                                    return matchTab && matchStatus && r.categoryId === cat.id;
+                                }).length;
+                                return (
+                                    <button
+                                        key={cat.id}
+                                        onClick={() => {
+                                            setSelectedCategoryId(selectedCategoryId === cat.id ? '' : cat.id);
+                                        }}
+                                        className={`w-full px-3 py-2 rounded-xl text-left text-xs font-bold transition flex items-center justify-between gap-2 ${
+                                            selectedCategoryId === cat.id
+                                                ? 'bg-indigo-50 dark:bg-[#35373c] text-indigo-655 dark:text-white font-bold shadow-sm'
+                                                : 'text-slate-600 dark:text-[#949ba4] hover:bg-slate-200/60 dark:hover:bg-[#2e3035] hover:text-slate-900 dark:hover:text-[#dbdee1]'
+                                        }`}
+                                    >
+                                        <div className="flex items-center gap-2 min-w-0">
+                                            <div className={`w-5 h-5 rounded-md bg-gradient-to-br ${cat.color} shrink-0`} />
+                                            <span className="truncate text-xs">{cat.name}</span>
+                                        </div>
+                                        {count > 0 && (
+                                            <span className="text-[9px] opacity-65 shrink-0">
+                                                {count}
+                                            </span>
+                                        )}
+                                    </button>
+                                );
+                            })}
+                        </div>
+
+                        {/* Switch to Kanban Button */}
+                        <div className="p-3 border-t border-slate-200 dark:border-slate-800 shrink-0">
+                            <button
+                                onClick={() => setViewMode('board')}
+                                className="w-full flex items-center justify-center gap-2 py-2.5 px-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-355 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl text-xs font-bold transition"
+                            >
+                                <LayoutGrid size={13} /> Chuyển sang Kanban Board
+                            </button>
+                        </div>
+                    </aside>
+
+                    {/* PANEL 2: Master Request List (Width: 380px) */}
+                    <section className="w-[380px] bg-white dark:bg-[#1e1f22] border-r border-slate-200 dark:border-slate-800 flex flex-col h-full shrink-0">
+                        {/* Search and Batch Panel */}
+                        <div className="p-3 shrink-0 border-b border-slate-200 dark:border-slate-800 space-y-2">
+                            <div className="flex h-9 items-center gap-2 rounded-lg bg-slate-100 dark:bg-[#313338] px-2.5 text-slate-500 dark:text-slate-400">
+                                <Search size={14} />
+                                <input
+                                    value={searchTerm}
+                                    onChange={event => setSearchTerm(event.target.value)}
+                                    placeholder="Tìm theo mã hoặc tiêu đề..."
+                                    className="h-full min-w-0 flex-1 bg-transparent text-xs font-bold text-slate-850 dark:text-[#dbdee1] outline-none placeholder:text-slate-400 dark:placeholder:text-slate-555"
+                                />
+                            </div>
+
+                            {activeTab === 'pending' && filteredRequests.filter(r => canApprove(r)).length > 0 && (
+                                <div className="flex items-center justify-between bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-100 dark:border-indigo-900/30 p-2 rounded-lg select-none">
+                                    <button
+                                        onClick={toggleSelectAll}
+                                        className="flex items-center gap-2 text-xs font-bold text-slate-600 dark:text-slate-300"
+                                    >
+                                        {selectedIds.size === filteredRequests.filter(r => canApprove(r)).length
+                                            ? <CheckSquare size={16} className="text-indigo-500" />
+                                            : <Square size={16} className="text-slate-300 dark:text-slate-600" />}
+                                        <span>Chọn tất cả ({filteredRequests.filter(r => canApprove(r)).length})</span>
+                                    </button>
+                                    {selectedIds.size > 0 && (
+                                        <div className="flex gap-1.5">
+                                            <button
+                                                onClick={() => setShowBatchConfirm('approve')}
+                                                className="px-2.5 py-1 bg-emerald-500 text-white rounded-lg text-[10px] font-bold hover:bg-emerald-650"
+                                            >
+                                                Duyệt
+                                            </button>
+                                            <button
+                                                onClick={() => setShowBatchConfirm('reject')}
+                                                className="px-2.5 py-1 bg-red-500 text-white rounded-lg text-[10px] font-bold hover:bg-red-650"
+                                            >
+                                                Từ chối
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Request Cards */}
+                        <div className="flex-1 overflow-y-auto p-3 space-y-2.5 bg-slate-50/50 dark:bg-slate-900/10">
+                            {filteredRequests.map(req => {
+                                const cat = categories.find(c => c.id === req.categoryId);
+                                const creator = users.find(u => u.id === req.createdBy);
+                                const status = STATUS_MAP[req.status] || STATUS_MAP.PENDING;
+                                const priority = PRIORITY_MAP[req.priority] || PRIORITY_MAP.medium;
+                                const isActiveCard = req.id === activeRequestId;
+
+                                // Sidebar category filter check
+                                if (selectedCategoryId && req.categoryId !== selectedCategoryId) return null;
+
+                                return (
+                                    <div
+                                        key={req.id}
+                                        ref={el => { requestRefs.current[req.id] = el; }}
+                                        onClick={() => setExpandedId(req.id)}
+                                        className={`p-4 rounded-2xl border transition-all cursor-pointer select-none ${
+                                            isActiveCard
+                                                ? 'bg-indigo-50/50 dark:bg-indigo-900/10 border-indigo-500 dark:border-indigo-650 shadow-md ring-1 ring-indigo-500/20'
+                                                : 'bg-white hover:bg-slate-50/30 dark:bg-[#1e1f22] dark:hover:bg-[#2e3035] border-slate-200 dark:border-slate-800'
+                                        }`}
+                                    >
+                                        <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                                            <span className="font-mono text-[9px] font-bold bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-slate-500">{req.code}</span>
+                                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${status.color} flex items-center gap-0.5`}>
+                                                <status.icon size={8} /> {status.label}
+                                            </span>
+                                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${priority.color}`}>{priority.label}</span>
+                                            {cat && <span className="text-[9px] text-slate-400 font-medium truncate max-w-[120px]">{cat.name}</span>}
+                                        </div>
+                                        <h3 className="font-bold text-xs text-slate-800 dark:text-white leading-snug mb-2 line-clamp-2">{req.title}</h3>
+                                        
+                                        <div className="flex items-center justify-between text-[10px] text-slate-450 dark:text-slate-400">
+                                            <span className="flex items-center gap-1"><User size={9} /> {creator?.name || 'N/A'}</span>
+                                            <span className="flex items-center gap-1"><Clock size={9} /> {new Date(req.createdAt).toLocaleDateString('vi-VN')}</span>
+                                        </div>
+
+                                        {req.dueDate && (() => {
+                                            const now = new Date();
+                                            const due = new Date(req.dueDate);
+                                            const isOverdue = now > due && !['DONE', 'CANCELLED', 'REJECTED'].includes(req.status);
+                                            return (
+                                                <div className={`mt-2 text-[9px] font-bold ${isOverdue ? 'text-red-500 animate-pulse' : 'text-slate-450 dark:text-slate-400'}`}>
+                                                    SLA Hạn: {due.toLocaleString('vi-VN')} {isOverdue && '(QUÁ HẠN!)'}
+                                                </div>
+                                            );
+                                        })()}
+
+                                        {/* Progress Circles */}
+                                        {req.approvers && req.approvers.length > 0 && (
+                                            <div className="mt-2.5 pt-2 border-t border-slate-100 dark:border-slate-800/60 flex items-center gap-1 flex-wrap">
+                                                {req.approvers.map((step, idx) => {
+                                                    const isApproved = step.status === 'approved';
+                                                    const isRejected = step.status === 'rejected';
+                                                    const isWaiting = step.status === 'waiting';
+                                                    const isCurrent = isWaiting && (idx === 0 || req.approvers[idx - 1]?.status === 'approved');
+                                                    return (
+                                                        <span
+                                                            key={idx}
+                                                            title={`Bước ${step.order}: ${users.find(u => u.id === step.userId)?.name}`}
+                                                            className={`w-2 h-2 rounded-full border ${
+                                                                isApproved ? 'bg-emerald-500 border-emerald-600' :
+                                                                isRejected ? 'bg-red-500 border-red-600' :
+                                                                isCurrent ? 'bg-amber-400 border-amber-500 animate-pulse' :
+                                                                'bg-slate-200 border-slate-300 dark:bg-slate-700 dark:border-slate-650'
+                                                            }`}
+                                                        />
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+
+                            {filteredRequests.length === 0 && (
+                                <div className="text-center py-20 opacity-60">
+                                    <Inbox className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+                                    <p className="text-xs text-slate-500 font-bold">Không tìm thấy phiếu yêu cầu nào</p>
+                                </div>
+                            )}
+                        </div>
+                    </section>
+
+                    {/* PANEL 3: Detailed Request & Actions View (Flex-1) */}
+                    <main className="flex-1 bg-white dark:bg-[#313338] flex flex-col h-full overflow-hidden relative">
+                        {activeRequest ? (() => {
+                            const req = activeRequest;
+                            const cat = categories.find(c => c.id === req.categoryId);
+                            const creator = users.find(u => u.id === req.createdBy);
+                            const status = STATUS_MAP[req.status] || STATUS_MAP.PENDING;
+                            const priority = PRIORITY_MAP[req.priority] || PRIORITY_MAP.medium;
+                            const reqLogs = getRequestLogs(req.id);
+                            const isPending = canApprove(req);
+                            const isOwner = req.createdBy === user.id;
+
+                            return (
+                                <>
+                                    {/* Panel Header */}
+                                    <header className="flex h-16 shrink-0 items-center justify-between border-b border-slate-200 dark:border-slate-800 px-6 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+                                        <div className="min-w-0">
+                                            <div className="flex items-center gap-2 mb-0.5">
+                                                <span className="font-mono text-[10px] font-black text-slate-400">{req.code}</span>
+                                                <span className="text-[10px] text-slate-400 font-bold">•</span>
+                                                <span className="text-[10px] text-indigo-650 dark:text-indigo-400 font-black">{cat?.name}</span>
+                                            </div>
+                                            <h2 className="text-sm font-black text-slate-800 dark:text-white truncate">{req.title}</h2>
+                                        </div>
+
+                                        <div className="flex items-center gap-2 select-none">
+                                            {/* Word template export */}
+                                            {(() => {
+                                                const templates = getRQPrintTemplates(req.categoryId);
+                                                return templates.map(pt => (
+                                                    <button
+                                                        key={pt.id}
+                                                        onClick={() => handleRQExportWord(req, pt)}
+                                                        className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-50 dark:bg-violet-900/20 text-violet-650 dark:text-violet-400 rounded-xl font-bold text-xs hover:bg-violet-100 dark:hover:bg-violet-900/40 transition border border-violet-200 dark:border-violet-850 shrink-0"
+                                                    >
+                                                        <Printer size={13} /> {pt.name}
+                                                    </button>
+                                                ));
+                                            })()}
+
+                                            {/* Recall/Cancel */}
+                                            {isOwner && req.status === RQStatus.PENDING && (
+                                                <button
+                                                    onClick={() => setCancelConfirmId(req.id)}
+                                                    className="flex items-center gap-1 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400 rounded-xl font-bold text-xs transition border border-amber-200 dark:border-amber-850"
+                                                >
+                                                    <Ban size={13} /> Hủy phiếu
+                                                </button>
+                                            )}
+
+                                            {/* Delete */}
+                                            {isOwner && (req.status === RQStatus.DRAFT || (req.status === RQStatus.PENDING && (user.role === Role.ADMIN || !req.approvers?.some(a => a.status === 'approved')))) && (
+                                                <button
+                                                    onClick={() => setDeleteConfirmId(req.id)}
+                                                    className="flex items-center gap-1 px-3 py-1.5 bg-red-50 hover:bg-red-100 dark:bg-red-950/20 text-red-650 dark:text-red-400 rounded-xl font-bold text-xs transition border border-red-200 dark:border-red-850"
+                                                >
+                                                    <Trash2 size={13} /> Xóa
+                                                </button>
+                                            )}
+                                        </div>
+                                    </header>
+
+                                    {/* Scrollable Detailed Area */}
+                                    <div className="flex-1 overflow-hidden flex divide-x divide-slate-200 dark:divide-slate-800">
+                                        {/* Left half: Form info & details */}
+                                        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                                            {/* General Metadata */}
+                                            <div className="bg-slate-50 dark:bg-[#1e1f22] border border-slate-150 dark:border-slate-800/80 p-4 rounded-2xl grid grid-cols-2 gap-4 text-xs">
+                                                <div>
+                                                    <span className="text-slate-400 font-bold block mb-1">Người tạo đề xuất</span>
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="w-6 h-6 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center font-bold text-slate-650 dark:text-slate-355">
+                                                            {creator?.name?.slice(0, 1) || 'U'}
+                                                        </div>
+                                                        <span className="font-bold text-slate-800 dark:text-slate-200">{creator?.name}</span>
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <span className="text-slate-400 font-bold block mb-1">Thời gian tạo</span>
+                                                    <span className="font-bold text-slate-700 dark:text-slate-200">{new Date(req.createdAt).toLocaleString('vi-VN')}</span>
+                                                </div>
+                                                <div>
+                                                    <span className="text-slate-400 font-bold block mb-1">Trạng thái đề xuất</span>
+                                                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${status.color} inline-flex items-center gap-1`}>
+                                                        <status.icon size={10} /> {status.label}
+                                                    </span>
+                                                </div>
+                                                {req.dueDate && (() => {
+                                                    const now = new Date();
+                                                    const due = new Date(req.dueDate);
+                                                    const isOverdue = now > due && !['DONE', 'CANCELLED', 'REJECTED'].includes(req.status);
+                                                    const diffMs = due.getTime() - now.getTime();
+                                                    const diffH = Math.abs(Math.round(diffMs / (1000 * 60 * 60) * 10) / 10);
+                                                    return (
+                                                        <div>
+                                                            <span className="text-slate-400 font-bold block mb-1">Hạn xử lý (SLA)</span>
+                                                            <span className={`font-bold ${isOverdue ? 'text-red-500 animate-pulse' : 'text-amber-500'}`}>
+                                                                {isOverdue ? `Quá hạn ${diffH}h` : `Còn ${diffH}h`} ({due.toLocaleDateString('vi-VN')})
+                                                            </span>
+                                                        </div>
+                                                    );
+                                                })()}
+                                            </div>
+
+                                            {/* Description */}
+                                            {req.description && (
+                                                <div className="space-y-1.5">
+                                                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Lý do đề xuất</h3>
+                                                    <div className="text-sm text-slate-755 dark:text-slate-200 whitespace-pre-wrap bg-slate-50 dark:bg-[#1e1f22]/30 border border-slate-100 dark:border-slate-805 p-4 rounded-xl leading-relaxed">
+                                                        {req.description}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Custom form fields */}
+                                            {cat?.customFields && cat.customFields.length > 0 && (
+                                                <div className="space-y-3">
+                                                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Thông tin chi tiết</h3>
+                                                    <div className="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden divide-y divide-slate-100 dark:divide-slate-800 bg-slate-50/20 dark:bg-slate-900/10">
+                                                        {cat.customFields.map(field => (
+                                                            <div key={field.id} className="p-3.5 flex items-start gap-4">
+                                                                <span className="text-xs font-bold text-slate-500 dark:text-slate-400 w-32 shrink-0">{field.label}:</span>
+                                                                <div className="flex-1 text-xs text-slate-800 dark:text-slate-200 font-semibold break-words">
+                                                                    {renderCustomFieldValue(field, req.formData[field.name])}
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Timeline Audit Logs */}
+                                            {reqLogs.length > 0 && (
+                                                <div className="space-y-3">
+                                                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Lịch sử hoạt động</h3>
+                                                    <div className="space-y-3 bg-slate-50/50 dark:bg-[#1e1f22]/25 border border-slate-100 dark:border-slate-800/80 p-4 rounded-2xl">
+                                                        {reqLogs.map(log => {
+                                                            const actor = users.find(u => u.id === log.actedBy);
+                                                            return (
+                                                                <div key={log.id} className="flex gap-3 text-xs leading-normal">
+                                                                    <div className="w-6 h-6 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center shrink-0 mt-0.5">
+                                                                        <MessageSquare size={12} className="text-slate-555" />
+                                                                    </div>
+                                                                    <div className="min-w-0 flex-1">
+                                                                        <div className="flex justify-between items-center flex-wrap gap-1">
+                                                                            <span className="font-bold text-slate-750 dark:text-slate-200">{actor?.name || 'Hệ thống'}</span>
+                                                                            <span className="text-[10px] text-slate-400 font-medium">{new Date(log.createdAt).toLocaleString('vi-VN')}</span>
+                                                                        </div>
+                                                                        <p className="text-slate-500 dark:text-slate-400 mt-0.5 font-medium">
+                                                                            Hành động: <span className="font-bold text-blue-500">{log.action}</span>
+                                                                            {log.comment && <span className="italic block mt-1 text-slate-650 dark:text-slate-350">"{log.comment}"</span>}
+                                                                        </p>
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Right half: Approver flow and Action Box */}
+                                        <div className="w-[340px] bg-slate-50/50 dark:bg-[#2b2d31]/30 flex flex-col h-full overflow-y-auto p-6 shrink-0 space-y-6">
+                                            {/* Approvers Workflow timeline */}
+                                            {req.approvers && req.approvers.length > 0 && (
+                                                <div className="space-y-3.5">
+                                                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Tiến trình phê duyệt</h3>
+                                                    <div className="relative border-l-2 border-slate-200 dark:border-slate-750 pl-5 ml-3.5 space-y-5 py-1">
+                                                        {[...req.approvers].sort((a, b) => a.order - b.order).map((step, idx) => {
+                                                            const approverUser = users.find(u => u.id === step.userId);
+                                                            const isApproved = step.status === 'approved';
+                                                            const isRejected = step.status === 'rejected';
+                                                            const isWaiting = step.status === 'waiting';
+                                                            const isCurrent = isWaiting && (idx === 0 || req.approvers[idx - 1]?.status === 'approved');
+
+                                                            return (
+                                                                <div key={step.order} className="relative flex gap-3.5">
+                                                                    <div className={`absolute -left-[30px] top-0.5 w-4.5 h-4.5 rounded-full flex items-center justify-center text-white ring-4 ring-slate-50 dark:ring-[#2b2d31]/50 ${
+                                                                        isApproved ? 'bg-emerald-500' :
+                                                                        isRejected ? 'bg-red-500' :
+                                                                        isCurrent ? 'bg-amber-400 animate-pulse' : 'bg-slate-300 dark:bg-slate-650'
+                                                                    }`}>
+                                                                        {isApproved ? <CheckCircle size={10} /> :
+                                                                         isRejected ? <XCircle size={10} /> : <Clock size={10} />}
+                                                                    </div>
+
+                                                                    <div className="flex-1 min-w-0">
+                                                                        <div className="flex items-center gap-1.5">
+                                                                            <span className="text-xs font-black text-slate-800 dark:text-white truncate">{approverUser?.name || 'N/A'}</span>
+                                                                            <span className="text-[9px] text-slate-400 bg-slate-200/50 dark:bg-slate-800 px-1 rounded font-bold shrink-0">{step.order}</span>
+                                                                        </div>
+                                                                        <p className="text-[10px] text-slate-450 dark:text-slate-400 font-medium truncate">{approverUser?.role || 'Người duyệt'}</p>
+                                                                        
+                                                                        {isApproved && <span className="text-[9px] text-emerald-600 dark:text-emerald-400 font-bold">Đã duyệt</span>}
+                                                                        {isRejected && <span className="text-[9px] text-red-500 font-bold">Từ chối</span>}
+                                                                        {isCurrent && <span className="text-[9px] text-amber-500 font-bold animate-pulse">Đang chờ duyệt</span>}
+
+                                                                        {step.comment && (
+                                                                            <p className="text-xs text-slate-505 italic mt-1 bg-white dark:bg-slate-850 p-2 rounded-lg border border-slate-100 dark:border-slate-800/80">
+                                                                                "{step.comment}"
+                                                                            </p>
+                                                                        )}
+                                                                        {step.actedAt && (
+                                                                            <div className="text-[9px] text-slate-400 mt-1">
+                                                                                {new Date(step.actedAt).toLocaleString('vi-VN')}
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Action Decision box */}
+                                            <div className="pt-4 border-t border-slate-200 dark:border-slate-800 space-y-4">
+                                                {isPending && (
+                                                    <div className="space-y-3 bg-white dark:bg-[#1e1f22] p-4 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm">
+                                                        <p className="text-xs font-black text-slate-700 dark:text-slate-200">Đưa ý kiến phản hồi</p>
+                                                        
+                                                        <textarea
+                                                            value={actionComment}
+                                                            onChange={e => setActionComment(e.target.value)}
+                                                            placeholder="Nhập ý kiến (tùy chọn)..."
+                                                            className="w-full px-3 py-2 bg-slate-50 dark:bg-[#313338] border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none focus:ring-2 focus:ring-accent resize-none font-medium text-slate-800 dark:text-slate-200"
+                                                            rows={3}
+                                                        />
+
+                                                        <div className="flex gap-2">
+                                                            <button
+                                                                onClick={() => handleAction(req.id, approveRequest, 'Đã duyệt!')}
+                                                                disabled={processingId === req.id}
+                                                                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-emerald-500 text-white rounded-xl font-bold text-xs hover:bg-emerald-600 transition shadow-lg shadow-emerald-500/20 disabled:opacity-50"
+                                                            >
+                                                                <CheckCircle size={13} /> Duyệt
+                                                            </button>
+                                                            <button
+                                                                onClick={() => handleAction(req.id, rejectRequest, 'Đã từ chối!')}
+                                                                disabled={processingId === req.id}
+                                                                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-red-500 text-white rounded-xl font-bold text-xs hover:bg-[#b91c1c] transition shadow-lg shadow-red-500/20 disabled:opacity-50"
+                                                            >
+                                                                <XCircle size={13} /> Từ chối
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                {req.status === RQStatus.APPROVED && (user.role === Role.ADMIN || req.createdBy === user.id) && (
+                                                    <button
+                                                        onClick={() => handleAction(req.id, completeRequest, 'Hoàn thành!')}
+                                                        disabled={processingId === req.id}
+                                                        className="w-full flex items-center justify-center gap-2 py-2.5 bg-emerald-500 text-white rounded-xl font-bold text-xs hover:bg-emerald-600 transition shadow-lg shadow-emerald-500/20 disabled:opacity-50"
+                                                    >
+                                                        <CheckCircle size={14} /> Hoàn thành
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </>
+                            );
+                        })() : (
+                            <div className="flex-1 flex flex-col items-center justify-center text-center opacity-60 p-6 select-none">
+                                <Inbox className="w-14 h-14 text-slate-300 dark:text-slate-700 mb-4" />
+                                <p className="font-bold text-slate-500">Chưa chọn phiếu yêu cầu nào</p>
+                                <p className="text-xs text-slate-400 mt-1">Vui lòng click vào các đề xuất từ danh sách ở giữa để hiển thị chi tiết.</p>
+                            </div>
+                        )}
+                    </main>
+                </>
+            )}
+
+            {/* ==================== KANBAN BOARD VIEW ==================== */}
             {viewMode === 'board' && (() => {
                 const BOARD_COLUMNS: { status: RQStatus; label: string; color: string; headerBg: string }[] = [
                     { status: RQStatus.DRAFT, label: 'Nháp', color: 'border-slate-300', headerBg: 'from-slate-500 to-slate-600' },
@@ -518,7 +1017,75 @@ const RequestList: React.FC = () => {
                 const boardSelected = boardSelectedId ? requests.find(r => r.id === boardSelectedId) : null;
 
                 return (
-                    <div className="relative">
+                    <div className="relative col-span-full">
+                        {/* Header */}
+                        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+                            <div>
+                                <h1 className="text-2xl font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                                    <Inbox className="text-accent" size={28} /> Phiếu yêu cầu
+                                </h1>
+                                <p className="text-sm text-slate-500 dark:text-slate-400">Tạo và theo dõi các phiếu yêu cầu.</p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <div className="flex bg-white/50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+                                    <button onClick={() => setViewMode('list')}
+                                        className={`px-3 py-2 flex items-center gap-1.5 text-xs font-bold transition ${(viewMode as string) === 'list' ? 'bg-accent text-white' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700'}`}>
+                                        <ListIcon size={14} /> Danh sách
+                                    </button>
+                                    <button onClick={() => setViewMode('board')}
+                                        className={`px-3 py-2 flex items-center gap-1.5 text-xs font-bold transition ${(viewMode as string) === 'board' ? 'bg-accent text-white' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700'}`}>
+                                        <LayoutGrid size={14} /> Bảng
+                                    </button>
+                                </div>
+                                <button onClick={() => setShowCreateModal(true)} disabled={activeCategories.length === 0}
+                                    className="flex items-center px-4 py-2.5 bg-accent text-white rounded-xl hover:bg-emerald-600 transition font-bold shadow-lg shadow-emerald-500/20 disabled:opacity-50">
+                                    <Plus size={18} className="mr-2" /> Tạo phiếu mới
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Filters */}
+                        <div className="glass-card p-4 rounded-xl space-y-3 mb-6">
+                            <div className="flex gap-2">
+                                {([
+                                    { id: 'mine', label: 'Phiếu của tôi', icon: User },
+                                    { id: 'pending', label: 'Chờ tôi duyệt', icon: Clock },
+                                    ...(user.role === Role.ADMIN ? [{ id: 'all', label: 'Tất cả', icon: Inbox }] : []),
+                                ] as { id: string; label: string; icon: any }[]).map(tab => (
+                                    <button key={tab.id} onClick={() => setActiveTab(tab.id as any)}
+                                        className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition ${activeTab === tab.id
+                                            ? 'bg-accent text-white shadow-md'
+                                            : 'bg-white/50 dark:bg-slate-800/50 text-slate-655 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-white dark:hover:bg-slate-700'
+                                            }`}>
+                                        <tab.icon size={15} /> {tab.label}
+                                        {tab.id === 'pending' && (() => {
+                                            const cnt = requests.filter(r => canApprove(r)).length;
+                                            return cnt > 0 ? <span className="bg-red-500 text-white px-1.5 py-0.5 rounded-full text-[10px] font-black">{cnt}</span> : null;
+                                        })()}
+                                    </button>
+                                ))}
+                            </div>
+                            <div className="flex flex-col md:flex-row gap-3">
+                                <div className="flex-1 relative">
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
+                                    <input type="text" placeholder="Tìm theo mã hoặc tiêu đề..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
+                                        className="w-full pl-10 pr-4 py-2.5 bg-white/50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-accent text-sm" />
+                                </div>
+                                <div className="flex gap-1.5 overflow-x-auto">
+                                    {['ALL', ...Object.keys(STATUS_MAP)].map(s => (
+                                        <button key={s} onClick={() => setFilterStatus(s)}
+                                            className={`px-3 py-1.5 rounded-lg text-[10px] font-bold whitespace-nowrap transition ${filterStatus === s
+                                                ? 'bg-slate-800 dark:bg-slate-200 text-white dark:text-slate-800'
+                                                : 'bg-slate-100 dark:bg-slate-700 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-600'
+                                                }`}>
+                                            {s === 'ALL' ? 'Tất cả' : STATUS_MAP[s as RQStatus].label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Kanban Columns */}
                         <div className="flex gap-4 overflow-x-auto pb-4 px-1" style={{ minHeight: '60vh' }}>
                             {BOARD_COLUMNS.map(col => {
                                 const colReqs = filteredRequests.filter(r => r.status === col.status);
@@ -551,31 +1118,14 @@ const RequestList: React.FC = () => {
                                                         <div className="p-3.5">
                                                             <div className="flex items-start gap-2 mb-2">
                                                                 <div className="flex-1 min-w-0">
-                                                                    <h4 className="text-[13px] font-bold text-slate-800 dark:text-white leading-tight line-clamp-2">{req.title}</h4>
+                                                                    <h4 className="text-[13px] font-bold text-slate-850 dark:text-white leading-tight line-clamp-2">{req.title}</h4>
                                                                     <span className="font-mono text-[9px] font-bold text-slate-400 mt-0.5 block">{req.code}</span>
                                                                 </div>
                                                             </div>
-                                                            <div className="flex items-center gap-3 text-[10px] text-slate-400">
-                                                                <span className="flex items-center gap-1"><User size={9} /><span className="truncate max-w-[80px]">{creator?.name || 'N/A'}</span></span>
-                                                                <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${priority.color}`}>{priority.label}</span>
-                                                                {cat && <span className="truncate max-w-[70px]">{cat.name}</span>}
+                                                            <div className="flex items-center justify-between text-[10px] text-slate-450 dark:text-slate-400">
+                                                                <span>{creator?.name}</span>
+                                                                <span>{new Date(req.createdAt).toLocaleDateString('vi-VN')}</span>
                                                             </div>
-                                                            {req.dueDate && (() => {
-                                                                const now = new Date(); const due = new Date(req.dueDate!);
-                                                                const isOverdue = now > due && !['DONE','CANCELLED','REJECTED'].includes(req.status);
-                                                                return isOverdue ? (
-                                                                    <div className="mt-2 flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-lg bg-red-50 dark:bg-red-900/20 text-red-500">
-                                                                        <AlertTriangle size={10} /> Quá hạn SLA
-                                                                    </div>
-                                                                ) : null;
-                                                            })()}
-                                                            {req.formData && (
-                                                                <div className="mt-2 flex flex-wrap gap-1">
-                                                                    {Object.entries(req.formData).filter(([k, v]) => typeof v === 'string' && v.length > 0 && v.length < 50).slice(0, 2).map(([k, v]) => (
-                                                                        <span key={k} className="text-[9px] bg-cyan-50 dark:bg-cyan-900/20 text-cyan-500 px-1.5 py-0.5 rounded font-medium truncate max-w-[120px]">{v as string}</span>
-                                                                    ))}
-                                                                </div>
-                                                            )}
                                                         </div>
                                                     </div>
                                                 );
@@ -590,13 +1140,12 @@ const RequestList: React.FC = () => {
                             })}
                         </div>
 
-                        {/* Board Detail Slide-in Panel */}
+                        {/* Slide-in details Drawer */}
                         {boardSelected && (() => {
                             const cat = categories.find(c => c.id === boardSelected.categoryId);
                             const creator = users.find(u => u.id === boardSelected.createdBy);
                             const status = STATUS_MAP[boardSelected.status] || STATUS_MAP.PENDING;
                             const priority = PRIORITY_MAP[boardSelected.priority] || PRIORITY_MAP.medium;
-                            const reqLogs = getRequestLogs(boardSelected.id);
                             const isPending = canApprove(boardSelected);
                             const isOwner = boardSelected.createdBy === user.id;
 
@@ -615,7 +1164,7 @@ const RequestList: React.FC = () => {
                                                         <button onClick={() => handleAction(boardSelected.id, approveRequest, 'Đã duyệt!')}
                                                             className="px-3 py-1.5 bg-white/20 hover:bg-white/30 rounded-lg text-xs font-bold flex items-center gap-1 transition"><CheckCircle size={14} /> Duyệt</button>
                                                         <button onClick={() => handleAction(boardSelected.id, rejectRequest, 'Đã từ chối!')}
-                                                            className="px-3 py-1.5 bg-red-500/60 hover:bg-red-500/80 rounded-lg text-xs font-bold flex items-center gap-1 transition"><XCircle size={14} /> Từ chối</button>
+                                                            className="px-3 py-1.5 bg-red-500/60 hover:bg-red-550/80 rounded-lg text-xs font-bold flex items-center gap-1 transition"><XCircle size={14} /> Từ chối</button>
                                                     </>
                                                 )}
                                                 {isOwner && boardSelected.status === RQStatus.PENDING && (
@@ -632,13 +1181,13 @@ const RequestList: React.FC = () => {
                                                 <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${priority.color}`}>{priority.label}</span>
                                                 {cat && <span className="text-[10px] text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded font-bold">{cat.name}</span>}
                                             </div>
-                                            {boardSelected.description && <p className="text-sm text-slate-600 dark:text-slate-400">{boardSelected.description}</p>}
+                                            {boardSelected.description && <p className="text-sm text-slate-650 dark:text-slate-400">{boardSelected.description}</p>}
                                             <div className="grid grid-cols-2 gap-3 text-xs">
                                                 <div><span className="text-slate-400 font-bold block mb-0.5">Người tạo</span><span className="font-bold text-slate-700 dark:text-slate-200">{creator?.name || 'N/A'}</span></div>
                                                 <div><span className="text-slate-400 font-bold block mb-0.5">Ngày tạo</span><span className="font-bold text-slate-700 dark:text-slate-200">{new Date(boardSelected.createdAt).toLocaleString('vi-VN')}</span></div>
                                                 {boardSelected.dueDate && <div><span className="text-slate-400 font-bold block mb-0.5">SLA</span><span className="font-bold text-slate-700 dark:text-slate-200">{new Date(boardSelected.dueDate).toLocaleString('vi-VN')}</span></div>}
                                             </div>
-                                            {/* Word Export */}
+                                            {/* Word template export inside Board panel */}
                                             {(() => {
                                                 const pts = getRQPrintTemplates(boardSelected.categoryId);
                                                 if (pts.length === 0) return null;
@@ -646,50 +1195,13 @@ const RequestList: React.FC = () => {
                                                     <div className="flex flex-wrap gap-2">
                                                         {pts.map(pt => (
                                                             <button key={pt.id} onClick={() => handleRQExportWord(boardSelected, pt)}
-                                                                className="flex items-center gap-1.5 px-3 py-2 bg-violet-50 dark:bg-violet-900/20 text-violet-600 dark:text-violet-400 rounded-xl font-bold text-xs hover:bg-violet-100 dark:hover:bg-violet-900/40 transition border border-violet-200 dark:border-violet-800">
+                                                                className="flex items-center gap-1.5 px-3 py-2 bg-violet-50 dark:bg-violet-900/20 text-violet-650 dark:text-violet-400 rounded-xl font-bold text-xs hover:bg-violet-100 dark:hover:bg-violet-900/40 transition border border-violet-200 dark:border-violet-850">
                                                                 <Printer size={13} /> {pt.name}
                                                             </button>
                                                         ))}
                                                     </div>
                                                 );
                                             })()}
-                                            {/* Approval Progress */}
-                                            {boardSelected.approvers?.length > 0 && (
-                                                <div><h4 className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-2">Tiến trình duyệt</h4><ApprovalProgress approvers={boardSelected.approvers} users={users} /></div>
-                                            )}
-                                            {/* Form Data */}
-                                            {cat?.customFields && cat.customFields.length > 0 && (
-                                                <div>
-                                                    <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-2">Thông tin chi tiết</h4>
-                                                    <div className="space-y-2">
-                                                        {cat.customFields.map(f => (
-                                                            <div key={f.name} className="flex justify-between items-center px-3 py-2 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
-                                                                <span className="text-xs font-bold text-slate-500">{f.label}</span>
-                                                                {renderCustomFieldValue(f, boardSelected.formData[f.name])}
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            )}
-                                            {/* Logs */}
-                                            {reqLogs.length > 0 && (
-                                                <div>
-                                                    <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-2">Lịch sử</h4>
-                                                    <div className="space-y-2">
-                                                        {reqLogs.map(log => (
-                                                            <div key={log.id} className="flex items-start gap-2 text-xs px-3 py-2 bg-slate-50 dark:bg-slate-800/30 rounded-lg">
-                                                                <MessageSquare size={12} className="text-slate-400 mt-0.5 shrink-0" />
-                                                                <div>
-                                                                    <span className="font-bold text-slate-600 dark:text-slate-300">{users.find(u => u.id === log.actedBy)?.name || 'N/A'}</span>
-                                                                    <span className="text-slate-400 mx-1">—</span>
-                                                                    <span className="text-slate-500">{log.comment}</span>
-                                                                    <span className="text-[10px] text-slate-400 block mt-0.5">{new Date(log.createdAt).toLocaleString('vi-VN')}</span>
-                                                                </div>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            )}
                                         </div>
                                     </div>
                                 </div>
@@ -699,342 +1211,10 @@ const RequestList: React.FC = () => {
                 );
             })()}
 
-            {/* ==================== BATCH TOOLBAR ==================== */}
-            {activeTab === 'pending' && filteredRequests.filter(r => canApprove(r)).length > 0 && (
-                <div className="glass-card rounded-xl p-3 flex items-center gap-3 flex-wrap">
-                    <button onClick={toggleSelectAll}
-                        className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600 transition">
-                        {selectedIds.size > 0 && selectedIds.size === filteredRequests.filter(r => canApprove(r)).length
-                            ? <CheckSquare size={14} className="text-indigo-500" />
-                            : <Square size={14} />}
-                        {selectedIds.size > 0 ? `Đã chọn ${selectedIds.size}` : 'Chọn tất cả'}
-                    </button>
-                    {selectedIds.size > 0 && (
-                        <>
-                            <button onClick={() => setShowBatchConfirm('approve')} disabled={batchProcessing}
-                                className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-black bg-emerald-500 text-white hover:bg-emerald-600 shadow-lg shadow-emerald-500/20 transition disabled:opacity-50">
-                                {batchProcessing ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />}
-                                Duyệt {selectedIds.size} phiếu
-                            </button>
-                            <button onClick={() => setShowBatchConfirm('reject')} disabled={batchProcessing}
-                                className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-black bg-red-500 text-white hover:bg-red-600 shadow-lg shadow-red-500/20 transition disabled:opacity-50">
-                                <XCircle size={14} /> Từ chối {selectedIds.size}
-                            </button>
-                            <button onClick={() => setSelectedIds(new Set())}
-                                className="px-3 py-2 rounded-lg text-xs font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 transition">
-                                Bỏ chọn
-                            </button>
-                        </>
-                    )}
-                </div>
-            )}
-
-            {/* Batch Confirm Modal */}
-            {showBatchConfirm && (
-                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setShowBatchConfirm(null)}>
-                    <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 max-w-sm w-full mx-4 shadow-2xl" onClick={e => e.stopPropagation()}>
-                        <h3 className="text-lg font-black text-slate-800 dark:text-white mb-2">
-                            {showBatchConfirm === 'approve' ? '✅ Xác nhận duyệt hàng loạt' : '❌ Xác nhận từ chối hàng loạt'}
-                        </h3>
-                        <p className="text-sm text-slate-500 mb-4">
-                            Bạn sắp {showBatchConfirm === 'approve' ? 'duyệt' : 'từ chối'} <strong>{selectedIds.size}</strong> phiếu yêu cầu. Thao tác này không thể hoàn tác.
-                        </p>
-                        <div className="flex gap-3 justify-end">
-                            <button onClick={() => setShowBatchConfirm(null)}
-                                className="px-4 py-2 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 transition">
-                                Hủy
-                            </button>
-                            <button onClick={() => handleBatchAction(showBatchConfirm)}
-                                className={`px-5 py-2 rounded-xl text-sm font-black text-white shadow-lg transition ${
-                                    showBatchConfirm === 'approve'
-                                        ? 'bg-emerald-500 hover:bg-emerald-600 shadow-emerald-500/20'
-                                        : 'bg-red-500 hover:bg-red-600 shadow-red-500/20'
-                                }`}>
-                                {showBatchConfirm === 'approve' ? 'Duyệt tất cả' : 'Từ chối tất cả'}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Request Cards (List View) */}
-            {viewMode === 'list' && <div className="space-y-3">
-                {filteredRequests.map(req => {
-                    const cat = categories.find(c => c.id === req.categoryId);
-                    const creator = users.find(u => u.id === req.createdBy);
-                    const status = STATUS_MAP[req.status] || STATUS_MAP.PENDING;
-                    const priority = PRIORITY_MAP[req.priority] || PRIORITY_MAP.medium;
-                    const isExpanded = expandedId === req.id;
-                    const reqLogs = getRequestLogs(req.id);
-
-                    return (
-                        <div
-                            key={req.id}
-                            ref={el => { requestRefs.current[req.id] = el; }}
-                            className={`glass-card rounded-2xl overflow-hidden transition-all hover:shadow-md ${
-                                targetRequestId === req.id ? 'ring-2 ring-amber-400 ring-offset-2' : selectedIds.has(req.id) ? 'ring-2 ring-indigo-400 ring-offset-1' : ''
-                            }`}
-                        >
-                            {/* Card Header */}
-                            <div className="flex items-center gap-4 px-5 py-4 cursor-pointer" onClick={() => setExpandedId(isExpanded ? null : req.id)}>
-                                {/* Batch Checkbox */}
-                                {activeTab === 'pending' && canApprove(req) && (
-                                    <button onClick={(e) => { e.stopPropagation(); toggleSelect(req.id); }}
-                                        className="shrink-0 p-0.5 rounded transition hover:bg-slate-100 dark:hover:bg-slate-700">
-                                        {selectedIds.has(req.id)
-                                            ? <CheckSquare size={18} className="text-indigo-500" />
-                                            : <Square size={18} className="text-slate-300 dark:text-slate-600" />}
-                                    </button>
-                                )}
-                                <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${cat?.color || 'from-slate-400 to-slate-600'} flex items-center justify-center text-white shadow-sm shrink-0`}>
-                                    <Inbox size={18} />
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2 mb-1 flex-wrap">
-                                        <span className="font-mono text-[10px] font-bold bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded text-slate-500">{req.code}</span>
-                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${status.color} flex items-center gap-1`}>
-                                            <status.icon size={10} /> {status.label}
-                                        </span>
-                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${priority.color}`}>{priority.label}</span>
-                                        {cat && <span className="text-[10px] text-slate-400 font-medium">{cat.name}</span>}
-                                    </div>
-                                    <h3 className="font-bold text-sm text-slate-800 dark:text-white truncate">{req.title}</h3>
-                                    <div className="flex items-center gap-3 mt-1 text-[10px] text-slate-400">
-                                        <span className="flex items-center gap-1"><User size={10} /> {creator?.name || 'N/A'}</span>
-                                        <span className="flex items-center gap-1"><Clock size={10} /> {new Date(req.createdAt).toLocaleDateString('vi-VN')}</span>
-                                        {req.dueDate && (() => {
-                                            const now = new Date();
-                                            const due = new Date(req.dueDate);
-                                            const isOverdue = now > due && !['DONE', 'CANCELLED', 'REJECTED'].includes(req.status);
-                                            const isNearDue = !isOverdue && (due.getTime() - now.getTime()) < 2 * 60 * 60 * 1000 && !['DONE', 'CANCELLED', 'REJECTED'].includes(req.status);
-                                            return (
-                                                <span className={`flex items-center gap-1 font-bold ${
-                                                    isOverdue ? 'text-red-500 animate-pulse' : isNearDue ? 'text-amber-500' : 'text-slate-400'
-                                                }`}>
-                                                    {isOverdue ? <AlertTriangle size={10} /> : <Clock size={10} />}
-                                                    SLA: {due.toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}
-                                                    {isOverdue && ' (QUÁ HẠN!)'}
-                                                </span>
-                                            );
-                                        })()}
-                                    </div>
-                                    {/* Approval Progress */}
-                                    {req.approvers && req.approvers.length > 0 && (
-                                        <div className="mt-2">
-                                            <ApprovalProgress approvers={req.approvers} users={users} />
-                                        </div>
-                                    )}
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    {canApprove(req) && (
-                                        <span className="text-[10px] font-bold text-amber-500 bg-amber-50 dark:bg-amber-900/20 px-2 py-1 rounded-lg animate-pulse">Chờ duyệt</span>
-                                    )}
-                                    <ChevronDown size={16} className={`text-slate-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
-                                </div>
-                            </div>
-
-                            {/* Expanded Detail */}
-                            {isExpanded && (
-                                <div className="border-t border-slate-100 dark:border-slate-700 px-5 py-4 space-y-4 animate-fade-in-down">
-                                    {/* Description */}
-                                    {req.description && (
-                                        <div>
-                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Mô tả</p>
-                                            <p className="text-sm text-slate-600 dark:text-slate-300">{req.description}</p>
-                                        </div>
-                                    )}
-
-                                    {/* Custom Fields Data */}
-                                    {cat?.customFields && cat.customFields.length > 0 && (
-                                        <div>
-                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Thông tin chi tiết</p>
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                                                {cat.customFields.map(field => (
-                                                    <div key={field.id} className="flex items-start gap-2 p-2 bg-white/50 dark:bg-slate-800/30 rounded-lg">
-                                                        <span className="text-[10px] font-bold text-slate-400 min-w-[80px] mt-0.5">{field.label}:</span>
-                                                        {renderCustomFieldValue(field, req.formData[field.name])}
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {/* Due date / SLA */}
-                                    {req.dueDate && (() => {
-                                        const now = new Date();
-                                        const due = new Date(req.dueDate);
-                                        const isOverdue = now > due && !['DONE', 'CANCELLED', 'REJECTED'].includes(req.status);
-                                        const diffMs = due.getTime() - now.getTime();
-                                        const diffH = Math.abs(Math.round(diffMs / (1000 * 60 * 60) * 10) / 10);
-                                        return (
-                                            <div className={`flex items-center gap-2 text-xs p-2.5 rounded-xl ${
-                                                isOverdue
-                                                    ? 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800'
-                                                    : 'bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800'
-                                            }`}>
-                                                {isOverdue ? <AlertTriangle size={14} className="shrink-0" /> : <Clock size={14} className="shrink-0" />}
-                                                <div>
-                                                    <span className="font-bold">
-                                                        {isOverdue ? `Quá hạn ${diffH} giờ` : `Còn ${diffH} giờ`}
-                                                    </span>
-                                                    <span className="mx-1.5">•</span>
-                                                    <span>Hạn: {due.toLocaleString('vi-VN')}</span>
-                                                    {cat?.slaHours && <span className="text-[10px] opacity-70 ml-1">(SLA: {cat.slaHours}h)</span>}
-                                                </div>
-                                            </div>
-                                        );
-                                    })()}
-
-                                    {/* Approval Chain Detail */}
-                                    {req.approvers && req.approvers.length > 0 && (
-                                        <div>
-                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Chuỗi phê duyệt</p>
-                                            <div className="space-y-1.5">
-                                                {[...req.approvers].sort((a, b) => a.order - b.order).map(step => {
-                                                    const approverUser = users.find(u => u.id === step.userId);
-                                                    return (
-                                                        <div key={step.order} className={`flex items-center gap-3 p-2.5 rounded-xl border ${
-                                                            step.status === 'approved' ? 'bg-emerald-50 dark:bg-emerald-900/10 border-emerald-200 dark:border-emerald-800' :
-                                                            step.status === 'rejected' ? 'bg-red-50 dark:bg-red-900/10 border-red-200 dark:border-red-800' :
-                                                            'bg-white/50 dark:bg-slate-800/30 border-slate-200 dark:border-slate-700'
-                                                        }`}>
-                                                            <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-black text-white ${
-                                                                step.status === 'approved' ? 'bg-emerald-500' :
-                                                                step.status === 'rejected' ? 'bg-red-500' : 'bg-slate-300 dark:bg-slate-600'
-                                                            }`}>
-                                                                {step.status === 'approved' ? <CheckCircle size={14} /> :
-                                                                 step.status === 'rejected' ? <XCircle size={14} /> : step.order}
-                                                            </div>
-                                                            <div className="flex-1">
-                                                                <span className="text-sm font-bold text-slate-700 dark:text-slate-200">{approverUser?.name || 'N/A'}</span>
-                                                                <span className="text-[10px] text-slate-400 ml-1.5">({approverUser?.role || ''})</span>
-                                                                {step.comment && <p className="text-xs text-slate-500 mt-0.5">"{step.comment}"</p>}
-                                                            </div>
-                                                            {step.actedAt && (
-                                                                <span className="text-[10px] text-slate-400">{new Date(step.actedAt).toLocaleString('vi-VN')}</span>
-                                                            )}
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {/* Logs */}
-                                    {reqLogs.length > 0 && (
-                                        <div>
-                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Lịch sử</p>
-                                            <div className="space-y-1.5">
-                                                {reqLogs.map(log => {
-                                                    const actor = users.find(u => u.id === log.actedBy);
-                                                    return (
-                                                        <div key={log.id} className="flex items-start gap-2 text-xs">
-                                                            <div className="w-5 h-5 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center shrink-0 mt-0.5">
-                                                                <MessageSquare size={10} className="text-slate-400" />
-                                                            </div>
-                                                            <div>
-                                                                <span className="font-bold text-slate-600 dark:text-slate-300">{actor?.name || 'N/A'}</span>
-                                                                <span className="text-slate-400 mx-1">—</span>
-                                                                <span className="font-bold text-blue-500">{log.action}</span>
-                                                                {log.comment && <span className="text-slate-500 ml-1">"{log.comment}"</span>}
-                                                                <span className="text-[10px] text-slate-400 ml-2">{new Date(log.createdAt).toLocaleString('vi-VN')}</span>
-                                                            </div>
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {/* Word Export */}
-                                    {(() => {
-                                        const templates = getRQPrintTemplates(req.categoryId);
-                                        if (templates.length === 0) return null;
-                                        return (
-                                            <div className="flex flex-wrap gap-2">
-                                                {templates.map(pt => (
-                                                    <button key={pt.id} onClick={() => handleRQExportWord(req, pt)}
-                                                        className="flex items-center gap-1.5 px-3 py-2 bg-violet-50 dark:bg-violet-900/20 text-violet-600 dark:text-violet-400 rounded-xl font-bold text-xs hover:bg-violet-100 dark:hover:bg-violet-900/40 transition border border-violet-200 dark:border-violet-800">
-                                                        <Printer size={13} /> {pt.name}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        );
-                                    })()}
-
-                                    {/* Action Area */}
-                                    <div className="border-t border-slate-100 dark:border-slate-700 pt-3 space-y-3">
-                                        {/* Comment input for actions */}
-                                        {canApprove(req) && (
-                                            <div className="flex gap-2">
-                                                <input type="text" value={actionComment} onChange={e => setActionComment(e.target.value)}
-                                                    placeholder="Ghi chú (tùy chọn)..."
-                                                    className="flex-1 px-3 py-2 bg-white/50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-600 rounded-xl text-sm outline-none focus:ring-2 focus:ring-accent" />
-                                            </div>
-                                        )}
-
-                                        {/* Approve/Reject buttons */}
-                                        {canApprove(req) && (
-                                            <div className="flex gap-2">
-                                                <button onClick={() => handleAction(req.id, approveRequest, 'Đã duyệt!')}
-                                                    disabled={processingId === req.id}
-                                                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-500 text-white rounded-xl font-bold text-sm hover:bg-emerald-600 transition shadow-lg shadow-emerald-500/20 disabled:opacity-50">
-                                                    <CheckCircle size={15} /> Duyệt
-                                                </button>
-                                                <button onClick={() => handleAction(req.id, rejectRequest, 'Đã từ chối — phiếu bị hủy!')}
-                                                    disabled={processingId === req.id}
-                                                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-red-500 text-white rounded-xl font-bold text-sm hover:bg-red-600 transition shadow-lg shadow-red-500/20 disabled:opacity-50">
-                                                    <XCircle size={15} /> Từ chối
-                                                </button>
-                                            </div>
-                                        )}
-
-                                        {/* Complete — for APPROVED requests */}
-                                        {req.status === RQStatus.APPROVED && (user.role === Role.ADMIN || req.createdBy === user.id) && (
-                                            <button onClick={() => handleAction(req.id, completeRequest, 'Hoàn thành!')}
-                                                disabled={processingId === req.id}
-                                                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-500 text-white rounded-xl font-bold text-sm hover:bg-emerald-600 transition shadow-lg shadow-emerald-500/20 disabled:opacity-50">
-                                                <CheckCircle size={15} /> Hoàn thành
-                                            </button>
-                                        )}
-
-                                        {/* Creator actions */}
-                                        {req.createdBy === user.id && req.status === RQStatus.PENDING && (() => {
-                                            const hasApprovals = req.approvers?.some(a => a.status === 'approved');
-                                            return (
-                                                <div className="flex gap-2">
-                                                    <button onClick={() => setCancelConfirmId(req.id)}
-                                                        className="flex items-center gap-1.5 px-3 py-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl font-bold text-xs transition">
-                                                        <Ban size={13} /> Hủy phiếu
-                                                    </button>
-                                                    {(user.role === Role.ADMIN || !hasApprovals) && (
-                                                        <button onClick={() => setDeleteConfirmId(req.id)}
-                                                            className="flex items-center gap-1.5 px-3 py-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl font-bold text-xs transition">
-                                                            <Trash2 size={13} /> Xóa
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            );
-                                        })()}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    );
-                })}
-                {filteredRequests.length === 0 && (
-                    <div className="text-center py-20 glass-card rounded-2xl border border-dashed border-slate-200 dark:border-slate-700">
-                        <Inbox className="w-16 h-16 text-slate-200 dark:text-slate-700 mx-auto mb-4" />
-                        <p className="text-slate-400 font-bold">Không có phiếu yêu cầu nào.</p>
-                        <p className="text-sm text-slate-300 dark:text-slate-500">Bấm "Tạo phiếu mới" để bắt đầu.</p>
-                    </div>
-                )}
-            </div>}
-
-            {/* Create Modal */}
+            {/* Shared Create Modal */}
             {showCreateModal && (
-                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-                    <div className="glass-card bg-white dark:bg-slate-800 rounded-2xl p-6 w-full max-w-lg mx-4 shadow-2xl max-h-[90vh] overflow-y-auto">
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in">
+                    <div className="glass-card bg-white dark:bg-slate-800 rounded-2xl p-6 w-full max-w-lg mx-4 shadow-2xl max-h-[90vh] overflow-y-auto select-text">
                         <h2 className="text-lg font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
                             <Plus size={20} className="text-accent" /> Tạo phiếu yêu cầu
                         </h2>
@@ -1046,11 +1226,11 @@ const RequestList: React.FC = () => {
                                         <button key={cat.id} onClick={() => { setSelectedCategoryId(cat.id); setCustomFormData({}); }}
                                             className={`flex items-center gap-2 p-3 rounded-xl border transition ${selectedCategoryId === cat.id
                                                 ? 'border-accent bg-emerald-50 dark:bg-emerald-900/10 ring-2 ring-accent'
-                                                : 'border-slate-200 dark:border-slate-600 hover:border-slate-400'}`}>
+                                                : 'border-slate-200 dark:border-slate-650 hover:border-slate-400'}`}>
                                             <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${cat.color} flex items-center justify-center text-white`}>
                                                 <Inbox size={14} />
                                             </div>
-                                            <span className="font-bold text-sm text-slate-700 dark:text-slate-300 truncate">{cat.name}</span>
+                                            <span className="font-bold text-sm text-slate-750 dark:text-slate-300 truncate">{cat.name}</span>
                                         </button>
                                     ))}
                                 </div>
@@ -1058,12 +1238,12 @@ const RequestList: React.FC = () => {
                             <div>
                                 <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Tiêu đề *</label>
                                 <input type="text" value={newTitle} onChange={e => setNewTitle(e.target.value)} placeholder="VD: Xin nghỉ ngày 20/03..."
-                                    className="w-full px-4 py-2.5 bg-white/50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl outline-none focus:ring-2 focus:ring-accent text-sm" />
+                                    className="w-full px-4 py-2.5 bg-white/50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl outline-none focus:ring-2 focus:ring-accent text-sm text-slate-850 dark:text-white" />
                             </div>
                             <div>
                                 <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Mô tả</label>
                                 <textarea value={newDesc} onChange={e => setNewDesc(e.target.value)} placeholder="Chi tiết yêu cầu..."
-                                    className="w-full px-4 py-2.5 bg-white/50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl outline-none focus:ring-2 focus:ring-accent text-sm resize-none" rows={3} />
+                                    className="w-full px-4 py-2.5 bg-white/50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl outline-none focus:ring-2 focus:ring-accent text-sm resize-none text-slate-855 dark:text-white" rows={3} />
                             </div>
 
                             {/* Approver Chain */}
@@ -1075,11 +1255,11 @@ const RequestList: React.FC = () => {
                                     {approverList.map((a, idx) => {
                                         const u = users.find(usr => usr.id === a.userId);
                                         return (
-                                            <div key={idx} className="flex items-center gap-2 p-2.5 bg-violet-50 dark:bg-violet-900/10 border border-violet-200 dark:border-violet-800 rounded-xl">
+                                            <div key={idx} className="flex items-center gap-2 p-2.5 bg-violet-50 dark:bg-violet-900/10 border border-violet-200 dark:border-violet-850 rounded-xl">
                                                 <div className="w-6 h-6 rounded-full bg-violet-500 text-white flex items-center justify-center text-xs font-black">{idx + 1}</div>
-                                                <span className="flex-1 text-sm font-bold text-slate-700 dark:text-slate-200">{u?.name || 'N/A'}</span>
-                                                <span className="text-[10px] text-slate-400">{u?.role}</span>
-                                                <button onClick={() => removeApprover(idx)} className="p-1 text-red-400 hover:bg-red-100 dark:hover:bg-red-900/20 rounded transition">
+                                                <span className="flex-1 text-sm font-bold text-slate-750 dark:text-slate-200">{u?.name || 'N/A'}</span>
+                                                <span className="text-[10px] text-slate-450">{u?.role}</span>
+                                                <button onClick={() => removeApprover(idx)} className="p-1 text-red-400 hover:bg-red-105 dark:hover:bg-red-900/20 rounded transition">
                                                     <X size={14} />
                                                 </button>
                                             </div>
@@ -1087,82 +1267,56 @@ const RequestList: React.FC = () => {
                                     })}
                                     <div className="flex gap-2">
                                         <select id="approver-select"
-                                            className="flex-1 px-4 py-2.5 bg-white/50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl outline-none focus:ring-2 focus:ring-violet-500 text-sm"
-                                            defaultValue="">
-                                            <option value="">-- Chọn người duyệt --</option>
-                                            {users.filter(u => u.id !== user.id && !approverList.some(a => a.userId === u.id)).map(u => (
-                                                <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
-                                            ))}
+                                            className="flex-1 px-4 py-2.5 bg-white/50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl outline-none focus:ring-2 focus:ring-violet-500 text-sm text-slate-850 dark:text-white"
+                                            onChange={e => { addApprover(e.target.value); e.target.value = ''; }}>
+                                            <option value="">-- Thêm người duyệt --</option>
+                                            {users.filter(u => u.id !== user.id).map(u => <option key={u.id} value={u.id}>{u.name} ({u.role})</option>)}
                                         </select>
-                                        <button onClick={() => {
-                                            const sel = (document.getElementById('approver-select') as HTMLSelectElement);
-                                            if (sel.value) { addApprover(sel.value); sel.value = ''; }
-                                        }}
-                                            className="px-4 py-2.5 bg-violet-600 text-white rounded-xl font-bold text-sm hover:bg-violet-700 transition shadow-lg shadow-violet-500/20">
-                                            <Plus size={16} />
-                                        </button>
                                     </div>
-                                    {approverList.length === 0 && (
-                                        <p className="text-[10px] text-slate-400 text-center py-2">Chưa có người duyệt. Thêm ít nhất 1 người.</p>
-                                    )}
                                 </div>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Mức ưu tiên</label>
-                                    <select value={newPriority} onChange={e => setNewPriority(e.target.value as RQPriority)}
-                                        className="w-full px-4 py-2.5 bg-white/50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl outline-none text-sm">
-                                        <option value="low">Thấp</option>
-                                        <option value="medium">Trung bình</option>
-                                        <option value="high">Cao</option>
-                                        <option value="urgent">Khẩn cấp</option>
-                                    </select>
+                            {selectedCategory?.slaHours && (
+                                <div className="p-2.5 bg-slate-50 dark:bg-slate-750/30 rounded-xl text-[10px] text-slate-500 font-bold">
+                                    Hạn xử lý (SLA) mặc định: {selectedCategory.slaHours} giờ làm việc
                                 </div>
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Hạn xử lý</label>
-                                    {selectedCategory?.slaHours ? (
-                                        <div className="px-4 py-2.5 bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-700 rounded-xl text-sm text-amber-700 dark:text-amber-300 flex items-center gap-2">
-                                            <Clock size={14} />
-                                            <span className="font-bold">Tự động: +{selectedCategory.slaHours} giờ</span>
-                                        </div>
-                                    ) : (
-                                        <input type="datetime-local" value={newDueDate} onChange={e => setNewDueDate(e.target.value)}
-                                            className="w-full px-4 py-2.5 bg-white/50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl outline-none text-sm" />
-                                    )}
-                                </div>
+                            )}
+
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Hạn chót mong muốn (tùy chọn)</label>
+                                <input type="datetime-local" value={newDueDate} onChange={e => setNewDueDate(e.target.value)}
+                                    className="w-full px-4 py-2.5 bg-white/50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl outline-none focus:ring-2 focus:ring-accent text-sm text-slate-850 dark:text-white" />
                             </div>
 
-                            {/* Custom Fields */}
                             {selectedFields.length > 0 && (
-                                <div className="border-t border-slate-200 dark:border-slate-700 pt-4 space-y-3">
-                                    <p className="text-[10px] font-bold text-violet-500 uppercase tracking-wider">Thông tin bổ sung</p>
+                                <div className="space-y-4 pt-4 border-t border-slate-200 dark:border-slate-650">
+                                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Thông tin đặc thù</h3>
                                     {selectedFields.map(field => (
                                         <div key={field.id}>
-                                            <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1.5">
-                                                {field.label} {field.required && <span className="text-red-500">*</span>}
+                                            <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                                                {field.label} {field.required && '*'}
                                             </label>
                                             {field.type === 'text' && (
                                                 <input type="text" value={customFormData[field.name] || ''} onChange={e => setCustomFormData(p => ({ ...p, [field.name]: e.target.value }))}
-                                                    placeholder={field.placeholder || `Nhập ${field.label.toLowerCase()}...`}
-                                                    className="w-full px-4 py-2.5 bg-white/50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl outline-none focus:ring-2 focus:ring-accent text-sm" />
+                                                    placeholder={field.placeholder || ''}
+                                                    className="w-full px-4 py-2.5 bg-white/50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl outline-none text-sm text-slate-850 dark:text-white" />
                                             )}
                                             {field.type === 'textarea' && (
                                                 <textarea value={customFormData[field.name] || ''} onChange={e => setCustomFormData(p => ({ ...p, [field.name]: e.target.value }))}
                                                     placeholder={field.placeholder || ''} rows={2}
-                                                    className="w-full px-4 py-2.5 bg-white/50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl outline-none text-sm resize-none" />
+                                                    className="w-full px-4 py-2.5 bg-white/50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl outline-none text-sm resize-none text-slate-850 dark:text-white" />
                                             )}
                                             {field.type === 'number' && (
                                                 <input type="number" value={customFormData[field.name] || ''} onChange={e => setCustomFormData(p => ({ ...p, [field.name]: e.target.value }))}
-                                                    className="w-full px-4 py-2.5 bg-white/50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl outline-none text-sm" />
+                                                    className="w-full px-4 py-2.5 bg-white/50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl outline-none text-sm text-slate-850 dark:text-white" />
                                             )}
                                             {field.type === 'date' && (
                                                 <input type="date" value={customFormData[field.name] || ''} onChange={e => setCustomFormData(p => ({ ...p, [field.name]: e.target.value }))}
-                                                    className="w-full px-4 py-2.5 bg-white/50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl outline-none text-sm" />
+                                                    className="w-full px-4 py-2.5 bg-white/50 dark:bg-slate-750/50 border border-slate-200 dark:border-slate-600 rounded-xl outline-none text-sm text-slate-850 dark:text-white" />
                                             )}
                                             {field.type === 'select' && (
                                                 <select value={customFormData[field.name] || ''} onChange={e => setCustomFormData(p => ({ ...p, [field.name]: e.target.value }))}
-                                                    className="w-full px-4 py-2.5 bg-white/50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl outline-none text-sm">
+                                                    className="w-full px-4 py-2.5 bg-white/50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl outline-none text-sm text-slate-850 dark:text-white">
                                                     <option value="">-- Chọn --</option>
                                                     {(field.options || []).map(opt => <option key={opt} value={opt}>{opt}</option>)}
                                                 </select>
@@ -1176,7 +1330,7 @@ const RequestList: React.FC = () => {
                             )}
                         </div>
                         <div className="flex gap-3 mt-6">
-                            <button onClick={() => setShowCreateModal(false)} className="flex-1 px-4 py-2.5 border border-slate-200 dark:border-slate-600 rounded-xl font-bold text-sm transition">Hủy</button>
+                            <button onClick={() => setShowCreateModal(false)} className="flex-1 px-4 py-2.5 border border-slate-200 dark:border-slate-600 rounded-xl font-bold text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition">Hủy</button>
                             <button onClick={handleCreate} disabled={!selectedCategoryId || !newTitle.trim() || approverList.length === 0}
                                 className="flex-1 px-4 py-2.5 bg-accent text-white rounded-xl font-bold text-sm hover:bg-emerald-600 transition disabled:opacity-50 shadow-lg shadow-emerald-500/20">
                                 <Send size={14} className="inline mr-1.5" /> Gửi yêu cầu
@@ -1186,29 +1340,29 @@ const RequestList: React.FC = () => {
                 </div>
             )}
 
-            {/* Delete Confirm */}
+            {/* Shared Delete Confirm */}
             {deleteConfirmId && (
                 <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-                    <div className="glass-card bg-white dark:bg-slate-800 rounded-2xl p-6 w-full max-w-sm mx-4 shadow-2xl">
+                    <div className="glass-card bg-white dark:bg-slate-800 rounded-2xl p-6 w-full max-w-sm mx-4 shadow-2xl animate-scale-in">
                         <h2 className="text-lg font-bold text-red-600 mb-2">Xóa phiếu yêu cầu?</h2>
-                        <p className="text-sm text-slate-500 mb-6">Hành động này không thể hoàn tác.</p>
+                        <p className="text-sm text-slate-550 mb-6">Hành động này không thể hoàn tác.</p>
                         <div className="flex gap-3">
-                            <button onClick={() => setDeleteConfirmId(null)} className="flex-1 px-4 py-2.5 border border-slate-200 dark:border-slate-600 rounded-xl font-bold text-sm">Hủy</button>
+                            <button onClick={() => setDeleteConfirmId(null)} className="flex-1 px-4 py-2.5 border border-slate-200 dark:border-slate-600 rounded-xl font-bold text-sm text-slate-600 dark:text-slate-355 hover:bg-slate-50 dark:hover:bg-slate-700">Hủy</button>
                             <button onClick={() => handleDelete(deleteConfirmId)} className="flex-1 px-4 py-2.5 bg-red-500 text-white rounded-xl font-bold text-sm hover:bg-red-600 transition shadow-lg shadow-red-500/20">Xóa</button>
                         </div>
                     </div>
                 </div>
             )}
 
-            {/* Cancel Confirm */}
+            {/* Shared Cancel Confirm */}
             {cancelConfirmId && (
                 <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-                    <div className="glass-card bg-white dark:bg-slate-800 rounded-2xl p-6 w-full max-w-sm mx-4 shadow-2xl">
+                    <div className="glass-card bg-white dark:bg-slate-800 rounded-2xl p-6 w-full max-w-sm mx-4 shadow-2xl animate-scale-in">
                         <h2 className="text-lg font-bold text-amber-600 mb-2">Hủy phiếu yêu cầu?</h2>
-                        <p className="text-sm text-slate-500 mb-6">Phiếu sẽ được đánh dấu là đã hủy.</p>
+                        <p className="text-sm text-slate-555 mb-6">Phiếu sẽ được đánh dấu là đã hủy.</p>
                         <div className="flex gap-3">
-                            <button onClick={() => setCancelConfirmId(null)} className="flex-1 px-4 py-2.5 border border-slate-200 dark:border-slate-600 rounded-xl font-bold text-sm">Không</button>
-                            <button onClick={() => handleCancel(cancelConfirmId)} className="flex-1 px-4 py-2.5 bg-amber-500 text-white rounded-xl font-bold text-sm hover:bg-amber-600 transition shadow-lg shadow-amber-500/20">Hủy phiếu</button>
+                            <button onClick={() => setCancelConfirmId(null)} className="flex-1 px-4 py-2.5 border border-slate-200 dark:border-slate-600 rounded-xl font-bold text-sm text-slate-600 dark:text-slate-355 hover:bg-slate-50 dark:hover:bg-slate-700">Không</button>
+                            <button onClick={() => handleCancel(cancelConfirmId)} className="flex-1 px-4 py-2.5 bg-amber-500 text-white rounded-xl font-bold text-sm hover:bg-amber-650 transition shadow-lg shadow-amber-500/20">Hủy phiếu</button>
                         </div>
                     </div>
                 </div>
