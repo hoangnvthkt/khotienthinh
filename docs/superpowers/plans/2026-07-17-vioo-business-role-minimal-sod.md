@@ -1267,7 +1267,7 @@ Record findings and required forward changes in the execution notes before proce
 - Consumes: Task 2 resolver and governance permission codes.
 - Produces: typed `authorization_sod_rules`, append-only `authorization_sod_warning_acceptances`, scalar `app_private.evaluate_authorization_change(...)`, multi-scope `app_private.evaluate_authorization_change_set(...)`, `public.preview_authorization_change(...)` and `app_private.assert_subject_sod(...)`.
 
-- [ ] **Step 1: Write the failing SoD migration contract**
+- [x] **Step 1: Write the failing SoD migration contract**
 
 ```ts
 import { readdirSync, readFileSync } from 'node:fs';
@@ -1311,7 +1311,7 @@ describe('minimal SoD registry migration', () => {
 
 Create `authorization_sod_smoke.sql` before the migration. It must expect typed rule rows, reject forged actor IDs, deny same creator/submitter/executor subject relations, allow distinct actors and prove the hard guard has no override parameter/path.
 
-- [ ] **Step 2: Run the focused test and observe RED**
+- [x] **Step 2: Run the focused test and observe RED**
 
 ```bash
 npm test -- lib/__tests__/authorizationSodMigration.test.ts
@@ -1320,7 +1320,7 @@ npx supabase db query --local --agent=no "$(node -e "const fs=require('fs'); con
 
 Expected: static and SQL smoke FAIL against the Task 2 schema because the SoD migration is absent.
 
-- [ ] **Step 3: Create the migration through the CLI**
+- [x] **Step 3: Create the migration through the CLI**
 
 ```bash
 npx supabase migration new authorization_minimal_sod_registry
@@ -1328,7 +1328,7 @@ SOD_MIGRATION="$(rg --files supabase/migrations | rg '_authorization_minimal_sod
 test -n "$SOD_MIGRATION"
 ```
 
-- [ ] **Step 4: Create the typed rule and warning-acceptance tables**
+- [x] **Step 4: Create the typed rule and warning-acceptance tables**
 
 ```sql
 create table public.authorization_sod_rules (
@@ -1413,7 +1413,7 @@ using (
 );
 ```
 
-- [ ] **Step 5: Seed concrete rules only for permission namespaces that exist**
+- [x] **Step 5: Seed concrete rules only for permission namespaces that exist**
 
 ```sql
 insert into public.authorization_sod_rules (
@@ -1447,7 +1447,7 @@ set name = excluded.name,
 
 Payroll prepare/approve is not seeded under the existing single `hrm.payroll.manage` permission because that would create a false control. The HRM Phase 6 module plan must split and seed those permission codes before enabling that warning.
 
-- [ ] **Step 6: Implement deterministic permission-change evaluation**
+- [x] **Step 6: Implement deterministic permission-change evaluation**
 
 ```sql
 create or replace function app_private.evaluate_authorization_change(
@@ -1578,7 +1578,7 @@ It self-authorizes the current actor exactly like the scalar evaluator, validate
 
 This helper is the single SoD set-evaluation seam for Task 4 role assignment and Task 5 direct replacement. Later phases must reuse it for governed permission-set changes instead of inventing module-specific pair logic.
 
-- [ ] **Step 7: Add an actor-derived preview RPC**
+- [x] **Step 7: Add an actor-derived preview RPC**
 
 ```sql
 create or replace function public.preview_authorization_change(
@@ -1621,7 +1621,7 @@ grant execute on function public.preview_authorization_change(uuid,text[],text,t
 
 `ADD` is used by Business Role assignment. `REPLACE_DIRECT` removes current `DIRECT` sources from the resulting-set baseline so a revoked direct permission cannot create a false warning, while the Task 5 key-level check remains responsible for sensitive self-grant detection. Unknown modes fail with SQLSTATE `22023` and cannot be used as a bypass.
 
-- [ ] **Step 8: Add typed hard subject-relation guards with no override branch**
+- [x] **Step 8: Add typed hard subject-relation guards with no override branch**
 
 ```sql
 create or replace function app_private.assert_subject_sod(
@@ -1679,7 +1679,7 @@ revoke all on function app_private.assert_subject_sod(text,uuid,uuid,uuid,uuid)
 
 The function intentionally has no override ID and never calls an override helper.
 
-- [ ] **Step 9: Run the focused tests and commit**
+- [x] **Step 9: Run the focused tests and commit**
 
 ```bash
 npx supabase db reset --local --no-seed
@@ -1711,7 +1711,7 @@ Expected: test PASS, clean diff and one Task 3 commit.
 - Consumes: Tasks 1–3 schema, resolver and SoD decisions.
 - Produces: `public.preview_business_role_change`, `public.preview_business_role_assignment`, `public.save_business_role`, `public.assign_business_role`, `public.revoke_business_role_assignment`, `public.list_authorization_principals` and the shared warning-acceptance validator.
 
-- [ ] **Step 1: Add failing command security contracts**
+- [x] **Step 1: Add failing command security contracts**
 
 Load exactly one file ending `_authorization_governance_commands.sql`, normalize it as `commandsNormalized`, and add:
 
@@ -1736,7 +1736,7 @@ expect(commandsNormalized).not.toMatch(/create or replace function public\.[^(]+
 
 Create `authorization_governance_commands_smoke.sql` now with the role definition/assignment, scope, self-grant, warning, audit and ACL cases listed in Step 8.
 
-- [ ] **Step 2: Run focused tests and observe RED**
+- [x] **Step 2: Run focused tests and observe RED**
 
 ```bash
 npm test -- \
@@ -1747,7 +1747,7 @@ npx supabase db query --local --agent=no "$(node -e "const fs=require('fs'); con
 
 Expected: static and SQL smoke FAIL against the Task 3 schema because the command migration is missing.
 
-- [ ] **Step 3: Create the command migration through the CLI**
+- [x] **Step 3: Create the command migration through the CLI**
 
 ```bash
 npx supabase migration new authorization_governance_commands
@@ -1755,7 +1755,7 @@ COMMANDS_MIGRATION="$(rg --files supabase/migrations | rg '_authorization_govern
 test -n "$COMMANDS_MIGRATION"
 ```
 
-- [ ] **Step 4: Add shared permission and warning-acceptance guards**
+- [x] **Step 4: Add shared permission and warning-acceptance guards**
 
 ```sql
 create or replace function app_private.assert_authorization_permission(p_permission_code text)
@@ -1883,7 +1883,7 @@ revoke all on function app_private.assert_and_record_sod_warnings(jsonb,jsonb,te
 
 These two helpers are owner-only internals called from self-authorizing private command implementations. Do not grant either helper to `authenticated`: otherwise a caller could submit fabricated decision JSON or a detached command ID and create warning evidence outside the governed mutation.
 
-- [ ] **Step 5: Implement role impact preview and controlled role save**
+- [x] **Step 5: Implement role impact preview and controlled role save**
 
 Use these exact interfaces:
 
@@ -1989,7 +1989,7 @@ jsonb_build_object(
 
 Public wrappers are `security invoker`, contain no actor parameter, and delegate once to the private self-authorizing function. Revoke both exact public/private signatures from `PUBLIC`/`anon`, then grant execute to `authenticated`; the private implementation must still derive/authorize the actor, because the invoker wrapper's execute grant is not itself an authorization decision.
 
-- [ ] **Step 6: Implement role assignment and revoke commands**
+- [x] **Step 6: Implement role assignment and revoke commands**
 
 Use these browser-callable signatures:
 
@@ -2133,7 +2133,7 @@ The warning recorder consumes the complete aggregated decision once. Each acknow
 
 Insert `principal_type='user'`, append `business_role_assigned`, and return the generated ID. Revoke first reads the assignment identity without trusting it as final state, locks the target user, then role, then assignment, and revalidates all three; it never locks assignment before user. It requires `manage_roles` and a ten-character reason, rejects revoking `SYSTEM_ADMIN` while the target remains an active legacy `Role.ADMIN`, and calls the continuity guard with this assignment excluded before revoking any durable rollout source. Disable continues to revoke through Task 6, and Phase 3's atomic profile command handles demotion. Other revokes set `status='REVOKED'` and revoke metadata, then append `business_role_revoked`. Repeating revoke with the same reason succeeds without a second event; a different reason after revoke raises SQLSTATE `55000`.
 
-- [ ] **Step 7: Add a minimal principal directory for governance UI**
+- [x] **Step 7: Add a minimal principal directory for governance UI**
 
 ```sql
 create or replace function app_private.list_authorization_principals_impl()
@@ -2305,7 +2305,7 @@ grant execute on function public.set_authorization_rollout_flags(boolean,boolean
 
 Add static/smoke assertions that a Permission Admin without legacy `Role.ADMIN`, or a System Admin without explicit `manage_roles`, cannot toggle rollout flags. Also assert either disabled fallback with `resolver=false` returns `22023`, and a cutoff cannot be enabled without a durable rollout operator; restoring both fallbacks remains allowed for any currently authorized intersection operator. Rollback may keep the resolver enabled while restoring both compatibility fallbacks, but the command can never create a state where explicit Business Role sources are disabled while a legacy fallback is also disabled.
 
-- [ ] **Step 8: Complete the prewritten role-command SQL smoke coverage**
+- [x] **Step 8: Complete the prewritten role-command SQL smoke coverage**
 
 Start `supabase/tests/authorization_governance_commands_smoke.sql` with disposable Permission Admin, Auditor and target users. Cover:
 
@@ -2345,7 +2345,7 @@ exception
 end;
 ```
 
-- [ ] **Step 9: Run focused tests and commit**
+- [x] **Step 9: Run focused tests and commit**
 
 ```bash
 npx supabase db reset --local --no-seed
@@ -2379,7 +2379,7 @@ Expected: focused tests PASS and one Task 4 commit.
 - Consumes: Task 4 permission and warning helpers.
 - Produces: `public.preview_direct_grant_replacement(uuid,jsonb)` and `public.replace_user_permission_grants_v2(uuid,jsonb,text,jsonb)` over one shared private evaluator; compatibility wrapper for the existing two-argument RPC; no delete/reinsert of grant rows.
 
-- [ ] **Step 1: Add a failing static direct-grant contract**
+- [x] **Step 1: Add a failing static direct-grant contract**
 
 ```ts
 it('governs direct grants without delete/reinsert history loss', () => {
@@ -2394,7 +2394,7 @@ it('governs direct grants without delete/reinsert history loss', () => {
 
 Before editing the shared commands migration, extend `authorization_governance_commands_smoke.sql` with the V2 preview/mutation, multi-scope parity, reason, expiry, revoke-history, self-grant and warning cases listed in Step 6.
 
-- [ ] **Step 2: Run the focused test and observe RED**
+- [x] **Step 2: Run the focused test and observe RED**
 
 ```bash
 npm test -- lib/__tests__/authorizationBusinessRoleMigration.test.ts
@@ -2403,7 +2403,7 @@ npx supabase db query --local --agent=no "$(node -e "const fs=require('fs'); con
 
 Expected: static and SQL smoke FAIL against the Task 4 schema because the V2 preview/mutation is absent.
 
-- [ ] **Step 3: Add the private governed direct-grant implementation**
+- [x] **Step 3: Add the private governed direct-grant implementation**
 
 Use this exact public contract:
 
@@ -2522,7 +2522,7 @@ The shared set evaluator catches a global desired direct permission conflicting 
 
 Capture complete active `v_before` and a fully normalized desired snapshot. If those snapshots differ, require `char_length(v_reason) >= 10` for every direct-grant change, including revoke-only changes; an exact no-op may return the current snapshot without a new audit row. Recompute the shared decision under the target row lock, generate `v_command_id`, and call `assert_and_record_sod_warnings` exactly once with the complete multi-scope decision before changing any grant row; it rejects any supplied `(ruleCode,scopeType,scopeId)` not present in that decision. The explicit key-level check above rejects a new, reactivated or expiry-modified sensitive self-grant while allowing an unchanged sensitive row to survive a safe retry.
 
-- [ ] **Step 4: Revoke omitted rows and upsert desired rows without DELETE**
+- [x] **Step 4: Revoke omitted rows and upsert desired rows without DELETE**
 
 ```sql
 update public.user_permission_grants existing
@@ -2580,7 +2580,7 @@ set is_active = true,
 
 Append one `direct_permission_grants_changed` audit event containing `commandId`, reason, decision, before and after snapshots. If `legacy_projection_enabled` is true, call `app_private.sync_legacy_permission_projection(p_user_id)` after the new grant state is complete and inside the same transaction.
 
-- [ ] **Step 5: Keep the old RPC safe during frontend rollout**
+- [x] **Step 5: Keep the old RPC safe during frontend rollout**
 
 ```sql
 create or replace function public.replace_user_permission_grants(
@@ -2610,7 +2610,7 @@ grant execute on function public.preview_direct_grant_replacement(uuid,jsonb) to
 
 Both new public functions are `security invoker` wrappers with no actor parameter. Revoke their private definer implementations from `PUBLIC`/`anon`, grant the exact signatures to `authenticated` only so the wrappers can enter them, and derive/validate the current actor again inside each private implementation; the preview requires `manage_grants` exactly like the mutation. The compatibility wrapper cannot bypass hard SoD, sensitive expiry or warnings; warning combinations fail closed because the acknowledgement array is empty.
 
-- [ ] **Step 6: Expand SQL smoke coverage**
+- [x] **Step 6: Expand SQL smoke coverage**
 
 Add checks for:
 
@@ -2643,7 +2643,7 @@ if not exists (
 end if;
 ```
 
-- [ ] **Step 7: Run focused and adjacent regression tests**
+- [x] **Step 7: Run focused and adjacent regression tests**
 
 ```bash
 npx supabase db reset --local --no-seed
@@ -2658,7 +2658,7 @@ npx supabase db query --local --agent=no "$(node -e "const fs=require('fs'); con
 
 Expected: PASS; frontend behavior has not changed yet.
 
-- [ ] **Step 8: Commit Task 5 separately**
+- [x] **Step 8: Commit Task 5 separately**
 
 ```bash
 COMMANDS_MIGRATION="$(rg --files supabase/migrations | rg '_authorization_governance_commands\.sql$')"
@@ -2686,7 +2686,7 @@ Expected: role commands and direct grants remain independently reviewable.
 - Consumes: `principal_role_assignments` and Phase 1 `user_account_operations`/preview/response functions.
 - Produces: atomic role revocation on account disable, lifecycle preview count `businessRoleAssignments`, and lifecycle result summary count without restoring roles on reactivation.
 
-- [ ] **Step 1: Add failing cross-phase lifecycle contracts**
+- [x] **Step 1: Add failing cross-phase lifecycle contracts**
 
 Load one migration ending `_authorization_account_lifecycle_integration.sql` and assert:
 
@@ -2707,7 +2707,7 @@ expect(combinedLifecycleSql).toMatch(/businessRoleAssignments/i);
 
 Before creating the integration migration, extend `user_account_lifecycle_smoke.sql` with the role preview/disable/reactivate assertions specified in Step 6.
 
-- [ ] **Step 2: Run focused tests and observe RED**
+- [x] **Step 2: Run focused tests and observe RED**
 
 ```bash
 npm test -- \
@@ -2718,7 +2718,7 @@ npx supabase db query --local --agent=no "$(node -e "const fs=require('fs'); con
 
 Expected: static and SQL smoke FAIL against the Task 5 schema because the lifecycle integration is absent.
 
-- [ ] **Step 3: Create a forward-only lifecycle integration migration**
+- [x] **Step 3: Create a forward-only lifecycle integration migration**
 
 ```bash
 npx supabase migration new authorization_account_lifecycle_integration
@@ -2726,7 +2726,7 @@ LIFECYCLE_INTEGRATION_MIGRATION="$(rg --files supabase/migrations | rg '_authori
 test -n "$LIFECYCLE_INTEGRATION_MIGRATION"
 ```
 
-- [ ] **Step 4: Revoke active role assignments inside the disable transaction**
+- [x] **Step 4: Revoke active role assignments inside the disable transaction**
 
 ```sql
 create or replace function app_private.revoke_business_roles_on_account_disable()
@@ -2808,7 +2808,7 @@ create trigger trg_users_revoke_business_roles_on_disable
 
 This trigger runs in the same transaction as `prepare_user_account_lifecycle`; an error rolls back both account disable and role revocation. The lifecycle transaction already locks/updates the target user before this trigger locks assignment rows, matching the global lock order used by role commands.
 
-- [ ] **Step 5: Extend lifecycle preview and response without rewriting the orchestrator**
+- [x] **Step 5: Extend lifecycle preview and response without rewriting the orchestrator**
 
 Replace `public.get_user_account_lifecycle_preview(uuid)` with its existing authorization and counts plus:
 
@@ -2837,7 +2837,7 @@ Replace `app_private.account_operation_response(app_private.user_account_operati
 
 Keep all existing revocation summary keys unchanged so the deployed Edge Function remains backward compatible.
 
-- [ ] **Step 6: Expand the lifecycle SQL smoke**
+- [x] **Step 6: Expand the lifecycle SQL smoke**
 
 Before disable, assign the target one active Business Role and assert preview count `1`. After disable, assert the row remains but has `status='REVOKED'`, revoke metadata and the lifecycle result summary count `1`. After reactivate, assert there is still no active role assignment. Add a separate Admin fixture proving disable of the last durable rollout operator rolls back, then assign another active Admin a non-expiring `manage_roles` role and prove disable can proceed.
 
@@ -2854,7 +2854,7 @@ end if;
 
 Clean the disposable role assignment before deleting its user fixture.
 
-- [ ] **Step 7: Run focused database contracts and commit Task 6**
+- [x] **Step 7: Run focused database contracts and commit Task 6**
 
 ```bash
 npx supabase db reset --local --no-seed
@@ -2891,7 +2891,7 @@ Expected: database contracts PASS and the commit remains green. Task 8 introduce
 - Consumes: `REQUIRE_OVERRIDE` rules, `system.authorization.override`, Auditor resolution and existing `notifications` table.
 - Produces: append-only `authorization_override_events`, `public.record_authorization_override(...)`, `app_private.has_valid_authorization_override(...)`, one audit and one notification per idempotency key.
 
-- [ ] **Step 1: Add failing override security contracts**
+- [x] **Step 1: Add failing override security contracts**
 
 ```ts
 expect(overrideFiles).toHaveLength(1);
@@ -2910,7 +2910,7 @@ expect(overrideNormalized).not.toMatch(/effect = 'DENY'.*record_authorization_ov
 
 Create `authorization_override_smoke.sql` now with the permission, non-overridable hard-rule, concurrent-safe idempotency, audit, notification, validity and sanitized-error cases listed in Step 7.
 
-- [ ] **Step 2: Run the focused test and observe RED**
+- [x] **Step 2: Run the focused test and observe RED**
 
 ```bash
 npm test -- lib/__tests__/authorizationSodMigration.test.ts
@@ -2919,7 +2919,7 @@ npx supabase db query --local --agent=no "$(node -e "const fs=require('fs'); con
 
 Expected: static and SQL smoke FAIL against the Task 6 schema because the override migration is absent.
 
-- [ ] **Step 3: Create the migration through the CLI**
+- [x] **Step 3: Create the migration through the CLI**
 
 ```bash
 npx supabase migration new authorization_override_evidence
@@ -2927,7 +2927,7 @@ OVERRIDE_MIGRATION="$(rg --files supabase/migrations | rg '_authorization_overri
 test -n "$OVERRIDE_MIGRATION"
 ```
 
-- [ ] **Step 4: Create the append-only override evidence table**
+- [x] **Step 4: Create the append-only override evidence table**
 
 ```sql
 create table public.authorization_override_events (
@@ -2975,7 +2975,7 @@ using (
 );
 ```
 
-- [ ] **Step 5: Implement the idempotent recording command**
+- [x] **Step 5: Implement the idempotent recording command**
 
 Use the exact public signature with no actor parameter:
 
@@ -3119,7 +3119,7 @@ The user-facing notification does not contain an Auth ID, SQL text, secret, raw 
 
 Implement the mutation body as `app_private.record_authorization_override_impl(...)`, `security definer set search_path = ''`, with the actor/permission validation above. Expose `public.record_authorization_override(...)` only as a `security invoker` wrapper that delegates once, accepts no actor parameter, and returns the private result. Revoke both functions from `PUBLIC`/`anon`; grant their exact signatures to `authenticated` so the invoker wrapper can enter the self-authorizing private boundary. Do not introduce a new public `security definer` function.
 
-- [ ] **Step 6: Add the private validity helper for future workflow RPCs**
+- [x] **Step 6: Add the private validity helper for future workflow RPCs**
 
 ```sql
 create or replace function app_private.has_valid_authorization_override(
@@ -3164,7 +3164,7 @@ revoke all on function app_private.has_valid_authorization_override(uuid,text,uu
   from public, anon, authenticated;
 ```
 
-- [ ] **Step 7: Write override SQL smoke coverage**
+- [x] **Step 7: Write override SQL smoke coverage**
 
 Cover:
 
@@ -3181,7 +3181,7 @@ Cover:
 - response/error messages contain no Auth ID, SQL or secret text;
 - all disposable notifications, grants, events and users are cleaned up.
 
-- [ ] **Step 8: Run focused tests and commit**
+- [x] **Step 8: Run focused tests and commit**
 
 ```bash
 npx supabase db reset --local --no-seed
@@ -3200,6 +3200,15 @@ Expected: PASS and one Task 7 commit.
 ---
 
 ## Mandatory Authorization Review Checkpoint B
+
+**Checkpoint B completed 2026-07-17 (Cloud rollback-only):** all backend security
+contracts passed in one linked transaction containing the seven candidate migrations
+and six SQL smoke suites. The post-rollback fingerprint was zero for candidate
+schema objects, migration history, fixtures and notifications. Review found one
+expired-active direct-grant snapshot edge case; it is locked by
+`authorization_backend_checkpoint_smoke.sql` and fixed forward-only by
+`authorization_backend_checkpoint_hardening.sql`. Full verification passed:
+164 test files / 952 tests, TypeScript lint and production build.
 
 Stop after Tasks 3–7 and review the complete database boundary before frontend work:
 
@@ -4694,10 +4703,11 @@ SOD_MIGRATION="$(rg --files supabase/migrations | rg '_authorization_minimal_sod
 COMMANDS_MIGRATION="$(rg --files supabase/migrations | rg '_authorization_governance_commands\.sql$')"
 LIFECYCLE_INTEGRATION_MIGRATION="$(rg --files supabase/migrations | rg '_authorization_account_lifecycle_integration\.sql$')"
 OVERRIDE_MIGRATION="$(rg --files supabase/migrations | rg '_authorization_override_evidence\.sql$')"
-test "$(printf '%s\n' "$FOUNDATION_MIGRATION" "$RESOLVER_MIGRATION" "$SOD_MIGRATION" "$COMMANDS_MIGRATION" "$LIFECYCLE_INTEGRATION_MIGRATION" "$OVERRIDE_MIGRATION" | rg -c '^supabase/migrations/[0-9]{14}_authorization_.*\.sql$')" -eq 6
+CHECKPOINT_HARDENING_MIGRATION="$(rg --files supabase/migrations | rg '_authorization_backend_checkpoint_hardening\.sql$')"
+test "$(printf '%s\n' "$FOUNDATION_MIGRATION" "$RESOLVER_MIGRATION" "$SOD_MIGRATION" "$COMMANDS_MIGRATION" "$LIFECYCLE_INTEGRATION_MIGRATION" "$OVERRIDE_MIGRATION" "$CHECKPOINT_HARDENING_MIGRATION" | rg -c '^supabase/migrations/[0-9]{14}_authorization_.*\.sql$')" -eq 7
 ```
 
-Expected: exactly six paths, each created by the CLI and carrying a unique generated version.
+Expected: exactly seven paths, each created by the CLI and carrying a unique generated version.
 
 - [ ] **Step 4: Run the complete local suite**
 
@@ -4722,7 +4732,7 @@ npx supabase migration repair --help
 npx supabase migration list --linked
 ```
 
-Expected: record the CLI version and only the six pending Phase 2 versions. Do not repair or apply anything here.
+Expected: record the CLI version and only the seven pending Phase 2 versions. Do not repair or apply anything here.
 
 - [ ] **Step 6: Run all Phase 2 migrations and smokes in one rollback-only linked transaction**
 
@@ -4733,6 +4743,7 @@ SOD_MIGRATION="$(rg --files supabase/migrations | rg '_authorization_minimal_sod
 COMMANDS_MIGRATION="$(rg --files supabase/migrations | rg '_authorization_governance_commands\.sql$')"
 LIFECYCLE_INTEGRATION_MIGRATION="$(rg --files supabase/migrations | rg '_authorization_account_lifecycle_integration\.sql$')"
 OVERRIDE_MIGRATION="$(rg --files supabase/migrations | rg '_authorization_override_evidence\.sql$')"
+CHECKPOINT_HARDENING_MIGRATION="$(rg --files supabase/migrations | rg '_authorization_backend_checkpoint_hardening\.sql$')"
 BUNDLE="$(mktemp /tmp/phase02-rollback.XXXXXX)"
 trap 'rm -f "$BUNDLE"' EXIT
 node -e "const fs=require('fs'); const out=process.argv[1]; const files=process.argv.slice(2); const sql=files.map(file=>fs.readFileSync(file,'utf8')).join('\n'); fs.writeFileSync(out, 'begin; set local lock_timeout=\'5s\'; set local statement_timeout=\'120s\';\n'+sql+'\nselect \'phase02_rollback_smoke_passed\' as checkpoint; rollback;\n', {mode:0o600});" \
@@ -4743,11 +4754,13 @@ node -e "const fs=require('fs'); const out=process.argv[1]; const files=process.
   "$COMMANDS_MIGRATION" \
   "$LIFECYCLE_INTEGRATION_MIGRATION" \
   "$OVERRIDE_MIGRATION" \
+  "$CHECKPOINT_HARDENING_MIGRATION" \
   supabase/tests/business_role_effective_permission_smoke.sql \
   supabase/tests/authorization_sod_smoke.sql \
   supabase/tests/authorization_governance_commands_smoke.sql \
   supabase/tests/authorization_override_smoke.sql \
-  supabase/tests/user_account_lifecycle_smoke.sql
+  supabase/tests/user_account_lifecycle_smoke.sql \
+  supabase/tests/authorization_backend_checkpoint_smoke.sql
 npx supabase db query --linked --agent=no --file "$BUNDLE"
 ```
 
@@ -4821,7 +4834,7 @@ Expected:
 
 Record in the apply log:
 
-- six generated migration versions and candidate commit;
+- seven generated migration versions and candidate commit;
 - full local command summaries;
 - rollback-only checkpoint and advisor summary;
 - independent review findings and resolutions;
@@ -4853,7 +4866,7 @@ git commit -m "docs(authz): align business role rollout roadmap"
 - Consumes: verified Task 12 candidate and explicit operator approvals.
 - Produces: applied Cloud schema/history, enabled resolver/admin separation, preview and production evidence, 24-hour observation and final Phase 2 exit-gate record.
 
-After Step 2 commits schema, any defect uses a new CLI-generated forward migration and a new commit, then returns through Task 12 local/rollback verification and a new exact preview SHA. Never edit one of the six applied files or hot-patch production outside the recorded workflow.
+After Step 2 commits schema, any defect uses a new CLI-generated forward migration and a new commit, then returns through Task 12 local/rollback verification and a new exact preview SHA. Never edit one of the seven applied files or hot-patch production outside the recorded workflow.
 
 - [ ] **Step 1: Reconfirm exact candidate and Cloud checkpoint approval**
 
@@ -4865,11 +4878,11 @@ git fetch origin
 npx supabase migration list --linked
 ```
 
-Expected: candidate tree equals the reviewed tree, only the six intended versions are pending, and no unrelated local modification is staged. Stop without approval.
+Expected: candidate tree equals the reviewed tree, only the seven intended versions are pending, and no unrelated local modification is staged. Stop without approval.
 
 Before approval, run read-only aggregate preflight on the pre-Phase-2 schema: reserved role-code collisions, active direct `system.settings.manage` grants and any existing template item containing that permission must each be `0`. Do not log user/template IDs. A non-zero result is a remediation checkpoint, not permission to let the migration take over or auto-promote anyone.
 
-- [ ] **Step 2: Apply all six migrations atomically without db push**
+- [ ] **Step 2: Apply all seven migrations atomically without db push**
 
 ```bash
 FOUNDATION_MIGRATION="$(rg --files supabase/migrations | rg '_authorization_business_role_foundation\.sql$')"
@@ -4878,6 +4891,7 @@ SOD_MIGRATION="$(rg --files supabase/migrations | rg '_authorization_minimal_sod
 COMMANDS_MIGRATION="$(rg --files supabase/migrations | rg '_authorization_governance_commands\.sql$')"
 LIFECYCLE_INTEGRATION_MIGRATION="$(rg --files supabase/migrations | rg '_authorization_account_lifecycle_integration\.sql$')"
 OVERRIDE_MIGRATION="$(rg --files supabase/migrations | rg '_authorization_override_evidence\.sql$')"
+CHECKPOINT_HARDENING_MIGRATION="$(rg --files supabase/migrations | rg '_authorization_backend_checkpoint_hardening\.sql$')"
 BUNDLE="$(mktemp /tmp/phase02-apply.XXXXXX)"
 trap 'rm -f "$BUNDLE"' EXIT
 node -e "const fs=require('fs'); const out=process.argv[1]; const files=process.argv.slice(2); const sql=files.map(file=>fs.readFileSync(file,'utf8')).join('\n'); fs.writeFileSync(out, 'begin; set local lock_timeout=\'5s\'; set local statement_timeout=\'120s\';\n'+sql+'\nselect \'phase02_migrations_applied\' as checkpoint; commit;\n', {mode:0o600});" \
@@ -4887,13 +4901,14 @@ node -e "const fs=require('fs'); const out=process.argv[1]; const files=process.
   "$SOD_MIGRATION" \
   "$COMMANDS_MIGRATION" \
   "$LIFECYCLE_INTEGRATION_MIGRATION" \
-  "$OVERRIDE_MIGRATION"
+  "$OVERRIDE_MIGRATION" \
+  "$CHECKPOINT_HARDENING_MIGRATION"
 npx supabase db query --linked --agent=no --file "$BUNDLE"
 ```
 
-Expected: exit `0`, checkpoint `phase02_migrations_applied`, one commit. SQL failure rolls back all six.
+Expected: exit `0`, checkpoint `phase02_migrations_applied`, one commit. SQL failure rolls back all seven.
 
-If the client disconnects after sending the transaction, first query the six schema fingerprints and the checkpoint-side effects read-only; do not blindly resend the migration SQL. Once the schema commit is proven, resume only migration-history repair. Flags default off, so the schema/history repair window does not activate the new resolver or admin cutover.
+If the client disconnects after sending the transaction, first query the seven schema fingerprints and the checkpoint-side effects read-only; do not blindly resend the migration SQL. Once the schema commit is proven, resume only migration-history repair. Flags default off, so the schema/history repair window does not activate the new resolver or admin cutover.
 
 - [ ] **Step 3: Run smokes against committed schema in a disposable transaction**
 
@@ -4906,13 +4921,14 @@ node -e "const fs=require('fs'); const out=process.argv[1]; const files=process.
   supabase/tests/authorization_sod_smoke.sql \
   supabase/tests/authorization_governance_commands_smoke.sql \
   supabase/tests/authorization_override_smoke.sql \
-  supabase/tests/user_account_lifecycle_smoke.sql
+  supabase/tests/user_account_lifecycle_smoke.sql \
+  supabase/tests/authorization_backend_checkpoint_smoke.sql
 npx supabase db query --linked --agent=no --file "$BUNDLE"
 ```
 
 Expected: exit `0`, checkpoint, rollback. All three rollout flags remain `false` after the transaction.
 
-- [ ] **Step 4: Repair exactly the six migration-history versions**
+- [ ] **Step 4: Repair exactly the seven migration-history versions**
 
 ```bash
 FOUNDATION_MIGRATION="$(rg --files supabase/migrations | rg '_authorization_business_role_foundation\.sql$')"
@@ -4921,20 +4937,22 @@ SOD_MIGRATION="$(rg --files supabase/migrations | rg '_authorization_minimal_sod
 COMMANDS_MIGRATION="$(rg --files supabase/migrations | rg '_authorization_governance_commands\.sql$')"
 LIFECYCLE_INTEGRATION_MIGRATION="$(rg --files supabase/migrations | rg '_authorization_account_lifecycle_integration\.sql$')"
 OVERRIDE_MIGRATION="$(rg --files supabase/migrations | rg '_authorization_override_evidence\.sql$')"
+CHECKPOINT_HARDENING_MIGRATION="$(rg --files supabase/migrations | rg '_authorization_backend_checkpoint_hardening\.sql$')"
 for migration in \
   "$FOUNDATION_MIGRATION" \
   "$RESOLVER_MIGRATION" \
   "$SOD_MIGRATION" \
   "$COMMANDS_MIGRATION" \
   "$LIFECYCLE_INTEGRATION_MIGRATION" \
-  "$OVERRIDE_MIGRATION"; do
+  "$OVERRIDE_MIGRATION" \
+  "$CHECKPOINT_HARDENING_MIGRATION"; do
   version="$(basename "$migration" | cut -d_ -f1)"
   npx supabase migration repair "$version" --status applied --linked --workdir . --yes
 done
 npx supabase migration list --linked
 ```
 
-Expected: only those six versions become applied; pre-existing migration-history drift is untouched.
+Expected: only those seven versions become applied; pre-existing migration-history drift is untouched.
 
 Repair is resumable version by version: re-run `migration list --linked`, repair only Phase 2 versions still shown pending, and never mark a version applied until its schema fingerprint has been verified on Cloud.
 
