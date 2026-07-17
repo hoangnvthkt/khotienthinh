@@ -12,6 +12,7 @@
 
 - Execute sequentially and inline in the current working session; do not use subagents.
 - Use strict TDD for every behavior change: failing focused test, observed failure, minimal implementation, focused pass, wider regression pass, commit.
+- **Operator-approved Cloud-only TDD override (2026-07-17):** this environment does not use Docker or local Supabase. Any later task text that says `--local`, `supabase start` or `supabase db reset` is replaced by the rollback-only linked-Cloud protocol in the preflight section below. No Phase 2 schema or migration-history change may persist before Task 13.
 - Do not use `supabase db push`. Create every migration with `npx supabase migration new <descriptive-name>` and apply Cloud SQL only through explicit transactions after an operator checkpoint.
 - Treat each fenced shell block as a fresh process: re-resolve migration paths in every block that uses them and never depend on an exported variable from an earlier step.
 - Do not edit already-applied migration files. Every database correction is a new forward migration.
@@ -171,23 +172,41 @@ Inspect the staged diff first. Do not include the committed Phase 1 plan/log or 
 
 ---
 
-## One-Time Local Database TDD Preflight
+## One-Time Cloud Rollback-Only Database TDD Preflight
 
-Run before Task 1. This affects only the disposable local Supabase stack:
+The operator explicitly requires Supabase Cloud and does not use Docker or a
+local Supabase stack. Before Task 1, verify the existing linked project and
+read-only baseline without printing `.env` values:
 
 ```bash
-npx supabase status || npx supabase start
-npx supabase db reset --local --no-seed
+npx supabase --version
+npx supabase db query --linked --agent=no \
+  "select current_database() is not null as connected, current_setting('server_version_num')::integer >= 150000 as postgres_15_plus;"
 ```
 
-Every database task must then follow RED/GREEN against that local database in addition to static Vitest contracts:
+Every database task must then follow RED/GREEN against linked Cloud without
+persisting candidate schema changes before Task 13:
 
-1. Write or extend the task's SQL smoke before creating/editing its migration.
-2. Wrap the smoke in `begin; ... rollback;` from the caller and observe a non-zero RED result against the previous task's schema.
-3. Add the minimal migration implementation and run `npx supabase db reset --local --no-seed`.
-4. Run the same wrapped smoke and observe GREEN before committing.
+1. Write or extend the task's static contract and SQL smoke before
+   creating/editing its migration.
+2. For RED, run the smoke against the current committed Cloud schema inside
+   `begin; set local lock_timeout='5s'; set local statement_timeout='120s'; ... rollback;`
+   and observe the expected non-zero result caused by the missing feature.
+3. Create migrations only through `npx supabase migration new <name>` and add
+   the minimal implementation.
+4. For GREEN, concatenate every Phase 2 migration through the current task and
+   the same smoke into one temporary file wrapped by `begin; ... rollback;`,
+   then execute it with `npx supabase db query --linked --agent=no --file`.
+5. Require an explicit success checkpoint immediately before `rollback`; query
+   the committed Cloud schema afterward to prove the candidate objects and
+   migration-history versions did not persist.
 
-If the local stack cannot start or reset, stop and fix the local harness. Do not use the linked Cloud database as a substitute for the RED step and never weaken an assertion merely to make the harness green.
+Use the linked CLI authentication backed by `SUPABASE_ACCESS_TOKEN` and
+`SUPABASE_DB_PASSWORD`; never print, interpolate into command output or commit
+their values. Never use `VITE_SUPABASE_ANON_KEY` or a service-role key for
+schema work. A disconnect after sending a rollback-only transaction requires a
+read-only schema fingerprint before any retry. Do not weaken an assertion or
+commit schema early merely to obtain GREEN.
 
 ---
 
