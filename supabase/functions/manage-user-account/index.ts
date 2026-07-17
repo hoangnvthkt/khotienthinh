@@ -3,6 +3,7 @@ import {
   getAdminClient,
   requireActiveAdmin,
 } from '../_shared/adminAuthorization.ts';
+import { buildRevocationPassword } from '../_shared/accountLifecyclePassword.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -35,10 +36,6 @@ type Operation = {
 
 const isUuid = (value: string) => (
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
-);
-
-const buildRevocationPassword = () => (
-  `${crypto.randomUUID()}-${crypto.randomUUID()}-Aa1!`
 );
 
 Deno.serve(async (req) => {

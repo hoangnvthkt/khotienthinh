@@ -26,6 +26,10 @@ describe('manage-user-account Edge Function contract', () => {
   it('rotates the password while banning and requires a new password when reactivating', () => {
     expect(source).toContain("ban_duration: '876000h'");
     expect(source).toContain("ban_duration: 'none'");
+    expect(source).toContain(
+      "import { buildRevocationPassword } from '../_shared/accountLifecyclePassword.ts';",
+    );
+    expect(source).not.toContain('const buildRevocationPassword');
     expect(source).toContain('buildRevocationPassword');
     expect(source).toMatch(/REACTIVATE.*newPassword/s);
   });
