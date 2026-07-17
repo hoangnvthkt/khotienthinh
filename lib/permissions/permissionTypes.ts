@@ -12,6 +12,8 @@ export interface PermissionScope {
   scopeId?: string;
 }
 
+export type PermissionRiskLevel = 'normal' | 'important' | 'sensitive';
+
 export interface PermissionActionDefinition {
   action: string;
   label: string;
@@ -22,6 +24,10 @@ export interface PermissionActionDefinition {
   legacyRoute?: string;
   legacyAdminOnly?: boolean;
   sortOrder?: number;
+  riskLevel?: PermissionRiskLevel;
+  isBusinessAction?: boolean;
+  isBusinessApproval?: boolean;
+  directGrantRequiresExpiry?: boolean;
 }
 
 export interface PermissionModuleDefinition {

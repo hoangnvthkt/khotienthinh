@@ -8,6 +8,10 @@ import {
   PermissionModuleDefinition,
   PermissionScopeType,
 } from './permissionTypes';
+import {
+  PermissionRiskMetadata,
+  resolvePermissionRiskMetadata,
+} from './permissionRisk';
 
 const PROJECT_SCOPE_TYPES: readonly PermissionScopeType[] = ['global', 'project', 'construction_site'];
 const PROJECT_WAREHOUSE_SCOPE_TYPES: readonly PermissionScopeType[] = [
@@ -85,10 +89,12 @@ const projectAction = (
   legacyRoute: string,
   sortOrder: number,
   scopeTypes: readonly PermissionScopeType[] = PROJECT_SCOPE_TYPES,
+  riskMetadata?: PermissionRiskMetadata,
 ): PermissionActionDefinition => ({
   action,
   label,
   permissionCode: `${prefix}.${action}`,
+  ...resolvePermissionRiskMetadata(prefix, action, riskMetadata),
   legacyModuleKey: 'DA',
   legacyRoute,
   legacyAdminOnly: false,
