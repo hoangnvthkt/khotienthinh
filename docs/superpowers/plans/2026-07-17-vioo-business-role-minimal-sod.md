@@ -223,7 +223,7 @@ commit schema early merely to obtain GREEN.
 - Consumes: existing `permission_actions`, `role_permission_templates`, `role_permission_template_items`, `users`, `permission_audit_events` and `app_private.assert_active_principal(uuid)`.
 - Produces: `public.principal_role_assignments`; four risk columns on `permission_actions`; `is_system`/`version` on role templates; governance permission codes and five seeded Business Roles.
 
-- [ ] **Step 1: Write the failing migration contract test**
+- [x] **Step 1: Write the failing migration contract test**
 
 ```ts
 import { readdirSync, readFileSync } from 'node:fs';
@@ -286,7 +286,7 @@ describe('authorization Business Role foundation migration', () => {
 
 Also create `business_role_effective_permission_smoke.sql` with foundation assertions for risk columns, five seed definitions, reserved-code/identity-bound preconditions, bootstrap assignment/audit parity, RLS/ACL denial, active-principal rejection, future-start rejection and assignment FK/index presence. Keep fixtures disposable; the caller supplies the transaction.
 
-- [ ] **Step 2: Run the focused test and observe the missing-migration failure**
+- [x] **Step 2: Run the focused test and observe the missing-migration failure**
 
 Run:
 
@@ -297,7 +297,7 @@ npx supabase db query --local --agent=no "$(node -e "const fs=require('fs'); con
 
 Expected: both commands FAIL because the migration/schema does not exist. Record the failing assertion names before implementation.
 
-- [ ] **Step 3: Discover the CLI and create the migration through Supabase CLI**
+- [x] **Step 3: Discover the CLI and create the migration through Supabase CLI**
 
 ```bash
 npx supabase --version
@@ -309,7 +309,7 @@ test -n "$FOUNDATION_MIGRATION"
 
 Expected: exactly one generated migration path; do not rename its timestamp.
 
-- [ ] **Step 4: Add risk metadata, assignment schema, indexes and active-principal guard**
+- [x] **Step 4: Add risk metadata, assignment schema, indexes and active-principal guard**
 
 The generated migration must contain these exact schema decisions:
 
@@ -411,7 +411,7 @@ create trigger trg_principal_role_assignments_active_principal
   for each row execute function app_private.guard_principal_role_assignment_principal();
 ```
 
-- [ ] **Step 5: Seed explicit risk metadata and governance permissions**
+- [x] **Step 5: Seed explicit risk metadata and governance permissions**
 
 Use `permission_modules.application_code` to classify business actions, and explicitly classify approvals rather than granting on action-name inference at runtime:
 
@@ -475,7 +475,7 @@ set label = excluded.label,
     updated_at = now();
 ```
 
-- [ ] **Step 6: Seed the five Business Roles and compatibility assignments**
+- [x] **Step 6: Seed the five Business Roles and compatibility assignments**
 
 Seed role definitions idempotently. Existing active legacy admins receive two separate assignments—`SYSTEM_ADMIN` and `PERMISSION_ADMIN`—so production administration remains available while the sources are independently auditable/revocable. Neither role contains a business approval permission.
 
@@ -596,7 +596,7 @@ The precondition is deliberate and runs before any reserved-role seed. Task 12 i
 
 Bootstrap audit uses the migration as source and a null human actor; it records application user/assignment identity only in the protected audit table, never an Auth ID or secret.
 
-- [ ] **Step 7: Apply RLS and least-privilege ACLs**
+- [x] **Step 7: Apply RLS and least-privilege ACLs**
 
 ```sql
 alter table public.principal_role_assignments enable row level security;
@@ -631,7 +631,7 @@ drop policy if exists permission_audit_events_insert on public.permission_audit_
 
 Expected: authenticated clients can read their own assignment and approved catalogs, but cannot directly mutate grants, roles, assignments or audit rows. Defense does not depend on ACL alone: legacy authenticated mutation policies are removed as well.
 
-- [ ] **Step 8: Run the focused test and migration formatting checks**
+- [x] **Step 8: Run the focused test and migration formatting checks**
 
 ```bash
 npx supabase db reset --local --no-seed
@@ -643,7 +643,7 @@ npx supabase db query --local --agent=no "$(node -e "const fs=require('fs'); con
 
 Expected: static and SQL behavior tests PASS and no whitespace findings.
 
-- [ ] **Step 9: Commit Task 1**
+- [x] **Step 9: Commit Task 1**
 
 ```bash
 FOUNDATION_MIGRATION="$(rg --files supabase/migrations | rg '_authorization_business_role_foundation\.sql$')"
@@ -668,7 +668,7 @@ git commit -m "feat(authz): add business role foundation"
 - Consumes: Task 1 role assignments/risk metadata and existing `app_private.permission_hardening_settings`.
 - Produces: `app_private.scope_covers(...)`, `app_private.resolve_effective_permission_sources(...)`, authoritative `app_private.has_permission(...)`, `public.get_effective_permission_sources(...)` and three rollout flags.
 
-- [ ] **Step 1: Extend the static contract with resolver and compatibility requirements**
+- [x] **Step 1: Extend the static contract with resolver and compatibility requirements**
 
 Add a second suffix loader and these assertions:
 
@@ -718,7 +718,7 @@ it('keeps the public explanation RPC actor-derived and read-only', () => {
 
 Before creating the resolver migration, extend `business_role_effective_permission_smoke.sql` with the role/direct/legacy, scoped denial and three-flag cases specified in Step 8.
 
-- [ ] **Step 2: Run the test and observe the resolver-migration failure**
+- [x] **Step 2: Run the test and observe the resolver-migration failure**
 
 ```bash
 npm test -- lib/__tests__/authorizationBusinessRoleMigration.test.ts
@@ -727,7 +727,7 @@ npx supabase db query --local --agent=no "$(node -e "const fs=require('fs'); con
 
 Expected: static and SQL smoke FAIL against the Task 1 schema because the resolver migration does not exist.
 
-- [ ] **Step 3: Create the resolver migration with the CLI**
+- [x] **Step 3: Create the resolver migration with the CLI**
 
 ```bash
 npx supabase migration new authorization_effective_permission_resolver
@@ -735,7 +735,7 @@ RESOLVER_MIGRATION="$(rg --files supabase/migrations | rg '_authorization_effect
 test -n "$RESOLVER_MIGRATION"
 ```
 
-- [ ] **Step 4: Add rollout flags and exact scope semantics**
+- [x] **Step 4: Add rollout flags and exact scope semantics**
 
 ```sql
 insert into app_private.permission_hardening_settings (key, value)
@@ -775,7 +775,7 @@ grant execute on function app_private.scope_covers(text,text,text,text)
 
 No generic project-to-construction-site inheritance is added here. A module subject resolver must supply the actual requested scope; later module plans may check both project and site explicitly.
 
-- [ ] **Step 5: Implement the private source resolver with a stable return contract**
+- [x] **Step 5: Implement the private source resolver with a stable return contract**
 
 ```sql
 create or replace function app_private.resolve_effective_permission_sources(
@@ -1001,7 +1001,7 @@ revoke all on function app_private.resolve_effective_permission_sources(uuid,tex
 
 The effective ROLE scope is the intersection, never the wider operand. In particular, assignment `project/*` plus item `project/project-1` resolves to `project/project-1`; the reverse combination also resolves to `project/project-1`.
 
-- [ ] **Step 6: Put the resolver behind the existing boolean helpers and permission-admin check**
+- [x] **Step 6: Put the resolver behind the existing boolean helpers and permission-admin check**
 
 ```sql
 create or replace function app_private.has_permission(
@@ -1047,7 +1047,7 @@ grant execute on function app_private.can_manage_permissions() to authenticated;
 
 Keep the existing `app_private.has_any_permission(...)` signature unchanged; it automatically consumes the new facade.
 
-- [ ] **Step 7: Add the self-authorizing private read boundary, invoker wrapper and admin RLS read policy**
+- [x] **Step 7: Add the self-authorizing private read boundary, invoker wrapper and admin RLS read policy**
 
 ```sql
 create or replace function app_private.get_effective_permission_sources_authorized(
@@ -1160,7 +1160,7 @@ using (
 notify pgrst, 'reload schema';
 ```
 
-- [ ] **Step 8: Complete the prewritten SQL smoke coverage**
+- [x] **Step 8: Complete the prewritten SQL smoke coverage**
 
 `supabase/tests/business_role_effective_permission_smoke.sql` must:
 
@@ -1201,7 +1201,7 @@ end;
 $$;
 ```
 
-- [ ] **Step 9: Reset local DB and turn the same contracts GREEN**
+- [x] **Step 9: Turn the same contracts GREEN through the approved Cloud rollback-only protocol**
 
 ```bash
 npx supabase db reset --local --no-seed
@@ -1213,7 +1213,7 @@ npx supabase db query --local --agent=no "$(node -e "const fs=require('fs'); con
 
 Expected: static and local SQL behavior tests PASS; no Cloud query occurs in this task.
 
-- [ ] **Step 10: Commit Task 2**
+- [x] **Step 10: Commit Task 2**
 
 ```bash
 RESOLVER_MIGRATION="$(rg --files supabase/migrations | rg '_authorization_effective_permission_resolver\.sql$')"
@@ -1240,6 +1240,17 @@ Stop after Tasks 1–2. Do not begin Task 3 until an independent database-securi
 - absence of actor IDs in every browser-callable mutation/read authorization decision.
 
 Record findings and required forward changes in the execution notes before proceeding.
+
+> **Checkpoint A review — PASS (`2026-07-17`):** Tasks 1–2 passed 942
+> repository tests and the linked-Cloud rollback smoke. The review found
+> missing lookup indexes for assignment/revocation actors and audit-event actor
+> RLS; commit `7e0b223` added all three and regression assertions. Candidate
+> inventory then confirmed RLS enabled, seven required security indexes, five
+> privileged functions with empty `search_path`, all three flags defaulting to
+> `false`, no raw-resolver EXECUTE for `authenticated`, no public RPC EXECUTE
+> for `anon`, no RLS recursion, correct scope intersection/expiry behavior and
+> no persisted Cloud schema, flags or fixtures. No Critical or Important
+> finding remains open.
 
 ---
 
