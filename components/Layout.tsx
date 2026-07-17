@@ -37,7 +37,7 @@ const Layout: React.FC = () => {
   const navigate = useNavigate();
   const { pathname } = useLocation();
 
-  const isChatRoute = pathname === '/chat';
+  const isFullBleedRoute = pathname === '/chat' || pathname.startsWith('/rq') || pathname === '/wf';
 
   const lastActivityRef = useRef<number>(Date.now());
   const warningTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -226,7 +226,7 @@ const Layout: React.FC = () => {
           </div>
         </header>
 
-        <main className={isChatRoute ? "flex-1 overflow-hidden relative" : "flex-1 overflow-auto p-2 sm:p-4 md:p-8 pb-20 lg:pb-8 transparent"}>
+        <main className={isFullBleedRoute ? "flex-1 overflow-hidden relative" : "flex-1 overflow-auto p-2 sm:p-4 md:p-8 pb-20 lg:pb-8 transparent"}>
           {isLoading || isRefreshing ? (
             <div className="h-full w-full flex flex-col items-center justify-center relative overflow-hidden">
               {/* Background animated particles */}
@@ -346,7 +346,7 @@ const Layout: React.FC = () => {
               `}</style>
             </div>
           ) : (
-            isChatRoute ? (
+            isFullBleedRoute ? (
               <React.Suspense fallback={<LoadingSpinner />}>
                 <Outlet />
               </React.Suspense>

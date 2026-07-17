@@ -2,10 +2,12 @@
 
 ## Current status
 
-- Status: **Local verification only; Cloud mutation not approved**
-- Updated at: `2026-07-17T17:11:21+07:00`
+- Status: **Cloud schema/history applied; all rollout flags off; resolver canary
+  blocked pending sensitive-grant expiry remediation**
+- Updated at: `2026-07-17T17:26:40+07:00`
 - Branch: `refactor/module-du-an-v1`
-- Candidate commit: `bf31d23cdf5c49152a99255ad161d997b9733bfc`
+- Reviewed rollout commit: `903b29740b1544787ab09e7c223229c02b2b5346`
+- Implementation candidate commit: `bf31d23cdf5c49152a99255ad161d997b9733bfc`
 - Database migration versions:
   - `20260717084356_authorization_business_role_foundation.sql`
   - `20260717084903_authorization_effective_permission_resolver.sql`
@@ -14,10 +16,8 @@
   - `20260717092007_authorization_account_lifecycle_integration.sql`
   - `20260717092508_authorization_override_evidence.sql`
   - `20260717093122_authorization_backend_checkpoint_hardening.sql`
-- Rollout flags: candidate defaults are resolver `false`, legacy-governance
-  fallback disabled `false`, and System Admin business-approval bypass disabled
-  `false`. Cloud remains unchanged because the candidate migrations have not
-  been applied.
+- Rollout flags on Cloud: resolver `false`, legacy-governance fallback disabled
+  `false`, and System Admin business-approval bypass disabled `false`.
 
 Do not record emails, passwords, access or refresh tokens, Auth IDs, database
 URLs, API keys or service-role values in this file.
@@ -61,13 +61,13 @@ URLs, API keys or service-role values in this file.
   `PUBLIC`/`anon` table ACL; no authenticated direct write; no actor/caller
   parameter on browser-callable Phase 2 RPCs; every Phase 2 private SECURITY
   DEFINER has an empty `search_path`.
-- The authenticated Data API error-envelope exercise is intentionally not
-  claimed here. The candidate RPCs do not exist outside the rollback
-  transaction, the environment contains no disposable authenticated test
-  session, and creating or successfully replaying a command would mutate Cloud
-  before approval. Task 13 must run unauthorized, invalid-payload and duplicate
-  idempotency-key cases after apply but before enabling any rollout flag, and
-  inspect raw `message`, `details` and `hint` fields for identifier or SQL leaks.
+- The authenticated Data API error-envelope exercise was intentionally not
+  claimed at Task 12 because the candidate RPCs did not exist outside the
+  rollback transaction and no disposable authenticated test session was
+  available. The RPCs now exist after apply, but unauthorized, invalid-payload
+  and duplicate-idempotency-key cases still must run before enabling any rollout
+  flag, with raw `message`, `details` and `hint` inspected for identifier or SQL
+  leaks.
 
 ## Independent security review findings
 
@@ -94,20 +94,58 @@ URLs, API keys or service-role values in this file.
   permissive policies and duplicate indexes. No Phase 2 object was persisted
   when advisors ran, so these are baseline inventory rather than new Phase 2
   findings.
+- The post-apply advisor rerun returned the same 267 warnings with zero matches
+  against Phase 2 objects, so the seven migrations introduced no new advisor
+  warning at the configured `warn` threshold.
 - Nine pre-existing `app_private` SECURITY DEFINER functions outside Phase 2
   use a non-empty search path. They are recorded as forward hardening debt; all
   Phase 2 private definers passed the empty-path assertion.
 
 ## Cloud apply and migration-history repair
 
-- Status: **Not started; explicit operator approval required.**
-- Current linked history contains 395 displayed rows: 167 aligned, 82
-  local-only and 146 remote-only. The non-Phase-2 divergence predates this
-  candidate and was not changed; seven of the local-only rows are the Phase 2
-  versions above.
-- Task 13 may apply only the seven versions above in their listed order, verify
-  the post-apply fingerprint, and repair only those exact seven history rows as
-  applied. It must not run `db push` or repair unrelated history.
+- Status: **Applied and repaired exactly seven versions with explicit operator
+  approval.**
+- Preflight at `2026-07-17T17:20+07:00` found zero reserved role-code
+  collisions, zero active direct `system.settings.manage` grants, zero existing
+  template items for that permission and zero Phase 2 schema/history
+  fingerprints.
+- The seven migration files were applied in their listed order inside one
+  linked Cloud transaction. Result: exit `0`, checkpoint
+  `phase02_migrations_applied`, one explicit `COMMIT`.
+- Fresh committed-schema fingerprint found all four governance relations, all
+  five unique public RPC checks and all three rollout flags set to `false`;
+  migration history still contained zero Phase 2 rows before repair.
+- All six smoke files then passed against committed schema in a separate linked
+  transaction. Result: exit `0`, checkpoint
+  `phase02_committed_schema_smoke_passed`, followed by `ROLLBACK`; zero fixture
+  users remained and all three flags stayed `false`.
+- Exactly versions `20260717084356`, `20260717084903`, `20260717085909`,
+  `20260717090703`, `20260717092007`, `20260717092508` and `20260717093122`
+  were repaired as applied. No `db push` was used.
+- Linked history changed exactly from 167 aligned / 82 local-only / 146
+  remote-only to 174 aligned / 75 local-only / 146 remote-only, with 395 total
+  displayed rows and zero mismatched row. This proves unrelated drift was not
+  changed.
+- Post-apply additive inventory: one active legacy Admin has both bootstrap
+  roles; missing `SYSTEM_ADMIN` and `PERMISSION_ADMIN` mirrors are both zero;
+  seeded business-approval items are zero; classification mismatches are zero;
+  active roles on disabled accounts are zero; durable rollout operators are
+  one.
+- ACL/security inventory remains clean: RLS is enabled on all four governance
+  tables, `PUBLIC`/`anon` ACL rows are zero, authenticated direct-write tables
+  are zero, Phase 2 definers with a non-empty search path are zero, public
+  actor-parameter RPCs are zero, and audit/notification secret-key hits are
+  zero.
+- Login incident evidence: before apply, Data API returned `PGRST202` because
+  `get_effective_permission_sources` did not exist. After apply, the RPC is in
+  the schema cache, `authenticated` has EXECUTE, and `anon`/`PUBLIC` do not. An
+  anonymous probe now receives the expected `42501` denial instead of a missing
+  function error. Authenticated operator retry remains the functional check.
+- Cutover blocker: 485 active direct-grant rows across 23 principals and 30
+  permission codes are now classified `sensitive` but have no expiry; expired
+  rows are zero. These grants were not revoked or rewritten. A Permission Admin
+  must explicitly revoke or reissue them with reason and future expiry before
+  resolver/cutoff canary proceeds.
 - Emergency rollback starts by calling
   `set_authorization_rollout_flags(true,false,false,reason)` to restore the
   compatibility resolver posture. Schema or data corrections use a forward-fix
@@ -115,7 +153,8 @@ URLs, API keys or service-role values in this file.
 
 ## Resolver enablement canary
 
-- Status: **Pending Task 13 approval and Cloud apply.**
+- Status: **Blocked before flag mutation by 485 sensitive direct grants without
+  expiry and by the pending authenticated Data API canary.**
 - Enable the resolver first while the other two cutoffs remain disabled. Verify
   source explanations, scope/expiry behavior and adjacent-action denials with
   disposable principals before advancing.
