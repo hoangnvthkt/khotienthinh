@@ -1,5 +1,21 @@
 do $$
 begin
+  if to_regprocedure('app_private.revoke_business_roles_on_account_disable()') is null
+    or not exists (
+      select 1
+      from pg_trigger trigger_row
+      where trigger_row.tgrelid = 'public.users'::regclass
+        and trigger_row.tgname = 'trg_users_revoke_business_roles_on_disable'
+        and not trigger_row.tgisinternal
+    )
+  then
+    raise exception 'Business Role account lifecycle integration contract failed';
+  end if;
+end;
+$$;
+
+do $$
+begin
   if to_regprocedure('public.prepare_user_account_lifecycle(uuid,uuid,text,text,uuid)') is null then
     raise exception 'Missing prepare lifecycle RPC';
   end if;
@@ -19,13 +35,14 @@ create temp table account_lifecycle_smoke_ids (
   disable_key uuid not null,
   reactivate_key uuid not null,
   disable_operation_id uuid,
-  reactivate_operation_id uuid
+  reactivate_operation_id uuid,
+  disable_result jsonb
 ) on commit drop;
 
 insert into account_lifecycle_smoke_ids
 values (
   gen_random_uuid(), gen_random_uuid(), gen_random_uuid(),
-  gen_random_uuid(), gen_random_uuid(), null, null
+  gen_random_uuid(), gen_random_uuid(), null, null, null
 );
 
 grant select, update on account_lifecycle_smoke_ids to authenticated, service_role;
@@ -53,6 +70,26 @@ insert into public.user_permission_grants (
 select target_id, 'system.wms.view', 'global', '*', true
 from account_lifecycle_smoke_ids;
 
+insert into public.principal_role_assignments (
+  principal_type,
+  principal_id,
+  role_template_id,
+  scope_type,
+  scope_id,
+  starts_at,
+  status,
+  assigned_reason
+)
+select 'user', target_id, role_row.id, 'global', '*', now(), 'ACTIVE',
+       'Lifecycle smoke Business Role assignment'
+from account_lifecycle_smoke_ids
+join public.role_permission_templates role_row on role_row.code = 'AUDITOR'
+union all
+select 'user', admin_id, role_row.id, 'global', '*', now(), 'ACTIVE',
+       'Lifecycle smoke durable rollout operator assignment'
+from account_lifecycle_smoke_ids
+join public.role_permission_templates role_row on role_row.code = 'PERMISSION_ADMIN';
+
 set role authenticated;
 select set_config(
   'request.jwt.claims',
@@ -74,6 +111,9 @@ begin
   if (preview ->> 'directGrants')::integer <> 1 then
     raise exception 'Lifecycle preview did not count active grants';
   end if;
+  if (preview ->> 'businessRoleAssignments')::integer <> 1 then
+    raise exception 'Lifecycle preview did not count active Business Roles';
+  end if;
   begin
     update public.users
     set account_operation_status = 'PENDING',
@@ -91,16 +131,29 @@ reset role;
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 set role service_role;
 
-update account_lifecycle_smoke_ids
-set disable_operation_id = (
-  public.prepare_user_account_lifecycle(
+do $$
+declare
+  v_result jsonb;
+begin
+  select public.prepare_user_account_lifecycle(
     admin_id,
     target_id,
     'DISABLE',
     'Nhân viên nghỉ việc',
     disable_key
-  ) ->> 'operationId'
-)::uuid;
+  )
+  into v_result
+  from account_lifecycle_smoke_ids;
+
+  update account_lifecycle_smoke_ids
+  set disable_operation_id = (v_result ->> 'operationId')::uuid,
+      disable_result = v_result;
+
+  if (v_result #>> '{revocationSummary,businessRoleAssignments}')::integer <> 1 then
+    raise exception 'Lifecycle result omitted Business Role revocation count';
+  end if;
+end;
+$$;
 
 select public.fail_user_account_lifecycle(
   (select admin_id from account_lifecycle_smoke_ids),
@@ -177,6 +230,18 @@ begin
   ) then
     raise exception 'Direct grants remained active';
   end if;
+  if not exists (
+    select 1
+    from public.principal_role_assignments assignment_row
+    where assignment_row.principal_id = (
+      select target_id from account_lifecycle_smoke_ids
+    )
+      and assignment_row.status = 'REVOKED'
+      and assignment_row.revoked_at is not null
+      and assignment_row.revoked_reason is not null
+  ) then
+    raise exception 'Account disable did not retain revoked Business Role history';
+  end if;
   begin
     update public.user_permission_grants
     set is_active = true
@@ -233,16 +298,124 @@ begin
   ) then
     raise exception 'Reactivation restored direct grants';
   end if;
+  if exists (
+    select 1
+    from public.principal_role_assignments assignment_row
+    where assignment_row.principal_id = (
+      select target_id from account_lifecycle_smoke_ids
+    )
+      and assignment_row.status = 'ACTIVE'
+  ) then
+    raise exception 'Account lifecycle left or restored an active Business Role';
+  end if;
+end;
+$$;
+
+do $$
+declare
+  v_admin_assignment_id uuid;
+  v_denied boolean := false;
+  v_result jsonb;
+begin
+  select assignment_row.id
+  into v_admin_assignment_id
+  from public.principal_role_assignments assignment_row
+  where assignment_row.principal_id = (
+    select admin_id from account_lifecycle_smoke_ids
+  )
+    and assignment_row.status = 'ACTIVE';
+
+  update public.principal_role_assignments assignment_row
+  set status = 'EXPIRED',
+      updated_at = now()
+  where assignment_row.status = 'ACTIVE'
+    and assignment_row.id <> v_admin_assignment_id;
+
+  begin
+    perform public.prepare_user_account_lifecycle(
+      (select backup_admin_id from account_lifecycle_smoke_ids),
+      (select admin_id from account_lifecycle_smoke_ids),
+      'DISABLE',
+      'Không được vô hiệu hóa rollout operator cuối cùng',
+      gen_random_uuid()
+    );
+  exception
+    when sqlstate '55000' then v_denied := true;
+  end;
+  if not v_denied then
+    raise exception 'Last durable rollout operator disable unexpectedly succeeded';
+  end if;
+
+  if not exists (
+    select 1
+    from public.users user_row
+    where user_row.id = (select admin_id from account_lifecycle_smoke_ids)
+      and user_row.role = 'ADMIN'
+      and user_row.account_status = 'ACTIVE'
+  ) then
+    raise exception 'Failed rollout-operator disable did not roll back atomically';
+  end if;
+
+  insert into public.principal_role_assignments (
+    principal_type,
+    principal_id,
+    role_template_id,
+    scope_type,
+    scope_id,
+    starts_at,
+    status,
+    assigned_reason
+  )
+  select 'user', backup_admin_id, role_row.id, 'global', '*', now(), 'ACTIVE',
+         'Lifecycle smoke backup rollout operator assignment'
+  from account_lifecycle_smoke_ids
+  join public.role_permission_templates role_row
+    on role_row.code = 'PERMISSION_ADMIN';
+
+  v_result := public.prepare_user_account_lifecycle(
+    (select backup_admin_id from account_lifecycle_smoke_ids),
+    (select admin_id from account_lifecycle_smoke_ids),
+    'DISABLE',
+    'Vô hiệu hóa sau khi có rollout operator dự phòng',
+    gen_random_uuid()
+  );
+
+  if v_result #>> '{revocationSummary,businessRoleAssignments}' <> '1'
+    or not exists (
+      select 1
+      from public.users user_row
+      where user_row.id = (select admin_id from account_lifecycle_smoke_ids)
+        and user_row.account_status = 'DISABLED'
+    )
+  then
+    raise exception 'Admin disable did not use backup rollout continuity';
+  end if;
 end;
 $$;
 
 reset role;
 delete from public.permission_audit_events
-where target_user_id in (select target_id from account_lifecycle_smoke_ids);
+where target_user_id in (
+  select target_id from account_lifecycle_smoke_ids
+  union all
+  select admin_id from account_lifecycle_smoke_ids
+);
+delete from public.principal_role_assignments
+where principal_id in (
+  select target_id from account_lifecycle_smoke_ids
+  union all
+  select admin_id from account_lifecycle_smoke_ids
+  union all
+  select backup_admin_id from account_lifecycle_smoke_ids
+);
 delete from public.user_permission_grants
 where user_id in (select target_id from account_lifecycle_smoke_ids);
 delete from app_private.user_account_operations
-where target_user_id in (select target_id from account_lifecycle_smoke_ids);
+where target_user_id in (
+  select target_id from account_lifecycle_smoke_ids
+  union all
+  select admin_id from account_lifecycle_smoke_ids
+);
 delete from public.users
 where id in (
   select admin_id from account_lifecycle_smoke_ids

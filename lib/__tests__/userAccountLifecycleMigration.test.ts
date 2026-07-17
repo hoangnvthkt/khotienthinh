@@ -11,6 +11,14 @@ const migration = files.length === 1
   : '';
 const normalized = migration.replace(/\s+/g, ' ').trim();
 
+const lifecycleIntegrationFiles = readdirSync(migrationsDir)
+  .filter(file => file.endsWith('_authorization_account_lifecycle_integration.sql'))
+  .sort();
+const lifecycleIntegration = lifecycleIntegrationFiles.length === 1
+  ? readFileSync(join(migrationsDir, lifecycleIntegrationFiles[0]), 'utf8')
+  : '';
+const combinedLifecycleSql = `${migration}\n${lifecycleIntegration}`;
+
 describe('user account lifecycle operations migration', () => {
   it('has one migration and a private idempotent operation ledger', () => {
     expect(files).toHaveLength(1);
@@ -72,5 +80,11 @@ describe('user account lifecycle operations migration', () => {
     expect(normalized).toMatch(/account_operation_status = 'AUTH_RETRY'/i);
     expect(normalized).toMatch(/status <> 'COMPLETED'/i);
     expect(normalized).toMatch(/old\.account_operation_status is distinct from new\.account_operation_status/i);
+  });
+
+  it('composes the forward Business Role lifecycle integration', () => {
+    expect(lifecycleIntegrationFiles).toHaveLength(1);
+    expect(combinedLifecycleSql).toMatch(/principal_role_assignments/i);
+    expect(combinedLifecycleSql).toMatch(/businessRoleAssignments/i);
   });
 });

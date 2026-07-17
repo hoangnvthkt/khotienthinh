@@ -25,6 +25,14 @@ const commandsSql = commandsFiles.length === 1
   : '';
 const commandsNormalized = commandsSql.replace(/\s+/g, ' ').trim();
 
+const lifecycleIntegrationFiles = readdirSync(dir)
+  .filter(file => file.endsWith('_authorization_account_lifecycle_integration.sql'))
+  .sort();
+const lifecycleIntegrationSql = lifecycleIntegrationFiles.length === 1
+  ? readFileSync(join(dir, lifecycleIntegrationFiles[0]), 'utf8')
+  : '';
+const lifecycleIntegrationNormalized = lifecycleIntegrationSql.replace(/\s+/g, ' ').trim();
+
 describe('authorization Business Role foundation migration', () => {
   it('has one forward migration with risk metadata', () => {
     expect(files).toHaveLength(1);
@@ -134,5 +142,15 @@ describe('authorization governance commands migration', () => {
     expect(commandsNormalized).not.toMatch(/delete from public\.user_permission_grants/i);
     expect(commandsNormalized).toMatch(/direct_grant_requires_expiry/i);
     expect(commandsNormalized).toMatch(/app_private\.assert_and_record_sod_warnings/i);
+  });
+});
+
+describe('authorization account lifecycle integration migration', () => {
+  it('revokes Business Roles on disable without restoring them on reactivate', () => {
+    expect(lifecycleIntegrationFiles).toHaveLength(1);
+    expect(lifecycleIntegrationNormalized).toMatch(/create trigger trg_users_revoke_business_roles_on_disable/i);
+    expect(lifecycleIntegrationNormalized).toMatch(/update public\.principal_role_assignments.*status = 'REVOKED'/is);
+    expect(lifecycleIntegrationNormalized).toMatch(/businessRoleAssignments/i);
+    expect(lifecycleIntegrationNormalized).not.toMatch(/update public\.principal_role_assignments.*set status = 'ACTIVE'/is);
   });
 });
