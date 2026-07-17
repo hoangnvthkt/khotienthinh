@@ -10,6 +10,10 @@ const migration = files.length === 1
   ? readFileSync(join(migrationsDir, files[0]), 'utf8')
   : '';
 const normalized = migration.replace(/\s+/g, ' ').trim();
+const surfaceSnapshot = readFileSync(
+  join(process.cwd(), 'supabase', 'tests', 'active_actor_surface_snapshot.sql'),
+  'utf8',
+);
 
 describe('active actor account status migration', () => {
   it('has exactly one generated migration and no external transaction wrapper', () => {
@@ -51,6 +55,13 @@ describe('active actor account status migration', () => {
     expect(normalized).toMatch(/as restrictive for all to authenticated/i);
     expect(normalized).toMatch(/n\.nspname = 'public'/i);
     expect(normalized).toMatch(/storage.*objects/i);
+  });
+
+  it('keeps the Cloud surface snapshot regex valid for PostgreSQL strings', () => {
+    expect(surfaceSnapshot).toContain('is_admin\\(');
+    expect(surfaceSnapshot).toContain('is_module_admin\\(');
+    expect(surfaceSnapshot).not.toContain('is_admin\\\\(');
+    expect(surfaceSnapshot).not.toContain('is_module_admin\\\\(');
   });
 
   it('removes ordinary authenticated hard-delete access to public.users', () => {

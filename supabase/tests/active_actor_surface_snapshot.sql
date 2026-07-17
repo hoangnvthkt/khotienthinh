@@ -20,7 +20,7 @@ function_rows as (
     jsonb_build_object(
       'authenticated_execute', has_function_privilege('authenticated', p.oid, 'EXECUTE'),
       'active_chain', lower(pg_get_functiondef(p.oid)) ~
-        'current_app_user_id|is_admin\\(|is_module_admin\\(|has_permission|can_access_module'
+        'current_app_user_id|is_admin\(|is_module_admin\(|has_permission|can_access_module'
     ) as metadata
   from pg_proc p
   join pg_namespace n on n.oid = p.pronamespace
