@@ -527,11 +527,33 @@ URLs, API keys or service-role values in this file.
   boundary was reverted immediately. No service-role/direct-SQL grant mutation,
   rollout-flag mutation, Permission Admin regrant or resolver enablement was
   performed.
+- After the operator approved continuing with every principal that could pass
+  cleanly, the remaining principals were previewed sequentially in bounded
+  groups without accepting any warning. Two further clean principals were
+  saved through the governed UI, adding 72 approved rows and two audit events;
+  every warned principal remained unsaved.
+- At `2026-07-18T14:54:12+07:00`, cumulative Task 4 evidence showed 103 active
+  sensitive rows across ten principals, exactly ten regrant audit events, zero
+  active key outside the approved manifest and zero wrong-cutoff row. The
+  2,177-row non-sensitive fingerprint remained
+  `7b6aa5192833101df63d74cd813eb510`; active Business Role assignments,
+  responsibility slots and app assignments remained `2`, `3` and `5`; the
+  durable rollout-operator count remained `1`; and all rollout flags remained
+  `false`.
+- All 12 remaining approved principals, covering 318 approved rows, produced
+  one SoD warning each. A read-only eligibility check found zero active Auditor
+  other than the current actor who can serve as an independent control owner.
+  The backend therefore cannot accept these warnings under the current
+  authorization state. Completing Task 4 now requires a separately approved,
+  governed appointment of an independent Auditor/control owner, followed by a
+  fresh preview of all 12 principals. No Auditor assignment was inferred or
+  created in this maintenance task.
 
 ## Resolver enablement canary
 
-- Status: **Blocked before flag mutation by 467 sensitive direct grants without
-  expiry. The authenticated negative-actor canary is complete.**
+- Status: **Blocked before flag mutation by 318 approved regrant rows whose 12
+  principals require SoD warning acceptance and currently have no eligible
+  independent Auditor/control owner.**
 - Enable the resolver first while the other two cutoffs remain disabled. Verify
   source explanations, scope/expiry behavior and adjacent-action denials with
   disposable principals before advancing.
