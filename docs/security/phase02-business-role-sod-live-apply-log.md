@@ -616,6 +616,29 @@ URLs, API keys or service-role values in this file.
   remains inactive as an effective source; current authorization evidence still
   comes from the temporary Direct bridge only.
 
+## Task 3 readiness prerequisite — read-only preflight
+
+- At `2026-07-18T22:03:44+07:00`, before any readiness migration or Cloud
+  smoke, linked Cloud read-only evidence reconfirmed the immutable Task 3
+  baseline: source `467 = 421 REGRANT + 46 DROP`; active sensitive grants
+  `103` across `10` principals; pending approved rows `318` across `12`
+  principals; zero sensitive null-expiry and zero active-sensitive rows outside
+  the source set.
+- The pending set remains blocked by `291` declared rows across exactly `21`
+  permission codes; `27` rows are already verified. All `12` pending
+  principals remain blocked, so no preview or Save was attempted.
+- Active non-sensitive grants remain `2179` with fingerprint
+  `632d0ce644dcec52126eabf7b44909ca`; Audit-capable actors remain `2`; active
+  Business Role assignments remain `3`; active warning acceptances remain `0`;
+  and all four rollout flags remain `false`.
+- Required migrations `20260718092455` and `20260718123119` remain applied.
+  The candidate Material smoke has SHA-256
+  `35692118cdf689ea473cbbd3681322f33b779bd92347330245195bb06f5ee48a`
+  at Git commit `7760d700082cac3ab7ef829ef35d98fccc26738b`.
+- This is read-only evidence only. Cloud Gate A is still required before the
+  smoke may execute inside `BEGIN`/`ROLLBACK`; it does not authorize creating,
+  applying, or repairing a migration.
+
 ## Resolver enablement canary
 
 - Status: **Pending behind the 318 approved regrant rows whose 12 principals
