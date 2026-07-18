@@ -678,6 +678,17 @@ URLs, API keys or service-role values in this file.
   `13` verified, zero warning acceptances and zero enabled hardening flags;
   neither forward migration is present in remote history. The smoke fixtures
   are corrected locally for a new, separately approved Cloud gate.
+- Cloud Gate A4 ran the corrected smoke with both forward guards in one linked
+  rollback-only transaction. Material Request and PO completed their intended
+  allows plus scope, workflow-state and adjacent-action denials. The smoke then
+  stopped at `project.custom_material.approve incorrectly bypassed workflow
+  state`: the Custom Material handler accepted `draft -> approved`.
+- Post-Gate-A4 read-only evidence remained `2282` active Direct Grants, `103`
+  sensitive grants, readiness `229` declared / `59` legacy / `13` verified,
+  zero warning acceptances and zero enabled hardening flags. The two forward
+  guard migrations remain absent from remote history. No principal preview,
+  Save, readiness promotion, migration-history repair, or rollout-flag change
+  occurred.
 
 ## Resolver enablement canary
 

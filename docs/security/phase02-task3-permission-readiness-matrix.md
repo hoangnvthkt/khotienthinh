@@ -21,10 +21,10 @@ negative evidence is added and passes. `MISMATCH` and `BLOCKED` both remain
 | Permission code | Backend entry point | Intended allow | Scope denial | State/ownership denial | Adjacent-action denial | Disposition |
 | --- | --- | --- | --- | --- | --- | --- |
 | `project.contract.approve` | missing | catalog-only smoke | missing | missing | missing | `BLOCKED` |
-| `project.custom_material.approve` | `public.transition_custom_material_request_status(...)` | `phase3_material_permissions_smoke.sql` | missing | missing | missing | `CANDIDATE` |
+| `project.custom_material.approve` | `public.transition_custom_material_request_status(...)` | Cloud Gate A4 passed intended allow | Cloud Gate A4 passed wrong-project denial | **Cloud Gate A4 failed:** `draft -> approved` was allowed | missing | `BLOCKED` |
 | `project.daily_log.confirm` | missing | missing | missing | missing | missing | `BLOCKED` |
-| `project.material_po.approve` | `public.transition_project_purchase_order_status(...)` | Cloud Gate A2 passed intended allow | Cloud Gate A2 passed wrong-project denial | **Cloud Gate A2 failed:** `in_transit -> confirmed` was allowed | existing Approve-to-Receive denial | `BLOCKED` |
-| `project.material_request.approve` | `public.transition_project_material_request_status(...)` | Cloud Gate A2 passed intended allow | Cloud Gate A2 passed wrong-project denial | guarded locally: only `PENDING -> APPROVED` | partial Create-to-Submit denial | `CANDIDATE` |
+| `project.material_po.approve` | `public.transition_project_purchase_order_status(...)` | Cloud Gate A4 passed intended allow | Cloud Gate A4 passed wrong-project denial | Cloud Gate A4 passed `in_transit -> confirmed` denial | Cloud Gate A4 passed Approve-to-Receive denial | `CANDIDATE` |
+| `project.material_request.approve` | `public.transition_project_material_request_status(...)` | Cloud Gate A4 passed intended allow | Cloud Gate A4 passed wrong-project denial | Cloud Gate A4 passed `DRAFT -> APPROVED` denial | Cloud Gate A4 passed Create-to-Submit denial | `CANDIDATE` |
 | `project.material_request.confirm` | modern handler uses `project.material_request.confirm_fulfillment` | mismatched catalog code | missing | missing | missing | `MISMATCH` |
 | `project.material_request.verify` | missing | missing | missing | missing | missing | `BLOCKED` |
 | `project.payment.approve` | missing | catalog-only smoke | missing | missing | missing | `BLOCKED` |
@@ -81,3 +81,15 @@ PO handler accepted `in_transit -> confirmed`. This keeps the PO code
 confirmed zero enabled rollout flags, unchanged readiness totals
 (`229` declared, `59` legacy, `13` verified), `103` active sensitive grants,
 and no remote history entry for the forward guard migration.
+
+## Cloud Gate A4 Result
+
+After correction of the PO approval fixtures, the linked transaction loaded
+both forward state guards and ran the Material smoke before rolling back. The
+Material Request and PO approval checks completed, including their intended
+allows, wrong-project denials, state denials, and adjacent-action denials. The
+smoke then stopped at `project.custom_material.approve incorrectly bypassed
+workflow state`: the current Custom Material handler accepted `draft ->
+approved`. All three codes remain `declared`; no readiness promotion is
+unlocked until Custom Material has an approved forward guard and a passing
+rollback-only smoke.
