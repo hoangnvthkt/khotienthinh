@@ -39,7 +39,7 @@
 - Consumes: trigger `app_private.prevent_users_privilege_self_update()` đã gắn với `public.users`, `public.is_admin()`, `public.current_app_user_id()` và lifecycle GUC hiện có.
 - Produces: đúng một migration suffix `_auth_profile_sync_guard_forward_fix.sql`, định nghĩa hiệu lực mới của `app_private.prevent_users_privilege_self_update()`.
 
-- [ ] **Step 1: Tạo static contract trước migration**
+- [x] **Step 1: Tạo static contract trước migration**
 
 Tạo `lib/__tests__/authProfileSyncGuardForwardFixMigration.test.ts` với toàn bộ nội dung:
 
@@ -109,7 +109,7 @@ describe('auth profile sync guard forward-fix migration', () => {
 });
 ```
 
-- [ ] **Step 2: Chạy test để xác nhận RED đúng nguyên nhân**
+- [x] **Step 2: Chạy test để xác nhận RED đúng nguyên nhân**
 
 Run:
 
@@ -119,7 +119,7 @@ npm test -- lib/__tests__/authProfileSyncGuardForwardFixMigration.test.ts
 
 Expected: FAIL tại `expect(migrationFiles).toHaveLength(1)` với received length `0`. Nếu lỗi vì TypeScript, import hoặc regex thì sửa test trước; không tạo migration để che lỗi test.
 
-- [ ] **Step 3: Tạo migration rỗng bằng CLI**
+- [x] **Step 3: Tạo migration rỗng bằng CLI**
 
 Run:
 
@@ -132,7 +132,7 @@ printf '%s\n' "$FIX_MIGRATION"
 
 Expected: CLI tạo đúng một file timestamped; biến `FIX_MIGRATION` chứa đúng một path. Không chạy tiếp nếu có zero hoặc nhiều hơn một match.
 
-- [ ] **Step 4: Thêm định nghĩa function hợp nhất tối thiểu**
+- [x] **Step 4: Thêm định nghĩa function hợp nhất tối thiểu**
 
 Ghi đúng nội dung sau vào file do CLI tạo:
 
@@ -195,7 +195,7 @@ revoke all on function app_private.prevent_users_privilege_self_update()
   from public, anon, authenticated;
 ```
 
-- [ ] **Step 5: Chạy focused GREEN và regression contracts liền kề**
+- [x] **Step 5: Chạy focused GREEN và regression contracts liền kề**
 
 Run:
 
@@ -226,7 +226,7 @@ Expected: sáu test files PASS. Test lịch sử `userPrivilegeGuardMigration.te
 - Consumes: migration Task 1 và các database roles `authenticated`, `service_role` trên linked Cloud; nhánh `session_user = 'supabase_auth_admin'` được kiểm tra bằng function definition tại rollback gate và bằng Auth canary thật sau apply.
 - Produces: smoke có checkpoint `auth_profile_sync_guard_forward_fix_smoke_passed`, chạy an toàn bên trong transaction rollback.
 
-- [ ] **Step 1: Tạo SQL smoke kiểm tra definition, behavior và ACL**
+- [x] **Step 1: Tạo SQL smoke kiểm tra definition, behavior và ACL**
 
 Tạo `supabase/tests/auth_profile_sync_guard_forward_fix_smoke.sql` với toàn bộ nội dung:
 
@@ -355,7 +355,7 @@ $$;
 select 'auth_profile_sync_guard_forward_fix_smoke_passed' as checkpoint;
 ```
 
-- [ ] **Step 2: Chạy repository verification không cần local Supabase**
+- [x] **Step 2: Chạy repository verification không cần local Supabase**
 
 Run:
 
@@ -377,7 +377,7 @@ git diff --check -- \
 
 Expected: focused tests và TypeScript exit `0`; `git diff --check` không có output. Không chạy SQL smoke trực tiếp vì user không dùng local Supabase.
 
-- [ ] **Step 3: Review candidate chỉ gồm ba file implementation**
+- [x] **Step 3: Review candidate chỉ gồm ba file implementation**
 
 Run:
 
@@ -394,7 +394,7 @@ git diff --cached
 
 Expected: cached name list có đúng ba path trên; không có sửa đổi Edge Function, UI, permission registry, grant, rollout setting hoặc migration cũ.
 
-- [ ] **Step 4: Commit candidate trước Cloud verification**
+- [x] **Step 4: Commit candidate trước Cloud verification**
 
 Run:
 
@@ -421,7 +421,7 @@ Expected: commit chứa đúng ba file; hai tài liệu Phase 2 đang dirty từ
 - Consumes: immutable candidate commit Task 2, linked Supabase project hiện có trong `supabase/.temp/project-ref` và credentials từ `.env`/CLI profile.
 - Produces: bằng chứng RED trên committed Cloud, GREEN trong một transaction rollback, post-rollback fingerprint và checkpoint xin phép apply.
 
-- [ ] **Step 1: Reconfirm CLI, link, candidate và migration history**
+- [x] **Step 1: Reconfirm CLI, link, candidate và migration history**
 
 Run:
 
@@ -438,7 +438,7 @@ git status --short
 
 Expected: CLI reports `2.95.6`; version mới chưa có remote applied marker; only known documentation changes may remain dirty. Không repair hoặc apply ở bước này.
 
-- [ ] **Step 2: Capture read-only preflight without exposing identities**
+- [x] **Step 2: Capture read-only preflight without exposing identities**
 
 Run:
 
@@ -449,28 +449,31 @@ select
   position(
     'session_user = ''supabase_auth_admin'''
     in pg_get_functiondef('app_private.prevent_users_privilege_self_update()'::regprocedure)
-  ) > 0 as auth_admin_bypass_present;
-select key, value
-from app_private.permission_hardening_settings
-where key in (
-  'business_role_resolver_enabled',
-  'legacy_governance_fallback_disabled',
-  'system_admin_business_approval_bypass_disabled'
-)
-order by key;
-select count(*) as sensitive_null_expiry_grants
-from public.user_permission_grants grant_row
-join public.permission_registry permission_row
-  on permission_row.code = grant_row.permission_code
-where grant_row.is_active
-  and grant_row.expires_at is null
-  and permission_row.risk_level = 'sensitive';
+  ) > 0 as auth_admin_bypass_present,
+  (
+    select jsonb_object_agg(setting_row.key, setting_row.value order by setting_row.key)
+    from app_private.permission_hardening_settings setting_row
+    where setting_row.key in (
+      'business_role_resolver_enabled',
+      'legacy_governance_fallback_disabled',
+      'system_admin_business_approval_bypass_disabled'
+    )
+  ) as rollout_flags,
+  (
+    select count(*)
+    from public.user_permission_grants grant_row
+    join public.permission_actions permission_row
+      on permission_row.permission_code = grant_row.permission_code
+    where grant_row.is_active
+      and grant_row.expires_at is null
+      and permission_row.risk_level = 'sensitive'
+  ) as sensitive_null_expiry_grants;
 "
 ```
 
 Expected: `auth_admin_bypass_present = false`, ba flag đều `false`, inventory sensitive null-expiry vẫn là `467`. Chỉ ghi aggregate/fingerprint vào log.
 
-- [ ] **Step 3: Chạy RED smoke trên committed Cloud trong rollback**
+- [x] **Step 3: Chạy RED smoke trên committed Cloud trong rollback**
 
 Run:
 
@@ -480,7 +483,7 @@ npx supabase db query --linked --agent=no "$(node -e "const fs=require('fs'); co
 
 Expected: FAIL với `Missing narrow supabase_auth_admin bypass`. Vì transaction rollback, không có fixture hoặc schema change tồn tại.
 
-- [ ] **Step 4: Chạy migration + smoke GREEN trong cùng transaction rollback**
+- [x] **Step 4: Chạy migration + smoke GREEN trong cùng transaction rollback**
 
 Run:
 
@@ -489,9 +492,9 @@ FIX_MIGRATION="$(rg --files supabase/migrations | rg '_auth_profile_sync_guard_f
 npx supabase db query --linked --agent=no "$(node -e "const fs=require('fs'); const files=process.argv.slice(1); const sql=files.map(file=>fs.readFileSync(file,'utf8')).join(' '); process.stdout.write(\"begin; set local lock_timeout='5s'; set local statement_timeout='120s'; \"+sql+\" select 'auth_profile_sync_guard_forward_fix_rollback_passed' as checkpoint; rollback;\");" "$FIX_MIGRATION" supabase/tests/auth_profile_sync_guard_forward_fix_smoke.sql)"
 ```
 
-Expected: xuất hiện cả `auth_profile_sync_guard_forward_fix_smoke_passed` và `auth_profile_sync_guard_forward_fix_rollback_passed`, sau đó `ROLLBACK`; exit `0`.
+Expected: CLI hiển thị checkpoint cuối `auth_profile_sync_guard_forward_fix_rollback_passed` và exit `0`. Management API chỉ render result set cuối; việc tới được checkpoint này chứng minh smoke trước đó đã pass. SQL kết thúc bằng `ROLLBACK`, và Step 5 phải chứng minh fingerprint/history quay về preflight.
 
-- [ ] **Step 5: Prove rollback restored the original Cloud definition and history**
+- [x] **Step 5: Prove rollback restored the original Cloud definition and history**
 
 Run lại query Step 2 và:
 
@@ -503,7 +506,7 @@ npx supabase migration list --linked | rg "$FIX_VERSION"
 
 Expected: `guard_hash` bằng preflight hash, `auth_admin_bypass_present = false`, ba flag vẫn `false`, sensitive count vẫn `467`; version chỉ local/pending, không applied remote.
 
-- [ ] **Step 6: Record rollback-only evidence and commit documentation**
+- [x] **Step 6: Record rollback-only evidence and commit documentation**
 
 Thêm vào `docs/security/phase02-business-role-sod-live-apply-log.md`, thay commit SHA bằng output chính xác của `git rev-parse HEAD`:
 

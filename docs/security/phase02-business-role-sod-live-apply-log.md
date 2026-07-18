@@ -2,9 +2,10 @@
 
 ## Current status
 
-- Status: **Cloud schema/history applied; all rollout flags off; resolver canary
-  blocked pending sensitive-grant expiry remediation**
-- Updated at: `2026-07-17T17:26:40+07:00`
+- Status: **Cloud schema/history applied; all rollout flags off; Auth profile
+  sync forward-fix passed rollback-only verification and is waiting for an
+  explicit one-version apply approval**
+- Updated at: `2026-07-18T08:25:49+07:00`
 - Branch: `refactor/module-du-an-v1`
 - Reviewed rollout commit: `903b29740b1544787ab09e7c223229c02b2b5346`
 - Implementation candidate commit: `bf31d23cdf5c49152a99255ad161d997b9733bfc`
@@ -141,7 +142,7 @@ URLs, API keys or service-role values in this file.
   the schema cache, `authenticated` has EXECUTE, and `anon`/`PUBLIC` do not. An
   anonymous probe now receives the expected `42501` denial instead of a missing
   function error. Authenticated operator retry remains the functional check.
-- Cutover blocker: 485 active direct-grant rows across 23 principals and 30
+- Cutover blocker: 467 active direct-grant rows across 23 principals and 26
   permission codes are now classified `sensitive` but have no expiry; expired
   rows are zero. These grants were not revoked or rewritten. A Permission Admin
   must explicitly revoke or reissue them with reason and future expiry before
@@ -151,10 +152,112 @@ URLs, API keys or service-role values in this file.
   compatibility resolver posture. Schema or data corrections use a forward-fix
   migration; governance and audit history is never deleted.
 
+## Post-apply checkpoint audit and remediation inventory
+
+- A fresh read-only linked-Cloud audit at `2026-07-17T22:51:59+07:00`
+  reconfirmed all seven intended Phase 2 versions aligned in local and remote
+  migration history. No migration was reapplied or repaired during this audit.
+- All four governance tables still have RLS enabled. Thirteen key public Phase
+  2 RPC names each resolve to exactly one overload; `PUBLIC`/`anon` executable
+  RPC rows, `PUBLIC`/`anon` governance-table ACL rows, authenticated direct-write
+  governance-table ACL rows and public RPC actor/caller parameters are all zero.
+- All three rollout flags remain `false`. One active legacy Admin has both
+  bootstrap roles, the durable rollout-operator count is one, and active role
+  assignments on disabled accounts remain zero.
+- The sensitive direct-grant snapshot is 467 active rows with null expiry across
+  23 principals and 26 permission codes; active rows with a past expiry are
+  zero. Scope distribution is 235 construction-site rows over three sites, 230
+  project rows over two projects and two global rows. Per-principal exposure is
+  2–50 rows, average 20.3.
+- The previous 485-row/30-code snapshot is retained only as historical evidence.
+  The database changed between snapshots; this checkpoint does not infer or
+  record principal identities or an unverified reason for the reduction.
+- Highest-volume affected action groups include Material Request approve (25),
+  Weekly Progress verify (25), Daily Log verify (24), Payment mark-paid/confirm/
+  verify (22 each), and Daily Log approve (19). This is operational authorization
+  data, not safe for blind bulk expiry or revocation.
+- Remediation is gated per principal: capture the complete current direct-grant
+  draft, classify each sensitive source as retain or revoke with a business
+  owner, preview the full replacement through the governed backend command,
+  require a future expiry and reason for retained sensitive grants, then verify
+  sources and adjacent-action denial before moving to the next principal.
+- No production grant, Business Role assignment, responsibility slot, rollout
+  flag or migration-history row was changed at this checkpoint.
+- At `2026-07-17T22:59:10+07:00`, the operator approved a 90-day expiry horizon
+  and use of a disposable authenticated principal for the Data API canary. The
+  environment exposes only the project URL, anon key, Management API access
+  token and database password; it contains no user password, service-role key,
+  E2E credential or stored browser session. Browser discovery returned no
+  available session. To preserve JWT-bound actor evidence, the checkpoint did
+  not create an Auth user through SQL, synthesize request JWT claims or use the
+  Management API as a substitute for an authenticated Permission Admin.
+- At that checkpoint, state-changing remediation remained blocked until an
+  active Permission Admin session became available through the application.
+  Secrets or access tokens must not be copied into this log or chat.
+- At `2026-07-17T23:37:04+07:00`, an authenticated Chrome session for Admin
+  Hoàng loaded the governance UI successfully. The page showed both active
+  bootstrap assignments, `SYSTEM_ADMIN` and `PERMISSION_ADMIN`, and returned
+  effective-permission sources through the Cloud Data API.
+- The authenticated invalid-payload canary submitted a sensitive direct-grant
+  preview without its required expiry. PostgREST returned code `23514`, message
+  `Invalid direct permission grant`, and null `details`/`hint`; no SQL,
+  relation, function, schema or principal identifier leaked in the envelope.
+- The exact no-op direct-grant command was then previewed and submitted twice
+  for an active principal with zero direct grants. Both calls returned cleanly.
+  A linked-Cloud before/after check remained at zero active direct grants and
+  zero `direct_permission_grants_changed` audit events for that principal, so
+  the retry produced neither data churn nor duplicate audit evidence.
+- A negative call to the override command from the current Admin session could
+  not serve as the unauthorized canary because legacy fallback is still on and
+  currently resolves the override capability for that Admin. The malformed
+  evidence was nevertheless rejected before mutation with code `22023`,
+  message `Invalid override control evidence`, and null `details`/`hint`.
+- Two attempts to create a zero-right disposable account through the existing
+  `create-user` Edge Function were rejected with the public safe message
+  `Không thể xử lý yêu cầu tài khoản.` The UI did not persist a profile; a
+  linked-Cloud check found zero matching canary profiles. Temporary local
+  diagnostic logging was reverted, and the working tree contains no code
+  change from the canary.
+- The read-only Auth-log trace identified the failure boundary: GoTrue's
+  `/admin/users` transaction reached the `public.users` sync trigger and was
+  rejected by `app_private.prevent_users_privilege_self_update()` with SQLSTATE
+  `42501` (`Only admins can update other user rows`). Migration
+  `20260716103946` had allowed the trusted `supabase_auth_admin` session, but
+  migration `20260716170745` later replaced that guard with a lifecycle-command
+  exception only. This is the reproduced root cause; no fix was applied.
+- The remaining authenticated negative-actor case therefore requires either a
+  working disposable-account path or a browser session for an existing active
+  non-admin account. No access/refresh token was inspected or copied. All three
+  rollout flags remain `false`; the sensitive-null-expiry inventory remains
+  467 rows and no production grant was remediated in this checkpoint.
+
+## Auth profile sync guard forward-fix
+
+- Verified at `2026-07-18T08:25:49+07:00` against immutable candidate commit
+  `f350b740ca08a9a0d95be033cd8076c998968681` and migration version
+  `20260718012151`.
+- The focused repository suite passed six test files and 26 tests; TypeScript
+  exited `0`. The pre-implementation repository baseline passed all 168 test
+  files and 984 tests.
+- Committed-Cloud RED reproduced `Missing narrow supabase_auth_admin bypass`
+  before any candidate SQL was applied.
+- Migration plus definition, normal-actor, lifecycle-gated `service_role` and
+  ACL smoke passed in one linked transaction. The final checkpoint was
+  `auth_profile_sync_guard_forward_fix_rollback_passed`; the transaction ended
+  in explicit `ROLLBACK`.
+- The post-rollback guard hash matched the preflight value
+  `fdcc839d7f78836c262f2b14d4a0e53c`; the Auth-admin bypass remained absent and
+  migration version `20260718012151` remained local-only/unapplied.
+- All three rollout flags remained `false`; the sensitive-null-expiry inventory
+  remained 467. No grant, role assignment, profile or migration-history row was
+  changed by this verification.
+- Status: **Waiting for explicit operator approval to apply and repair exactly
+  one forward-fix version.**
+
 ## Resolver enablement canary
 
-- Status: **Blocked before flag mutation by 485 sensitive direct grants without
-  expiry and by the pending authenticated Data API canary.**
+- Status: **Blocked before flag mutation by 467 sensitive direct grants without
+  expiry and by the remaining authenticated negative-actor canary.**
 - Enable the resolver first while the other two cutoffs remain disabled. Verify
   source explanations, scope/expiry behavior and adjacent-action denials with
   disposable principals before advancing.
