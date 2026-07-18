@@ -1,5 +1,11 @@
 # Thiết kế forward-fix command hoàn thiện Auth profile
 
+> **Superseded 2026-07-18:** Không triển khai command/RPC trong tài liệu này.
+> Operator đã duyệt phương án tối thiểu tại
+> `docs/superpowers/plans/2026-07-18-vioo-auth-profile-creation-command-forward-fix.md`:
+> protected profile write dùng caller Admin RLS và một migration hẹp giới hạn
+> Auth metadata. Tài liệu dưới đây chỉ giữ làm lịch sử quyết định.
+
 Ngày: 2026-07-18
 Trạng thái: Approved by operator on 2026-07-18
 Phạm vi: Loại bỏ lần ghi `public.users` không có command context trong Edge Function `create-user`
