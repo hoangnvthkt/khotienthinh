@@ -12,6 +12,13 @@ export interface PermissionScope {
   scopeId?: string;
 }
 
+export interface LegacyPermissionState {
+  allowedModules: string[];
+  allowedSubModules: Record<string, string[]>;
+  adminModules: string[];
+  adminSubModules: Record<string, string[]>;
+}
+
 export type PermissionRiskLevel = 'normal' | 'important' | 'sensitive';
 
 export type PermissionActionReadiness = 'legacy' | 'declared' | 'enforced' | 'verified';
