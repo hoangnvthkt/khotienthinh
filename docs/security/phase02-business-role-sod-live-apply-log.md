@@ -654,6 +654,20 @@ URLs, API keys or service-role values in this file.
   actions `13`, active warning acceptances `0`, and all four rollout flags
   `false`. No readiness migration was created, applied, or repaired; no
   principal preview or Save was attempted.
+- Explicit Cloud Gate A2 ran the forward
+  Material Request state-guard migration together with the Material smoke in
+  one linked `BEGIN`/`ROLLBACK` transaction. The new guard denied
+  `DRAFT -> APPROVED` as intended, then the smoke stopped at
+  `project.material_po.approve incorrectly bypassed workflow state`: the PO
+  handler accepted `in_transit -> confirmed`. The error rolled back the entire
+  transaction; the forward guard migration remains absent from remote history.
+- Post-Gate-A2 read-only aggregates show `2282` active Direct Grants, `103`
+  active sensitive grants, readiness totals `229` declared / `59` legacy /
+  `13` verified, zero active warning acceptances, and zero enabled hardening
+  flags. Five hardening keys now exist, all `false`; the additional
+  `legacy_fallback_disabled` key is separately tracked configuration drift,
+  not a Gate-A2 mutation. No principal preview, Save, readiness
+  promotion, migration-history repair, or rollout-flag mutation occurred.
 
 ## Resolver enablement canary
 

@@ -23,8 +23,8 @@ negative evidence is added and passes. `MISMATCH` and `BLOCKED` both remain
 | `project.contract.approve` | missing | catalog-only smoke | missing | missing | missing | `BLOCKED` |
 | `project.custom_material.approve` | `public.transition_custom_material_request_status(...)` | `phase3_material_permissions_smoke.sql` | missing | missing | missing | `CANDIDATE` |
 | `project.daily_log.confirm` | missing | missing | missing | missing | missing | `BLOCKED` |
-| `project.material_po.approve` | `public.transition_project_purchase_order_status(...)` | `phase3_material_permissions_smoke.sql` | missing | missing | existing Approve-to-Receive denial | `CANDIDATE` |
-| `project.material_request.approve` | `public.transition_project_material_request_status(...)` | Cloud Gate A passed intended allow | Cloud Gate A passed wrong-project denial | **Cloud Gate A failed:** `DRAFT -> APPROVED` was allowed | partial Create-to-Submit denial | `BLOCKED` |
+| `project.material_po.approve` | `public.transition_project_purchase_order_status(...)` | Cloud Gate A2 passed intended allow | Cloud Gate A2 passed wrong-project denial | **Cloud Gate A2 failed:** `in_transit -> confirmed` was allowed | existing Approve-to-Receive denial | `BLOCKED` |
+| `project.material_request.approve` | `public.transition_project_material_request_status(...)` | Cloud Gate A2 passed intended allow | Cloud Gate A2 passed wrong-project denial | guarded locally: only `PENDING -> APPROVED` | partial Create-to-Submit denial | `CANDIDATE` |
 | `project.material_request.confirm` | modern handler uses `project.material_request.confirm_fulfillment` | mismatched catalog code | missing | missing | missing | `MISMATCH` |
 | `project.material_request.verify` | missing | missing | missing | missing | missing | `BLOCKED` |
 | `project.payment.approve` | missing | catalog-only smoke | missing | missing | missing | `BLOCKED` |
@@ -68,3 +68,16 @@ The three Material candidates require additions to
 the linked Cloud project inside its existing `BEGIN`/`ROLLBACK` wrapper after
 explicit Cloud Gate A approval. Only a passing rollback-only smoke may unlock
 creation of a new forward readiness migration.
+
+## Cloud Gate A2 Result
+
+After explicit approval, the linked Cloud transaction loaded the
+forward Material Request state-guard migration and the Material smoke, then
+rolled back as one unit. Material Request approval passed its intended allow,
+wrong-project denial, and `DRAFT -> APPROVED` denial. The smoke then stopped at
+`project.material_po.approve incorrectly bypassed workflow state`: the current
+PO handler accepted `in_transit -> confirmed`. This keeps the PO code
+`declared` and blocks any readiness promotion. Post-failure aggregate evidence
+confirmed zero enabled rollout flags, unchanged readiness totals
+(`229` declared, `59` legacy, `13` verified), `103` active sensitive grants,
+and no remote history entry for the forward guard migration.
