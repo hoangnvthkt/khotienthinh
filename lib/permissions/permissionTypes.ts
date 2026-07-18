@@ -14,6 +14,8 @@ export interface PermissionScope {
 
 export type PermissionRiskLevel = 'normal' | 'important' | 'sensitive';
 
+export type PermissionActionReadiness = 'legacy' | 'declared' | 'enforced' | 'verified';
+
 export interface PermissionActionDefinition {
   action: string;
   label: string;

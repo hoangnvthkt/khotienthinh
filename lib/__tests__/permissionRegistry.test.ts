@@ -14,6 +14,7 @@ import {
   PROJECT_TAB_PERMISSIONS,
 } from '../projectTabPermissions';
 import { classifyPermissionAction } from '../permissions/permissionRisk';
+import { resolvePermissionActionReadiness } from '../permissions/permissionReadiness';
 
 const scanFiles = (dir: string): string[] => {
   const files: string[] = [];
@@ -89,6 +90,15 @@ describe('permissionRegistry', () => {
           classifyPermissionAction(module.code, action.action),
         );
       }
+    }
+  });
+
+  it('classifies every registered action with an explicit readiness value', () => {
+    for (const action of getAllPermissionActions()) {
+      expect(
+        ['legacy', 'declared', 'enforced', 'verified'],
+        action.permissionCode,
+      ).toContain(resolvePermissionActionReadiness(action));
     }
   });
 
