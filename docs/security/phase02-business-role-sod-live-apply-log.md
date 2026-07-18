@@ -753,6 +753,24 @@ URLs, API keys or service-role values in this file.
   remains zero. No principal preview/Save, grant, rollout-flag mutation, or
   migration-history repair occurred; any history repair is separately owned
   and unapproved.
+- Cloud Gate A10 at `2026-07-18T23:37:33+07:00` applied transition migration
+  `20260718155122` (SHA-256
+  `804728efc3fad0b10738ea8d423fff819ea79354680f11b1e9ac2c56bd7df0ef`) before
+  a savepoint, then ran the Payment/Quantity smoke (SHA-256
+  `2b7fa00ccfcb4195d279f81b9f658f5ea6ea304758372a91817b714cc782de5b`) after
+  that savepoint. Bundle SHA-256 was
+  `e2a0269bfe3b38538b5a3a186b191d2083fe585645013db8dd21cf40e10f8e3f`; the
+  checkpoint `phase02_task3_payment_quantity_readiness_smoke_passed` was
+  reached, all smoke fixture work rolled back to the savepoint, and the outer
+  transaction committed only the runtime objects.
+- Read-only post-apply evidence confirms both transition RPCs and private
+  guards exist, with exact triggers on `payment_certificates` and
+  `quantity_acceptances`. The five promoted codes remain `verified`, Payment
+  Mark Paid remains `declared`, active Direct Grants remain `2282`, and zero
+  hardening flags are enabled. Versions `20260718155122` and `20260718161857`
+  remain absent from migration history. No principal preview/Save, grant,
+  warning-acceptance, rollout-flag, readiness, or history mutation occurred
+  beyond the approved runtime apply.
 
 ## Resolver enablement canary
 

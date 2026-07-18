@@ -180,3 +180,25 @@ enabled. As explicitly scoped, this direct migration apply did not repair
 Supabase migration history: the remote history count for `20260718161857`
 remains zero. No principal preview or Save, grant, or rollout-flag mutation
 occurred. Any migration-history repair remains a separate, unapproved action.
+
+## Cloud Gate A10 Result
+
+At `2026-07-18T23:37:33+07:00`, the linked Cloud transaction applied the
+Payment/Quantity command migration `20260718155122` (SHA-256
+`804728efc3fad0b10738ea8d423fff819ea79354680f11b1e9ac2c56bd7df0ef`), then
+ran its smoke (SHA-256
+`2b7fa00ccfcb4195d279f81b9f658f5ea6ea304758372a91817b714cc782de5b`) after a
+savepoint. The bundle SHA-256 was
+`e2a0269bfe3b38538b5a3a186b191d2083fe585645013db8dd21cf40e10f8e3f` and it
+reached `phase02_task3_payment_quantity_readiness_smoke_passed`. The smoke
+fixture work rolled back to the savepoint before the outer transaction
+committed the runtime objects.
+
+Post-apply read-only evidence confirms both transition RPCs, both private
+workflow guards, and the exact triggers on `payment_certificates` and
+`quantity_acceptances` now exist. The five Payment/Quantity candidate codes
+remain `verified`; `project.payment.mark_paid` remains `declared`; active
+Direct Grants remain `2282`; and zero hardening flags are enabled. Neither
+`20260718155122` nor `20260718161857` has a remote history row yet. No
+principal preview or Save, grant, warning-acceptance, rollout-flag, readiness,
+or migration-history mutation occurred beyond the approved runtime apply.
