@@ -151,6 +151,11 @@ const canOpenLegacyRoute = (
   if ([...allowedSubs, ...adminSubs].some(allowedRoute => routeMatches(allowedRoute, route))) return true;
   if (
     legacyModuleKey === 'WF' &&
+    routeMatches('/wf/instances/:id', route) &&
+    (allowedSubs.includes('/wf') || adminSubs.includes('/wf'))
+  ) return true;
+  if (
+    legacyModuleKey === 'WF' &&
     route.startsWith('/wf/builder/') &&
     (allowedSubs.includes('/wf/templates') || adminSubs.includes('/wf/templates'))
   ) return true;
