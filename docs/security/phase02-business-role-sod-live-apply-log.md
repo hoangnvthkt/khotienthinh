@@ -2,13 +2,14 @@
 
 ## Current status
 
-- Status: **Cloud schema/history applied; all rollout flags off; Auth profile
-  sync forward-fix passed rollback-only verification and is waiting for an
-  explicit one-version apply approval**
-- Updated at: `2026-07-18T08:25:49+07:00`
+- Status: **Cloud schema/history and the approved Auth profile sync forward-fix
+  are applied; the authenticated negative-actor canary passed; all rollout
+  flags remain off; Task 13 Step 5 remains blocked by 467 sensitive grants
+  without expiry**
+- Updated at: `2026-07-18T10:49:12+07:00`
 - Branch: `refactor/module-du-an-v1`
 - Reviewed rollout commit: `903b29740b1544787ab09e7c223229c02b2b5346`
-- Implementation candidate commit: `bf31d23cdf5c49152a99255ad161d997b9733bfc`
+- Implementation candidate commit: `802e6aacc89333e3a3fcac530f909a5d34181fd3`
 - Database migration versions:
   - `20260717084356_authorization_business_role_foundation.sql`
   - `20260717084903_authorization_effective_permission_resolver.sql`
@@ -324,10 +325,49 @@ URLs, API keys or service-role values in this file.
   `create-user`.** The zero-right creation, unauthorized `42501` and lifecycle
   disable canaries remain pending until that approval.
 
+### Applied minimal profile creation forward-fix and authenticated canary
+
+- At `2026-07-18T10:49:12+07:00`, the operator-approved candidate was commit
+  `802e6aacc89333e3a3fcac530f909a5d34181fd3`; migration version
+  `20260718031842` retained SHA-256
+  `40869ea8ba4f844ceb66164006b8c8147c182c0718a5ad731c3c39b337a4b358`.
+- Exactly that migration was applied in an explicit linked transaction. The
+  committed smoke reached `auth_profile_safe_sync_committed_smoke_passed`, and
+  exactly version `20260718031842` was repaired to `applied`. Final linked
+  history shows the local and remote version markers aligned. The committed
+  `public.sync_auth_user_profile()` definition hash is
+  `2247b889645b5d73cf146e9cf98ff3fd`.
+- Exactly the `create-user` Edge Function was deployed. Final Cloud inventory
+  reports version `20`, status `ACTIVE`, with JWT verification still enabled.
+- One zero-right `EMPLOYEE` canary was created through the normal Settings UI.
+  The linked aggregate returned one ACTIVE profile linked to Supabase Auth,
+  zero active direct grants and zero active Business Role assignments.
+- Using that canary's own authenticated session, the Data API call to
+  `preview_direct_grant_replacement` was rejected before mutation with HTTP
+  `403`, SQLSTATE `42501`, message
+  `Authorization administration permission required`, and null `details` and
+  `hint`. No credential, token, Auth ID or profile ID was copied to this log.
+- The canary was then disabled through the standard account-lifecycle modal,
+  not by direct deletion. Final linked inventory shows one DISABLED profile,
+  lifecycle operation status `IDLE`, zero active direct grants and zero active
+  Business Role assignments. A fresh password grant was rejected by Auth with
+  `user_banned`.
+- Fresh post-Cloud verification passed all 170 test files and 993 tests;
+  TypeScript, production build and `git diff --check` exited `0`. The existing
+  large-chunk advisory is unchanged. Security and performance advisors retain
+  their existing warning baselines of 170 and 97 rows respectively.
+- Final read-only Cloud verification shows all three rollout flags remain
+  `false` and the sensitive-null-expiry inventory remains 467. No production
+  grant, Business Role assignment, responsibility assignment or rollout flag
+  was changed by this checkpoint.
+- Status: **The authenticated negative-actor blocker is closed. Task 13 Step 5
+  remains open solely for remediation of the 467 sensitive direct grants with
+  null expiry before resolver enablement.**
+
 ## Resolver enablement canary
 
 - Status: **Blocked before flag mutation by 467 sensitive direct grants without
-  expiry and by the remaining authenticated negative-actor canary.**
+  expiry. The authenticated negative-actor canary is complete.**
 - Enable the resolver first while the other two cutoffs remain disabled. Verify
   source explanations, scope/expiry behavior and adjacent-action denials with
   disposable principals before advancing.
