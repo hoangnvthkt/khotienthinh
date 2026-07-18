@@ -3,6 +3,7 @@ import { Role, User } from '../../types';
 import {
   canPerform,
   canViewModule,
+  canViewRoute,
   getInheritedPermissionCodes,
   getLegacyModuleAssignmentCount,
   isPermissionActionScopeAllowed,
@@ -74,6 +75,26 @@ describe('permissionService', () => {
     expect(canViewModule(user({ allowedModules: ['WMS'] }), 'WMS')).toBe(true);
     expect(canPerform(user({ allowedModules: ['WMS'] }), 'system.wms.view')).toBe(true);
     expect(canPerform(user({ allowedModules: ['WMS'] }), 'system.wms.manage')).toBe(false);
+  });
+
+  it('opens workflow instance details from a legacy allowed submodule grant', () => {
+    expect(canViewRoute(user({
+      allowedSubModules: { WF: ['/wf'] },
+    }), '/wf/instances/instance-1')).toBe(true);
+  });
+
+  it('opens workflow instance details from a legacy admin submodule grant', () => {
+    expect(canViewRoute(user({
+      allowedSubModules: { WF: [] },
+      adminSubModules: { WF: ['/wf'] },
+    }), '/wf/instances/instance-1')).toBe(true);
+  });
+
+  it('does not expose workflow template routes from a legacy workflow list grant', () => {
+    const workflowUser = user({ allowedSubModules: { WF: ['/wf'] } });
+
+    expect(canViewRoute(workflowUser, '/wf/templates')).toBe(false);
+    expect(canViewRoute(workflowUser, '/wf/builder/template-1')).toBe(false);
   });
 
   it('falls back to adminSubModules/adminModules for legacy manage access', () => {
