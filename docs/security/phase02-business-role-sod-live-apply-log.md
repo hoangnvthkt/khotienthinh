@@ -2,12 +2,14 @@
 
 ## Current status
 
-- Status: **Cloud schema/history and the approved Auth profile sync forward-fix
-  are applied; the authenticated negative-actor canary passed; all rollout
-  flags remain off; Task 13 Step 5 remains blocked by 467 sensitive grants
-  without expiry**
-- Updated at: `2026-07-18T10:49:12+07:00`
-- Branch: `refactor/module-du-an-v1`
+- Status: **Phase 02 closure Task 1 is applied: authorization View+Audit
+  readiness is verified; all rollout flags remain off; no user grant, Business
+  Role assignment or rollout flag was changed by this checkpoint. The next
+  gate is the independent control-owner appointment before the remaining
+  warned sensitive regrants.**
+- Updated at: `2026-07-18T19:39:41+07:00`
+- Branch: `main`
+- Phase 02 closure plan commit: `fcbe416e14fae07f20f9e2d14ec14227382a0afe`
 - Reviewed rollout commit: `903b29740b1544787ab09e7c223229c02b2b5346`
 - Implementation candidate commit: `802e6aacc89333e3a3fcac530f909a5d34181fd3`
 - Database migration versions:
@@ -548,6 +550,40 @@ URLs, API keys or service-role values in this file.
   governed appointment of an independent Auditor/control owner, followed by a
   fresh preview of all 12 principals. No Auditor assignment was inferred or
   created in this maintenance task.
+
+## Authorization View+Audit readiness forward migration
+
+- At `2026-07-18T19:39:41+07:00`, Phase 02 closure Task 1 applied exactly
+  migration version `20260718123119_authorization_audit_readiness.sql`
+  (SHA-256 `50210c1e3f31be7e8078047bbc24b7dfabb9c99e6cd0cbe997c36131e44e466a`).
+- Local TDD evidence first proved RED with no matching migration, then GREEN
+  passed the focused suite: three test files, nine tests. `git diff --check`
+  exited `0`.
+- The rollback-only linked Cloud smoke concatenated the migration and
+  `authorization_audit_readiness_smoke.sql` inside `BEGIN`/`ROLLBACK`; it
+  reached checkpoint `authorization_audit_readiness_smoke_passed`. Post-rollback
+  read-only evidence still showed both `system.authorization.view` and
+  `system.authorization.audit` as `declared`, readiness
+  `231 declared / 59 legacy / 11 verified`, active Direct Grants `2280`, and
+  all four rollout flags `false`.
+- After explicit operator approval, the exact migration was applied in one
+  linked transaction and reached checkpoint
+  `authorization_audit_readiness_migration_applied`. Exactly version
+  `20260718123119` was repaired to `applied`, and linked migration history now
+  aligns local and remote for that version. No `db push` was used.
+- Post-apply rollback smoke again reached
+  `authorization_audit_readiness_smoke_passed`. Read-only evidence shows only
+  `system.authorization.view` and `system.authorization.audit` promoted to
+  `verified`; readiness is now `229 declared / 59 legacy / 13 verified`, active
+  Direct Grants remain `2280`, and all four rollout flags remain `false`.
+- The smoke proved an Audit-only fixture can read unrelated authorization audit
+  events while an ungranted fixture cannot; the Audit fixture still cannot
+  insert, update or delete audit rows and cannot manage Business Roles or
+  Direct Grants. Fixture identities and raw payloads were not recorded.
+- No user grant, Business Role assignment, responsibility slot, app assignment
+  or rollout flag was changed by this checkpoint. The temporary Direct
+  View+Audit bridge for an independent control owner remains a separate
+  approval boundary.
 
 ## Resolver enablement canary
 
