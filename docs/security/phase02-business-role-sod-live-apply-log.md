@@ -726,6 +726,23 @@ URLs, API keys or service-role values in this file.
   RPC rows. All five runtime-backed Payment/Quantity codes are now evidence
   `CANDIDATE` only; their Cloud readiness stays `declared` and no principal
   preview, Save, migration apply/repair or rollout-flag mutation occurred.
+- Cloud Gate A8 at `2026-07-18T23:25:15+07:00` loaded readiness migration
+  `20260718161857` and its promotion smoke in one linked `BEGIN`/`ROLLBACK`
+  transaction. The source migration SHA-256 was
+  `293f04688c62bea5f9ae70d735b4be02c8bdbb282eaf0dfac5ea9d712481a0c1`, the
+  smoke SHA-256 was
+  `b43359079bee68c05b7955b4de8c76f22e3f2cf88d3591ed7625449ca37017da`, and the
+  combined bundle SHA-256 was
+  `5ad55a0d39799fd3afad1da3d0ff5d09c2653167d54228969d1fb192e6391a0e`.
+  It reached `phase02_task3_payment_quantity_readiness_promotion_smoke_passed`
+  before its outer rollback.
+- The temporary promotion covered exactly Payment Verify, Payment Approve,
+  Payment Confirm, Quantity Verify and Quantity Approve. Read-only
+  post-rollback evidence confirms all five are again `declared`, Mark Paid
+  remains `declared`, remote history for `20260718161857` remains zero, active
+  Direct Grants remain `2282`, and zero hardening flags are enabled. No
+  principal preview/Save, migration apply/history repair, grant, or rollout
+  flag mutation occurred.
 
 ## Resolver enablement canary
 

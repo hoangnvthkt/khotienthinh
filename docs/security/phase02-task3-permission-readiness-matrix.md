@@ -142,3 +142,24 @@ remote history rows for the forward migration, and zero persisted transition
 RPC rows. The five `CANDIDATE` codes remain `declared` until a separate,
 exact readiness-promotion migration is locally verified and receives its own
 Cloud gates. `project.payment.mark_paid` remains `BLOCKED`.
+
+## Cloud Gate A8 Result
+
+At `2026-07-18T23:25:15+07:00`, the linked Cloud transaction loaded the exact
+readiness-promotion migration `20260718161857` (SHA-256
+`293f04688c62bea5f9ae70d735b4be02c8bdbb282eaf0dfac5ea9d712481a0c1`) and
+its promotion smoke (SHA-256
+`b43359079bee68c05b7955b4de8c76f22e3f2cf88d3591ed7625449ca37017da`). The
+combined rollback-only bundle (SHA-256
+`5ad55a0d39799fd3afad1da3d0ff5d09c2653167d54228969d1fb192e6391a0e`) reached
+`phase02_task3_payment_quantity_readiness_promotion_smoke_passed` before its
+outer rollback.
+
+During the transaction, only the five candidate codes were temporarily
+promoted to `verified`: `project.payment.verify`, `project.payment.approve`,
+`project.payment.confirm`, `project.quantity_acceptance.verify`, and
+`project.quantity_acceptance.approve`. Post-rollback read-only evidence shows
+all five back at `declared`, `project.payment.mark_paid` still `declared`, zero
+remote history rows for `20260718161857`, `2282` active Direct Grants, and zero
+enabled hardening flags. No principal preview or Save, migration apply/history
+repair, grant, or rollout-flag mutation occurred.
