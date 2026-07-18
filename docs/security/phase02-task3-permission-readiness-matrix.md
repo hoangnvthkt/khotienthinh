@@ -205,3 +205,17 @@ Direct Grants remain `2282`; and zero hardening flags are enabled. Neither
 `20260718155122` nor `20260718161857` has a remote history row yet. No
 principal preview or Save, grant, warning-acceptance, rollout-flag, readiness,
 or migration-history mutation occurred beyond the approved runtime apply.
+
+## Cloud Gate A11 Result
+
+At `2026-07-18T23:47:15+07:00`, the linked Supabase migration history repair
+marked exactly `20260718155122` and `20260718161857` as `applied`. No migration
+SQL body was executed by this gate.
+
+Independent read-only postcheck confirms one history row for each exact
+version, both transition RPCs and guards remain present, the triggers remain
+attached to `payment_certificates` and `quantity_acceptances`, the five
+Payment/Quantity codes remain `verified`, and `project.payment.mark_paid`
+remains `declared`. Active Direct Grants remain `2282` and zero hardening flags
+are enabled. No principal preview or Save, grant, readiness, warning-acceptance,
+or rollout-flag mutation occurred.
