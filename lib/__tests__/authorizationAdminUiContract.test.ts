@@ -36,4 +36,23 @@ describe('authorization admin UI contract', () => {
     expect(page).toContain('previewBusinessRoleAssignment');
     expect(page).not.toMatch(/p_actor|actorUserId|requestedBy/);
   });
+
+  it('remounts the direct-grant draft when the selected principal changes', () => {
+    const page = read('pages/settings/SettingsAuthorizationGovernance.tsx');
+    expect(page).toMatch(/<PrincipalDirectGrantPanel\s+key=\{selectedPrincipal\.userId\}/);
+  });
+
+  it('preserves the latest principal across overlapping page loads', () => {
+    const page = read('pages/settings/SettingsAuthorizationGovernance.tsx');
+    expect(page).toContain("const selectedPrincipalIdRef = useRef('');");
+    expect(page).toContain('selectedPrincipalIdRef.current = principalId;');
+    expect(page).toContain('const preferredPrincipalId = selectedPrincipalIdRef.current;');
+  });
+
+  it('does not mount a principal draft before that principal details load', () => {
+    const page = read('pages/settings/SettingsAuthorizationGovernance.tsx');
+    expect(page).toContain("const [loadedPrincipalId, setLoadedPrincipalId] = useState('');");
+    expect(page).toContain('if (selectedPrincipalIdRef.current !== principalId) return;');
+    expect(page).toContain('selectedPrincipal && loadedPrincipalId === selectedPrincipal.userId');
+  });
 });

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, History, Loader2, RefreshCcw, ShieldCheck } from 'lucide-react';
 import type { User } from '../../types';
 import BusinessRoleEditor from '../../components/permissions/BusinessRoleEditor';
@@ -38,6 +38,8 @@ const SettingsAuthorizationGovernance: React.FC<SettingsAuthorizationGovernanceP
   const [principals, setPrincipals] = useState<AuthorizationPrincipal[]>([]);
   const [roles, setRoles] = useState<BusinessRole[]>([]);
   const [selectedPrincipalId, setSelectedPrincipalId] = useState('');
+  const selectedPrincipalIdRef = useRef('');
+  const [loadedPrincipalId, setLoadedPrincipalId] = useState('');
   const [selectedRoleId, setSelectedRoleId] = useState<string | null>(null);
   const [sources, setSources] = useState<EffectivePermissionSource[]>([]);
   const [assignments, setAssignments] = useState<PrincipalRoleAssignment[]>([]);
@@ -60,6 +62,7 @@ const SettingsAuthorizationGovernance: React.FC<SettingsAuthorizationGovernanceP
 
   const loadPrincipalDetails = useCallback(async (principalId: string) => {
     if (!principalId) return;
+    if (selectedPrincipalIdRef.current === principalId) setLoadedPrincipalId('');
     const [nextSources, nextAssignments, nextDirectGrants] = await Promise.all([
       authorizationGovernanceService.listEffectivePermissionSources(principalId),
       canManageRoles || canAudit
@@ -67,10 +70,12 @@ const SettingsAuthorizationGovernance: React.FC<SettingsAuthorizationGovernanceP
         : Promise.resolve([]),
       canManageGrants ? listUserPermissionGrants(principalId) : Promise.resolve([]),
     ]);
+    if (selectedPrincipalIdRef.current !== principalId) return;
     setSources(nextSources);
     setAssignments(nextAssignments);
     setDirectGrants(nextDirectGrants);
     setAssignmentDecision(null);
+    setLoadedPrincipalId(principalId);
   }, [canAudit, canManageGrants, canManageRoles]);
 
   const loadPage = useCallback(async () => {
@@ -85,12 +90,14 @@ const SettingsAuthorizationGovernance: React.FC<SettingsAuthorizationGovernanceP
     setRoles(nextRoles);
     setAuditEvents(nextAuditEvents);
     setOverrideRules(nextOverrideRules);
-    const nextPrincipalId = selectedPrincipalId && nextPrincipals.some(item => item.userId === selectedPrincipalId)
-      ? selectedPrincipalId
+    const preferredPrincipalId = selectedPrincipalIdRef.current;
+    const nextPrincipalId = preferredPrincipalId && nextPrincipals.some(item => item.userId === preferredPrincipalId)
+      ? preferredPrincipalId
       : nextPrincipals[0]?.userId || '';
+    selectedPrincipalIdRef.current = nextPrincipalId;
     setSelectedPrincipalId(nextPrincipalId);
     if (nextPrincipalId) await loadPrincipalDetails(nextPrincipalId);
-  }, [canAudit, canOverride, canView, loadPrincipalDetails, selectedPrincipalId]);
+  }, [canAudit, canOverride, canView, loadPrincipalDetails]);
 
   useEffect(() => {
     let active = true;
@@ -156,6 +163,8 @@ const SettingsAuthorizationGovernance: React.FC<SettingsAuthorizationGovernanceP
               value={selectedPrincipalId}
               onChange={event => {
                 const principalId = event.target.value;
+                selectedPrincipalIdRef.current = principalId;
+                setLoadedPrincipalId('');
                 setSelectedPrincipalId(principalId);
                 setErrorMessage('');
                 loadPrincipalDetails(principalId).catch(error => reportError('authorizationGovernance.selectPrincipal', error, 'Không thể tải nguồn quyền của tài khoản.'));
@@ -227,7 +236,7 @@ const SettingsAuthorizationGovernance: React.FC<SettingsAuthorizationGovernanceP
             </div>
           )}
 
-          {selectedPrincipal && (
+          {selectedPrincipal && loadedPrincipalId === selectedPrincipal.userId && (
             <>
               <section className="rounded-2xl border border-slate-200 bg-white p-4">
                 <div className="mb-3 text-xs font-black uppercase tracking-wide text-slate-700">Nguồn quyền hiệu lực</div>
@@ -279,6 +288,7 @@ const SettingsAuthorizationGovernance: React.FC<SettingsAuthorizationGovernanceP
 
               {canManageGrants && (
                 <PrincipalDirectGrantPanel
+                  key={selectedPrincipal.userId}
                   principal={selectedPrincipal}
                   grants={directGrants}
                   effectiveSources={sources}

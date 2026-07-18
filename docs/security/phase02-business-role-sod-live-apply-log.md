@@ -364,6 +364,137 @@ URLs, API keys or service-role values in this file.
   remains open solely for remediation of the 467 sensitive direct grants with
   null expiry before resolver enablement.**
 
+## Sensitive direct-grant global reset manifest checkpoint
+
+- At `2026-07-18T11:55:00+07:00`, the approved global two-phase plan captured
+  the exact active sensitive source into a private runtime manifest. The source
+  contains 467 unique rows across 23 principals and 26 permission codes, with
+  zero duplicate key and zero undecided decision after classification.
+- The business owner delegated classification authority for this checkpoint.
+  The preservation policy classified 421 rows across 22 principals as
+  `REGRANT`; the remaining 46 rows were classified `DROP`. The source contains
+  one Permission Admin principal and the approved regrant subset contains zero
+  Permission Admin principal, so the sensitive self-regrant blocker is closed
+  without creating a second operator.
+- Safe manifest fingerprints are source
+  `a3d0cf9514e487111c5ae27873c8f6cd` and regrant
+  `00a8f7f0f3a39721474a582592cf0b2e`. The private directory is mode `0700` and
+  its identity-bearing raw export and manifest are mode `0600`; neither path nor
+  payload is stored in Git, this log or chat.
+- A fresh read-only linked query at `2026-07-18T12:03:26+07:00` matched the
+  source fingerprint and 467-row count exactly. The active non-sensitive set
+  remains 2,177 rows with zero past-expiry row and fingerprint
+  `7b6aa5192833101df63d74cd813eb510`; all three rollout flags remain `false`.
+- No shared 90-day cutoff has been calculated, permission maintenance has not
+  opened, and no Cloud grant, role, responsibility, flag or migration-history
+  mutation occurred. Task 1 is complete and the next safe work is the two
+  read-only Cloud gates; revoke mutation remains a separate checkpoint.
+- At `2026-07-18T12:08:11+07:00`, the two read-only Cloud gates were committed
+  as `46b403aaa84a7d1dbef7b7d34ea685d4323dd8e4`. Static verification found no
+  mutation statement; both files use explicit `BEGIN`/`ROLLBACK` boundaries.
+  The zero-source gate reached the expected RED assertion with 467 active
+  sensitive rows, and the final-regrant gate reached the expected RED assertion
+  because the current active set does not match the approved 421-row subset.
+  No Cloud mutation occurred during either RED proof.
+- The operator subsequently delegated execution authority for the approved
+  plan. Permission maintenance opened at `2026-07-18T12:10:00+07:00`; the
+  shared regrant cutoff was fixed once at `2026-10-16T12:10:00+07:00`, exactly
+  90 days later. Preflight revalidated the 467-row source and both fingerprints,
+  found the same one durable operator, and confirmed unchanged baselines of two
+  active Business Role assignments, three active responsibility slots, five
+  active app assignments, zero maintenance-window direct-change audit events
+  and all three rollout flags `false`.
+- The approved revoke pilot contained two source rows. Authenticated backend
+  preview returned zero hard deny and zero SoD warning, and one governed save
+  reduced the global active-sensitive count from 467 to 465. Read-only evidence
+  then showed zero active sensitive row for the pilot, two retained revoked
+  rows with reason, exactly one new direct-change audit event, an unchanged
+  active non-sensitive fingerprint, unchanged role/responsibility/app-assignment
+  baselines and all three rollout flags `false`.
+- An exact retry of the already-revoked pilot passed backend preview and save as
+  a no-op. Fresh evidence at `2026-07-18T12:19:58+07:00` still showed 465 active
+  sensitive rows and exactly one maintenance-window direct-change audit event.
+  No regrant has occurred.
+- Revoke batch 1 processed the next three non-operator principals and eight
+  source rows through authenticated backend preview and governed saves. Fresh
+  read-only evidence at `2026-07-18T12:34:28+07:00` showed 457 active sensitive
+  rows globally, zero remaining active sensitive row for the batch, eight
+  retained revoked rows with reason, three batch audit events and four total
+  maintenance-window direct-change events. The non-sensitive fingerprint,
+  role/responsibility/app-assignment baselines and all three `false` rollout
+  flags remained unchanged. No regrant has occurred.
+- Revoke batch 2 processed three further non-operator principals and 13 source
+  rows. At `2026-07-18T12:36:24+07:00`, read-only evidence showed 444 active
+  sensitive rows globally, zero remaining active sensitive row for the batch,
+  13 retained revoked rows with reason, three batch audit events and seven total
+  maintenance-window direct-change events. The non-sensitive fingerprint,
+  role/responsibility/app-assignment baselines and all three `false` rollout
+  flags remained unchanged. No regrant has occurred.
+- Revoke batch 3 processed three non-operator principals and 54 source rows. At
+  `2026-07-18T12:38:37+07:00`, read-only evidence showed 390 active sensitive
+  rows globally, zero remaining active sensitive row for the batch, 54 retained
+  revoked rows with reason, three batch audit events and ten total
+  maintenance-window direct-change events. The non-sensitive fingerprint,
+  role/responsibility/app-assignment baselines and all three `false` rollout
+  flags remained unchanged. No regrant has occurred.
+- Revoke batch 4 processed three non-operator principals and 69 source rows. At
+  `2026-07-18T12:40:44+07:00`, read-only evidence showed 321 active sensitive
+  rows globally, zero remaining active sensitive row for the batch, 69 retained
+  revoked rows with reason, three batch audit events and 13 total
+  maintenance-window direct-change events. The non-sensitive fingerprint,
+  role/responsibility/app-assignment baselines and all three `false` rollout
+  flags remained unchanged. No regrant has occurred.
+- Revoke batch 5 processed three non-operator principals and 69 source rows. At
+  `2026-07-18T12:43:10+07:00`, read-only evidence showed 252 active sensitive
+  rows globally, zero remaining active sensitive row for the batch, 69 retained
+  revoked rows with reason, three batch audit events and 16 total
+  maintenance-window direct-change events. The non-sensitive fingerprint,
+  role/responsibility/app-assignment baselines and all three `false` rollout
+  flags remained unchanged. No regrant has occurred.
+- Revoke batch 6 processed three non-operator principals and 79 source rows. At
+  `2026-07-18T12:46:39+07:00`, read-only evidence showed 173 active sensitive
+  rows globally, zero remaining active sensitive row for the batch, 79 retained
+  revoked rows with reason, three batch audit events and 19 total
+  maintenance-window direct-change events. The non-sensitive fingerprint,
+  role/responsibility/app-assignment baselines and all three `false` rollout
+  flags remained unchanged. No regrant has occurred.
+- Revoke batch 7 processed the final three non-operator principals and 127
+  source rows. At `2026-07-18T12:49:51+07:00`, read-only evidence showed 46
+  active sensitive rows globally, zero remaining active sensitive row for the
+  batch, 127 retained revoked rows with reason, three batch audit events and 22
+  total maintenance-window direct-change events. The remaining 46 rows are the
+  source rows of the sole Permission Admin, intentionally reserved for the final
+  revoke save. The non-sensitive fingerprint, role/responsibility/app-assignment
+  baselines and all three `false` rollout flags remained unchanged. No regrant
+  has occurred.
+- The sole Permission Admin was processed last: authenticated preview returned
+  zero hard deny and zero warning, and one governed save revoked its final 46
+  source rows. An immediate fresh page/session still exposed permission
+  governance and authenticated no-op backend preview passed, proving the
+  unchanged legacy-governance fallback remained usable.
+- Revoke-phase arithmetic at `2026-07-18T12:52:13+07:00` showed zero active
+  sensitive direct grant, all 467 source rows retained as revoked history with
+  reason, exactly 23 revoke audit events, zero regrant event, the unchanged
+  non-sensitive fingerprint, unchanged role/responsibility/app-assignment
+  baselines and all three rollout flags `false`. The private zero-source gate
+  then passed checkpoint
+  `authorization_sensitive_grant_revoke_all_gate_passed`. No regrant has yet
+  occurred.
+- Before Task 4, the private manifest validator again matched 467 source rows,
+  421 approved regrant rows across 22 principals, 46 drops, zero undecided row,
+  zero Permission Admin regrant principal, both approved fingerprints and the
+  shared 90-day cutoff. The zero-source gate was rerun and passed again.
+- Regrant pilot preview exposed two client safety defects before any save: the
+  direct-grant draft could retain the prior principal state, and overlapping
+  page/detail loads could mount a newly selected principal against stale grant
+  data. Backend preview rejected the invalid draft, so no Cloud regrant or audit
+  event was created. Regression coverage and fail-closed principal/detail load
+  gates were added locally; targeted tests and TypeScript passed.
+- Reloading the corrected UI returned Chrome to the login screen. Maintenance
+  therefore remains open at the immutable zero-source checkpoint, and Task 4 is
+  blocked before its first mutation until the Permission Admin reauthenticates.
+  No service-role, direct SQL or rollout-flag bypass was used.
+
 ## Resolver enablement canary
 
 - Status: **Blocked before flag mutation by 467 sensitive direct grants without
