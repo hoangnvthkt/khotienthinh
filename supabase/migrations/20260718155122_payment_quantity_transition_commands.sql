@@ -130,7 +130,8 @@ begin
   v_required_permission := case p_status
     when 'submitted' then 'project.payment.submit'
     when 'returned' then 'project.payment.verify'
-    when 'approved', 'cancelled' then 'project.payment.approve'
+    when 'approved' then 'project.payment.approve'
+    when 'cancelled' then 'project.payment.approve'
     when 'paid' then 'project.payment.confirm'
     else null
   end;
@@ -302,7 +303,8 @@ begin
   v_required_permission := case p_status
     when 'submitted' then 'project.quantity_acceptance.submit'
     when 'returned' then 'project.quantity_acceptance.verify'
-    when 'approved', 'cancelled' then 'project.quantity_acceptance.approve'
+    when 'approved' then 'project.quantity_acceptance.approve'
+    when 'cancelled' then 'project.quantity_acceptance.approve'
     else null
   end;
 

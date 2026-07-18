@@ -25,6 +25,7 @@ describe('Payment and Quantity transition command migration', () => {
     expect(sql).toMatch(/payment_certificate_items/i);
     expect(sql).toMatch(/quantity_acceptance_items/i);
     expect(sql).toMatch(/using errcode = '23514'/i);
+    expect(sql).not.toMatch(/when\s+'approved',\s*'cancelled'/i);
     expect(sql).not.toMatch(/grant_readiness/i);
     expect(sql).not.toMatch(/user_permission_grants/i);
     expect(sql).not.toMatch(/set_authorization_rollout_flags/i);
