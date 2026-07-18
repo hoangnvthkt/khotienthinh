@@ -27,6 +27,14 @@ describe('permission readiness', () => {
     expect(resolvePermissionActionReadiness(action('system.wms.manage'))).toBe('legacy');
   });
 
+  it('marks only the evidence-backed Task 3 Material tranche as verified', () => {
+    expect(resolvePermissionActionReadiness(action('project.material_request.approve'))).toBe('verified');
+    expect(resolvePermissionActionReadiness(action('project.material_po.approve'))).toBe('verified');
+    expect(resolvePermissionActionReadiness(action('project.custom_material.approve'))).toBe('verified');
+    expect(resolvePermissionActionReadiness(action('project.material_request.confirm'))).toBe('declared');
+    expect(resolvePermissionActionReadiness(action('project.payment.approve'))).toBe('declared');
+  });
+
   it('adds only verified/enforced grants but permits existing Direct revocation', () => {
     expect(canAddDirectGrant(action('project.daily_log.edit_own'))).toBe(true);
     expect(canAddDirectGrant(action('project.daily_log.confirm'))).toBe(false);
