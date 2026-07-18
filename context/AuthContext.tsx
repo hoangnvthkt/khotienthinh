@@ -14,6 +14,7 @@ import LoadingSpinner from '../components/LoadingSpinner';
 import { MOCK_USERS } from '../constants';
 import { clearAppOwnedAuthStorage } from '../lib/authStorage';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { mapEffectivePermissionSource } from '../lib/permissions/authorizationGovernanceService';
 import { userActivityService } from '../lib/userActivityService';
 import {
   performLocalTelemetryLogout,
@@ -123,6 +124,13 @@ const authGateway: AuthProfileGateway = {
       .eq('is_active', true);
     if (error) throw error;
     return (data || []).map(mapUserPermissionGrantRow);
+  },
+  loadEffectivePermissionSources: async (userId) => {
+    const { data, error } = await supabase.rpc('get_effective_permission_sources', {
+      p_target_user_id: userId,
+    });
+    if (error) throw error;
+    return (data || []).map(mapEffectivePermissionSource);
   },
   loadSignatureUrl: async (userId) => {
     try {

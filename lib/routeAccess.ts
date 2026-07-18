@@ -39,18 +39,22 @@ export const isAuthenticatedOpenRoute = (route: string): boolean => {
 };
 
 export const canAccessRoute = (
-  user: Pick<User, 'role' | 'allowedModules' | 'allowedSubModules' | 'adminModules' | 'adminSubModules' | 'permissionGrants'> | null | undefined,
+  user: Pick<User, 'role' | 'allowedModules' | 'allowedSubModules' | 'adminModules' | 'adminSubModules' | 'permissionGrants' | 'effectivePermissions'> | null | undefined,
   route?: string,
 ): boolean => {
   if (!route) return true;
   if (!user) return false;
-  if (user.role === Role.ADMIN) return true;
 
   const pathname = normalizeRoutePath(route);
   if (isAuthenticatedOpenRoute(pathname)) return true;
 
+  if (user.effectivePermissions !== undefined) {
+    return canViewRoute(user, pathname);
+  }
+  if (user.role === Role.ADMIN) return true;
+
   const moduleKey = getRouteModuleKey(pathname);
-  if (!moduleKey) return false;
+  if (!moduleKey && !canViewRoute(user, pathname)) return false;
 
   return canViewRoute(user, pathname);
 };

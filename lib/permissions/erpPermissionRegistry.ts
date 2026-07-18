@@ -4,6 +4,10 @@ import {
   PermissionModuleDefinition,
   PermissionScopeType,
 } from './permissionTypes';
+import {
+  PermissionRiskMetadata,
+  resolvePermissionRiskMetadata,
+} from './permissionRisk';
 
 const GLOBAL_SCOPE: readonly PermissionScopeType[] = ['global'];
 const WMS_SCOPE: readonly PermissionScopeType[] = ['global', 'warehouse', 'own', 'assigned'];
@@ -12,7 +16,13 @@ const EXPENSE_SCOPE: readonly PermissionScopeType[] = ['global', 'own', 'departm
 const WORKFLOW_SCOPE: readonly PermissionScopeType[] = ['global', 'own', 'assigned'];
 const ASSET_SCOPE: readonly PermissionScopeType[] = ['global', 'warehouse', 'department', 'assigned'];
 
-type ActionTuple = readonly [string, string, number] | readonly [string, string, number, readonly PermissionScopeType[]];
+type ActionTuple = readonly [
+  string,
+  string,
+  number,
+  (readonly PermissionScopeType[])? ,
+  PermissionRiskMetadata?,
+];
 
 const actions = (
   prefix: string,
@@ -21,10 +31,11 @@ const actions = (
   scopeTypes: readonly PermissionScopeType[],
   entries: readonly ActionTuple[],
 ): readonly PermissionActionDefinition[] =>
-  entries.map(([action, label, sortOrder, actionScopes]) => ({
+  entries.map(([action, label, sortOrder, actionScopes, riskMetadata]) => ({
     action,
     label,
     permissionCode: `${prefix}.${action}`,
+    ...resolvePermissionRiskMetadata(prefix, action, riskMetadata),
     legacyModuleKey,
     legacyRoute,
     legacyAdminOnly: !action.startsWith('view') && action !== 'use',

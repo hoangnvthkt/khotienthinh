@@ -1,4 +1,6 @@
 
+import type { EffectivePermissionSource } from './lib/permissions/authorizationGovernanceTypes';
+
 export enum Role {
   ADMIN = 'ADMIN',
   WAREHOUSE_KEEPER = 'WAREHOUSE_KEEPER',
@@ -70,6 +72,7 @@ export interface UserAccountLifecyclePreview {
   operationAction?: UserAccountLifecycleAction | null;
   hasAuthIdentity: boolean;
   directGrants: number;
+  businessRoleAssignments: number;
   legacyModules: number;
   projectStaffAssignments: number;
   responsibilitySlots: number;
@@ -79,6 +82,7 @@ export interface UserAccountLifecyclePreview {
 
 export interface UserAccountRevocationSummary {
   directGrants: number;
+  businessRoleAssignments: number;
   projectPermissions: number;
   projectStaffAssignments: number;
   responsibilitySlots: number;
@@ -129,6 +133,7 @@ export interface User {
   reactivatedBy?: string;
   reactivationReason?: string;
   permissionGrants?: UserPermissionGrant[]; // Phase 1 permission framework grants
+  effectivePermissions?: EffectivePermissionSource[];
 }
 
 export interface UserPermissionGrant {

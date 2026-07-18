@@ -3,6 +3,7 @@ import { User, Role, Warehouse } from '../../types';
 import { Plus, MapPin, Shield, Mail, Phone, MoreVertical, RotateCcw, UserX } from 'lucide-react';
 import UserModal from '../../components/UserModal';
 import UserAccountStatusModal from '../../components/UserAccountStatusModal';
+import { canPerform } from '../../lib/permissions/permissionService';
 
 interface SettingsUsersProps {
   users: User[];
@@ -19,6 +20,7 @@ interface SettingsUsersProps {
   handleAddUser: () => void;
   handleEditUser: (u: User) => void;
   handleSaveUser: (u: User) => void | Promise<void>;
+  reloadManagedUser: (userId: string) => Promise<User>;
   getRoleBadge: (role: Role) => React.ReactNode;
   isSavingAccount?: boolean;
 }
@@ -38,9 +40,11 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
   handleAddUser,
   handleEditUser,
   handleSaveUser,
+  reloadManagedUser,
   getRoleBadge,
   isSavingAccount = false,
 }) => {
+  const canManageDirectGrants = canPerform(currentUser, 'system.authorization.manage_grants');
   const [accountFilter, setAccountFilter] = useState<'all' | 'active' | 'disabled'>('all');
   const visibleUsers = users.filter(candidate => {
     const disabled = candidate.accountStatus === 'DISABLED' || candidate.isActive === false;
@@ -176,9 +180,12 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
         isOpen={isUserModalOpen}
         onClose={() => setIsUserModalOpen(false)}
         onSave={handleSaveUser}
+        onPermissionsSaved={reloadManagedUser}
         userToEdit={editingUser}
         warehouses={warehouses}
         users={users}
+        currentUserId={currentUser.id}
+        canManageDirectGrants={canManageDirectGrants}
       />
 
       <UserAccountStatusModal

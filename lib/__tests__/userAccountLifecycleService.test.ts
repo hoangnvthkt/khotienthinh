@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildUserAccountLifecyclePayload,
+  normalizeUserAccountOperationResult,
   normalizeUserAccountLifecyclePreview,
 } from '../userAccountLifecycleService';
 
@@ -40,6 +41,7 @@ describe('buildUserAccountLifecyclePayload', () => {
       operationAction: 'DISABLE',
       hasAuthIdentity: true,
       directGrants: '2',
+      businessRoleAssignments: '2',
       legacyModules: 1,
       projectStaffAssignments: 3,
       responsibilitySlots: 1,
@@ -48,7 +50,43 @@ describe('buildUserAccountLifecyclePayload', () => {
       operationStatus: 'AUTH_RETRY',
       operationAction: 'DISABLE',
       directGrants: 2,
+      businessRoleAssignments: 2,
       needsReassignment: 5,
+    });
+  });
+
+  it('normalizes every lifecycle result revocation count', () => {
+    expect(normalizeUserAccountOperationResult({
+      operationId: 'operation-1',
+      idempotencyKey: 'key-1',
+      targetUserId: 'user-1',
+      requestedBy: 'admin-1',
+      action: 'DISABLE',
+      status: 'COMPLETED',
+      reason: 'Nhân viên nghỉ việc',
+      revocationSummary: {
+        directGrants: '1',
+        businessRoleAssignments: '2',
+        projectPermissions: '3',
+        projectStaffAssignments: '4',
+        responsibilitySlots: '5',
+        runtimeAssignments: '6',
+        needsReassignment: '11',
+      },
+      createdAt: '2026-07-17T00:00:00.000Z',
+      updatedAt: '2026-07-17T00:00:01.000Z',
+    })).toMatchObject({
+      action: 'DISABLE',
+      status: 'COMPLETED',
+      revocationSummary: {
+        directGrants: 1,
+        businessRoleAssignments: 2,
+        projectPermissions: 3,
+        projectStaffAssignments: 4,
+        responsibilitySlots: 5,
+        runtimeAssignments: 6,
+        needsReassignment: 11,
+      },
     });
   });
 });

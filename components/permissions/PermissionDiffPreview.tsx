@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { UserPermissionGrant } from '../../types';
 import { getPermissionActionByCode } from '../../lib/permissions/permissionRegistry';
+import type { EffectivePermissionSource } from '../../lib/permissions/authorizationGovernanceTypes';
 
 const activeCodeSet = (grants: readonly UserPermissionGrant[]) =>
   new Set(grants.filter(grant => grant.isActive !== false).map(grant => `${grant.permissionCode}::${grant.scopeType || 'global'}::${grant.scopeId || '*'}`));
@@ -14,9 +15,10 @@ const formatGrantKey = (key: string) => {
 interface PermissionDiffPreviewProps {
   before: readonly UserPermissionGrant[];
   after: readonly UserPermissionGrant[];
+  effectiveSources?: readonly EffectivePermissionSource[];
 }
 
-const PermissionDiffPreview: React.FC<PermissionDiffPreviewProps> = ({ before, after }) => {
+const PermissionDiffPreview: React.FC<PermissionDiffPreviewProps> = ({ before, after, effectiveSources = [] }) => {
   const diff = useMemo(() => {
     const beforeSet = activeCodeSet(before);
     const afterSet = activeCodeSet(after);
@@ -25,11 +27,17 @@ const PermissionDiffPreview: React.FC<PermissionDiffPreviewProps> = ({ before, a
       removed: [...beforeSet].filter(key => !afterSet.has(key)),
     };
   }, [before, after]);
+  const inheritedEffectiveCount = useMemo(() => new Set(
+    effectiveSources
+      .filter(source => source.sourceType === 'ROLE' || source.sourceType === 'LEGACY')
+      .map(source => `${source.permissionCode}::${source.scopeType}::${source.scopeId}`)
+  ).size, [effectiveSources]);
 
   if (diff.added.length === 0 && diff.removed.length === 0) {
     return (
       <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-500">
-        Grant mới chưa thay đổi.
+        <div>Grant trực tiếp chưa thay đổi.</div>
+        <div className="mt-1 text-[10px] text-violet-600">{inheritedEffectiveCount} quyền vẫn hiệu lực từ Business Role/Legacy</div>
       </div>
     );
   }
@@ -57,6 +65,9 @@ const PermissionDiffPreview: React.FC<PermissionDiffPreviewProps> = ({ before, a
             ))}
           </ul>
         </div>
+      </div>
+      <div className="mt-2 border-t border-blue-100 pt-2 text-[10px] font-bold text-violet-600">
+        {inheritedEffectiveCount} quyền vẫn hiệu lực từ Business Role/Legacy
       </div>
     </div>
   );

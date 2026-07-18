@@ -12,6 +12,17 @@ export interface PermissionScope {
   scopeId?: string;
 }
 
+export interface LegacyPermissionState {
+  allowedModules: string[];
+  allowedSubModules: Record<string, string[]>;
+  adminModules: string[];
+  adminSubModules: Record<string, string[]>;
+}
+
+export type PermissionRiskLevel = 'normal' | 'important' | 'sensitive';
+
+export type PermissionActionReadiness = 'legacy' | 'declared' | 'enforced' | 'verified';
+
 export interface PermissionActionDefinition {
   action: string;
   label: string;
@@ -22,6 +33,10 @@ export interface PermissionActionDefinition {
   legacyRoute?: string;
   legacyAdminOnly?: boolean;
   sortOrder?: number;
+  riskLevel?: PermissionRiskLevel;
+  isBusinessAction?: boolean;
+  isBusinessApproval?: boolean;
+  directGrantRequiresExpiry?: boolean;
 }
 
 export interface PermissionModuleDefinition {

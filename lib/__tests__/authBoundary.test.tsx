@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import type { Session, User as SupabaseUser } from '@supabase/supabase-js';
 import { describe, expect, it, vi } from 'vitest';
 import { Role, type User, type UserPermissionGrant } from '../../types';
+import type { EffectivePermissionSource } from '../permissions/authorizationGovernanceTypes';
 import {
   AuthoritativeAuthEpoch,
   AuthAttemptCoordinator,
@@ -85,10 +86,24 @@ const permissionGrant: UserPermissionGrant = {
   isActive: true,
 };
 
+const effectivePermission: EffectivePermissionSource = {
+  permissionCode: 'inventory.items.view',
+  sourceType: 'DIRECT',
+  sourceId: 'grant-1',
+  sourceCode: 'DIRECT',
+  sourceLabel: 'Direct grant',
+  scopeType: 'global',
+  scopeId: '*',
+  riskLevel: 'normal',
+  isBusinessApproval: false,
+  metadata: {},
+};
+
 const makeGateway = (overrides: Partial<AuthProfileGateway> = {}): AuthProfileGateway => ({
   verifySession: vi.fn(async () => ({ id: AUTH_ID })),
   loadActiveProfileByAuthId: vi.fn(async () => profileRow),
   loadPermissionGrants: vi.fn(async () => [permissionGrant]),
+  loadEffectivePermissionSources: vi.fn(async () => [effectivePermission]),
   loadSignatureUrl: vi.fn(async () => 'https://example.com/signature.png'),
   ...overrides,
 });
@@ -122,6 +137,18 @@ describe('fail-closed auth state', () => {
       isActive: true,
       signatureUrl: 'https://example.com/signature.png',
       permissionGrants: [permissionGrant],
+      effectivePermissions: [effectivePermission],
+    });
+  });
+
+  it('fails closed when effective permission sources cannot be loaded', async () => {
+    const sourceError = new Error('source resolver unavailable');
+    const gateway = makeGateway({
+      loadEffectivePermissionSources: vi.fn(async () => { throw sourceError; }),
+    });
+
+    await expect(resolveCandidateSession(makeSession(), gateway)).rejects.toMatchObject({
+      failure: { code: 'profile_load_failed', cause: sourceError },
     });
   });
 

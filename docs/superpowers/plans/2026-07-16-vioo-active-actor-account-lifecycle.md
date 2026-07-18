@@ -3241,7 +3241,7 @@ git commit -m "feat(users): replace deletion with account lifecycle"
 - Consumes: all Task 1-6 deliverables.
 - Produces: atomically verified Cloud schema, deployed Edge Functions, Vercel preview/production evidence and a production canary record.
 
-- [ ] **Step 1: Run the complete local verification suite**
+- [x] **Step 1: Run the complete local verification suite**
 
 ```bash
 npm test
@@ -3252,7 +3252,7 @@ git diff --check
 
 Expected: all tests PASS; TypeScript and Vite exit `0`; `git diff --check` has no findings.
 
-- [ ] **Step 2: Capture the read-only Cloud baseline**
+- [x] **Step 2: Capture the read-only Cloud baseline**
 
 ```bash
 npx supabase --version
@@ -3263,7 +3263,7 @@ npx supabase db query --linked --agent=no "with function_row as (select p.oid, p
 
 Expected: commands succeed and all three legacy-login execute checks are `false`. Record CLI version and summary counts in `docs/security/phase01-account-lifecycle-live-apply-log.md`; do not paste secrets, JWTs, emails or full user rows.
 
-- [ ] **Step 3: Re-run both migrations and both smoke files in one rollback transaction**
+- [x] **Step 3: Re-run both migrations and both smoke files in one rollback transaction**
 
 ```bash
 ACTIVE_ACTOR_MIGRATION="$(rg --files supabase/migrations | rg '_active_actor_account_status\.sql$')"
@@ -3273,7 +3273,7 @@ npx supabase db query --linked --agent=no "$(node -e "const fs=require('fs'); co
 
 Expected: exit `0` and explicit rollback. Stop here if any statement fails.
 
-- [ ] **Step 4: Checkpoint before Cloud mutation**
+- [x] **Step 4: Checkpoint before Cloud mutation**
 
 Review together:
 
@@ -3287,7 +3287,7 @@ Review together:
 
 Do not apply Cloud changes until this checkpoint is approved in the execution session.
 
-- [ ] **Step 5: Apply and verify the database migrations after checkpoint approval**
+- [x] **Step 5: Apply and verify the database migrations after checkpoint approval**
 
 Apply both migrations in one database transaction so no partial Phase 1 schema can become visible:
 
@@ -3317,7 +3317,7 @@ npx supabase migration list --linked
 
 Expected: only those two versions are newly marked `applied`; unrelated drift remains untouched.
 
-- [ ] **Step 6: Deploy the affected Edge Functions**
+- [x] **Step 6: Deploy the affected Edge Functions**
 
 First discover current CLI syntax:
 
@@ -3335,7 +3335,7 @@ npx supabase functions deploy manage-user-account --use-api
 
 Expected: each deployment succeeds against the linked project. Do not deploy unrelated functions and do not pass the unsupported `--linked` flag to `functions deploy`.
 
-- [ ] **Step 7: Publish the verified frontend to a Vercel preview**
+- [x] **Step 7: Publish the verified frontend to a Vercel preview**
 
 After the execution-session checkpoint explicitly approves a remote push:
 
@@ -3347,7 +3347,7 @@ git push origin refactor/module-du-an-v1
 
 Expected: only intentional commits are pushed; the pre-existing local `HANDOFF_SUMMARY.md` modification is not committed. Use the repository's existing Vercel Git integration to wait for the branch preview, then record the commit SHA, preview URL and successful Vercel build in the apply log. Do not promote to production yet.
 
-- [ ] **Step 8: Run a disposable-account canary through the Vercel preview**
+- [x] **Step 8: Run a disposable-account canary through the Vercel preview**
 
 Use a newly created test employee account with no business records except its linked HRM fixture:
 
@@ -3367,7 +3367,7 @@ Use a newly created test employee account with no business records except its li
 
 Expected: all twelve checks pass. Delete only disposable test fixtures that are explicitly safe to remove; do not use the ordinary account UI for permanent deletion.
 
-- [ ] **Step 9: Promote through the existing Vercel production workflow and observe**
+- [x] **Step 9: Promote through the existing Vercel production workflow and observe**
 
 At a second explicit checkpoint, review preview evidence and identify the configured Vercel production branch. Promote the exact canary commit through the existing Git/Vercel workflow; do not rebuild from a different tree.
 
@@ -3381,7 +3381,18 @@ For at least 24 hours after frontend rollout, record:
 
 Update `docs/security/phase01-account-lifecycle-live-apply-log.md` with timestamps, commit SHA, Vercel deployment URLs, command summaries, canary results and any forward-fix migration. Never paste access tokens, passwords or service-role values.
 
-- [ ] **Step 10: Final verification and commit**
+> **Operator deferral — 2026-07-17:** Production deployment of the exact canary
+> SHA succeeded, but the required 24-hour observation and Supabase Dashboard log
+> review have not elapsed. The operator directed planning work for the next
+> roadmap phase to proceed without representing this step as completed.
+
+> **Operator closure — 2026-07-17:** The operator subsequently confirmed that
+> Phase 1 was tested thoroughly, all Phase 1 behavior is currently OK, and the
+> phase is accepted as PASS. This explicit acceptance waives the remaining
+> elapsed-time/Dashboard-log collection and authorizes Phase 2 implementation;
+> it does not claim that the full 24-hour evidence window was collected.
+
+- [x] **Step 10: Final verification and commit**
 
 ```bash
 npm test
@@ -3398,9 +3409,18 @@ git add docs/security/phase01-account-lifecycle-live-apply-log.md
 git commit -m "docs(auth): record account lifecycle rollout"
 ```
 
+> **Operator deferral — 2026-07-17:** Final post-observation verification and
+> the rollout-log commit remain outstanding. Phase 2 planning is explicitly
+> authorized; this deferral is not evidence that Step 9 or Step 10 passed.
+
+> **Operator closure — 2026-07-17:** The operator replaced the planning-only
+> deferral with an explicit Phase 1 PASS acceptance after thorough manual
+> testing. The current execution session reruns the repository verification
+> commands before recording this closure commit.
+
 ## Active-Actor / Phase 1 Exit Gate
 
-Do not start the Phase 2 Business Role/SoD plan until all statements below are true:
+Do not start the Phase 2 Business Role/SoD plan until all statements below are true, except where the operator explicitly accepts equivalent evidence. On 2026-07-17 the operator accepted Phase 1 as PASS after thorough manual testing and authorized Phase 2 implementation while explicitly waiving only the unelapsed remainder of the 24-hour/Dashboard-log collection:
 
 - Disabled account receives backend denial even with a previously issued JWT.
 - Auth sign-in and token refresh are blocked after disable orchestration completes.

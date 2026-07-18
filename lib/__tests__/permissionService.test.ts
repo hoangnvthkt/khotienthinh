@@ -24,8 +24,103 @@ const user = (overrides: Partial<User> = {}): User => ({
 });
 
 describe('permissionService', () => {
-  it('allows admins to perform every registered permission', () => {
-    expect(canPerform(user({ role: Role.ADMIN }), 'project.daily_log.approve')).toBe(true);
+  it('keeps offline admins on registered technical actions without business approval bypass', () => {
+    const admin = user({ role: Role.ADMIN });
+    expect(canPerform(admin, 'system.settings.manage')).toBe(true);
+    expect(canPerform(admin, 'project.daily_log.approve')).toBe(false);
+    expect(canPerform(admin, 'unknown.permission')).toBe(false);
+  });
+
+  it('denies System Admin automatic business approval when effective sources are authoritative', () => {
+    expect(canPerform(user({
+      role: Role.ADMIN,
+      allowedModules: ['DA'],
+      effectivePermissions: [],
+    }), 'project.daily_log.approve', {
+      scopeType: 'project', scopeId: 'project-1',
+    })).toBe(false);
+  });
+
+  it('allows a scoped Business Role source and denies the adjacent scope', () => {
+    const roleUser = user({
+      effectivePermissions: [{
+        permissionCode: 'project.daily_log.approve',
+        sourceType: 'ROLE', sourceId: 'assignment-1',
+        sourceCode: 'PROJECT_APPROVER', sourceLabel: 'Project Approver',
+        scopeType: 'project', scopeId: 'project-1',
+        riskLevel: 'sensitive', isBusinessApproval: true, metadata: {},
+      }],
+    });
+
+    expect(canPerform(roleUser, 'project.daily_log.approve', {
+      scopeType: 'project', scopeId: 'project-1',
+    })).toBe(true);
+    expect(canPerform(roleUser, 'project.daily_log.approve', {
+      scopeType: 'project', scopeId: 'project-2',
+    })).toBe(false);
+  });
+
+  it('uses a direct view source without requiring legacy module arrays', () => {
+    expect(canViewModule(user({
+      allowedModules: [],
+      effectivePermissions: [{
+        permissionCode: 'wms.inventory.view',
+        sourceType: 'DIRECT', sourceId: 'grant-1',
+        sourceCode: 'DIRECT', sourceLabel: 'Direct grant',
+        scopeType: 'warehouse', scopeId: 'warehouse-1',
+        riskLevel: 'normal', isBusinessApproval: false, metadata: {},
+      }],
+    }), 'wms.inventory', {
+      scopeType: 'warehouse', scopeId: 'warehouse-1',
+    })).toBe(true);
+  });
+
+  it('fails closed for a malformed effective-source time', () => {
+    expect(canPerform(user({
+      effectivePermissions: [{
+        permissionCode: 'project.daily_log.approve',
+        sourceType: 'ROLE', sourceId: 'bad-time',
+        sourceCode: 'APPROVER', sourceLabel: 'Approver',
+        scopeType: 'project', scopeId: 'project-1',
+        startsAt: 'not-a-time', expiresAt: null,
+        riskLevel: 'sensitive', isBusinessApproval: true, metadata: {},
+      }],
+    }), 'project.daily_log.approve', {
+      scopeType: 'project', scopeId: 'project-1',
+    })).toBe(false);
+  });
+
+  it('opens the registered module route for an exact action source without granting adjacent actions', () => {
+    const approver = user({
+      allowedModules: [], allowedSubModules: {},
+      effectivePermissions: [{
+        permissionCode: 'project.daily_log.approve',
+        sourceType: 'DIRECT', sourceId: 'grant-approve',
+        sourceCode: 'DIRECT', sourceLabel: 'Direct grant',
+        scopeType: 'project', scopeId: 'project-1',
+        riskLevel: 'sensitive', isBusinessApproval: true, metadata: {},
+      }],
+    });
+
+    expect(canViewRoute(approver, '/da/tabs/dailylog')).toBe(true);
+    expect(canPerform(approver, 'project.daily_log.verify', {
+      scopeType: 'project', scopeId: 'project-1',
+    })).toBe(false);
+  });
+
+  it('does not reveal a sibling route from another permission module', () => {
+    const poApprover = user({
+      effectivePermissions: [{
+        permissionCode: 'project.material_po.approve',
+        sourceType: 'ROLE', sourceId: 'assignment-po',
+        sourceCode: 'PO_APPROVER', sourceLabel: 'PO Approver',
+        scopeType: 'project', scopeId: 'project-1',
+        riskLevel: 'sensitive', isBusinessApproval: true, metadata: {},
+      }],
+    });
+
+    expect(canViewRoute(poApprover, '/da/tabs/material/po')).toBe(true);
+    expect(canViewRoute(poApprover, '/da/tabs/material/planning')).toBe(false);
   });
 
   it('uses active scoped grants before legacy fallback', () => {
