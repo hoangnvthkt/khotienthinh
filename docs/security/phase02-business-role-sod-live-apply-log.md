@@ -743,6 +743,16 @@ URLs, API keys or service-role values in this file.
   Direct Grants remain `2282`, and zero hardening flags are enabled. No
   principal preview/Save, migration apply/history repair, grant, or rollout
   flag mutation occurred.
+- Cloud Gate A9 at `2026-07-18T23:26:51+07:00` applied exactly migration
+  `20260718161857` after a matching linked read-only preflight. The five
+  approved runtime-backed Payment/Quantity candidates are now persistently
+  `verified`; Payment Mark Paid remains `declared`.
+- Post-apply read-only evidence confirms active Direct Grants remain `2282`
+  and zero hardening flags are enabled. The direct apply intentionally did not
+  mutate Supabase migration history, so remote history for `20260718161857`
+  remains zero. No principal preview/Save, grant, rollout-flag mutation, or
+  migration-history repair occurred; any history repair is separately owned
+  and unapproved.
 
 ## Resolver enablement canary
 

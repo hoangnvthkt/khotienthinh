@@ -163,3 +163,20 @@ all five back at `declared`, `project.payment.mark_paid` still `declared`, zero
 remote history rows for `20260718161857`, `2282` active Direct Grants, and zero
 enabled hardening flags. No principal preview or Save, migration apply/history
 repair, grant, or rollout-flag mutation occurred.
+
+## Cloud Gate A9 Result
+
+At `2026-07-18T23:26:51+07:00`, after a matching read-only preflight, the
+approved linked Cloud apply ran exactly migration `20260718161857` (SHA-256
+`293f04688c62bea5f9ae70d735b4be02c8bdbb282eaf0dfac5ea9d712481a0c1`). The
+five runtime-backed candidate codes are now persistently `verified`:
+`project.payment.verify`, `project.payment.approve`,
+`project.payment.confirm`, `project.quantity_acceptance.verify`, and
+`project.quantity_acceptance.approve`.
+
+Read-only post-apply evidence confirms `project.payment.mark_paid` remains
+`declared`, active Direct Grants remain `2282`, and zero hardening flags are
+enabled. As explicitly scoped, this direct migration apply did not repair
+Supabase migration history: the remote history count for `20260718161857`
+remains zero. No principal preview or Save, grant, or rollout-flag mutation
+occurred. Any migration-history repair remains a separate, unapproved action.
