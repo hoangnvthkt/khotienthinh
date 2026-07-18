@@ -3,6 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const migrationDir = path.resolve(process.cwd(), 'supabase/migrations');
+const smokePath = path.resolve(process.cwd(), 'supabase/tests/phase3_material_permissions_smoke.sql');
 const candidates = fs
   .readdirSync(migrationDir)
   .filter(name => name.endsWith('_purchase_order_approve_state_guard.sql'));
@@ -23,5 +24,13 @@ describe('Purchase Order approve state-guard migration', () => {
     expect(sql).not.toMatch(/grant_readiness/i);
     expect(sql).not.toMatch(/user_permission_grants/i);
     expect(sql).not.toMatch(/set_authorization_rollout_flags/i);
+  });
+
+  it('uses sent PO fixtures for approval and wrong-scope approval evidence', () => {
+    const smoke = fs.readFileSync(smokePath, 'utf8');
+
+    expect(smoke).toMatch(/'phase3-po-approve'[\s\S]*?'sent',\s*'proactive_project'/i);
+    expect(smoke).toMatch(/'phase3-po-approve-wrong-scope'[\s\S]*?'sent',\s*'proactive_project'/i);
+    expect(smoke).toMatch(/'phase3-po-manage'[\s\S]*?'sent',\s*'proactive_project'/i);
   });
 });

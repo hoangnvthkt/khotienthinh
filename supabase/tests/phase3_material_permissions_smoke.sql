@@ -225,7 +225,7 @@ insert into public.purchase_orders(
   total_amount, order_date, status, source_mode, target_warehouse_id, created_by_id, created_at
 )
 select 'phase3-po-approve', project_id, site_id, 'phase3-vendor', 'NCC Smoke', 'PO-20269301', '[]'::jsonb,
-       0, current_date::text, 'draft', 'proactive_project', warehouse_id, po_creator_id::text, now()
+       0, current_date::text, 'sent', 'proactive_project', warehouse_id, po_creator_id::text, now()
 from phase3_material_smoke_ids
 union all
 select 'phase3-po-receive', project_id, site_id, 'phase3-vendor', 'NCC Smoke', 'PO-20269302', '[]'::jsonb,
@@ -233,7 +233,7 @@ select 'phase3-po-receive', project_id, site_id, 'phase3-vendor', 'NCC Smoke', '
 from phase3_material_smoke_ids
 union all
 select 'phase3-po-manage', project_id, site_id, 'phase3-vendor', 'NCC Smoke', 'PO-20269303', '[]'::jsonb,
-       0, current_date::text, 'draft', 'proactive_project', warehouse_id, po_creator_id::text, now()
+       0, current_date::text, 'sent', 'proactive_project', warehouse_id, po_creator_id::text, now()
 from phase3_material_smoke_ids
 union all
 select 'phase3-po-delete', project_id, site_id, 'phase3-vendor', 'NCC Smoke', 'PO-20269304', '[]'::jsonb,
@@ -245,7 +245,7 @@ select 'phase3-po-create-delete-deny', project_id, site_id, 'phase3-vendor', 'NC
 from phase3_material_smoke_ids
 union all
 select 'phase3-po-approve-wrong-scope', no_staff_project_id, site_id, 'phase3-vendor', 'NCC Smoke', 'PO-20269308', '[]'::jsonb,
-       0, current_date::text, 'draft', 'proactive_project', warehouse_id, po_creator_id::text, now()
+       0, current_date::text, 'sent', 'proactive_project', warehouse_id, po_creator_id::text, now()
 from phase3_material_smoke_ids;
 
 insert into public.custom_material_requests (

@@ -668,6 +668,16 @@ URLs, API keys or service-role values in this file.
   `legacy_fallback_disabled` key is separately tracked configuration drift,
   not a Gate-A2 mutation. No principal preview, Save, readiness
   promotion, migration-history repair, or rollout-flag mutation occurred.
+- Cloud Gate A3 loaded both forward state guards with the Material smoke in a
+  single linked rollback-only transaction. The PO guard rejected the smoke's
+  purported intended allow because that fixture was still initialized as
+  `draft`; the approved PO workflow requires `sent -> confirmed|returned`.
+  The error rolled back the transaction before any PO state evidence could be
+  promoted. Post-failure read-only aggregates remained `2282` active Direct
+  Grants, `103` sensitive grants, readiness `229` declared / `59` legacy /
+  `13` verified, zero warning acceptances and zero enabled hardening flags;
+  neither forward migration is present in remote history. The smoke fixtures
+  are corrected locally for a new, separately approved Cloud gate.
 
 ## Resolver enablement canary
 
