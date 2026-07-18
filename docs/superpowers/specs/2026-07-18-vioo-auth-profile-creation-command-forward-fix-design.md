@@ -1,7 +1,7 @@
 # Thiết kế forward-fix command hoàn thiện Auth profile
 
 Ngày: 2026-07-18
-Trạng thái: Phương án đã được operator duyệt; chờ duyệt bản spec viết
+Trạng thái: Approved by operator on 2026-07-18
 Phạm vi: Loại bỏ lần ghi `public.users` không có command context trong Edge Function `create-user`
 
 ## 1. Vấn đề đã xác nhận
@@ -188,9 +188,12 @@ Nếu bước sau Auth creation lỗi:
 - command ghi audit `account_creation_profile_rolled_back` mà không đưa PII hay
   credential vào metadata.
 
-Sau khi DB compensation thành công hoặc đã được thử, Edge Function gọi
-`admin.auth.admin.deleteUser(...)`. Cleanup không dùng direct protected update
-qua `admin.from('users').upsert(...)`.
+Sau khi DB compensation thành công, Edge Function gọi
+`admin.auth.admin.deleteUser(...)`. Nếu DB compensation lỗi, Edge không xóa
+Auth row vì thao tác đó sẽ tạo `auth_id` mồ côi; thay vào đó Edge ban Auth user,
+ghi một log chỉ có boolean failure state và giữ liên kết để operator có thể
+retry/reconcile. Cleanup không dùng direct protected update qua
+`admin.from('users').upsert(...)`.
 
 ## 5. Thay đổi Edge Function
 
@@ -204,8 +207,9 @@ qua `admin.from('users').upsert(...)`.
 3. Query profile đã được Auth trigger liên kết bằng `auth_id`.
 4. Gọi RPC action `FINALIZE` với actor ID, Auth ID và app profile payload.
 5. Trả `profileId` từ response RPC.
-6. Khi bước 3–4 lỗi, gọi action `ROLLBACK`, sau đó xóa Auth user và chỉ trả
-   thông báo công khai an toàn.
+6. Khi bước 3–4 lỗi, gọi action `ROLLBACK`; chỉ xóa Auth user khi rollback DB
+   thành công, nếu rollback lỗi thì ban Auth user và chỉ trả thông báo công khai
+   an toàn.
 
 Đoạn `admin.from('users').upsert(payload)` hiện tại bị xóa hoàn toàn. Edge
 Function không tự bật GUC và không chứa service-role bypass logic.
