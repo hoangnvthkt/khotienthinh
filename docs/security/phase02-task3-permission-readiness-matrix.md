@@ -4,14 +4,17 @@ Scope: Phase 02 Business Role and Minimal SoD readiness prerequisite before
 Closure Task 3 resumes. This matrix contains permission codes and aggregate
 evidence only; it contains no principal, account, grant-row, or manifest data.
 
-Read-only Cloud confirmation on 2026-07-18:
+Read-only Cloud confirmation after Payment/Quantity Cloud Gate A11 at
+`2026-07-18T23:41:25+07:00`:
 
 - Pending approved rows: `318` across `12` principals.
-- Ready pending rows: `27`.
-- Declared blocking rows: `291` across exactly `21` permission codes.
+- Ready pending rows: `97`.
+- Declared blocking rows: `221` across exactly `16` permission codes.
 - Blocked principals: `12`.
 - Every listed code is `sensitive`, requires direct-grant expiry, and supports
   `global`, `project`, and `construction_site` scopes.
+- The matrix retains the original 21-code surface: its five Payment/Quantity
+  codes are now `verified`; the remaining sixteen are still `declared`.
 
 `CANDIDATE` means that an implementation-level backend entry point and an
 intended-allow smoke already exist, but it remains `declared` until all missing

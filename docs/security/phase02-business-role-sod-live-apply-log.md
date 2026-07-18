@@ -780,6 +780,13 @@ URLs, API keys or service-role values in this file.
   `declared`; active Direct Grants remain `2282`; and zero hardening flags are
   enabled. No SQL migration body, principal preview/Save, grant,
   warning-acceptance, readiness, or rollout-flag mutation occurred.
+- At `2026-07-18T23:41:25+07:00`, aggregate-only readiness recomputation
+  retains `318` pending approved rows across `12` principals. Payment/Quantity
+  promotion moved the grantable portion to `97`, leaving `221` declared rows
+  across `16` blocking permission codes; all `12` principals remain blocked
+  and zero have a complete grantable draft. Closure Task 3 stays paused: no
+  principal preview or Save was attempted. The next focused tranche is the
+  three Material approval codes with existing rollback-only evidence.
 
 ## Resolver enablement canary
 
