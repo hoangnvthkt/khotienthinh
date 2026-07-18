@@ -28,14 +28,14 @@ negative evidence is added and passes. `MISMATCH` and `BLOCKED` both remain
 | `project.material_request.confirm` | modern handler uses `project.material_request.confirm_fulfillment` | mismatched catalog code | missing | missing | missing | `MISMATCH` |
 | `project.material_request.verify` | missing | missing | missing | missing | missing | `BLOCKED` |
 | `project.payment.approve` | `public.transition_project_payment_certificate_status(...)` | Cloud Gate A6R passed `submitted -> approved` | Cloud Gate A6R passed wrong-project denial | Cloud Gate A6R passed `draft -> approved` denial | Cloud Gate A6R passed Approve-to-Confirm denial | `CANDIDATE` |
-| `project.payment.confirm` | `public.transition_project_payment_certificate_status(...)` | Cloud Gate A6R passed `approved -> paid` | missing | missing | Cloud Gate A6R passed Approve-to-Confirm denial | `BLOCKED` |
+| `project.payment.confirm` | `public.transition_project_payment_certificate_status(...)` | Cloud Gate A6R passed `approved -> paid` | Cloud Gate A7 passed wrong-project denial | Cloud Gate A7 passed `draft -> paid` denial | Cloud Gate A6R passed Approve-to-Confirm denial | `CANDIDATE` |
 | `project.payment.mark_paid` | missing | client/service test only | missing | missing | missing | `BLOCKED` |
-| `project.payment.verify` | `public.transition_project_payment_certificate_status(...)` | Cloud Gate A6R passed `submitted -> returned` | missing | missing | missing | `BLOCKED` |
+| `project.payment.verify` | `public.transition_project_payment_certificate_status(...)` | Cloud Gate A6R passed `submitted -> returned` | Cloud Gate A7 passed wrong-project denial | Cloud Gate A7 passed `draft -> returned` denial | Cloud Gate A7 passed Verify-to-Approve denial | `CANDIDATE` |
 | `project.quality.approve` | missing | catalog-only smoke | missing | missing | missing | `BLOCKED` |
 | `project.quality.confirm` | missing | missing | missing | missing | missing | `BLOCKED` |
 | `project.quality.verify` | missing | catalog-only smoke | missing | missing | missing | `BLOCKED` |
 | `project.quantity_acceptance.approve` | `public.transition_project_quantity_acceptance_status(...)` | Cloud Gate A6R passed `submitted -> approved` | Cloud Gate A6R passed wrong-project denial | Cloud Gate A6R passed `draft -> approved` denial | Cloud Gate A6R passed Submit-to-Approve denial | `CANDIDATE` |
-| `project.quantity_acceptance.verify` | `public.transition_project_quantity_acceptance_status(...)` | Cloud Gate A6R passed `submitted -> returned` | missing | missing | missing | `BLOCKED` |
+| `project.quantity_acceptance.verify` | `public.transition_project_quantity_acceptance_status(...)` | Cloud Gate A6R passed `submitted -> returned` | Cloud Gate A7 passed wrong-project denial | Cloud Gate A7 passed `draft -> returned` denial | Cloud Gate A7 passed Verify-to-Approve denial | `CANDIDATE` |
 | `project.safety.approve` | missing | missing | missing | missing | missing | `BLOCKED` |
 | `project.safety.verify` | missing | missing | missing | missing | missing | `BLOCKED` |
 | `project.subcontract.approve` | missing | missing | missing | missing | missing | `BLOCKED` |
@@ -125,3 +125,20 @@ intended paid path for `project.payment.confirm`, but does not yet isolate each
 of their scope, invalid-state, and adjacent-action denials. Those three codes,
 and `project.payment.mark_paid`, remain `BLOCKED` and `declared`; no readiness
 promotion or principal Save is authorized.
+
+## Cloud Gate A7 Result
+
+At `2026-07-18T23:18:21+07:00`, the expanded linked Cloud smoke completed the
+same rollback-only checkpoint before its outer rollback. It adds the missing
+wrong-project, draft-state and adjacent-action denials for
+`project.payment.verify`, `project.payment.confirm`, and
+`project.quantity_acceptance.verify`. Those three codes now have all four
+required evidence dimensions and are `CANDIDATE` alongside Payment Approve and
+Quantity Approve.
+
+Post-rollback aggregates remain `2282` active Direct Grants, readiness `229`
+declared / `59` legacy / `13` verified, zero enabled hardening flags, zero
+remote history rows for the forward migration, and zero persisted transition
+RPC rows. The five `CANDIDATE` codes remain `declared` until a separate,
+exact readiness-promotion migration is locally verified and receives its own
+Cloud gates. `project.payment.mark_paid` remains `BLOCKED`.

@@ -715,6 +715,17 @@ URLs, API keys or service-role values in this file.
   `CANDIDATE` codes only. Payment Verify, Payment Confirm and Quantity Verify
   still lack code-specific negative coverage and remain `declared`; a later
   rollback-only gate is required before any readiness migration is considered.
+- Cloud Gate A7 at `2026-07-18T23:18:21+07:00` ran the expanded Payment and
+  Quantity smoke in the same linked rollback-only posture and reached
+  `phase02_task3_payment_quantity_readiness_smoke_passed`. It supplied the
+  missing wrong-scope, draft-state and adjacent-action denials for Payment
+  Verify, Payment Confirm and Quantity Verify.
+- Post-Gate-A7 aggregates remain `2282` active Direct Grants, readiness `229`
+  declared / `59` legacy / `13` verified, zero enabled hardening flags, zero
+  history rows for migration `20260718155122`, and zero persisted transition
+  RPC rows. All five runtime-backed Payment/Quantity codes are now evidence
+  `CANDIDATE` only; their Cloud readiness stays `declared` and no principal
+  preview, Save, migration apply/repair or rollout-flag mutation occurred.
 
 ## Resolver enablement canary
 
