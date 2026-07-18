@@ -295,6 +295,35 @@ URLs, API keys or service-role values in this file.
   write, then repeat the zero-right creation, unauthorized `42501` Data API
   canary and lifecycle disable cleanup before closing this checkpoint.
 
+### Minimal profile creation forward-fix rollback gate
+
+- At `2026-07-18T10:22:07+07:00`, the narrowed implementation candidate was
+  commit `ad63d389bcdff5ee3279b797f9bb0f151fea95cf`. It changes only the
+  `create-user` profile-write boundary, one contract test, and one forward
+  migration with its contract/smoke tests; no command RPC, wrapper, audit event
+  or generalized compensation framework was added.
+- Migration version `20260718031842` has SHA-256
+  `40869ea8ba4f844ceb66164006b8c8147c182c0718a5ad731c3c39b337a4b358`.
+  Linked history showed it local-only/pending before and after the rollback
+  gate.
+- Full repository verification passed 170 test files and 993 tests. TypeScript
+  and the production build exited `0`; the existing bundle-size warning was
+  unchanged and is outside this forward-fix.
+- Read-only Cloud preflight recorded sync-function hash
+  `c2929961018c33150527e25382dfbe3c`, all three rollout flags `false`, and 467
+  active sensitive grants with null expiry.
+- The new migration and definition smoke passed in one linked transaction. The
+  final checkpoint was `auth_profile_safe_sync_rollback_passed`, followed by
+  explicit `ROLLBACK`.
+- Post-rollback verification matched the preflight sync hash, kept migration
+  version `20260718031842` pending, kept all three rollout flags `false`, and
+  kept the sensitive-null-expiry inventory at 467. No schema, profile, grant,
+  assignment, rollout flag or migration-history mutation persisted.
+- Status: **Waiting for explicit approval to apply exactly migration
+  `20260718031842`, repair exactly that version and deploy exactly
+  `create-user`.** The zero-right creation, unauthorized `42501` and lifecycle
+  disable canaries remain pending until that approval.
+
 ## Resolver enablement canary
 
 - Status: **Blocked before flag mutation by 467 sensitive direct grants without
