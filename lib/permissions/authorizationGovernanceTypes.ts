@@ -1,4 +1,6 @@
+import type { UserPermissionGrant } from '../../types';
 import type {
+  LegacyPermissionState,
   PermissionRiskLevel,
   PermissionScopeType,
 } from './permissionTypes';
@@ -97,6 +99,18 @@ export interface SodFinding {
 export interface AuthorizationDecision {
   hardDenies: SodFinding[];
   warnings: SodFinding[];
+}
+
+export interface UnifiedPermissionPreview {
+  beforeFingerprint: string;
+  decision: AuthorizationDecision;
+  legacyBefore: LegacyPermissionState;
+  legacyAfter: LegacyPermissionState;
+}
+
+export interface UnifiedPermissionApplyResult extends UnifiedPermissionPreview {
+  afterFingerprint: string;
+  directAfter: UserPermissionGrant[];
 }
 
 export interface PreviewAuthorizationChangeInput {

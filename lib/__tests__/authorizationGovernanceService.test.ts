@@ -20,7 +20,9 @@ import {
   mapEffectivePermissionSource,
 } from '../permissions/authorizationGovernanceService';
 import {
+  applyUserPermissionChange,
   buildDirectGrantReplacementPayload,
+  previewUserPermissionChange,
   replaceUserPermissionGrants,
 } from '../permissions/permissionAdminService';
 
@@ -134,5 +136,61 @@ describe('authorization governance service contracts', () => {
       p_reason: 'Điều chỉnh quyền trực tiếp theo nhiệm vụ',
       p_warning_acceptances: [],
     });
+  });
+
+  it('previews and applies one actor-free unified permission payload', async () => {
+    const legacyState = {
+      allowedModules: ['DA'],
+      allowedSubModules: { DA: ['/da/tabs/dailylog'] },
+      adminModules: [],
+      adminSubModules: {},
+    };
+    const grants: UserPermissionGrant[] = [{
+      userId: 'user-1',
+      permissionCode: 'project.daily_log.view',
+      scopeType: 'project',
+      scopeId: 'project-1',
+    }];
+    const preview = {
+      beforeFingerprint: 'before-1',
+      decision: { hardDenies: [], warnings: [] },
+      legacyBefore: legacyState,
+      legacyAfter: legacyState,
+    };
+    supabaseMock.rpc
+      .mockResolvedValueOnce({ data: preview, error: null })
+      .mockResolvedValueOnce({
+        data: { ...preview, afterFingerprint: 'after-1', directAfter: grants },
+        error: null,
+      });
+
+    await previewUserPermissionChange('user-1', legacyState, grants);
+    await applyUserPermissionChange('user-1', 'before-1', legacyState, grants, {
+      reason: '  Cập nhật quyền nhật ký dự án  ',
+      warningAcceptances: [],
+    });
+
+    expect(supabaseMock.rpc.mock.calls[0]).toEqual([
+      'preview_user_permission_change',
+      {
+        p_user_id: 'user-1',
+        p_legacy_state: legacyState,
+        p_grants: buildDirectGrantReplacementPayload(grants),
+      },
+    ]);
+    expect(supabaseMock.rpc.mock.calls[1]).toEqual([
+      'apply_user_permission_change',
+      {
+        p_user_id: 'user-1',
+        p_expected_fingerprint: 'before-1',
+        p_legacy_state: legacyState,
+        p_grants: buildDirectGrantReplacementPayload(grants),
+        p_reason: 'Cập nhật quyền nhật ký dự án',
+        p_warning_acceptances: [],
+      },
+    ]);
+    for (const [, args] of supabaseMock.rpc.mock.calls) {
+      expect(Object.keys(args).some(key => /actor/i.test(key))).toBe(false);
+    }
   });
 });

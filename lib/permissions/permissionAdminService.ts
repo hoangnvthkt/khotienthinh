@@ -1,6 +1,11 @@
 import { UserPermissionGrant } from '../../types';
 import { isSupabaseConfigured, supabase } from '../supabase';
-import type { SodWarningAcceptanceInput } from './authorizationGovernanceTypes';
+import type {
+  SodWarningAcceptanceInput,
+  UnifiedPermissionApplyResult,
+  UnifiedPermissionPreview,
+} from './authorizationGovernanceTypes';
+import type { LegacyPermissionState } from './permissionTypes';
 
 const mapPermissionGrantFromDb = (row: any): UserPermissionGrant => ({
   id: row.id,
@@ -56,4 +61,43 @@ export const replaceUserPermissionGrants = async (
     p_warning_acceptances: options.warningAcceptances,
   });
   if (error) throw error;
+};
+
+export const previewUserPermissionChange = async (
+  userId: string,
+  legacyState: LegacyPermissionState | null,
+  grants: readonly UserPermissionGrant[],
+): Promise<UnifiedPermissionPreview> => {
+  if (!isSupabaseConfigured || !userId) {
+    throw new Error('Unified permission preview requires Supabase.');
+  }
+  const { data, error } = await supabase.rpc('preview_user_permission_change', {
+    p_user_id: userId,
+    p_legacy_state: legacyState,
+    p_grants: buildDirectGrantReplacementPayload(grants),
+  });
+  if (error) throw error;
+  return data as UnifiedPermissionPreview;
+};
+
+export const applyUserPermissionChange = async (
+  userId: string,
+  fingerprint: string,
+  legacyState: LegacyPermissionState | null,
+  grants: readonly UserPermissionGrant[],
+  options: ReplaceDirectGrantsOptions,
+): Promise<UnifiedPermissionApplyResult> => {
+  if (!isSupabaseConfigured || !userId) {
+    throw new Error('Unified permission save requires Supabase.');
+  }
+  const { data, error } = await supabase.rpc('apply_user_permission_change', {
+    p_user_id: userId,
+    p_expected_fingerprint: fingerprint,
+    p_legacy_state: legacyState,
+    p_grants: buildDirectGrantReplacementPayload(grants),
+    p_reason: options.reason.trim(),
+    p_warning_acceptances: options.warningAcceptances,
+  });
+  if (error) throw error;
+  return data as UnifiedPermissionApplyResult;
 };
