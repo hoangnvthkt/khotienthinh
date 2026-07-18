@@ -585,11 +585,43 @@ URLs, API keys or service-role values in this file.
   View+Audit bridge for an independent control owner remains a separate
   approval boundary.
 
+## Independent control-owner appointment
+
+- At `2026-07-18T20:06:43+07:00`, after explicit operator approval, Phase 02
+  closure Task 2 selected one active non-Admin, least-privilege control owner
+  through read-only filtering. The identity remains private runtime state; no
+  user ID, email or raw permission payload is recorded here.
+- Pre-save rollback preview passed with intent Direct Grants `2280 -> 2282`,
+  active sensitive Direct Grants unchanged at `103`, Audit-capable actors
+  `1 -> 2`, active Business Role assignments `2 -> 3`, and all four rollout
+  flags still `false`.
+- The approved Cloud Save ran once through governed authenticated RPCs:
+  unified Direct Grant Save for the temporary View+Audit bridge, followed by an
+  expiring `AUDITOR` assignment at `global/*` through
+  `2026-10-16T12:10:00+07:00`. Post-save evidence showed active Direct Grants
+  `2282`, active sensitive Direct Grants `103`, active non-sensitive Direct
+  Grants `2179`, non-sensitive fingerprint
+  `632d0ce644dcec52126eabf7b44909ca`, Audit-capable actors `2`, active
+  Business Role assignments `3`, and all four rollout flags still `false`.
+- Fresh-session least-privilege verification passed: global View+Audit allowed;
+  authorization audit rows and effective sources readable; no non-global
+  authorization source present; manage roles, manage grants, manage scopes,
+  override and business-approval permissions denied; governed mutation previews
+  denied; and the Direct Save plus `AUDITOR` assignment each created exactly
+  one audit event.
+- Because `app_private.scope_covers` intentionally treats `global/*` as covering
+  narrower requested scopes, the scope-negative evidence is recorded as zero
+  non-global authorization sources rather than treating a covered narrow request
+  as a failure. With the resolver flag still `false`, the staged `AUDITOR` role
+  remains inactive as an effective source; current authorization evidence still
+  comes from the temporary Direct bridge only.
+
 ## Resolver enablement canary
 
-- Status: **Blocked before flag mutation by 318 approved regrant rows whose 12
-  principals require SoD warning acceptance and currently have no eligible
-  independent Auditor/control owner.**
+- Status: **Pending behind the 318 approved regrant rows whose 12 principals
+  require fresh SoD warning acceptance and the final sensitive-grant gate.** The
+  independent Auditor/control owner now exists, but the resolver flag remains
+  `false` until the regrant and final-gate checkpoints pass.
 - Enable the resolver first while the other two cutoffs remain disabled. Verify
   source explanations, scope/expiry behavior and adjacent-action denials with
   disposable principals before advancing.
