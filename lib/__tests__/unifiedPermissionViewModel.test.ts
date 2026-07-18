@@ -3,8 +3,13 @@ import type { UserPermissionGrant } from '../../types';
 import type { EffectivePermissionSource } from '../permissions/authorizationGovernanceTypes';
 import { getPermissionModuleByCode } from '../permissions/permissionRegistry';
 import {
+  buildLegacyPermissionCatalog,
   buildUnifiedPermissionDraftKey,
   buildUnifiedPermissionRows,
+  isLegacyRouteVisible,
+  revokeLegacyUmbrella,
+  toggleLegacyModuleView,
+  toggleLegacyRouteView,
   toggleUnifiedDirectGrant,
 } from '../permissions/unifiedPermissionViewModel';
 
@@ -160,5 +165,83 @@ describe('unified permission view model', () => {
       allowedSubModules: { DA: ['/da/daily-log'] },
       allowedModules: ['DA'],
     }, [baseGrant])).toBe(baseline);
+  });
+
+  it('treats a missing allowedSubModules key as all known routes', () => {
+    const state = { allowedModules: ['WMS'], allowedSubModules: {}, adminModules: [], adminSubModules: {} };
+    expect(isLegacyRouteVisible(state, 'WMS', '/requests')).toBe(true);
+  });
+
+  it('removes one route by materializing the remaining known routes', () => {
+    const state = { allowedModules: ['WMS'], allowedSubModules: {}, adminModules: [], adminSubModules: {} };
+    expect(toggleLegacyRouteView(state, 'WMS', '/requests', false, ['/requests', '/inventory'])).toEqual({
+      ...state,
+      allowedSubModules: { WMS: ['/inventory'] },
+    });
+  });
+
+  it('uses an explicit empty route list to represent no visible routes', () => {
+    const state = {
+      allowedModules: ['WMS'],
+      allowedSubModules: { WMS: ['/requests'] },
+      adminModules: [],
+      adminSubModules: {},
+    };
+    expect(toggleLegacyRouteView(state, 'WMS', '/requests', false, ['/requests'])).toMatchObject({
+      allowedSubModules: { WMS: [] },
+    });
+  });
+
+  it('deletes the route restriction when every known route is selected', () => {
+    const state = {
+      allowedModules: ['WMS'],
+      allowedSubModules: { WMS: ['/inventory'] },
+      adminModules: [],
+      adminSubModules: {},
+    };
+    expect(toggleLegacyRouteView(state, 'WMS', '/requests', true, ['/requests', '/inventory'])).toEqual({
+      ...state,
+      allowedSubModules: {},
+    });
+  });
+
+  it('clearing module View also revokes its Legacy administration umbrella', () => {
+    const state = {
+      allowedModules: ['WMS'],
+      allowedSubModules: {},
+      adminModules: ['WMS'],
+      adminSubModules: { WMS: ['/requests'] },
+    };
+    expect(toggleLegacyModuleView(state, 'WMS', false)).toEqual({
+      allowedModules: [],
+      allowedSubModules: {},
+      adminModules: [],
+      adminSubModules: {},
+    });
+  });
+
+  it('only revokes an existing Legacy umbrella', () => {
+    const state = {
+      allowedModules: ['WMS'],
+      allowedSubModules: {},
+      adminModules: ['WMS'],
+      adminSubModules: { WMS: ['/requests'] },
+    };
+    expect(revokeLegacyUmbrella(state, 'WMS')).toEqual({
+      ...state,
+      adminModules: [],
+      adminSubModules: {},
+    });
+  });
+
+  it('builds deterministic Project and Settings Legacy route labels', () => {
+    const catalog = buildLegacyPermissionCatalog();
+    const project = catalog.find(entry => entry.legacyModuleKey === 'DA');
+    const settings = catalog.find(entry => entry.legacyModuleKey === 'SETTINGS');
+
+    expect(project?.routes).toContainEqual({ route: '/da/tabs/dailylog', label: 'Nhật ký' });
+    expect(settings?.routes).toContainEqual({ route: '/settings/users', label: 'Người dùng' });
+    expect(new Set(catalog.flatMap(entry => entry.routes.map(item => `${entry.legacyModuleKey}:${item.route}`))).size)
+      .toBe(catalog.reduce((count, entry) => count + entry.routes.length, 0));
   });
 });
