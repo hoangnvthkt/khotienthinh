@@ -689,6 +689,17 @@ URLs, API keys or service-role values in this file.
   guard migrations remain absent from remote history. No principal preview,
   Save, readiness promotion, migration-history repair, or rollout-flag change
   occurred.
+- Cloud Gate A5 loaded all three forward Material state guards and completed
+  `phase02_task3_material_readiness_smoke_passed` in one linked transaction
+  before its outer rollback. Material Request, PO and Custom Material approval
+  now each have passing intended allow, wrong-scope, workflow-state and
+  adjacent-action evidence.
+- Post-Gate-A5 read-only evidence remains `2282` active Direct Grants, `103`
+  sensitive grants, readiness `229` declared / `59` legacy / `13` verified,
+  zero warning acceptances and zero enabled hardening flags. All three forward
+  migrations remain absent from remote history. No principal preview, Save,
+  readiness promotion, migration-history repair, or rollout-flag change
+  occurred.
 
 ## Resolver enablement canary
 

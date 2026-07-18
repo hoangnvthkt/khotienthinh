@@ -21,7 +21,7 @@ negative evidence is added and passes. `MISMATCH` and `BLOCKED` both remain
 | Permission code | Backend entry point | Intended allow | Scope denial | State/ownership denial | Adjacent-action denial | Disposition |
 | --- | --- | --- | --- | --- | --- | --- |
 | `project.contract.approve` | missing | catalog-only smoke | missing | missing | missing | `BLOCKED` |
-| `project.custom_material.approve` | `public.transition_custom_material_request_status(...)` | Cloud Gate A4 passed intended allow | Cloud Gate A4 passed wrong-project denial | **Cloud Gate A4 failed:** `draft -> approved` was allowed | missing | `BLOCKED` |
+| `project.custom_material.approve` | `public.transition_custom_material_request_status(...)` | Cloud Gate A5 passed intended allow | Cloud Gate A5 passed wrong-project denial | Cloud Gate A5 passed `draft -> approved` denial | Cloud Gate A5 passed Approve-to-Create denial | `CANDIDATE` |
 | `project.daily_log.confirm` | missing | missing | missing | missing | missing | `BLOCKED` |
 | `project.material_po.approve` | `public.transition_project_purchase_order_status(...)` | Cloud Gate A4 passed intended allow | Cloud Gate A4 passed wrong-project denial | Cloud Gate A4 passed `in_transit -> confirmed` denial | Cloud Gate A4 passed Approve-to-Receive denial | `CANDIDATE` |
 | `project.material_request.approve` | `public.transition_project_material_request_status(...)` | Cloud Gate A4 passed intended allow | Cloud Gate A4 passed wrong-project denial | Cloud Gate A4 passed `DRAFT -> APPROVED` denial | Cloud Gate A4 passed Create-to-Submit denial | `CANDIDATE` |
@@ -93,3 +93,16 @@ workflow state`: the current Custom Material handler accepted `draft ->
 approved`. All three codes remain `declared`; no readiness promotion is
 unlocked until Custom Material has an approved forward guard and a passing
 rollback-only smoke.
+
+## Cloud Gate A5 Result
+
+The linked Cloud transaction loaded the three forward Material state guards,
+then completed the full Material smoke checkpoint
+`phase02_task3_material_readiness_smoke_passed` before its outer rollback. All
+three Material approval codes now have passing intended allow, wrong-scope,
+workflow-state, and adjacent-action evidence. Post-rollback aggregate checks
+remain `2282` active Direct Grants, `103` sensitive grants, readiness `229`
+declared / `59` legacy / `13` verified, zero warning acceptances and zero
+enabled hardening flags. All three guards remain absent from remote migration
+history. The codes remain `declared` candidates: no readiness promotion or
+principal Save is authorized while the other blocking codes remain incomplete.
