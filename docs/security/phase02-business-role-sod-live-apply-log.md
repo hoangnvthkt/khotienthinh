@@ -494,6 +494,39 @@ URLs, API keys or service-role values in this file.
   therefore remains open at the immutable zero-source checkpoint, and Task 4 is
   blocked before its first mutation until the Permission Admin reauthenticates.
   No service-role, direct SQL or rollout-flag bypass was used.
+- Task 4 resumed after Permission Admin reauthentication. A fresh read-only
+  preflight again matched the 467-row source manifest, the 421-row approved
+  regrant set across 22 principals, the 46-row drop set, both approved
+  fingerprints, the shared 90-day cutoff and the zero-source gate. The
+  non-sensitive fingerprint and role/responsibility/app-assignment baselines
+  were unchanged, and all three rollout flags remained `false`.
+- The two-row pilot was previewed with zero hard deny and zero warning, then
+  saved once through the governed authenticated UI with reason
+  `Task 13 Step 5: tái cấp quyền nhạy cảm đã được phê duyệt`. Read-only Cloud
+  evidence confirmed exactly two active pilot rows, the shared cutoff and one
+  regrant audit event. An immediate identical retry remained a no-op: the audit
+  count, `granted_at` values and expiries did not change.
+- Regrant batches 1 and 2 completed six further principals and 21 approved
+  rows. The first principal in batch 3 completed another eight approved rows.
+  At `2026-07-18T14:24:41+07:00`, the cumulative state was 31 active sensitive
+  rows across eight regranted principals and eight regrant audit events. Every
+  active sensitive row belongs to the approved manifest and has the exact
+  shared cutoff; active unapproved rows and wrong-cutoff rows are both zero.
+  The 2,177-row non-sensitive fingerprint remains
+  `7b6aa5192833101df63d74cd813eb510`, no non-sensitive row has a past expiry,
+  and all three rollout flags remain `false`.
+- The remaining two principals in batch 3 each produced one backend SoD
+  warning. No warning acceptance was present in the approved handoff, so the
+  UI validation blocked both saves; no Cloud row or audit event was created for
+  either principal. Task 4 is paused fail-closed with 390 approved rows across
+  14 principals still pending. Resumption requires explicit acceptance evidence
+  for each warning: an independent control owner, a reason, compensating
+  controls and a future acceptance expiry. No control owner or evidence was
+  inferred, and later batches were not started.
+- A temporary local diagnostic log used to prove the browser datetime event
+  boundary was reverted immediately. No service-role/direct-SQL grant mutation,
+  rollout-flag mutation, Permission Admin regrant or resolver enablement was
+  performed.
 
 ## Resolver enablement canary
 
