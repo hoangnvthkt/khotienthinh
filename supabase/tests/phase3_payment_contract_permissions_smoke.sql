@@ -68,10 +68,15 @@ create temp table phase3_payment_quantity_smoke_ids (
   payment_main_id uuid not null,
   payment_draft_id uuid not null,
   payment_wrong_scope_id uuid not null,
+  payment_verify_adjacent_id uuid not null,
+  payment_verify_wrong_scope_id uuid not null,
+  payment_confirm_wrong_scope_id uuid not null,
   quantity_return_id uuid not null,
   quantity_main_id uuid not null,
   quantity_draft_id uuid not null,
   quantity_wrong_scope_id uuid not null,
+  quantity_verify_adjacent_id uuid not null,
+  quantity_verify_wrong_scope_id uuid not null,
   payment_creator_id uuid not null,
   payment_verifier_id uuid not null,
   payment_approver_id uuid not null,
@@ -87,6 +92,11 @@ insert into phase3_payment_quantity_smoke_ids
 values (
   'phase3-payment-quantity-' || gen_random_uuid()::text,
   'phase3-payment-quantity-wrong-' || gen_random_uuid()::text,
+  gen_random_uuid(),
+  gen_random_uuid(),
+  gen_random_uuid(),
+  gen_random_uuid(),
+  gen_random_uuid(),
   gen_random_uuid(),
   gen_random_uuid(),
   gen_random_uuid(),
@@ -135,13 +145,16 @@ select payment_creator_id, 'project.payment.submit', 'project', project_id, true
 union all select payment_creator_id, 'project.payment.submit', 'project', wrong_project_id, true from phase3_payment_quantity_smoke_ids
 union all select payment_verifier_id, 'project.payment.verify', 'project', project_id, true from phase3_payment_quantity_smoke_ids
 union all select payment_verifier_id, 'project.payment.approve', 'project', project_id, true from phase3_payment_quantity_smoke_ids
+union all select payment_verifier_id, 'project.payment.approve', 'project', wrong_project_id, true from phase3_payment_quantity_smoke_ids
 union all select payment_approver_id, 'project.payment.approve', 'project', project_id, true from phase3_payment_quantity_smoke_ids
 union all select payment_approver_id, 'project.payment.approve', 'project', wrong_project_id, true from phase3_payment_quantity_smoke_ids
 union all select payment_confirmer_id, 'project.payment.confirm', 'project', project_id, true from phase3_payment_quantity_smoke_ids
+union all select payment_confirmer_id, 'project.payment.confirm', 'project', wrong_project_id, true from phase3_payment_quantity_smoke_ids
 union all select quantity_creator_id, 'project.quantity_acceptance.submit', 'project', project_id, true from phase3_payment_quantity_smoke_ids
 union all select quantity_creator_id, 'project.quantity_acceptance.submit', 'project', wrong_project_id, true from phase3_payment_quantity_smoke_ids
 union all select quantity_verifier_id, 'project.quantity_acceptance.verify', 'project', project_id, true from phase3_payment_quantity_smoke_ids
 union all select quantity_verifier_id, 'project.quantity_acceptance.approve', 'project', project_id, true from phase3_payment_quantity_smoke_ids
+union all select quantity_verifier_id, 'project.quantity_acceptance.approve', 'project', wrong_project_id, true from phase3_payment_quantity_smoke_ids
 union all select quantity_approver_id, 'project.quantity_acceptance.approve', 'project', project_id, true from phase3_payment_quantity_smoke_ids
 union all select quantity_approver_id, 'project.quantity_acceptance.approve', 'project', wrong_project_id, true from phase3_payment_quantity_smoke_ids;
 
@@ -171,6 +184,18 @@ from phase3_payment_quantity_smoke_ids
 union all
 select payment_wrong_scope_id, payment_contract_id, 'customer', wrong_project_id, site_id,
        4, current_date, current_date, jsonb_build_array(jsonb_build_object('fixture', 'payment-wrong-scope')), 'draft'
+from phase3_payment_quantity_smoke_ids
+union all
+select payment_verify_adjacent_id, payment_contract_id, 'customer', project_id, site_id,
+       5, current_date, current_date, jsonb_build_array(jsonb_build_object('fixture', 'payment-verify-adjacent')), 'draft'
+from phase3_payment_quantity_smoke_ids
+union all
+select payment_verify_wrong_scope_id, payment_contract_id, 'customer', wrong_project_id, site_id,
+       6, current_date, current_date, jsonb_build_array(jsonb_build_object('fixture', 'payment-verify-wrong-scope')), 'draft'
+from phase3_payment_quantity_smoke_ids
+union all
+select payment_confirm_wrong_scope_id, payment_contract_id, 'customer', wrong_project_id, site_id,
+       7, current_date, current_date, jsonb_build_array(jsonb_build_object('fixture', 'payment-confirm-wrong-scope')), 'draft'
 from phase3_payment_quantity_smoke_ids;
 
 insert into public.quantity_acceptances (
@@ -191,6 +216,14 @@ from phase3_payment_quantity_smoke_ids
 union all
 select quantity_wrong_scope_id, quantity_contract_id, 'customer', wrong_project_id, site_id,
        4, current_date, current_date, 'draft'
+from phase3_payment_quantity_smoke_ids
+union all
+select quantity_verify_adjacent_id, quantity_contract_id, 'customer', project_id, site_id,
+       5, current_date, current_date, 'draft'
+from phase3_payment_quantity_smoke_ids
+union all
+select quantity_verify_wrong_scope_id, quantity_contract_id, 'customer', wrong_project_id, site_id,
+       6, current_date, current_date, 'draft'
 from phase3_payment_quantity_smoke_ids;
 
 insert into public.quantity_acceptance_items (
@@ -206,7 +239,9 @@ cross join lateral (
     (s.quantity_return_id),
     (s.quantity_main_id),
     (s.quantity_draft_id),
-    (s.quantity_wrong_scope_id)
+    (s.quantity_wrong_scope_id),
+    (s.quantity_verify_adjacent_id),
+    (s.quantity_verify_wrong_scope_id)
 ) as fixture(acceptance_id);
 
 -- Run the direct-write guard as the owner so RLS cannot mask a missing trigger.
@@ -292,6 +327,39 @@ begin
     'project.payment.approve',
     'Payment wrong-scope fixture'
   );
+
+  perform public.transition_project_payment_certificate_status(
+    (select payment_verify_adjacent_id from phase3_payment_quantity_smoke_ids),
+    'submitted',
+    (select payment_creator_id from phase3_payment_quantity_smoke_ids),
+    null,
+    (select payment_verifier_id::text from phase3_payment_quantity_smoke_ids),
+    'Payment verifier',
+    'project.payment.approve',
+    'Payment verify adjacent fixture'
+  );
+
+  perform public.transition_project_payment_certificate_status(
+    (select payment_verify_wrong_scope_id from phase3_payment_quantity_smoke_ids),
+    'submitted',
+    (select payment_creator_id from phase3_payment_quantity_smoke_ids),
+    null,
+    (select payment_verifier_id::text from phase3_payment_quantity_smoke_ids),
+    'Payment verifier',
+    'project.payment.approve',
+    'Payment verify wrong-scope fixture'
+  );
+
+  perform public.transition_project_payment_certificate_status(
+    (select payment_confirm_wrong_scope_id from phase3_payment_quantity_smoke_ids),
+    'submitted',
+    (select payment_creator_id from phase3_payment_quantity_smoke_ids),
+    null,
+    (select payment_approver_id::text from phase3_payment_quantity_smoke_ids),
+    'Payment approver',
+    'project.payment.approve',
+    'Payment confirm wrong-scope fixture'
+  );
 end $$;
 
 do $$
@@ -335,6 +403,29 @@ declare
   v_blocked boolean := false;
 begin
   perform pg_temp.phase3_payment_quantity_smoke_set_user(
+    (select payment_verifier_id from phase3_payment_quantity_smoke_ids)
+  );
+  begin
+    perform public.transition_project_payment_certificate_status(
+      (select payment_draft_id from phase3_payment_quantity_smoke_ids),
+      'returned',
+      (select payment_verifier_id from phase3_payment_quantity_smoke_ids),
+      'Invalid payment verification state',
+      null, null, null, null
+    );
+  exception
+    when others then v_blocked := true;
+  end;
+  if not v_blocked then
+    raise exception 'project.payment.verify incorrectly bypassed draft state';
+  end if;
+end $$;
+
+do $$
+declare
+  v_blocked boolean := false;
+begin
+  perform pg_temp.phase3_payment_quantity_smoke_set_user(
     (select payment_approver_id from phase3_payment_quantity_smoke_ids)
   );
   perform public.transition_project_payment_certificate_status(
@@ -346,6 +437,17 @@ begin
     'Payment confirmer',
     'project.payment.confirm',
     'Payment confirmation fixture'
+  );
+
+  perform public.transition_project_payment_certificate_status(
+    (select payment_confirm_wrong_scope_id from phase3_payment_quantity_smoke_ids),
+    'approved',
+    (select payment_approver_id from phase3_payment_quantity_smoke_ids),
+    null,
+    (select payment_confirmer_id::text from phase3_payment_quantity_smoke_ids),
+    'Payment confirmer',
+    'project.payment.confirm',
+    'Payment confirm wrong-scope approval fixture'
   );
 
   begin
@@ -399,7 +501,94 @@ where user_id = (select payment_approver_id from phase3_payment_quantity_smoke_i
   and scope_type = 'project'
   and scope_id = (select wrong_project_id from phase3_payment_quantity_smoke_ids);
 
+delete from public.user_permission_grants
+where user_id = (select payment_verifier_id from phase3_payment_quantity_smoke_ids)
+  and permission_code = 'project.payment.approve'
+  and scope_type = 'project'
+  and scope_id = (select project_id from phase3_payment_quantity_smoke_ids);
+
+delete from public.user_permission_grants
+where user_id = (select payment_confirmer_id from phase3_payment_quantity_smoke_ids)
+  and permission_code = 'project.payment.confirm'
+  and scope_type = 'project'
+  and scope_id = (select wrong_project_id from phase3_payment_quantity_smoke_ids);
+
 set role authenticated;
+
+do $$
+declare
+  v_blocked boolean := false;
+begin
+  perform pg_temp.phase3_payment_quantity_smoke_set_user(
+    (select payment_verifier_id from phase3_payment_quantity_smoke_ids)
+  );
+  begin
+    perform public.transition_project_payment_certificate_status(
+      (select payment_verify_adjacent_id from phase3_payment_quantity_smoke_ids),
+      'approved',
+      (select payment_verifier_id from phase3_payment_quantity_smoke_ids),
+      null, null, null, null, null
+    );
+  exception
+    when others then v_blocked := true;
+  end;
+  if not v_blocked then
+    raise exception 'project.payment.verify incorrectly allowed approval';
+  end if;
+
+  v_blocked := false;
+  begin
+    perform public.transition_project_payment_certificate_status(
+      (select payment_verify_wrong_scope_id from phase3_payment_quantity_smoke_ids),
+      'returned',
+      (select payment_verifier_id from phase3_payment_quantity_smoke_ids),
+      'Wrong scope payment verification',
+      null, null, null, null
+    );
+  exception
+    when others then v_blocked := true;
+  end;
+  if not v_blocked then
+    raise exception 'project.payment.verify incorrectly crossed project scope';
+  end if;
+end $$;
+
+do $$
+declare
+  v_blocked boolean := false;
+begin
+  perform pg_temp.phase3_payment_quantity_smoke_set_user(
+    (select payment_confirmer_id from phase3_payment_quantity_smoke_ids)
+  );
+  begin
+    perform public.transition_project_payment_certificate_status(
+      (select payment_draft_id from phase3_payment_quantity_smoke_ids),
+      'paid',
+      (select payment_confirmer_id from phase3_payment_quantity_smoke_ids),
+      null, null, null, null, null
+    );
+  exception
+    when others then v_blocked := true;
+  end;
+  if not v_blocked then
+    raise exception 'project.payment.confirm incorrectly bypassed draft state';
+  end if;
+
+  v_blocked := false;
+  begin
+    perform public.transition_project_payment_certificate_status(
+      (select payment_confirm_wrong_scope_id from phase3_payment_quantity_smoke_ids),
+      'paid',
+      (select payment_confirmer_id from phase3_payment_quantity_smoke_ids),
+      null, null, null, null, null
+    );
+  exception
+    when others then v_blocked := true;
+  end;
+  if not v_blocked then
+    raise exception 'project.payment.confirm incorrectly crossed project scope';
+  end if;
+end $$;
 
 do $$
 declare
@@ -464,6 +653,28 @@ begin
     'project.quantity_acceptance.approve',
     'Quantity wrong-scope fixture'
   );
+
+  perform public.transition_project_quantity_acceptance_status(
+    (select quantity_verify_adjacent_id from phase3_payment_quantity_smoke_ids),
+    'submitted',
+    (select quantity_creator_id from phase3_payment_quantity_smoke_ids),
+    null,
+    (select quantity_verifier_id::text from phase3_payment_quantity_smoke_ids),
+    'Quantity verifier',
+    'project.quantity_acceptance.approve',
+    'Quantity verify adjacent fixture'
+  );
+
+  perform public.transition_project_quantity_acceptance_status(
+    (select quantity_verify_wrong_scope_id from phase3_payment_quantity_smoke_ids),
+    'submitted',
+    (select quantity_creator_id from phase3_payment_quantity_smoke_ids),
+    null,
+    (select quantity_verifier_id::text from phase3_payment_quantity_smoke_ids),
+    'Quantity verifier',
+    'project.quantity_acceptance.approve',
+    'Quantity verify wrong-scope fixture'
+  );
 end $$;
 
 do $$
@@ -507,6 +718,29 @@ declare
   v_blocked boolean := false;
 begin
   perform pg_temp.phase3_payment_quantity_smoke_set_user(
+    (select quantity_verifier_id from phase3_payment_quantity_smoke_ids)
+  );
+  begin
+    perform public.transition_project_quantity_acceptance_status(
+      (select quantity_draft_id from phase3_payment_quantity_smoke_ids),
+      'returned',
+      (select quantity_verifier_id from phase3_payment_quantity_smoke_ids),
+      'Invalid quantity verification state',
+      null, null, null, null
+    );
+  exception
+    when others then v_blocked := true;
+  end;
+  if not v_blocked then
+    raise exception 'project.quantity_acceptance.verify incorrectly bypassed draft state';
+  end if;
+end $$;
+
+do $$
+declare
+  v_blocked boolean := false;
+begin
+  perform pg_temp.phase3_payment_quantity_smoke_set_user(
     (select quantity_approver_id from phase3_payment_quantity_smoke_ids)
   );
   perform public.transition_project_quantity_acceptance_status(
@@ -539,7 +773,51 @@ where user_id = (select quantity_approver_id from phase3_payment_quantity_smoke_
   and scope_type = 'project'
   and scope_id = (select wrong_project_id from phase3_payment_quantity_smoke_ids);
 
+delete from public.user_permission_grants
+where user_id = (select quantity_verifier_id from phase3_payment_quantity_smoke_ids)
+  and permission_code = 'project.quantity_acceptance.approve'
+  and scope_type = 'project'
+  and scope_id = (select project_id from phase3_payment_quantity_smoke_ids);
+
 set role authenticated;
+
+do $$
+declare
+  v_blocked boolean := false;
+begin
+  perform pg_temp.phase3_payment_quantity_smoke_set_user(
+    (select quantity_verifier_id from phase3_payment_quantity_smoke_ids)
+  );
+  begin
+    perform public.transition_project_quantity_acceptance_status(
+      (select quantity_verify_adjacent_id from phase3_payment_quantity_smoke_ids),
+      'approved',
+      (select quantity_verifier_id from phase3_payment_quantity_smoke_ids),
+      null, null, null, null, null
+    );
+  exception
+    when others then v_blocked := true;
+  end;
+  if not v_blocked then
+    raise exception 'project.quantity_acceptance.verify incorrectly allowed approval';
+  end if;
+
+  v_blocked := false;
+  begin
+    perform public.transition_project_quantity_acceptance_status(
+      (select quantity_verify_wrong_scope_id from phase3_payment_quantity_smoke_ids),
+      'returned',
+      (select quantity_verifier_id from phase3_payment_quantity_smoke_ids),
+      'Wrong scope quantity verification',
+      null, null, null, null
+    );
+  exception
+    when others then v_blocked := true;
+  end;
+  if not v_blocked then
+    raise exception 'project.quantity_acceptance.verify incorrectly crossed project scope';
+  end if;
+end $$;
 
 do $$
 declare

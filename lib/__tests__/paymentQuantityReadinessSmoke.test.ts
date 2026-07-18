@@ -17,6 +17,14 @@ describe('Payment and Quantity readiness smoke', () => {
     expect(sql).toMatch(/project\.payment\.confirm/i);
     expect(sql).toMatch(/project\.quantity_acceptance\.verify/i);
     expect(sql).toMatch(/project\.quantity_acceptance\.approve/i);
+    expect(sql).toMatch(/project\.payment\.verify incorrectly crossed project scope/i);
+    expect(sql).toMatch(/project\.payment\.verify incorrectly bypassed draft state/i);
+    expect(sql).toMatch(/project\.payment\.verify incorrectly allowed approval/i);
+    expect(sql).toMatch(/project\.payment\.confirm incorrectly crossed project scope/i);
+    expect(sql).toMatch(/project\.payment\.confirm incorrectly bypassed draft state/i);
+    expect(sql).toMatch(/project\.quantity_acceptance\.verify incorrectly crossed project scope/i);
+    expect(sql).toMatch(/project\.quantity_acceptance\.verify incorrectly bypassed draft state/i);
+    expect(sql).toMatch(/project\.quantity_acceptance\.verify incorrectly allowed approval/i);
     expect(sql).toMatch(/phase02_task3_payment_quantity_readiness_smoke_passed/i);
     expect(sql).not.toMatch(/grant_readiness/i);
     expect(sql).not.toMatch(/set_authorization_rollout_flags/i);
