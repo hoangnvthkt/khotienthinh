@@ -18,9 +18,12 @@ describe('Payment and Quantity transition command migration', () => {
     expect(sql).toMatch(/'project\.payment\.verify'/i);
     expect(sql).toMatch(/'project\.payment\.approve'/i);
     expect(sql).toMatch(/'project\.payment\.confirm'/i);
+    expect(sql).toMatch(/'project\.quantity_acceptance\.verify'/i);
     expect(sql).toMatch(/'project\.quantity_acceptance\.approve'/i);
     expect(sql).toMatch(/create or replace function app_private\.guard_payment_certificate_direct_workflow_update/i);
     expect(sql).toMatch(/create or replace function app_private\.guard_quantity_acceptance_direct_workflow_update/i);
+    expect(sql).toMatch(/payment_certificate_items/i);
+    expect(sql).toMatch(/quantity_acceptance_items/i);
     expect(sql).toMatch(/using errcode = '23514'/i);
     expect(sql).not.toMatch(/grant_readiness/i);
     expect(sql).not.toMatch(/user_permission_grants/i);

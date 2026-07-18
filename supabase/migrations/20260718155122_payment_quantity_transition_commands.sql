@@ -154,6 +154,18 @@ begin
       using errcode = '23514';
   end if;
 
+  if p_status in ('submitted', 'approved', 'paid')
+    and coalesce(jsonb_array_length(v_certificate.items), 0) = 0
+    and not exists (
+      select 1
+      from public.payment_certificate_items item_row
+      where item_row.payment_certificate_id = p_certificate_id
+    )
+  then
+    raise exception 'Chứng từ thanh toán chưa có hạng mục.'
+      using errcode = '23514';
+  end if;
+
   if p_status = 'approved' and v_certificate.acceptance_id is not null and not exists (
     select 1
     from public.quantity_acceptances acceptance_row
@@ -289,7 +301,7 @@ begin
 
   v_required_permission := case p_status
     when 'submitted' then 'project.quantity_acceptance.submit'
-    when 'returned' then 'project.quantity_acceptance.return'
+    when 'returned' then 'project.quantity_acceptance.verify'
     when 'approved', 'cancelled' then 'project.quantity_acceptance.approve'
     else null
   end;
@@ -309,6 +321,15 @@ begin
 
   if p_status in ('returned', 'cancelled') and nullif(btrim(coalesce(p_reason, '')), '') is null then
     raise exception 'Cần nêu lý do trả lại hoặc hủy nghiệm thu.'
+      using errcode = '23514';
+  end if;
+
+  if p_status in ('submitted', 'approved') and not exists (
+    select 1
+    from public.quantity_acceptance_items item_row
+    where item_row.acceptance_id = p_acceptance_id
+  ) then
+    raise exception 'Nghiệm thu chưa có hạng mục.'
       using errcode = '23514';
   end if;
 
