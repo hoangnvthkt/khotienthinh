@@ -550,13 +550,13 @@ Expected: documentation commit only. Stop and request explicit operator approval
 - Consumes: approved immutable migration candidate and authenticated Admin session.
 - Produces: committed Cloud function, exactly one repaired migration version, successful disposable-user creation, unauthorized `42501` canary, disabled canary account and updated Phase 2 evidence.
 
-- [ ] **Step 1: Reconfirm approval, candidate SHA and unchanged preflight**
+- [x] **Step 1: Reconfirm approval, candidate SHA and unchanged preflight**
 
 Run the Task 3 Step 1 and Step 2 commands again.
 
 Expected: candidate migration has not changed since rollback verification; `auth_admin_bypass_present = false`; version is not remote-applied; flags are all `false`; sensitive null-expiry count is `467`. Stop on any drift.
 
-- [ ] **Step 2: Apply only the forward-fix in one explicit transaction**
+- [x] **Step 2: Apply only the forward-fix in one explicit transaction**
 
 Run:
 
@@ -567,7 +567,7 @@ npx supabase db query --linked --agent=no "$(node -e "const fs=require('fs'); co
 
 Expected: checkpoint `auth_profile_sync_guard_forward_fix_applied`, explicit `COMMIT`, exit `0`. Không chạy bất kỳ migration khác.
 
-- [ ] **Step 3: Verify committed schema before migration-history repair**
+- [x] **Step 3: Verify committed schema before migration-history repair**
 
 Run:
 
@@ -579,7 +579,7 @@ Run Task 3 Step 2 read-only inventory again.
 
 Expected: committed smoke PASS; `auth_admin_bypass_present = true`; ba flags vẫn `false`; sensitive null-expiry count vẫn `467`. Nếu fingerprint/behavior sai, không repair history; dừng và lập forward migration.
 
-- [ ] **Step 4: Repair exactly one verified migration version**
+- [x] **Step 4: Repair exactly one verified migration version**
 
 Run:
 
@@ -596,7 +596,7 @@ npx supabase migration list --linked | rg "$FIX_VERSION"
 
 Expected: đúng version mới có local và remote marker aligned. Không repair version nào khác.
 
-- [ ] **Step 5: Run scoped Cloud advisors**
+- [x] **Step 5: Run scoped Cloud advisors**
 
 Run:
 
@@ -608,6 +608,12 @@ npx supabase db advisors --linked --level warn --type performance
 Expected: không có warning mới trỏ tới `app_private.prevent_users_privilege_self_update`. Baseline warning ngoài phạm vi chỉ ghi nhận, không sửa kèm forward-fix.
 
 - [ ] **Step 6: Create a zero-right disposable user through the application**
+
+> Blocked on 2026-07-18 after two authenticated UI attempts. The Auth-admin
+> guard branch is committed, but the subsequent `create-user` service-role
+> PostgREST upsert is rejected with SQLSTATE `42501`. The Edge Function cleans
+> up both the Auth account and app profile. Continue only through a separately
+> reviewed forward fix; do not edit migration `20260718012151`.
 
 Trong authenticated Admin browser session:
 

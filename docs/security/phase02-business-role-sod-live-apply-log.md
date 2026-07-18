@@ -254,6 +254,47 @@ URLs, API keys or service-role values in this file.
 - Status: **Waiting for explicit operator approval to apply and repair exactly
   one forward-fix version.**
 
+### Applied forward-fix and post-apply canary blocker
+
+- At `2026-07-18T08:46:16+07:00`, the operator-approved Task 4 reconfirmed
+  candidate commit `f350b740ca08a9a0d95be033cd8076c998968681`, migration
+  version `20260718012151` and migration SHA-256
+  `9f1ed0b1a9eacfb3c28569af5efb9f5a3214943289527aa6093157f141d5464d`.
+- Exactly that migration was applied in an explicit linked transaction. The
+  committed smoke reached
+  `auth_profile_sync_guard_forward_fix_committed_smoke_passed`, and exactly
+  version `20260718012151` was repaired to `applied`; local and remote history
+  markers are aligned.
+- The committed guard hash is `dd1fc23c524c5d899378f3425461dce7` and the
+  narrow `supabase_auth_admin` bypass is present. Scoped security and
+  performance advisors returned their unchanged baselines (170 and 97 warning
+  rows respectively), with no warning targeting
+  `app_private.prevent_users_privilege_self_update()`.
+- Two post-apply attempts to create a zero-right `EMPLOYEE` canary through the
+  normal application UI still returned the safe public message `Không thể xử
+  lý yêu cầu tài khoản.` The form selected no legacy permission, Business Role
+  or direct grant.
+- Read-only Postgres logs for both attempts recorded SQLSTATE `42501`, message
+  `Only admins can update other user rows`, database role `authenticator` and
+  application `PostgREST 14.5`. This is a different boundary from the original
+  Auth-trigger failure: the restored Auth-admin branch is installed, while the
+  subsequent `create-user` Edge Function performs a redundant
+  `public.users` upsert through its service-role PostgREST client without the
+  lifecycle command context. The guard correctly rejects that second write.
+- The Edge Function compensating cleanup completed after both failures. A
+  linked aggregate confirmed zero matching `auth.users` accounts and zero
+  matching `public.users` profiles, so there is no active or orphaned canary to
+  disable. No credential, Auth ID, profile ID or token was copied to this log.
+- Final read-only inventory still shows all three rollout flags `false`, 467
+  active sensitive grants without expiry, zero canary accounts/profiles and the
+  repaired migration marker unchanged. No production grant, Business Role,
+  responsibility assignment or rollout flag changed.
+- Status: **Task 4 stopped at Step 6.** Do not edit the applied migration. The
+  next forward fix must change and deploy the `create-user` path so it does not
+  repeat the protected profile update as an ungated service-role PostgREST
+  write, then repeat the zero-right creation, unauthorized `42501` Data API
+  canary and lifecycle disable cleanup before closing this checkpoint.
+
 ## Resolver enablement canary
 
 - Status: **Blocked before flag mutation by 467 sensitive direct grants without
