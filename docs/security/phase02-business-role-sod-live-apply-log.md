@@ -638,6 +638,22 @@ URLs, API keys or service-role values in this file.
 - This is read-only evidence only. Cloud Gate A is still required before the
   smoke may execute inside `BEGIN`/`ROLLBACK`; it does not authorize creating,
   applying, or repairing a migration.
+- At `2026-07-18T22:07:56+07:00`, after explicit Cloud Gate A approval, the
+  linked rollback-only Material smoke stopped at
+  `project.material_request.approve incorrectly bypassed workflow state`.
+  The intended allow and wrong-project denial ran first; the negative assertion
+  then proved that the current handler accepts `DRAFT -> APPROVED`.
+- Root cause is the `APPROVED` path in
+  `public.transition_project_material_request_status(...)`: it resolves the
+  approval permission and performs the update without validating the source
+  request status. Existing workflow runtime paths promote to `APPROVED` only
+  from `PENDING`.
+- Post-failure read-only evidence confirmed rollback: source `467`, approved
+  regrant rows `421`, DROP rows `46`, active sensitive rows `103`, pending rows
+  `318`, declared pending rows `291`, blocking codes `21`, verified readiness
+  actions `13`, active warning acceptances `0`, and all four rollout flags
+  `false`. No readiness migration was created, applied, or repaired; no
+  principal preview or Save was attempted.
 
 ## Resolver enablement canary
 
