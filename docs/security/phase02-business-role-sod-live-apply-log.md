@@ -700,6 +700,21 @@ URLs, API keys or service-role values in this file.
   migrations remain absent from remote history. No principal preview, Save,
   readiness promotion, migration-history repair, or rollout-flag change
   occurred.
+- Cloud Gate A6R at `2026-07-18T23:12:09+07:00` loaded the Payment Certificate
+  and Quantity Acceptance transition migration plus its smoke in one linked
+  `BEGIN`/`ROLLBACK` transaction. It reached
+  `phase02_task3_payment_quantity_readiness_smoke_passed` before rollback.
+- Post-Gate-A6R aggregate evidence is unchanged: `2282` active Direct Grants,
+  readiness `229` declared / `59` legacy / `13` verified, zero enabled
+  hardening flags, zero remote history rows for migration `20260718155122`, and
+  zero persisted Payment/Quantity transition RPC rows. No principal preview,
+  Save, readiness promotion, migration-history repair, or rollout-flag change
+  occurred.
+- The evidence is complete for `project.payment.approve` and
+  `project.quantity_acceptance.approve`, so both are recorded as local
+  `CANDIDATE` codes only. Payment Verify, Payment Confirm and Quantity Verify
+  still lack code-specific negative coverage and remain `declared`; a later
+  rollback-only gate is required before any readiness migration is considered.
 
 ## Resolver enablement canary
 
