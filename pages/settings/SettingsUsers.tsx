@@ -20,6 +20,7 @@ interface SettingsUsersProps {
   handleAddUser: () => void;
   handleEditUser: (u: User) => void;
   handleSaveUser: (u: User) => void | Promise<void>;
+  reloadManagedUser: (userId: string) => Promise<User>;
   getRoleBadge: (role: Role) => React.ReactNode;
   isSavingAccount?: boolean;
 }
@@ -39,6 +40,7 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
   handleAddUser,
   handleEditUser,
   handleSaveUser,
+  reloadManagedUser,
   getRoleBadge,
   isSavingAccount = false,
 }) => {
@@ -178,6 +180,7 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
         isOpen={isUserModalOpen}
         onClose={() => setIsUserModalOpen(false)}
         onSave={handleSaveUser}
+        onPermissionsSaved={reloadManagedUser}
         userToEdit={editingUser}
         warehouses={warehouses}
         users={users}

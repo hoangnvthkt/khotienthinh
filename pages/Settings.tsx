@@ -106,7 +106,7 @@ const Settings: React.FC = () => {
     addUnit, updateUnit, removeUnit,
     addSupplier, updateSupplier, removeSupplier,
     appSettings, updateAppSettings, clearAllData, connectionError,
-    users, addUser, updateUser, disableUserAccount, reactivateUserAccount, user: currentUser, isLoading, realtimeStatus, lastRealtimeEvent,
+    users, addUser, updateUser, reloadManagedUser, disableUserAccount, reactivateUserAccount, user: currentUser, isLoading, realtimeStatus, lastRealtimeEvent,
     hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules, hrmConstructionSites,
     addHrmItem, updateHrmItem, removeHrmItem,
     items, addItem, updateItem, removeItem, transactions, requests, lossNorms, addLossNorm, updateLossNorm, removeLossNorm,
@@ -1948,6 +1948,7 @@ const Settings: React.FC = () => {
               handleAccountAction={handleAccountAction}
               handleAddUser={handleAddUser} handleEditUser={handleEditUser}
               handleSaveUser={handleSaveUser}
+              reloadManagedUser={reloadManagedUser}
               getRoleBadge={getRoleBadge}
               isSavingAccount={accountStatusLoading}
             />

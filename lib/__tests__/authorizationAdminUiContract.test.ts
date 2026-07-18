@@ -11,23 +11,28 @@ describe('authorization admin UI contract', () => {
     expect(settings).toContain('SettingsAuthorizationGovernance');
   });
 
-  it('uses source explanation and the governed V2 direct-grant service', () => {
+  it('uses one unified source-aware editor and governed permission save', () => {
     const modal = read('components/UserModal.tsx');
+    const panel = read('components/permissions/PrincipalDirectGrantPanel.tsx');
     expect(modal).toContain('listEffectivePermissionSources');
-    expect(modal).toContain('replaceUserPermissionGrants');
-    expect(modal).toContain('previewDirectGrantReplacement');
+    expect(modal).toContain('UnifiedPermissionMatrix');
+    expect(modal).toContain('previewUserPermissionChange');
+    expect(modal).toContain('applyUserPermissionChange');
     expect(modal).toContain('isIdentityBoundPermission');
     expect(modal).toContain('canManageDirectGrants');
-    expect(modal).not.toMatch(/formData\.role !== Role\.ADMIN\s*&&\s*\([\s\S]*PermissionMatrix/);
+    expect(modal).not.toContain('Phân quyền module');
+    expect(modal).not.toContain('Quản trị Sub-module');
+    expect(panel).toContain('UnifiedPermissionMatrix');
+    expect(panel).toContain('buildUnifiedPermissionDraftKey');
     expect(modal).toContain('permissionChangeReason');
     expect(modal).toContain('warningAcceptances');
     expect(modal).toContain('Lưu phân quyền');
   });
 
-  it('does not pretend profile and permissions save atomically in Phase 2', () => {
+  it('keeps profile save separate from protected permission drafts', () => {
     const modal = read('components/UserModal.tsx');
-    expect(modal).toContain('handleSaveDirectPermissions');
-    expect(modal).not.toMatch(/await onSave\(finalUser\);\s*if \(isSupabaseConfigured\) \{\s*await replaceUserPermissionGrants/s);
+    expect(modal).toContain('persistedLegacyState');
+    expect(modal).not.toMatch(/await onSave\([^)]*legacyDraft/);
   });
 
   it('contains no browser actor payload', () => {

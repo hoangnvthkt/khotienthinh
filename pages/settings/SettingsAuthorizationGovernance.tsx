@@ -6,7 +6,7 @@ import EffectivePermissionSourceList from '../../components/permissions/Effectiv
 import PrincipalDirectGrantPanel from '../../components/permissions/PrincipalDirectGrantPanel';
 import PrincipalRoleAssignmentPanel from '../../components/permissions/PrincipalRoleAssignmentPanel';
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
-import { listUserPermissionGrants, replaceUserPermissionGrants } from '../../lib/permissions/permissionAdminService';
+import { listUserPermissionGrants } from '../../lib/permissions/permissionAdminService';
 import { getAllPermissionActions } from '../../lib/permissions/permissionRegistry';
 import { canPerform } from '../../lib/permissions/permissionService';
 import { authorizationGovernanceService } from '../../lib/permissions/authorizationGovernanceService';
@@ -296,23 +296,11 @@ const SettingsAuthorizationGovernance: React.FC<SettingsAuthorizationGovernanceP
                   disabled={!canManageGrants}
                   controlOwners={principals}
                   currentUserId={currentUser.id}
-                  onPreview={async draft => {
+                  onSaved={async () => {
                     try {
-                      return await authorizationGovernanceService.previewDirectGrantReplacement(selectedPrincipal.userId, draft);
-                    } catch (error) {
-                      reportError('authorizationGovernance.previewDirect', error, 'Không thể preview direct grant.');
-                      throw error;
-                    }
-                  }}
-                  onSave={async (draft, reason, acceptances) => {
-                    try {
-                      await replaceUserPermissionGrants(selectedPrincipal.userId, draft, {
-                        reason,
-                        warningAcceptances: [...acceptances],
-                      });
                       await refreshAfterCommand();
                     } catch (error) {
-                      reportError('authorizationGovernance.saveDirect', error, 'Backend đã từ chối thay đổi direct grant.');
+                      reportError('authorizationGovernance.refreshDirect', error, 'Đã lưu quyền nhưng không thể tải lại dữ liệu mới.');
                       throw error;
                     }
                   }}
