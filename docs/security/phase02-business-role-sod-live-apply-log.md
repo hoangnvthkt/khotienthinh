@@ -771,6 +771,15 @@ URLs, API keys or service-role values in this file.
   remain absent from migration history. No principal preview/Save, grant,
   warning-acceptance, rollout-flag, readiness, or history mutation occurred
   beyond the approved runtime apply.
+- Cloud Gate A11 at `2026-07-18T23:39:40+07:00` repaired exactly migration
+  history versions `20260718155122` and `20260718161857` to `applied` on the
+  linked Cloud project. No other version was included.
+- Read-only post-repair evidence confirms one history row for each exact
+  version; both transition RPCs and private guards remain present; the five
+  Payment/Quantity codes remain `verified`; Payment Mark Paid remains
+  `declared`; active Direct Grants remain `2282`; and zero hardening flags are
+  enabled. No SQL migration body, principal preview/Save, grant,
+  warning-acceptance, readiness, or rollout-flag mutation occurred.
 
 ## Resolver enablement canary
 
