@@ -95,7 +95,7 @@ const PermissionChangeSummary: React.FC<PermissionChangeSummaryProps> = ({
 
       {summary.retained.length > 0 && (
         <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
-          Business Role vẫn giữ quyền thực tế sau khi Direct Grant được gỡ.
+          Gỡ Direct Grant không làm mất quyền thực tế vì Business Role vẫn còn hiệu lực.
         </p>
       )}
 

@@ -54,6 +54,8 @@ const SodWarningPanel: React.FC<SodWarningPanelProps> = ({
     owner.userId !== currentUserId &&
     owner.userId !== affectedPrincipalId
   );
+  const hasIndependentOwner = availableOwners.length > 0;
+  const acceptanceDisabled = disabled || !hasIndependentOwner;
 
   const updateAcceptance = (warning: SodFinding, patch: Partial<SodWarningAcceptanceInput>) => {
     const warningKey = sodWarningKey(warning);
@@ -69,6 +71,11 @@ const SodWarningPanel: React.FC<SodWarningPanelProps> = ({
       <div className="flex items-center gap-2 text-xs font-black text-amber-800">
         <AlertTriangle size={15} /> Cần xác nhận kiểm soát SoD
       </div>
+      {!hasIndependentOwner && (
+        <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs font-black text-rose-700">
+          Chưa có người kiểm soát độc lập đủ điều kiện; không thể lưu thay đổi quyền nhạy cảm này.
+        </div>
+      )}
       {warnings.map(warning => {
         const acceptance = acceptances.find(item => sodWarningKey(item) === sodWarningKey(warning)) || emptyAcceptance(warning);
         return (
@@ -81,7 +88,7 @@ const SodWarningPanel: React.FC<SodWarningPanelProps> = ({
             <textarea
               value={acceptance.reason}
               onChange={event => updateAcceptance(warning, { reason: event.target.value })}
-              disabled={disabled}
+              disabled={acceptanceDisabled}
               rows={2}
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-amber-200 disabled:bg-slate-50"
               placeholder="Lý do chấp nhận cảnh báo (ít nhất 10 ký tự)"
@@ -89,7 +96,7 @@ const SodWarningPanel: React.FC<SodWarningPanelProps> = ({
             <select
               value={acceptance.controlOwnerUserId}
               onChange={event => updateAcceptance(warning, { controlOwnerUserId: event.target.value })}
-              disabled={disabled}
+              disabled={acceptanceDisabled}
               className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 outline-none disabled:bg-slate-50"
             >
               <option value="">Chọn người kiểm soát độc lập</option>
@@ -98,7 +105,7 @@ const SodWarningPanel: React.FC<SodWarningPanelProps> = ({
             <textarea
               value={acceptance.compensatingControls}
               onChange={event => updateAcceptance(warning, { compensatingControls: event.target.value })}
-              disabled={disabled}
+              disabled={acceptanceDisabled}
               rows={2}
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-amber-200 disabled:bg-slate-50"
               placeholder="Biện pháp kiểm soát bù trừ (ít nhất 10 ký tự)"
@@ -107,7 +114,7 @@ const SodWarningPanel: React.FC<SodWarningPanelProps> = ({
               type="datetime-local"
               value={toLocalDateTime(acceptance.expiresAt)}
               onChange={event => updateAcceptance(warning, { expiresAt: toIsoDateTime(event.target.value) })}
-              disabled={disabled}
+              disabled={acceptanceDisabled}
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600 outline-none disabled:bg-slate-50"
             />
           </section>

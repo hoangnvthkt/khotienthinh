@@ -5,6 +5,7 @@ import type { UserPermissionGrant } from '../../types';
 import type { EffectivePermissionSource } from '../permissions/authorizationGovernanceTypes';
 import UnifiedPermissionMatrix from '../../components/permissions/UnifiedPermissionMatrix';
 import PermissionChangeSummary from '../../components/permissions/PermissionChangeSummary';
+import SodWarningPanel from '../../components/permissions/SodWarningPanel';
 
 const grant = (permissionCode: string): UserPermissionGrant => ({
   userId: 'user-1',
@@ -128,6 +129,34 @@ describe('UnifiedPermissionMatrix', () => {
     );
 
     expect(autoViewHtml).toContain('View được thêm tự động');
-    expect(retainedHtml).toContain('Business Role vẫn giữ quyền thực tế');
+    expect(retainedHtml).toContain('Gỡ Direct Grant không làm mất quyền thực tế vì Business Role vẫn còn hiệu lực.');
+  });
+
+  it('blocks warning acceptance when no independent control owner is eligible', () => {
+    const html = renderToStaticMarkup(
+      <SodWarningPanel
+        warnings={[{
+          ruleCode: 'SOD-01',
+          effect: 'WARN',
+          message: 'Cần kiểm soát độc lập.',
+          permissionCodes: ['project.daily_log.approve'],
+          scopeType: 'project',
+          scopeId: 'project-1',
+        }]}
+        acceptances={[]}
+        controlOwners={[{
+          userId: 'actor-1',
+          name: 'Actor',
+          email: 'actor@example.com',
+          accountStatus: 'ACTIVE',
+        }]}
+        currentUserId="actor-1"
+        affectedPrincipalId="user-1"
+        onChange={() => undefined}
+      />,
+    );
+
+    expect(html).toContain('Chưa có người kiểm soát độc lập đủ điều kiện; không thể lưu thay đổi quyền nhạy cảm này.');
+    expect(html).toMatch(/<textarea[^>]*disabled=""/);
   });
 });
