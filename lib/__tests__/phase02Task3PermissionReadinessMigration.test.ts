@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 const migrationDir = path.resolve(process.cwd(), 'supabase/migrations');
 const candidates = fs
   .readdirSync(migrationDir)
-  .filter(name => name.endsWith('_phase02_task3_permission_readiness.sql'));
+  .filter(name => name.endsWith('_material_approval_readiness.sql'));
 
 const promotable = [
   'project.material_request.approve',
@@ -20,10 +20,9 @@ describe('Phase 02 Task 3 permission readiness migration', () => {
 
     for (const code of promotable) expect(sql).toContain(`'${code}'`);
 
-    expect(sql).toMatch(/grant_readiness\s*=\s*'verified'/i);
-    expect(sql).toMatch(/grant_readiness\s*=\s*'declared'/i);
-    expect(sql).toMatch(/get diagnostics\s+v_updated\s*=\s*row_count/i);
-    expect(sql).toMatch(/v_updated\s*<>\s*3/i);
+    expect(sql).toMatch(/is_active\s+and\s+grant_readiness\s*=\s*'declared'/i);
+    expect(sql).toMatch(/set\s+grant_readiness\s*=\s*'verified'/i);
+    expect(sql).toMatch(/cardinality\(v_codes\)/i);
     expect(sql).not.toContain("'project.material_request.confirm'");
     expect(sql).not.toMatch(/set_authorization_rollout_flags/i);
     expect(sql).not.toMatch(/user_permission_grants/i);
