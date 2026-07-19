@@ -112,4 +112,26 @@ describe('authorization admin UI contract', () => {
     expect(workspace).not.toContain('Hay chon mot du an');
     expect(workspace).not.toContain('Tất cả dự án');
   });
+
+  it('explains optional scope selection and prioritizes modules compatible with the current scope', () => {
+    const workspace = read('components/permissions/DirectUserPermissionWorkspace.tsx');
+    const tree = read('components/permissions/CompactDirectPermissionTree.tsx');
+
+    expect(workspace).toContain('Không bắt buộc chọn Dự án');
+    expect(workspace).toContain('Scope Dự án chỉ cấp được quyền hỗ trợ Dự án');
+    expect(tree).toContain('sortModulesByScopeCompatibility');
+    expect(tree).toContain('moduleSupportsScope');
+    expect(tree).toContain('scope.scopeType');
+  });
+
+  it('groups Business Role permissions by module instead of rendering a flat action list', () => {
+    const editor = read('components/permissions/BusinessRoleEditor.tsx');
+
+    expect(editor).toContain('buildBusinessRolePermissionGroups');
+    expect(editor).toContain('selectedOnly');
+    expect(editor).toContain('permissionSearch');
+    expect(editor).toContain('expandedModules');
+    expect(editor).toContain('quyền đã chọn');
+    expect(editor).not.toContain('editableActions.map(action =>');
+  });
 });

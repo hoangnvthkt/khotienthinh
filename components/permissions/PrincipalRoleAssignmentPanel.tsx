@@ -10,6 +10,7 @@ import type {
 } from '../../lib/permissions/authorizationGovernanceTypes';
 import { validateSodWarningAcceptances } from '../../lib/permissions/authorizationGovernanceViewModel';
 import type { PermissionScope, PermissionScopeType } from '../../lib/permissions/permissionTypes';
+import type { PermissionScopeLookupOptionsByType } from '../../lib/permissions/permissionScopeLookupService';
 import PermissionScopePicker from './PermissionScopePicker';
 import SodWarningPanel from './SodWarningPanel';
 
@@ -21,6 +22,7 @@ interface PrincipalRoleAssignmentPanelProps {
   disabled: boolean;
   controlOwners?: readonly AuthorizationPrincipal[];
   currentUserId?: string;
+  scopeLookupOptions?: PermissionScopeLookupOptionsByType;
   onPreview: (roleId: string, scope: PermissionScope) => Promise<void>;
   onAssign: (input: AssignBusinessRoleInput) => Promise<void>;
   onRevoke: (assignmentId: string, reason: string) => Promise<void>;
@@ -43,6 +45,7 @@ const PrincipalRoleAssignmentPanel: React.FC<PrincipalRoleAssignmentPanelProps> 
   disabled,
   controlOwners = [],
   currentUserId,
+  scopeLookupOptions,
   onPreview,
   onAssign,
   onRevoke,
@@ -152,7 +155,7 @@ const PrincipalRoleAssignmentPanel: React.FC<PrincipalRoleAssignmentPanelProps> 
         </select>
         <input type="datetime-local" value={expiresAt} onChange={event => setExpiresAt(event.target.value)} disabled={disabled || principalDisabled} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold disabled:bg-slate-50" title="Hết hạn (tùy chọn)" />
       </div>
-      <PermissionScopePicker value={scope} onChange={value => { setScope(value); setAcceptances([]); setPreviewedDraftKey(null); }} disabled={disabled || principalDisabled} />
+      <PermissionScopePicker value={scope} onChange={value => { setScope(value); setAcceptances([]); setPreviewedDraftKey(null); }} disabled={disabled || principalDisabled} lookupOptions={scopeLookupOptions} />
       <textarea value={reason} onChange={event => setReason(event.target.value)} disabled={disabled || principalDisabled} rows={2} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold disabled:bg-slate-50" placeholder="Lý do phân công (ít nhất 10 ký tự)" />
       {decision && previewMatches && decision.hardDenies.length > 0 && (
         <div className="space-y-1 rounded-lg border border-rose-100 bg-rose-50 p-3 text-xs font-bold text-rose-700">

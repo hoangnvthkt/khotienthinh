@@ -38,6 +38,21 @@ const sortModules = (modules: readonly PermissionModuleDefinition[]): Permission
   [...modules].sort((left, right) =>
     (left.sortOrder || 0) - (right.sortOrder || 0) || left.label.localeCompare(right.label));
 
+const moduleSupportsScope = (module: PermissionModuleDefinition, scope: PermissionScope): boolean => {
+  const scopeType = scope.scopeType || 'global';
+  return module.actions.some(action => isPermissionActionScopeAllowed(action.permissionCode, {
+    scopeType,
+    scopeId: scope.scopeId || '*',
+  }));
+};
+
+const sortModulesByScopeCompatibility = (
+  modules: readonly PermissionModuleDefinition[],
+  scope: PermissionScope,
+): PermissionModuleDefinition[] => sortModules(modules).sort((left, right) =>
+  Number(moduleSupportsScope(right, scope)) - Number(moduleSupportsScope(left, scope))
+);
+
 const CompactDirectPermissionTree: React.FC<CompactDirectPermissionTreeProps> = ({
   targetUserId,
   grants,
@@ -53,10 +68,16 @@ const CompactDirectPermissionTree: React.FC<CompactDirectPermissionTreeProps> = 
     .filter(application => !applicationFilter || application.code === applicationFilter)
     .map(application => ({
       ...application,
-      modules: sortModules(application.modules)
+      modules: sortModulesByScopeCompatibility(application.modules, scope)
         .filter(module => !moduleFilter || module.code === moduleFilter),
     }))
-    .filter(application => application.modules.length > 0), [applicationFilter, moduleFilter]);
+    .filter(application => application.modules.length > 0)
+    .sort((left, right) =>
+      Number(right.modules.some(module => moduleSupportsScope(module, scope))) -
+      Number(left.modules.some(module => moduleSupportsScope(module, scope))) ||
+      (left.sortOrder || 0) - (right.sortOrder || 0) ||
+      left.label.localeCompare(right.label)
+    ), [applicationFilter, moduleFilter, scope]);
 
   const toggleExpanded = (moduleCode: string) => {
     setExpandedModules(previous => {

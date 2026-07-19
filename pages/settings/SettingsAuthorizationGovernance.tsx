@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, History, Loader2, RefreshCcw, ShieldCheck } from 'lucide-react';
 import type { User } from '../../types';
 import BusinessRoleEditor from '../../components/permissions/BusinessRoleEditor';
+import SearchableSelect from '../../components/common/SearchableSelect';
 import DirectUserPermissionWorkspace from '../../components/permissions/DirectUserPermissionWorkspace';
 import EffectivePermissionSourceList from '../../components/permissions/EffectivePermissionSourceList';
 import PrincipalDirectGrantPanel from '../../components/permissions/PrincipalDirectGrantPanel';
@@ -11,6 +12,10 @@ import { listUserPermissionGrants } from '../../lib/permissions/permissionAdminS
 import { getAllPermissionActions } from '../../lib/permissions/permissionRegistry';
 import { canPerform } from '../../lib/permissions/permissionService';
 import { authorizationGovernanceService } from '../../lib/permissions/authorizationGovernanceService';
+import {
+  permissionScopeLookupService,
+  type PermissionScopeLookupOptionsByType,
+} from '../../lib/permissions/permissionScopeLookupService';
 import type {
   AuthorizationAuditEvent,
   AuthorizationDecision,
@@ -30,6 +35,20 @@ interface SettingsAuthorizationGovernanceProps {
   currentUser: User;
 }
 
+const EMPTY_SCOPE_LOOKUP_OPTIONS: PermissionScopeLookupOptionsByType = {};
+
+const getPrincipalLabel = (principal: AuthorizationPrincipal) => `${principal.name} · ${principal.email}`;
+
+const getPrincipalSearchText = (principal: AuthorizationPrincipal) =>
+  `${principal.name} ${principal.email} ${principal.userId} ${principal.accountStatus}`;
+
+const renderPrincipalOption = (principal: AuthorizationPrincipal) => (
+  <span className="block">
+    <span className="block font-black">{principal.name}</span>
+    <span className="block text-[10px] font-semibold text-slate-400">{principal.email}</span>
+  </span>
+);
+
 const SettingsAuthorizationGovernance: React.FC<SettingsAuthorizationGovernanceProps> = ({ currentUser }) => {
   const canView = canPerform(currentUser, 'system.authorization.view');
   const canManageRoles = canPerform(currentUser, 'system.authorization.manage_roles');
@@ -46,6 +65,7 @@ const SettingsAuthorizationGovernance: React.FC<SettingsAuthorizationGovernanceP
   const [sources, setSources] = useState<EffectivePermissionSource[]>([]);
   const [assignments, setAssignments] = useState<PrincipalRoleAssignment[]>([]);
   const [directGrants, setDirectGrants] = useState<UserPermissionGrant[]>([]);
+  const [scopeLookupOptions, setScopeLookupOptions] = useState<PermissionScopeLookupOptionsByType>(EMPTY_SCOPE_LOOKUP_OPTIONS);
   const [auditEvents, setAuditEvents] = useState<AuthorizationAuditEvent[]>([]);
   const [overrideRules, setOverrideRules] = useState<AuthorizationSodRule[]>([]);
   const [roleImpactPreview, setRoleImpactPreview] = useState<BusinessRoleImpactPreview | null>(null);
@@ -82,18 +102,33 @@ const SettingsAuthorizationGovernance: React.FC<SettingsAuthorizationGovernanceP
     setLoadedPrincipalId(principalId);
   }, [canAudit, canManageGrants, canManageRoles]);
 
+  const selectPrincipal = useCallback((principalId: string) => {
+    selectedPrincipalIdRef.current = principalId;
+    setLoadedPrincipalId('');
+    setSelectedPrincipalId(principalId);
+    setErrorMessage('');
+    if (principalId) {
+      loadPrincipalDetails(principalId).catch(error => reportError('authorizationGovernance.selectPrincipal', error, 'Không thể tải nguồn quyền của tài khoản.'));
+    }
+  }, [loadPrincipalDetails, reportError]);
+
   const loadPage = useCallback(async () => {
     if (!canView) return;
-    const [nextPrincipals, nextRoles, nextAuditEvents, nextOverrideRules] = await Promise.all([
+    const [nextPrincipals, nextRoles, nextAuditEvents, nextOverrideRules, nextScopeLookupOptions] = await Promise.all([
       authorizationGovernanceService.listAuthorizationPrincipals(),
       authorizationGovernanceService.listBusinessRoles(),
       canAudit ? authorizationGovernanceService.listPermissionAuditEvents(100) : Promise.resolve([]),
       canOverride ? authorizationGovernanceService.listOverridableSodRules() : Promise.resolve([]),
+      permissionScopeLookupService.listLookupOptions().catch(error => {
+        logApiError('authorizationGovernance.loadScopeLookupOptions', error);
+        return EMPTY_SCOPE_LOOKUP_OPTIONS;
+      }),
     ]);
     setPrincipals(nextPrincipals);
     setRoles(nextRoles);
     setAuditEvents(nextAuditEvents);
     setOverrideRules(nextOverrideRules);
+    setScopeLookupOptions(nextScopeLookupOptions);
     const preferredPrincipalId = selectedPrincipalIdRef.current;
     const nextPrincipalId = preferredPrincipalId && nextPrincipals.some(item => item.userId === preferredPrincipalId)
       ? preferredPrincipalId
@@ -179,20 +214,20 @@ const SettingsAuthorizationGovernance: React.FC<SettingsAuthorizationGovernanceP
         <aside className="space-y-4">
           <section className="rounded-2xl border border-slate-200 bg-white p-3">
             <div className="mb-2 text-[10px] font-black uppercase tracking-wide text-slate-500">Principal</div>
-            <select
+            <SearchableSelect
               value={selectedPrincipalId}
-              onChange={event => {
-                const principalId = event.target.value;
-                selectedPrincipalIdRef.current = principalId;
-                setLoadedPrincipalId('');
-                setSelectedPrincipalId(principalId);
-                setErrorMessage('');
-                loadPrincipalDetails(principalId).catch(error => reportError('authorizationGovernance.selectPrincipal', error, 'Không thể tải nguồn quyền của tài khoản.'));
-              }}
-              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600"
-            >
-              {principals.map(principal => <option key={principal.userId} value={principal.userId}>{principal.name} · {principal.email}</option>)}
-            </select>
+              options={principals}
+              onChange={principal => selectPrincipal(principal?.userId || '')}
+              getOptionValue={principal => principal.userId}
+              getOptionLabel={getPrincipalLabel}
+              getOptionSearchText={getPrincipalSearchText}
+              renderOption={renderPrincipalOption}
+              placeholder="Gõ tên hoặc email..."
+              emptyLabel="Không tìm thấy tài khoản"
+              disabled={principals.length === 0}
+              clearable={false}
+              inputClassName="rounded-xl py-2"
+            />
           </section>
           <section className="rounded-2xl border border-slate-200 bg-white p-3">
             <div className="mb-2 text-[10px] font-black uppercase tracking-wide text-slate-500">Business Role</div>
@@ -223,6 +258,7 @@ const SettingsAuthorizationGovernance: React.FC<SettingsAuthorizationGovernanceP
               principals={principals}
               currentUserId={currentUser.id}
               disabled={!canManageGrants}
+              scopeLookupOptions={scopeLookupOptions}
               clipboard={directClipboard}
               onClipboardChange={setDirectClipboard}
               onSaved={async () => {
@@ -250,6 +286,7 @@ const SettingsAuthorizationGovernance: React.FC<SettingsAuthorizationGovernanceP
               permissionActions={permissionActions}
               preview={roleImpactPreview}
               disabled={!canManageRoles}
+              scopeLookupOptions={scopeLookupOptions}
               onPreview={async (items: BusinessRoleItem[]) => {
                 try {
                   setRoleImpactPreview(await authorizationGovernanceService.previewBusinessRoleChange(selectedRole?.id || null, items));
@@ -302,6 +339,7 @@ const SettingsAuthorizationGovernance: React.FC<SettingsAuthorizationGovernanceP
                   disabled={!canManageRoles}
                   controlOwners={principals}
                   currentUserId={currentUser.id}
+                  scopeLookupOptions={scopeLookupOptions}
                   onPreview={async (roleId, scope) => {
                     try {
                       setAssignmentDecision(await authorizationGovernanceService.previewBusinessRoleAssignment({
@@ -346,6 +384,7 @@ const SettingsAuthorizationGovernance: React.FC<SettingsAuthorizationGovernanceP
                   disabled={!canManageGrants}
                   controlOwners={principals}
                   currentUserId={currentUser.id}
+                  scopeLookupOptions={scopeLookupOptions}
                   onSaved={async () => {
                     try {
                       await refreshAfterCommand();
