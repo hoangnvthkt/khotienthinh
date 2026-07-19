@@ -112,4 +112,15 @@ describe('authorization admin UI contract', () => {
     expect(workspace).not.toContain('Hay chon mot du an');
     expect(workspace).not.toContain('Tất cả dự án');
   });
+
+  it('groups Business Role permissions by module instead of rendering a flat action list', () => {
+    const editor = read('components/permissions/BusinessRoleEditor.tsx');
+
+    expect(editor).toContain('buildBusinessRolePermissionGroups');
+    expect(editor).toContain('selectedOnly');
+    expect(editor).toContain('permissionSearch');
+    expect(editor).toContain('expandedModules');
+    expect(editor).toContain('quyền đã chọn');
+    expect(editor).not.toContain('editableActions.map(action =>');
+  });
 });

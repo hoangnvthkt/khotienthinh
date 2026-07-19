@@ -6,16 +6,17 @@ import type {
   BusinessRoleItem,
   SaveBusinessRoleInput,
 } from '../../lib/permissions/authorizationGovernanceTypes';
-import { permissionRegistry } from '../../lib/permissions/permissionRegistry';
-import { isIdentityBoundPermission } from '../../lib/permissions/permissionRisk';
+import {
+  buildBusinessRolePermissionGroups,
+  resolveBusinessRoleItemScope,
+  type BusinessRolePermissionActionRow,
+} from '../../lib/permissions/businessRolePermissionCatalogViewModel';
 import type {
   PermissionActionDefinition,
-  PermissionModuleDefinition,
   PermissionScope,
   PermissionScopeType,
 } from '../../lib/permissions/permissionTypes';
 import type { PermissionScopeLookupOptionsByType } from '../../lib/permissions/permissionScopeLookupService';
-import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 import PermissionScopePicker from './PermissionScopePicker';
 
 interface BusinessRoleEditorProps {
@@ -28,40 +29,11 @@ interface BusinessRoleEditorProps {
   onSave: (input: SaveBusinessRoleInput) => Promise<void>;
 }
 
-interface GroupedModule {
-  module: PermissionModuleDefinition;
-  actions: PermissionActionDefinition[];
-  selectedCount: number;
-  totalCount: number;
-}
-
 const itemKey = (item: BusinessRoleItem) => `${item.permissionCode}::${item.scopeType}::${item.scopeId}`;
 const canonicalItems = (items: readonly BusinessRoleItem[]) => [...items]
   .map(itemKey)
   .sort()
   .join('|');
-
-const actionModuleCodeByPermission = new Map<string, string>(
-  permissionRegistry.flatMap(application =>
-    application.modules.flatMap(module =>
-      module.actions.map(action => [action.permissionCode, module.code] as const),
-    ),
-  ),
-);
-
-const getDefaultExpandedModules = (role: BusinessRole | null) => {
-  const selectedModules = new Set(
-    (role?.items || [])
-      .map(item => actionModuleCodeByPermission.get(item.permissionCode))
-      .filter((moduleCode): moduleCode is string => Boolean(moduleCode)),
-  );
-  if (selectedModules.size > 0) return selectedModules;
-  const firstModule = permissionRegistry.flatMap(application => application.modules)[0];
-  return new Set(firstModule ? [firstModule.code] : []);
-};
-
-const getActionScopeTypes = (action: PermissionActionDefinition): readonly PermissionScopeType[] =>
-  action.scopeTypes?.length ? action.scopeTypes : ['global'];
 
 const BusinessRoleEditor: React.FC<BusinessRoleEditorProps> = ({
   role,
@@ -77,77 +49,53 @@ const BusinessRoleEditor: React.FC<BusinessRoleEditorProps> = ({
   const [description, setDescription] = useState('');
   const [items, setItems] = useState<BusinessRoleItem[]>([]);
   const [reason, setReason] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [showSelectedOnly, setShowSelectedOnly] = useState(false);
-  const [expandedModules, setExpandedModules] = useState<Set<string>>(() => getDefaultExpandedModules(null));
+  const [permissionSearch, setPermissionSearch] = useState('');
+  const [selectedOnly, setSelectedOnly] = useState(false);
+  const [defaultScope, setDefaultScope] = useState<PermissionScope>({ scopeType: 'global', scopeId: '*' });
+  const [expandedModules, setExpandedModules] = useState<Set<string>>(new Set());
   const [previewedItemsKey, setPreviewedItemsKey] = useState<string | null>(null);
   const [busy, setBusy] = useState<'preview' | 'save' | null>(null);
   const [validationMessage, setValidationMessage] = useState('');
 
   useEffect(() => {
+    const seedItems = role?.items ? [...role.items] : [];
+    const selectedGroups = buildBusinessRolePermissionGroups({
+      actions: permissionActions,
+      selectedItems: seedItems,
+      selectedOnly: true,
+      includeIdentityBoundSelected: Boolean(role?.isSystem),
+    });
+    const firstGroup = selectedGroups[0]
+      || buildBusinessRolePermissionGroups({ actions: permissionActions, selectedItems: [] })[0];
+    const nextExpandedModules = new Set(
+      selectedGroups
+        .flatMap(application => application.modules)
+        .map(module => module.moduleCode),
+    );
+    if (nextExpandedModules.size === 0 && firstGroup?.modules[0]) {
+      nextExpandedModules.add(firstGroup.modules[0].moduleCode);
+    }
+
     setCode(role?.code || '');
     setName(role?.name || '');
     setDescription(role?.description || '');
-    setItems(role?.items ? [...role.items] : []);
+    setItems(seedItems);
     setReason('');
-    setSearchQuery('');
-    setShowSelectedOnly(false);
-    setExpandedModules(getDefaultExpandedModules(role));
+    setPermissionSearch('');
+    setSelectedOnly(false);
+    setDefaultScope({ scopeType: 'global', scopeId: '*' });
+    setExpandedModules(nextExpandedModules);
     setPreviewedItemsKey(null);
     setValidationMessage('');
-  }, [role]);
+  }, [permissionActions, role]);
 
-  const editableActions = useMemo(
-    () => permissionActions.filter(action =>
-      !isIdentityBoundPermission(action.permissionCode) ||
-      Boolean(role?.isSystem && role.items.some(item => item.permissionCode === action.permissionCode))
-    ),
-    [permissionActions, role],
-  );
-  const editableActionByCode = useMemo(
-    () => new Map(editableActions.map(action => [action.permissionCode, action] as const)),
-    [editableActions],
-  );
-  const itemsByPermissionCode = useMemo(
-    () => new Map(items.map(item => [item.permissionCode, item] as const)),
-    [items],
-  );
-  const groupedApplications = useMemo(() => permissionRegistry
-    .map(application => {
-      const modules = application.modules
-        .map<GroupedModule>(module => {
-          const moduleActions = module.actions
-            .map(action => editableActionByCode.get(action.permissionCode))
-            .filter((action): action is PermissionActionDefinition => Boolean(action));
-          const selectedCount = moduleActions.filter(action => itemsByPermissionCode.has(action.permissionCode)).length;
-          const actions = moduleActions.filter(action => {
-            const item = itemsByPermissionCode.get(action.permissionCode);
-            if (showSelectedOnly && !item) return false;
-            return matchesSearchQueryMultiple([
-              application.code,
-              application.label,
-              module.code,
-              module.label,
-              module.description,
-              action.label,
-              action.permissionCode,
-              action.description,
-              item?.scopeType,
-              item?.scopeId,
-            ], searchQuery);
-          });
-          return { module, actions, selectedCount, totalCount: moduleActions.length };
-        })
-        .filter(module => module.actions.length > 0);
-
-      return {
-        code: application.code,
-        label: application.label,
-        modules,
-        selectedCount: modules.reduce((total, module) => total + module.selectedCount, 0),
-      };
-    })
-    .filter(application => application.modules.length > 0), [editableActionByCode, itemsByPermissionCode, searchQuery, showSelectedOnly]);
+  const groupedApplications = useMemo(() => buildBusinessRolePermissionGroups({
+    actions: permissionActions,
+    selectedItems: items,
+    query: permissionSearch,
+    selectedOnly,
+    includeIdentityBoundSelected: Boolean(role?.isSystem),
+  }), [items, permissionActions, permissionSearch, role?.isSystem, selectedOnly]);
 
   const currentItemsKey = canonicalItems(items);
   const originalItemsKey = canonicalItems(role?.items || []);
@@ -175,13 +123,13 @@ const BusinessRoleEditor: React.FC<BusinessRoleEditorProps> = ({
       setItems(current => current.filter(item => item.permissionCode !== action.permissionCode));
       return;
     }
-    const scopeType = getActionScopeTypes(action)[0] || 'global';
+    const resolvedScope = resolveBusinessRoleItemScope(action, defaultScope);
     setItems(current => current.some(item => item.permissionCode === action.permissionCode)
       ? current
       : [...current, {
         permissionCode: action.permissionCode,
-        scopeType,
-        scopeId: '*',
+        scopeType: resolvedScope.scopeType,
+        scopeId: resolvedScope.scopeId,
         sortOrder: action.sortOrder || current.length * 10 + 10,
       }]);
   };
@@ -247,9 +195,10 @@ const BusinessRoleEditor: React.FC<BusinessRoleEditorProps> = ({
     }
   };
 
-  const renderAction = (action: PermissionActionDefinition) => {
-    const item = itemsByPermissionCode.get(action.permissionCode);
-    const scopeTypes = getActionScopeTypes(action);
+  const renderAction = (row: BusinessRolePermissionActionRow) => {
+    const action = row.action;
+    const item = row.selectedItem;
+    const scopeTypes = row.scopeTypes;
 
     return (
       <div key={action.permissionCode} className="grid gap-3 rounded-lg border border-slate-100 px-3 py-2 md:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
@@ -306,19 +255,29 @@ const BusinessRoleEditor: React.FC<BusinessRoleEditorProps> = ({
           <label className="relative block">
             <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
-              value={searchQuery}
-              onChange={event => setSearchQuery(event.target.value)}
+              value={permissionSearch}
+              onChange={event => setPermissionSearch(event.target.value)}
               className="w-full rounded-lg border border-slate-200 bg-white px-9 py-2 text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-violet-200"
               placeholder="Tìm theo module, quyền, mã quyền..."
             />
           </label>
           <button
             type="button"
-            onClick={() => setShowSelectedOnly(current => !current)}
-            className={`rounded-lg border px-3 py-2 text-xs font-black ${showSelectedOnly ? 'border-violet-300 bg-violet-50 text-violet-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}
+            onClick={() => setSelectedOnly(current => !current)}
+            className={`rounded-lg border px-3 py-2 text-xs font-black ${selectedOnly ? 'border-violet-300 bg-violet-50 text-violet-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}
           >
             Đã chọn {items.length}
           </button>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <div className="mb-2 text-[10px] font-black uppercase tracking-wide text-slate-500">Scope mặc định khi thêm quyền</div>
+          <PermissionScopePicker
+            value={defaultScope}
+            onChange={setDefaultScope}
+            disabled={editorDisabled}
+            lookupOptions={scopeLookupOptions}
+          />
         </div>
 
         <div className="space-y-3 rounded-xl border border-slate-200 p-3">
@@ -328,23 +287,23 @@ const BusinessRoleEditor: React.FC<BusinessRoleEditorProps> = ({
             </div>
           )}
           {groupedApplications.map(application => (
-            <div key={application.code} className="space-y-2">
+            <div key={application.applicationCode} className="space-y-2">
               <div className="flex items-center justify-between gap-2 text-[10px] font-black uppercase tracking-wide text-slate-400">
-                <span>{application.label}</span>
+                <span>{application.applicationLabel}</span>
                 <span>{application.selectedCount}/{items.length || filteredActionCount}</span>
               </div>
-              {application.modules.map(({ module, actions, selectedCount, totalCount }) => {
-                const expanded = expandedModules.has(module.code) || Boolean(searchQuery.trim()) || showSelectedOnly;
+              {application.modules.map(({ moduleCode, moduleLabel, actions, selectedCount, totalCount }) => {
+                const expanded = expandedModules.has(moduleCode) || Boolean(permissionSearch.trim()) || selectedOnly;
                 return (
-                  <section key={module.code} className="overflow-hidden rounded-xl border border-slate-200">
+                  <section key={moduleCode} className="overflow-hidden rounded-xl border border-slate-200">
                     <button
                       type="button"
-                      onClick={() => toggleExpandedModule(module.code)}
+                      onClick={() => toggleExpandedModule(moduleCode)}
                       className="grid w-full grid-cols-[auto_1fr_auto] items-center gap-2 px-3 py-2 text-left hover:bg-slate-50"
                     >
                       {expanded ? <ChevronDown size={16} className="text-slate-400" /> : <ChevronRight size={16} className="text-slate-400" />}
                       <span className="min-w-0">
-                        <span className="block truncate text-sm font-black text-slate-800">{module.label}</span>
+                        <span className="block truncate text-sm font-black text-slate-800">{moduleLabel}</span>
                         <span className="mt-0.5 block text-[10px] font-bold text-slate-400">
                           {selectedCount}/{totalCount} quyền đã chọn
                         </span>

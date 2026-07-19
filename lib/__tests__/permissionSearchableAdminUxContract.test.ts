@@ -36,10 +36,10 @@ describe('searchable permission admin UX contract', () => {
     const editor = read('components/permissions/BusinessRoleEditor.tsx');
     const page = read('pages/settings/SettingsAuthorizationGovernance.tsx');
 
-    expect(editor).toContain('permissionRegistry');
+    expect(editor).toContain('buildBusinessRolePermissionGroups');
     expect(editor).toContain('expandedModules');
-    expect(editor).toContain('searchQuery');
-    expect(editor).toContain('showSelectedOnly');
+    expect(editor).toContain('permissionSearch');
+    expect(editor).toContain('selectedOnly');
     expect(editor).toContain('PermissionScopePicker');
     expect(editor).toContain('scopeLookupOptions?: PermissionScopeLookupOptionsByType');
     expect(page).toContain('<BusinessRoleEditor');
