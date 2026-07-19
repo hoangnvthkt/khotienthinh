@@ -224,6 +224,10 @@ const DirectUserPermissionWorkspace: React.FC<DirectUserPermissionWorkspaceProps
             disabled={panelDisabled}
             lookupOptions={scopeLookupOptions}
           />
+          <div className="rounded-lg bg-slate-50 px-3 py-2 text-[10px] font-bold leading-relaxed text-slate-500">
+            Không bắt buộc chọn Dự án. Chọn Toàn hệ thống, Của mình, Được giao, Kho, Phòng ban hoặc Công trình theo phạm vi công việc.
+            Scope Dự án chỉ cấp được quyền hỗ trợ Dự án; các quyền hệ thống cần scope Toàn hệ thống.
+          </div>
         </div>
       </aside>
 

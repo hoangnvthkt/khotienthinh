@@ -14,4 +14,11 @@ describe('PermissionScopePicker contract', () => {
     expect(source).toContain('PermissionScopeLookupOptionsByType');
     expect(source).toContain("scopeId: '*'");
   });
+
+  it('keeps the scope entity search input on its own row for long project names', () => {
+    const source = read('components/permissions/PermissionScopePicker.tsx');
+
+    expect(source).toContain('grid grid-cols-1 gap-2');
+    expect(source).not.toContain('sm:grid-cols-[180px_1fr]');
+  });
 });
