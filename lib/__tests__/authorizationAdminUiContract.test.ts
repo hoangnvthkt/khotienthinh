@@ -70,4 +70,30 @@ describe('authorization admin UI contract', () => {
     expect(page).toContain('if (selectedPrincipalIdRef.current !== principalId) return;');
     expect(page).toContain('selectedPrincipal && loadedPrincipalId === selectedPrincipal.userId');
   });
+
+  it('makes direct user permission matrix the primary governance workflow', () => {
+    const page = read('pages/settings/SettingsAuthorizationGovernance.tsx');
+    const workspace = read('components/permissions/DirectUserPermissionWorkspace.tsx');
+
+    expect(page).toContain('Phân quyền user');
+    expect(page).toContain('Mẫu quyền');
+    expect(page).toContain('DirectUserPermissionWorkspace');
+    expect(workspace).toContain('Copy quyền');
+    expect(workspace).toContain('Dán quyền');
+    expect(workspace).toContain('Preview backend');
+    expect(workspace).toContain('Lưu phân quyền');
+    expect(workspace).toContain('projectMasterService.list');
+    expect(workspace).not.toContain('Tất cả dự án');
+  });
+
+  it('keeps direct save governed and does not mutate identity, role assignment, or source mode from the browser', () => {
+    const workspace = read('components/permissions/DirectUserPermissionWorkspace.tsx');
+
+    expect(workspace).toContain('previewUserPermissionChange');
+    expect(workspace).toContain('applyUserPermissionChange');
+    expect(workspace).not.toContain(".from('user_permission_grants')");
+    expect(workspace).not.toContain('principal_role_assignments');
+    expect(workspace).not.toContain('source_mode');
+    expect(workspace).not.toMatch(/actorUserId|requestedBy|p_actor/);
+  });
 });
