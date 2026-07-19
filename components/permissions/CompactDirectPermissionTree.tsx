@@ -79,6 +79,7 @@ const CompactDirectPermissionTree: React.FC<CompactDirectPermissionTreeProps> = 
     const scopeAllowed = isPermissionActionScopeAllowed(viewRow.permissionCode, scope);
     const viewAdditionBlocked = !viewRow.hasDirectGrant && (!viewRow.canAdd || !scopeAllowed);
     const viewDisabled = disabled || (viewRow.hasDirectGrant ? !viewRow.canRemove : viewAdditionBlocked);
+    const hasViewAccess = viewRow.hasDirectGrant || viewRow.isEffective;
 
     return (
       <section key={module.code} className="rounded-lg border border-slate-200 bg-white">
@@ -127,15 +128,17 @@ const CompactDirectPermissionTree: React.FC<CompactDirectPermissionTreeProps> = 
           <div className="space-y-1 border-t border-slate-100 p-2">
             {childRows.map(row => {
               const childScopeAllowed = isPermissionActionScopeAllowed(row.permissionCode, scope);
-              const additionBlocked = !row.hasDirectGrant && (!row.canAdd || !childScopeAllowed);
+              const additionBlocked = !row.hasDirectGrant && (!row.canAdd || !childScopeAllowed || !hasViewAccess);
               const inputDisabled = disabled || (row.hasDirectGrant ? !row.canRemove : additionBlocked);
               const disabledReason = !childScopeAllowed
-                ? 'Scope nay khong ho tro tac vu.'
-                : row.readiness === 'declared'
-                  ? 'Chua du bang chung de cap moi.'
-                  : row.readiness === 'legacy'
-                    ? 'Legacy chi hien thi tuong thich.'
-                    : '';
+                ? 'Scope này không hỗ trợ tác vụ.'
+                : !hasViewAccess
+                  ? 'Cần có quyền xem trước khi cấp thao tác này.'
+                  : row.readiness === 'declared'
+                    ? 'Chưa đủ bằng chứng để cấp mới.'
+                    : row.readiness === 'legacy'
+                      ? 'Legacy chỉ hiển thị tương thích.'
+                      : '';
 
               return (
                 <label

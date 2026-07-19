@@ -32,4 +32,20 @@ describe('CompactDirectPermissionTree source contract', () => {
     expect(source).toContain('Nguồn quyền');
     expect(source).toContain('hasDirectGrant');
   });
+
+  it('requires module view before a child action can be added in the current scope', () => {
+    const source = read('components/permissions/CompactDirectPermissionTree.tsx');
+
+    expect(source).toContain('const hasViewAccess = viewRow.hasDirectGrant || viewRow.isEffective;');
+    expect(source).toContain('!hasViewAccess');
+    expect(source).toContain('Cần có quyền xem trước khi cấp thao tác này.');
+    expect(source).toContain('toggleUnifiedDirectGrant');
+  });
+
+  it('does not filter the registry to Project in the reusable tree', () => {
+    const source = read('components/permissions/CompactDirectPermissionTree.tsx');
+
+    expect(source).toContain('permissionRegistry');
+    expect(source).not.toContain("application.code === 'project'");
+  });
 });
