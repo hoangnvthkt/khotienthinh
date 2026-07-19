@@ -33,6 +33,11 @@ interface PrincipalDirectGrantPanelProps {
   onSaved: () => Promise<void>;
 }
 
+const RETIRED_MATERIAL_REQUEST_PERMISSION_CODES = new Set([
+  'project.material_request.confirm',
+  'project.material_request.verify',
+]);
+
 const toLocalDateTime = (value?: string) => {
   if (!value) return '';
   const date = new Date(value);
@@ -82,6 +87,10 @@ const PrincipalDirectGrantPanel: React.FC<PrincipalDirectGrantPanelProps> = ({
   const panelDisabled = disabled || principal.accountStatus !== 'ACTIVE';
   const sensitiveDrafts = drafts.filter(grant =>
     grant.isActive !== false && riskByPermissionCode.get(grant.permissionCode) === 'sensitive'
+  );
+  const retiredDirectGrants = drafts.filter(grant =>
+    grant.isActive !== false
+    && RETIRED_MATERIAL_REQUEST_PERMISSION_CODES.has(grant.permissionCode)
   );
 
   const updateDrafts = (next: UserPermissionGrant[]) => {
@@ -163,9 +172,30 @@ const PrincipalDirectGrantPanel: React.FC<PrincipalDirectGrantPanelProps> = ({
         <div className="mt-1 text-[10px] font-bold text-slate-400">Một ma trận hiển thị View, tác vụ, Direct Grant và nguồn quyền hiệu lực.</div>
       </div>
       {principal.accountStatus !== 'ACTIVE' && <div className="rounded-lg border border-rose-100 bg-rose-50 p-3 text-xs font-bold text-rose-700">Principal đang bị vô hiệu hóa; direct grant không thể thay đổi.</div>}
-      <PermissionScopePicker value={scope} onChange={setScope} disabled={panelDisabled} />
-      <UnifiedPermissionMatrix grants={drafts} effectiveSources={effectiveSources} targetUserId={principal.userId} scope={scope} disabled={panelDisabled} onGrantsChange={updateDrafts} />
-      {sensitiveDrafts.length > 0 && (
+       <PermissionScopePicker value={scope} onChange={setScope} disabled={panelDisabled} />
+       <UnifiedPermissionMatrix grants={drafts} effectiveSources={effectiveSources} targetUserId={principal.userId} scope={scope} disabled={panelDisabled} onGrantsChange={updateDrafts} />
+       {retiredDirectGrants.length > 0 && (
+         <div className="space-y-2 rounded-xl border border-amber-200 bg-amber-50/60 p-3">
+           <div className="text-[10px] font-black uppercase text-amber-800">Quyền retire chỉ được thu hồi</div>
+           {retiredDirectGrants.map(grant => (
+             <label key={`${grant.permissionCode}-${grant.scopeType}-${grant.scopeId}`} className="flex items-center justify-between gap-3 text-xs font-bold text-slate-700">
+               <span>{grant.permissionCode} · {grant.scopeType}/{grant.scopeId}</span>
+               <input
+                 type="checkbox"
+                 checked
+                 disabled={panelDisabled}
+                 onChange={event => {
+                   if (!event.target.checked) {
+                     updateDrafts(drafts.filter(candidate => candidate !== grant));
+                   }
+                 }}
+                 className="h-4 w-4 rounded accent-amber-600"
+               />
+             </label>
+           ))}
+         </div>
+       )}
+       {sensitiveDrafts.length > 0 && (
         <div className="space-y-2 rounded-xl border border-rose-100 bg-rose-50/50 p-3">
           <div className="text-[10px] font-black uppercase text-rose-700">Hạn bắt buộc cho quyền nhạy cảm</div>
           {sensitiveDrafts.map(grant => (
