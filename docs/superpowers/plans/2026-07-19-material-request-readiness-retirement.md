@@ -1,298 +1,340 @@
 # Material Request Readiness Retirement Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (- [ ]) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Retire the obsolete Material Request Confirm and Verify actions from the approved sensitive-regrant decision through an exact, aggregate-only, read-only manifest-revision gate.
+**Goal:** Retire two obsolete Material Request permission codes from the exact Task 3 sensitive-regrant decision while preserving the permission catalog and proving the result with aggregate-only Cloud evidence.
 
-**Architecture:** The catalog and Material Request lifecycle remain unchanged. A rollback-only SQL gate reconstructs the frozen source from standardized revoke/regrant history, verifies the old source and regrant fingerprints, excludes only the two retired codes, and validates the revised aggregate. It stops if a retired key is active; any governed revoke then needs separate approval.
+**Architecture:** A rollback-only linked Cloud gate reconstructs the frozen source from its maintenance reasons, validates the old source/regrant fingerprints, then derives a revised regrant set excluding the two retired codes. It never writes. A nonzero count of already-active retired keys is a hard stop for a separate governed-revoke decision.
 
-**Tech Stack:** PostgreSQL 15+, Supabase CLI 2.95.6 linked Cloud query, transactional SQL, TypeScript 5.8, Vitest 4.1.8.
+**Tech Stack:** PostgreSQL 15+, Supabase CLI 2.95.6, linked Supabase Cloud, transactional SQL, TypeScript 5.8, Vitest 4.1.8.
 
 ## Global Constraints
 
-- Remain in Phase 02 Closure Task 3 readiness; do not start Phase 03.
-- Retire only project.material_request.confirm and project.material_request.verify from the approved regrant subset.
-- Keep both catalog actions active and declared. Do not add them to the frontend verified mapping.
-- project.material_request.confirm_fulfillment remains the only fulfilment confirmation permission.
-- Do not edit an applied migration, Preview or Save a principal, change a Direct Grant, accept a warning, modify a Business Role, repair migration history, or change a rollout flag.
-- Do not print or commit identities, grant keys, raw manifest rows, credentials, database URLs, or private runtime artifacts.
-- Do not edit docs/superpowers/plans/2026-07-17-vioo-business-role-minimal-sod.md.
-- Do not use db push, --local, Docker, supabase start, or supabase db reset.
-- A nonzero retired-active count is a hard stop, not a reason to bypass the governed direct-grant command.
+- Remain in Phase 02 Task 3 readiness; do not start Phase 03.
+- Retire only `project.material_request.confirm` and `project.material_request.verify` from the approved regrant decision.
+- Keep both catalog actions active and `declared`; do not promote, deactivate, rename, or remap them.
+- Keep `project.material_request.confirm_fulfillment` as the only fulfilment-confirmation permission.
+- Do not print or commit identities, grant rows, manifest records, tokens, database URLs, or private runtime paths.
+- Do not Preview or Save any pending principal.
+- Do not mutate a Direct Grant, warning acceptance, Business Role, rollout flag, migration history, or applied migration.
+- Do not use `db push`, local Supabase, Docker, `--local`, `supabase start`, or `supabase db reset`.
+- Do not edit or stage `docs/superpowers/plans/2026-07-17-vioo-business-role-minimal-sod.md`.
 
 ## File Map
 
 | File | Responsibility |
 | --- | --- |
-| lib/__tests__/materialRequestReadinessRetirement.test.ts | Locks the runtime/catalog retirement boundary. |
-| supabase/tests/authorization_sensitive_grant_manifest_revision_gate.sql | Rollback-only aggregate gate for old and revised manifest invariants. |
-| lib/__tests__/authorizationSensitiveGrantManifestRevisionGate.test.ts | Static contract proving the gate is read-only and excludes exactly two codes. |
-| docs/security/phase02-task3-permission-readiness-matrix.md | Aggregate-only Tranche B evidence and blocker status. |
-| docs/security/phase02-business-role-sod-live-apply-log.md | Timestamped Cloud-gate evidence and no-mutation boundary. |
+| `lib/__tests__/materialRequestReadinessRetirement.test.ts` | Locks the runtime/UI retirement boundary and the frontend declared result. |
+| `supabase/tests/authorization_sensitive_grant_manifest_revision_gate.sql` | Rollback-only exact source/revision gate. |
+| `lib/__tests__/authorizationSensitiveGrantManifestRevisionGate.test.ts` | Statically rejects persistent SQL writes and missing gate conditions. |
+| `docs/security/phase02-task3-permission-readiness-matrix.md` | Aggregate retirement and revised blocker evidence. |
+| `docs/security/phase02-business-role-sod-live-apply-log.md` | Timestamped Cloud gate boundary and stop/go decision. |
 
 ---
 
-### Task 1: Lock The Retirement Boundary
+### Task 1: Lock The Runtime Retirement Boundary
 
 **Files:**
-- Create: lib/__tests__/materialRequestReadinessRetirement.test.ts
-- Verify: lib/permissions/projectMaterialPermissions.ts
-- Verify: pages/project/MaterialTab.tsx
-- Verify: supabase/migrations/20260718151157_material_request_approve_state_guard.sql
+- Create: `lib/__tests__/materialRequestReadinessRetirement.test.ts`
+- Verify: `lib/permissions/projectMaterialPermissions.ts`
+- Verify: `pages/project/MaterialTab.tsx`
+- Verify: `lib/permissions/permissionReadiness.ts`
 
 **Interfaces:**
-- Consumes the Material capability list, UI confirmation constant, and transition RPC source.
-- Produces a static guarantee that neither obsolete code is a current runtime Material capability, while confirm_fulfillment remains present.
+- Consumes the Project Material action list, UI normalization, and frontend readiness resolver.
+- Produces a regression contract: fulfilment uses `confirm_fulfillment`; the retired codes remain declared.
 
-- [ ] **Step 1: Write the boundary test**
+- [ ] **Step 1: Write the static contract test**
 
-Create lib/__tests__/materialRequestReadinessRetirement.test.ts:
-
-~~~ts
+```ts
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { resolvePermissionActionReadiness } from '../permissions/permissionReadiness';
+import type { PermissionActionDefinition } from '../permissions/permissionTypes';
 
-const root = process.cwd();
-const read = (file: string) => fs.readFileSync(path.join(root, file), 'utf8');
+const permissions = fs.readFileSync(
+  path.resolve(process.cwd(), 'lib/permissions/projectMaterialPermissions.ts'), 'utf8',
+);
+const materialTab = fs.readFileSync(
+  path.resolve(process.cwd(), 'pages/project/MaterialTab.tsx'), 'utf8',
+);
+const action = (permissionCode: string): PermissionActionDefinition => ({
+  permissionCode, permissionName: permissionCode,
+  moduleCode: 'project.material_request', moduleName: 'Material Request',
+  applicationCode: 'project', applicationName: 'Project',
+  riskLevel: 'sensitive', scopeModes: ['project'],
+  directGrantRequiresExpiry: true, readiness: 'declared',
+});
 
 describe('Material Request readiness retirement', () => {
-  it('keeps fulfillment confirmation separate from obsolete readiness codes', () => {
-    const permissions = read('lib/permissions/projectMaterialPermissions.ts');
-    const materialTab = read('pages/project/MaterialTab.tsx');
-    const transition = read('supabase/migrations/20260718151157_material_request_approve_state_guard.sql');
-
+  it('keeps fulfilment confirmation on its dedicated permission', () => {
     expect(permissions).toContain("'project.material_request.confirm_fulfillment'");
     expect(permissions).not.toContain("'project.material_request.confirm',");
     expect(permissions).not.toContain("'project.material_request.verify',");
-    expect(materialTab).toMatch(/MATERIAL_REQUEST_CONFIRM_PERMISSION\s*=\s*'project\.material_request\.confirm_fulfillment'/);
-    expect(transition).toContain("'project.material_request.confirm_fulfillment'");
-    expect(transition).not.toContain("'project.material_request.verify'");
+    expect(materialTab).toMatch(
+      /MATERIAL_REQUEST_CONFIRM_PERMISSION\s*=\s*'project\.material_request\.confirm_fulfillment'/,
+    );
+  });
+
+  it('keeps retired actions out of the frontend verified set', () => {
+    for (const permissionCode of [
+      'project.material_request.confirm',
+      'project.material_request.verify',
+    ]) {
+      expect(resolvePermissionActionReadiness(action(permissionCode))).toBe('declared');
+    }
   });
 });
-~~~
+```
 
-- [ ] **Step 2: Run the focused test**
+- [ ] **Step 2: Run the test without changing production behavior**
 
 Run:
 
-~~~bash
+```bash
 npx vitest run lib/__tests__/materialRequestReadinessRetirement.test.ts
-~~~
+```
 
-Expected: PASS. This documents an existing boundary; it does not change production code.
+Expected: PASS. This tranche classifies existing behavior; it must not create a fake lifecycle solely to make a test turn red.
 
 - [ ] **Step 3: Commit the boundary test**
 
-~~~bash
+```bash
 git add lib/__tests__/materialRequestReadinessRetirement.test.ts
 git diff --cached --check
 git commit -m "test(authz): lock material request retirement boundary"
-~~~
+```
 
-### Task 2: Add The Read-Only Manifest Revision Gate
+### Task 2: Add A Rollback-Only Manifest Revision Gate
 
 **Files:**
-- Create: supabase/tests/authorization_sensitive_grant_manifest_revision_gate.sql
-- Create: lib/__tests__/authorizationSensitiveGrantManifestRevisionGate.test.ts
+- Create: `supabase/tests/authorization_sensitive_grant_manifest_revision_gate.sql`
+- Create: `lib/__tests__/authorizationSensitiveGrantManifestRevisionGate.test.ts`
 
 **Interfaces:**
-- Consumes private session settings for old source/regrant counts and fingerprints, non-sensitive fingerprint, Direct Grant baseline, shared expiry, and revised regrant count/fingerprint.
-- Produces authorization_sensitive_grant_manifest_revision_gate_passed only when original and revised arithmetic match and no retired key is active.
+- Reads private session settings for the old source/regrant count/fingerprint, revised regrant count/fingerprint, non-sensitive fingerprint, and canonical expiry.
+- Emits only `authorization_sensitive_grant_manifest_revision_gate_passed`, otherwise an exception; always rolls back.
 
-- [ ] **Step 1: Write the failing static gate test**
+- [ ] **Step 1: Write the failing gate test**
 
-Create lib/__tests__/authorizationSensitiveGrantManifestRevisionGate.test.ts:
-
-~~~ts
+```ts
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-const gate = fs.readFileSync(
-  path.resolve(process.cwd(), 'supabase/tests/authorization_sensitive_grant_manifest_revision_gate.sql'),
-  'utf8',
+const gatePath = path.resolve(
+  process.cwd(), 'supabase/tests/authorization_sensitive_grant_manifest_revision_gate.sql',
 );
 
 describe('sensitive grant manifest revision gate', () => {
-  it('is rollback-only and retires exactly the two obsolete Material Request codes', () => {
-    expect(gate).toMatch(/^begin;/im);
-    expect(gate).toMatch(/rollback;\s*$/im);
-    expect(gate).toContain("'project.material_request.confirm'");
-    expect(gate).toContain("'project.material_request.verify'");
-    expect(gate).toContain('authorization_sensitive_grant_manifest_revision_gate_passed');
-    expect(gate).toMatch(/active_retired_count\s*<>\s*0/i);
-    expect(gate).toMatch(/expected_original_regrant_fingerprint/i);
-    expect(gate).toMatch(/expected_revised_regrant_fingerprint/i);
-    expect(gate).not.toMatch(/\b(insert|update|delete|truncate|alter|drop|create)\b/i);
+  it('is rollback-only and retires only the two obsolete codes', () => {
+    const sql = fs.readFileSync(gatePath, 'utf8');
+    expect(sql).toMatch(/^begin;[\s\S]*rollback;\s*$/i);
+    expect(sql).toContain("'project.material_request.confirm'");
+    expect(sql).toContain("'project.material_request.verify'");
+    expect(sql).toMatch(/active_retired_count/i);
+    expect(sql).toMatch(/expected_original_source_fingerprint/i);
+    expect(sql).toMatch(/expected_revised_regrant_fingerprint/i);
+    expect(sql).toMatch(/authorization_sensitive_grant_manifest_revision_gate_passed/i);
+    expect(sql).not.toMatch(/\b(insert|update|delete|truncate|alter|drop|create)\b/i);
   });
 });
-~~~
+```
 
-- [ ] **Step 2: Prove the test is red**
+- [ ] **Step 2: Verify RED**
 
-~~~bash
+```bash
 npx vitest run lib/__tests__/authorizationSensitiveGrantManifestRevisionGate.test.ts
-~~~
+```
 
-Expected: FAIL because the SQL gate does not exist.
+Expected: FAIL with `ENOENT` for the absent SQL gate.
 
-- [ ] **Step 3: Implement the rollback-only gate**
+- [ ] **Step 3: Implement the SQL gate**
 
-Create supabase/tests/authorization_sensitive_grant_manifest_revision_gate.sql with BEGIN, one DO assertion block, a checkpoint SELECT, and ROLLBACK. Parse and reject missing values for these session settings:
+Create a `BEGIN`/`ROLLBACK` SQL file with one `DO` block. The block must:
 
-~~~text
-app.expected_source_count
-app.expected_source_fingerprint
-app.expected_original_regrant_count
-app.expected_original_regrant_fingerprint
-app.expected_original_drop_count
-app.expected_non_sensitive_fingerprint
-app.expected_active_direct_grant_count
-app.expected_regrant_expires_at
-app.expected_revised_regrant_count
-app.expected_revised_regrant_fingerprint
-~~~
+1. Read:
+   `app.expected_original_source_count`,
+   `app.expected_original_source_fingerprint`,
+   `app.expected_original_regrant_count`,
+   `app.expected_original_regrant_fingerprint`,
+   `app.expected_revised_regrant_count`,
+   `app.expected_revised_regrant_fingerprint`,
+   `app.expected_non_sensitive_fingerprint`, and
+   `app.expected_regrant_expires_at`.
+2. Reject any empty setting.
+3. Build a `source_rows` CTE of active permission actions with
+   `risk_level = 'sensitive'`, accepting only:
+   - inactive rows with revoke reason
+     `Task 13 Step 5: thu hồi toàn bộ quyền nhạy cảm trước tái cấp`; or
+   - active rows with regrant reason
+     `Task 13 Step 5: tái cấp quyền nhạy cảm đã được phê duyệt`.
+4. Build `original_regrant` by excluding the active
+   `PERMISSION_ADMIN` principal through
+   `principal_role_assignments` and `role_permission_templates`.
+5. Build `revised_regrant` with this exact predicate:
 
-Inside the DO block, use a CTE with these exact source and decision boundaries:
-
-~~~sql
-with source_rows as (
-  select grant_row.user_id, grant_row.permission_code,
-         grant_row.scope_type, grant_row.scope_id, grant_row.is_active,
-         grant_row.expires_at, grant_row.grant_reason
-  from public.user_permission_grants grant_row
-  join public.permission_actions action_row
-    on action_row.permission_code = grant_row.permission_code
-   and action_row.is_active
-  where action_row.risk_level = 'sensitive'
-    and (
-      (not grant_row.is_active and grant_row.revoked_reason =
-        'Task 13 Step 5: thu hồi toàn bộ quyền nhạy cảm trước tái cấp')
-      or (grant_row.is_active and grant_row.grant_reason =
-        'Task 13 Step 5: tái cấp quyền nhạy cảm đã được phê duyệt')
-    )
-),
-original_regrant as (
-  select source_row.*
-  from source_rows source_row
-  where not exists (
-    select 1
-    from public.principal_role_assignments assignment_row
-    join public.role_permission_templates role_row
-      on role_row.id = assignment_row.role_template_id
-    where assignment_row.principal_type = 'user'
-      and assignment_row.principal_id = source_row.user_id
-      and assignment_row.status = 'ACTIVE'
-      and assignment_row.scope_type = 'global'
-      and assignment_row.scope_id = '*'
-      and role_row.code = 'PERMISSION_ADMIN'
-  )
-),
-revised_regrant as (
-  select *
-  from original_regrant
-  where permission_code not in (
-    'project.material_request.confirm',
-    'project.material_request.verify'
-  )
+```sql
+where permission_code not in (
+  'project.material_request.confirm',
+  'project.material_request.verify'
 )
-select count(*) filter (
-  where source_rows.is_active
-    and source_rows.permission_code in (
-      'project.material_request.confirm',
-      'project.material_request.verify'
-    )
-) as active_retired_count
-from source_rows;
-~~~
+```
 
-Use separate CTE aggregates to avoid join multiplication. Compare source/original/revised counts and canonical fingerprints, revised DROP arithmetic, canonical expiry/regrant reason, unchanged non-sensitive fingerprint, active Direct Grant count, durable rollout-operator count, and disabled rollout flags. Raise when active_retired_count <> 0.
+6. Compute each set's count and canonical-key MD5 using:
 
-- [ ] **Step 4: Make the contracts green**
+```sql
+md5(coalesce(string_agg(
+  concat_ws('|', user_id::text, permission_code, scope_type, scope_id),
+  E'\n' order by user_id, permission_code, scope_type, scope_id
+), ''))
+```
 
-~~~bash
-npx vitest run   lib/__tests__/authorizationSensitiveGrantManifestRevisionGate.test.ts   lib/__tests__/materialRequestReadinessRetirement.test.ts
+7. Assert old source/regrant count and fingerprints match their supplied values.
+8. Assert revised count/fingerprint match their supplied values.
+9. Assert `active_retired_count = 0`, where that count is active source rows
+   of either retired code.
+10. Assert every active revised row has the canonical expiry and standard
+    regrant reason.
+11. Recompute and assert the active non-sensitive fingerprint, then assert zero
+    enabled rows in `app_private.permission_hardening_settings`; also compare
+    the active Direct Grant count and durable rollout-operator count against
+    private expected settings captured in the same session.
+12. Return the checkpoint and roll back. The file may contain no DDL or
+    persistent DML.
+
+- [ ] **Step 4: Verify GREEN**
+
+```bash
+npx vitest run \
+  lib/__tests__/authorizationSensitiveGrantManifestRevisionGate.test.ts \
+  lib/__tests__/materialRequestReadinessRetirement.test.ts \
+  lib/__tests__/permissionReadiness.test.ts
 git diff --check
-~~~
+```
 
-Expected: both tests pass and whitespace verification exits 0.
+Expected: all tests pass; the SQL gate contains no persistent write token.
 
-- [ ] **Step 5: Commit the gate and static contracts**
+- [ ] **Step 5: Commit the gate**
 
-~~~bash
-git add   supabase/tests/authorization_sensitive_grant_manifest_revision_gate.sql   lib/__tests__/authorizationSensitiveGrantManifestRevisionGate.test.ts
+```bash
+git add \
+  supabase/tests/authorization_sensitive_grant_manifest_revision_gate.sql \
+  lib/__tests__/authorizationSensitiveGrantManifestRevisionGate.test.ts
 git diff --cached --check
-git commit -m "test(authz): add material request manifest revision gate"
-~~~
+git commit -m "test(authz): add manifest revision retirement gate"
+```
 
-### Task 3: Run The Private Read-Only Revision Gate
+### Task 3: Cloud Gate B0 - Read-Only Revision Evidence
 
 **Files:**
-- Verify: supabase/tests/authorization_sensitive_grant_manifest_revision_gate.sql
-- Modify: docs/security/phase02-task3-permission-readiness-matrix.md
-- Modify: docs/security/phase02-business-role-sod-live-apply-log.md
+- Verify: `supabase/tests/authorization_sensitive_grant_manifest_revision_gate.sql`
+- Modify only after PASS: `docs/security/phase02-task3-permission-readiness-matrix.md`
+- Modify only after PASS: `docs/security/phase02-business-role-sod-live-apply-log.md`
 
 **Interfaces:**
-- Consumes approved prior fingerprints and private session settings.
-- Produces aggregate-only original/revised counts and fingerprints, or a hard stop without a Cloud write.
+- Consumes only private session settings and the linked Cloud read-only state.
+- Produces a stop/go decision for the revised manifest; it never authorizes a principal mutation.
 
-- [ ] **Step 1: Build a mode-0600 bundle outside Git**
+- [ ] **Step 1: Discover the linked query syntax**
 
-Create a private directory with mktemp -d and chmod 700. Use Node readFileSync/writeFileSync to inject set_config calls for every app.expected_* setting before the gate transaction. The temporary file is mode 0600 and is deleted after the command. It never contains output rows in Git or chat.
-
-- [ ] **Step 2: Run only after explicit read-only Cloud Gate B0 approval**
-
-Discover syntax first:
-
-~~~bash
+```bash
 node_modules/.bin/supabase db query --help
-~~~
+```
 
-Then execute the private bundle against linked Cloud with --agent=no. Expected checkpoint: authorization_sensitive_grant_manifest_revision_gate_passed. Do not use a local database, service-role connection, or Direct Grant RPC.
+Expected: linked syntax is available. Do not use `--local`.
 
-- [ ] **Step 3: Enforce the hard-stop branch**
+- [ ] **Step 2: Construct the private session bundle**
 
-If retired-active count is nonzero, record only that count and stop. Do not revise the manifest, preview a principal, or change a grant. Prepare a separately approved governed-revoke checkpoint for the affected active keys.
+Outside Git, create a `0600` SQL bundle that injects only the original values:
 
-- [ ] **Step 4: Record evidence on the passing branch**
+```sql
+select set_config('app.expected_original_source_count', '467', true);
+select set_config('app.expected_original_source_fingerprint', 'a3d0cf9514e487111c5ae27873c8f6cd', true);
+select set_config('app.expected_original_regrant_count', '421', true);
+select set_config('app.expected_original_regrant_fingerprint', '00a8f7f0f3a39721474a582592cf0b2e', true);
+select set_config('app.expected_non_sensitive_fingerprint', '632d0ce644dcec52126eabf7b44909ca', true);
+select set_config('app.expected_regrant_expires_at', '2026-10-16T12:10:00+07:00', true);
+```
 
-Append aggregate-only evidence to both security documents:
+The first private CTE calculation retains the revised count/fingerprint only in
+the protected session artifact. It must not expose raw rows, principal IDs, or
+keys.
 
-~~~markdown
-- Tranche B retired project.material_request.confirm and
-  project.material_request.verify from the approved regrant decision only.
-  Both catalog actions remain active and declared; no Cloud row was changed.
-- The exact read-only revision gate matched the old source/regrant baselines,
-  found zero active retired keys, and produced a revised regrant count and
-  fingerprint. Closure Task 3 remains paused pending a refreshed
-  exact-manifest readiness aggregate.
-~~~
+- [ ] **Step 3: Request explicit Cloud Gate B0**
 
-Insert count and fingerprint values only after the gate passes. Change the blocker-code count from 13 to 11 only when the exact revised-manifest query proves both actions were in the approved blocker surface.
+Announce that B0 is read-only and covers original source/regrant validation,
+two-code revised arithmetic, active-retired count, expiry/reason contract,
+non-sensitive fingerprint, Direct Grant aggregate, durable operator aggregate,
+and rollout flags. Await explicit approval before the linked command.
 
-- [ ] **Step 5: Verify and commit evidence**
+- [ ] **Step 4: Execute the approved rollback-only bundle**
 
-~~~bash
-npx vitest run   lib/__tests__/materialRequestReadinessRetirement.test.ts   lib/__tests__/authorizationSensitiveGrantManifestRevisionGate.test.ts
+```bash
+node_modules/.bin/supabase db query --linked --agent=no --file "$PRIVATE_GATE_BUNDLE"
+```
+
+Expected:
+- PASS only if every old and revised value matches and `active_retired_count`
+  is zero.
+- Any mismatch, including an active retired key, is a hard stop with aggregate
+  evidence only. Do not weaken a predicate or retry with different inputs.
+
+- [ ] **Step 5: Branch from the evidence**
+
+If PASS, the revised manifest is the sole input to the next exact Task 3
+readiness calculation; it still does not allow Preview or Save.
+
+If `active_retired_count > 0`, stop and prepare a new, separate governed
+revoke proposal that identifies no principal. Do not change those rows in this
+plan.
+
+### Task 4: Record The Aggregate Result
+
+**Files:**
+- Modify: `docs/security/phase02-task3-permission-readiness-matrix.md`
+- Modify: `docs/security/phase02-business-role-sod-live-apply-log.md`
+
+**Interfaces:**
+- Consumes a Gate B0 result.
+- Produces an auditable Task 3 blocker state containing no raw manifest data.
+
+- [ ] **Step 1: Update the readiness matrix after a PASS**
+
+Record only: the two retired codes, confirmation that
+`confirm_fulfillment` remains operational, old/revised regrant and DROP
+arithmetic, revised pending rows/principals, remaining blocker-code count,
+active-retired count, active Direct Grant count, and enabled-flag count.
+
+- [ ] **Step 2: Update the live apply log**
+
+Record that B0 was read-only; no catalog, readiness, grant, principal, warning,
+role, history, or flag mutation occurred. State whether the next checkpoint is
+a fresh exact-manifest readiness test or a separate governed-revoke proposal.
+
+- [ ] **Step 3: Verify and commit the evidence**
+
+```bash
+npx vitest run \
+  lib/__tests__/materialRequestReadinessRetirement.test.ts \
+  lib/__tests__/authorizationSensitiveGrantManifestRevisionGate.test.ts
 npx tsc --noEmit
 git diff --check
-git status --short
-~~~
+git add \
+  docs/security/phase02-task3-permission-readiness-matrix.md \
+  docs/security/phase02-business-role-sod-live-apply-log.md
+git commit -m "docs(authz): record material request retirement readiness"
+```
 
-Commit only the evidence documents after the gate exists:
-
-~~~bash
-git add   docs/security/phase02-task3-permission-readiness-matrix.md   docs/security/phase02-business-role-sod-live-apply-log.md
-git diff --cached --check
-git commit -m "docs(authz): record material request manifest retirement"
-~~~
+Expected: only aggregate evidence is committed. The user-owned roadmap remains
+unstaged.
 
 ## Exit Criteria
 
-- The two obsolete codes are proved absent from the live Material Request capability path and remain outside the frontend verified mapping.
-- The SQL gate has no persistent data-definition or data-manipulation statement and always ends in ROLLBACK.
-- The old manifest baseline is verified before the revised subset is accepted.
-- The gate proves zero active retired keys, or stops with no mutation.
-- No principal Preview/Save, grant, warning, role, flag, migration, or history change occurs in this tranche.
-- Security evidence records aggregate-only results and does not claim Closure Task 3 is unblocked until the exact revised-manifest gate proves it.
+- The two retired codes are excluded only from the revised exact regrant decision and remain active `declared` catalog actions.
+- Old source/regrant fingerprints match before the revision is accepted.
+- Revised count/fingerprint exist only as approved aggregate runtime evidence.
+- Active retired count is zero; otherwise the tranche stops before mutation.
+- Non-sensitive fingerprint and rollout flags remain unchanged.
+- No principal is previewed or saved, and no Cloud mutation occurs.
