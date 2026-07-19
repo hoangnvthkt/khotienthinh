@@ -787,6 +787,27 @@ URLs, API keys or service-role values in this file.
   and zero have a complete grantable draft. Closure Task 3 stays paused: no
   principal preview or Save was attempted. The next focused tranche is the
   three Material approval codes with existing rollback-only evidence.
+- Cloud Gate A12 at `2026-07-19T07:52:20+07:00` applied exactly the three
+  Material state-guard migrations `20260718151157`, `20260718152445`, and
+  `20260718154050`, plus readiness migration `20260719004803`, in one linked
+  transaction. The four migration SHA-256 values were
+  `40326b97017061db08091dfd1e64c7966c348414395d21ecb5a43b3ef44b4267`,
+  `fb3c86e68926e2dd0b1b79ea92a61deb7cd794b8800b31b00ea064e10e7563d6`,
+  `2639f8ca5ae102f2328d8811aaf15b066e0be654f6a21cb0a1f1bf78b080c01f`, and
+  `c71ed87845b8f995f512e729205e57439d7dc94b52d05c5d33b5f043b33f236b`.
+- Bundle SHA-256 was
+  `f7cb79247e3060c976497c388092c17713296ccd6569def7fab56d7e7caa9c81`.
+  The existing Material behavior smoke and the Material readiness-promotion
+  smoke both passed inside savepoint `material_readiness_smoke`; their fixture
+  work rolled back before the outer transaction committed only migration
+  objects.
+- Read-only postchecks confirm all three Material state guards persist; exactly
+  three Material approval codes are `verified`; all five Payment/Quantity codes
+  remain `verified`; Payment Mark Paid plus the two named Material exclusions
+  remain `declared`; active Direct Grants remain `2282`; and zero hardening
+  flags are enabled. The four A12 versions remain absent from remote migration
+  history. No principal preview/Save, grant, warning, rollout-flag, or history
+  mutation occurred beyond the approved A12 apply.
 
 ## Resolver enablement canary
 
