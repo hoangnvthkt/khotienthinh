@@ -24,6 +24,10 @@ import type {
 import { validateDirectGrantDrafts, validateSodWarningAcceptances } from '../lib/permissions/authorizationGovernanceViewModel';
 import { isIdentityBoundPermission } from '../lib/permissions/permissionRisk';
 import type { LegacyPermissionState, PermissionScope } from '../lib/permissions/permissionTypes';
+import {
+  permissionScopeLookupService,
+  type PermissionScopeLookupOptionsByType,
+} from '../lib/permissions/permissionScopeLookupService';
 import { buildUnifiedPermissionDraftKey } from '../lib/permissions/unifiedPermissionViewModel';
 import { buildCreateUserFunctionPayload, readFunctionInvokeErrorMessage } from '../lib/userAccountCreation';
 
@@ -45,6 +49,8 @@ const EMPTY_LEGACY_STATE: LegacyPermissionState = {
   adminModules: [],
   adminSubModules: {},
 };
+
+const EMPTY_SCOPE_LOOKUP_OPTIONS: PermissionScopeLookupOptionsByType = {};
 
 const cloneLegacyState = (state: LegacyPermissionState): LegacyPermissionState => ({
   allowedModules: [...state.allowedModules],
@@ -102,6 +108,7 @@ const UserModal: React.FC<UserModalProps> = ({
   const [previewingPermissions, setPreviewingPermissions] = useState(false);
   const [permissionSourceLoadFailed, setPermissionSourceLoadFailed] = useState(false);
   const [permissionScope, setPermissionScope] = useState<PermissionScope>({ scopeType: 'global', scopeId: '*' });
+  const [scopeLookupOptions, setScopeLookupOptions] = useState<PermissionScopeLookupOptionsByType>(EMPTY_SCOPE_LOOKUP_OPTIONS);
 
   const configurablePermissionActions = useMemo(
     () => getAllPermissionActions().filter(action => !isIdentityBoundPermission(action.permissionCode)),
@@ -135,10 +142,19 @@ const UserModal: React.FC<UserModalProps> = ({
     setPreviewingPermissions(false);
     setPermissionSourceLoadFailed(false);
     setPermissionScope({ scopeType: 'global', scopeId: '*' });
+    setScopeLookupOptions(EMPTY_SCOPE_LOOKUP_OPTIONS);
     setFormData(userToEdit
       ? { ...userToEdit, password: '' }
       : { name: '', email: '', username: '', password: '', phone: '', role: Role.EMPLOYEE, assignedWarehouseId: '' });
     setErrors({});
+
+    if (canManageDirectGrants && isOpen && isSupabaseConfigured) {
+      permissionScopeLookupService.listLookupOptions().then(options => {
+        if (!cancelled) setScopeLookupOptions(options);
+      }).catch(error => {
+        if (!cancelled) logApiError('userModal.loadScopeLookupOptions', error);
+      });
+    }
 
     if (canManageDirectGrants && isOpen && userToEdit?.id && isSupabaseConfigured) {
       Promise.all([
@@ -376,7 +392,7 @@ const UserModal: React.FC<UserModalProps> = ({
               {!userToEdit && <div className="rounded-lg border border-amber-100 bg-amber-50 p-3 text-xs font-bold text-amber-700">Hãy tạo tài khoản trước, sau đó cấp quyền.</div>}
               {permissionSourceLoadFailed && <div className="rounded-lg border border-rose-100 bg-rose-50 p-3 text-xs font-bold text-rose-700">Nguồn quyền hiệu lực chưa tải đủ; chức năng lưu đã bị khóa.</div>}
               {userToEdit?.id === currentUserId && <div className="rounded-lg border border-amber-100 bg-amber-50 p-3 text-xs font-bold text-amber-700">Bạn đang sửa quyền của chính mình. Backend sẽ từ chối self-grant làm tăng quyền.</div>}
-              <PermissionScopePicker value={permissionScope} onChange={value => { setPermissionScope(value); invalidatePreview(); }} disabled={permissionDisabled} />
+              <PermissionScopePicker value={permissionScope} onChange={value => { setPermissionScope(value); invalidatePreview(); }} disabled={permissionDisabled} lookupOptions={scopeLookupOptions} />
               <UnifiedPermissionMatrix
                 grants={permissionGrants}
                 effectiveSources={effectiveSources}

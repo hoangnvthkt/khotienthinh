@@ -17,6 +17,7 @@ import {
 } from '../../lib/permissions/permissionAdminService';
 import { buildUnifiedPermissionDraftKey } from '../../lib/permissions/unifiedPermissionViewModel';
 import type { PermissionActionDefinition, PermissionScope } from '../../lib/permissions/permissionTypes';
+import type { PermissionScopeLookupOptionsByType } from '../../lib/permissions/permissionScopeLookupService';
 import PermissionChangeSummary from './PermissionChangeSummary';
 import PermissionScopePicker from './PermissionScopePicker';
 import SodWarningPanel from './SodWarningPanel';
@@ -30,6 +31,7 @@ interface PrincipalDirectGrantPanelProps {
   disabled: boolean;
   controlOwners?: readonly AuthorizationPrincipal[];
   currentUserId?: string;
+  scopeLookupOptions?: PermissionScopeLookupOptionsByType;
   onSaved: () => Promise<void>;
 }
 
@@ -58,6 +60,7 @@ const PrincipalDirectGrantPanel: React.FC<PrincipalDirectGrantPanelProps> = ({
   disabled,
   controlOwners = [],
   currentUserId,
+  scopeLookupOptions,
   onSaved,
 }) => {
   const [drafts, setDrafts] = useState<UserPermissionGrant[]>([...grants]);
@@ -172,7 +175,7 @@ const PrincipalDirectGrantPanel: React.FC<PrincipalDirectGrantPanelProps> = ({
         <div className="mt-1 text-[10px] font-bold text-slate-400">Một ma trận hiển thị View, tác vụ, Direct Grant và nguồn quyền hiệu lực.</div>
       </div>
       {principal.accountStatus !== 'ACTIVE' && <div className="rounded-lg border border-rose-100 bg-rose-50 p-3 text-xs font-bold text-rose-700">Principal đang bị vô hiệu hóa; direct grant không thể thay đổi.</div>}
-       <PermissionScopePicker value={scope} onChange={setScope} disabled={panelDisabled} />
+       <PermissionScopePicker value={scope} onChange={setScope} disabled={panelDisabled} lookupOptions={scopeLookupOptions} />
        <UnifiedPermissionMatrix grants={drafts} effectiveSources={effectiveSources} targetUserId={principal.userId} scope={scope} disabled={panelDisabled} onGrantsChange={updateDrafts} />
        {retiredDirectGrants.length > 0 && (
          <div className="space-y-2 rounded-xl border border-amber-200 bg-amber-50/60 p-3">

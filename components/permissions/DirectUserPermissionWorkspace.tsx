@@ -23,6 +23,7 @@ import {
   type DirectPermissionClipboard,
 } from '../../lib/permissions/directUserPermissionMatrixViewModel';
 import type { PermissionScope } from '../../lib/permissions/permissionTypes';
+import type { PermissionScopeLookupOptionsByType } from '../../lib/permissions/permissionScopeLookupService';
 import { buildUnifiedPermissionDraftKey } from '../../lib/permissions/unifiedPermissionViewModel';
 import CompactDirectPermissionTree from './CompactDirectPermissionTree';
 import PermissionChangeSummary from './PermissionChangeSummary';
@@ -36,6 +37,7 @@ export interface DirectUserPermissionWorkspaceProps {
   principals: readonly AuthorizationPrincipal[];
   currentUserId: string;
   disabled: boolean;
+  scopeLookupOptions?: PermissionScopeLookupOptionsByType;
   clipboard: DirectPermissionClipboard | null;
   onClipboardChange: (clipboard: DirectPermissionClipboard | null) => void;
   onSaved: () => Promise<void>;
@@ -60,6 +62,7 @@ const DirectUserPermissionWorkspace: React.FC<DirectUserPermissionWorkspaceProps
   principals,
   currentUserId,
   disabled,
+  scopeLookupOptions,
   clipboard,
   onClipboardChange,
   onSaved,
@@ -219,6 +222,7 @@ const DirectUserPermissionWorkspace: React.FC<DirectUserPermissionWorkspaceProps
               setMessage('');
             }}
             disabled={panelDisabled}
+            lookupOptions={scopeLookupOptions}
           />
         </div>
       </aside>
