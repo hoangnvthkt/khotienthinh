@@ -31,4 +31,19 @@ describe('searchable permission admin UX contract', () => {
     expect(userModal).toContain('permissionScopeLookupService.listLookupOptions()');
     expect(userModal).toContain('lookupOptions={scopeLookupOptions}');
   });
+
+  it('groups the Business Role editor by app and module with search filters', () => {
+    const editor = read('components/permissions/BusinessRoleEditor.tsx');
+    const page = read('pages/settings/SettingsAuthorizationGovernance.tsx');
+
+    expect(editor).toContain('permissionRegistry');
+    expect(editor).toContain('expandedModules');
+    expect(editor).toContain('searchQuery');
+    expect(editor).toContain('showSelectedOnly');
+    expect(editor).toContain('PermissionScopePicker');
+    expect(editor).toContain('scopeLookupOptions?: PermissionScopeLookupOptionsByType');
+    expect(page).toContain('<BusinessRoleEditor');
+    expect(page).toContain('scopeLookupOptions={scopeLookupOptions}');
+    expect(editor).not.toContain('max-h-72 space-y-2 overflow-auto');
+  });
 });

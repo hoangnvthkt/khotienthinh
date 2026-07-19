@@ -286,6 +286,7 @@ const SettingsAuthorizationGovernance: React.FC<SettingsAuthorizationGovernanceP
               permissionActions={permissionActions}
               preview={roleImpactPreview}
               disabled={!canManageRoles}
+              scopeLookupOptions={scopeLookupOptions}
               onPreview={async (items: BusinessRoleItem[]) => {
                 try {
                   setRoleImpactPreview(await authorizationGovernanceService.previewBusinessRoleChange(selectedRole?.id || null, items));

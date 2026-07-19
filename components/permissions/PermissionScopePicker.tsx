@@ -21,6 +21,7 @@ export interface PermissionScopePickerProps {
   onChange: (value: PermissionScope) => void;
   disabled?: boolean;
   lookupOptions?: PermissionScopeLookupOptionsByType;
+  allowedScopeTypes?: readonly PermissionScopeType[];
 }
 
 const PermissionScopePicker: React.FC<PermissionScopePickerProps> = ({
@@ -28,8 +29,15 @@ const PermissionScopePicker: React.FC<PermissionScopePickerProps> = ({
   onChange,
   disabled = false,
   lookupOptions,
+  allowedScopeTypes,
 }) => {
   const scopeType = value.scopeType || 'global';
+  const scopeOptions = allowedScopeTypes?.length
+    ? SCOPE_OPTIONS.filter(option => allowedScopeTypes.includes(option.value))
+    : SCOPE_OPTIONS;
+  const visibleScopeOptions = scopeOptions.some(option => option.value === scopeType)
+    ? scopeOptions
+    : SCOPE_OPTIONS.filter(option => option.value === scopeType).concat(scopeOptions);
   const isEntityScope = ENTITY_SCOPE_TYPES.has(scopeType);
   const options = isEntityScope
     ? lookupOptions?.[scopeType as keyof PermissionScopeLookupOptionsByType] || []
@@ -56,7 +64,7 @@ const PermissionScopePicker: React.FC<PermissionScopePickerProps> = ({
         onChange={event => changeScopeType(event.target.value as PermissionScopeType)}
         className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 outline-none focus:ring-2 focus:ring-blue-200"
       >
-        {SCOPE_OPTIONS.map(option => (
+        {visibleScopeOptions.map(option => (
           <option key={option.value} value={option.value}>{option.label}</option>
         ))}
       </select>
