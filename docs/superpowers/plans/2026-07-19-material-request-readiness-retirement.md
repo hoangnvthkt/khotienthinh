@@ -50,8 +50,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { getPermissionActionByCode } from '../permissions/permissionRegistry';
 import { resolvePermissionActionReadiness } from '../permissions/permissionReadiness';
-import type { PermissionActionDefinition } from '../permissions/permissionTypes';
 
 const permissions = fs.readFileSync(
   path.resolve(process.cwd(), 'lib/permissions/projectMaterialPermissions.ts'), 'utf8',
@@ -59,13 +59,11 @@ const permissions = fs.readFileSync(
 const materialTab = fs.readFileSync(
   path.resolve(process.cwd(), 'pages/project/MaterialTab.tsx'), 'utf8',
 );
-const action = (permissionCode: string): PermissionActionDefinition => ({
-  permissionCode, permissionName: permissionCode,
-  moduleCode: 'project.material_request', moduleName: 'Material Request',
-  applicationCode: 'project', applicationName: 'Project',
-  riskLevel: 'sensitive', scopeModes: ['project'],
-  directGrantRequiresExpiry: true, readiness: 'declared',
-});
+const action = (permissionCode: string) => {
+  const found = getPermissionActionByCode(permissionCode);
+  if (!found) throw new Error('Missing fixture ' + permissionCode);
+  return found;
+};
 
 describe('Material Request readiness retirement', () => {
   it('keeps fulfilment confirmation on its dedicated permission', () => {
