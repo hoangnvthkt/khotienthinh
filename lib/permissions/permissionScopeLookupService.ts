@@ -70,10 +70,10 @@ export const mapPermissionScopeLookupRows = (
   ),
 });
 
-const safeSelect = async (table: string, columns: string) => {
+const safeSelect = async (table: string, columns: string): Promise<RawLookupRow[]> => {
   const { data, error } = await supabase.from(table).select(columns);
   if (error) return [];
-  return data || [];
+  return (data || []) as unknown as RawLookupRow[];
 };
 
 export const permissionScopeLookupService = {
