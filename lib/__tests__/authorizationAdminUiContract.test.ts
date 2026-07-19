@@ -100,4 +100,16 @@ describe('authorization admin UI contract', () => {
     expect(workspace).not.toContain('source_mode');
     expect(workspace).not.toMatch(/actorUserId|requestedBy|p_actor/);
   });
+
+  it('renders all-module matrix with adaptive scope instead of project-only filtering', () => {
+    const workspace = read('components/permissions/DirectUserPermissionWorkspace.tsx');
+
+    expect(workspace).toContain('PermissionScopePicker');
+    expect(workspace).toContain('<CompactDirectPermissionTree');
+    expect(workspace).not.toContain('applicationFilter="project"');
+    expect(workspace).not.toContain('projectMasterService.list');
+    expect(workspace).not.toContain('__missing_project__');
+    expect(workspace).not.toContain('Hay chon mot du an');
+    expect(workspace).not.toContain('Tất cả dự án');
+  });
 });

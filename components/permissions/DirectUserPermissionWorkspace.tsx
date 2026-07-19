@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Clipboard, ClipboardPaste, Eye, Loader2, Save } from 'lucide-react';
-import type { Project, UserPermissionGrant } from '../../types';
-import { projectMasterService } from '../../lib/projectMasterService';
+import type { UserPermissionGrant } from '../../types';
 import type {
   AuthorizationPrincipal,
   EffectivePermissionSource,
@@ -23,9 +22,11 @@ import {
   pasteDirectPermissionClipboard,
   type DirectPermissionClipboard,
 } from '../../lib/permissions/directUserPermissionMatrixViewModel';
+import type { PermissionScope } from '../../lib/permissions/permissionTypes';
 import { buildUnifiedPermissionDraftKey } from '../../lib/permissions/unifiedPermissionViewModel';
 import CompactDirectPermissionTree from './CompactDirectPermissionTree';
 import PermissionChangeSummary from './PermissionChangeSummary';
+import PermissionScopePicker from './PermissionScopePicker';
 import SodWarningPanel from './SodWarningPanel';
 
 export interface DirectUserPermissionWorkspaceProps {
@@ -64,8 +65,7 @@ const DirectUserPermissionWorkspace: React.FC<DirectUserPermissionWorkspaceProps
   onSaved,
 }) => {
   const [drafts, setDrafts] = useState<UserPermissionGrant[]>([...grants]);
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [selectedProjectId, setSelectedProjectId] = useState('');
+  const [scope, setScope] = useState<PermissionScope>({ scopeType: 'global', scopeId: '*' });
   const [reason, setReason] = useState('');
   const [preview, setPreview] = useState<UnifiedPermissionPreview | null>(null);
   const [previewedDraftKey, setPreviewedDraftKey] = useState<string | null>(null);
@@ -78,11 +78,10 @@ const DirectUserPermissionWorkspace: React.FC<DirectUserPermissionWorkspaceProps
     () => new Map(permissionActions.map(action => [action.permissionCode, action.riskLevel || 'normal'] as const)),
     [permissionActions],
   );
-  const selectedProject = projects.find(project => project.id === selectedProjectId) || null;
-  const scope = useMemo(
-    () => ({ scopeType: 'project' as const, scopeId: selectedProjectId || '__missing_project__' }),
-    [selectedProjectId],
-  );
+  const normalizedScope = useMemo(() => ({
+    scopeType: scope.scopeType || 'global',
+    scopeId: scope.scopeId || '*',
+  }), [scope.scopeId, scope.scopeType]);
   const currentDraftKey = preview
     ? buildUnifiedPermissionDraftKey(principal.userId, preview.legacyAfter, drafts)
     : null;
@@ -105,29 +104,6 @@ const DirectUserPermissionWorkspace: React.FC<DirectUserPermissionWorkspaceProps
     setAcceptances([]);
     setMessage('');
   }, [grants, principal.userId]);
-
-  useEffect(() => {
-    let active = true;
-    setBusy('load');
-    projectMasterService.list()
-      .then(nextProjects => {
-        if (!active) return;
-        setProjects(nextProjects);
-        const preferredProject = nextProjects.find(project => project.status === 'active') || nextProjects[0];
-        setSelectedProjectId(previous =>
-          previous && nextProjects.some(project => project.id === previous)
-            ? previous
-            : preferredProject?.id || ''
-        );
-      })
-      .catch(() => {
-        if (active) setMessage('Khong the tai du an.');
-      })
-      .finally(() => {
-        if (active) setBusy(null);
-      });
-    return () => { active = false; };
-  }, []);
 
   const updateDrafts = (next: UserPermissionGrant[]) => {
     setDrafts(next);
@@ -156,10 +132,6 @@ const DirectUserPermissionWorkspace: React.FC<DirectUserPermissionWorkspaceProps
   };
 
   const handlePreview = async () => {
-    if (!selectedProjectId) {
-      setMessage('Hay chon mot du an cu the truoc khi preview.');
-      return;
-    }
     setBusy('preview');
     setMessage('');
     setAcceptances([]);
@@ -235,37 +207,27 @@ const DirectUserPermissionWorkspace: React.FC<DirectUserPermissionWorkspaceProps
           <div className="rounded-lg bg-violet-50 px-2 py-2 text-[10px] font-black text-violet-700">Role {sourceSummary.role}</div>
           <div className="rounded-lg bg-amber-50 px-2 py-2 text-[10px] font-black text-amber-700">Legacy {sourceSummary.legacy}</div>
         </div>
-        <label className="block space-y-1.5 text-xs font-bold text-slate-600">
-          <span>Du an</span>
-          <select
-            value={selectedProjectId}
-            onChange={event => {
-              setSelectedProjectId(event.target.value);
+        <div className="space-y-1.5">
+          <div className="text-xs font-bold text-slate-600">Scope dang chinh</div>
+          <PermissionScopePicker
+            value={scope}
+            onChange={nextScope => {
+              setScope(nextScope);
               setPreview(null);
               setPreviewedDraftKey(null);
               setAcceptances([]);
+              setMessage('');
             }}
-            disabled={panelDisabled || projects.length === 0}
-            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 disabled:bg-slate-50"
-          >
-            {projects.length === 0 && <option value="">Chua co du an</option>}
-            {projects.map(project => (
-              <option key={project.id} value={project.id}>{project.code} - {project.name}</option>
-            ))}
-          </select>
-        </label>
-        {selectedProject && (
-          <div className="rounded-lg bg-slate-50 px-3 py-2 text-[10px] font-bold text-slate-500">
-            {selectedProject.name}
-          </div>
-        )}
+            disabled={panelDisabled}
+          />
+        </div>
       </aside>
 
       <main className="space-y-4 rounded-lg border border-slate-200 bg-white p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <div className="text-sm font-black text-slate-800">Phân quyền user</div>
-            <div className="mt-1 text-[10px] font-bold text-slate-400">Scope project/{selectedProjectId || 'none'}</div>
+            <div className="mt-1 text-[10px] font-bold text-slate-400">Scope {normalizedScope.scopeType}/{normalizedScope.scopeId}</div>
           </div>
           <div className="flex flex-wrap gap-2">
             <button
@@ -287,7 +249,7 @@ const DirectUserPermissionWorkspace: React.FC<DirectUserPermissionWorkspaceProps
             <button
               type="button"
               onClick={handlePreview}
-              disabled={panelDisabled || !selectedProjectId}
+              disabled={panelDisabled}
               className="flex items-center gap-2 rounded-lg border border-blue-200 px-3 py-2 text-xs font-black text-blue-700 disabled:opacity-50"
             >
               {busy === 'preview' ? <Loader2 size={14} className="animate-spin" /> : <Eye size={14} />}
@@ -316,8 +278,7 @@ const DirectUserPermissionWorkspace: React.FC<DirectUserPermissionWorkspaceProps
           grants={drafts}
           effectiveSources={effectiveSources}
           scope={scope}
-          disabled={panelDisabled || !selectedProjectId}
-          applicationFilter="project"
+          disabled={panelDisabled}
           onGrantsChange={updateDrafts}
         />
 
