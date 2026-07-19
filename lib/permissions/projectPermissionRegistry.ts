@@ -325,10 +325,11 @@ export const PROJECT_PERMISSION_MODULES: readonly PermissionModuleDefinition[] =
     ['export', 'Xuất dữ liệu', 20],
   ])),
   moduleDefinition('project.dashboard', 'Dashboard dự án', [], 220, actionSet('project.dashboard', '/da/portfolio', [
-    ['view_progress', 'Xem tiến độ', 10],
-    ['view_financials', 'Xem tài chính', 20],
-    ['view_risk', 'Xem rủi ro', 30],
-    ['manage', 'Quản trị', 40],
+    ['view', 'Xem', 10],
+    ['view_progress', 'Xem tiến độ', 20],
+    ['view_financials', 'Xem tài chính', 30],
+    ['view_risk', 'Xem rủi ro', 40],
+    ['manage', 'Quản trị', 50],
   ])),
 ];
 
