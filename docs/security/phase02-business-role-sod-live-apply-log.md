@@ -808,6 +808,22 @@ URLs, API keys or service-role values in this file.
   flags are enabled. The four A12 versions remain absent from remote migration
   history. No principal preview/Save, grant, warning, rollout-flag, or history
   mutation occurred beyond the approved A12 apply.
+- Cloud Gate A13 then repaired exactly remote migration-history versions
+  `20260718151157`, `20260718152445`, `20260718154050`, and `20260719004803`
+  to `applied`. Read-only post-repair evidence found one history row for each
+  exact version, all three public Material transition functions present,
+  exactly three Material approval codes `verified`, the five Payment/Quantity
+  codes still `verified`, Payment Mark Paid plus the two Material exclusions
+  still `declared`, active Direct Grants `2282`, and enabled hardening flags
+  `0`. A13 changed no SQL body, principal, grant, warning, readiness value, or
+  rollout flag.
+- The broad historical `sensitive`-grant inventory includes rows outside the
+  frozen Task 3 source set, so it is not used as a proxy for the approved
+  manifest. The exact `318` pending rows across `12` principals remain bound
+  to that private manifest and the final exact gate. Material promotion reduces
+  the declared code-level blocker surface from `16` to `13`, but does not
+  authorize a partial principal Save. Closure Task 3 stays paused until a
+  fresh exact-manifest readiness check proves a complete grantable draft.
 
 ## Resolver enablement canary
 

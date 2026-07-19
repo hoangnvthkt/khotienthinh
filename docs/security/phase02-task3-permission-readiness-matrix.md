@@ -237,3 +237,26 @@ zero hardening flags are enabled. The four A12 migration versions still have
 zero remote history rows. No principal preview or Save, grant, warning,
 rollout-flag, or migration-history repair occurred. History repair remains a
 separate A13 checkpoint.
+
+## Cloud Gate A13 Result
+
+At `2026-07-19T07:59:20+07:00`, the approved linked migration-history repair
+marked exactly versions `20260718151157`, `20260718152445`, `20260718154050`,
+and `20260719004803` as `applied`. Read-only post-repair evidence found one
+remote history row for each exact version, all three public Material transition
+functions present, and exactly three Material approval codes still `verified`.
+
+The five Payment/Quantity codes remain `verified`; Payment Mark Paid and the
+two Material exclusions remain `declared`; active Direct Grants remain `2282`;
+and enabled hardening flags remain `0`. A13 changed migration history only: it
+did not apply SQL bodies, preview or Save a principal, change a grant or
+warning, or enable a rollout flag.
+
+The broad historical `sensitive`-grant inventory is not a substitute for the
+approved private manifest: it contains rows outside the frozen Task 3 source
+set. Therefore the exact `318` rows across `12` pending principals must remain
+bound to the frozen manifest and its final exact gate. Material promotion
+removes three codes from the prior 16-code declared blocker surface, leaving
+13 declared code-level blockers; it does not authorize a partial principal
+Save. Closure Task 3 remains paused until the exact-manifest readiness check
+shows a complete grantable draft for a principal.
