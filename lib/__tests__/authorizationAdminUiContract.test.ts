@@ -71,43 +71,33 @@ describe('authorization admin UI contract', () => {
     expect(page).toContain('selectedPrincipal && loadedPrincipalId === selectedPrincipal.userId');
   });
 
-  it('makes direct user permission matrix the primary governance workflow', () => {
+  it('makes manual direct user permission matrix the only primary governance workflow', () => {
     const page = read('pages/settings/SettingsAuthorizationGovernance.tsx');
     const workspace = read('components/permissions/DirectUserPermissionWorkspace.tsx');
 
     expect(page).toContain('Phân quyền user');
-    expect(page).toContain('Mẫu quyền');
     expect(page).toContain('DirectUserPermissionWorkspace');
+    expect(page).not.toContain('Mẫu quyền');
+    expect(page).not.toContain('PermissionQuickTemplateEditor');
+    expect(page).not.toContain("activeTab === 'templates'");
     expect(workspace).toContain('Copy quyền');
     expect(workspace).toContain('Dán quyền');
     expect(workspace).toContain('Preview backend');
     expect(workspace).toContain('Lưu phân quyền');
-    expect(workspace).toContain('projectMasterService.list');
-    expect(workspace).not.toContain('Tất cả dự án');
+    expect(workspace).not.toContain('permissionQuickTemplateService');
+    expect(workspace).not.toContain('PROJECT_PERMISSION_TEMPLATES');
+    expect(workspace).not.toContain('applyPermissionQuickTemplateToDraft');
   });
 
-  it('keeps direct save governed and does not mutate identity, role assignment, or source mode from the browser', () => {
+  it('keeps direct save governed and does not mutate identity, role assignment, audit, grant tables, or source mode from the browser', () => {
     const workspace = read('components/permissions/DirectUserPermissionWorkspace.tsx');
 
     expect(workspace).toContain('previewUserPermissionChange');
     expect(workspace).toContain('applyUserPermissionChange');
     expect(workspace).not.toContain(".from('user_permission_grants')");
     expect(workspace).not.toContain('principal_role_assignments');
+    expect(workspace).not.toContain('permission_audit_events');
     expect(workspace).not.toContain('source_mode');
     expect(workspace).not.toMatch(/actorUserId|requestedBy|p_actor/);
-  });
-
-  it('edits quick templates as presets, not live Business Role assignments', () => {
-    const page = read('pages/settings/SettingsAuthorizationGovernance.tsx');
-    const editor = read('components/permissions/PermissionQuickTemplateEditor.tsx');
-
-    expect(page).toContain('PermissionQuickTemplateEditor');
-    expect(editor).toContain('permissionQuickTemplateService.save');
-    expect(editor).toContain('permissionQuickTemplateService.deactivate');
-    expect(editor).toContain('CompactDirectPermissionTree');
-    expect(editor).toContain('Mẫu quyền');
-    expect(editor).not.toContain('assignBusinessRole');
-    expect(editor).not.toContain('principal_role_assignments');
-    expect(editor).not.toContain('role_permission_templates');
   });
 });

@@ -4,7 +4,6 @@ import type { User } from '../../types';
 import BusinessRoleEditor from '../../components/permissions/BusinessRoleEditor';
 import DirectUserPermissionWorkspace from '../../components/permissions/DirectUserPermissionWorkspace';
 import EffectivePermissionSourceList from '../../components/permissions/EffectivePermissionSourceList';
-import PermissionQuickTemplateEditor from '../../components/permissions/PermissionQuickTemplateEditor';
 import PrincipalDirectGrantPanel from '../../components/permissions/PrincipalDirectGrantPanel';
 import PrincipalRoleAssignmentPanel from '../../components/permissions/PrincipalRoleAssignmentPanel';
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
@@ -51,7 +50,7 @@ const SettingsAuthorizationGovernance: React.FC<SettingsAuthorizationGovernanceP
   const [overrideRules, setOverrideRules] = useState<AuthorizationSodRule[]>([]);
   const [roleImpactPreview, setRoleImpactPreview] = useState<BusinessRoleImpactPreview | null>(null);
   const [assignmentDecision, setAssignmentDecision] = useState<AuthorizationDecision | null>(null);
-  const [activeTab, setActiveTab] = useState<'users' | 'templates' | 'advanced'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'advanced'>('users');
   const [directClipboard, setDirectClipboard] = useState<DirectPermissionClipboard | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -163,7 +162,6 @@ const SettingsAuthorizationGovernance: React.FC<SettingsAuthorizationGovernanceP
       <div className="flex flex-wrap gap-2 rounded-2xl border border-slate-100 bg-white p-2 shadow-sm">
         {([
           ['users', 'Phân quyền user'],
-          ['templates', 'Mẫu quyền'],
           ['advanced', 'Nguồn nâng cao'],
         ] as const).map(([tab, label]) => (
           <button
@@ -242,10 +240,6 @@ const SettingsAuthorizationGovernance: React.FC<SettingsAuthorizationGovernanceP
             <div className="rounded-2xl border border-slate-200 bg-white p-4 text-xs font-bold text-slate-500">
               Đang tải dữ liệu phân quyền user...
             </div>
-          )}
-
-          {activeTab === 'templates' && (
-            <PermissionQuickTemplateEditor disabled={!canManageGrants} />
           )}
 
           {activeTab === 'advanced' && (

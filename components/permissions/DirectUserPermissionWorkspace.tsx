@@ -17,17 +17,8 @@ import {
   applyUserPermissionChange,
   previewUserPermissionChange,
 } from '../../lib/permissions/permissionAdminService';
-import { getAllPermissionActions, permissionRegistry } from '../../lib/permissions/permissionRegistry';
+import { getAllPermissionActions } from '../../lib/permissions/permissionRegistry';
 import {
-  getProjectPermissionTemplateCodes,
-  PROJECT_PERMISSION_TEMPLATES,
-} from '../../lib/permissions/projectPermissionTemplates';
-import {
-  permissionQuickTemplateService,
-  type PermissionQuickTemplate,
-} from '../../lib/permissions/permissionQuickTemplateService';
-import {
-  applyPermissionQuickTemplateToDraft,
   copyDirectPermissionDraft,
   pasteDirectPermissionClipboard,
   type DirectPermissionClipboard,
@@ -74,9 +65,7 @@ const DirectUserPermissionWorkspace: React.FC<DirectUserPermissionWorkspaceProps
 }) => {
   const [drafts, setDrafts] = useState<UserPermissionGrant[]>([...grants]);
   const [projects, setProjects] = useState<Project[]>([]);
-  const [customTemplates, setCustomTemplates] = useState<PermissionQuickTemplate[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState('');
-  const [selectedTemplateId, setSelectedTemplateId] = useState('');
   const [reason, setReason] = useState('');
   const [preview, setPreview] = useState<UnifiedPermissionPreview | null>(null);
   const [previewedDraftKey, setPreviewedDraftKey] = useState<string | null>(null);
@@ -89,26 +78,6 @@ const DirectUserPermissionWorkspace: React.FC<DirectUserPermissionWorkspaceProps
     () => new Map(permissionActions.map(action => [action.permissionCode, action.riskLevel || 'normal'] as const)),
     [permissionActions],
   );
-  const projectModules = useMemo(
-    () => permissionRegistry.find(application => application.code === 'project')?.modules || [],
-    [],
-  );
-  const staticTemplates = useMemo<PermissionQuickTemplate[]>(() => PROJECT_PERMISSION_TEMPLATES.map(template => ({
-    id: `project:${template.key}`,
-    code: template.key,
-    name: template.label,
-    isActive: true,
-    permissionCodes: [...getProjectPermissionTemplateCodes(template.key)],
-  })), []);
-  const templates = useMemo(() => {
-    const byCode = new Map<string, PermissionQuickTemplate>();
-    staticTemplates.forEach(template => byCode.set(template.code, template));
-    customTemplates.filter(template => template.isActive).forEach(template => byCode.set(template.code, template));
-    return [...byCode.values()]
-      .filter(template => template.permissionCodes.length > 0)
-      .sort((left, right) => left.name.localeCompare(right.name) || left.code.localeCompare(right.code));
-  }, [customTemplates, staticTemplates]);
-  const selectedTemplate = templates.find(template => template.id === selectedTemplateId) || templates[0] || null;
   const selectedProject = projects.find(project => project.id === selectedProjectId) || null;
   const scope = useMemo(
     () => ({ scopeType: 'project' as const, scopeId: selectedProjectId || '__missing_project__' }),
@@ -140,14 +109,10 @@ const DirectUserPermissionWorkspace: React.FC<DirectUserPermissionWorkspaceProps
   useEffect(() => {
     let active = true;
     setBusy('load');
-    Promise.all([
-      projectMasterService.list(),
-      permissionQuickTemplateService.list(),
-    ])
-      .then(([nextProjects, nextTemplates]) => {
+    projectMasterService.list()
+      .then(nextProjects => {
         if (!active) return;
         setProjects(nextProjects);
-        setCustomTemplates(nextTemplates);
         const preferredProject = nextProjects.find(project => project.status === 'active') || nextProjects[0];
         setSelectedProjectId(previous =>
           previous && nextProjects.some(project => project.id === previous)
@@ -156,21 +121,13 @@ const DirectUserPermissionWorkspace: React.FC<DirectUserPermissionWorkspaceProps
         );
       })
       .catch(() => {
-        if (active) setMessage('Khong the tai du an hoac mau quyen.');
+        if (active) setMessage('Khong the tai du an.');
       })
       .finally(() => {
         if (active) setBusy(null);
       });
     return () => { active = false; };
   }, []);
-
-  useEffect(() => {
-    setSelectedTemplateId(previous =>
-      previous && templates.some(template => template.id === previous)
-        ? previous
-        : templates[0]?.id || ''
-    );
-  }, [templates]);
 
   const updateDrafts = (next: UserPermissionGrant[]) => {
     setDrafts(next);
@@ -185,17 +142,6 @@ const DirectUserPermissionWorkspace: React.FC<DirectUserPermissionWorkspaceProps
       ...candidate,
       expiresAt: toIsoDateTime(value),
     } : candidate));
-  };
-
-  const applyTemplate = () => {
-    if (!selectedTemplate || !selectedProjectId) return;
-    updateDrafts(applyPermissionQuickTemplateToDraft({
-      targetUserId: principal.userId,
-      drafts,
-      template: selectedTemplate,
-      modules: projectModules,
-      scope,
-    }));
   };
 
   const handleCopy = () => {
@@ -308,28 +254,6 @@ const DirectUserPermissionWorkspace: React.FC<DirectUserPermissionWorkspaceProps
             ))}
           </select>
         </label>
-        <label className="block space-y-1.5 text-xs font-bold text-slate-600">
-          <span>Mẫu quyền</span>
-          <select
-            value={selectedTemplate?.id || ''}
-            onChange={event => setSelectedTemplateId(event.target.value)}
-            disabled={panelDisabled || templates.length === 0}
-            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 disabled:bg-slate-50"
-          >
-            {templates.length === 0 && <option value="">Chua co mau</option>}
-            {templates.map(template => (
-              <option key={template.id} value={template.id}>{template.name}</option>
-            ))}
-          </select>
-        </label>
-        <button
-          type="button"
-          onClick={applyTemplate}
-          disabled={panelDisabled || !selectedTemplate || !selectedProjectId}
-          className="w-full rounded-lg border border-blue-200 px-3 py-2 text-xs font-black text-blue-700 disabled:opacity-50"
-        >
-          Ap dung mau
-        </button>
         {selectedProject && (
           <div className="rounded-lg bg-slate-50 px-3 py-2 text-[10px] font-bold text-slate-500">
             {selectedProject.name}
