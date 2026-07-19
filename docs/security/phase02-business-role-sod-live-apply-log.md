@@ -824,6 +824,25 @@ URLs, API keys or service-role values in this file.
   the declared code-level blocker surface from `16` to `13`, but does not
   authorize a partial principal Save. Closure Task 3 stays paused until a
   fresh exact-manifest readiness check proves a complete grantable draft.
+- Cloud Gate B0 at `2026-07-19T08:26:23+07:00` ran the approved linked
+  read-only manifest-reconstruction gate for retirement of
+  `project.material_request.confirm` and `project.material_request.verify`.
+  The original source/regrant/DROP arithmetic matched `467`/`421`/`46` and both
+  approved fingerprints; active Direct Grants remained `2282`, the
+  non-sensitive fingerprint remained unchanged, the durable rollout-operator
+  count remained `1`, and enabled hardening flags remained `0`.
+- The candidate retirement calculation would yield regrant `383`, DROP `84`,
+  candidate fingerprint `43676e109ad8c48a83243adedcfa6e33`, and a projected
+  pending set of `288` rows across `12` principals. It would leave `147`
+  declared rows across `11` codes and `141` verified/enforced rows. These are
+  candidate aggregates only, not an adopted manifest revision.
+- The exact rollback-only gate stopped as designed because aggregate
+  `active_retired_count` was `8`. Its governed-remediation exception rolled the
+  transaction back; no catalog, readiness, direct grant, principal preview or
+  Save, warning, Business Role, migration history, or rollout flag changed.
+  Closure Task 3 remains paused. The next work is a separately approved
+  governed-revoke proposal for those active retired keys, with no identity data
+  recorded.
 
 ## Resolver enablement canary
 

@@ -260,3 +260,25 @@ removes three codes from the prior 16-code declared blocker surface, leaving
 13 declared code-level blockers; it does not authorize a partial principal
 Save. Closure Task 3 remains paused until the exact-manifest readiness check
 shows a complete grantable draft for a principal.
+
+## Cloud Gate B0 Result
+
+At `2026-07-19T08:26:23+07:00`, the approved linked Cloud Gate B0 ran
+aggregate-only read-only reconstruction for the retirement of
+`project.material_request.confirm` and `project.material_request.verify`.
+The original source and decision baselines matched exactly: source `467`,
+regrant `421`, DROP `46`, and both approved fingerprints. Active Direct Grants
+remain `2282`, the non-sensitive fingerprint remains unchanged, one durable
+rollout operator remains, and enabled hardening flags remain `0`.
+
+The candidate revision would produce regrant `383`, DROP `84`, candidate
+fingerprint `43676e109ad8c48a83243adedcfa6e33`, and a projected pending set of
+`288` rows across `12` principals. Its projected declared blocker surface is
+`147` rows across `11` codes; `141` rows are already verified or enforced.
+
+The gate stopped fail-closed because `8` retired keys are already active. The
+exact rollback-only gate then returned the expected governed-remediation
+exception; no catalog, readiness, grant, principal, warning, role, history, or
+rollout flag changed. The candidate revision is not adopted. Closure Task 3
+remains paused pending a separately approved governed-revoke checkpoint for
+those active retired keys.
