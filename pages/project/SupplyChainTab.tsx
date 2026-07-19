@@ -3582,7 +3582,12 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     };
 
     const updatePoStatus = async (id: string, status: POStatus, submissionTarget?: ProjectSubmissionTarget) => {
-        if (status === 'returned') {
+        const po = pos.find(p => p.id === id);
+        if (!po) return;
+
+        if (status === 'returned' && po.status === 'sent') {
+            if (!ensureCanApprovePo('yêu cầu chỉnh sửa PO')) return;
+        } else if (status === 'returned') {
             if (!ensureCanReturnSupplierPo('trả hàng/hoàn hàng PO')) return;
         } else if (status === 'cancelled') {
             if (!ensureCanRunRestrictedPoAction('huỷ PO')) return;
@@ -3593,8 +3598,6 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         } else if (!ensureCanCreatePo('cập nhật trạng thái PO')) {
             return;
         }
-        const po = pos.find(p => p.id === id);
-        if (!po) return;
         if (status === 'sent' && !submissionTarget) {
             setSubmittingPo(po);
             return;
@@ -3613,7 +3616,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             });
             if (!ok) return;
         }
-        if (status === 'returned') {
+        if (status === 'returned' && po.status !== 'sent') {
             const receivedQty = po.items.reduce((sum, item) => sum + (Number(item.receivedQty) || 0), 0);
             if (['partial', 'delivered', 'closed'].includes(po.status) || receivedQty > 0) {
                 setSupplierReturnPo(po);
@@ -5182,7 +5185,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 await updatePoStatus(po.id, 'confirmed');
                 return;
             case 'request_revision':
-                await updatePoStatus(po.id, 'draft');
+                await updatePoStatus(po.id, 'returned');
                 return;
             case 'approve_supplemental':
                 if (!ensureCanApprovePo('duyệt bổ sung PO')) return;

@@ -446,35 +446,19 @@ export const paymentCertificateService = {
       }
     }
 
-    const updates: any = {
-      status,
-      ...projectSubmissionService.actionMeta(userId, status === 'submitted'),
-    };
     const now = new Date().toISOString();
-    if (status === 'submitted') {
-      updates.submittedBy = userId;
-      updates.submittedAt = now;
-      Object.assign(updates, projectSubmissionService.targetToUpdate(options?.submissionTarget));
-    }
-    if (status === 'returned') {
-      updates.returnedBy = userId;
-      updates.returnedAt = now;
-      updates.returnReason = reason;
-      Object.assign(updates, projectSubmissionService.returnToOwnerUpdate(cert.submittedBy, reason));
-    }
-    if (status === 'approved') {
-      updates.approvedBy = userId;
-      updates.approvedAt = now;
-      Object.assign(updates, projectSubmissionService.targetToUpdate(options?.submissionTarget || null));
-    }
-    if (status === 'paid') {
-      updates.paidAt = now;
-      Object.assign(updates, projectSubmissionService.targetToUpdate(null));
-    }
-    if (status === 'cancelled') {
-      Object.assign(updates, projectSubmissionService.targetToUpdate(null));
-    }
-    const { error } = await supabase.from(TABLE).update(toDb(updates)).eq('id', id);
+    if (!userId) throw new Error('Không xác định được người dùng chuyển trạng thái chứng từ thanh toán.');
+    const target = options?.submissionTarget;
+    const { error } = await supabase.rpc('transition_project_payment_certificate_status', {
+      p_certificate_id: id,
+      p_status: status,
+      p_actor_user_id: userId,
+      p_reason: reason || null,
+      p_target_user_id: target?.userId || null,
+      p_target_name: target?.name || null,
+      p_target_permission: target?.permissionCode || null,
+      p_submission_note: target?.note || null,
+    });
     if (error) throw error;
     if ((status === 'submitted' || status === 'approved') && options?.submissionTarget) {
       const isConfirmStep = status === 'approved';

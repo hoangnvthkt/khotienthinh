@@ -585,11 +585,252 @@ URLs, API keys or service-role values in this file.
   View+Audit bridge for an independent control owner remains a separate
   approval boundary.
 
+## Independent control-owner appointment
+
+- At `2026-07-18T20:06:43+07:00`, after explicit operator approval, Phase 02
+  closure Task 2 selected one active non-Admin, least-privilege control owner
+  through read-only filtering. The identity remains private runtime state; no
+  user ID, email or raw permission payload is recorded here.
+- Pre-save rollback preview passed with intent Direct Grants `2280 -> 2282`,
+  active sensitive Direct Grants unchanged at `103`, Audit-capable actors
+  `1 -> 2`, active Business Role assignments `2 -> 3`, and all four rollout
+  flags still `false`.
+- The approved Cloud Save ran once through governed authenticated RPCs:
+  unified Direct Grant Save for the temporary View+Audit bridge, followed by an
+  expiring `AUDITOR` assignment at `global/*` through
+  `2026-10-16T12:10:00+07:00`. Post-save evidence showed active Direct Grants
+  `2282`, active sensitive Direct Grants `103`, active non-sensitive Direct
+  Grants `2179`, non-sensitive fingerprint
+  `632d0ce644dcec52126eabf7b44909ca`, Audit-capable actors `2`, active
+  Business Role assignments `3`, and all four rollout flags still `false`.
+- Fresh-session least-privilege verification passed: global View+Audit allowed;
+  authorization audit rows and effective sources readable; no non-global
+  authorization source present; manage roles, manage grants, manage scopes,
+  override and business-approval permissions denied; governed mutation previews
+  denied; and the Direct Save plus `AUDITOR` assignment each created exactly
+  one audit event.
+- Because `app_private.scope_covers` intentionally treats `global/*` as covering
+  narrower requested scopes, the scope-negative evidence is recorded as zero
+  non-global authorization sources rather than treating a covered narrow request
+  as a failure. With the resolver flag still `false`, the staged `AUDITOR` role
+  remains inactive as an effective source; current authorization evidence still
+  comes from the temporary Direct bridge only.
+
+## Task 3 readiness prerequisite — read-only preflight
+
+- At `2026-07-18T22:03:44+07:00`, before any readiness migration or Cloud
+  smoke, linked Cloud read-only evidence reconfirmed the immutable Task 3
+  baseline: source `467 = 421 REGRANT + 46 DROP`; active sensitive grants
+  `103` across `10` principals; pending approved rows `318` across `12`
+  principals; zero sensitive null-expiry and zero active-sensitive rows outside
+  the source set.
+- The pending set remains blocked by `291` declared rows across exactly `21`
+  permission codes; `27` rows are already verified. All `12` pending
+  principals remain blocked, so no preview or Save was attempted.
+- Active non-sensitive grants remain `2179` with fingerprint
+  `632d0ce644dcec52126eabf7b44909ca`; Audit-capable actors remain `2`; active
+  Business Role assignments remain `3`; active warning acceptances remain `0`;
+  and all four rollout flags remain `false`.
+- Required migrations `20260718092455` and `20260718123119` remain applied.
+  The candidate Material smoke has SHA-256
+  `35692118cdf689ea473cbbd3681322f33b779bd92347330245195bb06f5ee48a`
+  at Git commit `7760d700082cac3ab7ef829ef35d98fccc26738b`.
+- This is read-only evidence only. Cloud Gate A is still required before the
+  smoke may execute inside `BEGIN`/`ROLLBACK`; it does not authorize creating,
+  applying, or repairing a migration.
+- At `2026-07-18T22:07:56+07:00`, after explicit Cloud Gate A approval, the
+  linked rollback-only Material smoke stopped at
+  `project.material_request.approve incorrectly bypassed workflow state`.
+  The intended allow and wrong-project denial ran first; the negative assertion
+  then proved that the current handler accepts `DRAFT -> APPROVED`.
+- Root cause is the `APPROVED` path in
+  `public.transition_project_material_request_status(...)`: it resolves the
+  approval permission and performs the update without validating the source
+  request status. Existing workflow runtime paths promote to `APPROVED` only
+  from `PENDING`.
+- Post-failure read-only evidence confirmed rollback: source `467`, approved
+  regrant rows `421`, DROP rows `46`, active sensitive rows `103`, pending rows
+  `318`, declared pending rows `291`, blocking codes `21`, verified readiness
+  actions `13`, active warning acceptances `0`, and all four rollout flags
+  `false`. No readiness migration was created, applied, or repaired; no
+  principal preview or Save was attempted.
+- Explicit Cloud Gate A2 ran the forward
+  Material Request state-guard migration together with the Material smoke in
+  one linked `BEGIN`/`ROLLBACK` transaction. The new guard denied
+  `DRAFT -> APPROVED` as intended, then the smoke stopped at
+  `project.material_po.approve incorrectly bypassed workflow state`: the PO
+  handler accepted `in_transit -> confirmed`. The error rolled back the entire
+  transaction; the forward guard migration remains absent from remote history.
+- Post-Gate-A2 read-only aggregates show `2282` active Direct Grants, `103`
+  active sensitive grants, readiness totals `229` declared / `59` legacy /
+  `13` verified, zero active warning acceptances, and zero enabled hardening
+  flags. Five hardening keys now exist, all `false`; the additional
+  `legacy_fallback_disabled` key is separately tracked configuration drift,
+  not a Gate-A2 mutation. No principal preview, Save, readiness
+  promotion, migration-history repair, or rollout-flag mutation occurred.
+- Cloud Gate A3 loaded both forward state guards with the Material smoke in a
+  single linked rollback-only transaction. The PO guard rejected the smoke's
+  purported intended allow because that fixture was still initialized as
+  `draft`; the approved PO workflow requires `sent -> confirmed|returned`.
+  The error rolled back the transaction before any PO state evidence could be
+  promoted. Post-failure read-only aggregates remained `2282` active Direct
+  Grants, `103` sensitive grants, readiness `229` declared / `59` legacy /
+  `13` verified, zero warning acceptances and zero enabled hardening flags;
+  neither forward migration is present in remote history. The smoke fixtures
+  are corrected locally for a new, separately approved Cloud gate.
+- Cloud Gate A4 ran the corrected smoke with both forward guards in one linked
+  rollback-only transaction. Material Request and PO completed their intended
+  allows plus scope, workflow-state and adjacent-action denials. The smoke then
+  stopped at `project.custom_material.approve incorrectly bypassed workflow
+  state`: the Custom Material handler accepted `draft -> approved`.
+- Post-Gate-A4 read-only evidence remained `2282` active Direct Grants, `103`
+  sensitive grants, readiness `229` declared / `59` legacy / `13` verified,
+  zero warning acceptances and zero enabled hardening flags. The two forward
+  guard migrations remain absent from remote history. No principal preview,
+  Save, readiness promotion, migration-history repair, or rollout-flag change
+  occurred.
+- Cloud Gate A5 loaded all three forward Material state guards and completed
+  `phase02_task3_material_readiness_smoke_passed` in one linked transaction
+  before its outer rollback. Material Request, PO and Custom Material approval
+  now each have passing intended allow, wrong-scope, workflow-state and
+  adjacent-action evidence.
+- Post-Gate-A5 read-only evidence remains `2282` active Direct Grants, `103`
+  sensitive grants, readiness `229` declared / `59` legacy / `13` verified,
+  zero warning acceptances and zero enabled hardening flags. All three forward
+  migrations remain absent from remote history. No principal preview, Save,
+  readiness promotion, migration-history repair, or rollout-flag change
+  occurred.
+- Cloud Gate A6R at `2026-07-18T23:12:09+07:00` loaded the Payment Certificate
+  and Quantity Acceptance transition migration plus its smoke in one linked
+  `BEGIN`/`ROLLBACK` transaction. It reached
+  `phase02_task3_payment_quantity_readiness_smoke_passed` before rollback.
+- Post-Gate-A6R aggregate evidence is unchanged: `2282` active Direct Grants,
+  readiness `229` declared / `59` legacy / `13` verified, zero enabled
+  hardening flags, zero remote history rows for migration `20260718155122`, and
+  zero persisted Payment/Quantity transition RPC rows. No principal preview,
+  Save, readiness promotion, migration-history repair, or rollout-flag change
+  occurred.
+- The evidence is complete for `project.payment.approve` and
+  `project.quantity_acceptance.approve`, so both are recorded as local
+  `CANDIDATE` codes only. Payment Verify, Payment Confirm and Quantity Verify
+  still lack code-specific negative coverage and remain `declared`; a later
+  rollback-only gate is required before any readiness migration is considered.
+- Cloud Gate A7 at `2026-07-18T23:18:21+07:00` ran the expanded Payment and
+  Quantity smoke in the same linked rollback-only posture and reached
+  `phase02_task3_payment_quantity_readiness_smoke_passed`. It supplied the
+  missing wrong-scope, draft-state and adjacent-action denials for Payment
+  Verify, Payment Confirm and Quantity Verify.
+- Post-Gate-A7 aggregates remain `2282` active Direct Grants, readiness `229`
+  declared / `59` legacy / `13` verified, zero enabled hardening flags, zero
+  history rows for migration `20260718155122`, and zero persisted transition
+  RPC rows. All five runtime-backed Payment/Quantity codes are now evidence
+  `CANDIDATE` only; their Cloud readiness stays `declared` and no principal
+  preview, Save, migration apply/repair or rollout-flag mutation occurred.
+- Cloud Gate A8 at `2026-07-18T23:25:15+07:00` loaded readiness migration
+  `20260718161857` and its promotion smoke in one linked `BEGIN`/`ROLLBACK`
+  transaction. The source migration SHA-256 was
+  `293f04688c62bea5f9ae70d735b4be02c8bdbb282eaf0dfac5ea9d712481a0c1`, the
+  smoke SHA-256 was
+  `b43359079bee68c05b7955b4de8c76f22e3f2cf88d3591ed7625449ca37017da`, and the
+  combined bundle SHA-256 was
+  `5ad55a0d39799fd3afad1da3d0ff5d09c2653167d54228969d1fb192e6391a0e`.
+  It reached `phase02_task3_payment_quantity_readiness_promotion_smoke_passed`
+  before its outer rollback.
+- The temporary promotion covered exactly Payment Verify, Payment Approve,
+  Payment Confirm, Quantity Verify and Quantity Approve. Read-only
+  post-rollback evidence confirms all five are again `declared`, Mark Paid
+  remains `declared`, remote history for `20260718161857` remains zero, active
+  Direct Grants remain `2282`, and zero hardening flags are enabled. No
+  principal preview/Save, migration apply/history repair, grant, or rollout
+  flag mutation occurred.
+- Cloud Gate A9 at `2026-07-18T23:26:51+07:00` applied exactly migration
+  `20260718161857` after a matching linked read-only preflight. The five
+  approved runtime-backed Payment/Quantity candidates are now persistently
+  `verified`; Payment Mark Paid remains `declared`.
+- Post-apply read-only evidence confirms active Direct Grants remain `2282`
+  and zero hardening flags are enabled. The direct apply intentionally did not
+  mutate Supabase migration history, so remote history for `20260718161857`
+  remains zero. No principal preview/Save, grant, rollout-flag mutation, or
+  migration-history repair occurred; any history repair is separately owned
+  and unapproved.
+- Cloud Gate A10 at `2026-07-18T23:37:33+07:00` applied transition migration
+  `20260718155122` (SHA-256
+  `804728efc3fad0b10738ea8d423fff819ea79354680f11b1e9ac2c56bd7df0ef`) before
+  a savepoint, then ran the Payment/Quantity smoke (SHA-256
+  `2b7fa00ccfcb4195d279f81b9f658f5ea6ea304758372a91817b714cc782de5b`) after
+  that savepoint. Bundle SHA-256 was
+  `e2a0269bfe3b38538b5a3a186b191d2083fe585645013db8dd21cf40e10f8e3f`; the
+  checkpoint `phase02_task3_payment_quantity_readiness_smoke_passed` was
+  reached, all smoke fixture work rolled back to the savepoint, and the outer
+  transaction committed only the runtime objects.
+- Read-only post-apply evidence confirms both transition RPCs and private
+  guards exist, with exact triggers on `payment_certificates` and
+  `quantity_acceptances`. The five promoted codes remain `verified`, Payment
+  Mark Paid remains `declared`, active Direct Grants remain `2282`, and zero
+  hardening flags are enabled. Versions `20260718155122` and `20260718161857`
+  remain absent from migration history. No principal preview/Save, grant,
+  warning-acceptance, rollout-flag, readiness, or history mutation occurred
+  beyond the approved runtime apply.
+- Cloud Gate A11 at `2026-07-18T23:39:40+07:00` repaired exactly migration
+  history versions `20260718155122` and `20260718161857` to `applied` on the
+  linked Cloud project. No other version was included.
+- Read-only post-repair evidence confirms one history row for each exact
+  version; both transition RPCs and private guards remain present; the five
+  Payment/Quantity codes remain `verified`; Payment Mark Paid remains
+  `declared`; active Direct Grants remain `2282`; and zero hardening flags are
+  enabled. No SQL migration body, principal preview/Save, grant,
+  warning-acceptance, readiness, or rollout-flag mutation occurred.
+- At `2026-07-18T23:41:25+07:00`, aggregate-only readiness recomputation
+  retains `318` pending approved rows across `12` principals. Payment/Quantity
+  promotion moved the grantable portion to `97`, leaving `221` declared rows
+  across `16` blocking permission codes; all `12` principals remain blocked
+  and zero have a complete grantable draft. Closure Task 3 stays paused: no
+  principal preview or Save was attempted. The next focused tranche is the
+  three Material approval codes with existing rollback-only evidence.
+- Cloud Gate A12 at `2026-07-19T07:52:20+07:00` applied exactly the three
+  Material state-guard migrations `20260718151157`, `20260718152445`, and
+  `20260718154050`, plus readiness migration `20260719004803`, in one linked
+  transaction. The four migration SHA-256 values were
+  `40326b97017061db08091dfd1e64c7966c348414395d21ecb5a43b3ef44b4267`,
+  `fb3c86e68926e2dd0b1b79ea92a61deb7cd794b8800b31b00ea064e10e7563d6`,
+  `2639f8ca5ae102f2328d8811aaf15b066e0be654f6a21cb0a1f1bf78b080c01f`, and
+  `c71ed87845b8f995f512e729205e57439d7dc94b52d05c5d33b5f043b33f236b`.
+- Bundle SHA-256 was
+  `f7cb79247e3060c976497c388092c17713296ccd6569def7fab56d7e7caa9c81`.
+  The existing Material behavior smoke and the Material readiness-promotion
+  smoke both passed inside savepoint `material_readiness_smoke`; their fixture
+  work rolled back before the outer transaction committed only migration
+  objects.
+- Read-only postchecks confirm all three Material state guards persist; exactly
+  three Material approval codes are `verified`; all five Payment/Quantity codes
+  remain `verified`; Payment Mark Paid plus the two named Material exclusions
+  remain `declared`; active Direct Grants remain `2282`; and zero hardening
+  flags are enabled. The four A12 versions remain absent from remote migration
+  history. No principal preview/Save, grant, warning, rollout-flag, or history
+  mutation occurred beyond the approved A12 apply.
+- Cloud Gate A13 then repaired exactly remote migration-history versions
+  `20260718151157`, `20260718152445`, `20260718154050`, and `20260719004803`
+  to `applied`. Read-only post-repair evidence found one history row for each
+  exact version, all three public Material transition functions present,
+  exactly three Material approval codes `verified`, the five Payment/Quantity
+  codes still `verified`, Payment Mark Paid plus the two Material exclusions
+  still `declared`, active Direct Grants `2282`, and enabled hardening flags
+  `0`. A13 changed no SQL body, principal, grant, warning, readiness value, or
+  rollout flag.
+- The broad historical `sensitive`-grant inventory includes rows outside the
+  frozen Task 3 source set, so it is not used as a proxy for the approved
+  manifest. The exact `318` pending rows across `12` principals remain bound
+  to that private manifest and the final exact gate. Material promotion reduces
+  the declared code-level blocker surface from `16` to `13`, but does not
+  authorize a partial principal Save. Closure Task 3 stays paused until a
+  fresh exact-manifest readiness check proves a complete grantable draft.
+
 ## Resolver enablement canary
 
-- Status: **Blocked before flag mutation by 318 approved regrant rows whose 12
-  principals require SoD warning acceptance and currently have no eligible
-  independent Auditor/control owner.**
+- Status: **Pending behind the 318 approved regrant rows whose 12 principals
+  require fresh SoD warning acceptance and the final sensitive-grant gate.** The
+  independent Auditor/control owner now exists, but the resolver flag remains
+  `false` until the regrant and final-gate checkpoints pass.
 - Enable the resolver first while the other two cutoffs remain disabled. Verify
   source explanations, scope/expiry behavior and adjacent-action denials with
   disposable principals before advancing.

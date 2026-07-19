@@ -183,7 +183,8 @@ values
   ('MR-2026-9301'),
   ('MR-2026-9302'),
   ('MR-2026-9303'),
-  ('MR-2026-9304')
+  ('MR-2026-9304'),
+  ('MR-2026-9305')
 on conflict (code) do nothing;
 
 insert into app_private.purchase_order_number_registry(po_number)
@@ -194,7 +195,8 @@ values
   ('PO-20269304'),
   ('PO-20269305'),
   ('PO-20269306'),
-  ('PO-20269307')
+  ('PO-20269307'),
+  ('PO-20269308')
 on conflict (po_number) do nothing;
 
 insert into public.requests(
@@ -212,6 +214,10 @@ from phase3_material_smoke_ids
 union all
 select 'phase3-mat-approve-ok', 'MR-2026-9303', warehouse_id, submitter_id, 'PENDING'::public.request_status, '[]'::jsonb,
        now(), now() + interval '1 day', project_id, site_id, 'project', 'site_manager_review', approver_id::text
+from phase3_material_smoke_ids
+union all
+select 'phase3-mat-approve-wrong-scope', 'MR-2026-9305', warehouse_id, submitter_id, 'PENDING'::public.request_status, '[]'::jsonb,
+       now(), now() + interval '1 day', no_staff_project_id, site_id, 'project', 'site_manager_review', approver_id::text
 from phase3_material_smoke_ids;
 
 insert into public.purchase_orders(
@@ -219,7 +225,7 @@ insert into public.purchase_orders(
   total_amount, order_date, status, source_mode, target_warehouse_id, created_by_id, created_at
 )
 select 'phase3-po-approve', project_id, site_id, 'phase3-vendor', 'NCC Smoke', 'PO-20269301', '[]'::jsonb,
-       0, current_date::text, 'draft', 'proactive_project', warehouse_id, po_creator_id::text, now()
+       0, current_date::text, 'sent', 'proactive_project', warehouse_id, po_creator_id::text, now()
 from phase3_material_smoke_ids
 union all
 select 'phase3-po-receive', project_id, site_id, 'phase3-vendor', 'NCC Smoke', 'PO-20269302', '[]'::jsonb,
@@ -227,7 +233,7 @@ select 'phase3-po-receive', project_id, site_id, 'phase3-vendor', 'NCC Smoke', '
 from phase3_material_smoke_ids
 union all
 select 'phase3-po-manage', project_id, site_id, 'phase3-vendor', 'NCC Smoke', 'PO-20269303', '[]'::jsonb,
-       0, current_date::text, 'draft', 'proactive_project', warehouse_id, po_creator_id::text, now()
+       0, current_date::text, 'sent', 'proactive_project', warehouse_id, po_creator_id::text, now()
 from phase3_material_smoke_ids
 union all
 select 'phase3-po-delete', project_id, site_id, 'phase3-vendor', 'NCC Smoke', 'PO-20269304', '[]'::jsonb,
@@ -236,12 +242,22 @@ from phase3_material_smoke_ids
 union all
 select 'phase3-po-create-delete-deny', project_id, site_id, 'phase3-vendor', 'NCC Smoke', 'PO-20269305', '[]'::jsonb,
        0, current_date::text, 'draft', 'proactive_project', warehouse_id, po_approver_id::text, now()
+from phase3_material_smoke_ids
+union all
+select 'phase3-po-approve-wrong-scope', no_staff_project_id, site_id, 'phase3-vendor', 'NCC Smoke', 'PO-20269308', '[]'::jsonb,
+       0, current_date::text, 'sent', 'proactive_project', warehouse_id, po_creator_id::text, now()
 from phase3_material_smoke_ids;
 
 insert into public.custom_material_requests (
   id, code, title, project_id, construction_site_id, status, created_by, updated_by
 )
 select '11111111-1111-4111-8111-111111111111'::uuid, 'PHASE3-CMR-APPROVE', 'Phase 3 CMR', project_id, site_id, 'submitted', custom_creator_id, custom_creator_id
+from phase3_material_smoke_ids
+union all
+select '22222222-2222-4222-8222-222222222222'::uuid, 'PHASE3-CMR-WRONG-SCOPE', 'Phase 3 CMR wrong scope', no_staff_project_id, site_id, 'submitted', custom_creator_id, custom_creator_id
+from phase3_material_smoke_ids
+union all
+select '33333333-3333-4333-8333-333333333333'::uuid, 'PHASE3-CMR-DRAFT', 'Phase 3 CMR invalid state', project_id, site_id, 'draft', custom_creator_id, custom_creator_id
 from phase3_material_smoke_ids;
 
 set role authenticated;
@@ -343,6 +359,48 @@ select public.transition_project_material_request_status(
 )
 from phase3_material_smoke_ids;
 
+do $$
+declare
+  v_blocked boolean := false;
+begin
+  begin
+    perform public.transition_project_material_request_status(
+      'phase3-mat-approve-wrong-scope',
+      'APPROVED',
+      'APPROVED',
+      (select approver_id::text from phase3_material_smoke_ids),
+      null,
+      null,
+      null,
+      jsonb_build_object('status', 'APPROVED', 'workflow_step', 'batch_planning')
+    );
+  exception
+    when others then v_blocked := true;
+  end;
+  if not v_blocked then
+    raise exception 'project.material_request.approve incorrectly crossed project scope';
+  end if;
+
+  v_blocked := false;
+  begin
+    perform public.transition_project_material_request_status(
+      'phase3-mat-create-only',
+      'APPROVED',
+      'APPROVED',
+      (select approver_id::text from phase3_material_smoke_ids),
+      null,
+      null,
+      null,
+      jsonb_build_object('status', 'APPROVED', 'workflow_step', 'batch_planning')
+    );
+  exception
+    when others then v_blocked := true;
+  end;
+  if not v_blocked then
+    raise exception 'project.material_request.approve incorrectly bypassed workflow state';
+  end if;
+end $$;
+
 select pg_temp.phase3_material_smoke_set_user(po_approver_id)
 from phase3_material_smoke_ids;
 
@@ -398,6 +456,38 @@ begin
   exception
     when insufficient_privilege then null;
   end;
+end $$;
+
+do $$
+declare
+  v_blocked boolean := false;
+begin
+  begin
+    perform public.transition_project_purchase_order_status(
+      'phase3-po-approve-wrong-scope',
+      'confirmed',
+      jsonb_build_object('status', 'confirmed')
+    );
+  exception
+    when others then v_blocked := true;
+  end;
+  if not v_blocked then
+    raise exception 'project.material_po.approve incorrectly crossed project scope';
+  end if;
+
+  v_blocked := false;
+  begin
+    perform public.transition_project_purchase_order_status(
+      'phase3-po-receive',
+      'confirmed',
+      jsonb_build_object('status', 'confirmed')
+    );
+  exception
+    when others then v_blocked := true;
+  end;
+  if not v_blocked then
+    raise exception 'project.material_po.approve incorrectly bypassed workflow state';
+  end if;
 end $$;
 
 select pg_temp.phase3_material_smoke_set_user(po_receiver_id)
@@ -543,6 +633,52 @@ select public.transition_custom_material_request_status(
 )
 from phase3_material_smoke_ids;
 
+do $$
+declare
+  v_blocked boolean := false;
+begin
+  begin
+    perform public.transition_custom_material_request_status(
+      '22222222-2222-4222-8222-222222222222'::uuid,
+      'approved',
+      (select custom_approver_id from phase3_material_smoke_ids),
+      'Wrong-scope denial'
+    );
+  exception
+    when others then v_blocked := true;
+  end;
+  if not v_blocked then
+    raise exception 'project.custom_material.approve incorrectly crossed project scope';
+  end if;
+
+  v_blocked := false;
+  begin
+    perform public.transition_custom_material_request_status(
+      '33333333-3333-4333-8333-333333333333'::uuid,
+      'approved',
+      (select custom_approver_id from phase3_material_smoke_ids),
+      'Invalid-state denial'
+    );
+  exception
+    when others then v_blocked := true;
+  end;
+  if not v_blocked then
+    raise exception 'project.custom_material.approve incorrectly bypassed workflow state';
+  end if;
+
+  begin
+    insert into public.custom_material_requests(
+      id, code, title, project_id, construction_site_id, status, created_by, updated_by
+    )
+    select gen_random_uuid(), 'PHASE3-CMR-APPROVER-CREATE-DENY', 'Adjacent denial',
+           project_id, site_id, 'draft', custom_approver_id, custom_approver_id
+    from phase3_material_smoke_ids;
+    raise exception 'project.custom_material.approve incorrectly allowed create';
+  exception
+    when insufficient_privilege then null;
+  end;
+end $$;
+
 select pg_temp.phase3_material_smoke_set_user(nogrant_id)
 from phase3_material_smoke_ids;
 
@@ -557,5 +693,7 @@ begin
     when insufficient_privilege then null;
   end;
 end $$;
+
+select 'phase02_task3_material_readiness_smoke_passed' as checkpoint;
 
 rollback;

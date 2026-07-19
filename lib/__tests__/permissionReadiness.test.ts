@@ -27,6 +27,31 @@ describe('permission readiness', () => {
     expect(resolvePermissionActionReadiness(action('system.wms.manage'))).toBe('legacy');
   });
 
+  it('marks only the Cloud-verified Payment/Quantity and Material approval tranche as verified', () => {
+    const verifiedCodes = [
+      'project.payment.verify',
+      'project.payment.approve',
+      'project.payment.confirm',
+      'project.quantity_acceptance.verify',
+      'project.quantity_acceptance.approve',
+      'project.material_request.approve',
+      'project.material_po.approve',
+      'project.custom_material.approve',
+    ];
+
+    for (const permissionCode of verifiedCodes) {
+      expect(resolvePermissionActionReadiness(action(permissionCode))).toBe('verified');
+    }
+
+    for (const permissionCode of [
+      'project.payment.mark_paid',
+      'project.material_request.confirm',
+      'project.material_request.verify',
+    ]) {
+      expect(resolvePermissionActionReadiness(action(permissionCode))).toBe('declared');
+    }
+  });
+
   it('adds only verified/enforced grants but permits existing Direct revocation', () => {
     expect(canAddDirectGrant(action('project.daily_log.edit_own'))).toBe(true);
     expect(canAddDirectGrant(action('project.daily_log.confirm'))).toBe(false);
