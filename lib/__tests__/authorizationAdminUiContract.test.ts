@@ -70,4 +70,46 @@ describe('authorization admin UI contract', () => {
     expect(page).toContain('if (selectedPrincipalIdRef.current !== principalId) return;');
     expect(page).toContain('selectedPrincipal && loadedPrincipalId === selectedPrincipal.userId');
   });
+
+  it('makes manual direct user permission matrix the only primary governance workflow', () => {
+    const page = read('pages/settings/SettingsAuthorizationGovernance.tsx');
+    const workspace = read('components/permissions/DirectUserPermissionWorkspace.tsx');
+
+    expect(page).toContain('Phân quyền user');
+    expect(page).toContain('DirectUserPermissionWorkspace');
+    expect(page).not.toContain('Mẫu quyền');
+    expect(page).not.toContain('PermissionQuickTemplateEditor');
+    expect(page).not.toContain("activeTab === 'templates'");
+    expect(workspace).toContain('Copy quyền');
+    expect(workspace).toContain('Dán quyền');
+    expect(workspace).toContain('Preview backend');
+    expect(workspace).toContain('Lưu phân quyền');
+    expect(workspace).not.toContain('permissionQuickTemplateService');
+    expect(workspace).not.toContain('PROJECT_PERMISSION_TEMPLATES');
+    expect(workspace).not.toContain('applyPermissionQuickTemplateToDraft');
+  });
+
+  it('keeps direct save governed and does not mutate identity, role assignment, audit, grant tables, or source mode from the browser', () => {
+    const workspace = read('components/permissions/DirectUserPermissionWorkspace.tsx');
+
+    expect(workspace).toContain('previewUserPermissionChange');
+    expect(workspace).toContain('applyUserPermissionChange');
+    expect(workspace).not.toContain(".from('user_permission_grants')");
+    expect(workspace).not.toContain('principal_role_assignments');
+    expect(workspace).not.toContain('permission_audit_events');
+    expect(workspace).not.toContain('source_mode');
+    expect(workspace).not.toMatch(/actorUserId|requestedBy|p_actor/);
+  });
+
+  it('renders all-module matrix with adaptive scope instead of project-only filtering', () => {
+    const workspace = read('components/permissions/DirectUserPermissionWorkspace.tsx');
+
+    expect(workspace).toContain('PermissionScopePicker');
+    expect(workspace).toContain('<CompactDirectPermissionTree');
+    expect(workspace).not.toContain('applicationFilter="project"');
+    expect(workspace).not.toContain('projectMasterService.list');
+    expect(workspace).not.toContain('__missing_project__');
+    expect(workspace).not.toContain('Hay chon mot du an');
+    expect(workspace).not.toContain('Tất cả dự án');
+  });
 });

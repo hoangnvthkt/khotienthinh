@@ -27,12 +27,29 @@ describe('permission readiness', () => {
     expect(resolvePermissionActionReadiness(action('system.wms.manage'))).toBe('legacy');
   });
 
-  it('marks only the evidence-backed Task 3 Material tranche as verified', () => {
-    expect(resolvePermissionActionReadiness(action('project.material_request.approve'))).toBe('verified');
-    expect(resolvePermissionActionReadiness(action('project.material_po.approve'))).toBe('verified');
-    expect(resolvePermissionActionReadiness(action('project.custom_material.approve'))).toBe('verified');
-    expect(resolvePermissionActionReadiness(action('project.material_request.confirm'))).toBe('declared');
-    expect(resolvePermissionActionReadiness(action('project.payment.approve'))).toBe('declared');
+  it('marks only the Cloud-verified Payment/Quantity and Material approval tranche as verified', () => {
+    const verifiedCodes = [
+      'project.payment.verify',
+      'project.payment.approve',
+      'project.payment.confirm',
+      'project.quantity_acceptance.verify',
+      'project.quantity_acceptance.approve',
+      'project.material_request.approve',
+      'project.material_po.approve',
+      'project.custom_material.approve',
+    ];
+
+    for (const permissionCode of verifiedCodes) {
+      expect(resolvePermissionActionReadiness(action(permissionCode))).toBe('verified');
+    }
+
+    for (const permissionCode of [
+      'project.payment.mark_paid',
+      'project.material_request.confirm',
+      'project.material_request.verify',
+    ]) {
+      expect(resolvePermissionActionReadiness(action(permissionCode))).toBe('declared');
+    }
   });
 
   it('adds only verified/enforced grants but permits existing Direct revocation', () => {

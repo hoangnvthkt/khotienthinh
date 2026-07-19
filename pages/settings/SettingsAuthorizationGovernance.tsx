@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, History, Loader2, RefreshCcw, ShieldCheck } from 'lucide-react';
 import type { User } from '../../types';
 import BusinessRoleEditor from '../../components/permissions/BusinessRoleEditor';
+import DirectUserPermissionWorkspace from '../../components/permissions/DirectUserPermissionWorkspace';
 import EffectivePermissionSourceList from '../../components/permissions/EffectivePermissionSourceList';
 import PrincipalDirectGrantPanel from '../../components/permissions/PrincipalDirectGrantPanel';
 import PrincipalRoleAssignmentPanel from '../../components/permissions/PrincipalRoleAssignmentPanel';
@@ -22,6 +23,7 @@ import type {
   PrincipalRoleAssignment,
   SaveBusinessRoleInput,
 } from '../../lib/permissions/authorizationGovernanceTypes';
+import type { DirectPermissionClipboard } from '../../lib/permissions/directUserPermissionMatrixViewModel';
 import type { UserPermissionGrant } from '../../types';
 
 interface SettingsAuthorizationGovernanceProps {
@@ -48,6 +50,8 @@ const SettingsAuthorizationGovernance: React.FC<SettingsAuthorizationGovernanceP
   const [overrideRules, setOverrideRules] = useState<AuthorizationSodRule[]>([]);
   const [roleImpactPreview, setRoleImpactPreview] = useState<BusinessRoleImpactPreview | null>(null);
   const [assignmentDecision, setAssignmentDecision] = useState<AuthorizationDecision | null>(null);
+  const [activeTab, setActiveTab] = useState<'users' | 'advanced'>('users');
+  const [directClipboard, setDirectClipboard] = useState<DirectPermissionClipboard | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -155,6 +159,22 @@ const SettingsAuthorizationGovernance: React.FC<SettingsAuthorizationGovernanceP
 
       {errorMessage && <div className="flex items-start gap-2 rounded-xl border border-rose-100 bg-rose-50 p-4 text-xs font-bold text-rose-700"><AlertTriangle size={15} className="mt-0.5 shrink-0" />{errorMessage}</div>}
 
+      <div className="flex flex-wrap gap-2 rounded-2xl border border-slate-100 bg-white p-2 shadow-sm">
+        {([
+          ['users', 'Phân quyền user'],
+          ['advanced', 'Nguồn nâng cao'],
+        ] as const).map(([tab, label]) => (
+          <button
+            key={tab}
+            type="button"
+            onClick={() => setActiveTab(tab)}
+            className={`rounded-xl px-4 py-2 text-xs font-black ${activeTab === tab ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       <div className="grid gap-5 xl:grid-cols-[280px_1fr]">
         <aside className="space-y-4">
           <section className="rounded-2xl border border-slate-200 bg-white p-3">
@@ -194,6 +214,36 @@ const SettingsAuthorizationGovernance: React.FC<SettingsAuthorizationGovernanceP
         </aside>
 
         <main className="space-y-5">
+          {activeTab === 'users' && selectedPrincipal && loadedPrincipalId === selectedPrincipal.userId && (
+            <DirectUserPermissionWorkspace
+              key={`direct-user-${selectedPrincipal.userId}`}
+              principal={selectedPrincipal}
+              grants={directGrants}
+              effectiveSources={sources}
+              principals={principals}
+              currentUserId={currentUser.id}
+              disabled={!canManageGrants}
+              clipboard={directClipboard}
+              onClipboardChange={setDirectClipboard}
+              onSaved={async () => {
+                try {
+                  await refreshAfterCommand();
+                } catch (error) {
+                  reportError('authorizationGovernance.refreshDirectWorkspace', error, 'Đã lưu quyền nhưng không thể tải lại dữ liệu mới.');
+                  throw error;
+                }
+              }}
+            />
+          )}
+
+          {activeTab === 'users' && (!selectedPrincipal || loadedPrincipalId !== selectedPrincipal.userId) && (
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 text-xs font-bold text-slate-500">
+              Đang tải dữ liệu phân quyền user...
+            </div>
+          )}
+
+          {activeTab === 'advanced' && (
+            <>
           {canManageRoles ? (
             <BusinessRoleEditor
               role={selectedRole}
@@ -323,6 +373,8 @@ const SettingsAuthorizationGovernance: React.FC<SettingsAuthorizationGovernanceP
                 ))}
               </div>
             </section>
+          )}
+            </>
           )}
         </main>
       </div>

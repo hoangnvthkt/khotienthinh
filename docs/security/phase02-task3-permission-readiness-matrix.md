@@ -205,3 +205,80 @@ Direct Grants remain `2282`; and zero hardening flags are enabled. Neither
 `20260718155122` nor `20260718161857` has a remote history row yet. No
 principal preview or Save, grant, warning-acceptance, rollout-flag, readiness,
 or migration-history mutation occurred beyond the approved runtime apply.
+
+## Cloud Gate A12 Result
+
+At `2026-07-19T07:52:20+07:00`, the approved linked Cloud transaction applied
+the three Material state-guard migrations `20260718151157` (SHA-256
+`40326b97017061db08091dfd1e64c7966c348414395d21ecb5a43b3ef44b4267`),
+`20260718152445` (SHA-256
+`fb3c86e68926e2dd0b1b79ea92a61deb7cd794b8800b31b00ea064e10e7563d6`), and
+`20260718154050` (SHA-256
+`2639f8ca5ae102f2328d8811aaf15b066e0be654f6a21cb0a1f1bf78b080c01f`), then
+the Material readiness migration `20260719004803` (SHA-256
+`c71ed87845b8f995f512e729205e57439d7dc94b52d05c5d33b5f043b33f236b`).
+The bundle SHA-256 was
+`f7cb79247e3060c976497c388092c17713296ccd6569def7fab56d7e7caa9c81`.
+
+After savepoint `material_readiness_smoke`, the existing Material behavior
+smoke (SHA-256
+`0cf40d0b858734b117bbf1f96143bf1a8594fe3d66d84abde0213baef3fe0909`) and the
+new promotion smoke (SHA-256
+`dcfb2438d565e7a9f64104f2041413c7257de709f5cc06edfb9f2155f8824dc7`) both
+completed their deterministic checkpoints. Smoke fixtures then rolled back to
+the savepoint before the outer transaction committed only the migration
+objects.
+
+Aggregate-only postchecks confirm the three Material state guards persist and
+the three Material approval codes are `verified`. The five Payment/Quantity
+codes remain `verified`; Payment Mark Paid and the two named unpromoted
+Material actions remain `declared`; active Direct Grants remain `2282`; and
+zero hardening flags are enabled. The four A12 migration versions still have
+zero remote history rows. No principal preview or Save, grant, warning,
+rollout-flag, or migration-history repair occurred. History repair remains a
+separate A13 checkpoint.
+
+## Cloud Gate A13 Result
+
+At `2026-07-19T07:59:20+07:00`, the approved linked migration-history repair
+marked exactly versions `20260718151157`, `20260718152445`, `20260718154050`,
+and `20260719004803` as `applied`. Read-only post-repair evidence found one
+remote history row for each exact version, all three public Material transition
+functions present, and exactly three Material approval codes still `verified`.
+
+The five Payment/Quantity codes remain `verified`; Payment Mark Paid and the
+two Material exclusions remain `declared`; active Direct Grants remain `2282`;
+and enabled hardening flags remain `0`. A13 changed migration history only: it
+did not apply SQL bodies, preview or Save a principal, change a grant or
+warning, or enable a rollout flag.
+
+The broad historical `sensitive`-grant inventory is not a substitute for the
+approved private manifest: it contains rows outside the frozen Task 3 source
+set. Therefore the exact `318` rows across `12` pending principals must remain
+bound to the frozen manifest and its final exact gate. Material promotion
+removes three codes from the prior 16-code declared blocker surface, leaving
+13 declared code-level blockers; it does not authorize a partial principal
+Save. Closure Task 3 remains paused until the exact-manifest readiness check
+shows a complete grantable draft for a principal.
+
+## Cloud Gate B0 Result
+
+At `2026-07-19T08:26:23+07:00`, the approved linked Cloud Gate B0 ran
+aggregate-only read-only reconstruction for the retirement of
+`project.material_request.confirm` and `project.material_request.verify`.
+The original source and decision baselines matched exactly: source `467`,
+regrant `421`, DROP `46`, and both approved fingerprints. Active Direct Grants
+remain `2282`, the non-sensitive fingerprint remains unchanged, one durable
+rollout operator remains, and enabled hardening flags remain `0`.
+
+The candidate revision would produce regrant `383`, DROP `84`, candidate
+fingerprint `43676e109ad8c48a83243adedcfa6e33`, and a projected pending set of
+`288` rows across `12` principals. Its projected declared blocker surface is
+`147` rows across `11` codes; `141` rows are already verified or enforced.
+
+The gate stopped fail-closed because `8` retired keys are already active. The
+exact rollback-only gate then returned the expected governed-remediation
+exception; no catalog, readiness, grant, principal, warning, role, history, or
+rollout flag changed. The candidate revision is not adopted. Closure Task 3
+remains paused pending a separately approved governed-revoke checkpoint for
+those active retired keys.

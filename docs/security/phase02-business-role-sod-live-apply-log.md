@@ -787,6 +787,62 @@ URLs, API keys or service-role values in this file.
   and zero have a complete grantable draft. Closure Task 3 stays paused: no
   principal preview or Save was attempted. The next focused tranche is the
   three Material approval codes with existing rollback-only evidence.
+- Cloud Gate A12 at `2026-07-19T07:52:20+07:00` applied exactly the three
+  Material state-guard migrations `20260718151157`, `20260718152445`, and
+  `20260718154050`, plus readiness migration `20260719004803`, in one linked
+  transaction. The four migration SHA-256 values were
+  `40326b97017061db08091dfd1e64c7966c348414395d21ecb5a43b3ef44b4267`,
+  `fb3c86e68926e2dd0b1b79ea92a61deb7cd794b8800b31b00ea064e10e7563d6`,
+  `2639f8ca5ae102f2328d8811aaf15b066e0be654f6a21cb0a1f1bf78b080c01f`, and
+  `c71ed87845b8f995f512e729205e57439d7dc94b52d05c5d33b5f043b33f236b`.
+- Bundle SHA-256 was
+  `f7cb79247e3060c976497c388092c17713296ccd6569def7fab56d7e7caa9c81`.
+  The existing Material behavior smoke and the Material readiness-promotion
+  smoke both passed inside savepoint `material_readiness_smoke`; their fixture
+  work rolled back before the outer transaction committed only migration
+  objects.
+- Read-only postchecks confirm all three Material state guards persist; exactly
+  three Material approval codes are `verified`; all five Payment/Quantity codes
+  remain `verified`; Payment Mark Paid plus the two named Material exclusions
+  remain `declared`; active Direct Grants remain `2282`; and zero hardening
+  flags are enabled. The four A12 versions remain absent from remote migration
+  history. No principal preview/Save, grant, warning, rollout-flag, or history
+  mutation occurred beyond the approved A12 apply.
+- Cloud Gate A13 then repaired exactly remote migration-history versions
+  `20260718151157`, `20260718152445`, `20260718154050`, and `20260719004803`
+  to `applied`. Read-only post-repair evidence found one history row for each
+  exact version, all three public Material transition functions present,
+  exactly three Material approval codes `verified`, the five Payment/Quantity
+  codes still `verified`, Payment Mark Paid plus the two Material exclusions
+  still `declared`, active Direct Grants `2282`, and enabled hardening flags
+  `0`. A13 changed no SQL body, principal, grant, warning, readiness value, or
+  rollout flag.
+- The broad historical `sensitive`-grant inventory includes rows outside the
+  frozen Task 3 source set, so it is not used as a proxy for the approved
+  manifest. The exact `318` pending rows across `12` principals remain bound
+  to that private manifest and the final exact gate. Material promotion reduces
+  the declared code-level blocker surface from `16` to `13`, but does not
+  authorize a partial principal Save. Closure Task 3 stays paused until a
+  fresh exact-manifest readiness check proves a complete grantable draft.
+- Cloud Gate B0 at `2026-07-19T08:26:23+07:00` ran the approved linked
+  read-only manifest-reconstruction gate for retirement of
+  `project.material_request.confirm` and `project.material_request.verify`.
+  The original source/regrant/DROP arithmetic matched `467`/`421`/`46` and both
+  approved fingerprints; active Direct Grants remained `2282`, the
+  non-sensitive fingerprint remained unchanged, the durable rollout-operator
+  count remained `1`, and enabled hardening flags remained `0`.
+- The candidate retirement calculation would yield regrant `383`, DROP `84`,
+  candidate fingerprint `43676e109ad8c48a83243adedcfa6e33`, and a projected
+  pending set of `288` rows across `12` principals. It would leave `147`
+  declared rows across `11` codes and `141` verified/enforced rows. These are
+  candidate aggregates only, not an adopted manifest revision.
+- The exact rollback-only gate stopped as designed because aggregate
+  `active_retired_count` was `8`. Its governed-remediation exception rolled the
+  transaction back; no catalog, readiness, direct grant, principal preview or
+  Save, warning, Business Role, migration history, or rollout flag changed.
+  Closure Task 3 remains paused. The next work is a separately approved
+  governed-revoke proposal for those active retired keys, with no identity data
+  recorded.
 
 ## Resolver enablement canary
 

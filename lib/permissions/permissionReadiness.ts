@@ -15,6 +15,14 @@ const VERIFIED_PERMISSION_CODES = new Set([
   'project.daily_log.verify',
   'project.daily_log.approve',
   'project.daily_log.summarize',
+  'project.payment.verify',
+  'project.payment.approve',
+  'project.payment.confirm',
+  'project.quantity_acceptance.verify',
+  'project.quantity_acceptance.approve',
+  'project.material_request.approve',
+  'project.material_po.approve',
+  'project.custom_material.approve',
 ]);
 
 const ENFORCED_PERMISSION_CODES = new Set<string>();

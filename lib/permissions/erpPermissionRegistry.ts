@@ -83,7 +83,8 @@ export const ERP_PERMISSION_APPLICATIONS: readonly PermissionApplicationDefiniti
         ['complete', 'Hoàn tất', 40],
       ])),
       module('wms.master_data', 'Danh mục kho', 'WMS', [], 40, actions('wms.master_data', 'WMS', undefined, WMS_SCOPE, [
-        ['manage', 'Quản trị danh mục', 10],
+        ['view', 'Xem', 10],
+        ['manage', 'Quản trị danh mục', 20],
       ])),
     ],
   },
@@ -126,14 +127,16 @@ export const ERP_PERMISSION_APPLICATIONS: readonly PermissionApplicationDefiniti
         ['edit_all', 'Sửa tất cả', 30],
       ])),
       module('expense.expense_record', 'Ghi nhận chi phí', 'EX', ['/expense'], 20, actions('expense.expense_record', 'EX', '/expense', EXPENSE_SCOPE, [
-        ['view_own', 'Xem của mình', 10],
-        ['view_all', 'Xem tất cả', 20],
-        ['create', 'Tạo', 30],
-        ['edit_own', 'Sửa của mình', 40],
-        ['approve', 'Duyệt', 50],
+        ['view', 'Xem', 10],
+        ['view_own', 'Xem của mình', 20],
+        ['view_all', 'Xem tất cả', 30],
+        ['create', 'Tạo', 40],
+        ['edit_own', 'Sửa của mình', 50],
+        ['approve', 'Duyệt', 60],
       ])),
       module('expense.master_data', 'Danh mục chi phí', 'EX', ['/expense'], 30, actions('expense.master_data', 'EX', '/expense', EXPENSE_SCOPE, [
-        ['manage', 'Quản trị danh mục', 10],
+        ['view', 'Xem', 10],
+        ['manage', 'Quản trị danh mục', 20],
       ])),
     ],
   },
@@ -161,10 +164,11 @@ export const ERP_PERMISSION_APPLICATIONS: readonly PermissionApplicationDefiniti
     sortOrder: 70,
     modules: [
       module('request.instance', 'Phiếu yêu cầu', 'RQ', ['/rq/dashboard', '/rq'], 10, actions('request.instance', 'RQ', '/rq', WORKFLOW_SCOPE, [
-        ['view_own', 'Xem của mình', 10],
-        ['create', 'Tạo', 20],
-        ['act_assigned', 'Xử lý được giao', 30],
-        ['view_all', 'Xem tất cả', 40],
+        ['view', 'Xem', 10],
+        ['view_own', 'Xem của mình', 20],
+        ['create', 'Tạo', 30],
+        ['act_assigned', 'Xử lý được giao', 40],
+        ['view_all', 'Xem tất cả', 50],
       ])),
       module('request.category', 'Danh mục yêu cầu', 'RQ', ['/rq/categories'], 20, actions('request.category', 'RQ', '/rq/categories', WORKFLOW_SCOPE, [
         ['view', 'Xem', 10],
