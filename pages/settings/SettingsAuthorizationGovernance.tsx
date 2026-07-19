@@ -4,6 +4,7 @@ import type { User } from '../../types';
 import BusinessRoleEditor from '../../components/permissions/BusinessRoleEditor';
 import DirectUserPermissionWorkspace from '../../components/permissions/DirectUserPermissionWorkspace';
 import EffectivePermissionSourceList from '../../components/permissions/EffectivePermissionSourceList';
+import PermissionQuickTemplateEditor from '../../components/permissions/PermissionQuickTemplateEditor';
 import PrincipalDirectGrantPanel from '../../components/permissions/PrincipalDirectGrantPanel';
 import PrincipalRoleAssignmentPanel from '../../components/permissions/PrincipalRoleAssignmentPanel';
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
@@ -244,9 +245,7 @@ const SettingsAuthorizationGovernance: React.FC<SettingsAuthorizationGovernanceP
           )}
 
           {activeTab === 'templates' && (
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 text-xs font-bold text-slate-500">
-              Tab Mẫu quyền sẽ dùng cùng ma trận gọn để cấu hình preset checkbox.
-            </div>
+            <PermissionQuickTemplateEditor disabled={!canManageGrants} />
           )}
 
           {activeTab === 'advanced' && (

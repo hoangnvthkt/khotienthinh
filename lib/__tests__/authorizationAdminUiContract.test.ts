@@ -96,4 +96,18 @@ describe('authorization admin UI contract', () => {
     expect(workspace).not.toContain('source_mode');
     expect(workspace).not.toMatch(/actorUserId|requestedBy|p_actor/);
   });
+
+  it('edits quick templates as presets, not live Business Role assignments', () => {
+    const page = read('pages/settings/SettingsAuthorizationGovernance.tsx');
+    const editor = read('components/permissions/PermissionQuickTemplateEditor.tsx');
+
+    expect(page).toContain('PermissionQuickTemplateEditor');
+    expect(editor).toContain('permissionQuickTemplateService.save');
+    expect(editor).toContain('permissionQuickTemplateService.deactivate');
+    expect(editor).toContain('CompactDirectPermissionTree');
+    expect(editor).toContain('Mẫu quyền');
+    expect(editor).not.toContain('assignBusinessRole');
+    expect(editor).not.toContain('principal_role_assignments');
+    expect(editor).not.toContain('role_permission_templates');
+  });
 });
