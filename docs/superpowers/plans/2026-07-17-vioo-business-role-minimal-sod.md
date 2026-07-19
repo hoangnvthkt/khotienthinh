@@ -4884,7 +4884,7 @@ git commit -m "docs(authz): align business role rollout roadmap"
 
 After Step 2 commits schema, any defect uses a new CLI-generated forward migration and a new commit, then returns through Task 12 local/rollback verification and a new exact preview SHA. Never edit one of the seven applied files or hot-patch production outside the recorded workflow.
 
-- [ ] **Step 1: Reconfirm exact candidate and Cloud checkpoint approval**
+- [x] **Step 1: Reconfirm exact candidate and Cloud checkpoint approval**
 
 ```bash
 git status --short
@@ -4898,7 +4898,7 @@ Expected: candidate tree equals the reviewed tree, only the seven intended versi
 
 Before approval, run read-only aggregate preflight on the pre-Phase-2 schema: reserved role-code collisions, active direct `system.settings.manage` grants and any existing template item containing that permission must each be `0`. Do not log user/template IDs. A non-zero result is a remediation checkpoint, not permission to let the migration take over or auto-promote anyone.
 
-- [ ] **Step 2: Apply all seven migrations atomically without db push**
+- [x] **Step 2: Apply all seven migrations atomically without db push**
 
 ```bash
 FOUNDATION_MIGRATION="$(rg --files supabase/migrations | rg '_authorization_business_role_foundation\.sql$')"
@@ -4926,7 +4926,7 @@ Expected: exit `0`, checkpoint `phase02_migrations_applied`, one commit. SQL fai
 
 If the client disconnects after sending the transaction, first query the seven schema fingerprints and the checkpoint-side effects read-only; do not blindly resend the migration SQL. Once the schema commit is proven, resume only migration-history repair. Flags default off, so the schema/history repair window does not activate the new resolver or admin cutover.
 
-- [ ] **Step 3: Run smokes against committed schema in a disposable transaction**
+- [x] **Step 3: Run smokes against committed schema in a disposable transaction**
 
 ```bash
 BUNDLE="$(mktemp /tmp/phase02-smoke.XXXXXX)"
@@ -4944,7 +4944,7 @@ npx supabase db query --linked --agent=no --file "$BUNDLE"
 
 Expected: exit `0`, checkpoint, rollback. All three rollout flags remain `false` after the transaction.
 
-- [ ] **Step 4: Repair exactly the seven migration-history versions**
+- [x] **Step 4: Repair exactly the seven migration-history versions**
 
 ```bash
 FOUNDATION_MIGRATION="$(rg --files supabase/migrations | rg '_authorization_business_role_foundation\.sql$')"
