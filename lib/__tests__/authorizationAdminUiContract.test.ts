@@ -29,6 +29,16 @@ describe('authorization admin UI contract', () => {
     expect(modal).toContain('Lưu phân quyền');
   });
 
+  it('exposes only approved retired Direct Grants for removal', () => {
+    const panel = read('components/permissions/PrincipalDirectGrantPanel.tsx');
+    expect(panel).toContain('RETIRED_MATERIAL_REQUEST_PERMISSION_CODES');
+    expect(panel).toContain("'project.material_request.confirm'");
+    expect(panel).toContain("'project.material_request.verify'");
+    expect(panel).toContain('retiredDirectGrants');
+    expect(panel).toContain('Quyền retire chỉ được thu hồi');
+    expect(panel).toContain('updateDrafts(drafts.filter(candidate => candidate !== grant))');
+  });
+
   it('keeps profile save separate from protected permission drafts', () => {
     const modal = read('components/UserModal.tsx');
     expect(modal).toContain('persistedLegacyState');
