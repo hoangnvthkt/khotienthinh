@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Execute one auditable pilot maintenance event that installs the approved application memberships and explicit permissions for all active users, clears Legacy authorization sources, disables Legacy fallback, verifies access, and can restore the exact pre-cutover state when a defined hard failure occurs.
+**Goal:** Execute one auditable pilot maintenance event that establishes exactly one System Admin, installs Member application memberships and explicit permissions, enables global read-only System Admin oversight, clears Legacy/App Admin sources, and can restore the exact pre-cutover state when a defined hard failure occurs.
 
 **Architecture:** An encrypted off-repo entitlement manifest is normalized and fingerprinted by both Node and Postgres. A governed Preview is read-only. Apply acquires a global advisory lock, revalidates readiness and fingerprints, stores a private immutable snapshot, updates roles/memberships/grants, clears Legacy arrays, enables hardening flags, audits, and emits refresh events in one database transaction. Rollback is separately governed, time-bounded, drift-protected, audited, and restores the exact snapshot plus flags.
 
@@ -21,6 +21,9 @@
 - Legacy arrays are cleared as active authorization sources but their pre-state remains in the immutable snapshot for the short recovery window.
 - Rollback is allowed only before the retention deadline and only when the current authorization fingerprint equals the recorded cutover post-state. Drift blocks automatic rollback.
 - Re-adding an application never resurrects pre-cutover Legacy or revoked Direct Grants.
+- The target manifest contains exactly one `SYSTEM_ADMIN`; that account has no membership rows.
+- System Admin receives global read-only and configuration-allowlist sources, but no implicit business mutation source.
+- The target state contains no Application Administrator role, access level, assignment, source, or UI payload.
 - Cloud migration/apply/history operations require exact hashes and separate approval.
 
 ---
@@ -145,7 +148,7 @@ public.preview_pilot_authorization_cutover(
 
 - [ ] **Step 1: Add failing Preview tests**
 
-Cover unauthorized actor, malformed manifest, fingerprint mismatch, missing one of 42 active users, duplicate user, no active High-level Administrator, unknown/inactive account, unknown app/code/scope, missing assignment, declared/legacy permission, sensitive self-grant, and membership/action mismatch.
+Cover unauthorized actor, malformed manifest, fingerprint mismatch, missing one of 42 active users, duplicate user, zero or two `SYSTEM_ADMIN` rows, System Admin membership, unknown/inactive account, unknown app/code/scope, missing mutation assignment, declared/legacy permission, sensitive self-grant, and Member membership/action mismatch.
 
 - [ ] **Step 2: Reuse the readiness gate**
 
@@ -166,6 +169,8 @@ Preview compares normalized manifest user IDs with every active `public.users` r
   "grantCount":0,
   "legacyUsersToClear":0,
   "keeperRolesToConvert":0,
+  "systemAdminCount":1,
+  "systemAdminReadWorkflowCount":0,
   "sensitiveGrantCount":0,
   "hardDenies":[],
   "warnings":[]
@@ -223,7 +228,7 @@ Insert operation/snapshot only after all validation passes but before state chan
 
 - [ ] **Step 4: Apply target state in deterministic order**
 
-1. Map manifest account role `SUPER_ADMIN -> ADMIN`, `MEMBER -> EMPLOYEE`.
+1. Map manifest account role `SYSTEM_ADMIN -> ADMIN`, `MEMBER -> EMPLOYEE` and require exactly one ADMIN target.
 2. Convert all existing `WAREHOUSE_KEEPER` users to `EMPLOYEE`; their WMS responsibilities/grants come from the manifest.
 3. Revoke existing active memberships not in target; upsert target memberships.
 4. Revoke existing active Direct Grants not in target; insert target grants with governed metadata.
@@ -244,7 +249,11 @@ Before commit, hard-fail unless:
 - no unexpected active membership/grant remains;
 - no `WAREHOUSE_KEEPER` active role remains;
 - required hardening flags are true;
-- at least one active ADMIN remains;
+- exactly one active ADMIN remains and it has no membership row;
+- every required System Admin read workflow resolves `SYSTEM_ADMIN_VIEW` globally;
+- only allowlisted configuration resolves `SYSTEM_ADMIN_CONFIGURATION`;
+- no business mutation resolves from System Admin role alone;
+- zero effective source is `APP_ADMIN`;
 - audit and refresh counts equal expected active-user coverage.
 
 - [ ] **Step 6: Prove transactional rollback on forced failure**
@@ -370,7 +379,7 @@ git commit -m "feat: export encrypted permission rollback artifacts"
 
 - [ ] **Step 1: Extend no-Legacy smoke**
 
-Assert hardening flag true, all active Legacy arrays empty, effective source query returns no `LEGACY`, and resolver cannot be made to read Legacy by a browser/session setting.
+Assert hardening flag true, all active Legacy arrays empty, effective source query returns neither `LEGACY` nor `APP_ADMIN`, and resolver cannot be made to read Legacy by a browser/session setting.
 
 - [ ] **Step 2: Add a post-cutover write guard**
 
@@ -378,7 +387,7 @@ Once fallback is disabled, a trigger rejects nonempty writes to the four Legacy 
 
 - [ ] **Step 3: Extend permission health**
 
-Report orphan membership, inactive-user access, unknown app/code, unsupported scope, expired active grant, membership/grant mismatch, missing required assignment, sensitive self-grant, and unexpected admin bypass flag.
+Report anything other than exactly one active System Admin, System Admin membership rows, orphan membership, inactive-user access, unknown app/code, unsupported scope, expired active grant, Member membership/grant mismatch, missing mutation assignment, sensitive self-grant, unexpected admin mutation source, missing System Admin global-view coverage, and unexpected admin bypass flag.
 
 - [ ] **Step 4: Verify and commit**
 
@@ -410,9 +419,11 @@ Rollback immediately when any occurs before unfreeze:
 - Apply/postcondition transaction fails;
 - any active user is missing from target state;
 - any effective `LEGACY` source remains;
-- High-level Administrator cannot administer accounts/apps;
+- System Admin cannot administer accounts/apps/configuration;
+- System Admin cannot read a required record outside project/warehouse/department assignment;
+- System Admin can mutate business data without an explicit grant and required relationship;
 - ordinary Member gains an unassigned project/warehouse/business record;
-- App Admin gains sensitive action without explicit grant;
+- System Admin gains or self-grants a sensitive business action;
 - required pilot route/backend operation is denied for its approved user;
 - audit/refresh counts are incomplete;
 - post-state fingerprint differs from Apply result.
@@ -423,14 +434,15 @@ Cosmetic layout issues and a single noncritical label defect do not trigger auth
 
 At minimum:
 
-1. High-level Administrator customization allow + unassigned business-data denial.
-2. ordinary Member app-not-assigned denial.
-3. Project Member correct-project allow + wrong-project denial.
-4. Project App Admin customization allow + unassigned-project denial.
-5. WMS assignee correct-warehouse allow + other-warehouse denial.
-6. sensitive approver explicit-grant allow.
-7. App Admin/high-level admin without sensitive grant denial.
-8. membership removal reflected in active session.
+1. System Admin all-app and cross-scope read allow.
+2. System Admin allowlisted configuration allow.
+3. System Admin ungranted create/edit/delete/transition/export denial.
+4. System Admin sensitive self-grant and sensitive-action denial.
+5. ordinary Member app-not-assigned denial.
+6. Project Member correct-project allow + wrong-project denial.
+7. WMS assignee correct-warehouse allow + other-warehouse denial.
+8. sensitive Member approver explicit-grant allow.
+9. membership removal reflected in active session.
 
 - [ ] **Step 4: Define monitoring window**
 
@@ -541,6 +553,10 @@ Required evidence:
 - zero readiness blockers for the approved manifest;
 - no required Legacy/declared action;
 - zero active keeper-role dependency;
+- exactly one active System Admin and zero System Admin membership rows;
+- System Admin global read passed across required project/warehouse/department scopes;
+- System Admin ungranted business mutations and sensitive self-grant are denied;
+- zero effective `APP_ADMIN` source and no App Admin target-state field;
 - external snapshot encryption/verification passed;
 - post-cutover Legacy write guard passed;
 - runbook contract passed;

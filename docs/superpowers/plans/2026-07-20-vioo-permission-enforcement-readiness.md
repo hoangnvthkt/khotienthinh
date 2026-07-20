@@ -15,8 +15,9 @@
 - Readiness is evidence, not a label chosen for UI convenience.
 - Promote an action only after intended allow, wrong-scope denial, state/ownership denial, adjacent-action denial, and direct-API denial pass.
 - A required pilot action in `legacy` or `declared` blocks cutover. Unused catalog actions may remain declared if no route/service grants them during the pilot.
-- Do not make App Admin a shortcut for business CRUD, all records, project membership, warehouse responsibility, approval, payment, payroll, or stock adjustment.
-- High-level Administrator business-data paths must use explicit permission + assignment like members. Account administration checks may still use the canonical high-level role.
+- Do not introduce an App Admin role, access level, source, or mutation shortcut.
+- System Admin may bypass scope/assignment only for reviewed read-only operations. Every business mutation still requires explicit permission and any required assignment.
+- Preserve exactly-one-System-Admin and service-role recovery invariants from the foundation plan.
 - Replace `WAREHOUSE_KEEPER` behavior before relabelling the five existing accounts as Members.
 - Every new migration is created with `npx supabase migration new`; do not hand-invent timestamped paths.
 - Do not promote readiness in the same migration that first implements an operation. First pass behavior smoke, then use a separate promotion migration/smoke.
@@ -142,12 +143,13 @@ Prove:
 - a Direct Grant without app membership cannot open a route or pass `canPerform`;
 - membership without action cannot pass `canPerform`;
 - membership + action can pass only for a compatible scope;
-- High-level Administrator can open customization routes but not business routes without required action/assignment;
+- System Admin can open every business route and read every record without assignment;
+- System Admin cannot execute create/edit/delete/transition/export/bulk business operations without explicit action permission and required assignment;
 - unknown protected routes deny by default.
 
 - [ ] **Step 2: Write backend failures**
 
-The SQL smoke creates two users with identical grants/scopes but only one app membership. Direct SELECT, public RPC, and mutation must deny the non-member.
+The SQL smoke creates two Members with identical grants/scopes but only one app membership; direct SELECT, public RPC, and mutation deny the non-member. It also creates the sole System Admin and proves cross-scope SELECT/read-only RPC allow plus INSERT/UPDATE/DELETE/state-transition denial without an explicit mutation grant.
 
 - [ ] **Step 3: Implement a shared authorization predicate**
 
@@ -163,7 +165,7 @@ app_private.user_has_permission_in_application(
 ) returns boolean
 ```
 
-It requires active account, application access, active effective permission, and scope match. Application-specific helpers add relationship/workflow checks.
+It requires active account, application access, active effective permission, and scope match. Application-specific helpers add relationship/workflow checks for Members and every mutation. Reviewed read-only helpers accept `SYSTEM_ADMIN_VIEW` before assignment filtering, but mutation helpers never do.
 
 - [ ] **Step 4: Integrate frontend navigation and service checks**
 
@@ -206,11 +208,11 @@ project.material_boq.manage
 
 - [ ] **Step 1: Write failing frontend/service tests**
 
-Prove view sees BOQ, edit mutates but cannot delete, delete deletes but cannot edit, manage opens BOQ configuration only, and no action works outside `project_staff` plus matching project/site scope.
+Prove Member view sees BOQ only with project membership/scope, edit mutates but cannot delete, delete deletes but cannot edit, and manage does not imply CRUD. Prove System Admin can view BOQ outside `project_staff` but cannot edit/delete/manage it without the matching explicit grant and required project relationship.
 
 - [ ] **Step 2: Write failing backend smoke**
 
-For each code, cover intended allow, no-membership denial, wrong-project denial, no-project-staff denial, adjacent-action denial, and direct table/API denial.
+For each code, cover intended Member allow, no-membership denial, wrong-project denial, no-project-staff mutation denial, adjacent-action denial, and direct table/API denial. Add a separate System Admin global-view allow and edit/delete denial.
 
 - [ ] **Step 3: Split DELETE from EDIT in RLS/private helpers**
 
@@ -262,7 +264,7 @@ git commit -m "test: verify project BOQ permission readiness"
   "users": [{
     "userId": "uuid",
     "accountRole": "MEMBER",
-    "applications": [{"applicationCode":"project","accessLevel":"MEMBER"}],
+    "applications": ["project"],
     "grants": [{
       "permissionCode":"project.material_boq.view",
       "scopeType":"project",
@@ -280,7 +282,7 @@ git commit -m "test: verify project BOQ permission readiness"
 
 - [ ] **Step 1: Write validator failures**
 
-Reject duplicate users/apps/grants, unknown app/code/scope, inactive user, missing membership, App Admin without membership, sensitive self-grant, missing expiry/reason where required, missing assignment assertion, and any action not `enforced`/`verified`.
+Reject duplicate users/apps/grants, unknown app/code/scope, inactive user, Member grant without membership, System Admin membership rows, sensitive self-grant, missing expiry/reason where required, missing mutation assignment assertion, and any action not `enforced`/`verified`. Require exactly one `SYSTEM_ADMIN` manifest account.
 
 - [ ] **Step 2: Implement offline structural validation**
 
@@ -333,7 +335,7 @@ For view/approve/export/receive/complete, prove:
 - matching action without warehouse assignment does not access warehouse data;
 - assignment + action works only for the assigned warehouse;
 - global WMS access requires explicit global scope, not `assignedWarehouseId=null`;
-- High-level Administrator/App Admin has no automatic stock action;
+- System Admin can view all warehouses/transactions but has no automatic stock mutation action;
 - creator/owner self-service remains only where explicitly designed.
 
 - [ ] **Step 3: Introduce canonical warehouse responsibility**
@@ -346,7 +348,7 @@ Refactor `canApproveWmsTransaction`, `canReceiveWmsTransaction`, `canViewWmsTran
 
 - [ ] **Step 5: Replace SQL keeper shortcuts**
 
-Change policies/RPC guards that call `current_user_is_global_wms_keeper` or `current_user_is_wms_keeper_for` to explicit membership, WMS action, warehouse scope, and responsibility checks.
+Change policies/RPC guards that call `current_user_is_global_wms_keeper` or `current_user_is_wms_keeper_for` to explicit Member membership, WMS action, warehouse scope, and responsibility checks. SELECT/read-only paths additionally accept `SYSTEM_ADMIN_VIEW`; mutation paths do not.
 
 - [ ] **Step 6: Migrate five active keeper accounts in the cutover manifest**
 
@@ -483,7 +485,7 @@ For each wave:
 - [ ] **Step 2:** Map every code to actual frontend control and backend operation.
 - [ ] **Step 3:** Add application membership prerequisite.
 - [ ] **Step 4:** Add assignment/ownership/scope/workflow checks.
-- [ ] **Step 5:** Remove role/module-admin business-data bypasses.
+- [ ] **Step 5:** Remove role/module-admin business-mutation bypasses while retaining reviewed System Admin read-only access.
 - [ ] **Step 6:** Run intended allow plus four negative dimensions.
 - [ ] **Step 7:** Promote proven codes in a separate migration.
 - [ ] **Step 8:** Update aggregate readiness report and commit the wave.
@@ -498,41 +500,42 @@ npx supabase test db supabase/tests/chat_v2_user_access_smoke.sql
 npx supabase test db supabase/tests/phase5_readiness_smoke.sql
 ```
 
-Sensitive HRM payroll, stock adjustment, financial approval, permission administration, and equivalent actions require explicit High-level Admin grant authority, no self-grant, reason, expiry where policy requires, and SoD evidence.
+Sensitive HRM payroll, stock adjustment, financial approval, and equivalent business actions require System Admin grant authority, no self-grant, reason, expiry where policy requires, and SoD evidence. Permission administration itself remains an allowlisted System Admin configuration operation.
 
 ---
 
-### Task 8: Remove Broad Administrator Business-Data Bypasses
+### Task 8: Replace Broad Administrator Mutation Bypasses
 
 **Files:**
 - Modify: `lib/permissions/permissionService.ts`
 - Modify: `lib/wmsPermissions.ts`
 - Modify: affected pages/services
 - Create via multiple operation-owned migrations; never one unreviewable global search/replace migration
-- Test: `lib/__tests__/highLevelAdminBusinessBoundary.test.ts`
-- Create: `supabase/tests/high_level_admin_business_boundary_smoke.sql`
+- Test: `lib/__tests__/systemAdminBusinessBoundary.test.ts`
+- Create: `supabase/tests/system_admin_business_boundary_smoke.sql`
 
 - [ ] **Step 1: Write the global boundary test**
 
-An ADMIN/App Admin can administer accounts/apps/customization, but cannot view/mutate an unassigned project, warehouse, HRM department record, workflow item, or sensitive approval by role alone.
+The sole ADMIN can administer accounts/apps/configuration and read an unassigned project, warehouse, HRM department record, or workflow item. It cannot mutate those records or perform a sensitive action by role alone.
 
 - [ ] **Step 2: Classify all bypass references**
 
 Allowed categories:
 
 - account/session/application administration;
-- catalog/customization operations explicitly tagged `app_admin`;
+- configuration operations explicitly tagged `system_admin`;
+- reviewed SELECT/read-only operations through `SYSTEM_ADMIN_VIEW`;
 - emergency operations separately governed and audited.
 
 Everything else must be replaced with explicit action + relationship.
 
 - [ ] **Step 3: Remove frontend `Role.ADMIN -> all permission codes`**
 
-In `permissionService.ts`, stop returning every action for ADMIN. Consume the backend effective sources: APP_ADMIN for customization, Direct/Role for business actions.
+In `permissionService.ts`, stop returning every action for ADMIN. Consume `SYSTEM_ADMIN_VIEW` for read-only actions, `SYSTEM_ADMIN_CONFIGURATION` for allowlisted configuration, and Direct/Role sources for business mutations.
 
 - [ ] **Step 4: Replace SQL data bypasses operation by operation**
 
-For each `is_admin()`/`is_module_admin(...)` path, add a negative smoke before changing it. Keep account authority checks where appropriate; remove business-data shortcuts.
+For each `is_admin()`/`is_module_admin(...)` path, first classify it as read or mutation. Retain only reviewed read-only/admin-configuration branches; add a negative smoke and remove every business-mutation shortcut.
 
 - [ ] **Step 5: Prove sensitive boundaries**
 
@@ -552,8 +555,8 @@ Every remaining occurrence must be listed with its allowed category in `docs/sec
 - [ ] **Step 7: Verify and commit per operation family**
 
 ```bash
-npm test -- lib/__tests__/highLevelAdminBusinessBoundary.test.ts
-npx supabase test db supabase/tests/high_level_admin_business_boundary_smoke.sql
+npm test -- lib/__tests__/systemAdminBusinessBoundary.test.ts
+npx supabase test db supabase/tests/system_admin_business_boundary_smoke.sql
 ```
 
 ---
@@ -572,7 +575,7 @@ public.preview_pilot_permission_readiness(p_manifest jsonb) returns jsonb
 
 - [ ] **Step 1: Write failing gate cases**
 
-Reject inactive/unknown user, last-admin absence, unknown app/action, missing membership, declared/legacy action, unsupported scope, missing assignment, sensitive self-grant, missing expiry/reason, duplicate row, and a required app with no gateway/view action.
+Reject inactive/unknown user, anything other than exactly one active System Admin, a System Admin membership row, unknown app/action, Member grant without membership, declared/legacy action, unsupported scope, missing mutation assignment, sensitive self-grant, missing expiry/reason, duplicate row, and a required app with no reviewed gateway/view action. Require System Admin global-view coverage for every pilot read workflow.
 
 - [ ] **Step 2: Implement private validator**
 
@@ -623,7 +626,8 @@ Exit criteria:
 - all required app memberships/scopes/assignments are valid;
 - Project BOQ edit/delete are independent;
 - no active pilot decision relies on `Role.WAREHOUSE_KEEPER`;
-- no active pilot business-data path relies solely on ADMIN/App Admin/module-admin;
+- no active pilot business mutation relies solely on ADMIN/module-admin;
+- System Admin global read succeeds across all required pilot scopes without assignments;
 - frontend and backend test suites pass;
 - residual bypass references are classified and non-business;
 - aggregate readiness report is current;

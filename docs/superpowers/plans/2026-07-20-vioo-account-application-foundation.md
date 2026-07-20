@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Implement two operator-facing account roles and governed per-user application membership/Application Administrator access without granting unassigned business data or sensitive actions.
+**Goal:** Implement exactly one System Admin, ordinary Members, governed Member application membership, global read-only System Admin oversight, and explicit configuration authority without implicit business mutations.
 
-**Architecture:** Add a canonical application-access catalog and an audited `user_application_memberships` relation. Public Preview/Apply RPC wrappers call private authorization helpers. The effective resolver emits `APP_MEMBER` and `APP_ADMIN` sources, where `APP_ADMIN` expands only permission actions explicitly tagged `app_admin`. React consumes the governed service and renders a Base-style account/application workflow.
+**Architecture:** Add a canonical application-access catalog and an audited Member-only `user_application_memberships` relation. Public Preview/Apply RPC wrappers call private authorization helpers. The effective resolver emits `SYSTEM_ADMIN_VIEW` for reviewed read operations and `SYSTEM_ADMIN_CONFIGURATION` only for permissions tagged `system_admin`; ordinary business mutations still require explicit grants. React consumes governed services and renders a Base-style account/application workflow without an App Admin control.
 
 **Tech Stack:** TypeScript, React 18, Vitest, Supabase/Postgres, RLS, PL/pgSQL, existing permission registry, authorization governance service, account lifecycle commands, realtime refresh.
 
@@ -12,11 +12,13 @@
 
 - Follow the program constraints in `docs/superpowers/plans/2026-07-20-vioo-pilot-hard-cutover-program.md`.
 - Legacy arrays remain unchanged and read-only during this plan; do not clear them and do not disable fallback here.
-- Preserve stored role values initially: map `ADMIN -> SUPER_ADMIN` behavior and `EMPLOYEE -> MEMBER` behavior through an adapter. Existing `WAREHOUSE_KEEPER` rows remain readable until the enforcement plan migrates them.
-- Do not add Application Administrator behavior to vague Legacy `manage` permissions. Every app customization action must be explicitly classified.
+- Preserve stored role values initially: map `ADMIN -> SYSTEM_ADMIN` behavior and `EMPLOYEE -> MEMBER` behavior through an adapter. Existing `WAREHOUSE_KEEPER` rows remain readable until the enforcement plan migrates them.
+- Do not add an Application Administrator access level, assignment, source, or UI toggle.
+- Classify System Admin configuration operations explicitly; vague Legacy `manage` actions are ordinary actions until reviewed.
 - Membership removal must atomically revoke active Direct Grants for the same canonical application and emit audit/refresh evidence.
-- High-level Administrator gets effective App Admin for all active catalog applications without duplicate membership rows.
-- Sensitive and business-action permission codes are never emitted from App Admin expansion.
+- The sole active System Admin gets all-application access and global read-only visibility without membership rows.
+- `SYSTEM_ADMIN_CONFIGURATION` contains only permissions in the reviewed `system_admin` allowlist.
+- Sensitive and business-mutation permission codes are never emitted from System Admin role expansion.
 - Create migrations with the Supabase CLI; all SQL snippets belong in the CLI-generated file.
 - Do not deploy to Cloud as part of this plan without a separate exact approval.
 
@@ -33,6 +35,7 @@
 - `lib/__tests__/applicationAccessCatalog.test.ts`
 - `lib/__tests__/applicationMembershipService.test.ts`
 - `lib/__tests__/userApplicationAccessPanel.test.tsx`
+- `supabase/tests/single_system_admin_recovery_smoke.sql`
 - `supabase/tests/application_membership_foundation_smoke.sql`
 
 **Modify:**
@@ -66,7 +69,7 @@
 
 ```ts
 export type ApplicationCode =
-  | 'project' | 'wms' | 'hrm' | 'workflow' | 'request'
+  | 'project' | 'procurement' | 'wms' | 'hrm' | 'workflow' | 'request'
   | 'expense' | 'asset' | 'contract' | 'chat' | 'ai'
   | 'storage' | 'kb' | 'analytics' | 'settings';
 
@@ -76,6 +79,7 @@ export interface ApplicationAccessDefinition {
   legacyModuleKeys: readonly string[];
   permissionApplicationCodes: readonly string[];
   rootRoutes: readonly string[];
+  memberAssignable: boolean;
   sortOrder: number;
 }
 ```
@@ -86,7 +90,7 @@ Assert unique app codes, unique normalized Legacy-module ownership, nonempty rou
 
 ```ts
 const expectedLegacyOwners = {
-  DA: 'project', WMS: 'wms', HRM: 'hrm', EP: 'hrm', WF: 'workflow',
+  DA: 'project', PROCUREMENT: 'procurement', WMS: 'wms', HRM: 'hrm', EP: 'hrm', WF: 'workflow',
   RQ: 'request', EX: 'expense', TS: 'asset', HD: 'contract', CHAT: 'chat',
   AI: 'ai', TENDER_AI: 'ai', STORAGE: 'storage', KB: 'kb',
   ANALYTICS: 'analytics', CUSTOM_DASHBOARD: 'analytics',
@@ -94,7 +98,7 @@ const expectedLegacyOwners = {
 } as const;
 ```
 
-`PROCUREMENT` must be resolved explicitly before the test passes: assign it to `wms` if its routes are company purchasing/warehouse operations, or to `project` if they are project procurement. Record the chosen owner in the catalog and a one-line rationale in the test. Do not create a duplicate app merely to preserve a Legacy key.
+Mark `settings.memberAssignable = false`; every ordinary product app is `true`. The membership command rejects Member assignment to `settings`, while System Admin receives settings access implicitly.
 
 - [ ] **Step 2: Run the failing test**
 
@@ -132,7 +136,7 @@ git commit -m "feat: define canonical application access catalog"
 
 ---
 
-### Task 2: Classify Application Customization Permissions Explicitly
+### Task 2: Classify System Admin Configuration Permissions Explicitly
 
 **Files:**
 - Modify: `lib/permissions/permissionTypes.ts`
@@ -143,7 +147,7 @@ git commit -m "feat: define canonical application access catalog"
 **Interfaces:**
 
 ```ts
-export type PermissionActionGroup = 'access' | 'action' | 'app_admin';
+export type PermissionActionGroup = 'access' | 'action' | 'system_admin';
 ```
 
 - [ ] **Step 1: Replace the existing broad grouping test with security contracts**
@@ -151,10 +155,11 @@ export type PermissionActionGroup = 'access' | 'action' | 'app_admin';
 The test must prove:
 
 - every module has exactly one `view` gateway classified `access`;
-- sensitive or `isBusinessApproval` actions are never `app_admin`;
+- sensitive or `isBusinessApproval` actions are never `system_admin`;
 - `edit`, `delete`, `approve`, `confirm`, `receive`, `export`, and workflow actions default to `action`;
-- `app_admin` appears only on a reviewed allowlist;
-- a vague Legacy-labelled `manage` action is not automatically `app_admin`.
+- `system_admin` appears only on a reviewed configuration allowlist;
+- a vague Legacy-labelled `manage` action is not automatically `system_admin`;
+- root business-object creation such as project/warehouse creation remains `action`.
 
 - [ ] **Step 2: Run the test and observe failure**
 
@@ -162,7 +167,7 @@ The test must prove:
 npm test -- lib/__tests__/applicationPermissionRegistryContract.test.ts
 ```
 
-- [ ] **Step 3: Remove action-name inference for App Admin**
+- [ ] **Step 3: Remove action-name inference for System Admin configuration**
 
 Change the resolver to:
 
@@ -171,21 +176,19 @@ export const resolvePermissionActionGroup = (action: string): PermissionActionGr
   action === 'view' ? 'access' : 'action';
 ```
 
-Allow registry entries to pass `permissionGroup: 'app_admin'` only through explicit metadata.
+Allow registry entries to pass `permissionGroup: 'system_admin'` only through explicit metadata.
 
 - [ ] **Step 4: Add explicit customization codes**
 
 Use concrete operations, not umbrella data access. Minimum catalog:
 
 ```text
-project.master.create
 project.master.manage_categories
 project.settings.manage
 project.template.manage
 project.workflow.configure
 wms.master_data.manage
 wms.settings.manage
-wms.warehouse.create
 hrm.master_data.manage
 hrm.settings.manage
 workflow.template.create
@@ -200,9 +203,9 @@ system.authorization.manage_grants
 system.authorization.audit
 ```
 
-Before adding a new code, identify its real route, mutation entry point, and backend guard. If the operation does not yet exist, keep it `declared` in the DB but do not make App Admin resolve it until Plan B enforces it.
+Before adding a new code, identify its real route, mutation entry point, and backend guard. If the operation changes business records rather than shared configuration, keep it in `action` and require an explicit grant. If the operation does not yet exist, keep it `declared` and do not include it in System Admin configuration expansion until Plan B enforces it.
 
-- [ ] **Step 5: Verify no business action leaked into App Admin**
+- [ ] **Step 5: Verify no business mutation leaked into System Admin configuration**
 
 ```bash
 npm test -- lib/__tests__/applicationPermissionRegistryContract.test.ts lib/__tests__/permissionRisk.test.ts
@@ -237,7 +240,7 @@ The smoke must assert absence before migration implementation, then after implem
 - authenticated users cannot insert/update/delete directly;
 - inactive target users cannot receive effective membership;
 - one active row per user/application;
-- `APP_ADMIN` implies app use;
+- membership rows belong only to Members;
 - revoke metadata is mandatory;
 - audit events and refresh events are written by commands.
 
@@ -248,7 +251,6 @@ create table public.user_application_memberships (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.users(id) on delete cascade,
   application_code text not null references public.permission_applications(code) on update cascade,
-  access_level text not null check (access_level in ('MEMBER', 'APP_ADMIN')),
   status text not null default 'ACTIVE' check (status in ('ACTIVE', 'REVOKED')),
   granted_by uuid not null references public.users(id),
   granted_reason text not null check (char_length(btrim(granted_reason)) >= 5),
@@ -269,11 +271,11 @@ Use a constraint trigger to require all three revoke fields together when status
 
 - [ ] **Step 4: Add RLS and privileges**
 
-Enable RLS. Allow a user to select only their own active memberships; allow High-level Administrators to list all through an authorized RPC. Revoke direct DML from `anon` and `authenticated`. The public schema exposes only wrappers; mutation helpers live in `app_private` with an empty `search_path`.
+Enable RLS. Allow a Member to select only their own active memberships; allow the sole System Admin to list all through an authorized RPC. Reject membership rows for the System Admin account. Revoke direct DML from `anon` and `authenticated`. The public schema exposes only wrappers; mutation helpers live in `app_private` with an empty `search_path`.
 
 - [ ] **Step 5: Add application code integrity**
 
-Seed/reconcile `permission_applications` from the canonical catalog in the migration. Add `permission_actions.access_application_code` as a canonical product-app foreign key and backfill every action from the reviewed catalog, including synthetic `system.*` actions. Reject unknown or inactive application codes. Do not delete historical catalog rows; mark them inactive.
+Seed/reconcile `permission_applications` from the canonical catalog and add `member_assignable boolean not null default true`; set `settings=false`. Add `permission_actions.access_application_code` as a canonical product-app foreign key and backfill every action from the reviewed catalog, including synthetic `system.*` actions. Reject unknown, inactive, or non-member-assignable application codes in Member commands. Do not delete historical catalog rows; mark them inactive.
 
 - [ ] **Step 6: Reset and run SQL smoke**
 
@@ -319,12 +321,12 @@ public.apply_user_application_access_change(
 Desired-access JSON is an array of unique rows:
 
 ```json
-[{"applicationCode":"project","accessLevel":"MEMBER"}]
+["project"]
 ```
 
 - [ ] **Step 1: Add failing command smoke cases**
 
-Cover invalid app, duplicate app, inactive target, unauthorized actor, stale fingerprint, idempotent retry, membership add, upgrade/downgrade, removal, and atomic grant revocation.
+Cover invalid app, non-member-assignable settings app, duplicate app, inactive target, System Admin target, unauthorized actor, stale fingerprint, idempotent retry, membership add, removal, and atomic grant revocation.
 
 - [ ] **Step 2: Implement private normalization and fingerprint helpers**
 
@@ -340,8 +342,6 @@ Return:
   "before": [],
   "after": [],
   "added": [],
-  "upgraded": [],
-  "downgraded": [],
   "removed": [],
   "revokedGrantCount": 0,
   "hardDenies": [],
@@ -349,7 +349,7 @@ Return:
 }
 ```
 
-Hard-deny self-escalation, inactive target, unknown app, last-admin violation, and actor without `system.authorization.manage_grants` or canonical High-level Administrator authority.
+Hard-deny inactive target, System Admin as membership target, unknown app, exactly-one-admin violation, and any actor other than the canonical System Admin.
 
 - [ ] **Step 4: Implement Apply under one transaction**
 
@@ -370,7 +370,7 @@ git commit -m "feat: govern application access changes"
 
 ---
 
-### Task 5: Extend Effective Sources Without Granting Business Data
+### Task 5: Add System Admin Global View and Configuration Sources
 
 **Files:**
 - Modify via new CLI migration named `application_membership_effective_sources`
@@ -382,27 +382,28 @@ git commit -m "feat: govern application access changes"
 
 ```ts
 export type EffectivePermissionSourceType =
-  | 'ROLE' | 'DIRECT' | 'LEGACY' | 'APP_MEMBER' | 'APP_ADMIN';
+  | 'ROLE' | 'DIRECT' | 'LEGACY'
+  | 'SYSTEM_ADMIN_VIEW' | 'SYSTEM_ADMIN_CONFIGURATION';
 ```
 
 - [ ] **Step 1: Add failing mapping and SQL smoke assertions**
 
-Assert a Member receives app shell evidence but no action permission, an App Admin receives only `permission_group='app_admin'`, and an ADMIN receives the same App Admin expansion for every active app without membership rows.
+Assert a Member membership opens only the application shell, while ADMIN receives every active app plus global read sources and only `permission_group='system_admin'` configuration sources without membership rows. Assert ADMIN receives no create/edit/delete/approve/export source by role alone.
 
 - [ ] **Step 2: Add `permission_group` to `permission_actions`**
 
-Use values `access`, `action`, `app_admin`; backfill from the reviewed registry seed. `manage` is not automatically `app_admin`.
+Use values `access`, `action`, `system_admin`; backfill from the reviewed registry seed. `manage` is not automatically `system_admin`.
 
 - [ ] **Step 3: Extend the private effective resolver**
 
 Emit:
 
-- one `APP_MEMBER` source describing active membership and application code;
-- `APP_ADMIN` permission sources only for active `app_admin` actions belonging to that application;
-- effective `APP_ADMIN` for active High-level Administrators across every active app;
+- `SYSTEM_ADMIN_VIEW` permission sources for reviewed read-only actions across every active application and scope;
+- `SYSTEM_ADMIN_CONFIGURATION` sources only for active `system_admin` actions;
+- no implicit source for create/edit/delete/submit/confirm/approve/pay/close/adjust/receive/issue/import/export/bulk business operations;
 - no source for inactive accounts.
 
-The resolver must use `permission_actions.access_application_code` for membership and App Admin expansion, and keep Legacy behavior unchanged until cutover.
+The resolver must use `permission_actions.access_application_code` for app ownership, require read-only classification before emitting global view, and keep Legacy behavior unchanged until cutover.
 
 - [ ] **Step 4: Add application membership prerequisite helper**
 
@@ -410,7 +411,7 @@ The resolver must use `permission_actions.access_application_code` for membershi
 app_private.user_has_application_access(p_user_id uuid, p_application_code text) returns boolean
 ```
 
-It returns true for active membership or active High-level Administrator, false for inactive users. It does not check action/scope/assignment.
+It returns true for active Member membership or the sole active System Admin, false for inactive users. It does not check action/scope/assignment.
 
 - [ ] **Step 5: Verify and commit**
 
@@ -434,11 +435,9 @@ git commit -m "feat: resolve application membership sources"
 **Interfaces:**
 
 ```ts
-export type ApplicationAccessLevel = 'NONE' | 'MEMBER' | 'APP_ADMIN';
-
 export interface UserApplicationAccess {
   applicationCode: ApplicationCode;
-  accessLevel: Exclude<ApplicationAccessLevel, 'NONE'>;
+  status: 'ACTIVE';
   grantedAt: string;
   grantedBy: string;
 }
@@ -475,7 +474,7 @@ git commit -m "feat: add application membership client"
 
 - [ ] **Step 1: Write failing UI behavior tests**
 
-Cover searchable add list, selected app chips/cards, `Use application`, `Application Administrator`, App Admin implying use, membership removal preview, reason requirement, stale preview recovery, success only after Apply, and disabled controls for the current actor where required.
+Cover searchable add list, selected app chips/cards, the single `Use application` toggle, membership removal preview, reason requirement, stale preview recovery, success only after Apply, and read-only all-app messaging for the System Admin. Assert no App Admin label, toggle, badge, access level, or payload exists.
 
 - [ ] **Step 2: Implement the panel**
 
@@ -484,12 +483,12 @@ Props:
 ```ts
 interface UserApplicationAccessPanelProps {
   targetUserId: string;
-  targetIsHighLevelAdministrator: boolean;
+  targetIsSystemAdmin: boolean;
   onApplied?: () => Promise<void> | void;
 }
 ```
 
-Use a two-step Preview -> Apply interaction. Show the grant-revocation count before removal. For High-level Administrators, render all apps as effective App Admin and explain that sensitive/scoped business permissions remain separate.
+Use a two-step Preview -> Apply interaction. Show the grant-revocation count before removal. For System Admin, render every app as implicitly available and explain: all-data view plus configuration allowlist are automatic, while business mutations remain explicit.
 
 - [ ] **Step 3: Mount it in the existing governance page**
 
@@ -513,38 +512,60 @@ git commit -m "feat: add Base-style application access panel"
 - Modify: `pages/UserManagement.tsx`
 - Modify: `context/authState.ts`
 - Modify: `supabase/functions/create-user/index.ts`
+- Create via CLI: migration named `single_system_admin_invariant`
 - Test: `lib/__tests__/userModalAccountRoles.test.tsx`
 - Test: `lib/__tests__/authBoundary.test.tsx`
 - Test: `lib/__tests__/createUserEdgeFunctionContract.test.ts`
+- Test: `supabase/tests/single_system_admin_recovery_smoke.sql`
 
 - [ ] **Step 1: Add the behavior adapter**
 
 ```ts
-export type AccountRole = 'SUPER_ADMIN' | 'MEMBER';
+export type AccountRole = 'SYSTEM_ADMIN' | 'MEMBER';
 export const toAccountRole = (role: Role): AccountRole =>
-  role === Role.ADMIN ? 'SUPER_ADMIN' : 'MEMBER';
+  role === Role.ADMIN ? 'SYSTEM_ADMIN' : 'MEMBER';
 ```
 
 Do not rename stored values yet; that would unnecessarily combine schema migration with behavior migration.
 
 - [ ] **Step 2: Write failing UI and payload tests**
 
-The select shows only `Thành viên` and `Quản trị cấp cao`. New Member payload persists `EMPLOYEE`; High-level persists `ADMIN`. It never creates a new `WAREHOUSE_KEEPER`, never sends Legacy arrays as entitlements, and never grants app memberships through profile-table writes.
+The select shows only `Thành viên` and `System Admin`. New Member payload persists `EMPLOYEE`. The existing sole System Admin displays as `ADMIN`; ordinary UI rejects promotion of another account to `ADMIN`. It never creates a new `WAREHOUSE_KEEPER`, never sends Legacy arrays as entitlements, and never grants app memberships through profile-table writes.
 
 - [ ] **Step 3: Refactor UserModal**
 
 Remove the warehouse-role selector and `Kho phụ trách` from account identity. Warehouse assignment moves to the WMS owning UI in Plan B. Keep a read-only compatibility message for an existing keeper until migrated.
 
-- [ ] **Step 4: Enforce last-admin and self-demotion server-side**
+- [ ] **Step 4: Enforce exactly one System Admin server-side**
 
-Extend governed account update/lifecycle RPCs; UI checks are not sufficient. High-level Administrators may be demoted only when another active High-level Administrator remains.
+Extend governed account update/lifecycle RPCs; UI checks are not sufficient. Reject demotion/disablement of the sole System Admin and reject ordinary promotion while an active System Admin exists.
 
-- [ ] **Step 5: Verify and commit**
+- [ ] **Step 5: Add the service-role-only recovery command**
+
+Create and revoke public browser access to:
+
+```sql
+public.recover_single_system_admin(
+  p_target_user_id uuid,
+  p_expected_fingerprint text,
+  p_reason text,
+  p_change_reference text
+) returns jsonb
+```
+
+The command requires service-role execution, serializes on an advisory lock, snapshots every active ADMIN row, restores exactly one active ADMIN, demotes any other ADMIN to EMPLOYEE, grants no memberships or business permissions, writes `permission_audit_events`, and returns before/after fingerprints.
+
+- [ ] **Step 6: Prove recovery and ordinary-command denials**
+
+`single_system_admin_recovery_smoke.sql` must prove zero-admin recovery, two-admin reconciliation, stale-fingerprint denial, authenticated-call denial, no business grant creation, audit evidence, and final active ADMIN count exactly one.
+
+- [ ] **Step 7: Verify and commit**
 
 ```bash
 npm test -- lib/__tests__/userModalAccountRoles.test.tsx lib/__tests__/authBoundary.test.tsx lib/__tests__/createUserEdgeFunctionContract.test.ts
-git add types.ts components/UserModal.tsx pages/UserManagement.tsx context/authState.ts supabase/functions/create-user/index.ts lib/__tests__/userModalAccountRoles.test.tsx lib/__tests__/authBoundary.test.tsx lib/__tests__/createUserEdgeFunctionContract.test.ts
-git commit -m "feat: present member and high-level admin roles"
+npx supabase test db supabase/tests/single_system_admin_recovery_smoke.sql --local
+git add types.ts components/UserModal.tsx pages/UserManagement.tsx context/authState.ts supabase/functions/create-user/index.ts lib/__tests__/userModalAccountRoles.test.tsx lib/__tests__/authBoundary.test.tsx lib/__tests__/createUserEdgeFunctionContract.test.ts supabase/migrations/*_single_system_admin_invariant.sql supabase/tests/single_system_admin_recovery_smoke.sql
+git commit -m "feat: present system admin and member roles"
 ```
 
 ---
@@ -598,8 +619,11 @@ Expected:
 - all targeted tests, typecheck, build, reset, and SQL smoke pass;
 - no new account can be created as `WAREHOUSE_KEEPER`;
 - direct membership DML is denied;
-- App Admin sources contain only explicit customization actions;
-- sensitive and scoped business actions remain denied without explicit grants and assignments;
+- System Admin view sources contain only reviewed read operations;
+- System Admin configuration sources contain only the explicit `system_admin` allowlist;
+- System Admin role produces no business mutation source;
+- business mutations remain denied without explicit grants and required assignments, including for System Admin;
+- System Admin global view succeeds without project/warehouse/department assignment;
 - Legacy fields and fallback are still unchanged/read-only;
 - only intended files are staged/committed.
 
@@ -609,7 +633,7 @@ Record in a short implementation report:
 
 - migration filenames and SHA-256 hashes;
 - app catalog codes and Legacy ownership mapping;
-- counts of test fixtures by `MEMBER`/`APP_ADMIN` (no PII);
+- counts of test fixtures by Member membership and System Admin implicit access (no PII);
 - membership removal/re-add proof;
 - last-admin and inactive-account denial proof;
 - realtime refresh proof;

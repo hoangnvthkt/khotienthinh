@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace Legacy module/submodule authorization for all active pilot users with two account roles, explicit application membership, scoped Application Administrator capability, explicit business permissions, assignments, and one controlled hard cutover.
+**Goal:** Replace Legacy module/submodule authorization with exactly one System Admin, ordinary Members, Member application membership, explicit business mutations, global read-only System Admin oversight, and one controlled hard cutover.
 
 **Architecture:** Deliver three gated workstreams in order: (A) account/application foundation, (B) backend enforcement readiness for the pilot workflows, and (C) immutable snapshot plus atomic cutover/rollback. Legacy stays read-only and active during A/B, then is disabled globally only after every required pilot action has passed positive and negative backend evidence.
 
@@ -11,15 +11,18 @@
 ## Global Constraints
 
 - Work only on branch `refactor/module-du-an-v1` unless the operator explicitly chooses another branch.
-- The approved design is `docs/superpowers/specs/2026-07-20-vioo-base-style-user-application-permission-model-design.md`.
+- The approved design is `docs/superpowers/specs/2026-07-20-vioo-system-admin-member-permission-model-design.md`.
 - This program supersedes Legacy conversion tasks in `docs/superpowers/plans/2026-07-20-vioo-application-permission-workbench.md`; do not build a product-facing Legacy conversion panel.
 - Do not stage, rewrite, or discard unrelated dirty files. At plan creation time these include the realtime permission-refresh work in `DirectUserPermissionWorkspace.tsx`, `AuthContext.tsx`, `authState.ts`, two tests, and `20260720110000_current_user_permission_grant_realtime.sql`.
 - Do not run Cloud migrations, mutate Cloud users/grants, repair migration history, or enable rollout flags without a separate explicit approval for that exact operation.
 - Use the exact `npx supabase migration new migration_name` command stated in each child-plan task. Do not invent timestamped migration filenames in advance.
 - Browser clients never write membership, grant, audit, role, cutover, or Legacy authorization fields directly.
 - RLS/RPC/private helpers are the enforcement boundary; UI hiding is supporting evidence only.
-- High-level Administrator means account/application administration, not unrestricted scoped business data and not sensitive approval bypass.
-- Application Administrator means explicit customization/root-container capabilities only, not all CRUD inside the application.
+- Exactly one active System Admin coordinates accounts, application access, configuration, and permission grants.
+- There is no Application Administrator role, assignment, access level, source, or UI control.
+- System Admin can open every application and view business data across every project, warehouse, department, ownership, and assignment.
+- System Admin's implicit authority is read-only plus an explicit configuration allowlist; every business mutation requires a separate permission.
+- System Admin cannot self-grant or implicitly perform sensitive business actions.
 - Application membership is a prerequisite, never a substitute, for business action + scope + assignment.
 - `Role.WAREHOUSE_KEEPER` must be replaced by warehouse assignment and scoped WMS permissions before it is removed from the UI/resolver.
 - Every permission action required by a pilot workflow must be `enforced` or `verified`; `declared` and `legacy` are cutover blockers.
@@ -47,7 +50,8 @@ These numbers are evidence, not entitlement decisions. The target matrix must be
 ```text
 Plan A: Account + Application Foundation
   -> application catalog and membership commands
-  -> two-role UI and App Admin customization resolver
+  -> exactly-one-System-Admin invariant and Member-only membership
+  -> SYSTEM_ADMIN_VIEW and SYSTEM_ADMIN_CONFIGURATION resolver sources
   -> application prerequisite in route/backend helpers
 
 Plan B: Permission Enforcement Readiness
@@ -69,7 +73,7 @@ Plan C may start its tooling implementation after Plan A schema stabilizes, but 
 1. `docs/superpowers/plans/2026-07-20-vioo-account-application-foundation.md`
    - canonical app catalog and access levels;
    - governed membership Preview/Apply;
-   - effective `APP_ADMIN` source for customization permissions;
+   - effective `SYSTEM_ADMIN_VIEW` and `SYSTEM_ADMIN_CONFIGURATION` sources;
    - two-role Base-style account/application UI;
    - realtime/session refresh;
    - account-disable and last-admin integration.
@@ -142,7 +146,7 @@ git commit -m "docs: plan pilot permission hard cutover"
 - [ ] **Step 2:** Run the Plan A final verification block.
 - [ ] **Step 3:** Produce an aggregate-only foundation report containing active membership counts by app/access level, no account PII.
 - [ ] **Step 4:** Confirm all membership mutations use governed RPCs and audit events.
-- [ ] **Step 5:** Confirm a High-level Administrator receives only app customization capabilities from `APP_ADMIN`, not business approvals or all-data scope.
+- [ ] **Step 5:** Confirm the sole System Admin receives all-app/global read-only access and only allowlisted configuration mutations, never business mutations by role alone.
 - [ ] **Step 6:** Confirm membership removal revokes the app's active Direct Grants atomically and re-adding does not restore them.
 - [ ] **Step 7:** Stop if any assertion fails; do not begin Plan B rollout work against an unstable foundation.
 
@@ -157,7 +161,7 @@ git commit -m "docs: plan pilot permission hard cutover"
 - [ ] **Step 1:** Generate the current readiness/bypass inventories from code and database catalog.
 - [ ] **Step 2:** Finish the Project BOQ reference slice and prove edit/delete independence.
 - [ ] **Step 3:** Replace WMS keeper-role decisions with warehouse assignment + action permissions.
-- [ ] **Step 4:** Replace High-level Administrator and module-admin business-data bypasses with explicit actions and relationships.
+- [ ] **Step 4:** Replace broad administrator/module-admin mutation bypasses with explicit actions and relationships while retaining the reviewed System Admin SELECT/read-only path.
 - [ ] **Step 5:** Complete per-app waves only for workflows that the approved pilot entitlement manifest requires.
 - [ ] **Step 6:** Reject any manifest row whose permission is not `enforced` or `verified`.
 - [ ] **Step 7:** Run all positive and required negative backend smokes.
@@ -192,7 +196,7 @@ git commit -m "docs: plan pilot permission hard cutover"
 - [ ] **Step 4:** Run cutover Preview; require zero blockers and exact manifest fingerprint.
 - [ ] **Step 5:** Apply once with the approved idempotency key.
 - [ ] **Step 6:** Verify application memberships, explicit grants, assignments, cleared Legacy sources, enabled fallback-disable flag, audit, and refresh events.
-- [ ] **Step 7:** Run the operator checklist for High-level Administrator, Member, Application Administrator, project member, warehouse assignee, and sensitive-action denial.
+- [ ] **Step 7:** Run the operator checklist for System Admin global view, System Admin mutation denial, Member application access, project member, warehouse assignee, and sensitive-action denial.
 - [ ] **Step 8:** Roll back immediately if a hard threshold in Plan C is met; otherwise end the freeze and monitor.
 
 ---
@@ -222,10 +226,11 @@ git commit -m "docs: plan pilot permission hard cutover"
 
 ## Program Acceptance Criteria
 
-- Exactly two operator-facing account roles: Member and High-level Administrator.
-- Application access and Application Administrator are independent, governed assignments.
-- High-level Administrator is effective App Admin for all apps but receives no sensitive approval or unassigned scoped data by role alone.
-- App Admin opens customization capabilities only.
+- Exactly two operator-facing account roles: System Admin and Member, with exactly one active System Admin.
+- There is no Application Administrator concept in the target database, resolver, command payload, UI, or cutover manifest.
+- System Admin opens every application and can read all business data across all supported scopes.
+- System Admin role cannot create, edit, delete, transition, export, or otherwise mutate business data.
+- System Admin configuration mutations are restricted to the explicit `system_admin` permission group.
 - A user without membership cannot open or call an app's protected operations.
 - A user with membership but no matching action/scope/assignment cannot access business data.
 - Every required pilot workflow has backend allow plus wrong-scope/ownership/state/adjacent-action denial evidence.
