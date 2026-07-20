@@ -33,6 +33,8 @@ import {
   parseStoredMockUser,
   resolveCandidateSession,
   serializeMockUser,
+  shouldReconcileAuthorizationChannel,
+  shouldRefreshCurrentAuthorization,
   shouldRefreshCurrentProfile,
   shouldRevalidateInBackground,
   signOutAndConfirmLocalSessionCleared,
@@ -405,17 +407,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     let scheduledRefresh: ReturnType<typeof setTimeout> | null = null;
-    const scheduleProfileRefresh = (payload: {
-      eventType?: string;
-      new?: { id?: unknown };
-      old?: { id?: unknown };
-    }) => {
-      if (!shouldRefreshCurrentProfile(payload, profileId)) return;
+    const scheduleSnapshotRefresh = () => {
       if (scheduledRefresh) globalThis.clearTimeout(scheduledRefresh);
       scheduledRefresh = globalThis.setTimeout(() => {
         scheduledRefresh = null;
         void refreshProfile().catch(() => undefined);
       }, 0);
+    };
+    const scheduleProfileRefresh = (payload: {
+      eventType?: string;
+      new?: { id?: unknown; user_id?: unknown };
+      old?: { id?: unknown; user_id?: unknown };
+    }) => {
+      if (
+        !shouldRefreshCurrentProfile(payload, profileId)
+        && !shouldRefreshCurrentAuthorization(payload, profileId)
+      ) return;
+      scheduleSnapshotRefresh();
     };
     const channel = supabase
       .channel(`auth-current-profile:${profileId}`)
@@ -432,7 +440,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         schema: 'public',
         table: 'users',
       }, scheduleProfileRefresh)
-      .subscribe();
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'user_permission_grants',
+        filter: `user_id=eq.${profileId}`,
+      }, scheduleProfileRefresh)
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'user_permission_grants',
+        filter: `user_id=eq.${profileId}`,
+      }, scheduleProfileRefresh)
+      .subscribe(status => {
+        if (shouldReconcileAuthorizationChannel(status)) scheduleSnapshotRefresh();
+      });
 
     return () => {
       if (scheduledRefresh) globalThis.clearTimeout(scheduledRefresh);

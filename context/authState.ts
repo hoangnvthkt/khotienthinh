@@ -195,6 +195,21 @@ export const shouldRefreshCurrentProfile = (
   return false;
 };
 
+export const shouldRefreshCurrentAuthorization = (
+  payload: {
+    eventType?: string;
+    new?: { id?: unknown; user_id?: unknown };
+    old?: { id?: unknown; user_id?: unknown };
+  },
+  profileId: string,
+): boolean => (
+  (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE')
+  && payload.new?.user_id === profileId
+);
+
+export const shouldReconcileAuthorizationChannel = (status: string): boolean =>
+  status === 'SUBSCRIBED';
+
 export const authenticateMockUser = (
   configured: boolean,
   email: string,

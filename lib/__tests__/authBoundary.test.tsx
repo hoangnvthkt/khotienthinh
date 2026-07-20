@@ -16,7 +16,9 @@ import {
   resolveCandidateSession,
   serializeMockUser,
   selectApplicationShell,
+  shouldReconcileAuthorizationChannel,
   shouldRefreshCurrentProfile,
+  shouldRefreshCurrentAuthorization,
   shouldRevalidateInBackground,
   signOutAndConfirmLocalSessionCleared,
   type AuthProfileGateway,
@@ -297,6 +299,36 @@ describe('fail-closed auth state', () => {
     }, PROFILE_ID)).toBe(false);
   });
 
+  it('refreshes effective permissions when the current user direct grants change', () => {
+    expect(shouldRefreshCurrentAuthorization({
+      eventType: 'INSERT',
+      new: { user_id: PROFILE_ID },
+      old: {},
+    }, PROFILE_ID)).toBe(true);
+    expect(shouldRefreshCurrentAuthorization({
+      eventType: 'UPDATE',
+      new: { user_id: PROFILE_ID },
+      old: { user_id: PROFILE_ID },
+    }, PROFILE_ID)).toBe(true);
+    expect(shouldRefreshCurrentAuthorization({
+      eventType: 'UPDATE',
+      new: { user_id: '33333333-3333-4333-8333-333333333333' },
+      old: {},
+    }, PROFILE_ID)).toBe(false);
+    expect(shouldRefreshCurrentAuthorization({
+      eventType: 'DELETE',
+      new: {},
+      old: { id: 'grant-1' },
+    }, PROFILE_ID)).toBe(false);
+  });
+
+  it('reconciles the authorization snapshot after initial subscribe and reconnect', () => {
+    expect(shouldReconcileAuthorizationChannel('SUBSCRIBED')).toBe(true);
+    expect(shouldReconcileAuthorizationChannel('CHANNEL_ERROR')).toBe(false);
+    expect(shouldReconcileAuthorizationChannel('TIMED_OUT')).toBe(false);
+    expect(shouldReconcileAuthorizationChannel('CLOSED')).toBe(false);
+  });
+
   it('permits mock credentials only when Supabase is unconfigured and only by email', () => {
     const mockUsers: User[] = [{
       id: 'u1',
@@ -489,6 +521,9 @@ describe('authenticated provider architecture', () => {
     const settingsSource = readFileSync(join(process.cwd(), 'pages', 'settings', 'SettingsAccount.tsx'), 'utf8');
 
     expect(authSource).toContain("table: 'users'");
+    expect(authSource).toContain("table: 'user_permission_grants'");
+    expect(authSource).toContain('filter: `user_id=eq.${profileId}`');
+    expect(authSource).toContain('shouldReconcileAuthorizationChannel(status)');
     expect(authSource).toContain('filter: `id=eq.${profileId}`');
     expect(authSource).toContain("event: 'UPDATE'");
     expect(authSource).toContain("event: 'DELETE'");

@@ -394,6 +394,15 @@ const DirectUserPermissionWorkspace: React.FC<DirectUserPermissionWorkspaceProps
     || !unifiedDraftChanged
     || Boolean(previewMatches && preview?.decision.hardDenies.length)
     || (unifiedDraftChanged && permissionChangeReason.trim().length < 10);
+  const saveStatusText = panelDisabled
+    ? 'Đang khóa thao tác hoặc user không còn ACTIVE.'
+    : !unifiedDraftChanged
+      ? 'Chưa có thay đổi để lưu.'
+      : permissionChangeReason.trim().length < 10
+        ? 'Cần nhập lý do tối thiểu 10 ký tự để bật nút Lưu.'
+        : previewMatches && preview?.decision.hardDenies.length
+          ? 'Backend đang chặn bởi quy tắc SoD bắt buộc.'
+          : 'Đã đủ điều kiện lưu; bấm Lưu phân quyền để áp dụng.';
 
   return (
     <section className="grid min-h-[680px] gap-4 xl:grid-cols-[300px_1fr]">
@@ -473,6 +482,47 @@ const DirectUserPermissionWorkspace: React.FC<DirectUserPermissionWorkspaceProps
           </div>
         </div>
 
+        <section className="grid gap-2 md:grid-cols-3">
+          <div className="rounded-lg border border-blue-100 bg-blue-50 p-3">
+            <div className="text-[10px] font-black uppercase text-blue-600">Bước 1</div>
+            <div className="mt-1 text-xs font-black text-slate-800">Chọn phạm vi</div>
+            <p className="mt-1 text-[11px] font-semibold leading-relaxed text-slate-500">
+              Dùng Toàn hệ thống khi cấp quyền chung; dùng Phòng ban/Kho/Của mình khi muốn giới hạn.
+            </p>
+          </div>
+          <div className="rounded-lg border border-blue-100 bg-blue-50 p-3">
+            <div className="text-[10px] font-black uppercase text-blue-600">Bước 2</div>
+            <div className="mt-1 text-xs font-black text-slate-800">Chọn ứng dụng, module và tác vụ</div>
+            <p className="mt-1 text-[11px] font-semibold leading-relaxed text-slate-500">
+              Tích Xem trước; sau đó tích Tạo/Sửa/Duyệt theo việc cần giao.
+            </p>
+          </div>
+          <div className="rounded-lg border border-amber-100 bg-amber-50 p-3">
+            <div className="text-[10px] font-black uppercase text-amber-700">Bước 3</div>
+            <div className="mt-1 text-xs font-black text-slate-800">Nhập lý do và lưu</div>
+            <p className="mt-1 text-[11px] font-semibold leading-relaxed text-amber-700">
+              {saveStatusText}
+            </p>
+          </div>
+        </section>
+
+        <label className="block rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <span className="text-xs font-black text-slate-700">Lý do thay đổi phân quyền</span>
+            <span className="text-[10px] font-bold text-slate-400">
+              {Math.min(permissionChangeReason.trim().length, 10)}/10
+            </span>
+          </div>
+          <textarea
+            value={permissionChangeReason}
+            onChange={event => setPermissionChangeReason(event.target.value)}
+            disabled={panelDisabled}
+            rows={2}
+            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold disabled:bg-slate-50"
+            placeholder="Ví dụ: Cấp quyền Nhân sự > Nhân viên theo phạm vi công việc."
+          />
+        </label>
+
         {principal.accountStatus !== 'ACTIVE' && (
           <div className="rounded-lg border border-rose-100 bg-rose-50 p-3 text-xs font-bold text-rose-700">
             Principal dang bi vo hieu hoa.
@@ -518,13 +568,12 @@ const DirectUserPermissionWorkspace: React.FC<DirectUserPermissionWorkspaceProps
                     {row.sourceTypes.map(sourceType => (
                       <span
                         key={sourceType}
-                        className={`rounded px-2 py-1 text-[10px] font-black ${
-                          sourceType === 'DIRECT'
+                        className={`rounded px-2 py-1 text-[10px] font-black ${sourceType === 'DIRECT'
                             ? 'bg-blue-100 text-blue-700'
                             : sourceType === 'ROLE'
                               ? 'bg-violet-100 text-violet-700'
                               : 'bg-amber-100 text-amber-700'
-                        }`}
+                          }`}
                       >
                         {SOURCE_TYPE_LABELS[sourceType]}
                       </span>
@@ -638,15 +687,6 @@ const DirectUserPermissionWorkspace: React.FC<DirectUserPermissionWorkspaceProps
             ))}
           </div>
         )}
-
-        <textarea
-          value={permissionChangeReason}
-          onChange={event => setPermissionChangeReason(event.target.value)}
-          disabled={panelDisabled}
-          rows={2}
-          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold disabled:bg-slate-50"
-          placeholder="Ly do thay doi phan quyen"
-        />
 
         {preview && (
           <PermissionChangeSummary

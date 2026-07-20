@@ -87,4 +87,28 @@ describe('application permission workbench UI contract', () => {
     expect(html).toContain('Preview backend');
     expect(html).toContain('Lưu phân quyền');
   });
+
+  it('shows the permission editing flow and save reason before the matrix', () => {
+    const html = renderToStaticMarkup(
+      <DirectUserPermissionWorkspace
+        principal={principal}
+        grants={[]}
+        effectiveSources={[]}
+        principals={[principal]}
+        currentUserId="admin-1"
+        disabled={false}
+        clipboard={null}
+        onClipboardChange={vi.fn()}
+        onSaved={vi.fn(async () => undefined)}
+      />,
+    );
+
+    expect(html).toContain('Bước 1');
+    expect(html).toContain('Bước 2');
+    expect(html).toContain('Bước 3');
+    expect(html).toContain('Chọn phạm vi');
+    expect(html).toContain('Chọn ứng dụng, module và tác vụ');
+    expect(html).toContain('Lý do thay đổi phân quyền');
+    expect(html.indexOf('Lý do thay đổi phân quyền')).toBeLessThan(html.indexOf('Phân quyền theo khu vực và tác vụ'));
+  });
 });
