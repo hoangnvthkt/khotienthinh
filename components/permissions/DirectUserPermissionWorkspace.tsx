@@ -24,10 +24,14 @@ import {
 import type { LegacyPermissionState, PermissionScope } from '../../lib/permissions/permissionTypes';
 import type { PermissionScopeLookupOptionsByType } from '../../lib/permissions/permissionScopeLookupService';
 import {
+  applyLegacyConversionDraft,
+  buildLegacyConversionCandidates,
   buildLegacyPermissionCatalog,
   buildCurrentPermissionOverview,
   buildUnifiedPermissionDraftKey,
+  getDirectGrantRevokeDraft,
   type CurrentPermissionOverviewRow,
+  type LegacyConversionCandidate,
 } from '../../lib/permissions/unifiedPermissionViewModel';
 import PermissionChangeSummary from './PermissionChangeSummary';
 import PermissionScopePicker from './PermissionScopePicker';
@@ -212,6 +216,10 @@ const DirectUserPermissionWorkspace: React.FC<DirectUserPermissionWorkspaceProps
     () => buildCurrentPermissionOverview({ directGrants: drafts, effectiveSources }),
     [drafts, effectiveSources],
   );
+  const legacyConversionCandidates = useMemo(
+    () => buildLegacyConversionCandidates({ legacyState: legacyDraft, scope }),
+    [legacyDraft, scope],
+  );
   const sourceSummary = useMemo(() => ({
     role: effectiveSources.filter(source => source.sourceType === 'ROLE').length,
     legacy: effectiveSources.filter(source => source.sourceType === 'LEGACY').length,
@@ -264,12 +272,24 @@ const DirectUserPermissionWorkspace: React.FC<DirectUserPermissionWorkspaceProps
 
   const handleRevokeDirectGrant = (row: CurrentPermissionOverviewRow) => {
     handleOpenPermissionLocation(row);
-    updateDrafts(drafts.filter(grant => !(
-      grant.isActive !== false
-      && grant.permissionCode === row.permissionCode
-      && (grant.scopeType || 'global') === row.scopeType
-      && (grant.scopeId || '*') === row.scopeId
-    )));
+    updateDrafts(getDirectGrantRevokeDraft({
+      grants: drafts,
+      targetUserId: principal.userId,
+      permissionCode: row.permissionCode,
+      scopeType: row.scopeType,
+      scopeId: row.scopeId,
+    }));
+  };
+
+  const handleConvertLegacy = (conversion: LegacyConversionCandidate) => {
+    const result = applyLegacyConversionDraft({
+      targetUserId: principal.userId,
+      grants: drafts,
+      legacyState: legacyDraft,
+      conversion,
+    });
+    setDrafts(result.grants);
+    updateLegacyDraft(result.legacyState);
   };
 
   const updateExpiry = (grant: UserPermissionGrant, value: string) => {
@@ -389,7 +409,7 @@ const DirectUserPermissionWorkspace: React.FC<DirectUserPermissionWorkspaceProps
           <div className="rounded-lg bg-amber-50 px-2 py-2 text-[10px] font-black text-amber-700">Legacy {sourceSummary.legacy}</div>
         </div>
         <div className="space-y-1.5">
-          <div className="text-xs font-bold text-slate-600">Scope dang chinh</div>
+          <div className="text-xs font-bold text-slate-600">Phạm vi đang chỉnh</div>
           <PermissionScopePicker
             value={scope}
             onChange={nextScope => {
@@ -462,7 +482,7 @@ const DirectUserPermissionWorkspace: React.FC<DirectUserPermissionWorkspaceProps
         <section className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <div className="text-xs font-black uppercase tracking-wide text-slate-700">
-              Quyền đang có ({currentPermissionOverview.length})
+              Quyền hiện có ({currentPermissionOverview.length})
             </div>
             <div className="text-[10px] font-bold text-slate-400">
               Direct / Role / Legacy
@@ -528,6 +548,61 @@ const DirectUserPermissionWorkspace: React.FC<DirectUserPermissionWorkspaceProps
             </div>
           )}
         </section>
+
+        {legacyConversionCandidates.length > 0 && (
+          <section className="rounded-xl border border-amber-200 bg-amber-50/70 p-3">
+            <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <div className="text-xs font-black uppercase tracking-wide text-amber-900">
+                  Chuyển đổi Legacy
+                </div>
+                <div className="mt-1 text-[11px] font-semibold text-amber-800">
+                  Tạo Direct Grant tương ứng rồi bỏ nguồn Legacy đã chuyển trong draft.
+                </div>
+              </div>
+              <div className="text-[10px] font-bold text-amber-700">
+                {normalizedScope.scopeType}/{normalizedScope.scopeId}
+              </div>
+            </div>
+            <div className="grid gap-2 lg:grid-cols-2">
+              {legacyConversionCandidates.map(conversion => (
+                <article
+                  key={`${conversion.sourceKind}-${conversion.legacyModuleKey}-${conversion.scopeType}-${conversion.scopeId}`}
+                  className="rounded-lg border border-amber-200 bg-white p-3"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-xs font-black text-slate-800">
+                        {conversion.label}
+                      </div>
+                      <div className="mt-1 text-[11px] font-bold text-slate-500">
+                        {conversion.permissionCodes.length} quyền mới · {conversion.sourceKind === 'allowedModule' ? 'View Legacy' : 'Admin Legacy'}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleConvertLegacy(conversion)}
+                      disabled={panelDisabled}
+                      className="shrink-0 rounded-lg border border-amber-300 bg-amber-100 px-3 py-2 text-[11px] font-black text-amber-900 disabled:opacity-50"
+                    >
+                      Chuyển sang quyền mới
+                    </button>
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {conversion.permissionCodes.map(permissionCode => (
+                      <code
+                        key={permissionCode}
+                        className="rounded bg-amber-100 px-2 py-1 text-[10px] font-bold text-amber-900"
+                      >
+                        {permissionCode}
+                      </code>
+                    ))}
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+        )}
 
         <UnifiedPermissionMatrix
           targetUserId={principal.userId}
