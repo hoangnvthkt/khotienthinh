@@ -1,5 +1,7 @@
 # Vioo Application Permission Workbench Implementation Plan
 
+> **Superseded on 2026-07-20:** Tasks that build editable Legacy controls or Legacy conversion drafts must not be executed. The approved pilot hard-cutover program is `2026-07-20-vioo-pilot-hard-cutover-program.md`. Registry and backend-enforcement findings in this document remain useful inventory only.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build a single admin workbench where an administrator grants, revokes, previews, and explains application/module/action/scope permissions without needing to understand Direct Grant, Business Role, Legacy, or App Access internals.
