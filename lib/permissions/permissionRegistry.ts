@@ -3,9 +3,11 @@ import {
   PermissionActionDefinition,
   PermissionApplicationDefinition,
   PermissionModuleDefinition,
+  resolvePermissionActionGroup,
 } from './permissionTypes';
 import { ERP_PERMISSION_APPLICATIONS } from './erpPermissionRegistry';
 import { PROJECT_PERMISSION_MODULES } from './projectPermissionRegistry';
+import { resolvePermissionRiskMetadata } from './permissionRisk';
 
 const moduleLabels: Record<string, string> = {
   WMS: 'Kho vật tư',
@@ -60,28 +62,33 @@ const routesByLegacyModule = Object.entries(ROUTE_TO_MODULE).reduce<Record<strin
 
 const baseActions = (legacyModuleKey: string): readonly PermissionActionDefinition[] => {
   const code = toSnakeCode(legacyModuleKey);
+  const moduleCode = `system.${code}`;
   return [
     {
       action: 'view',
       label: 'Xem',
-      permissionCode: `system.${code}.view`,
+      permissionCode: `${moduleCode}.view`,
+      ...resolvePermissionRiskMetadata(moduleCode, 'view'),
       legacyModuleKey,
+      permissionGroup: resolvePermissionActionGroup('view'),
       scopeTypes: ['global'],
       sortOrder: 10,
     },
     {
       action: 'manage',
       label: 'Quản trị',
-      permissionCode: `system.${code}.manage`,
+      permissionCode: `${moduleCode}.manage`,
+      ...resolvePermissionRiskMetadata(moduleCode, 'manage'),
       legacyModuleKey,
       legacyAdminOnly: true,
+      permissionGroup: resolvePermissionActionGroup('manage'),
       scopeTypes: ['global'],
       sortOrder: 20,
     },
   ];
 };
 
-const systemModules: readonly PermissionModuleDefinition[] = moduleSortOrder
+const routeSystemModules: readonly PermissionModuleDefinition[] = moduleSortOrder
   .filter(moduleKey => Boolean(routesByLegacyModule[moduleKey]))
   .map((moduleKey, index) => ({
     code: `system.${toSnakeCode(moduleKey)}`,
@@ -91,6 +98,45 @@ const systemModules: readonly PermissionModuleDefinition[] = moduleSortOrder
     sortOrder: (index + 1) * 10,
     actions: baseActions(moduleKey),
   }));
+
+const governanceAction = (
+  action: string,
+  label: string,
+  sortOrder: number,
+): PermissionActionDefinition => ({
+  action,
+  label,
+  permissionCode: `system.authorization.${action}`,
+  ...resolvePermissionRiskMetadata('system.authorization', action),
+  legacyModuleKey: 'SETTINGS',
+  legacyRoute: '/settings',
+  legacyAdminOnly: true,
+  permissionGroup: resolvePermissionActionGroup(action),
+  scopeTypes: ['global'],
+  sortOrder,
+});
+
+const authorizationModule: PermissionModuleDefinition = {
+  code: 'system.authorization',
+  label: 'Quản trị phân quyền',
+  description: 'Business Role, direct grant, SoD và audit phân quyền',
+  routes: ['/settings'],
+  legacyModuleKey: 'SETTINGS',
+  sortOrder: 135,
+  actions: [
+    governanceAction('view', 'Xem quản trị phân quyền', 10),
+    governanceAction('manage_roles', 'Quản lý Business Role', 20),
+    governanceAction('manage_grants', 'Quản lý quyền trực tiếp', 30),
+    governanceAction('manage_scopes', 'Quản lý phân công theo scope', 40),
+    governanceAction('audit', 'Xem audit phân quyền', 50),
+    governanceAction('override', 'Ghi nhận override được phép', 60),
+  ],
+};
+
+const systemModules: readonly PermissionModuleDefinition[] = [
+  ...routeSystemModules,
+  authorizationModule,
+];
 
 const deepFreeze = <T>(value: T): T => {
   if (value && typeof value === 'object' && !Object.isFrozen(value)) {

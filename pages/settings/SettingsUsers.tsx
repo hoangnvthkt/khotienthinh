@@ -178,7 +178,6 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
         onSave={handleSaveUser}
         userToEdit={editingUser}
         warehouses={warehouses}
-        users={users}
       />
 
       <UserAccountStatusModal

@@ -1,3 +1,4 @@
+import { createClient } from '@supabase/supabase-js';
 import {
   EdgeAuthorizationError,
   getAdminClient,
@@ -24,6 +25,21 @@ Deno.serve(async (req) => {
     const admin = getAdminClient();
     await requireActiveAdmin(req, admin);
 
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
+    const anonKey = Deno.env.get('SUPABASE_ANON_KEY') || '';
+    const authorization = req.headers.get('Authorization') || '';
+    if (!supabaseUrl || !anonKey || !authorization) {
+      throw new Error('Missing caller-scoped Supabase configuration');
+    }
+    const callerClient = createClient(supabaseUrl, anonKey, {
+      global: { headers: { Authorization: authorization } },
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+      },
+    });
+
     const body = await req.json();
     const email = String(body.email || '').trim().toLowerCase();
     const password = String(body.password || '');
@@ -38,7 +54,6 @@ Deno.serve(async (req) => {
       email_confirm: true,
       user_metadata: {
         name: profile.name,
-        username: profile.username,
         phone: profile.phone,
         avatar: profile.avatar,
       },
@@ -55,8 +70,6 @@ Deno.serve(async (req) => {
     const profileId = linkedProfile?.id || profile.id || data.user.id;
     if (body.profile) {
       const payload = {
-        id: profileId,
-        auth_id: data.user.id,
         name: profile.name || email,
         email,
         username: profile.username || email,
@@ -70,7 +83,13 @@ Deno.serve(async (req) => {
         admin_sub_modules: profile.adminSubModules || null,
       };
 
-      const { error: profileError } = await admin.from('users').upsert(payload).select('id').single();
+      const { error: profileError } = await callerClient
+        .from('users')
+        .update(payload)
+        .eq('id', profileId)
+        .eq('auth_id', data.user.id)
+        .select('id')
+        .single();
       if (profileError) {
         await admin.from('users').delete().eq('id', data.user.id).eq('auth_id', data.user.id);
         await admin.auth.admin.deleteUser(data.user.id);

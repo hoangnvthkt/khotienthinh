@@ -1,14 +1,32 @@
 import { describe, expect, it } from 'vitest';
 import { Role, User } from '../../types';
+import type { EffectivePermissionSource } from '../permissions/authorizationGovernanceTypes';
 import { canAccessRoute, getRouteModuleKey, isAuthenticatedOpenRoute } from '../routeAccess';
 
-const user = (allowedModules?: string[]): User => ({
+const user = (allowedModules?: string[], effectivePermissions?: EffectivePermissionSource[]): User => ({
   id: 'user-1',
   name: 'Nguyễn Văn A',
   email: 'a@example.com',
   role: Role.EMPLOYEE,
   allowedModules,
+  effectivePermissions,
 });
+
+const approverSource: EffectivePermissionSource = {
+  permissionCode: 'project.daily_log.approve',
+  sourceType: 'ROLE', sourceId: 'assignment-1',
+  sourceCode: 'PROJECT_APPROVER', sourceLabel: 'Project Approver',
+  scopeType: 'project', scopeId: 'project-1',
+  riskLevel: 'sensitive', isBusinessApproval: true, metadata: {},
+};
+
+const dailyLogViewSource: EffectivePermissionSource = {
+  permissionCode: 'project.daily_log.view',
+  sourceType: 'ROLE', sourceId: 'assignment-view-1',
+  sourceCode: 'PROJECT_APPROVER', sourceLabel: 'Project Approver',
+  scopeType: 'project', scopeId: 'project-1',
+  riskLevel: 'normal', isBusinessApproval: false, metadata: {},
+};
 
 describe('chat route access', () => {
   it('maps the chat route to the CHAT module', () => {
@@ -29,6 +47,18 @@ describe('chat route access', () => {
 
   it('always allows administrators', () => {
     expect(canAccessRoute({ ...user([]), role: Role.ADMIN }, '/chat')).toBe(true);
+  });
+
+  it('blocks a non-view effective action source at the registered route gate', () => {
+    expect(canAccessRoute(user([], [approverSource]), '/da/tabs/dailylog')).toBe(false);
+  });
+
+  it('lets a matching effective view source through the registered route gate', () => {
+    expect(canAccessRoute(user([], [dailyLogViewSource, approverSource]), '/da/tabs/dailylog')).toBe(true);
+  });
+
+  it('does not let authoritative-empty System Admin open an unrelated protected route', () => {
+    expect(canAccessRoute({ ...user([], []), role: Role.ADMIN }, '/chat')).toBe(false);
   });
 });
 

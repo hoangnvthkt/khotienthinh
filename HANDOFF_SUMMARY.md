@@ -2,234 +2,135 @@
 
 ## 1. Mục tiêu ban đầu
 
-Triển khai kiến trúc phân quyền mới cho VIOO theo mô hình:
-
-`Principal - Permission - Scope - Assignment - Workflow - Notification`
-
-Daily Log là pilot đầu tiên. Mục tiêu chính:
-
-- Permission không còn là bộ quyền cố định toàn hệ thống.
-- Quyền phụ thuộc vào scope, assignment, workflow state và thời gian hiệu lực.
-- Notification đi theo trách nhiệm workflow, không broadcast cho tất cả người có permission.
-- Internal/deep link không tự cấp quyền.
-- Daily Log khi gửi duyệt CHT phải tự resolve người chịu trách nhiệm, không bắt người gửi tự chọn trong danh sách nhiều người có quyền verify.
+Đóng Closure Task 3 của **Phase 02 - Business Role and Minimal SoD** theo
+manifest sensitive Direct Grant đã duyệt, không tạo partial Save cho 12
+principals còn bị readiness chặn. Nhánh hiện tại là Task 3 Readiness Tranche B:
+retire hai quyền Material Request và khôi phục provenance bị lệnh B1 ghi đè.
 
 ## 2. Việc đã hoàn thành
 
-- Tạo tài liệu kiến trúc riêng cho mô hình quyền mới.
-- Bổ sung policy về internal deep link, notification action link và public capability link.
-- Implement Daily Log pilot trên branch hiện tại `refactor/module-du-an-v1`, không tạo worktree mới.
-- Tạo migration `20260716040851_daily_log_responsibility_assignment_pilot.sql`.
-- Apply migration lên Supabase Cloud bằng `supabase db query --linked --workdir .`, không dùng `db push`.
-- Chạy dry-run `BEGIN ... ROLLBACK` với `lock_timeout = '5s'` trước khi apply thật.
-- Repair migration history Cloud cho version `20260716040851` là `applied`.
-- Tạo bảng/logic:
-  - `public.app_responsibility_slots`
-  - `public.app_responsibility_slot_events`
-  - `public.app_assignments`
-  - `public.app_assignment_events`
-  - `public.can_view_subject(...)`
-  - `public.can_act_on_subject(...)`
-  - `public.get_daily_log_responsibility_target(...)`
-  - `public.get_daily_log_assignment_context(...)`
-  - `public.upsert_daily_log_responsibility_slot(...)`
-- Override `public.transition_daily_log_status(text,text,text,text,text)` để Daily Log submit/verify/return đi qua assignment-aware backend check.
-- Revoke `anon` khỏi Daily Log authorization/action RPC mới.
-- Cấu hình Cloud responsibility slots cho Daily Log:
-  - `current_verifier` theo CHT công trường.
-  - `current_approver` theo cấp quản lý/Ban giám đốc.
-- Verify Cloud:
-  - 4 slot active.
-  - Resolver trả đúng người.
-  - `can_receive = true`.
-  - Không có duplicate active slot.
-  - Có đủ audit events.
-- Frontend Daily Log đã chuyển hướng submit sang backend resolver thay vì chọn verifier thủ công.
-- Thêm test static/contract cho migration, service authorization và UI contract.
-- Chạy `npm test`, `npm run lint`, `npm run build` thành công trong phiên implement trước.
+- B0 xác nhận hai quyền Material Request cần retire và phát hiện 8 active key.
+- B1 đã dùng UI governed để thu hồi đủ 8 key; Cloud hiện có 0 active retired
+  key, 95 active sensitive grants và 2274 active Direct Grants.
+- UI removal-only đã được đưa vào root qua commit `dd6544f`.
+- Read-only evidence phát hiện B1 đã ghi đè provenance của 363 active grants;
+  69 là sensitive. Cả 363 đều phục hồi được từ audit snapshot ngay trước B1.
+- Spec Remediation C đã được viết và commit ở worktree Tranche B:
+  `9180141 docs(authz): define provenance remediation`.
 
 ## 3. File đã thay đổi
 
-- `docs/security/principal-permission-scope-assignment-workflow-notification-architecture.md`
-- `supabase/migrations/20260716040851_daily_log_responsibility_assignment_pilot.sql`
-- `lib/subjectAuthorizationService.ts`
-- `lib/__tests__/subjectAuthorizationService.test.ts`
-- `lib/__tests__/dailyLogResponsibilityAssignmentMigration.test.ts`
-- `lib/__tests__/dailyLogAssignmentUiContract.test.ts`
-- `lib/__tests__/routeAccess.test.ts`
-- `pages/project/DailyLogTab.tsx`
+Root branch `refactor/module-du-an-v1`:
 
-File cần đọc tiếp trước khi làm:
+- `components/permissions/PrincipalDirectGrantPanel.tsx` - surface chỉ thu hồi
+  hai quyền retired.
+- `lib/__tests__/authorizationAdminUiContract.test.ts` - UI contract cho
+  removal-only surface.
+- `HANDOFF_SUMMARY.md` - handoff này.
 
-- `docs/security/principal-permission-scope-assignment-workflow-notification-architecture.md`
-- `supabase/migrations/20260716040851_daily_log_responsibility_assignment_pilot.sql`
-- `pages/project/DailyLogTab.tsx`
-- `lib/subjectAuthorizationService.ts`
-- `lib/projectStaffService.ts`
-- `pages/project/ProjectOrgTab.tsx`
-- `components/permissions/PermissionMatrix.tsx`
-- `lib/permissions/permissionAdminService.ts`
-- `lib/permissions/permissionRegistry.ts`
-- `lib/permissions/permissionService.ts`
-- `lib/notificationService.ts`
-- `lib/notificationAlertRules.ts`
-- `context/AuthContext.tsx`
+Worktree `/Users/admin/khotienthinh/.worktrees/material-request-readiness-tranche-b`
+(chưa nhập lại root):
+
+- `docs/superpowers/specs/2026-07-19-material-request-provenance-remediation-design.md`.
+- Các commit B0/B1 liên quan gồm gate/test/spec/plan và UI commit `2fccab0`;
+  UI tương đương đã có trên root bằng `dd6544f`.
 
 ## 4. Quyết định kỹ thuật quan trọng
 
-- Backend là authority cuối cùng. Frontend chỉ hỗ trợ UX, không được tự quyết quyền workflow.
-- Internal ERP link không cấp quyền. Copy link không tạo view/action permission.
-- Permission chỉ nói user có thể được phép làm gì; assignment mới nói hồ sơ cụ thể đang giao cho ai.
-- Daily Log submit không cho frontend truyền người duyệt thật. Tham số legacy `p_requested_verifier_*` được giữ để tương thích nhưng bị backend bỏ qua.
-- Daily Log resolver ưu tiên responsibility slot:
-  - `construction_site`
-  - `project`
-  - `global`
-- `current_verifier` yêu cầu permission `project.daily_log.verify`.
-- `current_approver` yêu cầu permission `project.daily_log.approve`.
-- User có cùng permission nhưng không có active assignment không được xử lý hồ sơ.
-- User có assignment nhưng mất grant/sai scope/hết hạn vẫn bị deny.
-- Notification/inbox hướng đích phải đi theo assignment/relationship, không theo permission pool.
-- `app_responsibility_slots` là cấu hình người chịu trách nhiệm mặc định theo scope.
-- `app_assignments` là trách nhiệm runtime trên subject cụ thể.
-- Không mở `anon` để chữa regression.
-- Không dùng `supabase db push` vì remote migration history đã từng drift.
+- Architecture source: `docs/superpowers/specs/2026-07-16-vioo-authorization-governance-migration-design.md`.
+- Master roadmap: `docs/superpowers/plans/2026-07-17-vioo-business-role-minimal-sod.md`.
+- Remediation C dùng **forward migration**, không sửa migration đã apply.
+- Future full-draft replace phải giữ `granted_by`, `granted_at`, `grant_reason`
+  cho grant vẫn active; grant mới/reactivate mới nhận metadata của command mới.
+- Repair chỉ qua RPC governed, server tự suy ra provenance từ audit, browser
+  không gửi provenance/grant tuple; repair chỉ cập nhật ba field provenance.
+- Cloud sequence: C0 read-only recovery evidence -> C1 apply forward migration
+  -> C2 ba repair Save qua UI -> C3 rollback-only reconstruction gate.
+- Proposed C2 reason, chưa được chốt để apply Cloud:
+  `Task 13 Step 5: khôi phục provenance sau thu hồi Material Request`.
 
 ## 5. Lỗi / vấn đề còn tồn tại
 
-- Daily Log pilot chưa được xác nhận end-to-end trên Vercel/Production UI sau khi apply DB Cloud.
-- Notification/Inbox chưa hoàn toàn assignment-first ở backend; hiện mới đi được phần Daily Log/resolved target.
-- Các module khác như Material Request, Payment/Quantity, Quality, WMS, HRM, Asset, Contract chưa onboard vào mô hình mới.
-- Legacy permission vẫn tồn tại:
-  - `allowedModules`
-  - `adminModules`
-  - `allowedSubModules`
-  - `adminSubModules`
-  - `project_staff_permissions`
-- UI phân quyền mới vẫn hiển thị một số quyền `LEGACY`; cần cleanup/transition rõ hơn.
-- Người dùng hỏi cách bỏ quyền legacy: hiện có thể set inactive ở DB hoặc qua UI nếu màn hình hỗ trợ, nhưng cần hoàn thiện UX bỏ tích legacy/derived grants.
-- Label UI "Tự động theo responsibility slot khi gửi" đúng về kỹ thuật nhưng hơi khó hiểu với người dùng cuối; nên đổi thành tên người nhận đã resolve nếu có thể.
-- Chưa theo dõi đủ 24 giờ production logs sau rollout để khẳng định sạch lỗi.
-- Chưa triển khai hardening toàn bộ auth/session telemetry trong scope cũ của plan remediation.
+- B1 đã làm drift provenance: 363 active grants mang B1 retirement reason;
+  manifest B0 hiện không tái dựng đúng baseline cho tới khi Remediation C xong.
+- Remediation C mới có spec, chưa có implementation plan, migration, RPC, UI
+  repair, test mới hoặc Cloud mutation.
+- Worktree mới tạo từ root
+  `material-request-provenance-remediation` có 2 baseline test fail vì root
+  thiếu các commit readiness lịch sử: `permissionReadiness.test.ts` và
+  `phase02Task3PermissionReadinessMigration.test.ts`. Dùng worktree Tranche B
+  làm nền cho Remediation C, không coi hai fail này là lý do để nới test/gate.
+- 12 principals / 318 manifest rows vẫn blocked bởi 21 declared permission
+  codes; không được Save từng phần.
 
 ## 6. Rủi ro cần chú ý
 
-- Nếu chưa cấu hình responsibility slot cho scope mới, Daily Log submit sẽ fail-closed.
-- Nếu gán slot cho user có permission rộng/global nhưng không đúng trách nhiệm thực tế, notification/task sẽ route sai người.
-- Nếu frontend vẫn hiển thị manual verifier picker ở flow nào đó, có thể làm người dùng hiểu sai là được chọn người duyệt tùy ý.
-- Nếu legacy permission còn được dùng song song, user có thể thấy quyền trong UI nhưng backend mới vẫn deny vì thiếu assignment.
-- Nếu notification vẫn dùng `project_permission` pool, sẽ quay lại lỗi gửi cho nhiều người có cùng quyền.
-- Nếu reapply migration hoặc repair nhầm history cũ, có thể làm lệch migration state Cloud.
-- Nếu mở grant cho `anon` để chữa lỗi nhanh, sẽ phá invariant bảo mật.
-- Nếu dùng link/route guard frontend thay backend authorization, shared-link bypass vẫn có thể tái xuất hiện.
+- Mọi Cloud evidence chỉ aggregate-only: không in identity, email, UUID, raw
+  grant, audit payload, token, database URL hoặc private manifest.
+- C0 phải vẫn chứng minh: B1 audit 3, repair audit 0, affected 363, sensitive
+  affected 69, recoverable 363, retired active 0, Direct Grants 2274,
+  non-sensitive fingerprint không đổi, durable operator 1, flags enabled 0.
+- C2 chỉ được chạy sau khi user chốt exact reason; dừng ngay khi hard deny,
+  warning hoặc invariant drift.
+- UI port 3000 từng được user đăng nhập; chỉ dùng authenticated governed UI cho
+  repair, không direct-SQL mutate grant.
 
 ## 7. Việc cần làm tiếp theo
 
-1. Test end-to-end Daily Log trên môi trường đang dùng Cloud:
-   - Login user lập nhật ký.
-   - Tạo/tổng hợp Daily Log.
-   - Bấm `Gửi CHT`.
-   - Verify assignment tạo đúng CHT theo công trường.
-   - Login CHT xử lý được.
-   - Login user khác có `project.daily_log.verify` nhưng không assigned bị deny.
-2. Cải thiện UI Daily Log:
-   - Thay text "Tự động theo responsibility slot khi gửi" bằng tên người nhận resolve được.
-   - Nếu chưa có slot, hiển thị cảnh báo cấu hình thiếu trước khi bấm gửi.
-3. Hoàn thiện Notification/Inbox Daily Log:
-   - Submitted -> active `current_verifier`.
-   - Returned -> creator/revision owner.
-   - Approved -> creator/watcher.
-   - Không gửi theo tất cả user có permission.
-4. Hoàn thiện UI quản trị quyền:
-   - Bỏ tích quyền mới qua `user_permission_grants`.
-   - Legacy/derived grant phải hiển thị rõ nguồn.
-   - Không để người dùng tưởng bỏ một ô legacy là đã bỏ hết quyền nếu quyền đó được sinh từ grant mới.
-5. Viết migration/logic nếu cần để cleanup dần legacy permission.
-6. Sau Daily Log ổn định, rollout module kế tiếp:
-   - Material Request.
-   - Payment/Quantity.
-   - Quality.
-7. Theo dõi Supabase Cloud logs tối thiểu 24 giờ sau deploy frontend.
+1. Đọc spec Remediation C và xin user duyệt **written spec**.
+2. Dùng `writing-plans` để tạo plan C chi tiết, rồi xin xác nhận execution.
+3. TDD: viết test đỏ cho forward replace provenance, repair RPC/security,
+   frontend fresh-preview, manifest source filter và rollback-only postcheck.
+4. Tạo migration bằng `supabase migration new`, thực hiện code tối thiểu,
+   chạy focused tests, `npm test`, `npx tsc --noEmit`, `git diff --check`.
+5. Xin duyệt Cloud Gate C0; chỉ sau PASS mới xin C1 để apply migration.
+6. Sau C1 PASS, xin user chốt exact C2 reason và duyệt C2; chạy ba UI Save
+   bounded, mỗi Save có fresh Preview và retry no-op proof.
+7. Chạy C3 rollback-only; chỉ PASS mới quay lại Task 3 readiness chính.
 
 ## 8. Lệnh đã chạy và kết quả
 
-- `npm test`
-  - Kết quả trong phiên implement trước: passed, 149 test files, 893 tests.
-- `npm run lint`
-  - Kết quả: passed.
-- `npm run build`
-  - Kết quả: passed, chỉ có warning chunk size của Vite.
-- `psql --version`
-  - Kết quả: không có `psql` trên máy.
-- Direct connection `db.<project>.supabase.co`
-  - Kết quả: lỗi IPv6 `no route to host`.
-- `npx supabase db query ... --linked --workdir .`
-  - Kết quả: kết nối Cloud thành công, Postgres 17.6.
-- Dry-run migration:
-  - `BEGIN; set local lock_timeout = '5s'; ... ROLLBACK;`
-  - Kết quả: `dry_run_rolled_back`.
-- Apply migration Cloud:
-  - Chạy migration `20260716040851_daily_log_responsibility_assignment_pilot.sql` trong transaction riêng.
-  - Kết quả: `migration_applied`.
-- `npx supabase migration repair 20260716040851 --status applied --linked --workdir . --yes`
-  - Kết quả: repaired history `[20260716040851] => applied`.
-- Verify Cloud sau migration:
-  - `migration_history_marked_applied = true`
-  - `assignments_exists = true`
-  - `can_act_wrapper_exists = true`
-  - `transition_exists = true`
-  - `assignment_rows = 5`
-  - `anon` không có execute trên action RPC.
-  - `authenticated` có execute trên public wrapper cần thiết.
-- Configure Daily Log slots Cloud:
-  - Tạo 2 `current_verifier` slots.
-  - Tạo 2 `current_approver` slots.
-  - Kết quả verify:
-    - 4 slots active.
-    - duplicate active slots = 0.
-    - audit events = 4.
-    - resolver `can_receive = true` cho cả 4 người.
+- `npm test` trong worktree remediation mới từ root: 599 pass / 2 fail baseline
+  như mục 5; `npx tsc --noEmit` chưa chạy vì command chain dừng tại test fail.
+- Trước đó B1 UI branch: focused UI test, full test suite, TypeScript và
+  `git diff --check` đã pass trước commit `2fccab0`.
+- `git -C .../material-request-readiness-tranche-b status --short`: sạch sau
+  commit spec `9180141`.
+- Read-only Cloud B1 final/postcheck: retired active 0, sensitive 95, Direct
+  Grants 2274, B1 audit 3, retry no-op, non-sensitive fingerprint không đổi,
+  durable operator 1, flags enabled 0.
+- Read-only recovery query: 363/363 affected active grants recoverable; không
+  có Cloud mutation trong các query evidence.
 
 ## 9. Các phần KHÔNG được tự ý thay đổi
 
-- Không tạo worktree mới nếu user đã nói làm trên branch hiện tại.
-- Không dùng `supabase db push`.
-- Không mass-repair migration history cũ.
-- Không reapply migration `20260716040851` nếu Cloud history đã marked applied.
-- Không mở quyền `anon` cho Daily Log/workflow/assignment RPC.
-- Không khôi phục manual verifier picker làm nguồn quyết định backend.
-- Không để notification đi theo permission pool thay cho assignment.
-- Không dùng frontend fallback để che lỗi schema/RPC.
-- Không xóa legacy permission fields trong một migration lớn.
-- Không rollout toàn ERP trong một lần.
-- Không sửa/revert các thay đổi không thuộc task khi chưa hiểu nguồn gốc.
-- Không coi `app_responsibility_slots` là quyền; nó chỉ là cấu hình trách nhiệm mặc định.
-- Không coi permission là assignment; action workflow cần cả permission + scope + assignment + workflow state.
+- Không sửa, stage, revert roadmap dirty:
+  `docs/superpowers/plans/2026-07-17-vioo-business-role-minimal-sod.md`.
+- Không sửa applied migrations, đặc biệt
+  `supabase/migrations/20260718092455_unified_permission_change_command.sql`
+  và `supabase/migrations/20260718123119_authorization_audit_readiness.sql`.
+- Không `supabase db push`, không local Supabase/Docker, không `--local`, không
+  direct SQL mutate grants, không service-role bypass, không bật rollout flags.
+- Không restore hai quyền retired, không sửa catalog/readiness/resolver/Phase 03
+  trong Remediation C, không rewrite audit B1.
+- Không Save 12 principals, không tách 318 rows thành partial principal draft,
+  không in dữ liệu nhận diện hay manifest private.
+- Không bỏ qua hard deny/warning, không đổi fingerprint/gate để ép PASS.
 
 ## 10. Prompt đề xuất để bắt đầu phiên Codex mới
 
 ```text
+Đọc đầy đủ HANDOFF_SUMMARY.md trước, sau đó đọc các file bắt buộc trong mục 3
+và architecture source/master roadmap được nêu ở mục 4. Làm việc bằng tiếng
+Việt, xưng anh/em. Xác nhận Git và Supabase Cloud bằng aggregate-only read-only
+evidence, không in identity/raw grants/tokens/URLs và không Cloud mutation.
 
-
-Mục tiêu tiếp theo:
-2. Không tạo worktree mới.
-3. Không chạy supabase db push.
-4. Kiểm tra Daily Log pilot end-to-end:
-   - Gửi CHT tự resolve từ responsibility slot.
-   - CHT được assigned xử lý được.
-   - User khác có project.daily_log.verify nhưng không assigned bị deny.
-5. Cải thiện UI Daily Log để hiển thị tên người nhận thay cho "Tự động theo responsibility slot khi gửi".
-6. Hoàn thiện Notification/Inbox Daily Log theo assignment-first.
-7. Kiểm tra UI phân quyền mới/legacy:
-   - user_permission_grants là nguồn quyền mới.
-   - legacy permissions cần hiển thị rõ là LEGACY/derived.
-   - bỏ tích quyền phải gọi RPC/flow an toàn, không sửa tay DB từ frontend.
-8. Chạy test/lint/build trước khi báo hoàn thành.
-
-Nhắc lại các điều cấm:
-- Không dùng db push.
-- Không mở anon.
-- Không reapply migration 20260716040851 nếu không có lý do rõ.
-- Không quay lại chọn người duyệt thủ công ở backend.
-- Không gửi notification theo tất cả người có cùng permission.
+Tiếp tục đúng Closure Task 3, Phase 02, tại Remediation C. Chỉ dùng worktree
+/Users/admin/khotienthinh/.worktrees/material-request-readiness-tranche-b làm
+nền vì nó chứa đầy đủ B0/B1 và spec commit 9180141. Trước code hãy chờ/ghi nhận
+user duyệt written spec, dùng writing-plans tạo plan C, rồi TDD. Tuyệt đối không
+sửa roadmap dirty, applied migrations, hoặc Save 12 principals; không direct
+SQL mutate grant, không supabase db push/local Docker. Dừng fail-closed ở mọi
+hard deny, warning hoặc invariant drift. Sau mỗi checkpoint, báo ngắn gọn đã
+làm gì, evidence aggregate và bước kế tiếp.
 ```

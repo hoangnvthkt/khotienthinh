@@ -1,5 +1,6 @@
 import { matchPath } from 'react-router-dom';
 import { Role, User, UserPermissionGrant } from '../../types';
+import type { EffectivePermissionSource } from './authorizationGovernanceTypes';
 import {
   LEGACY_PROJECT_SUPPLY_ROUTE,
   PROJECT_FINANCE_LEGACY_TAB_KEYS,
@@ -11,7 +12,7 @@ import {
   type ProjectMaterialTabKey,
   type ProjectOverviewTabKey,
 } from '../projectTabPermissions';
-import { getPermissionModuleByCode, getPermissionModules } from './permissionRegistry';
+import { getPermissionActionByCode, getPermissionModuleByCode, getPermissionModules } from './permissionRegistry';
 import {
   PROJECT_MATERIAL_TAB_MODULE_CODE_BY_KEY,
   PROJECT_TAB_MODULE_CODE_BY_KEY,
@@ -28,7 +29,7 @@ export type ProjectPermissionScope = {
 
 type ProjectPermissionUser = Pick<
   User,
-  'role' | 'allowedModules' | 'adminModules' | 'allowedSubModules' | 'adminSubModules' | 'permissionGrants'
+  'role' | 'allowedModules' | 'adminModules' | 'allowedSubModules' | 'adminSubModules' | 'permissionGrants' | 'effectivePermissions'
 > | null | undefined;
 
 export type LegacyProjectPermissionCode =
@@ -79,6 +80,40 @@ const projectScopeMatches = (grant: UserPermissionGrant, scope: ProjectPermissio
   );
 };
 
+const isEffectiveSourceActive = (source: EffectivePermissionSource, now = new Date()): boolean => {
+  const startsAt = source.startsAt !== undefined && source.startsAt !== null
+    ? new Date(source.startsAt).getTime()
+    : null;
+  const expiresAt = source.expiresAt !== undefined && source.expiresAt !== null
+    ? new Date(source.expiresAt).getTime()
+    : null;
+  if (startsAt !== null && (!Number.isFinite(startsAt) || startsAt > now.getTime())) return false;
+  if (expiresAt !== null && (!Number.isFinite(expiresAt) || expiresAt <= now.getTime())) return false;
+  return true;
+};
+
+const effectiveProjectSourceMatches = (
+  source: EffectivePermissionSource,
+  permissionCode: string,
+  scope: ProjectPermissionScope,
+): boolean => source.permissionCode === permissionCode &&
+  isEffectiveSourceActive(source) &&
+  projectScopeMatches({
+    userId: '',
+    permissionCode: source.permissionCode,
+    scopeType: source.scopeType,
+    scopeId: source.scopeId,
+    isActive: true,
+  }, scope);
+
+const hasEffectiveProjectPermission = (
+  user: ProjectPermissionUser,
+  permissionCode: string,
+  scope: ProjectPermissionScope,
+): boolean => Boolean(user?.effectivePermissions?.some(source =>
+  effectiveProjectSourceMatches(source, permissionCode, scope)
+));
+
 const hasExplicitProjectGrant = (
   user: ProjectPermissionUser,
   permissionCode: string,
@@ -96,9 +131,15 @@ export const canPerformProjectAction = (
   scopeInput: { projectId?: string; constructionSiteId?: string | null },
 ): boolean => {
   if (!user) return false;
-  if (user.role === Role.ADMIN) return true;
   if (!permissionCode.startsWith('project.')) return false;
-  return hasExplicitProjectGrant(user, permissionCode, getProjectScope(scopeInput.projectId, scopeInput.constructionSiteId));
+  const scope = getProjectScope(scopeInput.projectId, scopeInput.constructionSiteId);
+  if (user.effectivePermissions !== undefined) {
+    return hasEffectiveProjectPermission(user, permissionCode, scope);
+  }
+  if (hasExplicitProjectGrant(user, permissionCode, scope)) return true;
+  if (user.role !== Role.ADMIN) return false;
+  const action = getPermissionActionByCode(permissionCode);
+  return Boolean(action && action.isBusinessApproval !== true);
 };
 
 export const checkProjectAction = canPerformProjectAction;
@@ -177,6 +218,11 @@ export const canViewProjectTab = (
   const moduleCode = PROJECT_TAB_MODULE_CODE_BY_KEY[tabKey];
   const viewPermissionCode = getProjectViewPermissionCode(moduleCode);
   const scope = getProjectScope(scopeInput.projectId, scopeInput.constructionSiteId);
+  if (user?.effectivePermissions !== undefined) {
+    return Boolean(getPermissionModuleByCode(moduleCode)?.actions.some(action =>
+      hasEffectiveProjectPermission(user, action.permissionCode, scope)
+    ));
+  }
   if (viewPermissionCode && hasExplicitProjectGrant(user, viewPermissionCode, scope)) return true;
 
   if (tabKey === 'finance') {
@@ -198,6 +244,11 @@ export const canViewProjectMaterialTab = (
   const moduleCode = PROJECT_MATERIAL_TAB_MODULE_CODE_BY_KEY[tabKey];
   const viewPermissionCode = getProjectViewPermissionCode(moduleCode);
   const scope = getProjectScope(scopeInput.projectId, scopeInput.constructionSiteId);
+  if (user?.effectivePermissions !== undefined) {
+    return Boolean(getPermissionModuleByCode(moduleCode)?.actions.some(action =>
+      hasEffectiveProjectPermission(user, action.permissionCode, scope)
+    ));
+  }
   if (viewPermissionCode && hasExplicitProjectGrant(user, viewPermissionCode, scope)) return true;
   return canOpenLegacyProjectRoute(user, PROJECT_MATERIAL_TAB_ROUTE_BY_KEY[tabKey]) ||
     canOpenLegacyProjectRoute(user, PROJECT_TAB_ROUTE_BY_KEY.material);
@@ -210,6 +261,11 @@ export const canManageProjectTab = (
 ): boolean => {
   const moduleCode = PROJECT_TAB_MODULE_CODE_BY_KEY[tabKey];
   const scope = getProjectScope(scopeInput.projectId, scopeInput.constructionSiteId);
+  if (user?.effectivePermissions !== undefined) {
+    return getProjectManagePermissionCodes(moduleCode).some(code =>
+      hasEffectiveProjectPermission(user, code, scope)
+    );
+  }
   if (getProjectManagePermissionCodes(moduleCode).some(code => hasExplicitProjectGrant(user, code, scope))) return true;
 
   if (tabKey === 'finance') {
@@ -230,6 +286,11 @@ export const canManageProjectMaterialTab = (
 ): boolean => {
   const moduleCode = PROJECT_MATERIAL_TAB_MODULE_CODE_BY_KEY[tabKey];
   const scope = getProjectScope(scopeInput.projectId, scopeInput.constructionSiteId);
+  if (user?.effectivePermissions !== undefined) {
+    return getProjectManagePermissionCodes(moduleCode).some(code =>
+      hasEffectiveProjectPermission(user, code, scope)
+    );
+  }
   if (getProjectManagePermissionCodes(moduleCode).some(code => hasExplicitProjectGrant(user, code, scope))) return true;
   return canManageLegacyProjectRoute(user, PROJECT_MATERIAL_TAB_ROUTE_BY_KEY[tabKey]) ||
     canManageLegacyProjectRoute(user, PROJECT_TAB_ROUTE_BY_KEY.material);

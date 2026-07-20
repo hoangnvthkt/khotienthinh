@@ -1,0 +1,174 @@
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { describe, expect, it } from 'vitest';
+
+const dir = join(process.cwd(), 'supabase', 'migrations');
+const files = readdirSync(dir)
+  .filter(file => file.endsWith('_authorization_business_role_foundation.sql'))
+  .sort();
+const sql = files.length === 1 ? readFileSync(join(dir, files[0]), 'utf8') : '';
+const normalized = sql.replace(/\s+/g, ' ').trim();
+
+const resolverFiles = readdirSync(dir)
+  .filter(file => file.endsWith('_authorization_effective_permission_resolver.sql'))
+  .sort();
+const resolverSql = resolverFiles.length === 1
+  ? readFileSync(join(dir, resolverFiles[0]), 'utf8')
+  : '';
+const resolverNormalized = resolverSql.replace(/\s+/g, ' ').trim();
+
+const commandsFiles = readdirSync(dir)
+  .filter(file => file.endsWith('_authorization_governance_commands.sql'))
+  .sort();
+const commandsSql = commandsFiles.length === 1
+  ? readFileSync(join(dir, commandsFiles[0]), 'utf8')
+  : '';
+const commandsNormalized = commandsSql.replace(/\s+/g, ' ').trim();
+
+const principalLegacyStateFiles = readdirSync(dir)
+  .filter(file => file.endsWith('_authorization_principals_legacy_state.sql'))
+  .sort();
+const principalLegacyStateSql = principalLegacyStateFiles.length === 1
+  ? readFileSync(join(dir, principalLegacyStateFiles[0]), 'utf8')
+  : '';
+const principalLegacyStateNormalized = principalLegacyStateSql.replace(/\s+/g, ' ').trim();
+
+const lifecycleIntegrationFiles = readdirSync(dir)
+  .filter(file => file.endsWith('_authorization_account_lifecycle_integration.sql'))
+  .sort();
+const lifecycleIntegrationSql = lifecycleIntegrationFiles.length === 1
+  ? readFileSync(join(dir, lifecycleIntegrationFiles[0]), 'utf8')
+  : '';
+const lifecycleIntegrationNormalized = lifecycleIntegrationSql.replace(/\s+/g, ' ').trim();
+
+describe('authorization Business Role foundation migration', () => {
+  it('has one forward migration with risk metadata', () => {
+    expect(files).toHaveLength(1);
+    expect(normalized).toMatch(/add column if not exists risk_level text/i);
+    expect(normalized).toMatch(/add column if not exists is_business_action boolean/i);
+    expect(normalized).toMatch(/add column if not exists is_business_approval boolean/i);
+    expect(normalized).toMatch(/add column if not exists direct_grant_requires_expiry boolean/i);
+  });
+
+  it('creates temporal scoped role assignments without a polymorphic foreign key', () => {
+    expect(normalized).toMatch(/create table public\.principal_role_assignments/i);
+    expect(normalized).toMatch(/principal_type text not null/i);
+    expect(normalized).toMatch(/principal_id uuid not null/i);
+    expect(normalized).toMatch(/role_template_id uuid not null references public\.role_permission_templates/i);
+    expect(normalized).toMatch(/status text not null default 'ACTIVE'/i);
+    expect(normalized).toMatch(/assigned_reason text not null/i);
+    expect(normalized).toMatch(/revoked_reason text/i);
+    expect(normalized).not.toMatch(/principal_id uuid[^,]*references/i);
+  });
+
+  it('uses RLS, least privilege and no authenticated direct mutation', () => {
+    expect(normalized).toMatch(/alter table public\.principal_role_assignments enable row level security/i);
+    expect(normalized).toMatch(/revoke all privileges on table public\.principal_role_assignments from public, anon, authenticated/i);
+    expect(normalized).toMatch(/grant select on table public\.principal_role_assignments to authenticated/i);
+    expect(normalized).toMatch(/drop policy if exists permission_audit_events_insert/i);
+    expect(normalized).toMatch(/drop policy if exists user_permission_grants_(insert|update|delete)/i);
+    expect(normalized).not.toMatch(/grant (insert|update|delete).*principal_role_assignments.*authenticated/i);
+  });
+
+  it('seeds separated governance roles and permissions', () => {
+    for (const code of ['SYSTEM_ADMIN', 'PERMISSION_ADMIN', 'BUSINESS_SCOPE_ADMIN', 'BUSINESS_USER', 'AUDITOR']) {
+      expect(sql).toContain(`'${code}'`);
+    }
+    for (const code of [
+      'system.authorization.view',
+      'system.authorization.manage_roles',
+      'system.authorization.manage_grants',
+      'system.authorization.manage_scopes',
+      'system.authorization.audit',
+      'system.authorization.override',
+    ]) {
+      expect(sql).toContain(`'${code}'`);
+    }
+  });
+});
+
+describe('authorization effective permission resolver migration', () => {
+  it('adds one private source resolver behind the existing boolean facade', () => {
+    expect(resolverFiles).toHaveLength(1);
+    expect(resolverNormalized).toMatch(/create or replace function app_private\.resolve_effective_permission_sources\(/i);
+    expect(resolverNormalized).toMatch(/source_type text/i);
+    expect(resolverSql).toContain("'ROLE'");
+    expect(resolverSql).toContain("'DIRECT'");
+    expect(resolverSql).toContain("'LEGACY'");
+    expect(resolverNormalized).toMatch(/create or replace function app_private\.has_permission\(/i);
+    expect(resolverNormalized).not.toMatch(/where u\.role = 'ADMIN'\s*\)\s*or exists/i);
+  });
+
+  it('uses explicit rollout flags for resolver, governance separation and business approval', () => {
+    expect(resolverSql).toContain("'business_role_resolver_enabled'");
+    expect(resolverSql).toContain("'legacy_governance_fallback_disabled'");
+    expect(resolverSql).toContain("'system_admin_business_approval_bypass_disabled'");
+    expect(resolverNormalized).toMatch(/user_row\.role = 'ADMIN'.*system\.authorization.*legacy_governance_fallback_disabled/is);
+    expect(resolverNormalized).toMatch(/user_row\.role = 'ADMIN'.*system_admin_business_approval_bypass_disabled/is);
+    expect(resolverNormalized).toMatch(/user_row\.role = 'ADMIN'.*action_row\.is_business_approval/is);
+  });
+
+  it('keeps System Admin identity permission bound to its profile mirror', () => {
+    expect(resolverNormalized).toMatch(/system\.settings\.manage.*role_template\.code = 'SYSTEM_ADMIN'.*user_row\.role = 'ADMIN'/is);
+    expect(resolverNormalized).toMatch(/direct_sources.*grant_row\.permission_code <> 'system\.settings\.manage'/is);
+  });
+
+  it('keeps the public explanation RPC actor-derived and read-only', () => {
+    expect(resolverNormalized).toMatch(/v_actor_user_id uuid := public\.current_app_user_id\(\)/i);
+    expect(resolverNormalized).toMatch(/create or replace function app_private\.get_effective_permission_sources_authorized\(/i);
+    expect(resolverNormalized).toMatch(/create or replace function public\.get_effective_permission_sources/i);
+    expect(resolverNormalized).toMatch(/create or replace function public\.get_effective_permission_sources\(.*?security invoker/is);
+    expect(resolverNormalized).toMatch(/revoke all on function app_private\.resolve_effective_permission_sources\(uuid,text,text,text,timestamptz\) from public, anon, authenticated/i);
+    expect(resolverNormalized).not.toMatch(/get_effective_permission_sources\([^)]*p_actor/i);
+  });
+});
+
+describe('authorization governance commands migration', () => {
+  it('exposes actor-derived governed role commands with locked audited mutations', () => {
+    expect(commandsFiles).toHaveLength(1);
+    expect(commandsNormalized).toMatch(/v_actor_user_id uuid := public\.current_app_user_id\(\)/i);
+    expect(commandsNormalized).toMatch(/create or replace function public\.assign_business_role/i);
+    expect(commandsNormalized).toMatch(/create or replace function public\.revoke_business_role_assignment/i);
+    expect(commandsNormalized).toMatch(/create or replace function app_private\.assert_rollout_operator_continuity/i);
+    expect(commandsNormalized).toMatch(/create trigger trg_users_guard_rollout_operator_transition/i);
+    expect(commandsNormalized).toMatch(/create or replace function public\.save_business_role/i);
+    expect(commandsNormalized).toMatch(/create or replace function public\.preview_business_role_change/i);
+    expect(commandsNormalized).toMatch(/create or replace function public\.preview_business_role_assignment/i);
+    expect(commandsNormalized).toMatch(/create or replace function app_private\.list_authorization_principals_impl/i);
+    expect(commandsNormalized).toMatch(/create or replace function app_private\.set_authorization_rollout_flags_impl/i);
+    expect(commandsNormalized).toMatch(/create or replace function public\.list_authorization_principals\(\).*?security invoker/is);
+    expect(commandsNormalized).toMatch(/create or replace function public\.set_authorization_rollout_flags\(.*?security invoker/is);
+    expect(commandsNormalized).toMatch(/for update/i);
+    expect(commandsNormalized).toMatch(/insert into public\.permission_audit_events/i);
+    expect(commandsNormalized).not.toMatch(/create or replace function public\.[^(]+\([^)]*p_actor_user_id/i);
+  });
+
+  it('governs direct grants without delete/reinsert history loss', () => {
+    expect(commandsNormalized).toMatch(/create or replace function public\.replace_user_permission_grants_v2/i);
+    expect(commandsNormalized).toMatch(/create or replace function public\.preview_direct_grant_replacement/i);
+    expect(commandsNormalized).toMatch(/set is_active = false.*revoked_at.*revoked_reason/is);
+    expect(commandsNormalized).not.toMatch(/delete from public\.user_permission_grants/i);
+    expect(commandsNormalized).toMatch(/direct_grant_requires_expiry/i);
+    expect(commandsNormalized).toMatch(/app_private\.assert_and_record_sod_warnings/i);
+  });
+});
+
+describe('authorization principals legacy state migration', () => {
+  it('extends authorization principal listing with legacy module state', () => {
+    expect(principalLegacyStateFiles).toHaveLength(1);
+    expect(principalLegacyStateNormalized).toMatch(/returns table \( user_id uuid, name text, email text, account_status text, allowed_modules text\[\], allowed_sub_modules jsonb, admin_modules text\[\], admin_sub_modules jsonb \)/i);
+    expect(principalLegacyStateNormalized).toMatch(/coalesce\(user_row\.allowed_modules, '\{\}'::text\[\]\)/i);
+    expect(principalLegacyStateNormalized).toMatch(/coalesce\(user_row\.allowed_sub_modules, '\{\}'::jsonb\)/i);
+    expect(principalLegacyStateNormalized).toMatch(/create or replace function public\.list_authorization_principals\(\).*?security invoker/is);
+  });
+});
+
+describe('authorization account lifecycle integration migration', () => {
+  it('revokes Business Roles on disable without restoring them on reactivate', () => {
+    expect(lifecycleIntegrationFiles).toHaveLength(1);
+    expect(lifecycleIntegrationNormalized).toMatch(/create trigger trg_users_revoke_business_roles_on_disable/i);
+    expect(lifecycleIntegrationNormalized).toMatch(/update public\.principal_role_assignments.*status = 'REVOKED'/is);
+    expect(lifecycleIntegrationNormalized).toMatch(/businessRoleAssignments/i);
+    expect(lifecycleIntegrationNormalized).not.toMatch(/update public\.principal_role_assignments.*set status = 'ACTIVE'/is);
+  });
+});

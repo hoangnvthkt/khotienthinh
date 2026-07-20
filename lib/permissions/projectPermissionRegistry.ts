@@ -7,7 +7,12 @@ import {
   PermissionActionDefinition,
   PermissionModuleDefinition,
   PermissionScopeType,
+  resolvePermissionActionGroup,
 } from './permissionTypes';
+import {
+  PermissionRiskMetadata,
+  resolvePermissionRiskMetadata,
+} from './permissionRisk';
 
 const PROJECT_SCOPE_TYPES: readonly PermissionScopeType[] = ['global', 'project', 'construction_site'];
 const PROJECT_WAREHOUSE_SCOPE_TYPES: readonly PermissionScopeType[] = [
@@ -85,13 +90,16 @@ const projectAction = (
   legacyRoute: string,
   sortOrder: number,
   scopeTypes: readonly PermissionScopeType[] = PROJECT_SCOPE_TYPES,
+  riskMetadata?: PermissionRiskMetadata,
 ): PermissionActionDefinition => ({
   action,
   label,
   permissionCode: `${prefix}.${action}`,
+  ...resolvePermissionRiskMetadata(prefix, action, riskMetadata),
   legacyModuleKey: 'DA',
   legacyRoute,
   legacyAdminOnly: false,
+  permissionGroup: resolvePermissionActionGroup(action),
   scopeTypes,
   sortOrder,
 });
@@ -319,10 +327,11 @@ export const PROJECT_PERMISSION_MODULES: readonly PermissionModuleDefinition[] =
     ['export', 'Xuất dữ liệu', 20],
   ])),
   moduleDefinition('project.dashboard', 'Dashboard dự án', [], 220, actionSet('project.dashboard', '/da/portfolio', [
-    ['view_progress', 'Xem tiến độ', 10],
-    ['view_financials', 'Xem tài chính', 20],
-    ['view_risk', 'Xem rủi ro', 30],
-    ['manage', 'Quản trị', 40],
+    ['view', 'Xem', 10],
+    ['view_progress', 'Xem tiến độ', 20],
+    ['view_financials', 'Xem tài chính', 30],
+    ['view_risk', 'Xem rủi ro', 40],
+    ['manage', 'Quản trị', 50],
   ])),
 ];
 

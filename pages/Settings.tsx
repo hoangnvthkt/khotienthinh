@@ -29,6 +29,7 @@ import SettingsAiLearning from './settings/SettingsAiLearning';
 import SettingsReleaseNotes from './settings/SettingsReleaseNotes';
 import SettingsAlerts from './settings/SettingsAlerts';
 import SettingsPermissionHealth from './settings/SettingsPermissionHealth';
+import SettingsAuthorizationGovernance from './settings/SettingsAuthorizationGovernance';
 import { useModuleData } from '../hooks/useModuleData';
 import { useToast } from '../context/ToastContext';
 import { useAsyncAction } from '../hooks/useAsyncAction';
@@ -105,7 +106,7 @@ const Settings: React.FC = () => {
     addUnit, updateUnit, removeUnit,
     addSupplier, updateSupplier, removeSupplier,
     appSettings, updateAppSettings, clearAllData, connectionError,
-    users, addUser, updateUser, disableUserAccount, reactivateUserAccount, user: currentUser, isLoading, realtimeStatus, lastRealtimeEvent,
+    users, addUser, updateUser, reloadManagedUser, disableUserAccount, reactivateUserAccount, user: currentUser, isLoading, realtimeStatus, lastRealtimeEvent,
     hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules, hrmConstructionSites,
     addHrmItem, updateHrmItem, removeHrmItem,
     items, addItem, updateItem, removeItem, transactions, requests, lossNorms, addLossNorm, updateLossNorm, removeLossNorm,
@@ -114,6 +115,7 @@ const Settings: React.FC = () => {
   const isSettingsAdmin = currentUser.role === Role.ADMIN;
   const hasSettingsManagementAccess = hasAnySettingsManagementFeature(currentUser);
   const canViewPermissionHealth = canPerform(currentUser, 'system.settings.manage');
+  const canViewAuthorizationGovernance = canPerform(currentUser, 'system.authorization.view');
   const canOpenSettingsFeature = (featureId: SettingsFeatureId) => canAccessSettingsFeature(currentUser, featureId);
   useModuleData('admin', hasSettingsManagementAccess);
   useModuleData('wms', canOpenSettingsFeature('warehouses') || canOpenSettingsFeature('master-data') || canOpenSettingsFeature('loss-norms') || canOpenSettingsFeature('users'));
@@ -968,11 +970,20 @@ const Settings: React.FC = () => {
     { id: 'users', label: 'Người dùng', icon: Users },
     { id: 'alerts', label: 'Cảnh báo', icon: BellRing, adminOnly: true },
     { id: 'permission-health', label: 'Permission health', icon: ShieldCheck, healthOnly: true },
+    { id: 'authorization', label: 'Phân quyền', icon: ShieldCheck, authorizationOnly: true },
     { id: 'chibi-bot', label: 'Trợ lý ảo', icon: Bot },
     { id: 'ai-learning', label: 'AI Learning', icon: BrainCircuit },
     { id: 'account', label: 'Tài khoản', icon: UserIcon },
     { id: 'maintenance', label: 'Bảo trì', icon: AlertCircle },
-  ].filter(tab => tab.healthOnly ? canViewPermissionHealth : tab.adminOnly ? isSettingsAdmin : canOpenSettingsFeature(tab.id as SettingsFeatureId));
+  ].filter(tab =>
+    ('authorizationOnly' in tab && tab.authorizationOnly)
+      ? canViewAuthorizationGovernance
+      : ('healthOnly' in tab && tab.healthOnly)
+        ? canViewPermissionHealth
+        : ('adminOnly' in tab && tab.adminOnly)
+          ? isSettingsAdmin
+          : canOpenSettingsFeature(tab.id as SettingsFeatureId)
+  );
   const activeSettingsTab = tabs.some(tab => tab.id === activeTab) ? activeTab : 'account';
   const handleSelectTab = (tabId: string) => {
     setActiveTab(tabId);
@@ -996,7 +1007,7 @@ const Settings: React.FC = () => {
     if (!tabs.find(t => t.id === activeTab)) {
       setActiveTab('account');
     }
-  }, [activeTab, currentUser.role]);
+  }, [activeTab, currentUser.role, canViewAuthorizationGovernance]);
 
   useEffect(() => {
     if (location.pathname === '/settings/permission-health') {
@@ -1948,6 +1959,10 @@ const Settings: React.FC = () => {
 
           {activeSettingsTab === 'permission-health' && (
             <SettingsPermissionHealth />
+          )}
+
+          {activeSettingsTab === 'authorization' && (
+            <SettingsAuthorizationGovernance currentUser={currentUser} />
           )}
 
           {activeSettingsTab === 'account' && (

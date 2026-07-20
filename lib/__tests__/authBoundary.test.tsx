@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import type { Session, User as SupabaseUser } from '@supabase/supabase-js';
 import { describe, expect, it, vi } from 'vitest';
 import { Role, type User, type UserPermissionGrant } from '../../types';
+import type { EffectivePermissionSource } from '../permissions/authorizationGovernanceTypes';
 import {
   AuthoritativeAuthEpoch,
   AuthAttemptCoordinator,
@@ -15,7 +16,9 @@ import {
   resolveCandidateSession,
   serializeMockUser,
   selectApplicationShell,
+  shouldReconcileAuthorizationChannel,
   shouldRefreshCurrentProfile,
+  shouldRefreshCurrentAuthorization,
   shouldRevalidateInBackground,
   signOutAndConfirmLocalSessionCleared,
   type AuthProfileGateway,
@@ -85,10 +88,24 @@ const permissionGrant: UserPermissionGrant = {
   isActive: true,
 };
 
+const effectivePermission: EffectivePermissionSource = {
+  permissionCode: 'inventory.items.view',
+  sourceType: 'DIRECT',
+  sourceId: 'grant-1',
+  sourceCode: 'DIRECT',
+  sourceLabel: 'Direct grant',
+  scopeType: 'global',
+  scopeId: '*',
+  riskLevel: 'normal',
+  isBusinessApproval: false,
+  metadata: {},
+};
+
 const makeGateway = (overrides: Partial<AuthProfileGateway> = {}): AuthProfileGateway => ({
   verifySession: vi.fn(async () => ({ id: AUTH_ID })),
   loadActiveProfileByAuthId: vi.fn(async () => profileRow),
   loadPermissionGrants: vi.fn(async () => [permissionGrant]),
+  loadEffectivePermissionSources: vi.fn(async () => [effectivePermission]),
   loadSignatureUrl: vi.fn(async () => 'https://example.com/signature.png'),
   ...overrides,
 });
@@ -122,6 +139,18 @@ describe('fail-closed auth state', () => {
       isActive: true,
       signatureUrl: 'https://example.com/signature.png',
       permissionGrants: [permissionGrant],
+      effectivePermissions: [effectivePermission],
+    });
+  });
+
+  it('fails closed when effective permission sources cannot be loaded', async () => {
+    const sourceError = new Error('source resolver unavailable');
+    const gateway = makeGateway({
+      loadEffectivePermissionSources: vi.fn(async () => { throw sourceError; }),
+    });
+
+    await expect(resolveCandidateSession(makeSession(), gateway)).rejects.toMatchObject({
+      failure: { code: 'profile_load_failed', cause: sourceError },
     });
   });
 
@@ -268,6 +297,36 @@ describe('fail-closed auth state', () => {
       new: { id: PROFILE_ID },
       old: {},
     }, PROFILE_ID)).toBe(false);
+  });
+
+  it('refreshes effective permissions when the current user direct grants change', () => {
+    expect(shouldRefreshCurrentAuthorization({
+      eventType: 'INSERT',
+      new: { user_id: PROFILE_ID },
+      old: {},
+    }, PROFILE_ID)).toBe(true);
+    expect(shouldRefreshCurrentAuthorization({
+      eventType: 'UPDATE',
+      new: { user_id: PROFILE_ID },
+      old: { user_id: PROFILE_ID },
+    }, PROFILE_ID)).toBe(true);
+    expect(shouldRefreshCurrentAuthorization({
+      eventType: 'UPDATE',
+      new: { user_id: '33333333-3333-4333-8333-333333333333' },
+      old: {},
+    }, PROFILE_ID)).toBe(false);
+    expect(shouldRefreshCurrentAuthorization({
+      eventType: 'DELETE',
+      new: {},
+      old: { id: 'grant-1' },
+    }, PROFILE_ID)).toBe(false);
+  });
+
+  it('reconciles the authorization snapshot after initial subscribe and reconnect', () => {
+    expect(shouldReconcileAuthorizationChannel('SUBSCRIBED')).toBe(true);
+    expect(shouldReconcileAuthorizationChannel('CHANNEL_ERROR')).toBe(false);
+    expect(shouldReconcileAuthorizationChannel('TIMED_OUT')).toBe(false);
+    expect(shouldReconcileAuthorizationChannel('CLOSED')).toBe(false);
   });
 
   it('permits mock credentials only when Supabase is unconfigured and only by email', () => {
@@ -462,6 +521,9 @@ describe('authenticated provider architecture', () => {
     const settingsSource = readFileSync(join(process.cwd(), 'pages', 'settings', 'SettingsAccount.tsx'), 'utf8');
 
     expect(authSource).toContain("table: 'users'");
+    expect(authSource).toContain("table: 'user_permission_grants'");
+    expect(authSource).toContain('filter: `user_id=eq.${profileId}`');
+    expect(authSource).toContain('shouldReconcileAuthorizationChannel(status)');
     expect(authSource).toContain('filter: `id=eq.${profileId}`');
     expect(authSource).toContain("event: 'UPDATE'");
     expect(authSource).toContain("event: 'DELETE'");

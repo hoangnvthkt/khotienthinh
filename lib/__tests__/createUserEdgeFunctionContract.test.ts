@@ -9,10 +9,19 @@ const source = readFileSync(
 const normalized = source.replace(/\s+/g, ' ').trim();
 
 describe('create-user Edge Function contract', () => {
+  it('updates the trigger-linked profile through the caller Admin RLS context', () => {
+    expect(normalized).toContain("Deno.env.get('SUPABASE_ANON_KEY')");
+    expect(normalized).toContain("req.headers.get('Authorization')");
+    expect(normalized).toContain('const callerClient = createClient');
+    expect(normalized).toMatch(/callerClient[\s\S]*from\('users'\)[\s\S]*\.update\(/);
+    expect(normalized).toContain(".eq('auth_id', data.user.id)");
+    expect(normalized).not.toMatch(/admin\.from\('users'\)\.upsert/);
+  });
+
   it('uses the app profile linked by the auth trigger instead of assuming auth id is the profile id', () => {
     expect(normalized).toMatch(/from\('users'\)\.select\('id'\)\.eq\('auth_id', data\.user\.id\)\.maybeSingle\(\)/);
     expect(normalized).toMatch(/const profileId = linkedProfile\?\.id \|\| profile\.id \|\| data\.user\.id/);
-    expect(normalized).toMatch(/id: profileId/);
+    expect(normalized).toContain(".eq('id', profileId)");
   });
 
   it('cleans up only the trigger-created profile row when profile upsert fails', () => {

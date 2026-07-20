@@ -3,7 +3,12 @@ import {
   PermissionApplicationDefinition,
   PermissionModuleDefinition,
   PermissionScopeType,
+  resolvePermissionActionGroup,
 } from './permissionTypes';
+import {
+  PermissionRiskMetadata,
+  resolvePermissionRiskMetadata,
+} from './permissionRisk';
 
 const GLOBAL_SCOPE: readonly PermissionScopeType[] = ['global'];
 const WMS_SCOPE: readonly PermissionScopeType[] = ['global', 'warehouse', 'own', 'assigned'];
@@ -12,7 +17,13 @@ const EXPENSE_SCOPE: readonly PermissionScopeType[] = ['global', 'own', 'departm
 const WORKFLOW_SCOPE: readonly PermissionScopeType[] = ['global', 'own', 'assigned'];
 const ASSET_SCOPE: readonly PermissionScopeType[] = ['global', 'warehouse', 'department', 'assigned'];
 
-type ActionTuple = readonly [string, string, number] | readonly [string, string, number, readonly PermissionScopeType[]];
+type ActionTuple = readonly [
+  string,
+  string,
+  number,
+  (readonly PermissionScopeType[])? ,
+  PermissionRiskMetadata?,
+];
 
 const actions = (
   prefix: string,
@@ -21,13 +32,15 @@ const actions = (
   scopeTypes: readonly PermissionScopeType[],
   entries: readonly ActionTuple[],
 ): readonly PermissionActionDefinition[] =>
-  entries.map(([action, label, sortOrder, actionScopes]) => ({
+  entries.map(([action, label, sortOrder, actionScopes, riskMetadata]) => ({
     action,
     label,
     permissionCode: `${prefix}.${action}`,
+    ...resolvePermissionRiskMetadata(prefix, action, riskMetadata),
     legacyModuleKey,
     legacyRoute,
     legacyAdminOnly: !action.startsWith('view') && action !== 'use',
+    permissionGroup: resolvePermissionActionGroup(action),
     scopeTypes: actionScopes || scopeTypes,
     sortOrder,
   }));
@@ -72,7 +85,8 @@ export const ERP_PERMISSION_APPLICATIONS: readonly PermissionApplicationDefiniti
         ['complete', 'Hoàn tất', 40],
       ])),
       module('wms.master_data', 'Danh mục kho', 'WMS', [], 40, actions('wms.master_data', 'WMS', undefined, WMS_SCOPE, [
-        ['manage', 'Quản trị danh mục', 10],
+        ['view', 'Xem', 10],
+        ['manage', 'Quản trị danh mục', 20],
       ])),
     ],
   },
@@ -115,14 +129,16 @@ export const ERP_PERMISSION_APPLICATIONS: readonly PermissionApplicationDefiniti
         ['edit_all', 'Sửa tất cả', 30],
       ])),
       module('expense.expense_record', 'Ghi nhận chi phí', 'EX', ['/expense'], 20, actions('expense.expense_record', 'EX', '/expense', EXPENSE_SCOPE, [
-        ['view_own', 'Xem của mình', 10],
-        ['view_all', 'Xem tất cả', 20],
-        ['create', 'Tạo', 30],
-        ['edit_own', 'Sửa của mình', 40],
-        ['approve', 'Duyệt', 50],
+        ['view', 'Xem', 10],
+        ['view_own', 'Xem của mình', 20],
+        ['view_all', 'Xem tất cả', 30],
+        ['create', 'Tạo', 40],
+        ['edit_own', 'Sửa của mình', 50],
+        ['approve', 'Duyệt', 60],
       ])),
       module('expense.master_data', 'Danh mục chi phí', 'EX', ['/expense'], 30, actions('expense.master_data', 'EX', '/expense', EXPENSE_SCOPE, [
-        ['manage', 'Quản trị danh mục', 10],
+        ['view', 'Xem', 10],
+        ['manage', 'Quản trị danh mục', 20],
       ])),
     ],
   },
@@ -150,10 +166,11 @@ export const ERP_PERMISSION_APPLICATIONS: readonly PermissionApplicationDefiniti
     sortOrder: 70,
     modules: [
       module('request.instance', 'Phiếu yêu cầu', 'RQ', ['/rq/dashboard', '/rq'], 10, actions('request.instance', 'RQ', '/rq', WORKFLOW_SCOPE, [
-        ['view_own', 'Xem của mình', 10],
-        ['create', 'Tạo', 20],
-        ['act_assigned', 'Xử lý được giao', 30],
-        ['view_all', 'Xem tất cả', 40],
+        ['view', 'Xem', 10],
+        ['view_own', 'Xem của mình', 20],
+        ['create', 'Tạo', 30],
+        ['act_assigned', 'Xử lý được giao', 40],
+        ['view_all', 'Xem tất cả', 50],
       ])),
       module('request.category', 'Danh mục yêu cầu', 'RQ', ['/rq/categories'], 20, actions('request.category', 'RQ', '/rq/categories', WORKFLOW_SCOPE, [
         ['view', 'Xem', 10],
@@ -172,21 +189,31 @@ export const ERP_PERMISSION_APPLICATIONS: readonly PermissionApplicationDefiniti
     modules: [
       module('asset.catalog', 'Danh mục tài sản', 'TS', ['/ts/dashboard', '/ts/catalog', '/ts/asset/:id'], 10, actions('asset.catalog', 'TS', '/ts/catalog', ASSET_SCOPE, [
         ['view', 'Xem', 10],
-        ['manage', 'Quản trị', 20],
+        ['create', 'Tạo', 20],
+        ['edit', 'Sửa', 30],
+        ['delete', 'Xóa', 40],
+        ['dispose', 'Xuất hủy', 50],
+        ['import', 'Import Excel', 60],
+        ['transfer_stock', 'Điều chuyển tồn', 70],
+        ['manage', 'Quản trị Legacy', 90],
       ])),
       module('asset.assignment', 'Cấp phát tài sản', 'TS', ['/ts/assignment'], 20, actions('asset.assignment', 'TS', '/ts/assignment', ASSET_SCOPE, [
         ['view', 'Xem', 10],
-        ['create', 'Tạo', 20],
-        ['approve', 'Duyệt', 30],
+        ['assign', 'Cấp phát', 20],
+        ['return', 'Thu hồi', 30],
+        ['transfer', 'Luân chuyển', 40],
       ])),
       module('asset.maintenance', 'Bảo trì tài sản', 'TS', ['/ts/maintenance'], 30, actions('asset.maintenance', 'TS', '/ts/maintenance', ASSET_SCOPE, [
         ['view', 'Xem', 10],
-        ['create', 'Tạo', 20],
-        ['manage', 'Quản trị', 30],
+        ['create', 'Tạo phiếu', 20],
+        ['complete', 'Hoàn tất', 30],
+        ['import', 'Import Excel', 40],
+        ['manage', 'Quản trị Legacy', 90],
       ])),
       module('asset.audit', 'Kiểm kê tài sản', 'TS', ['/ts/audit', '/ts/reports'], 40, actions('asset.audit', 'TS', '/ts/audit', ASSET_SCOPE, [
         ['view', 'Xem', 10],
         ['perform', 'Thực hiện kiểm kê', 20],
+        ['export', 'Xuất Excel', 30],
       ])),
     ],
   },

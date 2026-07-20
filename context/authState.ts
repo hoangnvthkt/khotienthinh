@@ -1,5 +1,6 @@
 import type { Session } from '@supabase/supabase-js';
 import { Role, type User, type UserPermissionGrant } from '../types';
+import type { EffectivePermissionSource } from '../lib/permissions/authorizationGovernanceTypes';
 
 export type AuthStatus =
   | 'initializing'
@@ -41,6 +42,7 @@ export interface AuthProfileGateway {
   verifySession(session: Session): Promise<{ id: string }>;
   loadActiveProfileByAuthId(authId: string): Promise<unknown | null>;
   loadPermissionGrants(userId: string): Promise<UserPermissionGrant[]>;
+  loadEffectivePermissionSources(userId: string): Promise<EffectivePermissionSource[]>;
   loadSignatureUrl(userId: string): Promise<string | undefined>;
 }
 
@@ -192,6 +194,21 @@ export const shouldRefreshCurrentProfile = (
   if (payload.eventType === 'DELETE') return payload.old?.id === profileId;
   return false;
 };
+
+export const shouldRefreshCurrentAuthorization = (
+  payload: {
+    eventType?: string;
+    new?: { id?: unknown; user_id?: unknown };
+    old?: { id?: unknown; user_id?: unknown };
+  },
+  profileId: string,
+): boolean => (
+  (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE')
+  && payload.new?.user_id === profileId
+);
+
+export const shouldReconcileAuthorizationChannel = (status: string): boolean =>
+  status === 'SUBSCRIBED';
 
 export const authenticateMockUser = (
   configured: boolean,
@@ -375,13 +392,15 @@ export const resolveCandidateSession = async (
   }
 
   try {
-    const [permissionGrants, signatureUrl] = await Promise.all([
+    const [permissionGrants, effectivePermissions, signatureUrl] = await Promise.all([
       gateway.loadPermissionGrants(mappedUser.id),
+      gateway.loadEffectivePermissionSources(mappedUser.id),
       gateway.loadSignatureUrl(mappedUser.id),
     ]);
     return {
       ...mappedUser,
       permissionGrants,
+      effectivePermissions,
       signatureUrl,
     };
   } catch (cause) {

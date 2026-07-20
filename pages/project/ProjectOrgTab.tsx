@@ -25,6 +25,8 @@ import {
   type ProjectPermissionTemplateKey,
 } from '../../lib/permissions/projectPermissionTemplates';
 import { PermissionScope } from '../../lib/permissions/permissionTypes';
+import type { EffectivePermissionSource } from '../../lib/permissions/authorizationGovernanceTypes';
+import { getPermissionActionByCode } from '../../lib/permissions/permissionRegistry';
 
 interface Props {
   projectId: string;
@@ -137,6 +139,24 @@ const ProjectOrgTab: React.FC<Props> = ({ projectId, constructionSiteId, canMana
     const legacyCodes = visibleLegacyPermissionTypes.map(permissionType => permissionType.code);
     return [...new Set(legacyCodes.flatMap(code => legacyProjectCodeToPermissionCodes(code as LegacyProjectPermissionCode)))];
   }, [visibleLegacyPermissionTypes]);
+
+  const inheritedProjectEffectiveSources = useMemo<EffectivePermissionSource[]>(() => (
+    inheritedProjectPermissionCodes.map(permissionCode => {
+      const action = getPermissionActionByCode(permissionCode);
+      return {
+        permissionCode,
+        sourceType: 'LEGACY',
+        sourceId: `project-staff-${permissionCode}`,
+        sourceCode: 'PROJECT_STAFF',
+        sourceLabel: 'Legacy project staff',
+        scopeType: projectGrantScope.scopeType || 'project',
+        scopeId: projectGrantScope.scopeId || '*',
+        riskLevel: action?.riskLevel || 'normal',
+        isBusinessApproval: action?.isBusinessApproval || false,
+        metadata: {},
+      };
+    })
+  ), [inheritedProjectPermissionCodes, projectGrantScope]);
 
   const canAssignStaff = canManageTab || capabilities.canAssignStaff;
   const canGrantPermissions = canManageTab || capabilities.canGrantPermissions;
@@ -604,7 +624,7 @@ const ProjectOrgTab: React.FC<Props> = ({ projectId, constructionSiteId, canMana
                   <PermissionMatrix
                     applicationCodes={['project']}
                     grants={fProjectGrants}
-                    inheritedPermissionCodes={inheritedProjectPermissionCodes}
+                    effectiveSources={inheritedProjectEffectiveSources}
                     targetUserId={fUserId || editingStaff?.userId || ''}
                     scope={projectGrantScope}
                     disabled={!canGrantPermissions}
@@ -612,7 +632,7 @@ const ProjectOrgTab: React.FC<Props> = ({ projectId, constructionSiteId, canMana
                   />
                 )}
                 <div className="mt-3">
-                  <PermissionDiffPreview before={initialProjectGrants} after={fProjectGrants} />
+                  <PermissionDiffPreview before={initialProjectGrants} after={fProjectGrants} effectiveSources={inheritedProjectEffectiveSources} />
                 </div>
               </div>
             </div>

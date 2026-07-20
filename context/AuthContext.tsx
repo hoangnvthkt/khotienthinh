@@ -14,6 +14,7 @@ import LoadingSpinner from '../components/LoadingSpinner';
 import { MOCK_USERS } from '../constants';
 import { clearAppOwnedAuthStorage } from '../lib/authStorage';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { mapEffectivePermissionSource } from '../lib/permissions/authorizationGovernanceService';
 import { userActivityService } from '../lib/userActivityService';
 import {
   performLocalTelemetryLogout,
@@ -32,6 +33,8 @@ import {
   parseStoredMockUser,
   resolveCandidateSession,
   serializeMockUser,
+  shouldReconcileAuthorizationChannel,
+  shouldRefreshCurrentAuthorization,
   shouldRefreshCurrentProfile,
   shouldRevalidateInBackground,
   signOutAndConfirmLocalSessionCleared,
@@ -123,6 +126,13 @@ const authGateway: AuthProfileGateway = {
       .eq('is_active', true);
     if (error) throw error;
     return (data || []).map(mapUserPermissionGrantRow);
+  },
+  loadEffectivePermissionSources: async (userId) => {
+    const { data, error } = await supabase.rpc('get_effective_permission_sources', {
+      p_target_user_id: userId,
+    });
+    if (error) throw error;
+    return (data || []).map(mapEffectivePermissionSource);
   },
   loadSignatureUrl: async (userId) => {
     try {
@@ -397,17 +407,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     let scheduledRefresh: ReturnType<typeof setTimeout> | null = null;
-    const scheduleProfileRefresh = (payload: {
-      eventType?: string;
-      new?: { id?: unknown };
-      old?: { id?: unknown };
-    }) => {
-      if (!shouldRefreshCurrentProfile(payload, profileId)) return;
+    const scheduleSnapshotRefresh = () => {
       if (scheduledRefresh) globalThis.clearTimeout(scheduledRefresh);
       scheduledRefresh = globalThis.setTimeout(() => {
         scheduledRefresh = null;
         void refreshProfile().catch(() => undefined);
       }, 0);
+    };
+    const scheduleProfileRefresh = (payload: {
+      eventType?: string;
+      new?: { id?: unknown; user_id?: unknown };
+      old?: { id?: unknown; user_id?: unknown };
+    }) => {
+      if (
+        !shouldRefreshCurrentProfile(payload, profileId)
+        && !shouldRefreshCurrentAuthorization(payload, profileId)
+      ) return;
+      scheduleSnapshotRefresh();
     };
     const channel = supabase
       .channel(`auth-current-profile:${profileId}`)
@@ -424,7 +440,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         schema: 'public',
         table: 'users',
       }, scheduleProfileRefresh)
-      .subscribe();
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'user_permission_grants',
+        filter: `user_id=eq.${profileId}`,
+      }, scheduleProfileRefresh)
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'user_permission_grants',
+        filter: `user_id=eq.${profileId}`,
+      }, scheduleProfileRefresh)
+      .subscribe(status => {
+        if (shouldReconcileAuthorizationChannel(status)) scheduleSnapshotRefresh();
+      });
 
     return () => {
       if (scheduledRefresh) globalThis.clearTimeout(scheduledRefresh);

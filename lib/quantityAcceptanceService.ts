@@ -760,30 +760,17 @@ export const quantityAcceptanceService = {
     }
 
     const now = new Date().toISOString();
-    const updates: any = {
-      status,
-      ...projectSubmissionService.actionMeta(userId, status === 'submitted'),
-    };
-    if (status === 'submitted') {
-      updates.submittedBy = userId;
-      updates.submittedAt = now;
-      Object.assign(updates, projectSubmissionService.targetToUpdate(submissionTarget));
-    }
-    if (status === 'returned') {
-      updates.returnedBy = userId;
-      updates.returnedAt = now;
-      updates.returnReason = reason;
-      Object.assign(updates, projectSubmissionService.returnToOwnerUpdate(acceptance.submittedBy, reason));
-    }
-    if (status === 'approved') {
-      updates.approvedBy = userId;
-      updates.approvedAt = now;
-      Object.assign(updates, projectSubmissionService.targetToUpdate(null));
-    }
-    if (status === 'cancelled') {
-      Object.assign(updates, projectSubmissionService.targetToUpdate(null));
-    }
-    const { error } = await supabase.from(TABLE).update(toDb(updates)).eq('id', id);
+    if (!userId) throw new Error('Không xác định được người dùng chuyển trạng thái nghiệm thu.');
+    const { error } = await supabase.rpc('transition_project_quantity_acceptance_status', {
+      p_acceptance_id: id,
+      p_status: status,
+      p_actor_user_id: userId,
+      p_reason: reason || null,
+      p_target_user_id: submissionTarget?.userId || null,
+      p_target_name: submissionTarget?.name || null,
+      p_target_permission: submissionTarget?.permissionCode || null,
+      p_submission_note: submissionTarget?.note || null,
+    });
     if (error) throw error;
     if (status === 'submitted' && submissionTarget) {
       await projectSubmissionService.notifyTarget({

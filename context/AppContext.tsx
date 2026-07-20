@@ -43,6 +43,11 @@ import {
   projectTransactionToDb,
 } from '../lib/projectTransactionMapping';
 import { canPerform } from '../lib/permissions/permissionService';
+import {
+  canDeleteHrmEmployeeRecord,
+  getHrmEmployeeRecordScope,
+  isOwnEmployeeRecord,
+} from '../lib/permissions/hrmPermissionCapabilities';
 import { executeUserAccountLifecycle } from '../lib/userAccountLifecycleService';
 import { useAuth } from './AuthContext';
 import { mapUserProfileRow as mapUserFromDb, serializeMockUser } from './authState';
@@ -104,6 +109,7 @@ interface AppContextType {
   theme: 'light' | 'dark';
   addUser: (user: User) => Promise<void>;
   updateUser: (user: User) => Promise<void>;
+  reloadManagedUser: (userId: string) => Promise<User>;
   disableUserAccount: (userId: string, reason: string) => Promise<UserAccountOperationResult>;
   reactivateUserAccount: (userId: string, reason: string, newPassword: string) => Promise<UserAccountOperationResult>;
   items: InventoryItem[];
@@ -217,14 +223,15 @@ interface AppContextType {
   assetTransfers: AssetTransfer[];
   addAsset: (asset: Asset) => void;
   addAssetWithInitialStock: (asset: Asset) => Promise<void>;
-  updateAsset: (asset: Asset) => void;
-  removeAsset: (id: string) => void;
+  updateAsset: (asset: Asset) => Promise<void>;
+  removeAsset: (id: string) => Promise<void>;
+  disposeAsset: (asset: Asset, reason?: string) => Promise<void>;
   addAssetCategory: (cat: AssetCategory) => void;
   updateAssetCategory: (cat: AssetCategory) => void;
   removeAssetCategory: (id: string) => void;
-  addAssetAssignment: (a: AssetAssignment) => void;
-  addAssetMaintenance: (m: AssetMaintenance) => void;
-  updateAssetMaintenance: (m: AssetMaintenance) => void;
+  addAssetAssignment: (a: AssetAssignment) => Promise<void>;
+  addAssetMaintenance: (m: AssetMaintenance, operation?: 'create' | 'import') => Promise<void>;
+  updateAssetMaintenance: (m: AssetMaintenance) => Promise<void>;
   addAssetTransfer: (transfer: AssetTransfer, updatedStocks: AssetLocationStock[]) => void;
   transferAssetStock: (args: {
     assetId: string;
@@ -371,6 +378,68 @@ const mapAssetTransferFromDb = (t: any): AssetTransfer => ({
   performedBy: t.performed_by,
   performedByName: t.performed_by_name,
   createdAt: t.created_at,
+});
+
+const assetAssignmentToDbPayload = (a: AssetAssignment) => ({
+  id: a.id,
+  asset_id: a.assetId,
+  type: a.type,
+  user_id: a.userId,
+  user_name: a.userName,
+  from_user_id: a.fromUserId || null,
+  from_user_name: a.fromUserName || null,
+  date: a.date,
+  note: a.note || null,
+  performed_by: a.performedBy,
+  performed_by_name: a.performedByName,
+  dept_name: a.deptName || null,
+  site_name: a.siteName || null,
+  qty: a.qty ?? null,
+});
+
+const mapAssetAssignmentFromDb = (a: any): AssetAssignment => ({
+  ...a,
+  assetId: a.asset_id,
+  userId: a.user_id,
+  userName: a.user_name,
+  fromUserId: a.from_user_id,
+  fromUserName: a.from_user_name,
+  performedBy: a.performed_by,
+  performedByName: a.performed_by_name,
+  deptName: a.dept_name,
+  siteName: a.site_name,
+});
+
+const assetMaintenanceToDbPayload = (m: AssetMaintenance) => ({
+  id: m.id,
+  asset_id: m.assetId,
+  type: m.type,
+  description: m.description,
+  cost: m.cost ?? 0,
+  estimated_cost: m.estimatedCost ?? 0,
+  actual_cost: m.actualCost ?? 0,
+  vendor: m.vendor || null,
+  invoice_number: m.invoiceNumber || null,
+  start_date: m.startDate,
+  end_date: m.endDate || null,
+  status: m.status,
+  performed_by: m.performedBy,
+  performed_by_name: m.performedByName || null,
+  note: m.note || null,
+  attachments: m.attachments || [],
+});
+
+const mapAssetMaintenanceFromDb = (m: any): AssetMaintenance => ({
+  ...m,
+  assetId: m.asset_id,
+  estimatedCost: m.estimated_cost,
+  actualCost: m.actual_cost,
+  invoiceNumber: m.invoice_number,
+  startDate: m.start_date,
+  endDate: m.end_date,
+  performedBy: m.performed_by,
+  performedByName: m.performed_by_name,
+  attachments: Array.isArray(m.attachments) ? m.attachments : [],
 });
 
 const assetToDbPayload = (data: Asset) => ({
@@ -1440,6 +1509,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       .single();
     if (error) throw error;
     return mapUserFromDb(data);
+  };
+
+  const reloadManagedUser = async (id: string): Promise<User> => {
+    const refreshed = await refreshManagedUser(id);
+    setUsers(prev => prev.map(candidate => candidate.id === id ? refreshed : candidate));
+    if (user.id === id) await refreshProfile();
+    return refreshed;
   };
 
   const disableUserAccount = async (id: string, reason: string) => {
@@ -2662,7 +2738,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (oldSup) auditService.log({ tableName: 'suppliers', recordId: id, action: 'DELETE', oldData: oldSup as any, userId: user.id, userName: user.name || user.username });
   };
 
+  const assertHrmEmployeePermission = (
+    permissionCode: 'hrm.employee.create' | 'hrm.employee.edit',
+    employee?: Employee | null,
+    options?: { allowSelfEdit?: boolean },
+  ) => {
+    if (permissionCode === 'hrm.employee.create') {
+      if (canPerform(user, 'hrm.employee.create')) return;
+      throw new Error('Không đủ quyền hrm.employee.create để tạo hồ sơ nhân sự.');
+    }
+
+    if (options?.allowSelfEdit !== false && isOwnEmployeeRecord(user, employee)) return;
+    if (canPerform(user, 'hrm.employee.edit', getHrmEmployeeRecordScope(employee, user.id))) return;
+    throw new Error('Không đủ quyền hrm.employee.edit để sửa hồ sơ nhân sự.');
+  };
+
   const addEmployee = async (e: Employee) => {
+    assertHrmEmployeePermission('hrm.employee.create', e);
     if (isSupabaseConfigured) {
       try {
         const payload = {
@@ -2703,6 +2795,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const updateEmployee = async (e: Employee) => {
     const oldEmp = employees.find(emp => emp.id === e.id);
+    assertHrmEmployeePermission('hrm.employee.edit', oldEmp || e);
+    if (oldEmp && oldEmp.departmentId !== e.departmentId) {
+      assertHrmEmployeePermission('hrm.employee.edit', e);
+    }
     const syncOk = await syncToSupabase('employees', e);
     if (!syncOk) {
       throw new Error('Không thể cập nhật hồ sơ nhân sự trên Supabase.');
@@ -2718,6 +2814,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const removeEmployee = async (id: string) => {
     const e = employees.find(emp => emp.id === id);
+    if (!canDeleteHrmEmployeeRecord(user)) {
+      throw new Error('Chưa hỗ trợ quyền hrm.employee.delete; chỉ HRM admin legacy hiện tại được xóa hồ sơ nhân sự.');
+    }
     setEmployees(prev => prev.filter(emp => emp.id !== id));
     try {
       if (isSupabaseConfigured) {
@@ -3126,23 +3225,66 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     auditService.log({ tableName: 'assets', recordId: asset.id, action: 'INSERT', newData: asset as any, userId: user.id, userName: user.name || user.username });
   };
 
-  const updateAsset = (asset: Asset) => {
+  const updateAsset = async (asset: Asset) => {
     const oldAsset = assets.find(a => a.id === asset.id);
-    setAssets(prev => prev.map(a => a.id === asset.id ? asset : a));
     if (isSupabaseConfigured) {
-      syncToSupabase('assets', asset);
+      const { id, created_at, ...payload } = assetToDbPayload(asset) as any;
+      const { data, error } = await supabase
+        .from('assets')
+        .update(payload)
+        .eq('id', asset.id)
+        .select('id')
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) throw new Error('Supabase không xác nhận đã cập nhật tài sản.');
     }
+    setAssets(prev => prev.map(a => a.id === asset.id ? asset : a));
     auditService.log({ tableName: 'assets', recordId: asset.id, action: 'UPDATE', oldData: oldAsset as any, newData: asset as any, userId: user.id, userName: user.name || user.username });
   };
 
-  const removeAsset = (id: string) => {
+  const removeAsset = async (id: string) => {
     const asset = assets.find(a => a.id === id);
-    setAssets(prev => prev.filter(a => a.id !== id));
     if (isSupabaseConfigured) {
-      supabase.from('assets').delete().eq('id', id).then();
+      const { data, error } = await supabase
+        .from('assets')
+        .delete()
+        .eq('id', id)
+        .select('id')
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) throw new Error('Supabase không xác nhận đã xóa tài sản.');
     }
+    setAssets(prev => prev.filter(a => a.id !== id));
     logActivity('SYSTEM', 'Xóa tài sản', `Xóa tài sản ${asset?.name || id}`, 'WARNING');
     if (asset) auditService.log({ tableName: 'assets', recordId: id, action: 'DELETE', oldData: asset as any, userId: user.id, userName: user.name || user.username });
+  };
+
+  const disposeAsset = async (asset: Asset, reason?: string) => {
+    const disposalDate = new Date().toISOString().split('T')[0];
+    const nextAsset: Asset = {
+      ...asset,
+      status: AssetStatus.DISPOSED,
+      assignedToUserId: undefined,
+      assignedToName: undefined,
+      assignedDate: undefined,
+      disposalDate,
+      disposalNote: reason || asset.disposalNote,
+      note: `${asset.note ? asset.note + '\n' : ''}[XUẤT HUỶ ${new Date().toLocaleDateString('vi-VN')}] ${reason || ''}`.trim(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    if (isSupabaseConfigured) {
+      const { error } = await supabase.rpc('dispose_asset', {
+        p_asset_id: asset.id,
+        p_disposal_date: disposalDate,
+        p_disposal_value: asset.disposalValue || null,
+        p_disposal_note: reason || null,
+      });
+      if (error) throw error;
+    }
+
+    setAssets(prev => prev.map(a => a.id === asset.id ? nextAsset : a));
+    auditService.log({ tableName: 'assets', recordId: asset.id, action: 'UPDATE', oldData: asset as any, newData: nextAsset as any, userId: user.id, userName: user.name || user.username });
   };
 
   const addAssetCategory = (cat: AssetCategory) => {
@@ -3166,34 +3308,49 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const addAssetAssignment = (a: AssetAssignment) => {
-    setAssetAssignments(prev => [a, ...prev]);
+  const addAssetAssignment = async (a: AssetAssignment) => {
+    let savedAssignment = a;
     if (isSupabaseConfigured) {
-      syncToSupabase('asset_assignments', { ...a, asset_id: a.assetId, user_id: a.userId, user_name: a.userName, from_user_id: a.fromUserId, from_user_name: a.fromUserName, performed_by: a.performedBy, performed_by_name: a.performedByName });
+      const { data, error } = await supabase.rpc('record_asset_assignment', {
+        p_assignment: assetAssignmentToDbPayload(a),
+      });
+      if (error) throw error;
+      if (data) savedAssignment = mapAssetAssignmentFromDb(data);
     }
+    setAssetAssignments(prev => [savedAssignment, ...prev]);
     // Update asset status
     const asset = assets.find(ast => ast.id === a.assetId);
     if (asset) {
+      let nextAsset: Asset;
       if (a.type === 'assign') {
-        updateAsset({ ...asset, status: AssetStatus.IN_USE, assignedToUserId: a.userId, assignedToName: a.userName, assignedDate: a.date, updatedAt: new Date().toISOString() });
+        nextAsset = { ...asset, status: AssetStatus.IN_USE, assignedToUserId: a.userId, assignedToName: a.userName, assignedDate: a.date, updatedAt: new Date().toISOString() };
       } else if (a.type === 'transfer') {
-        // Luân chuyển: đổi người sử dụng, giữ nguyên status IN_USE
-        updateAsset({ ...asset, status: AssetStatus.IN_USE, assignedToUserId: a.userId, assignedToName: a.userName, assignedDate: a.date, updatedAt: new Date().toISOString() });
+        nextAsset = { ...asset, status: AssetStatus.IN_USE, assignedToUserId: a.userId, assignedToName: a.userName, assignedDate: a.date, updatedAt: new Date().toISOString() };
       } else {
-        updateAsset({ ...asset, status: AssetStatus.AVAILABLE, assignedToUserId: undefined, assignedToName: undefined, assignedDate: undefined, updatedAt: new Date().toISOString() });
+        nextAsset = { ...asset, status: AssetStatus.AVAILABLE, assignedToUserId: undefined, assignedToName: undefined, assignedDate: undefined, updatedAt: new Date().toISOString() };
       }
+      setAssets(prev => prev.map(item => item.id === asset.id ? nextAsset : item));
     }
     logActivity('SYSTEM', a.type === 'assign' ? 'Cấp phát tài sản' : a.type === 'transfer' ? 'Luân chuyển tài sản' : 'Thu hồi tài sản', `${a.type === 'assign' ? 'Cấp phát' : a.type === 'transfer' ? `Luân chuyển từ ${a.fromUserName} sang` : 'Thu hồi'} tài sản ${a.type !== 'return' ? 'cho' : 'từ'} ${a.userName}`, 'INFO');
   };
 
-  const addAssetMaintenance = (m: AssetMaintenance) => {
-    setAssetMaintenances(prev => [m, ...prev]);
+  const addAssetMaintenance = async (m: AssetMaintenance, operation: 'create' | 'import' = 'create') => {
+    let savedMaintenance = m;
     if (isSupabaseConfigured) {
-      syncToSupabase('asset_maintenances', { ...m, asset_id: m.assetId, start_date: m.startDate, end_date: m.endDate, performed_by: m.performedBy, performed_by_name: m.performedByName, invoice_number: m.invoiceNumber, estimated_cost: m.estimatedCost, actual_cost: m.actualCost, attachments: JSON.stringify(m.attachments || []) });
+      const { data, error } = await supabase.rpc('record_asset_maintenance', {
+        p_maintenance: assetMaintenanceToDbPayload(m),
+        p_operation: operation,
+      });
+      if (error) throw error;
+      if (data) savedMaintenance = mapAssetMaintenanceFromDb(data);
     }
-    if (m.status === 'in_progress') {
+    setAssetMaintenances(prev => [savedMaintenance, ...prev]);
+    if (savedMaintenance.status === 'in_progress') {
       const asset = assets.find(a => a.id === m.assetId);
-      if (asset) updateAsset({ ...asset, status: AssetStatus.MAINTENANCE, updatedAt: new Date().toISOString() });
+      if (asset) {
+        const nextAsset = { ...asset, status: AssetStatus.MAINTENANCE, updatedAt: new Date().toISOString() };
+        setAssets(prev => prev.map(item => item.id === asset.id ? nextAsset : item));
+      }
     }
     logActivity('SYSTEM', 'Bảo trì tài sản', `Ghi nhận bảo trì: ${m.description}`, 'INFO');
   };
@@ -3255,16 +3412,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return transfer;
   };
 
-  const updateAssetMaintenance = (m: AssetMaintenance) => {
-    setAssetMaintenances(prev => prev.map(x => x.id === m.id ? m : x));
+  const updateAssetMaintenance = async (m: AssetMaintenance) => {
+    let savedMaintenance = m;
     if (isSupabaseConfigured) {
-      syncToSupabase('asset_maintenances', { ...m, asset_id: m.assetId, start_date: m.startDate, end_date: m.endDate, performed_by: m.performedBy, estimated_cost: m.estimatedCost, actual_cost: m.actualCost });
+      if (m.status !== 'completed') {
+        throw new Error('Hiện chỉ hỗ trợ cập nhật bảo trì qua thao tác hoàn tất.');
+      }
+      const { data, error } = await supabase.rpc('complete_asset_maintenance', {
+        p_maintenance_id: m.id,
+        p_end_date: m.endDate || null,
+        p_actual_cost: m.actualCost ?? null,
+        p_note: m.note || null,
+      });
+      if (error) throw error;
+      if (data) savedMaintenance = mapAssetMaintenanceFromDb(data);
     }
-    if (m.status === 'completed') {
+    setAssetMaintenances(prev => prev.map(x => x.id === m.id ? savedMaintenance : x));
+    if (savedMaintenance.status === 'completed') {
       const asset = assets.find(a => a.id === m.assetId);
       if (asset && asset.status === AssetStatus.MAINTENANCE) {
         const isAssigned = asset.assignedToUserId;
-        updateAsset({ ...asset, status: isAssigned ? AssetStatus.IN_USE : AssetStatus.AVAILABLE, updatedAt: new Date().toISOString() });
+        const nextAsset = { ...asset, status: isAssigned ? AssetStatus.IN_USE : AssetStatus.AVAILABLE, updatedAt: new Date().toISOString() };
+        setAssets(prev => prev.map(item => item.id === asset.id ? nextAsset : item));
       }
     }
   };
@@ -3368,7 +3537,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   return (
     <AppContext.Provider value={{
-      user, users, appSettings, theme, addUser, updateUser, disableUserAccount, reactivateUserAccount, items, warehouses, warehouseTypes, suppliers, transactions, requests, activities,
+      user, users, appSettings, theme, addUser, updateUser, reloadManagedUser, disableUserAccount, reactivateUserAccount, items, warehouses, warehouseTypes, suppliers, transactions, requests, activities,
       categories, units, employees,
       hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules, hrmConstructionSites, constructionSites: hrmConstructionSites,
       shiftTypes, employeeShifts,
@@ -3386,7 +3555,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       projectFinances, addProjectFinance, updateProjectFinance, removeProjectFinance,
       projectTransactions, addProjectTransaction, addProjectTransactions, updateProjectTransaction, removeProjectTransaction,
       assets, assetCategories, assetAssignments, assetMaintenances, assetLocationStocks, assetTransfers,
-      addAsset, addAssetWithInitialStock, updateAsset, removeAsset, addAssetCategory, updateAssetCategory, removeAssetCategory,
+      addAsset, addAssetWithInitialStock, updateAsset, removeAsset, disposeAsset, addAssetCategory, updateAssetCategory, removeAssetCategory,
       addAssetAssignment, addAssetMaintenance, updateAssetMaintenance, addAssetTransfer, transferAssetStock,
       isModuleAdmin, loadModuleData, moduleLoadState, moduleLoadedAt, moduleLoadErrors, setActiveRealtimeModules, refreshWmsRecords,
       saveSignature, deleteSignature,

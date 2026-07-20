@@ -13,6 +13,8 @@ import {
   PROJECT_MATERIAL_TAB_PERMISSIONS,
   PROJECT_TAB_PERMISSIONS,
 } from '../projectTabPermissions';
+import { classifyPermissionAction } from '../permissions/permissionRisk';
+import { resolvePermissionActionReadiness } from '../permissions/permissionReadiness';
 
 const scanFiles = (dir: string): string[] => {
   const files: string[] = [];
@@ -47,11 +49,57 @@ describe('permissionRegistry', () => {
     expect(actionCodes).toEqual(expect.arrayContaining([
       'system.wms.view',
       'system.settings.manage',
+      'system.authorization.manage_roles',
+      'system.authorization.manage_grants',
+      'system.authorization.manage_scopes',
+      'system.authorization.audit',
+      'system.authorization.override',
       'project.daily_log.view',
       'project.daily_log.approve',
       'project.material_request.view_available_stock',
       'project.quality.manage',
     ]));
+  });
+
+  it('attaches deterministic risk metadata to every registered action', () => {
+    const actionByCode = Object.fromEntries(
+      getAllPermissionActions().map(action => [action.permissionCode, action]),
+    );
+
+    expect(actionByCode['project.daily_log.approve']).toMatchObject({
+      riskLevel: 'sensitive',
+      isBusinessAction: true,
+      isBusinessApproval: true,
+      directGrantRequiresExpiry: true,
+    });
+    expect(actionByCode['system.authorization.manage_grants']).toMatchObject({
+      riskLevel: 'sensitive',
+      isBusinessAction: false,
+      isBusinessApproval: false,
+      directGrantRequiresExpiry: true,
+    });
+
+    for (const module of getPermissionModules()) {
+      for (const action of module.actions) {
+        expect({
+          riskLevel: action.riskLevel,
+          isBusinessAction: action.isBusinessAction,
+          isBusinessApproval: action.isBusinessApproval,
+          directGrantRequiresExpiry: action.directGrantRequiresExpiry,
+        }, action.permissionCode).toEqual(
+          classifyPermissionAction(module.code, action.action),
+        );
+      }
+    }
+  });
+
+  it('classifies every registered action with an explicit readiness value', () => {
+    for (const action of getAllPermissionActions()) {
+      expect(
+        ['legacy', 'declared', 'enforced', 'verified'],
+        action.permissionCode,
+      ).toContain(resolvePermissionActionReadiness(action));
+    }
   });
 
   it('seeds the full Project PBAC v2 module tree', () => {
@@ -208,7 +256,7 @@ describe('permissionRegistry', () => {
     expect(actionByCode['hrm.employee.view'].scopeTypes).toEqual(expect.arrayContaining(['global', 'own', 'department', 'assigned']));
     expect(actionByCode['expense.expense_record.edit_own'].scopeTypes).toEqual(expect.arrayContaining(['global', 'own', 'department']));
     expect(actionByCode['workflow.instance.act_assigned'].scopeTypes).toEqual(expect.arrayContaining(['global', 'own', 'assigned']));
-    expect(actionByCode['asset.assignment.approve'].scopeTypes).toEqual(expect.arrayContaining(['global', 'warehouse', 'department', 'assigned']));
+    expect(actionByCode['asset.assignment.transfer'].scopeTypes).toEqual(expect.arrayContaining(['global', 'warehouse', 'department', 'assigned']));
     expect(actionByCode['contract.supplier.manage'].scopeTypes).toEqual(['global']);
     expect(actionByCode['analytics.export'].scopeTypes).toEqual(['global']);
   });

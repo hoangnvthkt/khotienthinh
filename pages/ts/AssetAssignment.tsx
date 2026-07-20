@@ -9,11 +9,13 @@ import {
 } from 'lucide-react';
 import { Asset, AssetStatus, ASSET_STATUS_LABELS, AssetAssignment as AssetAssignmentType } from '../../types';
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
+import { buildAssetAssignmentActionPolicy, type AssetActionPolicy } from '../../lib/permissions/assetActionUiPolicy';
+import { targetFromAsset } from '../../lib/permissions/assetPermissionScope';
 
 const AssetAssignment: React.FC = () => {
     const {
         assets, assetAssignments, assetCategories, users, user, orgUnits,
-        addAssetAssignment, updateAsset,
+        addAssetAssignment,
     } = useApp();
   useModuleData('ts');
     const toast = useToast();
@@ -71,75 +73,129 @@ const AssetAssignment: React.FC = () => {
         });
     }, [assetAssignments, filterType]);
 
-    const handleAssign = () => {
-        if (!selectedAsset || !assignUserId) return;
-        const targetUser = users.find(u => u.id === assignUserId);
-        if (!targetUser) return;
+    const showPolicyDenied = (policy: AssetActionPolicy) => {
+        toast.error('Không có quyền', policy.reason || 'Bạn chưa được cấp quyền thực hiện thao tác này.');
+    };
 
-        addAssetAssignment({
-            id: `aa-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-            assetId: selectedAsset.id,
-            type: 'assign',
-            userId: assignUserId,
-            userName: targetUser.name,
-            date: new Date().toISOString(),
-            note: assignNote,
-            performedBy: user.id,
-            performedByName: user.name,
-        });
+    const ensureAssignmentPolicy = (
+        operation: Parameters<typeof buildAssetAssignmentActionPolicy>[1],
+        asset: Asset,
+    ) => {
+        const policy = buildAssetAssignmentActionPolicy(user, operation, targetFromAsset(asset));
+        if (!policy.allowed) {
+            showPolicyDenied(policy);
+            return false;
+        }
+        return true;
+    };
 
-        toast.success('Cấp phát thành công', `${selectedAsset.name} đã được giao cho ${targetUser.name}`);
-        setShowAssignModal(false);
-        setSelectedAsset(null);
+    const openAssignModal = (asset: Asset) => {
+        if (!ensureAssignmentPolicy('assign', asset)) return;
+        setSelectedAsset(asset);
+        setShowAssignModal(true);
         setAssignUserId('');
         setAssignNote('');
     };
 
-    const handleReturn = () => {
-        if (!selectedAsset) return;
-
-        addAssetAssignment({
-            id: `aa-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-            assetId: selectedAsset.id,
-            type: 'return',
-            userId: selectedAsset.assignedToUserId || '',
-            userName: selectedAsset.assignedToName || '',
-            date: new Date().toISOString(),
-            note: assignNote,
-            performedBy: user.id,
-            performedByName: user.name,
-        });
-
-        toast.success('Thu hồi thành công', `${selectedAsset.name} đã được thu hồi từ ${selectedAsset.assignedToName}`);
-        setShowReturnModal(false);
-        setSelectedAsset(null);
+    const openReturnModal = (asset: Asset) => {
+        if (!ensureAssignmentPolicy('return', asset)) return;
+        setSelectedAsset(asset);
+        setShowReturnModal(true);
         setAssignNote('');
     };
 
-    const handleTransfer = () => {
+    const openTransferModal = (asset: Asset) => {
+        if (!ensureAssignmentPolicy('transfer', asset)) return;
+        setSelectedAsset(asset);
+        setShowTransferModal(true);
+        setTransferUserId('');
+        setTransferNote('');
+    };
+
+    const handleAssign = async () => {
+        if (!selectedAsset || !assignUserId) return;
+        if (!ensureAssignmentPolicy('assign', selectedAsset)) return;
+        const targetUser = users.find(u => u.id === assignUserId);
+        if (!targetUser) return;
+
+        try {
+            await addAssetAssignment({
+                id: `aa-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+                assetId: selectedAsset.id,
+                type: 'assign',
+                userId: assignUserId,
+                userName: targetUser.name,
+                date: new Date().toISOString(),
+                note: assignNote,
+                performedBy: user.id,
+                performedByName: user.name,
+            });
+
+            toast.success('Cấp phát thành công', `${selectedAsset.name} đã được giao cho ${targetUser.name}`);
+            setShowAssignModal(false);
+            setSelectedAsset(null);
+            setAssignUserId('');
+            setAssignNote('');
+        } catch (err: any) {
+            toast.error('Lỗi cấp phát', err?.message || 'Không thể cấp phát tài sản');
+        }
+    };
+
+    const handleReturn = async () => {
+        if (!selectedAsset) return;
+        if (!ensureAssignmentPolicy('return', selectedAsset)) return;
+
+        try {
+            await addAssetAssignment({
+                id: `aa-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+                assetId: selectedAsset.id,
+                type: 'return',
+                userId: selectedAsset.assignedToUserId || '',
+                userName: selectedAsset.assignedToName || '',
+                date: new Date().toISOString(),
+                note: assignNote,
+                performedBy: user.id,
+                performedByName: user.name,
+            });
+
+            toast.success('Thu hồi thành công', `${selectedAsset.name} đã được thu hồi từ ${selectedAsset.assignedToName}`);
+            setShowReturnModal(false);
+            setSelectedAsset(null);
+            setAssignNote('');
+        } catch (err: any) {
+            toast.error('Lỗi thu hồi', err?.message || 'Không thể thu hồi tài sản');
+        }
+    };
+
+    const handleTransfer = async () => {
         if (!selectedAsset || !transferUserId) return;
+        if (!ensureAssignmentPolicy('transfer', selectedAsset)) return;
         const targetUser = users.find(u => u.id === transferUserId);
         if (!targetUser) return;
 
-        addAssetAssignment({
-            id: `aa-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-            assetId: selectedAsset.id,
-            type: 'transfer',
-            userId: transferUserId,
-            userName: targetUser.name,
-            fromUserId: selectedAsset.assignedToUserId,
-            fromUserName: selectedAsset.assignedToName,
-            date: new Date().toISOString(),
-            note: transferNote,
-            performedBy: user.id,
-            performedByName: user.name,
-        });
+        try {
+            await addAssetAssignment({
+                id: `aa-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+                assetId: selectedAsset.id,
+                type: 'transfer',
+                userId: transferUserId,
+                userName: targetUser.name,
+                fromUserId: selectedAsset.assignedToUserId,
+                fromUserName: selectedAsset.assignedToName,
+                date: new Date().toISOString(),
+                note: transferNote,
+                performedBy: user.id,
+                performedByName: user.name,
+            });
 
-        toast.success('Luân chuyển thành công', `${selectedAsset.name}: ${selectedAsset.assignedToName} → ${targetUser.name}`);
-        setShowTransferModal(false);
-        setSelectedAsset(null);
-        setTransferUserId('');
-        setTransferNote('');
+            toast.success('Luân chuyển thành công', `${selectedAsset.name}: ${selectedAsset.assignedToName} → ${targetUser.name}`);
+            setShowTransferModal(false);
+            setSelectedAsset(null);
+            setTransferUserId('');
+            setTransferNote('');
+        } catch (err: any) {
+            toast.error('Lỗi luân chuyển', err?.message || 'Không thể luân chuyển tài sản');
+        }
     };
 
     const getCategoryName = (catId: string) => assetCategories.find(c => c.id === catId)?.name || '';
@@ -256,10 +312,12 @@ const AssetAssignment: React.FC = () => {
                                                 <div className="text-[10px] text-slate-400">{getCategoryName(asset.categoryId)}</div>
                                             </div>
                                         </div>
-                                        <button onClick={() => { setSelectedAsset(asset); setShowAssignModal(true); setAssignUserId(''); setAssignNote(''); }}
+                                        {buildAssetAssignmentActionPolicy(user, 'assign', targetFromAsset(asset)).allowed && (
+                                        <button onClick={() => openAssignModal(asset)}
                                             className="px-3 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 text-[10px] font-black uppercase hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-colors flex items-center gap-1 shrink-0">
                                             <UserPlus size={12} /> Cấp phát
                                         </button>
+                                        )}
                                     </div>
                                 ))
                             )}
@@ -292,10 +350,12 @@ const AssetAssignment: React.FC = () => {
                                                 </div>
                                             </div>
                                         </div>
-                                        <button onClick={() => { setSelectedAsset(asset); setShowReturnModal(true); setAssignNote(''); }}
+                                        {buildAssetAssignmentActionPolicy(user, 'return', targetFromAsset(asset)).allowed && (
+                                        <button onClick={() => openReturnModal(asset)}
                                             className="px-3 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-950/30 text-amber-600 text-[10px] font-black uppercase hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors flex items-center gap-1 shrink-0">
                                             <UserMinus size={12} /> Thu hồi
                                         </button>
+                                        )}
                                     </div>
                                 ))
                             )}
@@ -362,10 +422,12 @@ const AssetAssignment: React.FC = () => {
                                                 </div>
                                             </div>
                                         </div>
-                                        <button onClick={() => { setSelectedAsset(asset); setShowTransferModal(true); setTransferUserId(''); setTransferNote(''); }}
+                                        {buildAssetAssignmentActionPolicy(user, 'transfer', targetFromAsset(asset)).allowed && (
+                                        <button onClick={() => openTransferModal(asset)}
                                             className="px-4 py-2 rounded-xl bg-violet-50 dark:bg-violet-950/30 text-violet-600 text-[10px] font-black uppercase hover:bg-violet-100 dark:hover:bg-violet-900/40 transition-colors flex items-center gap-1.5 shrink-0 shadow-sm group-hover:shadow-md group-hover:shadow-violet-500/10">
                                             <ArrowLeftRight size={14} /> Luân chuyển
                                         </button>
+                                        )}
                                     </div>
                                 ))
                             )}
