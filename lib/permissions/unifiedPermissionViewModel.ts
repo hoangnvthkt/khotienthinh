@@ -14,7 +14,7 @@ import type {
 } from './authorizationGovernanceTypes';
 import { buildPermissionSourceBadges } from './authorizationGovernanceViewModel';
 import { canAddDirectGrant, canRemoveDirectGrant, resolvePermissionActionReadiness } from './permissionReadiness';
-import { getPermissionApplications, getPermissionModules } from './permissionRegistry';
+import { getPermissionApplications, getPermissionModules, getPermissionModulesByLegacyKey } from './permissionRegistry';
 import type {
   LegacyPermissionState,
   PermissionActionReadiness,
@@ -284,6 +284,17 @@ const normalizeLegacyState = (state: LegacyPermissionState): LegacyPermissionSta
     Object.entries(state.adminSubModules)
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([key, routes]) => [key, sortedUnique(routes)]),
+  ),
+});
+
+const cloneLegacyState = (state: LegacyPermissionState): LegacyPermissionState => normalizeLegacyState({
+  allowedModules: [...state.allowedModules],
+  allowedSubModules: Object.fromEntries(
+    Object.entries(state.allowedSubModules).map(([key, routes]) => [key, [...routes]]),
+  ),
+  adminModules: [...state.adminModules],
+  adminSubModules: Object.fromEntries(
+    Object.entries(state.adminSubModules).map(([key, routes]) => [key, [...routes]]),
   ),
 });
 
@@ -656,4 +667,109 @@ export const buildLegacyPermissionCatalog = (): LegacyPermissionCatalogEntry[] =
         .sort((left, right) => left.label.localeCompare(right.label) || left.route.localeCompare(right.route)),
     }))
     .sort((left, right) => left.label.localeCompare(right.label) || left.legacyModuleKey.localeCompare(right.legacyModuleKey));
+};
+
+export type LegacyConversionSourceKind = 'allowedModule' | 'adminModule';
+
+export interface LegacyConversionCandidate {
+  legacyModuleKey: string;
+  label: string;
+  sourceKind: LegacyConversionSourceKind;
+  scopeType: PermissionScopeType;
+  scopeId: string;
+  permissionCodes: string[];
+}
+
+const actionsForLegacyConversion = (
+  legacyModuleKey: string,
+  sourceKind: LegacyConversionSourceKind,
+): string[] => getPermissionModulesByLegacyKey(legacyModuleKey)
+  .flatMap(module => module.actions)
+  .filter(action => {
+    if (sourceKind === 'allowedModule') return action.action === 'view';
+    return action.permissionGroup === 'admin';
+  })
+  .filter(action => canAddDirectGrant(action))
+  .map(action => action.permissionCode);
+
+export const buildLegacyConversionCandidates = (input: {
+  legacyState: LegacyPermissionState;
+  scope: PermissionScope;
+}): LegacyConversionCandidate[] => {
+  const scope = normalizeScope(input.scope);
+  const catalogByKey = new Map(buildLegacyPermissionCatalog().map(entry => [entry.legacyModuleKey, entry]));
+  const candidates: LegacyConversionCandidate[] = [];
+
+  for (const legacyModuleKey of input.legacyState.allowedModules) {
+    candidates.push({
+      legacyModuleKey,
+      label: catalogByKey.get(legacyModuleKey)?.label || legacyModuleKey,
+      sourceKind: 'allowedModule',
+      scopeType: scope.scopeType as PermissionScopeType,
+      scopeId: scope.scopeId,
+      permissionCodes: actionsForLegacyConversion(legacyModuleKey, 'allowedModule'),
+    });
+  }
+
+  for (const legacyModuleKey of input.legacyState.adminModules) {
+    candidates.push({
+      legacyModuleKey,
+      label: catalogByKey.get(legacyModuleKey)?.label || legacyModuleKey,
+      sourceKind: 'adminModule',
+      scopeType: scope.scopeType as PermissionScopeType,
+      scopeId: scope.scopeId,
+      permissionCodes: actionsForLegacyConversion(legacyModuleKey, 'adminModule'),
+    });
+  }
+
+  return candidates.filter(candidate => candidate.permissionCodes.length > 0);
+};
+
+export const applyLegacyConversionDraft = (input: {
+  targetUserId: string;
+  grants: readonly UserPermissionGrant[];
+  legacyState: LegacyPermissionState;
+  conversion: LegacyConversionCandidate;
+}): { grants: UserPermissionGrant[]; legacyState: LegacyPermissionState } => {
+  const nextGrants = [...input.grants];
+
+  for (const permissionCode of input.conversion.permissionCodes) {
+    const exists = nextGrants.some(grant =>
+      grant.userId === input.targetUserId
+      && grant.permissionCode === permissionCode
+      && grant.scopeType === input.conversion.scopeType
+      && grant.scopeId === input.conversion.scopeId
+      && grant.isActive !== false
+    );
+    if (!exists) {
+      nextGrants.push({
+        userId: input.targetUserId,
+        permissionCode,
+        scopeType: input.conversion.scopeType,
+        scopeId: input.conversion.scopeId,
+      });
+    }
+  }
+
+  const nextLegacyState = cloneLegacyState(input.legacyState);
+  if (input.conversion.sourceKind === 'allowedModule') {
+    nextLegacyState.allowedModules = nextLegacyState.allowedModules
+      .filter(key => key !== input.conversion.legacyModuleKey);
+    nextLegacyState.allowedSubModules = withoutMapKey(
+      nextLegacyState.allowedSubModules,
+      input.conversion.legacyModuleKey,
+    );
+  } else {
+    nextLegacyState.adminModules = nextLegacyState.adminModules
+      .filter(key => key !== input.conversion.legacyModuleKey);
+    nextLegacyState.adminSubModules = withoutMapKey(
+      nextLegacyState.adminSubModules,
+      input.conversion.legacyModuleKey,
+    );
+  }
+
+  return {
+    grants: nextGrants,
+    legacyState: normalizeLegacyState(nextLegacyState),
+  };
 };
