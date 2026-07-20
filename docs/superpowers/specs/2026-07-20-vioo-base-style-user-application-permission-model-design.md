@@ -1,5 +1,9 @@
 # VIOO Base-style User and Application Permission Model
 
+> **Superseded on 2026-07-20:** The Application Administrator layer in this
+> document is no longer approved. The replacement design is
+> `2026-07-20-vioo-system-admin-member-permission-model-design.md`.
+
 **Date:** 2026-07-20
 **Status:** Approved by operator
 **Scope:** Account roles, application access, application administration, scoped business permissions, pilot hard cutover from Legacy, administration UX, backend enforcement, and rollout sequencing.
