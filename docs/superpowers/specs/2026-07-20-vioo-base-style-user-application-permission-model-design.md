@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-20
 **Status:** Approved by operator
-**Scope:** Account roles, application access, application administration, scoped business permissions, legacy migration, administration UX, backend enforcement, and rollout sequencing.
+**Scope:** Account roles, application access, application administration, scoped business permissions, pilot hard cutover from Legacy, administration UX, backend enforcement, and rollout sequencing.
 
 ## 1. Purpose
 
@@ -35,6 +35,8 @@ Account role
 The UI is deliberately simple and user-centered. The backend remains explicit and deny-by-default.
 
 This design refines the UI and role boundaries described in the existing authorization and application-permission specifications. It does not remove scoped Direct Grants, effective-source evidence, backend enforcement, SoD, or audit requirements.
+
+Because VIOO is still in pilot operation and has a small user population, the approved rollout is a **pilot hard cutover**. VIOO will rebuild the active users' permissions in the new model and disable Legacy authorization in one controlled maintenance event after enforcement verification. The product will not build a long-lived dual-mode migration experience or a Legacy conversion workbench.
 
 ## 3. Account Roles
 
@@ -293,7 +295,7 @@ The detailed flow is:
 6. Preview the backend decision;
 7. enter the required reason and Apply.
 
-Technical source evidence such as Direct, Role, Legacy, assignment, or Application Administrator is shown in an advanced explanation area, not as the primary operator workflow.
+Technical source evidence such as Direct, Role, assignment, or Application Administrator is shown in an advanced explanation area, not as the primary operator workflow. Legacy evidence is available only in the pre-cutover inventory and rollback snapshot; it is not part of the post-cutover administration experience.
 
 ### 9.4 Assignment inside an application
 
@@ -301,7 +303,7 @@ Project, warehouse, department, and workflow assignments remain managed within t
 
 ## 10. Governed Commands and Error Handling
 
-Frontend code must not directly mutate application memberships, grants, role assignments, authorization audit tables, or legacy source fields.
+Frontend code must not directly mutate application memberships, grants, role assignments, authorization audit tables, or Legacy source fields. The hard cutover is executed by a dedicated governed backend command or reviewed migration procedure, never by browser-side table updates.
 
 The change sequence is:
 
@@ -328,21 +330,24 @@ Required failure behavior:
 - session authorization must refresh promptly after membership or grant changes;
 - UI success is shown only after the governed Apply command succeeds.
 
-## 11. Legacy Compatibility and Migration
+## 11. Pilot Hard Cutover From Legacy
 
-Legacy permissions continue to operate during controlled migration.
+Legacy remains active only while the replacement authorization model is being completed and verified. It is not a supported operating mode after the pilot cutover.
 
-Approved mapping rules:
+The cutover deliberately rebuilds permissions rather than automatically translating broad Legacy administration:
 
-- `allowedModules` may migrate to `MEMBER` application membership.
-- `allowedSubModules` must be inventoried and mapped to explicit module visibility or existing assignments.
-- `adminModules` and `adminSubModules` must not automatically migrate to Application Administrator because legacy administration primarily represented broad data CRUD rather than application customization.
-- each legacy administration source must be mapped to real explicit actions by module and route;
-- legacy sources remain visible as compatibility evidence during migration;
-- new Base-style screens must not create new legacy admin umbrellas;
-- legacy fallback is disabled only after positive and adjacent-negative enforcement tests pass for the migrated application.
+- export a complete, immutable snapshot of every active user's `allowedModules`, `allowedSubModules`, `adminModules`, and `adminSubModules` before mutation;
+- inventory current application access, project membership, warehouse responsibility, department relationships, and sensitive duties;
+- manually define the intended application membership, Application Administrator capability, Direct Grants, scope, and assignments for every pilot user;
+- do not automatically convert `adminModules` or `adminSubModules` to Application Administrator because Legacy administration represented broad data CRUD rather than application customization;
+- do not build a product-facing Legacy conversion panel or maintain editable Legacy checkboxes in the new Base-style screens;
+- verify every action required by pilot users as `enforced` or `verified` before the cutover;
+- treat `declared` and `legacy` actions as cutover blockers when an active pilot workflow depends on them;
+- apply new memberships and grants, revoke Legacy arrays, enable `legacy_fallback_disabled`, append audit evidence, and trigger authorization refresh in one controlled maintenance event;
+- require the final post-cutover resolver to produce no `LEGACY` effective sources;
+- retain the snapshot for emergency rollback for a defined short retention period, without keeping Legacy enabled during normal operation.
 
-Migration must be previewable per user and application. It must not be a one-time global rewrite.
+Emergency rollback restores the snapshot and the fallback flag only when the cutover validation fails. Rollback is an operational recovery procedure, not a second permission administration mode.
 
 ## 12. Rollout Sequence
 
@@ -351,7 +356,7 @@ Migration must be previewable per user and application. It must not be a one-tim
 - introduce the two-role account experience;
 - introduce application membership and Application Administrator assignment;
 - implement the Base-style account/application UI;
-- preserve Legacy compatibility;
+- keep Legacy unchanged and read-only while replacement work is in progress;
 - enforce membership as an application-access prerequisite.
 
 ### Phase 2 — Application customization permissions
@@ -363,20 +368,25 @@ Migration must be previewable per user and application. It must not be a one-tim
 
 ### Phase 3 — Detailed business actions
 
-- split legacy module/submodule administration into real actions;
+- define real actions for every pilot workflow previously relying on Legacy module/submodule administration;
 - enforce each action in UI and backend;
 - separate edit from delete;
 - promote actions to `enforced` or `verified` only with evidence;
-- keep declared or legacy-only actions non-grantable.
+- keep declared or legacy-only actions non-grantable;
+- configure the complete target membership, grant, scope, and assignment set for every pilot user in a cutover draft;
+- run positive, adjacent-negative, wrong-scope, and sensitive-action tests against that draft.
 
-### Phase 4 — Per-application Legacy cutover
+### Phase 4 — Single pilot hard cutover
 
-- create application memberships from approved legacy view sources;
-- preview legacy administration mappings per user;
-- grant explicit modern actions;
-- revoke legacy administration sources;
-- monitor authorization health;
-- disable fallback only for applications that satisfy cutover criteria.
+- freeze permission administration for the maintenance window;
+- export and verify the Legacy snapshot and rollback artifact;
+- atomically activate the approved application memberships and explicit grants;
+- atomically clear or revoke `allowedModules`, `allowedSubModules`, `adminModules`, and `adminSubModules` as active authorization sources;
+- enable `legacy_fallback_disabled` globally;
+- refresh active authorization sessions and realtime listeners;
+- verify every pilot user against the approved access checklist;
+- monitor denial logs, permission health, and audit events;
+- use the emergency rollback procedure only if the cutover validation fails.
 
 ## 13. Verification Requirements
 
@@ -393,7 +403,7 @@ Every application must prove:
 9. wrong project, warehouse, department, or record relationship is denied by the backend;
 10. removing application membership takes effect in the active session;
 11. re-adding an application does not silently restore revoked grants;
-12. legacy sources stop contributing after the relevant cutover is applied;
+12. no Legacy source contributes to effective authorization after the hard cutover;
 13. direct API, guessed route, or known record ID does not bypass enforcement;
 14. every grant, revoke, role change, membership change, and sensitive decision has audit evidence.
 
@@ -407,7 +417,9 @@ This design does not introduce:
 - automatic sensitive approvals for High-level Administrators;
 - automatic project or warehouse membership for object creators;
 - a single broad `manage` permission as a replacement for legacy administration;
-- automatic migration of all legacy administration rights;
+- automatic translation of Legacy administration rights;
+- a long-lived dual-mode Legacy/new permission experience;
+- a product-facing Legacy conversion workbench;
 - direct browser mutation of authorization tables;
 - negative-grant policy language;
 - multi-tenant authorization;
@@ -423,4 +435,4 @@ The design is successful when an operator can:
 4. grant exact business actions at the correct scope;
 5. understand why access exists without learning internal authorization implementation details;
 6. prove that sensitive, cross-scope, and unassigned actions are denied by the backend;
-7. migrate away from legacy administration one application at a time without disrupting active users.
+7. complete one controlled pilot hard cutover with verified replacement permissions, no post-cutover Legacy effective sources, and a tested emergency rollback artifact.
