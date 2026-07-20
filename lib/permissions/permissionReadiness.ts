@@ -26,6 +26,24 @@ const VERIFIED_PERMISSION_CODES = new Set([
 ]);
 
 const ENFORCED_PERMISSION_CODES = new Set<string>();
+[
+  'asset.catalog.view',
+  'asset.catalog.create',
+  'asset.catalog.edit',
+  'asset.catalog.delete',
+  'asset.catalog.dispose',
+  'asset.catalog.import',
+  'asset.catalog.transfer_stock',
+  'asset.assignment.view',
+  'asset.assignment.assign',
+  'asset.assignment.return',
+  'asset.assignment.transfer',
+  'asset.maintenance.view',
+  'asset.maintenance.create',
+  'asset.maintenance.complete',
+  'asset.maintenance.import',
+  'asset.audit.view',
+].forEach(code => ENFORCED_PERMISSION_CODES.add(code));
 
 export const resolvePermissionActionReadiness = (
   action: PermissionActionDefinition,
@@ -37,6 +55,6 @@ export const resolvePermissionActionReadiness = (
 };
 
 export const canAddDirectGrant = (action: PermissionActionDefinition): boolean =>
-  ['enforced', 'verified'].includes(resolvePermissionActionReadiness(action));
+  resolvePermissionActionReadiness(action) !== 'legacy';
 
 export const canRemoveDirectGrant = (hasDirectGrant: boolean): boolean => hasDirectGrant;

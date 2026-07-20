@@ -16,6 +16,8 @@ const DEFAULT_SCOPE: Required<PermissionScope> = { scopeType: 'global', scopeId:
 const routeMatches = (pattern: string, route: string): boolean =>
   pattern === route || (pattern.includes(':') && !!matchPath({ path: pattern, end: true }, route));
 
+const isViewAction = (action: PermissionActionDefinition): boolean => action.action === 'view';
+
 const isGrantActive = (grant: UserPermissionGrant, now = new Date()): boolean => {
   if (grant.isActive === false) return false;
   if (!grant.expiresAt) return true;
@@ -240,7 +242,7 @@ const canViewModuleFromEffectiveSources = (
 ): boolean => getPermissionModules()
   .filter(module => moduleMatchesIdentifier(module.code, module.legacyModuleKey, moduleCodeOrLegacyKey))
   .some(module => module.actions.some(action =>
-    userHasEffectivePermissionForNavigation(user, action.permissionCode, scope)
+    isViewAction(action) && userHasEffectivePermissionForNavigation(user, action.permissionCode, scope)
   ));
 
 export const canViewModule = (
@@ -273,6 +275,7 @@ export const canViewRoute = (
   if (!user) return false;
   if (user.effectivePermissions !== undefined) {
     return getPermissionModules().some(module => module.actions.some(action => {
+      if (!isViewAction(action)) return false;
       if (!userHasEffectivePermissionForNavigation(user, action.permissionCode, scope)) return false;
       const moduleRoutes = module.routes || [];
       const moduleRouteMatches = moduleRoutes.some(moduleRoute => routeMatches(moduleRoute, route));
@@ -280,6 +283,7 @@ export const canViewRoute = (
       if (actionRoute && routeMatches(actionRoute, route)) return true;
       if (actionRoute && (actionRoute === route || actionRoute.startsWith(`${route}/`))) return true;
       if (!moduleRouteMatches) return false;
+      if (isViewAction(action)) return true;
       if (!actionRoute || moduleRoutes.length === 1) return true;
       return route.startsWith(`${actionRoute}/`);
     }));

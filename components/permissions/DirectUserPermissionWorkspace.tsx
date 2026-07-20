@@ -8,7 +8,6 @@ import type {
   UnifiedPermissionPreview,
 } from '../../lib/permissions/authorizationGovernanceTypes';
 import {
-  buildDirectGrantDraftKey,
   validateDirectGrantDrafts,
   validateSodWarningAcceptances,
 } from '../../lib/permissions/authorizationGovernanceViewModel';
@@ -22,13 +21,18 @@ import {
   pasteDirectPermissionClipboard,
   type DirectPermissionClipboard,
 } from '../../lib/permissions/directUserPermissionMatrixViewModel';
-import type { PermissionScope } from '../../lib/permissions/permissionTypes';
+import type { LegacyPermissionState, PermissionScope } from '../../lib/permissions/permissionTypes';
 import type { PermissionScopeLookupOptionsByType } from '../../lib/permissions/permissionScopeLookupService';
-import { buildUnifiedPermissionDraftKey } from '../../lib/permissions/unifiedPermissionViewModel';
-import CompactDirectPermissionTree from './CompactDirectPermissionTree';
+import {
+  buildLegacyPermissionCatalog,
+  buildCurrentPermissionOverview,
+  buildUnifiedPermissionDraftKey,
+  type CurrentPermissionOverviewRow,
+} from '../../lib/permissions/unifiedPermissionViewModel';
 import PermissionChangeSummary from './PermissionChangeSummary';
 import PermissionScopePicker from './PermissionScopePicker';
 import SodWarningPanel from './SodWarningPanel';
+import UnifiedPermissionMatrix from './UnifiedPermissionMatrix';
 
 export interface DirectUserPermissionWorkspaceProps {
   principal: AuthorizationPrincipal;
@@ -55,6 +59,106 @@ const toIsoDateTime = (value: string) => {
   return Number.isFinite(date.getTime()) ? date.toISOString() : undefined;
 };
 
+const EMPTY_LEGACY_STATE: LegacyPermissionState = {
+  allowedModules: [],
+  allowedSubModules: {},
+  adminModules: [],
+  adminSubModules: {},
+};
+
+const cloneLegacyState = (state?: LegacyPermissionState | null): LegacyPermissionState => ({
+  allowedModules: [...(state?.allowedModules || [])],
+  allowedSubModules: Object.fromEntries(Object.entries(state?.allowedSubModules || {}).map(([key, routes]) => [key, [...routes]])),
+  adminModules: [...(state?.adminModules || [])],
+  adminSubModules: Object.fromEntries(Object.entries(state?.adminSubModules || {}).map(([key, routes]) => [key, [...routes]])),
+});
+
+const hasEditableLegacyState = (state: LegacyPermissionState): boolean =>
+  state.allowedModules.length > 0
+  || state.adminModules.length > 0
+  || Object.keys(state.allowedSubModules).length > 0
+  || Object.keys(state.adminSubModules).length > 0;
+
+const sortedUnique = (values: readonly string[]): string[] =>
+  [...new Set(values.map(value => value.trim()).filter(Boolean))].sort();
+
+const addRoute = (
+  routesByModule: Record<string, string[]>,
+  legacyModuleKey: string,
+  route: string,
+) => {
+  routesByModule[legacyModuleKey] = sortedUnique([...(routesByModule[legacyModuleKey] || []), route]);
+};
+
+const buildLegacyStateFromEffectiveSources = (
+  effectiveSources: readonly EffectivePermissionSource[],
+): LegacyPermissionState => {
+  const permissionActionByCode = new Map(getAllPermissionActions().map(action => [action.permissionCode, action]));
+  const routeCountByLegacyKey = new Map(
+    buildLegacyPermissionCatalog().map(entry => [entry.legacyModuleKey, entry.routes.length]),
+  );
+  const allowedModules: string[] = [];
+  const allowedSubModules: Record<string, string[]> = {};
+  const adminModules: string[] = [];
+  const adminSubModules: Record<string, string[]> = {};
+
+  effectiveSources
+    .filter(source => source.sourceType === 'LEGACY')
+    .forEach(source => {
+      const metadata = source.metadata || {};
+      const legacyModuleKey = typeof metadata.legacyModuleKey === 'string'
+        ? metadata.legacyModuleKey
+        : source.sourceCode || source.sourceId;
+      if (!legacyModuleKey) return;
+
+      const action = permissionActionByCode.get(source.permissionCode);
+      const isAdminSource = Boolean(action?.legacyAdminOnly || action?.action === 'manage');
+      const legacyRoute = typeof metadata.legacyRoute === 'string' ? metadata.legacyRoute : '';
+      if (legacyRoute) {
+        addRoute(isAdminSource ? adminSubModules : allowedSubModules, legacyModuleKey, legacyRoute);
+        return;
+      }
+
+      if ((routeCountByLegacyKey.get(legacyModuleKey) || 0) === 0) {
+        (isAdminSource ? adminModules : allowedModules).push(legacyModuleKey);
+      }
+    });
+
+  return {
+    allowedModules: sortedUnique(allowedModules),
+    allowedSubModules,
+    adminModules: sortedUnique(adminModules),
+    adminSubModules,
+  };
+};
+
+const getInitialLegacyState = (
+  principal: AuthorizationPrincipal,
+  effectiveSources: readonly EffectivePermissionSource[],
+): LegacyPermissionState => {
+  const principalLegacyState = cloneLegacyState(principal.legacyState || EMPTY_LEGACY_STATE);
+  return hasEditableLegacyState(principalLegacyState)
+    ? principalLegacyState
+    : buildLegacyStateFromEffectiveSources(effectiveSources);
+};
+
+const SOURCE_TYPE_LABELS = {
+  ROLE: 'Business Role',
+  DIRECT: 'Direct',
+  LEGACY: 'Legacy',
+} as const;
+
+const getInitialPermissionSelection = (
+  grants: readonly UserPermissionGrant[],
+  effectiveSources: readonly EffectivePermissionSource[],
+) => {
+  const first = buildCurrentPermissionOverview({ directGrants: grants, effectiveSources })[0];
+  return {
+    applicationCode: first?.applicationCode || 'wms',
+    moduleCode: first?.moduleCode || 'wms.inventory',
+  };
+};
+
 const DirectUserPermissionWorkspace: React.FC<DirectUserPermissionWorkspaceProps> = ({
   principal,
   grants,
@@ -68,13 +172,22 @@ const DirectUserPermissionWorkspace: React.FC<DirectUserPermissionWorkspaceProps
   onSaved,
 }) => {
   const [drafts, setDrafts] = useState<UserPermissionGrant[]>([...grants]);
+  const [persistedLegacyState, setPersistedLegacyState] = useState<LegacyPermissionState>(() =>
+    getInitialLegacyState(principal, effectiveSources)
+  );
+  const [legacyDraft, setLegacyDraft] = useState<LegacyPermissionState>(() =>
+    getInitialLegacyState(principal, effectiveSources)
+  );
   const [scope, setScope] = useState<PermissionScope>({ scopeType: 'global', scopeId: '*' });
-  const [reason, setReason] = useState('');
+  const [permissionChangeReason, setPermissionChangeReason] = useState('');
   const [preview, setPreview] = useState<UnifiedPermissionPreview | null>(null);
   const [previewedDraftKey, setPreviewedDraftKey] = useState<string | null>(null);
-  const [acceptances, setAcceptances] = useState<SodWarningAcceptanceInput[]>([]);
+  const [warningAcceptances, setWarningAcceptances] = useState<SodWarningAcceptanceInput[]>([]);
   const [busy, setBusy] = useState<'load' | 'preview' | 'save' | null>(null);
   const [message, setMessage] = useState('');
+  const [permissionSelection, setPermissionSelection] = useState(() =>
+    getInitialPermissionSelection(grants, effectiveSources)
+  );
 
   const permissionActions = useMemo(() => getAllPermissionActions(), []);
   const riskByPermissionCode = useMemo(
@@ -86,13 +199,18 @@ const DirectUserPermissionWorkspace: React.FC<DirectUserPermissionWorkspaceProps
     scopeId: scope.scopeId || '*',
   }), [scope.scopeId, scope.scopeType]);
   const currentDraftKey = preview
-    ? buildUnifiedPermissionDraftKey(principal.userId, preview.legacyAfter, drafts)
+    ? buildUnifiedPermissionDraftKey(principal.userId, legacyDraft, drafts)
     : null;
   const previewMatches = preview !== null && previewedDraftKey === currentDraftKey;
-  const draftChanged = buildDirectGrantDraftKey(principal.userId, grants) !== buildDirectGrantDraftKey(principal.userId, drafts);
+  const unifiedDraftChanged = buildUnifiedPermissionDraftKey(principal.userId, persistedLegacyState, grants)
+    !== buildUnifiedPermissionDraftKey(principal.userId, legacyDraft, drafts);
   const panelDisabled = disabled || principal.accountStatus !== 'ACTIVE' || busy !== null;
   const sensitiveDrafts = drafts.filter(grant =>
     grant.isActive !== false && riskByPermissionCode.get(grant.permissionCode) === 'sensitive'
+  );
+  const currentPermissionOverview = useMemo(
+    () => buildCurrentPermissionOverview({ directGrants: drafts, effectiveSources }),
+    [drafts, effectiveSources],
   );
   const sourceSummary = useMemo(() => ({
     role: effectiveSources.filter(source => source.sourceType === 'ROLE').length,
@@ -101,19 +219,57 @@ const DirectUserPermissionWorkspace: React.FC<DirectUserPermissionWorkspaceProps
   }), [effectiveSources]);
 
   useEffect(() => {
+    const nextLegacy = getInitialLegacyState(principal, effectiveSources);
     setDrafts([...grants]);
+    setPersistedLegacyState(nextLegacy);
+    setLegacyDraft(cloneLegacyState(nextLegacy));
     setPreview(null);
     setPreviewedDraftKey(null);
-    setAcceptances([]);
+    setWarningAcceptances([]);
     setMessage('');
-  }, [grants, principal.userId]);
+    setPermissionSelection(getInitialPermissionSelection(grants, effectiveSources));
+  }, [effectiveSources, grants, principal.legacyState, principal.userId]);
 
   const updateDrafts = (next: UserPermissionGrant[]) => {
     setDrafts(next);
     setPreview(null);
     setPreviewedDraftKey(null);
-    setAcceptances([]);
+    setWarningAcceptances([]);
     setMessage('');
+  };
+
+  const updateLegacyDraft = (next: LegacyPermissionState) => {
+    setLegacyDraft(next);
+    setPreview(null);
+    setPreviewedDraftKey(null);
+    setWarningAcceptances([]);
+    setMessage('');
+  };
+
+  const selectPermissionLocation = (selection: { applicationCode: string; moduleCode: string }) => {
+    setPermissionSelection(selection);
+    setPreview(null);
+    setPreviewedDraftKey(null);
+    setWarningAcceptances([]);
+    setMessage('');
+  };
+
+  const handleOpenPermissionLocation = (row: CurrentPermissionOverviewRow) => {
+    selectPermissionLocation({
+      applicationCode: row.applicationCode,
+      moduleCode: row.moduleCode,
+    });
+    setScope({ scopeType: row.scopeType, scopeId: row.scopeId });
+  };
+
+  const handleRevokeDirectGrant = (row: CurrentPermissionOverviewRow) => {
+    handleOpenPermissionLocation(row);
+    updateDrafts(drafts.filter(grant => !(
+      grant.isActive !== false
+      && grant.permissionCode === row.permissionCode
+      && (grant.scopeType || 'global') === row.scopeType
+      && (grant.scopeId || '*') === row.scopeId
+    )));
   };
 
   const updateExpiry = (grant: UserPermissionGrant, value: string) => {
@@ -137,10 +293,11 @@ const DirectUserPermissionWorkspace: React.FC<DirectUserPermissionWorkspaceProps
   const handlePreview = async () => {
     setBusy('preview');
     setMessage('');
-    setAcceptances([]);
+    setWarningAcceptances([]);
     try {
-      const nextPreview = await previewUserPermissionChange(principal.userId, null, drafts);
+      const nextPreview = await previewUserPermissionChange(principal.userId, legacyDraft, drafts);
       setPreview(nextPreview);
+      setLegacyDraft(cloneLegacyState(nextPreview.legacyAfter));
       setPreviewedDraftKey(buildUnifiedPermissionDraftKey(principal.userId, nextPreview.legacyAfter, drafts));
     } catch {
       setMessage('Khong the preview thay doi quyen.');
@@ -150,37 +307,58 @@ const DirectUserPermissionWorkspace: React.FC<DirectUserPermissionWorkspaceProps
   };
 
   const handleSave = async () => {
-    const validationErrors = validateDirectGrantDrafts(grants, drafts, riskByPermissionCode, new Date(), reason);
+    const validationErrors = validateDirectGrantDrafts(grants, drafts, riskByPermissionCode, new Date(), permissionChangeReason);
     if (validationErrors.length > 0) {
       setMessage(validationErrors[0]);
       return;
     }
-    if (!preview || !previewMatches) {
-      setMessage('Draft da thay doi; hay preview lai.');
-      return;
+
+    let previewToApply: UnifiedPermissionPreview | null = previewMatches ? preview : null;
+    let legacyToApply = legacyDraft;
+    if (!previewToApply) {
+      setBusy('preview');
+      setMessage('');
+      setWarningAcceptances([]);
+      try {
+        previewToApply = await previewUserPermissionChange(principal.userId, legacyDraft, drafts);
+        legacyToApply = cloneLegacyState(previewToApply.legacyAfter);
+        setPreview(previewToApply);
+        setLegacyDraft(cloneLegacyState(legacyToApply));
+        setPreviewedDraftKey(buildUnifiedPermissionDraftKey(principal.userId, legacyToApply, drafts));
+      } catch {
+        setMessage('Khong the preview thay doi quyen.');
+        setBusy(null);
+        return;
+      }
     }
-    if (preview.decision.hardDenies.length > 0) {
+    if (previewToApply.decision.hardDenies.length > 0) {
       setMessage('Backend tu choi do quy tac SoD bat buoc.');
+      setBusy(null);
       return;
     }
-    const acceptanceErrors = validateSodWarningAcceptances(preview.decision, acceptances, new Date());
+    const acceptanceErrors = validateSodWarningAcceptances(previewToApply.decision, warningAcceptances, new Date());
     if (acceptanceErrors.length > 0) {
       setMessage(acceptanceErrors[0]);
+      setBusy(null);
       return;
     }
 
     setBusy('save');
     setMessage('');
     try {
-      await applyUserPermissionChange(principal.userId, preview.beforeFingerprint, null, drafts, {
-        reason: reason.trim(),
-        warningAcceptances: acceptances,
+      const result = await applyUserPermissionChange(principal.userId, previewToApply.beforeFingerprint, legacyToApply, drafts, {
+        reason: permissionChangeReason.trim(),
+        warningAcceptances,
       });
+      const nextLegacy = cloneLegacyState(result.legacyAfter);
+      setPersistedLegacyState(nextLegacy);
+      setLegacyDraft(cloneLegacyState(nextLegacy));
+      setDrafts(result.directAfter);
       await onSaved();
-      setReason('');
+      setPermissionChangeReason('');
       setPreview(null);
       setPreviewedDraftKey(null);
-      setAcceptances([]);
+      setWarningAcceptances([]);
       setMessage('Da luu phan quyen.');
     } catch (error) {
       const code = typeof error === 'object' && error && 'code' in error ? String(error.code) : '';
@@ -193,9 +371,9 @@ const DirectUserPermissionWorkspace: React.FC<DirectUserPermissionWorkspaceProps
   };
 
   const saveDisabled = panelDisabled
-    || !previewMatches
-    || Boolean(preview?.decision.hardDenies.length)
-    || (draftChanged && reason.trim().length < 10);
+    || !unifiedDraftChanged
+    || Boolean(previewMatches && preview?.decision.hardDenies.length)
+    || (unifiedDraftChanged && permissionChangeReason.trim().length < 10);
 
   return (
     <section className="grid min-h-[680px] gap-4 xl:grid-cols-[300px_1fr]">
@@ -218,7 +396,7 @@ const DirectUserPermissionWorkspace: React.FC<DirectUserPermissionWorkspaceProps
               setScope(nextScope);
               setPreview(null);
               setPreviewedDraftKey(null);
-              setAcceptances([]);
+              setWarningAcceptances([]);
               setMessage('');
             }}
             disabled={panelDisabled}
@@ -269,7 +447,7 @@ const DirectUserPermissionWorkspace: React.FC<DirectUserPermissionWorkspaceProps
               disabled={saveDisabled}
               className="flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-xs font-black text-white disabled:opacity-50"
             >
-              {busy === 'save' ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+              {busy === 'save' || busy === 'preview' ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
               Lưu phân quyền
             </button>
           </div>
@@ -281,13 +459,88 @@ const DirectUserPermissionWorkspace: React.FC<DirectUserPermissionWorkspaceProps
           </div>
         )}
 
-        <CompactDirectPermissionTree
+        <section className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <div className="text-xs font-black uppercase tracking-wide text-slate-700">
+              Quyền đang có ({currentPermissionOverview.length})
+            </div>
+            <div className="text-[10px] font-bold text-slate-400">
+              Direct / Role / Legacy
+            </div>
+          </div>
+          {currentPermissionOverview.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-slate-200 bg-white p-3 text-xs font-bold text-slate-400">
+              Chưa có quyền hiệu lực.
+            </div>
+          ) : (
+            <div className="grid max-h-64 gap-2 overflow-auto lg:grid-cols-2">
+              {currentPermissionOverview.map(row => (
+                <article key={row.key} className="rounded-lg border border-slate-200 bg-white p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-xs font-black text-slate-800">
+                        {row.applicationLabel} · {row.moduleLabel}
+                      </div>
+                      <div className="mt-1 text-[11px] font-bold text-slate-500">
+                        {row.actionLabel} · {row.scopeType}/{row.scopeId}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenPermissionLocation(row)}
+                      disabled={panelDisabled}
+                      className="shrink-0 rounded-md border border-slate-200 px-2 py-1 text-[10px] font-black text-slate-600 disabled:opacity-50"
+                    >
+                      Mở module
+                    </button>
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                    {row.sourceTypes.map(sourceType => (
+                      <span
+                        key={sourceType}
+                        className={`rounded px-2 py-1 text-[10px] font-black ${
+                          sourceType === 'DIRECT'
+                            ? 'bg-blue-100 text-blue-700'
+                            : sourceType === 'ROLE'
+                              ? 'bg-violet-100 text-violet-700'
+                              : 'bg-amber-100 text-amber-700'
+                        }`}
+                      >
+                        {SOURCE_TYPE_LABELS[sourceType]}
+                      </span>
+                    ))}
+                    {row.sourceTypes.includes('LEGACY') && (
+                      <span className="text-[10px] font-bold text-amber-700">Bỏ tích Legacy ở module này để thu hồi.</span>
+                    )}
+                    {row.canRevokeDirect && (
+                      <button
+                        type="button"
+                        onClick={() => handleRevokeDirectGrant(row)}
+                        disabled={panelDisabled}
+                        className="rounded border border-rose-200 px-2 py-1 text-[10px] font-black text-rose-700 disabled:opacity-50"
+                      >
+                        Thu hồi Direct
+                      </button>
+                    )}
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <UnifiedPermissionMatrix
           targetUserId={principal.userId}
           grants={drafts}
           effectiveSources={effectiveSources}
           scope={scope}
+          legacyState={legacyDraft}
           disabled={panelDisabled}
+          selectedApplicationCode={permissionSelection.applicationCode}
+          selectedModuleCode={permissionSelection.moduleCode}
+          onSelectionChange={selectPermissionLocation}
           onGrantsChange={updateDrafts}
+          onLegacyStateChange={updateLegacyDraft}
         />
 
         {sensitiveDrafts.length > 0 && (
@@ -312,8 +565,8 @@ const DirectUserPermissionWorkspace: React.FC<DirectUserPermissionWorkspaceProps
         )}
 
         <textarea
-          value={reason}
-          onChange={event => setReason(event.target.value)}
+          value={permissionChangeReason}
+          onChange={event => setPermissionChangeReason(event.target.value)}
           disabled={panelDisabled}
           rows={2}
           className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold disabled:bg-slate-50"
@@ -325,7 +578,7 @@ const DirectUserPermissionWorkspace: React.FC<DirectUserPermissionWorkspaceProps
             beforeGrants={grants}
             afterGrants={drafts}
             beforeLegacy={preview.legacyBefore}
-            afterLegacy={preview.legacyAfter}
+            afterLegacy={legacyDraft}
             effectiveSources={effectiveSources}
           />
         )}
@@ -341,12 +594,12 @@ const DirectUserPermissionWorkspace: React.FC<DirectUserPermissionWorkspaceProps
         {preview && previewMatches && (
           <SodWarningPanel
             warnings={preview.decision.warnings}
-            acceptances={acceptances}
+            acceptances={warningAcceptances}
             controlOwners={principals}
             currentUserId={currentUserId}
             affectedPrincipalId={principal.userId}
             disabled={panelDisabled}
-            onChange={setAcceptances}
+            onChange={setWarningAcceptances}
           />
         )}
 

@@ -165,13 +165,17 @@ const SettingsAuthorizationGovernance: React.FC<SettingsAuthorizationGovernanceP
   };
 
   const refreshAfterCommand = async () => {
-    if (selectedPrincipalId) await loadPrincipalDetails(selectedPrincipalId);
-    const [nextRoles, nextAuditEvents] = await Promise.all([
+    const [nextPrincipals, nextRoles, nextAuditEvents] = await Promise.all([
+      authorizationGovernanceService.listAuthorizationPrincipals(),
       authorizationGovernanceService.listBusinessRoles(),
       canAudit ? authorizationGovernanceService.listPermissionAuditEvents(100) : Promise.resolve([]),
     ]);
+    setPrincipals(nextPrincipals);
     setRoles(nextRoles);
     setAuditEvents(nextAuditEvents);
+    if (selectedPrincipalId && nextPrincipals.some(item => item.userId === selectedPrincipalId)) {
+      await loadPrincipalDetails(selectedPrincipalId);
+    }
   };
 
   if (!canView) {

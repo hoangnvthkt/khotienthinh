@@ -10,6 +10,8 @@ import {
 import { AssetMaintenance as MaintenanceType, MaintenanceAttachment, AssetStatus } from '../../types';
 import { loadXlsx } from '../../lib/loadXlsx';
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
+import { buildAssetMaintenanceActionPolicy, type AssetActionPolicy } from '../../lib/permissions/assetActionUiPolicy';
+import { targetFromAsset } from '../../lib/permissions/assetPermissionScope';
 
 const TYPE_LABELS: Record<string, string> = { scheduled: 'Bảo trì định kỳ', repair: 'Sửa chữa', inspection: 'Kiểm tra', warranty: 'Bảo hành' };
 const STATUS_LABELS: Record<string, string> = { planned: 'Lên kế hoạch', in_progress: 'Đang thực hiện', completed: 'Hoàn thành' };
@@ -74,6 +76,28 @@ const AssetMaintenancePage: React.FC = () => {
 
     const getAsset = (id: string) => assets.find(a => a.id === id);
 
+    const showPolicyDenied = (policy: AssetActionPolicy) => {
+        toast.error('Không có quyền', policy.reason || 'Bạn chưa được cấp quyền thực hiện thao tác này.');
+    };
+
+    const ensureMaintenancePolicy = (
+        operation: Parameters<typeof buildAssetMaintenanceActionPolicy>[1],
+        assetId: string,
+    ) => {
+        const policy = buildAssetMaintenanceActionPolicy(user, operation, targetFromAsset(getAsset(assetId)));
+        if (!policy.allowed) {
+            showPolicyDenied(policy);
+            return false;
+        }
+        return true;
+    };
+
+    const canOpenCreate = assets.some(asset => buildAssetMaintenanceActionPolicy(user, 'create', targetFromAsset(asset)).allowed);
+    const canOpenImport = assets.some(asset =>
+        buildAssetMaintenanceActionPolicy(user, 'import', targetFromAsset(asset)).allowed &&
+        buildAssetMaintenanceActionPolicy(user, 'create', targetFromAsset(asset)).allowed
+    );
+
     // Handle file attachment
     const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = e.target.files;
@@ -97,11 +121,12 @@ const AssetMaintenancePage: React.FC = () => {
     const removeAttachment = (id: string) => setAttachments(prev => prev.filter(a => a.id !== id));
 
     // Save maintenance
-    const handleSave = () => {
+    const handleSave = async () => {
         if (!form.assetId || !form.description.trim()) {
             toast.error('Lỗi', 'Vui lòng chọn tài sản và nhập mô tả');
             return;
         }
+        if (!ensureMaintenancePolicy('create', form.assetId)) return;
         const estCost = Number(form.estimatedCost) || 0;
         const actCost = Number(form.actualCost) || 0;
         const m: MaintenanceType = {
@@ -116,11 +141,15 @@ const AssetMaintenancePage: React.FC = () => {
             note: form.note || undefined,
             attachments: attachments.length > 0 ? attachments : undefined,
         };
-        addAssetMaintenance(m);
-        const asset = getAsset(form.assetId);
-        toast.success('Thành công', `Đã ghi nhận bảo trì cho ${asset?.name || form.assetId}`);
-        resetForm();
-        setActiveTab('list');
+        try {
+            await addAssetMaintenance(m);
+            const asset = getAsset(form.assetId);
+            toast.success('Thành công', `Đã ghi nhận bảo trì cho ${asset?.name || form.assetId}`);
+            resetForm();
+            setActiveTab('list');
+        } catch (err: any) {
+            toast.error('Lỗi bảo trì', err?.message || 'Không thể ghi nhận bảo trì');
+        }
     };
 
     // Import Excel
@@ -135,10 +164,14 @@ const AssetMaintenancePage: React.FC = () => {
                 const ws = wb.Sheets[wb.SheetNames[0]];
                 const data = XLSX.utils.sheet_to_json<any>(ws);
                 let imported = 0;
-                data.forEach((row: any) => {
+                for (const row of data) {
                     const assetCode = String(row['Mã TS'] || row['ma_ts'] || '').trim();
                     const asset = assets.find(a => a.code === assetCode);
-                    if (!asset) return;
+                    if (!asset) continue;
+                    if (
+                        !buildAssetMaintenanceActionPolicy(user, 'import', targetFromAsset(asset)).allowed ||
+                        !buildAssetMaintenanceActionPolicy(user, 'create', targetFromAsset(asset)).allowed
+                    ) continue;
                     const m: MaintenanceType = {
                         id: `mt-${Date.now()}-${Math.random().toString(36).substring(2, 7)}-${imported}`,
                         assetId: asset.id,
@@ -154,9 +187,9 @@ const AssetMaintenancePage: React.FC = () => {
                         performedBy: user.id, performedByName: user.name,
                         note: String(row['Ghi chú'] || row['note'] || ''),
                     };
-                    addAssetMaintenance(m);
+                    await addAssetMaintenance(m, 'import');
                     imported++;
-                });
+                }
                 toast.success('Import thành công', `Đã nhập ${imported} bản ghi bảo trì`);
             } catch {
                 toast.error('Lỗi import', 'File Excel không hợp lệ');
@@ -167,9 +200,14 @@ const AssetMaintenancePage: React.FC = () => {
     };
 
     // Update status
-    const handleComplete = (m: MaintenanceType) => {
-        updateAssetMaintenance({ ...m, status: 'completed', endDate: new Date().toISOString().split('T')[0] });
-        toast.success('Hoàn thành', 'Đã cập nhật trạng thái bảo trì');
+    const handleComplete = async (m: MaintenanceType) => {
+        if (!ensureMaintenancePolicy('complete', m.assetId)) return;
+        try {
+            await updateAssetMaintenance({ ...m, status: 'completed', endDate: new Date().toISOString().split('T')[0] });
+            toast.success('Hoàn thành', 'Đã cập nhật trạng thái bảo trì');
+        } catch (err: any) {
+            toast.error('Lỗi hoàn tất', err?.message || 'Không thể hoàn tất bảo trì');
+        }
     };
 
     const formatCurrency = (v: number) => v.toLocaleString('vi-VN') + 'đ';
@@ -186,15 +224,19 @@ const AssetMaintenancePage: React.FC = () => {
                     <p className="text-sm text-slate-400 mt-1">Quản lý bảo trì, sửa chữa tài sản với chi phí, hoá đơn đính kèm</p>
                 </div>
                 <div className="flex gap-2">
+                    {canOpenImport && (
                     <button onClick={() => excelInputRef.current?.click()}
                         className="px-4 py-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 text-xs font-black uppercase flex items-center gap-1.5 hover:bg-emerald-100 transition-colors">
                         <FileSpreadsheet size={14} /> Import Excel
                     </button>
+                    )}
                     <input ref={excelInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleExcelImport} />
+                    {canOpenCreate && (
                     <button onClick={() => { resetForm(); setActiveTab('create'); }}
                         className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-red-500 text-white text-xs font-black uppercase flex items-center gap-1.5 shadow-lg shadow-orange-500/20">
                         <Plus size={14} /> Tạo mới
                     </button>
+                    )}
                 </div>
             </div>
 
@@ -232,10 +274,12 @@ const AssetMaintenancePage: React.FC = () => {
                     className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'list' ? 'bg-gradient-to-r from-orange-500 to-red-500 text-white shadow-lg shadow-orange-500/20' : 'text-slate-400 hover:text-orange-500'}`}>
                     <Wrench size={13} className="inline mr-1.5" /> Danh sách
                 </button>
+                {canOpenCreate && (
                 <button onClick={() => setActiveTab('create')}
                     className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'create' ? 'bg-gradient-to-r from-orange-500 to-red-500 text-white shadow-lg shadow-orange-500/20' : 'text-slate-400 hover:text-orange-500'}`}>
                     <Plus size={13} className="inline mr-1.5" /> Tạo mới
                 </button>
+                )}
             </div>
 
             {/* ==================== LIST TAB ==================== */}
@@ -325,7 +369,7 @@ const AssetMaintenancePage: React.FC = () => {
                                                     <td className="p-4 text-center">
                                                         <div className="flex items-center gap-1 justify-center">
                                                             <button onClick={() => setViewDetail(m)} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-blue-500"><Eye size={14} /></button>
-                                                            {m.status !== 'completed' && (
+                                                            {m.status !== 'completed' && buildAssetMaintenanceActionPolicy(user, 'complete', targetFromAsset(asset)).allowed && (
                                                                 <button onClick={() => handleComplete(m)} className="p-1.5 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-950/20 text-slate-400 hover:text-emerald-500" title="Đánh dấu hoàn thành"><CheckCircle size={14} /></button>
                                                             )}
                                                         </div>

@@ -12,6 +12,10 @@ import {
 } from '../permissions/permissionReadiness';
 
 const read = (path: string) => readFileSync(join(process.cwd(), path), 'utf8');
+const actionCodesFor = (moduleCode: string): string[] =>
+  getPermissionModules()
+    .find(module => module.code === moduleCode)
+    ?.actions.map(action => action.permissionCode) || [];
 
 describe('manual permission matrix catalog contract', () => {
   it('keeps the matrix all-application and every module anchored by view', () => {
@@ -61,6 +65,42 @@ describe('manual permission matrix catalog contract', () => {
       'project.report.export',
       'system.authorization.manage_grants',
     ]));
+  });
+
+  it('defines asset catalog action codes with view first and legacy manage last', () => {
+    expect(actionCodesFor('asset.catalog')).toEqual([
+      'asset.catalog.view',
+      'asset.catalog.create',
+      'asset.catalog.edit',
+      'asset.catalog.delete',
+      'asset.catalog.dispose',
+      'asset.catalog.import',
+      'asset.catalog.transfer_stock',
+      'asset.catalog.manage',
+    ]);
+  });
+
+  it('defines asset assignment, maintenance, audit, and report action codes', () => {
+    expect(actionCodesFor('asset.assignment')).toEqual([
+      'asset.assignment.view',
+      'asset.assignment.assign',
+      'asset.assignment.return',
+      'asset.assignment.transfer',
+    ]);
+
+    expect(actionCodesFor('asset.maintenance')).toEqual([
+      'asset.maintenance.view',
+      'asset.maintenance.create',
+      'asset.maintenance.complete',
+      'asset.maintenance.import',
+      'asset.maintenance.manage',
+    ]);
+
+    expect(actionCodesFor('asset.audit')).toEqual([
+      'asset.audit.view',
+      'asset.audit.perform',
+      'asset.audit.export',
+    ]);
   });
 
   it('records the manual matrix inventory boundary', () => {

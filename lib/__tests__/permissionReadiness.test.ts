@@ -52,9 +52,11 @@ describe('permission readiness', () => {
     }
   });
 
-  it('adds only verified/enforced grants but permits existing Direct revocation', () => {
+  it('adds declared action grants but keeps legacy-only manage actions blocked', () => {
     expect(canAddDirectGrant(action('project.daily_log.edit_own'))).toBe(true);
-    expect(canAddDirectGrant(action('project.daily_log.confirm'))).toBe(false);
+    expect(canAddDirectGrant(action('project.daily_log.confirm'))).toBe(true);
+    expect(canAddDirectGrant(action('hrm.employee.create'))).toBe(true);
+    expect(canAddDirectGrant(action('project.daily_log.manage'))).toBe(false);
     expect(canRemoveDirectGrant(true)).toBe(true);
     expect(canRemoveDirectGrant(false)).toBe(false);
   });

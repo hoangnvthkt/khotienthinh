@@ -1,0 +1,6 @@
+{
+  "ok": true,
+  "migrations": [
+    "20260720100000_asset_action_operation_guards.sql"
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "finalRows": [
+    {
+      "local": "20260720095234",
+      "remote": "20260720095234",
+      "time": "2026-07-20 09:52:34"
+    },
+    {
+      "local": "20260720100000",
+      "remote": "20260720100000",
+      "time": "2026-07-20 10:00:00"
+    }
+  ],
+  "bothVersionsPresent": true,
+  "applied": [
+    "20260720100000_asset_action_operation_guards.sql"
+  ],
+  "onlyExpectedApplied": true,
+  "smokeOutputBytes": 0,
+  "countsUnchanged": true,
+  "notices": [
+    "NOTICE (42701): column \"grant_readiness\" of relation \"permission_actions\" already exists, skipping",
+    "NOTICE (00000): policy \"asset_categories_select\" for relation \"public.asset_categories\" does not exist, skipping",
+    "NOTICE (00000): policy \"asset_categories_write\" for relation \"public.asset_categories\" does not exist, skipping",
+    "NOTICE (00000): policy \"asset_categories_update\" for relation \"public.asset_categories\" does not exist, skipping",
+    "NOTICE (00000): policy \"asset_categories_delete\" for relation \"public.asset_categories\" does not exist, skipping",
+    "NOTICE (00000): policy \"asset_assignments_select\" for relation \"public.asset_assignments\" does not exist, skipping",
+    "NOTICE (00000): policy \"asset_assignments_write\" for relation \"public.asset_assignments\" does not exist, skipping",
+    "NOTICE (00000): policy \"asset_assignments_update\" for relation \"public.asset_assignments\" does not exist, skipping",
+    "NOTICE (00000): policy \"asset_assignments_delete\" for relation \"public.asset_assignments\" does not exist, skipping",
+    "NOTICE (00000): policy \"asset_maintenances_select\" for relation \"public.asset_maintenances\" does not exist, skipping",
+    "NOTICE (00000): policy \"asset_maintenances_write\" for relation \"public.asset_maintenances\" does not exist, skipping",
+    "NOTICE (00000): policy \"asset_maintenances_update\" for relation \"public.asset_maintenances\" does not exist, skipping",
+    "NOTICE (00000): policy \"asset_maintenances_delete\" for relation \"public.asset_maintenances\" does not exist, skipping"
+  ],
+  "errors": []
+}

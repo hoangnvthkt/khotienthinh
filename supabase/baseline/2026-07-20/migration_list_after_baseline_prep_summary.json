@@ -1,0 +1,12 @@
+{
+  "rows": 333,
+  "both": 0,
+  "localOnly": 2,
+  "remoteOnly": 331,
+  "localVersions": [
+    "20260720095234",
+    "20260720100000"
+  ],
+  "remoteFirst": "20260304041720",
+  "remoteLast": "20260719153519"
+}

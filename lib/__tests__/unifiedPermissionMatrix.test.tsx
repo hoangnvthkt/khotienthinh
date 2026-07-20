@@ -63,12 +63,12 @@ describe('UnifiedPermissionMatrix', () => {
         targetUserId="user-1"
         grants={[]}
         effectiveSources={[
-          source('system.authorization.view', 'ROLE'),
-          source('system.authorization.view', 'LEGACY'),
+          source('hrm.employee.view', 'ROLE'),
+          source('hrm.employee.view', 'LEGACY'),
         ]}
         scope={{ scopeType: 'project', scopeId: 'project-1' }}
-        initialApplicationCode="system"
-        initialModuleCode="system.authorization"
+        initialApplicationCode="hrm"
+        initialModuleCode="hrm.employee"
         onGrantsChange={() => undefined}
       />,
     );
@@ -78,34 +78,54 @@ describe('UnifiedPermissionMatrix', () => {
     expect(html).not.toMatch(/type="checkbox"[^>]*checked=""/);
   });
 
-  it('disables a Declared addition but lets an existing Declared Direct be revoked', () => {
+  it('allows a Declared app action to be granted while still allowing Direct revocation', () => {
     const withoutGrant = renderToStaticMarkup(
       <UnifiedPermissionMatrix
         targetUserId="user-1"
         grants={[]}
         effectiveSources={[]}
-        scope={{ scopeType: 'project', scopeId: 'project-1' }}
-        initialApplicationCode="project"
-        initialModuleCode="project.daily_log"
+        scope={{ scopeType: 'global', scopeId: '*' }}
+        initialApplicationCode="hrm"
+        initialModuleCode="hrm.employee"
         onGrantsChange={() => undefined}
       />,
     );
     const withGrant = renderToStaticMarkup(
       <UnifiedPermissionMatrix
         targetUserId="user-1"
-        grants={[grant('project.daily_log.confirm')]}
+        grants={[{ ...grant('hrm.employee.create'), scopeType: 'global', scopeId: '*' }]}
         effectiveSources={[]}
-        scope={{ scopeType: 'project', scopeId: 'project-1' }}
-        initialApplicationCode="project"
-        initialModuleCode="project.daily_log"
+        scope={{ scopeType: 'global', scopeId: '*' }}
+        initialApplicationCode="hrm"
+        initialModuleCode="hrm.employee"
         onGrantsChange={() => undefined}
       />,
     );
 
     expect(withoutGrant).toContain('Chưa xác minh');
-    expect(withoutGrant).toMatch(/Xác nhận[\s\S]{0,800}disabled=""/);
-    expect(withGrant).toMatch(/Xác nhận[\s\S]{0,800}checked=""/);
+    expect(withoutGrant).not.toMatch(/Tạo[\s\S]{0,800}disabled=""/);
+    expect(withGrant).toMatch(/Tạo[\s\S]{0,800}checked=""/);
     expect(withGrant).toContain('Có thể thu hồi');
+  });
+
+  it('disables View revocation while same-module Direct actions remain', () => {
+    const html = renderToStaticMarkup(
+      <UnifiedPermissionMatrix
+        targetUserId="user-1"
+        grants={[
+          { ...grant('asset.catalog.view'), scopeType: 'warehouse', scopeId: 'wh-1' },
+          { ...grant('asset.catalog.create'), scopeType: 'warehouse', scopeId: 'wh-1' },
+        ]}
+        effectiveSources={[]}
+        scope={{ scopeType: 'warehouse', scopeId: 'wh-1' }}
+        initialApplicationCode="asset"
+        initialModuleCode="asset.catalog"
+        onGrantsChange={() => undefined}
+      />,
+    );
+
+    expect(html).toMatch(/Xem[\s\S]{0,1200}type="checkbox"[^>]*disabled=""/);
+    expect(html).toContain('Bỏ quyền hành động trước khi thu hồi View.');
   });
 
   it('summarizes auto-View and effective access retained by inherited sources', () => {
@@ -149,6 +169,12 @@ describe('UnifiedPermissionMatrix', () => {
           name: 'Actor',
           email: 'actor@example.com',
           accountStatus: 'ACTIVE',
+          legacyState: {
+            allowedModules: [],
+            allowedSubModules: {},
+            adminModules: [],
+            adminSubModules: {},
+          },
         }]}
         currentUserId="actor-1"
         affectedPrincipalId="user-1"

@@ -25,6 +25,14 @@ const commandsSql = commandsFiles.length === 1
   : '';
 const commandsNormalized = commandsSql.replace(/\s+/g, ' ').trim();
 
+const principalLegacyStateFiles = readdirSync(dir)
+  .filter(file => file.endsWith('_authorization_principals_legacy_state.sql'))
+  .sort();
+const principalLegacyStateSql = principalLegacyStateFiles.length === 1
+  ? readFileSync(join(dir, principalLegacyStateFiles[0]), 'utf8')
+  : '';
+const principalLegacyStateNormalized = principalLegacyStateSql.replace(/\s+/g, ' ').trim();
+
 const lifecycleIntegrationFiles = readdirSync(dir)
   .filter(file => file.endsWith('_authorization_account_lifecycle_integration.sql'))
   .sort();
@@ -142,6 +150,16 @@ describe('authorization governance commands migration', () => {
     expect(commandsNormalized).not.toMatch(/delete from public\.user_permission_grants/i);
     expect(commandsNormalized).toMatch(/direct_grant_requires_expiry/i);
     expect(commandsNormalized).toMatch(/app_private\.assert_and_record_sod_warnings/i);
+  });
+});
+
+describe('authorization principals legacy state migration', () => {
+  it('extends authorization principal listing with legacy module state', () => {
+    expect(principalLegacyStateFiles).toHaveLength(1);
+    expect(principalLegacyStateNormalized).toMatch(/returns table \( user_id uuid, name text, email text, account_status text, allowed_modules text\[\], allowed_sub_modules jsonb, admin_modules text\[\], admin_sub_modules jsonb \)/i);
+    expect(principalLegacyStateNormalized).toMatch(/coalesce\(user_row\.allowed_modules, '\{\}'::text\[\]\)/i);
+    expect(principalLegacyStateNormalized).toMatch(/coalesce\(user_row\.allowed_sub_modules, '\{\}'::jsonb\)/i);
+    expect(principalLegacyStateNormalized).toMatch(/create or replace function public\.list_authorization_principals\(\).*?security invoker/is);
   });
 });
 

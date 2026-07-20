@@ -256,7 +256,7 @@ describe('permissionRegistry', () => {
     expect(actionByCode['hrm.employee.view'].scopeTypes).toEqual(expect.arrayContaining(['global', 'own', 'department', 'assigned']));
     expect(actionByCode['expense.expense_record.edit_own'].scopeTypes).toEqual(expect.arrayContaining(['global', 'own', 'department']));
     expect(actionByCode['workflow.instance.act_assigned'].scopeTypes).toEqual(expect.arrayContaining(['global', 'own', 'assigned']));
-    expect(actionByCode['asset.assignment.approve'].scopeTypes).toEqual(expect.arrayContaining(['global', 'warehouse', 'department', 'assigned']));
+    expect(actionByCode['asset.assignment.transfer'].scopeTypes).toEqual(expect.arrayContaining(['global', 'warehouse', 'department', 'assigned']));
     expect(actionByCode['contract.supplier.manage'].scopeTypes).toEqual(['global']);
     expect(actionByCode['analytics.export'].scopeTypes).toEqual(['global']);
   });

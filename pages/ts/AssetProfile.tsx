@@ -10,7 +10,8 @@ import {
     AlertTriangle, Package, Building2, Download, Printer
 } from 'lucide-react';
 import { AssetStatus, ASSET_STATUS_LABELS, AssetMaintenance, MaintenanceAttachment } from '../../types';
-import { usePermission } from '../../hooks/usePermission';
+import { buildAssetMaintenanceActionPolicy } from '../../lib/permissions/assetActionUiPolicy';
+import { targetFromAsset } from '../../lib/permissions/assetPermissionScope';
 
 const TYPE_LABELS: Record<string, string> = { scheduled: 'Bảo trì định kỳ', repair: 'Sửa chữa', inspection: 'Kiểm tra', warranty: 'Bảo hành' };
 const STATUS_LABELS: Record<string, string> = { planned: 'Lên kế hoạch', in_progress: 'Đang thực hiện', completed: 'Hoàn thành' };
@@ -27,8 +28,6 @@ const AssetProfile: React.FC = () => {
     useModuleData('ts');
     useModuleData('wms');
     const toast = useToast();
-    const { canManage } = usePermission();
-    const canCRUD = canManage('/ts/catalog');
 
     const [activeTab, setActiveTab] = useState<'overview' | 'history' | 'maintenance' | 'costs'>('overview');
     const [showAddMaintenance, setShowAddMaintenance] = useState(false);
@@ -110,8 +109,13 @@ const AssetProfile: React.FC = () => {
     const StatusIcon = cfg.icon;
 
     // Handle quick-add maintenance
-    const handleAddMaintenance = () => {
+    const handleAddMaintenance = async () => {
         if (!mForm.description.trim()) { toast.error('Lỗi', 'Vui lòng nhập mô tả'); return; }
+        const policy = buildAssetMaintenanceActionPolicy(user, 'create', targetFromAsset(asset));
+        if (!policy.allowed) {
+            toast.error('Không có quyền', policy.reason || 'Bạn chưa được cấp quyền tạo phiếu bảo trì trong phạm vi này.');
+            return;
+        }
         const estCost = Number(mForm.estimatedCost) || 0;
         const actCost = Number(mForm.actualCost) || 0;
         const m: AssetMaintenance = {
@@ -125,11 +129,15 @@ const AssetProfile: React.FC = () => {
             performedBy: user.id, performedByName: user.name, note: mForm.note || undefined,
             attachments: mAttachments.length > 0 ? mAttachments : undefined,
         };
-        addAssetMaintenance(m);
-        toast.success('Thành công', `Đã ghi nhận bảo trì cho ${asset.name}`);
-        setShowAddMaintenance(false);
-        setMForm({ type: 'repair', description: '', estimatedCost: 0, actualCost: 0, vendor: '', invoiceNumber: '', startDate: new Date().toISOString().split('T')[0], status: 'in_progress', note: '' });
-        setMAttachments([]);
+        try {
+            await addAssetMaintenance(m);
+            toast.success('Thành công', `Đã ghi nhận bảo trì cho ${asset.name}`);
+            setShowAddMaintenance(false);
+            setMForm({ type: 'repair', description: '', estimatedCost: 0, actualCost: 0, vendor: '', invoiceNumber: '', startDate: new Date().toISOString().split('T')[0], status: 'in_progress', note: '' });
+            setMAttachments([]);
+        } catch (err: any) {
+            toast.error('Lỗi bảo trì', err?.message || 'Không thể ghi nhận bảo trì');
+        }
     };
 
     const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -395,7 +403,7 @@ const AssetProfile: React.FC = () => {
             {activeTab === 'maintenance' && (
                 <div className="space-y-4">
                     <div className="flex justify-end">
-                        {canCRUD && (
+                        {buildAssetMaintenanceActionPolicy(user, 'create', targetFromAsset(asset)).allowed && (
                         <button onClick={() => setShowAddMaintenance(true)}
                             className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-red-500 text-white text-xs font-black uppercase flex items-center gap-1.5 shadow-lg shadow-orange-500/20">
                             <Plus size={14} /> Thêm bảo trì

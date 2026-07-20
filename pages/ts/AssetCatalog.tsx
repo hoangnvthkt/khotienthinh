@@ -10,7 +10,6 @@ import {
     Upload, Download, Table2, CheckCircle2, Loader2, ChevronDown, ChevronRight, Layers, LayoutGrid, ArrowLeftRight, RefreshCcw
 } from 'lucide-react';
 import { Asset, AssetStatus, ASSET_STATUS_LABELS, ASSET_CATEGORY_LABELS, AssetCategoryType, AssetLocationStock, AssetTransfer } from '../../types';
-import { usePermission } from '../../hooks/usePermission';
 import { isSupabaseConfigured, supabase } from '../../lib/supabase';
 import { loadXlsx } from '../../lib/loadXlsx';
 import Pagination from '../../components/Pagination';
@@ -20,6 +19,8 @@ import { ExcelImportMode, ExcelImportPreview, applyImportChanges, buildImportPre
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
 import SearchableSelect from '../../components/common/SearchableSelect';
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
+import { buildAssetCatalogActionPolicy, type AssetActionPolicy } from '../../lib/permissions/assetActionUiPolicy';
+import { hasAnyAssetActionSource, targetFromAsset, targetFromStock, type AssetPermissionTarget } from '../../lib/permissions/assetPermissionScope';
 
 const ScannerModal = React.lazy(() => import('../../components/ScannerModal'));
 
@@ -29,15 +30,17 @@ const AssetCatalog: React.FC = () => {
         assets, assetCategories, warehouses, users, user,
         assetLocationStocks, assetTransfers,
         suppliers, units,
-        addAssetWithInitialStock, updateAsset, removeAsset,
+        addAssetWithInitialStock, updateAsset, removeAsset, disposeAsset,
         addAssetCategory, updateAssetCategory, removeAssetCategory, addAssetTransfer,
         transferAssetStock,
         addSupplier, addUnit
     } = useApp();
   useModuleData('ts');
     const toast = useToast();
-    const { canManage } = usePermission();
-    const canCRUD = canManage('/ts/catalog');
+    const canCreateAsset = hasAnyAssetActionSource(user, 'asset.catalog.create');
+    const canEditAsset = hasAnyAssetActionSource(user, 'asset.catalog.edit');
+    const canImportAsset = hasAnyAssetActionSource(user, 'asset.catalog.import');
+    const canTransferStock = hasAnyAssetActionSource(user, 'asset.catalog.transfer_stock');
 
     const [searchTerm, setSearchTerm] = useState('');
     const [filterCategory, setFilterCategory] = useState('all');
@@ -90,7 +93,31 @@ const AssetCatalog: React.FC = () => {
         });
     };
 
+    const showPolicyDenied = (policy: AssetActionPolicy) => {
+        toast.error('Không có quyền', policy.reason || 'Bạn chưa được cấp quyền thực hiện thao tác này.');
+    };
+
+    const ensureCatalogPolicy = (
+        operation: Parameters<typeof buildAssetCatalogActionPolicy>[1],
+        target: Parameters<typeof buildAssetCatalogActionPolicy>[2],
+    ) => {
+        const policy = buildAssetCatalogActionPolicy(user, operation, target);
+        if (!policy.allowed) {
+            showPolicyDenied(policy);
+            return false;
+        }
+        return true;
+    };
+
+    const formPermissionTarget = (): AssetPermissionTarget => ({
+        warehouseId: form.warehouseId || undefined,
+    });
+
     const openAdd = async () => {
+        if (!canCreateAsset) {
+            showPolicyDenied(buildAssetCatalogActionPolicy(user, 'create', {}));
+            return;
+        }
         resetForm();
         let nextCode = `TS-${String(assets.length + 1).padStart(3, '0')}`;
         if (isSupabaseConfigured) {
@@ -103,6 +130,7 @@ const AssetCatalog: React.FC = () => {
     };
 
     const openEdit = (asset: Asset) => {
+        if (!ensureCatalogPolicy('edit', targetFromAsset(asset))) return;
         setForm({
             code: asset.code, name: asset.name, categoryId: asset.categoryId,
             brand: asset.brand || '', model: asset.model || '', serialNumber: asset.serialNumber || '',
@@ -121,6 +149,7 @@ const AssetCatalog: React.FC = () => {
             toast.error('Lỗi', 'Vui lòng nhập mã tài sản và tên tài sản');
             return;
         }
+        if (!ensureCatalogPolicy(editingAsset ? 'edit' : 'create', editingAsset ? targetFromAsset(editingAsset) : formPermissionTarget())) return;
         const now = new Date().toISOString();
         const resolvedSupplierName = suppliers.find(s => s.id === form.supplierId)?.name || undefined;
         try {
@@ -183,26 +212,29 @@ const AssetCatalog: React.FC = () => {
         toast.success('Thêm đơn vị thành công', `"đơn vị được thêm vào danh sách`);
     };
 
-    const handleDelete = (id: string) => {
-        removeAsset(id);
-        setDeleteConfirm(null);
-        toast.success('Đã xóa', 'Tài sản đã được xóa khỏi danh mục');
+    const handleDelete = async (id: string) => {
+        const asset = assets.find(item => item.id === id);
+        if (!ensureCatalogPolicy('delete', targetFromAsset(asset))) return;
+        try {
+            await removeAsset(id);
+            setDeleteConfirm(null);
+            toast.success('Đã xóa', 'Tài sản đã được xóa khỏi danh mục');
+        } catch (err: any) {
+            toast.error('Lỗi xóa tài sản', err?.message || 'Không thể xóa tài sản');
+        }
     };
 
-    const handleDispose = () => {
+    const handleDispose = async () => {
         if (!disposeConfirm) return;
-        updateAsset({
-            ...disposeConfirm,
-            status: AssetStatus.DISPOSED,
-            assignedToUserId: undefined,
-            assignedToName: undefined,
-            assignedDate: undefined,
-            note: `${disposeConfirm.note ? disposeConfirm.note + '\n' : ''}[XUẤT HUỶ ${new Date().toLocaleDateString('vi-VN')}] ${disposeReason}`.trim(),
-            updatedAt: new Date().toISOString(),
-        });
-        toast.success('Xuất huỷ thành công', `Tài sản ${disposeConfirm.name} đã được xuất huỷ. Lịch sử vẫn được lưu lại.`);
-        setDisposeConfirm(null);
-        setDisposeReason('');
+        if (!ensureCatalogPolicy('dispose', targetFromAsset(disposeConfirm))) return;
+        try {
+            await disposeAsset(disposeConfirm, disposeReason);
+            toast.success('Xuất huỷ thành công', `Tài sản ${disposeConfirm.name} đã được xuất huỷ. Lịch sử vẫn được lưu lại.`);
+            setDisposeConfirm(null);
+            setDisposeReason('');
+        } catch (err: any) {
+            toast.error('Lỗi xuất huỷ', err?.message || 'Không thể xuất huỷ tài sản');
+        }
     };
 
     const handleBatchTransfer = async () => {
@@ -215,6 +247,10 @@ const AssetCatalog: React.FC = () => {
             toast.error('Lỗi', 'Vui lòng chọn kho hoặc người nhận');
             return;
         }
+        if (!ensureCatalogPolicy('transfer_stock', {
+            source: targetFromStock(transferFromStock),
+            destination: { warehouseId: tForm.toWarehouseId || undefined, assignedUserId: tForm.userId || undefined },
+        })) return;
 
         if (isSupabaseConfigured) {
             try {
@@ -290,6 +326,13 @@ const AssetCatalog: React.FC = () => {
     };
 
     const openBatchTransfer = (stock: AssetLocationStock) => {
+        if (!canTransferStock) {
+            showPolicyDenied(buildAssetCatalogActionPolicy(user, 'transfer_stock', {
+                source: targetFromStock(stock),
+                destination: targetFromStock(stock),
+            }));
+            return;
+        }
         setTransferFromStock(stock);
         setTForm(prev => ({ ...prev, qty: stock.qty, toWarehouseId: '', userId: '', reason: '' }));
         setShowBatchTransfer(true);
@@ -329,6 +372,10 @@ const AssetCatalog: React.FC = () => {
     };
 
     const openAssetImport = (mode: ExcelImportMode) => {
+        if (!canImportAsset || (mode === 'create' && !canCreateAsset) || (mode === 'update' && !canEditAsset)) {
+            showPolicyDenied(buildAssetCatalogActionPolicy(user, 'import', {}));
+            return;
+        }
         importModeRef.current = mode;
         setImportMode(mode);
         fileInputRef.current?.click();
@@ -476,6 +523,8 @@ const AssetCatalog: React.FC = () => {
         try {
           if (importPreview.mode === 'create') {
             for (const row of records) {
+                const target = { warehouseId: row.warehouseId || undefined };
+                if (!ensureCatalogPolicy('import', target) || !ensureCatalogPolicy('create', target)) return;
                 const supplierName = row.supplierId ? suppliers.find(s => s.id === row.supplierId)?.name : undefined;
                 await addAssetWithInitialStock({
                     ...row,
@@ -490,6 +539,7 @@ const AssetCatalog: React.FC = () => {
           } else {
             const changedRows = importPreview.rows.filter(row => row.status === 'update' && row.existingRecord && row.nextRecord);
             for (const row of changedRows) {
+                if (!ensureCatalogPolicy('import', targetFromAsset(row.existingRecord)) || !ensureCatalogPolicy('edit', targetFromAsset(row.existingRecord))) return;
                 const supplierName = row.nextRecord!.supplierId
                     ? suppliers.find(s => s.id === row.nextRecord!.supplierId)?.name || row.nextRecord!.supplierName
                     : undefined;
@@ -611,6 +661,10 @@ const AssetCatalog: React.FC = () => {
         const StatusIcon = cfg.icon;
         const dep = getDepreciation(asset);
         const warranty = getWarrantyInfo(asset);
+        const target = targetFromAsset(asset);
+        const canEditRow = buildAssetCatalogActionPolicy(user, 'edit', target).allowed;
+        const canDeleteRow = buildAssetCatalogActionPolicy(user, 'delete', target).allowed;
+        const canDisposeRow = buildAssetCatalogActionPolicy(user, 'dispose', target).allowed;
         const isBundle = asset.assetType === 'bundle';
         const isBatch = asset.assetType === 'batch';
         const isExpanded = expandedBundles.has(asset.id);
@@ -667,15 +721,15 @@ const AssetCatalog: React.FC = () => {
                     </td>
                     <td className="p-4 text-right">
                         <div className="flex items-center justify-end gap-1">
-                            {asset.status !== AssetStatus.DISPOSED && canCRUD && (
+                            {asset.status !== AssetStatus.DISPOSED && canEditRow && (
                                 <button onClick={(e) => { e.stopPropagation(); openEdit(asset); }} className="p-2 text-slate-300 hover:text-blue-600 transition-colors" title="Sửa"><Edit3 size={14} /></button>
                             )}
-                            {asset.status !== AssetStatus.DISPOSED && asset.status !== AssetStatus.IN_USE && canCRUD && (
+                            {asset.status !== AssetStatus.DISPOSED && asset.status !== AssetStatus.IN_USE && canDisposeRow && (
                                 <button onClick={(e) => { e.stopPropagation(); setDisposeConfirm(asset); setDisposeReason(''); }} className="p-2 text-slate-300 hover:text-orange-600 transition-colors" title="Xuất huỷ">
                                     <XCircle size={14} />
                                 </button>
                             )}
-                            {canCRUD && (deleteConfirm === asset.id ? (
+                            {canDeleteRow && (deleteConfirm === asset.id ? (
                                 <div className="flex gap-1" onClick={e => e.stopPropagation()}>
                                     <button onClick={() => handleDelete(asset.id)} className="p-1.5 bg-red-500 text-white rounded-lg text-[9px] font-bold">Xóa</button>
                                     <button onClick={() => setDeleteConfirm(null)} className="p-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg text-[9px] font-bold">Hủy</button>
@@ -762,21 +816,27 @@ const AssetCatalog: React.FC = () => {
                     <button onClick={() => setScannerOpen(true)} className="flex items-center px-4 py-2 bg-slate-800 dark:bg-slate-700 text-white rounded-xl hover:bg-slate-700 transition text-[10px] font-black uppercase tracking-widest">
                         <QrCode className="w-4 h-4 mr-2" /> Quét QR
                     </button>
-                    {canCRUD && (
+                    {(canCreateAsset || canEditAsset || canImportAsset) && (
                     <>
                     <button onClick={downloadTemplate} className="flex items-center px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-500 transition text-[10px] font-black uppercase tracking-widest">
                         <Download className="w-4 h-4 mr-2" /> Tải mẫu
                     </button>
+                    {canImportAsset && canCreateAsset && (
                     <button disabled={importing} onClick={() => openAssetImport('create')} className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-500 transition text-[10px] font-black uppercase tracking-widest disabled:opacity-60">
                         {importing && importMode === 'create' ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Upload className="w-4 h-4 mr-2" />} Nhập mới
                     </button>
+                    )}
+                    {canImportAsset && canEditAsset && (
                     <button disabled={importing} onClick={() => openAssetImport('update')} className="flex items-center px-4 py-2 bg-amber-500 text-white rounded-xl hover:bg-amber-400 transition text-[10px] font-black uppercase tracking-widest disabled:opacity-60">
                         {importing && importMode === 'update' ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RefreshCcw className="w-4 h-4 mr-2" />} Cập nhật
                     </button>
+                    )}
                     <input ref={fileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleFileUpload} />
+                    {canCreateAsset && (
                     <button onClick={openAdd} className="flex items-center px-6 py-2 bg-gradient-to-r from-rose-500 to-pink-600 text-white rounded-xl hover:shadow-lg transition text-[10px] font-black uppercase tracking-widest shadow-lg shadow-rose-500/20">
                         <Plus className="w-4 h-4 mr-2" /> Thêm tài sản
                     </button>
+                    )}
                     </>
                     )}
                 </div>
@@ -1296,7 +1356,10 @@ const AssetCatalog: React.FC = () => {
                                                         <span className="text-xs text-slate-500 mr-2">Tồn:</span>
                                                         <span className="text-lg font-black text-amber-600">{stock.qty} {detailAsset.unit}</span>
                                                     </div>
-                                                    {stock.qty > 0 && canCRUD && (
+                                                    {stock.qty > 0 && buildAssetCatalogActionPolicy(user, 'transfer_stock', {
+                                                        source: targetFromStock(stock),
+                                                        destination: targetFromStock(stock),
+                                                    }).allowed && (
                                                         <button onClick={() => openBatchTransfer(stock)} className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 text-[10px] font-bold rounded-lg transition-colors flex items-center gap-1 border border-amber-200">
                                                             <ArrowLeftRight size={12} /> Điều chuyển / Cấp phát
                                                         </button>
@@ -1310,10 +1373,12 @@ const AssetCatalog: React.FC = () => {
                             )}
                         </div>
                         <div className="p-4 border-t border-slate-100 dark:border-slate-800 flex justify-end shrink-0 bg-white dark:bg-slate-900 rounded-b-2xl">
+                            {buildAssetCatalogActionPolicy(user, 'edit', targetFromAsset(detailAsset)).allowed && (
                             <button onClick={() => { setDetailAsset(null); openEdit(detailAsset); }}
                                 className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-bold text-xs shadow-lg shadow-blue-500/20 hover:shadow-xl transition-all flex items-center gap-2">
                                 <Edit3 size={14} /> Chỉnh sửa
                             </button>
+                            )}
                         </div>
                     </div>
                 </div>

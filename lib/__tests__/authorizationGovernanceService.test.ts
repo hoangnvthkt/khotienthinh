@@ -60,6 +60,35 @@ describe('authorization governance service contracts', () => {
     });
   });
 
+  it('maps authorization principals with legacy module state for the single permission editor', async () => {
+    supabaseMock.rpc.mockResolvedValueOnce({
+      data: [{
+        user_id: 'user-1',
+        name: 'Hà Thị Hải Hồng',
+        email: 'honghh@tienthinhjsc.vn',
+        account_status: 'ACTIVE',
+        allowed_modules: ['HRM'],
+        allowed_sub_modules: { HRM: ['/hrm/employees'] },
+        admin_modules: [],
+        admin_sub_modules: {},
+      }],
+      error: null,
+    });
+
+    await expect(authorizationGovernanceService.listAuthorizationPrincipals()).resolves.toEqual([{
+      userId: 'user-1',
+      name: 'Hà Thị Hải Hồng',
+      email: 'honghh@tienthinhjsc.vn',
+      accountStatus: 'ACTIVE',
+      legacyState: {
+        allowedModules: ['HRM'],
+        allowedSubModules: { HRM: ['/hrm/employees'] },
+        adminModules: [],
+        adminSubModules: {},
+      },
+    }]);
+  });
+
   it('never sends an actor field in browser RPC payloads', () => {
     const assignmentArgs = buildAssignBusinessRoleRpcArgs({
       targetUserId: 'user-1', roleTemplateId: 'role-1',

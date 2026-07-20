@@ -17,8 +17,28 @@ import type {
   PrincipalRoleAssignment,
   SaveBusinessRoleInput,
 } from './authorizationGovernanceTypes';
+import type { LegacyPermissionState } from './permissionTypes';
 
 const EMPTY_DECISION: AuthorizationDecision = { hardDenies: [], warnings: [] };
+
+const normalizeStringArray = (value: unknown): string[] =>
+  Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+
+const normalizeRouteMap = (value: unknown): Record<string, string[]> => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .map(([key, routes]) => [key, normalizeStringArray(routes)])
+      .filter(([, routes]) => routes.length > 0),
+  );
+};
+
+const mapLegacyPermissionState = (row: any): LegacyPermissionState => ({
+  allowedModules: normalizeStringArray(row.allowed_modules ?? row.allowedModules),
+  allowedSubModules: normalizeRouteMap(row.allowed_sub_modules ?? row.allowedSubModules),
+  adminModules: normalizeStringArray(row.admin_modules ?? row.adminModules),
+  adminSubModules: normalizeRouteMap(row.admin_sub_modules ?? row.adminSubModules),
+});
 
 const throwIfError = (error: unknown): void => {
   if (error) throw error;
@@ -133,6 +153,7 @@ export const authorizationGovernanceService = {
       name: row.name,
       email: row.email,
       accountStatus: row.account_status ?? row.accountStatus,
+      legacyState: mapLegacyPermissionState(row),
     }));
   },
 

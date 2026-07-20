@@ -63,6 +63,7 @@ export interface AuthorizationPrincipal {
   name: string;
   email: string;
   accountStatus: 'ACTIVE' | 'DISABLED';
+  legacyState: LegacyPermissionState;
 }
 
 export interface AuthorizationAuditEvent {

@@ -10,9 +10,11 @@ import {
 import { AssetStatus, ASSET_STATUS_LABELS } from '../../types';
 import { loadXlsx } from '../../lib/loadXlsx';
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
+import { buildAssetAuditActionPolicy } from '../../lib/permissions/assetActionUiPolicy';
+import { targetFromAsset } from '../../lib/permissions/assetPermissionScope';
 
 const AssetReports: React.FC = () => {
-    const { assets, assetCategories, assetAssignments } = useApp();
+    const { assets, assetCategories, user } = useApp();
   useModuleData('ts');
     const toast = useToast();
 
@@ -97,7 +99,19 @@ const AssetReports: React.FC = () => {
         }), { totalOriginal: 0, totalDepreciated: 0, totalRemaining: 0, count: 0, warrantyExpiring: 0 });
     }, [reportData]);
 
+    const canExportReport = useMemo(() => {
+        return reportData.every(row => {
+            const asset = assets.find(a => a.id === row.id);
+            return buildAssetAuditActionPolicy(user, 'export', targetFromAsset(asset)).allowed;
+        });
+    }, [assets, reportData, user]);
+
     const handleExportExcel = async () => {
+        if (!canExportReport) {
+            toast.error('Không có quyền', 'Bạn chưa được cấp quyền xuất báo cáo trong toàn bộ phạm vi tài sản đang lọc.');
+            return;
+        }
+
         const XLSX = await loadXlsx();
         const data = reportData.map((r, idx) => ({
             'STT': idx + 1,
@@ -152,10 +166,12 @@ const AssetReports: React.FC = () => {
                         className="flex items-center px-4 py-2.5 bg-slate-800 text-white rounded-xl hover:bg-slate-700 transition shadow-lg shadow-slate-900/20 font-bold text-sm">
                         <Printer size={18} className="mr-2" /> In PDF
                     </button>
-                    <button onClick={handleExportExcel}
-                        className="flex items-center px-4 py-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition shadow-lg shadow-emerald-500/20 font-bold text-sm">
-                        <Download size={18} className="mr-2" /> Xuất Excel
-                    </button>
+                    {canExportReport && (
+                        <button onClick={handleExportExcel}
+                            className="flex items-center px-4 py-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition shadow-lg shadow-emerald-500/20 font-bold text-sm">
+                            <Download size={18} className="mr-2" /> Xuất Excel
+                        </button>
+                    )}
                 </div>
             </div>
 

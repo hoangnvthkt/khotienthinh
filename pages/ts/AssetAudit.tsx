@@ -10,6 +10,8 @@ import {
 import { AssetStatus, ASSET_STATUS_LABELS } from '../../types';
 import { loadXlsx } from '../../lib/loadXlsx';
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
+import { buildAssetAuditActionPolicy, type AssetActionPolicy } from '../../lib/permissions/assetActionUiPolicy';
+import { targetFromAsset } from '../../lib/permissions/assetPermissionScope';
 
 type AssetCondition = 'good' | 'damaged' | 'lost' | 'wrong_location';
 const CONDITION_LABELS: Record<AssetCondition, string> = {
@@ -77,6 +79,20 @@ const AssetAudit: React.FC = () => {
 
     const getCategoryName = (catId: string) => assetCategories.find(c => c.id === catId)?.name || 'Khác';
 
+    const showPolicyDenied = (policy: AssetActionPolicy) => {
+        toast.error('Không có quyền', policy.reason || 'Bạn chưa được cấp quyền thực hiện thao tác này.');
+    };
+
+    const canPerformAuditForAsset = (assetId: string) => {
+        const asset = assets.find(a => a.id === assetId);
+        return buildAssetAuditActionPolicy(user, 'perform', targetFromAsset(asset)).allowed;
+    };
+
+    const canExportAuditSession = (session: AssetAuditSession) => session.items.every(item => {
+        const asset = assets.find(a => a.id === item.assetId);
+        return buildAssetAuditActionPolicy(user, 'export', targetFromAsset(asset)).allowed;
+    });
+
     const stats = useMemo(() => {
         const audited = Object.keys(auditData).length;
         const good = Object.values(auditData).filter(v => v === 'good').length;
@@ -88,6 +104,12 @@ const AssetAudit: React.FC = () => {
 
     const handleSaveAudit = () => {
         if (Object.keys(auditData).length === 0) return;
+        const deniedAssetId = Object.keys(auditData).find(assetId => !canPerformAuditForAsset(assetId));
+        if (deniedAssetId) {
+            const asset = assets.find(a => a.id === deniedAssetId);
+            showPolicyDenied(buildAssetAuditActionPolicy(user, 'perform', targetFromAsset(asset)));
+            return;
+        }
         setIsSaving(true);
 
         const items: AssetAuditItem[] = Object.entries(auditData).map(([assetId, condition]: [string, AssetCondition]) => {
@@ -128,6 +150,10 @@ const AssetAudit: React.FC = () => {
     };
 
     const exportSessionToExcel = async (session: AssetAuditSession) => {
+        if (!canExportAuditSession(session)) {
+            showPolicyDenied(buildAssetAuditActionPolicy(user, 'export', {}));
+            return;
+        }
         const XLSX = await loadXlsx();
         const wsData = [
             ['BÁO CÁO KIỂM KÊ TÀI SẢN'],
@@ -192,9 +218,11 @@ const AssetAudit: React.FC = () => {
                         <h1 className="text-2xl font-black text-slate-800 dark:text-white tracking-tight">Chi tiết kiểm kê tài sản</h1>
                         <p className="text-slate-500 text-sm font-medium">{new Date(viewingSession.date).toLocaleString('vi-VN')} — {viewingSession.auditorName}</p>
                     </div>
+                    {canExportAuditSession(viewingSession) && (
                     <button onClick={() => exportSessionToExcel(viewingSession)} className="flex items-center px-5 py-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition font-black text-[10px] uppercase tracking-widest shadow-lg shadow-emerald-500/20">
                         <Download size={16} className="mr-2" /> Xuất Excel
                     </button>
+                    )}
                 </div>
 
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
@@ -353,9 +381,11 @@ const AssetAudit: React.FC = () => {
                                                     <button onClick={() => setViewingSession(session)} className="flex items-center px-3 py-1.5 bg-blue-50 dark:bg-blue-950/20 text-blue-600 rounded-lg hover:bg-blue-100 transition text-[10px] font-bold">
                                                         <Eye size={12} className="mr-1" /> Xem
                                                     </button>
-                                                    <button onClick={() => exportSessionToExcel(session)} className="flex items-center px-3 py-1.5 bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 rounded-lg hover:bg-emerald-100 transition text-[10px] font-bold">
-                                                        <Download size={12} className="mr-1" /> Excel
-                                                    </button>
+                                                     {canExportAuditSession(session) && (
+                                                     <button onClick={() => exportSessionToExcel(session)} className="flex items-center px-3 py-1.5 bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 rounded-lg hover:bg-emerald-100 transition text-[10px] font-bold">
+                                                         <Download size={12} className="mr-1" /> Excel
+                                                     </button>
+                                                     )}
                                                 </div>
                                             </td>
                                         </tr>
@@ -465,8 +495,8 @@ const AssetAudit: React.FC = () => {
                                                     <span className="text-[10px] font-bold text-slate-500">{ASSET_STATUS_LABELS[asset.status]}</span>
                                                 </td>
                                                 <td className="p-4 text-center">
-                                                    <select value={condition || ''} onChange={e => {
-                                                        if (e.target.value) {
+                                                     <select disabled={!canPerformAuditForAsset(asset.id)} value={condition || ''} onChange={e => {
+                                                         if (e.target.value) {
                                                             setAuditData(prev => ({ ...prev, [asset.id]: e.target.value as AssetCondition }));
                                                         } else {
                                                             setAuditData(prev => { const n = { ...prev }; delete n[asset.id]; return n; });
@@ -479,8 +509,8 @@ const AssetAudit: React.FC = () => {
                                                     </select>
                                                 </td>
                                                 <td className="p-4">
-                                                    {hasInput && (
-                                                        <input type="text" placeholder="Ghi chú..."
+                                                     {hasInput && canPerformAuditForAsset(asset.id) && (
+                                                         <input type="text" placeholder="Ghi chú..."
                                                             value={auditNotes[asset.id] || ''}
                                                             onChange={e => setAuditNotes(prev => ({ ...prev, [asset.id]: e.target.value }))}
                                                             className="w-full px-2 py-1 text-[10px] border border-slate-200 dark:border-slate-600 rounded-lg outline-none focus:ring-1 focus:ring-rose-500 font-medium text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800" />

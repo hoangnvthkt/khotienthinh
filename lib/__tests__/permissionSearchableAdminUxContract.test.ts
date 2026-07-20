@@ -28,8 +28,9 @@ describe('searchable permission admin UX contract', () => {
     expect(directWorkspace).toContain('scopeLookupOptions?: PermissionScopeLookupOptionsByType');
     expect(roleAssignment).toContain('scopeLookupOptions?: PermissionScopeLookupOptionsByType');
     expect(directPanel).toContain('scopeLookupOptions?: PermissionScopeLookupOptionsByType');
-    expect(userModal).toContain('permissionScopeLookupService.listLookupOptions()');
-    expect(userModal).toContain('lookupOptions={scopeLookupOptions}');
+    expect(directWorkspace).toContain('lookupOptions={scopeLookupOptions}');
+    expect(userModal).not.toContain('permissionScopeLookupService.listLookupOptions()');
+    expect(userModal).not.toContain('lookupOptions={scopeLookupOptions}');
   });
 
   it('groups the Business Role editor by app and module with search filters', () => {

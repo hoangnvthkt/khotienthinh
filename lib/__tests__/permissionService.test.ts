@@ -90,7 +90,7 @@ describe('permissionService', () => {
     })).toBe(false);
   });
 
-  it('opens the registered module route for an exact action source without granting adjacent actions', () => {
+  it('does not open the registered module route from a non-view action source alone', () => {
     const approver = user({
       allowedModules: [], allowedSubModules: {},
       effectivePermissions: [{
@@ -102,21 +102,101 @@ describe('permissionService', () => {
       }],
     });
 
-    expect(canViewRoute(approver, '/da/tabs/dailylog')).toBe(true);
+    expect(canViewRoute(approver, '/da/tabs/dailylog')).toBe(false);
     expect(canPerform(approver, 'project.daily_log.verify', {
       scopeType: 'project', scopeId: 'project-1',
     })).toBe(false);
   });
 
+  it('opens the registered module route only when a view source exists', () => {
+    const dailyLogUser = user({
+      allowedModules: [], allowedSubModules: {},
+      effectivePermissions: [
+        {
+          permissionCode: 'project.daily_log.view',
+          sourceType: 'DIRECT', sourceId: 'grant-view',
+          sourceCode: 'DIRECT', sourceLabel: 'Direct grant',
+          scopeType: 'project', scopeId: 'project-1',
+          riskLevel: 'normal', isBusinessApproval: false, metadata: {},
+        },
+        {
+          permissionCode: 'project.daily_log.approve',
+          sourceType: 'DIRECT', sourceId: 'grant-approve',
+          sourceCode: 'DIRECT', sourceLabel: 'Direct grant',
+          scopeType: 'project', scopeId: 'project-1',
+          riskLevel: 'sensitive', isBusinessApproval: true, metadata: {},
+        },
+      ],
+    });
+
+    expect(canViewRoute(dailyLogUser, '/da/tabs/dailylog')).toBe(true);
+    expect(canPerform(dailyLogUser, 'project.daily_log.approve', {
+      scopeType: 'project', scopeId: 'project-1',
+    })).toBe(true);
+    expect(canPerform(dailyLogUser, 'project.daily_log.verify', {
+      scopeType: 'project', scopeId: 'project-1',
+    })).toBe(false);
+  });
+
+  it('does not open asset routes from a non-view effective action alone', () => {
+    const actor = user({
+      effectivePermissions: [{
+        permissionCode: 'asset.catalog.create',
+        sourceType: 'DIRECT',
+        sourceId: 'grant-create',
+        sourceCode: 'DIRECT',
+        sourceLabel: 'Direct grant',
+        scopeType: 'warehouse',
+        scopeId: 'wh-1',
+        riskLevel: 'normal',
+        isBusinessApproval: false,
+        metadata: {},
+      }],
+    });
+
+    expect(canViewModule(actor, 'TS')).toBe(false);
+    expect(canViewRoute(actor, '/ts/catalog')).toBe(false);
+  });
+
+  it('opens only the asset route whose matching view source exists', () => {
+    const actor = user({
+      effectivePermissions: [{
+        permissionCode: 'asset.catalog.view',
+        sourceType: 'DIRECT',
+        sourceId: 'grant-view',
+        sourceCode: 'DIRECT',
+        sourceLabel: 'Direct grant',
+        scopeType: 'warehouse',
+        scopeId: 'wh-1',
+        riskLevel: 'normal',
+        isBusinessApproval: false,
+        metadata: {},
+      }],
+    });
+
+    expect(canViewModule(actor, 'TS')).toBe(true);
+    expect(canViewRoute(actor, '/ts/catalog')).toBe(true);
+    expect(canViewRoute(actor, '/ts/assignment')).toBe(false);
+  });
+
   it('does not reveal a sibling route from another permission module', () => {
     const poApprover = user({
-      effectivePermissions: [{
-        permissionCode: 'project.material_po.approve',
-        sourceType: 'ROLE', sourceId: 'assignment-po',
-        sourceCode: 'PO_APPROVER', sourceLabel: 'PO Approver',
-        scopeType: 'project', scopeId: 'project-1',
-        riskLevel: 'sensitive', isBusinessApproval: true, metadata: {},
-      }],
+      effectivePermissions: [
+        {
+          permissionCode: 'project.material_po.view',
+          sourceType: 'ROLE', sourceId: 'assignment-po-view',
+          sourceCode: 'PO_APPROVER', sourceLabel: 'PO Approver',
+          scopeType: 'project', scopeId: 'project-1',
+          riskLevel: 'normal', isBusinessApproval: false, metadata: {},
+        },
+        {
+          permissionCode: 'project.material_po.approve',
+          sourceType: 'ROLE', sourceId: 'assignment-po',
+          sourceCode: 'PO_APPROVER', sourceLabel: 'PO Approver',
+          scopeType: 'project', scopeId: 'project-1',
+          riskLevel: 'sensitive', isBusinessApproval: true, metadata: {},
+        },
+      ],
     });
 
     expect(canViewRoute(poApprover, '/da/tabs/material/po')).toBe(true);

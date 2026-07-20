@@ -1948,7 +1948,6 @@ const Settings: React.FC = () => {
               handleAccountAction={handleAccountAction}
               handleAddUser={handleAddUser} handleEditUser={handleEditUser}
               handleSaveUser={handleSaveUser}
-              reloadManagedUser={reloadManagedUser}
               getRoleBadge={getRoleBadge}
               isSavingAccount={accountStatusLoading}
             />

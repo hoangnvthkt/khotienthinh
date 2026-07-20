@@ -15,7 +15,6 @@ const UserManagement: React.FC = () => {
     warehouses,
     addUser,
     updateUser,
-    reloadManagedUser,
     disableUserAccount,
     reactivateUserAccount,
     user: currentUser,
@@ -114,12 +113,8 @@ const UserManagement: React.FC = () => {
         isOpen={isModalOpen} 
         onClose={() => setIsModalOpen(false)} 
         onSave={handleSaveUser}
-        onPermissionsSaved={reloadManagedUser}
         userToEdit={editingUser}
         warehouses={warehouses}
-        users={users}
-        currentUserId={currentUser.id}
-        canManageDirectGrants
       />
 
       <UserAccountStatusModal

@@ -1,0 +1,7 @@
+users|0
+assets|0
+asset_location_stocks|0
+asset_transfers|0
+asset_assignments|0
+asset_maintenances|0
+user_permission_grants|0

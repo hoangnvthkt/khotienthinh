@@ -2,16 +2,14 @@ import React, { useMemo, useState } from 'react';
 import { Info, ShieldCheck } from 'lucide-react';
 import type { UserPermissionGrant } from '../../types';
 import type { EffectivePermissionSource } from '../../lib/permissions/authorizationGovernanceTypes';
-import { permissionRegistry } from '../../lib/permissions/permissionRegistry';
 import { isPermissionActionScopeAllowed } from '../../lib/permissions/permissionService';
 import type {
   LegacyPermissionState,
-  PermissionApplicationDefinition,
-  PermissionModuleDefinition,
   PermissionScope,
 } from '../../lib/permissions/permissionTypes';
 import {
   buildLegacyPermissionCatalog,
+  buildPermissionWorkbenchApplications,
   buildUnifiedPermissionRows,
   isLegacyRouteVisible,
   revokeLegacyUmbrella,
@@ -29,6 +27,9 @@ export interface UnifiedPermissionMatrixProps {
   disabled?: boolean;
   initialApplicationCode?: string;
   initialModuleCode?: string;
+  selectedApplicationCode?: string;
+  selectedModuleCode?: string;
+  onSelectionChange?: (selection: { applicationCode: string; moduleCode: string }) => void;
   onGrantsChange: (grants: UserPermissionGrant[]) => void;
   onLegacyStateChange?: (state: LegacyPermissionState) => void;
 }
@@ -46,34 +47,6 @@ const RISK_LABELS = {
   sensitive: 'Nhạy cảm',
 } as const;
 
-const isRouteDerivedSystemShell = (module: PermissionModuleDefinition): boolean =>
-  module.code.startsWith('system.')
-  && module.code !== 'system.authorization'
-  && module.actions.length === 2
-  && module.actions.some(action => action.action === 'view')
-  && module.actions.some(action => action.action === 'manage');
-
-const buildVisibleApplications = (): PermissionApplicationDefinition[] => {
-  const detailedLegacyKeys = new Set(
-    permissionRegistry
-      .flatMap(application => application.modules)
-      .filter(module => !isRouteDerivedSystemShell(module))
-      .map(module => module.legacyModuleKey)
-      .filter((key): key is string => Boolean(key)),
-  );
-
-  return permissionRegistry
-    .map(application => ({
-      ...application,
-      modules: application.modules.filter(module => !(
-        isRouteDerivedSystemShell(module)
-        && module.legacyModuleKey
-        && detailedLegacyKeys.has(module.legacyModuleKey)
-      )),
-    }))
-    .filter(application => application.modules.length > 0);
-};
-
 const UnifiedPermissionMatrix: React.FC<UnifiedPermissionMatrixProps> = ({
   targetUserId,
   grants,
@@ -83,18 +56,23 @@ const UnifiedPermissionMatrix: React.FC<UnifiedPermissionMatrixProps> = ({
   disabled = false,
   initialApplicationCode,
   initialModuleCode,
+  selectedApplicationCode,
+  selectedModuleCode,
+  onSelectionChange,
   onGrantsChange,
   onLegacyStateChange,
 }) => {
-  const applications = useMemo(buildVisibleApplications, []);
+  const applications = useMemo(buildPermissionWorkbenchApplications, []);
   const initialApplication = applications.find(item => item.code === initialApplicationCode) || applications[0];
-  const [selectedApplicationCode, setSelectedApplicationCode] = useState(initialApplication?.code || '');
+  const [uncontrolledApplicationCode, setUncontrolledApplicationCode] = useState(initialApplication?.code || '');
   const initialModule = initialApplication?.modules.find(item => item.code === initialModuleCode)
     || initialApplication?.modules[0];
-  const [selectedModuleCode, setSelectedModuleCode] = useState(initialModule?.code || '');
+  const [uncontrolledModuleCode, setUncontrolledModuleCode] = useState(initialModule?.code || '');
 
-  const selectedApplication = applications.find(item => item.code === selectedApplicationCode) || applications[0];
-  const selectedModule = selectedApplication?.modules.find(item => item.code === selectedModuleCode)
+  const activeApplicationCode = selectedApplicationCode || uncontrolledApplicationCode;
+  const selectedApplication = applications.find(item => item.code === activeApplicationCode) || applications[0];
+  const activeModuleCode = selectedModuleCode || uncontrolledModuleCode;
+  const selectedModule = selectedApplication?.modules.find(item => item.code === activeModuleCode)
     || selectedApplication?.modules[0];
   const rows = useMemo(() => selectedModule ? buildUnifiedPermissionRows({
     module: selectedModule,
@@ -133,8 +111,15 @@ const UnifiedPermissionMatrix: React.FC<UnifiedPermissionMatrixProps> = ({
 
   const changeApplication = (applicationCode: string) => {
     const application = applications.find(item => item.code === applicationCode);
-    setSelectedApplicationCode(applicationCode);
-    setSelectedModuleCode(application?.modules[0]?.code || '');
+    const moduleCode = application?.modules[0]?.code || '';
+    setUncontrolledApplicationCode(applicationCode);
+    setUncontrolledModuleCode(moduleCode);
+    onSelectionChange?.({ applicationCode, moduleCode });
+  };
+
+  const changeModule = (moduleCode: string) => {
+    setUncontrolledModuleCode(moduleCode);
+    onSelectionChange?.({ applicationCode: selectedApplication.code, moduleCode });
   };
 
   return (
@@ -168,7 +153,7 @@ const UnifiedPermissionMatrix: React.FC<UnifiedPermissionMatrixProps> = ({
           <select
             value={selectedModule.code}
             disabled={disabled}
-            onChange={event => setSelectedModuleCode(event.target.value)}
+            onChange={event => changeModule(event.target.value)}
             className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:bg-slate-100 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:focus:ring-blue-900"
           >
             {selectedApplication.modules.map(module => (
@@ -189,10 +174,15 @@ const UnifiedPermissionMatrix: React.FC<UnifiedPermissionMatrixProps> = ({
         <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
           {rows.map(row => {
             const scopeAllowed = isPermissionActionScopeAllowed(row.permissionCode, scope);
+            const viewRevocationBlocked = row.action === 'view'
+              && row.hasDirectGrant
+              && rows.some(candidate => candidate.action !== 'view' && candidate.hasDirectGrant);
             const additionBlocked = !row.hasDirectGrant && (!row.canAdd || !scopeAllowed);
-            const inputDisabled = disabled || (row.hasDirectGrant ? !row.canRemove : additionBlocked);
+            const inputDisabled = disabled || viewRevocationBlocked || (row.hasDirectGrant ? !row.canRemove : additionBlocked);
             const disabledReason = !scopeAllowed
               ? 'Tác vụ không hỗ trợ scope đang chọn.'
+              : viewRevocationBlocked
+                ? 'Bỏ quyền hành động trước khi thu hồi View.'
               : row.readiness === 'declared'
                 ? 'Chưa có đủ bằng chứng thực thi để cấp mới.'
                 : row.readiness === 'legacy'
@@ -236,7 +226,7 @@ const UnifiedPermissionMatrix: React.FC<UnifiedPermissionMatrixProps> = ({
                 <span className="mt-2 flex flex-wrap gap-1.5">
                   {row.hasDirectGrant && (
                     <span className="rounded-md bg-blue-100 px-2 py-1 text-[10px] font-black text-blue-700 dark:bg-blue-900 dark:text-blue-200">
-                      Direct {row.canRemove ? '· Có thể thu hồi' : ''}
+                      Direct {row.canRemove && !viewRevocationBlocked ? '· Có thể thu hồi' : ''}
                     </span>
                   )}
                   {row.sourceBadges.map(badge => (
@@ -246,7 +236,7 @@ const UnifiedPermissionMatrix: React.FC<UnifiedPermissionMatrixProps> = ({
                   ))}
                 </span>
 
-                {disabledReason && !row.hasDirectGrant && (
+                {disabledReason && (!row.hasDirectGrant || viewRevocationBlocked) && (
                   <span className="mt-auto flex items-start gap-1.5 pt-2 text-[10px] font-semibold text-slate-500 dark:text-slate-400">
                     <Info size={12} className="mt-0.5 shrink-0" /> {disabledReason}
                   </span>
@@ -260,13 +250,13 @@ const UnifiedPermissionMatrix: React.FC<UnifiedPermissionMatrixProps> = ({
           <section className="rounded-xl border border-amber-200 bg-amber-50/70 p-3 dark:border-amber-800 dark:bg-amber-950/25">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <h4 className="text-xs font-black text-amber-900 dark:text-amber-200">Hiển thị tương thích Legacy</h4>
+                <h4 className="text-xs font-black text-amber-900 dark:text-amber-200">Quyền tương thích Legacy</h4>
                 <p className="mt-1 text-[11px] font-medium text-amber-800/80 dark:text-amber-300/80">
-                  Chỉ chỉnh tại scope toàn hệ thống. Quyền quản trị Legacy không được cấp mới tại đây.
+                  Dùng cho phần còn chạy theo quyền cũ. Cấp Direct tương ứng bên trên rồi bỏ tích Legacy ở đây để chuyển dần.
                 </p>
               </div>
               <label className="flex items-center gap-2 text-xs font-black text-amber-900 dark:text-amber-200">
-                <span>View module</span>
+                <span>Cấp quyền vào ứng dụng</span>
                 <input
                   type="checkbox"
                   checked={legacyState.allowedModules.includes(selectedModule.legacyModuleKey)}
