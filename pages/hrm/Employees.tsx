@@ -8,7 +8,6 @@ import EmployeeDetailModal from '../../components/hrm/EmployeeDetailModal';
 import ConfirmDeleteModal from '../../components/ConfirmDeleteModal';
 import Pagination from '../../components/Pagination';
 import { usePagination } from '../../hooks/usePagination';
-import { usePermission } from '../../hooks/usePermission';
 import { loadXlsx } from '../../lib/loadXlsx';
 import { useToast } from '../../context/ToastContext';
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
@@ -16,11 +15,11 @@ import ExcelImportReviewModal from '../../components/ExcelImportReviewModal';
 import { ExcelImportMode, ExcelImportPreview, applyImportChanges, buildImportPreview, parseExcelRows } from '../../lib/excelImport';
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 import { employeeSelfService } from '../../lib/employeeSelfService';
+import { buildHrmEmployeeActionPolicy, HRM_EMPLOYEE_CREATE_PERMISSION, HRM_EMPLOYEE_EDIT_PERMISSION } from '../../lib/permissions/hrmPermissionCapabilities';
 
 const Employees: React.FC = () => {
     const { employees, users, addEmployee, updateEmployee, updateUser, replaceEmployeeLocal, removeEmployee, addHrmItem, hrmAreas, hrmOffices, hrmPositions, hrmConstructionSites, orgUnits, user } = useApp();
-    const { canManage } = usePermission();
-    const canCRUD = canManage('/hrm/employees');
+    const employeeActionPolicy = useMemo(() => buildHrmEmployeeActionPolicy(user), [user]);
     useModuleData('hrm');
     const toast = useToast();
     const [searchTerm, setSearchTerm] = useState('');
@@ -51,17 +50,25 @@ const Employees: React.FC = () => {
     const { paginatedItems: paginatedEmployees, currentPage, totalPages, totalItems, pageSize, setPage, setPageSize, startIndex, endIndex } = usePagination<Employee>(filteredEmployees, 20);
 
     const isSelfEmployee = (emp: Employee) => Boolean(user?.id && emp.userId === user.id);
-    const canEditEmployee = (emp: Employee) => canCRUD || isSelfEmployee(emp);
-    const showActions = canCRUD || paginatedEmployees.some(isSelfEmployee);
+    const canCreateEmployee = employeeActionPolicy.canCreateEmployee;
+    const canEditEmployee = (emp: Employee) => employeeActionPolicy.canEditEmployee(emp);
+    const canDeleteEmployee = (emp: Employee) => employeeActionPolicy.canEditEmployeeByGrant(emp);
+    const canBulkUpdateEmployees = employeeActionPolicy.canEditAnyEmployee;
+    const showActions = paginatedEmployees.some(emp => canEditEmployee(emp) || canDeleteEmployee(emp));
 
     const handleEdit = (emp: Employee) => {
         if (!canEditEmployee(emp)) return;
         setEditingEmployee(emp);
         setIsModalOpen(true);
     };
-    const handleAdd = () => { setEditingEmployee(null); setIsModalOpen(true); };
+    const handleAdd = () => {
+        if (!canCreateEmployee) return;
+        setEditingEmployee(null);
+        setIsModalOpen(true);
+    };
     const handleView = (emp: Employee) => { setViewingEmployee(emp); };
     const handleDelete = (emp: Employee) => {
+        if (!canDeleteEmployee(emp)) return;
         setDeletingEmployee(emp);
     };
     const handleConfirmDelete = async () => {
@@ -270,6 +277,14 @@ const Employees: React.FC = () => {
         try {
             const rows = await parseExcelRows(file, importModeRef.current === 'create' ? 'Nhap_moi' : 'Cap_nhat');
             if (rows.length === 0) { toast.warning('File rỗng', 'File Excel không có dữ liệu nhân sự.'); return; }
+            if (importModeRef.current === 'create' && !canCreateEmployee) {
+                toast.error('Không đủ quyền', `Cần quyền ${HRM_EMPLOYEE_CREATE_PERMISSION} để nhập mới nhân sự.`);
+                return;
+            }
+            if (importModeRef.current === 'update' && !canBulkUpdateEmployees) {
+                toast.error('Không đủ quyền', `Cần quyền ${HRM_EMPLOYEE_EDIT_PERMISSION} phạm vi toàn hệ thống để cập nhật hàng loạt.`);
+                return;
+            }
             setImportPreview(buildEmployeePreview(importModeRef.current, rows));
         } catch (err: any) {
             logApiError('employees.import', err);
@@ -369,7 +384,7 @@ const Employees: React.FC = () => {
                             <List size={16} />
                         </button>
                     </div>
-                    {canCRUD && (
+                    {(canCreateEmployee || canBulkUpdateEmployees) && (
                         <>
                             <input ref={importInputRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleImportEmployees} className="hidden" />
                             <button
@@ -380,26 +395,26 @@ const Employees: React.FC = () => {
                                 <Download size={16} />
                                 <span>Mẫu</span>
                             </button>
-                            <button
+                            {canCreateEmployee && <button
                                 onClick={() => openEmployeeImport('create')}
                                 disabled={importing}
                                 className="flex items-center gap-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 px-4 py-2.5 rounded-xl transition-all hover:bg-slate-50 dark:hover:bg-slate-700 text-sm font-bold justify-center disabled:opacity-60"
                             >
                                 {importing && importMode === 'create' ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
                                 <span>Nhập mới</span>
-                            </button>
-                            <button
+                            </button>}
+                            {canBulkUpdateEmployees && <button
                                 onClick={() => openEmployeeImport('update')}
                                 disabled={importing}
                                 className="flex items-center gap-2 bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-900/60 text-amber-700 dark:text-amber-300 px-4 py-2.5 rounded-xl transition-all hover:bg-amber-50 dark:hover:bg-amber-900/20 text-sm font-bold justify-center disabled:opacity-60"
                             >
                                 {importing && importMode === 'update' ? <Loader2 size={16} className="animate-spin" /> : <RefreshCcw size={16} />}
                                 <span>Cập nhật</span>
-                            </button>
-                            <button onClick={handleAdd} className="flex items-center gap-2 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white px-5 py-2.5 rounded-xl transition-all shadow-lg hover:shadow-indigo-500/30 text-sm font-bold flex-1 sm:flex-initial justify-center">
+                            </button>}
+                            {canCreateEmployee && <button onClick={handleAdd} className="flex items-center gap-2 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white px-5 py-2.5 rounded-xl transition-all shadow-lg hover:shadow-indigo-500/30 text-sm font-bold flex-1 sm:flex-initial justify-center">
                                 <Plus size={18} />
                                 <span>Thêm Mới</span>
-                            </button>
+                            </button>}
                         </>
                     )}
                 </div>
@@ -483,10 +498,10 @@ const Employees: React.FC = () => {
                                         </div>
 
                                         {/* Actions hover */}
-                                        {canEditEmployee(emp) && (
+                                        {(canEditEmployee(emp) || canDeleteEmployee(emp)) && (
                                             <div className="absolute top-1 right-1 flex gap-px opacity-0 group-hover:opacity-100 transition-opacity">
-                                                <button onClick={(e) => { e.stopPropagation(); handleEdit(emp); }} className="p-0.5 text-slate-300 hover:text-indigo-500 rounded transition-all" title="Sửa"><Edit2 size={9} /></button>
-                                                {canCRUD && <button onClick={(e) => { e.stopPropagation(); handleDelete(emp); }} className="p-0.5 text-slate-300 hover:text-red-500 rounded transition-all" title="Xóa"><Trash2 size={9} /></button>}
+                                                {canEditEmployee(emp) && <button onClick={(e) => { e.stopPropagation(); handleEdit(emp); }} className="p-0.5 text-slate-300 hover:text-indigo-500 rounded transition-all" title="Sửa"><Edit2 size={9} /></button>}
+                                                {canDeleteEmployee(emp) && <button onClick={(e) => { e.stopPropagation(); handleDelete(emp); }} className="p-0.5 text-slate-300 hover:text-red-500 rounded transition-all" title="Xóa"><Trash2 size={9} /></button>}
                                             </div>
                                         )}
                                     </div>
@@ -582,7 +597,7 @@ const Employees: React.FC = () => {
                                                 <td className="py-2.5 px-4 text-center">
                                                     <div className="flex items-center justify-center gap-0.5">
                                                         {canEditEmployee(emp) && <button onClick={(e) => { e.stopPropagation(); handleEdit(emp); }} className="p-1.5 text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-all" title="Sửa"><Edit2 size={14} /></button>}
-                                                        {canCRUD && <button onClick={(e) => { e.stopPropagation(); handleDelete(emp); }} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-all" title="Xóa"><Trash2 size={14} /></button>}
+                                                        {canDeleteEmployee(emp) && <button onClick={(e) => { e.stopPropagation(); handleDelete(emp); }} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-all" title="Xóa"><Trash2 size={14} /></button>}
                                                     </div>
                                                 </td>
                                             )}
@@ -606,7 +621,7 @@ const Employees: React.FC = () => {
             {isModalOpen && (
                 <EmployeeModal
                     employee={editingEmployee}
-                    mode={editingEmployee && !canCRUD && isSelfEmployee(editingEmployee) ? 'self' : 'admin'}
+                    mode={editingEmployee && !employeeActionPolicy.canEditEmployeeByGrant(editingEmployee) && isSelfEmployee(editingEmployee) ? 'self' : 'admin'}
                     onSelfUpdate={handleSelfEmployeeUpdate}
                     onClose={() => setIsModalOpen(false)}
                 />

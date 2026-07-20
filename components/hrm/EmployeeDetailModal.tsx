@@ -3,7 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { Employee, AssetStatus } from '../../types';
 import { X, User as UserIcon, Briefcase, Phone, Edit2, Landmark, FolderOpen, FileText, Eye, ExternalLink } from 'lucide-react';
 import { hrmDocumentService, HrmDocument, DocCategory } from '../../lib/hrmDocumentService';
-import { usePermission } from '../../hooks/usePermission';
+import { buildHrmEmployeeActionPolicy, isOwnEmployeeRecord } from '../../lib/permissions/hrmPermissionCapabilities';
 
 interface EmployeeDetailModalProps {
     employee: Employee;
@@ -15,9 +15,9 @@ type TabKey = 'personal' | 'work' | 'contact' | 'assets' | 'documents';
 
 const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({ employee, onClose, onEdit }) => {
     const { user, users, hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules, hrmConstructionSites, orgUnits, assets, assetAssignments, assetCategories } = useApp();
-    const { canManage } = usePermission();
-    const canCRUD = canManage('/hrm/employees');
-    const canEditEmployee = canCRUD || employee.userId === user.id;
+    const employeeActionPolicy = useMemo(() => buildHrmEmployeeActionPolicy(user), [user]);
+    const canEditByGrant = employeeActionPolicy.canEditEmployeeByGrant(employee);
+    const canEditEmployee = canEditByGrant || isOwnEmployeeRecord(user, employee);
     const [activeTab, setActiveTab] = useState<TabKey>('personal');
 
     const linkedUser = users.find(u => u.id === employee.userId);
@@ -305,7 +305,7 @@ const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({ employee, onC
                             className="flex items-center space-x-2 px-5 py-2 rounded-xl bg-accent hover:bg-blue-700 text-white text-sm font-bold transition shadow-lg hover:shadow-blue-500/30"
                         >
                             <Edit2 size={15} />
-                            <span>{canCRUD ? 'Sửa' : 'Sửa cá nhân'}</span>
+                            <span>{canEditByGrant ? 'Sửa' : 'Sửa cá nhân'}</span>
                         </button>
                     )}
                 </div>

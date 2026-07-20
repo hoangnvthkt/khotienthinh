@@ -43,6 +43,10 @@ import {
   projectTransactionToDb,
 } from '../lib/projectTransactionMapping';
 import { canPerform } from '../lib/permissions/permissionService';
+import {
+  getHrmEmployeeRecordScope,
+  isOwnEmployeeRecord,
+} from '../lib/permissions/hrmPermissionCapabilities';
 import { executeUserAccountLifecycle } from '../lib/userAccountLifecycleService';
 import { useAuth } from './AuthContext';
 import { mapUserProfileRow as mapUserFromDb, serializeMockUser } from './authState';
@@ -2733,7 +2737,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (oldSup) auditService.log({ tableName: 'suppliers', recordId: id, action: 'DELETE', oldData: oldSup as any, userId: user.id, userName: user.name || user.username });
   };
 
+  const assertHrmEmployeePermission = (
+    permissionCode: 'hrm.employee.create' | 'hrm.employee.edit',
+    employee?: Employee | null,
+    options?: { allowSelfEdit?: boolean },
+  ) => {
+    if (permissionCode === 'hrm.employee.create') {
+      if (canPerform(user, 'hrm.employee.create')) return;
+      throw new Error('Không đủ quyền hrm.employee.create để tạo hồ sơ nhân sự.');
+    }
+
+    if (options?.allowSelfEdit !== false && isOwnEmployeeRecord(user, employee)) return;
+    if (canPerform(user, 'hrm.employee.edit', getHrmEmployeeRecordScope(employee, user.id))) return;
+    throw new Error('Không đủ quyền hrm.employee.edit để sửa hồ sơ nhân sự.');
+  };
+
   const addEmployee = async (e: Employee) => {
+    assertHrmEmployeePermission('hrm.employee.create', e);
     if (isSupabaseConfigured) {
       try {
         const payload = {
@@ -2774,6 +2794,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const updateEmployee = async (e: Employee) => {
     const oldEmp = employees.find(emp => emp.id === e.id);
+    assertHrmEmployeePermission('hrm.employee.edit', oldEmp || e);
+    if (oldEmp && oldEmp.departmentId !== e.departmentId) {
+      assertHrmEmployeePermission('hrm.employee.edit', e);
+    }
     const syncOk = await syncToSupabase('employees', e);
     if (!syncOk) {
       throw new Error('Không thể cập nhật hồ sơ nhân sự trên Supabase.');
@@ -2789,6 +2813,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const removeEmployee = async (id: string) => {
     const e = employees.find(emp => emp.id === id);
+    assertHrmEmployeePermission('hrm.employee.edit', e || null, { allowSelfEdit: false });
     setEmployees(prev => prev.filter(emp => emp.id !== id));
     try {
       if (isSupabaseConfigured) {
