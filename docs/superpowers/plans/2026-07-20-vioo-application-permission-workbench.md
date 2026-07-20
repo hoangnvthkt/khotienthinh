@@ -994,7 +994,7 @@ git commit -m "feat: gate hrm routes and actions by permissions"
 - Consumes: Supabase linked project read-only metadata.
 - Produces: inventory document listing tables, columns, functions, policies, and action candidates for the next backend-enforced app.
 
-- [ ] **Step 1: Create inventory document skeleton**
+- [x] **Step 1: Create inventory document skeleton**
 
 Create `docs/superpowers/plans/artifacts/application-permission-backend-inventory.md`:
 
@@ -1040,7 +1040,7 @@ This inventory records the backend objects needed before promoting another appli
 | --- | --- | --- |
 ```
 
-- [ ] **Step 2: Collect table metadata without mutating Cloud**
+- [x] **Step 2: Collect table metadata without mutating Cloud**
 
 Run read-only commands:
 
@@ -1052,11 +1052,13 @@ supabase db query --linked --agent=no -c "select n.nspname, p.proname, pg_get_fu
 
 Expected: output only metadata. Do not run `db push`, `migration repair`, or any write statement.
 
-- [ ] **Step 3: Fill inventory document**
+Implementation note: local Supabase CLI `2.95.6` uses positional SQL for `supabase db query`; the actual read-only commands used `npx supabase db query --linked --agent=no --output csv "<sql>"`.
+
+- [x] **Step 3: Fill inventory document**
 
 Paste summarized metadata into the markdown tables. For every HRM mutation flow, include the file path and the exact permission code to enforce.
 
-- [ ] **Step 4: Commit inventory only**
+- [x] **Step 4: Commit inventory only**
 
 ```bash
 git add docs/superpowers/plans/artifacts/application-permission-backend-inventory.md
