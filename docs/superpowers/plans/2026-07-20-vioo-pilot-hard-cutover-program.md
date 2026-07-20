@@ -71,7 +71,7 @@ Plan C may start its tooling implementation after Plan A schema stabilizes, but 
 ## Child Plans
 
 1. `docs/superpowers/plans/2026-07-20-vioo-account-application-foundation.md`
-   - canonical app catalog and access levels;
+   - canonical app catalog and Member assignability;
    - governed membership Preview/Apply;
    - effective `SYSTEM_ADMIN_VIEW` and `SYSTEM_ADMIN_CONFIGURATION` sources;
    - two-role Base-style account/application UI;
@@ -144,7 +144,7 @@ git commit -m "docs: plan pilot permission hard cutover"
 
 - [ ] **Step 1:** Implement every Plan A checkbox in order.
 - [ ] **Step 2:** Run the Plan A final verification block.
-- [ ] **Step 3:** Produce an aggregate-only foundation report containing active membership counts by app/access level, no account PII.
+- [ ] **Step 3:** Produce an aggregate-only foundation report containing active Member membership counts by application, no account PII.
 - [ ] **Step 4:** Confirm all membership mutations use governed RPCs and audit events.
 - [ ] **Step 5:** Confirm the sole System Admin receives all-app/global read-only access and only allowlisted configuration mutations, never business mutations by role alone.
 - [ ] **Step 6:** Confirm membership removal revokes the app's active Direct Grants atomically and re-adding does not restore them.

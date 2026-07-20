@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-20
 
-**Status:** Approved in conversation; written-spec review pending
+**Status:** Approved by operator
 
 **Supersedes:** `2026-07-20-vioo-base-style-user-application-permission-model-design.md`
 
