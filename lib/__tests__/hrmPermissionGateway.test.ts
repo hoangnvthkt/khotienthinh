@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Role, type User, type UserPermissionGrant } from '../../types';
+import { buildHrmEmployeeActionPolicy } from '../permissions/hrmPermissionCapabilities';
 import { canPerform, canViewRoute } from '../permissions/permissionService';
 
 const userWith = (
@@ -43,6 +44,17 @@ describe('HRM permission gateway', () => {
     expect(canPerform(actor, 'hrm.employee.edit', { scopeType: 'department', scopeId: 'dept-2' })).toBe(false);
   });
 
+  it('does not treat HRM employee edit as delete during the legacy transition', () => {
+    const directEditor = userWith(['hrm.employee.view', 'hrm.employee.edit']);
+    expect(buildHrmEmployeeActionPolicy(directEditor).canDeleteEmployee(null)).toBe(false);
+
+    const legacyHrmAdmin = {
+      ...userWith([]),
+      adminModules: ['HRM'],
+    };
+    expect(buildHrmEmployeeActionPolicy(legacyHrmAdmin).canDeleteEmployee(null)).toBe(true);
+  });
+
   it('gates HRM employee UI with explicit action permissions instead of broad route management', () => {
     const employeesPage = readFileSync(join(process.cwd(), 'pages/hrm/Employees.tsx'), 'utf8');
     const detailModal = readFileSync(join(process.cwd(), 'components/hrm/EmployeeDetailModal.tsx'), 'utf8');
@@ -53,7 +65,9 @@ describe('HRM permission gateway', () => {
     expect(employeesPage).toContain('HRM_EMPLOYEE_EDIT_PERMISSION');
     expect(capabilities).toContain("'hrm.employee.create'");
     expect(capabilities).toContain("'hrm.employee.edit'");
+    expect(capabilities).toContain("'hrm.employee.delete'");
     expect(employeesPage).not.toContain("canCRUD = canManage('/hrm/employees')");
+    expect(employeesPage).not.toContain('canDeleteEmployee = (emp: Employee) => employeeActionPolicy.canEditEmployeeByGrant(emp)');
     expect(detailModal).toContain('buildHrmEmployeeActionPolicy');
     expect(detailModal).not.toContain("canCRUD = canManage('/hrm/employees')");
   });
@@ -64,5 +78,6 @@ describe('HRM permission gateway', () => {
     expect(appContext).toContain('assertHrmEmployeePermission');
     expect(appContext).toContain("'hrm.employee.create'");
     expect(appContext).toContain("'hrm.employee.edit'");
+    expect(appContext).toContain('canDeleteHrmEmployeeRecord');
   });
 });

@@ -1081,7 +1081,7 @@ git commit -m "docs: inventory application permission backend gaps"
   - backend guard functions/policies for `hrm.employee.view/create/edit`
   - readiness promotion only for backend-enforced HRM employee actions
 
-- [ ] **Step 1: Write migration contract test**
+- [x] **Step 1: Write migration contract test**
 
 Create `lib/__tests__/hrmEmployeeBackendMigrationContract.test.ts`:
 
@@ -1129,7 +1129,7 @@ describe('HRM employee backend permission guards', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify failure**
+- [x] **Step 2: Run test to verify failure**
 
 Run:
 
@@ -1139,7 +1139,7 @@ npm test -- lib/__tests__/hrmEmployeeBackendMigrationContract.test.ts
 
 Expected: FAIL because migration does not exist.
 
-- [ ] **Step 3: Generate migration**
+- [x] **Step 3: Generate migration**
 
 Run:
 
@@ -1149,13 +1149,15 @@ supabase migration new hrm_employee_permission_guards
 
 Expected: creates `supabase/migrations/<timestamp>_hrm_employee_permission_guards.sql`.
 
-- [ ] **Step 4: Confirm concrete HRM backend targets from inventory**
+Implementation note: `npx supabase migration new hrm_employee_permission_guards` created `20260720064623_hrm_employee_permission_guards.sql` using UTC, which sorted before the accepted baseline. The generated empty file was renamed to `20260720104623_hrm_employee_permission_guards.sql` so active migrations remain after `20260720095234` and `20260720100000`.
+
+- [x] **Step 4: Confirm concrete HRM backend targets from inventory**
 
 Before writing policy SQL, open `docs/superpowers/plans/artifacts/application-permission-backend-inventory.md` and copy the exact table, primary key, department/scope column, and current policy names for the HRM employee slice into the migration header comment. The comment must contain real object names from the inventory, not example names.
 
 If the inventory does not identify those concrete objects, stop this task and finish Task 6 first. Do not write guessed HRM policy SQL.
 
-- [ ] **Step 5: Implement migration using Asset style**
+- [x] **Step 5: Implement migration using Asset style**
 
 The migration must follow the pattern in `supabase/migrations/20260720100000_asset_action_operation_guards.sql`:
 
@@ -1194,7 +1196,7 @@ After the helper exists, add operation-specific policies for the confirmed HRM e
 - If the HRM employee table has a department column, evaluate department scope before global fallback.
 - If the operation targets the current user's own profile, evaluate `own/<current-user-id>` before global fallback.
 
-- [ ] **Step 6: Add smoke test with rollback**
+- [x] **Step 6: Add smoke test with rollback**
 
 Create `supabase/tests/hrm_employee_permission_guards_smoke.sql`:
 
@@ -1241,7 +1243,7 @@ end $$;
 rollback;
 ```
 
-- [ ] **Step 7: Promote readiness in frontend**
+- [x] **Step 7: Promote readiness in frontend**
 
 Modify `lib/permissions/permissionReadiness.ts`:
 
@@ -1253,7 +1255,7 @@ Modify `lib/permissions/permissionReadiness.ts`:
 ].forEach(code => ENFORCED_PERMISSION_CODES.add(code));
 ```
 
-- [ ] **Step 8: Run local gates**
+- [x] **Step 8: Run local gates**
 
 Run:
 
@@ -1264,7 +1266,7 @@ npm run lint
 
 Expected: PASS.
 
-- [ ] **Step 9: Ask approval before Cloud change**
+- [x] **Step 9: Ask approval before Cloud change**
 
 Stop and report:
 
@@ -1275,7 +1277,18 @@ Stop and report:
 
 Do not run `supabase db push --linked` until the user approves.
 
-- [ ] **Step 10: Commit local migration and tests after approval strategy is accepted**
+Post-approval evidence:
+
+- User approved pushing linked migration `20260720104623_hrm_employee_permission_guards.sql`.
+- Actual push applied only `20260720104623_hrm_employee_permission_guards.sql`.
+- Push notices were limited to idempotent `drop policy if exists` skips for new action policy names that did not already exist.
+- Rollback smoke test `supabase/tests/hrm_employee_permission_guards_smoke.sql` passed.
+- Smoke fixture counts for `users`, `employees`, and `org_units` were `0` before and `0` after rollback.
+- Final linked migration list shows `20260720095234`, `20260720100000`, and `20260720104623` on both Local and Remote.
+- Post-push dry-run reports `Remote database is up to date`.
+- Remote policy snapshot shows `employees_select_action`, `employees_insert_action`, and `employees_update_action` using `app_private.hrm_employee_has_action(...)`; `employees_delete` remains legacy until a separate delete action exists.
+
+- [x] **Step 10: Commit local migration and tests after approval strategy is accepted**
 
 ```bash
 git add supabase/migrations supabase/tests lib/permissions/permissionReadiness.ts lib/__tests__/hrmEmployeeBackendMigrationContract.test.ts

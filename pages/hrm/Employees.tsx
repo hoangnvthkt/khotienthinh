@@ -52,7 +52,7 @@ const Employees: React.FC = () => {
     const isSelfEmployee = (emp: Employee) => Boolean(user?.id && emp.userId === user.id);
     const canCreateEmployee = employeeActionPolicy.canCreateEmployee;
     const canEditEmployee = (emp: Employee) => employeeActionPolicy.canEditEmployee(emp);
-    const canDeleteEmployee = (emp: Employee) => employeeActionPolicy.canEditEmployeeByGrant(emp);
+    const canDeleteEmployee = (emp: Employee) => employeeActionPolicy.canDeleteEmployee(emp);
     const canBulkUpdateEmployees = employeeActionPolicy.canEditAnyEmployee;
     const showActions = paginatedEmployees.some(emp => canEditEmployee(emp) || canDeleteEmployee(emp));
 

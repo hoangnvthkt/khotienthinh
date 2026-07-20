@@ -43,6 +43,9 @@ const ENFORCED_PERMISSION_CODES = new Set<string>();
   'asset.maintenance.complete',
   'asset.maintenance.import',
   'asset.audit.view',
+  'hrm.employee.view',
+  'hrm.employee.create',
+  'hrm.employee.edit',
 ].forEach(code => ENFORCED_PERMISSION_CODES.add(code));
 
 export const resolvePermissionActionReadiness = (

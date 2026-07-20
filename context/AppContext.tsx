@@ -44,6 +44,7 @@ import {
 } from '../lib/projectTransactionMapping';
 import { canPerform } from '../lib/permissions/permissionService';
 import {
+  canDeleteHrmEmployeeRecord,
   getHrmEmployeeRecordScope,
   isOwnEmployeeRecord,
 } from '../lib/permissions/hrmPermissionCapabilities';
@@ -2813,7 +2814,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const removeEmployee = async (id: string) => {
     const e = employees.find(emp => emp.id === id);
-    assertHrmEmployeePermission('hrm.employee.edit', e || null, { allowSelfEdit: false });
+    if (!canDeleteHrmEmployeeRecord(user)) {
+      throw new Error('Chưa hỗ trợ quyền hrm.employee.delete; chỉ HRM admin legacy hiện tại được xóa hồ sơ nhân sự.');
+    }
     setEmployees(prev => prev.filter(emp => emp.id !== id));
     try {
       if (isSupabaseConfigured) {

@@ -1,9 +1,10 @@
-import type { Employee, User } from '../../types';
+import { Role, type Employee, type User } from '../../types';
 import { canPerform, canViewRoute } from './permissionService';
 import type { PermissionScope } from './permissionTypes';
 
 export const HRM_EMPLOYEE_CREATE_PERMISSION = 'hrm.employee.create';
 export const HRM_EMPLOYEE_EDIT_PERMISSION = 'hrm.employee.edit';
+export const HRM_EMPLOYEE_DELETE_PERMISSION = 'hrm.employee.delete';
 
 export const isOwnEmployeeRecord = (
   user: Pick<User, 'id'> | null | undefined,
@@ -23,6 +24,15 @@ export const getHrmEmployeeRecordScope = (
   return { scopeType: 'global', scopeId: '*' };
 };
 
+export const canDeleteHrmEmployeeRecord = (
+  user: Pick<User, 'role' | 'adminModules' | 'adminSubModules'> | null | undefined,
+): boolean => {
+  if (!user) return false;
+  if (user.role === Role.ADMIN) return true;
+  if ((user.adminModules || []).includes('HRM')) return true;
+  return (user.adminSubModules?.HRM || []).includes('/hrm/employees');
+};
+
 export const buildHrmEmployeeActionPolicy = (
   user: Pick<User, 'id' | 'role' | 'allowedModules' | 'adminModules' | 'allowedSubModules' | 'adminSubModules' | 'permissionGrants' | 'effectivePermissions'> | null | undefined,
 ) => {
@@ -36,5 +46,7 @@ export const buildHrmEmployeeActionPolicy = (
     canEditEmployeeByGrant,
     canEditEmployee: (employee: Pick<Employee, 'departmentId' | 'userId'> | null | undefined): boolean =>
       canEditEmployeeByGrant(employee) || isOwnEmployeeRecord(user, employee),
+    canDeleteEmployee: (_employee: Pick<Employee, 'departmentId' | 'userId'> | null | undefined): boolean =>
+      canDeleteHrmEmployeeRecord(user),
   };
 };
