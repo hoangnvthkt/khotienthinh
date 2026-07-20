@@ -3,6 +3,7 @@ import {
   PermissionActionDefinition,
   PermissionApplicationDefinition,
   PermissionModuleDefinition,
+  resolvePermissionActionGroup,
 } from './permissionTypes';
 import { ERP_PERMISSION_APPLICATIONS } from './erpPermissionRegistry';
 import { PROJECT_PERMISSION_MODULES } from './projectPermissionRegistry';
@@ -69,6 +70,7 @@ const baseActions = (legacyModuleKey: string): readonly PermissionActionDefiniti
       permissionCode: `${moduleCode}.view`,
       ...resolvePermissionRiskMetadata(moduleCode, 'view'),
       legacyModuleKey,
+      permissionGroup: resolvePermissionActionGroup('view'),
       scopeTypes: ['global'],
       sortOrder: 10,
     },
@@ -79,6 +81,7 @@ const baseActions = (legacyModuleKey: string): readonly PermissionActionDefiniti
       ...resolvePermissionRiskMetadata(moduleCode, 'manage'),
       legacyModuleKey,
       legacyAdminOnly: true,
+      permissionGroup: resolvePermissionActionGroup('manage'),
       scopeTypes: ['global'],
       sortOrder: 20,
     },
@@ -108,6 +111,7 @@ const governanceAction = (
   legacyModuleKey: 'SETTINGS',
   legacyRoute: '/settings',
   legacyAdminOnly: true,
+  permissionGroup: resolvePermissionActionGroup(action),
   scopeTypes: ['global'],
   sortOrder,
 });

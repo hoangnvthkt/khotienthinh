@@ -23,6 +23,14 @@ export type PermissionRiskLevel = 'normal' | 'important' | 'sensitive';
 
 export type PermissionActionReadiness = 'legacy' | 'declared' | 'enforced' | 'verified';
 
+export type PermissionActionGroup = 'access' | 'action' | 'admin';
+
+export const resolvePermissionActionGroup = (action: string): PermissionActionGroup => {
+  if (action === 'view') return 'access';
+  if (action === 'manage' || action === 'settings_manage') return 'admin';
+  return 'action';
+};
+
 export interface PermissionActionDefinition {
   action: string;
   label: string;
@@ -37,6 +45,7 @@ export interface PermissionActionDefinition {
   isBusinessAction?: boolean;
   isBusinessApproval?: boolean;
   directGrantRequiresExpiry?: boolean;
+  permissionGroup?: PermissionActionGroup;
 }
 
 export interface PermissionModuleDefinition {

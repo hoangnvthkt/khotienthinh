@@ -7,6 +7,7 @@ import {
   PermissionActionDefinition,
   PermissionModuleDefinition,
   PermissionScopeType,
+  resolvePermissionActionGroup,
 } from './permissionTypes';
 import {
   PermissionRiskMetadata,
@@ -98,6 +99,7 @@ const projectAction = (
   legacyModuleKey: 'DA',
   legacyRoute,
   legacyAdminOnly: false,
+  permissionGroup: resolvePermissionActionGroup(action),
   scopeTypes,
   sortOrder,
 });

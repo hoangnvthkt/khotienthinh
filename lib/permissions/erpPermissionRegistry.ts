@@ -3,6 +3,7 @@ import {
   PermissionApplicationDefinition,
   PermissionModuleDefinition,
   PermissionScopeType,
+  resolvePermissionActionGroup,
 } from './permissionTypes';
 import {
   PermissionRiskMetadata,
@@ -39,6 +40,7 @@ const actions = (
     legacyModuleKey,
     legacyRoute,
     legacyAdminOnly: !action.startsWith('view') && action !== 'use',
+    permissionGroup: resolvePermissionActionGroup(action),
     scopeTypes: actionScopes || scopeTypes,
     sortOrder,
   }));
