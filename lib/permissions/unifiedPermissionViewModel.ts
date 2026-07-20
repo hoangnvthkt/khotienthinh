@@ -65,6 +65,16 @@ export interface CurrentPermissionOverviewRow {
   canRevokeDirect: boolean;
 }
 
+export interface ApplicationAccessOverviewRow {
+  applicationCode: string;
+  applicationLabel: string;
+  hasAccess: boolean;
+  viewPermissionCount: number;
+  actionPermissionCount: number;
+  adminPermissionCount: number;
+  sourceTypes: EffectivePermissionSourceType[];
+}
+
 const BUSINESS_PERMISSION_WORKBENCH_APPS: readonly {
   code: string;
   label: string;
@@ -92,6 +102,10 @@ const SOURCE_TYPE_ORDER: Record<EffectivePermissionSourceType, number> = {
   DIRECT: 1,
   LEGACY: 2,
 };
+
+const uniqueSourceTypes = (sources: readonly EffectivePermissionSource[]): EffectivePermissionSourceType[] =>
+  [...new Set(sources.map(source => source.sourceType))]
+    .sort((left, right) => SOURCE_TYPE_ORDER[left] - SOURCE_TYPE_ORDER[right]);
 
 const normalizeScope = (scope: PermissionScope): Required<PermissionScope> => ({
   scopeType: scope.scopeType || 'global',
@@ -465,6 +479,39 @@ const findWorkbenchLocation = (
   return null;
 };
 
+export const buildApplicationAccessOverview = (input: {
+  effectiveSources: readonly EffectivePermissionSource[];
+  applications?: readonly PermissionApplicationDefinition[];
+}): ApplicationAccessOverviewRow[] => {
+  const applications = input.applications || buildPermissionWorkbenchApplications();
+
+  return applications
+    .map(application => {
+      const actionCodes = new Set(application.modules.flatMap(module => module.actions.map(action => action.permissionCode)));
+      const actionsByCode = new Map(application.modules.flatMap(module =>
+        module.actions.map(action => [action.permissionCode, action] as const)
+      ));
+      const sources = input.effectiveSources.filter(source => actionCodes.has(source.permissionCode));
+      const viewSources = sources.filter(source => actionsByCode.get(source.permissionCode)?.action === 'view');
+      const adminSources = sources.filter(source => actionsByCode.get(source.permissionCode)?.permissionGroup === 'admin');
+      const actionSources = sources.filter(source => {
+        const action = actionsByCode.get(source.permissionCode);
+        return Boolean(action && action.action !== 'view' && action.permissionGroup !== 'admin');
+      });
+
+      return {
+        applicationCode: application.code,
+        applicationLabel: application.label,
+        hasAccess: viewSources.length > 0,
+        viewPermissionCount: viewSources.length,
+        actionPermissionCount: actionSources.length,
+        adminPermissionCount: adminSources.length,
+        sourceTypes: uniqueSourceTypes(sources),
+      };
+    })
+    .sort((left, right) => left.applicationLabel.localeCompare(right.applicationLabel) || left.applicationCode.localeCompare(right.applicationCode));
+};
+
 export const buildCurrentPermissionOverview = (input: {
   directGrants: readonly UserPermissionGrant[];
   effectiveSources: readonly EffectivePermissionSource[];
@@ -552,6 +599,19 @@ export const buildCurrentPermissionOverview = (input: {
       || left.scopeId.localeCompare(right.scopeId)
     );
 };
+
+export const getDirectGrantRevokeDraft = (input: {
+  grants: readonly UserPermissionGrant[];
+  targetUserId: string;
+  permissionCode: string;
+  scopeType: PermissionScopeType;
+  scopeId: string;
+}): UserPermissionGrant[] => input.grants.filter(grant => !(
+  grant.userId === input.targetUserId
+  && grant.permissionCode === input.permissionCode
+  && grant.scopeType === input.scopeType
+  && grant.scopeId === input.scopeId
+));
 
 export const buildLegacyPermissionCatalog = (): LegacyPermissionCatalogEntry[] => {
   const catalog = new Map<string, {
