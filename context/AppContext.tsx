@@ -23,6 +23,7 @@ import { realtimeService, RealtimeStatus } from '../lib/realtimeService';
 import { notificationService } from '../lib/notificationService';
 import { logApiError } from '../lib/apiError';
 import { projectSubmissionService } from '../lib/projectSubmissionService';
+import { projectPermissionRoomService } from '../lib/projectPermissionRoomService';
 import { getDefaultMaterialRequestWorkflowStep, getMaterialRequestWorkflowPatch, mapMaterialRequestFromDb, materialRequestService } from '../lib/materialRequestService';
 import { materialRequestBoqLineSnapshotService } from '../lib/materialRequestBoqLineSnapshotService';
 import { materialRequestMaterialGroupSnapshotService } from '../lib/materialRequestMaterialGroupSnapshotService';
@@ -2231,9 +2232,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!req) throw new Error('Không tìm thấy phiếu đề xuất cần xoá.');
 
     const isOwner = req.requesterId === user.id;
+    const canDeleteByRoom = req.requestOrigin === 'project' && Boolean(req.projectId)
+      ? await projectPermissionRoomService.hasAction(
+        user.id,
+        req.projectId,
+        req.constructionSiteId || null,
+        'material_request',
+        'delete',
+      )
+      : false;
     const deletableStatus = [RequestStatus.DRAFT, RequestStatus.PENDING, RequestStatus.REJECTED].includes(req.status);
     const canDelete =
       user.role === Role.ADMIN ||
+      (
+        canDeleteByRoom &&
+        (req.status === RequestStatus.DRAFT || req.status === RequestStatus.REJECTED || req.workflowStep === 'returned_to_creator')
+      ) ||
       (
         deletableStatus &&
         isOwner &&

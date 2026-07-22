@@ -94,6 +94,7 @@ const MaterialTab = React.lazy(() => import('./project/MaterialTab'));
 const ReportTab = React.lazy(() => import('./project/ReportTab'));
 const DocumentsTab = React.lazy(() => import('./project/DocumentsTab'));
 const ProjectOrgTab = React.lazy(() => import('./project/ProjectOrgTab'));
+const ProjectPermissionsTab = React.lazy(() => import('./project/ProjectPermissionsTab'));
 const ExecutiveTab = React.lazy(() => import('./project/ExecutiveTab'));
 const QualityTab = React.lazy(() => import('./project/QualityTab'));
 const SafetyTab = React.lazy(() => import('./project/SafetyTab'));
@@ -526,8 +527,12 @@ const ProjectDashboard: React.FC = () => {
     }, [canManageProjectTab, projectPermissionScope, user]);
 
     const visibleOverviewTabs = useMemo(
-        () => PROJECT_TAB_PERMISSIONS.filter(tab => !isProjectFinanceLegacyTabKey(tab.key) && canViewProjectTab(tab.key)),
-        [canViewProjectTab]
+        () => PROJECT_TAB_PERMISSIONS.filter(tab =>
+            !isProjectFinanceLegacyTabKey(tab.key) &&
+            (tab.key !== 'permissions' || user?.role === Role.ADMIN) &&
+            canViewProjectTab(tab.key)
+        ),
+        [canViewProjectTab, user?.role]
     );
     const defaultOverviewTab = visibleOverviewTabs[0]?.key || 'executive';
     const canManageBudgetTab = canManageProjectTab('budget');
@@ -3141,7 +3146,9 @@ const ProjectDashboard: React.FC = () => {
                             <ExecutiveTab constructionSiteId={effectiveSiteId!} projectId={selectedProject.id} />
                         ) : renderSiteRequired('Điều hành')
                     ) : overviewTab === 'org' ? (
-                        <ProjectOrgTab projectId={selectedProject.id} constructionSiteId={effectiveSiteId} canManageTab={canManageProjectTab('org')} />
+                        <ProjectOrgTab projectId={selectedProject.id} constructionSiteId={effectiveSiteId} />
+                    ) : overviewTab === 'permissions' ? (
+                        <ProjectPermissionsTab projectId={selectedProject.id} constructionSiteId={effectiveSiteId} />
                     ) : overviewTab === 'finance' ? (
                         hasSiteLink ? (
                             <ProjectFinanceWorkspace

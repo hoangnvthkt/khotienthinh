@@ -11,6 +11,7 @@ interface Props {
   orgUnits?: OrgUnit[];
   value?: string[] | string | null;
   creatorUserId?: string | null;
+  allowedUserIds?: string[];
   label?: string;
   selectionMode?: 'single' | 'multiple';
   disabled?: boolean;
@@ -25,6 +26,7 @@ const ProjectWorkflowAssigneeSelect: React.FC<Props> = ({
   orgUnits = [],
   value,
   creatorUserId,
+  allowedUserIds,
   label = 'Người xử lý',
   selectionMode = 'multiple',
   disabled = false,
@@ -36,6 +38,10 @@ const ProjectWorkflowAssigneeSelect: React.FC<Props> = ({
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const userById = useMemo(() => new Map(users.map(user => [user.id, user])), [users]);
+  const allowedUserIdSet = useMemo(
+    () => allowedUserIds ? new Set(allowedUserIds) : null,
+    [allowedUserIds],
+  );
   const selectedUserIds = useMemo(
     () => Array.isArray(value) ? value.filter(Boolean) : value ? [value] : [],
     [value],
@@ -43,6 +49,7 @@ const ProjectWorkflowAssigneeSelect: React.FC<Props> = ({
   const fixedUserId = node?.config?.assigneeUserId || null;
   const creatorModeUserId = node?.config?.assignmentMode === 'creator' ? creatorUserId || null : null;
   const lockedUserId = fixedUserId || creatorModeUserId;
+  const isLockedUserAllowed = !lockedUserId || !allowedUserIdSet || allowedUserIdSet.has(lockedUserId);
   const configuredUserTargetIds = useMemo(
     () => new Set(
       (node?.config?.assignmentTargets || [])
@@ -66,8 +73,9 @@ const ProjectWorkflowAssigneeSelect: React.FC<Props> = ({
   const activeUsers = useMemo(
     () => users
       .filter(user => user.isActive !== false)
+      .filter(user => !allowedUserIdSet || allowedUserIdSet.has(user.id))
       .filter(user => !node?.config?.assigneeRole || user.role === node.config.assigneeRole),
-    [node?.config?.assigneeRole, users],
+    [allowedUserIdSet, node?.config?.assigneeRole, users],
   );
   const activeEmployees = useMemo(
     () => employees.filter(employee => employee.status === 'Đang làm việc' && employee.userId),
@@ -84,6 +92,7 @@ const ProjectWorkflowAssigneeSelect: React.FC<Props> = ({
     const isConfiguredCreator = (userId?: string | null) => !!userId && hasCreatorTarget && userId === creatorUserId;
 
     candidates
+      .filter(candidate => !allowedUserIdSet || allowedUserIdSet.has(candidate.userId))
       .filter(candidate => {
         if (!hasExplicitPeoplePool) return true;
         return configuredUserTargetIds.has(candidate.userId)
@@ -94,9 +103,13 @@ const ProjectWorkflowAssigneeSelect: React.FC<Props> = ({
         if (candidate.userId) byUserId.set(candidate.userId, candidate);
       });
 
-    if (configuredUserTargetIds.size > 0 || hasCreatorTarget) {
+    if (configuredUserTargetIds.size > 0 || hasCreatorTarget || (allowedUserIdSet && !hasExplicitPeoplePool)) {
       activeUsers
-        .filter(user => configuredUserTargetIds.has(user.id) || isConfiguredCreator(user.id))
+        .filter(user => (
+          allowedUserIdSet && !hasExplicitPeoplePool
+            ? true
+            : configuredUserTargetIds.has(user.id) || isConfiguredCreator(user.id)
+        ))
         .forEach((user, index) => {
           if (byUserId.has(user.id)) return;
           byUserId.set(user.id, {
@@ -121,7 +134,7 @@ const ProjectWorkflowAssigneeSelect: React.FC<Props> = ({
         )
         .forEach((employee, index) => {
           const user = userById.get(employee.userId!);
-          if (!user || user.isActive === false || byUserId.has(user.id)) return;
+          if (!user || user.isActive === false || byUserId.has(user.id) || (allowedUserIdSet && !allowedUserIdSet.has(user.id))) return;
           byUserId.set(user.id, {
             id: `department-${user.id}`,
             projectId: subject.projectId || null,
@@ -136,7 +149,7 @@ const ProjectWorkflowAssigneeSelect: React.FC<Props> = ({
     }
 
     selectedUserIds.forEach((userId, index) => {
-      if (byUserId.has(userId)) return;
+      if (byUserId.has(userId) || (allowedUserIdSet && !allowedUserIdSet.has(userId))) return;
       const user = userById.get(userId);
       if (!user) return;
       byUserId.set(userId, {
@@ -155,6 +168,7 @@ const ProjectWorkflowAssigneeSelect: React.FC<Props> = ({
   }, [
     activeEmployees,
     activeUsers,
+    allowedUserIdSet,
     candidates,
     configuredDepartmentIds,
     configuredUserTargetIds,
@@ -199,7 +213,7 @@ const ProjectWorkflowAssigneeSelect: React.FC<Props> = ({
 
   useEffect(() => {
     if (lockedUserId) {
-      onChange([lockedUserId]);
+      onChange(isLockedUserAllowed ? [lockedUserId] : []);
       return;
     }
 
@@ -224,10 +238,10 @@ const ProjectWorkflowAssigneeSelect: React.FC<Props> = ({
       });
 
     return () => { alive = false; };
-  }, [creatorUserId, lockedUserId, node?.id, node?.config?.assigneeRole, onChange, selectedUserIds.length, subject.id, userById]);
+  }, [creatorUserId, isLockedUserAllowed, lockedUserId, node?.id, node?.config?.assigneeRole, onChange, selectedUserIds.length, subject.id, userById]);
 
   const toggleUser = (userId: string) => {
-    if (disabled || loading) return;
+    if (disabled || loading || (allowedUserIdSet && !allowedUserIdSet.has(userId))) return;
     const next = selectedUserIds.includes(userId)
       ? selectedUserIds.filter(id => id !== userId)
       : selectionMode === 'single'
@@ -247,7 +261,7 @@ const ProjectWorkflowAssigneeSelect: React.FC<Props> = ({
     const departmentUserIds = activeEmployees
       .filter(employee => employee.departmentId === departmentId || employee.orgUnitId === departmentId)
       .map(employee => employee.userId!)
-      .filter(userId => configuredDepartmentIds.has(departmentId) || candidateUserIds.has(userId));
+      .filter(userId => candidateUserIds.has(userId));
 
     const nextUserIds = exists
       ? selectedUserIds.filter(id => !departmentUserIds.includes(id))
@@ -260,10 +274,10 @@ const ProjectWorkflowAssigneeSelect: React.FC<Props> = ({
     return (
       <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
         <div className="mb-1 text-[10px] font-black uppercase text-slate-400">{label}</div>
-        <div className="flex items-center gap-2 font-black text-slate-700">
+        {isLockedUserAllowed ? <div className="flex items-center gap-2 font-black text-slate-700">
           <UserRound size={14} className="text-slate-400" />
           {lockedUser?.name || lockedUserId}
-        </div>
+        </div> : <div className="flex items-start gap-1.5 font-bold text-amber-700"><AlertTriangle size={13} className="mt-0.5 shrink-0" />Người được cấu hình cho bước này chưa thuộc Room xử lý.</div>}
       </div>
     );
   }

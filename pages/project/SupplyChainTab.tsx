@@ -78,6 +78,7 @@ import ExcelImportReviewModal from '../../components/ExcelImportReviewModal';
 import InventoryItemCombobox from '../../components/InventoryItemCombobox';
 import { ExcelImportMode, ExcelImportPreview, applyImportChanges, buildImportPreview, parseExcelRows } from '../../lib/excelImport';
 import ProjectSubmissionDialog from '../../components/project/ProjectSubmissionDialog';
+import ProjectRoomSubmissionDialog from '../../components/project/ProjectRoomSubmissionDialog';
 import { projectSubmissionService } from '../../lib/projectSubmissionService';
 import SupplierCombobox from '../../components/SupplierCombobox';
 import { materialRequestService } from '../../lib/materialRequestService';
@@ -8664,7 +8665,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 </div>
             )}
             {submittingPo && (
-                <ProjectSubmissionDialog
+                <ProjectRoomSubmissionDialog
                     title="Gửi đơn hàng vật tư"
                     actionLabel="Gửi đơn"
                     documentLabel="PO vật tư"
@@ -8672,8 +8673,9 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     documentSubtitle={`Trạng thái hiện tại: ${PO_STATUS[submittingPo.status].label}`}
                     projectId={projectId}
                     constructionSiteId={constructionSiteId || submittingPo.constructionSiteId}
-                    recipientPermissionCodes={['confirm']}
-                    recipientHint="Chọn đích danh người nhận/xác nhận đơn hàng vật tư."
+                    recipientRoomCode="material_po"
+                    recipientAction="approve"
+                    recipientHint="Chọn người thuộc Room Đơn hàng PO có quyền duyệt."
                     details={[
                         { label: 'Nhà cung cấp', value: submittingPo.vendorName || '-' },
                         { label: 'Tổng giá trị', value: `${fmtMoney(submittingPoDisplayAmount)} đ` },
@@ -8687,7 +8689,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 />
             )}
             {submittingDirectPurchase && (
-                <ProjectSubmissionDialog
+                <ProjectRoomSubmissionDialog
                     title="Gửi duyệt mua nóng"
                     actionLabel="Gửi duyệt"
                     documentLabel="Phiếu mua nóng"
@@ -8695,8 +8697,9 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     documentSubtitle={`Trạng thái hiện tại: ${DIRECT_PURCHASE_STATUS[submittingDirectPurchase.status]?.label || submittingDirectPurchase.status}`}
                     projectId={submittingDirectPurchase.projectId || projectId}
                     constructionSiteId={submittingDirectPurchase.constructionSiteId || constructionSiteId}
-                    recipientPermissionCodes={['project.material_direct_purchase.edit']}
-                    recipientHint="Chọn đích danh người có quyền kiểm tra và duyệt phiếu mua nóng tại dự án/công trường này."
+                    recipientRoomCode="material_po"
+                    recipientAction="approve"
+                    recipientHint="Chọn người thuộc Room Đơn hàng PO có quyền duyệt mua nóng."
                     details={[
                         { label: 'Nhà cung cấp', value: submittingDirectPurchase.supplierNameSnapshot },
                         { label: 'Nguồn thanh toán', value: DIRECT_PURCHASE_PAYMENT_SOURCE[submittingDirectPurchase.paymentSource] },
@@ -8710,7 +8713,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 />
             )}
             {pendingPoSupplementalSubmission && (
-                <ProjectSubmissionDialog
+                <ProjectRoomSubmissionDialog
                     title="Gửi duyệt bổ sung PO"
                     actionLabel="Gửi duyệt bổ sung"
                     documentLabel="Duyệt bổ sung PO"
@@ -8718,8 +8721,9 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     documentSubtitle="Đợt mua vẫn được lưu, nhưng chưa thể tạo WMS/QR cho tới khi duyệt bổ sung."
                     projectId={projectId}
                     constructionSiteId={constructionSiteId || editingPo?.constructionSiteId}
-                    recipientPermissionCodes={['project.material_po.approve']}
-                    recipientHint="Chọn người có quyền duyệt PO để duyệt phần giá trị vượt."
+                    recipientRoomCode="material_po"
+                    recipientAction="approve"
+                    recipientHint="Chọn người thuộc Room Đơn hàng PO có quyền duyệt phần giá trị vượt."
                     details={[
                         { label: 'Tổng đã duyệt', value: `${fmtMoney(pendingPoSupplementalSubmission.previousApprovedAmount)} đ` },
                         { label: 'Tổng cần duyệt mới', value: `${fmtMoney(pendingPoSupplementalSubmission.requestedTotalAmount)} đ` },

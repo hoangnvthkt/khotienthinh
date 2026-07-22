@@ -9,7 +9,7 @@ import { useConfirm, useReasonConfirm } from '../../context/ConfirmContext';
 import { useApp } from '../../context/AppContext';
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
-import ProjectSubmissionDialog from './ProjectSubmissionDialog';
+import ProjectRoomSubmissionDialog from './ProjectRoomSubmissionDialog';
 import { formatPolicyMessage, getProjectDocumentPolicy } from '../../lib/projectDocumentPolicy';
 import { projectDocumentActionLogService } from '../../lib/projectDocumentActionLogService';
 
@@ -457,7 +457,7 @@ const ContractVariationPanel: React.FC<Props> = ({ contractId, contractType, pro
         </div>
       </div>
       {submittingVariation && (
-        <ProjectSubmissionDialog
+        <ProjectRoomSubmissionDialog
           title="Gửi điều chỉnh BOQ"
           actionLabel="Gửi duyệt"
           documentLabel="Phát sinh BOQ"
@@ -465,8 +465,9 @@ const ContractVariationPanel: React.FC<Props> = ({ contractId, contractType, pro
           documentSubtitle={`Version ${submittingVariation.versionNumber || '?'} • Trạng thái hiện tại: ${submittingVariation.status}`}
           projectId={projectId}
           constructionSiteId={constructionSiteId}
-          recipientPermissionCodes={['approve']}
-          recipientHint="Chọn đích danh người có quyền phê duyệt phát sinh BOQ."
+          recipientRoomCode="boq_reconciliation"
+          recipientAction="approve"
+          recipientHint="Chọn người thuộc Room Đối soát BOQ có quyền duyệt phát sinh BOQ."
           details={[
             { label: 'Giá trị phát sinh', value: fmt(submittingVariation.totalAmountDelta) },
             { label: 'Số dòng', value: `${submittingVariation.items.length} hạng mục` },

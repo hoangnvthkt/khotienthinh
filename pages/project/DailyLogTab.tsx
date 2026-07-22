@@ -8,6 +8,7 @@ import { dailyLogService, taskService, workBoqService } from '../../lib/projectS
 import { contractLaborCatalogService, contractMachineCatalogService } from '../../lib/contractMetadataService';
 import { partnerService } from '../../lib/partnerService';
 import { projectStaffService } from '../../lib/projectStaffService';
+import { projectPermissionRoomService } from '../../lib/projectPermissionRoomService';
 import { notificationService } from '../../lib/notificationService';
 import { delayEventService } from '../../lib/projectScheduleForecastService';
 import { projectDocumentActionLogService } from '../../lib/projectDocumentActionLogService';
@@ -796,7 +797,7 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
                     )}
                     {canVerify && (
                         <button onClick={onVerify} disabled={busy} className="px-4 py-2 rounded-xl text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-1.5">
-                            {busy ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />} Xác nhận
+                            {busy ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />} {log.submittedToPermission === 'approve' ? 'Duyệt CHT' : 'Xác nhận'}
                         </button>
                     )}
                     {canEdit && (
@@ -855,6 +856,8 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     const [summaryDate, setSummaryDate] = useState<string | null>(null);
     const [summarySaving, setSummarySaving] = useState(false);
     const [summaryLogId, setSummaryLogId] = useState<string>('');
+    const [summaryApprovers, setSummaryApprovers] = useState<ProjectStaff[]>([]);
+    const [summaryApproverUserId, setSummaryApproverUserId] = useState('');
     const [summaryWeather, setSummaryWeather] = useState<WeatherType>('sunny');
     const [summaryDescription, setSummaryDescription] = useState('');
     const [summaryIssues, setSummaryIssues] = useState('');
@@ -965,6 +968,32 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
             return false;
         }
     }, [constructionSiteId, ensureDailyLogAction, projectId, toast, user?.id, user?.role]);
+
+    const requireDailyLogResponsibilityRoom = useCallback(async (
+        log: DailyLog,
+        target: DailyLogResponsibilityTarget,
+    ) => {
+        const roomContext = {
+            roomCode: 'daily_log' as const,
+            actionCode: target.responsibility === 'current_approver' ? 'approve' as const : 'verify' as const,
+        };
+        const scopedProjectId = projectId || log.projectId;
+        if (!scopedProjectId) {
+            toast.error('Chưa xác định dự án', 'Không thể kiểm tra Room của người nhận nhật ký.');
+            return false;
+        }
+        const allowed = await projectPermissionRoomService.hasAction(
+            target.userId,
+            scopedProjectId,
+            constructionSiteId || log.constructionSiteId || null,
+            roomContext.roomCode,
+            roomContext.actionCode,
+        );
+        if (!allowed) {
+            toast.error('Người nhận chưa thuộc Room', `Người chịu trách nhiệm chưa có quyền ${roomContext.actionCode === 'approve' ? 'duyệt' : 'kiểm tra'} trong Room Nhật ký công trường.`);
+        }
+        return allowed;
+    }, [constructionSiteId, projectId, toast]);
 
     const reloadDailyLogRecords = useCallback(async () => {
         if (!effectiveId) return;
@@ -1107,6 +1136,18 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         return editableStatus && isDailyLogOwner(log) && hasDailyLogAction(DAILY_LOG_ACTION.submit);
     }, [hasDailyLogAction, isAdminUser, isDailyLogOwner]);
 
+    const canProcessDailyLog = useCallback((log: DailyLog) => {
+        if (getLogStatus(log) !== 'submitted') return false;
+        const reviewAction = log.submittedToPermission === 'approve'
+            ? DAILY_LOG_ACTION.approve
+            : DAILY_LOG_ACTION.verify;
+        if (!isAdminUser && !hasDailyLogAction(reviewAction)) return false;
+        if (isAdminUser) return true;
+
+        const currentHandlerId = log.requestedVerifierId || log.submittedToUserId;
+        return Boolean(currentHandlerId && currentHandlerId === user?.id);
+    }, [hasDailyLogAction, isAdminUser, user?.id]);
+
     const resetForm = () => {
         if (savingLogRef.current) return;
         setEditing(null);
@@ -1242,9 +1283,20 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         const metadata = existingSummary?.summarySourceMetadata || {};
         const metadataLegacyLogIds = toStringArray(metadata.legacyDailyLogIds);
         const metadataSourceSnapshots = getDailyLogSummarySourceSnapshots(metadata);
+        const approvers = projectId
+            ? await projectPermissionRoomService.listRecipients(projectId, constructionSiteId, 'daily_log', 'approve')
+            : [];
 
         setSummaryDate(date);
         setSummaryLogId(id);
+        setSummaryApprovers(approvers);
+        setSummaryApproverUserId(
+            existingSummary?.submittedToUserId && approvers.some(staff => staff.userId === existingSummary.submittedToUserId)
+                ? existingSummary.submittedToUserId
+                : approvers.length === 1
+                    ? approvers[0].userId
+                    : '',
+        );
         setSummaryWeather(existingSummary?.weather || 'sunny');
         setSummaryDescription(existingSummary?.description || '');
         setSummaryIssues(existingSummary?.issues || '');
@@ -1252,12 +1304,14 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         setSummaryPhotos(existingSummary?.photos || []);
         setSelectedSummaryLegacyLogIds(existingSummary ? metadataLegacyLogIds : []);
         setSummarySourceSnapshots(existingSummary ? metadataSourceSnapshots : {});
-    }, [logs, requireDailyLogAction]);
+    }, [constructionSiteId, logs, projectId, requireDailyLogAction]);
 
     const closeSummary = (force = false) => {
         if (!force && summarySaving) return;
         setSummaryDate(null);
         setSummaryLogId('');
+        setSummaryApprovers([]);
+        setSummaryApproverUserId('');
         setSummaryDescription('');
         setSummaryIssues('');
         setSummaryNextPlan('');
@@ -1299,6 +1353,11 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         if (!summaryDate || !summaryLogId) return;
         if (!(await requireDailyLogAction(DAILY_LOG_ACTION.summarize, 'lưu bản tổng hợp'))) return;
         if (submitNow && !(await requireDailyLogAction(DAILY_LOG_ACTION.submit, 'gửi bản tổng hợp'))) return;
+        const summaryApprover = summaryApprovers.find(staff => staff.userId === summaryApproverUserId);
+        if (submitNow && !summaryApprover) {
+            toast.warning('Chưa chọn CHT duyệt', 'Vui lòng chọn người có quyền duyệt trong Room Nhật ký công trường.');
+            return;
+        }
         if (!summaryDescription.trim() && summaryPhotos.length === 0) {
             toast.warning('Thiếu nội dung tổng hợp', 'Vui lòng nhập nội dung hoặc chọn ảnh từ báo cáo thành viên.');
             return;
@@ -1349,8 +1408,6 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                 nextDayPlan: summaryNextPlan.trim() || undefined,
                 photos: summaryPhotos,
                 volumes: summaryVolumes,
-                status: existing.status || 'draft',
-                submittedToPermission: 'approve',
                 summarySourceType: DAILY_SUMMARY_SOURCE_TYPE,
                 summaryContributionCount: selectedLegacyLogs.length,
                 summarySourceMetadata,
@@ -1388,14 +1445,15 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
             };
             await dailyLogService.upsert(item);
             if (submitNow) {
-                const targetApprover = await subjectAuthorizationService.getDailyLogResponsibilityTarget(summaryLogId);
                 await dailyLogService.updateStatus({
                     logId: summaryLogId,
                     status: 'submitted',
+                    requestedVerifierId: summaryApproverUserId,
+                    requestedVerifierName: summaryApprover?.userName || null,
                     actorUserId: user?.id,
                 });
                 await notificationService.notifyProjectUsers({
-                    recipientIds: [targetApprover.userId],
+                    recipientIds: [summaryApproverUserId],
                     actorId: user?.id,
                     type: 'info',
                     category: 'progress',
@@ -1405,15 +1463,15 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                     icon: '✅',
                     link: buildDailyLogLink(summaryLogId),
                     sourceType: 'dailylog_summary_submitted',
-                    sourceId: `dailylog_summary_${summaryLogId}_${targetApprover.userId}_${Date.now()}`,
+                    sourceId: `dailylog_summary_${summaryLogId}_${summaryApproverUserId}_${Date.now()}`,
                     constructionSiteId: constructionSiteId || undefined,
                     metadata: {
                         logId: summaryLogId,
                         date: summaryDate,
                         projectId,
                         constructionSiteId,
-                        assignmentResponsibility: targetApprover.responsibility,
-                        assignmentUserId: targetApprover.userId,
+                        assignmentResponsibility: 'current_approver',
+                        assignmentUserId: summaryApproverUserId,
                     },
                 }).catch(err => console.warn('Cannot notify responsibility assignee', err?.message || err));
             }
@@ -1615,6 +1673,9 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
             if (status === 'submitted') {
                 responsibilityTarget = responsibilityTarget
                     || await subjectAuthorizationService.getDailyLogResponsibilityTarget(log.id);
+                if (!responsibilityTarget || !(await requireDailyLogResponsibilityRoom(log, responsibilityTarget))) {
+                    return false;
+                }
             }
             if (status === 'submitted' || status === 'verified') {
                 const reviewAction = status === 'verified' && log.submittedToPermission === 'approve' ? 'approve' : 'verify';
@@ -2049,7 +2110,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         : [];
     const canReturnViewingLog = !!viewingLog && canReviewDailyLog(viewingLog);
     const canVerifyViewingLog = !!viewingLog
-        && canReviewDailyLog(viewingLog)
+        && canProcessDailyLog(viewingLog)
         && !isLegacyDailyLogSource(viewingLog);
     const canRollbackViewingLog = !!viewingLog
         && viewingLogStatus === 'verified'
@@ -2708,9 +2769,19 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                     </div>
                                     <div>
                                         <label className="mb-1 block text-[10px] font-black uppercase text-muted-foreground">CHT duyệt</label>
-                                        <div className="w-full rounded-xl border border-teal-200 bg-teal-50 px-3 py-2 text-sm font-bold text-teal-800">
-                                            Tự động theo responsibility slot khi gửi
-                                        </div>
+                                        <select
+                                            value={summaryApproverUserId}
+                                            onChange={event => setSummaryApproverUserId(event.target.value)}
+                                            className="w-full rounded-xl border border-teal-200 bg-teal-50 px-3 py-2 text-sm font-bold text-teal-800 outline-none focus:ring-2 focus:ring-teal-400"
+                                        >
+                                            <option value="">Chọn CHT từ Room Nhật ký</option>
+                                            {summaryApprovers.map(staff => (
+                                                <option key={staff.userId} value={staff.userId}>{staff.userName}</option>
+                                            ))}
+                                        </select>
+                                        {summaryApprovers.length === 0 && (
+                                            <p className="mt-1 text-[10px] font-bold text-red-600">Chưa có người có quyền duyệt trong Room Nhật ký công trường.</p>
+                                        )}
                                     </div>
                                 </div>
                                 <div className="mt-4">
