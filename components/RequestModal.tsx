@@ -4162,6 +4162,8 @@ const RequestModal: React.FC<RequestModalProps> = ({
                     users={users}
 	                    employees={employees}
 	                    orgUnits={orgUnits}
+	                    recipientRoomCode="material_request"
+	                    recipientAction="approve"
 	                    submitLabel={request ? 'Gửi duyệt' : 'Tạo và gửi duyệt'}
 	                    onCancel={() => setSubmittingProjectRequest(null)}
                     onConfirm={input => submitRequestForApproval(submittingProjectRequest, {

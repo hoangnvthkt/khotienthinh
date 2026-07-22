@@ -19,4 +19,16 @@ describe('Project Room recipient cutover', () => {
     expect(source).toContain('recipientAction="approve"');
     expect(source).not.toContain("recipientPermissionCodes={['confirm']}");
   });
+
+  it('limits the first Material Request workflow recipient picker to its Room', () => {
+    const startDialog = readFileSync(join(process.cwd(), 'components/project/ProjectWorkflowStartDialog.tsx'), 'utf8');
+    const requestModal = readFileSync(join(process.cwd(), 'components/RequestModal.tsx'), 'utf8');
+
+    expect(startDialog).toContain('projectPermissionRoomService.listRecipients');
+    expect(startDialog).toContain('recipientRoomCode');
+    expect(startDialog).toContain('recipientAction');
+    expect(startDialog).toContain('assigneeUserIds.every(userId => roomRecipientUserIds.includes(userId))');
+    expect(requestModal).toContain('recipientRoomCode="material_request"');
+    expect(requestModal).toContain('recipientAction="approve"');
+  });
 });

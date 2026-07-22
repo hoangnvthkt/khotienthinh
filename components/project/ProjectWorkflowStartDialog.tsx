@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, GitBranch, Send, X } from 'lucide-react';
 import { Employee, OrgUnit, ProjectWorkflowConfiguration, ProjectWorkflowSubject, User, WorkflowNode } from '../../types';
 import { projectWorkflowService } from '../../lib/projectWorkflowService';
+import { projectPermissionRoomService } from '../../lib/projectPermissionRoomService';
+import type { ProjectPermissionRoomCode, ProjectRoomActionCode } from '../../lib/permissions/projectPermissionRooms';
 import ProjectWorkflowAssigneeSelect from './ProjectWorkflowAssigneeSelect';
 
 interface Props {
@@ -13,6 +15,8 @@ interface Props {
   users: User[];
   employees?: Employee[];
   orgUnits?: OrgUnit[];
+  recipientRoomCode?: ProjectPermissionRoomCode;
+  recipientAction?: ProjectRoomActionCode;
   submitLabel?: string;
   onCancel: () => void;
   onConfirm: (input: { templateId: string; assigneeUserIds: string[]; comment: string }) => Promise<void> | void;
@@ -27,6 +31,8 @@ const ProjectWorkflowStartDialog: React.FC<Props> = ({
   users,
   employees = [],
   orgUnits = [],
+  recipientRoomCode,
+  recipientAction,
   submitLabel = 'Gửi duyệt',
   onCancel,
   onConfirm,
@@ -38,6 +44,7 @@ const ProjectWorkflowStartDialog: React.FC<Props> = ({
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [roomRecipientUserIds, setRoomRecipientUserIds] = useState<string[] | null>(null);
   const syntheticSubject = useMemo<ProjectWorkflowSubject>(() => ({
     id: `draft:${requestId}`,
     subjectType: 'material_request',
@@ -49,28 +56,52 @@ const ProjectWorkflowStartDialog: React.FC<Props> = ({
 
   useEffect(() => {
     let alive = true;
-    setLoading(true);
-    projectWorkflowService.getConfiguration('material_request', projectId || null, constructionSiteId || null)
-      .then(async next => {
+    const load = async () => {
+      setLoading(true);
+      setError(null);
+      setRoomRecipientUserIds(null);
+      try {
+        const next = await projectWorkflowService.getConfiguration('material_request', projectId || null, constructionSiteId || null);
         if (!alive) return;
         setConfiguration(next);
         if (!next.valid || !next.binding) {
           setError(next.errors[0] || 'Chưa cấu hình workflow hợp lệ.');
           return;
         }
-        const context = await projectWorkflowService.getTemplateStartContext(next.binding.workflowTemplateId);
+        if ((recipientRoomCode || recipientAction) && (!recipientRoomCode || !recipientAction || !projectId)) {
+          setError('Chưa xác định được Room nhận xử lý của dự án.');
+          return;
+        }
+        const [context, recipients] = await Promise.all([
+          projectWorkflowService.getTemplateStartContext(next.binding.workflowTemplateId),
+          recipientRoomCode && recipientAction && projectId
+            ? projectPermissionRoomService.listRecipients(projectId, constructionSiteId, recipientRoomCode, recipientAction)
+            : Promise.resolve(null),
+        ]);
         if (!alive) return;
         setFirstNode(context.firstNode);
+        setRoomRecipientUserIds(recipients?.map(item => item.userId) || null);
         if (!context.firstNode) setError('Mẫu workflow chưa có bước xử lý đầu tiên.');
-      })
-      .catch(err => alive && setError(err?.message || 'Không tải được workflow đề xuất vật tư.'))
-      .finally(() => alive && setLoading(false));
+        if (recipients && recipients.length === 0) {
+          setError('Chưa có người có quyền duyệt trong Room của đề xuất vật tư.');
+        }
+      } catch (err: any) {
+        if (alive) setError(err?.message || 'Không tải được workflow đề xuất vật tư.');
+      } finally {
+        if (alive) setLoading(false);
+      }
+    };
+    void load();
     return () => { alive = false; };
-  }, [constructionSiteId, projectId]);
+  }, [constructionSiteId, projectId, recipientAction, recipientRoomCode]);
 
   const submit = async () => {
     if (!configuration?.binding || !firstNode || assigneeUserIds.length === 0) {
       setError('Vui lòng chọn ít nhất một người xử lý bước đầu.');
+      return;
+    }
+    if (roomRecipientUserIds && !assigneeUserIds.every(userId => roomRecipientUserIds.includes(userId))) {
+      setError('Người xử lý không còn thuộc Room được phép nhận đề xuất vật tư. Vui lòng tải lại danh sách.');
       return;
     }
     setSubmitting(true);
@@ -113,6 +144,7 @@ const ProjectWorkflowStartDialog: React.FC<Props> = ({
                 orgUnits={orgUnits}
                 value={assigneeUserIds}
                 creatorUserId={requesterUserId}
+                allowedUserIds={roomRecipientUserIds || undefined}
                 disabled={submitting}
                 onChange={setAssigneeUserIds}
               />

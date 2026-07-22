@@ -3142,6 +3142,8 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                         users={users}
                         employees={employees}
                         orgUnits={orgUnits}
+                        recipientRoomCode="material_request"
+                        recipientAction="approve"
                         onCancel={() => setStartWorkflowRequest(null)}
                         onConfirm={async input => {
                             await performDynamicRequestTransition({
