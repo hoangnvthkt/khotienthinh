@@ -46,7 +46,7 @@ import {
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm, useReasonConfirm } from '../../context/ConfirmContext';
-import ProjectSubmissionDialog from '../../components/project/ProjectSubmissionDialog';
+import ProjectRoomSubmissionDialog from '../../components/project/ProjectRoomSubmissionDialog';
 import MediaViewer, { MediaItem } from '../../components/project/MediaViewer';
 import { EmptyState, MobileCardList, StatusBadge as ErpStatusBadge } from '../../components/erp';
 
@@ -1614,7 +1614,7 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
       )}
 
       {submittingFormDraft && (
-        <ProjectSubmissionDialog
+        <ProjectRoomSubmissionDialog
           title="Gửi duyệt hồ sơ nghiệm thu"
           actionLabel="Gửi duyệt"
           documentLabel="HỒ SƠ CHẤT LƯỢNG"
@@ -1628,15 +1628,16 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
           ]}
           projectId={projectId}
           constructionSiteId={submittingFormDraft.constructionSiteId}
-          recipientPermissionCodes={['approve']}
-          recipientHint="Chọn người có quyền phê duyệt hồ sơ chất lượng."
+          recipientRoomCode="quality"
+          recipientAction="approve"
+          recipientHint="Chọn người thuộc Room Chất lượng có quyền duyệt hồ sơ."
           onCancel={() => setSubmittingFormDraft(null)}
           onConfirm={handleConfirmFormSubmit}
         />
       )}
 
       {submittingChecklist && (
-        <ProjectSubmissionDialog
+        <ProjectRoomSubmissionDialog
           title="Gửi duyệt hồ sơ nghiệm thu"
           actionLabel="Gửi duyệt"
           documentLabel="HỒ SƠ CHẤT LƯỢNG"
@@ -1648,8 +1649,9 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
           ]}
           projectId={projectId}
           constructionSiteId={siteId || null}
-          recipientPermissionCodes={['approve']}
-          recipientHint="Chọn người có quyền phê duyệt hồ sơ chất lượng."
+          recipientRoomCode="quality"
+          recipientAction="approve"
+          recipientHint="Chọn người thuộc Room Chất lượng có quyền duyệt hồ sơ."
           onCancel={() => setSubmittingChecklist(null)}
           onConfirm={handleConfirmSubmit}
         />
