@@ -12,7 +12,16 @@ describe('Daily Log summary Room cutover', () => {
   it('lets the sender select the CHT from Daily Log Room approvers', () => {
     expect(source).toContain("projectPermissionRoomService.listRecipients(projectId, constructionSiteId, 'daily_log', 'approve')");
     expect(source).toContain('summaryApproverUserId');
-    expect(source).toContain('submittedToUserId: summaryApproverUserId');
+    expect(source).toContain('requestedVerifierId: summaryApproverUserId');
+  });
+
+  it('does not write the selected CHT directly while saving the draft', () => {
+    const saveSummary = source.slice(
+      source.indexOf('const saveSummary = async'),
+      source.indexOf('await dailyLogService.upsert(item);'),
+    );
+
+    expect(saveSummary).not.toContain('submittedToUserId: summaryApproverUserId');
   });
 
   it('does not resolve the summary recipient from the legacy responsibility slot', () => {
