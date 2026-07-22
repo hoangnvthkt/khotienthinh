@@ -856,6 +856,8 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     const [summaryDate, setSummaryDate] = useState<string | null>(null);
     const [summarySaving, setSummarySaving] = useState(false);
     const [summaryLogId, setSummaryLogId] = useState<string>('');
+    const [summaryApprovers, setSummaryApprovers] = useState<ProjectStaff[]>([]);
+    const [summaryApproverUserId, setSummaryApproverUserId] = useState('');
     const [summaryWeather, setSummaryWeather] = useState<WeatherType>('sunny');
     const [summaryDescription, setSummaryDescription] = useState('');
     const [summaryIssues, setSummaryIssues] = useState('');
@@ -1269,9 +1271,20 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         const metadata = existingSummary?.summarySourceMetadata || {};
         const metadataLegacyLogIds = toStringArray(metadata.legacyDailyLogIds);
         const metadataSourceSnapshots = getDailyLogSummarySourceSnapshots(metadata);
+        const approvers = projectId
+            ? await projectPermissionRoomService.listRecipients(projectId, constructionSiteId, 'daily_log', 'approve')
+            : [];
 
         setSummaryDate(date);
         setSummaryLogId(id);
+        setSummaryApprovers(approvers);
+        setSummaryApproverUserId(
+            existingSummary?.submittedToUserId && approvers.some(staff => staff.userId === existingSummary.submittedToUserId)
+                ? existingSummary.submittedToUserId
+                : approvers.length === 1
+                    ? approvers[0].userId
+                    : '',
+        );
         setSummaryWeather(existingSummary?.weather || 'sunny');
         setSummaryDescription(existingSummary?.description || '');
         setSummaryIssues(existingSummary?.issues || '');
@@ -1279,12 +1292,14 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         setSummaryPhotos(existingSummary?.photos || []);
         setSelectedSummaryLegacyLogIds(existingSummary ? metadataLegacyLogIds : []);
         setSummarySourceSnapshots(existingSummary ? metadataSourceSnapshots : {});
-    }, [logs, requireDailyLogAction]);
+    }, [constructionSiteId, logs, projectId, requireDailyLogAction]);
 
     const closeSummary = (force = false) => {
         if (!force && summarySaving) return;
         setSummaryDate(null);
         setSummaryLogId('');
+        setSummaryApprovers([]);
+        setSummaryApproverUserId('');
         setSummaryDescription('');
         setSummaryIssues('');
         setSummaryNextPlan('');
@@ -1326,6 +1341,11 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         if (!summaryDate || !summaryLogId) return;
         if (!(await requireDailyLogAction(DAILY_LOG_ACTION.summarize, 'lưu bản tổng hợp'))) return;
         if (submitNow && !(await requireDailyLogAction(DAILY_LOG_ACTION.submit, 'gửi bản tổng hợp'))) return;
+        const summaryApprover = summaryApprovers.find(staff => staff.userId === summaryApproverUserId);
+        if (submitNow && !summaryApprover) {
+            toast.warning('Chưa chọn CHT duyệt', 'Vui lòng chọn người có quyền duyệt trong Room Nhật ký công trường.');
+            return;
+        }
         if (!summaryDescription.trim() && summaryPhotos.length === 0) {
             toast.warning('Thiếu nội dung tổng hợp', 'Vui lòng nhập nội dung hoặc chọn ảnh từ báo cáo thành viên.');
             return;
@@ -1377,6 +1397,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                 photos: summaryPhotos,
                 volumes: summaryVolumes,
                 status: existing.status || 'draft',
+                submittedToUserId: summaryApproverUserId || existing.submittedToUserId,
                 submittedToPermission: 'approve',
                 summarySourceType: DAILY_SUMMARY_SOURCE_TYPE,
                 summaryContributionCount: selectedLegacyLogs.length,
@@ -1398,6 +1419,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                 photoRequired: false,
                 verified: false,
                 status: 'draft',
+                submittedToUserId: summaryApproverUserId || undefined,
                 submittedToPermission: 'approve',
                 summarySourceType: DAILY_SUMMARY_SOURCE_TYPE,
                 summaryContributionCount: selectedLegacyLogs.length,
@@ -1415,14 +1437,15 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
             };
             await dailyLogService.upsert(item);
             if (submitNow) {
-                const targetApprover = await subjectAuthorizationService.getDailyLogResponsibilityTarget(summaryLogId);
                 await dailyLogService.updateStatus({
                     logId: summaryLogId,
                     status: 'submitted',
+                    requestedVerifierId: summaryApproverUserId,
+                    requestedVerifierName: summaryApprover?.userName || null,
                     actorUserId: user?.id,
                 });
                 await notificationService.notifyProjectUsers({
-                    recipientIds: [targetApprover.userId],
+                    recipientIds: [summaryApproverUserId],
                     actorId: user?.id,
                     type: 'info',
                     category: 'progress',
@@ -1432,15 +1455,15 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                     icon: '✅',
                     link: buildDailyLogLink(summaryLogId),
                     sourceType: 'dailylog_summary_submitted',
-                    sourceId: `dailylog_summary_${summaryLogId}_${targetApprover.userId}_${Date.now()}`,
+                    sourceId: `dailylog_summary_${summaryLogId}_${summaryApproverUserId}_${Date.now()}`,
                     constructionSiteId: constructionSiteId || undefined,
                     metadata: {
                         logId: summaryLogId,
                         date: summaryDate,
                         projectId,
                         constructionSiteId,
-                        assignmentResponsibility: targetApprover.responsibility,
-                        assignmentUserId: targetApprover.userId,
+                        assignmentResponsibility: 'current_approver',
+                        assignmentUserId: summaryApproverUserId,
                     },
                 }).catch(err => console.warn('Cannot notify responsibility assignee', err?.message || err));
             }
@@ -2738,9 +2761,19 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                     </div>
                                     <div>
                                         <label className="mb-1 block text-[10px] font-black uppercase text-muted-foreground">CHT duyệt</label>
-                                        <div className="w-full rounded-xl border border-teal-200 bg-teal-50 px-3 py-2 text-sm font-bold text-teal-800">
-                                            Tự động theo responsibility slot khi gửi
-                                        </div>
+                                        <select
+                                            value={summaryApproverUserId}
+                                            onChange={event => setSummaryApproverUserId(event.target.value)}
+                                            className="w-full rounded-xl border border-teal-200 bg-teal-50 px-3 py-2 text-sm font-bold text-teal-800 outline-none focus:ring-2 focus:ring-teal-400"
+                                        >
+                                            <option value="">Chọn CHT từ Room Nhật ký</option>
+                                            {summaryApprovers.map(staff => (
+                                                <option key={staff.userId} value={staff.userId}>{staff.userName}</option>
+                                            ))}
+                                        </select>
+                                        {summaryApprovers.length === 0 && (
+                                            <p className="mt-1 text-[10px] font-bold text-red-600">Chưa có người có quyền duyệt trong Room Nhật ký công trường.</p>
+                                        )}
                                     </div>
                                 </div>
                                 <div className="mt-4">
