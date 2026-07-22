@@ -22,23 +22,24 @@ import { useApp } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
 import { useReservedStock } from '../../hooks/useReservedStock';
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
-import { subcontractorContractService } from '../../lib/hdService';
+import { supplierContractService } from '../../lib/hdService';
 import {
   MaterialIssueOrder,
   MaterialIssueRecipientType,
   MaterialIssueStatus,
   Role,
   BusinessPartner,
-  SubcontractorContract,
-  WorkGroup,
+  SupplierContract,
   InventoryItem,
 } from '../../types';
 import { materialIssueService } from '../../lib/materialIssueService';
 import { partnerService } from '../../lib/partnerService';
-import { workGroupService } from '../../lib/workGroupService';
 import { isGlobalWarehouseKeeper } from '../../lib/wmsPermissions';
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 import { normalizeLookupText, SITE_WAREHOUSE_STOP_WORDS } from '../../lib/projectMaterialTabUtils';
+import { buildMaterialIssueRecipientSource, type MaterialIssueRecipientSourceSelection } from '../../lib/materialIssueRecipientSource';
+import { dateInputToTransactionTimestamp } from '../../lib/transactionVoucherDates';
+import { formatQuantityInput, parseQuantityInput, sanitizeQuantityInput } from '../../lib/quantityInput';
 
 type MaterialIssuePanelProps = {
   projectId?: string | null;
@@ -67,6 +68,15 @@ type StockItemOption = {
 type StockDraftInput = {
   quantity: string;
   note: string;
+};
+
+type RecipientSourceTab = 'supplier_contract' | 'business_partner';
+
+type RecipientSourceOption = {
+  id: string;
+  label: string;
+  searchText: string;
+  selection: MaterialIssueRecipientSourceSelection;
 };
 
 type ActionType = 'receipt' | 'return' | 'consume' | 'loss' | 'cancel';
@@ -99,7 +109,7 @@ const STATUS_META: Record<MaterialIssueStatus, { label: string; tone: string }> 
 };
 
 const parseQty = (value: string | number | null | undefined) => {
-  const parsed = Number(String(value ?? '').replace(',', '.'));
+  const parsed = parseQuantityInput(value);
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
@@ -119,6 +129,12 @@ const getRecipientOptionLabel = (type: MaterialIssueRecipientType) => {
   if (type === 'subcontractor') return 'Chọn hợp đồng/thầu phụ';
   if (type === 'partner') return 'Chọn đối tác';
   return 'Tên bên nhận';
+};
+
+const getRecipientSourceLabel = (order: MaterialIssueOrder) => {
+  if (order.recipientSourceType === 'supplier_contract') return 'HĐ nhà cung cấp';
+  if (order.recipientSourceType === 'business_partner') return 'Đối tác';
+  return RECIPIENT_LABELS[order.recipientType];
 };
 
 const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
@@ -146,19 +162,17 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
-  const [workGroups, setWorkGroups] = useState<WorkGroup[]>([]);
   const [partners, setPartners] = useState<BusinessPartner[]>([]);
-  const [subcontracts, setSubcontracts] = useState<SubcontractorContract[]>([]);
 
   const [sourceWarehouseId, setSourceWarehouseId] = useState('');
-  const [recipientType, setRecipientType] = useState<MaterialIssueRecipientType>('partner');
-  const [recipientId, setRecipientId] = useState('');
+  const [recipientSourceTab, setRecipientSourceTab] = useState<RecipientSourceTab>('supplier_contract');
+  const [recipientSourceId, setRecipientSourceId] = useState('');
+  const [supplierContracts, setSupplierContracts] = useState<SupplierContract[]>([]);
   const [recipientName, setRecipientName] = useState('');
   const [recipientSearchQuery, setRecipientSearchQuery] = useState('');
   const [recipientMenuOpen, setRecipientMenuOpen] = useState(false);
   const [responsibleUserId, setResponsibleUserId] = useState(user.id);
-  const [subcontractorContractId, setSubcontractorContractId] = useState('');
-  const [neededDate, setNeededDate] = useState('');
+  const [voucherDate, setVoucherDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [note, setNote] = useState('');
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
   const [stockSearchQuery, setStockSearchQuery] = useState('');
@@ -317,34 +331,46 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
     [selectedStockOptions],
   );
 
-  const filteredSuppliers = useMemo(() => {
-    const suppliers = partners.filter(p => p.classifications?.includes('supplier'));
-    if (!recipientSearchQuery.trim()) return suppliers.slice(0, 50);
-    return suppliers.filter(p =>
-      matchesSearchQueryMultiple([p.name, p.code, p.taxCode], recipientSearchQuery)
+  const recipientSourceOptions = useMemo<RecipientSourceOption[]>(() => {
+    if (recipientSourceTab === 'supplier_contract') {
+      return supplierContracts.map(contract => ({
+        id: contract.id,
+        label: `${contract.code} – ${contract.supplierName || contract.name}`,
+        searchText: [contract.code, contract.name, contract.supplierName, contract.supplierRepresentative].filter(Boolean).join(' '),
+        selection: { kind: 'supplier_contract', contract },
+      }));
+    }
+    return partners.map(partner => ({
+      id: partner.id,
+      label: `${partner.code ? `${partner.code} – ` : ''}${partner.name}`,
+      searchText: [partner.code, partner.name, partner.taxCode, partner.phone, partner.contactName, partner.email].filter(Boolean).join(' '),
+      selection: { kind: 'business_partner', partner },
+    }));
+  }, [partners, recipientSourceTab, supplierContracts]);
+
+  const filteredRecipientSourceOptions = useMemo(() => {
+    if (!recipientSearchQuery.trim()) return recipientSourceOptions.slice(0, 50);
+    return recipientSourceOptions.filter(option =>
+      matchesSearchQueryMultiple([option.searchText], recipientSearchQuery)
     ).slice(0, 50);
-  }, [partners, recipientSearchQuery]);
+  }, [recipientSearchQuery, recipientSourceOptions]);
 
-  const selectSupplier = (partner: BusinessPartner) => {
-    setRecipientId(partner.id);
-    setRecipientName(partner.name);
-    setRecipientType('partner');
-    setRecipientSearchQuery('');
-    setRecipientMenuOpen(false);
-  };
+  const selectedRecipientSource = useMemo(
+    () => recipientSourceOptions.find(option => option.id === recipientSourceId) || null,
+    [recipientSourceId, recipientSourceOptions],
+  );
 
-  const selectManualRecipient = (name: string) => {
-    setRecipientId('');
-    setRecipientName(name);
-    setRecipientType('manual');
+  const selectRecipientSource = (option: RecipientSourceOption) => {
+    const recipient = buildMaterialIssueRecipientSource(option.selection);
+    setRecipientSourceId(option.id);
+    setRecipientName(recipient.recipientName);
     setRecipientSearchQuery('');
     setRecipientMenuOpen(false);
   };
 
   const clearRecipient = () => {
-    setRecipientId('');
+    setRecipientSourceId('');
     setRecipientName('');
-    setRecipientType('manual');
     setRecipientSearchQuery('');
     setRecipientMenuOpen(false);
   };
@@ -370,30 +396,6 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
     document.addEventListener('pointerdown', handleOutsideClick);
     return () => document.removeEventListener('pointerdown', handleOutsideClick);
   }, []);
-
-  const recipientOptions = useMemo(() => {
-    if (recipientType === 'employee') {
-      return activeUsers.map(item => ({ id: item.id, name: item.name || item.email, contractId: '' }));
-    }
-    if (recipientType === 'work_group') {
-      return workGroups.map(item => ({ id: item.id, name: item.name, contractId: '' }));
-    }
-    if (recipientType === 'subcontractor') {
-      const contractOptions = subcontracts.map(item => ({
-        id: item.id,
-        name: `${item.subcontractorName} • ${item.name}`,
-        contractId: item.id,
-      }));
-      const partnerOptions = partners
-        .filter(item => item.classifications?.includes('contractor'))
-        .map(item => ({ id: item.id, name: item.name, contractId: '' }));
-      return [...contractOptions, ...partnerOptions];
-    }
-    if (recipientType === 'partner') {
-      return partners.map(item => ({ id: item.id, name: item.name, contractId: '' }));
-    }
-    return [];
-  }, [activeUsers, partners, recipientType, subcontracts, workGroups]);
 
   const loadOrders = useCallback(async () => {
     setLoading(true);
@@ -421,17 +423,13 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
     let cancelled = false;
     const run = async () => {
       try {
-        const [groupRows, partnerRows, contractRows] = await Promise.all([
-          workGroupService.listGroups({ activeOnly: true }).catch(() => []),
+        const [partnerRows, contractRows] = await Promise.all([
           partnerService.list({ includeInactive: false }).catch(() => []),
-          projectId
-            ? subcontractorContractService.listBySite(projectId, constructionSiteId || null).catch(() => [])
-            : subcontractorContractService.list().catch(() => []),
+          supplierContractService.list().catch(() => []),
         ]);
         if (cancelled) return;
-        setWorkGroups(groupRows);
         setPartners(partnerRows);
-        setSubcontracts(contractRows);
+        setSupplierContracts(contractRows);
       } catch (error) {
         logApiError('MaterialIssuePanel.loadMasterData', error);
       }
@@ -460,29 +458,12 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
     ));
   }, [availableStockItemIdSet]);
 
-  useEffect(() => {
-    if (recipientType === 'manual') {
-      setRecipientId('');
-      setSubcontractorContractId('');
-      return;
-    }
-    const option = recipientOptions.find(item => item.id === recipientId);
-    if (option) {
-      setRecipientName(option.name);
-      setSubcontractorContractId(option.contractId);
-    } else {
-      setRecipientName('');
-      setSubcontractorContractId('');
-    }
-  }, [recipientId, recipientOptions, recipientType]);
-
   const resetCreateForm = () => {
-    setRecipientId('');
+    setRecipientSourceId('');
     setRecipientName('');
     setRecipientSearchQuery('');
     setRecipientMenuOpen(false);
-    setSubcontractorContractId('');
-    setNeededDate('');
+    setVoucherDate(new Date().toISOString().slice(0, 10));
     setNote('');
     setSelectedItemIds([]);
     setStockSearchQuery('');
@@ -523,13 +504,13 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
         const existing = next.find(line => line.itemId === itemId);
         if (existing) {
           next = next.map(line => line.itemId === itemId
-            ? { ...line, quantity: String(parseQty(line.quantity) + quantity), note: trimmedNote || line.note }
+            ? { ...line, quantity: formatQuantityInput(parseQty(line.quantity) + quantity), note: trimmedNote || line.note }
             : line);
         } else {
           next.push({
             key: crypto.randomUUID(),
             itemId,
-            quantity: String(quantity),
+            quantity: formatQuantityInput(quantity),
             note: trimmedNote,
           });
         }
@@ -548,8 +529,8 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
       toast.warning('Chưa chọn kho xuất');
       return;
     }
-    if (!recipientName.trim()) {
-      toast.warning('Chưa chọn bên nhận', 'Chọn người/tổ đội/thầu phụ hoặc nhập tay tên bên nhận.');
+    if (!selectedRecipientSource) {
+      toast.warning('Chưa chọn tổ đội', 'Chọn một hợp đồng nhà cung cấp hoặc một đối tác trước khi gửi phiếu xuất cấp.');
       return;
     }
     if (draftLines.length === 0) {
@@ -565,17 +546,19 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
 
     setSubmitting(true);
     try {
+      const recipient = buildMaterialIssueRecipientSource(selectedRecipientSource.selection);
       const created = await materialIssueService.createAndSubmit({
         projectId: projectId || null,
         constructionSiteId: constructionSiteId || null,
         sourceWarehouseId,
-        recipientType,
-        recipientId: recipientType === 'manual' ? null : recipientId || null,
-        recipientName: recipientName.trim(),
+        recipientType: recipient.recipientType,
+        recipientId: recipient.recipientId,
+        recipientName: recipient.recipientName,
+        recipientSourceType: recipient.recipientSourceType,
+        recipientSourceId: recipient.recipientSourceId,
         responsibleUserId: responsibleUserId || null,
-        subcontractorContractId: subcontractorContractId || null,
         materialRequestId: materialRequestId || null,
-        neededDate: neededDate || null,
+        transactionDate: dateInputToTransactionTimestamp(voucherDate) || null,
         note: note.trim() || null,
         lines: draftLines.map(line => {
           const item = items.find(row => row.id === line.itemId);
@@ -584,7 +567,6 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
             quantity: parseQty(line.quantity),
             unit: item?.unit || null,
             unitPrice: item?.priceIn || 0,
-            subcontractorContractId: subcontractorContractId || null,
             note: line.note.trim() || null,
           };
         }),
@@ -611,7 +593,7 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
   const openAction = (type: ActionType, order: MaterialIssueOrder) => {
     const defaults: Record<string, string> = {};
     order.lines.forEach(line => {
-      if (type === 'receipt') defaults[line.id] = String(lineReceiptRemaining(line));
+      if (type === 'receipt') defaults[line.id] = formatQuantityInput(lineReceiptRemaining(line));
       else defaults[line.id] = '0';
     });
     setAction({ type, order });
@@ -800,7 +782,23 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
             </label>
 
             <div className="relative space-y-1 md:col-span-2" id="recipient-combobox-wrapper">
-              <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Chọn tổ đội</span>
+              <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Chọn tổ đội <span className="text-rose-500">*</span></span>
+              <div className="flex rounded-lg border border-slate-200 bg-slate-50 p-1">
+                <button
+                  type="button"
+                  onClick={() => { setRecipientSourceTab('supplier_contract'); clearRecipient(); }}
+                  className={`flex-1 rounded-md px-2 py-1.5 text-[10px] font-black uppercase tracking-wide transition ${recipientSourceTab === 'supplier_contract' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                >
+                  HĐ nhà cung cấp
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setRecipientSourceTab('business_partner'); clearRecipient(); }}
+                  className={`flex-1 rounded-md px-2 py-1.5 text-[10px] font-black uppercase tracking-wide transition ${recipientSourceTab === 'business_partner' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                >
+                  Đối tác
+                </button>
+              </div>
               <div className="relative">
                 <input
                   type="text"
@@ -813,7 +811,7 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
                     setRecipientSearchQuery(event.target.value);
                     setRecipientMenuOpen(true);
                   }}
-                  placeholder="Gõ để tìm kiếm hoặc tự nhập..."
+                  placeholder={recipientSourceTab === 'supplier_contract' ? 'Tìm mã HĐ, NCC...' : 'Tìm tên, MST, SĐT đối tác...'}
                   className="w-full h-10 rounded-lg border border-slate-200 bg-white px-3 pr-8 text-xs font-bold text-slate-700 outline-none focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                 />
                 {recipientName && (
@@ -827,27 +825,23 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
                 )}
                 {recipientMenuOpen && (
                   <div className="absolute left-0 right-0 z-[1000] mt-1 max-h-60 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-xl dark:border-slate-700 dark:bg-slate-900">
-                    {filteredSuppliers.map(partner => (
+                    {filteredRecipientSourceOptions.map(option => (
                       <button
-                        key={partner.id}
+                        key={option.id}
                         type="button"
-                        onClick={() => selectSupplier(partner)}
+                        onClick={() => selectRecipientSource(option)}
                         className="block w-full rounded-lg px-3 py-2 text-left text-xs hover:bg-indigo-50 hover:text-indigo-700 text-slate-700 dark:text-slate-100 dark:hover:bg-slate-800"
                       >
-                        {partner.name} {partner.code ? `(${partner.code})` : ''}
+                        <div className="font-black">{option.label}</div>
+                        <div className="mt-0.5 text-[10px] font-semibold text-slate-400">
+                          {option.selection.kind === 'supplier_contract'
+                            ? option.selection.contract.name
+                            : [option.selection.partner.taxCode ? `MST ${option.selection.partner.taxCode}` : '', option.selection.partner.phone].filter(Boolean).join(' • ') || 'Đối tác'}
+                        </div>
                       </button>
                     ))}
-                    {recipientSearchQuery.trim() && !filteredSuppliers.some(p => p.name.toLowerCase() === recipientSearchQuery.trim().toLowerCase()) && (
-                      <button
-                        type="button"
-                        onClick={() => selectManualRecipient(recipientSearchQuery.trim())}
-                        className="block w-full rounded-lg px-3 py-2 text-left text-xs hover:bg-amber-50 hover:text-amber-700 text-amber-700 font-bold dark:hover:bg-slate-800"
-                      >
-                        ✨ Nhập tay: "{recipientSearchQuery.trim()}"
-                      </button>
-                    )}
-                    {filteredSuppliers.length === 0 && !recipientSearchQuery.trim() && (
-                      <div className="px-3 py-2 text-xs font-semibold text-slate-400">Không có nhà cung cấp nào</div>
+                    {filteredRecipientSourceOptions.length === 0 && (
+                      <div className="px-3 py-2 text-xs font-semibold text-slate-400">Không có nguồn phù hợp</div>
                     )}
                   </div>
                 )}
@@ -866,8 +860,8 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
 
           <div className="grid grid-cols-1 md:grid-cols-[180px_minmax(0,1fr)] gap-3">
             <label className="space-y-1">
-              <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Ngày cần cấp</span>
-              <input type="date" value={neededDate} onChange={event => setNeededDate(event.target.value)}
+              <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Ngày phiếu xuất cấp</span>
+              <input type="date" value={voucherDate} onChange={event => setVoucherDate(event.target.value)}
                 className="w-full h-10 rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 outline-none focus:border-indigo-400" />
             </label>
             <label className="space-y-1">
@@ -1001,7 +995,9 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
                             <div className="flex items-center justify-end gap-1">
                               <input
                                 value={draft.quantity}
-                                onChange={event => updateStockDraft(option.item.id, { quantity: event.target.value })}
+                                onChange={event => updateStockDraft(option.item.id, {
+                                  quantity: sanitizeQuantityInput(event.target.value, { previousValue: draft.quantity }),
+                                })}
                                 inputMode="decimal"
                                 className={`h-9 w-28 rounded-lg border px-2 text-right text-xs font-black outline-none focus:border-indigo-400 ${isOver ? 'border-amber-300 bg-amber-50 text-amber-700' : 'border-slate-200 text-slate-700'}`}
                               />
@@ -1054,7 +1050,10 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
                         ) : 'Chưa chọn kho'}
                       </div>
                       <div className="flex items-center gap-1">
-                        <input value={line.quantity} onChange={event => setDraftLines(prev => prev.map(row => row.key === line.key ? { ...row, quantity: event.target.value } : row))}
+                        <input value={line.quantity} onChange={event => setDraftLines(prev => prev.map(row => row.key === line.key ? {
+                          ...row,
+                          quantity: sanitizeQuantityInput(event.target.value, { previousValue: line.quantity }),
+                        } : row))}
                           inputMode="decimal"
                           className={`w-full h-9 rounded-lg border px-2 text-right text-xs font-black outline-none ${isOver ? 'border-amber-300 bg-amber-50 text-amber-700' : 'border-slate-200 text-slate-700'}`} />
                         <span className="text-[10px] font-black text-slate-400">{item?.unit}</span>
@@ -1123,8 +1122,9 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
                           <div className="min-w-0 flex-1">
                             <div className="text-[10px] font-bold text-slate-400">{new Date(order.createdAt || '').toLocaleString('vi-VN')}</div>
                             <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] font-bold text-slate-500">
-                              <span className="inline-flex items-center gap-1"><Users size={11} /> {RECIPIENT_LABELS[order.recipientType]}: <b className="text-slate-700">{order.recipientName}</b></span>
+                              <span className="inline-flex items-center gap-1"><Users size={11} /> {getRecipientSourceLabel(order)}: <b className="text-slate-700">{order.recipientName}</b></span>
                               <span>Kho xuất: <b className="text-slate-700">{warehouse?.name || order.sourceWarehouseId}</b></span>
+                              {order.voucherDate && <span>Ngày phiếu: <b className="text-slate-700">{new Date(order.voucherDate).toLocaleDateString('vi-VN')}</b></span>}
                               {order.neededDate && <span>Cần cấp: <b className="text-slate-700">{new Date(order.neededDate).toLocaleDateString('vi-VN')}</b></span>}
                               {order.transactionId && <span>WMS: <b className="text-slate-700">{order.transactionId.slice(-8)}</b></span>}
                             </div>
@@ -1237,7 +1237,12 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
                             <td className="p-3 text-right">
                               <input
                                 value={actionQtyByLine[line.id] || '0'}
-                                onChange={event => setActionQtyByLine(prev => ({ ...prev, [line.id]: event.target.value }))}
+                                onChange={event => setActionQtyByLine(prev => ({
+                                  ...prev,
+                                  [line.id]: sanitizeQuantityInput(event.target.value, {
+                                    previousValue: prev[line.id] || '0',
+                                  }),
+                                }))}
                                 inputMode="decimal"
                                 disabled={maxQty <= 0}
                                 className="w-28 h-9 rounded-lg border border-slate-200 text-right px-2 text-xs font-black outline-none focus:border-indigo-400 disabled:bg-slate-50 disabled:text-slate-300"

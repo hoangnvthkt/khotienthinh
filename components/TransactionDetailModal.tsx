@@ -7,25 +7,33 @@ import { canApproveWmsTransaction, canReceiveWmsTransaction, isFulfillmentBatchT
 import { useToast } from '../context/ToastContext';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
 import { materialRequestFulfillmentService } from '../lib/materialRequestFulfillmentService';
-import { parseQuantityInput, sanitizeQuantityInput } from '../lib/quantityInput';
+import { formatQuantityInput, parseQuantityInput, sanitizeQuantityInput } from '../lib/quantityInput';
+import { dateInputToTransactionTimestamp } from '../lib/transactionVoucherDates';
+import { canEditTransactionVoucher } from '../lib/transactionVoucherMetadata';
 
 interface TransactionDetailModalProps {
   isOpen: boolean;
   onClose: () => void;
   transaction: Transaction | null;
+  onUpdated?: (transaction: Transaction) => void;
 }
 
-const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen, onClose, transaction }) => {
-  const { items, warehouses, users, suppliers, user, updateTransactionStatus } = useApp();
+const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen, onClose, transaction, onUpdated }) => {
+  const { items, warehouses, users, suppliers, user, updateTransactionStatus, updateTransactionVoucher } = useApp();
   const toast = useToast();
   const [quantityDrafts, setQuantityDrafts] = useState<Record<number, { quantity: string; reason: string }>>({});
   const [processing, setProcessing] = useState(false);
+  const [voucherDate, setVoucherDate] = useState('');
+  const [voucherNote, setVoucherNote] = useState('');
+  const [savingVoucher, setSavingVoucher] = useState(false);
 
   useEffect(() => {
     if (transaction) {
       setQuantityDrafts(Object.fromEntries(
-        transaction.items.map((ti, index) => [index, { quantity: String(ti.quantity ?? 0), reason: ti.varianceReason || '' }])
+        transaction.items.map((ti, index) => [index, { quantity: formatQuantityInput(ti.quantity), reason: ti.varianceReason || '' }])
       ));
+      setVoucherDate(transaction.date.slice(0, 10));
+      setVoucherNote(transaction.note || '');
     }
   }, [transaction]);
 
@@ -34,6 +42,7 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
   const isPending = transaction.status === TransactionStatus.PENDING;
   const isApproved = transaction.status === TransactionStatus.APPROVED;
   const canApprove = isPending && canApproveWmsTransaction(user, transaction);
+  const canEditVoucher = canEditTransactionVoucher(transaction, user.id, canApprove);
   const canReceive = isApproved
     && (transaction.type === TransactionType.IMPORT || transaction.type === TransactionType.TRANSFER)
     && canReceiveWmsTransaction(user, transaction);
@@ -57,7 +66,7 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
     setQuantityDrafts(prev => ({
       ...prev,
       [index]: {
-        quantity: prev[index]?.quantity ?? String(transaction.items[index]?.quantity ?? 0),
+        quantity: prev[index]?.quantity ?? formatQuantityInput(transaction.items[index]?.quantity),
         reason: prev[index]?.reason ?? '',
         ...patch,
       },
@@ -76,7 +85,7 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
 
   const buildQuantityLines = () => {
     return transaction.items.map((ti, index) => {
-      const draft = quantityDrafts[index] || { quantity: String(ti.quantity ?? 0), reason: '' };
+      const draft = quantityDrafts[index] || { quantity: formatQuantityInput(ti.quantity), reason: '' };
       const quantity = parseQuantityInput(draft.quantity);
       const originalQty = Number(ti.quantity || 0);
       const reason = draft.reason.trim();
@@ -140,6 +149,28 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
     }
   };
 
+  const handleSaveVoucher = async () => {
+    const transactionDate = dateInputToTransactionTimestamp(voucherDate);
+    if (!transactionDate) {
+      toast.warning('Thiếu ngày tạo', 'Chọn ngày tạo phiếu trước khi lưu.');
+      return;
+    }
+    setSavingVoucher(true);
+    try {
+      const updated = await updateTransactionVoucher(transaction.id, {
+        date: transactionDate,
+        note: voucherNote,
+      });
+      onUpdated?.(updated);
+      toast.success('Đã cập nhật phiếu', 'Ngày tạo và ghi chú phiếu đã được lưu.');
+    } catch (err: any) {
+      logApiError('transactionDetail.updateVoucher', err);
+      toast.error('Không thể cập nhật phiếu', getApiErrorMessage(err, 'Vui lòng kiểm tra quyền chỉnh sửa phiếu.'));
+    } finally {
+      setSavingVoucher(false);
+    }
+  };
+
   const getStatusInfo = (status: TransactionStatus) => {
     switch (status) {
       case TransactionStatus.COMPLETED: return { label: 'Đã phê duyệt', color: 'bg-green-100 text-green-700 border-green-200' };
@@ -187,6 +218,45 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
 
         {/* Content */}
         <div className="p-6 overflow-y-auto space-y-8 bg-slate-50/30">
+          {canEditVoucher && (
+            <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-4 space-y-3">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-indigo-500">Chỉnh phiếu</p>
+                <p className="mt-0.5 text-xs font-semibold text-slate-500">Có thể chỉnh ngày tạo và ghi chú khi phiếu đang chờ duyệt.</p>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-[180px_minmax(0,1fr)] gap-3 items-end">
+                <label className="space-y-1">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Ngày tạo</span>
+                  <input
+                    type="date"
+                    value={voucherDate}
+                    onChange={event => setVoucherDate(event.target.value)}
+                    className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 outline-none focus:border-indigo-400"
+                  />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Ghi chú phiếu</span>
+                  <textarea
+                    value={voucherNote}
+                    onChange={event => setVoucherNote(event.target.value)}
+                    rows={2}
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 outline-none focus:border-indigo-400"
+                    placeholder="Nhập ghi chú phiếu"
+                  />
+                </label>
+              </div>
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={handleSaveVoucher}
+                  disabled={savingVoucher}
+                  className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-xs font-black text-white hover:bg-indigo-700 disabled:opacity-60"
+                >
+                  {savingVoucher && <Loader2 size={14} className="animate-spin" />} Lưu chỉnh sửa
+                </button>
+              </div>
+            </div>
+          )}
           {/* Info Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-4">
@@ -210,6 +280,18 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
                   <div>
                     <p className="text-[10px] font-bold text-slate-400 uppercase">Người phê duyệt</p>
                     <p className="text-sm font-medium text-slate-700">{approver?.name}</p>
+                  </div>
+                </div>
+              )}
+              {(transaction.approvedAt || transaction.approvalNote) && (
+                <div className="flex items-start gap-3">
+                  <Calendar size={18} className="text-orange-500 mt-0.5" />
+                  <div>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase">Thông tin duyệt</p>
+                    {transaction.approvedAt && (
+                      <p className="text-sm font-medium text-slate-700">{new Date(transaction.approvedAt).toLocaleDateString('vi-VN')}</p>
+                    )}
+                    {transaction.approvalNote && <p className="mt-0.5 text-xs text-slate-500">{transaction.approvalNote}</p>}
                   </div>
                 </div>
               )}
@@ -259,7 +341,7 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
               <tbody className="divide-y divide-slate-100">
                 {transaction.items.map((ti, idx) => {
                   const item = items.find(i => i.id === ti.itemId) || transaction.pendingItems?.find(i => i.id === ti.itemId);
-                  const draft = quantityDrafts[idx] || { quantity: String(ti.quantity ?? 0), reason: '' };
+                  const draft = quantityDrafts[idx] || { quantity: formatQuantityInput(ti.quantity), reason: '' };
                   const draftQty = parseQuantityInput(draft.quantity);
                   const hasVariance = Number.isFinite(draftQty) && draftQty !== Number(ti.quantity || 0);
                   return (
@@ -306,7 +388,7 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
             </table>
           </div>
 
-          {transaction.note && (
+          {!canEditVoucher && transaction.note && (
             <div className="bg-slate-100 p-4 rounded-xl border-l-4 border-slate-400">
               <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Ghi chú phiếu</p>
               <p className="text-sm text-slate-600 italic">"{transaction.note}"</p>

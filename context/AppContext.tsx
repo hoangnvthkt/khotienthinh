@@ -159,7 +159,8 @@ interface AppContextType {
   updateItem: (item: InventoryItem) => Promise<void>;
   removeItem: (itemId: string) => Promise<void>;
   addTransaction: (transaction: Transaction) => Promise<void>;
-  updateTransactionStatus: (id: string, status: TransactionStatus, approverId?: string) => Promise<void>;
+  updateTransactionStatus: (id: string, status: TransactionStatus, approverId?: string, approval?: { approvedAt?: string; approvalNote?: string }) => Promise<void>;
+  updateTransactionVoucher: (id: string, patch: { date: string; note?: string | null }) => Promise<Transaction>;
   clearTransactionHistory: () => void;
   addWarehouse: (warehouse: Warehouse) => void;
   updateWarehouse: (warehouse: Warehouse) => void;
@@ -306,6 +307,8 @@ const mapTransactionFromDb = (t: any): Transaction => ({
   updatedBy: t.updated_by ?? t.updatedBy ?? null,
   businessPartnerId: t.business_partner_id ?? t.businessPartnerId ?? null,
   businessPartnerNameSnapshot: t.business_partner_name_snapshot ?? t.businessPartnerNameSnapshot ?? null,
+  approvedAt: t.approved_at ?? t.approvedAt ?? null,
+  approvalNote: t.approval_note ?? t.approvalNote ?? null,
   approverId: t.approver_id,
   sourceType: t.source_type ?? t.sourceType ?? null,
   sourceId: t.source_id ?? t.sourceId ?? null,
@@ -1225,6 +1228,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           created_by: data.createdBy || null, updated_by: data.updatedBy || null,
           business_partner_id: data.businessPartnerId || null,
           business_partner_name_snapshot: data.businessPartnerNameSnapshot || null,
+          approved_at: data.approvedAt || null,
+          approval_note: data.approvalNote || null,
           source_type: data.sourceType || null, source_id: data.sourceId || null,
           status: data.status, note: data.note, related_request_id: data.relatedRequestId, pending_items: data.pendingItems
         };
@@ -1835,7 +1840,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const updateTransactionStatus = async (id: string, status: TransactionStatus, approverId?: string) => {
+  const updateTransactionStatus = async (
+    id: string,
+    status: TransactionStatus,
+    approverId?: string,
+    approval?: { approvedAt?: string; approvalNote?: string },
+  ) => {
     const tx = transactions.find(t => t.id === id);
     if (!tx) throw new Error('Không tìm thấy phiếu kho cần cập nhật.');
 
@@ -1847,17 +1857,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     if (isSupabaseConfigured) {
-      const { data, error } = await supabase.rpc('process_transaction_status', {
+      const { data, error } = await supabase.rpc('process_transaction_approval', {
         p_transaction_id: id,
         p_status: status,
         p_approver_id: approverId || user.id,
+        p_approved_at: approval?.approvedAt || null,
+        p_approval_note: approval?.approvalNote || null,
       });
       if (error) {
         logApiError('updateTransactionStatus.process_transaction_status', error);
         throw error;
       }
 
-      const storedTx = data ? mapTransactionFromDb(data) : { ...tx, status, approverId: approverId || user.id };
+      const storedTx = data ? mapTransactionFromDb(data) : {
+        ...tx,
+        status,
+        approverId: approverId || user.id,
+        ...(status === TransactionStatus.APPROVED || status === TransactionStatus.COMPLETED ? {
+          approvedAt: approval?.approvedAt || new Date().toISOString(),
+          approvalNote: approval?.approvalNote || null,
+        } : {}),
+      };
       setTransactions(prev => prev.map(t => t.id === id ? storedTx : t));
 
       await refreshWmsRecords({ itemIds: getTransactionItemIds(storedTx, tx) });
@@ -1873,7 +1893,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setTransactions(prev => prev.map(tx => {
       if (tx.id === id) {
-        const updatedTx = { ...tx, status, approverId: approverId || user.id };
+        const updatedTx = {
+          ...tx,
+          status,
+          approverId: approverId || user.id,
+          ...(status === TransactionStatus.APPROVED || status === TransactionStatus.COMPLETED ? {
+            approvedAt: approval?.approvedAt || new Date().toISOString(),
+            approvalNote: approval?.approvalNote || null,
+          } : {}),
+        };
         const whId = tx.targetWarehouseId || tx.sourceWarehouseId;
 
         if (status === TransactionStatus.COMPLETED || status === TransactionStatus.APPROVED) {
@@ -1892,6 +1920,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
       return tx;
     }));
+  };
+
+  const updateTransactionVoucher = async (
+    id: string,
+    patch: { date: string; note?: string | null },
+  ): Promise<Transaction> => {
+    const tx = transactions.find(item => item.id === id);
+    if (!tx) throw new Error('Không tìm thấy phiếu kho cần cập nhật.');
+
+    if (isSupabaseConfigured) {
+      const { data, error } = await supabase.rpc('update_transaction_voucher_metadata', {
+        p_transaction_id: id,
+        p_date: patch.date,
+        p_note: patch.note?.trim() || null,
+      });
+      if (error) {
+        logApiError('updateTransactionVoucher.update_transaction_voucher_metadata', error);
+        throw error;
+      }
+      const updated = data ? mapTransactionFromDb(data) : { ...tx, date: patch.date, note: patch.note?.trim() || undefined };
+      setTransactions(prev => prev.map(item => item.id === id ? updated : item));
+      return updated;
+    }
+
+    const updated = { ...tx, date: patch.date, note: patch.note?.trim() || undefined };
+    setTransactions(prev => prev.map(item => item.id === id ? updated : item));
+    return updated;
   };
 
   const approvePartialTransaction = async (id: string, selectedItemIds: string[], approverId: string) => {
@@ -3391,7 +3446,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       budgetCategories, budgetEntries, expenseRecords,
       addHrmItem, updateHrmItem, removeHrmItem,
       orgUnits, addOrgUnit, updateOrgUnit, removeOrgUnit,
-      addItem, addItems, updateItem, removeItem, addTransaction, updateTransactionStatus, clearTransactionHistory, addWarehouse, updateWarehouse, removeWarehouse,
+      addItem, addItems, updateItem, removeItem, addTransaction, updateTransactionStatus, updateTransactionVoucher, clearTransactionHistory, addWarehouse, updateWarehouse, removeWarehouse,
       addWarehouseType, updateWarehouseType, removeWarehouseType,
       addRequest, updateRequestStatus, removeRequest, logActivity, addCategory, updateCategory, removeCategory, addUnit, updateUnit, removeUnit,
       addSupplier, updateSupplier, removeSupplier, addEmployee, updateEmployee, replaceEmployeeLocal, removeEmployee, updateAppSettings, approvePartialTransaction, clearAllData,

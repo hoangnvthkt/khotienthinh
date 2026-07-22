@@ -3080,6 +3080,7 @@ export interface TransactionItem {
 }
 
 export type MaterialIssueRecipientType = 'employee' | 'work_group' | 'subcontractor' | 'partner' | 'manual';
+export type MaterialIssueRecipientSourceType = 'supplier_contract' | 'business_partner';
 
 export type MaterialIssueStatus =
   | 'draft'
@@ -3189,10 +3190,13 @@ export interface MaterialIssueOrder {
   recipientType: MaterialIssueRecipientType;
   recipientId?: string | null;
   recipientName: string;
+  recipientSourceType?: MaterialIssueRecipientSourceType | null;
+  recipientSourceId?: string | null;
   responsibleUserId?: string | null;
   subcontractorContractId?: string | null;
   materialRequestId?: string | null;
   workBoqItemId?: string | null;
+  voucherDate?: string | null;
   neededDate?: string | null;
   status: MaterialIssueStatus;
   transactionId?: string | null;
@@ -3265,6 +3269,8 @@ export interface Transaction {
   updatedBy?: string | null;
   businessPartnerId?: string | null;
   businessPartnerNameSnapshot?: string | null;
+  approvedAt?: string | null;
+  approvalNote?: string | null;
   approverId?: string; // User approving
   status: TransactionStatus;
   note?: string;

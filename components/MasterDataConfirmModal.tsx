@@ -12,10 +12,11 @@ interface MasterDataConfirmModalProps {
   actionLabel: string;
   countdownRequired?: boolean;
   isLoading?: boolean;
+  children?: React.ReactNode;
 }
 
 const MasterDataConfirmModal: React.FC<MasterDataConfirmModalProps> = ({ 
-  isOpen, onClose, onConfirm, title, message, type, actionLabel, countdownRequired = true, isLoading = false
+  isOpen, onClose, onConfirm, title, message, type, actionLabel, countdownRequired = true, isLoading = false, children
 }) => {
   const [timeLeft, setTimeLeft] = useState(6);
 
@@ -76,6 +77,7 @@ const MasterDataConfirmModal: React.FC<MasterDataConfirmModalProps> = ({
           
           <h3 className="text-xl font-bold text-slate-800 mb-2">{title}</h3>
           <p className="text-slate-600 mb-6 leading-relaxed px-4">{message}</p>
+          {children && <div className="mb-6 w-full text-left">{children}</div>}
           
           <div className={`${style.bg} p-4 rounded-xl border ${style.border} mb-8 w-full text-left`}>
             <p className="text-[11px] font-bold uppercase tracking-wider mb-2 text-slate-400">Ràng buộc hệ thống:</p>

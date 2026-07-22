@@ -5,6 +5,7 @@ import {
   MaterialIssueReceipt,
   MaterialIssueReceiptLine,
   MaterialIssueRecipientType,
+  MaterialIssueRecipientSourceType,
   MaterialIssueReturn,
   MaterialIssueReturnLine,
   MaterialIssueStatus,
@@ -39,11 +40,14 @@ export type MaterialIssueCreateInput = {
   recipientType: MaterialIssueRecipientType;
   recipientId?: string | null;
   recipientName: string;
+  recipientSourceType?: MaterialIssueRecipientSourceType | null;
+  recipientSourceId?: string | null;
   responsibleUserId?: string | null;
   subcontractorContractId?: string | null;
   materialRequestId?: string | null;
   workBoqItemId?: string | null;
   neededDate?: string | null;
+  transactionDate?: string | null;
   note?: string | null;
   lines: MaterialIssueCreateLineInput[];
 };
@@ -236,14 +240,25 @@ export const materialIssueService = {
       p_lines: input.lines,
     });
     if (error) throw error;
+    if (input.recipientSourceType && input.recipientSourceId) {
+      const { error: sourceError } = await supabase
+        .from(ORDER_TABLE)
+        .update({
+          recipient_source_type: input.recipientSourceType,
+          recipient_source_id: input.recipientSourceId,
+        })
+        .eq('id', data);
+      if (sourceError) throw sourceError;
+    }
     return orderOrThrow(data);
   },
 
-  async submit(orderId: string, overrideReason?: string | null): Promise<MaterialIssueOrder> {
+  async submit(orderId: string, overrideReason?: string | null, transactionDate?: string | null): Promise<MaterialIssueOrder> {
     if (!isSupabaseConfigured) throw new Error('Supabase chưa được cấu hình.');
-    const { data, error } = await supabase.rpc('submit_material_issue_order', {
+    const { data, error } = await supabase.rpc('submit_material_issue_order_with_date', {
       p_order_id: orderId,
       p_override_reason: overrideReason || null,
+      p_transaction_date: transactionDate || null,
     });
     if (error) throw error;
     return orderOrThrow(data);
@@ -251,7 +266,7 @@ export const materialIssueService = {
 
   async createAndSubmit(input: MaterialIssueCreateInput, overrideReason?: string | null): Promise<MaterialIssueOrder> {
     const draft = await this.createDraft(input);
-    return this.submit(draft.id, overrideReason);
+    return this.submit(draft.id, overrideReason, input.transactionDate);
   },
 
   async cancel(orderId: string, reason: string): Promise<MaterialIssueOrder> {
