@@ -314,6 +314,8 @@ export interface ProjectSubmissionTarget {
   name: string;
   names?: string[];
   permissionCode?: string;
+  roomCode?: string;
+  actionCode?: string;
   note?: string;
 }
 
