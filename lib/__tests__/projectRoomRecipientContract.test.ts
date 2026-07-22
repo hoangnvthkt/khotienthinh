@@ -31,4 +31,18 @@ describe('Project Room recipient cutover', () => {
     expect(requestModal).toContain('recipientRoomCode="material_request"');
     expect(requestModal).toContain('recipientAction="approve"');
   });
+
+  it('keeps later Material Request workflow handoffs inside its Room', () => {
+    const actionDialog = readFileSync(join(process.cwd(), 'components/project/ProjectWorkflowActionDialog.tsx'), 'utf8');
+    const workflowPanel = readFileSync(join(process.cwd(), 'components/project/ProjectWorkflowPanel.tsx'), 'utf8');
+    const materialTab = readFileSync(join(process.cwd(), 'pages/project/MaterialTab.tsx'), 'utf8');
+
+    expect(actionDialog).toContain('projectPermissionRoomService');
+    expect(actionDialog).toContain('.listRecipients(');
+    expect(actionDialog).toContain('if (!needsAssignee || (!recipientRoomCode && !resolvedRecipientAction))');
+    expect(actionDialog).toContain('recipientRoomCode');
+    expect(workflowPanel).toContain('recipientRoomCode');
+    expect(materialTab).toContain('recipientRoomCode="material_request"');
+    expect(materialTab).toContain('ProjectRoomSubmissionDialog');
+  });
 });

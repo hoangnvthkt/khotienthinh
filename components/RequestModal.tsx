@@ -2684,10 +2684,13 @@ const RequestModal: React.FC<RequestModalProps> = ({
                             completionHandoff={{
                                 required: true,
                                 eligiblePermissionCodes: ['approve'],
+                                recipientAction: 'confirm',
                                 actionLabel: 'Duyệt và bàn giao cấp hàng',
                                 assigneeLabel: 'Người phụ trách tạo đợt cấp / đặt mua',
                                 helperText: 'Workflow phê duyệt sẽ hoàn thành. Phiếu vật tư chuyển sang Chờ tạo đợt cấp và giao cho người được chọn để cấp hàng hoặc đặt mua.',
                             }}
+                            recipientRoomCode="material_request"
+                            recipientAction="approve"
                             disabled={isSaving}
                             onAction={handleProjectWorkflowPanelAction}
                         />

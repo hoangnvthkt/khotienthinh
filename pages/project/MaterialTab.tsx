@@ -68,7 +68,7 @@ import { useProjectMaterialAccess } from '../../hooks/project/material/useProjec
 
 const SupplyChainTab = React.lazy(() => import('./SupplyChainTab'));
 const MaterialPlanningPanel = React.lazy(() => import('../../components/project/MaterialPlanningPanel'));
-const ProjectSubmissionDialog = React.lazy(() => import('../../components/project/ProjectSubmissionDialog'));
+const ProjectRoomSubmissionDialog = React.lazy(() => import('../../components/project/ProjectRoomSubmissionDialog'));
 const ProjectWorkflowActionDialog = React.lazy(() => import('../../components/project/ProjectWorkflowActionDialog'));
 const ProjectWorkflowStartDialog = React.lazy(() => import('../../components/project/ProjectWorkflowStartDialog'));
 const BoqReconciliationPanel = React.lazy(() => import('../../components/project/BoqReconciliationPanel'));
@@ -2940,7 +2940,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
 
             {submissionTransition && (
                 <React.Suspense fallback={<LazyPanelFallback label="Đang mở hộp thoại chuyển bước..." />}>
-                    <ProjectSubmissionDialog
+                    <ProjectRoomSubmissionDialog
                         title={submissionTransition.title}
                         actionLabel="Chuyển bước"
                         documentLabel="Đề xuất vật tư dự án"
@@ -2948,8 +2948,9 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                         documentSubtitle={submissionTransition.subtitle}
                         projectId={projectId || undefined}
                         constructionSiteId={constructionSiteId || null}
-                        recipientPermissionCodes={submissionTransition.recipientPermissionCodes?.length ? submissionTransition.recipientPermissionCodes : [MATERIAL_REQUEST_APPROVE_PERMISSION]}
-                        recipientHint={submissionTransition.recipientHint || `Chọn đích danh nhân sự dự án có quyền ${MATERIAL_REQUEST_APPROVE_PERMISSION} để xử lý bước tiếp theo.`}
+                        recipientRoomCode="material_request"
+                        recipientAction={submissionTransition.toStep === 'batch_planning' ? 'confirm' : 'approve'}
+                        recipientHint={submissionTransition.recipientHint || 'Chỉ hiển thị nhân sự thuộc Room Đề xuất vật tư phù hợp với bước xử lý.'}
                         details={[
                             { label: 'Kho nhận', value: warehouses.find(w => w.id === submissionTransition.request.siteWarehouseId)?.name || submissionTransition.request.siteWarehouseId },
                             { label: 'Số dòng vật tư', value: `${submissionTransition.request.items.length} dòng` },
@@ -3181,9 +3182,12 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                         completionHandoff={{
                             required: true,
                             eligiblePermissionCodes: [MATERIAL_REQUEST_CONFIRM_PERMISSION],
+                            recipientAction: 'confirm',
                             assigneeLabel: 'Người phụ trách tạo đợt cấp / đặt mua',
                             helperText: 'Workflow phê duyệt sẽ hoàn thành. Phiếu vật tư chuyển sang Chờ tạo đợt cấp và giao cho người được chọn để cấp hàng hoặc đặt mua.',
                         }}
+                        recipientRoomCode="material_request"
+                        recipientAction="approve"
                         onCancel={() => setWorkflowActionTransition(null)}
                         onConfirm={async context => {
                             const assigneeUserIds = context.assigneeUserIds || [];
