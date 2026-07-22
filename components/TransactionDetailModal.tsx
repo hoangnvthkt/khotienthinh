@@ -46,6 +46,12 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
   const sourceWh = warehouses.find(w => w.id === transaction.sourceWarehouseId);
   const targetWh = warehouses.find(w => w.id === transaction.targetWarehouseId);
   const supplier = suppliers.find(s => s.id === transaction.supplierId);
+  const supplyName = transaction.businessPartnerNameSnapshot || supplier?.name;
+  const supplySourceLabel = transaction.sourceType === 'supplier_contract'
+    ? 'HĐ nhà cung cấp'
+    : transaction.sourceType === 'business_partner'
+      ? 'Đối tác'
+      : 'Nhà cung cấp';
 
   const updateQuantityDraft = (index: number, patch: Partial<{ quantity: string; reason: string }>) => {
     setQuantityDrafts(prev => ({
@@ -210,12 +216,13 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
             </div>
 
             <div className="space-y-4">
-              {transaction.type === TransactionType.IMPORT && supplier && (
+              {transaction.type === TransactionType.IMPORT && supplyName && (
                 <div className="flex items-start gap-3">
                   <Truck size={18} className="text-blue-500 mt-0.5" />
                   <div>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase">Nhà cung cấp</p>
-                    <p className="text-sm font-medium text-slate-700">{supplier.name}</p>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase">Nguồn cung cấp</p>
+                    <p className="text-sm font-medium text-slate-700">{supplyName}</p>
+                    <p className="text-[10px] font-bold text-slate-400">{supplySourceLabel}</p>
                   </div>
                 </div>
               )}
