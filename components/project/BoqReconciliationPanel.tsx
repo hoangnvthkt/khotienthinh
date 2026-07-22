@@ -19,7 +19,7 @@ import { workBoqService } from '../../lib/projectService';
 import { useApp } from '../../context/AppContext';
 import { useConfirm, useReasonConfirm } from '../../context/ConfirmContext';
 import { useToast } from '../../context/ToastContext';
-import ProjectSubmissionDialog from './ProjectSubmissionDialog';
+import ProjectRoomSubmissionDialog from './ProjectRoomSubmissionDialog';
 import { ProjectPermissionCode, projectStaffService } from '../../lib/projectStaffService';
 import { formatPolicyMessage, getProjectDocumentPolicy } from '../../lib/projectDocumentPolicy';
 import { projectDocumentActionLogService } from '../../lib/projectDocumentActionLogService';
@@ -574,7 +574,7 @@ const BoqReconciliationPanel: React.FC<Props> = ({ projectId, constructionSiteId
         )}
       </div>
       {submittingGroup && (
-        <ProjectSubmissionDialog
+        <ProjectRoomSubmissionDialog
           title="Gửi nhóm đối chiếu BOQ"
           actionLabel="Gửi rà soát"
           documentLabel="Đối chiếu BOQ"
@@ -582,8 +582,9 @@ const BoqReconciliationPanel: React.FC<Props> = ({ projectId, constructionSiteId
           documentSubtitle={`Trạng thái hiện tại: ${statusLabel[submittingGroup.status]}`}
           projectId={projectId || undefined}
           constructionSiteId={constructionSiteId || undefined}
-          recipientPermissionCodes={['verify']}
-          recipientHint="Chọn đích danh người có quyền rà soát bảng đối chiếu tham khảo."
+          recipientRoomCode="boq_reconciliation"
+          recipientAction="verify"
+          recipientHint="Chọn người thuộc Room Đối soát BOQ có quyền rà soát."
           details={[
             { label: 'Dòng BOQ hợp đồng', value: `${submittingGroup.contractLines?.length || 0} dòng` },
             { label: 'Đầu mục BOQ thi công', value: `${submittingGroup.workLines?.length || 0} đầu mục` },
