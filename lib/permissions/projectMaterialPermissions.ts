@@ -105,7 +105,7 @@ export const getProjectMaterialCapabilities = (
   const canPo = (code: Extract<ProjectMaterialActionCode, `project.material_po.${string}`>) =>
     canManagePo || can(code);
   const canDirectPurchase = (code: Extract<ProjectMaterialActionCode, `project.material_direct_purchase.${string}`>) =>
-    can(code);
+    canManagePo || can(code);
   const canSupplierDelivery = (code: Extract<ProjectMaterialActionCode, `project.material_supplier_delivery.${string}`>) =>
     can(code);
 
