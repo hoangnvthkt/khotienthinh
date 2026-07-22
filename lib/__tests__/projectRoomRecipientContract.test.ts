@@ -63,4 +63,12 @@ describe('Project Room recipient cutover', () => {
     expect(source).toContain('recipientAction="confirm"');
     expect(source).not.toContain("recipientPermissionCodes={['confirm']}");
   });
+
+  it('routes quantity acceptance approval to its Room', () => {
+    const source = readFileSync(join(process.cwd(), 'components/project/QuantityAcceptancePanel.tsx'), 'utf8');
+
+    expect(source).toContain('ProjectRoomSubmissionDialog');
+    expect(source).toContain('recipientRoomCode="quantity_acceptance"');
+    expect(source).toContain('recipientAction="approve"');
+  });
 });

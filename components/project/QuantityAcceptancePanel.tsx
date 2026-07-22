@@ -22,7 +22,7 @@ import { formatPolicyMessage, getProjectDocumentPolicy } from '../../lib/project
 import { useToast } from '../../context/ToastContext';
 import { useConfirm, useReasonConfirm } from '../../context/ConfirmContext';
 import { useApp } from '../../context/AppContext';
-import ProjectSubmissionDialog from './ProjectSubmissionDialog';
+import ProjectRoomSubmissionDialog from './ProjectRoomSubmissionDialog';
 
 interface Props {
   contractId: string;
@@ -627,7 +627,7 @@ const QuantityAcceptancePanel: React.FC<Props> = ({ contractId, contractType, pr
         </div>
       </div>
       {submittingAcceptance && (
-        <ProjectSubmissionDialog
+        <ProjectRoomSubmissionDialog
           title={submittingAcceptance.acceptanceScope === 'internal' ? 'Gửi nghiệm thu nội bộ' : 'Gửi nghiệm thu khối lượng'}
           actionLabel="Gửi duyệt"
           documentLabel="Nghiệm thu"
@@ -635,8 +635,9 @@ const QuantityAcceptancePanel: React.FC<Props> = ({ contractId, contractType, pr
           documentSubtitle={`Trạng thái hiện tại: ${submittingAcceptance.status}`}
           projectId={projectId}
           constructionSiteId={constructionSiteId}
-          recipientPermissionCodes={['approve']}
-          recipientHint="Chọn đích danh người có quyền phê duyệt nghiệm thu."
+          recipientRoomCode="quantity_acceptance"
+          recipientAction="approve"
+          recipientHint="Chọn người thuộc Room Nghiệm thu khối lượng có quyền duyệt."
           details={[
             { label: submittingAcceptance.acceptanceScope === 'internal' ? 'Giá trị nội bộ' : 'Giá trị nghiệm thu', value: `${fmt(submittingAcceptance.totalAcceptedAmount)} đ` },
             { label: 'Số dòng', value: `${submittingAcceptance.items.length} hạng mục` },
