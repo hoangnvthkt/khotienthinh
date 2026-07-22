@@ -103,9 +103,13 @@ const ProjectWorkflowAssigneeSelect: React.FC<Props> = ({
         if (candidate.userId) byUserId.set(candidate.userId, candidate);
       });
 
-    if (configuredUserTargetIds.size > 0 || hasCreatorTarget) {
+    if (configuredUserTargetIds.size > 0 || hasCreatorTarget || (allowedUserIdSet && !hasExplicitPeoplePool)) {
       activeUsers
-        .filter(user => configuredUserTargetIds.has(user.id) || isConfiguredCreator(user.id))
+        .filter(user => (
+          allowedUserIdSet && !hasExplicitPeoplePool
+            ? true
+            : configuredUserTargetIds.has(user.id) || isConfiguredCreator(user.id)
+        ))
         .forEach((user, index) => {
           if (byUserId.has(user.id)) return;
           byUserId.set(user.id, {
