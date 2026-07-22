@@ -2,7 +2,7 @@
 
 Ngày thiết kế: 2026-07-22
 
-Trạng thái: Chờ duyệt đặc tả
+Trạng thái: Đã duyệt ngày 2026-07-22
 
 Phạm vi: Module Dự án, ưu tiên Tab Phân quyền và các nghiệp vụ đang dùng quyền legacy
 
