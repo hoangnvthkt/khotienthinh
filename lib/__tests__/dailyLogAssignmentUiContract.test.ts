@@ -18,4 +18,10 @@ describe('Daily Log assignment-first UI contract', () => {
     expect(source).toContain("subjectAuthorizationService.canAct('daily_log', log.id, 'submit')");
     expect(source).toContain('Người nhận được hệ thống phân công');
   });
+
+  it('keeps Daily Log assignment-first while requiring its Room action', () => {
+    expect(source).toContain("roomCode: 'daily_log'");
+    expect(source).toContain('projectPermissionRoomService.hasAction');
+    expect(source).toContain('getDailyLogResponsibilityTarget');
+  });
 });

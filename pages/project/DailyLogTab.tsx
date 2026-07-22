@@ -8,6 +8,7 @@ import { dailyLogService, taskService, workBoqService } from '../../lib/projectS
 import { contractLaborCatalogService, contractMachineCatalogService } from '../../lib/contractMetadataService';
 import { partnerService } from '../../lib/partnerService';
 import { projectStaffService } from '../../lib/projectStaffService';
+import { projectPermissionRoomService } from '../../lib/projectPermissionRoomService';
 import { notificationService } from '../../lib/notificationService';
 import { delayEventService } from '../../lib/projectScheduleForecastService';
 import { projectDocumentActionLogService } from '../../lib/projectDocumentActionLogService';
@@ -966,6 +967,32 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         }
     }, [constructionSiteId, ensureDailyLogAction, projectId, toast, user?.id, user?.role]);
 
+    const requireDailyLogResponsibilityRoom = useCallback(async (
+        log: DailyLog,
+        target: DailyLogResponsibilityTarget,
+    ) => {
+        const roomContext = {
+            roomCode: 'daily_log' as const,
+            actionCode: target.responsibility === 'current_approver' ? 'approve' as const : 'verify' as const,
+        };
+        const scopedProjectId = projectId || log.projectId;
+        if (!scopedProjectId) {
+            toast.error('Chưa xác định dự án', 'Không thể kiểm tra Room của người nhận nhật ký.');
+            return false;
+        }
+        const allowed = await projectPermissionRoomService.hasAction(
+            target.userId,
+            scopedProjectId,
+            constructionSiteId || log.constructionSiteId || null,
+            roomContext.roomCode,
+            roomContext.actionCode,
+        );
+        if (!allowed) {
+            toast.error('Người nhận chưa thuộc Room', `Người chịu trách nhiệm chưa có quyền ${roomContext.actionCode === 'approve' ? 'duyệt' : 'kiểm tra'} trong Room Nhật ký công trường.`);
+        }
+        return allowed;
+    }, [constructionSiteId, projectId, toast]);
+
     const reloadDailyLogRecords = useCallback(async () => {
         if (!effectiveId) return;
         const staffPromise = projectId
@@ -1615,6 +1642,9 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
             if (status === 'submitted') {
                 responsibilityTarget = responsibilityTarget
                     || await subjectAuthorizationService.getDailyLogResponsibilityTarget(log.id);
+                if (!responsibilityTarget || !(await requireDailyLogResponsibilityRoom(log, responsibilityTarget))) {
+                    return false;
+                }
             }
             if (status === 'submitted' || status === 'verified') {
                 const reviewAction = status === 'verified' && log.submittedToPermission === 'approve' ? 'approve' : 'verify';
