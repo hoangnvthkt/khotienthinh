@@ -797,7 +797,7 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
                     )}
                     {canVerify && (
                         <button onClick={onVerify} disabled={busy} className="px-4 py-2 rounded-xl text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-1.5">
-                            {busy ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />} Xác nhận
+                            {busy ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />} {log.submittedToPermission === 'approve' ? 'Duyệt CHT' : 'Xác nhận'}
                         </button>
                     )}
                     {canEdit && (
@@ -1135,6 +1135,18 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         if (isAdminUser) return editableStatus;
         return editableStatus && isDailyLogOwner(log) && hasDailyLogAction(DAILY_LOG_ACTION.submit);
     }, [hasDailyLogAction, isAdminUser, isDailyLogOwner]);
+
+    const canProcessDailyLog = useCallback((log: DailyLog) => {
+        if (getLogStatus(log) !== 'submitted') return false;
+        const reviewAction = log.submittedToPermission === 'approve'
+            ? DAILY_LOG_ACTION.approve
+            : DAILY_LOG_ACTION.verify;
+        if (!isAdminUser && !hasDailyLogAction(reviewAction)) return false;
+        if (isAdminUser) return true;
+
+        const currentHandlerId = log.requestedVerifierId || log.submittedToUserId;
+        return Boolean(currentHandlerId && currentHandlerId === user?.id);
+    }, [hasDailyLogAction, isAdminUser, user?.id]);
 
     const resetForm = () => {
         if (savingLogRef.current) return;
@@ -2098,7 +2110,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         : [];
     const canReturnViewingLog = !!viewingLog && canReviewDailyLog(viewingLog);
     const canVerifyViewingLog = !!viewingLog
-        && canReviewDailyLog(viewingLog)
+        && canProcessDailyLog(viewingLog)
         && !isLegacyDailyLogSource(viewingLog);
     const canRollbackViewingLog = !!viewingLog
         && viewingLogStatus === 'verified'
