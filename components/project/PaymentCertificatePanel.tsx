@@ -13,7 +13,7 @@ import { formatPolicyMessage, getProjectDocumentPolicy } from '../../lib/project
 import { useToast } from '../../context/ToastContext';
 import { useConfirm, useReasonConfirm } from '../../context/ConfirmContext';
 import { useApp } from '../../context/AppContext';
-import ProjectSubmissionDialog from './ProjectSubmissionDialog';
+import ProjectRoomSubmissionDialog from './ProjectRoomSubmissionDialog';
 
 interface Props {
   contractId: string;
@@ -741,7 +741,7 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, pr
       </div>
 
       {submittingCert && (
-        <ProjectSubmissionDialog
+        <ProjectRoomSubmissionDialog
           title="Gửi chứng từ thanh toán"
           actionLabel="Gửi duyệt"
           documentLabel="Thanh toán"
@@ -749,8 +749,9 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, pr
           documentSubtitle={`Trạng thái hiện tại: ${STATUS_CFG[submittingCert.status].label}`}
           projectId={projectId}
           constructionSiteId={constructionSiteId}
-          recipientPermissionCodes={['approve']}
-          recipientHint="Chọn đích danh người có quyền phê duyệt chứng từ thanh toán."
+          recipientRoomCode="payment"
+          recipientAction="approve"
+          recipientHint="Chọn người thuộc Room Thanh toán có quyền duyệt chứng từ."
           details={[
             { label: 'Giá trị đề nghị', value: fmtM(submittingCert.grossThisPeriod ?? submittingCert.currentCompletedValue) },
             { label: 'Giá trị thanh toán', value: fmtM(submittingCert.payableThisPeriod ?? submittingCert.currentPayableAmount) },
@@ -762,7 +763,7 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, pr
         />
       )}
       {confirmingCert && (
-        <ProjectSubmissionDialog
+        <ProjectRoomSubmissionDialog
           title="Phê duyệt chứng từ thanh toán"
           actionLabel="Duyệt và chuyển xác nhận"
           documentLabel="Thanh toán"
@@ -770,8 +771,9 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, pr
           documentSubtitle={`Trạng thái hiện tại: ${STATUS_CFG[confirmingCert.status].label}`}
           projectId={projectId}
           constructionSiteId={constructionSiteId}
-          recipientPermissionCodes={['confirm']}
-          recipientHint="Chọn đích danh người xác nhận thanh toán/chi tiền ở bước tiếp theo."
+          recipientRoomCode="payment"
+          recipientAction="confirm"
+          recipientHint="Chọn người thuộc Room Thanh toán có quyền xác nhận/chi tiền."
           details={[
             { label: 'Giá trị đề nghị', value: fmtM(confirmingCert.grossThisPeriod ?? confirmingCert.currentCompletedValue) },
             { label: 'Giá trị thanh toán', value: fmtM(confirmingCert.payableThisPeriod ?? confirmingCert.currentPayableAmount) },

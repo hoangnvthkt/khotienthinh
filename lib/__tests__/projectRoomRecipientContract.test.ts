@@ -53,4 +53,14 @@ describe('Project Room recipient cutover', () => {
     expect(materialTab).toContain('recipientRoomCode="material_request"');
     expect(materialTab).toContain('ProjectRoomSubmissionDialog');
   });
+
+  it('routes payment approval and payment confirmation to separate Room actions', () => {
+    const source = readFileSync(join(process.cwd(), 'components/project/PaymentCertificatePanel.tsx'), 'utf8');
+
+    expect(source).toContain('ProjectRoomSubmissionDialog');
+    expect(source).toContain('recipientRoomCode="payment"');
+    expect(source).toContain('recipientAction="approve"');
+    expect(source).toContain('recipientAction="confirm"');
+    expect(source).not.toContain("recipientPermissionCodes={['confirm']}");
+  });
 });
