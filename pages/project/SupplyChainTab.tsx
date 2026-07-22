@@ -8689,7 +8689,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 />
             )}
             {submittingDirectPurchase && (
-                <ProjectSubmissionDialog
+                <ProjectRoomSubmissionDialog
                     title="Gửi duyệt mua nóng"
                     actionLabel="Gửi duyệt"
                     documentLabel="Phiếu mua nóng"
@@ -8697,8 +8697,9 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     documentSubtitle={`Trạng thái hiện tại: ${DIRECT_PURCHASE_STATUS[submittingDirectPurchase.status]?.label || submittingDirectPurchase.status}`}
                     projectId={submittingDirectPurchase.projectId || projectId}
                     constructionSiteId={submittingDirectPurchase.constructionSiteId || constructionSiteId}
-                    recipientPermissionCodes={['project.material_direct_purchase.edit']}
-                    recipientHint="Chọn đích danh người có quyền kiểm tra và duyệt phiếu mua nóng tại dự án/công trường này."
+                    recipientRoomCode="material_po"
+                    recipientAction="approve"
+                    recipientHint="Chọn người thuộc Room Đơn hàng PO có quyền duyệt mua nóng."
                     details={[
                         { label: 'Nhà cung cấp', value: submittingDirectPurchase.supplierNameSnapshot },
                         { label: 'Nguồn thanh toán', value: DIRECT_PURCHASE_PAYMENT_SOURCE[submittingDirectPurchase.paymentSource] },

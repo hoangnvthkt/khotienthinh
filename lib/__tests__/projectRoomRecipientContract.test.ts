@@ -20,6 +20,14 @@ describe('Project Room recipient cutover', () => {
     expect(source).not.toContain("recipientPermissionCodes={['confirm']}");
   });
 
+  it('uses the PO Room for hot-purchase approval as well', () => {
+    const source = readFileSync(join(process.cwd(), 'pages/project/SupplyChainTab.tsx'), 'utf8');
+
+    expect(source).toContain('title="Gửi duyệt mua nóng"');
+    expect(source).toContain('recipientRoomCode="material_po"');
+    expect(source).not.toContain("recipientPermissionCodes={['project.material_direct_purchase.edit']}");
+  });
+
   it('limits the first Material Request workflow recipient picker to its Room', () => {
     const startDialog = readFileSync(join(process.cwd(), 'components/project/ProjectWorkflowStartDialog.tsx'), 'utf8');
     const requestModal = readFileSync(join(process.cwd(), 'components/RequestModal.tsx'), 'utf8');
