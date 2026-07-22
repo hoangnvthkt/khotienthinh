@@ -21,6 +21,7 @@ import { buildCreateUserFunctionPayload, readFunctionInvokeErrorMessage } from '
 const PROJECT_TAB_PERMISSION_ICONS: Record<ProjectOverviewTabKey, any> = {
   executive: LayoutDashboard,
   org: Users,
+  permissions: ShieldCheck,
   finance: DollarSign,
   budget: DollarSign,
   cashflow: Repeat,
