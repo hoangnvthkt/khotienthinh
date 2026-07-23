@@ -31,6 +31,7 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
   const { canManage } = usePermission();
   const toast = useToast();
   const [quantities, setQuantities] = useState<Record<string, string>>({});
+  const [varianceReasons, setVarianceReasons] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
 
   const targetWarehouse = warehouses.find(warehouse => warehouse.id === po?.targetWarehouseId);
@@ -67,6 +68,7 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
       defaults[`${item.itemId}-${index}`] = String(remainingQty);
     });
     setQuantities(defaults);
+    setVarianceReasons({});
   }, [po, isOpen]);
 
   if (!isOpen || !po) return null;
@@ -75,19 +77,25 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
   const hasReceivableLine = totalRemaining > 0;
   const hasInvalidQty = lines.some(line => {
     const qty = parseQuantityInput(quantities[line.key]);
-    return line.remainingQty > 0 && (qty <= 0 || qty > line.remainingQty);
+    const reason = (varianceReasons[line.key] || '').trim();
+    return line.remainingQty > 0 && (qty <= 0 || (qty !== line.remainingQty && !reason));
   });
   const receiptLines = lines
-    .map(line => ({ itemId: line.itemId, lineId: line.lineId, quantity: parseQuantityInput(quantities[line.key]) || 0, price: Number(line.unitPrice) || 0 }))
+    .map(line => ({
+      itemId: line.itemId,
+      lineId: line.lineId,
+      quantity: parseQuantityInput(quantities[line.key]) || 0,
+      price: Number(line.unitPrice) || 0,
+      varianceReason: (varianceReasons[line.key] || '').trim() || undefined,
+    }))
     .filter(line => line.quantity > 0);
   const unlinkedReceiptLines = receiptLines.filter(line => !items.some(item => item.id === line.itemId));
 
-  const updateReceiptQuantity = (lineKey: string, rawValue: string, maxQty: number) => {
+  const updateReceiptQuantity = (lineKey: string, rawValue: string) => {
     setQuantities(prev => ({
       ...prev,
       [lineKey]: sanitizeQuantityInput(rawValue, {
-        max: maxQty,
-        previousValue: prev[lineKey] ?? String(maxQty),
+        previousValue: prev[lineKey] ?? '0',
       }),
     }));
   };
@@ -103,7 +111,7 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
       return;
     }
     if (hasInvalidQty || receiptLines.length === 0) {
-      toast.warning('Kiểm tra số lượng', 'Mỗi dòng đang giao phải có số lượng thực nhận lớn hơn 0 và không vượt phần còn lại.');
+      toast.warning('Kiểm tra số lượng', 'Số thực nhận phải lớn hơn 0; nếu lệch phần còn lại, cần nhập lý do.');
       return;
     }
     if (unlinkedReceiptLines.length > 0) {
@@ -203,7 +211,9 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
                 <tbody className="divide-y divide-slate-100">
                   {lines.map(line => {
                     const qty = parseQuantityInput(quantities[line.key]) || 0;
-                    const invalid = qty < 0 || qty > line.remainingQty;
+                    const reason = (varianceReasons[line.key] || '').trim();
+                    const hasVariance = qty !== line.remainingQty;
+                    const invalid = qty < 0 || (qty <= 0 && line.remainingQty > 0) || (hasVariance && !reason);
                     const stockQty = poLinePurchaseToStockQty(line, qty, line.inventoryItem);
                     return (
                       <tr key={line.key} className={line.remainingQty <= 0 ? 'bg-slate-50/60 opacity-70' : ''}>
@@ -225,7 +235,7 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
                             inputMode="decimal"
                             disabled={line.remainingQty <= 0 || saving}
                             value={quantities[line.key] ?? '0'}
-                            onChange={(event) => updateReceiptQuantity(line.key, event.target.value, line.remainingQty)}
+                            onChange={(event) => updateReceiptQuantity(line.key, event.target.value)}
                             className={`w-full px-3 py-2 rounded-xl border text-center font-black outline-none focus:ring-2 ${
                               invalid ? 'border-red-300 bg-red-50 text-red-600 focus:ring-red-200' : 'border-slate-200 focus:ring-emerald-200'
                             }`}
@@ -234,6 +244,15 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
                             <div className="mt-1 text-[10px] font-bold text-cyan-700 text-center">
                               Nhập kho: {stockQty.toLocaleString('vi-VN', { maximumFractionDigits: 6 })} {line.stockUnit}
                             </div>
+                          )}
+                          {hasVariance && qty > 0 && (
+                            <input
+                              type="text"
+                              value={varianceReasons[line.key] || ''}
+                              onChange={(event) => setVarianceReasons(prev => ({ ...prev, [line.key]: event.target.value }))}
+                              placeholder="Lý do lệch số lượng"
+                              className="mt-2 w-full rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-[10px] font-semibold text-amber-900 outline-none focus:border-amber-400"
+                            />
                           )}
                         </td>
                       </tr>
@@ -247,7 +266,9 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
             <div className="block md:hidden divide-y divide-slate-100">
               {lines.map(line => {
                 const qty = parseQuantityInput(quantities[line.key]) || 0;
-                const invalid = qty < 0 || qty > line.remainingQty;
+                const reason = (varianceReasons[line.key] || '').trim();
+                const hasVariance = qty !== line.remainingQty;
+                const invalid = qty < 0 || (qty <= 0 && line.remainingQty > 0) || (hasVariance && !reason);
                 const stockQty = poLinePurchaseToStockQty(line, qty, line.inventoryItem);
                 return (
                   <div key={line.key} className={`p-4 space-y-3 ${line.remainingQty <= 0 ? 'bg-slate-50/60 opacity-70' : ''}`}>
@@ -284,7 +305,7 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
                           inputMode="decimal"
                           disabled={line.remainingQty <= 0 || saving}
                           value={quantities[line.key] ?? '0'}
-                          onChange={(event) => updateReceiptQuantity(line.key, event.target.value, line.remainingQty)}
+                          onChange={(event) => updateReceiptQuantity(line.key, event.target.value)}
                           className={`w-full px-3 py-2 rounded-xl border text-center font-black outline-none focus:ring-2 ${
                             invalid ? 'border-red-300 bg-red-50 text-red-600 focus:ring-red-200' : 'border-slate-200 focus:ring-emerald-200'
                           }`}
@@ -293,6 +314,15 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
                           <div className="mt-1 text-[10px] font-bold text-cyan-700 text-right">
                             Nhập kho: {stockQty.toLocaleString('vi-VN', { maximumFractionDigits: 6 })} {line.stockUnit}
                           </div>
+                        )}
+                        {hasVariance && qty > 0 && (
+                          <input
+                            type="text"
+                            value={varianceReasons[line.key] || ''}
+                            onChange={(event) => setVarianceReasons(prev => ({ ...prev, [line.key]: event.target.value }))}
+                            placeholder="Lý do lệch số lượng"
+                            className="mt-2 w-full rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-[10px] font-semibold text-amber-900 outline-none focus:border-amber-400"
+                          />
                         )}
                       </div>
                     </div>
