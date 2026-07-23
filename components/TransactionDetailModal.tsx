@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
-import { X, Calendar, User, Package, MapPin, Truck, ArrowRight, CheckCircle, Loader2, AlertTriangle } from 'lucide-react';
-import { Transaction, TransactionStatus, TransactionType } from '../types';
+import { X, Calendar, User, Package, MapPin, Truck, ArrowRight, CheckCircle, Loader2, AlertTriangle, Paperclip, ExternalLink, Download } from 'lucide-react';
+import { Transaction, TransactionStatus, TransactionType, WmsTransactionAttachment } from '../types';
 import { useApp } from '../context/AppContext';
 import { canApproveWmsTransaction, canReceiveWmsTransaction, isFulfillmentBatchTransaction } from '../lib/wmsPermissions';
 import { useToast } from '../context/ToastContext';
@@ -10,6 +10,13 @@ import { materialRequestFulfillmentService } from '../lib/materialRequestFulfill
 import { formatQuantityInput, parseQuantityInput, sanitizeQuantityInput } from '../lib/quantityInput';
 import { dateInputToTransactionTimestamp } from '../lib/transactionVoucherDates';
 import { canEditTransactionVoucher } from '../lib/transactionVoucherMetadata';
+import { buildActualReceiptItems, validateReceiptQuantityLines } from '../lib/poActualReceipt';
+import {
+  cleanupTransactionAttachmentPaths,
+  getTransactionAttachmentUrl,
+  persistTransactionAttachments,
+  uploadTransactionAttachments,
+} from '../lib/wmsTransactionAttachmentService';
 
 interface TransactionDetailModalProps {
   isOpen: boolean;
@@ -19,13 +26,16 @@ interface TransactionDetailModalProps {
 }
 
 const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen, onClose, transaction, onUpdated }) => {
-  const { items, warehouses, users, suppliers, user, updateTransactionStatus, updateTransactionVoucher } = useApp();
+  const { items, warehouses, users, suppliers, transactions, user, updateTransactionStatus, updateTransactionVoucher } = useApp();
   const toast = useToast();
   const [quantityDrafts, setQuantityDrafts] = useState<Record<number, { quantity: string; reason: string }>>({});
   const [processing, setProcessing] = useState(false);
   const [voucherDate, setVoucherDate] = useState('');
   const [voucherNote, setVoucherNote] = useState('');
   const [savingVoucher, setSavingVoucher] = useState(false);
+  const [attachmentDrafts, setAttachmentDrafts] = useState<File[]>([]);
+  const [attachmentUrls, setAttachmentUrls] = useState<Record<string, string>>({});
+  const [attachmentLoadingId, setAttachmentLoadingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (transaction) {
@@ -34,6 +44,8 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
       ));
       setVoucherDate(transaction.date.slice(0, 10));
       setVoucherNote(transaction.note || '');
+      setAttachmentDrafts([]);
+      setAttachmentUrls({});
     }
   }, [transaction]);
 
@@ -49,6 +61,8 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
   const actionMode: 'approval' | 'receipt' | null = canApprove ? 'approval' : canReceive ? 'receipt' : null;
   const canAdjustQuantities = !!actionMode && (transaction.type === TransactionType.IMPORT || transaction.type === TransactionType.TRANSFER);
   const isFulfillmentTx = isFulfillmentBatchTransaction(transaction);
+  const isPoDeliveryTx = transaction.sourceType === 'po_delivery_batch';
+  const isQualityApprovalTx = isFulfillmentTx || isPoDeliveryTx;
 
   const requester = users.find(u => u.id === transaction.requesterId);
   const approver = users.find(u => u.id === transaction.approverId);
@@ -74,45 +88,75 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
   };
 
   const updateQuantityValue = (index: number, rawValue: string) => {
-    const maxQty = Number(transaction.items[index]?.quantity || 0);
     updateQuantityDraft(index, {
       quantity: sanitizeQuantityInput(rawValue, {
-        max: maxQty,
-        previousValue: quantityDrafts[index]?.quantity ?? String(maxQty),
+        previousValue: quantityDrafts[index]?.quantity ?? '0',
       }),
     });
   };
 
-  const buildQuantityLines = () => {
-    return transaction.items.map((ti, index) => {
-      const draft = quantityDrafts[index] || { quantity: formatQuantityInput(ti.quantity), reason: '' };
+  const buildQuantityLines = (sourceTransaction: Transaction = transaction) => {
+    const drafts = sourceTransaction.id === transaction.id ? quantityDrafts : Object.fromEntries(
+      sourceTransaction.items.map((ti, index) => [index, { quantity: formatQuantityInput(ti.quantity), reason: ti.varianceReason || '' }]),
+    );
+    const lines = sourceTransaction.items.map((ti, index) => {
+      const draft = drafts[index] || { quantity: formatQuantityInput(ti.quantity), reason: '' };
       const quantity = parseQuantityInput(draft.quantity);
-      const originalQty = Number(ti.quantity || 0);
       const reason = draft.reason.trim();
-
-      if (!Number.isFinite(quantity) || quantity <= 0) {
-        throw new Error(`Dòng ${index + 1}: Số lượng thực tế phải lớn hơn 0.`);
-      }
-      if (quantity > originalQty) {
-        throw new Error(`Dòng ${index + 1}: Số lượng thực tế không được lớn hơn số lượng trên phiếu.`);
-      }
-      if (quantity !== originalQty && !reason) {
-        throw new Error(`Dòng ${index + 1}: Nhập lý do khi số lượng thực tế lệch phiếu.`);
-      }
-
       return { index, quantity, reason };
     });
+    validateReceiptQuantityLines(sourceTransaction, lines);
+    return lines;
+  };
+
+  const openAttachment = async (attachment: WmsTransactionAttachment, download = false) => {
+    setAttachmentLoadingId(attachment.id);
+    try {
+      const url = attachmentUrls[attachment.id] || await getTransactionAttachmentUrl(attachment.storagePath);
+      setAttachmentUrls(prev => ({ ...prev, [attachment.id]: url }));
+      if (download) {
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = attachment.fileName;
+        anchor.target = '_blank';
+        anchor.rel = 'noreferrer';
+        anchor.click();
+      } else {
+        window.open(url, '_blank', 'noopener,noreferrer');
+      }
+    } catch (err: any) {
+      toast.error('Không thể mở tệp', getApiErrorMessage(err, 'Không thể tạo đường dẫn tệp đính kèm.'));
+    } finally {
+      setAttachmentLoadingId(null);
+    }
   };
 
   const handlePrimaryAction = async () => {
     setProcessing(true);
+    let uploadedPaths: string[] = [];
+    const latestTransaction = transactions.find(candidate => candidate.id === transaction.id) || transaction;
+    const previousAttachments = latestTransaction.attachments || [];
     try {
+      if (actionMode === 'approval' && latestTransaction.status !== TransactionStatus.PENDING) {
+        throw new Error('Phiếu kho đã thay đổi trạng thái. Vui lòng đóng và mở lại để xử lý dữ liệu mới nhất.');
+      }
       if (canAdjustQuantities) {
         await materialRequestFulfillmentService.updateTransactionReceiptQuantities({
-          transaction,
+          transaction: latestTransaction,
           stage: actionMode || 'approval',
-          lines: buildQuantityLines(),
+          lines: buildQuantityLines(latestTransaction),
         });
+      }
+
+      if (actionMode === 'approval' && attachmentDrafts.length > 0) {
+        const uploadResult = await uploadTransactionAttachments({
+          transactionId: latestTransaction.id,
+          actorUserId: user.id,
+          files: attachmentDrafts,
+          existing: previousAttachments,
+        });
+        uploadedPaths = uploadResult.uploadedPaths;
+        await persistTransactionAttachments(latestTransaction.id, uploadResult.attachments);
       }
 
       const nextStatus = actionMode === 'receipt'
@@ -121,10 +165,18 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
           ? TransactionStatus.APPROVED
           : TransactionStatus.COMPLETED;
 
-      await updateTransactionStatus(transaction.id, nextStatus, user.id);
+      await updateTransactionStatus(latestTransaction.id, nextStatus, user.id);
       onClose();
       toast.success(actionMode === 'receipt' ? 'Đã xác nhận nhập kho' : 'Đã duyệt phiếu kho');
     } catch (err: any) {
+      if (uploadedPaths.length > 0) {
+        try {
+          await cleanupTransactionAttachmentPaths(uploadedPaths);
+          await persistTransactionAttachments(latestTransaction.id, previousAttachments);
+        } catch (cleanupError) {
+          console.warn('Cannot roll back WMS approval attachments', cleanupError);
+        }
+      }
       logApiError('transactionDetail.primaryAction', err);
       toast.error(
         actionMode === 'receipt' ? 'Không thể xác nhận nhập kho' : 'Không thể phê duyệt phiếu',
@@ -193,7 +245,7 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
   const statusInfo = getStatusInfo(transaction.status);
   const primaryActionLabel = actionMode === 'receipt'
     ? 'Xác nhận nhập'
-    : isFulfillmentTx
+    : isQualityApprovalTx
       ? 'Duyệt SL/CL'
       : 'Duyệt phiếu';
 
@@ -323,7 +375,7 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
           </div>
 
           {/* Items List */}
-          <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+       <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
             <div className="px-4 py-3 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
               <h4 className="text-sm font-bold text-slate-700 flex items-center">
                 <Package size={16} className="mr-2" /> Danh mục vật tư
@@ -339,19 +391,23 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {transaction.items.map((ti, idx) => {
-                  const item = items.find(i => i.id === ti.itemId) || transaction.pendingItems?.find(i => i.id === ti.itemId);
-                  const draft = quantityDrafts[idx] || { quantity: formatQuantityInput(ti.quantity), reason: '' };
-                  const draftQty = parseQuantityInput(draft.quantity);
-                  const hasVariance = Number.isFinite(draftQty) && draftQty !== Number(ti.quantity || 0);
+               {transaction.items.map((ti, idx) => {
+                 const item = items.find(i => i.id === ti.itemId) || transaction.pendingItems?.find(i => i.id === ti.itemId);
+                 const draft = quantityDrafts[idx] || { quantity: formatQuantityInput(ti.quantity), reason: '' };
+                 const draftQty = parseQuantityInput(draft.quantity);
+                 const orderedQty = Number(ti.orderedQty ?? ti.quantity ?? 0);
+                 const hasVariance = Number.isFinite(draftQty) && draftQty !== orderedQty;
                   return (
                     <tr key={`${ti.fulfillmentBatchId || ''}-${ti.requestLineId || ti.itemId}-${idx}`}>
                       <td className="px-4 py-3">
                         <div className="font-bold text-slate-700">{item?.name || 'Vật tư mới'}</div>
                         <div className="text-[10px] text-slate-400 font-mono">{item?.sku || 'Đang chờ duyệt'}</div>
                       </td>
-                      <td className="px-4 py-3 text-right font-bold text-slate-800">
-                        {ti.quantity} <span className="text-[10px] text-slate-400 ml-1">{item?.unit}</span>
+                       <td className="px-4 py-3 text-right font-bold text-slate-800">
+                         {orderedQty} <span className="text-[10px] text-slate-400 ml-1">{item?.unit}</span>
+                         {hasVariance && canAdjustQuantities && (
+                           <div className="text-[10px] font-bold text-amber-600">Lệch: {(Number.isFinite(draftQty) ? draftQty : 0) - orderedQty}</div>
+                         )}
                       </td>
                       {canAdjustQuantities && (
                         <td className="px-4 py-3 text-right">
@@ -387,6 +443,62 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
               </tbody>
             </table>
           </div>
+
+          {(transaction.attachments?.length || 0) > 0 && (
+            <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+              <div className="flex items-center gap-2 text-sm font-black text-slate-700">
+                <Paperclip size={16} /> Tệp đính kèm ({transaction.attachments?.length || 0})
+              </div>
+              <div className="space-y-2">
+                {transaction.attachments?.map(attachment => (
+                  <div key={attachment.id} className="flex items-center justify-between gap-3 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
+                    <div className="min-w-0">
+                      <div className="truncate text-xs font-bold text-slate-700">{attachment.fileName}</div>
+                      <div className="text-[10px] text-slate-400">{attachment.mimeType} • {(attachment.fileSize / 1024).toFixed(1)} KB</div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => void openAttachment(attachment)}
+                        disabled={attachmentLoadingId === attachment.id}
+                        className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-black text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+                      >
+                        <ExternalLink size={12} /> Xem tệp
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void openAttachment(attachment, true)}
+                        disabled={attachmentLoadingId === attachment.id}
+                        className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-black text-slate-600 hover:bg-slate-100 disabled:opacity-50"
+                      >
+                        <Download size={12} /> Tải xuống
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {canApprove && isQualityApprovalTx && (
+            <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-4 space-y-2">
+              <div className="flex items-center gap-2 text-sm font-black text-indigo-700">
+                <Paperclip size={16} /> Chứng từ thực nhận
+              </div>
+              <p className="text-[11px] font-semibold text-slate-500">Có thể đính kèm phiếu cân, biên bản giao nhận hoặc ảnh chất lượng trước khi Duyệt SL/CL.</p>
+              <input
+                type="file"
+                multiple
+                accept="image/*,.pdf,.doc,.docx,.xls,.xlsx"
+                onChange={event => setAttachmentDrafts(Array.from(event.target.files || []))}
+                disabled={processing}
+                className="block w-full text-xs font-semibold text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-600 file:px-3 file:py-2 file:text-xs file:font-black file:text-white hover:file:bg-indigo-700"
+              />
+              {attachmentDrafts.length > 0 && (
+                <div className="text-[10px] font-bold text-indigo-700">Đã chọn {attachmentDrafts.length} tệp; tệp sẽ tải lên khi bấm Duyệt SL/CL.</div>
+              )}
+            </div>
+          )}
 
           {!canEditVoucher && transaction.note && (
             <div className="bg-slate-100 p-4 rounded-xl border-l-4 border-slate-400">
