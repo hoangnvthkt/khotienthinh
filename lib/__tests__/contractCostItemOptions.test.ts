@@ -53,13 +53,25 @@ describe('contract cost item options', () => {
     });
   });
 
-  it('infers legacy project cost category from contract cost item symbol', () => {
+  it('infers project cost category from contract cost item symbol, name keywords, or explicit category', () => {
     expect(inferProjectCostCategoryFromCostItem(item({ id: 'cpvl', symbol: 'CPVL', name: 'Chi phí vật liệu' }))).toBe('materials');
+    expect(inferProjectCostCategoryFromCostItem(item({ id: 'cpnvl', symbol: 'CPNVL', name: 'Chi phí nguyên vật liệu' }))).toBe('materials');
     expect(inferProjectCostCategoryFromCostItem(item({ id: 'cpnc', symbol: 'CPNC', name: 'Chi phí nhân công' }))).toBe('labor');
-    expect(inferProjectCostCategoryFromCostItem(item({ id: 'cpmtc', symbol: 'CPMTC', name: 'Chi phí máy thi công' }))).toBe('machinery');
+    expect(inferProjectCostCategoryFromCostItem(item({ id: 'cpmtc', symbol: 'CPMTC', name: 'Chi phí giờ máy thi công' }))).toBe('machinery');
+    expect(inferProjectCostCategoryFromCostItem(item({ id: 'cpgt', symbol: 'CPGT', name: 'Chi phí gián tiếp' }))).toBe('overhead');
+    expect(inferProjectCostCategoryFromCostItem(item({ id: 'cpng', symbol: 'CPNG', name: 'Chi phí ngoại giao' }))).toBe('overhead');
     expect(inferProjectCostCategoryFromCostItem(item({ id: 'cpql', symbol: 'CPQL', name: 'Chi phí quản lý chung' }))).toBe('overhead');
     expect(inferProjectCostCategoryFromCostItem(item({ id: 'cpl', symbol: 'CPL', name: 'Chi phí lương nhân viên' }))).toBe('overhead');
+    expect(inferProjectCostCategoryFromCostItem(item({ id: 'cpl1', symbol: 'CPL1', name: 'Chi phí lương BCH công trường' }))).toBe('overhead');
     expect(inferProjectCostCategoryFromCostItem(item({ id: 'cpc', symbol: 'CPC', name: 'Chi phí chung' }))).toBe('overhead');
     expect(inferProjectCostCategoryFromCostItem(item({ id: 'other', symbol: 'CPK', name: 'Chi phí khác' }))).toBe('other');
+
+    // Test explicit category override
+    expect(inferProjectCostCategoryFromCostItem(item({ id: 'custom', symbol: 'CPNG', name: 'Chi phí ngoại giao', category: 'other' }))).toBe('other');
+    expect(inferProjectCostCategoryFromCostItem(item({ id: 'custom2', symbol: 'CUSTOM', name: 'Giao thầu phần móng', category: 'subcontract' }))).toBe('subcontract');
+
+    // Test keyword fallback on name
+    expect(inferProjectCostCategoryFromCostItem(item({ id: 'kw1', symbol: 'X1', name: 'Mua sắm vật tư xây dựng' }))).toBe('materials');
+    expect(inferProjectCostCategoryFromCostItem(item({ id: 'kw2', symbol: 'X2', name: 'Thuê thợ chính thi công' }))).toBe('labor');
   });
 });

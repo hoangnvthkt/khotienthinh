@@ -5366,6 +5366,7 @@ export interface ContractCostItem {
   parentId?: string | null;
   symbol: string;
   name: string;
+  category?: ProjectCostCategory | null;
   costType?: string;
   description?: string;
   status: ContractCatalogStatus;

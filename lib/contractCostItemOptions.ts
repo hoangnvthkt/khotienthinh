@@ -81,14 +81,43 @@ export const resolveContractCostItem = (
 export const inferProjectCostCategoryFromCostItem = (
   itemOrSymbol?: ContractCostItem | string | null,
 ): ProjectCostCategory => {
-  const symbol = typeof itemOrSymbol === 'string'
-    ? itemOrSymbol
-    : itemOrSymbol?.symbol;
-  const normalized = String(symbol || '').trim().toUpperCase();
-  if (normalized === 'CPVL') return 'materials';
-  if (normalized === 'CPNC') return 'labor';
-  if (normalized === 'CPMTC') return 'machinery';
-  if (['CPQL', 'CPL', 'CPC'].includes(normalized)) return 'overhead';
+  if (!itemOrSymbol) return 'other';
+
+  // 1. Check explicit metadata category set on item
+  if (typeof itemOrSymbol === 'object' && itemOrSymbol.category) {
+    return itemOrSymbol.category;
+  }
+
+  const symbol = (typeof itemOrSymbol === 'string' ? itemOrSymbol : itemOrSymbol.symbol || '').trim().toUpperCase();
+  const name = (typeof itemOrSymbol === 'object' ? itemOrSymbol.name || '' : '').trim().toLowerCase();
+  const costType = (typeof itemOrSymbol === 'object' ? itemOrSymbol.costType || '' : '').trim().toLowerCase();
+  const text = `${name} ${costType}`;
+
+  // 2. Smart Symbol Pattern Match
+  if (['CPVL', 'CPNVL', 'VL', 'NVL', 'VAT_TU', 'VATTU'].includes(symbol) || symbol.startsWith('CPVL') || symbol.startsWith('CPNVL')) {
+    return 'materials';
+  }
+  if (['CPNC', 'NC', 'NHAN_CONG'].includes(symbol) || symbol.startsWith('CPNC')) {
+    return 'labor';
+  }
+  if (['CPMTC', 'CPM', 'MTC', 'MAY'].includes(symbol) || symbol.startsWith('CPMTC')) {
+    return 'machinery';
+  }
+  if (['CPTP', 'TP', 'THAU_PHU'].includes(symbol) || symbol.startsWith('CPTP')) {
+    return 'subcontract';
+  }
+  if (['CPQL', 'CPL', 'CPL1', 'CPGT', 'CPNG', 'CPC', 'CPBH', 'CPVP'].includes(symbol)
+      || symbol.startsWith('CPQL') || symbol.startsWith('CPL') || symbol.startsWith('CPGT') || symbol.startsWith('CPNG')) {
+    return 'overhead';
+  }
+
+  // 3. Fallback Smart Keyword Matching on Name & CostType
+  if (/vật liệu|nguyên vật liệu|vật tư|phụ liệu|vật tư phụ/i.test(text)) return 'materials';
+  if (/nhân công|thợ chính|thợ phụ|tiền công|nhân lực/i.test(text)) return 'labor';
+  if (/máy thi công|giờ máy|ca máy|máy móc|thiết bị thi công/i.test(text)) return 'machinery';
+  if (/thầu phụ|giao thầu|tổ đội thầu|nhà thầu phụ/i.test(text)) return 'subcontract';
+  if (/quản lý|lương|văn phòng|bch|ban chỉ huy|gián tiếp|ngoại giao|tiếp khách|hành chính|bảo hiểm|lễ tết|chi phí chung/i.test(text)) return 'overhead';
+
   return 'other';
 };
 

@@ -326,6 +326,7 @@ export const contractCostItemService = {
       parentId: input.parentId || null,
       symbol: input.symbol.trim(),
       name: input.name.trim(),
+      category: input.category || null,
       costType: input.costType || null,
       description: input.description || null,
       status: input.status || 'active',

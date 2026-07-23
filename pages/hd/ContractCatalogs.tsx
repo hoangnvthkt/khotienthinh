@@ -24,7 +24,9 @@ import {
   ContractServiceCatalogItem,
   BusinessPartner,
   InventoryItem,
+  ProjectCostCategory,
 } from '../../types';
+import { inferProjectCostCategoryFromCostItem } from '../../lib/contractCostItemOptions';
 import {
   contractCatalogInventoryService,
   contractCostItemService,
@@ -104,6 +106,7 @@ const emptyCostItem = (parentId: string | null = null, sortOrder = 0): ContractC
   parentId,
   symbol: '',
   name: '',
+  category: null,
   costType: '',
   description: '',
   status: 'active',
@@ -612,6 +615,26 @@ const MaterialNormTable: React.FC<{
   </div>
 );
 
+const COST_CATEGORY_CONFIG: Record<ProjectCostCategory, { label: string; className: string }> = {
+  materials: { label: 'Vật tư', className: 'bg-orange-50 text-orange-600 border-orange-200' },
+  labor: { label: 'Nhân công', className: 'bg-sky-50 text-sky-600 border-sky-200' },
+  machinery: { label: 'Máy móc', className: 'bg-emerald-50 text-emerald-600 border-emerald-200' },
+  subcontract: { label: 'Thầu phụ', className: 'bg-purple-50 text-purple-600 border-purple-200' },
+  overhead: { label: 'Quản lý chung', className: 'bg-indigo-50 text-indigo-600 border-indigo-200' },
+  other: { label: 'Phát sinh / Khác', className: 'bg-pink-50 text-pink-600 border-pink-200' },
+};
+
+const CategoryBadge: React.FC<{ item: ContractCostItem }> = ({ item }) => {
+  const category = inferProjectCostCategoryFromCostItem(item);
+  const config = COST_CATEGORY_CONFIG[category] || COST_CATEGORY_CONFIG.other;
+  const isExplicit = Boolean(item.category);
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold border ${config.className}`} title={isExplicit ? 'Chỉ định thủ công' : 'Hệ thống tự động suy luận'}>
+      {isExplicit ? '📌 ' : '⚡ '}{config.label}
+    </span>
+  );
+};
+
 const CostItemTreeTable: React.FC<{
   rows: CostTreeRow[];
   expandedIds: Set<string>;
@@ -662,7 +685,10 @@ const CostItemTreeTable: React.FC<{
                   <span className="w-6" />
                 )}
                 <div>
-                  <div className="font-bold text-slate-800 dark:text-white">{row.item.name}</div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-bold text-slate-800 dark:text-white">{row.item.name}</span>
+                    <CategoryBadge item={row.item} />
+                  </div>
                   {row.item.costType && <div className="text-xs font-bold text-slate-400">Loại: {row.item.costType}</div>}
                 </div>
               </div>
