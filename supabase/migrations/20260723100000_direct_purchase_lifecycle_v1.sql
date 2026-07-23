@@ -18,7 +18,8 @@ begin
 
   if new.status = old.status then
     if old.status <> 'draft'
-      and (to_jsonb(new) - 'updated_at') <> (to_jsonb(old) - 'updated_at') then
+      and (to_jsonb(new) - array['updated_at', 'wms_transaction_id', 'last_action_by', 'last_action_at'])
+        <> (to_jsonb(old) - array['updated_at', 'wms_transaction_id', 'last_action_by', 'last_action_at']) then
       raise exception 'Chỉ sửa được phiếu mua nóng ở trạng thái Nháp.';
     end if;
     return new;
