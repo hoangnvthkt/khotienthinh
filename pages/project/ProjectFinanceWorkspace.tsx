@@ -12,6 +12,7 @@ import {
   Edit2,
   ExternalLink,
   FileText,
+  Filter,
   Landmark,
   Loader2,
   Paperclip,
@@ -19,6 +20,7 @@ import {
   QrCode,
   ReceiptText,
   RefreshCcw,
+  RotateCcw,
   Search,
   Save,
   Trash2,
@@ -37,6 +39,7 @@ import {
   PaymentScheduleMilestoneType,
   PaymentScheduleStatus,
   ContractCostItem,
+  ProjectCostCategory,
   ProjectTransaction,
   ProjectTxType,
   CashFund,
@@ -79,9 +82,12 @@ import { partnerService } from '../../lib/partnerService';
 import { paymentService } from '../../lib/projectService';
 import {
   buildProjectTransactionsFromImportRows,
+  parseProjectTransactionImportPreviewRows,
+  ProjectTransactionImportPreviewResult,
   PROJECT_TRANSACTION_IMPORT_HEADERS,
   PROJECT_TRANSACTION_IMPORT_SAMPLE_ROWS,
 } from '../../lib/projectTransactionImport';
+import { ProjectTransactionImportPreviewModal } from '../../components/project/ProjectTransactionImportPreviewModal';
 import { buildDocumentTracePath } from '../../lib/documentTraceService';
 import { supabase } from '../../lib/supabase';
 import { useApp } from '../../context/AppContext';
@@ -1842,8 +1848,25 @@ const ReceivablesTable = ({
   );
 };
 
+const CATEGORY_LABEL_MAP: Record<ProjectCostCategory, string> = {
+  materials: '🧱 Vật tư / Vật liệu',
+  labor: '👷 Nhân công',
+  machinery: '⚙️ Máy móc / Máy thi công',
+  subcontract: '🏗️ Thầu phụ / Giao thầu',
+  overhead: '📋 Quản lý chung / Lương',
+  other: '📦 Phát sinh / Chi phí khác',
+};
+
+const SOURCE_LABEL_MAP: Record<string, string> = {
+  manual: '✍️ Nhập tay',
+  import: '📥 Import Excel',
+  workflow: '⚡ Duyệt Workflow',
+};
+
 const LedgerTable = ({
   rows,
+  costItems = [],
+  partners = [],
   canManage,
   onCreate,
   onDownloadTemplate,
@@ -1852,6 +1875,8 @@ const LedgerTable = ({
   onDelete,
 }: {
   rows: ProjectFinanceLedgerRow[];
+  costItems?: ContractCostItem[];
+  partners?: BusinessPartner[];
   canManage?: boolean;
   onCreate?: () => void;
   onDownloadTemplate?: () => void;
@@ -1860,28 +1885,190 @@ const LedgerTable = ({
   onDelete?: (row: ProjectFinanceLedgerRow) => void;
 }) => {
   const [search, setSearch] = useState('');
-  const filtered = rows.filter(row => [
-    row.description,
-    row.sourceRef,
-    row.category,
-    row.type,
-    row.contractCostItemSymbolSnapshot,
-    row.contractCostItemNameSnapshot,
-    row.counterpartyName,
-    row.invoiceNo,
-  ].some(value => String(value || '').toLowerCase().includes(search.toLowerCase())));
+  const [selectedCategory, setSelectedCategory] = useState<ProjectCostCategory | 'all'>('all');
+  const [selectedCostItemId, setSelectedCostItemId] = useState<string>('');
+  const [selectedSource, setSelectedSource] = useState<'all' | 'manual' | 'import' | 'workflow'>('all');
+  const [fromDate, setFromDate] = useState<string>('');
+  const [toDate, setToDate] = useState<string>('');
+  const [showAdvancedFilter, setShowAdvancedFilter] = useState(false);
+
+  const costItemOptions = useMemo(() => buildContractCostItemOptions(costItems), [costItems]);
+
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (search.trim()) count++;
+    if (selectedCategory !== 'all') count++;
+    if (selectedCostItemId) count++;
+    if (selectedSource !== 'all') count++;
+    if (fromDate) count++;
+    if (toDate) count++;
+    return count;
+  }, [search, selectedCategory, selectedCostItemId, selectedSource, fromDate, toDate]);
+
+  const resetFilters = () => {
+    setSearch('');
+    setSelectedCategory('all');
+    setSelectedCostItemId('');
+    setSelectedSource('all');
+    setFromDate('');
+    setToDate('');
+  };
+
+  const setShortcutDateRange = (type: 'this_month' | 'last_month' | 'all') => {
+    if (type === 'all') {
+      setFromDate('');
+      setToDate('');
+      return;
+    }
+    const now = new Date();
+    if (type === 'this_month') {
+      const first = new Date(now.getFullYear(), now.getMonth(), 1);
+      const last = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      setFromDate(first.toISOString().slice(0, 10));
+      setToDate(last.toISOString().slice(0, 10));
+    } else if (type === 'last_month') {
+      const first = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const last = new Date(now.getFullYear(), now.getMonth(), 0);
+      setFromDate(first.toISOString().slice(0, 10));
+      setToDate(last.toISOString().slice(0, 10));
+    }
+  };
+
+  const filtered = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return rows.filter(row => {
+      // 1. Keyword search
+      if (query) {
+        const matchesKeyword = [
+          row.description,
+          row.sourceRef,
+          row.category,
+          row.type,
+          row.contractCostItemSymbolSnapshot,
+          row.contractCostItemNameSnapshot,
+          row.counterpartyName,
+          row.invoiceNo,
+        ].some(value => String(value || '').toLowerCase().includes(query));
+        if (!matchesKeyword) return false;
+      }
+
+      // 2. Category filter
+      if (selectedCategory !== 'all' && row.category !== selectedCategory) {
+        return false;
+      }
+
+      // 3. Cost Item filter
+      if (selectedCostItemId) {
+        const targetCostItem = costItems.find(c => c.id === selectedCostItemId);
+        const matchesCostItem = row.contractCostItemId === selectedCostItemId
+          || (targetCostItem && (
+            row.contractCostItemSymbolSnapshot === targetCostItem.symbol
+            || row.contractCostItemNameSnapshot === targetCostItem.name
+          ));
+        if (!matchesCostItem) return false;
+      }
+
+      // 4. Source filter
+      if (selectedSource !== 'all' && row.source !== selectedSource) {
+        return false;
+      }
+
+      // 5. Date range filter
+      if (fromDate && row.date < fromDate) return false;
+      if (toDate && row.date > toDate) return false;
+
+      return true;
+    });
+  }, [rows, search, selectedCategory, selectedCostItemId, selectedSource, fromDate, toDate, costItems]);
+
+  const filteredExpenseTotal = useMemo(() =>
+    filtered.filter(r => r.type === 'expense').reduce((s, r) => s + Math.abs(r.amount), 0),
+  [filtered]);
+
+  const filteredRevenueTotal = useMemo(() =>
+    filtered.filter(r => r.type !== 'expense').reduce((s, r) => s + Math.abs(r.amount), 0),
+  [filtered]);
+
   return (
     <div className="space-y-3">
+      {/* Search & Actions Bar */}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div className="relative max-w-sm">
-          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            value={search}
-            onChange={event => setSearch(event.target.value)}
-            placeholder="Tìm giao dịch..."
-            className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-xs font-bold outline-none focus:border-orange-300 dark:border-slate-700 dark:bg-slate-900"
-          />
+        <div className="flex flex-wrap items-center gap-2 flex-1">
+          <div className="relative min-w-[240px] max-w-sm flex-1">
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              value={search}
+              onChange={event => setSearch(event.target.value)}
+              placeholder="Tìm nội dung, mã chứng từ, đối tác..."
+              className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-8 text-xs font-bold outline-none focus:border-orange-300 dark:border-slate-700 dark:bg-slate-900"
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+
+          {/* Toggle Advanced Filter Button */}
+          <button
+            type="button"
+            onClick={() => setShowAdvancedFilter(prev => !prev)}
+            className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-bold transition-all ${
+              showAdvancedFilter || activeFilterCount > 0
+                ? 'border-orange-300 bg-orange-50 text-orange-700 dark:border-orange-900 dark:bg-orange-950/40 dark:text-orange-300'
+                : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300'
+            }`}
+          >
+            <Filter size={14} />
+            <span>Bộ lọc</span>
+            {activeFilterCount > 0 && (
+              <span className="ml-0.5 rounded-full bg-orange-500 px-1.5 py-0.2 text-[10px] font-black text-white">
+                {activeFilterCount}
+              </span>
+            )}
+          </button>
+
+          {/* Quick Date Range Shortcuts */}
+          <div className="hidden md:inline-flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg">
+            <button
+              type="button"
+              onClick={() => setShortcutDateRange('this_month')}
+              className="px-2 py-1 text-[11px] font-bold text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 rounded-md"
+            >
+              Tháng này
+            </button>
+            <button
+              type="button"
+              onClick={() => setShortcutDateRange('last_month')}
+              className="px-2 py-1 text-[11px] font-bold text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 rounded-md"
+            >
+              Tháng trước
+            </button>
+            <button
+              type="button"
+              onClick={() => setShortcutDateRange('all')}
+              className="px-2 py-1 text-[11px] font-bold text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 rounded-md"
+            >
+              Tất cả
+            </button>
+          </div>
+
+          {activeFilterCount > 0 && (
+            <button
+              type="button"
+              onClick={resetFilters}
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-lg"
+              title="Xóa toàn bộ bộ lọc"
+            >
+              <RotateCcw size={13} /> Đặt lại
+            </button>
+          )}
         </div>
+
         {canManage && (
           <div className="flex flex-wrap gap-2">
             <button type="button" onClick={onDownloadTemplate} className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800">
@@ -1896,7 +2083,106 @@ const LedgerTable = ({
           </div>
         )}
       </div>
-      {filtered.length === 0 ? <EmptyState label="Chưa có giao dịch tài chính phù hợp." /> : (
+
+      {/* Advanced Filter Panel */}
+      {showAdvancedFilter && (
+        <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/60 p-3.5 space-y-3 animate-in fade-in duration-150">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+            {/* Nhóm chi phí */}
+            <div>
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                Nhóm chi phí
+              </label>
+              <select
+                value={selectedCategory}
+                onChange={e => setSelectedCategory(e.target.value as any)}
+                className="w-full rounded-lg border border-slate-200 bg-white p-2 font-bold text-slate-700 outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
+              >
+                <option value="all">Tất cả nhóm chi phí</option>
+                {Object.entries(CATEGORY_LABEL_MAP).map(([key, label]) => (
+                  <option key={key} value={key}>{label}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Khoản mục chi phí */}
+            <div>
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                Khoản mục chi phí
+              </label>
+              <select
+                value={selectedCostItemId}
+                onChange={e => setSelectedCostItemId(e.target.value)}
+                className="w-full rounded-lg border border-slate-200 bg-white p-2 font-bold text-slate-700 outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
+              >
+                <option value="">Tất cả khoản mục</option>
+                {costItemOptions.map(opt => (
+                  <option key={opt.item.id} value={opt.item.id}>
+                    {`${'-- '.repeat(opt.depth)}${opt.displayIndex} - ${opt.item.symbol} - ${opt.item.name}`}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Nguồn phát sinh */}
+            <div>
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                Nguồn phát sinh
+              </label>
+              <select
+                value={selectedSource}
+                onChange={e => setSelectedSource(e.target.value as any)}
+                className="w-full rounded-lg border border-slate-200 bg-white p-2 font-bold text-slate-700 outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
+              >
+                <option value="all">Tất cả nguồn</option>
+                {Object.entries(SOURCE_LABEL_MAP).map(([key, label]) => (
+                  <option key={key} value={key}>{label}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Khoảng thời gian */}
+            <div>
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                Từ ngày - Đến ngày
+              </label>
+              <div className="grid grid-cols-2 gap-1.5">
+                <input
+                  type="date"
+                  value={fromDate}
+                  onChange={e => setFromDate(e.target.value)}
+                  className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 font-mono text-xs font-bold outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
+                />
+                <input
+                  type="date"
+                  value={toDate}
+                  onChange={e => setToDate(e.target.value)}
+                  className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 font-mono text-xs font-bold outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Filtered Metrics Summary Row */}
+      {activeFilterCount > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2 rounded-xl bg-orange-50/60 dark:bg-orange-950/20 border border-orange-200/60 dark:border-orange-900/40 text-xs">
+          <div className="font-bold text-slate-700 dark:text-slate-300">
+            Kết quả lọc: <span className="font-black text-orange-600">{filtered.length}</span> / {rows.length} giao dịch
+          </div>
+          <div className="flex items-center gap-4 text-xs font-black">
+            {filteredExpenseTotal > 0 && (
+              <span className="text-red-600">Tổng chi: -{fmtMoney(filteredExpenseTotal)}</span>
+            )}
+            {filteredRevenueTotal > 0 && (
+              <span className="text-emerald-600">Tổng thu: +{fmtMoney(filteredRevenueTotal)}</span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {filtered.length === 0 ? <EmptyState label="Chưa có giao dịch tài chính phù hợp bộ lọc." /> : (
         <div className="overflow-x-auto rounded-lg border border-slate-100 bg-white dark:border-slate-700 dark:bg-slate-900">
           <table className="w-full min-w-[780px] text-left">
             <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-wide text-slate-400 dark:bg-slate-800">
@@ -1993,6 +2279,8 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
   const [transactionForm, setTransactionForm] = useState<ProjectTransaction | null>(null);
   const [transactionFiles, setTransactionFiles] = useState<File[]>([]);
   const [savingTransaction, setSavingTransaction] = useState(false);
+  const [importPreviewResult, setImportPreviewResult] = useState<ProjectTransactionImportPreviewResult | null>(null);
+  const [savingImportTransactions, setSavingImportTransactions] = useState(false);
   const [poPaymentForm, setPoPaymentForm] = useState<PurchaseOrderPaymentForm | null>(null);
   const [savingPoPayment, setSavingPoPayment] = useState(false);
   const [supplierPayableDrawer, setSupplierPayableDrawer] = useState<SupplierPayableDocumentDrawerState | null>(null);
@@ -2952,7 +3240,8 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
       const importPartners = partners.length > 0 ? partners : await partnerService.list();
       if (contractCostItems.length === 0 && importCostItems.length > 0) setContractCostItems(importCostItems);
       if (partners.length === 0 && importPartners.length > 0) setPartners(importPartners);
-      const result = buildProjectTransactionsFromImportRows(rows, {
+
+      const previewResult = parseProjectTransactionImportPreviewRows(rows, {
         projectId: projectId || null,
         projectFinanceId: '',
         constructionSiteId,
@@ -2960,17 +3249,28 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
         partners: importPartners,
         createdBy: user?.id,
       });
-      if (result.transactions.length === 0) {
-        toast.warning('Không có giao dịch hợp lệ', `Bỏ qua ${result.skippedMissingCostItem} dòng chi phí chưa map được khoản mục.`);
+
+      if (previewResult.items.length === 0) {
+        toast.warning('File rỗng', 'File Excel không chứa dòng dữ liệu nào.');
         return;
       }
-      await addProjectTransactions(result.transactions);
-      const skippedText = result.skippedMissingCostItem > 0
-        ? ` Bỏ qua ${result.skippedMissingCostItem} dòng chi phí chưa map được khoản mục.`
-        : '';
-      toast.success(`Đã import ${result.transactions.length} giao dịch`, `${result.modeMessage}.${skippedText}`);
+
+      setImportPreviewResult(previewResult);
     } catch (err: any) {
       toast.error('Không import được giao dịch', err?.message || 'Vui lòng kiểm tra file Excel.');
+    }
+  };
+
+  const confirmImportPreview = async (selectedTransactions: ProjectTransaction[]) => {
+    setSavingImportTransactions(true);
+    try {
+      await addProjectTransactions(selectedTransactions);
+      toast.success(`Đã import thành công ${selectedTransactions.length} giao dịch`, 'Các giao dịch đã được ghi nhận vào Sổ giao dịch.');
+      setImportPreviewResult(null);
+    } catch (err: any) {
+      toast.error('Lỗi khi import giao dịch', err?.message || 'Không thể lưu các giao dịch đã chọn.');
+    } finally {
+      setSavingImportTransactions(false);
     }
   };
 
@@ -3347,6 +3647,8 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
               </div>
               <LedgerTable
                 rows={visibleLedgerRows}
+                costItems={contractCostItems}
+                partners={partners}
                 canManage={canManageLedger}
                 onCreate={openNewTransaction}
                 onDownloadTemplate={downloadTransactionImportTemplate}
@@ -3395,6 +3697,17 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
         className="hidden"
         onChange={importLedgerTransactions}
       />
+      {importPreviewResult && (
+        <ProjectTransactionImportPreviewModal
+          isOpen={Boolean(importPreviewResult)}
+          costItems={contractCostItems}
+          partners={partners}
+          initialResult={importPreviewResult}
+          saving={savingImportTransactions}
+          onClose={() => setImportPreviewResult(null)}
+          onConfirm={confirmImportPreview}
+        />
+      )}
       {poPaymentForm && (
         <PurchaseOrderPaymentModal
           form={poPaymentForm}

@@ -148,26 +148,99 @@ const isTotalRow = (row: Record<string, unknown>) =>
       || lower.includes('total'));
   });
 
-export const buildProjectTransactionsFromImportRows = (
+import { loadXlsx } from './loadXlsx';
+
+export interface ProjectTransactionImportPreviewItem {
+  rowNumber: number;
+  selected: boolean;
+  isTotal: boolean;
+  status: 'valid' | 'warning_missing_cost_item' | 'invalid_amount';
+  warningMessage?: string;
+  rawCostItemInput: string;
+  rawPartnerInput: string;
+  tx: ProjectTransaction;
+}
+
+export interface ProjectTransactionImportPreviewResult {
+  items: ProjectTransactionImportPreviewItem[];
+  totalRows: number;
+  totalExpenseCount: number;
+  totalRevenueCount: number;
+  totalExpenseAmount: number;
+  totalRevenueAmount: number;
+  warningCount: number;
+}
+
+export const downloadProjectTransactionImportTemplate = async () => {
+  const XLSX = await loadXlsx();
+  const ws = XLSX.utils.json_to_sheet([...PROJECT_TRANSACTION_IMPORT_SAMPLE_ROWS]);
+  ws['!cols'] = [
+    { wch: 16 },
+    { wch: 16 },
+    { wch: 16 },
+    { wch: 32 },
+    { wch: 14 },
+    { wch: 16 },
+    { wch: 24 },
+    { wch: 20 },
+    { wch: 20 },
+    { wch: 18 },
+  ];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Mau_Giao_Dich');
+  const wbOut = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  const blob = new Blob([wbOut], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'Mau_Nhap_So_Giao_Dich_Tai_Chinh.xlsx';
+  link.click();
+  URL.revokeObjectURL(url);
+};
+
+export const parseProjectTransactionImportPreviewRows = (
   rows: Record<string, unknown>[],
   input: BuildImportInput,
-): ProjectTransactionImportResult => {
+): ProjectTransactionImportPreviewResult => {
   const now = input.now || new Date().toISOString();
   const idFactory = input.idFactory || (() => crypto.randomUUID());
-  const parsed = rows.map(row => {
+
+  const items: ProjectTransactionImportPreviewItem[] = rows.map((row, index) => {
     const rawType = normalizeLookup(findCol(row, ['loại giao dịch', 'loai giao dich', 'loại', 'loai', 'type']));
     const type = typeMap[rawType] || 'expense';
     const amount = parseAmount(findCol(row, ['số tiền', 'so tien', 'amount', 'thành tiền', 'thanh tien', 'giá trị', 'gia tri', 'value']));
-    const rawCostItem = findCol(row, ['mã khoản mục', 'ma khoan muc', 'khoản mục chi phí', 'khoan muc chi phi', 'cost_item', 'cost item', 'cost_item_symbol', 'cost item symbol', 'mã chi phí', 'ma chi phi']);
+    const rawCostItem = lookup(findCol(row, ['mã khoản mục', 'ma khoan muc', 'khoản mục chi phí', 'khoan muc chi phi', 'cost_item', 'cost item', 'cost_item_symbol', 'cost item symbol', 'mã chi phí', 'ma chi phi']));
     const costItem = type === 'expense' ? resolveContractCostItem(input.costItems, rawCostItem) : null;
-    const rawPartnerCode = findCol(row, ['mã đối tác', 'ma doi tac', 'mã đối tượng', 'ma doi tuong', 'partner code', 'partner_code', 'mã ncc', 'ma ncc']);
-    const rawPartnerName = findCol(row, ['đối tác', 'doi tac', 'đối tượng', 'doi tuong', 'counterparty', 'nhà cung cấp', 'nha cung cap', 'ncc', 'khách hàng', 'khach hang']);
+    const rawPartnerCode = lookup(findCol(row, ['mã đối tác', 'ma doi tac', 'mã đối tượng', 'ma doi tuong', 'partner code', 'partner_code', 'mã ncc', 'ma ncc']));
+    const rawPartnerName = lookup(findCol(row, ['đối tác', 'doi tac', 'đối tượng', 'doi tuong', 'counterparty', 'nhà cung cấp', 'nha cung cap', 'ncc', 'khách hàng', 'khach hang']));
     const partner = resolveProjectTransactionPartner(input.partners, rawPartnerCode) || resolveProjectTransactionPartner(input.partners, rawPartnerName);
-    const fallbackCounterpartyName = lookup(rawPartnerName) || lookup(rawPartnerCode) || null;
+    const fallbackCounterpartyName = rawPartnerName || rawPartnerCode || null;
     const category: ProjectCostCategory = costItem ? inferProjectCostCategoryFromCostItem(costItem) : 'other';
     const rawInvoiceDate = findCol(row, ['ngày hóa đơn/chứng từ', 'ngay hoa don/chung tu', 'ngày hóa đơn', 'ngay hoa don', 'ngày chứng từ', 'ngay chung tu', 'invoice_date', 'invoice date', 'document_date', 'document date']);
 
+    const isTotal = isTotalRow(row);
+    const missingCostItem = type === 'expense' && !costItem;
+    const invalidAmount = amount <= 0;
+
+    let status: ProjectTransactionImportPreviewItem['status'] = 'valid';
+    let warningMessage: string | undefined;
+
+    if (invalidAmount) {
+      status = 'invalid_amount';
+      warningMessage = 'Số tiền <= 0';
+    } else if (missingCostItem) {
+      status = 'warning_missing_cost_item';
+      warningMessage = rawCostItem ? `Không tìm thấy khoản mục "${rawCostItem}"` : 'Chưa nhập khoản mục chi phí';
+    }
+
     return {
+      rowNumber: index + 1,
+      selected: !invalidAmount,
+      isTotal,
+      status,
+      warningMessage,
+      rawCostItemInput: rawCostItem,
+      rawPartnerInput: rawPartnerName || rawPartnerCode,
       tx: {
         id: idFactory(),
         projectId: input.projectId || null,
@@ -189,23 +262,46 @@ export const buildProjectTransactionsFromImportRows = (
         createdBy: input.createdBy || undefined,
         createdAt: now,
       } as ProjectTransaction,
-      isTotal: isTotalRow(row),
-      missingCostItem: type === 'expense' && !costItem,
     };
-  }).filter(item => item.tx.amount > 0);
+  });
 
-  const skippedInvalidAmount = rows.length - parsed.length;
-  const totalRows = parsed.filter(item => item.isTotal);
-  const detailRows = parsed.filter(item => !item.isTotal);
-  const candidateRows = totalRows.length > 0 ? totalRows : detailRows;
-  const skippedMissingCostItem = candidateRows.filter(item => item.missingCostItem).length;
-  const validRows = candidateRows.filter(item => !item.missingCostItem);
+  const validItems = items.filter(item => item.tx.amount > 0);
+  const totalExpenseCount = validItems.filter(item => item.tx.type === 'expense').length;
+  const totalRevenueCount = validItems.filter(item => item.tx.type !== 'expense').length;
+  const totalExpenseAmount = validItems.filter(item => item.tx.type === 'expense').reduce((sum, item) => sum + Number(item.tx.amount || 0), 0);
+  const totalRevenueAmount = validItems.filter(item => item.tx.type !== 'expense').reduce((sum, item) => sum + Number(item.tx.amount || 0), 0);
+  const warningCount = validItems.filter(item => item.status === 'warning_missing_cost_item').length;
+
+  return {
+    items,
+    totalRows: rows.length,
+    totalExpenseCount,
+    totalRevenueCount,
+    totalExpenseAmount,
+    totalRevenueAmount,
+    warningCount,
+  };
+};
+
+export const buildProjectTransactionsFromImportRows = (
+  rows: Record<string, unknown>[],
+  input: BuildImportInput,
+): ProjectTransactionImportResult => {
+  const preview = parseProjectTransactionImportPreviewRows(rows, input);
+  const candidateItems = preview.items.filter(item => item.tx.amount > 0);
+  const totalRows = candidateItems.filter(item => item.isTotal);
+  const detailRows = candidateItems.filter(item => !item.isTotal);
+  const activeItems = totalRows.length > 0 ? totalRows : detailRows;
+
+  const validItems = activeItems.filter(item => item.tx.type === 'expense' && !item.tx.contractCostItemId ? false : true);
+  const skippedMissingCostItem = activeItems.length - validItems.length;
+  const skippedInvalidAmount = preview.totalRows - candidateItems.length;
 
   if (totalRows.length > 0) {
-    const amount = validRows.reduce((sum, item) => sum + Number(item.tx.amount || 0), 0);
-    const description = validRows.map(item => item.tx.description).filter(Boolean).join('; ') || 'Tổng import từ Excel';
+    const amount = validItems.reduce((sum, item) => sum + Number(item.tx.amount || 0), 0);
+    const description = validItems.map(item => item.tx.description).filter(Boolean).join('; ') || 'Tổng import từ Excel';
     return {
-      transactions: validRows.length > 0 ? [{ ...validRows[0].tx, amount, description }] : [],
+      transactions: validItems.length > 0 ? [{ ...validItems[0].tx, amount, description }] : [],
       skippedMissingCostItem,
       skippedInvalidAmount,
       modeMessage: totalRows.length === 1
@@ -215,9 +311,9 @@ export const buildProjectTransactionsFromImportRows = (
   }
 
   return {
-    transactions: validRows.map(item => item.tx),
+    transactions: validItems.map(item => item.tx),
     skippedMissingCostItem,
     skippedInvalidAmount,
-    modeMessage: `Không có dòng tổng -> import ${validRows.length} dòng chi tiết`,
+    modeMessage: `Không có dòng tổng -> import ${validItems.length} dòng chi tiết`,
   };
 };

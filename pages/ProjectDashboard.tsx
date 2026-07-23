@@ -48,9 +48,12 @@ import {
 import { partnerService } from '../lib/partnerService';
 import {
     buildProjectTransactionsFromImportRows,
+    parseProjectTransactionImportPreviewRows,
+    ProjectTransactionImportPreviewResult,
     PROJECT_TRANSACTION_IMPORT_HEADERS,
     PROJECT_TRANSACTION_IMPORT_SAMPLE_ROWS,
 } from '../lib/projectTransactionImport';
+import { ProjectTransactionImportPreviewModal } from '../components/project/ProjectTransactionImportPreviewModal';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
 import {
     PROJECT_TAB_PERMISSIONS,
@@ -487,6 +490,8 @@ const ProjectDashboard: React.FC = () => {
     const [customerContracts, setCustomerContracts] = useState<CustomerContract[]>([]);
     const [contractCostItems, setContractCostItems] = useState<ContractCostItem[]>([]);
     const [partners, setPartners] = useState<BusinessPartner[]>([]);
+    const [importPreviewResult, setImportPreviewResult] = useState<ProjectTransactionImportPreviewResult | null>(null);
+    const [savingImportTransactions, setSavingImportTransactions] = useState(false);
     const [projectMasterDataLoading, setProjectMasterDataLoading] = useState(false);
     const [workGroups, setWorkGroups] = useState<WorkGroupWithMembers[]>([]);
     const [workGroupsLoading, setWorkGroupsLoading] = useState(false);
@@ -2128,7 +2133,7 @@ const ProjectDashboard: React.FC = () => {
                 if (contractCostItems.length === 0 && importCostItems.length > 0) setContractCostItems(importCostItems);
                 const importPartners = partners.length > 0 ? partners : await partnerService.list();
                 if (partners.length === 0 && importPartners.length > 0) setPartners(importPartners);
-                const result = buildProjectTransactionsFromImportRows(rows, {
+                const previewResult = parseProjectTransactionImportPreviewRows(rows, {
                     projectId: selectedProject?.id || null,
                     projectFinanceId: financeId!,
                     constructionSiteId: effectiveSiteId,
@@ -2137,19 +2142,12 @@ const ProjectDashboard: React.FC = () => {
                     createdBy: user.id,
                 });
 
-                if (result.transactions.length > 0) {
-                    await addProjectTransactions(result.transactions);
-                    const skippedMessage = result.skippedMissingCostItem > 0
-                        ? ` Bỏ qua ${result.skippedMissingCostItem} dòng chi phí chưa map được khoản mục.`
-                        : '';
-                    toast.success(`Import thành công ${result.transactions.length} giao dịch`, `${result.modeMessage}.${skippedMessage}`);
-                } else {
-                    const sampleKeys = rows.length > 0 ? Object.keys(rows[0]).join(', ') : 'N/A';
-                    const skippedMessage = result.skippedMissingCostItem > 0
-                        ? ` Đã bỏ qua ${result.skippedMissingCostItem} dòng chi phí chưa map được khoản mục.`
-                        : '';
-                    toast.warning('Không tìm thấy giao dịch hợp lệ', `Cột trong file: ${sampleKeys}. Cần ít nhất cột Số tiền/Amount.${skippedMessage}`);
+                if (previewResult.items.length === 0) {
+                    toast.warning('File rỗng', 'File Excel không có dữ liệu giao dịch.');
+                    return;
                 }
+
+                setImportPreviewResult(previewResult);
             } catch (err: any) {
                 logApiError('ProjectDashboard.transactionImport', err);
                 toast.error('Lỗi đọc file giao dịch', getApiErrorMessage(err, 'Không thể đọc file Excel giao dịch.'));
@@ -2157,6 +2155,20 @@ const ProjectDashboard: React.FC = () => {
         };
         reader.readAsArrayBuffer(file);
         e.target.value = '';
+    };
+
+    const confirmImportPreview = async (selectedTransactions: ProjectTransaction[]) => {
+        setSavingImportTransactions(true);
+        try {
+            await addProjectTransactions(selectedTransactions);
+            toast.success(`Import thành công ${selectedTransactions.length} giao dịch`, 'Các giao dịch đã được ghi nhận vào hệ thống.');
+            setImportPreviewResult(null);
+        } catch (err: any) {
+            logApiError('ProjectDashboard.confirmImportPreview', err);
+            toast.error('Lỗi khi import giao dịch', getApiErrorMessage(err, 'Không thể lưu các giao dịch đã chọn.'));
+        } finally {
+            setSavingImportTransactions(false);
+        }
     };
 
     const handleDeleteTx = async (id: string) => {
@@ -3812,6 +3824,18 @@ const ProjectDashboard: React.FC = () => {
                     loading={projectImporting}
                     onClose={() => setProjectImportPreview(null)}
                     onConfirm={handleConfirmProjectImport}
+                />
+            )}
+
+            {importPreviewResult && (
+                <ProjectTransactionImportPreviewModal
+                    isOpen={Boolean(importPreviewResult)}
+                    costItems={contractCostItems}
+                    partners={partners}
+                    initialResult={importPreviewResult}
+                    saving={savingImportTransactions}
+                    onClose={() => setImportPreviewResult(null)}
+                    onConfirm={confirmImportPreview}
                 />
             )}
 
