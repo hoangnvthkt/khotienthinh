@@ -2766,6 +2766,7 @@ export interface PurchaseOrderDeliveryBatch {
   plannedDeliveryDate?: string | null;
   status: PurchaseOrderDeliveryBatchStatus;
   fulfillmentBatchIds?: string[];
+  wmsTransactionId?: string | null;
   supplementalApprovalId?: string | null;
   note?: string | null;
   createdBy?: string | null;
@@ -3057,9 +3058,20 @@ export interface MaterialCodeRequest {
   updatedAt?: string | null;
 }
 
+export interface WmsTransactionAttachment {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  fileSize: number;
+  storagePath: string;
+  uploadedAt: string;
+  uploadedBy: string;
+}
+
 export interface TransactionItem {
   itemId: string;
   quantity: number;            // Số lượng theo đơn vị tồn kho (Cây, Cái...)
+  orderedQty?: number;         // Số lượng baseline trên PO/phiếu tại thời điểm tạo WMS
   price?: number;              // Snapshot giá tại thời điểm giao dịch
   materialRequestId?: string;
   requestLineId?: string;
@@ -3278,6 +3290,7 @@ export interface Transaction {
   sourceId?: string | null;
   relatedRequestId?: string; // Link to MaterialRequest
   pendingItems?: InventoryItem[]; // Full metadata for new items created during bulk import
+  attachments?: WmsTransactionAttachment[];
 }
 
 export type InventoryLedgerTransactionType =

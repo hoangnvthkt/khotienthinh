@@ -757,6 +757,7 @@ const poDeliveryLineToDb = (line: PurchaseOrderDeliveryLine): any => {
 const poDeliveryBatchFromRows = (batch: any, lineRows: any[]): PurchaseOrderDeliveryBatch => ({
     ...(fromDb(batch) as PurchaseOrderDeliveryBatch),
     fulfillmentBatchIds: batch.fulfillment_batch_ids || [],
+    wmsTransactionId: batch.wms_transaction_id || null,
     supplementalApprovalId: batch.supplemental_approval_id || null,
     deliveryNo: Number(batch.delivery_no || 1),
     status: (batch.status || 'planned') as PurchaseOrderDeliveryBatch['status'],
