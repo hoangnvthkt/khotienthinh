@@ -726,6 +726,7 @@ const poDeliveryBatchToDb = (batch: PurchaseOrderDeliveryBatch): any => {
         plannedDeliveryDate: batch.plannedDeliveryDate || null,
         status: batch.status || 'planned',
         fulfillmentBatchIds: batch.fulfillmentBatchIds || [],
+        wmsTransactionId: batch.wmsTransactionId || null,
         supplementalApprovalId: batch.supplementalApprovalId || null,
         note: batch.note || null,
         createdBy: batch.createdBy || null,

@@ -6573,6 +6573,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                         return sum + netReceivedQty * Number(item.unitPrice || 0);
                     }, 0);
                 const getWmsTransactionIdForBatch = (batch: PurchaseOrderDeliveryBatch) => {
+                    if (batch.wmsTransactionId) return batch.wmsTransactionId;
                     const fulfillmentBatch = fulfillmentBatchesForPo.find(item => item.poDeliveryBatchId === batch.id || item.id === batch.fulfillmentBatchIds?.[0]);
                     return fulfillmentBatch?.transactionId || null;
                 };

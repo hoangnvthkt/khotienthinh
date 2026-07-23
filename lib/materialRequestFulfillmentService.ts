@@ -513,6 +513,84 @@ const syncDeliveryGroupStatus = async (deliveryGroupId?: string | null) => {
   if (updateError && !isMissingDeliveryGroupTable(updateError)) throw updateError;
 };
 
+const createProactivePoDeliveryReceiptBatch = async (
+  input: CreatePoDeliveryReceiptBatchInput,
+): Promise<string[]> => {
+  const { po, deliveryBatch } = input;
+  if (deliveryBatch.wmsTransactionId) return [];
+  if (deliveryBatch.status !== 'planned') return [];
+
+  const { data: existingSource, error: existingSourceError } = await supabase
+    .from('transactions')
+    .select('id')
+    .eq('source_type', 'po_delivery_batch')
+    .eq('source_id', deliveryBatch.id)
+    .maybeSingle();
+  if (existingSourceError) throw existingSourceError;
+  if (existingSource?.id) return [];
+
+  const inventoryById = await loadInventoryForPo(po);
+  const poItemByLineId = new Map((po.items || []).map(item => [item.lineId || item.itemId, item]));
+  const poSourceSuffix = po.vendorName ? ` - ${po.vendorName}` : '';
+  const poNumber = formatPoNumber(po.poNumber);
+  const transactionId = `tx-po-delivery-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  const items = (deliveryBatch.lines || []).map(deliveryLine => {
+    const poItem = poItemByLineId.get(deliveryLine.purchaseOrderLineId);
+    if (!poItem) return null;
+    const inventory = inventoryById.get(poItem.itemId);
+    let stockQty = Number(deliveryLine.stockPlannedQty || 0);
+    if (stockQty <= 0) stockQty = poLinePurchaseToStockQty(poItem, Number(deliveryLine.plannedQty || 0), inventory);
+    if (stockQty <= 0) return null;
+    const purchaseUnitPrice = Number(deliveryLine.deliveryUnitPrice ?? poItem.unitPrice ?? 0);
+    return buildPoReceiptTransactionItem(poItem, stockQty, inventory, {
+      quantity: stockQty,
+      orderedQty: stockQty,
+      price: getPoLineStockUnitPrice({ ...poItem, unitPrice: purchaseUnitPrice }, inventory),
+      accountingPrice: purchaseUnitPrice,
+      purchaseOrderDeliveryBatchId: deliveryBatch.id,
+      purchaseOrderDeliveryLineId: deliveryLine.id,
+    });
+  }).filter(Boolean);
+
+  if (items.length === 0) {
+    throw new Error('Đợt giao chưa có số lượng vật tư hợp lệ để tạo phiếu nhận WMS.');
+  }
+
+  const transactionPayload = {
+    id: transactionId,
+    type: TransactionType.IMPORT,
+    date: new Date().toISOString(),
+    items,
+    targetWarehouseId: po.targetWarehouseId,
+    requesterId: input.actorUserId,
+    approverId: input.actorUserId,
+    status: TransactionStatus.PENDING,
+    note: `${poNumber} - đợt ${deliveryBatch.deliveryNo} đang giao${poSourceSuffix}`,
+    sourceType: 'po_delivery_batch',
+    sourceId: deliveryBatch.id,
+  };
+
+  const { error: transactionError } = await supabase
+    .from('transactions')
+    .insert(toDb(transactionPayload));
+  if (transactionError) {
+    if (String(transactionError.code || '') === '23505') return [];
+    throw transactionError;
+  }
+
+  const { error: scheduleError } = await supabase
+    .from('purchase_order_delivery_batches')
+    .update({ wms_transaction_id: transactionId, status: 'wms_pending' })
+    .eq('id', deliveryBatch.id)
+    .is('wms_transaction_id', null);
+  if (scheduleError) {
+    await supabase.from('transactions').delete().eq('id', transactionId);
+    throw scheduleError;
+  }
+
+  return [];
+};
+
 export const materialRequestFulfillmentService = {
   async listPurchaseOrderSourceLabels(poIds: string[]): Promise<Record<string, string>> {
     const uniqueIds = Array.from(new Set(poIds.filter(Boolean)));
@@ -1475,6 +1553,9 @@ export const materialRequestFulfillmentService = {
     if (deliveryBatch.status === 'supplemental_pending') {
       throw new Error('Đợt mua đang chờ duyệt bổ sung nên chưa thể tạo WMS/QR.');
     }
+    if (po.sourceMode !== 'from_request') {
+      return createProactivePoDeliveryReceiptBatch(input);
+    }
     if (deliveryBatch.status !== 'planned') {
       const { data: existingRows, error: existingError } = await supabase
         .from(BATCH_TABLE)
@@ -1615,6 +1696,7 @@ export const materialRequestFulfillmentService = {
             : Number(line.deliveryUnitPrice || 0);
           return buildPoReceiptTransactionItem(poItem, line.issuedQty, inventory, {
             price: deliveryStockUnitPrice,
+            orderedQty: line.issuedQty,
             accountingPrice: Number(line.deliveryUnitPrice || 0),
             materialRequestId,
             requestLineId: line.requestLineId,

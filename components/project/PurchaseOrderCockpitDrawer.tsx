@@ -716,7 +716,7 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
                                     </button>
                                   </>
                                 )}
-                                {batch && canReceivePo && po.sourceMode === 'from_request' && ['confirmed', 'in_transit'].includes(po.status) && batch.status === 'planned' && (
+                                {batch && canReceivePo && ['confirmed', 'in_transit'].includes(po.status) && batch.status === 'planned' && (
                                   <button type="button" onClick={() => void onCreateDeliveryReceipt(batch)} disabled={creatingDeliveryBatchId === batch.id} className="inline-flex h-9 items-center gap-1 rounded-lg bg-indigo-600 px-3 text-[10px] font-black text-white hover:bg-indigo-700 disabled:opacity-60">
                                     {creatingDeliveryBatchId === batch.id ? <Loader2 size={13} className="animate-spin" /> : <QrCode size={13} />} Tạo WMS
                                   </button>
