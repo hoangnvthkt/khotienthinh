@@ -296,12 +296,14 @@ const KpiCard = ({
   hint,
   icon: Icon,
   tone = 'slate',
+  onClick,
 }: {
   label: string;
   value: number;
   hint?: string;
   icon: React.ElementType;
   tone?: 'slate' | 'green' | 'red' | 'blue' | 'amber';
+  onClick?: () => void;
 }) => {
   const toneClass = {
     slate: 'text-slate-700 bg-slate-50',
@@ -311,7 +313,12 @@ const KpiCard = ({
     amber: 'text-amber-700 bg-amber-50',
   }[tone];
   return (
-    <div className="rounded-lg border border-slate-100 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+    <div
+      onClick={onClick}
+      className={`rounded-lg border border-slate-100 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900 transition-all ${
+        onClick ? 'cursor-pointer hover:border-orange-300 hover:shadow-md dark:hover:border-orange-800' : ''
+      }`}
+    >
       <div className="flex items-center justify-between gap-3">
         <div className="text-[10px] font-black uppercase tracking-wide text-slate-400">{label}</div>
         <span className={`flex h-8 w-8 items-center justify-center rounded-lg ${toneClass}`}>
@@ -426,16 +433,7 @@ const FinanceSupplierControlPanel = ({
         </div>
       </div>
 
-      <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-6">
-        <FinanceControlMetric
-          label="CP vật tư ghi nhận"
-          value={summary.recognizedMaterialCost}
-          hint={`${summary.apDocumentCount.toLocaleString('vi-VN')} AP${summary.openingMaterialCost > 0 ? ' + đầu kỳ' : ''}`}
-          icon={ReceiptText}
-          tone="blue"
-          money
-          onClick={onOpenPayables}
-        />
+      <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
         <FinanceControlMetric
           label="Đã thanh toán NCC"
           value={summary.supplierPaidAmount}
@@ -1867,6 +1865,7 @@ const LedgerTable = ({
   rows,
   costItems = [],
   partners = [],
+  initialCostItemId = '',
   canManage,
   onCreate,
   onDownloadTemplate,
@@ -1877,6 +1876,7 @@ const LedgerTable = ({
   rows: ProjectFinanceLedgerRow[];
   costItems?: ContractCostItem[];
   partners?: BusinessPartner[];
+  initialCostItemId?: string;
   canManage?: boolean;
   onCreate?: () => void;
   onDownloadTemplate?: () => void;
@@ -1886,11 +1886,18 @@ const LedgerTable = ({
 }) => {
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<ProjectCostCategory | 'all'>('all');
-  const [selectedCostItemId, setSelectedCostItemId] = useState<string>('');
+  const [selectedCostItemId, setSelectedCostItemId] = useState<string>(initialCostItemId);
   const [selectedSource, setSelectedSource] = useState<'all' | 'manual' | 'import' | 'workflow'>('all');
   const [fromDate, setFromDate] = useState<string>('');
   const [toDate, setToDate] = useState<string>('');
-  const [showAdvancedFilter, setShowAdvancedFilter] = useState(false);
+  const [showAdvancedFilter, setShowAdvancedFilter] = useState(Boolean(initialCostItemId));
+
+  useEffect(() => {
+    if (initialCostItemId) {
+      setSelectedCostItemId(initialCostItemId);
+      setShowAdvancedFilter(true);
+    }
+  }, [initialCostItemId]);
 
   const costItemOptions = useMemo(() => buildContractCostItemOptions(costItems), [costItems]);
 
@@ -1988,6 +1995,19 @@ const LedgerTable = ({
   const filteredRevenueTotal = useMemo(() =>
     filtered.filter(r => r.type !== 'expense').reduce((s, r) => s + Math.abs(r.amount), 0),
   [filtered]);
+
+  const PAGE_SIZE = 10;
+  const [currentPage, setCurrentPage] = useState(1);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, selectedCategory, selectedCostItemId, selectedSource, fromDate, toDate]);
+
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE) || 1;
+  const pagedRows = useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE;
+    return filtered.slice(start, start + PAGE_SIZE);
+  }, [filtered, currentPage]);
 
   return (
     <div className="space-y-3">
@@ -2183,60 +2203,93 @@ const LedgerTable = ({
       )}
 
       {filtered.length === 0 ? <EmptyState label="Chưa có giao dịch tài chính phù hợp bộ lọc." /> : (
-        <div className="overflow-x-auto rounded-lg border border-slate-100 bg-white dark:border-slate-700 dark:bg-slate-900">
-          <table className="w-full min-w-[780px] text-left">
-            <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-wide text-slate-400 dark:bg-slate-800">
-              <tr>
-                <th className="px-3 py-2 whitespace-nowrap">Ngày</th>
-                <th className="px-3 py-2 whitespace-nowrap">Nội dung</th>
-                <th className="px-3 py-2 whitespace-nowrap">Khoản mục</th>
-                <th className="px-3 py-2 whitespace-nowrap">Nguồn</th>
-                <th className="px-3 py-2 text-right whitespace-nowrap">Số tiền</th>
-                <th className="px-3 py-2 text-right whitespace-nowrap">Thao tác</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
-              {filtered.map(row => (
-                <tr key={row.id} className="text-xs">
-                  <td className="px-3 py-3 font-bold text-slate-500 whitespace-nowrap">{fmtDate(row.date)}</td>
-                  <td className="px-3 py-3">
-                    <div className="font-black text-slate-800 dark:text-slate-100">{row.description}</div>
-                    <div className="mt-0.5 text-[10px] font-bold text-slate-400">
-                      {row.category} • {row.counterpartyName || row.sourceRef || row.source}
-                    </div>
-                  </td>
-                  <td className="px-3 py-3">
-                    {row.contractCostItemSymbolSnapshot || row.contractCostItemNameSnapshot ? (
-                      <div>
-                        <div className="font-black text-slate-700 dark:text-slate-200">{row.contractCostItemSymbolSnapshot || '-'}</div>
-                        <div className="mt-0.5 max-w-[180px] truncate text-[10px] font-bold text-slate-400">{row.contractCostItemNameSnapshot || '-'}</div>
-                      </div>
-                    ) : (
-                      <span className="text-[10px] font-bold text-slate-300">-</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-3 font-bold text-slate-500 whitespace-nowrap">{row.source}</td>
-                  <td className={`px-3 py-3 text-right font-black whitespace-nowrap ${row.type === 'expense' ? 'text-red-600' : 'text-emerald-700'}`}>
-                    {row.type === 'expense' ? '-' : '+'}{fmtMoney(Math.abs(row.amount))}
-                  </td>
-                  <td className="px-3 py-3 text-right whitespace-nowrap">
-                    {canManage && row.source === 'manual' ? (
-                      <div className="flex justify-end gap-1">
-                        <button type="button" onClick={() => onEdit?.(row)} className="rounded-md px-2 py-1 text-[10px] font-black text-blue-600 hover:bg-blue-50">
-                          <Edit2 size={11} className="inline" /> Sửa
-                        </button>
-                        <button type="button" onClick={() => onDelete?.(row)} className="rounded-md px-2 py-1 text-[10px] font-black text-red-600 hover:bg-red-50">
-                          <Trash2 size={11} className="inline" /> Xóa
-                        </button>
-                      </div>
-                    ) : (
-                      <span className="text-[10px] font-bold text-slate-300">Khóa</span>
-                    )}
-                  </td>
+        <div className="space-y-3">
+          <div className="overflow-x-auto rounded-lg border border-slate-100 bg-white dark:border-slate-700 dark:bg-slate-900">
+            <table className="w-full min-w-[780px] text-left">
+              <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-wide text-slate-400 dark:bg-slate-800">
+                <tr>
+                  <th className="px-3 py-2 whitespace-nowrap">Ngày</th>
+                  <th className="px-3 py-2 whitespace-nowrap">Nội dung</th>
+                  <th className="px-3 py-2 whitespace-nowrap">Khoản mục</th>
+                  <th className="px-3 py-2 whitespace-nowrap">Nguồn</th>
+                  <th className="px-3 py-2 text-right whitespace-nowrap">Số tiền</th>
+                  <th className="px-3 py-2 text-right whitespace-nowrap">Thao tác</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
+                {pagedRows.map(row => (
+                  <tr key={row.id} className="text-xs">
+                    <td className="px-3 py-3 font-bold text-slate-500 whitespace-nowrap">{fmtDate(row.date)}</td>
+                    <td className="px-3 py-3">
+                      <div className="font-black text-slate-800 dark:text-slate-100">{row.description}</div>
+                      <div className="mt-0.5 text-[10px] font-bold text-slate-400">
+                        {row.category} • {row.counterpartyName || row.sourceRef || row.source}
+                      </div>
+                    </td>
+                    <td className="px-3 py-3">
+                      {row.contractCostItemSymbolSnapshot || row.contractCostItemNameSnapshot ? (
+                        <div>
+                          <div className="font-black text-slate-700 dark:text-slate-200">{row.contractCostItemSymbolSnapshot || '-'}</div>
+                          <div className="mt-0.5 max-w-[180px] truncate text-[10px] font-bold text-slate-400">{row.contractCostItemNameSnapshot || '-'}</div>
+                        </div>
+                      ) : (
+                        <span className="text-[10px] font-bold text-slate-300">-</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-3 font-bold text-slate-500 whitespace-nowrap">{row.source}</td>
+                    <td className={`px-3 py-3 text-right font-black whitespace-nowrap ${row.type === 'expense' ? 'text-red-600' : 'text-emerald-700'}`}>
+                      {row.type === 'expense' ? '-' : '+'}{fmtMoney(Math.abs(row.amount))}
+                    </td>
+                    <td className="px-3 py-3 text-right whitespace-nowrap">
+                      {canManage && row.source === 'manual' ? (
+                        <div className="flex justify-end gap-1">
+                          <button type="button" onClick={() => onEdit?.(row)} className="rounded-md px-2 py-1 text-[10px] font-black text-blue-600 hover:bg-blue-50">
+                            <Edit2 size={11} className="inline" /> Sửa
+                          </button>
+                          <button type="button" onClick={() => onDelete?.(row)} className="rounded-md px-2 py-1 text-[10px] font-black text-red-600 hover:bg-red-50">
+                            <Trash2 size={11} className="inline" /> Xóa
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="text-[10px] font-bold text-slate-300">Khóa</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Pagination Bar */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-2 px-3.5 py-2 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold">
+            <div className="text-slate-500 dark:text-slate-400">
+              Hiển thị <span className="font-black text-slate-700 dark:text-slate-200">{(currentPage - 1) * PAGE_SIZE + 1}</span> đến <span className="font-black text-slate-700 dark:text-slate-200">{Math.min(currentPage * PAGE_SIZE, filtered.length)}</span> trên tổng số <span className="font-black text-orange-600">{filtered.length}</span> giao dịch
+            </div>
+
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                disabled={currentPage <= 1}
+                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-40 disabled:hover:bg-white dark:disabled:hover:bg-slate-900 transition-colors cursor-pointer disabled:cursor-not-allowed"
+              >
+                Trang trước
+              </button>
+
+              <span className="px-2.5 py-1 text-slate-500 dark:text-slate-400 font-mono font-bold">
+                {currentPage} / {totalPages}
+              </span>
+
+              <button
+                type="button"
+                disabled={currentPage >= totalPages}
+                onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-40 disabled:hover:bg-white dark:disabled:hover:bg-slate-900 transition-colors cursor-pointer disabled:cursor-not-allowed"
+              >
+                Trang sau
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -2425,6 +2478,8 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
     if (activeTab === 'payables') void loadCashFunds();
   }, [activeTab, loadCashFunds]);
 
+  const [ledgerCostItemIdFilter, setLedgerCostItemIdFilter] = useState<string>('');
+
   const openTab = useCallback((tab: ProjectFinanceWorkspaceTab) => {
     setActiveTab(tab);
     const params = new URLSearchParams(location.search);
@@ -2432,6 +2487,12 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
     params.set('financeTab', tab);
     navigate(`${location.pathname}?${params.toString()}`, { replace: true });
   }, [location.pathname, location.search, navigate]);
+
+  const openLedgerWithCostItemFilter = useCallback((costItemId: string) => {
+    setLedgerCostItemIdFilter(costItemId);
+    setLedgerView('paid');
+    openTab('ledger');
+  }, [openTab]);
 
   const openSourceRoute = useCallback((route?: ProjectFinanceSourceRoute | null, fallbackTab?: string) => {
     const params = new URLSearchParams(location.search);
@@ -3448,15 +3509,50 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
         <>
           {activeTab === 'overview' && (
             <div className="space-y-5">
-              <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-                <KpiCard label="Giá trị HĐ" value={summary.contractValue || contractValue} icon={FileText} tone="blue" />
-                <KpiCard label="Chi phí thực tế" value={summary.actualCost} icon={ArrowDownRight} tone="red" hint={`NS: ${fmtMoney(summary.budgetAmount)}`} />
-                <KpiCard label="Còn phải thu" value={summary.receivableOutstanding} icon={ArrowUpRight} tone="green" />
-                <KpiCard label="Còn phải trả" value={summary.payableOutstanding} icon={WalletCards} tone="amber" />
-                <KpiCard label="Tổng thu" value={summary.cashIn} icon={Banknote} tone="green" hint="Tiền đã thu" />
-                <KpiCard label="Doanh thu xác nhận" value={summary.certifiedRevenue} icon={ReceiptText} tone="blue" />
-                <KpiCard label="Tạm ứng còn treo" value={summary.advanceOutstanding} icon={CalendarClock} tone="amber" hint="Chưa tất toán" />
-                <KpiCard label="Biên tạm tính" value={summary.estimatedMargin} icon={BarChart3} tone={summary.estimatedMargin >= 0 ? 'green' : 'red'} hint="Giá trị HĐ - chi phí" />
+              <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+                <KpiCard
+                  label="Giá trị HĐ"
+                  value={summary.contractValue || contractValue}
+                  icon={FileText}
+                  tone="blue"
+                  onClick={() => openTab('receivables')}
+                />
+                <KpiCard
+                  label="Đã chi"
+                  value={summary.actualCost}
+                  icon={ArrowDownRight}
+                  tone="red"
+                  hint={`NS: ${fmtMoney(summary.budgetAmount)}`}
+                  onClick={() => {
+                    setLedgerView('paid');
+                    openTab('ledger');
+                  }}
+                />
+                <KpiCard
+                  label="Còn phải thu"
+                  value={summary.receivableOutstanding}
+                  icon={ArrowUpRight}
+                  tone="green"
+                  onClick={() => openTab('receivables')}
+                />
+                <KpiCard
+                  label="Còn phải chi"
+                  value={summary.payableOutstanding}
+                  icon={WalletCards}
+                  tone="amber"
+                  onClick={() => openTab('payables')}
+                />
+                <KpiCard
+                  label="Đã thu"
+                  value={summary.cashIn}
+                  icon={Banknote}
+                  tone="green"
+                  hint="Tiền đã thu"
+                  onClick={() => {
+                    setLedgerView('received');
+                    openTab('ledger');
+                  }}
+                />
               </div>
 
               {summary.alerts.length > 0 && (
@@ -3510,7 +3606,13 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
             </div>
           )}
 
-          {activeTab === 'budget' && <CostAnalysisPanel constructionSiteId={constructionSiteId} projectId={projectId} />}
+          {activeTab === 'budget' && (
+            <CostAnalysisPanel
+              constructionSiteId={constructionSiteId}
+              projectId={projectId}
+              onSelectCostItem={openLedgerWithCostItemFilter}
+            />
+          )}
           {activeTab === 'payables' && (
             <section className="space-y-3">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -3649,6 +3751,7 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
                 rows={visibleLedgerRows}
                 costItems={contractCostItems}
                 partners={partners}
+                initialCostItemId={ledgerCostItemIdFilter}
                 canManage={canManageLedger}
                 onCreate={openNewTransaction}
                 onDownloadTemplate={downloadTransactionImportTemplate}
