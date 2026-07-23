@@ -190,7 +190,7 @@ export const getPurchaseOrderUiPolicy = ({
       primaryAction = { id: 'create_delivery', label: 'Tạo đợt giao', intent: 'primary' };
       nextStep = 'Lập đợt giao để chuyển PO sang bước thực hiện giao nhận.';
     } else if (po.status === 'in_transit' && mayReceivePo) {
-      if (po.sourceMode === 'from_request' && plannedBatch) {
+      if (plannedBatch) {
         primaryAction = {
           id: 'create_receipt',
           label: 'Tạo phiếu nhận WMS',

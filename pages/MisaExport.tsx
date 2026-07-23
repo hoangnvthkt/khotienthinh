@@ -248,6 +248,8 @@ const MisaExport: React.FC = () => {
             .flatMap((tx, idx) => {
                 const wh = warehouses.find(w => w.id === tx.targetWarehouseId);
                 const supplier = suppliers.find(s => s.id === tx.supplierId);
+                const supplyName = tx.businessPartnerNameSnapshot || supplier?.name;
+                const supplyId = tx.businessPartnerId || tx.supplierId;
                 const docNo = `NK-${String(idx + 1).padStart(4, '0')}`;
                 const dateStr = new Date(tx.date).toLocaleDateString('vi-VN');
 
@@ -263,7 +265,7 @@ const MisaExport: React.FC = () => {
                     return {
                         date: dateStr,
                         docNo,
-                        description: `Nhập kho${supplier ? ` - ${supplier.name}` : ''}: ${item?.name || ti.itemId}`,
+                        description: `Nhập kho${supplyName ? ` - ${supplyName}` : ''}: ${item?.name || ti.itemId}`,
                         warehouseCode: wh?.id?.slice(-6).toUpperCase() || 'KHO',
                         warehouseName: wh?.name || '',
                         itemCode: item?.sku || ti.itemId,
@@ -274,8 +276,8 @@ const MisaExport: React.FC = () => {
                         accountingQty: ti.accountingQty,
                         unitPrice,
                         totalAmount,
-                        supplierCode: supplier?.id?.slice(-6).toUpperCase(),
-                        supplierName: supplier?.name,
+                        supplierCode: supplyId?.slice(-6).toUpperCase(),
+                        supplierName: supplyName,
                         note: tx.note || '',
                     } as MisaImportRow;
                 });

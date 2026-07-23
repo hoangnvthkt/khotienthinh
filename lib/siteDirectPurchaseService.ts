@@ -2,7 +2,6 @@ import type {
   SiteDirectPurchase,
   SiteDirectPurchaseLine,
   SiteDirectPurchaseLineStatus,
-  SiteDirectPurchaseStatus,
   ProjectSubmissionTarget,
   SupplierPayableDocument,
   Transaction,
@@ -29,19 +28,19 @@ const isMissingDirectPurchaseTable = (error: any): boolean =>
   || String(error?.message || '').includes(PURCHASE_TABLE)
   || String(error?.message || '').includes(LINE_TABLE);
 
-const isMissingSubmissionTargetColumn = (error: any): boolean =>
-  error?.code === '42703'
-  || ['submitted_to_user_id', 'submitted_to_name', 'submitted_to_permission', 'submission_note', 'ever_submitted', 'last_action_by', 'last_action_at']
-    .some(column => String(error?.message || '').includes(column) || String(error?.details || '').includes(column));
-
-const compactObject = <T extends Record<string, any>>(value: T): Partial<T> =>
-  Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as Partial<T>;
-
 const completedWmsStatuses = new Set<string>([
   TransactionStatus.COMPLETED,
   TransactionStatus.LEGACY_COMPLETED,
   'completed',
 ]);
+
+export type DirectPurchaseLifecycleAction =
+  | 'submit'
+  | 'return_to_draft'
+  | 'approve_to_buy'
+  | 'cancel_approval'
+  | 'mark_purchased'
+  | 'close_after_payment';
 
 export const calculateSiteDirectPurchaseTotals = (lines: SiteDirectPurchaseLine[]) => {
   const grossAmount = money(lines.reduce((sum, line) => sum + numeric(line.quantity) * numeric(line.unitPrice), 0));
@@ -121,16 +120,6 @@ export const siteDirectPurchaseService = {
     if (error) throw error;
 
     const saved = normalizePurchase(Array.isArray(data) ? data[0] : data);
-    const activeLines = lines.filter(line => line.status !== 'rejected');
-    const hasStockLine = activeLines.some(line => line.lineType === 'stock_item');
-    const hasRecognizableNonStockLine = activeLines.some(line =>
-      line.lineType === 'expense_only' || line.lineType === 'small_tool',
-    );
-
-    if (hasRecognizableNonStockLine && !hasStockLine) {
-      await this.syncPayable(saved.id);
-    }
-
     return saved;
   },
 
@@ -214,60 +203,71 @@ export const siteDirectPurchaseService = {
     if ((data || []).length === 0) throw new Error('Không tìm thấy phiếu mua nóng để xoá.');
   },
 
-  async setStatus(id: string, status: SiteDirectPurchaseStatus, patch: Partial<SiteDirectPurchase> = {}): Promise<SiteDirectPurchase> {
-    const { data, error } = await supabase
-      .from(PURCHASE_TABLE)
-      .update(toDb(compactObject({ ...patch, status })))
-      .eq('id', id)
-      .select('*')
-      .single();
+  async transition(
+    id: string,
+    action: DirectPurchaseLifecycleAction,
+    input: {
+      reason?: string | null;
+      target?: ProjectSubmissionTarget | null;
+    } = {},
+  ): Promise<SiteDirectPurchase> {
+    const { data, error } = await supabase.rpc('transition_site_direct_purchase_v1', {
+      p_direct_purchase_id: id,
+      p_action: action,
+      p_reason: input.reason?.trim() || null,
+      p_target_user_id: input.target?.userId || null,
+      p_target_name: input.target?.name || null,
+      p_target_permission: input.target?.permissionCode || null,
+    });
     if (error) throw error;
-    return normalizePurchase(data);
+    return normalizePurchase(Array.isArray(data) ? data[0] : data);
+  },
+
+  async recordPayable(id: string): Promise<SupplierPayableDocument> {
+    const { data, error } = await supabase.rpc('record_site_direct_purchase_payable_v1', {
+      p_direct_purchase_id: id,
+    });
+    if (error) throw error;
+    return normalizePayableDocument(Array.isArray(data) ? data[0] : data);
+  },
+
+  async unrecordPayable(id: string, reason: string): Promise<SiteDirectPurchase> {
+    const { data, error } = await supabase.rpc('unrecord_site_direct_purchase_payable_v1', {
+      p_direct_purchase_id: id,
+      p_reason: reason.trim() || null,
+    });
+    if (error) throw error;
+    return normalizePurchase(Array.isArray(data) ? data[0] : data);
+  },
+
+  async rejectDocument(id: string, reason: string): Promise<SiteDirectPurchase> {
+    const { data, error } = await supabase.rpc('reject_site_direct_purchase_v1', {
+      p_direct_purchase_id: id,
+      p_reason: reason.trim() || null,
+    });
+    if (error) throw error;
+    return normalizePurchase(Array.isArray(data) ? data[0] : data);
   },
 
   async submit(id: string, target?: ProjectSubmissionTarget | null, actorId?: string | null): Promise<SiteDirectPurchase> {
-    if (!target) return this.setStatus(id, 'submitted');
-    try {
-      return await this.setStatus(id, 'submitted', {
-        submittedToUserId: target.userId || null,
-        submittedToName: target.name || null,
-        submittedToPermission: target.permissionCode || 'approve',
-        submissionNote: target.note || null,
-        everSubmitted: true,
-        lastActionBy: actorId || null,
-        lastActionAt: new Date().toISOString(),
-      });
-    } catch (error) {
-      if (isMissingSubmissionTargetColumn(error)) return this.setStatus(id, 'submitted');
-      throw error;
-    }
+    void actorId;
+    return this.transition(id, 'submit', { target });
   },
 
   async approveToBuy(id: string): Promise<SiteDirectPurchase> {
-    return this.setStatus(id, 'approved_to_buy');
+    return this.transition(id, 'approve_to_buy');
   },
 
   async cancelApproval(id: string, reason?: string | null, actorId?: string | null): Promise<SiteDirectPurchase> {
-    return this.setStatus(id, 'submitted', {
-      submittedToPermission: 'approve',
-      lastActionBy: actorId || null,
-      lastActionAt: new Date().toISOString(),
-      note: reason?.trim() ? `Hủy duyệt: ${reason.trim()}` : undefined,
-    });
+    void actorId;
+    return this.transition(id, 'cancel_approval', { reason });
   },
 
   async markPurchased(id: string, patch: Partial<SiteDirectPurchase> = {}): Promise<SiteDirectPurchase> {
-    const { data, error } = await supabase
-      .from(PURCHASE_TABLE)
-      .update(toDb({
-        ...patch,
-        status: 'purchased',
-      }))
-      .eq('id', id)
-      .select('*')
-      .single();
-    if (error) throw error;
-    return normalizePurchase(data);
+    if (Object.keys(patch).length > 0) {
+      throw new Error('Không thể sửa thông tin phiếu khi đánh dấu đã mua. Hãy cập nhật ở trạng thái Nháp.');
+    }
+    return this.transition(id, 'mark_purchased');
   },
 
   async reviewLines(

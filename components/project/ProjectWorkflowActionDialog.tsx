@@ -13,6 +13,8 @@ import {
 } from '../../types';
 import ProjectWorkflowAssigneeSelect from './ProjectWorkflowAssigneeSelect';
 import { projectWorkflowService } from '../../lib/projectWorkflowService';
+import { projectPermissionRoomService } from '../../lib/projectPermissionRoomService';
+import type { ProjectPermissionRoomCode, ProjectRoomActionCode } from '../../lib/permissions/projectPermissionRooms';
 import ProjectWorkflowDependencyList from './ProjectWorkflowDependencyList';
 
 interface Props {
@@ -29,9 +31,12 @@ interface Props {
   completionHandoff?: {
     required: boolean;
     eligiblePermissionCodes: string[];
+    recipientAction?: ProjectRoomActionCode;
     assigneeLabel?: string;
     helperText?: string;
   };
+  recipientRoomCode?: ProjectPermissionRoomCode;
+  recipientAction?: ProjectRoomActionCode;
   onCancel: () => void;
   onConfirm: (context: ProjectWorkflowActionContext) => Promise<void> | void;
 }
@@ -68,6 +73,8 @@ const ProjectWorkflowActionDialog: React.FC<Props> = ({
   requesterUserId,
   documentName,
   completionHandoff,
+  recipientRoomCode,
+  recipientAction,
   onCancel,
   onConfirm,
 }) => {
@@ -76,6 +83,8 @@ const ProjectWorkflowActionDialog: React.FC<Props> = ({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [rollbackDependencies, setRollbackDependencies] = useState<ProjectWorkflowRollbackDependencyResult | null>(null);
+  const [roomRecipientUserIds, setRoomRecipientUserIds] = useState<string[] | null>(null);
+  const [loadingRoomRecipients, setLoadingRoomRecipients] = useState(false);
 
   const targetNode = useMemo(() => {
     if (action === 'approve') return nextNode || null;
@@ -102,6 +111,9 @@ const ProjectWorkflowActionDialog: React.FC<Props> = ({
     || isCompletionHandoff
     || action === 'resubmit'
     || action === 'reassign';
+  const resolvedRecipientAction = isCompletionHandoff
+    ? completionHandoff?.recipientAction || recipientAction
+    : recipientAction;
 
   const helperText = (() => {
     if (isCompletionHandoff) return completionHandoff?.helperText || 'Phiếu sẽ hoàn tất phần phê duyệt và bàn giao sang bước nghiệp vụ tiếp theo.';
@@ -132,6 +144,30 @@ const ProjectWorkflowActionDialog: React.FC<Props> = ({
       .catch(err => setError(err?.message || 'Không kiểm tra được chứng từ downstream.'));
   }, [action, subject.subjectId]);
 
+  React.useEffect(() => {
+    if (!needsAssignee || (!recipientRoomCode && !resolvedRecipientAction)) {
+      setRoomRecipientUserIds(null);
+      return;
+    }
+    if (!recipientRoomCode || !resolvedRecipientAction || !subject.projectId) {
+      setRoomRecipientUserIds([]);
+      setError('Chưa xác định được Room nhận xử lý của dự án.');
+      return;
+    }
+    let alive = true;
+    setLoadingRoomRecipients(true);
+    projectPermissionRoomService
+      .listRecipients(subject.projectId, subject.constructionSiteId, recipientRoomCode, resolvedRecipientAction)
+      .then(rows => {
+        if (!alive) return;
+        setRoomRecipientUserIds(rows.map(row => row.userId));
+        if (rows.length === 0) setError('Chưa có người phù hợp trong Room xử lý của đề xuất vật tư.');
+      })
+      .catch(err => alive && setError(err?.message || 'Không tải được người xử lý theo Room.'))
+      .finally(() => alive && setLoadingRoomRecipients(false));
+    return () => { alive = false; };
+  }, [needsAssignee, recipientRoomCode, resolvedRecipientAction, subject.constructionSiteId, subject.projectId]);
+
   const submit = async () => {
     const trimmed = comment.trim();
     if (requiresComment(action) && !trimmed) {
@@ -140,6 +176,10 @@ const ProjectWorkflowActionDialog: React.FC<Props> = ({
     }
     if (needsAssignee && assigneeUserIds.length === 0) {
       setError('Vui lòng chọn ít nhất một người xử lý.');
+      return;
+    }
+    if (roomRecipientUserIds && !assigneeUserIds.every(userId => roomRecipientUserIds.includes(userId))) {
+      setError('Người xử lý không còn thuộc Room được phép. Vui lòng tải lại danh sách.');
       return;
     }
     if (isCompletionHandoff && assigneeUserIds.length !== 1) {
@@ -213,9 +253,10 @@ const ProjectWorkflowActionDialog: React.FC<Props> = ({
               orgUnits={orgUnits}
               value={assigneeUserIds}
               creatorUserId={requesterUserId}
+              allowedUserIds={roomRecipientUserIds || undefined}
               label={isCompletionHandoff ? completionHandoff?.assigneeLabel : undefined}
               selectionMode={isCompletionHandoff ? 'single' : 'multiple'}
-              disabled={submitting}
+              disabled={submitting || loadingRoomRecipients}
               onChange={setAssigneeUserIds}
             />
           )}
@@ -248,7 +289,7 @@ const ProjectWorkflowActionDialog: React.FC<Props> = ({
           </button>
           <button
             onClick={submit}
-            disabled={submitting || (action === 'rollback' && rollbackDependencies?.allowed === false)}
+            disabled={submitting || loadingRoomRecipients || (action === 'rollback' && rollbackDependencies?.allowed === false)}
             className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-xs font-black text-white hover:bg-slate-700 disabled:opacity-50"
           >
             {actionIcon[action]} {submitting ? 'Đang xử lý...' : 'Xác nhận'}

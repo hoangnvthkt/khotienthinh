@@ -57,4 +57,10 @@ describe('purchase order drawer regression guard', () => {
   it('reloads delivery groups immediately after a supplemental delivery draft is submitted', () => {
     expect(source).toContain('await loadPoDeliveryPrintGroups(deliveryPo, true);');
   });
+
+  it('keeps the WMS/QR action available for proactive planned delivery batches', () => {
+    expect(cockpitSource).toContain("['confirmed', 'in_transit'].includes(po.status)");
+    expect(cockpitSource).toContain("batch.status === 'planned'");
+    expect(cockpitSource).not.toContain("po.sourceMode === 'from_request' &&");
+  });
 });

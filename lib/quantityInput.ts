@@ -1,8 +1,10 @@
-const DECIMAL_INPUT_PATTERN = /^\d*(?:[.,]\d*)?$/;
+// Vật tư uses Vietnamese number entry: comma for decimals and no thousands
+// grouping. Keeping the text as-entered lets a user type `12,5` naturally.
+const DECIMAL_INPUT_PATTERN = /^\d*(?:,\d*)?$/;
 
 export const formatQuantityInput = (value: number | string | null | undefined): string => {
   if (value === null || value === undefined) return '';
-  if (typeof value === 'number') return Number.isFinite(value) ? String(value) : '';
+  if (typeof value === 'number') return Number.isFinite(value) ? String(value).replace('.', ',') : '';
   return value;
 };
 
@@ -17,7 +19,7 @@ export const sanitizeQuantityInput = (
   rawValue: string,
   options: { max?: number; previousValue?: string } = {},
 ): string => {
-  const normalized = rawValue.trim().replace(',', '.');
+  const normalized = rawValue.trim();
   const previousValue = options.previousValue ?? '';
 
   if (normalized === '') return '';

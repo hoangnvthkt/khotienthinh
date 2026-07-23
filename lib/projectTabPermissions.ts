@@ -4,6 +4,7 @@ export const LEGACY_PROJECT_SUPPLY_ROUTE = '/da/tabs/supply';
 export const PROJECT_TAB_PERMISSIONS = [
   { key: 'executive', label: 'Điều hành', icon: '🏛️', route: '/da/tabs/executive' },
   { key: 'org', label: 'Tổ chức', icon: '👥', route: '/da/tabs/org' },
+  { key: 'permissions', label: 'Phân quyền', icon: '🔐', route: '/da/tabs/permissions' },
   { key: 'finance', label: 'Tài chính', icon: '💹', route: '/da/tabs/finance' },
   { key: 'budget', label: 'Ngân sách', icon: '📊', route: '/da/tabs/budget' },
   { key: 'cashflow', label: 'Dòng tiền', icon: '💰', route: '/da/tabs/cashflow' },

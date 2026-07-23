@@ -10,6 +10,7 @@ import {
     getProjectMaterialCapabilities,
     type ProjectMaterialCapability,
 } from '../../../lib/permissions/projectMaterialPermissions';
+import { projectPermissionRoomService } from '../../../lib/projectPermissionRoomService';
 import { projectStaffService } from '../../../lib/projectStaffService';
 
 export interface ProjectMaterialAccessState {
@@ -98,8 +99,8 @@ export const useProjectMaterialAccess = ({
             }
 
             try {
-                const results = await Promise.all(
-                    PROJECT_MATERIAL_ACTION_CODES.map(async permissionCode => ({
+                const [results, roomActions] = await Promise.all([
+                    Promise.all(PROJECT_MATERIAL_ACTION_CODES.map(async permissionCode => ({
                         permissionCode,
                         allowed: (await projectStaffService.checkProjectAction({
                             userId: user.id,
@@ -107,10 +108,26 @@ export const useProjectMaterialAccess = ({
                             constructionSiteId,
                             permissionCode,
                         })).allowed,
-                    })),
-                );
+                    }))),
+                    Promise.all((['view', 'submit'] as const).map(async actionCode => ({
+                        actionCode,
+                        allowed: await projectPermissionRoomService.hasAction(
+                            user.id,
+                            projectId || constructionSiteId || '',
+                            constructionSiteId || null,
+                            'material_request',
+                            actionCode,
+                        ),
+                    }))),
+                ]);
                 if (!cancelled) {
                     const grantedCodes = new Set(results.filter(result => result.allowed).map(result => result.permissionCode));
+                    const roomActionsGranted = new Set(roomActions.filter(result => result.allowed).map(result => result.actionCode));
+                    if (roomActionsGranted.has('view')) grantedCodes.add('project.material_request.view');
+                    if (roomActionsGranted.has('submit')) {
+                        grantedCodes.add('project.material_request.create');
+                        grantedCodes.add('project.material_request.submit');
+                    }
                     setMaterialCapabilities(getProjectMaterialCapabilities(grantedCodes));
                 }
             } catch (error) {

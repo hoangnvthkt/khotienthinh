@@ -3,7 +3,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
-import { TransactionType, Transaction, TransactionStatus, TransactionItem, InventoryItem, Role } from '../types';
+import { TransactionType, Transaction, TransactionStatus, TransactionItem, InventoryItem, Role, BusinessPartner, SupplierContract } from '../types';
 import {
   Plus, Trash2, ArrowRight, Save, Send, Clock,
   CheckCircle, XCircle, FileText, User, History,
@@ -24,13 +24,25 @@ import { useReservedStock } from '../hooks/useReservedStock';
 import { useModuleData } from '../hooks/useModuleData';
 import { canApproveWmsTransaction, canReceiveWmsTransaction, isFulfillmentBatchTransaction, isWarehouseKeeper } from '../lib/wmsPermissions';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
-import { clampQuantity, parseQuantityInput } from '../lib/quantityInput';
+import { clampQuantity, formatQuantityInput, parseQuantityInput, sanitizeQuantityInput } from '../lib/quantityInput';
 import { getTransactionNextAction, getTransactionTypeLabel } from '../lib/erpWorkflow';
 import { EmptyState, PageHeader, StatusBadge } from '../components/erp';
+import { partnerService } from '../lib/partnerService';
+import { supplierContractService } from '../lib/hdService';
+import { buildWmsImportSupplySource, type WmsImportSupplySourceSelection } from '../lib/wmsSupplySource';
+import { dateInputToTransactionTimestamp } from '../lib/transactionVoucherDates';
 
 const ScannerModal = React.lazy(() => import('../components/ScannerModal'));
 
 type HistoryColumnKey = 'import' | 'export' | 'transfer' | 'rejected';
+type SupplySourceTab = 'supplier_contract' | 'business_partner';
+
+type SupplySourceOption = {
+  id: string;
+  label: string;
+  searchText: string;
+  selection: WmsImportSupplySourceSelection;
+};
 
 const escapeHtml = (value: unknown) =>
   String(value ?? '')
@@ -117,9 +129,15 @@ const Operations: React.FC = () => {
   // - Chuyển kho: selectedWarehouseId = kho nguồn (kho của thủ kho), targetWarehouseId = kho đích
   const [selectedWarehouseId, setSelectedWarehouseId] = useState('');
   const [targetWarehouseId, setTargetWarehouseId] = useState('');
-  const [supplierId, setSupplierId] = useState(''); // Tùy chọn, không bắt buộc
+  const [supplySourceTab, setSupplySourceTab] = useState<SupplySourceTab>('supplier_contract');
+  const [supplySourceId, setSupplySourceId] = useState('');
+  const [supplierContracts, setSupplierContracts] = useState<SupplierContract[]>([]);
+  const [businessPartners, setBusinessPartners] = useState<BusinessPartner[]>([]);
+  const [isLoadingSupplySources, setIsLoadingSupplySources] = useState(false);
+  const [voucherDate, setVoucherDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [note, setNote] = useState('');
   const [txItems, setTxItems] = useState<TransactionItem[]>([]);
+  const [transactionQuantityInputs, setTransactionQuantityInputs] = useState<Record<string, string>>({});
   const [submittingTx, setSubmittingTx] = useState(false);
   const [processingApproval, setProcessingApproval] = useState(false);
   const [historySearch, setHistorySearch] = useState('');
@@ -140,13 +158,68 @@ const Operations: React.FC = () => {
     }
   }, [user, hasAssignedWh, warehouses]);
 
+  useEffect(() => {
+    let cancelled = false;
+    setIsLoadingSupplySources(true);
+    Promise.all([
+      supplierContractService.list(),
+      partnerService.list(),
+    ]).then(([contracts, partners]) => {
+      if (cancelled) return;
+      setSupplierContracts(contracts);
+      setBusinessPartners(partners);
+    }).catch(err => {
+      if (!cancelled) {
+        logApiError('operations.loadSupplySources', err);
+        toast.error('Không tải được nguồn cung cấp', getApiErrorMessage(err, 'Vui lòng thử tải lại trang.'));
+      }
+    }).finally(() => {
+      if (!cancelled) setIsLoadingSupplySources(false);
+    });
+    return () => { cancelled = true; };
+  }, [toast]);
+
+  const supplySourceOptions = useMemo<SupplySourceOption[]>(() => {
+    if (supplySourceTab === 'supplier_contract') {
+      return supplierContracts.map(contract => ({
+        id: contract.id,
+        label: `${contract.code} – ${contract.supplierName || contract.name}`,
+        searchText: [contract.code, contract.name, contract.supplierName, contract.supplierRepresentative].filter(Boolean).join(' '),
+        selection: { kind: 'supplier_contract', contract },
+      }));
+    }
+    return businessPartners.map(partner => ({
+      id: partner.id,
+      label: `${partner.code ? `${partner.code} – ` : ''}${partner.name}`,
+      searchText: [partner.code, partner.name, partner.taxCode, partner.phone, partner.contactName, partner.email].filter(Boolean).join(' '),
+      selection: { kind: 'business_partner', partner },
+    }));
+  }, [businessPartners, supplierContracts, supplySourceTab]);
+
+  const selectedSupplySource = useMemo(
+    () => supplySourceOptions.find(option => option.id === supplySourceId) || null,
+    [supplySourceId, supplySourceOptions],
+  );
+
+  const getTransactionSupplyName = (transaction: Transaction) => {
+    const supplierContract = transaction.sourceType === 'supplier_contract'
+      ? supplierContracts.find(contract => contract.id === transaction.sourceId)
+      : undefined;
+    if (supplierContract) return `${supplierContract.code} – ${supplierContract.supplierName || supplierContract.name}`;
+    return transaction.businessPartnerNameSnapshot
+      || suppliers.find(item => item.id === transaction.supplierId)?.name
+      || '-';
+  };
+
   // Reset item list khi chuyển tab
   const handleTabChange = (tab: string) => {
     setActiveTab(tab);
     setTxItems([]);
+    setTransactionQuantityInputs({});
     setAccountingData({});
     setTargetWarehouseId('');
-    setSupplierId('');
+    setSupplySourceId('');
+    setVoucherDate(new Date().toISOString().slice(0, 10));
     setNote('');
   };
 
@@ -160,6 +233,8 @@ const Operations: React.FC = () => {
   }>({
     isOpen: false, txId: '', type: 'APPROVE', title: '', message: ''
   });
+  const [approvalDate, setApprovalDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [approvalNote, setApprovalNote] = useState('');
 
   // Lọc danh sách transaction đang chờ DUYỆT (PENDING - Chờ Admin)
   const pendingAdminTxs = useMemo(() => {
@@ -218,7 +293,6 @@ const Operations: React.FC = () => {
       const approver = users.find(item => item.id === tx.approverId);
       const sourceWh = warehouses.find(item => item.id === tx.sourceWarehouseId);
       const targetWh = warehouses.find(item => item.id === tx.targetWarehouseId);
-      const supplier = suppliers.find(item => item.id === tx.supplierId);
       const itemText = tx.items.map(line => {
         const product = items.find(item => item.id === line.itemId) || tx.pendingItems?.find(item => item.id === line.itemId);
         return [product?.sku, product?.name, line.quantity, product?.unit].filter(Boolean).join(' ');
@@ -234,7 +308,7 @@ const Operations: React.FC = () => {
         approver?.name,
         sourceWh?.name,
         targetWh?.name,
-        supplier?.name,
+        getTransactionSupplyName(tx),
         tx.note,
         itemText,
       ].filter(Boolean).join(' ').toLowerCase();
@@ -251,6 +325,7 @@ const Operations: React.FC = () => {
     historyWarehouseFilter,
     items,
     suppliers,
+    supplierContracts,
     users,
     warehouses,
   ]);
@@ -273,6 +348,33 @@ const Operations: React.FC = () => {
     return clampQuantity(parsed, getMaxIssueQuantity(itemId));
   };
 
+  const updateTransactionQuantityInput = (itemId: string, rawValue: string) => {
+    const currentItem = txItems.find(item => item.itemId === itemId);
+    const previousValue = transactionQuantityInputs[itemId] ?? formatQuantityInput(currentItem?.quantity ?? 0);
+    const nextValue = sanitizeQuantityInput(rawValue, {
+      max: getMaxIssueQuantity(itemId),
+      previousValue,
+    });
+    setTransactionQuantityInputs(prev => ({ ...prev, [itemId]: nextValue }));
+    const parsed = parseQuantityInput(nextValue);
+    if (Number.isFinite(parsed)) {
+      setTxItems(prev => prev.map(item => item.itemId === itemId
+        ? { ...item, quantity: normalizeTransactionQuantity(itemId, parsed) }
+        : item));
+    }
+  };
+
+  const adjustTransactionQuantity = (itemId: string, adjustment: number) => {
+    setTxItems(prev => prev.map(item => item.itemId === itemId
+      ? { ...item, quantity: normalizeTransactionQuantity(itemId, item.quantity + adjustment) }
+      : item));
+    setTransactionQuantityInputs(prev => {
+      const next = { ...prev };
+      delete next[itemId];
+      return next;
+    });
+  };
+
   const getDefaultTransactionQuantity = (itemId: string): number => {
     if (activeTab === TransactionType.IMPORT) return 1;
     const maxQty = getMaxIssueQuantity(itemId) ?? 0;
@@ -282,7 +384,7 @@ const Operations: React.FC = () => {
   const handleSelectItem = (item: InventoryItem) => {
     const existing = txItems.find(i => i.itemId === item.id);
     if (existing) {
-      setTxItems(txItems.map(i => i.itemId === item.id ? { ...i, quantity: normalizeTransactionQuantity(item.id, i.quantity + 1) } : i));
+      adjustTransactionQuantity(item.id, 1);
     } else {
       setTxItems([...txItems, { itemId: item.id, quantity: getDefaultTransactionQuantity(item.id), price: item.priceIn || 0 }]);
     }
@@ -299,42 +401,51 @@ const Operations: React.FC = () => {
       const acc = accountingData[ti.itemId];
       const product = items.find(i => i.id === ti.itemId);
       const hasDualUnit = product?.purchaseUnit && product.purchaseUnit !== product.unit;
-      if (hasDualUnit && acc?.qty && parseFloat(acc.qty) > 0) {
+      const accountingQty = parseQuantityInput(acc?.qty);
+      if (hasDualUnit && Number.isFinite(accountingQty) && accountingQty > 0) {
         return {
           ...ti,
-          accountingQty: parseFloat(acc.qty),
+          accountingQty,
           accountingUnit: product!.purchaseUnit,
           accountingPrice: acc.price ? parseFloat(acc.price) : undefined,
           // Cập nhật price (giá vốn mỗi cây) = tổng tiền / số lượng (nếu có đủ dữ liệu)
           price: (acc.qty && acc.price && ti.quantity > 0)
-            ? Math.round((parseFloat(acc.qty) * parseFloat(acc.price)) / ti.quantity)
+            ? Math.round((accountingQty * parseFloat(acc.price)) / ti.quantity)
             : ti.price
         };
       }
       return ti;
     });
 
+    const supplySource = activeTab === TransactionType.IMPORT && selectedSupplySource
+      ? buildWmsImportSupplySource(selectedSupplySource.selection)
+      : null;
+
     const newTx: Transaction = {
       id: `tx-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       type: activeTab as TransactionType,
-      date: new Date().toISOString(),
+      date: activeTab === TransactionType.IMPORT
+        ? dateInputToTransactionTimestamp(voucherDate) || new Date().toISOString()
+        : new Date().toISOString(),
       items: enrichedItems,
       requesterId: user.id,
       status: TransactionStatus.PENDING,
       note,
-      // Nhập kho → kho nhận = selectedWarehouseId; nguồn cung cấp tùy chọn
+      // Nhập kho → kho nhận = selectedWarehouseId; nguồn cung cấp bắt buộc từ module Hợp đồng
       targetWarehouseId: activeTab === TransactionType.IMPORT ? selectedWarehouseId : (activeTab === TransactionType.TRANSFER ? targetWarehouseId : undefined),
       sourceWarehouseId: (activeTab === TransactionType.EXPORT || activeTab === TransactionType.TRANSFER || activeTab === TransactionType.LIQUIDATION) ? selectedWarehouseId : undefined,
-      supplierId: (activeTab === TransactionType.IMPORT && supplierId) ? supplierId : undefined,
+      ...(supplySource || {}),
     };
 
     setSubmittingTx(true);
     try {
       await addTransaction(newTx);
       setTxItems([]);
+      setTransactionQuantityInputs({});
       setAccountingData({});
       setNote('');
-      setSupplierId('');
+      setSupplySourceId('');
+      setVoucherDate(new Date().toISOString().slice(0, 10));
       setShowConfirmTransfer(false);
       toast.success('Đã gửi đề xuất', 'Phiếu của bạn đang chờ Admin phê duyệt.');
     } catch (err: any) {
@@ -347,6 +458,13 @@ const Operations: React.FC = () => {
 
   const handleSubmit = () => {
     if (txItems.length === 0) return setWarningState({ isOpen: true, title: 'Chưa có dữ liệu', message: 'Chọn ít nhất một vật tư.' });
+    if (activeTab === TransactionType.IMPORT && !selectedSupplySource) {
+      return setWarningState({
+        isOpen: true,
+        title: 'Thiếu nguồn cung cấp',
+        message: 'Chọn một hợp đồng nhà cung cấp hoặc một đối tác trước khi gửi phiếu nhập kho.',
+      });
+    }
     const invalidQtyItem = txItems.find(ti => ti.quantity <= 0);
     if (invalidQtyItem) {
       const product = items.find(item => item.id === invalidQtyItem.itemId);
@@ -362,6 +480,7 @@ const Operations: React.FC = () => {
         const product = items.find(item => item.id === overAvailableItem.itemId);
         const maxQty = getMaxIssueQuantity(overAvailableItem.itemId) ?? 0;
         setTxItems(prev => prev.map(ti => ti.itemId === overAvailableItem.itemId ? { ...ti, quantity: maxQty } : ti));
+        setTransactionQuantityInputs(prev => ({ ...prev, [overAvailableItem.itemId]: formatQuantityInput(maxQty) }));
         return setWarningState({
           isOpen: true,
           title: 'Vượt tồn khả dụng',
@@ -384,6 +503,8 @@ const Operations: React.FC = () => {
     if (!tx) return;
 
     if (type === 'APPROVE') {
+      setApprovalDate(new Date().toISOString().slice(0, 10));
+      setApprovalNote('');
       const isNeedReceipt = tx.type === TransactionType.IMPORT || tx.type === TransactionType.TRANSFER;
       const isFulfillmentTx = isFulfillmentBatchTransaction(tx);
       setApprovalModal({
@@ -423,12 +544,16 @@ const Operations: React.FC = () => {
     setProcessingApproval(true);
     try {
       if (approvalModal.type === 'APPROVE') {
+        const approval = {
+          approvedAt: dateInputToTransactionTimestamp(approvalDate),
+          approvalNote: approvalNote.trim() || undefined,
+        };
         // Luồng mới: Nhập/Chuyển cần APPROVED trước khi COMPLETED
         if (tx.type === TransactionType.IMPORT || tx.type === TransactionType.TRANSFER) {
-          await updateTransactionStatus(tx.id, TransactionStatus.APPROVED, user.id);
+          await updateTransactionStatus(tx.id, TransactionStatus.APPROVED, user.id, approval);
         } else {
           // Xuất/Hủy: Duyệt là COMPLETED luôn
-          await updateTransactionStatus(tx.id, TransactionStatus.COMPLETED, user.id);
+          await updateTransactionStatus(tx.id, TransactionStatus.COMPLETED, user.id, approval);
         }
       } else if (approvalModal.type === 'RECEIVE') {
         await updateTransactionStatus(tx.id, TransactionStatus.COMPLETED, user.id);
@@ -472,7 +597,7 @@ const Operations: React.FC = () => {
     const approver = users.find(item => item.id === tx.approverId);
     const sourceWh = warehouses.find(item => item.id === tx.sourceWarehouseId);
     const targetWh = warehouses.find(item => item.id === tx.targetWarehouseId);
-    const supplier = suppliers.find(item => item.id === tx.supplierId);
+    const supplyName = getTransactionSupplyName(tx);
     const documentTitle = `${mode === 'pdf' ? 'PDF_' : ''}${title}_${code}`.replace(/[^\p{L}\p{N}_-]+/gu, '_');
     const flowLabel = tx.type === TransactionType.IMPORT
       ? `Nhập vào: ${targetWh?.name || '-'}`
@@ -537,7 +662,8 @@ const Operations: React.FC = () => {
           <div><span class="label">Luồng kho</span>${escapeHtml(flowLabel)}</div>
           <div><span class="label">Người lập</span>${escapeHtml(requester?.name || 'Hệ thống')}</div>
           <div><span class="label">Người phê duyệt</span>${escapeHtml(approver?.name || '-')}</div>
-          <div><span class="label">Nhà cung cấp</span>${escapeHtml(supplier?.name || '-')}</div>
+          <div><span class="label">Ngày duyệt</span>${escapeHtml(tx.approvedAt ? new Date(tx.approvedAt).toLocaleDateString('vi-VN') : '-')}</div>
+          <div><span class="label">Nguồn cung cấp</span>${escapeHtml(supplyName)}</div>
           <div><span class="label">Mã giao dịch hệ thống</span>${escapeHtml(tx.id)}</div>
         </div>
         <table>
@@ -554,6 +680,7 @@ const Operations: React.FC = () => {
           <tbody>${rows}</tbody>
         </table>
         ${tx.note ? `<div class="note"><strong>Ghi chú:</strong> ${escapeHtml(tx.note)}</div>` : ''}
+        ${tx.approvalNote ? `<div class="note"><strong>Ghi chú duyệt:</strong> ${escapeHtml(tx.approvalNote)}</div>` : ''}
         <div class="signatures">
           <div>Người lập<span>Ký, ghi rõ họ tên</span></div>
           <div>Thủ kho<span>Ký, ghi rõ họ tên</span></div>
@@ -657,7 +784,12 @@ const Operations: React.FC = () => {
         isLoading={submittingTx}
       />
 
-      <TransactionDetailModal isOpen={!!viewingHistoryTx} onClose={() => setViewingHistoryTx(null)} transaction={viewingHistoryTx} />
+      <TransactionDetailModal
+        isOpen={!!viewingHistoryTx}
+        onClose={() => setViewingHistoryTx(null)}
+        transaction={viewingHistoryTx}
+        onUpdated={setViewingHistoryTx}
+      />
 
       <MasterDataConfirmModal
         isOpen={approvalModal.isOpen}
@@ -669,7 +801,31 @@ const Operations: React.FC = () => {
         actionLabel={approvalModal.type === 'APPROVE' ? 'Xác nhận Duyệt' : (approvalModal.type === 'RECEIVE' ? 'Xác nhận Nhận hàng' : 'Từ chối phiếu')}
         countdownRequired={approvalModal.type !== 'RECEIVE'}
         isLoading={processingApproval}
-      />
+      >
+        {approvalModal.type === 'APPROVE' && (
+          <div className="space-y-3">
+            <label className="block space-y-1">
+              <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Ngày duyệt phiếu</span>
+              <input
+                type="date"
+                value={approvalDate}
+                onChange={event => setApprovalDate(event.target.value)}
+                className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-bold text-slate-700 outline-none focus:border-orange-400"
+              />
+            </label>
+            <label className="block space-y-1">
+              <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Ghi chú duyệt</span>
+              <textarea
+                value={approvalNote}
+                onChange={event => setApprovalNote(event.target.value)}
+                rows={3}
+                placeholder="Nhập ghi chú cho lần duyệt này..."
+                className="w-full resize-none rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:border-orange-400"
+              />
+            </label>
+          </div>
+        )}
+      </MasterDataConfirmModal>
 
       <PageHeader
         eyebrow="WMS"
@@ -1012,7 +1168,7 @@ const Operations: React.FC = () => {
                               const requester = users.find(u => u.id === tx.requesterId);
                               const sourceWh = warehouses.find(w => w.id === tx.sourceWarehouseId);
                               const targetWh = warehouses.find(w => w.id === tx.targetWarehouseId);
-                              const supplier = suppliers.find(s => s.id === tx.supplierId);
+                              const supplyName = getTransactionSupplyName(tx);
                               const isApproved = tx.status === TransactionStatus.COMPLETED;
                               const flowLabel = tx.type === TransactionType.IMPORT
                                 ? (targetWh?.name || 'Kho nhận')
@@ -1046,10 +1202,10 @@ const Operations: React.FC = () => {
                                       <span className="text-slate-400">Kho</span>
                                       <span className="truncate text-right">{flowLabel}</span>
                                     </div>
-                                    {supplier && (
+                                    {tx.type === TransactionType.IMPORT && supplyName !== '-' && (
                                       <div className="flex items-center justify-between gap-2 mt-1">
-                                        <span className="text-slate-400">NCC</span>
-                                        <span className="truncate text-right">{supplier.name}</span>
+                                        <span className="text-slate-400">Nguồn</span>
+                                        <span className="truncate text-right">{supplyName}</span>
                                       </div>
                                     )}
                                     <div className="flex items-center justify-between gap-2 mt-1">
@@ -1092,29 +1248,63 @@ const Operations: React.FC = () => {
             <>
               {/* Form tạo phiếu */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-10">
-                {/* Nhà cung cấp - chỉ cho NHẬP KHO, là tùy chọn */}
+                {/* Nguồn cung cấp - bắt buộc cho NHẬP KHO */}
                 {activeTab === TransactionType.IMPORT && (
                   <div className="space-y-2">
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                      Nguồn cung cấp <span className="text-slate-300 normal-case font-normal">(tùy chọn)</span>
+                      Nguồn cung cấp <span className="text-rose-500">*</span>
                     </label>
+                    <div className="flex rounded-xl border border-slate-200 bg-slate-50 p-1">
+                      <button
+                        type="button"
+                        onClick={() => { setSupplySourceTab('supplier_contract'); setSupplySourceId(''); }}
+                        className={`flex-1 rounded-lg px-2 py-2 text-[10px] font-black uppercase tracking-wide transition ${supplySourceTab === 'supplier_contract' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                      >
+                        HĐ nhà cung cấp
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setSupplySourceTab('business_partner'); setSupplySourceId(''); }}
+                        className={`flex-1 rounded-lg px-2 py-2 text-[10px] font-black uppercase tracking-wide transition ${supplySourceTab === 'business_partner' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                      >
+                        Đối tác
+                      </button>
+                    </div>
                     <SearchableSelect
-                      value={supplierId}
-                      options={suppliers}
-                      onChange={supplier => setSupplierId(supplier?.id || '')}
-                      getOptionValue={supplier => supplier.id}
-                      getOptionLabel={supplier => supplier.name}
-                      getOptionSearchText={supplier => [
-                        supplier.name,
-                        supplier.phone,
-                        supplier.taxCode,
-                        supplier.contactPerson,
-                        supplier.email,
-                      ].filter(Boolean).join(' ')}
-                      placeholder="Gõ tên NCC, MST, SĐT..."
+                      value={supplySourceId}
+                      options={supplySourceOptions}
+                      onChange={option => setSupplySourceId(option?.id || '')}
+                      getOptionValue={option => option.id}
+                      getOptionLabel={option => option.label}
+                      getOptionSearchText={option => option.searchText}
+                      renderOption={option => (
+                        <div>
+                          <div className="font-black">{option.label}</div>
+                          <div className="mt-0.5 text-[10px] font-semibold text-slate-400">
+                            {option.selection.kind === 'supplier_contract'
+                              ? option.selection.contract.name
+                              : [option.selection.partner.taxCode ? `MST ${option.selection.partner.taxCode}` : '', option.selection.partner.phone].filter(Boolean).join(' • ') || 'Đối tác'}
+                          </div>
+                        </div>
+                      )}
+                      placeholder={isLoadingSupplySources ? 'Đang tải nguồn cung cấp...' : supplySourceTab === 'supplier_contract' ? 'Tìm mã HĐ, NCC...' : 'Tìm tên, MST, SĐT đối tác...'}
+                      emptyLabel={isLoadingSupplySources ? 'Đang tải...' : 'Không có nguồn phù hợp'}
+                      disabled={isLoadingSupplySources}
                       inputClassName="rounded-xl bg-slate-50 p-3 text-sm"
                     />
                   </div>
+                )}
+
+                {activeTab === TransactionType.IMPORT && (
+                  <label className="space-y-2">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Ngày phiếu nhập</span>
+                    <input
+                      type="date"
+                      value={voucherDate}
+                      onChange={event => setVoucherDate(event.target.value)}
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-accent"
+                    />
+                  </label>
                 )}
 
                 {/* Kho chính (kho của thủ kho) */}
@@ -1152,7 +1342,7 @@ const Operations: React.FC = () => {
                   </div>
                 )}
 
-                <div className={`space-y-2 ${activeTab === TransactionType.LIQUIDATION || (activeTab === TransactionType.IMPORT && !supplierId) ? 'lg:col-span-2' : 'lg:col-span-1'}`}>
+                <div className={`space-y-2 ${activeTab === TransactionType.LIQUIDATION ? 'lg:col-span-2' : 'lg:col-span-1'}`}>
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Ghi chú & Lý do</label>
                   <input type="text" className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 outline-none font-bold text-sm" placeholder="Thông tin bổ sung..." value={note} onChange={e => setNote(e.target.value)} />
                 </div>
@@ -1222,7 +1412,7 @@ const Operations: React.FC = () => {
                             const hasDualUnit = activeTab === TransactionType.IMPORT && product?.purchaseUnit && product.purchaseUnit !== product.unit;
                             const accData = accountingData[item.itemId] || { qty: '', price: '' };
                             const totalAccValue = hasDualUnit && accData.qty && accData.price
-                              ? parseFloat(accData.qty) * parseFloat(accData.price)
+                              ? parseQuantityInput(accData.qty) * parseFloat(accData.price)
                               : undefined;
                             return (
                               <tr key={idx} className={`hover:bg-slate-50/50 ${
@@ -1282,12 +1472,15 @@ const Operations: React.FC = () => {
                                     {hasDualUnit ? (
                                       <div className="flex items-center gap-1">
                                         <input
-                                          type="number" min="0" step="0.001"
+                                          type="text" inputMode="decimal"
                                           placeholder="0.00"
                                           value={accData.qty}
                                           onChange={e => setAccountingData(prev => ({
                                             ...prev,
-                                            [item.itemId]: { ...accData, qty: e.target.value }
+                                            [item.itemId]: {
+                                              ...accData,
+                                              qty: sanitizeQuantityInput(e.target.value, { previousValue: accData.qty }),
+                                            }
                                           }))}
                                           className="w-full border-2 border-amber-200 bg-amber-50 rounded-lg px-2 py-1.5 text-center font-black text-amber-800 text-sm outline-none focus:border-amber-400"
                                         />
@@ -1332,21 +1525,26 @@ const Operations: React.FC = () => {
                                     <input
                                       type="text"
                                       inputMode="decimal"
-                                      value={item.quantity}
-                                      onChange={(e) => setTxItems(txItems.map(ti => ti.itemId === item.itemId ? { ...ti, quantity: normalizeTransactionQuantity(item.itemId, e.target.value) } : ti))}
+                                      value={transactionQuantityInputs[item.itemId] ?? formatQuantityInput(item.quantity)}
+                                      onChange={(e) => updateTransactionQuantityInput(item.itemId, e.target.value)}
                                       className={`w-full border-2 rounded-lg px-2 py-1.5 text-center font-black text-accent outline-none focus:border-accent ${isOverOnHand ? 'border-red-300 bg-red-50' : isOverAvailable ? 'border-amber-300 bg-amber-50' : 'border-slate-100'}`}
                                     />
                                     <span className="text-[10px] font-black text-slate-400 uppercase">{product?.unit}</span>
                                   </div>
                                   {hasDualUnit && accData.qty && accData.price && item.quantity > 0 && (
                                     <div className="text-[9px] text-slate-400 font-bold text-center mt-1 italic">
-                                      Giá vốn/cây: {Math.round(parseFloat(accData.qty) * parseFloat(accData.price) / item.quantity).toLocaleString('vi-VN')} ₫
+                                      Giá vốn/cây: {Math.round(parseQuantityInput(accData.qty) * parseFloat(accData.price) / item.quantity).toLocaleString('vi-VN')} ₫
                                     </div>
                                   )}
                                 </td>
                                 <td className="p-4 text-right">
                                   <button onClick={() => {
                                     setTxItems(txItems.filter(ti => ti.itemId !== item.itemId));
+                                    setTransactionQuantityInputs(prev => {
+                                      const next = { ...prev };
+                                      delete next[item.itemId];
+                                      return next;
+                                    });
                                     setAccountingData(prev => { const n = { ...prev }; delete n[item.itemId]; return n; });
                                   }} className="text-slate-300 hover:text-red-500 p-2 rounded-lg transition-colors"><Trash2 size={18} /></button>
                                 </td>
@@ -1380,14 +1578,21 @@ const Operations: React.FC = () => {
                                   </div>
                                 )}
                               </div>
-                              <button onClick={() => setTxItems(txItems.filter(ti => ti.itemId !== item.itemId))} className="p-2 text-slate-300 hover:text-red-600 transition-colors shrink-0"><Trash2 size={18} /></button>
+                              <button onClick={() => {
+                                setTxItems(txItems.filter(ti => ti.itemId !== item.itemId));
+                                setTransactionQuantityInputs(prev => {
+                                  const next = { ...prev };
+                                  delete next[item.itemId];
+                                  return next;
+                                });
+                              }} className="p-2 text-slate-300 hover:text-red-600 transition-colors shrink-0"><Trash2 size={18} /></button>
                             </div>
                             <div className="flex justify-between items-center">
                               <span className="text-[10px] text-slate-400 font-bold uppercase">Số lượng:</span>
                               <div className="flex items-center gap-3 bg-slate-50 p-1 rounded-lg border border-slate-100">
-                                <button onClick={() => setTxItems(txItems.map(ti => ti.itemId === item.itemId ? { ...ti, quantity: normalizeTransactionQuantity(item.itemId, ti.quantity - 1) } : ti))} className="p-1.5 bg-white rounded border border-slate-200 text-slate-400"><Minus size={14} /></button>
-                                <span className="w-12 text-center font-black text-sm">{item.quantity}</span>
-                                <button onClick={() => setTxItems(txItems.map(ti => ti.itemId === item.itemId ? { ...ti, quantity: normalizeTransactionQuantity(item.itemId, ti.quantity + 1) } : ti))} className="p-1.5 bg-white rounded border border-slate-200 text-slate-400"><Plus size={14} /></button>
+                                <button onClick={() => adjustTransactionQuantity(item.itemId, -1)} className="p-1.5 bg-white rounded border border-slate-200 text-slate-400"><Minus size={14} /></button>
+                                <span className="w-12 text-center font-black text-sm">{formatQuantityInput(item.quantity)}</span>
+                                <button onClick={() => adjustTransactionQuantity(item.itemId, 1)} className="p-1.5 bg-white rounded border border-slate-200 text-slate-400"><Plus size={14} /></button>
                               </div>
                             </div>
                           </div>
@@ -1408,7 +1613,7 @@ const Operations: React.FC = () => {
                             if (hasDualUnit) {
                               hasDualUnitItem = true;
                               const accData = accountingData[item.itemId] || { qty: '', price: '' };
-                              const qty = parseFloat(accData.qty);
+                              const qty = parseQuantityInput(accData.qty);
                               const price = parseFloat(accData.price);
                               if (!isNaN(qty)) totalAccQty += qty;
                               if (!isNaN(qty) && !isNaN(price)) totalAccValue += qty * price;

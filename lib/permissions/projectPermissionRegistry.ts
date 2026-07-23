@@ -55,6 +55,7 @@ export type ProjectPermissionModuleCode = typeof PROJECT_PERMISSION_MODULE_CODES
 export const PROJECT_TAB_MODULE_CODE_BY_KEY = {
   executive: 'project.executive',
   org: 'project.org',
+  permissions: 'project.org',
   finance: 'project.cashflow',
   budget: 'project.budget',
   cashflow: 'project.cashflow',
@@ -160,7 +161,7 @@ export const PROJECT_PERMISSION_MODULES: readonly PermissionModuleDefinition[] =
     ['view', 'Xem', 10],
     ['manage', 'Quản trị', 20],
   ])),
-  moduleDefinition('project.org', 'Tổ chức dự án', [PROJECT_TAB_ROUTE_BY_KEY.org], 20, actionSet('project.org', PROJECT_TAB_ROUTE_BY_KEY.org, [
+  moduleDefinition('project.org', 'Tổ chức dự án', [PROJECT_TAB_ROUTE_BY_KEY.org, PROJECT_TAB_ROUTE_BY_KEY.permissions], 20, actionSet('project.org', PROJECT_TAB_ROUTE_BY_KEY.org, [
     ['view', 'Xem', 10],
     ['assign_staff', 'Phân bổ nhân sự', 20],
     ['grant_permissions', 'Cấp quyền', 30],

@@ -64,6 +64,16 @@ describe('Phase 3.3 Material permission capabilities', () => {
     expect(caps.canManagePo).toBe(true);
   });
 
+  it('lets PO manage cover the direct-purchase lifecycle in the same purchasing room', () => {
+    const caps = capabilitiesFor(['project.material_po.manage']);
+
+    expect(caps.canViewDirectPurchase).toBe(true);
+    expect(caps.canCreateDirectPurchase).toBe(true);
+    expect(caps.canEditDirectPurchase).toBe(true);
+    expect(caps.canDeleteDirectPurchase).toBe(true);
+    expect(caps.canRecordDirectPurchaseAp).toBe(true);
+  });
+
   it('requires the dedicated available-stock action for stock exposure', () => {
     const withoutStock = capabilitiesFor([
       'project.material_request.view',

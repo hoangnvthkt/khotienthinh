@@ -13,6 +13,7 @@ import {
   WorkflowStepAssignment,
 } from '../../types';
 import ProjectWorkflowActionDialog from './ProjectWorkflowActionDialog';
+import type { ProjectPermissionRoomCode, ProjectRoomActionCode } from '../../lib/permissions/projectPermissionRooms';
 
 interface Props {
   subject?: ProjectWorkflowSubject | null;
@@ -33,10 +34,13 @@ interface Props {
   completionHandoff?: {
     required: boolean;
     eligiblePermissionCodes: string[];
+    recipientAction?: ProjectRoomActionCode;
     actionLabel?: string;
     assigneeLabel?: string;
     helperText?: string;
   };
+  recipientRoomCode?: ProjectPermissionRoomCode;
+  recipientAction?: ProjectRoomActionCode;
   disabled?: boolean;
   onAction: (context: ProjectWorkflowActionContext) => Promise<void> | void;
 }
@@ -87,6 +91,8 @@ const ProjectWorkflowPanel: React.FC<Props> = ({
   canResubmit = false,
   canRollback = false,
   completionHandoff,
+  recipientRoomCode,
+  recipientAction,
   disabled = false,
   onAction,
 }) => {
@@ -248,6 +254,8 @@ const ProjectWorkflowPanel: React.FC<Props> = ({
           requesterUserId={requesterUserId}
           documentName={documentName}
           completionHandoff={completionHandoff}
+          recipientRoomCode={recipientRoomCode}
+          recipientAction={recipientAction}
           onCancel={() => setActiveAction(null)}
           onConfirm={handleConfirm}
         />

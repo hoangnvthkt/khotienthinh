@@ -316,7 +316,6 @@ describe('permissionRegistry', () => {
       'lib/projectStaffService.ts',
       'pages/project/GanttTab.tsx',
       'pages/project/PaymentWorkbenchTab.tsx',
-      'pages/project/ProjectOrgTab.tsx',
       'pages/project/QualityTab.tsx',
       'pages/settings/SettingsAlerts.tsx',
     ]);
@@ -341,15 +340,27 @@ describe('permissionRegistry', () => {
     expect(dailyLogSource).toContain('project.daily_log.summarize');
   });
 
-  it('keeps Project Org permissions on the scoped matrix instead of legacy quick toggles', () => {
+  it('keeps Project Org focused on membership instead of the legacy permission matrix', () => {
     const projectOrgSource = readFileSync(join(process.cwd(), 'pages/project/ProjectOrgTab.tsx'), 'utf8');
 
     expect(projectOrgSource).not.toContain('handleQuickTogglePerm');
     expect(projectOrgSource).not.toContain('togglePerm');
     expect(projectOrgSource).not.toContain('PROJECT_PERMISSION_TEMPLATES =');
-    expect(projectOrgSource).toContain('PermissionMatrix');
-    expect(projectOrgSource).toContain('canAssignStaff');
-    expect(projectOrgSource).toContain('canGrantPermissions');
+    expect(projectOrgSource).not.toContain('PermissionMatrix');
+    expect(projectOrgSource).toContain('isSystemAdmin');
+    expect(projectOrgSource).toContain('Phân quyền nghiệp vụ được quản lý ở tab Phân quyền');
+  });
+
+  it('keeps organization and Room permissions in separate tabs', () => {
+    const org = readFileSync(join(process.cwd(), 'pages/project/ProjectOrgTab.tsx'), 'utf8');
+    const permissions = readFileSync(join(process.cwd(), 'pages/project/ProjectPermissionsTab.tsx'), 'utf8');
+    const dashboard = readFileSync(join(process.cwd(), 'pages/ProjectDashboard.tsx'), 'utf8');
+
+    expect(org).not.toContain('PermissionMatrix');
+    expect(org).not.toContain('PROJECT_PERMISSION_TEMPLATES');
+    expect(permissions).toContain('ProjectPermissionRoomsPanel');
+    expect(dashboard).toContain("overviewTab === 'permissions'");
+    expect(dashboard).toContain('user?.role === Role.ADMIN');
   });
 
   it('seeds new project staff with scoped Project PBAC grants, not legacy permission type ids', () => {
