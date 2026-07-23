@@ -350,15 +350,15 @@ const DIRECT_PURCHASE_PAYMENT_SOURCE: Record<SiteDirectPurchasePaymentSource, st
 
 const DIRECT_PURCHASE_STATUS: Record<SiteDirectPurchaseStatus, { label: string; tone: ErpStatusTone }> = {
     draft: { label: 'Nháp', tone: 'neutral' },
-    submitted: { label: 'Đã trình', tone: 'warning' },
-    approved_to_buy: { label: 'Được mua', tone: 'success' },
+    submitted: { label: 'Chờ duyệt', tone: 'warning' },
+    approved_to_buy: { label: 'Đã duyệt mua', tone: 'success' },
     purchased: { label: 'Đã mua', tone: 'attention' },
     received: { label: 'Đã nhập kho', tone: 'info' },
-    finance_review: { label: 'Kế toán duyệt', tone: 'warning' },
-    reconciled: { label: 'Đã ghi AP', tone: 'success' },
-    closed: { label: 'Đã đóng', tone: 'neutral' },
-    rejected: { label: 'Từ chối', tone: 'danger' },
-    cancelled: { label: 'Huỷ', tone: 'danger' },
+    finance_review: { label: 'Chờ xác nhận công nợ', tone: 'warning' },
+    reconciled: { label: 'Đã xác nhận công nợ', tone: 'success' },
+    closed: { label: 'Đã thanh toán', tone: 'neutral' },
+    rejected: { label: 'Từ chối phiếu', tone: 'danger' },
+    cancelled: { label: 'Đã hủy', tone: 'danger' },
 };
 
 const DIRECT_PURCHASE_LINE_TYPE: Record<SiteDirectPurchaseLineType, { label: string; badge: string; defaultName: string; defaultUnit: string }> = {
@@ -1836,7 +1836,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             return;
         }
         const totals = calculateSiteDirectPurchaseTotals(normalizedLines);
-        const status = editingDirectPurchase?.status || (dpMode === 'planned' ? 'draft' : 'purchased');
+        const status = editingDirectPurchase?.status || 'draft';
         const manualLinkAttachment: Attachment[] = dpAttachmentUrl.trim()
             ? [{
                 id: editingDirectPurchase?.attachments?.[0]?.id || crypto.randomUUID(),
@@ -1939,13 +1939,13 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         await loadSupplyData();
     };
     const canDeleteDirectPurchaseDocument = (purchase: SiteDirectPurchase) =>
-        !purchase.everSubmitted
-        && !['submitted', 'approved_to_buy', 'finance_review', 'reconciled', 'closed'].includes(purchase.status)
+        purchase.status === 'draft'
+        && !purchase.everSubmitted
         && !purchase.wmsTransactionId
         && !purchase.siteCashSettlementId
         && !purchase.poId;
     const canEditDirectPurchaseDocument = (purchase: SiteDirectPurchase) =>
-        canDeleteDirectPurchaseDocument(purchase) || purchase.status === 'draft';
+        purchase.status === 'draft';
     const updateSmallToolCustody = async (record: SiteSmallToolRecord) => {
         if (!ensureCanManage('cập nhật bàn giao CCDC nhỏ')) return;
         const holderName = window.prompt('Người/bộ phận đang giữ CCDC', record.holderNameSnapshot || '');
@@ -1986,14 +1986,14 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             setSmallToolActionLoading(null);
         }
     };
-    const updateDirectPurchaseStatus = async (purchase: SiteDirectPurchase, status: SiteDirectPurchaseStatus) => {
+    const transitionDirectPurchase = async (purchase: SiteDirectPurchase, action: 'return_to_draft' | 'approve_to_buy' | 'mark_purchased') => {
         if (!ensureDirectPurchase(effectiveDirectPurchaseCapabilities.canEditDirectPurchase, 'cập nhật trạng thái mua nóng')) return;
-        if (status === 'approved_to_buy') {
+        if (action === 'approve_to_buy') {
             const ok = await confirm({
                 title: 'Duyệt mua nóng',
                 targetName: purchase.code,
                 subtitle: `${purchase.supplierNameSnapshot} • ${fmtMoney(purchase.totalAmount)} đ`,
-                warningText: 'Phiếu sẽ được phép mua. Sau bước này nếu cần sửa phải hủy duyệt trước khi đánh dấu đã mua/phát sinh WMS/AP.',
+                warningText: 'Phiếu sẽ được phép mua. Sau bước này nếu cần sửa phải hủy duyệt trước khi đánh dấu đã mua hoặc phát sinh chứng từ tiếp theo.',
                 actionLabel: 'Duyệt mua',
                 cancelLabel: 'Kiểm tra lại',
                 intent: 'success',
@@ -2001,13 +2001,9 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             });
             if (!ok) return;
         }
-        setDirectActionLoading(`${status}:${purchase.id}`);
+        setDirectActionLoading(`${action}:${purchase.id}`);
         try {
-            const saved = status === 'approved_to_buy'
-                ? await siteDirectPurchaseService.approveToBuy(purchase.id)
-                : status === 'submitted'
-                    ? await siteDirectPurchaseService.submit(purchase.id)
-                    : await siteDirectPurchaseService.setStatus(purchase.id, status);
+            const saved = await siteDirectPurchaseService.transition(purchase.id, action);
             toast.success('Đã cập nhật phiếu mua nóng', `${saved.code} - ${DIRECT_PURCHASE_STATUS[saved.status]?.label || saved.status}`);
             await reloadSelectedDirectPurchase(purchase.id);
         } catch (error: any) {
@@ -2076,39 +2072,6 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             setDirectActionLoading(null);
         }
     };
-    const reviewDirectPurchaseLine = async (line: SiteDirectPurchaseLine, status: 'accepted' | 'adjusted' | 'rejected') => {
-        const detail = selectedDirectPurchase;
-        if (!detail || !ensureDirectPurchase(effectiveDirectPurchaseCapabilities.canRecordDirectPurchaseAp, 'duyệt dòng mua nóng')) return;
-        if (status === 'accepted' || status === 'adjusted') {
-            const ok = await confirm({
-                title: status === 'accepted' ? 'Duyệt dòng mua nóng' : 'Duyệt điều chỉnh dòng mua nóng',
-                targetName: line.itemNameSnapshot || line.skuSnapshot || line.id,
-                subtitle: `${fmtQty(line.quantity)} ${line.unitSnapshot || ''} • ${fmtMoney(Number(line.lineAmount || 0) + Number(line.vatAmount || 0))} đ`,
-                warningText: 'Dòng được duyệt sẽ đủ điều kiện đi tiếp WMS/AP theo loại dòng. Kiểm tra lại số lượng, đơn giá và chứng từ trước khi xác nhận.',
-                actionLabel: 'Duyệt dòng',
-                cancelLabel: 'Kiểm tra lại',
-                intent: 'success',
-                countdownSeconds: 1,
-            });
-            if (!ok) return;
-        }
-        setDirectActionLoading(`review:${line.id}`);
-        try {
-            await siteDirectPurchaseService.reviewLines(detail.purchase.id, [{
-                lineId: line.id,
-                status,
-                acceptedQuantity: status === 'rejected' ? 0 : Number(line.quantity || 0),
-                acceptedAmount: status === 'rejected' ? 0 : Number(line.lineAmount || 0) + Number(line.vatAmount || 0),
-                reviewNote: status === 'rejected' ? 'Kế toán từ chối dòng chứng từ' : 'Kế toán chấp nhận dòng chứng từ',
-            }]);
-            await reloadSelectedDirectPurchase(detail.purchase.id);
-        } catch (error: any) {
-            logApiError('supplyChain.siteDirect.reviewLine', error);
-            toast.error('Không duyệt được dòng mua nóng', getApiErrorMessage(error, 'Không thể duyệt dòng chứng từ.'));
-        } finally {
-            setDirectActionLoading(null);
-        }
-    };
     const createDirectPurchaseWmsDraft = async (purchase: SiteDirectPurchase) => {
         if (!ensureDirectPurchase(effectiveDirectPurchaseCapabilities.canEditDirectPurchase, 'tạo phiếu nhập WMS từ mua nóng')) return;
         setDirectActionLoading(`wms:${purchase.id}`);
@@ -2127,17 +2090,68 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             setDirectActionLoading(null);
         }
     };
-    const syncDirectPurchasePayable = async (purchase: SiteDirectPurchase) => {
-        if (!ensureDirectPurchase(effectiveDirectPurchaseCapabilities.canRecordDirectPurchaseAp, 'ghi nhận AP mua nóng')) return;
-        setDirectActionLoading(`ap:${purchase.id}`);
+    const recordDirectPurchasePayable = async (purchase: SiteDirectPurchase) => {
+        if (!ensureDirectPurchase(effectiveDirectPurchaseCapabilities.canRecordDirectPurchaseAp, 'xác nhận công nợ nhà cung cấp')) return;
+        setDirectActionLoading(`record-payable:${purchase.id}`);
         try {
-            const document = await siteDirectPurchaseService.syncPayable(purchase.id);
-            await siteDirectPurchaseService.setStatus(purchase.id, 'reconciled').catch(() => document);
-            toast.success('Đã ghi nhận AP mua nóng', `${document.documentNo || purchase.code}: ${fmtMoney(document.recognizedAmount)} đ`);
+            const document = await siteDirectPurchaseService.recordPayable(purchase.id);
+            toast.success('Đã xác nhận công nợ nhà cung cấp', `${document.documentNo || purchase.code}: ${fmtMoney(document.recognizedAmount)} đ`);
             await reloadSelectedDirectPurchase(purchase.id);
         } catch (error: any) {
-            logApiError('supplyChain.siteDirect.syncPayable', error);
-            toast.error('Không ghi nhận được AP', getApiErrorMessage(error, 'Stock line cần WMS hoàn tất và dòng chứng từ đã được duyệt.'));
+            logApiError('supplyChain.siteDirect.recordPayable', error);
+            toast.error('Không xác nhận được công nợ', getApiErrorMessage(error, 'Vật tư tồn kho cần hoàn tất nhập kho trước khi xác nhận công nợ.'));
+        } finally {
+            setDirectActionLoading(null);
+        }
+    };
+    const unrecordDirectPurchasePayable = async (purchase: SiteDirectPurchase) => {
+        if (!ensureDirectPurchase(effectiveDirectPurchaseCapabilities.canRecordDirectPurchaseAp, 'bỏ xác nhận công nợ')) return;
+        const reason = await reasonConfirm({
+            title: 'Bỏ xác nhận công nợ',
+            targetName: purchase.code,
+            subtitle: `${purchase.supplierNameSnapshot} • ${fmtMoney(purchase.totalAmount)} đ`,
+            warningText: 'Công nợ nhà cung cấp sẽ được hủy. Chỉ thực hiện khi phiếu chưa có thanh toán, nhập kho hoặc CCDC không thể đảo.',
+            reasonLabel: 'Lý do bỏ xác nhận',
+            reasonPlaceholder: 'VD: Sai hóa đơn, sai số tiền, cần đối chiếu lại...',
+            actionLabel: 'Bỏ xác nhận',
+            cancelLabel: 'Giữ công nợ',
+            intent: 'warning',
+        });
+        if (!reason) return;
+        setDirectActionLoading(`unrecord-payable:${purchase.id}`);
+        try {
+            await siteDirectPurchaseService.unrecordPayable(purchase.id, reason);
+            toast.success('Đã bỏ xác nhận công nợ', `${purchase.code} đã quay lại chờ xác nhận công nợ.`);
+            await reloadSelectedDirectPurchase(purchase.id);
+        } catch (error: any) {
+            logApiError('supplyChain.siteDirect.unrecordPayable', error);
+            toast.error('Không thể bỏ xác nhận công nợ', getApiErrorMessage(error, 'Hãy đảo chứng từ phát sinh sau trước khi thực hiện.'));
+        } finally {
+            setDirectActionLoading(null);
+        }
+    };
+    const rejectDirectPurchase = async (purchase: SiteDirectPurchase) => {
+        if (!ensureDirectPurchase(effectiveDirectPurchaseCapabilities.canRecordDirectPurchaseAp, 'từ chối phiếu mua nóng')) return;
+        const reason = await reasonConfirm({
+            title: 'Từ chối phiếu mua nóng',
+            targetName: purchase.code,
+            subtitle: `${purchase.supplierNameSnapshot} • ${fmtMoney(purchase.totalAmount)} đ`,
+            warningText: 'Toàn bộ phiếu sẽ bị từ chối. Nếu đã xác nhận công nợ nhưng chưa thanh toán, công nợ sẽ được hủy và giữ lại lịch sử.',
+            reasonLabel: 'Lý do từ chối',
+            reasonPlaceholder: 'VD: Chứng từ không hợp lệ, sai nhà cung cấp, không nhận hàng...',
+            actionLabel: 'Từ chối phiếu',
+            cancelLabel: 'Giữ phiếu',
+            intent: 'danger',
+        });
+        if (!reason) return;
+        setDirectActionLoading(`reject:${purchase.id}`);
+        try {
+            await siteDirectPurchaseService.rejectDocument(purchase.id, reason);
+            toast.success('Đã từ chối phiếu mua nóng', `${purchase.code} đã được từ chối và công nợ liên quan đã được hủy.`);
+            await reloadSelectedDirectPurchase(purchase.id);
+        } catch (error: any) {
+            logApiError('supplyChain.siteDirect.reject', error);
+            toast.error('Không thể từ chối phiếu', getApiErrorMessage(error, 'Hãy đảo thanh toán, WMS hoặc CCDC phát sinh sau trước khi thực hiện.'));
         } finally {
             setDirectActionLoading(null);
         }
@@ -6703,13 +6717,18 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                     </button>
                                 )}
                                 {effectiveDirectPurchaseCapabilities.canEditDirectPurchase && purchase.status === 'submitted' && (
-                                    <button type="button" onClick={() => updateDirectPurchaseStatus(purchase, 'approved_to_buy')} disabled={actionBusy} className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[10px] font-black text-emerald-700 hover:bg-emerald-100 disabled:opacity-50">
-                                        <CheckCircle2 size={12} /> Duyệt mua
-                                    </button>
+                                    <>
+                                        <button type="button" onClick={() => transitionDirectPurchase(purchase, 'approve_to_buy')} disabled={actionBusy} className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[10px] font-black text-emerald-700 hover:bg-emerald-100 disabled:opacity-50">
+                                            <CheckCircle2 size={12} /> Duyệt mua
+                                        </button>
+                                        <button type="button" onClick={() => transitionDirectPurchase(purchase, 'return_to_draft')} disabled={actionBusy} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[10px] font-black text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+                                            <RefreshCcw size={12} /> Trả về nháp
+                                        </button>
+                                    </>
                                 )}
                                 {effectiveDirectPurchaseCapabilities.canEditDirectPurchase && purchase.status === 'approved_to_buy' && (
                                     <>
-                                        <button type="button" onClick={() => updateDirectPurchaseStatus(purchase, 'purchased')} disabled={actionBusy} className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-[10px] font-black text-blue-700 hover:bg-blue-100 disabled:opacity-50">
+                                        <button type="button" onClick={() => transitionDirectPurchase(purchase, 'mark_purchased')} disabled={actionBusy} className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-[10px] font-black text-blue-700 hover:bg-blue-100 disabled:opacity-50">
                                             <Package size={12} /> Đã mua
                                         </button>
                                         <button type="button" onClick={() => void cancelDirectPurchaseApproval(purchase)} disabled={actionBusy} className="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[10px] font-black text-amber-700 hover:bg-amber-100 disabled:opacity-50">
@@ -6717,7 +6736,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                         </button>
                                     </>
                                 )}
-                                {effectiveDirectPurchaseCapabilities.canEditDirectPurchase && hasStockLines && !purchase.wmsTransactionId && (
+                                {effectiveDirectPurchaseCapabilities.canEditDirectPurchase && ['purchased', 'received', 'finance_review'].includes(purchase.status) && hasStockLines && !purchase.wmsTransactionId && (
                                     <button type="button" onClick={() => createDirectPurchaseWmsDraft(purchase)} disabled={actionBusy} className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-[10px] font-black text-indigo-700 hover:bg-indigo-100 disabled:opacity-50">
                                         <Truck size={12} /> Tạo WMS import
                                     </button>
@@ -6727,9 +6746,19 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                         <ExternalLink size={12} /> Mở WMS
                                     </button>
                                 )}
-                                {effectiveDirectPurchaseCapabilities.canRecordDirectPurchaseAp && hasAcceptedLines && (
-                                    <button type="button" onClick={() => syncDirectPurchasePayable(purchase)} disabled={actionBusy} title={!wmsCompleted ? 'Hệ thống sẽ kiểm tra WMS trước khi ghi AP.' : 'Ghi nhận AP mua nóng'} className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[10px] font-black text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50">
-                                        <FileText size={12} /> Ghi AP
+                                {effectiveDirectPurchaseCapabilities.canRecordDirectPurchaseAp && ['purchased', 'received', 'finance_review'].includes(purchase.status) && hasAcceptedLines && (
+                                    <button type="button" onClick={() => recordDirectPurchasePayable(purchase)} disabled={actionBusy} title={!wmsCompleted ? 'Vật tư tồn kho cần WMS hoàn tất trước khi xác nhận công nợ.' : 'Xác nhận công nợ nhà cung cấp'} className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[10px] font-black text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50">
+                                        <FileText size={12} /> Xác nhận công nợ nhà cung cấp
+                                    </button>
+                                )}
+                                {effectiveDirectPurchaseCapabilities.canRecordDirectPurchaseAp && purchase.status === 'reconciled' && (
+                                    <button type="button" onClick={() => unrecordDirectPurchasePayable(purchase)} disabled={actionBusy} className="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[10px] font-black text-amber-700 hover:bg-amber-100 disabled:opacity-50">
+                                        <RefreshCcw size={12} /> Bỏ xác nhận công nợ
+                                    </button>
+                                )}
+                                {effectiveDirectPurchaseCapabilities.canRecordDirectPurchaseAp && ['submitted', 'approved_to_buy', 'purchased', 'received', 'finance_review', 'reconciled'].includes(purchase.status) && (
+                                    <button type="button" onClick={() => rejectDirectPurchase(purchase)} disabled={actionBusy} className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[10px] font-black text-red-600 hover:bg-red-100 disabled:opacity-50">
+                                        <Ban size={12} /> Từ chối phiếu
                                     </button>
                                 )}
                                 {effectiveDirectPurchaseCapabilities.canDeleteDirectPurchase && canDeleteDirectPurchaseDocument(purchase) && (
@@ -6777,20 +6806,6 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                     </div>
                                                     <div className="shrink-0 text-left lg:text-right">
                                                         <div className="text-sm font-black text-orange-700">{fmtMoney(amount)} đ</div>
-                                                        {effectiveDirectPurchaseCapabilities.canRecordDirectPurchaseAp && (
-                                                            <div className="mt-2 flex flex-wrap justify-start gap-1 lg:justify-end">
-                                                                {line.status !== 'accepted' && (
-                                                                    <button type="button" onClick={() => void reviewDirectPurchaseLine(line, 'accepted')} className="rounded-md px-2 py-1 text-[10px] font-black text-emerald-700 hover:bg-emerald-50">
-                                                                        Duyệt dòng
-                                                                    </button>
-                                                                )}
-                                                                {line.status !== 'rejected' && (
-                                                                    <button type="button" onClick={() => void reviewDirectPurchaseLine(line, 'rejected')} className="rounded-md px-2 py-1 text-[10px] font-black text-red-600 hover:bg-red-50">
-                                                                        Từ chối
-                                                                    </button>
-                                                                )}
-                                                            </div>
-                                                        )}
                                                     </div>
                                                 </div>
                                             </div>

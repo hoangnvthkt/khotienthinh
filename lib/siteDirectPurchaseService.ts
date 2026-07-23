@@ -2,7 +2,6 @@ import type {
   SiteDirectPurchase,
   SiteDirectPurchaseLine,
   SiteDirectPurchaseLineStatus,
-  SiteDirectPurchaseStatus,
   ProjectSubmissionTarget,
   SupplierPayableDocument,
   Transaction,
@@ -28,14 +27,6 @@ const isMissingDirectPurchaseTable = (error: any): boolean =>
   error?.code === '42P01'
   || String(error?.message || '').includes(PURCHASE_TABLE)
   || String(error?.message || '').includes(LINE_TABLE);
-
-const isMissingSubmissionTargetColumn = (error: any): boolean =>
-  error?.code === '42703'
-  || ['submitted_to_user_id', 'submitted_to_name', 'submitted_to_permission', 'submission_note', 'ever_submitted', 'last_action_by', 'last_action_at']
-    .some(column => String(error?.message || '').includes(column) || String(error?.details || '').includes(column));
-
-const compactObject = <T extends Record<string, any>>(value: T): Partial<T> =>
-  Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as Partial<T>;
 
 const completedWmsStatuses = new Set<string>([
   TransactionStatus.COMPLETED,
@@ -210,17 +201,6 @@ export const siteDirectPurchaseService = {
       .select('id');
     if (error) throw error;
     if ((data || []).length === 0) throw new Error('Không tìm thấy phiếu mua nóng để xoá.');
-  },
-
-  async setStatus(id: string, status: SiteDirectPurchaseStatus, patch: Partial<SiteDirectPurchase> = {}): Promise<SiteDirectPurchase> {
-    const { data, error } = await supabase
-      .from(PURCHASE_TABLE)
-      .update(toDb(compactObject({ ...patch, status })))
-      .eq('id', id)
-      .select('*')
-      .single();
-    if (error) throw error;
-    return normalizePurchase(data);
   },
 
   async transition(
