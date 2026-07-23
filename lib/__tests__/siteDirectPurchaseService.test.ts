@@ -231,7 +231,7 @@ describe('siteDirectPurchaseService persistence', () => {
     expect(saved.id).toBe('direct-1');
   });
 
-  it('auto-syncs AP after saving an expense-only direct purchase', async () => {
+  it('does not create supplier payable when saving an expense-only draft', async () => {
     const expenseLine = line({
       id: 'line-expense',
       lineType: 'expense_only',
@@ -242,32 +242,54 @@ describe('siteDirectPurchaseService persistence', () => {
       lineAmount: 500000,
       vatAmount: 0,
     });
+    supabaseMocks.rpc.mockResolvedValueOnce({
+      data: purchaseRow({ status: 'draft', target_warehouse_id: null, gross_amount: 500000, vat_amount: 0, total_amount: 500000 }),
+      error: null,
+    });
+
+    await siteDirectPurchaseService.upsert(purchase({ status: 'draft', targetWarehouseId: null }), [expenseLine]);
+
+    expect(supabaseMocks.rpc).toHaveBeenCalledTimes(1);
+    expect(supabaseMocks.rpc).toHaveBeenCalledWith('upsert_site_direct_purchase_with_lines', expect.any(Object));
+  });
+
+  it('uses named lifecycle RPCs for payable confirmation, unrecording and full-document rejection', async () => {
     supabaseMocks.rpc
-      .mockResolvedValueOnce({ data: purchaseRow({ target_warehouse_id: null, gross_amount: 500000, vat_amount: 0, total_amount: 500000 }), error: null })
-      .mockResolvedValueOnce({
-        data: {
-          id: 'ap-1',
-          source_type: 'site_direct_purchase',
-          source_id: 'direct-1',
-          recognized_amount: 500000,
-          paid_amount: 0,
-          credit_amount: 0,
-          outstanding_amount: 500000,
-          currency: 'VND',
-          status: 'open',
-        },
-        error: null,
-      });
-    supabaseMocks.from
-      .mockReturnValueOnce(query({ data: purchaseRow({ target_warehouse_id: null }), error: null }))
-      .mockReturnValueOnce(query({ data: [lineRow({ id: 'line-expense', line_type: 'expense_only', item_id: null, status: 'accepted', accepted_quantity: 1, accepted_amount: 500000, line_amount: 500000, vat_amount: 0 })], error: null }));
+      .mockResolvedValueOnce({ data: { id: 'ap-1', source_type: 'site_direct_purchase', source_id: 'direct-1', recognized_amount: 500000, paid_amount: 0, credit_amount: 0, outstanding_amount: 500000, currency: 'VND', status: 'open' }, error: null })
+      .mockResolvedValueOnce({ data: purchaseRow({ status: 'finance_review' }), error: null })
+      .mockResolvedValueOnce({ data: purchaseRow({ status: 'rejected' }), error: null });
 
-    await siteDirectPurchaseService.upsert(purchase({ targetWarehouseId: null }), [expenseLine]);
+    await siteDirectPurchaseService.recordPayable('direct-1');
+    await siteDirectPurchaseService.unrecordPayable('direct-1', 'Sai hóa đơn');
+    await siteDirectPurchaseService.rejectDocument('direct-1', 'Không đủ chứng từ');
 
-    expect(supabaseMocks.rpc).toHaveBeenNthCalledWith(1, 'upsert_site_direct_purchase_with_lines', expect.any(Object));
-    expect(supabaseMocks.rpc).toHaveBeenNthCalledWith(2, 'sync_supplier_payable_from_site_direct_purchase', {
+    expect(supabaseMocks.rpc).toHaveBeenNthCalledWith(1, 'record_site_direct_purchase_payable_v1', {
       p_direct_purchase_id: 'direct-1',
     });
+    expect(supabaseMocks.rpc).toHaveBeenNthCalledWith(2, 'unrecord_site_direct_purchase_payable_v1', {
+      p_direct_purchase_id: 'direct-1',
+      p_reason: 'Sai hóa đơn',
+    });
+    expect(supabaseMocks.rpc).toHaveBeenNthCalledWith(3, 'reject_site_direct_purchase_v1', {
+      p_direct_purchase_id: 'direct-1',
+      p_reason: 'Không đủ chứng từ',
+    });
+  });
+
+  it('sends status changes through the guarded lifecycle RPC', async () => {
+    supabaseMocks.rpc.mockResolvedValueOnce({ data: purchaseRow({ status: 'approved_to_buy' }), error: null });
+
+    const saved = await siteDirectPurchaseService.transition('direct-1', 'approve_to_buy');
+
+    expect(supabaseMocks.rpc).toHaveBeenCalledWith('transition_site_direct_purchase_v1', {
+      p_direct_purchase_id: 'direct-1',
+      p_action: 'approve_to_buy',
+      p_reason: null,
+      p_target_user_id: null,
+      p_target_name: null,
+      p_target_permission: null,
+    });
+    expect(saved.status).toBe('approved_to_buy');
   });
 
   it('reviews direct purchase lines with accepted quantity and accepted amount snapshots', async () => {
@@ -297,19 +319,16 @@ describe('siteDirectPurchaseService persistence', () => {
   });
 
   it('submits a direct purchase with an explicit approval recipient', async () => {
-    const updateQuery = query({
+    supabaseMocks.rpc.mockResolvedValueOnce({
       data: purchaseRow({
         status: 'submitted',
         submitted_to_user_id: 'approver-1',
         submitted_to_name: 'Anh duyệt',
         submitted_to_permission: 'approve',
-        submission_note: 'Duyệt gấp',
         ever_submitted: true,
-        last_action_by: 'actor-1',
       }),
       error: null,
     });
-    supabaseMocks.from.mockReturnValueOnce(updateQuery);
 
     const saved = await siteDirectPurchaseService.submit('direct-1', {
       userId: 'approver-1',
@@ -320,57 +339,45 @@ describe('siteDirectPurchaseService persistence', () => {
       note: 'Duyệt gấp',
     }, 'actor-1');
 
-    expect(updateQuery.update).toHaveBeenCalledWith(expect.objectContaining({
-      status: 'submitted',
-      submitted_to_user_id: 'approver-1',
-      submitted_to_name: 'Anh duyệt',
-      submitted_to_permission: 'approve',
-      submission_note: 'Duyệt gấp',
-      ever_submitted: true,
-      last_action_by: 'actor-1',
-    }));
+    expect(supabaseMocks.rpc).toHaveBeenCalledWith('transition_site_direct_purchase_v1', {
+      p_direct_purchase_id: 'direct-1',
+      p_action: 'submit',
+      p_reason: null,
+      p_target_user_id: 'approver-1',
+      p_target_name: 'Anh duyệt',
+      p_target_permission: 'approve',
+    });
     expect(saved.status).toBe('submitted');
     expect(saved.submittedToUserId).toBe('approver-1');
     expect(saved.everSubmitted).toBe(true);
   });
 
-  it('falls back to status-only submit when approval recipient columns are missing', async () => {
-    const missingColumnQuery = query({
-      data: null,
-      error: { code: '42703', message: 'column "submitted_to_user_id" does not exist' },
-    });
-    const fallbackQuery = query({ data: purchaseRow({ status: 'submitted' }), error: null });
-    supabaseMocks.from
-      .mockReturnValueOnce(missingColumnQuery)
-      .mockReturnValueOnce(fallbackQuery);
-
-    const saved = await siteDirectPurchaseService.submit('direct-1', {
-      userId: 'approver-1',
-      userIds: ['approver-1'],
-      name: 'Anh duyệt',
-      names: ['Anh duyệt'],
-      permissionCode: 'approve',
-    }, 'actor-1');
-
-    expect(missingColumnQuery.update).toHaveBeenCalledWith(expect.objectContaining({
-      submitted_to_user_id: 'approver-1',
-    }));
-    expect(fallbackQuery.update).toHaveBeenCalledWith({ status: 'submitted' });
-    expect(saved.status).toBe('submitted');
-  });
-
   it('cancels purchase approval back to submitted before purchase execution', async () => {
-    const updateQuery = query({ data: purchaseRow({ status: 'submitted', note: 'Hủy duyệt: cần bổ sung báo giá' }), error: null });
-    supabaseMocks.from.mockReturnValueOnce(updateQuery);
+    supabaseMocks.rpc.mockResolvedValueOnce({ data: purchaseRow({ status: 'submitted', note: 'Hủy duyệt: cần bổ sung báo giá' }), error: null });
 
     const saved = await siteDirectPurchaseService.cancelApproval('direct-1', 'cần bổ sung báo giá');
 
-    expect(updateQuery.update).toHaveBeenCalledWith(expect.objectContaining({
-      status: 'submitted',
-      last_action_by: null,
-      submitted_to_permission: 'approve',
-    }));
+    expect(supabaseMocks.rpc).toHaveBeenCalledWith('transition_site_direct_purchase_v1', {
+      p_direct_purchase_id: 'direct-1',
+      p_action: 'cancel_approval',
+      p_reason: 'cần bổ sung báo giá',
+      p_target_user_id: null,
+      p_target_name: null,
+      p_target_permission: null,
+    });
     expect(saved.status).toBe('submitted');
+  });
+
+  it('routes approval and purchase completion through the guarded lifecycle RPC', async () => {
+    supabaseMocks.rpc
+      .mockResolvedValueOnce({ data: purchaseRow({ status: 'approved_to_buy' }), error: null })
+      .mockResolvedValueOnce({ data: purchaseRow({ status: 'purchased' }), error: null });
+
+    await siteDirectPurchaseService.approveToBuy('direct-1');
+    await siteDirectPurchaseService.markPurchased('direct-1');
+
+    expect(supabaseMocks.rpc).toHaveBeenNthCalledWith(1, 'transition_site_direct_purchase_v1', expect.objectContaining({ p_action: 'approve_to_buy' }));
+    expect(supabaseMocks.rpc).toHaveBeenNthCalledWith(2, 'transition_site_direct_purchase_v1', expect.objectContaining({ p_action: 'mark_purchased' }));
   });
 
   it('deletes an unsubmitted direct purchase that has no downstream documents', async () => {

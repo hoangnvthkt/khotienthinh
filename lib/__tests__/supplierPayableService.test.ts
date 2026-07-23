@@ -71,6 +71,34 @@ describe('supplierPayableService helpers', () => {
     expect(calculatePurchaseOrderRecognizedAmount(basePo())).toBe(10_000_000);
   });
 
+  it('recognizes over-received PO payable from actual quantity, then nets returns', () => {
+    expect(calculatePurchaseOrderRecognizedAmount(basePo({
+      items: [{
+        itemId: 'steel',
+        sku: 'D10',
+        name: 'Thep D10',
+        unit: 'kg',
+        qty: 2000,
+        unitPrice: 20_000,
+        receivedQty: 2010,
+        returnedQty: 0,
+      }],
+    }))).toBe(40_200_000);
+
+    expect(calculatePurchaseOrderRecognizedAmount(basePo({
+      items: [{
+        itemId: 'steel',
+        sku: 'D10',
+        name: 'Thep D10',
+        unit: 'kg',
+        qty: 2000,
+        unitPrice: 20_000,
+        receivedQty: 2010,
+        returnedQty: 10,
+      }],
+    }))).toBe(40_000_000);
+  });
+
   it('builds an AP document snapshot from a received purchase order', () => {
     const document = buildPayableDocumentFromPurchaseOrder(basePo());
 

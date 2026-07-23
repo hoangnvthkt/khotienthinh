@@ -299,6 +299,14 @@ const fetchAllInventoryItemRows = async (): Promise<any[] | null> => {
 
 const mapTransactionFromDb = (t: any): Transaction => ({
   ...t,
+  attachments: Array.isArray(t.attachments) ? t.attachments : [],
+  items: Array.isArray(t.items)
+    ? t.items.map((item: any) => ({
+      ...item,
+      orderedQty: item.orderedQty ?? item.ordered_qty,
+      varianceReason: item.varianceReason ?? item.variance_reason,
+    }))
+    : [],
   sourceWarehouseId: t.source_warehouse_id,
   targetWarehouseId: t.target_warehouse_id,
   supplierId: t.supplier_id,
