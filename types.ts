@@ -3076,6 +3076,9 @@ export interface TransactionItem {
   materialRequestId?: string;
   requestLineId?: string;
   fulfillmentBatchId?: string;
+  purchaseOrderLineId?: string;
+  purchaseOrderDeliveryBatchId?: string;
+  purchaseOrderDeliveryLineId?: string;
   materialIssueOrderId?: string;
   materialIssueLineId?: string;
   materialIssueReturnId?: string;
