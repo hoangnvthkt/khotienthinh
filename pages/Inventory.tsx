@@ -3,7 +3,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
-import { Plus, QrCode, Upload, FileSpreadsheet, Trash2, MoreHorizontal, ShieldAlert, AlertTriangle, Loader2, Download, RefreshCcw, PackageSearch } from 'lucide-react';
+import { Plus, QrCode, Upload, FileSpreadsheet, Trash2, MoreHorizontal, ShieldAlert, AlertTriangle, Loader2, Download, RefreshCcw, PackageSearch, ArrowDown, ArrowUp } from 'lucide-react';
 import AddInventoryModal from '../components/AddInventoryModal';
 import InventoryDetailModal from '../components/InventoryDetailModal';
 import DeleteInventoryModal from '../components/DeleteInventoryModal';
@@ -74,6 +74,7 @@ const Inventory: React.FC = () => {
   useModuleData('wms');
   const toast = useToast();
   const [searchTerm, setSearchTerm] = useState('');
+  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
 
   const hasAssignedWh = !!user.assignedWarehouseId;
   const { canManage } = usePermission();
@@ -110,24 +111,19 @@ const Inventory: React.FC = () => {
   const importModeRef = useRef<ExcelImportMode>('create');
   const lastLoadedQrTokenRef = useRef<string | null>(null);
 
-  // Logic lọc vật tư theo yêu cầu bảo mật mới
+  // Logic lọc và sắp xếp vật tư theo tồn kho (Mặc định DESC: cao tới thấp)
   const filteredItems = useMemo(() => {
-    return items.filter(item => {
+    const list = items.filter(item => {
       const matchesSearch = matchesSearchQueryMultiple([item.name, item.sku], searchTerm);
 
       let matchesFilter = true;
 
-      // Nếu là thủ kho:
-      // Thấy tất cả vật tư thuộc kho mình (có entry trong stockByWarehouse, kể cả tồn = 0)
-      // Điều này đảm bảo thủ kho thấy được hết danh mục vật tư kho mình quản lý
       if (hasAssignedWh && user.assignedWarehouseId) {
         matchesFilter = user.assignedWarehouseId in item.stockByWarehouse;
       } else if (filterWarehouse !== 'all') {
-        // Nếu là Admin nhưng đang chọn lọc 1 kho cụ thể
         matchesFilter = filterWarehouse in item.stockByWarehouse;
       }
 
-      // Lọc cảnh báo tồn
       if (showLowStockOnly) {
         const stock = filterWarehouse === 'all'
           ? Object.values(item.stockByWarehouse).reduce((a, b) => (a as number) + (b as number), 0)
@@ -137,7 +133,18 @@ const Inventory: React.FC = () => {
 
       return matchesSearch && matchesFilter;
     });
-  }, [items, searchTerm, hasAssignedWh, user, filterWarehouse, showLowStockOnly]);
+
+    return [...list].sort((a, b) => {
+      const stockA = filterWarehouse === 'all'
+        ? Object.values(a.stockByWarehouse).reduce((sum, n) => sum + Number(n || 0), 0)
+        : Number(a.stockByWarehouse[filterWarehouse] || 0);
+      const stockB = filterWarehouse === 'all'
+        ? Object.values(b.stockByWarehouse).reduce((sum, n) => sum + Number(n || 0), 0)
+        : Number(b.stockByWarehouse[filterWarehouse] || 0);
+
+      return sortOrder === 'desc' ? stockB - stockA : stockA - stockB;
+    });
+  }, [items, searchTerm, hasAssignedWh, user, filterWarehouse, showLowStockOnly, sortOrder]);
 
   const { paginatedItems, currentPage, totalPages, totalItems, pageSize, setPage, setPageSize, startIndex, endIndex } = usePagination<InventoryItem>(filteredItems, 20);
 
@@ -734,45 +741,75 @@ const Inventory: React.FC = () => {
         searchValue={searchTerm}
         onSearchChange={setSearchTerm}
         searchPlaceholder="Tìm theo tên, mã SKU..."
-        canClear={!!searchTerm || showLowStockOnly || (!hasAssignedWh && filterWarehouse !== 'all')}
+        canClear={!!searchTerm || showLowStockOnly || (!hasAssignedWh && filterWarehouse !== 'all') || sortOrder !== 'desc'}
         onClear={() => {
           setSearchTerm('');
           setShowLowStockOnly(false);
+          setSortOrder('desc');
           if (!hasAssignedWh) setFilterWarehouse('all');
         }}
         filters={
           <>
             <select
               disabled={hasAssignedWh}
-              className="min-h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 outline-none disabled:opacity-70 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
+              className="min-h-9 rounded-xl border border-zinc-200 bg-white px-3 text-xs font-semibold text-zinc-700 outline-none disabled:opacity-70 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300"
               value={filterWarehouse}
               onChange={(e) => setFilterWarehouse(e.target.value)}
             >
               {!hasAssignedWh && <option value="all">Tất cả kho hệ thống</option>}
               {warehouses.map(wh => <option key={wh.id} value={wh.id}>{wh.name}</option>)}
             </select>
+
+            {/* Sắp xếp tồn kho ASC / DESC */}
+            <div className="inline-flex items-center rounded-xl bg-zinc-100 dark:bg-zinc-800 p-1 border border-zinc-200 dark:border-zinc-700">
+              <button
+                type="button"
+                onClick={() => setSortOrder('desc')}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  sortOrder === 'desc'
+                    ? 'bg-teal-700 text-white shadow-sm'
+                    : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
+                }`}
+                title="Sắp xếp tồn kho từ cao đến thấp (Mặc định)"
+              >
+                <ArrowDown size={14} /> Giảm dần (DESC)
+              </button>
+              <button
+                type="button"
+                onClick={() => setSortOrder('asc')}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  sortOrder === 'asc'
+                    ? 'bg-teal-700 text-white shadow-sm'
+                    : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
+                }`}
+                title="Sắp xếp tồn kho từ thấp đến cao"
+              >
+                <ArrowUp size={14} /> Tăng dần (ASC)
+              </button>
+            </div>
+
             <button
               type="button"
               onClick={() => setShowLowStockOnly(!showLowStockOnly)}
-              className={`inline-flex min-h-9 items-center justify-center rounded-lg border px-3 text-xs font-black transition ${
+              className={`inline-flex min-h-9 items-center justify-center rounded-xl border px-3 text-xs font-semibold transition ${
                 showLowStockOnly
-                  ? 'border-orange-200 bg-orange-50 text-orange-700'
-                  : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300'
+                  ? 'border-teal-200 bg-teal-50 text-teal-800 dark:border-teal-800/60 dark:bg-teal-950/40 dark:text-teal-300'
+                  : 'border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800'
               }`}
             >
-              <AlertTriangle className="mr-2 h-4 w-4" />
+              <AlertTriangle className="mr-1.5 h-3.5 w-3.5 text-teal-700 dark:text-teal-400" />
               Cảnh báo tồn
             </button>
           </>
         }
       />
 
-      <div className="bg-card rounded-2xl shadow-sm border border-border overflow-hidden">
+      <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-sm border border-zinc-200 dark:border-zinc-800 overflow-hidden">
         {/* Desktop Table View */}
         <div className="hidden md:block overflow-x-auto scrollbar-hide">
           <table className="w-full text-left border-collapse min-w-[700px]">
             <thead>
-              <tr className="bg-muted/50 border-b border-border text-muted-foreground text-[10px] uppercase font-black tracking-widest">
+              <tr className="bg-zinc-50 dark:bg-zinc-800/60 border-b border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400 text-[10px] uppercase font-semibold tracking-wider">
                 <th className="p-4">Mã SKU</th>
                 <th className="p-4">Tên vật tư</th>
                 <th className="p-4">Danh mục</th>
@@ -781,20 +818,20 @@ const Inventory: React.FC = () => {
                 <th className="p-4"></th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-border text-sm">
+            <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800 text-sm">
               {paginatedItems.map(item => {
                 const stock = getDisplayStock(item);
                 const isLow = stock <= item.minStock;
                 return (
-                  <tr key={item.id} className="hover:bg-muted/30 transition-colors group">
-                    <td className="p-4 font-mono text-muted-foreground font-bold text-xs">{item.sku}</td>
-                    <td className="p-4 font-black text-foreground cursor-pointer hover:text-accent" onClick={() => setSelectedItem(item)}>
-                      <div className="truncate max-w-[200px]">{item.name}</div>
+                  <tr key={item.id} className="hover:bg-teal-50/40 dark:hover:bg-teal-950/30 transition-colors group">
+                    <td className="p-4 font-mono text-zinc-500 dark:text-zinc-400 font-semibold text-xs">{item.sku}</td>
+                    <td className="p-4 font-bold text-zinc-900 dark:text-zinc-100 cursor-pointer hover:text-teal-700 dark:hover:text-teal-400 transition-colors" onClick={() => setSelectedItem(item)}>
+                      <div className="truncate max-w-[220px]">{item.name}</div>
                     </td>
-                    <td className="p-4 text-muted-foreground font-medium">{item.category}</td>
+                    <td className="p-4 text-zinc-600 dark:text-zinc-400 font-medium">{item.category}</td>
                     <td className="p-4 text-right">
-                      <span className={`font-black ${isLow ? 'text-red-600' : 'text-foreground'}`}>{stock.toLocaleString()}</span>
-                      <span className="text-[10px] text-muted-foreground ml-1 uppercase font-bold">{item.unit}</span>
+                      <span className={`font-bold ${isLow ? 'text-teal-900 dark:text-teal-300' : 'text-zinc-900 dark:text-zinc-100'}`}>{stock.toLocaleString()}</span>
+                      <span className="text-[10px] text-zinc-400 ml-1 uppercase font-semibold">{item.unit}</span>
                     </td>
                     <td className="p-4 text-center">
                       <StatusBadge status={isLow ? 'warning' : 'completed'} label={isLow ? 'Sắp hết' : 'An toàn'} tone={isLow ? 'attention' : 'success'} />
@@ -804,12 +841,12 @@ const Inventory: React.FC = () => {
                         {canCRUD && (
                           <button
                             onClick={(e) => { e.stopPropagation(); setItemToDelete(item); }}
-                            className="p-2 text-muted-foreground/30 hover:text-red-600 transition-colors"
+                            className="p-2 text-zinc-400 hover:text-red-600 transition-colors"
                           >
                             <Trash2 size={16} />
                           </button>
                         )}
-                        <button onClick={() => setSelectedItem(item)} className="text-muted-foreground/30 hover:text-accent p-2">
+                        <button onClick={() => setSelectedItem(item)} className="text-zinc-400 hover:text-teal-700 dark:hover:text-teal-400 p-2">
                           <MoreHorizontal size={18} />
                         </button>
                       </div>

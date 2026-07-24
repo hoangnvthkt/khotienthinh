@@ -314,10 +314,17 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
       <aside className={`fixed top-0 left-0 z-[70] h-[100dvh] ${sidebarWidth} text-slate-800 dark:text-white transition-all duration-300 lg:translate-x-0 lg:static ${sidebarBg} ${isOpen ? 'translate-x-0' : '-translate-x-full'} flex flex-col`}>
 
         {/* Logo */}
-        <div className={`flex items-center h-16 px-4 border-b border-white/20 dark:border-white/5 shrink-0 ${collapsed ? 'justify-center' : 'space-x-3'}`}>
-          <div className="w-8 h-8 bg-accent rounded-lg flex items-center justify-center font-black text-xs uppercase shadow-lg shadow-blue-500/40 shrink-0">
-            {appSettings.name.slice(0, 2)}
-          </div>
+        <div
+          onClick={goBackToHome}
+          className="flex items-center justify-center h-16 px-4 border-b border-white/20 dark:border-white/5 shrink-0 gap-2.5 cursor-pointer hover:opacity-90 transition-opacity"
+        >
+          {appSettings.logo ? (
+            <img src={appSettings.logo} alt={appSettings.name} className="w-8 h-8 object-contain rounded-lg shadow-sm shrink-0" />
+          ) : (
+            <div className="w-8 h-8 bg-accent rounded-lg flex items-center justify-center font-black text-xs uppercase shadow-lg shadow-blue-500/40 shrink-0 text-white">
+              {appSettings.name.slice(0, 2)}
+            </div>
+          )}
           {!collapsed && <span className="text-lg font-black tracking-tight truncate">{appSettings.name}</span>}
         </div>
 
