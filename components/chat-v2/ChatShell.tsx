@@ -7,6 +7,9 @@ import {
   Bell,
   BellOff,
   Check,
+  CheckCheck,
+  Loader2,
+  AlertCircle,
   ChevronUp,
   CornerUpLeft,
   Crown,
@@ -504,10 +507,10 @@ const MessageRow: React.FC<{
         <div className={`flex max-w-full items-center gap-2 ${isMine ? 'flex-row-reverse' : 'flex-row'}`}>
           <div className="relative max-w-full">
             {/* Message bubble */}
-            <div className={`relative min-w-0 rounded-2xl px-4 py-2.5 shadow-sm border ${
+            <div className={`relative min-w-0 rounded-2xl px-4 py-2.5 shadow-sm border transition-all ${
               isMine
-                ? 'rounded-br-sm bg-emerald-600 text-white border-emerald-600'
-                : 'rounded-bl-sm border-slate-200 bg-slate-100 text-slate-850 dark:border-slate-750 dark:bg-[#2b2d31] dark:text-[#dbdee1]'
+                ? 'rounded-br-xs bg-gradient-to-r from-teal-700 to-teal-800 text-white border-teal-700/80 shadow-teal-900/10'
+                : 'rounded-bl-xs border-zinc-200 dark:border-zinc-700/60 bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-zinc-900/5'
             }`}>
               {isEditing ? (
                 <div className="space-y-2">
@@ -518,7 +521,7 @@ const MessageRow: React.FC<{
                     className={`w-full min-w-[220px] resize-none rounded-lg border px-3 py-2 text-sm font-semibold outline-none ${
                       isMine
                         ? 'border-white/30 bg-white/10 text-white placeholder:text-white/60'
-                        : 'border-slate-200 bg-white text-slate-850 placeholder:text-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:text-[#dbdee1] dark:placeholder:text-slate-550'
+                        : 'border-zinc-200 bg-white text-zinc-850 placeholder:text-zinc-400 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder:text-zinc-500'
                     }`}
                   />
                   <div className="flex justify-end gap-1.5">
@@ -556,9 +559,23 @@ const MessageRow: React.FC<{
                 />
               )}
 
-              {/* Timestamp inside bubble */}
-              <div className={`mt-1 text-right text-[9px] font-bold ${isMine ? 'text-emerald-100/80' : 'text-slate-500 dark:text-slate-400'}`}>
-                {formatTime(message.createdAt)} {message.editedAt ? '· đã sửa' : ''}
+              {/* Timestamp & Status indicator inside bubble */}
+              <div className={`mt-1 flex items-center justify-end gap-1 text-[9px] font-bold ${isMine ? 'text-teal-100/90' : 'text-zinc-500 dark:text-zinc-400'}`}>
+                <span>{formatTime(message.createdAt)}</span>
+                {message.editedAt && <span>· đã sửa</span>}
+                {isMine && (
+                  <span className="ml-0.5 inline-flex items-center">
+                    {message.isOptimistic ? (
+                      <span title="Đang gửi..."><Loader2 size={11} className="animate-spin text-teal-200" /></span>
+                    ) : message.isFailed ? (
+                      <span title="Gửi thất bại"><AlertCircle size={11} className="text-red-300" /></span>
+                    ) : readers.length > 0 ? (
+                      <span title={`Đã xem bởi ${readers.map(u => u.name).join(', ')}`}><CheckCheck size={12} className="text-emerald-300" /></span>
+                    ) : (
+                      <span title="Đã gửi đến máy chủ"><Check size={12} className="text-teal-200" /></span>
+                    )}
+                  </span>
+                )}
               </div>
             </div>
 
@@ -935,16 +952,16 @@ const MessageComposer: React.FC<{
             }
           }}
           rows={1}
-          placeholder="Gõ và nhấn Enter để gửi tin nhắn"
+          placeholder="Gõ và nhấn Enter để gửi tin nhắn..."
           disabled={disabled || sending}
-          className="max-h-32 min-h-11 resize-none rounded-lg border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800 px-3 py-3 text-sm font-semibold text-slate-850 dark:text-[#dbdee1] outline-none transition focus:border-indigo-500/40 disabled:opacity-50"
+          className="max-h-32 min-h-11 resize-none rounded-xl border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 px-3.5 py-3 text-xs font-semibold text-zinc-900 dark:text-zinc-100 outline-none transition focus:border-teal-500/50 focus:ring-2 focus:ring-teal-500/20 disabled:opacity-50"
         />
         <button
           type="button"
           onClick={submit}
-          title="Gửi"
+          title="Gửi (Enter)"
           disabled={disabled || sending || (!body.trim() && files.length === 0)}
-          className="flex h-11 w-11 items-center justify-center rounded-lg bg-emerald-600 text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 dark:disabled:bg-slate-800 dark:disabled:text-slate-500"
+          className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white shadow-md shadow-teal-600/20 active:scale-95 transition-all disabled:cursor-not-allowed disabled:bg-none disabled:bg-zinc-200 disabled:text-zinc-400 dark:disabled:bg-zinc-800 dark:disabled:text-zinc-600"
         >
           <Send size={18} />
         </button>
@@ -1404,32 +1421,32 @@ const ConversationList: React.FC<{
         key={conversation.id}
         type="button"
         onClick={() => onSelect(conversation.id)}
-        className={`grid w-full grid-cols-[auto_1fr_auto] gap-3 rounded-lg px-2 py-2.5 text-left transition select-none ${
+        className={`grid w-full grid-cols-[auto_1fr_auto] gap-3 rounded-xl px-2.5 py-2.5 text-left transition-all select-none border-l-4 ${
           isActive
-            ? 'bg-indigo-50 dark:bg-[#35373c] text-indigo-600 dark:text-white font-bold'
-            : 'text-slate-600 dark:text-[#949ba4] hover:bg-slate-200/60 dark:hover:bg-[#2e3035] hover:text-slate-900 dark:hover:text-[#dbdee1]'
+            ? 'bg-teal-50 dark:bg-teal-950/40 text-teal-800 dark:text-teal-200 font-bold border-teal-600 shadow-sm'
+            : 'border-transparent text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800/60 hover:text-zinc-900 dark:hover:text-zinc-200'
         }`}
       >
         {conversation.type === 'direct' ? (
           <Avatar user={otherUser} label={title} online={isOnline} size="sm" />
         ) : (
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-800 text-slate-350 animate-fade-in self-center">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-teal-700 text-white font-bold text-xs shadow-sm self-center">
             <Users size={14} />
           </div>
         )}
         <div className="min-w-0 self-center">
           <div className="flex min-w-0 items-center gap-1">
-            {conversation.currentParticipant?.isPinned && <Pin size={11} className="shrink-0 text-amber-500" />}
-            <span className="truncate text-xs font-bold">{title}</span>
+            {conversation.currentParticipant?.isPinned && <Pin size={11} className="shrink-0 text-teal-700 dark:text-teal-400" />}
+            <span className="truncate text-xs font-extrabold">{title}</span>
           </div>
-          <div className="mt-0.5 truncate text-[10px] text-slate-500 leading-tight">
+          <div className="mt-0.5 truncate text-[10px] text-zinc-500 dark:text-zinc-400 leading-tight">
             {lastMsgPreview || ' '}
           </div>
         </div>
         <div className="flex flex-col items-end justify-center gap-1 select-none">
-          <span className="text-[9px] font-bold text-slate-500">{formatTime(conversation.lastMessageAt || conversation.updatedAt)}</span>
+          <span className="text-[9px] font-semibold text-zinc-400 dark:text-zinc-500">{formatTime(conversation.lastMessageAt || conversation.updatedAt)}</span>
           {conversation.unreadCount > 0 && (
-            <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-red-505 bg-red-500 px-1 text-[8px] font-black text-white ring-1 ring-red-400 animate-pulse">
+            <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-teal-700 text-white px-1.5 text-[8px] font-extrabold shadow-sm">
               {conversation.unreadCount > 9 ? '9+' : conversation.unreadCount}
             </span>
           )}

@@ -4241,6 +4241,29 @@ export interface WorkflowInstanceComment {
   updatedAt?: string;
 }
 
+export interface WorkflowStepTaskAttachment {
+  id: string;
+  fileName: string;
+  fileSize: number;
+  mimeType: string;
+  storagePath: string;
+  uploadedAt?: string;
+}
+
+export interface WorkflowStepTask {
+  id: string;
+  instanceId: string;
+  nodeId: string;
+  title: string;
+  isCompleted: boolean;
+  completedBy?: string | null;
+  completedAt?: string | null;
+  attachments: WorkflowStepTaskAttachment[];
+  createdBy: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
 // ==================== REQUEST MODULE ====================
 
 export enum RQStatus {
