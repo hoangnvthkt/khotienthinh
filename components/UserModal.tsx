@@ -240,6 +240,9 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
     username: '',
     password: '',
     phone: '',
+    position: '',
+    managerId: '',
+    birthDate: '',
     role: Role.EMPLOYEE,
     assignedWarehouseId: '',
     allowedModules: [],
@@ -279,7 +282,17 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
     }
 
     if (userToEdit) {
-      setFormData({ ...userToEdit, password: '', allowedModules: userToEdit.allowedModules || getLegacyAllowedModules(userToEdit), allowedSubModules: userToEdit.allowedSubModules || {}, adminModules: userToEdit.adminModules || [], adminSubModules: userToEdit.adminSubModules || {} });
+      setFormData({
+        ...userToEdit,
+        password: '',
+        position: userToEdit.position || '',
+        managerId: userToEdit.managerId || '',
+        birthDate: userToEdit.birthDate || '',
+        allowedModules: userToEdit.allowedModules || getLegacyAllowedModules(userToEdit),
+        allowedSubModules: userToEdit.allowedSubModules || {},
+        adminModules: userToEdit.adminModules || [],
+        adminSubModules: userToEdit.adminSubModules || {},
+      });
     } else {
       setFormData({
         name: '',
@@ -287,6 +300,9 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
         username: '',
         password: '',
         phone: '',
+        position: '',
+        managerId: '',
+        birthDate: '',
         role: Role.EMPLOYEE,
         assignedWarehouseId: '',
         allowedModules: [],
@@ -502,6 +518,9 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
         name: formData.name || '',
         email: formData.email || '',
         username: formData.username || '',
+        position: formData.position || undefined,
+        managerId: formData.managerId || undefined,
+        birthDate: formData.birthDate || undefined,
         password: formData.password || userToEdit?.password || '',
         phone: formData.phone || '',
         role: formData.role as Role,
@@ -636,6 +655,54 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
               {userToEdit && (
                 <p className="text-[9px] text-amber-600 italic">⚠️ Mật khẩu tối thiểu 6 ký tự. Đổi mật khẩu sẽ cập nhật cả Supabase Auth.</p>
               )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Position / Title */}
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-slate-500 uppercase flex items-center">
+                <Briefcase size={12} className="mr-1" /> Chức danh / Vị trí
+              </label>
+              <input
+                type="text"
+                value={formData.position || ''}
+                onChange={e => setFormData({ ...formData, position: e.target.value })}
+                className="w-full p-2.5 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-accent"
+                placeholder="VD: TP HCNS, Chỉ huy Phó..."
+              />
+            </div>
+
+            {/* Birth Date */}
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-slate-500 uppercase flex items-center">
+                <Calendar size={12} className="mr-1" /> Ngày sinh
+              </label>
+              <input
+                type="date"
+                value={formData.birthDate || ''}
+                onChange={e => setFormData({ ...formData, birthDate: e.target.value })}
+                className="w-full p-2.5 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-accent bg-white"
+              />
+            </div>
+
+            {/* Direct Manager */}
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-slate-500 uppercase flex items-center">
+                <Users size={12} className="mr-1" /> Quản lý trực tiếp
+              </label>
+              <select
+                value={formData.managerId || ''}
+                onChange={e => setFormData({ ...formData, managerId: e.target.value })}
+                className="w-full p-2.5 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-accent bg-white text-xs"
+              >
+                <option value="">-- Chưa chỉ định --</option>
+                {users.map(u => (
+                  <option key={u.id} value={u.id}>
+                    {u.name} {u.username ? `(@${u.username})` : ''} {u.position ? `- ${u.position}` : ''}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 
