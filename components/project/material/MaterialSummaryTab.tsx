@@ -140,18 +140,18 @@ export const MaterialSummaryTab: React.FC<MaterialSummaryTabProps> = ({
     };
 
     return (
-        <div className="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm dark:border-slate-700/60 dark:bg-slate-800">
-            <div className="flex flex-col gap-3 border-b border-slate-100 p-4 dark:border-slate-700/60 lg:flex-row lg:items-center lg:justify-between">
+        <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+            <div className="flex flex-col gap-3 border-b border-zinc-200 p-4 dark:border-zinc-800 lg:flex-row lg:items-center lg:justify-between">
                 <div className="min-w-0 flex-1">
-                    <h4 className="flex items-center gap-2 text-sm font-black text-slate-800 dark:text-slate-100">
-                        <Package size={15} className="text-indigo-500" /> Tổng hợp vật tư theo Tổng BOQ
+                    <h4 className="flex items-center gap-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                        <Package size={15} className="text-teal-700 dark:text-teal-400" /> Tổng hợp vật tư theo Tổng BOQ
                     </h4>
-                    <p className="mt-1 text-[10px] font-bold text-slate-400">Đề xuất mới tạo ngoài BOQ theo mã vật tư tổng hợp, khối lượng nhập thủ công.</p>
+                    <p className="mt-1 text-[10px] font-medium text-zinc-400 dark:text-zinc-500">Đề xuất mới tạo ngoài BOQ theo mã vật tư tổng hợp, khối lượng nhập thủ công.</p>
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
-                    {/* Ô tìm kiếm linh hoạt, fuzzy search */}
+                    {/* Ô tìm kiếm linh hoạt */}
                     <div className="relative w-64">
-                        <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400 pointer-events-none">
+                        <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-zinc-400 pointer-events-none">
                             <Search size={14} />
                         </span>
                         <input
@@ -159,23 +159,23 @@ export const MaterialSummaryTab: React.FC<MaterialSummaryTabProps> = ({
                             placeholder="Tìm kiếm vật tư, SKU..."
                             value={searchQuery}
                             onChange={e => setSearchQuery(e.target.value)}
-                            className="w-full pl-9 pr-8 py-1.5 text-xs rounded-lg border border-slate-200 bg-white placeholder-slate-400 text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                            className="w-full pl-9 pr-8 py-1.5 text-xs rounded-xl border border-zinc-200 bg-white placeholder-zinc-400 text-zinc-900 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
                         />
                         {searchQuery && (
                             <button
                                 type="button"
                                 onClick={() => setSearchQuery('')}
-                                className="absolute inset-y-0 right-0 flex items-center pr-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-350"
+                                className="absolute inset-y-0 right-0 flex items-center pr-2.5 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
                             >
                                 <X size={14} />
                             </button>
                         )}
                     </div>
-                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-black text-slate-700 dark:bg-slate-900 dark:text-slate-200">
+                    <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-[10px] font-semibold text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
                         {selectedCount} vật tư đã chọn
                     </span>
                     {selectedMissingInventoryCount > 0 && (
-                        <span className="rounded-full bg-red-50 px-2.5 py-1 text-[10px] font-black text-red-700 dark:bg-red-950/40 dark:text-red-300">
+                        <span className="rounded-full bg-red-50 px-2.5 py-1 text-[10px] font-semibold text-red-700 dark:bg-red-950/40 dark:text-red-300">
                             {selectedMissingInventoryCount} chưa có mã kho
                         </span>
                     )}
@@ -183,7 +183,7 @@ export const MaterialSummaryTab: React.FC<MaterialSummaryTabProps> = ({
                         type="button"
                         onClick={onCreateRequestFromSelection}
                         disabled={!canCreateMaterialRequest || selectedReadyCount === 0}
-                        className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-indigo-600 px-3 text-xs font-black text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-teal-700 hover:bg-teal-800 px-3 text-xs font-semibold text-white shadow-sm transition disabled:cursor-not-allowed disabled:opacity-50"
                     >
                         <Plus size={14} /> Tạo đề xuất
                     </button>
@@ -191,7 +191,7 @@ export const MaterialSummaryTab: React.FC<MaterialSummaryTabProps> = ({
                         type="button"
                         onClick={onClearSelection}
                         disabled={selectedCount === 0}
-                        className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                        className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-3 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
                     >
                         <X size={14} /> Bỏ chọn
                     </button>
@@ -203,36 +203,36 @@ export const MaterialSummaryTab: React.FC<MaterialSummaryTabProps> = ({
                     const expanded = expandedRows.has(row.key);
                     const checked = selectedMaterialGroupKeys.has(row.key);
                     return (
-                        <div key={row.key} className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-700 dark:bg-slate-900/50">
+                        <div key={row.key} className="rounded-xl border border-zinc-200 bg-white p-3 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/50">
                             <div className="flex items-start gap-3">
                                 <input
                                     type="checkbox"
                                     checked={checked}
                                     disabled={!row.inventoryItemId && !checked}
                                     onChange={event => onToggleMaterialGroup(row.key, event.target.checked)}
-                                    className="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-200 disabled:opacity-40"
+                                    className="mt-1 h-4 w-4 rounded border-zinc-300 text-teal-700 focus:ring-teal-500 disabled:opacity-40"
                                 />
-                                <button type="button" onClick={() => toggleExpanded(row.key)} className="mt-0.5 rounded p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800">
+                                <button type="button" onClick={() => toggleExpanded(row.key)} className="mt-0.5 rounded p-1 text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800">
                                     {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                                 </button>
                                 <div className="min-w-0 flex-1">
-                                    <div className="font-mono text-[10px] font-black text-indigo-500">{row.sku || 'Chưa có SKU'}</div>
-                                    <h5 className="mt-1 line-clamp-2 text-sm font-black text-slate-800 dark:text-slate-100">{row.itemName}</h5>
-                                    <p className="mt-0.5 text-[10px] font-bold text-slate-400">{row.unit}</p>
+                                    <div className="font-mono text-[10px] font-semibold text-teal-700 dark:text-teal-400">{row.sku || 'Chưa có SKU'}</div>
+                                    <h5 className="mt-1 line-clamp-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">{row.itemName}</h5>
+                                    <p className="mt-0.5 text-[10px] font-medium text-zinc-400">{row.unit}</p>
                                 </div>
                                 {renderWarning(row)}
                             </div>
-                            <div className="mt-3 grid grid-cols-2 gap-2 text-[10px] font-bold text-slate-500">
-                                <div className="rounded-lg bg-slate-50 p-2 dark:bg-slate-800"><span className="block text-slate-400">Tổng BOQ</span>{formatQuantity(row.totalBoqQty)}</div>
-                                <div className="rounded-lg bg-slate-50 p-2 dark:bg-slate-800"><span className="block text-slate-400">LK yêu cầu</span>{formatQuantity(row.cumulativeRequested)}</div>
-                                <div className={`rounded-lg p-2 ${row.remainingBoqQty < 0 ? 'bg-red-50 text-red-700 dark:bg-red-950/30' : 'bg-slate-50 dark:bg-slate-800'}`}><span className="block text-slate-400">Còn cần</span>{formatQuantity(row.remainingBoqQty)}</div>
-                                <div className="rounded-lg bg-slate-50 p-2 dark:bg-slate-800"><span className="block text-slate-400">Tồn kho</span>{formatQuantity(row.stockBalance)}</div>
+                            <div className="mt-3 grid grid-cols-2 gap-2 text-[10px] font-medium text-zinc-500">
+                                <div className="rounded-lg bg-zinc-50 p-2 dark:bg-zinc-800"><span className="block text-zinc-400">Tổng BOQ</span>{formatQuantity(row.totalBoqQty)}</div>
+                                <div className="rounded-lg bg-zinc-50 p-2 dark:bg-zinc-800"><span className="block text-zinc-400">LK yêu cầu</span>{formatQuantity(row.cumulativeRequested)}</div>
+                                <div className={`rounded-lg p-2 ${row.remainingBoqQty < 0 ? 'bg-red-50 text-red-700 dark:bg-red-950/30' : 'bg-zinc-50 dark:bg-zinc-800'}`}><span className="block text-zinc-400">Còn cần</span>{formatQuantity(row.remainingBoqQty)}</div>
+                                <div className="rounded-lg bg-zinc-50 p-2 dark:bg-zinc-800"><span className="block text-zinc-400">Tồn kho</span>{formatQuantity(row.stockBalance)}</div>
                             </div>
                             {expanded && (
-                                <div className="mt-3 space-y-2 border-t border-slate-100 pt-3 dark:border-slate-700">
+                                <div className="mt-3 space-y-2 border-t border-zinc-200 pt-3 dark:border-zinc-800">
                                     {row.details.map(detail => (
-                                        <div key={detail.id} className="rounded-lg bg-slate-50 p-2 text-[10px] font-bold text-slate-500 dark:bg-slate-800">
-                                            <div className="text-xs font-black text-slate-700 dark:text-slate-200">{detail.taskName}</div>
+                                        <div key={detail.id} className="rounded-lg bg-zinc-50 p-2 text-[10px] font-medium text-zinc-500 dark:bg-zinc-800">
+                                            <div className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">{detail.taskName}</div>
                                             <div className="mt-1 flex flex-wrap gap-2">
                                                 <span>{detail.wbsCode || '-'}</span>
                                                 <span>Ngày cần {formatDate(detail.needDate)}</span>
@@ -250,9 +250,9 @@ export const MaterialSummaryTab: React.FC<MaterialSummaryTabProps> = ({
             <div className="hidden overflow-x-auto md:block">
                 <table className="w-full min-w-[1500px] text-left">
                     <thead>
-                        <tr className="bg-gradient-to-r from-indigo-500 to-purple-500 text-[11px] font-bold uppercase tracking-wider text-white border-b border-indigo-400">
+                        <tr className="bg-zinc-900 dark:bg-zinc-800 text-[11px] font-semibold uppercase tracking-wider text-zinc-100 border-b border-zinc-700">
                             <th 
-                                className="sticky left-0 z-10 bg-indigo-500 py-3 px-2.5 font-bold whitespace-nowrap text-left relative select-none group border-r border-indigo-400"
+                                className="sticky left-0 z-10 bg-zinc-900 dark:bg-zinc-800 py-3 px-2.5 font-semibold whitespace-nowrap text-left relative select-none group border-r border-zinc-700"
                                 style={{ width: vattuWidth, minWidth: vattuWidth, maxWidth: vattuWidth }}
                             >
                                 <div className="flex items-center justify-between">
@@ -260,7 +260,7 @@ export const MaterialSummaryTab: React.FC<MaterialSummaryTabProps> = ({
                                 </div>
                                 <div
                                     onMouseDown={handleMouseDown}
-                                    className="absolute right-0 top-0 bottom-0 w-[4px] cursor-col-resize bg-indigo-400 opacity-40 hover:opacity-100 group-hover:opacity-100 hover:bg-white active:bg-white active:w-[6px] transition-all z-20"
+                                    className="absolute right-0 top-0 bottom-0 w-[4px] cursor-col-resize bg-zinc-700 opacity-40 hover:opacity-100 group-hover:opacity-100 hover:bg-white active:bg-white active:w-[6px] transition-all z-20"
                                     title="Kéo để đổi độ rộng cột Vật tư"
                                 />
                             </th>
@@ -279,15 +279,15 @@ export const MaterialSummaryTab: React.FC<MaterialSummaryTabProps> = ({
                             <th className="py-3 px-2.5 whitespace-nowrap">Cảnh báo</th>
                         </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-50 text-xs dark:divide-slate-700/40">
+                    <tbody className="divide-y divide-zinc-200 text-xs dark:divide-zinc-800">
                         {pageItems.map(row => {
                             const expanded = expandedRows.has(row.key);
                             const checked = selectedMaterialGroupKeys.has(row.key);
                             return (
                                 <React.Fragment key={row.key}>
-                                    <tr className={`${row.remainingBoqQty < 0 ? 'bg-red-50/40 dark:bg-red-950/15' : row.shortageQty['7d'] > 0 ? 'bg-amber-50/50 dark:bg-amber-950/10' : ''} hover:bg-slate-50 dark:hover:bg-slate-700/30`}>
+                                    <tr className={`${row.remainingBoqQty < 0 ? 'bg-red-50/40 dark:bg-red-950/15' : row.shortageQty['7d'] > 0 ? 'bg-amber-50/50 dark:bg-amber-950/10' : ''} hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors`}>
                                         <td 
-                                            className="sticky left-0 z-10 bg-white p-2.5 dark:bg-slate-800 border-r border-slate-200/80 dark:border-slate-700/80"
+                                            className="sticky left-0 z-10 bg-white p-2.5 dark:bg-zinc-900 border-r border-zinc-200 dark:border-zinc-800"
                                             style={{ width: vattuWidth, minWidth: vattuWidth, maxWidth: vattuWidth }}
                                         >
                                             <div className="flex items-start gap-2 min-w-0 w-full">
@@ -297,46 +297,46 @@ export const MaterialSummaryTab: React.FC<MaterialSummaryTabProps> = ({
                                                     disabled={!row.inventoryItemId && !checked}
                                                     onChange={event => onToggleMaterialGroup(row.key, event.target.checked)}
                                                     title={row.inventoryItemId ? 'Chọn vật tư tạo đề xuất ngoài BOQ' : 'Cần liên kết mã kho trước khi tạo đề xuất'}
-                                                    className="mt-1 h-4 w-4 shrink-0 rounded border-slate-300 text-indigo-600 focus:ring-indigo-200 disabled:opacity-40"
+                                                    className="mt-1 h-4 w-4 shrink-0 rounded border-zinc-300 text-teal-700 focus:ring-teal-500 disabled:opacity-40"
                                                 />
-                                                <button type="button" onClick={() => toggleExpanded(row.key)} className="mt-0.5 shrink-0 rounded p-0.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700">
+                                                <button type="button" onClick={() => toggleExpanded(row.key)} className="mt-0.5 shrink-0 rounded p-0.5 text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800">
                                                     {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                                                 </button>
                                                 <div className="min-w-0 flex-1">
-                                                    <div className="truncate font-black text-slate-800 dark:text-slate-100" title={row.itemName}>{row.itemName}</div>
-                                                    <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[10px] font-bold text-slate-400">
-                                                        <span className="font-mono text-indigo-500">{row.sku || 'Chưa có SKU'}</span>
+                                                    <div className="truncate font-semibold text-zinc-900 dark:text-zinc-100" title={row.itemName}>{row.itemName}</div>
+                                                    <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[10px] font-medium text-zinc-400">
+                                                        <span className="font-mono text-teal-700 dark:text-teal-400">{row.sku || 'Chưa có SKU'}</span>
                                                         <span className="shrink-0">{row.details.length} đầu mục</span>
                                                     </div>
                                                 </div>
                                             </div>
                                         </td>
-                                        <td className="p-2.5 text-center font-bold text-slate-650 dark:text-slate-350">{row.unit || '-'}</td>
-                                        <td className="p-2.5 text-right font-black text-slate-800 dark:text-slate-100">
+                                        <td className="p-2.5 text-center font-medium text-zinc-600 dark:text-zinc-400">{row.unit || '-'}</td>
+                                        <td className="p-2.5 text-right font-semibold text-zinc-900 dark:text-zinc-100">
                                             {formatQuantity(row.totalBoqQty)}
-                                            <div className="text-[9px] font-bold text-slate-400">{formatMoneyShort(row.totalBoqValue)}</div>
+                                            <div className="text-[9px] font-medium text-zinc-400">{formatMoneyShort(row.totalBoqValue)}</div>
                                         </td>
-                                        <td className="p-2.5 text-right font-black text-indigo-600 dark:text-indigo-300">
+                                        <td className="p-2.5 text-right font-semibold text-teal-700 dark:text-teal-400">
                                             {formatQuantity(row.cumulativeRequested)}
-                                            <div className="text-[9px] font-bold text-slate-400">{formatPercent(row.requestedPercent)}%</div>
+                                            <div className="text-[9px] font-medium text-zinc-400">{formatPercent(row.requestedPercent)}%</div>
                                         </td>
-                                        <td className={`p-2.5 text-right font-black ${row.remainingBoqQty < 0 ? 'text-red-600 dark:text-red-300' : 'text-slate-700 dark:text-slate-200'}`}>{formatQuantity(row.remainingBoqQty)}</td>
-                                        <td className="p-2.5 text-right font-bold text-slate-600 dark:text-slate-300">{formatQuantity(row.cumulativeImported)}</td>
-                                        <td className="p-2.5 text-right font-bold text-slate-600 dark:text-slate-300">{formatQuantity(row.cumulativeExported)}</td>
-                                        <td className={`p-2.5 text-right font-black ${row.stockBalance < 0 ? 'text-red-600 dark:text-red-300' : 'text-emerald-600 dark:text-emerald-300'}`}>{formatQuantity(row.stockBalance)}</td>
-                                        <td className="p-2.5 text-center font-bold text-slate-500 dark:text-slate-400">{formatDate(row.startDate)} - {formatDate(row.endDate)}</td>
-                                        <td className="p-2.5 text-center font-bold text-slate-700 dark:text-slate-200">{formatDate(row.needDate)}</td>
-                                        <td className="p-2.5 text-right font-bold text-slate-600 dark:text-slate-300">{formatQuantity(row.demandQty['7d'])}</td>
-                                        <td className="p-2.5 text-right font-bold text-slate-600 dark:text-slate-300">{formatQuantity(row.demandQty['30d'])}</td>
-                                        <td className="p-2.5 text-right font-bold text-slate-600 dark:text-slate-300">{formatQuantity(row.demandQty['90d'])}</td>
+                                        <td className={`p-2.5 text-right font-semibold ${row.remainingBoqQty < 0 ? 'text-red-600 dark:text-red-400' : 'text-zinc-900 dark:text-zinc-100'}`}>{formatQuantity(row.remainingBoqQty)}</td>
+                                        <td className="p-2.5 text-right font-medium text-zinc-600 dark:text-zinc-400">{formatQuantity(row.cumulativeImported)}</td>
+                                        <td className="p-2.5 text-right font-medium text-zinc-600 dark:text-zinc-400">{formatQuantity(row.cumulativeExported)}</td>
+                                        <td className={`p-2.5 text-right font-semibold ${row.stockBalance < 0 ? 'text-red-600 dark:text-red-400' : 'text-teal-700 dark:text-teal-400'}`}>{formatQuantity(row.stockBalance)}</td>
+                                        <td className="p-2.5 text-center font-medium text-zinc-500 dark:text-zinc-400">{formatDate(row.startDate)} - {formatDate(row.endDate)}</td>
+                                        <td className="p-2.5 text-center font-medium text-zinc-900 dark:text-zinc-100">{formatDate(row.needDate)}</td>
+                                        <td className="p-2.5 text-right font-medium text-zinc-600 dark:text-zinc-400">{formatQuantity(row.demandQty['7d'])}</td>
+                                        <td className="p-2.5 text-right font-medium text-zinc-600 dark:text-zinc-400">{formatQuantity(row.demandQty['30d'])}</td>
+                                        <td className="p-2.5 text-right font-medium text-zinc-600 dark:text-zinc-400">{formatQuantity(row.demandQty['90d'])}</td>
                                         <td className="p-2.5">{renderWarning(row)}</td>
                                     </tr>
                                     {expanded && (
-                                        <tr className="bg-slate-50/70 dark:bg-slate-900/40">
+                                        <tr className="bg-zinc-50/70 dark:bg-zinc-900/40">
                                             <td colSpan={14} className="px-10 py-3">
-                                                <div className="overflow-hidden rounded-xl border border-slate-100 bg-white dark:border-slate-700 dark:bg-slate-900">
+                                                <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
                                                     <table className="w-full min-w-[980px] text-[11px]">
-                                                        <thead className="bg-indigo-50/80 text-[10px] font-black uppercase text-indigo-950 dark:bg-slate-800 dark:text-slate-200">
+                                                        <thead className="bg-zinc-100 text-[10px] font-semibold uppercase text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
                                                             <tr>
                                                                 <th className="px-3 py-2 text-left">Đầu mục triển khai</th>
                                                                 <th className="px-3 py-2 text-left">Vật tư BOQ</th>
@@ -350,25 +350,25 @@ export const MaterialSummaryTab: React.FC<MaterialSummaryTabProps> = ({
                                                                 <th className="px-3 py-2 text-right">90D</th>
                                                             </tr>
                                                         </thead>
-                                                        <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
+                                                        <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
                                                             {row.details.map(detail => (
                                                                 <tr key={detail.id}>
                                                                     <td className="px-3 py-2">
-                                                                        <div className="font-bold text-slate-700 dark:text-slate-200">{detail.taskName}</div>
-                                                                        <div className="font-mono text-[9px] font-bold text-indigo-500">{detail.wbsCode || '-'}</div>
+                                                                        <div className="font-semibold text-zinc-900 dark:text-zinc-100">{detail.taskName}</div>
+                                                                        <div className="font-mono text-[9px] font-semibold text-teal-700 dark:text-teal-400">{detail.wbsCode || '-'}</div>
                                                                     </td>
                                                                     <td className="px-3 py-2">
-                                                                        <div className="font-bold text-slate-700 dark:text-slate-200">{detail.itemName}</div>
-                                                                        <div className="font-mono text-[9px] font-bold text-slate-400">{detail.materialCode || '-'}</div>
+                                                                        <div className="font-semibold text-zinc-900 dark:text-zinc-100">{detail.itemName}</div>
+                                                                        <div className="font-mono text-[9px] font-medium text-zinc-400">{detail.materialCode || '-'}</div>
                                                                     </td>
-                                                                    <td className="px-3 py-2 text-center text-slate-500">{formatDate(detail.startDate)} - {formatDate(detail.endDate)}</td>
-                                                                    <td className="px-3 py-2 text-center font-bold text-slate-700 dark:text-slate-200">{formatDate(detail.needDate)}</td>
-                                                                    <td className="px-3 py-2 text-right font-bold text-slate-700 dark:text-slate-200">{formatQuantity(detail.budgetQty)}</td>
-                                                                    <td className="px-3 py-2 text-right font-bold text-indigo-600 dark:text-indigo-300">{formatQuantity(detail.cumulativeRequested)}</td>
-                                                                    <td className="px-3 py-2 text-right font-bold text-slate-700 dark:text-slate-200">{formatQuantity(detail.remainingDemandQty)}</td>
-                                                                    <td className="px-3 py-2 text-right text-slate-600 dark:text-slate-400">{formatQuantity(detail.demandQty['7d'])}</td>
-                                                                    <td className="px-3 py-2 text-right text-slate-600 dark:text-slate-400">{formatQuantity(detail.demandQty['30d'])}</td>
-                                                                    <td className="px-3 py-2 text-right text-slate-600 dark:text-slate-400">{formatQuantity(detail.demandQty['90d'])}</td>
+                                                                    <td className="px-3 py-2 text-center text-zinc-500">{formatDate(detail.startDate)} - {formatDate(detail.endDate)}</td>
+                                                                    <td className="px-3 py-2 text-center font-semibold text-zinc-900 dark:text-zinc-100">{formatDate(detail.needDate)}</td>
+                                                                    <td className="px-3 py-2 text-right font-semibold text-zinc-900 dark:text-zinc-100">{formatQuantity(detail.budgetQty)}</td>
+                                                                    <td className="px-3 py-2 text-right font-semibold text-teal-700 dark:text-teal-400">{formatQuantity(detail.cumulativeRequested)}</td>
+                                                                    <td className="px-3 py-2 text-right font-semibold text-zinc-900 dark:text-zinc-100">{formatQuantity(detail.remainingDemandQty)}</td>
+                                                                    <td className="px-3 py-2 text-right text-zinc-600 dark:text-zinc-400">{formatQuantity(detail.demandQty['7d'])}</td>
+                                                                    <td className="px-3 py-2 text-right text-zinc-600 dark:text-zinc-400">{formatQuantity(detail.demandQty['30d'])}</td>
+                                                                    <td className="px-3 py-2 text-right text-zinc-600 dark:text-zinc-400">{formatQuantity(detail.demandQty['90d'])}</td>
                                                                 </tr>
                                                             ))}
                                                         </tbody>
@@ -383,16 +383,16 @@ export const MaterialSummaryTab: React.FC<MaterialSummaryTabProps> = ({
                         {filteredRows.length === 0 && (
                             <tr>
                                 <td colSpan={14} className="px-6 py-12 text-center">
-                                    <Package size={32} className="mx-auto mb-2 text-slate-200" />
+                                    <Package size={32} className="mx-auto mb-2 text-zinc-300 dark:text-zinc-600" />
                                     {materialRows.length === 0 ? (
                                         <>
-                                            <div className="text-sm font-black text-slate-400">Chưa có dữ liệu vật tư BOQ</div>
-                                            <div className="mt-1 text-[10px] font-bold text-slate-300">Đồng bộ hoặc import BOQ triển khai để có tổng định mức vật tư.</div>
+                                            <div className="text-sm font-semibold text-zinc-400">Chưa có dữ liệu vật tư BOQ</div>
+                                            <div className="mt-1 text-[10px] font-medium text-zinc-400">Đồng bộ hoặc import BOQ triển khai để có tổng định mức vật tư.</div>
                                         </>
                                     ) : (
                                         <>
-                                            <div className="text-sm font-black text-slate-400">Không tìm thấy vật tư phù hợp</div>
-                                            <div className="mt-1 text-[10px] font-bold text-slate-300">Vui lòng thử lại với từ khóa khác.</div>
+                                            <div className="text-sm font-semibold text-zinc-400">Không tìm thấy vật tư phù hợp</div>
+                                            <div className="mt-1 text-[10px] font-medium text-zinc-400">Vui lòng thử lại với từ khóa khác.</div>
                                         </>
                                     )}
                                 </td>
@@ -402,17 +402,17 @@ export const MaterialSummaryTab: React.FC<MaterialSummaryTabProps> = ({
                 </table>
             </div>
 
-            <div className="flex flex-col gap-3 border-t border-slate-100 bg-slate-50/60 px-4 py-3 dark:border-slate-700/60 dark:bg-slate-900/40 sm:flex-row sm:items-center sm:justify-between">
-                <div className="text-xs font-bold text-slate-500">
+            <div className="flex flex-col gap-3 border-t border-zinc-200 bg-zinc-50/60 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900/40 sm:flex-row sm:items-center sm:justify-between">
+                <div className="text-xs font-medium text-zinc-500">
                     Đang xem {pageStart}-{pageEnd} trên {filteredRows.length} vật tư
                     {searchQuery && ` (tìm thấy từ ${materialRows.length})`}
                 </div>
                 <div className="flex items-center justify-end gap-2">
-                    <button type="button" onClick={() => setPage(prev => Math.max(1, prev - 1))} disabled={page <= 1} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+                    <button type="button" onClick={() => setPage(prev => Math.max(1, prev - 1))} disabled={page <= 1} className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-3 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800">
                         <ChevronLeft size={14} /> Trước
                     </button>
-                    <span className="min-w-[82px] text-center text-xs font-black text-slate-500">{page}/{pageCount}</span>
-                    <button type="button" onClick={() => setPage(prev => Math.min(pageCount, prev + 1))} disabled={page >= pageCount} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+                    <span className="min-w-[82px] text-center text-xs font-semibold text-zinc-500">{page}/{pageCount}</span>
+                    <button type="button" onClick={() => setPage(prev => Math.min(pageCount, prev + 1))} disabled={page >= pageCount} className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-3 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800">
                         Sau <ChevronRight size={14} />
                     </button>
                 </div>

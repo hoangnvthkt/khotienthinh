@@ -5580,22 +5580,22 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     <AiInsightPanel module="supplychain" siteId={constructionSiteId} />
                 </div>
             )}
-            <div className="flex flex-wrap gap-2 rounded-lg border border-border bg-card p-1 shadow-sm">
+            <div className="flex flex-wrap gap-2 rounded-2xl border border-zinc-200 bg-white p-1.5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
                 <button
                     type="button"
                     onClick={() => setSubTab('po')}
-                    className={`inline-flex min-h-9 items-center gap-2 rounded-md px-3 py-2 text-xs font-black transition ${subTab === 'po' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-900'}`}
+                    className={`inline-flex min-h-9 items-center gap-2 rounded-xl px-4 py-2 text-xs font-semibold transition ${subTab === 'po' ? 'bg-teal-700 text-white shadow-sm' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'}`}
                 >
                     <FileText size={14} /> Đơn đặt hàng (PO)
-                    <span className={`rounded-full px-2 py-0.5 text-[10px] ${subTab === 'po' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-300'}`}>{pos.length}</span>
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] ${subTab === 'po' ? 'bg-white/20 text-white' : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300'}`}>{pos.length}</span>
                 </button>
                 <button
                     type="button"
                     onClick={() => setSubTab('direct')}
-                    className={`inline-flex min-h-9 items-center gap-2 rounded-md px-3 py-2 text-xs font-black transition ${subTab === 'direct' ? 'bg-orange-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-900'}`}
+                    className={`inline-flex min-h-9 items-center gap-2 rounded-xl px-4 py-2 text-xs font-semibold transition ${subTab === 'direct' ? 'bg-teal-700 text-white shadow-sm' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'}`}
                 >
                     <Package size={14} /> Mua nóng / CCDC
-                    <span className={`rounded-full px-2 py-0.5 text-[10px] ${subTab === 'direct' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-300'}`}>{directPurchases.length + supplierDeliveryNotes.length + smallToolRecords.length}</span>
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] ${subTab === 'direct' ? 'bg-white/20 text-white' : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300'}`}>{directPurchases.length + supplierDeliveryNotes.length + smallToolRecords.length}</span>
                 </button>
             </div>
             {/* KPI */}
@@ -6417,49 +6417,20 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                     : 'Đủ nhu cầu';
                                 return (
                                     <div key={po.id} className={isPrintMenuOpen ? 'relative z-50' : 'relative z-0'}>
-                                        <div className="px-5 py-4 transition hover:bg-slate-50/50 dark:hover:bg-slate-900/30">
-                                            <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-                                                <div className="min-w-0">
-                                                    <div className="mb-1.5 flex flex-wrap items-center gap-2">
-                                                        <span className="font-mono text-[11px] font-black uppercase tracking-wide text-slate-400">{po.poNumber}</span>
-                                                        <StatusBadge status={po.status} label={stCfg.label} tone={PO_STATUS_TONE[po.status]} showDot={false} />
-                                                        {poUiPolicy.alerts.map(alert => (
-                                                            <span
-                                                                key={alert.id}
-                                                                className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-black ${alert.tone === 'danger' ? 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-300' : alert.tone === 'warning' ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300' : 'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300'}`}
-                                                            >
-                                                                {alert.label}
-                                                            </span>
-                                                        ))}
-                                                    </div>
-                                                    <div className="truncate text-sm font-black text-slate-900 dark:text-slate-100">
-                                                        {poListSummary.requestTitle}
-                                                    </div>
-                                                    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-bold text-slate-500 dark:text-slate-400">
-                                                        <span>{sourceCfg.label}</span>
-                                                        <span>{po.vendorName || poListSummary.materialSummary}</span>
-                                                        {po.procurementGroupNo && <span>Nhóm {po.procurementGroupNo}{groupSize > 1 ? ` - ${groupSize} PO` : ''}</span>}
-                                                    </div>
-                                                    <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] font-bold text-slate-500 dark:text-slate-400">
-                                                        <span>MR/Vật tư: <strong className="text-slate-700 dark:text-slate-200">{poListSummary.materialSummary}</strong></span>
-                                                        <span>Nhận: <strong className="text-emerald-700 dark:text-emerald-300">{receiptProgressLabel}</strong></span>
-                                                        <span className={receiptStats.remainingQty > 0 ? 'text-amber-700 dark:text-amber-300' : 'text-emerald-700 dark:text-emerald-300'}>{receiptRemainingLabel}</span>
-                                                        {po.expectedDeliveryDate && <span>Giao gần nhất: {new Date(po.expectedDeliveryDate).toLocaleDateString('vi-VN')}</span>}
-                                                    </div>
+                                        <div className="px-5 py-3.5 transition hover:bg-zinc-50 dark:hover:bg-zinc-800/40 border-b border-zinc-200/80 dark:border-zinc-800">
+                                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                                <div className="min-w-0 flex-1 flex flex-wrap items-center gap-3">
+                                                    <span className="font-mono text-xs font-semibold text-zinc-500 dark:text-zinc-400">{po.poNumber}</span>
+                                                    <span className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">{poListSummary.requestTitle}</span>
+                                                    <StatusBadge status={po.status} label={stCfg.label} tone={PO_STATUS_TONE[po.status]} showDot={false} />
                                                 </div>
-                                                <div className="flex items-center justify-between gap-3 lg:justify-end">
-                                                    <div className="text-right">
-                                                        <div className="text-sm font-black text-slate-900 dark:text-slate-100">{fmtMoney(poPaymentTotal)} đ</div>
-                                                        <div className="text-[9px] font-bold text-slate-400">
-                                                            Trước VAT: {fmtMoney(poDisplayAmount)} đ{poVatRate > 0 ? ` - VAT ${poVatRate.toLocaleString('vi-VN')}%` : ''}
-                                                        </div>
-                                                    </div>
+                                                <div className="flex items-center justify-end gap-2 shrink-0">
                                                     <button
                                                         type="button"
                                                         onClick={() => openPoDetail(po)}
-                                                        className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-blue-600 px-4 text-xs font-black text-white shadow-sm transition hover:bg-blue-700 active:scale-[0.98]"
+                                                        className="inline-flex h-8 items-center gap-1.5 rounded-xl bg-teal-700 hover:bg-teal-800 px-3.5 text-xs font-semibold text-white shadow-sm transition active:scale-[0.98]"
                                                     >
-                                                        <FileText size={14} /> Xử lý
+                                                        <FileText size={13} /> Chi tiết
                                                     </button>
                                                     <div className="relative">
                                                         <button
@@ -6468,13 +6439,13 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                                 event.stopPropagation();
                                                                 setPoPrintMenuId(prev => prev === po.id ? null : po.id);
                                                             }}
-                                                            className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 hover:text-slate-800 dark:border-slate-700 dark:bg-slate-950 dark:hover:bg-slate-900"
+                                                            className="flex h-8 w-8 items-center justify-center rounded-xl border border-zinc-200 bg-white text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-800 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800"
                                                             title="Thao tác khác"
                                                         >
-                                                            <MoreVertical size={16} />
+                                                            <MoreVertical size={15} />
                                                         </button>
                                                         {isPrintMenuOpen && (
-                                                            <div onClick={event => event.stopPropagation()} className="absolute right-0 top-10 z-[100] w-64 overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-xl">
+                                                            <div onClick={event => event.stopPropagation()} className="absolute right-0 top-10 z-[100] w-64 overflow-hidden rounded-2xl border border-zinc-200 bg-white text-zinc-900 shadow-xl dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100">
                                                                 {poUiPolicy.menuActions.map(action => (
                                                                     <button
                                                                         key={action.id}
@@ -6482,7 +6453,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                                         disabled={action.disabled}
                                                                         title={action.disabledReason || action.label}
                                                                         onClick={() => void runPoUiAction(po, action)}
-                                                                        className={`flex w-full items-center gap-2 px-3 py-2 text-left text-[11px] font-black transition disabled:pointer-events-auto disabled:opacity-60 ${getPoMenuActionClass(action)}`}
+                                                                        className={`flex w-full items-center gap-2 px-3 py-2 text-left text-[11px] font-semibold transition disabled:pointer-events-auto disabled:opacity-60 ${getPoMenuActionClass(action)}`}
                                                                     >
                                                                         {getPoActionIcon(action)} {action.label}
                                                                     </button>

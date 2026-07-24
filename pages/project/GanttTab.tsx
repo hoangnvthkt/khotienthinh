@@ -9,7 +9,7 @@ import {
     Filter, Calendar, User, Clock, AlertTriangle, CheckCircle2,
     Circle, PlayCircle, ArrowUpDown, ChevronUp, ChevronsUp, ChevronsDown, Copy,
     Anchor, Link2, Shield, Wrench, Users, Zap, Lock, Bell,
-    FlaskConical, Lightbulb, RotateCcw, Check,
+    FlaskConical, Lightbulb, RotateCcw, Check, SlidersHorizontal,
     Upload, Download, FileSpreadsheet, Loader2, XCircle, Eye, CircleDollarSign,
     Paperclip, ClipboardCheck
 } from 'lucide-react';
@@ -372,13 +372,12 @@ const PROJECT_PERMISSION_HINTS: Record<ProjectPermissionCode, string> = {
 
 // ============= COMPONENTS =============
 
-/** Status Badge */
+/** Status Badge (Minimalized) */
 const StatusBadge: React.FC<{ status: TaskStatus }> = ({ status }) => {
     const cfg = STATUS_CONFIG[status];
-    const Icon = cfg.icon;
     return (
-        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap ${cfg.color} ${cfg.bg}`}>
-            <Icon size={10} /> {cfg.label}
+        <span className="text-[11px] font-medium text-zinc-600 dark:text-zinc-400 whitespace-nowrap">
+            {cfg.label}
         </span>
     );
 };
@@ -450,6 +449,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
     const [isSandboxMode, setIsSandboxMode] = useState(false);
     const [sandboxTasks, setSandboxTasks] = useState<ProjectTask[]>([]);
     const [showAiInsights, setShowAiInsights] = useState(false);
+    const [showToolsMenu, setShowToolsMenu] = useState(false);
     // GĐ2: Set of task IDs whose predecessor gate is blocking them
     const gateBlockedIds = useMemo(() => getGateBlockedTaskIds(tasks), [tasks]);
 
@@ -2487,118 +2487,150 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                         )}
                     </p>
                 </div>
-                <div className="flex items-center gap-2 w-full md:w-auto overflow-x-auto pb-2 md:pb-0 scroll-smooth shrink-0 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                    <div className="flex items-center gap-2 shrink-0">
-                        <AiInsightPanel module="gantt" siteId={constructionSiteId} />
-                        {/* GĐ3: Excel Import/Export */}
-                        <button onClick={handleExportExcel}
-                            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-emerald-600 border border-emerald-200 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-400 dark:hover:bg-emerald-900/30 transition-all whitespace-nowrap shrink-0"
-                            title="Xuất Excel">
-                            <Download size={13} />
+                <div className="flex items-center gap-2 shrink-0">
+                    {/* Consolidated Tools Dropdown */}
+                    <div className="relative">
+                        <button
+                            type="button"
+                            onClick={() => setShowToolsMenu(v => !v)}
+                            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border transition-all whitespace-nowrap ${
+                                showToolsMenu || showGatePanel || showBaselinePanel || showForecastPanel || isSandboxMode || showAiInsights
+                                    ? 'border-teal-500 bg-teal-50 dark:bg-teal-950/40 text-teal-700 dark:text-teal-400'
+                                    : 'border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                            }`}
+                        >
+                            <SlidersHorizontal size={14} /> Công cụ & Phân tích
+                            <ChevronDown size={12} className={`transition-transform duration-200 ${showToolsMenu ? 'rotate-180' : ''}`} />
                         </button>
-                        <button onClick={() => fileInputRef.current?.click()}
-                            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-blue-600 border border-blue-200 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-400 dark:hover:bg-blue-900/30 transition-all whitespace-nowrap shrink-0"
-                            title="Nhập Excel">
-                            <Upload size={13} />
-                        </button>
-                        <input type="file" ref={fileInputRef} className="hidden" accept=".xlsx,.xls" onChange={handleFileUpload} />
-                        {/* GĐ2: Gate Panel toggle */}
-                        {(() => {
-                            const pendingCount = progressSummary.pendingGateCount;
-                            return (
-                                <button onClick={() => setShowGatePanel(v => !v)}
-                                    className={`relative flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all whitespace-nowrap shrink-0 ${showGatePanel
-                                        ? 'border-amber-400 bg-amber-50 dark:bg-amber-900/20 text-amber-700'
-                                        : 'border-border dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
-                                        }`}
-                                    title="Danh sách chờ nghiệm thu">
-                                    <Shield size={13} /> Gate
-                                    {pendingCount > 0 && (
-                                        <span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-red-500 text-white text-[8px] font-black flex items-center justify-center animate-pulse">
-                                            {pendingCount}
+
+                        {showToolsMenu && (
+                            <div className="absolute right-0 top-full mt-2 z-50 w-72 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-2 shadow-2xl space-y-1">
+                                <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+                                    Công cụ & Phân tích Nâng cao
+                                </div>
+
+                                <button
+                                    type="button"
+                                    onClick={() => { setShowGatePanel(v => !v); setShowToolsMenu(false); }}
+                                    className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition-colors ${
+                                        showGatePanel ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400' : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                                    }`}
+                                >
+                                    <span className="flex items-center gap-2"><Shield size={14} /> Gate Nghiệm thu</span>
+                                    {progressSummary.pendingGateCount > 0 && (
+                                        <span className="px-1.5 py-0.5 rounded-full bg-red-500 text-white text-[9px] font-bold">
+                                            {progressSummary.pendingGateCount}
                                         </span>
                                     )}
                                 </button>
-                            );
-                        })()}
-                        {/* GĐ1: Lock Baseline */}
-                        <button onClick={lockBaseline}
-                            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 border border-border dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all whitespace-nowrap shrink-0"
-                            title="Chốt kế hoạch gốc (Baseline)">
-                            <Lock size={13} /> Chốt Baseline
-                            {baselines.length > 0 && <span className="text-[9px] text-muted-foreground">v{baselines.length}</span>}
-                        </button>
-                        {/* T3: Baseline Compare Panel toggle */}
-                        {baselines.length > 0 && (
-                            <button onClick={() => setShowBaselinePanel(v => !v)}
-                                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all whitespace-nowrap shrink-0 ${showBaselinePanel
-                                    ? 'border-sky-400 bg-sky-50 dark:bg-sky-900/20 text-sky-700'
-                                    : 'border-border dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
+
+                                <button
+                                    type="button"
+                                    onClick={() => { lockBaseline(); setShowToolsMenu(false); }}
+                                    className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                                >
+                                    <span className="flex items-center gap-2"><Lock size={14} /> Chốt Baseline</span>
+                                    {baselines.length > 0 && <span className="text-[10px] text-zinc-400">v{baselines.length}</span>}
+                                </button>
+
+                                {baselines.length > 0 && (
+                                    <button
+                                        type="button"
+                                        onClick={() => { setShowBaselinePanel(v => !v); setShowToolsMenu(false); }}
+                                        className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition-colors ${
+                                            showBaselinePanel ? 'bg-teal-50 dark:bg-teal-950/40 text-teal-700 dark:text-teal-400' : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                                        }`}
+                                    >
+                                        <span className="flex items-center gap-2"><BarChart3 size={14} /> So sánh Baseline</span>
+                                    </button>
+                                )}
+
+                                <button
+                                    type="button"
+                                    onClick={() => { setShowForecastPanel(v => !v); setShowToolsMenu(false); }}
+                                    className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition-colors ${
+                                        showForecastPanel ? 'bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-400' : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'
                                     }`}
-                                title="So sánh kế hoạch vs thực tế">
-                                <BarChart3 size={13} /> So sánh BL
-                            </button>
+                                >
+                                    <span className="flex items-center gap-2"><AlertTriangle size={14} /> Dự báo tác động trễ</span>
+                                    {activeDelayEventCount > 0 && (
+                                        <span className="px-1.5 py-0.5 rounded-full bg-red-500 text-white text-[9px] font-bold">
+                                            {activeDelayEventCount}
+                                        </span>
+                                    )}
+                                </button>
+
+                                <button
+                                    type="button"
+                                    onClick={() => { toggleSandbox(); setShowToolsMenu(false); }}
+                                    className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition-colors ${
+                                        isSandboxMode ? 'bg-teal-700 text-white' : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                                    }`}
+                                >
+                                    <span className="flex items-center gap-2"><FlaskConical size={14} /> {isSandboxMode ? 'Tắt Giả lập' : 'Chế độ Giả lập'}</span>
+                                </button>
+
+                                <button
+                                    type="button"
+                                    onClick={() => { setShowAiInsights(v => !v); setShowToolsMenu(false); }}
+                                    className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition-colors ${
+                                        showAiInsights ? 'bg-teal-50 dark:bg-teal-950/40 text-teal-700 dark:text-teal-400' : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                                    }`}
+                                >
+                                    <span className="flex items-center gap-2"><Lightbulb size={14} /> AI Dự báo rủi ro</span>
+                                    {aiInsights.length > 0 && (
+                                        <span className="px-1.5 py-0.5 rounded-full bg-amber-500 text-white text-[9px] font-bold">
+                                            {aiInsights.length}
+                                        </span>
+                                    )}
+                                </button>
+
+                                <div className="my-1 border-t border-zinc-100 dark:border-zinc-800" />
+
+                                <div className="flex items-center gap-1 p-1">
+                                    <button
+                                        type="button"
+                                        onClick={() => { handleExportExcel(); setShowToolsMenu(false); }}
+                                        className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                                    >
+                                        <Download size={13} /> Xuất Excel
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => { fileInputRef.current?.click(); setShowToolsMenu(false); }}
+                                        className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                                    >
+                                        <Upload size={13} /> Nhập Excel
+                                    </button>
+                                </div>
+                            </div>
                         )}
-                        <button onClick={() => setShowForecastPanel(v => !v)}
-                            className={`relative flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all whitespace-nowrap shrink-0 ${showForecastPanel
-                                ? 'border-red-400 bg-red-50 dark:bg-red-900/20 text-red-700'
-                                : 'border-border dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
-                                }`}
-                            title="Dự báo tác động chậm tiến độ">
-                            <AlertTriangle size={13} /> Dự báo
-                            {activeDelayEventCount > 0 && (
-                                <span className="absolute -top-1.5 -right-1.5 min-w-4 h-4 px-1 rounded-full bg-red-500 text-white text-[8px] font-black flex items-center justify-center">
-                                    {activeDelayEventCount}
-                                </span>
-                            )}
-                        </button>
-                        {/* GĐ5: Sandbox Toggle */}
-                        <button onClick={toggleSandbox}
-                            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all whitespace-nowrap shrink-0 ${isSandboxMode
-                                ? 'border-violet-400 bg-violet-50 dark:bg-violet-900/30 text-violet-700 ring-2 ring-violet-300 shadow-lg shadow-violet-500/20'
-                                : 'border-border dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
-                                }`}
-                            title="Chế độ giả lập (không lưu vào DB)">
-                            <FlaskConical size={13} /> {isSandboxMode ? 'Tắt Giả lập' : 'Giả lập'}
-                        </button>
-                        {/* GĐ5: AI Insights Toggle */}
-                        <button onClick={() => setShowAiInsights(v => !v)}
-                            className={`relative flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all whitespace-nowrap shrink-0 ${showAiInsights
-                                ? 'border-amber-400 bg-amber-50 dark:bg-amber-900/20 text-amber-700'
-                                : 'border-border dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
-                                }`}
-                            title="AI Dự báo rủi ro">
-                            <Lightbulb size={13} /> AI
-                            {aiInsights.length > 0 && (
-                                <span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-amber-500 text-white text-[8px] font-black flex items-center justify-center">
-                                    {aiInsights.length}
-                                </span>
-                            )}
-                        </button>
-                        <button onClick={() => openAdd()}
-                            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-orange-500 to-amber-500 shadow-lg shadow-orange-500/20 hover:shadow-xl hover:scale-[1.02] transition-all whitespace-nowrap shrink-0">
-                            <Plus size={14} /> Thêm hạng mục
-                        </button>
                     </div>
+                    <input type="file" ref={fileInputRef} className="hidden" accept=".xlsx,.xls" onChange={handleFileUpload} />
+
+                    <button onClick={() => openAdd()}
+                        className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 shadow-sm transition-colors whitespace-nowrap shrink-0">
+                        <Plus size={14} /> Thêm hạng mục
+                    </button>
                 </div>
             </div>
 
-            <div className="bg-card rounded-2xl border border-emerald-100 shadow-sm overflow-hidden">
+            <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-hidden">
                 <div className="p-4 grid grid-cols-1 xl:grid-cols-[1fr_1.35fr] gap-4">
                     <div className="flex items-start gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center border border-emerald-100 shrink-0">
+                        <div className="w-10 h-10 rounded-xl bg-teal-700/10 text-teal-700 dark:bg-teal-500/20 dark:text-teal-400 flex items-center justify-center border border-teal-200/50 dark:border-teal-800/50 shrink-0">
                             <CircleDollarSign size={18} />
                         </div>
                         <div className="min-w-0">
-                            <div className="text-xs font-black uppercase tracking-wide text-emerald-600">Sản lượng thực tế</div>
-                            <div className="mt-1 text-lg font-black text-foreground dark:text-white">
+                            <div className="text-xs font-bold uppercase tracking-wide text-teal-700 dark:text-teal-400">Sản lượng thực tế</div>
+                            <div className="mt-1 text-lg font-bold text-zinc-900 dark:text-zinc-100">
                                 {valueProgressMetric.valueProgressPercent}% theo giá trị
                             </div>
-                            <div className="mt-1 text-[11px] font-bold text-muted-foreground">
+                            <div className="mt-1 text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
                                 {formatMoneyShort(valueProgressMetric.actualProductionValue)} / {formatMoneyShort(valueProgressMetric.contractTotalValue)} · PO/vật tư không còn dùng để tính tỷ lệ này
                             </div>
                             {currentProjectFinance?.actualProductionUpdatedAt && (
-                                <div className="mt-1 text-[10px] font-semibold text-muted-foreground">
+                                <div className="mt-1 text-[10px] font-medium text-zinc-400">
                                     Cập nhật {new Date(currentProjectFinance.actualProductionUpdatedAt).toLocaleString('vi-VN')}
                                 </div>
                             )}
@@ -2607,37 +2639,37 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
 
                     <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-3 items-end">
                         <label className="min-w-0">
-                            <span className="block text-[10px] font-black uppercase tracking-wide text-muted-foreground mb-1.5">Giá trị sản lượng thực tế</span>
+                            <span className="block text-[10px] font-bold uppercase tracking-wide text-zinc-400 dark:text-zinc-500 mb-1.5">Giá trị sản lượng thực tế</span>
                             <input
                                 value={actualProductionDraft}
                                 onChange={event => setActualProductionDraft(event.target.value)}
                                 onBlur={() => setActualProductionDraft(formatMoneyInput(parseMoneyInput(actualProductionDraft)))}
                                 inputMode="numeric"
                                 placeholder="Nhập số tiền..."
-                                className="w-full rounded-xl border border-border bg-transparent px-3 py-2.5 text-sm font-black text-foreground outline-none focus:ring-2 focus:ring-emerald-500"
+                                className="w-full rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2.5 text-sm font-semibold text-zinc-900 dark:text-zinc-100 outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
                                 disabled={!canManageTab || savingActualProduction}
                             />
                         </label>
                         <label className="min-w-0">
-                            <span className="block text-[10px] font-black uppercase tracking-wide text-muted-foreground mb-1.5">Ghi chú</span>
+                            <span className="block text-[10px] font-bold uppercase tracking-wide text-zinc-400 dark:text-zinc-500 mb-1.5">Ghi chú</span>
                             <input
                                 value={actualProductionNote}
                                 onChange={event => setActualProductionNote(event.target.value)}
                                 placeholder="VD: cập nhật theo nghiệm thu nội bộ"
-                                className="w-full rounded-xl border border-border bg-transparent px-3 py-2.5 text-sm font-bold text-foreground outline-none focus:ring-2 focus:ring-emerald-500"
+                                className="w-full rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2.5 text-sm font-semibold text-zinc-900 dark:text-zinc-100 outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
                                 disabled={!canManageTab || savingActualProduction}
                             />
                         </label>
                         <div className="flex items-center gap-3">
                             <div className="hidden sm:block text-right">
-                                <div className="text-[10px] font-black uppercase tracking-wide text-muted-foreground">Sau khi lưu</div>
-                                <div className="text-base font-black text-emerald-600">{actualProductionPreviewPercent}%</div>
+                                <div className="text-[10px] font-bold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">Sau khi lưu</div>
+                                <div className="text-base font-bold text-teal-700 dark:text-teal-400">{actualProductionPreviewPercent}%</div>
                             </div>
                             <button
                                 type="button"
                                 onClick={saveActualProductionValue}
                                 disabled={!canManageTab || savingActualProduction}
-                                className="h-[42px] px-4 rounded-xl bg-emerald-600 text-white text-xs font-black shadow-sm hover:bg-emerald-700 active:scale-95 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 whitespace-nowrap"
+                                className="h-[42px] px-4 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-xs font-semibold shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 whitespace-nowrap"
                             >
                                 {savingActualProduction ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
                                 Lưu
@@ -2924,33 +2956,33 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
             {/* Stats Cards */}
             <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-7 gap-3">
                 {[
-                    { label: 'Tổng hạng mục', value: stats.total, color: 'text-foreground', icon: '📋' },
-                    { label: 'Tiến độ thi công', value: `${stats.avgProgress}%`, color: 'text-orange-600', icon: '📈', bar: stats.avgProgress },
+                    { label: 'Tổng hạng mục', value: stats.total, color: 'text-zinc-900 dark:text-zinc-100', icon: '📋' },
+                    { label: 'Tiến độ thi công', value: `${stats.avgProgress}%`, color: 'text-teal-700 dark:text-teal-400', icon: '📈', bar: stats.avgProgress },
                     {
                         label: 'Tiến độ theo giá trị',
                         value: `${valueProgressMetric.valueProgressPercent}%`,
-                        color: 'text-emerald-600',
+                        color: 'text-teal-700 dark:text-teal-400',
                         icon: '💰',
                         bar: valueProgressMetric.valueProgressPercent,
                         sub: `${formatMoneyShort(valueProgressMetric.actualProductionValue)} / ${formatMoneyShort(valueProgressMetric.contractTotalValue)}`,
                     },
-                    { label: 'Hoàn thành', value: stats.completed, color: 'text-emerald-600', icon: '✅' },
-                    { label: 'Chờ NT', value: stats.pendingGate, color: stats.pendingGate > 0 ? 'text-amber-600' : 'text-muted-foreground', icon: '🛡️' },
-                    { label: 'Đang thực hiện', value: stats.inProgress, color: 'text-blue-600', icon: '🔄' },
-                    { label: 'Trễ hạn', value: stats.overdue, color: stats.overdue > 0 ? 'text-red-600' : 'text-muted-foreground', icon: '⚠️' },
+                    { label: 'Hoàn thành', value: stats.completed, color: 'text-teal-700 dark:text-teal-400', icon: '✅' },
+                    { label: 'Chờ NT', value: stats.pendingGate, color: stats.pendingGate > 0 ? 'text-amber-700 dark:text-amber-400' : 'text-zinc-400', icon: '🛡️' },
+                    { label: 'Đang thực hiện', value: stats.inProgress, color: 'text-teal-700 dark:text-teal-400', icon: '🔄' },
+                    { label: 'Trễ hạn', value: stats.overdue, color: stats.overdue > 0 ? 'text-red-600 dark:text-red-400' : 'text-zinc-400', icon: '⚠️' },
                 ].map((s, i) => (
-                    <div key={i} className="bg-card rounded-2xl p-4 border border-border shadow-sm hover:shadow-md transition-shadow">
+                    <div key={i} className="bg-white dark:bg-zinc-900 rounded-2xl p-4 border border-zinc-200 dark:border-zinc-800 shadow-sm transition-shadow">
                         <div className="flex items-center justify-between mb-2">
-                            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">{s.label}</span>
+                            <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider">{s.label}</span>
                             <span className="text-sm">{s.icon}</span>
                         </div>
-                        <div className={`text-2xl font-black ${s.color}`}>{s.value}</div>
+                        <div className={`text-2xl font-bold ${s.color}`}>{s.value}</div>
                         {'sub' in s && s.sub && (
-                            <div className="mt-0.5 text-[9px] font-bold text-muted-foreground truncate" title={s.sub}>{s.sub}</div>
+                            <div className="mt-0.5 text-[9px] font-medium text-zinc-400 dark:text-zinc-500 truncate" title={s.sub}>{s.sub}</div>
                         )}
                         {s.bar !== undefined && (
-                            <div className="mt-2 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                                <div className="h-full bg-gradient-to-r from-orange-400 to-amber-500 rounded-full transition-all" style={{ width: `${clampProgress(s.bar)}%` }} />
+                            <div className="mt-2 h-1.5 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
+                                <div className="h-full bg-teal-700 rounded-full transition-all" style={{ width: `${clampProgress(s.bar)}%` }} />
                             </div>
                         )}
                     </div>

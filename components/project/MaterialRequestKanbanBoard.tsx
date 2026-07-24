@@ -46,71 +46,71 @@ interface MaterialRequestKanbanBoardProps {
 }
 
 const columnHeaderGradient: Record<MaterialRequestKanbanStage, string> = {
-  draft: 'from-slate-500 to-slate-600',
-  site_manager_review: 'from-amber-500 to-orange-500',
-  material_department_review: 'from-blue-500 to-blue-600',
-  batch_planning: 'from-indigo-500 to-violet-500',
-  site_quality_check: 'from-orange-500 to-amber-500',
-  site_receipt: 'from-cyan-500 to-teal-500',
-  completed: 'from-emerald-500 to-emerald-600',
-  closed: 'from-rose-500 to-red-600',
+  draft: 'from-zinc-700 via-zinc-800 to-zinc-900',
+  site_manager_review: 'from-teal-600 via-teal-700 to-teal-800',
+  material_department_review: 'from-teal-700 via-teal-800 to-teal-900',
+  batch_planning: 'from-teal-800 via-teal-900 to-zinc-900',
+  site_quality_check: 'from-teal-700 via-emerald-800 to-teal-900',
+  site_receipt: 'from-teal-600 via-emerald-700 to-teal-800',
+  completed: 'from-emerald-700 via-teal-800 to-teal-950',
+  closed: 'from-zinc-600 via-zinc-700 to-zinc-800',
 };
 
 const columnBgTone: Record<MaterialRequestKanbanStage, string> = {
-  draft: 'bg-slate-50/50 dark:bg-slate-900/40',
-  site_manager_review: 'bg-amber-50/30 dark:bg-amber-900/10',
-  material_department_review: 'bg-blue-50/30 dark:bg-blue-900/10',
-  batch_planning: 'bg-indigo-50/30 dark:bg-indigo-900/10',
-  site_quality_check: 'bg-orange-50/30 dark:bg-orange-900/10',
-  site_receipt: 'bg-cyan-50/30 dark:bg-cyan-900/10',
-  completed: 'bg-emerald-50/30 dark:bg-emerald-900/10',
-  closed: 'bg-rose-50/30 dark:bg-rose-900/10',
+  draft: 'bg-zinc-100/70 dark:bg-zinc-900/60',
+  site_manager_review: 'bg-teal-50/40 dark:bg-teal-950/20',
+  material_department_review: 'bg-teal-50/60 dark:bg-teal-950/30',
+  batch_planning: 'bg-teal-50/80 dark:bg-teal-950/40',
+  site_quality_check: 'bg-teal-50/50 dark:bg-teal-950/25',
+  site_receipt: 'bg-teal-50/60 dark:bg-teal-950/30',
+  completed: 'bg-emerald-50/50 dark:bg-emerald-950/30',
+  closed: 'bg-zinc-100/40 dark:bg-zinc-900/40',
 };
 
 const columnBorderTone: Record<MaterialRequestKanbanStage, string> = {
-  draft: 'border-slate-200 dark:border-slate-700',
-  site_manager_review: 'border-amber-200/50 dark:border-amber-800/30',
-  material_department_review: 'border-blue-200/50 dark:border-blue-800/30',
-  batch_planning: 'border-indigo-200/50 dark:border-indigo-800/30',
-  site_quality_check: 'border-orange-200/50 dark:border-orange-800/30',
-  site_receipt: 'border-cyan-200/50 dark:border-cyan-800/30',
-  completed: 'border-emerald-200/50 dark:border-emerald-800/30',
-  closed: 'border-rose-200/50 dark:border-rose-800/30',
+  draft: 'border-zinc-200 dark:border-zinc-800',
+  site_manager_review: 'border-teal-200/80 dark:border-teal-800/50',
+  material_department_review: 'border-teal-300/80 dark:border-teal-800/60',
+  batch_planning: 'border-teal-300 dark:border-teal-700/60',
+  site_quality_check: 'border-teal-200/80 dark:border-teal-800/50',
+  site_receipt: 'border-teal-200/80 dark:border-teal-800/50',
+  completed: 'border-emerald-200/80 dark:border-emerald-800/60',
+  closed: 'border-zinc-200 dark:border-zinc-800',
 };
 
 const getHeaderGradient = (id: MaterialRequestKanbanLaneId) => {
-  if (id.startsWith('workflow:')) return 'from-purple-500 to-violet-500';
-  if (id === 'legacy_review') return 'from-amber-500 to-orange-500';
-  return columnHeaderGradient[id as MaterialRequestKanbanStage] || 'from-slate-500 to-slate-600';
+  if (id.startsWith('workflow:')) return 'from-teal-700 via-teal-800 to-teal-900';
+  if (id === 'legacy_review') return 'from-teal-600 via-teal-700 to-teal-800';
+  return columnHeaderGradient[id as MaterialRequestKanbanStage] || 'from-zinc-700 via-zinc-800 to-zinc-900';
 };
 
 const getColumnBg = (id: MaterialRequestKanbanLaneId) => {
-  if (id.startsWith('workflow:')) return 'bg-purple-50/30 dark:bg-purple-900/10';
-  if (id === 'legacy_review') return 'bg-amber-50/30 dark:bg-amber-900/10';
-  return columnBgTone[id as MaterialRequestKanbanStage] || 'bg-slate-50/50 dark:bg-slate-900/40';
+  if (id.startsWith('workflow:')) return 'bg-teal-50/40 dark:bg-teal-950/20';
+  if (id === 'legacy_review') return 'bg-teal-50/50 dark:bg-teal-950/25';
+  return columnBgTone[id as MaterialRequestKanbanStage] || 'bg-zinc-100/70 dark:bg-zinc-900/60';
 };
 
 const getColumnBorder = (id: MaterialRequestKanbanLaneId) => {
-  if (id.startsWith('workflow:')) return 'border-purple-200/50 dark:border-purple-800/30';
-  if (id === 'legacy_review') return 'border-amber-200/50 dark:border-amber-800/30';
-  return columnBorderTone[id as MaterialRequestKanbanStage] || 'border-slate-200 dark:border-slate-700';
+  if (id.startsWith('workflow:')) return 'border-teal-200/60 dark:border-teal-800/40';
+  if (id === 'legacy_review') return 'border-teal-200 dark:border-teal-800/50';
+  return columnBorderTone[id as MaterialRequestKanbanStage] || 'border-zinc-200 dark:border-zinc-800';
 };
 
 const getLaneBorderColor = (laneId: MaterialRequestKanbanLaneId) => {
-  if (laneId.startsWith('workflow:')) return 'border-l-purple-500';
-  if (laneId === 'legacy_review') return 'border-l-amber-500';
+  if (laneId.startsWith('workflow:')) return 'border-l-teal-700';
+  if (laneId === 'legacy_review') return 'border-l-teal-600';
   
   const colors: Record<MaterialRequestKanbanStage, string> = {
-    draft: 'border-l-slate-400',
-    site_manager_review: 'border-l-amber-500',
-    material_department_review: 'border-l-blue-500',
-    batch_planning: 'border-l-indigo-500',
-    site_quality_check: 'border-l-orange-500',
-    site_receipt: 'border-l-cyan-500',
-    completed: 'border-l-emerald-500',
-    closed: 'border-l-rose-500',
+    draft: 'border-l-zinc-400',
+    site_manager_review: 'border-l-teal-600',
+    material_department_review: 'border-l-teal-700',
+    batch_planning: 'border-l-teal-800',
+    site_quality_check: 'border-l-teal-700',
+    site_receipt: 'border-l-teal-600',
+    completed: 'border-l-emerald-600',
+    closed: 'border-l-zinc-400',
   };
-  return colors[laneId as MaterialRequestKanbanStage] || 'border-l-slate-400';
+  return colors[laneId as MaterialRequestKanbanStage] || 'border-l-zinc-400';
 };
 
 

@@ -91,12 +91,12 @@ export const MaterialBoqFormModal: React.FC<MaterialBoqFormModalProps> = ({
     const isG8NormItem = editingBoq?.sourceType === 'g8_norm';
     return (
     <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm">
-        <div className="mx-4 max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-800">
-            <div className="flex items-center justify-between rounded-t-3xl border-b border-slate-100 bg-gradient-to-r from-indigo-500 to-purple-500 px-6 py-4">
-                <span className="flex items-center gap-2 text-lg font-bold text-white">
+        <div className="mx-4 max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900">
+            <div className="flex items-center justify-between border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-6 py-4 rounded-t-2xl">
+                <span className="flex items-center gap-2 text-base font-semibold text-zinc-900 dark:text-zinc-100">
                     {editingBoq ? <><Edit2 size={18} /> Sửa BOQ</> : <><Plus size={18} /> Thêm BOQ</>}
                 </span>
-                <button onClick={onCancel} className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/20 text-white hover:bg-white/30"><X size={18} /></button>
+                <button onClick={onCancel} className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-500 transition-colors"><X size={18} /></button>
             </div>
             <div className="space-y-4 p-6">
                 <div>
@@ -234,12 +234,12 @@ export const MaterialBoqFormModal: React.FC<MaterialBoqFormModalProps> = ({
                         className="w-full resize-none rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
                 </div>
             </div>
-            <div className="flex justify-end gap-3 border-t border-slate-100 px-6 py-4">
-                <button onClick={onCancel} className="rounded-xl px-5 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-100">Huỷ</button>
+            <div className="flex justify-end gap-3 border-t border-zinc-200 dark:border-zinc-800 px-6 py-4">
+                <button onClick={onCancel} className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800">Huỷ</button>
                 <button
                     onClick={onSave}
                     disabled={!canSaveBoqItem}
-                    className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-500 px-6 py-2.5 text-sm font-bold text-white shadow-lg hover:shadow-xl disabled:opacity-50"
+                    className="flex items-center gap-2 rounded-lg bg-teal-700 hover:bg-teal-800 px-5 py-2 text-sm font-medium text-white shadow-sm disabled:opacity-50 transition-colors"
                 >
                     <Save size={16} /> {editingBoq ? 'Lưu' : 'Thêm'}
                 </button>

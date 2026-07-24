@@ -2513,63 +2513,63 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             {/* BOQ Tab */}
             {materialAccess.boq.canView && activeSubTab === 'boq' && (
                 <div className="space-y-4">
-                    <details className="group border-y border-slate-100 dark:border-slate-700/60">
+                    <details className="group border-y border-zinc-200 dark:border-zinc-800">
                         <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-4">
                             <div>
-                                <h3 className="flex items-center gap-2 text-sm font-black text-slate-700 dark:text-slate-100">
-                                    <GitBranch size={16} className="text-indigo-500" /> Đối chiếu BOQ hợp đồng tham khảo
+                                <h3 className="flex items-center gap-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                                    <GitBranch size={16} className="text-teal-700 dark:text-teal-400" /> Đối chiếu BOQ hợp đồng tham khảo
                                 </h3>
-                                <p className="mt-1 text-[10px] font-bold text-slate-400">Không còn là điều kiện tạo nghiệm thu/thanh toán; mở ra khi cần so sánh BOQ hợp đồng với BOQ triển khai.</p>
+                                <p className="mt-1 text-[10px] font-medium text-zinc-400">Không còn là điều kiện tạo nghiệm thu/thanh toán; mở ra khi cần so sánh BOQ hợp đồng với BOQ triển khai.</p>
                             </div>
-                            <ChevronDown size={16} className="shrink-0 text-slate-400 transition-transform group-open:rotate-180" />
+                            <ChevronDown size={16} className="shrink-0 text-zinc-400 transition-transform group-open:rotate-180" />
                         </summary>
-                        <div className="border-t border-slate-100 p-4 dark:border-slate-700/60">
+                        <div className="border-t border-zinc-200 p-4 dark:border-zinc-800">
                             <React.Suspense fallback={<LazyPanelFallback label="Đang tải đối chiếu BOQ..." />}>
                                 <BoqReconciliationPanel projectId={projectId || null} constructionSiteId={constructionSiteId || null} />
                             </React.Suspense>
                         </div>
                     </details>
-                    <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700/60 shadow-sm overflow-hidden">
-                        <div className="p-5 border-b border-slate-100 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                    <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-hidden">
+                        <div className="p-5 border-b border-zinc-200 dark:border-zinc-800 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
                             <div>
-                                <h3 className="text-sm font-black text-slate-700 flex items-center gap-2"><ListTree size={16} className="text-indigo-500" /> BOQ khối lượng triển khai theo tiến độ</h3>
-                                <p className="text-[10px] text-slate-400 mt-1">KL dự toán vật tư tự tính bằng KL dự toán đầu mục × Ngưỡng hao hụt.</p>
+                                <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 flex items-center gap-2"><ListTree size={16} className="text-teal-700 dark:text-teal-400" /> BOQ khối lượng triển khai theo tiến độ</h3>
+                                <p className="text-[10px] text-zinc-400 mt-1">KL dự toán vật tư tự tính bằng KL dự toán đầu mục × Ngưỡng hao hụt.</p>
                             </div>
                             <div className="flex flex-wrap gap-2">
                                 {canEditBoq && (
                                     <button onClick={handleSyncWithSchedule} disabled={syncingBoq}
-                                        className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 disabled:opacity-50">
+                                        className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-semibold text-teal-700 bg-teal-50 border border-teal-200 hover:bg-teal-100 dark:bg-teal-950/40 dark:border-teal-800 dark:text-teal-400 disabled:opacity-50">
                                         <RefreshCcw size={12} className={syncingBoq ? 'animate-spin' : ''} /> Đồng bộ với tiến độ
                                     </button>
                                 )}
                                 <button onClick={expandAllWorkBoqNodes}
-                                    className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-[#2563EB] bg-blue-50 border border-blue-200 hover:bg-blue-100">
+                                    className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-semibold text-zinc-700 bg-zinc-100 border border-zinc-200 hover:bg-zinc-200 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-200">
                                     Mở rộng cây
                                 </button>
                                 <button onClick={collapseAllWorkBoqNodes}
-                                    className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-slate-700 bg-slate-50 border border-slate-200 hover:bg-slate-100">
+                                    className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-semibold text-zinc-700 bg-zinc-100 border border-zinc-200 hover:bg-zinc-200 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-200">
                                     Thu gọn cây
                                 </button>
                                 <button onClick={handleDownloadWorkBoqTemplate}
-                                    className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-slate-600 bg-slate-50 border border-slate-200 hover:bg-slate-100">
+                                    className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-semibold text-zinc-700 bg-zinc-100 border border-zinc-200 hover:bg-zinc-200 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-200">
                                     <FileSpreadsheet size={12} /> File mẫu
                                 </button>
                                 <button onClick={handleExportWorkBoq}
-                                    className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-blue-600 bg-blue-50 border border-blue-200 hover:bg-blue-100">
+                                    className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-semibold text-zinc-700 bg-zinc-100 border border-zinc-200 hover:bg-zinc-200 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-200">
                                     <Download size={12} /> Xuất Excel
                                 </button>
                                 {canEditBoq && (
                                     <>
                                         <button onClick={() => boqImportRef.current?.click()} disabled={importingBoq}
-                                            className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-amber-600 bg-amber-50 border border-amber-200 hover:bg-amber-100 disabled:opacity-50">
+                                            className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 hover:bg-amber-100 dark:bg-amber-950/40 dark:border-amber-800 dark:text-amber-300 disabled:opacity-50">
                                             <Upload size={12} /> Nhập Excel
                                         </button>
                                         <button onClick={() => { resetBoqForm(); setShowBoqForm(true); }}
-                                            className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100">
+                                            className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-semibold text-white bg-teal-700 hover:bg-teal-800 shadow-sm">
                                             <Plus size={12} /> Thêm vật tư
                                         </button>
                                         <button onClick={() => openG8NormModal()}
-                                            className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100">
+                                            className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-semibold text-teal-700 bg-teal-50 border border-teal-200 hover:bg-teal-100 dark:bg-teal-950/40 dark:border-teal-800 dark:text-teal-400">
                                             <BookOpen size={12} /> Thêm định mức
                                         </button>
                                     </>

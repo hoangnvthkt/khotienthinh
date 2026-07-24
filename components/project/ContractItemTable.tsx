@@ -648,7 +648,7 @@ const ContractItemTable: React.FC<ContractItemTableProps> = ({
       <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-600">
         <table className="w-full text-left">
           <thead>
-            <tr className="bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-slate-700 dark:to-slate-700">
+            <tr className="bg-zinc-100 dark:bg-zinc-800 border-b border-zinc-200 dark:border-zinc-700">
               <th className="px-2 py-2.5 text-[9px] font-black text-slate-500 uppercase text-center w-10">#</th>
               <th className="px-2 py-2.5 text-[9px] font-black text-slate-500 uppercase">Mã</th>
               <th className="px-2 py-2.5 text-[9px] font-black text-slate-500 uppercase">Tên hạng mục</th>
@@ -724,11 +724,11 @@ const ContractItemTable: React.FC<ContractItemTableProps> = ({
           {/* Footer total */}
           {items.length > 0 && (
             <tfoot>
-              <tr className="bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-slate-700 dark:to-slate-700 border-t-2 border-indigo-200 dark:border-indigo-800">
-                <td colSpan={6} className="px-3 py-2.5 text-xs font-black text-slate-700 dark:text-white text-right uppercase">
+              <tr className="bg-zinc-100 dark:bg-zinc-800 border-t-2 border-zinc-200 dark:border-zinc-700">
+                <td colSpan={6} className="px-3 py-2.5 text-xs font-semibold text-zinc-900 dark:text-zinc-100 text-right uppercase">
                   Tổng cộng
                 </td>
-                <td className="px-2 py-2.5 text-sm font-black text-indigo-700 dark:text-indigo-300 text-right">
+                <td className="px-2 py-2.5 text-sm font-bold text-teal-700 dark:text-teal-400 text-right">
                   {fmtMoney(totalValue)}
                 </td>
                 <td className="px-2 py-2.5 text-[10px] font-bold text-emerald-600 text-center">

@@ -146,11 +146,11 @@ const qualityOptions: Array<{ value: PaymentQualityStatus; label: string }> = [
   { value: 'failed', label: 'Không đạt' },
 ];
 
-const fieldClass = 'w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-orange-300 focus:ring-2 focus:ring-orange-100';
+const fieldClass = 'w-full rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 text-xs font-semibold text-zinc-800 dark:text-zinc-100 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 dark:focus:ring-teal-900/50';
 
 const FormField = ({ label, children }: { label: string; children: React.ReactNode }) => (
   <label className="block">
-    <span className="mb-1.5 block text-[10px] font-black uppercase tracking-wide text-slate-400">{label}</span>
+    <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">{label}</span>
     {children}
   </label>
 );
@@ -162,14 +162,14 @@ const PaymentScheduleEditor: React.FC<{
   onClose: () => void;
   onSave: () => void;
 }> = ({ form, saving, onChange, onClose, onSave }) => (
-  <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
-    <div className="w-full max-w-3xl rounded-2xl border border-slate-200 bg-white shadow-2xl">
-      <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/40 p-4">
+    <div className="w-full max-w-3xl rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-2xl">
+      <div className="flex items-center justify-between gap-3 border-b border-zinc-100 dark:border-zinc-800 px-5 py-4">
         <div>
-          <div className="text-sm font-black text-slate-900">Kế hoạch thanh toán</div>
-          <div className="mt-0.5 text-[11px] font-bold text-slate-400">Tạo hoặc cập nhật dòng thanh toán công trình</div>
+          <div className="text-sm font-bold text-zinc-900 dark:text-zinc-100">Kế hoạch thanh toán</div>
+          <div className="mt-0.5 text-[11px] font-medium text-zinc-400 dark:text-zinc-500">Tạo hoặc cập nhật dòng thanh toán công trình</div>
         </div>
-        <button type="button" onClick={onClose} className="rounded-lg p-2 text-slate-400 hover:bg-slate-50 hover:text-slate-700">
+        <button type="button" onClick={onClose} className="rounded-lg p-2 text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-700">
           <X size={16} />
         </button>
       </div>
@@ -232,9 +232,9 @@ const PaymentScheduleEditor: React.FC<{
           <input className={fieldClass} value={form.plannedScopeNote || ''} onChange={event => onChange({ ...form, plannedScopeNote: event.target.value })} placeholder="Hạng mục/phạm vi dự kiến" />
         </FormField>
       </div>
-      <div className="flex justify-end gap-2 border-t border-slate-100 px-5 py-4">
-        <button type="button" onClick={onClose} className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-black text-slate-600 hover:bg-slate-50">Hủy</button>
-        <button type="button" onClick={onSave} disabled={saving} className="inline-flex items-center gap-1.5 rounded-xl bg-orange-500 px-4 py-2 text-xs font-black text-white hover:bg-orange-600 disabled:opacity-50">
+      <div className="flex justify-end gap-2 border-t border-zinc-100 dark:border-zinc-800 px-5 py-4">
+        <button type="button" onClick={onClose} className="rounded-xl border border-zinc-200 dark:border-zinc-800 px-4 py-2 text-xs font-semibold text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">Hủy</button>
+        <button type="button" onClick={onSave} disabled={saving} className="inline-flex items-center gap-1.5 rounded-xl bg-teal-700 px-4 py-2 text-xs font-semibold text-white hover:bg-teal-800 shadow-sm transition-colors disabled:opacity-50">
           {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Lưu
         </button>
       </div>
@@ -588,30 +588,30 @@ const PaymentWorkbenchTab: React.FC<PaymentWorkbenchTabProps> = ({ constructionS
     <div className="space-y-4">
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
         <div>
-          <h3 className="text-xl font-black text-slate-800 dark:text-white">Nghiệm thu & Thanh toán</h3>
-          <p className="text-xs font-bold text-slate-400 mt-1">Kế hoạch thanh toán nhập tay theo hợp đồng, có hạng mục dự kiến và xác nhận chất lượng tổng hợp.</p>
+          <h3 className="text-xl font-bold text-zinc-900 dark:text-zinc-100">Nghiệm thu & Thanh toán</h3>
+          <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 mt-1">Kế hoạch thanh toán nhập tay theo hợp đồng, có hạng mục dự kiến và xác nhận chất lượng tổng hợp.</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {canEditSchedule && (
-            <button onClick={openNew} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-orange-500 text-xs font-black text-white hover:bg-orange-600 transition">
+            <button onClick={openNew} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-teal-700 text-xs font-semibold text-white hover:bg-teal-800 shadow-sm transition-colors">
               <Plus size={14} /> Thêm kế hoạch
             </button>
           )}
-          <button onClick={loadWorkbench} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 text-xs font-black text-slate-600 hover:bg-slate-50 transition">
+          <button onClick={loadWorkbench} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
             <RefreshCcw size={14} /> Tải lại
           </button>
-          <button onClick={exportRows} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-emerald-200 bg-emerald-50 text-xs font-black text-emerald-700 hover:bg-emerald-100 transition">
+          <button onClick={exportRows} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800 text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-700/60 transition-colors">
             <Download size={14} /> Export
           </button>
         </div>
       </div>
 
-      <div className="flex gap-1 bg-white dark:bg-slate-800 rounded-2xl p-1.5 border border-slate-100 dark:border-slate-700/50 shadow-sm overflow-x-auto">
+      <div className="flex gap-1 bg-white dark:bg-zinc-900 rounded-2xl p-1.5 border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-x-auto">
         {subTabs.map(tab => (
           <button
             key={tab.key}
             onClick={() => setPaymentSubTab(tab.key)}
-            className={`shrink-0 px-3 py-2 rounded-xl text-xs font-black transition ${activeTab === tab.key ? 'bg-orange-500 text-white shadow' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}
+            className={`shrink-0 px-3 py-2 rounded-xl text-xs font-semibold transition-colors ${activeTab === tab.key ? 'bg-teal-700 text-white shadow-sm' : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}
           >
             {tab.label}
           </button>

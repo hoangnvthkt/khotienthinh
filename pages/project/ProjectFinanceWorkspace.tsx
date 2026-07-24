@@ -298,32 +298,32 @@ const KpiCard = ({
   tone?: 'slate' | 'green' | 'red' | 'blue' | 'amber';
 }) => {
   const toneClass = {
-    slate: 'text-slate-700 bg-slate-50',
-    green: 'text-emerald-700 bg-emerald-50',
-    red: 'text-red-700 bg-red-50',
-    blue: 'text-blue-700 bg-blue-50',
-    amber: 'text-amber-700 bg-amber-50',
+    slate: 'text-zinc-800 dark:text-zinc-200 bg-zinc-50 dark:bg-zinc-800/60 border-zinc-200 dark:border-zinc-700',
+    green: 'text-teal-700 dark:text-teal-400 bg-teal-50 dark:bg-teal-950/40 border-teal-200 dark:border-teal-800/60',
+    red: 'text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-800/60',
+    blue: 'text-teal-800 dark:text-teal-300 bg-teal-50/70 dark:bg-teal-950/30 border-teal-200/80 dark:border-teal-800/50',
+    amber: 'text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800/60',
   }[tone];
   return (
-    <div className="rounded-lg border border-slate-100 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+    <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 shadow-sm">
       <div className="flex items-center justify-between gap-3">
-        <div className="text-[10px] font-black uppercase tracking-wide text-slate-400">{label}</div>
-        <span className={`flex h-8 w-8 items-center justify-center rounded-lg ${toneClass}`}>
+        <div className="text-[10px] font-bold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">{label}</div>
+        <span className={`flex h-8 w-8 items-center justify-center rounded-lg border ${toneClass}`}>
           <Icon size={16} />
         </span>
       </div>
-      <div className={`mt-2 text-lg font-black ${toneClass.split(' ')[0]}`}>{fmtMoney(value)}</div>
-      {hint && <div className="mt-1 text-[11px] font-bold text-slate-400">{hint}</div>}
+      <div className={`mt-2 text-lg font-bold ${toneClass.split(' ')[0]}`}>{fmtMoney(value)}</div>
+      {hint && <div className="mt-1 text-[11px] font-medium text-zinc-400 dark:text-zinc-500">{hint}</div>}
     </div>
   );
 };
 
 const controlToneClass = (tone: 'slate' | 'green' | 'red' | 'blue' | 'amber') => ({
-  slate: 'text-slate-700 bg-slate-50',
-  green: 'text-emerald-700 bg-emerald-50',
-  red: 'text-red-700 bg-red-50',
-  blue: 'text-blue-700 bg-blue-50',
-  amber: 'text-amber-700 bg-amber-50',
+  slate: 'text-zinc-800 dark:text-zinc-200 bg-zinc-50 dark:bg-zinc-800/60 border-zinc-200 dark:border-zinc-700',
+  green: 'text-teal-700 dark:text-teal-400 bg-teal-50 dark:bg-teal-950/40 border-teal-200 dark:border-teal-800/60',
+  red: 'text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-800/60',
+  blue: 'text-teal-800 dark:text-teal-300 bg-teal-50/70 dark:bg-teal-950/30 border-teal-200/80 dark:border-teal-800/50',
+  amber: 'text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800/60',
 }[tone]);
 
 const FinanceControlMetric = ({
@@ -515,7 +515,7 @@ const FieldLabel = ({ label, children }: { label: string; children: React.ReactN
   </label>
 );
 
-const inputClass = 'w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-orange-300 focus:ring-2 focus:ring-orange-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100';
+const inputClass = 'w-full rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 text-xs font-semibold text-zinc-800 dark:text-zinc-100 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 dark:focus:ring-teal-900/50';
 
 const PaymentScheduleFormModal = ({
   form,
@@ -606,7 +606,7 @@ const PaymentScheduleFormModal = ({
       </div>
       <div className="flex justify-end gap-2 border-t border-slate-100 px-5 py-4 dark:border-slate-800">
         <button type="button" onClick={onClose} className="rounded-lg border border-slate-200 px-4 py-2 text-xs font-black text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">Hủy</button>
-        <button type="button" onClick={onSave} disabled={saving} className="inline-flex items-center gap-1.5 rounded-lg bg-orange-500 px-4 py-2 text-xs font-black text-white hover:bg-orange-600 disabled:opacity-50">
+        <button type="button" onClick={onSave} disabled={saving} className="inline-flex items-center gap-1.5 rounded-xl bg-teal-700 px-4 py-2 text-xs font-semibold text-white hover:bg-teal-800 shadow-sm disabled:opacity-50 transition-colors">
           {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Lưu
         </button>
       </div>
@@ -761,7 +761,7 @@ const TransactionFormModal = ({
         </div>
         <div className="flex justify-end gap-2 border-t border-slate-100 px-5 py-4 dark:border-slate-800">
           <button type="button" onClick={onClose} className="rounded-lg border border-slate-200 px-4 py-2 text-xs font-black text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">Hủy</button>
-          <button type="button" onClick={onSave} disabled={saving} className="inline-flex items-center gap-1.5 rounded-lg bg-orange-500 px-4 py-2 text-xs font-black text-white hover:bg-orange-600 disabled:opacity-50">
+          <button type="button" onClick={onSave} disabled={saving} className="inline-flex items-center gap-1.5 rounded-xl bg-teal-700 px-4 py-2 text-xs font-semibold text-white hover:bg-teal-800 shadow-sm disabled:opacity-50 transition-colors">
             {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Lưu
           </button>
         </div>
@@ -1879,18 +1879,18 @@ const LedgerTable = ({
             value={search}
             onChange={event => setSearch(event.target.value)}
             placeholder="Tìm giao dịch..."
-            className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-xs font-bold outline-none focus:border-orange-300 dark:border-slate-700 dark:bg-slate-900"
+            className="w-full rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 py-2 pl-9 pr-3 text-xs font-semibold outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 dark:focus:ring-teal-900/50"
           />
         </div>
         {canManage && (
           <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={onDownloadTemplate} className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800">
+            <button type="button" onClick={onDownloadTemplate} className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
               <Download size={14} /> Tải mẫu
             </button>
-            <button type="button" onClick={onImportClick} className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-xs font-black text-orange-700 hover:bg-orange-100 dark:border-orange-900 dark:bg-orange-950/30 dark:text-orange-300">
+            <button type="button" onClick={onImportClick} className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-teal-200 dark:border-teal-800/60 bg-teal-50 dark:bg-teal-950/40 px-3 py-2 text-xs font-semibold text-teal-700 dark:text-teal-400 hover:bg-teal-100 dark:hover:bg-teal-900/40 transition-colors">
               <Upload size={14} /> Import Excel
             </button>
-            <button type="button" onClick={onCreate} className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-orange-500 px-3 py-2 text-xs font-black text-white hover:bg-orange-600">
+            <button type="button" onClick={onCreate} className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-teal-700 px-3 py-2 text-xs font-semibold text-white hover:bg-teal-800 shadow-sm transition-colors">
               <Plus size={14} /> Thêm giao dịch
             </button>
           </div>
@@ -3105,24 +3105,24 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h3 className="text-base font-black text-slate-900 dark:text-white">Tài chính công trình</h3>
-          <p className="mt-0.5 text-xs font-bold text-slate-400">Tổng hợp ngân sách, công nợ, thanh toán và dòng tiền từ chứng từ hiện có.</p>
+          <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-100">Tài chính công trình</h3>
+          <p className="mt-0.5 text-xs font-medium text-zinc-500 dark:text-zinc-400">Tổng hợp ngân sách, công nợ, thanh toán và dòng tiền từ chứng từ hiện có.</p>
         </div>
-        <button onClick={load} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-600 hover:border-orange-200 hover:text-orange-600 dark:border-slate-700 dark:bg-slate-900">
+        <button onClick={load} className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-700 hover:border-teal-500 hover:text-teal-700 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:text-teal-400">
           <RefreshCcw size={14} className={loading ? 'animate-spin' : ''} /> Tải lại
         </button>
       </div>
 
-      <div className="flex gap-1 overflow-x-auto rounded-lg border border-slate-100 bg-white p-1 shadow-sm dark:border-slate-700 dark:bg-slate-900 [&::-webkit-scrollbar]:hidden">
+      <div className="flex gap-1 overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-1 shadow-sm [&::-webkit-scrollbar]:hidden">
         {tabs.map(tab => {
           const Icon = tab.icon;
           return (
             <button
               key={tab.key}
               onClick={() => openTab(tab.key)}
-              className={`inline-flex shrink-0 items-center gap-1.5 rounded-md px-3 py-2 text-xs font-black transition ${activeTab === tab.key
-                ? 'bg-orange-500 text-white shadow-sm'
-                : 'text-slate-500 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800'
+              className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${activeTab === tab.key
+                ? 'bg-teal-700 text-white shadow-sm'
+                : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'
               }`}
             >
               <Icon size={14} /> {tab.label}
@@ -3132,14 +3132,14 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
       </div>
 
       {loading && (
-        <div className="rounded-lg border border-slate-100 bg-white p-10 text-center text-sm font-bold text-slate-400 dark:border-slate-700 dark:bg-slate-900">
-          <Loader2 size={22} className="mx-auto mb-2 animate-spin text-orange-500" />
+        <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-10 text-center text-sm font-medium text-zinc-400">
+          <Loader2 size={22} className="mx-auto mb-2 animate-spin text-teal-600" />
           Đang tổng hợp tài chính...
         </div>
       )}
 
       {!loading && error && (
-        <div className="rounded-lg border border-red-100 bg-red-50 p-4 text-sm font-bold text-red-700">
+        <div className="rounded-xl border border-red-200 dark:border-red-800/60 bg-red-50 dark:bg-red-950/40 p-4 text-sm font-medium text-red-700 dark:text-red-400">
           {error}
         </div>
       )}
@@ -3162,13 +3162,13 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
               {summary.alerts.length > 0 && (
                 <div className="grid gap-3 lg:grid-cols-3">
                   {summary.alerts.map(alert => (
-                    <div key={alert.id} className={`rounded-lg border p-3 ${
-                      alert.tone === 'danger' ? 'border-red-100 bg-red-50 text-red-700' :
-                      alert.tone === 'warning' ? 'border-amber-100 bg-amber-50 text-amber-700' :
-                      'border-blue-100 bg-blue-50 text-blue-700'
+                    <div key={alert.id} className={`rounded-xl border p-3 ${
+                      alert.tone === 'danger' ? 'border-red-200 dark:border-red-800/60 bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-400' :
+                      alert.tone === 'warning' ? 'border-amber-200 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400' :
+                      'border-teal-200 dark:border-teal-800/60 bg-teal-50 dark:bg-teal-950/40 text-teal-700 dark:text-teal-400'
                     }`}>
-                      <div className="flex items-center gap-2 text-xs font-black"><AlertTriangle size={14} /> {alert.title}</div>
-                      <p className="mt-1 text-[11px] font-bold leading-5 opacity-80">{alert.message}</p>
+                      <div className="flex items-center gap-2 text-xs font-bold"><AlertTriangle size={14} /> {alert.title}</div>
+                      <p className="mt-1 text-[11px] font-medium leading-5 opacity-90">{alert.message}</p>
                     </div>
                   ))}
                 </div>
@@ -3186,8 +3186,8 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
               <div className="grid gap-5 xl:grid-cols-2">
                 <section className="space-y-3">
                   <div className="flex items-center justify-between">
-                    <h4 className="text-sm font-black text-slate-800 dark:text-white">Phải trả gần nhất</h4>
-                    <button onClick={() => openTab('payables')} className="text-xs font-black text-orange-600">Xem tất cả</button>
+                    <h4 className="text-sm font-bold text-zinc-800 dark:text-zinc-200">Phải trả gần nhất</h4>
+                    <button onClick={() => openTab('payables')} className="text-xs font-bold text-teal-700 dark:text-teal-400 hover:text-teal-800">Xem tất cả</button>
                   </div>
                   <PayablesTable
                     rows={openPayableRows.slice(0, 5)}
@@ -3197,8 +3197,8 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
                 </section>
                 <section className="space-y-3">
                   <div className="flex items-center justify-between">
-                    <h4 className="text-sm font-black text-slate-800 dark:text-white">Phải thu gần nhất</h4>
-                    <button onClick={() => openTab('receivables')} className="text-xs font-black text-orange-600">Xem tất cả</button>
+                    <h4 className="text-sm font-bold text-zinc-800 dark:text-zinc-200">Phải thu gần nhất</h4>
+                    <button onClick={() => openTab('receivables')} className="text-xs font-bold text-teal-700 dark:text-teal-400 hover:text-teal-800">Xem tất cả</button>
                   </div>
                   <ReceivablesTable
                     rows={openReceivableRows.slice(0, 5)}
@@ -3215,45 +3215,45 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
             <section className="space-y-3">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <h4 className="text-sm font-black text-slate-800 dark:text-white">Khoản phải trả</h4>
-                  <p className="mt-0.5 text-[11px] font-bold text-slate-400">Theo dõi AP NCC và các đợt thanh toán đã post.</p>
+                  <h4 className="text-sm font-bold text-zinc-800 dark:text-zinc-200">Khoản phải trả</h4>
+                  <p className="mt-0.5 text-[11px] font-medium text-zinc-400 dark:text-zinc-500">Theo dõi AP NCC và các đợt thanh toán đã post.</p>
                 </div>
                 <div className="flex flex-wrap items-center justify-end gap-2">
-                  <div className="inline-flex rounded-lg border border-slate-200 bg-white p-1 dark:border-slate-700 dark:bg-slate-900">
+                  <div className="inline-flex rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-1">
                     <button
                       type="button"
                       onClick={() => setPayablesView('documents')}
-                      className={`rounded-md px-3 py-1.5 text-xs font-black ${payablesView === 'documents' ? 'bg-orange-500 text-white' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
+                      className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${payablesView === 'documents' ? 'bg-teal-700 text-white' : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}
                     >
                       Chứng từ phải trả
                     </button>
                     <button
                       type="button"
                       onClick={() => setPayablesView('payments')}
-                      className={`rounded-md px-3 py-1.5 text-xs font-black ${payablesView === 'payments' ? 'bg-emerald-600 text-white' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
+                      className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${payablesView === 'payments' ? 'bg-teal-700 text-white' : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}
                     >
                       Thanh toán NCC
                     </button>
                     <button
                       type="button"
                       onClick={() => setPayablesView('settlements')}
-                      className={`rounded-md px-3 py-1.5 text-xs font-black ${payablesView === 'settlements' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
+                      className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${payablesView === 'settlements' ? 'bg-teal-700 text-white' : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}
                     >
                       Hoàn ứng
                     </button>
                   </div>
                   {payablesView === 'documents' && canManageSchedules && (
-                    <button type="button" onClick={() => openNewSchedule('payable')} className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-orange-500 px-3 py-2 text-xs font-black text-white hover:bg-orange-600">
+                    <button type="button" onClick={() => openNewSchedule('payable')} className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-teal-700 px-3 py-2 text-xs font-semibold text-white hover:bg-teal-800 shadow-sm transition-colors">
                       <Plus size={14} /> Thêm phải trả
                     </button>
                   )}
                   {payablesView === 'payments' && canRecordPoPayment && (
-                    <button type="button" onClick={() => openSupplierPaymentBatchForm()} className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-black text-white hover:bg-emerald-700">
+                    <button type="button" onClick={() => openSupplierPaymentBatchForm()} className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-teal-700 px-3 py-2 text-xs font-semibold text-white hover:bg-teal-800 shadow-sm transition-colors">
                       <Plus size={14} /> Tạo đợt thanh toán
                     </button>
                   )}
                   {payablesView === 'settlements' && canManageFinance && (
-                    <button type="button" onClick={() => void createSiteCashSettlementBatch()} disabled={savingSiteCashSettlement} className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-xs font-black text-white hover:bg-blue-700 disabled:opacity-50">
+                    <button type="button" onClick={() => void createSiteCashSettlementBatch()} disabled={savingSiteCashSettlement} className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-teal-700 px-3 py-2 text-xs font-semibold text-white hover:bg-teal-800 shadow-sm transition-colors disabled:opacity-50">
                       {savingSiteCashSettlement ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />} Tạo bộ hoàn ứng
                     </button>
                   )}

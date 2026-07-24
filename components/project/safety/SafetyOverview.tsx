@@ -24,38 +24,38 @@ const StatCard: React.FC<{
   onClick?: () => void;
 }> = ({ label, value, icon, tone = 'slate', onClick }) => {
   const tones = {
-    slate: 'border-slate-200 bg-white text-slate-700',
-    emerald: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-    amber: 'border-amber-200 bg-amber-50 text-amber-700',
-    red: 'border-red-200 bg-red-50 text-red-700',
-    blue: 'border-blue-200 bg-blue-50 text-blue-700',
+    slate: 'border-zinc-200 bg-white text-zinc-900 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100',
+    emerald: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-300',
+    amber: 'border-teal-200 bg-teal-50 text-teal-700 dark:border-teal-900/50 dark:bg-teal-950/40 dark:text-teal-300',
+    red: 'border-red-200 bg-red-50 text-red-700 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300',
+    blue: 'border-teal-200 bg-teal-50 text-teal-700 dark:border-teal-900/50 dark:bg-teal-950/40 dark:text-teal-300',
   };
   const content = (
     <>
       <div className="flex items-center justify-between gap-3">
-        <span className="text-[10px] font-black uppercase text-slate-400">{label}</span>
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">{label}</span>
         <span className="text-current opacity-70">{icon}</span>
       </div>
-      <div className="mt-2 text-2xl font-black">{value}</div>
+      <div className="mt-2 text-2xl font-bold">{value}</div>
     </>
   );
 
   if (onClick) {
     return (
-      <button type="button" onClick={onClick} className={`rounded-lg border p-4 text-left shadow-sm transition hover:shadow-md ${tones[tone]}`}>
+      <button type="button" onClick={onClick} className={`rounded-2xl border p-4 text-left shadow-sm transition hover:shadow-md ${tones[tone]}`}>
         {content}
       </button>
     );
   }
 
-  return <div className={`rounded-lg border p-4 shadow-sm ${tones[tone]}`}>{content}</div>;
+  return <div className={`rounded-2xl border p-4 shadow-sm ${tones[tone]}`}>{content}</div>;
 };
 
 const SafetyOverview: React.FC<Props> = ({ summary, loading, onOpenView, onOpenAction }) => {
   if (loading) {
     return (
       <div className="grid gap-3 md:grid-cols-4">
-        {[0, 1, 2, 3].map(index => <div key={index} className="h-28 animate-pulse rounded-lg bg-slate-100" />)}
+        {[0, 1, 2, 3].map(index => <div key={index} className="h-28 animate-pulse rounded-2xl bg-zinc-100 dark:bg-zinc-800" />)}
       </div>
     );
   }
@@ -73,16 +73,16 @@ const SafetyOverview: React.FC<Props> = ({ summary, loading, onOpenView, onOpenA
   return (
     <div className="space-y-5">
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-5 text-emerald-700 shadow-sm">
+        <div className="rounded-2xl border border-teal-200 bg-teal-50/80 p-5 text-teal-800 shadow-sm dark:border-teal-900/50 dark:bg-teal-950/40 dark:text-teal-300">
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-[10px] font-black uppercase text-emerald-600/70">Safety Score</div>
-              <div className="mt-2 text-4xl font-black">{summary.safetyScore}</div>
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-teal-700 dark:text-teal-400">Safety Score</div>
+              <div className="mt-2 text-4xl font-bold">{summary.safetyScore}</div>
             </div>
-            <ShieldCheck size={34} />
+            <ShieldCheck size={34} className="text-teal-700 dark:text-teal-400" />
           </div>
-          <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/80">
-            <div className="h-full rounded-full bg-emerald-500" style={{ width: `${summary.safetyScore}%` }} />
+          <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/80 dark:bg-zinc-800">
+            <div className="h-full rounded-full bg-teal-700 dark:bg-teal-400" style={{ width: `${summary.safetyScore}%` }} />
           </div>
         </div>
         <StatCard label="Issue đang mở" value={summary.openIssues} icon={<AlertTriangle size={18} />} tone={summary.openIssues ? 'amber' : 'emerald'} onClick={() => onOpenView('issues')} />

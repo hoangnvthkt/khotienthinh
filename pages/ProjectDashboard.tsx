@@ -75,7 +75,8 @@ import {
     Plus, Edit2, Trash2, X, Check, Save, ChevronDown, ChevronLeft, ChevronRight, FileText,
     Building2, HardHat, AlertCircle, ArrowUpRight, ArrowDownRight,
     Upload, Download, Filter, Calendar, Tag, List, Paperclip, Eye, Image,
-    Users, UserPlus, Loader2, RefreshCcw, Search, EyeOff, ArchiveRestore, Shield, Pin
+    Users, UserPlus, Loader2, RefreshCcw, Search, EyeOff, ArchiveRestore, Shield, Pin,
+    Share2, LayoutGrid, ListFilter, ArrowRight, Zap, GitBranch
 } from 'lucide-react';
 
 import PremiumMemberSelect, { MemberOption } from '../components/common/PremiumMemberSelect';
@@ -430,6 +431,7 @@ const ProjectDashboard: React.FC = () => {
 
     const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null);
     const [activeView, setActiveView] = useState<'list' | 'overview'>('list');
+    const [hubDisplayMode, setHubDisplayMode] = useState<'network' | 'grid' | 'table'>('network');
     const [overviewTab, setOverviewTab] = useState<ProjectOverviewTabKey>('executive');
     const [showBudgetForm, setShowBudgetForm] = useState(false);
     const [showTxForm, setShowTxForm] = useState(false);
@@ -696,7 +698,7 @@ const ProjectDashboard: React.FC = () => {
         const tab = params.get('tab');
         const projectIdParam = params.get('projectId');
         const siteIdParam = params.get('siteId') || params.get('constructionSiteId');
-        if (!projectIdParam && !siteIdParam && !isProjectOverviewTabKey(tab)) return;
+        if (!projectIdParam && !siteIdParam) return;
 
         const targetProject = projectIdParam
             ? projectRows.find(project => project.id === projectIdParam)
@@ -707,13 +709,15 @@ const ProjectDashboard: React.FC = () => {
         if (targetProject) {
             setSelectedProjectId(targetProject.id);
             setSelectedSiteId(targetProject.constructionSiteId || siteIdParam || null);
+            if (isProjectFinanceLegacyTabKey(tab)) setOverviewTab('finance');
+            else if (isProjectOverviewTabKey(tab)) setOverviewTab(tab);
+            setActiveView('overview');
         } else if (siteIdParam) {
             setSelectedSiteId(siteIdParam);
+            if (isProjectFinanceLegacyTabKey(tab)) setOverviewTab('finance');
+            else if (isProjectOverviewTabKey(tab)) setOverviewTab(tab);
+            setActiveView('overview');
         }
-
-        if (isProjectFinanceLegacyTabKey(tab)) setOverviewTab('finance');
-        else if (isProjectOverviewTabKey(tab)) setOverviewTab(tab);
-        setActiveView('overview');
     }, [location.search, projectRows]);
 
     useEffect(() => {
@@ -1078,9 +1082,10 @@ const ProjectDashboard: React.FC = () => {
     const openProjectDetail = (project: Project) => {
         setSelectedProjectId(project.id);
         setSelectedSiteId(project.constructionSiteId || null);
-        setOverviewTab(defaultOverviewTab);
+        const targetTab: ProjectOverviewTabKey = visibleOverviewTabs.some(t => t.key === 'executive') ? 'executive' : defaultOverviewTab;
+        setOverviewTab(targetTab);
         setActiveView('overview');
-        navigate(buildProjectDashboardPath(project.id, project.constructionSiteId || null, defaultOverviewTab));
+        navigate(buildProjectDashboardPath(project.id, project.constructionSiteId || null, targetTab));
     };
 
     const openCreateProject = () => {
@@ -2296,8 +2301,8 @@ const ProjectDashboard: React.FC = () => {
                                     type="button"
                                     onClick={() => setActiveSelectPopover(isGroupPopoverOpen ? null : { field: label, type: 'group' })}
                                     className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-bold transition-all shadow-sm ${isGroupPopoverOpen
-                                            ? 'bg-cyan-600 text-white border-cyan-600'
-                                            : 'bg-cyan-50 text-cyan-600 hover:bg-cyan-100 border-cyan-150'
+                                        ? 'bg-cyan-600 text-white border-cyan-600'
+                                        : 'bg-cyan-50 text-cyan-600 hover:bg-cyan-100 border-cyan-150'
                                         }`}
                                 >
                                     <Users size={13} />
@@ -2327,8 +2332,8 @@ const ProjectDashboard: React.FC = () => {
                                     type="button"
                                     onClick={() => setActiveSelectPopover(isUserPopoverOpen ? null : { field: label, type: 'user' })}
                                     className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-bold transition-all shadow-sm ${isUserPopoverOpen
-                                            ? 'bg-slate-700 text-white border-slate-700 dark:bg-slate-600 dark:border-slate-600'
-                                            : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border-slate-200 dark:bg-slate-700 dark:text-slate-200 dark:border-slate-600'
+                                        ? 'bg-slate-700 text-white border-slate-700 dark:bg-slate-600 dark:border-slate-600'
+                                        : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border-slate-200 dark:bg-slate-700 dark:text-slate-200 dark:border-slate-600'
                                         }`}
                                 >
                                     {icon}
@@ -2493,18 +2498,18 @@ const ProjectDashboard: React.FC = () => {
                             <div className="flex justify-end gap-2">
                                 {editingProject ? (
                                     <button onClick={() => saveProject(true)} disabled={savingProject || !projectForm.name.trim()}
-                                        className="px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-orange-500 to-amber-500 shadow-lg hover:shadow-xl flex items-center gap-2 disabled:opacity-50">
+                                        className="px-5 py-2.5 rounded-lg text-sm font-medium text-white bg-teal-700 hover:bg-teal-800 shadow-sm flex items-center gap-2 disabled:opacity-50 transition-colors">
                                         {savingProject ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Đang lưu...</> : <><Save size={16} /> Lưu dự án</>}
                                     </button>
                                 ) : (
                                     <>
                                         <button onClick={() => saveProject(false)} disabled={savingProject || !projectForm.name.trim()}
-                                            className="px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-teal-500 hover:bg-teal-600 shadow-lg flex items-center gap-2 disabled:opacity-50">
-                                            {savingProject ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Plus size={16} />}
+                                            className="px-5 py-2.5 rounded-lg text-sm font-medium text-teal-700 bg-teal-50 border border-teal-200 hover:bg-teal-100 flex items-center gap-2 disabled:opacity-50 transition-colors">
+                                            {savingProject ? <span className="w-4 h-4 border-2 border-teal-700/30 border-t-teal-700 rounded-full animate-spin" /> : <Plus size={16} />}
                                             Tạo dự án
                                         </button>
                                         <button onClick={() => saveProject(true)} disabled={savingProject || !projectForm.name.trim()}
-                                            className="px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-orange-500 to-amber-500 shadow-lg hover:shadow-xl flex items-center gap-2 disabled:opacity-50">
+                                            className="px-5 py-2.5 rounded-lg text-sm font-medium text-white bg-teal-700 hover:bg-teal-800 shadow-sm flex items-center gap-2 disabled:opacity-50 transition-colors">
                                             {savingProject ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Plus size={16} />}
                                             Tạo và mở chi tiết
                                         </button>
@@ -2570,12 +2575,12 @@ const ProjectDashboard: React.FC = () => {
         return (
             <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm">
                 <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
-                    <div className="px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-orange-500 to-amber-500 rounded-t-3xl flex items-center justify-between">
-                        <div className="text-white">
-                            <span className="font-bold text-lg block">Kế hoạch & Ngân sách</span>
-                            <span className="text-white/80 text-sm">{site?.name}</span>
+                    <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 rounded-t-2xl flex items-center justify-between">
+                        <div className="text-zinc-900 dark:text-zinc-100">
+                            <span className="font-semibold text-base block">Kế hoạch & Ngân sách</span>
+                            <span className="text-zinc-500 text-xs">{site?.name}</span>
                         </div>
-                        <button onClick={() => setShowBudgetForm(false)} className="w-8 h-8 rounded-xl bg-white/20 hover:bg-white/30 text-white flex items-center justify-center"><X size={18} /></button>
+                        <button onClick={() => setShowBudgetForm(false)} className="w-8 h-8 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-500 flex items-center justify-center transition-colors"><X size={18} /></button>
                     </div>
                     <div className="p-6 space-y-5">
                         {/* Contract + Status */}
@@ -2631,9 +2636,9 @@ const ProjectDashboard: React.FC = () => {
                         <textarea value={budgetData.notes || ''} onChange={e => setBudgetData({ ...budgetData, notes: e.target.value })}
                             placeholder="Ghi chú..." rows={2} className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-orange-500 outline-none resize-none" />
                     </div>
-                    <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3">
-                        <button onClick={() => setShowBudgetForm(false)} className="px-5 py-2.5 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100">Huỷ</button>
-                        <button onClick={saveBudget} className="px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-orange-500 to-amber-500 shadow-lg hover:shadow-xl flex items-center gap-2">
+                    <div className="px-6 py-4 border-t border-zinc-200 dark:border-zinc-800 flex justify-end gap-3">
+                        <button onClick={() => setShowBudgetForm(false)} className="px-4 py-2 rounded-lg text-sm font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800">Huỷ</button>
+                        <button onClick={saveBudget} className="px-5 py-2 rounded-lg text-sm font-medium text-white bg-teal-700 hover:bg-teal-800 shadow-sm flex items-center gap-2 transition-colors">
                             <Save size={16} /> Lưu
                         </button>
                     </div>
@@ -2647,10 +2652,10 @@ const ProjectDashboard: React.FC = () => {
         if (!showTxForm) return null;
         return (
             <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm">
-                <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-lg mx-4 max-h-[90vh] flex flex-col">
-                    <div className={`px-6 py-4 border-b border-slate-100 rounded-t-3xl flex items-center justify-between ${editingTx ? 'bg-gradient-to-r from-amber-500 to-orange-500' : 'bg-gradient-to-r from-blue-500 to-cyan-500'}`}>
-                        <span className="font-bold text-lg text-white flex items-center gap-2">{editingTx ? <><Edit2 size={20} /> Chỉnh sửa giao dịch</> : <><Plus size={20} /> Thêm giao dịch</>}</span>
-                        <button onClick={resetTxForm} className="w-8 h-8 rounded-xl bg-white/20 hover:bg-white/30 text-white flex items-center justify-center"><X size={18} /></button>
+                <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl border border-zinc-200 dark:border-zinc-800 w-full max-w-lg mx-4 max-h-[90vh] flex flex-col">
+                    <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 rounded-t-2xl flex items-center justify-between bg-zinc-50 dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100">
+                        <span className="font-semibold text-base flex items-center gap-2">{editingTx ? <><Edit2 size={18} /> Chỉnh sửa giao dịch</> : <><Plus size={18} /> Thêm giao dịch</>}</span>
+                        <button onClick={resetTxForm} className="w-8 h-8 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-500 flex items-center justify-center transition-colors"><X size={18} /></button>
                     </div>
                     <div className="p-6 space-y-4 overflow-y-auto flex-1">
                         {/* Type */}
@@ -2789,10 +2794,10 @@ const ProjectDashboard: React.FC = () => {
                             </div>
                         </div>
                     )}
-                    <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3">
-                        <button onClick={resetTxForm} className="px-5 py-2.5 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100">Huỷ</button>
+                    <div className="px-6 py-4 border-t border-zinc-200 dark:border-zinc-800 flex justify-end gap-3">
+                        <button onClick={resetTxForm} className="px-4 py-2 rounded-lg text-sm font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800">Huỷ</button>
                         <button onClick={handleAddTx} disabled={!txAmount || Number(txAmount) <= 0 || uploading}
-                            className={`px-6 py-2.5 rounded-xl text-sm font-bold text-white shadow-lg hover:shadow-xl flex items-center gap-2 disabled:opacity-50 ${editingTx ? 'bg-gradient-to-r from-amber-500 to-orange-500' : 'bg-gradient-to-r from-blue-500 to-cyan-500'}`}>
+                            className="px-5 py-2 rounded-lg text-sm font-medium text-white bg-teal-700 hover:bg-teal-800 shadow-sm flex items-center gap-2 disabled:opacity-50 transition-colors">
                             {uploading ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Đang tải...</> : editingTx ? <><Save size={16} /> Lưu thay đổi</> : <><Check size={16} /> Thêm giao dịch</>}
                         </button>
                     </div>
@@ -3018,19 +3023,19 @@ const ProjectDashboard: React.FC = () => {
         return (
             <div className="space-y-6">
                 {/* Header Banner */}
-                <div className="bg-gradient-to-r from-orange-500 to-amber-500 rounded-2xl p-4 px-5 text-white shadow-md">
+                <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-5 text-zinc-900 dark:text-zinc-100 shadow-sm">
                     <div className="flex items-center justify-between flex-wrap gap-3">
                         <div className="flex items-center gap-3">
-                            <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center shrink-0"><HardHat size={18} /></div>
+                            <div className="w-10 h-10 rounded-lg bg-teal-700/10 text-teal-700 dark:bg-teal-500/20 dark:text-teal-400 flex items-center justify-center shrink-0"><HardHat size={20} /></div>
                             <div>
-                                <h2 className="text-lg font-bold leading-snug">{selectedProject.name}</h2>
-                                <p className="text-white/85 text-xs mt-0.5">
+                                <h2 className="text-lg font-semibold leading-snug">{selectedProject.name}</h2>
+                                <p className="text-zinc-500 dark:text-zinc-400 text-xs mt-0.5">
                                     {selectedProject.code} • {selectedSite ? `Công trường: ${selectedSite.name}` : 'Chưa liên kết công trường HRM'}
                                 </p>
                                 {metaChips.length > 0 && (
                                     <div className="mt-1.5 flex flex-wrap gap-1">
                                         {metaChips.map(chip => (
-                                            <span key={chip.label} className="px-1.5 py-0.5 rounded bg-white/25 text-white text-[9px] font-bold border border-white/10">
+                                            <span key={chip.label} className="px-2 py-0.5 rounded-md bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 text-[11px] font-medium border border-zinc-200 dark:border-zinc-700">
                                                 {chip.label}
                                             </span>
                                         ))}
@@ -3039,21 +3044,21 @@ const ProjectDashboard: React.FC = () => {
                             </div>
                         </div>
                         <div className="text-right">
-                            <div className="inline-block px-2 py-0.5 rounded-full text-[11px] font-bold bg-white/20 mb-0.5">{STATUS_CONFIG[statusKey]?.label || statusKey}</div>
-                            <div className="text-xl font-extrabold">{displayProgress}%</div>
+                            <StatusBadge status={statusKey} label={STATUS_CONFIG[statusKey]?.label || statusKey} size="md" />
+                            <div className="text-xl font-bold mt-1 text-teal-700 dark:text-teal-400">{displayProgress}%</div>
                         </div>
                     </div>
 
-                    {/* Action buttons inside the orange card */}
-                    <div className="mt-3.5 flex flex-wrap items-center gap-1.5 border-t border-white/10 pt-3">
+                    {/* Action buttons inside header card */}
+                    <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-zinc-100 dark:border-zinc-800 pt-3">
                         <button onClick={() => { setActiveView('list'); setSelectedSiteId(null); setSelectedProjectId(null); }}
-                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold bg-white/10 hover:bg-white/20 text-white transition-all shrink-0">
+                            className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 transition-colors shrink-0">
                             ← Dự án khác
                         </button>
                         {canManageProjects && (
                             <button onClick={() => openEditProject(selectedProject)}
-                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold text-slate-700 bg-white hover:bg-slate-50 transition-all shrink-0">
-                                <Edit2 size={12} /> Dự án
+                                className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium text-zinc-700 dark:text-zinc-200 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200 transition-colors shrink-0">
+                                <Edit2 size={13} /> Sửa dự án
                             </button>
                         )}
                         {hasSiteLink && (
@@ -3061,32 +3066,32 @@ const ProjectDashboard: React.FC = () => {
                                 {canManageCashflowTab && (
                                     <>
                                         <button onClick={() => { resetTxForm(); setShowTxForm(true); }}
-                                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 transition-all shrink-0">
-                                            <Plus size={12} /> Giao dịch
+                                            className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium text-teal-700 bg-teal-50 border border-teal-200 hover:bg-teal-100 dark:bg-teal-950/40 dark:text-teal-300 dark:border-teal-900 transition-colors shrink-0">
+                                            <Plus size={13} /> Giao dịch
                                         </button>
                                         <button onClick={() => fileInputRef.current?.click()}
-                                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold text-emerald-600 bg-emerald-50 hover:bg-emerald-100 transition-all shrink-0">
-                                            <Upload size={12} /> Import Excel
+                                            className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium text-zinc-700 dark:text-zinc-200 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200 transition-colors shrink-0">
+                                            <Upload size={13} /> Import Excel
                                         </button>
                                         <button onClick={handleDownloadTransactionTemplate}
-                                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold text-slate-700 bg-white hover:bg-slate-50 transition-all shrink-0">
-                                            <Download size={12} /> Mẫu import
+                                            className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium text-zinc-700 dark:text-zinc-200 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200 transition-colors shrink-0">
+                                            <Download size={13} /> Mẫu import
                                         </button>
                                     </>
                                 )}
                                 <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleImportExcel} />
                                 {canManageBudgetTab && (
                                     <button onClick={() => effectiveSiteId && openBudgetForm(effectiveSiteId)}
-                                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold text-orange-600 bg-orange-50 hover:bg-orange-100 transition-all shrink-0">
-                                        <Edit2 size={12} /> Ngân sách
+                                        className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium text-zinc-700 dark:text-zinc-200 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200 transition-colors shrink-0">
+                                        <Edit2 size={13} /> Ngân sách
                                     </button>
                                 )}
                             </>
                         )}
                     </div>
 
-                    <div className="mt-3 h-1.5 bg-white/20 rounded-full overflow-hidden">
-                        <div className="h-full bg-white rounded-full transition-all duration-700" style={{ width: `${displayProgress}%` }} />
+                    <div className="mt-3 h-2 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
+                        <div className="h-full bg-teal-700 dark:bg-teal-500 rounded-full transition-all duration-700" style={{ width: `${displayProgress}%` }} />
                     </div>
                 </div>
 
@@ -3117,12 +3122,12 @@ const ProjectDashboard: React.FC = () => {
                 )}
 
                 {/* Overview Sub-tabs */}
-                <div className="flex gap-1 bg-white dark:bg-slate-800 rounded-2xl p-1.5 border border-slate-100 dark:border-slate-700/50 shadow-sm overflow-x-auto [&::-webkit-scrollbar]:hidden">
+                <div className="flex gap-1 bg-white dark:bg-zinc-900 rounded-xl p-1.5 border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-x-auto [&::-webkit-scrollbar]:hidden">
                     {visibleOverviewTabs.map(tab => (
                         <button key={tab.key} onClick={() => goToProjectTab(tab.key)}
-                            className={`shrink-0 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${overviewTab === tab.key
-                                    ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-lg shadow-orange-500/25'
-                                    : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50'
+                            className={`shrink-0 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${overviewTab === tab.key
+                                ? 'bg-teal-700 text-white shadow-sm font-semibold'
+                                : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-900 dark:hover:text-zinc-100'
                                 }`}>
                             <span>{tab.icon}</span> {tab.label}
                         </button>
@@ -3430,364 +3435,458 @@ const ProjectDashboard: React.FC = () => {
         );
     };
 
-    // ========== PROJECT LIST VIEW ==========
-    const renderList = () => (
-        <div className="space-y-6">
-            {projectRows.length > 0 && (
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                    <div className="bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl p-5 text-white shadow-lg">
-                        <div className="text-xs font-bold uppercase tracking-wider opacity-70 mb-1">Tổng giá trị HĐ</div>
-                        <div className="text-2xl font-black">{fmt(allStats.totalContract)}</div>
-                        <div className="text-xs opacity-60 mt-1">Trang này: {filteredProjectRows.length} dự án</div>
-                    </div>
-                    <div className="bg-gradient-to-br from-orange-500 to-amber-600 rounded-2xl p-5 text-white shadow-lg">
-                        <div className="text-xs font-bold uppercase tracking-wider opacity-70 mb-1">Tổng chi thực tế</div>
-                        <div className="text-2xl font-black">{fmt(allStats.totalActual)}</div>
-                        <div className="text-xs opacity-60 mt-1">NS: {fmt(allStats.totalBudget)}</div>
-                    </div>
-                    <div className={`bg-gradient-to-br ${allStats.profit >= 0 ? 'from-emerald-500 to-green-600' : 'from-red-500 to-rose-600'} rounded-2xl p-5 text-white shadow-lg`}>
-                        <div className="text-xs font-bold uppercase tracking-wider opacity-70 mb-1">{allStats.profit >= 0 ? 'Biên tạm tính' : 'Âm theo chi hiện tại'}</div>
-                        <div className="text-2xl font-black">{fmt(allStats.profit)}</div>
-                    </div>
-                    <div className="bg-gradient-to-br from-violet-500 to-purple-600 rounded-2xl p-5 text-white shadow-lg">
-                        <div className="text-xs font-bold uppercase tracking-wider opacity-70 mb-1">Tiến độ TB</div>
-                        <div className="text-2xl font-black">{allStats.avgProgress.toFixed(0)}%</div>
-                        <div className="text-xs opacity-60 mt-1">Thu: {fmt(allStats.totalRevenue)}</div>
-                    </div>
-                </div>
-            )}
+    // ========== PROJECT LIST / HUB VIEW ==========
+    const renderList = () => {
+        const activeProjects = projectRows.filter(p => {
+            const m = getProjectListMetrics(p);
+            const st = m.finance?.status || p.status || 'planning';
+            return st === 'active' && !p.isHidden;
+        });
 
-            <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700/60 shadow-sm overflow-hidden">
-                <div className="p-4 border-b border-slate-100 dark:border-slate-700/50 bg-slate-50/50 dark:bg-slate-800/50 flex flex-col xl:flex-row xl:items-center justify-between gap-3">
-                    <div>
-                        <h3 className="text-sm font-black text-slate-700 uppercase tracking-wider">Danh sách dự án</h3>
-                        <p className="text-xs text-slate-400 mt-0.5">
-                            {projectPageStart}-{projectPageEnd} / {projectTotalLabel} dự án theo bộ lọc • Trang {projectPage}/{projectPageCount} • {hrmConstructionSites.length} công trường HRM có thể liên kết
-                        </p>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                        <button onClick={handleDownloadProjectTemplate} disabled={projectExporting}
-                            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[10px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 disabled:opacity-50">
-                            {projectExporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} Xuất mẫu
-                        </button>
-                        {canManageProjects && (
-                            <>
-                                <button onClick={() => openProjectImport('create')} disabled={projectImporting}
-                                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[10px] font-black text-blue-700 bg-blue-50 border border-blue-200 hover:bg-blue-100 disabled:opacity-50">
-                                    {projectImporting && projectImportMode === 'create' ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />} Nhập mới
-                                </button>
-                                <button onClick={() => openProjectImport('update')} disabled={projectImporting}
-                                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[10px] font-black text-amber-700 bg-amber-50 border border-amber-200 hover:bg-amber-100 disabled:opacity-50">
-                                    {projectImporting && projectImportMode === 'update' ? <Loader2 size={14} className="animate-spin" /> : <RefreshCcw size={14} />} Cập nhật
-                                </button>
-                            </>
-                        )}
-                        <input ref={projectImportInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleProjectImportExcel} />
-                        <button onClick={handleExportProjectList} disabled={projectExporting}
-                            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[10px] font-black text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 disabled:opacity-50">
-                            {projectExporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} Xuất danh sách
-                        </button>
-                        {canManageProjects && (
-                            <button onClick={openCreateProject}
-                                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-black text-white bg-gradient-to-r from-orange-500 to-amber-500 shadow-lg shadow-orange-500/20 hover:shadow-xl transition-all">
-                                <Plus size={14} /> Thêm dự án
-                            </button>
-                        )}
-                    </div>
-                </div>
+        const planningProjects = projectRows.filter(p => {
+            const m = getProjectListMetrics(p);
+            const st = m.finance?.status || p.status || 'planning';
+            return st === 'planning' && !p.isHidden;
+        });
 
-                <div className="p-4 border-b border-slate-100 bg-white">
-                    <div className="flex flex-col lg:flex-row gap-3">
-                        <div className="relative flex-1 min-w-0">
-                            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" />
-                            <input
-                                value={projectFilters.query}
-                                onChange={e => setProjectFilters(prev => ({ ...prev, query: e.target.value }))}
-                                placeholder="Tìm mã, tên, khách hàng, công trường..."
-                                className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-orange-500"
-                            />
+        const completedProjects = projectRows.filter(p => {
+            const m = getProjectListMetrics(p);
+            const st = m.finance?.status || p.status || 'planning';
+            return st === 'completed' && !p.isHidden;
+        });
+
+        // Hub nodes to display in network mode (Active projects first, fill with planning if needed)
+        const hubNodes = activeProjects.length > 0 ? activeProjects : projectRows.filter(p => !p.isHidden).slice(0, 6);
+
+        return (
+            <div className="space-y-6">
+                {/* Executive Control Header & View Mode Switcher */}
+                <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 p-5 shadow-sm">
+                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                        <div>
+                            {/* <div className="flex items-center gap-2">
+                                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-teal-700/10 text-teal-700 dark:bg-teal-500/20 dark:text-teal-400 border border-teal-200 dark:border-teal-800/60">
+                                    Command Network Hub
+                                </span>
+                                <span className="text-xs text-zinc-400">• {activeProjects.length} công trường đang thi công</span>
+                            </div> */}
+                            {/* <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-100 mt-1">Không gian Làm việc & Điều hành Công trường</h2> */}
+                            {/* <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+                                Trung tâm tác chiến chọn nhanh công trường thi công thực địa • VIOO Enterprise ERP
+                            </p> */}
                         </div>
+
+                        {/* Controls & Actions */}
+                        <div className="flex flex-wrap items-center gap-2">
+                            {/* View Switcher */}
+                            <div className="flex items-center bg-zinc-100 dark:bg-zinc-800 p-1 rounded-xl border border-zinc-200/80 dark:border-zinc-700">
+                                <button
+                                    onClick={() => setHubDisplayMode('network')}
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${hubDisplayMode === 'network' ? 'bg-teal-700 text-white shadow-sm font-semibold' : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'}`}
+                                    title="Sơ đồ Mạng Nơ-ron Công trường"
+                                >
+                                    <Share2 size={14} /> Mạng Nơ-ron
+                                </button>
+                                <button
+                                    onClick={() => setHubDisplayMode('grid')}
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${hubDisplayMode === 'grid' ? 'bg-teal-700 text-white shadow-sm font-semibold' : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'}`}
+                                    title="Chế độ Lưới Workspace"
+                                >
+                                    <LayoutGrid size={14} /> Lưới Workspace
+                                </button>
+                                <button
+                                    onClick={() => setHubDisplayMode('table')}
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${hubDisplayMode === 'table' ? 'bg-teal-700 text-white shadow-sm font-semibold' : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'}`}
+                                    title="Danh sách Quản trị"
+                                >
+                                    <ListFilter size={14} /> Quản trị Bảng
+                                </button>
+                            </div>
+
+                            {canManageProjects && (
+                                <button onClick={openCreateProject}
+                                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-medium text-white bg-teal-700 hover:bg-teal-800 shadow-sm transition-colors shrink-0">
+                                    <Plus size={14} /> Thêm dự án
+                                </button>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Filter Pills Header */}
+                    {/* <div className="flex flex-wrap items-center gap-2 mt-4 border-t border-zinc-100 dark:border-zinc-800 pt-3">
+                        <span className="text-xs font-medium text-zinc-400 mr-1">Bộ lọc công trường:</span>
                         <button
                             type="button"
-                            onClick={() => setShowProjectAdvancedFilters(prev => !prev)}
-                            aria-expanded={showProjectAdvancedFilters}
-                            className="inline-flex h-[42px] items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 text-xs font-black text-slate-700 hover:bg-slate-100 lg:w-auto"
+                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); setProjectFilters(prev => ({ ...prev, status: 'all' })); }}
+                            className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${projectFilters.status === 'all' ? 'bg-teal-700 text-white border-teal-800' : 'bg-zinc-100 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200'}`}
                         >
-                            <Filter size={15} />
-                            Tìm kiếm nâng cao
-                            {projectAdvancedFilterCount > 0 && (
-                                <span className="rounded-full bg-orange-500 px-2 py-0.5 text-[10px] text-white">
-                                    {projectAdvancedFilterCount}
-                                </span>
-                            )}
-                            <ChevronDown size={15} className={`transition-transform ${showProjectAdvancedFilters ? 'rotate-180' : ''}`} />
+                            Tất cả ({projectRows.length})
                         </button>
-                    </div>
-
-                    {showProjectAdvancedFilters && (
-                        <div className="mt-4 border-t border-slate-100 pt-4">
-                            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-                                <div>
-                                    <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Trạng thái</label>
-                                    <select value={projectFilters.status} onChange={e => setProjectFilters(prev => ({ ...prev, status: e.target.value as ProjectFilterState['status'] }))} className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 outline-none focus:ring-2 focus:ring-orange-500">
-                                        <option value="all">Tất cả trạng thái</option>
-                                        {Object.entries(STATUS_CONFIG).map(([key, value]) => <option key={key} value={key}>{value.label}</option>)}
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Nhóm dự án</label>
-                                    <select value={projectFilters.groupId} onChange={e => setProjectFilters(prev => ({ ...prev, groupId: e.target.value }))} className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 outline-none focus:ring-2 focus:ring-orange-500">
-                                        <option value="all">Tất cả nhóm</option>
-                                        {projectGroups.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Loại dự án</label>
-                                    <select value={projectFilters.typeId} onChange={e => setProjectFilters(prev => ({ ...prev, typeId: e.target.value }))} className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 outline-none focus:ring-2 focus:ring-orange-500">
-                                        <option value="all">Tất cả loại</option>
-                                        {projectTypes.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Lĩnh vực</label>
-                                    <select value={projectFilters.sectorId} onChange={e => setProjectFilters(prev => ({ ...prev, sectorId: e.target.value }))} className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 outline-none focus:ring-2 focus:ring-orange-500">
-                                        <option value="all">Tất cả lĩnh vực</option>
-                                        {projectSectors.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Quy trình</label>
-                                    <select value={projectFilters.workflowId} onChange={e => setProjectFilters(prev => ({ ...prev, workflowId: e.target.value }))} className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 outline-none focus:ring-2 focus:ring-orange-500">
-                                        <option value="all">Tất cả quy trình</option>
-                                        {workflowTemplates.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Công trường</label>
-                                    <select value={projectFilters.siteLink} onChange={e => setProjectFilters(prev => ({ ...prev, siteLink: e.target.value as ProjectSiteFilter }))} className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 outline-none focus:ring-2 focus:ring-orange-500">
-                                        <option value="all">Liên kết công trường</option>
-                                        <option value="linked">Đã liên kết</option>
-                                        <option value="unlinked">Chưa liên kết</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Bắt đầu từ</label>
-                                    <input type="date" value={projectFilters.startFrom} onChange={e => setProjectFilters(prev => ({ ...prev, startFrom: e.target.value }))} className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 outline-none focus:ring-2 focus:ring-orange-500" />
-                                </div>
-                                <div>
-                                    <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Bắt đầu đến</label>
-                                    <input type="date" value={projectFilters.startTo} onChange={e => setProjectFilters(prev => ({ ...prev, startTo: e.target.value }))} className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 outline-none focus:ring-2 focus:ring-orange-500" />
-                                </div>
-                                <div>
-                                    <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Kết thúc từ</label>
-                                    <input type="date" value={projectFilters.endFrom} onChange={e => setProjectFilters(prev => ({ ...prev, endFrom: e.target.value }))} className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 outline-none focus:ring-2 focus:ring-orange-500" />
-                                </div>
-                                <div>
-                                    <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Kết thúc đến</label>
-                                    <input type="date" value={projectFilters.endTo} onChange={e => setProjectFilters(prev => ({ ...prev, endTo: e.target.value }))} className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 outline-none focus:ring-2 focus:ring-orange-500" />
-                                </div>
-                                <div>
-                                    <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Sắp xếp</label>
-                                    <select value={projectSort} onChange={e => setProjectSort(e.target.value as ProjectSortKey)} className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 outline-none focus:ring-2 focus:ring-orange-500">
-                                        <option value="updatedAt">Cập nhật mới</option>
-                                        <option value="code">Mã dự án</option>
-                                        <option value="name">Tên dự án</option>
-                                        <option value="startDate">Ngày bắt đầu</option>
-                                        <option value="contractValue">Giá trị HĐ</option>
-                                        <option value="actualCost">Chi phí thực tế</option>
-                                        <option value="profit">Lợi nhuận tạm tính</option>
-                                        <option value="progress">Tiến độ</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Thứ tự</label>
-                                    <button onClick={() => setProjectSortAsc(prev => !prev)} className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-black text-slate-600 hover:bg-slate-50">
-                                        {projectSortAsc ? 'Tăng dần' : 'Giảm dần'}
-                                    </button>
-                                </div>
-                                {isAdmin && (
-                                    <div>
-                                        <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Dự án ẩn</label>
-                                        <select value={projectFilters.hidden} onChange={e => setProjectFilters(prev => ({ ...prev, hidden: e.target.value as ProjectHiddenFilter }))} className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 outline-none focus:ring-2 focus:ring-orange-500">
-                                            <option value="active">Đang hoạt động</option>
-                                            <option value="hidden">Đã ẩn</option>
-                                            <option value="all">Tất cả</option>
-                                        </select>
-                                    </div>
-                                )}
-                            </div>
-                            <div className="mt-4 flex justify-end">
-                                <button
-                                    onClick={() => {
-                                        setProjectFilters(emptyProjectFilters());
-                                        setProjectSort('updatedAt');
-                                        setProjectSortAsc(false);
-                                    }}
-                                    className="px-3 py-2 rounded-xl border border-slate-200 text-xs font-black text-slate-500 hover:bg-slate-50"
-                                >
-                                    Xoá lọc
-                                </button>
-                            </div>
-                        </div>
-                    )}
+                        <button
+                            type="button"
+                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); setProjectFilters(prev => ({ ...prev, status: 'active' })); }}
+                            className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${projectFilters.status === 'active' ? 'bg-teal-700 text-white border-teal-800' : 'bg-zinc-100 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200'}`}
+                        >
+                            Đang thi công ({activeProjects.length})
+                        </button>
+                        <button
+                            type="button"
+                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); setProjectFilters(prev => ({ ...prev, status: 'planning' })); }}
+                            className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${projectFilters.status === 'planning' ? 'bg-teal-700 text-white border-teal-800' : 'bg-zinc-100 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200'}`}
+                        >
+                            Lập kế hoạch ({planningProjects.length})
+                        </button>
+                        <button
+                            type="button"
+                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); setProjectFilters(prev => ({ ...prev, status: 'completed' })); }}
+                            className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${projectFilters.status === 'completed' ? 'bg-teal-700 text-white border-teal-800' : 'bg-zinc-100 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200'}`}
+                        >
+                            Hoàn thành ({completedProjects.length})
+                        </button>
+                    </div> */}
                 </div>
 
-                {projectLoadError && projects.length === 0 && hrmConstructionSites.length > 0 && (
-                    <div className="px-4 py-3 bg-amber-50 border-b border-amber-100 text-xs font-bold text-amber-700">
-                        Đang dùng dữ liệu công trường cũ làm fallback. Cần chạy migration `projects` để bật luồng dự án mới.
+                {/* ===== MODE 1: NEURAL NETWORK HUB MODE ===== */}
+                {hubDisplayMode === 'network' && (
+                    <div className="bg-white dark:bg-zinc-950/80 rounded-2xl border border-zinc-200 dark:border-zinc-800 p-6 shadow-sm overflow-hidden relative min-h-[520px]">
+                        {/* Central Node Container */}
+                        <div className="relative flex flex-col items-center">
+
+                            {/* Central Core Node (VIOO HQ) */}
+                            <div className="relative z-20 flex flex-col items-center mb-2">
+                                <div className="relative">
+                                    <div className="w-20 h-20 rounded-full bg-gradient-to-b from-teal-700 to-teal-900 border-4 border-teal-500/40 text-white flex flex-col items-center justify-center shadow-xl shadow-teal-900/30 z-20 relative">
+                                        <HardHat size={28} className="text-teal-200" />
+                                        <span className="text-[9px] font-bold mt-0.5 tracking-wider">TIẾN THỊNH</span>
+                                    </div>
+                                </div>
+                                <span className="mt-2 text-xs font-bold text-zinc-800 dark:text-zinc-200 bg-zinc-100 dark:bg-zinc-900 px-3 py-1 rounded-full border border-zinc-200 dark:border-zinc-800 shadow-sm">
+                                    Trung tâm Điều hành Công trường
+                                </span>
+                            </div>
+
+                            {/* Connecting SVG Network Lines (Desktop) */}
+                            {hubNodes.length > 0 && (
+                                <div className="hidden lg:block w-full h-12 relative my-1 z-10 pointer-events-none">
+                                    <svg className="w-full h-full overflow-visible" viewBox="0 0 1000 48" preserveAspectRatio="none">
+                                        {hubNodes.slice(0, 3).map((project, index) => {
+                                            const colIndex = index % 3;
+                                            const targetX = colIndex === 0 ? 166.6 : colIndex === 1 ? 500.0 : 833.3;
+                                            return (
+                                                <g key={project.id || index}>
+                                                    {/* Smooth Bézier Curve Line from TIẾN THỊNH (x=500, y=0) to Card top (x=targetX, y=48) */}
+                                                    <path
+                                                        d={`M 500 0 C 500 24, ${targetX} 24, ${targetX} 48`}
+                                                        fill="none"
+                                                        className="stroke-teal-600 dark:stroke-teal-400 opacity-80 dark:opacity-90"
+                                                        strokeWidth="2.5"
+                                                        strokeLinecap="round"
+                                                    />
+                                                    {/* Target Node Dot at card header */}
+                                                    <circle cx={targetX} cy="48" r="4.5" className="fill-teal-700 dark:fill-teal-400" />
+                                                </g>
+                                            );
+                                        })}
+                                        {/* Source Node Dot at TIẾN THỊNH bottom */}
+                                        <circle cx="500" cy="0" r="5.5" className="fill-teal-700 dark:fill-teal-400" />
+                                    </svg>
+                                </div>
+                            )}
+
+                            {/* Active Construction Sites Neural Cards */}
+                            {hubNodes.length === 0 ? (
+                                <div className="text-center py-12 text-zinc-400 text-xs">Chưa có công trường nào phù hợp bộ lọc.</div>
+                            ) : (
+                                <div className="w-full">
+                                    {/* Desktop Constellation Network Grid (lg+) */}
+                                    <div className="hidden lg:grid grid-cols-3 gap-6 relative z-10">
+                                        {hubNodes.map((project) => {
+                                            const metrics = getProjectListMetrics(project);
+                                            const status = metrics.finance?.status || project.status || 'planning';
+
+                                            return (
+                                                <div
+                                                    key={project.id}
+                                                    onClick={() => openProjectDetail(project)}
+                                                    className="bg-white dark:bg-zinc-900/90 border border-zinc-200 dark:border-zinc-800/90 rounded-2xl p-5 shadow-sm hover:border-teal-500/60 hover:bg-zinc-50 dark:hover:bg-zinc-800/90 hover:shadow-xl hover:shadow-teal-500/10 hover:scale-[1.02] transition-all duration-300 group cursor-pointer relative flex flex-col justify-between"
+                                                >
+                                                    {/* Top Hub Connector Node Indicator */}
+                                                    <div className="absolute -top-2 left-1/2 -translate-x-1/2 w-3.5 h-3.5 rounded-full bg-teal-700 border-2 border-white dark:border-zinc-900 shadow-sm z-20 hidden lg:block" />
+
+                                                    <div>
+                                                        <div className="flex items-center justify-between gap-2 mb-3">
+                                                            <StatusBadge status={status} label={STATUS_CONFIG[status]?.label || status} />
+                                                            <span className="font-semibold text-xs text-teal-700 dark:text-teal-400">Tiến độ: {metrics.progress}%</span>
+                                                        </div>
+
+                                                        <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-100 group-hover:text-teal-700 dark:group-hover:text-teal-400 transition-colors line-clamp-2">
+                                                            {project.name}
+                                                        </h3>
+                                                    </div>
+
+                                                    <div className="mt-5 pt-3 border-t border-zinc-100 dark:border-zinc-800/80 flex items-center justify-between">
+                                                        <span className="text-[11px] text-zinc-400 font-medium">Điều hành công trình</span>
+                                                        <button
+                                                            type="button"
+                                                            onClick={(e) => { e.stopPropagation(); openProjectDetail(project); }}
+                                                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 shadow-sm transition-colors"
+                                                        >
+                                                            Vào điều hành <ArrowRight size={13} />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+
+                                    {/* Mobile Responsive Connected Vertical Branch (mobile & tablet) */}
+                                    <div className="lg:hidden relative space-y-4 before:absolute before:left-6 before:top-0 before:bottom-0 before:w-0.5 before:bg-teal-500/40 before:z-0">
+                                        {hubNodes.map((project) => {
+                                            const metrics = getProjectListMetrics(project);
+                                            const status = metrics.finance?.status || project.status || 'planning';
+
+                                            return (
+                                                <div
+                                                    key={project.id}
+                                                    onClick={() => openProjectDetail(project)}
+                                                    className="relative z-10 ml-4 pl-6 border-l-2 border-teal-500/50 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 shadow-sm hover:border-teal-500/60 hover:bg-zinc-50 dark:hover:bg-zinc-800/90 active:scale-[0.99] transition-all cursor-pointer"
+                                                >
+                                                    <div className="flex items-center justify-between gap-2 mb-2">
+                                                        <StatusBadge status={status} label={STATUS_CONFIG[status]?.label || status} />
+                                                        <span className="text-xs text-teal-700 dark:text-teal-400 font-bold">Tiến độ: {metrics.progress}%</span>
+                                                    </div>
+                                                    <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">{project.name}</h3>
+                                                    <div className="mt-3 flex items-center justify-end border-t border-zinc-100 dark:border-zinc-800 pt-2 text-xs">
+                                                        <button
+                                                            type="button"
+                                                            onClick={(e) => { e.stopPropagation(); openProjectDetail(project); }}
+                                                            className="flex items-center gap-1 text-xs font-semibold text-teal-700 dark:text-teal-400"
+                                                        >
+                                                            Vào điều hành <ArrowRight size={12} />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                     </div>
                 )}
 
-                {projectsLoading ? (
-                    <div className="p-12 text-center">
-                        <div className="w-8 h-8 border-2 border-orange-200 border-t-orange-500 rounded-full animate-spin mx-auto mb-3" />
-                        <p className="text-sm font-bold text-slate-400">Đang tải danh sách dự án...</p>
-                    </div>
-                ) : projectRows.length === 0 ? (
-                    <div className="p-12 text-center">
-                        <Building2 size={40} className="mx-auto mb-3 text-slate-300" />
-                        <p className="text-sm font-bold text-slate-500">Chưa có dự án nào</p>
-                        <p className="text-xs text-slate-400 mt-1">Bấm "Thêm dự án" để tạo dự án, sau đó cấu hình nhân sự tại tab Tổ chức.</p>
-                    </div>
-                ) : filteredProjectRows.length === 0 ? (
-                    <div className="p-12 text-center">
-                        <Search size={40} className="mx-auto mb-3 text-slate-300" />
-                        <p className="text-sm font-bold text-slate-500">Không có dự án phù hợp bộ lọc</p>
-                        <p className="text-xs text-slate-400 mt-1">Thử xoá bớt điều kiện lọc hoặc chuyển trạng thái ẩn nếu là Admin.</p>
-                    </div>
-                ) : (
-                    <div className="divide-y divide-slate-100">
-                        {filteredProjectRows.map(project => {
-                            const metrics = getProjectListMetrics(project);
-                            const site = metrics.site;
-                            const finance = metrics.finance;
-                            const status = finance?.status || project.status || 'planning';
-                            const metaChips = getProjectMetaChips(project);
+                {/* ===== MODE 2: WORKSPACE GRID MODE ===== */}
+                {hubDisplayMode === 'grid' && (
+                    <div className="space-y-4">
+                        {/* Search & Simple Filters */}
+                        <div className="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 p-4 shadow-sm">
+                            <div className="relative">
+                                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
+                                <input
+                                    value={projectFilters.query}
+                                    onChange={e => setProjectFilters(prev => ({ ...prev, query: e.target.value }))}
+                                    placeholder="Tìm kiếm công trường, đối tác..."
+                                    className="w-full pl-9 pr-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm outline-none focus:ring-2 focus:ring-teal-500"
+                                />
+                            </div>
+                        </div>
 
-                            return (
-                                <div key={project.id} className={`flex flex-col md:flex-row md:items-center justify-between p-4 gap-3 transition-colors group ${project.isHidden ? 'bg-slate-50/70 hover:bg-slate-100/70' : 'hover:bg-slate-50/50'}`}>
-                                    <div className="flex items-start gap-3 flex-1 min-w-0">
-                                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 mt-0.5 ${project.isHidden ? 'bg-slate-200 text-slate-500' : site ? 'bg-orange-50 text-orange-500' : 'bg-slate-100 text-slate-400'}`}>
-                                            {project.isHidden ? <EyeOff size={18} /> : site ? <HardHat size={18} /> : <Building2 size={18} />}
+                        {/* Cards Grid */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {filteredProjectRows.map(project => {
+                                const metrics = getProjectListMetrics(project);
+                                const status = metrics.finance?.status || project.status || 'planning';
+
+                                return (
+                                    <div
+                                        key={project.id}
+                                        onClick={() => openProjectDetail(project)}
+                                        className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-5 hover:border-teal-500/50 hover:bg-zinc-50 dark:hover:bg-zinc-800/80 hover:shadow-lg hover:shadow-teal-500/5 hover:-translate-y-0.5 transition-all duration-300 group cursor-pointer flex flex-col justify-between"
+                                    >
+                                        <div>
+                                            <div className="flex items-center justify-between gap-2 mb-3">
+                                                <StatusBadge status={status} label={STATUS_CONFIG[status]?.label || status} />
+                                                <span className="font-semibold text-xs text-teal-700 dark:text-teal-400">Tiến độ: {metrics.progress}%</span>
+                                            </div>
+
+                                            <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-100 group-hover:text-teal-700 dark:group-hover:text-teal-400 transition-colors line-clamp-2">
+                                                {project.name}
+                                            </h3>
                                         </div>
-                                        <div className="min-w-0 flex-1">
-                                            <div className="flex flex-wrap items-center gap-1.5 min-w-0">
-                                                <div className={`text-sm font-bold truncate ${project.isHidden ? 'text-slate-500' : 'text-slate-800'}`}>{project.name}</div>
-                                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 font-bold shrink-0 whitespace-nowrap">{project.code}</span>
-                                                {project.isPinned && <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-600 border border-amber-100 font-black shrink-0 whitespace-nowrap"><Pin size={9} className="fill-amber-500" /> Ghim</span>}
-                                                {project.isHidden && <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-50 text-red-600 border border-red-100 font-black shrink-0 whitespace-nowrap">Đã ẩn</span>}
-                                            </div>
-                                            <div className="text-xs text-slate-400 truncate mt-0.5">
-                                                {site ? `Công trường: ${site.name}` : 'Chưa liên kết công trường HRM'}
-                                                {project.clientName ? ` • ${project.clientName}` : ''}
-                                                {project.hiddenReason ? ` • Lý do ẩn: ${project.hiddenReason}` : ''}
-                                            </div>
-                                            {metaChips.length > 0 && (
-                                                <div className="mt-1.5 flex flex-wrap gap-1">
-                                                    {metaChips.map(chip => (
-                                                        <span key={chip.label} className={`px-1.5 py-0.5 rounded-md border text-[9px] font-black whitespace-nowrap ${chip.tone}`}>
-                                                            {chip.label}
-                                                        </span>
-                                                    ))}
-                                                </div>
-                                            )}
+
+                                        <div className="mt-5 pt-3 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
+                                            <span className="text-xs text-zinc-400 font-medium">Chi tiết công trình</span>
+                                            <button
+                                                type="button"
+                                                onClick={(e) => { e.stopPropagation(); openProjectDetail(project); }}
+                                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 shadow-sm transition-colors"
+                                            >
+                                                Truy cập <ArrowRight size={13} />
+                                            </button>
                                         </div>
                                     </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
 
-                                    <div className="flex items-center justify-between md:justify-end gap-2.5 w-full md:w-auto border-t border-slate-100 md:border-0 pt-2.5 md:pt-0 mt-1 md:mt-0 flex-wrap">
-                                        <div className={`px-2 py-0.5 rounded-full text-[10px] font-bold border whitespace-nowrap ${STATUS_CONFIG[status]?.bg || 'bg-slate-50 border-slate-200'} ${STATUS_CONFIG[status]?.color || 'text-slate-500'}`}>
-                                            {STATUS_CONFIG[status]?.label || status}
+                {/* ===== MODE 3: TABLE / ADMIN MANAGEMENT MODE ===== */}
+                {hubDisplayMode === 'table' && (
+                    <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-hidden">
+                        <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900 flex flex-col xl:flex-row xl:items-center justify-between gap-3">
+                            <div>
+                                <h3 className="text-sm font-semibold text-zinc-800 dark:text-zinc-100 uppercase tracking-wider">Danh sách quản trị công trường</h3>
+                                <p className="text-xs text-zinc-400 mt-0.5">
+                                    {projectPageStart}-{projectPageEnd} / {projectTotalLabel} dự án theo bộ lọc • Trang {projectPage}/{projectPageCount}
+                                </p>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                                <button onClick={handleDownloadProjectTemplate} disabled={projectExporting}
+                                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 disabled:opacity-50 transition-colors">
+                                    {projectExporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} Xuất mẫu
+                                </button>
+                                {canManageProjects && (
+                                    <>
+                                        <button onClick={() => openProjectImport('create')} disabled={projectImporting}
+                                            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium text-teal-700 bg-teal-50 border border-teal-200 hover:bg-teal-100 disabled:opacity-50 transition-colors">
+                                            {projectImporting && projectImportMode === 'create' ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />} Nhập mới
+                                        </button>
+                                        <button onClick={() => openProjectImport('update')} disabled={projectImporting}
+                                            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 hover:bg-amber-100 disabled:opacity-50 transition-colors">
+                                            {projectImporting && projectImportMode === 'update' ? <Loader2 size={14} className="animate-spin" /> : <RefreshCcw size={14} />} Cập nhật
+                                        </button>
+                                    </>
+                                )}
+                                <input ref={projectImportInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleProjectImportExcel} />
+                                <button onClick={handleExportProjectList} disabled={projectExporting}
+                                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium text-zinc-700 dark:text-zinc-200 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 disabled:opacity-50 transition-colors">
+                                    {projectExporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} Xuất danh sách
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Search & Advanced Filters */}
+                        <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
+                            <div className="flex flex-col lg:flex-row gap-3">
+                                <div className="relative flex-1 min-w-0">
+                                    <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
+                                    <input
+                                        value={projectFilters.query}
+                                        onChange={e => setProjectFilters(prev => ({ ...prev, query: e.target.value }))}
+                                        placeholder="Tìm mã, tên, khách hàng, công trường..."
+                                        className="w-full pl-9 pr-3 py-2.5 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm outline-none focus:ring-2 focus:ring-teal-500"
+                                    />
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setShowProjectAdvancedFilters(prev => !prev)}
+                                    aria-expanded={showProjectAdvancedFilters}
+                                    className="inline-flex h-[42px] items-center justify-center gap-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-4 text-xs font-semibold text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 lg:w-auto"
+                                >
+                                    <Filter size={15} />
+                                    Tìm kiếm nâng cao
+                                    {projectAdvancedFilterCount > 0 && (
+                                        <span className="rounded-full bg-teal-700 px-2 py-0.5 text-[10px] text-white font-bold">
+                                            {projectAdvancedFilterCount}
+                                        </span>
+                                    )}
+                                    <ChevronDown size={15} className={`transition-transform ${showProjectAdvancedFilters ? 'rotate-180' : ''}`} />
+                                </button>
+                            </div>
+
+                            {showProjectAdvancedFilters && (
+                                <div className="mt-4 border-t border-zinc-100 dark:border-zinc-800 pt-4">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                                        <div>
+                                            <label className="mb-1 block text-[10px] font-semibold uppercase text-zinc-400">Trạng thái</label>
+                                            <select value={projectFilters.status} onChange={e => setProjectFilters(prev => ({ ...prev, status: e.target.value as ProjectFilterState['status'] }))} className="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm font-medium text-zinc-700 dark:text-zinc-300 outline-none focus:ring-2 focus:ring-teal-500">
+                                                <option value="all">Tất cả trạng thái</option>
+                                                {Object.entries(STATUS_CONFIG).map(([key, value]) => <option key={key} value={key}>{value.label}</option>)}
+                                            </select>
                                         </div>
-                                        <div className="text-right hidden md:block">
-                                            <div className="text-xs font-bold text-slate-600">{fmt(metrics.contractValue)}</div>
-                                            <div className={`text-[10px] font-bold ${metrics.profit >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
-                                                {site ? `${metrics.profit >= 0 ? '+' : ''}${fmt(metrics.profit)} (${metrics.txCount} GD)` : 'Chưa có dữ liệu hiện trường'}
-                                            </div>
+                                        <div>
+                                            <label className="mb-1 block text-[10px] font-semibold uppercase text-zinc-400">Nhóm dự án</label>
+                                            <select value={projectFilters.groupId} onChange={e => setProjectFilters(prev => ({ ...prev, groupId: e.target.value }))} className="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm font-medium text-zinc-700 dark:text-zinc-300 outline-none focus:ring-2 focus:ring-teal-500">
+                                                <option value="all">Tất cả nhóm</option>
+                                                {projectGroups.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+                                            </select>
                                         </div>
-                                        <div className="w-20 hidden lg:block">
-                                            <div className="text-[10px] font-bold text-slate-500 mb-0.5">{metrics.progress}%</div>
-                                            <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                                                <div className="h-full bg-orange-500 rounded-full" style={{ width: `${metrics.progress}%` }} />
-                                            </div>
+                                        <div>
+                                            <label className="mb-1 block text-[10px] font-semibold uppercase text-zinc-400">Loại dự án</label>
+                                            <select value={projectFilters.typeId} onChange={e => setProjectFilters(prev => ({ ...prev, typeId: e.target.value }))} className="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm font-medium text-zinc-700 dark:text-zinc-300 outline-none focus:ring-2 focus:ring-teal-500">
+                                                <option value="all">Tất cả loại</option>
+                                                {projectTypes.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+                                            </select>
                                         </div>
-                                        {canManageProjects && !project.isHidden && (
-                                            <button
-                                                onClick={() => handleToggleProjectPin(project)}
-                                                className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${project.isPinned
-                                                        ? 'text-amber-600 bg-amber-50 border border-amber-100 hover:bg-amber-100'
-                                                        : 'text-slate-400 hover:text-amber-600 hover:bg-amber-50'
-                                                    }`}
-                                                title={project.isPinned ? 'Bỏ ghim dự án' : 'Ghim dự án'}
-                                                aria-label={project.isPinned ? 'Bỏ ghim dự án' : 'Ghim dự án'}
-                                            >
-                                                <Pin size={14} className={project.isPinned ? 'fill-amber-500' : ''} />
-                                            </button>
-                                        )}
-                                        {canManageProjects && !project.isHidden && (
-                                            <button onClick={() => openEditProject(project)}
-                                                className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-300 hover:text-slate-700 hover:bg-slate-100 opacity-0 group-hover:opacity-100 transition-all" title="Sửa dự án">
-                                                <Edit2 size={14} />
-                                            </button>
-                                        )}
-                                        {canManageProjects && !project.isHidden && (
-                                            <button onClick={() => openHideProject(project)}
-                                                className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-300 hover:text-red-600 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all" title="Ẩn / xoá dự án">
-                                                <Trash2 size={14} />
-                                            </button>
-                                        )}
-                                        {isAdmin && project.isHidden && (
-                                            <button onClick={() => handleRestoreProject(project)} disabled={restoringProjectId === project.id}
-                                                className="w-8 h-8 rounded-lg flex items-center justify-center text-emerald-600 bg-emerald-50 hover:bg-emerald-100 disabled:opacity-50" title="Khôi phục dự án">
-                                                {restoringProjectId === project.id ? <Loader2 size={14} className="animate-spin" /> : <ArchiveRestore size={14} />}
-                                            </button>
-                                        )}
-                                        {site && !finance && !project.isHidden && canManageBudgetTab && (
-                                            <button onClick={() => openBudgetForm(site.id)}
-                                                className="px-3 py-1.5 rounded-lg text-[10px] font-bold text-slate-500 bg-slate-50 border border-slate-200 hover:bg-orange-50 hover:text-orange-600 hover:border-orange-200 opacity-0 group-hover:opacity-100 transition-all">
-                                                Ngân sách
-                                            </button>
-                                        )}
-                                        <button onClick={() => openProjectDetail(project)}
-                                            className="px-3 py-1.5 rounded-lg text-[10px] font-bold text-orange-600 bg-orange-50 border border-orange-200 hover:bg-orange-100 opacity-0 group-hover:opacity-100 transition-all">
-                                            Xem chi tiết
+                                        <div>
+                                            <label className="mb-1 block text-[10px] font-semibold uppercase text-zinc-400">Lĩnh vực</label>
+                                            <select value={projectFilters.sectorId} onChange={e => setProjectFilters(prev => ({ ...prev, sectorId: e.target.value }))} className="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm font-medium text-zinc-700 dark:text-zinc-300 outline-none focus:ring-2 focus:ring-teal-500">
+                                                <option value="all">Tất cả lĩnh vực</option>
+                                                {projectSectors.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div className="mt-4 flex justify-end">
+                                        <button
+                                            onClick={() => {
+                                                setProjectFilters(emptyProjectFilters());
+                                                setProjectSort('updatedAt');
+                                                setProjectSortAsc(false);
+                                            }}
+                                            className="px-3 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 text-xs font-semibold text-zinc-500 hover:bg-zinc-100"
+                                        >
+                                            Xoá lọc
                                         </button>
                                     </div>
                                 </div>
-                            );
-                        })}
-                        <div className="flex flex-col gap-3 border-t border-slate-100 bg-slate-50/60 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                            <div className="text-xs font-bold text-slate-500">
-                                Đang xem {projectPageStart}-{projectPageEnd} trên {projectTotalLabel} dự án
-                            </div>
-                            <div className="flex items-center justify-end gap-2">
-                                <button
-                                    type="button"
-                                    onClick={() => setProjectPage(prev => Math.max(1, prev - 1))}
-                                    disabled={projectsLoading || projectPage <= 1}
-                                    className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                                >
-                                    <ChevronLeft size={14} />
-                                    Trước
-                                </button>
-                                <span className="min-w-[82px] text-center text-xs font-black text-slate-500">
-                                    {projectPage}/{projectPageCount}
-                                </span>
-                                <button
-                                    type="button"
-                                    onClick={() => setProjectPage(prev => prev + 1)}
-                                    disabled={projectsLoading || !projectHasNextPage}
-                                    className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                                >
-                                    Sau
-                                    <ChevronRight size={14} />
-                                </button>
-                            </div>
+                            )}
+                        </div>
+
+                        {/* List Items */}
+                        <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                            {filteredProjectRows.map(project => {
+                                const metrics = getProjectListMetrics(project);
+                                const site = metrics.site;
+                                const status = metrics.finance?.status || project.status || 'planning';
+
+                                return (
+                                    <div key={project.id} className="flex flex-col md:flex-row md:items-center justify-between p-4 gap-3 hover:bg-zinc-50/80 dark:hover:bg-zinc-800/50 transition-colors group">
+                                        <div className="flex items-start gap-3 flex-1 min-w-0">
+                                            <div className="w-10 h-10 rounded-lg bg-teal-700/10 text-teal-700 dark:bg-teal-500/20 dark:text-teal-400 flex items-center justify-center shrink-0 mt-0.5">
+                                                {site ? <HardHat size={18} /> : <Building2 size={18} />}
+                                            </div>
+                                            <div className="min-w-0 flex-1">
+                                                <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+                                                    <div className="text-sm font-bold text-zinc-900 dark:text-zinc-100 truncate">{project.name}</div>
+                                                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-500 font-bold shrink-0">{project.code}</span>
+                                                </div>
+                                                <div className="text-xs text-zinc-400 truncate mt-0.5">
+                                                    {site ? `Công trường: ${site.name}` : 'Chưa liên kết công trường HRM'}
+                                                    {project.clientName ? ` • ${project.clientName}` : ''}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex items-center justify-between md:justify-end gap-3 w-full md:w-auto">
+                                            <StatusBadge status={status} label={STATUS_CONFIG[status]?.label || status} />
+                                            <span className="text-xs font-semibold text-teal-700 dark:text-teal-400">{metrics.progress}%</span>
+                                            <button
+                                                onClick={() => openProjectDetail(project)}
+                                                className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 shadow-sm transition-colors"
+                                            >
+                                                Truy cập →
+                                            </button>
+                                        </div>
+                                    </div>
+                                );
+                            })}
                         </div>
                     </div>
                 )}
             </div>
-        </div>
-    );
+        );
+    };
 
     // ========== MAIN ==========
     return (
@@ -3795,12 +3894,12 @@ const ProjectDashboard: React.FC = () => {
             {/* Header */}
             {activeView === 'list' && (
                 <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-orange-500 to-amber-500 flex items-center justify-center shadow-lg shadow-orange-500/30">
-                        <BarChart3 size={24} className="text-white" />
+                    <div className="w-10 h-10 rounded-xl bg-teal-700/10 text-teal-700 dark:bg-teal-500/20 dark:text-teal-400 flex items-center justify-center shrink-0">
+                        <BarChart3 size={20} />
                     </div>
                     <div>
-                        <h1 className="text-2xl font-black text-slate-800 dark:text-white">Tổng quan Dự án</h1>
-                        <p className="text-sm text-slate-500">Chi phí tự động cập nhật từ giao dịch • Import • Workflow</p>
+                        <h1 className="text-xl font-bold text-zinc-900 dark:text-zinc-100">Tổng quan Dự án</h1>
+                        <p className="text-xs text-zinc-500 dark:text-zinc-400">Chi phí tự động cập nhật từ giao dịch • Import • Workflow</p>
                     </div>
                 </div>
             )}

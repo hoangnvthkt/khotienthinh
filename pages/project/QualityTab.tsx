@@ -83,28 +83,28 @@ const STATUS_CONFIG: Record<QualityChecklistStatus, {
 }> = {
   draft: {
     label: 'Nháp',
-    chipClass: 'border-slate-200 bg-slate-50 text-slate-600',
-    dotClass: 'bg-slate-400',
+    chipClass: 'border-zinc-200 bg-zinc-100 text-zinc-600 dark:border-zinc-800 dark:bg-zinc-800 dark:text-zinc-400',
+    dotClass: 'bg-zinc-400',
   },
   submitted: {
     label: 'Chờ duyệt',
-    chipClass: 'border-amber-200 bg-amber-50 text-amber-700',
-    dotClass: 'bg-amber-500',
+    chipClass: 'border-teal-200 bg-teal-50 text-teal-700 dark:border-teal-900/50 dark:bg-teal-950/40 dark:text-teal-300',
+    dotClass: 'bg-teal-600',
   },
   approved: {
     label: 'Đã duyệt',
-    chipClass: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-    dotClass: 'bg-emerald-500',
+    chipClass: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-300',
+    dotClass: 'bg-emerald-600',
   },
   returned: {
     label: 'Trả lại',
-    chipClass: 'border-red-200 bg-red-50 text-red-700',
+    chipClass: 'border-red-200 bg-red-50 text-red-700 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300',
     dotClass: 'bg-red-500',
   },
   cancelled: {
     label: 'Đã huỷ',
-    chipClass: 'border-slate-200 bg-slate-100 text-slate-400',
-    dotClass: 'bg-slate-300',
+    chipClass: 'border-zinc-200 bg-zinc-100 text-zinc-400 dark:border-zinc-800 dark:bg-zinc-800 dark:text-zinc-500',
+    dotClass: 'bg-zinc-300',
   },
 };
 
@@ -166,20 +166,20 @@ const MiniStat: React.FC<{
   onClick?: () => void;
 }> = ({ label, value, icon, tone = 'slate', active = false, onClick }) => {
   const tones = {
-    slate: 'border-slate-200 bg-white text-slate-700',
-    amber: 'border-amber-200 bg-amber-50 text-amber-700',
-    emerald: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-    red: 'border-red-200 bg-red-50 text-red-700',
-    sky: 'border-sky-200 bg-sky-50 text-sky-700',
+    slate: 'border-zinc-200 bg-white text-zinc-900 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100',
+    amber: 'border-teal-200 bg-teal-50 text-teal-700 dark:border-teal-900/50 dark:bg-teal-950/40 dark:text-teal-300',
+    emerald: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-300',
+    red: 'border-red-200 bg-red-50 text-red-700 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300',
+    sky: 'border-teal-200 bg-teal-50 text-teal-700 dark:border-teal-900/50 dark:bg-teal-950/40 dark:text-teal-300',
   };
-  const className = `w-full rounded-lg border p-3 ${tones[tone]} ${active ? 'ring-2 ring-amber-300 ring-offset-1' : ''} ${onClick ? 'cursor-pointer text-left transition hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-amber-300' : ''}`;
+  const className = `w-full rounded-2xl border p-3.5 ${tones[tone]} ${active ? 'ring-2 ring-teal-500 ring-offset-1' : ''} ${onClick ? 'cursor-pointer text-left transition hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-teal-500' : ''}`;
   const content = (
     <>
       <div className="flex items-center justify-between gap-2">
-        <span className="text-[10px] font-black uppercase text-slate-400">{label}</span>
-        <span className="text-slate-400">{icon}</span>
+        <span className="text-[10px] font-semibold uppercase text-zinc-400 dark:text-zinc-500">{label}</span>
+        <span className="text-teal-700 dark:text-teal-400">{icon}</span>
       </div>
-      <div className="mt-1 text-xl font-black">{value}</div>
+      <div className="mt-1 text-xl font-bold">{value}</div>
     </>
   );
   if (onClick) {
@@ -199,9 +199,9 @@ const MiniStat: React.FC<{
 const ProgressBar: React.FC<{ value?: number }> = ({ value }) => {
   const width = clampPercent(value);
   return (
-    <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
+    <div className="h-2 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
       <div
-        className={`h-full rounded-full ${width >= 100 ? 'bg-emerald-500' : width > 0 ? 'bg-amber-500' : 'bg-slate-300'}`}
+        className={`h-full rounded-full transition-all duration-300 ${width >= 100 ? 'bg-emerald-600' : width > 0 ? 'bg-teal-700' : 'bg-zinc-300 dark:bg-zinc-700'}`}
         style={{ width: `${width}%` }}
       />
     </div>
@@ -219,39 +219,39 @@ const FolderCard: React.FC<{
   return (
     <button
       onClick={onOpen}
-      className="group rounded-lg border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-amber-300 hover:shadow-md"
+      className="group rounded-2xl border border-zinc-200 bg-white p-4 text-left shadow-sm transition hover:border-teal-500 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-amber-100 bg-amber-50 text-amber-600">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-teal-200 bg-teal-50 text-teal-700 dark:border-teal-900/50 dark:bg-teal-950/40 dark:text-teal-400">
             {childCount > 0 ? <FolderOpen size={20} /> : <Folder size={20} />}
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               {task.wbsCode && (
-                <span className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] font-black text-slate-500">
+                <span className="rounded-lg border border-zinc-200 bg-zinc-100 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
                   {task.wbsCode}
                 </span>
               )}
-              <span className="text-[10px] font-black uppercase text-slate-400">
+              <span className="text-[10px] font-medium uppercase text-zinc-400">
                 {childCount} thư mục con
               </span>
             </div>
-            <h4 className="mt-1 truncate text-sm font-black text-slate-800 group-hover:text-amber-700" title={task.name}>
+            <h4 className="mt-1 truncate text-sm font-semibold text-zinc-900 group-hover:text-teal-700 dark:text-zinc-100 dark:group-hover:text-teal-400" title={task.name}>
               {task.name}
             </h4>
             {parentPath && (
-              <p className="mt-1 truncate text-[10px] font-bold text-slate-400" title={parentPath}>
+              <p className="mt-1 truncate text-[10px] font-medium text-zinc-400" title={parentPath}>
                 {parentPath}
               </p>
             )}
           </div>
         </div>
-        <ChevronRight size={16} className="mt-1 shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-amber-500" />
+        <ChevronRight size={16} className="mt-1 shrink-0 text-zinc-300 transition group-hover:translate-x-0.5 group-hover:text-teal-700 dark:text-zinc-600 dark:group-hover:text-teal-400" />
       </div>
 
       <div className="mt-4 space-y-2">
-        <div className="flex items-center justify-between text-[10px] font-black text-slate-500">
+        <div className="flex items-center justify-between text-[10px] font-semibold text-zinc-500 dark:text-zinc-400">
           <span>Tiến độ</span>
           <span>{Math.round(Number(task.progress || 0))}%</span>
         </div>
@@ -259,21 +259,21 @@ const FolderCard: React.FC<{
       </div>
 
       <div className="mt-4 grid grid-cols-4 gap-2 text-center">
-        <div className="rounded border border-slate-100 bg-slate-50 px-2 py-1.5">
-          <div className="text-sm font-black text-slate-700">{checklists.length}</div>
-          <div className="text-[8px] font-black uppercase text-slate-400">Hồ sơ</div>
+        <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-2 py-1.5 dark:border-zinc-800 dark:bg-zinc-800/50">
+          <div className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">{checklists.length}</div>
+          <div className="text-[8px] font-semibold uppercase text-zinc-400">Hồ sơ</div>
         </div>
-        <div className="rounded border border-amber-100 bg-amber-50 px-2 py-1.5">
-          <div className="text-sm font-black text-amber-700">{counts.submitted}</div>
-          <div className="text-[8px] font-black uppercase text-amber-600">Chờ</div>
+        <div className="rounded-xl border border-teal-200 bg-teal-50 px-2 py-1.5 dark:border-teal-900/50 dark:bg-teal-950/40">
+          <div className="text-sm font-semibold text-teal-700 dark:text-teal-300">{counts.submitted}</div>
+          <div className="text-[8px] font-semibold uppercase text-teal-600 dark:text-teal-400">Chờ</div>
         </div>
-        <div className="rounded border border-emerald-100 bg-emerald-50 px-2 py-1.5">
-          <div className="text-sm font-black text-emerald-700">{counts.approved}</div>
-          <div className="text-[8px] font-black uppercase text-emerald-600">Duyệt</div>
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-2 py-1.5 dark:border-emerald-900/50 dark:bg-emerald-950/40">
+          <div className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">{counts.approved}</div>
+          <div className="text-[8px] font-semibold uppercase text-emerald-600 dark:text-emerald-400">Duyệt</div>
         </div>
-        <div className="rounded border border-red-100 bg-red-50 px-2 py-1.5">
-          <div className="text-sm font-black text-red-700">{counts.returned}</div>
-          <div className="text-[8px] font-black uppercase text-red-600">Trả</div>
+        <div className="rounded-xl border border-red-200 bg-red-50 px-2 py-1.5 dark:border-red-900/50 dark:bg-red-950/40">
+          <div className="text-sm font-semibold text-red-700 dark:text-red-300">{counts.returned}</div>
+          <div className="text-[8px] font-semibold uppercase text-red-600 dark:text-red-400">Trả</div>
         </div>
       </div>
     </button>
@@ -1135,24 +1135,24 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
 
   return (
     <div className="space-y-5">
-      <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
-            <div className="flex items-center gap-2 text-[10px] font-black uppercase text-amber-600">
+            <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-teal-700 dark:text-teal-400">
               <ShieldCheck size={14} />
               Module Chất lượng
             </div>
-            <h2 className="mt-1 truncate text-xl font-black text-slate-900">{pageTitle}</h2>
-            <div className="mt-1 flex flex-wrap items-center gap-1 text-xs font-bold text-slate-500">
-              <button onClick={openRoot} className="rounded px-1.5 py-1 hover:bg-slate-100 hover:text-amber-700">
+            <h2 className="mt-1 truncate text-xl font-bold text-zinc-900 dark:text-zinc-100">{pageTitle}</h2>
+            <div className="mt-1 flex flex-wrap items-center gap-1 text-xs font-medium text-zinc-500 dark:text-zinc-400">
+              <button onClick={openRoot} className="rounded-lg px-2 py-1 hover:bg-zinc-100 hover:text-teal-700 dark:hover:bg-zinc-800 dark:hover:text-teal-400 transition-colors">
                 {projectName || 'Dự án'}
               </button>
               {breadcrumbTasks.map(task => (
                 <React.Fragment key={task.id}>
-                  <ChevronRight size={13} className="text-slate-300" />
+                  <ChevronRight size={13} className="text-zinc-400" />
                   <button
                     onClick={() => openTask(task.id)}
-                    className={`max-w-[220px] truncate rounded px-1.5 py-1 hover:bg-slate-100 hover:text-amber-700 ${task.id === currentTaskId ? 'text-slate-800' : ''}`}
+                    className={`max-w-[220px] truncate rounded-lg px-2 py-1 hover:bg-zinc-100 hover:text-teal-700 dark:hover:bg-zinc-800 dark:hover:text-teal-400 transition-colors ${task.id === currentTaskId ? 'font-semibold text-zinc-900 dark:text-zinc-100' : ''}`}
                     title={taskLabel(task)}
                   >
                     {task.wbsCode || task.name}
@@ -1161,8 +1161,8 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
               ))}
               {showOrphans && (
                 <>
-                  <ChevronRight size={13} className="text-slate-300" />
-                  <span className="rounded px-1.5 py-1 text-slate-800">Chưa gắn hạng mục</span>
+                  <ChevronRight size={13} className="text-zinc-400" />
+                  <span className="rounded-lg px-2 py-1 font-semibold text-zinc-900 dark:text-zinc-100">Chưa gắn hạng mục</span>
                 </>
               )}
             </div>
@@ -1204,23 +1204,23 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
         </div>
       </div>
 
-      <div className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-3 shadow-sm lg:flex-row lg:items-center lg:justify-between">
+      <div className="flex flex-col gap-3 rounded-2xl border border-zinc-200 bg-white p-3.5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex min-w-0 flex-1 items-center gap-2">
           {(currentTask || showOrphans) && (
             <button
               onClick={currentTask?.parentId ? () => openTask(currentTask.parentId!) : openRoot}
-              className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 px-3 py-2 text-xs font-black text-slate-600 hover:bg-slate-50"
+              className="inline-flex shrink-0 items-center gap-1 rounded-xl border border-zinc-200 bg-white px-3.5 py-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 transition-colors"
             >
               <ArrowLeft size={14} /> Quay lại
             </button>
           )}
           <div className="relative min-w-0 flex-1">
-            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400" />
             <input
               value={search}
               onChange={event => setSearch(event.target.value)}
               placeholder="Tìm WBS, hạng mục, hồ sơ..."
-              className="w-full rounded-lg border border-slate-200 py-2 pl-9 pr-3 text-xs font-bold outline-none focus:border-amber-300 focus:ring-2 focus:ring-amber-100"
+              className="w-full rounded-xl border border-zinc-200 bg-white py-2 pl-9 pr-3 text-xs font-medium text-zinc-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:ring-teal-950"
             />
           </div>
         </div>
@@ -1228,7 +1228,7 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
           <select
             value={statusFilter}
             onChange={event => setStatusFilter(event.target.value as QualityChecklistStatus | '')}
-            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 outline-none focus:border-amber-300"
+            className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-700 outline-none focus:border-teal-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300"
           >
             <option value="">Tất cả trạng thái</option>
             {Object.entries(STATUS_CONFIG).map(([status, config]) => (
@@ -1238,7 +1238,7 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
           {orphanChecklists.length > 0 && !showOrphans && (
             <button
               onClick={openOrphans}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-black text-red-700 hover:bg-red-100"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-100 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300"
             >
               <AlertCircle size={14} /> Chưa gắn
             </button>
@@ -1247,26 +1247,26 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
       </div>
 
       {currentTask && !showOrphans && (
-        <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 {currentTask.wbsCode && (
-                  <span className="rounded border border-slate-200 bg-slate-50 px-2 py-1 font-mono text-[11px] font-black text-slate-600">
+                  <span className="rounded-lg border border-zinc-200 bg-zinc-100 px-2.5 py-1 font-mono text-[11px] font-semibold text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
                     WBS {currentTask.wbsCode}
                   </span>
                 )}
-                <span className="rounded border border-slate-200 bg-white px-2 py-1 text-[10px] font-black uppercase text-slate-500">
+                <span className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1 text-[10px] font-semibold uppercase text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
                   {currentChildren.length} thư mục con
                 </span>
               </div>
-              <h3 className="mt-2 text-lg font-black text-slate-900">{currentTask.name}</h3>
-              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] font-bold text-slate-500">
+              <h3 className="mt-2 text-lg font-bold text-zinc-900 dark:text-zinc-100">{currentTask.name}</h3>
+              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
                 <span className="inline-flex items-center gap-1"><Calendar size={12} />{formatDate(currentTask.startDate)} - {formatDate(currentTask.endDate)}</span>
                 {currentTask.assignee && <span className="inline-flex items-center gap-1"><User size={12} />{currentTask.assignee}</span>}
               </div>
               <div className="mt-3 max-w-md">
-                <div className="mb-1 flex items-center justify-between text-[10px] font-black text-slate-500">
+                <div className="mb-1 flex items-center justify-between text-[10px] font-semibold text-zinc-500 dark:text-zinc-400">
                   <span>Tiến độ hạng mục</span>
                   <span>{Math.round(Number(currentTask.progress || 0))}%</span>
                 </div>
@@ -1280,7 +1280,7 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
               {canManageTab && (
                 <button
                   onClick={() => openCreate(currentTask)}
-                  className="inline-flex min-h-[72px] items-center gap-2 rounded-lg bg-amber-500 px-4 py-3 text-xs font-black text-white shadow-sm hover:bg-amber-600"
+                  className="inline-flex min-h-[72px] items-center gap-2 rounded-2xl bg-teal-700 hover:bg-teal-800 px-4 py-3 text-xs font-semibold text-white shadow-sm transition-colors"
                 >
                   <Plus size={16} /> Tạo hồ sơ nghiệm thu
                 </button>

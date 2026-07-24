@@ -110,9 +110,21 @@ const formatNumberInput = (value: number, decimals = 2): string => {
     return parseFloat(value.toFixed(decimals)).toString();
 };
 
-const getWeekColor = (index: number) => {
-    const hue = (index * 137.5) % 360;
-    return `hsl(${hue}, 70%, 50%)`;
+/** Green/Teal shade generator from light to dark based on index and total count */
+const getTealShade = (index: number, total = 8): string => {
+    const shades = [
+        '#99f6e4', // teal-200 (lightest)
+        '#5eead4', // teal-300
+        '#2dd4bf', // teal-400
+        '#14b8a6', // teal-500
+        '#0d9488', // teal-600
+        '#0f766e', // teal-700
+        '#115e59', // teal-800
+        '#134e4a', // teal-900 (darkest)
+    ];
+    if (total <= 1) return shades[5];
+    const step = Math.min(shades.length - 1, Math.floor((index / Math.max(1, total - 1)) * (shades.length - 1)));
+    return shades[step];
 };
 
 export default function WeeklyProgressTab({ projectId, constructionSiteId, canManageTab }: WeeklyProgressTabProps) {
@@ -372,8 +384,9 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
 
     const weekColors = useMemo(() => {
         const colors: Record<string, string> = {};
+        const total = uniqueWeeks.length;
         uniqueWeeks.forEach((week, idx) => {
-            colors[week] = getWeekColor(idx);
+            colors[week] = getTealShade(idx, total);
         });
         return colors;
     }, [uniqueWeeks]);
@@ -414,8 +427,9 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
 
     const dayColors = useMemo(() => {
         const colors: Record<string, string> = {};
+        const total = selectedWeekDays.length;
         selectedWeekDays.forEach((day, idx) => {
-            colors[day] = getWeekColor(idx + 3);
+            colors[day] = getTealShade(idx, total);
         });
         return colors;
     }, [selectedWeekDays]);
@@ -1304,30 +1318,30 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
     return (
         <div className="space-y-6">
             {/* Top Controllers & Action Bar */}
-            <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 border border-slate-100 dark:border-slate-700/60 shadow-sm space-y-4">
+            <div className="bg-white dark:bg-zinc-900 rounded-3xl p-6 border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-4">
                 <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                     {/* Left: Searchable Select for WBS */}
                     <div className="flex-1 min-w-0 space-y-1">
-                        <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Chọn hạng mục WBS cần xem/nhập</label>
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500 block">Chọn hạng mục WBS cần xem/nhập</label>
                         <div ref={dropdownRef} className="relative w-full max-w-md">
                             <button
                                 type="button"
                                 onClick={() => setDropdownOpen(!dropdownOpen)}
-                                className="w-full flex items-center justify-between gap-3 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-bold text-slate-700 dark:text-slate-200 shadow-sm hover:border-slate-300 transition-colors"
+                                className="w-full flex items-center justify-between gap-3 px-4 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-sm font-semibold text-zinc-800 dark:text-zinc-200 shadow-sm hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors"
                             >
                                 <div className="flex items-center gap-2 truncate">
-                                    <Sliders size={15} className="text-orange-500 shrink-0" />
+                                    <Sliders size={15} className="text-teal-700 dark:text-teal-400 shrink-0" />
                                     <span className="truncate">
                                         {activeFilterTask
                                             ? `[${activeFilterTask.wbsCode}] ${activeFilterTask.name}`
                                             : '— Hiển thị toàn bộ hạng mục —'}
                                     </span>
                                 </div>
-                                <div className="flex items-center gap-1.5 shrink-0 text-slate-400">
+                                <div className="flex items-center gap-1.5 shrink-0 text-zinc-400">
                                     {selectedFilterTaskId && (
                                         <X
                                             size={14}
-                                            className="hover:text-slate-600 cursor-pointer"
+                                            className="hover:text-zinc-600 cursor-pointer"
                                             onClick={(e) => {
                                                 e.stopPropagation();
                                                 setSelectedFilterTaskId('');
@@ -1339,18 +1353,18 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
                             </button>
 
                             {dropdownOpen && (
-                                <div className="absolute left-0 right-0 mt-2 z-50 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-2xl p-2 max-h-[300px] flex flex-col">
+                                <div className="absolute left-0 right-0 mt-2 z-50 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-2xl p-2 max-h-[300px] flex flex-col">
                                     <div className="relative mb-2 shrink-0">
-                                        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                                        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
                                         <input
                                             type="text"
                                             value={dropdownSearch}
                                             onChange={e => setDropdownSearch(e.target.value)}
                                             placeholder="Tìm mã WBS hoặc tên..."
-                                            className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 font-bold outline-none focus:ring-2 focus:ring-orange-500"
+                                            className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 font-semibold outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
                                         />
                                     </div>
-                                    <div className="overflow-y-auto flex-1 divide-y divide-slate-50 dark:divide-slate-800/40">
+                                    <div className="overflow-y-auto flex-1 divide-y divide-zinc-100 dark:divide-zinc-800">
                                         <button
                                             type="button"
                                             onClick={() => {
@@ -1358,7 +1372,7 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
                                                 setDropdownOpen(false);
                                                 setDropdownSearch('');
                                             }}
-                                            className="w-full text-left px-3 py-2 text-xs font-black text-indigo-600 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg"
+                                            className="w-full text-left px-3 py-2 text-xs font-bold text-teal-700 dark:text-teal-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg"
                                         >
                                             — Hiển thị toàn bộ hạng mục —
                                         </button>
@@ -1371,10 +1385,10 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
                                                     setDropdownOpen(false);
                                                     setDropdownSearch('');
                                                 }}
-                                                className={`w-full text-left px-3 py-2 text-xs rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-start gap-2 ${selectedFilterTaskId === t.id ? 'bg-orange-50 dark:bg-orange-950/20 text-orange-600 font-black' : 'text-slate-700 dark:text-slate-300 font-bold'
+                                                className={`w-full text-left px-3 py-2 text-xs rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors flex items-start gap-2 ${selectedFilterTaskId === t.id ? 'bg-teal-50 dark:bg-teal-950/40 text-teal-700 dark:text-teal-400 font-bold' : 'text-zinc-700 dark:text-zinc-300 font-medium'
                                                     }`}
                                             >
-                                                <span className="font-mono text-indigo-500 shrink-0 w-[50px]">{t.wbsCode}</span>
+                                                <span className="font-mono text-teal-700 dark:text-teal-400 shrink-0 w-[50px]">{t.wbsCode}</span>
                                                 <span className="truncate">{t.name}</span>
                                             </button>
                                         ))}
@@ -1387,8 +1401,8 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
                     {/* Right: Entry mode, date/week selection & Save button */}
                     <div className="flex items-end justify-end gap-3 flex-wrap">
                         <div className="space-y-1">
-                            <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Kiểu chốt</label>
-                            <div className="flex rounded-xl bg-slate-100 p-1 dark:bg-slate-900">
+                            <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500 block">Kiểu chốt</label>
+                            <div className="flex rounded-xl bg-zinc-100 p-1 dark:bg-zinc-800">
                                 {[
                                     { key: 'daily', label: 'Chốt ngày' },
                                     { key: 'weekly', label: 'Tổng hợp tuần' },
@@ -1397,9 +1411,9 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
                                         key={option.key}
                                         type="button"
                                         onClick={() => setEntryMode(option.key as ProgressEntryMode)}
-                                        className={`rounded-lg px-3 py-1.5 text-[10px] font-black transition-colors ${entryMode === option.key
-                                                ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-white'
-                                                : 'text-slate-500 hover:text-slate-700'
+                                        className={`rounded-lg px-3 py-1.5 text-[10px] font-bold transition-colors ${entryMode === option.key
+                                                ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-900 dark:text-zinc-100'
+                                                : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
                                             }`}
                                     >
                                         {option.label}
@@ -1408,7 +1422,7 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
                             </div>
                         </div>
                         <div className="space-y-1">
-                            <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
+                            <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500 block">
                                 {entryMode === 'daily' ? 'Chọn ngày chốt tiến độ' : 'Chọn tuần chốt tiến độ'}
                             </label>
                             {entryMode === 'daily' ? (
@@ -1423,7 +1437,7 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
                                         setFilterWeek(nextWeekStart);
                                         setFilterMonth(nextWeekStart.substring(0, 7));
                                     }}
-                                    className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-black bg-transparent focus:ring-2 focus:ring-orange-500 outline-none text-slate-700 dark:text-slate-200"
+                                    className="px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 text-xs font-semibold bg-white dark:bg-zinc-900 focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none text-zinc-800 dark:text-zinc-100"
                                     title="Ngày chốt"
                                 />
                             ) : (
@@ -1437,7 +1451,7 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
                                         setFilterWeek(nextWeekStart);
                                         setFilterMonth(nextWeekStart.substring(0, 7));
                                     }}
-                                    className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-black bg-transparent focus:ring-2 focus:ring-orange-500 outline-none text-slate-700 dark:text-slate-200"
+                                    className="px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 text-xs font-semibold bg-white dark:bg-zinc-900 focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none text-zinc-800 dark:text-zinc-100"
                                     title="Tuần chốt"
                                 />
                             )}
@@ -1446,7 +1460,7 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
                         <button
                             onClick={entryMode === 'daily' ? handleSaveDailyProgress : handleSaveWeeklyProgress}
                             disabled={savingDailyProgress || savingWeeklyProgress || weeklyLeafTasks.length === 0}
-                            className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-xs font-black text-white bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 shadow-md shadow-orange-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                            className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                         >
                             {savingDailyProgress || savingWeeklyProgress ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
                             {entryMode === 'daily'

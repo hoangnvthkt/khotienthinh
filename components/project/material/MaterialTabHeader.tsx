@@ -51,14 +51,14 @@ export const MaterialTabHeader: React.FC<MaterialTabHeaderProps> = ({
             </div>
         </div>
 
-        <div className="flex gap-1 overflow-x-auto rounded-2xl border border-slate-100 bg-white p-1.5 shadow-sm dark:border-slate-700/60 dark:bg-slate-850 [&::-webkit-scrollbar]:hidden">
+        <div className="flex gap-1 overflow-x-auto rounded-xl border border-zinc-200 bg-white p-1.5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 [&::-webkit-scrollbar]:hidden">
             {visibleMaterialTabs.map(tab => (
                 <button
                     key={tab.key}
                     onClick={() => onTabChange(tab.key)}
-                    className={`flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl px-3 py-2 text-xs font-bold transition-all ${activeSubTab === tab.key ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-50'}`}
+                    className={`flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-2 text-xs font-medium transition-all ${activeSubTab === tab.key ? 'bg-teal-700 text-white shadow-sm font-semibold' : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-900 dark:hover:text-zinc-100'}`}
                 >
-                    {tabLabels[tab.key]} {tabCounts[tab.key] > 0 && <span className={`rounded-full px-1.5 py-0.5 text-[9px] ${activeSubTab === tab.key ? 'bg-white/20' : 'bg-slate-100'}`}>{tabCounts[tab.key]}</span>}
+                    {tabLabels[tab.key]} {tabCounts[tab.key] > 0 && <span className={`rounded-full px-1.5 py-0.5 text-[9px] ${activeSubTab === tab.key ? 'bg-white/20 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400'}`}>{tabCounts[tab.key]}</span>}
                 </button>
             ))}
         </div>

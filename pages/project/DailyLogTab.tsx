@@ -2182,37 +2182,33 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
             {/* Summary */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 {/* Tổng nhật ký */}
-                <div className="relative overflow-hidden bg-gradient-to-br from-white to-slate-50/50 dark:from-slate-800 dark:to-slate-900/50 rounded-2xl p-5 border border-slate-100/80 dark:border-slate-700/60 shadow-sm transition-all duration-300 hover:shadow-md hover:scale-[1.02] group">
-                    <div className="absolute top-0 right-0 w-24 h-24 bg-teal-500/5 dark:bg-teal-400/5 rounded-bl-full pointer-events-none transition-transform duration-300 group-hover:scale-110" />
-                    <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5"><FileSpreadsheet size={11} className="text-teal-500" /> Tổng nhật ký</div>
-                    <div className="text-3xl font-black text-slate-800 dark:text-white leading-none tracking-tight">{stats.total}</div>
-                    <div className="text-[10px] text-teal-600 dark:text-teal-400 font-bold mt-2 flex items-center gap-1">
-                        <span className="w-1.5 h-1.5 rounded-full bg-teal-50 dark:bg-teal-400 animate-pulse" /> Tháng này: {stats.monthCount}
+                <div className="bg-white dark:bg-zinc-900 rounded-2xl p-5 border border-zinc-200 dark:border-zinc-800 shadow-sm transition-shadow">
+                    <div className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-2 flex items-center gap-1.5"><FileSpreadsheet size={11} className="text-teal-700 dark:text-teal-400" /> Tổng nhật ký</div>
+                    <div className="text-3xl font-bold text-zinc-900 dark:text-zinc-100 leading-none tracking-tight">{stats.total}</div>
+                    <div className="text-[10px] text-teal-700 dark:text-teal-400 font-medium mt-2 flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-teal-600 animate-pulse" /> Tháng này: {stats.monthCount}
                     </div>
                 </div>
 
                 {/* Nhân công trung bình */}
-                <div className="relative overflow-hidden bg-gradient-to-br from-white to-slate-50/50 dark:from-slate-800 dark:to-slate-900/50 rounded-2xl p-5 border border-slate-100/80 dark:border-slate-700/60 shadow-sm transition-all duration-300 hover:shadow-md hover:scale-[1.02] group">
-                    <div className="absolute top-0 right-0 w-24 h-24 bg-blue-500/5 dark:bg-blue-400/5 rounded-bl-full pointer-events-none transition-transform duration-300 group-hover:scale-110" />
-                    <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5"><Users size={11} className="text-blue-500" /> CN TB/ngày</div>
-                    <div className="text-3xl font-black text-blue-600 dark:text-blue-400 leading-none tracking-tight">{stats.avgWorkers}</div>
-                    <div className="text-[10px] text-muted-foreground font-medium mt-2">Nhân công bình quân công trường</div>
+                <div className="bg-white dark:bg-zinc-900 rounded-2xl p-5 border border-zinc-200 dark:border-zinc-800 shadow-sm transition-shadow">
+                    <div className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-2 flex items-center gap-1.5"><Users size={11} className="text-teal-700 dark:text-teal-400" /> CN TB/ngày</div>
+                    <div className="text-3xl font-bold text-teal-700 dark:text-teal-400 leading-none tracking-tight">{stats.avgWorkers}</div>
+                    <div className="text-[10px] text-zinc-400 dark:text-zinc-500 font-medium mt-2">Nhân công bình quân công trường</div>
                 </div>
 
                 {/* Ngày mưa */}
-                <div className="relative overflow-hidden bg-gradient-to-br from-white to-slate-50/50 dark:from-slate-800 dark:to-slate-900/50 rounded-2xl p-5 border border-slate-100/80 dark:border-slate-700/60 shadow-sm transition-all duration-300 hover:shadow-md hover:scale-[1.02] group">
-                    <div className="absolute top-0 right-0 w-24 h-24 bg-cyan-500/5 dark:bg-cyan-400/5 rounded-bl-full pointer-events-none transition-transform duration-300 group-hover:scale-110" />
-                    <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5"><CloudRain size={11} className="text-cyan-500" /> Ngày mưa</div>
-                    <div className="text-3xl font-black text-cyan-600 dark:text-cyan-400 leading-none tracking-tight">{stats.rainyDays}</div>
-                    <div className="text-[10px] text-muted-foreground font-medium mt-2">Ảnh hưởng đến tiến độ</div>
+                <div className="bg-white dark:bg-zinc-900 rounded-2xl p-5 border border-zinc-200 dark:border-zinc-800 shadow-sm transition-shadow">
+                    <div className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-2 flex items-center gap-1.5"><CloudRain size={11} className="text-teal-700 dark:text-teal-400" /> Ngày mưa</div>
+                    <div className="text-3xl font-bold text-teal-700 dark:text-teal-400 leading-none tracking-tight">{stats.rainyDays}</div>
+                    <div className="text-[10px] text-zinc-400 dark:text-zinc-500 font-medium mt-2">Ảnh hưởng đến tiến độ</div>
                 </div>
 
                 {/* Vấn đề sự cố */}
-                <div className="relative overflow-hidden bg-gradient-to-br from-white to-slate-50/50 dark:from-slate-800 dark:to-slate-900/50 rounded-2xl p-5 border border-slate-100/80 dark:border-slate-700/60 shadow-sm transition-all duration-300 hover:shadow-md hover:scale-[1.02] group">
-                    <div className="absolute top-0 right-0 w-24 h-24 bg-red-500/5 dark:bg-red-400/5 rounded-bl-full pointer-events-none transition-transform duration-300 group-hover:scale-110" />
-                    <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5"><AlertTriangle size={11} className="text-red-500" /> Vấn đề ghi nhận</div>
-                    <div className="text-3xl font-black text-red-500 dark:text-red-400 leading-none tracking-tight">{stats.issueCount}</div>
-                    <div className="text-[10px] text-muted-foreground font-medium mt-2">Sự cố, vướng mắc phát sinh</div>
+                <div className="bg-white dark:bg-zinc-900 rounded-2xl p-5 border border-zinc-200 dark:border-zinc-800 shadow-sm transition-shadow">
+                    <div className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-2 flex items-center gap-1.5"><AlertTriangle size={11} className="text-red-500" /> Vấn đề ghi nhận</div>
+                    <div className="text-3xl font-bold text-red-600 dark:text-red-400 leading-none tracking-tight">{stats.issueCount}</div>
+                    <div className="text-[10px] text-zinc-400 dark:text-zinc-500 font-medium mt-2">Sự cố, vướng mắc phát sinh</div>
                 </div>
             </div>
 
@@ -2428,9 +2424,9 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
 
                 {viewMode === 'calendar' ? (
                     <div className="p-3 sm:p-5">
-                        <div className="grid grid-cols-7 border-l border-t border-slate-100 rounded-2xl overflow-hidden">
+                        <div className="grid grid-cols-7 border-l border-t border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden shadow-sm">
                             {['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'].map(day => (
-                                <div key={day} className="bg-slate-50 border-r border-b border-slate-100 px-1.5 py-2 text-center text-[10px] font-black text-slate-400 uppercase">
+                                <div key={day} className="bg-zinc-50 dark:bg-zinc-800/60 border-r border-b border-zinc-200 dark:border-zinc-800 px-1.5 py-2 text-center text-[10px] font-bold text-zinc-500 dark:text-zinc-400 uppercase">
                                     {day}
                                 </div>
                             ))}
@@ -2443,11 +2439,11 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                     <button
                                         key={cell.date}
                                         onClick={() => handleCalendarDayClick(cell.date, dayLogs)}
-                                        className={`min-h-[72px] sm:min-h-[92px] border-r border-b border-border p-1.5 sm:p-2 text-left transition-colors hover:bg-teal-500/10 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-teal-400 ${cell.inMonth ? 'bg-card' : 'bg-muted/50 text-muted-foreground'} ${isToday ? 'ring-2 ring-inset ring-teal-400' : ''}`}
+                                        className={`min-h-[72px] sm:min-h-[92px] border-r border-b border-zinc-200 dark:border-zinc-800 p-2 text-left transition-colors hover:bg-teal-50/50 dark:hover:bg-teal-950/20 focus:outline-none ${cell.inMonth ? 'bg-white dark:bg-zinc-900' : 'bg-zinc-50/40 dark:bg-zinc-950/40'} ${isToday ? 'ring-2 ring-inset ring-teal-500 dark:ring-teal-400' : ''}`}
                                     >
                                         <div className="flex items-start justify-between gap-1">
-                                            <span className={`text-xs font-black ${cell.inMonth ? 'text-slate-700' : 'text-slate-300'}`}>{cell.day}</span>
-                                            {primaryLog && <span className="text-sm leading-none">{WEATHER[primaryLog.weather]?.emoji}</span>}
+                                            <span className={`text-xs font-bold ${cell.inMonth ? 'text-zinc-900 dark:text-zinc-100' : 'text-zinc-300 dark:text-zinc-600'}`}>{cell.day}</span>
+                                            {primaryLog && <span className="text-sm leading-none" title={WEATHER[primaryLog.weather]?.label}>{WEATHER[primaryLog.weather]?.emoji}</span>}
                                         </div>
                                         {dayLogs.length > 0 && (
                                             <div className="mt-2 space-y-1">
@@ -2455,15 +2451,12 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                                     {dayLogs.slice(0, 4).map(log => (
                                                         <span key={log.id} className={`w-2 h-2 rounded-full ${STATUS_DOT[getLogStatus(log)]}`} />
                                                     ))}
-                                                    {dayLogs.length > 4 && <span className="text-[9px] font-bold text-slate-400">+{dayLogs.length - 4}</span>}
+                                                    {dayLogs.length > 4 && <span className="text-[9px] font-bold text-zinc-400">+{dayLogs.length - 4}</span>}
                                                 </div>
-                                                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] font-bold text-slate-500">
+                                                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] font-semibold text-zinc-500 dark:text-zinc-400">
                                                     <span className="inline-flex items-center gap-0.5"><Users size={10} /> {totalWorkers}</span>
                                                     {dayLogs.length > 1 && <span>{dayLogs.length} nhật ký</span>}
                                                 </div>
-                                                {primaryLog?.description && (
-                                                    <p className="hidden sm:block text-[10px] text-slate-500 line-clamp-2 leading-snug">{primaryLog.description}</p>
-                                                )}
                                             </div>
                                         )}
                                     </button>
@@ -2512,124 +2505,60 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                     key={row.date}
                                     ref={el => { if (officialLog) logRefs.current[officialLog.id] = el; }}
                                     onClick={() => officialLog ? openView(officialLog) : canSummarizeDay ? openSummaryForDate(row.date) : openCreateForDate(row.date)}
-                                    className={`relative pl-5 sm:pl-7 pr-4 sm:pr-5 py-3.5 sm:py-4 bg-card hover:bg-muted/40 border-b border-border transition-all duration-200 cursor-pointer group flex items-start justify-between gap-3 overflow-hidden ${officialLog && highlightLogId === officialLog.id ? 'bg-amber-500/10 ring-2 ring-amber-500/40 ring-inset' : ''
-                                        }`}
+                                    className={`group flex items-center justify-between px-4 sm:px-6 py-3.5 bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800/60 border-b border-zinc-200 dark:border-zinc-800 transition-colors cursor-pointer ${
+                                        officialLog && highlightLogId === officialLog.id ? 'bg-teal-50/50 dark:bg-teal-950/20' : ''
+                                    }`}
                                 >
-                                    {/* Left Accent Status Border */}
-                                    <div className={`absolute left-0 top-0 bottom-0 w-1 ${borderAccentCls} transition-all duration-200 group-hover:w-2`} />
-                                    
-                                    <div className="flex items-start gap-3.5 flex-1 min-w-0">
-                                        <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-800 dark:to-slate-900 border border-slate-200/60 dark:border-slate-700/60 flex flex-col items-center justify-center shrink-0 shadow-sm transition-transform duration-250 group-hover:scale-105">
-                                            <div className="text-[10px] font-black text-slate-700 dark:text-slate-200">{new Date(`${row.date}T00:00:00`).getDate()}</div>
-                                            <div className="text-[8px] font-bold text-muted-foreground uppercase">T{new Date(`${row.date}T00:00:00`).getMonth() + 1}</div>
+                                    {/* Left: Date info & Status badge */}
+                                    <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+                                        {/* Date badge */}
+                                        <div className="w-10 h-10 rounded-xl bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700/60 flex flex-col items-center justify-center shrink-0">
+                                            <span className="text-[11px] font-bold text-zinc-900 dark:text-zinc-100">{new Date(`${row.date}T00:00:00`).getDate()}</span>
+                                            <span className="text-[8px] font-semibold text-zinc-400 dark:text-zinc-500 uppercase">Th{new Date(`${row.date}T00:00:00`).getMonth() + 1}</span>
                                         </div>
-                                        <div className="min-w-0 flex-1">
-                                            <div className="flex items-center gap-2 mb-1 flex-wrap">
-                                                <span className="text-xs font-bold text-slate-800 dark:text-slate-150 transition-colors group-hover:text-teal-600 dark:group-hover:text-teal-400">
-                                                    {dayLabel}
-                                                </span>
-                                                {w && <span className="text-xs">{w.emoji}</span>}
-                                                <span className="text-[10px] font-bold text-blue-500 dark:text-blue-400 flex items-center gap-0.5"><Users size={10} /> {row.reportCount} báo cáo nguồn</span>
-                                                <span className="text-[10px] font-bold text-rose-500 dark:text-rose-400 flex items-center gap-0.5"><Camera size={10} /> {row.photoCount} ảnh</span>
-                                                <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${statusCfg?.cls || 'bg-blue-500/10 text-blue-500 border-blue-500/20'}`}>{summaryLabel}</span>
-                                            </div>
-                                            <p className="text-xs text-slate-600 dark:text-slate-350 leading-relaxed line-clamp-2">
-                                                {officialLog?.description || row.legacyReports[0]?.description || 'Chưa có nội dung trong ngày.'}
-                                            </p>
+
+                                        {/* Day of Week + Date String + Weather icon + Status Badge */}
+                                        <div className="flex items-center gap-2.5 sm:gap-3 flex-wrap min-w-0">
+                                            <span className="text-xs sm:text-sm font-semibold text-zinc-900 dark:text-zinc-100 group-hover:text-teal-700 dark:group-hover:text-teal-400 transition-colors capitalize">
+                                                {dayLabel}
+                                            </span>
+                                            {w && <span className="text-xs sm:text-sm" title={w.label}>{w.emoji}</span>}
                                             
-                                            <div className="mt-2 flex flex-wrap gap-x-2.5 gap-y-1 text-[10px] font-bold text-slate-500 dark:text-slate-400 border-t border-slate-100/60 dark:border-slate-800/80 pt-1.5">
-                                                {contributorNames.slice(0, 5).map((name, idx) => (
-                                                    <span key={`${row.date}-${name}-${idx}`} className="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-2 py-0.5 text-slate-600">
-                                                        <span className="flex h-4 w-4 items-center justify-center rounded-full bg-white text-[8px] font-black text-blue-600">
-                                                            {String(name || '?').slice(0, 1).toUpperCase()}
-                                                        </span>
-                                                        {name}
-                                                    </span>
-                                                ))}
-                                                {contributorNames.length > 5 && (
-                                                    <span className="inline-flex items-center rounded-lg bg-slate-100 px-2 py-0.5 text-slate-500">+{contributorNames.length - 5}</span>
-                                                )}
-                                                {officialLog?.summarizedByName && (
-                                                    <span className="inline-flex items-center gap-1 rounded-lg bg-teal-50 px-2 py-0.5 text-teal-700">
-                                                        <UserCheck size={10} /> Tổng hợp: {officialLog.summarizedByName}
-                                                    </span>
-                                                )}
-                                                {officialLog?.verifiedBy && (
-                                                    <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 px-2 py-0.5 text-emerald-700">
-                                                        <CheckCircle2 size={10} /> Duyệt: {officialLog.verifiedBy}
-                                                    </span>
-                                                )}
-                                            </div>
-                                            {row.legacyReports.length > 0 && (
-                                                <div className="mt-2 flex flex-wrap gap-1.5">
-                                                    {row.legacyReports.slice(0, 4).map(log => {
-                                                        const sourceSummary = sourceSummaryByLogId.get(log.id);
-                                                        const sourceSnapshots = getDailyLogSummarySourceSnapshots(sourceSummary?.summarySourceMetadata || null);
-                                                        const sourceReviewState = getDailyLogSourceReviewState({
-                                                            sourceLog: log,
-                                                            included: Boolean(sourceSummary),
-                                                            snapshot: sourceSnapshots[log.id] || null,
-                                                        });
-                                                        const sourceStateCfg = SOURCE_REVIEW_STATE_CFG[sourceReviewState];
-                                                        return (
-                                                            <span key={log.id} className={`rounded-full border px-2 py-0.5 text-[9px] font-black ${sourceStateCfg.cls}`}>
-                                                                {getLegacyDailyLogSourceName(log)}: {sourceStateCfg.label}
-                                                            </span>
-                                                        );
-                                                    })}
-                                                </div>
-                                            )}
-                                            {officialLog && status === 'submitted' && (officialLog.requestedVerifierName || officialLog.submittedToName) && (
-                                                <div className="mt-1 text-[10px] font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1">
-                                                    <UserCheck size={11} /> Chờ {officialLog.requestedVerifierName || officialLog.submittedToName} {officialLog.submittedToPermission === 'approve' ? 'duyệt' : 'xác nhận'}
-                                                </div>
-                                            )}
-                                            {officialLog?.issues && (
-                                                <div className="mt-1.5 flex items-start gap-1.5 px-2.5 py-1.5 rounded-lg bg-red-50/80 dark:bg-red-950/20 border border-red-100/60 dark:border-red-900/30">
-                                                    <AlertTriangle size={12} className="text-red-400 dark:text-red-500 shrink-0 mt-0.5" />
-                                                    <span className="text-xs text-red-600 dark:text-red-450 font-medium">{officialLog.issues}</span>
-                                                </div>
-                                            )}
+                                            {/* Status Badge */}
+                                            <span className={`text-[10px] font-medium px-2.5 py-0.5 rounded-full border ${statusCfg?.cls || 'bg-zinc-100 text-zinc-600 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:border-zinc-700'}`}>
+                                                {summaryLabel}
+                                            </span>
                                         </div>
                                     </div>
-                                    <div className="flex flex-col sm:flex-row gap-1 opacity-100 transition-all shrink-0 self-center">
+
+                                    {/* Right: Quick Action Buttons */}
+                                    <div className="flex items-center gap-1.5 sm:gap-2 shrink-0" onClick={e => e.stopPropagation()}>
                                         {canReportDay && (
                                             <button
                                                 type="button"
-                                                onClick={e => { e.stopPropagation(); openCreateForDate(row.date); }}
-                                                className="h-8 rounded-lg border border-teal-200 bg-teal-50 px-2 text-[10px] font-black text-teal-700 hover:bg-teal-100"
+                                                onClick={() => openCreateForDate(row.date)}
+                                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:border-teal-500 hover:text-teal-700 dark:hover:text-teal-400 transition-colors"
                                             >
-                                                Ghi nhật ký
+                                                <Plus size={13} /> Ghi nhật ký
                                             </button>
                                         )}
                                         {canSummarizeDay && (
                                             <button
                                                 type="button"
-                                                onClick={e => { e.stopPropagation(); openSummaryForDate(row.date); }}
-                                                className="h-8 rounded-lg border border-teal-200 bg-teal-50 px-2 text-[10px] font-black text-teal-700 hover:bg-teal-100"
+                                                onClick={() => openSummaryForDate(row.date)}
+                                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-xs font-semibold shadow-sm transition-colors"
                                             >
-                                                Tổng hợp
+                                                <FileSpreadsheet size={13} /> Tổng hợp
                                             </button>
                                         )}
-                                        {officialLog ? (
-                                            <button
-                                                type="button"
-                                                onClick={e => { e.stopPropagation(); openView(officialLog); }}
-                                                className="h-8 w-8 rounded-lg flex items-center justify-center text-teal-600 dark:text-teal-400 bg-teal-50 dark:bg-teal-950/40 border border-teal-100 dark:border-teal-900/30 shadow-sm"
-                                                title="Xem nhật ký ngày"
-                                            >
-                                                <Eye size={13} />
-                                            </button>
-                                        ) : row.logs.length > 0 ? (
-                                            <button
-                                                type="button"
-                                                onClick={e => { e.stopPropagation(); setDayLogPicker({ date: row.date, logs: row.logs }); }}
-                                                className="h-8 w-8 rounded-lg flex items-center justify-center text-teal-600 dark:text-teal-400 bg-teal-50 dark:bg-teal-950/40 border border-teal-100 dark:border-teal-900/30 shadow-sm"
-                                                title="Xem phiếu nguồn"
-                                            >
-                                                <Eye size={13} />
-                                            </button>
-                                        ) : null}
+                                        <button
+                                            type="button"
+                                            onClick={() => officialLog ? openView(officialLog) : canSummarizeDay ? openSummaryForDate(row.date) : openCreateForDate(row.date)}
+                                            className="w-8 h-8 rounded-xl flex items-center justify-center text-zinc-400 hover:text-teal-700 dark:hover:text-teal-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                                            title="Xem chi tiết"
+                                        >
+                                            <ChevronRight size={16} />
+                                        </button>
                                     </div>
                                 </div>
                             );
