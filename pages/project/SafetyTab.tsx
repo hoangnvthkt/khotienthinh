@@ -495,7 +495,7 @@ const SafetyTab: React.FC<SafetyTabProps> = ({ projectId, constructionSiteId, ca
         <div className="space-y-2">
           {VIEW_GROUPS.map(group => (
             <div key={group.label} className="flex flex-wrap items-center gap-2">
-              <div className="w-full text-[10px] font-black uppercase tracking-wide text-slate-400 dark:text-slate-500 sm:w-28">
+              <div className="w-full text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500 sm:w-28">
                 {group.label}
               </div>
               <div className="flex min-w-0 flex-1 flex-wrap gap-2">
@@ -504,9 +504,9 @@ const SafetyTab: React.FC<SafetyTabProps> = ({ projectId, constructionSiteId, ca
                     key={key}
                     type="button"
                     onClick={() => setView(key)}
-                    className={`inline-flex min-h-9 items-center gap-2 rounded-lg px-3 text-xs font-black transition ${view === key
-                        ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
-                        : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800'
+                    className={`inline-flex min-h-9 items-center gap-2 rounded-xl px-3.5 text-xs font-semibold transition ${view === key
+                        ? 'bg-teal-700 text-white shadow-sm'
+                        : 'border border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800'
                       }`}
                   >
                     {VIEW_CONFIG[key].icon} {VIEW_CONFIG[key].label}

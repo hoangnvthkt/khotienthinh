@@ -401,50 +401,49 @@ const CashFlowTab: React.FC<CashFlowTabProps> = ({ constructionSiteId, projectId
 
             {/* Payment Form Modal */}
             {showPaymentForm && (
-                <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm">
-                    <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-lg mx-4">
-                        <div className="px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-indigo-500 to-violet-600 rounded-t-3xl flex items-center justify-between">
+                <div className="fixed inset-0 z-[999] flex items-center justify-center bg-zinc-950/40 backdrop-blur-sm">
+                    <div className="bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl border border-zinc-200 dark:border-zinc-800 w-full max-w-lg mx-4 overflow-hidden">
+                        <div className="px-6 py-4 bg-gradient-to-r from-teal-800 to-teal-950 border-b border-teal-700/50 flex items-center justify-between">
                             <span className="font-bold text-lg text-white flex items-center gap-2">
                                 {editingPayment ? <><Edit2 size={18} /> Sửa đợt thanh toán</> : <><Plus size={18} /> Thêm đợt thanh toán</>}
                             </span>
-                            <button onClick={resetPaymentForm} className="w-8 h-8 rounded-xl bg-white/20 hover:bg-white/30 text-white flex items-center justify-center"><X size={18} /></button>
+                            <button onClick={resetPaymentForm} className="w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors"><X size={18} /></button>
                         </div>
                         <div className="p-6 space-y-4">
                             <div>
-                                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Loại</label>
+                                <label className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase block mb-1">Loại</label>
                                 <div className="flex gap-2">
-                                    <button onClick={() => setPType('receivable')} className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-all ${pType === 'receivable' ? 'bg-blue-50 border-blue-300 text-blue-700' : 'border-slate-200 text-slate-500'}`}>📥 Phải thu (CĐT)</button>
-                                    <button onClick={() => setPType('payable')} className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-all ${pType === 'payable' ? 'bg-orange-50 border-orange-300 text-orange-700' : 'border-slate-200 text-slate-500'}`}>📤 Phải trả (NTP)</button>
+                                    <button onClick={() => setPType('receivable')} className={`flex-1 py-2 rounded-xl text-xs font-semibold border transition-all ${pType === 'receivable' ? 'bg-teal-50 dark:bg-teal-950/40 border-teal-200 dark:border-teal-800/60 text-teal-700 dark:text-teal-400' : 'border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400'}`}>📥 Phải thu (CĐT)</button>
+                                    <button onClick={() => setPType('payable')} className={`flex-1 py-2 rounded-xl text-xs font-semibold border transition-all ${pType === 'payable' ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800/60 text-amber-700 dark:text-amber-400' : 'border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400'}`}>📤 Phải trả (NTP)</button>
                                 </div>
                             </div>
                             <div>
-                                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Mô tả</label>
+                                <label className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase block mb-1">Mô tả</label>
                                 <input value={pDesc} onChange={e => setPDesc(e.target.value)} placeholder="VD: Đợt 1 - Tạm ứng 30%"
-                                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none" />
+                                    className="w-full px-3 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-sm font-semibold text-zinc-800 dark:text-zinc-100 focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none" />
                             </div>
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
-                                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Số tiền (VNĐ)</label>
+                                    <label className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase block mb-1">Số tiền (VNĐ)</label>
                                     <input type="number" value={pAmount} onChange={e => setPAmount(e.target.value)} placeholder="0"
-                                        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none" />
+                                        className="w-full px-3 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-sm font-semibold text-zinc-800 dark:text-zinc-100 focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none" />
                                 </div>
                                 <div>
-                                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Hạn thanh toán</label>
+                                    <label className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase block mb-1">Hạn thanh toán</label>
                                     <input type="date" value={pDueDate} onChange={e => setPDueDate(e.target.value)}
-                                        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-indigo-500 outline-none" />
+                                        className="w-full px-3 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-sm font-semibold text-zinc-800 dark:text-zinc-100 focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none" />
                                 </div>
                             </div>
                             <div>
-                                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Đối tác (tuỳ chọn)</label>
+                                <label className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase block mb-1">Đối tác (tuỳ chọn)</label>
                                 <input value={pContact} onChange={e => setPContact(e.target.value)} placeholder="VD: Chủ đầu tư ABC / NTP XYZ"
-                                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-indigo-500 outline-none" />
+                                    className="w-full px-3 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-sm font-semibold text-zinc-800 dark:text-zinc-100 focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none" />
                             </div>
                         </div>
-                        <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3">
-                            <button onClick={resetPaymentForm} className="px-5 py-2.5 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100">Huỷ</button>
-                            <button onClick={handleSavePayment} disabled={!pDesc || !pAmount || !pDueDate}
-                                className="px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-indigo-500 to-violet-600 shadow-lg hover:shadow-xl flex items-center gap-2 disabled:opacity-50">
-                                <Save size={16} /> {editingPayment ? 'Lưu' : 'Thêm'}
+                        <div className="px-6 py-4 bg-zinc-50 dark:bg-zinc-800/60 border-t border-zinc-100 dark:border-zinc-800 flex justify-end gap-2">
+                            <button onClick={resetPaymentForm} className="px-4 py-2 rounded-xl text-xs font-semibold border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">Hủy</button>
+                            <button onClick={handleSavePayment} disabled={!pDesc || !pAmount || !pDueDate} className="px-4 py-2 rounded-xl text-xs font-semibold bg-teal-700 hover:bg-teal-800 text-white shadow-sm transition-colors flex items-center gap-1.5 disabled:opacity-50">
+                                <Save size={14} /> {editingPayment ? 'Lưu' : 'Thêm'}
                             </button>
                         </div>
                     </div>

@@ -94,22 +94,22 @@ const SummaryCard = ({
   tone?: 'slate' | 'emerald' | 'orange' | 'blue' | 'violet' | 'red';
 }) => {
   const toneClass = {
-    slate: 'bg-slate-50 border-slate-200 text-slate-700',
-    emerald: 'bg-emerald-50 border-emerald-200 text-emerald-700',
-    orange: 'bg-orange-50 border-orange-200 text-orange-700',
-    blue: 'bg-blue-50 border-blue-200 text-blue-700',
-    violet: 'bg-violet-50 border-violet-200 text-violet-700',
-    red: 'bg-red-50 border-red-200 text-red-700',
+    slate: 'bg-zinc-50 dark:bg-zinc-800/60 border-zinc-200 dark:border-zinc-700 text-zinc-800 dark:text-zinc-200',
+    emerald: 'bg-emerald-50/70 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/60 text-emerald-800 dark:text-emerald-300',
+    orange: 'bg-teal-50/70 dark:bg-teal-950/40 border-teal-200 dark:border-teal-800/60 text-teal-800 dark:text-teal-300',
+    blue: 'bg-teal-50/60 dark:bg-teal-950/40 border-teal-200 dark:border-teal-800/60 text-teal-800 dark:text-teal-300',
+    violet: 'bg-teal-50/70 dark:bg-teal-950/40 border-teal-200 dark:border-teal-800/60 text-teal-800 dark:text-teal-300',
+    red: 'bg-teal-100/60 dark:bg-teal-950/60 border-teal-300 dark:border-teal-800 text-teal-900 dark:text-teal-200',
   }[tone];
 
   return (
     <div className={`rounded-2xl border p-4 ${toneClass}`}>
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <div className="text-[10px] uppercase font-black tracking-wide opacity-70">{title}</div>
-          <div className="mt-1 text-lg md:text-xl font-black truncate">{value}</div>
+          <div className="text-[10px] uppercase font-bold tracking-wide opacity-70">{title}</div>
+          <div className="mt-1 text-lg md:text-xl font-bold truncate">{value}</div>
         </div>
-        <div className="w-9 h-9 shrink-0 rounded-xl bg-white/80 shadow-sm flex items-center justify-center">
+        <div className="w-9 h-9 shrink-0 rounded-xl bg-white/80 dark:bg-zinc-800/80 shadow-sm flex items-center justify-center">
           {icon}
         </div>
       </div>
@@ -134,13 +134,13 @@ const ExecutiveKpiCard = ({
   onClick?: () => void;
 }) => {
   const toneClass = {
-    slate: 'border-slate-200 bg-white text-slate-900',
-    emerald: 'border-emerald-200 bg-emerald-50/60 text-emerald-800',
-    orange: 'border-orange-200 bg-orange-50/70 text-orange-800',
-    blue: 'border-blue-200 bg-blue-50/70 text-blue-800',
-    violet: 'border-violet-200 bg-violet-50/70 text-violet-800',
-    red: 'border-red-200 bg-red-50/70 text-red-800',
-    cyan: 'border-cyan-200 bg-cyan-50/70 text-cyan-800',
+    slate: 'border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100',
+    emerald: 'border-teal-200 dark:border-teal-800/60 bg-teal-50/60 dark:bg-teal-950/40 text-teal-800 dark:text-teal-300',
+    orange: 'border-amber-200 dark:border-amber-800/60 bg-amber-50/70 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300',
+    blue: 'border-blue-200 dark:border-blue-800/60 bg-blue-50/70 dark:bg-blue-950/40 text-blue-800 dark:text-blue-300',
+    violet: 'border-violet-200 dark:border-violet-800/60 bg-violet-50/70 dark:bg-violet-950/40 text-violet-800 dark:text-violet-300',
+    red: 'border-red-200 dark:border-red-800/60 bg-red-50/70 dark:bg-red-950/40 text-red-800 dark:text-red-300',
+    cyan: 'border-cyan-200 dark:border-cyan-800/60 bg-cyan-50/70 dark:bg-cyan-950/40 text-cyan-800 dark:text-cyan-300',
   }[tone];
   const Element = onClick ? 'button' : 'div';
 
@@ -148,18 +148,18 @@ const ExecutiveKpiCard = ({
     <Element
       type={onClick ? 'button' : undefined}
       onClick={onClick}
-      className={`group rounded-xl border p-4 text-left shadow-sm transition ${toneClass} ${onClick ? 'hover:-translate-y-0.5 hover:shadow-md active:translate-y-0' : ''}`}
+      className={`group rounded-xl border p-4 text-left shadow-sm transition-all ${toneClass} ${onClick ? 'hover:-translate-y-0.5 hover:shadow-md hover:border-teal-500/50 active:translate-y-0 cursor-pointer' : ''}`}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="text-[10px] font-black uppercase tracking-wide text-slate-500">{title}</div>
-          <div className="mt-2 text-2xl font-black leading-none tracking-normal sm:text-3xl">{value}</div>
+          <div className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{title}</div>
+          <div className="mt-2 text-2xl font-bold leading-none tracking-normal sm:text-3xl">{value}</div>
         </div>
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/80 text-current shadow-sm">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-zinc-100 dark:bg-zinc-800 text-current shadow-sm">
           {icon}
         </div>
       </div>
-      {sub && <div className="mt-3 min-h-8 text-[11px] font-bold leading-4 text-slate-500">{sub}</div>}
+      {sub && <div className="mt-3 min-h-8 text-[11px] font-semibold leading-4 text-zinc-500 dark:text-zinc-400">{sub}</div>}
     </Element>
   );
 };
@@ -180,23 +180,23 @@ const TaskHighlightPanel = ({
   onOpenAll: () => void;
 }) => {
   const toneClass = {
-    emerald: 'text-emerald-700 bg-emerald-50 border-emerald-100',
-    blue: 'text-blue-700 bg-blue-50 border-blue-100',
-    orange: 'text-orange-700 bg-orange-50 border-orange-100',
-    red: 'text-red-700 bg-red-50 border-red-100',
+    emerald: 'text-emerald-700 bg-emerald-50 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800/60',
+    blue: 'text-teal-700 bg-teal-50 border-teal-200 dark:bg-teal-950/40 dark:text-teal-400 dark:border-teal-800/60',
+    orange: 'text-teal-800 bg-teal-50/80 border-teal-200 dark:bg-teal-950/50 dark:text-teal-300 dark:border-teal-800/60',
+    red: 'text-teal-900 bg-teal-100/60 border-teal-300 dark:bg-teal-950/60 dark:text-teal-200 dark:border-teal-800',
   }[tone];
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 shadow-sm">
       <div className="mb-3 flex items-center justify-between gap-2">
         <div>
-          <div className="text-xs font-black text-slate-900">{title}</div>
-          <div className="mt-0.5 text-[11px] font-bold text-slate-400">{rows.length} hạng mục</div>
+          <div className="text-xs font-bold text-zinc-900 dark:text-zinc-100">{title}</div>
+          <div className="mt-0.5 text-[11px] font-medium text-zinc-400 dark:text-zinc-500">{rows.length} hạng mục</div>
         </div>
         <button
           type="button"
           onClick={onOpenAll}
-          className={`rounded-lg border px-2.5 py-1 text-[10px] font-black ${toneClass}`}
+          className={`rounded-lg border px-2.5 py-1 text-[10px] font-semibold ${toneClass}`}
         >
           Mở
         </button>
@@ -207,23 +207,23 @@ const TaskHighlightPanel = ({
             key={row.taskId}
             type="button"
             onClick={() => onOpenTask(row.taskId)}
-            className="w-full rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-left transition hover:border-slate-200 hover:bg-white"
+            className="w-full rounded-lg border border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50 px-3 py-2 text-left transition hover:border-zinc-200 dark:hover:border-zinc-700 hover:bg-white dark:hover:bg-zinc-800"
           >
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
-                <div className="truncate text-xs font-black text-slate-800">{row.wbsCode ? `${row.wbsCode} · ` : ''}{row.name}</div>
-                <div className="mt-1 truncate text-[10px] font-bold text-slate-400">
+                <div className="truncate text-xs font-bold text-zinc-800 dark:text-zinc-200">{row.wbsCode ? `${row.wbsCode} · ` : ''}{row.name}</div>
+                <div className="mt-1 truncate text-[10px] font-medium text-zinc-400 dark:text-zinc-500">
                   {fmtDate(row.startDate)} - {fmtDate(row.plannedEndDate)} · {row.actualProgress}%
                 </div>
               </div>
-              <div className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-black ${row.dayDelta > 0 ? 'bg-red-50 text-red-700' : row.dayDelta < 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+              <div className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-bold ${row.dayDelta > 0 ? 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-400' : row.dayDelta < 0 ? 'bg-teal-50 text-teal-700 dark:bg-teal-950/40 dark:text-teal-400' : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400'}`}>
                 {fmtScheduleDelta(row.dayDelta)}
               </div>
             </div>
           </button>
         ))}
         {rows.length === 0 && (
-          <div className="rounded-lg border border-dashed border-slate-200 px-3 py-5 text-center text-[11px] font-bold text-slate-400">
+          <div className="rounded-lg border border-dashed border-zinc-200 dark:border-zinc-800 px-3 py-5 text-center text-[11px] font-medium text-zinc-400">
             {empty}
           </div>
         )}
@@ -240,51 +240,51 @@ const ExecutiveActionCard = ({
   onOpen: (action: ExecutiveAction) => void;
 }) => {
   const toneClass = {
-    critical: 'border-red-200 bg-red-50 text-red-700',
-    warning: 'border-orange-200 bg-orange-50 text-orange-700',
-    info: 'border-blue-200 bg-blue-50 text-blue-700',
-    success: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+    critical: 'border-red-200 dark:border-red-800/60 bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-400',
+    warning: 'border-amber-200 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400',
+    info: 'border-blue-200 dark:border-blue-800/60 bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-400',
+    success: 'border-teal-200 dark:border-teal-800/60 bg-teal-50 dark:bg-teal-950/40 text-teal-700 dark:text-teal-400',
   }[action.tone || 'info'];
 
   return (
     <button
       type="button"
       onClick={() => onOpen(action)}
-      className="group flex min-h-[96px] w-full flex-col justify-between rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-slate-300 hover:shadow-md"
+      className="group flex min-h-[96px] w-full flex-col justify-between rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 text-left shadow-sm transition-all hover:border-teal-500/50 hover:shadow-md"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="truncate text-xs font-black text-slate-900">{action.title}</div>
-          <div className="mt-1 line-clamp-2 text-[11px] font-semibold leading-4 text-slate-500">{action.description}</div>
+          <div className="truncate text-xs font-bold text-zinc-900 dark:text-zinc-100">{action.title}</div>
+          <div className="mt-1 line-clamp-2 text-[11px] font-medium leading-4 text-zinc-500 dark:text-zinc-400">{action.description}</div>
         </div>
         <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${toneClass}`}>
           <ArrowUpRight size={14} />
         </div>
       </div>
       <div className="mt-3 flex items-center justify-between gap-2">
-        <div className="text-[11px] font-black text-slate-500">
+        <div className="text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">
           {action.amount ? fmtMoney(action.amount) : action.count != null ? `${action.count} mục` : 'Mở chi tiết'}
         </div>
-        <ArrowRight size={13} className="text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-slate-500" />
+        <ArrowRight size={13} className="text-zinc-400 transition group-hover:translate-x-0.5 group-hover:text-teal-600 dark:group-hover:text-teal-400" />
       </div>
     </button>
   );
 };
 
 const MetricRow = ({ label, value, highlight }: { label: string; value: number; highlight?: boolean }) => (
-  <div className="flex items-center justify-between gap-3 py-2 border-b border-slate-100 last:border-b-0">
-    <span className="text-[11px] font-semibold text-slate-500">{label}</span>
-    <span className={`text-xs font-black text-right ${highlight ? 'text-slate-900' : 'text-slate-700'}`}>
+  <div className="flex items-center justify-between gap-3 py-2 border-b border-zinc-100 dark:border-zinc-800 last:border-b-0">
+    <span className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400">{label}</span>
+    <span className={`text-xs font-bold text-right ${highlight ? 'text-zinc-900 dark:text-zinc-100' : 'text-zinc-700 dark:text-zinc-300'}`}>
       {fmtFull(value)}
     </span>
   </div>
 );
 
 const severityClasses: Record<ExecutiveAlertSeverity, string> = {
-  critical: 'bg-red-50 border-red-200 text-red-700',
-  warning: 'bg-orange-50 border-orange-200 text-orange-700',
-  info: 'bg-blue-50 border-blue-200 text-blue-700',
-  success: 'bg-emerald-50 border-emerald-200 text-emerald-700',
+  critical: 'bg-teal-100/80 dark:bg-teal-950/60 border-teal-300 dark:border-teal-800 text-teal-900 dark:text-teal-200',
+  warning: 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800/60 text-amber-700 dark:text-amber-400',
+  info: 'bg-blue-50 dark:bg-blue-950/40 border-blue-200 dark:border-blue-800/60 text-blue-700 dark:text-blue-400',
+  success: 'bg-teal-50 dark:bg-teal-950/40 border-teal-200 dark:border-teal-800/60 text-teal-700 dark:text-teal-400',
 };
 
 const stageLabels: Record<ExecutivePaymentBlockingStage, string> = {
@@ -309,10 +309,10 @@ const statusLabel = {
 const CompactProgress = ({ label, value, tone }: { label: string; value: number; tone: string }) => (
   <div>
     <div className="flex items-center justify-between gap-3 mb-1">
-      <span className="text-[11px] font-bold text-slate-500">{label}</span>
-      <span className="text-xs font-black text-slate-800">{Math.round(value)}%</span>
+      <span className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400">{label}</span>
+      <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200">{Math.round(value)}%</span>
     </div>
-    <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+    <div className="h-2 rounded-full bg-zinc-100 dark:bg-zinc-800 overflow-hidden">
       <div className={`h-full rounded-full ${tone}`} style={{ width: `${Math.min(100, Math.max(0, value))}%` }} />
     </div>
   </div>
@@ -330,15 +330,15 @@ const ApprovalQueuePanel = ({ metrics }: { metrics: ProjectDashboardMetrics }) =
   ];
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
+    <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm p-4">
       <div className="flex items-center justify-between gap-3 mb-3">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center">
+          <div className="w-8 h-8 rounded-xl bg-blue-500/10 text-blue-700 dark:bg-blue-500/20 dark:text-blue-400 flex items-center justify-center">
             <ClipboardCheck size={15} />
           </div>
-          <h3 className="text-xs font-black text-slate-800">Yêu cầu chờ xử lý</h3>
+          <h3 className="text-xs font-bold text-zinc-800 dark:text-zinc-200">Yêu cầu chờ xử lý</h3>
         </div>
-        <span className="text-lg font-black text-slate-900">{queue.total}</span>
+        <span className="text-lg font-bold text-zinc-900 dark:text-zinc-100">{queue.total}</span>
       </div>
       <div className="grid grid-cols-2 gap-2">
         {items.map(item => (
@@ -352,15 +352,15 @@ const ApprovalQueuePanel = ({ metrics }: { metrics: ProjectDashboardMetrics }) =
 const PriorityAlertsPanel = ({ metrics }: { metrics: ProjectDashboardMetrics }) => {
   const alerts = metrics.executive.priorityAlerts;
   return (
-    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
+    <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm p-4">
       <div className="flex items-center gap-2 mb-3">
-        <div className="w-8 h-8 rounded-xl bg-red-100 text-red-700 flex items-center justify-center">
+        <div className="w-8 h-8 rounded-xl bg-red-500/10 text-red-700 dark:bg-red-500/20 dark:text-red-400 flex items-center justify-center">
           <AlertTriangle size={15} />
         </div>
-        <h3 className="text-xs font-black text-slate-800">Cảnh báo ưu tiên</h3>
+        <h3 className="text-xs font-bold text-zinc-800 dark:text-zinc-200">Cảnh báo ưu tiên</h3>
       </div>
       {alerts.length === 0 ? (
-        <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3 text-xs font-bold text-emerald-700 flex items-center gap-2">
+        <div className="rounded-xl border border-teal-200 dark:border-teal-800/60 bg-teal-50 dark:bg-teal-950/40 p-3 text-xs font-bold text-teal-700 dark:text-teal-400 flex items-center gap-2">
           <CheckCircle2 size={14} />
           Không có cảnh báo trọng yếu trong dữ liệu hiện tại.
         </div>
@@ -368,8 +368,8 @@ const PriorityAlertsPanel = ({ metrics }: { metrics: ProjectDashboardMetrics }) 
         <div className="space-y-2">
           {alerts.map(alert => (
             <div key={alert.id} className={`rounded-xl border p-3 ${severityClasses[alert.severity]}`}>
-              <div className="text-xs font-black">{alert.title}</div>
-              <div className="mt-1 text-[11px] font-semibold opacity-85 leading-relaxed">{alert.message}</div>
+              <div className="text-xs font-bold">{alert.title}</div>
+              <div className="mt-1 text-[11px] font-medium opacity-85 leading-relaxed">{alert.message}</div>
             </div>
           ))}
         </div>
@@ -383,23 +383,23 @@ const ScheduleHealthPanel = ({ metrics }: { metrics: ProjectDashboardMetrics }) 
   const tone = schedule.status === 'red'
     ? 'bg-red-500'
     : schedule.status === 'amber'
-      ? 'bg-orange-500'
-      : 'bg-emerald-500';
+      ? 'bg-amber-500'
+      : 'bg-teal-600';
   return (
-    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
+    <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm p-4">
       <div className="flex items-center justify-between gap-3 mb-4">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-xl bg-slate-900 text-white flex items-center justify-center">
+          <div className="w-8 h-8 rounded-xl bg-teal-700/10 text-teal-700 dark:bg-teal-500/20 dark:text-teal-400 flex items-center justify-center">
             <Activity size={15} />
           </div>
-          <h3 className="text-xs font-black text-slate-800">Sức khỏe tiến độ</h3>
+          <h3 className="text-xs font-bold text-zinc-800 dark:text-zinc-200">Sức khỏe tiến độ</h3>
         </div>
-        <span className={`text-[10px] font-black px-2 py-1 rounded-full border ${severityClasses[schedule.status === 'red' ? 'critical' : schedule.status === 'amber' ? 'warning' : 'success']}`}>
+        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${severityClasses[schedule.status === 'red' ? 'critical' : schedule.status === 'amber' ? 'warning' : 'success']}`}>
           {statusLabel[schedule.status]}
         </span>
       </div>
       <div className="space-y-3">
-        <CompactProgress label="Kế hoạch đến hôm nay" value={schedule.plannedProgress} tone="bg-slate-400" />
+        <CompactProgress label="Kế hoạch đến hôm nay" value={schedule.plannedProgress} tone="bg-zinc-400 dark:bg-zinc-600" />
         <CompactProgress label="Thực tế" value={schedule.actualProgress} tone={tone} />
       </div>
       <div className="grid grid-cols-2 gap-2 mt-4">
@@ -408,10 +408,10 @@ const ScheduleHealthPanel = ({ metrics }: { metrics: ProjectDashboardMetrics }) 
         <MiniCount label="Task quá hạn" value={schedule.overdueTaskCount} />
         <MiniCount label="Delay active" value={schedule.activeDelayEventCount} />
       </div>
-      <div className="mt-3 rounded-xl bg-slate-50 border border-slate-100 px-3 py-2 text-[11px] font-semibold text-slate-500">
-        Hoàn thành forecast: <span className="font-black text-slate-800">{fmtDate(schedule.forecastEndDate)}</span>
+      <div className="mt-3 rounded-xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-100 dark:border-zinc-800 px-3 py-2 text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
+        Hoàn thành forecast: <span className="font-bold text-zinc-800 dark:text-zinc-200">{fmtDate(schedule.forecastEndDate)}</span>
         <span className="mx-1">·</span>
-        Ảnh hưởng <span className="font-black text-slate-800">{schedule.impactedTaskCount}</span> hạng mục downstream.
+        Ảnh hưởng <span className="font-bold text-zinc-800 dark:text-zinc-200">{schedule.impactedTaskCount}</span> hạng mục downstream.
       </div>
     </div>
   );
@@ -420,42 +420,42 @@ const ScheduleHealthPanel = ({ metrics }: { metrics: ProjectDashboardMetrics }) 
 const PaymentRiskPanel = ({ metrics }: { metrics: ProjectDashboardMetrics }) => {
   const risks = metrics.executive.paymentPeriodRisks;
   return (
-    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-      <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
+    <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-hidden">
+      <div className="px-5 py-4 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center">
+          <div className="w-8 h-8 rounded-xl bg-teal-700/10 text-teal-700 dark:bg-teal-500/20 dark:text-teal-400 flex items-center justify-center">
             <CalendarClock size={15} />
           </div>
           <div>
-            <h3 className="text-xs font-black text-slate-800">Kỳ thanh toán sắp đến / quá hạn</h3>
-            <p className="text-[11px] font-semibold text-slate-400 mt-0.5">Theo mốc 10 ngày tới và target lũy kế của lịch thanh toán.</p>
+            <h3 className="text-xs font-bold text-zinc-800 dark:text-zinc-200">Kỳ thanh toán sắp đến / quá hạn</h3>
+            <p className="text-[11px] font-medium text-zinc-400 dark:text-zinc-500 mt-0.5">Theo mốc 10 ngày tới và target lũy kế của lịch thanh toán.</p>
           </div>
         </div>
-        <span className="text-sm font-black text-slate-900">{risks.length}</span>
+        <span className="text-sm font-bold text-zinc-900 dark:text-zinc-100">{risks.length}</span>
       </div>
       {risks.length === 0 ? (
-        <div className="p-4 text-xs font-bold text-slate-400">Chưa có kỳ thanh toán quá hạn hoặc đến hạn trong 10 ngày tới.</div>
+        <div className="p-4 text-xs font-medium text-zinc-400">Chưa có kỳ thanh toán quá hạn hoặc đến hạn trong 10 ngày tới.</div>
       ) : (
-        <div className="divide-y divide-slate-100">
+        <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
           {risks.slice(0, 6).map(risk => (
             <div key={risk.id} className="p-4">
               <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className={`text-[10px] font-black px-2 py-1 rounded-full border ${severityClasses[risk.severity]}`}>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${severityClasses[risk.severity]}`}>
                       {partyLabels[risk.party]}
                     </span>
-                    <span className="text-xs font-black text-slate-800 truncate">{risk.description || risk.label}</span>
-                    <span className="text-[11px] font-bold text-slate-400">{fmtDate(risk.dueDate)}</span>
+                    <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200 truncate">{risk.description || risk.label}</span>
+                    <span className="text-[11px] font-medium text-zinc-400">{fmtDate(risk.dueDate)}</span>
                   </div>
-                  <div className="mt-1 text-[11px] font-semibold text-slate-500 leading-relaxed">
+                  <div className="mt-1 text-[11px] font-medium text-zinc-500 dark:text-zinc-400 leading-relaxed">
                     {risk.daysUntilDue < 0 ? `Quá hạn ${Math.abs(risk.daysUntilDue)} ngày` : `Còn ${risk.daysUntilDue} ngày`}
                     <span className="mx-1">·</span>
-                    Nghẽn tại: <span className="font-black text-slate-700">{stageLabels[risk.blockingStage]}</span>
+                    Nghẽn tại: <span className="font-bold text-zinc-700 dark:text-zinc-300">{stageLabels[risk.blockingStage]}</span>
                     <span className="mx-1">·</span>
-                    Thiếu: <span className="font-black text-red-600">{fmtFull(risk.missingAmount)}</span>
+                    Thiếu: <span className="font-bold text-teal-800 dark:text-teal-300">{fmtFull(risk.missingAmount)}</span>
                   </div>
-                  <div className="mt-1 text-[11px] font-semibold text-slate-500">{risk.recommendation}</div>
+                  <div className="mt-1 text-[11px] font-medium text-zinc-500 dark:text-zinc-400">{risk.recommendation}</div>
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2 lg:w-[560px]">
                   <MiniMoney label="Kế hoạch" value={risk.targetCumulative} />
@@ -967,17 +967,17 @@ const FastConsDashboard: React.FC<FastConsDashboardProps> = ({ constructionSiteI
 
   return (
     <section className="space-y-4">
-      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-4 md:flex-row md:items-center md:justify-between md:px-5">
+      <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm">
+        <div className="flex flex-col gap-3 border-b border-zinc-100 dark:border-zinc-800 px-4 py-4 md:flex-row md:items-center md:justify-between md:px-5">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <BarIcon />
-              <h2 className="truncate text-base font-black text-slate-950">Điều hành dự án</h2>
-              <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-black ${scheduleHealth.status === 'red' ? 'bg-red-50 text-red-700' : scheduleHealth.status === 'amber' ? 'bg-orange-50 text-orange-700' : 'bg-emerald-50 text-emerald-700'}`}>
+              <h2 className="truncate text-base font-bold text-zinc-900 dark:text-zinc-100">Điều hành dự án</h2>
+              <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-bold border ${scheduleHealth.status === 'red' ? 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-400 border-red-200 dark:border-red-800/60' : scheduleHealth.status === 'amber' ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400 border-amber-200 dark:border-amber-800/60' : 'bg-teal-50 text-teal-700 dark:bg-teal-950/40 dark:text-teal-400 border-teal-200 dark:border-teal-800/60'}`}>
                 {projectStatusText}
               </span>
             </div>
-            <p className="mt-1 text-[11px] font-semibold text-slate-400">
+            <p className="mt-1 text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
               Cập nhật {new Date(metrics.calculatedAt).toLocaleString('vi-VN')} từ tiến độ, tài chính, thanh toán và nhật ký.
             </p>
           </div>
@@ -985,7 +985,7 @@ const FastConsDashboard: React.FC<FastConsDashboardProps> = ({ constructionSiteI
             <button
               onClick={handleSync}
               disabled={isSyncing}
-              className="flex items-center gap-1.5 rounded-lg bg-slate-950 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-white shadow-sm transition hover:bg-slate-800 active:scale-95 disabled:opacity-50"
+              className="flex items-center gap-1.5 rounded-lg bg-teal-700 hover:bg-teal-800 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-white shadow-sm transition-colors disabled:opacity-50"
               title="Đồng bộ lại toàn bộ dữ liệu mới nhất"
             >
               {isSyncing ? <RefreshCw size={12} className="animate-spin" /> : <RefreshCw size={12} />}
@@ -995,37 +995,37 @@ const FastConsDashboard: React.FC<FastConsDashboardProps> = ({ constructionSiteI
         </div>
 
         <div className="grid gap-4 p-4 xl:grid-cols-[1.25fr_0.75fr]">
-          <div className="rounded-xl bg-emerald-600 p-5 text-white shadow-sm">
+          <div className="rounded-xl bg-gradient-to-br from-teal-800 to-teal-950 border border-teal-700/50 p-5 text-white shadow-sm">
             <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
               <div>
-                <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wide text-emerald-100">
+                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-teal-200">
                   <CalendarDays size={16} />
                   Đã thi công
                 </div>
                 <div className="mt-3 flex items-end gap-2">
-                  <span className="text-5xl font-black leading-none sm:text-6xl">{timeline.calendarElapsedDays}</span>
-                  <span className="pb-1 text-sm font-black text-emerald-100">ngày</span>
+                  <span className="text-5xl font-bold leading-none sm:text-6xl">{timeline.calendarElapsedDays}</span>
+                  <span className="pb-1 text-sm font-semibold text-teal-200">ngày</span>
                 </div>
-                <div className="mt-3 text-sm font-bold text-emerald-50">
+                <div className="mt-3 text-sm font-medium text-teal-100/90">
                   Tổng {timeline.projectDurationDays || '-'} ngày kế hoạch · {timeline.verifiedLogDays} ngày có nhật ký xác nhận
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3 sm:min-w-[280px]">
-                <div className="rounded-lg bg-white/12 p-3">
-                  <div className="text-[10px] font-black uppercase text-emerald-100">Kết thúc KH</div>
-                  <div className="mt-1 text-sm font-black">{fmtDate(timeline.projectEnd || scheduleHealth.baselineEndDate)}</div>
+                <div className="rounded-lg bg-white/10 backdrop-blur-sm p-3 border border-white/10">
+                  <div className="text-[10px] font-medium uppercase text-teal-200">Kết thúc KH</div>
+                  <div className="mt-1 text-sm font-bold">{fmtDate(timeline.projectEnd || scheduleHealth.baselineEndDate)}</div>
                 </div>
-                <div className="rounded-lg bg-white/12 p-3">
-                  <div className="text-[10px] font-black uppercase text-emerald-100">Kết thúc dự kiến</div>
-                  <div className="mt-1 text-sm font-black">{fmtDate(timeline.forecastProjectEnd || scheduleHealth.forecastEndDate)}</div>
+                <div className="rounded-lg bg-white/10 backdrop-blur-sm p-3 border border-white/10">
+                  <div className="text-[10px] font-medium uppercase text-teal-200">Kết thúc dự kiến</div>
+                  <div className="mt-1 text-sm font-bold">{fmtDate(timeline.forecastProjectEnd || scheduleHealth.forecastEndDate)}</div>
                 </div>
-                <div className="rounded-lg bg-white/12 p-3">
-                  <div className="text-[10px] font-black uppercase text-emerald-100">Nhanh/chậm</div>
-                  <div className="mt-1 text-sm font-black">{fmtScheduleDelta(timeline.forecastDeltaDays || scheduleHealth.forecastDeltaDays)}</div>
+                <div className="rounded-lg bg-white/10 backdrop-blur-sm p-3 border border-white/10">
+                  <div className="text-[10px] font-medium uppercase text-teal-200">Nhanh/chậm</div>
+                  <div className="mt-1 text-sm font-bold">{fmtScheduleDelta(timeline.forecastDeltaDays || scheduleHealth.forecastDeltaDays)}</div>
                 </div>
-                <div className="rounded-lg bg-white/12 p-3">
-                  <div className="text-[10px] font-black uppercase text-emerald-100">Tiến độ TT</div>
-                  <div className="mt-1 text-sm font-black">{constructionProgressPercent}%</div>
+                <div className="rounded-lg bg-white/10 backdrop-blur-sm p-3 border border-white/10">
+                  <div className="text-[10px] font-medium uppercase text-teal-200">Tiến độ TT</div>
+                  <div className="mt-1 text-sm font-bold">{constructionProgressPercent}%</div>
                 </div>
               </div>
             </div>
@@ -1146,25 +1146,25 @@ const FastConsDashboard: React.FC<FastConsDashboardProps> = ({ constructionSiteI
         />
       </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60 p-4">
         <div className="mb-3 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white text-slate-700 shadow-sm">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 shadow-sm border border-zinc-200 dark:border-zinc-700">
               <ListChecks size={15} />
             </div>
             <div>
-              <div className="text-xs font-black text-slate-900">Hành động nhanh</div>
-              <div className="text-[11px] font-bold text-slate-400">Mở đúng tab và bộ lọc liên quan</div>
+              <div className="text-xs font-bold text-zinc-900 dark:text-zinc-100">Hành động nhanh</div>
+              <div className="text-[11px] font-medium text-zinc-400 dark:text-zinc-500">Mở đúng tab và bộ lọc liên quan</div>
             </div>
           </div>
-          <div className="text-[10px] font-black uppercase tracking-wide text-slate-400">{actionLinks.length} lối tắt</div>
+          <div className="text-[10px] font-bold uppercase tracking-wide text-zinc-400">{actionLinks.length} lối tắt</div>
         </div>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
           {actionLinks.slice(0, 8).map(action => (
             <ExecutiveActionCard key={action.id} action={action} onOpen={openAction} />
           ))}
           {actionLinks.length === 0 && (
-            <div className="rounded-xl border border-dashed border-slate-200 bg-white px-4 py-8 text-center text-xs font-bold text-slate-400 md:col-span-2 xl:col-span-4">
+            <div className="rounded-xl border border-dashed border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-8 text-center text-xs font-medium text-zinc-400 md:col-span-2 xl:col-span-4">
               Cần bấm Cập nhật để tạo các lối tắt điều hành mới.
             </div>
           )}
@@ -1185,33 +1185,33 @@ const FastConsDashboard: React.FC<FastConsDashboardProps> = ({ constructionSiteI
       <ReconciliationTable owner={metrics.owner} subcontractor={metrics.subcontractor} supplier={metrics.supplier} />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
+        <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm p-4">
           <div className="flex items-center gap-2 mb-3">
-            <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-xl bg-teal-700/10 text-teal-700 dark:bg-teal-500/20 dark:text-teal-400 flex items-center justify-center">
               <ShieldCheck size={15} />
             </div>
-            <h3 className="text-xs font-black text-slate-800">Chi phí theo KL thi công</h3>
+            <h3 className="text-xs font-bold text-zinc-800 dark:text-zinc-200">Chi phí theo KL thi công</h3>
           </div>
           <MetricRow label="Chi phí dự toán KL đã thực hiện" value={metrics.constructionCost.performedBudgetCost} highlight />
           <MetricRow label="Chi phí trả thầu phụ" value={metrics.constructionCost.subcontractPaid} />
           <MetricRow label="Chi phí trả NCC" value={metrics.constructionCost.supplierPaid} />
           <MetricRow label="Chi phí khác" value={metrics.constructionCost.otherCost} />
           <MetricRow label="Tổng chi phí thực tế" value={metrics.constructionCost.totalActualCost} highlight />
-          <div className={`mt-3 text-sm font-black ${metricTone(metrics.constructionCost.forecastProfitLoss)}`}>
+          <div className={`mt-3 text-sm font-bold ${metricTone(metrics.constructionCost.forecastProfitLoss)}`}>
             Dự trù lãi/lỗ: {fmtFull(metrics.constructionCost.forecastProfitLoss)}
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
+        <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm p-4">
           <div className="flex items-center gap-2 mb-3">
-            <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400 flex items-center justify-center">
               <Package size={15} />
             </div>
-            <h3 className="text-xs font-black text-slate-800">Vật liệu và định mức</h3>
+            <h3 className="text-xs font-bold text-zinc-800 dark:text-zinc-200">Vật liệu và định mức</h3>
           </div>
           <MetricRow label="CP vật liệu theo dự toán" value={metrics.material.materialPurchasedBudgetCost} highlight />
           <MetricRow label="CP vật liệu theo PO/phiếu mua" value={metrics.material.materialPurchasedActualCost} />
-          <div className={`py-2 text-xs font-black ${metricTone(metrics.material.materialPurchaseProfitLoss)}`}>
+          <div className={`py-2 text-xs font-bold ${metricTone(metrics.material.materialPurchaseProfitLoss)}`}>
             Dự trù lãi/lỗ vật liệu: {fmtFull(metrics.material.materialPurchaseProfitLoss)}
           </div>
           <div className="grid grid-cols-2 gap-2 mt-2">
@@ -1222,21 +1222,21 @@ const FastConsDashboard: React.FC<FastConsDashboardProps> = ({ constructionSiteI
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
+        <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm p-4">
           <div className="flex items-center gap-2 mb-3">
-            <div className="w-8 h-8 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-xl bg-blue-500/10 text-blue-700 dark:bg-blue-500/20 dark:text-blue-400 flex items-center justify-center">
               <FileText size={15} />
             </div>
-            <h3 className="text-xs font-black text-slate-800">Dòng tiền và công nợ</h3>
+            <h3 className="text-xs font-bold text-zinc-800 dark:text-zinc-200">Dòng tiền và công nợ</h3>
           </div>
           <MetricRow label="Giá trị thu" value={metrics.cashFlow.cashIn} highlight />
           <MetricRow label="Giá trị chi" value={metrics.cashFlow.cashOut} />
           <MetricRow label="Số dư" value={metrics.cashFlow.balance} highlight />
           <MetricRow label="Phải thu" value={metrics.cashFlow.receivable} />
           <MetricRow label="Phải trả" value={metrics.cashFlow.payable} />
-          <div className="mt-3 rounded-xl bg-slate-50 border border-slate-100 px-3 py-2 flex items-center justify-between">
-            <span className="text-[11px] font-bold text-slate-500">Khoản quá hạn</span>
-            <span className="text-sm font-black text-slate-800">{metrics.cashFlow.overdueCount}</span>
+          <div className="mt-3 rounded-xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-100 dark:border-zinc-800 px-3 py-2 flex items-center justify-between">
+            <span className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400">Khoản quá hạn</span>
+            <span className="text-sm font-bold text-zinc-800 dark:text-zinc-200">{metrics.cashFlow.overdueCount}</span>
           </div>
         </div>
       </div>
@@ -1251,14 +1251,14 @@ const FastConsDashboard: React.FC<FastConsDashboardProps> = ({ constructionSiteI
       )}
 
       {(metrics.warnings.length > 0 || metrics.sourceNotes.length > 0) && (
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-          <div className="text-[11px] font-black uppercase text-slate-500 mb-2">Ghi chú dữ liệu</div>
+        <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60 p-4">
+          <div className="text-[11px] font-bold uppercase text-zinc-500 dark:text-zinc-400 mb-2">Ghi chú dữ liệu</div>
           <div className="space-y-1">
             {metrics.sourceNotes.map((note, index) => (
-              <p key={`note-${index}`} className="text-[11px] font-semibold text-slate-500">{note}</p>
+              <p key={`note-${index}`} className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400">{note}</p>
             ))}
             {metrics.warnings.map((warning, index) => (
-              <p key={`warning-${index}`} className="text-[11px] font-semibold text-amber-700">Thiếu nguồn: {warning}</p>
+              <p key={`warning-${index}`} className="text-[11px] font-medium text-amber-700 dark:text-amber-400">Thiếu nguồn: {warning}</p>
             ))}
           </div>
         </div>
@@ -1268,21 +1268,21 @@ const FastConsDashboard: React.FC<FastConsDashboardProps> = ({ constructionSiteI
 };
 
 const MiniCount = ({ label, value }: { label: string; value: number }) => (
-  <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
-    <div className="text-[10px] font-bold text-slate-400 truncate">{label}</div>
-    <div className="text-base font-black text-slate-800">{value}</div>
+  <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/60 px-3 py-2">
+    <div className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 truncate">{label}</div>
+    <div className="text-base font-bold text-zinc-800 dark:text-zinc-200">{value}</div>
   </div>
 );
 
 const MiniMoney = ({ label, value }: { label: string; value: number }) => (
-  <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 min-w-0">
-    <div className="text-[10px] font-bold text-slate-400 truncate">{label}</div>
-    <div className="text-xs font-black text-slate-800 truncate">{fmtMoney(value)}</div>
+  <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/60 px-3 py-2 min-w-0">
+    <div className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 truncate">{label}</div>
+    <div className="text-xs font-bold text-zinc-800 dark:text-zinc-200 truncate">{fmtMoney(value)}</div>
   </div>
 );
 
 const BarIcon = () => (
-  <div className="w-8 h-8 rounded-xl bg-slate-900 text-white flex items-center justify-center">
+  <div className="w-8 h-8 rounded-xl bg-teal-700/10 text-teal-700 dark:bg-teal-500/20 dark:text-teal-400 flex items-center justify-center">
     <Activity size={15} />
   </div>
 );

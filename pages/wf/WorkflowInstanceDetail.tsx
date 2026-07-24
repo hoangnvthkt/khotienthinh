@@ -4,7 +4,7 @@ import {
     ArrowLeft, CheckCircle, Clock, FileText, GitBranch, Image as ImageIcon,
     MessageSquare, Paperclip, RefreshCcw, RotateCcw, Send, User, X, XCircle,
     AlertCircle, Calendar, Download, Eye, Table2, FileSpreadsheet, ChevronRight, ChevronDown, Check,
-    Search, Edit2
+    Search, Edit2, Bookmark
 } from 'lucide-react';
 import { useWorkflow } from '../../context/WorkflowContext';
 import { useApp } from '../../context/AppContext';
@@ -30,6 +30,7 @@ import { supabase } from '../../lib/supabase';
 import { saveAs } from 'file-saver';
 import { loadXlsx } from '../../lib/loadXlsx';
 import { TableFieldInput, FileFieldInput } from './WorkflowInstances';
+import { WorkflowStepChecklist } from '../../components/wf/WorkflowStepChecklist';
 
 const STATUS_LABEL: Record<WorkflowInstanceStatus, string> = {
     RUNNING: 'Đang xử lý',
@@ -853,621 +854,574 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
     );
 
     return (
-        <div className="min-h-[calc(100vh-120px)] space-y-5">
-            {/* Header Title Block */}
-            <div className="flex flex-col gap-3 rounded-2xl bg-white/80 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-700 px-5 py-4 shadow-sm md:flex-row md:items-center md:justify-between">
-                <div className="flex items-start gap-3 min-w-0">
-                    <button onClick={onBack || (() => navigate('/wf'))} className="mt-1 rounded-xl p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">
-                        <ArrowLeft size={18} />
+        <div className="min-h-[calc(100vh-120px)] space-y-5 text-slate-800 dark:text-slate-200">
+            {/* Top Navigation & Action Header */}
+            <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 shadow-sm space-y-3">
+                {/* Breadcrumb & Navigation */}
+                <div className="flex items-center gap-2 text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                    <button
+                        onClick={onBack || (() => navigate('/wf'))}
+                        className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 transition-colors"
+                        title="Quay lại"
+                    >
+                        <ArrowLeft size={16} />
                     </button>
-                    <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                            <span className="rounded-lg bg-slate-100 dark:bg-slate-800 px-2 py-1 font-mono text-[11px] font-black text-slate-500">{instance.code}</span>
-                            <span className="rounded-lg bg-blue-50 dark:bg-blue-900/30 px-2 py-1 text-[11px] font-black text-blue-600 dark:text-blue-300">{STATUS_LABEL[instance.status]}</span>
-                            {currentNode && instance.status === WorkflowInstanceStatus.RUNNING && (
-                                <span className="rounded-lg bg-amber-50 dark:bg-amber-900/30 px-2 py-1 text-[11px] font-black text-amber-700 dark:text-amber-300">Bước: {currentNode.label}</span>
+                    <span>QT {template?.name?.toUpperCase() || 'QUY TRÌNH'}</span>
+                    <span>›</span>
+                    <span className="text-slate-700 dark:text-slate-300 font-extrabold">{currentNode?.label?.toUpperCase() || STATUS_LABEL[instance.status]}</span>
+                </div>
+
+                {/* Main Title & Action Bar Row */}
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="space-y-1.5 flex-1 min-w-0">
+                        <div className="flex items-center gap-3">
+                            <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white leading-tight break-words">
+                                {instance.title}
+                            </h1>
+                            {creator && (
+                                <div className="hidden sm:flex items-center gap-2 shrink-0 bg-slate-50 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700 rounded-full px-2.5 py-1 text-xs font-bold text-slate-700 dark:text-slate-300">
+                                    <div className="h-5 w-5 rounded-full bg-indigo-500 text-white flex items-center justify-center text-[10px] font-black uppercase overflow-hidden">
+                                        {creator.avatar ? <img src={creator.avatar} alt={creator.name} className="h-full w-full object-cover" /> : creator.name.slice(0, 2)}
+                                    </div>
+                                    <span>{creator.name}</span>
+                                </div>
                             )}
                         </div>
-                        <h1 className="mt-2 truncate text-2xl font-black text-slate-900 dark:text-white">{instance.title}</h1>
-                        <div className="mt-1 flex flex-wrap items-center gap-4 text-xs font-semibold text-slate-400">
-                            <span className="flex items-center gap-1"><GitBranch size={13} /> {template?.name || 'N/A'}</span>
-                            <span className="flex items-center gap-1"><User size={13} /> {creator?.name || 'N/A'}</span>
-                            <span className="flex items-center gap-1"><Clock size={13} /> {new Date(instance.createdAt).toLocaleString('vi-VN')}</span>
+
+                        {/* Sub Metadata Row */}
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs font-semibold text-slate-500 dark:text-slate-400 pt-1">
+                            <span className="flex items-center gap-1.5">
+                                <Bookmark size={14} className="text-slate-400" />
+                                {instance.formData?.note ? 'Có ghi chú tổng quan' : 'Không có tổng quan ngắn về nhiệm vụ'}
+                            </span>
+                            <span>•</span>
+                            <span className="flex items-center gap-1.5">
+                                <AlertCircle size={14} className="text-slate-400" />
+                                Thời hạn trong giai đoạn: <strong className="text-slate-700 dark:text-slate-200">{currentNode?.config?.slaHours ? `${currentNode.config.slaHours}h` : 'Không thời hạn'}</strong> • SLA: <strong className="text-slate-700 dark:text-slate-200">{currentNode?.config?.slaHours || 0}h</strong>
+                            </span>
                         </div>
                     </div>
-                </div>
-                <div className="flex items-center gap-2 shrink-0 flex-wrap">
-                    {canAct && (
-                        <>
-                            <button onClick={() => { setActionError(''); setSelectedAssigneeIds([]); setActionComment(''); setActiveAction(WorkflowInstanceAction.APPROVED); }} className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white px-3.5 py-2 text-xs font-bold transition shadow-sm shadow-emerald-500/10">
-                                <CheckCircle size={13} /> Duyệt
-                            </button>
-                            <button onClick={() => { setActionError(''); setSelectedAssigneeIds([]); setActionComment(''); setActiveAction(WorkflowInstanceAction.REVISION_REQUESTED); }} className="inline-flex items-center gap-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white px-3.5 py-2 text-xs font-bold transition shadow-sm shadow-amber-500/10">
-                                <RotateCcw size={13} /> Yêu cầu bổ sung
-                            </button>
-                            <button onClick={() => { setActionError(''); setSelectedAssigneeIds([]); setActionComment(''); setActiveAction(WorkflowInstanceAction.REJECTED); }} className="inline-flex items-center gap-1.5 rounded-xl bg-red-500 hover:bg-red-600 text-white px-3.5 py-2 text-xs font-bold transition shadow-sm shadow-red-500/10">
-                                <XCircle size={13} /> Từ chối
-                            </button>
-                        </>
-                    )}
-                    <button onClick={() => refreshData()} className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 px-3.5 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">
-                        <RefreshCcw size={14} /> Làm mới
-                    </button>
+
+                    {/* Top Action Buttons (Purple / Red / Actions) */}
+                    <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                        {canAct && (
+                            <>
+                                <button
+                                    onClick={() => { setActionError(''); setSelectedAssigneeIds([]); setActionComment(''); setActiveAction(WorkflowInstanceAction.APPROVED); }}
+                                    className="inline-flex items-center gap-1.5 rounded-xl bg-purple-700 hover:bg-purple-800 text-white px-4 py-2 text-xs font-black transition shadow-md shadow-purple-700/20"
+                                >
+                                    <CheckCircle size={14} /> Chuyển tiếp / Duyệt
+                                </button>
+                                <button
+                                    onClick={() => { setActionError(''); setSelectedAssigneeIds([]); setActionComment(''); setActiveAction(WorkflowInstanceAction.REVISION_REQUESTED); }}
+                                    className="inline-flex items-center gap-1.5 rounded-xl border border-pink-300 dark:border-pink-800 text-pink-700 dark:text-pink-300 hover:bg-pink-50 dark:hover:bg-pink-950/30 px-3.5 py-2 text-xs font-black transition"
+                                >
+                                    <RotateCcw size={14} /> Yêu cầu bổ sung
+                                </button>
+                                <button
+                                    onClick={() => { setActionError(''); setSelectedAssigneeIds([]); setActionComment(''); setActiveAction(WorkflowInstanceAction.REJECTED); }}
+                                    className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 px-3.5 py-2 text-xs font-black transition"
+                                >
+                                    <XCircle size={14} /> Từ chối
+                                </button>
+                            </>
+                        )}
+                        <button
+                            onClick={() => refreshData()}
+                            className="inline-flex items-center justify-center p-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 transition"
+                            title="Làm mới dữ liệu"
+                        >
+                            <RefreshCcw size={15} />
+                        </button>
+                    </div>
                 </div>
             </div>
 
-            {/* Layout Grid */}
-            <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_260px]">
-                {/* Main Column (Left) */}
-                <div className="space-y-5">
-                    {/* Horizontal Stages Progress Timeline */}
-                    <div className="flex flex-wrap items-center gap-2 p-3 bg-white/80 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm overflow-x-auto">
-                        {orderedSteps.map((step, index) => {
-                            const isCurrent = step.id === instance.currentNodeId && instance.status === WorkflowInstanceStatus.RUNNING;
-                            const stepLogs = instanceLogs.filter(log => log.nodeId === step.id);
-                            const isCompleted = stepLogs.some(log => log.action === WorkflowInstanceAction.APPROVED);
-                            const isLast = index === orderedSteps.length - 1;
+            {/* Horizontal Stage Ribbon Stepper (Chevron Ribbon Layout) */}
+            <div className="flex items-center overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm p-1.5 scrollbar-none">
+                {orderedSteps.map((step, index) => {
+                    const isCurrent = step.id === instance.currentNodeId && instance.status === WorkflowInstanceStatus.RUNNING;
+                    const stepLogs = instanceLogs.filter(log => log.nodeId === step.id);
+                    const isCompleted = stepLogs.some(log => log.action === WorkflowInstanceAction.APPROVED);
 
-                            let bgClass = 'bg-slate-50 text-slate-500 border-slate-200 dark:bg-slate-800/40 dark:text-slate-400 dark:border-slate-700';
-                            if (isCurrent) {
-                                bgClass = 'bg-blue-50 text-blue-600 border-blue-200 dark:bg-blue-900/20 dark:text-blue-300 dark:border-blue-800 font-black';
-                            } else if (isCompleted) {
-                                bgClass = 'bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:border-emerald-800 font-black';
-                            }
+                    let itemStyle = 'bg-slate-50 dark:bg-slate-800/40 text-slate-500 dark:text-slate-400';
+                    if (isCurrent) {
+                        itemStyle = 'bg-sky-500 text-white font-black shadow-md shadow-sky-500/20';
+                    } else if (isCompleted) {
+                        itemStyle = 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 font-bold border-r border-emerald-200/50';
+                    }
 
-                            return (
-                                <div key={step.id} className="flex items-center gap-2 shrink-0">
-                                    <div className={`flex items-center gap-1.5 px-3 py-1.5 border rounded-xl text-xs transition ${bgClass}`}>
-                                        <span className={`flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-black ${isCurrent ? 'bg-blue-600 text-white' : isCompleted ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-500 dark:bg-slate-700 dark:text-slate-400'
-                                            }`}>{index + 1}</span>
-                                        <span>{step.label}</span>
-                                    </div>
-                                    {!isLast && <ChevronRight size={14} className="text-slate-300 dark:text-slate-600" />}
-                                </div>
-                            );
-                        })}
-                    </div>
+                    return (
+                        <div
+                            key={step.id}
+                            className={`flex-1 min-w-[180px] px-4 py-2.5 rounded-xl flex items-center gap-2.5 text-xs uppercase tracking-wider transition-all border-r last:border-r-0 border-slate-100 dark:border-slate-800 ${itemStyle}`}
+                        >
+                            <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-black ${isCurrent ? 'bg-white text-sky-600' : isCompleted ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-500 dark:bg-slate-700 dark:text-slate-400'
+                                }`}>
+                                {index + 1}
+                            </span>
+                            <span className="truncate font-extrabold">{step.label}</span>
+                        </div>
+                    );
+                })}
+            </div>
 
-                    {/* General Description and Attachments Block */}
-                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl p-5 shadow-sm space-y-4">
+            {/* 2-Column Grid Layout */}
+            <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
+                {/* Left Column (Main Content) */}
+                <div className="space-y-6">
+                    {/* Section 1: MÔ TẢ & TÀI LIỆU ĐÍNH KÈM */}
+                    <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-sm space-y-4">
                         <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
-                            <h2 className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-2">
-                                <FileText size={16} className="text-indigo-500" /> Mô tả & Ghi chú
+                            <h2 className="text-xs font-extrabold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 flex items-center gap-2">
+                                MÔ TẢ
                             </h2>
-                            {/* Actions: "Tải lên tài liệu" & "Chỉnh sửa" */}
-                            <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-3 text-xs font-bold">
                                 {instance.status === WorkflowInstanceStatus.RUNNING && (instance.createdBy === user.id || user.role === Role.ADMIN) && (
                                     <>
-                                        {/* <label className="text-xs font-black text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 cursor-pointer flex items-center gap-1 select-none">
-                                            <Paperclip size={13} /> {isUploadingDoc ? 'Đang tải...' : 'Tải tài liệu'}
-                                            <input type="file" multiple className="hidden" onChange={handleDocUpload} />
-                                        </label> */}
                                         <button
                                             onClick={handleStartEditDescription}
-                                            className="text-xs font-black text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 flex items-center gap-1"
+                                            className="text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 font-bold flex items-center gap-1"
                                         >
-                                            <Edit2 size={13} className="shrink-0" /> Chỉnh sửa
+                                            Tải lên tài liệu
+                                        </button>
+                                        <span className="text-slate-300">•</span>
+                                        <button
+                                            onClick={handleStartEditDescription}
+                                            className="text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 font-bold flex items-center gap-1"
+                                        >
+                                            <Edit2 size={13} /> Chỉnh sửa
                                         </button>
                                     </>
                                 )}
                             </div>
                         </div>
 
-                        {/* Description Text */}
+                        {/* Note / Description text */}
                         <div>
                             {instance.formData?.note ? (
-                                <p className="text-sm text-slate-700 dark:text-slate-350 whitespace-pre-wrap font-medium leading-relaxed">
+                                <p className="text-xs text-slate-700 dark:text-slate-300 whitespace-pre-wrap font-medium leading-relaxed">
                                     {instance.formData.note}
                                 </p>
                             ) : (
-                                <p className="text-xs italic text-slate-400 dark:text-slate-500">
+                                <p className="text-xs text-slate-400 dark:text-slate-500 font-semibold italic">
                                     Không có mô tả
                                 </p>
                             )}
                         </div>
 
-                        {/* Attachments List */}
+                        {/* File attachments grid (Clean cards style matching screenshot) */}
                         {instance.formData?.attachments && instance.formData.attachments.length > 0 && (
                             <div className="pt-2">
-                                <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2">Tài liệu đính kèm ({instance.formData.attachments.length})</div>
-                                <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 md:grid-cols-3">
-                                    {instance.formData.attachments.map((file: any, index: number) => (
-                                        <div key={file.id || index} className="flex items-center gap-2.5 rounded-xl border border-slate-150 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/20 px-3.5 py-2.5 text-xs font-semibold relative group">
-                                            <Paperclip size={14} className="text-slate-400 shrink-0" />
-                                            <span className="min-w-0 flex-1 truncate text-slate-750 dark:text-slate-300" title={file.fileName}>{file.fileName}</span>
-                                            <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity ml-1">
-                                                <button onClick={() => setPreviewFile(file)} className="p-1 rounded text-blue-500 hover:bg-blue-55 dark:hover:bg-blue-900/30" title="Xem trước">
-                                                    <Eye size={13} />
-                                                </button>
-                                                <button onClick={() => handleDownloadDoc(file)} className="p-1 rounded text-emerald-500 hover:bg-emerald-55 dark:hover:bg-emerald-800/30" title="Tải về">
-                                                    <Download size={13} />
-                                                </button>
-                                                {instance.status === WorkflowInstanceStatus.RUNNING && (instance.createdBy === user.id || user.role === Role.ADMIN) && (
-                                                    <button onClick={() => handleDeleteDoc(file)} className="p-1 rounded text-red-500 hover:bg-red-55 dark:hover:bg-red-900/30" title="Xóa">
-                                                        <X size={13} />
-                                                    </button>
-                                                )}
+                                <div className="grid gap-3 grid-cols-1 sm:grid-cols-2">
+                                    {instance.formData.attachments.map((file: any, index: number) => {
+                                        const isPdf = /\.pdf$/i.test(file.fileName || '');
+                                        return (
+                                            <div key={file.id || index} className="flex items-start gap-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 p-3 text-xs relative group hover:border-emerald-300 transition-all">
+                                                <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl font-bold uppercase ${isPdf ? 'bg-red-50 dark:bg-red-950/40 text-red-500' : 'bg-blue-50 dark:bg-blue-950/40 text-blue-500'
+                                                    }`}>
+                                                    {isPdf ? 'PDF' : <Paperclip size={18} />}
+                                                </div>
+                                                <div className="min-w-0 flex-1 space-y-1">
+                                                    <p className="font-bold text-slate-800 dark:text-slate-200 truncate" title={file.fileName}>
+                                                        {file.fileName}
+                                                    </p>
+                                                    <div className="flex items-center gap-2 text-[10px] text-slate-400 font-semibold">
+                                                        <span>{formatBytes(file.fileSize)}</span>
+                                                        <span>•</span>
+                                                        <button onClick={() => setPreviewFile(file)} className="hover:text-emerald-600 font-bold">Xem trước</button>
+                                                        <span>•</span>
+                                                        <button onClick={() => handleDownloadDoc(file)} className="hover:text-emerald-600 font-bold">Tải về</button>
+                                                        {instance.status === WorkflowInstanceStatus.RUNNING && (instance.createdBy === user.id || user.role === Role.ADMIN) && (
+                                                            <>
+                                                                <span>•</span>
+                                                                <button onClick={() => handleDeleteDoc(file)} className="hover:text-red-500 font-bold">Xoá</button>
+                                                            </>
+                                                        )}
+                                                    </div>
+                                                </div>
                                             </div>
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             </div>
                         )}
                     </div>
 
-                    {/* Accordion Custom Fields */}
-                    <div className="bg-slate-50/50 dark:bg-slate-850/20 border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden shadow-sm">
-                        <button
-                            onClick={() => setFieldsExpanded(!fieldsExpanded)}
-                            className="w-full flex items-center justify-between px-5 py-3.5 bg-slate-100/50 dark:bg-slate-800/40 border-b border-slate-200/60 dark:border-slate-700/60 transition hover:bg-slate-100 dark:hover:bg-slate-800"
-                        >
-                            <span className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-2">
+                    {/* Section 2: TRƯỜNG TUỲ CHỈNH */}
+                    <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-sm space-y-4">
+                        <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+                            <h2 className="text-xs font-extrabold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+                                TRƯỜNG TUỲ CHỈNH
+                            </h2>
+                            <button
+                                onClick={() => setFieldsExpanded(!fieldsExpanded)}
+                                className="text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:underline"
+                            >
+                                {fieldsExpanded ? 'Thu gọn' : 'Xem tất cả'}
+                            </button>
+                        </div>
+
+                        {/* Accordion header */}
+                        <div className="flex items-center justify-between text-xs font-extrabold uppercase text-slate-700 dark:text-slate-300">
+                            <button
+                                onClick={() => setFieldsExpanded(!fieldsExpanded)}
+                                className="flex items-center gap-2 hover:text-emerald-600 transition"
+                            >
                                 {fieldsExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />} TRƯỜNG DỮ LIỆU KHI NHẬP MỚI
+                            </button>
+                            <span className="text-[10px] text-slate-400 font-bold">
+                                {customFieldsToRender.length} trường
                             </span>
-                            <div className="flex items-center gap-3">
-                                <span className="text-[10px] bg-slate-200 dark:bg-slate-700 text-slate-655 dark:text-slate-300 px-2.5 py-0.5 rounded-full font-bold">
-                                    {customFieldsToRender.length} trường
-                                </span>
-                                {instance.status === WorkflowInstanceStatus.RUNNING && (instance.createdBy === user.id || user.role === Role.ADMIN) && (
-                                    <button
-                                        onClick={(e) => { e.stopPropagation(); handleStartEditDescription(); }}
-                                        className="text-[10px] text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300 font-black uppercase tracking-wider"
-                                    >
-                                        Chỉnh sửa
-                                    </button>
-                                )}
-                            </div>
-                        </button>
+                        </div>
 
                         {fieldsExpanded && (
-                            <div className="p-5 bg-white dark:bg-slate-900 space-y-4 animate-fade-in">
-                                <div className="border border-slate-100 dark:border-slate-800 rounded-2xl p-4 shadow-sm bg-white dark:bg-slate-950/40">
-                                    <div className="text-xs font-black text-indigo-500 uppercase tracking-widest flex items-center gap-1">
-                                        <span>⤳ ĐẦU VÀO</span>
-                                    </div>
-                                    <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1 border-b border-slate-100 dark:border-slate-800 pb-2">
-                                        THÔNG TIN CHI TIẾT
-                                    </div>
+                            <div className="pt-2 space-y-5">
+                                {customFieldsToRender.length > 0 ? (
+                                    <div className="space-y-6">
+                                        {/* Simple Fields Grid */}
+                                        {customFieldsToRender.filter(f => f.type !== 'table' && f.type !== 'file' && f.type !== 'textarea').length > 0 && (
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-4 pt-1">
+                                                {customFieldsToRender
+                                                    .filter(f => f.type !== 'table' && f.type !== 'file' && f.type !== 'textarea')
+                                                    .map((field) => {
+                                                        const value = instance.formData?.[field.name];
+                                                        const idx = customFieldsToRender.findIndex(f => f.id === field.id);
+                                                        const numStr = String(idx + 1).padStart(2, '0');
 
-                                    {customFieldsToRender.length > 0 ? (
-                                        <div className="mt-4 space-y-5">
-                                            {/* Simple Fields Grid */}
-                                            {customFieldsToRender.filter(f => f.type !== 'table' && f.type !== 'file' && f.type !== 'textarea').length > 0 && (
-                                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                                                    {customFieldsToRender
-                                                        .filter(f => f.type !== 'table' && f.type !== 'file' && f.type !== 'textarea')
-                                                        .map((field) => {
-                                                            const value = instance.formData?.[field.name];
-                                                            const idx = customFieldsToRender.findIndex(f => f.id === field.id);
-                                                            const numStr = String(idx + 2).padStart(2, '0');
-
-                                                            return (
-                                                                <div key={field.id} className="p-3 bg-slate-50/50 dark:bg-slate-900/40 hover:bg-slate-50 dark:hover:bg-slate-900/80 border border-slate-100 dark:border-slate-800/80 rounded-xl transition-all duration-200 shadow-sm">
-                                                                    <div className="flex items-center gap-2 mb-1.5 pb-1.5 border-b border-slate-100 dark:border-slate-800/80">
-                                                                        <span className="flex h-5 items-center justify-center rounded bg-emerald-600 px-1.5 text-[9px] font-black text-white uppercase tracking-wider shadow-sm shadow-emerald-600/10">
-                                                                            {numStr}
-                                                                        </span>
-                                                                        <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800 dark:text-emerald-400">
-                                                                            {field.label}
-                                                                        </span>
-                                                                    </div>
-                                                                    <div className="break-words text-sm font-semibold text-slate-800 dark:text-slate-200">
-                                                                        {value !== null && value !== undefined && String(value).trim() !== '' ? String(value) : <span className="text-slate-300 dark:text-slate-650 font-normal italic">Trống</span>}
-                                                                    </div>
+                                                        return (
+                                                            <div key={field.id} className="space-y-1">
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="flex h-4 w-4 items-center justify-center rounded bg-emerald-600 text-[9px] font-black text-white shrink-0">
+                                                                        {numStr}
+                                                                    </span>
+                                                                    <span className="text-[10px] font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-400 truncate">
+                                                                        {field.label}
+                                                                    </span>
                                                                 </div>
-                                                            );
-                                                        })}
-                                                </div>
-                                            )}
+                                                                <div className="text-xs font-semibold text-slate-800 dark:text-slate-200 pl-6 break-words">
+                                                                    {value !== null && value !== undefined && String(value).trim() !== '' ? String(value) : <span className="text-slate-300 dark:text-slate-650 font-normal italic">Trống</span>}
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                            </div>
+                                        )}
 
-                                            {/* Complex Fields Full Width List */}
-                                            {customFieldsToRender.filter(f => f.type === 'table' || f.type === 'file' || f.type === 'textarea').length > 0 && (
-                                                <div className="space-y-4 pt-1">
-                                                    {customFieldsToRender
-                                                        .filter(f => f.type === 'table' || f.type === 'file' || f.type === 'textarea')
-                                                        .map((field) => {
-                                                            const value = instance.formData?.[field.name];
-                                                            const idx = customFieldsToRender.findIndex(f => f.id === field.id);
-                                                            const numStr = String(idx + 2).padStart(2, '0');
+                                        {/* Complex Fields (Table, File, Textarea) */}
+                                        {customFieldsToRender.filter(f => f.type === 'table' || f.type === 'file' || f.type === 'textarea').length > 0 && (
+                                            <div className="space-y-5">
+                                                {customFieldsToRender
+                                                    .filter(f => f.type === 'table' || f.type === 'file' || f.type === 'textarea')
+                                                    .map((field) => {
+                                                        const value = instance.formData?.[field.name];
+                                                        const idx = customFieldsToRender.findIndex(f => f.id === field.id);
+                                                        const numStr = String(idx + 1).padStart(2, '0');
 
-                                                            return (
-                                                                <div key={field.id} className="p-4 bg-slate-50/20 dark:bg-slate-900/10 border border-slate-100 dark:border-slate-800/80 rounded-xl shadow-sm">
-                                                                    <div className="flex items-center gap-2 mb-3 pb-2 border-b border-slate-100 dark:border-slate-800/80">
-                                                                        <span className="flex h-5 items-center justify-center rounded bg-emerald-600 px-1.5 text-[9px] font-black text-white uppercase tracking-wider shadow-sm shadow-emerald-600/10">
-                                                                            {numStr}
-                                                                        </span>
-                                                                        <span className="text-xs font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
-                                                                            {field.label}
-                                                                        </span>
-                                                                    </div>
-                                                                    <div className="mt-1">
-                                                                        {/* Table field rendering */}
-                                                                        {field.type === 'table' && (
-                                                                            <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden bg-white dark:bg-slate-900 shadow-sm max-w-full">
-                                                                                <div className="overflow-x-auto scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-800">
-                                                                                    <table className="w-full text-xs text-left" style={{ minWidth: Math.max(600, (field.options || []).length * 150) }}>
-                                                                                        <thead>
-                                                                                            <tr className="bg-emerald-50/50 dark:bg-emerald-950/20 text-emerald-800 dark:text-emerald-300 font-bold border-b border-slate-200 dark:border-slate-700">
-                                                                                                <th className="px-4 py-3 text-center w-12 font-bold uppercase tracking-wider text-[10px]">#</th>
-                                                                                                {(field.options || []).map((col, colIdx) => (
-                                                                                                    <th key={colIdx} className="px-4 py-3 whitespace-nowrap font-bold uppercase tracking-wider text-[10px]">{col}</th>
-                                                                                                ))}
-                                                                                            </tr>
-                                                                                        </thead>
-                                                                                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">
-                                                                                            {Array.isArray(value) && value.length > 0 ? (
-                                                                                                value.map((row, ri) => (
-                                                                                                    <tr key={ri} className="even:bg-slate-50/30 dark:even:bg-slate-900/10 hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
-                                                                                                        <td className="px-4 py-3 text-center">
-                                                                                                            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800 text-[10px] font-bold text-slate-500">
-                                                                                                                {ri + 1}
-                                                                                                            </span>
-                                                                                                        </td>
-                                                                                                        {(field.options || []).map((_, ci) => (
-                                                                                                            <td key={ci} className="px-4 py-3 text-slate-700 dark:text-slate-300 whitespace-nowrap font-medium">{row[ci] ?? ''}</td>
-                                                                                                        ))}
-                                                                                                    </tr>
-                                                                                                ))
-                                                                                            ) : (
-                                                                                                <tr>
-                                                                                                    <td colSpan={(field.options?.length || 0) + 1} className="px-4 py-6 text-center text-slate-400 italic font-semibold">
-                                                                                                        Bảng không có dữ liệu
+                                                        return (
+                                                            <div key={field.id} className="space-y-2">
+                                                                <div className="flex items-center gap-2 pb-1 border-b border-slate-100 dark:border-slate-800/60">
+                                                                    <span className="flex h-4 w-4 items-center justify-center rounded bg-emerald-600 text-[9px] font-black text-white shrink-0">
+                                                                        {numStr}
+                                                                    </span>
+                                                                    <span className="text-xs font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
+                                                                        {field.label}
+                                                                    </span>
+                                                                </div>
+
+                                                                <div>
+                                                                    {/* Table field rendering */}
+                                                                    {field.type === 'table' && (
+                                                                        <div className="rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden bg-white dark:bg-slate-900 shadow-sm max-w-full">
+                                                                            <div className="overflow-x-auto scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-800">
+                                                                                <table className="w-full text-xs text-left" style={{ minWidth: Math.max(600, (field.options || []).length * 150) }}>
+                                                                                    <thead>
+                                                                                        <tr className="bg-emerald-50/60 dark:bg-emerald-950/20 text-emerald-800 dark:text-emerald-300 font-bold border-b border-slate-200 dark:border-slate-800">
+                                                                                            <th className="px-4 py-2.5 text-center w-12 font-bold uppercase tracking-wider text-[10px]">#</th>
+                                                                                            {(field.options || []).map((col, colIdx) => (
+                                                                                                <th key={colIdx} className="px-4 py-2.5 whitespace-nowrap font-bold uppercase tracking-wider text-[10px]">{col}</th>
+                                                                                            ))}
+                                                                                        </tr>
+                                                                                    </thead>
+                                                                                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">
+                                                                                        {Array.isArray(value) && value.length > 0 ? (
+                                                                                            value.map((row, ri) => (
+                                                                                                <tr key={ri} className="even:bg-slate-50/30 dark:even:bg-slate-900/10 hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
+                                                                                                    <td className="px-4 py-2.5 text-center">
+                                                                                                        <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800 text-[10px] font-bold text-slate-500">
+                                                                                                            {ri + 1}
+                                                                                                        </span>
                                                                                                     </td>
+                                                                                                    {(field.options || []).map((_, ci) => (
+                                                                                                        <td key={ci} className="px-4 py-2.5 text-slate-700 dark:text-slate-300 whitespace-nowrap font-medium">{row[ci] ?? ''}</td>
+                                                                                                    ))}
                                                                                                 </tr>
-                                                                                            )}
-                                                                                        </tbody>
-                                                                                    </table>
-                                                                                </div>
+                                                                                            ))
+                                                                                        ) : (
+                                                                                            <tr>
+                                                                                                <td colSpan={(field.options?.length || 0) + 1} className="px-4 py-5 text-center text-slate-400 italic font-medium">
+                                                                                                    Bảng không có dữ liệu
+                                                                                                </td>
+                                                                                            </tr>
+                                                                                        )}
+                                                                                    </tbody>
+                                                                                </table>
                                                                             </div>
-                                                                        )}
-                                                                        {/* File field rendering */}
-                                                                        {field.type === 'file' && value && typeof value === 'object' && value.fileName ? (
-                                                                            <div className="flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-800/80 rounded-xl text-xs max-w-md shadow-sm transition hover:shadow-md">
-                                                                                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-rose-50 dark:bg-rose-950/20 text-rose-500 shrink-0">
-                                                                                    <Paperclip size={16} />
-                                                                                </div>
-                                                                                <div className="min-w-0 flex-1">
-                                                                                    <span className="block font-semibold text-slate-800 dark:text-slate-200 truncate" title={value.fileName}>
-                                                                                        {value.fileName}
-                                                                                    </span>
-                                                                                    <span className="block text-[10px] text-slate-400 font-medium mt-0.5">
-                                                                                        {(value.fileSize / 1024).toFixed(1)} KB
-                                                                                    </span>
-                                                                                </div>
-                                                                                <div className="flex items-center gap-1 shrink-0">
-                                                                                    <button onClick={() => setPreviewFile(value)} className="p-1.5 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/30 text-blue-500 transition-colors" title="Xem trước">
-                                                                                        <Eye size={14} />
+                                                                        </div>
+                                                                    )}
+
+                                                                    {/* File field rendering */}
+                                                                    {field.type === 'file' && value && typeof value === 'object' && value.fileName ? (
+                                                                        <div className="flex items-center gap-3 px-3.5 py-2.5 bg-slate-50/50 dark:bg-slate-850/50 border border-slate-200 dark:border-slate-800 rounded-xl text-xs max-w-md">
+                                                                            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-rose-50 dark:bg-rose-950/20 text-rose-500 shrink-0">
+                                                                                <Paperclip size={16} />
+                                                                            </div>
+                                                                            <div className="min-w-0 flex-1">
+                                                                                <span className="block font-semibold text-slate-800 dark:text-slate-200 truncate" title={value.fileName}>
+                                                                                    {value.fileName}
+                                                                                </span>
+                                                                                <span className="block text-[10px] text-slate-400 font-medium mt-0.5">
+                                                                                    {(value.fileSize / 1024).toFixed(1)} KB
+                                                                                </span>
+                                                                            </div>
+                                                                            <div className="flex items-center gap-1 shrink-0">
+                                                                                <button onClick={() => setPreviewFile(value)} className="p-1.5 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/30 text-blue-500 transition-colors" title="Xem trước">
+                                                                                    <Eye size={14} />
+                                                                                </button>
+                                                                                {hasDownloadableFile(value) && (
+                                                                                    <button onClick={() => downloadWorkflowFile(value)} className="p-1.5 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-800/30 text-emerald-500 transition-colors" title="Tải về">
+                                                                                        <Download size={14} />
                                                                                     </button>
-                                                                                    {hasDownloadableFile(value) && (
-                                                                                        <button onClick={() => downloadWorkflowFile(value)} className="p-1.5 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-800/30 text-emerald-500 transition-colors" title="Tải về">
-                                                                                            <Download size={14} />
-                                                                                        </button>
-                                                                                    )}
-                                                                                </div>
+                                                                                )}
                                                                             </div>
-                                                                        ) : field.type === 'file' && (
-                                                                            <span className="text-slate-300 dark:text-slate-650 font-normal italic text-sm">Chưa có tệp đính kèm</span>
-                                                                        )}
-                                                                        {/* Textarea field rendering */}
-                                                                        {field.type === 'textarea' && (
-                                                                            <div className="text-sm font-medium text-slate-750 dark:text-slate-350 whitespace-pre-wrap leading-relaxed">
-                                                                                {value !== null && value !== undefined && String(value).trim() !== '' ? String(value) : <span className="text-slate-300 dark:text-slate-650 font-normal italic">Trống</span>}
-                                                                            </div>
-                                                                        )}
-                                                                    </div>
+                                                                        </div>
+                                                                    ) : field.type === 'file' && (
+                                                                        <span className="text-slate-300 dark:text-slate-600 font-normal italic text-xs pl-6">Chưa có tệp đính kèm</span>
+                                                                    )}
+
+                                                                    {/* Textarea field rendering */}
+                                                                    {field.type === 'textarea' && (
+                                                                        <div className="text-xs font-medium text-slate-700 dark:text-slate-300 whitespace-pre-wrap leading-relaxed pl-6">
+                                                                            {value !== null && value !== undefined && String(value).trim() !== '' ? String(value) : <span className="text-slate-300 dark:text-slate-650 font-normal italic">Trống</span>}
+                                                                        </div>
+                                                                    )}
                                                                 </div>
-                                                            );
-                                                        })}
-                                                </div>
-                                            )}
-                                        </div>
-                                    ) : (
-                                        <p className="text-sm font-semibold text-slate-400 mt-2">Quy trình không cấu hình trường dữ liệu tùy chỉnh.</p>
-                                    )}
-                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                            </div>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <p className="text-xs font-semibold text-slate-400 italic">Quy trình không cấu hình trường dữ liệu tùy chỉnh.</p>
+                                )}
                             </div>
                         )}
                     </div>
 
+                    {/* Section 3: DANH SÁCH CÔNG VIỆC (Checklist Component) */}
+                    <WorkflowStepChecklist
+                        instanceId={instance.id}
+                        currentNodeId={instance.currentNodeId}
+                        currentNodeLabel={currentNode?.label}
+                        allStepNodes={orderedSteps.map(s => ({ id: s.id, label: s.label }))}
+                        currentUser={user}
+                        users={users}
+                        canEdit={canAct || instance.createdBy === user.id || user.role === Role.ADMIN}
+                        onPreviewFile={(file) => setPreviewFile(file)}
+                    />
+
+                    {/* Section 4: LIÊN KẾT */}
 
 
-                    {/* Wide Comments Section */}
-                    <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-5 flex flex-col shadow-sm">
-                        <h2 className="mb-4 flex items-center gap-2 text-sm font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                            <MessageSquare size={16} /> Trao đổi thảo luận
-                        </h2>
-                        <div className="space-y-3 max-h-[450px] overflow-y-auto pr-1 mb-4">
-                            {comments.length === 0 && (
-                                <div className="rounded-xl border border-dashed border-slate-200 dark:border-slate-700 p-8 text-center text-sm font-semibold text-slate-400">
-                                    Chưa có trao đổi nào trong phiếu này.
+                    {/* Section 5: THẢO LUẬN & BÌNH LUẬN */}
+                    <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-sm space-y-4">
+                        <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+                            <div className="flex items-center gap-3">
+                                <div className="h-8 w-8 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-xs">
+                                    {user.avatar ? <img src={user.avatar} alt={user.name} className="h-full w-full rounded-full object-cover" /> : user.name.slice(0, 2)}
                                 </div>
-                            )}
+                                <div>
+                                    <div className="text-xs font-bold text-slate-800 dark:text-slate-200">{user.name}</div>
+                                    <div className="text-[10px] font-semibold text-slate-400">{user.role} • @{user.name.toLowerCase().replace(/\s+/g, '')}</div>
+                                </div>
+                            </div>
+                            <label className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 cursor-pointer">
+                                <Paperclip size={13} /> Thêm tài liệu
+                                <input type="file" multiple className="hidden" onChange={event => { handleAttachmentFiles(event.target.files); event.target.value = ''; }} />
+                            </label>
+                        </div>
+
+                        {/* Comments input box */}
+                        <div className="space-y-3">
+                            <textarea
+                                value={commentBody}
+                                onChange={event => setCommentBody(event.target.value)}
+                                placeholder="Viết thảo luận của bạn..."
+                                rows={3}
+                                className="w-full resize-none rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-3.5 text-xs font-medium outline-none focus:ring-2 focus:ring-emerald-400 text-slate-800 dark:text-slate-200"
+                            />
+                            {commentError && <div className="text-xs font-bold text-red-500">{commentError}</div>}
+                            <div className="flex justify-end">
+                                <button
+                                    onClick={sendComment}
+                                    disabled={isSendingComment || isUploading || (!commentBody.trim() && draftAttachments.length === 0)}
+                                    className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2 text-xs font-black shadow-md disabled:opacity-50"
+                                >
+                                    <Send size={13} /> Gửi thảo luận
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Comment Stream */}
+                        <div className="space-y-3 pt-2">
                             {comments.map(comment => {
                                 const author = users.find(item => item.id === comment.authorUserId);
-                                const mine = comment.authorUserId === user.id;
                                 return (
-                                    <div key={comment.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
-                                        <div className={`max-w-[75%] rounded-2xl px-4 py-2.5 shadow-sm ${mine ? 'bg-indigo-500 text-white' : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200'}`}>
-                                            <div className={`mb-1 text-[10px] font-black uppercase tracking-wider ${mine ? 'text-indigo-100' : 'text-slate-400'}`}>
-                                                {author?.name || 'N/A'} • {new Date(comment.createdAt).toLocaleString('vi-VN')}
-                                            </div>
-                                            {comment.body && <div className="whitespace-pre-wrap text-sm font-medium leading-relaxed">{comment.body}</div>}
-                                            {comment.attachments.length > 0 && (
-                                                <div className="mt-2 grid gap-2 grid-cols-2 md:grid-cols-3">
-                                                    {comment.attachments.map(attachment => <AttachmentPreview key={attachment.id} attachment={attachment} />)}
-                                                </div>
-                                            )}
+                                    <div key={comment.id} className="p-3.5 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 text-xs space-y-1.5">
+                                        <div className="flex items-center justify-between text-[10px] font-extrabold uppercase text-slate-400">
+                                            <span>{author?.name || 'N/A'}</span>
+                                            <span>{new Date(comment.createdAt).toLocaleString('vi-VN')}</span>
                                         </div>
+                                        <p className="font-semibold text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">{comment.body}</p>
                                     </div>
                                 );
                             })}
                         </div>
-
-                        <div className="border-t border-slate-200 pt-4 dark:border-slate-700">
-                            {draftAttachments.length > 0 && (
-                                <div className="mb-3 grid gap-2 grid-cols-2 md:grid-cols-3">
-                                    {draftAttachments.map(attachment => (
-                                        <div key={attachment.id} className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-1.5 border border-slate-100 text-xs font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                                            <Paperclip size={13} className="text-slate-400" />
-                                            <span className="min-w-0 flex-1 truncate">{attachment.fileName}</span>
-                                            <button onClick={() => removeDraftAttachment(attachment)} className="rounded-lg p-1 text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700">
-                                                <X size={13} />
-                                            </button>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                            <textarea
-                                value={commentBody}
-                                onChange={event => setCommentBody(event.target.value)}
-                                placeholder="Nhập nội dung trao đổi thảo luận..."
-                                rows={3}
-                                className="mb-3 w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300 dark:border-slate-700 dark:bg-slate-800 text-slate-700 dark:text-slate-250"
-                            />
-                            {commentError && <div className="mb-2 rounded-lg bg-red-50 px-3 py-2 text-xs font-bold text-red-600 dark:bg-red-900/20 dark:text-red-300">{commentError}</div>}
-                            <div className="flex items-center justify-between gap-2">
-                                <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">
-                                    <Paperclip size={14} /> {isUploading ? 'Đang tải...' : 'Đính kèm tệp'}
-                                    <input type="file" multiple className="hidden" onChange={event => { handleAttachmentFiles(event.target.files); event.target.value = ''; }} />
-                                </label>
-                                <button
-                                    onClick={sendComment}
-                                    disabled={isSendingComment || isUploading || (!commentBody.trim() && draftAttachments.length === 0)}
-                                    className="inline-flex items-center gap-2 rounded-xl bg-indigo-500 px-5 py-2 text-xs font-black text-white hover:bg-indigo-650 disabled:cursor-not-allowed disabled:opacity-50 shadow-md shadow-indigo-500/20"
-                                >
-                                    <Send size={14} /> Gửi tin
-                                </button>
-                            </div>
-                        </div>
                     </div>
                 </div>
 
-                {/* Sidebar Column (Right) */}
+                {/* Right Column (Sidebar) */}
                 <div className="space-y-5">
-                    {/* Overdue Alert Banner */}
-                    {isOverdue && (
-                        <div className="flex items-center gap-2.5 rounded-xl border border-red-200 bg-red-500 text-white px-4 py-3 shadow-md animate-pulse">
-                            <AlertCircle size={18} className="shrink-0" />
-                            <div className="text-xs font-black flex-1 uppercase tracking-wider">
-                                Quá hạn tại bước này!
-                            </div>
-                            <span className="text-[11px] font-black">
-                                {currentStepTiming ? `${currentStepTiming.durationHours}h` : ''} / {currentNode?.config?.slaHours}h
-                            </span>
-                        </div>
-                    )}
-
-                    {/* Current Stage Card */}
+                    {/* Card 1: GIAI ĐOẠN HIỆN TẠI (Solid Sky Blue Card matching screenshot) */}
                     {currentNode && instance.status === WorkflowInstanceStatus.RUNNING && (
-                        <div className="rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50/80 to-blue-100/30 dark:border-blue-900/50 dark:from-slate-900 dark:to-blue-950/20 p-5 shadow-sm">
-                            <span className="text-[9px] font-black text-blue-500 uppercase tracking-widest block">Giai đoạn hiện tại</span>
-                            <h3 className="text-base font-black text-blue-800 dark:text-blue-300 mt-1">
+                        <div className="rounded-2xl bg-gradient-to-br from-sky-500 to-blue-600 text-white p-5 shadow-lg shadow-sky-500/20 space-y-3">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-sky-100 block">
+                                GIAI ĐOẠN HIỆN TẠI
+                            </span>
+                            <h3 className="text-base font-black text-white leading-snug">
                                 [{currentStepIndex}/{orderedSteps.length}] {currentNode.label}
                             </h3>
-                            <div className="mt-3.5 space-y-2.5 text-xs">
-                                <div className="flex justify-between font-semibold text-slate-500 dark:text-slate-400">
-                                    <span>Thời hạn hoàn thành:</span>
-                                    <span className="text-slate-800 dark:text-slate-200 font-bold">{deadlineString}</span>
+                            <div className="space-y-1.5 text-[11px] pt-1">
+                                <div className="flex justify-between text-sky-100 font-semibold">
+                                    <span>THỜI HẠN: {deadlineString}</span>
+                                    <span>Đã bắt đầu {currentStepTiming ? currentStepTiming.startTime.split(' ')[0] : 'gần đây'}</span>
                                 </div>
-                                <div className="flex justify-between font-semibold text-slate-500 dark:text-slate-400">
-                                    <span>Thời gian bắt đầu:</span>
-                                    <span className="text-slate-800 dark:text-slate-200 font-bold">
-                                        {currentStepTiming ? currentStepTiming.startTime.split(' ')[0] : 'N/A'}
+                                <div className="flex justify-between font-black text-white pt-1">
+                                    <span>KỲ VỌNG: {currentNode.config?.slaHours ? `${currentNode.config.slaHours.toFixed(2)}h` : '0.00h'}</span>
+                                    <span className={isOverdue ? 'text-amber-300 font-black' : 'text-white'}>
+                                        ĐÃ SỬ DỤNG: {currentStepTiming ? `${currentStepTiming.durationHours.toFixed(2)}h` : '0.00h'}
                                     </span>
                                 </div>
-                                <div className="pt-2 border-t border-blue-200/50 dark:border-blue-900/30 flex justify-between text-[11px] font-black uppercase text-slate-400">
-                                    <span>Kỳ vọng SLA</span>
-                                    <span>Đã sử dụng</span>
-                                </div>
-                                <div className="flex justify-between text-sm font-black text-slate-700 dark:text-slate-200">
-                                    <span>{currentNode.config?.slaHours ? `${currentNode.config.slaHours.toFixed(2)}h` : 'N/A'}</span>
-                                    <span className={isOverdue ? 'text-red-500 font-bold' : 'text-blue-600 dark:text-blue-400'}>
-                                        {currentStepTiming ? `${currentStepTiming.durationHours}h` : '0.00h'}
-                                    </span>
-                                </div>
-                                {/* Progress Bar */}
-                                {currentNode.config?.slaHours && currentStepTiming && (
-                                    <div className="w-full bg-slate-200 dark:bg-slate-800 h-2 rounded-full overflow-hidden mt-1 shadow-inner">
-                                        <div
-                                            className={`h-full rounded-full transition-all ${isOverdue ? 'bg-red-500' : 'bg-blue-500'}`}
-                                            style={{ width: `${Math.min((currentStepTiming.durationHours / currentNode.config.slaHours) * 100, 100)}%` }}
-                                        />
-                                    </div>
-                                )}
                             </div>
                             {nextNode && (
-                                <div className="mt-4 pt-3 border-t border-blue-200/50 dark:border-blue-900/30 text-[10px] font-black text-blue-600 dark:text-blue-400 flex items-center gap-1">
-                                    <span>» Giai đoạn kế tiếp:</span>
-                                    <span className="underline">{nextNode.label} ({nextNode.config?.slaHours || 24}h0m)</span>
+                                <div className="pt-2 border-t border-sky-400/40 text-[11px] font-bold text-sky-100">
+                                    » GIAI ĐOẠN KẾ TIẾP: <span className="underline">{nextNode.label} ({nextNode.config?.slaHours || 24}h)</span>
                                 </div>
                             )}
                         </div>
                     )}
 
-                    {/* Task Info Card */}
-                    <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-5 shadow-sm">
-                        <h4 className="text-[10px] font-black uppercase tracking-wider text-slate-400 border-b border-slate-100 dark:border-slate-800 pb-2">Thông tin nhiệm vụ</h4>
-                        <div className="mt-3 space-y-2.5 text-xs">
-                            <div className="flex justify-between font-semibold">
-                                <span className="text-slate-400">Mã nhiệm vụ:</span>
-                                <span className="text-slate-700 dark:text-slate-200 font-mono font-bold">#{instance.code}</span>
+                    {/* Card 2: THÔNG TIN NHIỆM VỤ */}
+                    <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-sm space-y-3">
+                        <h4 className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 border-b border-slate-100 dark:border-slate-800 pb-2">
+                            THÔNG TIN NHIỆM VỤ
+                        </h4>
+                        <div className="space-y-2.5 text-xs">
+                            <div className="flex items-start gap-2">
+                                <span className="text-slate-400 font-mono">#</span>
+                                <span className="text-slate-500 font-semibold">Mã nhiệm vụ:</span>
+                                <span className="ml-auto font-bold text-slate-800 dark:text-slate-200">{instance.code}</span>
                             </div>
-                            <div className="flex justify-between font-semibold">
-                                <span className="text-slate-400">Tạo bởi:</span>
-                                <span className="text-slate-700 dark:text-slate-200 font-bold">{creator?.name || 'N/A'}</span>
+                            <div className="flex items-start gap-2">
+                                <User size={14} className="text-slate-400 shrink-0 mt-0.5" />
+                                <span className="text-slate-500 font-semibold">Tạo bởi:</span>
+                                <span className="ml-auto font-bold text-slate-800 dark:text-slate-200 text-right">{creator?.name || 'N/A'}</span>
                             </div>
-                            <div className="flex justify-between font-semibold">
-                                <span className="text-slate-400">Thời gian tạo:</span>
-                                <span className="text-slate-700 dark:text-slate-200 font-bold">{new Date(instance.createdAt).toLocaleString('vi-VN')}</span>
+                            <div className="flex items-start gap-2">
+                                <Clock size={14} className="text-slate-400 shrink-0 mt-0.5" />
+                                <span className="text-slate-500 font-semibold">Cập nhật:</span>
+                                <span className="ml-auto font-bold text-slate-800 dark:text-slate-200">{new Date(instance.updatedAt).toLocaleDateString('vi-VN')}</span>
                             </div>
-                            <div className="flex justify-between font-semibold">
-                                <span className="text-slate-400">Cập nhật gần nhất:</span>
-                                <span className="text-slate-700 dark:text-slate-200 font-bold">{new Date(instance.updatedAt).toLocaleString('vi-VN')}</span>
+                            <div className="flex items-start gap-2">
+                                <GitBranch size={14} className="text-slate-400 shrink-0 mt-0.5" />
+                                <span className="text-slate-400 font-semibold">Giai đoạn:</span>
+                                <span className="ml-auto font-bold text-slate-800 dark:text-slate-200 text-right">{currentNode?.label || 'Hoàn thành'}</span>
                             </div>
-                            <div className="flex justify-between font-semibold">
-                                <span className="text-slate-400">Giai đoạn hiện tại:</span>
-                                <span className="text-slate-700 dark:text-slate-200 font-bold">{currentNode?.label || 'Hoàn thành'}</span>
-                            </div>
-                            {currentNode && instance.status === WorkflowInstanceStatus.RUNNING && (
-                                <div className="flex justify-between font-semibold">
-                                    <span className="text-slate-400">Người quản trị giai đoạn:</span>
-                                    <span className="text-indigo-600 dark:text-indigo-400 font-bold text-right truncate max-w-[200px]" title={stageManagersString}>
-                                        {stageManagersString}
-                                    </span>
-                                </div>
-                            )}
                         </div>
                     </div>
 
-                    {/* Followers Card */}
-                    <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-5 shadow-sm">
+                    {/* Card 3: NGƯỜI THEO DÕI */}
+                    <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-sm space-y-3">
                         <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
-                            <h4 className="text-[10px] font-black uppercase tracking-wider text-slate-400">Người theo dõi</h4>
-                            <span
-                                onClick={() => {
-                                    setTempSelectedWatcherIds(instance.watchers || []);
-                                    setWatcherSearchTerm('');
-                                    setShowWatchersModal(true);
-                                }}
-                                className="text-[10px] font-bold text-indigo-500 hover:underline cursor-pointer"
-                            >
-                                Thêm nhiều người
-                            </span>
-                        </div>
-                        <div className="mt-3 flex items-center gap-2 overflow-x-auto py-1">
-                            <div className="flex -space-x-2.5 overflow-hidden">
-                                {Array.from(new Set([...(template?.defaultWatchers || []), ...(instance.watchers || [])])).slice(0, 8).map((watcherId, idx) => {
-                                    const watcherUser = users.find(u => u.id === watcherId);
-                                    const watcherEmployee = employees.find(e => e.userId === watcherId);
-                                    const watcherAvatar = watcherEmployee?.avatarUrl || watcherUser?.avatar;
-                                    return (
-                                        <div
-                                            key={watcherId}
-                                            className="inline-block h-8 w-8 rounded-full ring-2 ring-white dark:ring-slate-900 bg-slate-200 overflow-hidden flex items-center justify-center text-[10px] font-black text-slate-600 uppercase border border-slate-100 shadow-sm"
-                                            title={watcherUser?.name || 'N/A'}
-                                        >
-                                            {watcherAvatar ? (
-                                                <img src={watcherAvatar} alt={watcherUser?.name || ''} className="w-full h-full object-cover" />
-                                            ) : (
-                                                watcherUser?.name ? watcherUser.name.split(' ').pop()?.slice(0, 2) : '?'
-                                            )}
-                                        </div>
-                                    );
-                                })}
+                            <h4 className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">NGƯỜI THEO DÕI</h4>
+                            <div className="flex items-center gap-2 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                                <span onClick={() => { setTempSelectedWatcherIds(instance.watchers || []); setShowWatchersModal(true); }} className="hover:underline cursor-pointer">Thêm người</span>
+                                <span>•</span>
+                                <span onClick={handleToggleWatch} className="hover:underline cursor-pointer">{isCustomWatcher ? 'Bỏ theo dõi' : 'Theo dõi'}</span>
                             </div>
-                            <button
-                                onClick={handleToggleWatch}
-                                disabled={isDefaultWatcher}
-                                title={isDefaultWatcher ? 'Bạn là người theo dõi mặc định của quy trình này' : undefined}
-                                className="h-8 px-3 rounded-xl border border-slate-200 dark:border-slate-700 text-[10px] font-black text-slate-600 dark:text-slate-300 hover:bg-slate-50 transition ml-auto disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                {isDefaultWatcher ? 'Đang theo dõi (Mặc định)' : isCustomWatcher ? 'Bỏ theo dõi' : 'Theo dõi'}
-                            </button>
+                        </div>
+                        <div className="flex -space-x-2 overflow-hidden py-1">
+                            {Array.from(new Set([...(template?.defaultWatchers || []), ...(instance.watchers || [])])).slice(0, 6).map((wId) => {
+                                const wUser = users.find(u => u.id === wId);
+                                return (
+                                    <div key={wId} className="inline-block h-8 w-8 rounded-full ring-2 ring-white dark:ring-slate-900 bg-slate-200 overflow-hidden flex items-center justify-center text-[10px] font-black text-slate-600 uppercase" title={wUser?.name}>
+                                        {wUser?.avatar ? <img src={wUser.avatar} alt={wUser.name} className="h-full w-full object-cover" /> : wUser?.name?.slice(0, 2) || '?'}
+                                    </div>
+                                );
+                            })}
                         </div>
                     </div>
 
-                    {/* Total Time / Duration Progress */}
-                    <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-5 shadow-sm">
-                        <h4 className="text-[10px] font-black uppercase tracking-wider text-slate-400 border-b border-slate-100 dark:border-slate-800 pb-2">Tổng thời gian sử dụng</h4>
-                        <div className="mt-3 text-xs space-y-2">
-                            <div className="flex justify-between font-semibold">
-                                <span className="text-slate-400">Tổng SLA kỳ vọng:</span>
-                                <span className="text-slate-800 dark:text-slate-200 font-bold">{totalSlaHours.toFixed(2)} giờ</span>
-                            </div>
-                            <div className="flex justify-between font-semibold">
-                                <span className="text-slate-400">Đã sử dụng thực tế:</span>
-                                <span className={`font-bold ${totalDurationHours > totalSlaHours ? 'text-red-500 font-bold animate-pulse' : 'text-slate-800 dark:text-slate-200'}`}>
-                                    {totalDurationHours.toFixed(2)} giờ
-                                </span>
-                            </div>
-                            <div className="w-full bg-slate-200 dark:bg-slate-800 h-2 rounded-full overflow-hidden mt-2">
-                                <div
-                                    className={`h-full rounded-full transition-all ${totalDurationHours > totalSlaHours ? 'bg-red-500' : 'bg-emerald-500'}`}
-                                    style={{ width: `${Math.min((totalDurationHours / (totalSlaHours || 1)) * 100, 100)}%` }}
-                                />
-                            </div>
+                    {/* Card 4: TỔNG THỜI GIAN */}
+                    <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-sm space-y-3">
+                        <div className="flex items-center justify-between text-[10px] font-extrabold uppercase tracking-wider border-b border-slate-100 dark:border-slate-800 pb-2">
+                            <span className="text-slate-400">TỔNG THỜI GIAN</span>
+                            <span className="text-slate-700 dark:text-slate-300">Đã sử dụng {totalDurationHours.toFixed(2)}h</span>
+                        </div>
+                        <div className="h-2 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                            <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${Math.min((totalDurationHours / (totalSlaHours || 1)) * 100, 100)}%` }} />
                         </div>
                     </div>
 
-                    {/* Stage Timeline History Card */}
-                    <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-5 shadow-sm">
-                        <h4 className="text-[10px] font-black uppercase tracking-wider text-slate-400 border-b border-slate-100 dark:border-slate-800 pb-2.5">Tiến trình của các giai đoạn</h4>
-                        <div className="mt-4 space-y-5 relative pl-4 border-l border-slate-200 dark:border-slate-800">
+                    {/* Card 5: TIẾN TRÌNH CỦA CÁC GIAI ĐOẠN (Vertical Stepper Timeline matching reference) */}
+                    <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-sm space-y-4">
+                        <h4 className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 border-b border-slate-100 dark:border-slate-800 pb-2">
+                            TIẾN TRÌNH CỦA CÁC GIAI ĐOẠN
+                        </h4>
+                        <div className="space-y-5 relative pl-4 border-l-2 border-slate-150 dark:border-slate-800">
                             {stepTimings.map((timing, idx) => {
                                 const isCurrent = timing.status === 'running';
                                 const isCompleted = timing.status === 'completed';
 
                                 return (
-                                    <div key={timing.stepId} className="relative text-xs">
-                                        {/* Status Dot */}
-                                        <div className={`absolute -left-[22.5px] top-0.5 h-3 w-3 rounded-full border-2 bg-white dark:bg-slate-900 transition-all ${isCompleted
-                                            ? 'border-emerald-500 bg-emerald-500 text-white flex items-center justify-center text-[6px]'
-                                            : isCurrent
-                                                ? 'border-blue-500 bg-blue-500'
-                                                : 'border-slate-300 dark:border-slate-700'
+                                    <div key={timing.stepId} className="relative text-xs space-y-1">
+                                        {/* Numbered node circle */}
+                                        <div className={`absolute -left-[23px] top-0 h-4 w-4 rounded-full flex items-center justify-center text-[9px] font-black ${isCurrent
+                                                ? 'bg-sky-500 text-white ring-4 ring-sky-100 dark:ring-sky-950'
+                                                : isCompleted
+                                                    ? 'bg-emerald-500 text-white'
+                                                    : 'bg-slate-200 dark:bg-slate-700 text-slate-500'
                                             }`}>
-                                            {isCompleted && <Check size={6} className="stroke-[3] text-white" />}
+                                            {idx + 1}
                                         </div>
 
-                                        <div className="flex flex-col gap-0.5">
-                                            <div className="flex items-center justify-between">
-                                                <span className={`font-black uppercase tracking-wide ${isCurrent ? 'text-blue-600 dark:text-blue-400' : 'text-slate-700 dark:text-slate-200'}`}>
-                                                    {idx + 1}. {timing.label}
-                                                </span>
-                                                {timing.startTime && (
-                                                    <span className="text-[10px] text-slate-400 font-bold shrink-0">
-                                                        SLA: {orderedSteps[idx]?.config?.slaHours || 24}h
-                                                    </span>
-                                                )}
+                                        <div className="flex items-center justify-between font-bold text-slate-800 dark:text-slate-200">
+                                            <span className={isCurrent ? 'text-sky-600 dark:text-sky-400 font-extrabold' : ''}>{timing.label}</span>
+                                            {timing.actionDate && <span className="text-[10px] font-semibold text-slate-400">{timing.actionDate}</span>}
+                                        </div>
+
+                                        <div className="flex items-center justify-between text-[10px] text-slate-400 font-semibold">
+                                            <span>Kỳ vọng: {orderedSteps[idx]?.config?.slaHours || 0}h</span>
+                                            <span>Thực tế: {timing.durationHours.toFixed(2)}h</span>
+                                        </div>
+
+                                        {timing.actorName && (
+                                            <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-600 dark:text-slate-300 pt-1">
+                                                <div className="h-4 w-4 rounded-full bg-slate-300 flex items-center justify-center text-[8px]">👤</div>
+                                                <span>{timing.actorName}</span>
                                             </div>
-
-                                            {timing.startTime ? (
-                                                <div className="mt-1 space-y-1 text-slate-500 dark:text-slate-400 font-medium">
-                                                    <div className="flex justify-between text-[10px]">
-                                                        <span>Thực tế:</span>
-                                                        <span className={`font-bold ${isCurrent && isOverdue ? 'text-red-500' : 'text-slate-700 dark:text-slate-350'}`}>
-                                                            {timing.durationHours.toFixed(2)}h
-                                                        </span>
-                                                    </div>
-                                                    {isCompleted && timing.actorName && (
-                                                        <div className="text-[10px] mt-0.5 bg-slate-50 dark:bg-slate-800/40 p-1.5 rounded-lg border border-slate-100 dark:border-slate-800/20">
-                                                            <div>
-                                                                Xử lý: <span className="font-bold text-slate-700 dark:text-slate-200">{timing.actorName}</span>
-                                                            </div>
-                                                            <div className="text-[9px] text-slate-400 mt-0.5">{timing.actionDate}</div>
-                                                            {timing.comment && <div className="mt-1 italic text-slate-400">"{timing.comment}"</div>}
-                                                        </div>
-                                                    )}
-                                                    {isCurrent && (
-                                                        <span className="inline-block px-1.5 py-0.5 bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400 rounded text-[9px] font-black uppercase tracking-wider animate-pulse">
-                                                            Đang xử lý ở bước này
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            ) : (
-                                                <span className="text-[10px] text-slate-300 dark:text-slate-700 font-semibold italic">Chưa bắt đầu</span>
-                                            )}
-                                        </div>
+                                        )}
                                     </div>
                                 );
                             })}
@@ -1480,7 +1434,6 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
             {previewFile && (
                 <FilePreviewModal file={previewFile} onClose={() => setPreviewFile(null)} />
             )}
-
             {/* Watchers Selection Modal */}
             {showWatchersModal && (
                 <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/60 backdrop-blur-sm">

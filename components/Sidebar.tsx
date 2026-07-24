@@ -32,20 +32,20 @@ interface SidebarProps {
 }
 
 const MODULE_CONFIG = [
-  { key: 'WMS' as const, icon: Package, label: 'Vật tư', shortLabel: 'KHO', gradient: 'from-emerald-500 to-emerald-600', shadow: 'shadow-emerald-500/30', color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-900/30', border: 'border-emerald-200 dark:border-emerald-700', route: '/inventory' },
-  { key: 'HRM' as const, icon: Briefcase, label: 'Nhân sự', shortLabel: 'NS', gradient: 'from-teal-500 to-cyan-600', shadow: 'shadow-teal-500/30', color: 'text-teal-600 dark:text-teal-400', bg: 'bg-teal-50 dark:bg-teal-900/30', border: 'border-teal-200 dark:border-teal-700', route: '/hrm/employees' },
-  { key: 'WF' as const, icon: GitBranch, label: 'Quy trình', shortLabel: 'QT', gradient: 'from-violet-500 to-purple-600', shadow: 'shadow-violet-500/30', color: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-50 dark:bg-violet-900/30', border: 'border-violet-200 dark:border-violet-700', route: '/wf' },
-  { key: 'DA' as const, icon: BarChart3, label: 'Dự án', shortLabel: 'DA', gradient: 'from-orange-500 to-amber-500', shadow: 'shadow-orange-500/30', color: 'text-orange-600 dark:text-orange-400', bg: 'bg-orange-50 dark:bg-orange-900/30', border: 'border-orange-200 dark:border-orange-700', route: '/da' },
-  { key: 'PROCUREMENT' as const, icon: ShoppingCart, label: 'Mua hàng', shortLabel: 'MH', gradient: 'from-emerald-500 to-teal-600', shadow: 'shadow-emerald-500/30', color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-900/30', border: 'border-emerald-200 dark:border-emerald-700', route: '/procurement' },
-  { key: 'TS' as const, icon: Landmark, label: 'Tài sản', shortLabel: 'TS', gradient: 'from-rose-500 to-pink-600', shadow: 'shadow-rose-500/30', color: 'text-rose-600 dark:text-rose-400', bg: 'bg-rose-50 dark:bg-rose-900/30', border: 'border-rose-200 dark:border-rose-700', route: '/ts/dashboard' },
-  { key: 'RQ' as const, icon: Inbox, label: 'Yêu cầu', shortLabel: 'RQ', gradient: 'from-cyan-500 to-blue-600', shadow: 'shadow-cyan-500/30', color: 'text-cyan-600 dark:text-cyan-400', bg: 'bg-cyan-50 dark:bg-cyan-900/30', border: 'border-cyan-200 dark:border-cyan-700', route: '/rq' },
-  { key: 'EX' as const, icon: BarChart3, label: 'Chi phí', shortLabel: 'CP', gradient: 'from-indigo-500 to-blue-600', shadow: 'shadow-indigo-500/30', color: 'text-indigo-600 dark:text-indigo-400', bg: 'bg-indigo-50 dark:bg-indigo-900/30', border: 'border-indigo-200 dark:border-indigo-700', route: '/expense' },
-  { key: 'STORAGE' as const, icon: HardDrive, label: 'Kho dữ liệu', shortLabel: 'DL', gradient: 'from-violet-500 to-purple-600', shadow: 'shadow-violet-500/30', color: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-50 dark:bg-violet-900/30', border: 'border-violet-200 dark:border-violet-700', route: '/storage' },
-  { key: 'KB' as const, icon: BookOpen, label: 'Kho Kiến Thức', shortLabel: 'KT', gradient: 'from-amber-500 to-orange-600', shadow: 'shadow-amber-500/30', color: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-900/30', border: 'border-amber-200 dark:border-amber-700', route: '/knowledge-base' },
-  { key: 'AI' as const, icon: Bot, label: 'Trợ lý AI', shortLabel: 'AI', gradient: 'from-fuchsia-500 to-purple-600', shadow: 'shadow-fuchsia-500/30', color: 'text-fuchsia-600 dark:text-fuchsia-400', bg: 'bg-fuchsia-50 dark:bg-fuchsia-900/30', border: 'border-fuchsia-200 dark:border-fuchsia-700', route: '/ai' },
-  { key: 'EP' as const, icon: IdCard, label: 'Hồ sơ NV', shortLabel: 'EP', gradient: 'from-sky-500 to-blue-600', shadow: 'shadow-sky-500/30', color: 'text-sky-600 dark:text-sky-400', bg: 'bg-sky-50 dark:bg-sky-900/30', border: 'border-sky-200 dark:border-sky-700', route: '/ep' },
-  { key: 'HD' as const, icon: FileSignature, label: 'Hợp đồng', shortLabel: 'HĐ', gradient: 'from-blue-500 to-indigo-600', shadow: 'shadow-blue-500/30', color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-50 dark:bg-blue-900/30', border: 'border-blue-200 dark:border-blue-700', route: '/hd/partners' },
-  { key: 'TENDER_AI' as const, icon: Bot, label: 'Tender AI', shortLabel: 'TAI', gradient: 'from-fuchsia-500 to-purple-600', shadow: 'shadow-fuchsia-500/30', color: 'text-fuchsia-600 dark:text-fuchsia-400', bg: 'bg-fuchsia-50 dark:bg-fuchsia-900/30', border: 'border-fuchsia-200 dark:border-fuchsia-700', route: '/tender-ai/boq' },
+  { key: 'WMS' as const, icon: Package, label: 'Vật tư', shortLabel: 'KHO', route: '/inventory' },
+  { key: 'HRM' as const, icon: Briefcase, label: 'Nhân sự', shortLabel: 'NS', route: '/hrm/employees' },
+  { key: 'WF' as const, icon: GitBranch, label: 'Quy trình', shortLabel: 'QT', route: '/wf' },
+  { key: 'DA' as const, icon: BarChart3, label: 'Dự án', shortLabel: 'DA', route: '/da' },
+  { key: 'PROCUREMENT' as const, icon: ShoppingCart, label: 'Mua hàng', shortLabel: 'MH', route: '/procurement' },
+  { key: 'TS' as const, icon: Landmark, label: 'Tài sản', shortLabel: 'TS', route: '/ts/dashboard' },
+  { key: 'RQ' as const, icon: Inbox, label: 'Yêu cầu', shortLabel: 'RQ', route: '/rq' },
+  { key: 'EX' as const, icon: BarChart3, label: 'Chi phí', shortLabel: 'CP', route: '/expense' },
+  { key: 'STORAGE' as const, icon: HardDrive, label: 'Kho dữ liệu', shortLabel: 'DL', route: '/storage' },
+  { key: 'KB' as const, icon: BookOpen, label: 'Kho Kiến Thức', shortLabel: 'KT', route: '/knowledge-base' },
+  { key: 'AI' as const, icon: Bot, label: 'Trợ lý AI', shortLabel: 'AI', route: '/ai' },
+  { key: 'EP' as const, icon: IdCard, label: 'Hồ sơ NV', shortLabel: 'EP', route: '/ep' },
+  { key: 'HD' as const, icon: FileSignature, label: 'Hợp đồng', shortLabel: 'HĐ', route: '/hd/partners' },
+  { key: 'TENDER_AI' as const, icon: Bot, label: 'Tender AI', shortLabel: 'TAI', route: '/tender-ai/boq' },
 ] as const;
 
 type AppKey = typeof MODULE_CONFIG[number]['key'];
@@ -314,10 +314,17 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
       <aside className={`fixed top-0 left-0 z-[70] h-[100dvh] ${sidebarWidth} text-slate-800 dark:text-white transition-all duration-300 lg:translate-x-0 lg:static ${sidebarBg} ${isOpen ? 'translate-x-0' : '-translate-x-full'} flex flex-col`}>
 
         {/* Logo */}
-        <div className={`flex items-center h-16 px-4 border-b border-white/20 dark:border-white/5 shrink-0 ${collapsed ? 'justify-center' : 'space-x-3'}`}>
-          <div className="w-8 h-8 bg-accent rounded-lg flex items-center justify-center font-black text-xs uppercase shadow-lg shadow-blue-500/40 shrink-0">
-            {appSettings.name.slice(0, 2)}
-          </div>
+        <div
+          onClick={goBackToHome}
+          className="flex items-center justify-center h-16 px-4 border-b border-white/20 dark:border-white/5 shrink-0 gap-2.5 cursor-pointer hover:opacity-90 transition-opacity"
+        >
+          {appSettings.logo ? (
+            <img src={appSettings.logo} alt={appSettings.name} className="w-8 h-8 object-contain rounded-lg shadow-sm shrink-0" />
+          ) : (
+            <div className="w-8 h-8 bg-accent rounded-lg flex items-center justify-center font-black text-xs uppercase shadow-lg shadow-blue-500/40 shrink-0 text-white">
+              {appSettings.name.slice(0, 2)}
+            </div>
+          )}
           {!collapsed && <span className="text-lg font-black tracking-tight truncate">{appSettings.name}</span>}
         </div>
 
@@ -399,10 +406,10 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
                           onDrop={() => handleDrop(idx)}
                           onDragEnd={handleDragEnd}
                           onClick={() => { handleModuleClick(mod); toggle(); }}
-                          className={`flex flex-col items-center gap-1.5 py-3 px-1 rounded-xl transition-all ${dragOverIdx === idx ? 'ring-2 ring-accent scale-105' : ''} ${dragIdx === idx ? 'opacity-40' : ''} ${isActiveModule ? `bg-gradient-to-br ${mod.gradient} text-white shadow-lg ${mod.shadow}` : `${mod.bg} border ${mod.border} hover:shadow-md`}`}
+                          className={`flex flex-col items-center gap-1.5 py-3 px-1 rounded-xl transition-all ${dragOverIdx === idx ? 'ring-2 ring-teal-500 scale-105' : ''} ${dragIdx === idx ? 'opacity-40' : ''} ${isActiveModule ? 'bg-teal-700 text-white shadow-sm border border-teal-800' : 'bg-zinc-50/80 dark:bg-zinc-900/40 border border-zinc-200/80 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-800/60'}`}
                         >
-                          <ModIcon size={20} className={isActiveModule ? '' : mod.color.split(' ')[0]} />
-                          <span className={`text-[9px] font-bold leading-tight text-center ${isActiveModule ? 'text-white' : 'text-slate-600 dark:text-slate-400'}`}>{mod.shortLabel}</span>
+                          <ModIcon size={20} className={isActiveModule ? 'text-white' : 'text-zinc-700 dark:text-zinc-300'} />
+                          <span className={`text-[9px] font-bold leading-tight text-center ${isActiveModule ? 'text-white' : 'text-zinc-700 dark:text-zinc-300'}`}>{mod.shortLabel}</span>
                         </button>
                       );
                     })}
@@ -479,9 +486,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
                   <ArrowLeft size={14} className="mr-2 group-hover:-translate-x-0.5 transition-transform" />
                   <span className="text-xs font-bold">Quay lại</span>
                 </button>
-                <div className={`mx-1 mb-2 px-3 py-2 rounded-xl flex items-center gap-2.5 bg-gradient-to-r ${activeModule.gradient} text-white shadow-lg ${activeModule.shadow}`}>
+                <div className="mx-1 mb-2 px-3 py-2 rounded-xl flex items-center gap-2.5 bg-teal-700 text-white shadow-sm border border-teal-800">
                   <activeModule.icon size={18} />
-                  <span className="text-sm font-black">{activeModule.label}</span>
+                  <span className="text-sm font-semibold">{activeModule.label}</span>
                 </div>
                 {filteredNavItems.map((item: any) => (
                   <NavLink key={item.to} to={item.to} end onClick={toggle}
@@ -700,6 +707,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
                 <div className="space-y-1 mt-1">
                   {orderedModules.map((mod, idx) => {
                     const ModIcon = mod.icon;
+                    const isActiveModule = detectAppFromUrl() === mod.key;
                     return (
                       <button
                         key={mod.key}
@@ -710,17 +718,17 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
                         onDragEnd={handleDragEnd}
                         onClick={() => handleModuleClick(mod)}
                         title={collapsed ? mod.label : undefined}
-                        className={`w-full flex items-center ${collapsed ? 'justify-center' : 'gap-3'} ${collapsed ? 'px-2' : 'px-4'} py-3 rounded-xl transition-all group hover:shadow-md ${mod.bg} border ${mod.border} ${dragOverIdx === idx ? 'ring-2 ring-accent scale-[1.03] shadow-lg' : 'hover:scale-[1.01]'} ${dragIdx === idx ? 'opacity-40' : ''}`}
+                        className={`w-full flex items-center ${collapsed ? 'justify-center' : 'gap-3'} ${collapsed ? 'px-2' : 'px-4'} py-2.5 rounded-xl transition-all group border ${isActiveModule ? 'bg-teal-700 text-white border-teal-800 shadow-sm' : 'bg-zinc-50/80 dark:bg-zinc-900/40 border-zinc-200/80 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-800/60'} ${dragOverIdx === idx ? 'ring-2 ring-teal-500 scale-[1.02]' : ''} ${dragIdx === idx ? 'opacity-40' : ''}`}
                       >
                         {!collapsed && (
-                          <GripVertical size={14} className="text-slate-300 dark:text-slate-600 shrink-0 cursor-grab active:cursor-grabbing" />
+                          <GripVertical size={14} className={`shrink-0 cursor-grab active:cursor-grabbing ${isActiveModule ? 'text-teal-200' : 'text-zinc-400 dark:text-zinc-600'}`} />
                         )}
-                        <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${mod.gradient} flex items-center justify-center text-white shadow-sm ${mod.shadow} shrink-0`}>
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-colors ${isActiveModule ? 'bg-teal-800/60 text-white' : 'bg-zinc-200/70 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 group-hover:bg-teal-700/10 group-hover:text-teal-700 dark:group-hover:text-teal-400'}`}>
                           <ModIcon size={16} />
                         </div>
                         {!collapsed && (
                           <div className="text-left min-w-0 flex-1">
-                            <span className={`text-sm font-bold ${mod.color} block truncate`}>{mod.label}</span>
+                            <span className={`text-sm font-semibold block truncate ${isActiveModule ? 'text-white' : 'text-zinc-800 dark:text-zinc-200'}`}>{mod.label}</span>
                           </div>
                         )}
                       </button>
@@ -745,9 +753,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
 
               {/* Active module header */}
               {!collapsed && (
-                <div className={`mx-1 mb-2 px-3 py-2 rounded-xl flex items-center gap-2.5 bg-gradient-to-r ${activeModule.gradient} text-white shadow-lg ${activeModule.shadow}`}>
+                <div className="mx-1 mb-2 px-3 py-2 rounded-xl flex items-center gap-2.5 bg-teal-700 text-white shadow-sm border border-teal-800">
                   <activeModule.icon size={18} />
-                  <span className="text-sm font-black">{activeModule.label}</span>
+                  <span className="text-sm font-semibold">{activeModule.label}</span>
                 </div>
               )}
 

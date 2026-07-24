@@ -118,6 +118,11 @@ export interface User {
   allowedSubModules?: Record<string, string[]>; // Module key -> danh sách route sub-app được phép (VD: { "HRM": ["/hrm/attendance", "/hrm/leave"] })
   adminSubModules?: Record<string, string[]>; // Module key -> danh sách route sub-app có quyền CRUD (VD: { "HRM": ["/hrm/employees"] })
   signatureUrl?: string; // URL ảnh chữ ký số
+  position?: string; // Chức danh / Vị trí công tác (VD: TP HCNS, Chỉ huy Phó, Cán bộ IT)
+  managerId?: string; // User ID của người quản lý trực tiếp
+  birthDate?: string; // Ngày sinh (YYYY-MM-DD hoặc DD/MM/YYYY)
+  isOnline?: boolean; // Trạng thái Online
+  lastLoginAt?: string; // Thời gian đăng nhập gần nhất
   isActive?: boolean;
   accountStatus?: UserAccountStatus;
   accountOperationStatus?: UserAccountOperationStatus;
@@ -4237,6 +4242,29 @@ export interface WorkflowInstanceComment {
   authorUserId: string;
   body: string;
   attachments: WorkflowInstanceCommentAttachment[];
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface WorkflowStepTaskAttachment {
+  id: string;
+  fileName: string;
+  fileSize: number;
+  mimeType: string;
+  storagePath: string;
+  uploadedAt?: string;
+}
+
+export interface WorkflowStepTask {
+  id: string;
+  instanceId: string;
+  nodeId: string;
+  title: string;
+  isCompleted: boolean;
+  completedBy?: string | null;
+  completedAt?: string | null;
+  attachments: WorkflowStepTaskAttachment[];
+  createdBy: string;
   createdAt: string;
   updatedAt?: string;
 }

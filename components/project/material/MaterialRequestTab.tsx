@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { AlertTriangle, Calendar, ChevronRight, Clock, LayoutGrid, ListChecks, Loader2, Package, Plus, Search } from 'lucide-react';
+import { Activity, AlertTriangle, Calendar, ChevronDown, ChevronRight, Clock, LayoutGrid, ListChecks, Loader2, Package, Plus, Search } from 'lucide-react';
 import {
     InventoryItem,
     MaterialRequest,
@@ -358,21 +358,32 @@ export const MaterialRequestTab: React.FC<MaterialRequestTabProps> = ({
 
             {requests.length > 0 && (
                 <>
-                    <React.Suspense fallback={<LazyPanelFallback label="Đang tải hộp việc workflow..." />}>
-                        <ProjectWorkflowInbox
-                            requests={sortedRequests}
-                            subjectsByRequestId={requestWorkflowSubjects}
-                            users={users}
-                            currentUserId={currentUserId}
-                            onOpenRequest={onOpenRequest}
-                        />
-                        <ProjectWorkflowAnalyticsPanel
-                            requests={sortedRequests}
-                            subjectsByRequestId={requestWorkflowSubjects}
-                            users={users}
-                        />
-                    </React.Suspense>
-                    <div className="flex flex-col gap-3 border-b border-slate-100 bg-white px-5 py-3 lg:flex-row lg:items-center lg:justify-between">
+                    <details className="group border-b border-zinc-200 dark:border-zinc-800">
+                        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-3 bg-zinc-50 dark:bg-zinc-800/40 text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800">
+                            <span className="flex items-center gap-2">
+                                <Activity size={14} className="text-teal-700 dark:text-teal-400" />
+                                Theo dõi workflow & Hộp việc SLA ({sortedRequests.length} phiếu)
+                            </span>
+                            <ChevronDown size={14} className="text-zinc-400 transition-transform group-open:rotate-180" />
+                        </summary>
+                        <div className="p-4 space-y-4 border-t border-zinc-200 dark:border-zinc-800">
+                            <React.Suspense fallback={<LazyPanelFallback label="Đang tải hộp việc workflow..." />}>
+                                <ProjectWorkflowInbox
+                                    requests={sortedRequests}
+                                    subjectsByRequestId={requestWorkflowSubjects}
+                                    users={users}
+                                    currentUserId={currentUserId}
+                                    onOpenRequest={onOpenRequest}
+                                />
+                                <ProjectWorkflowAnalyticsPanel
+                                    requests={sortedRequests}
+                                    subjectsByRequestId={requestWorkflowSubjects}
+                                    users={users}
+                                />
+                            </React.Suspense>
+                        </div>
+                    </details>
+                    <div className="flex flex-col gap-3 border-b border-zinc-200 bg-white px-5 py-3 dark:border-zinc-800 dark:bg-zinc-900 lg:flex-row lg:items-center lg:justify-between">
                         <div className="flex flex-wrap gap-1.5">
                             {([
                                 ['all', 'Tất cả'],

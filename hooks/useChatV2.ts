@@ -11,6 +11,7 @@ import {
   ChatV2Conversation,
   ChatV2Mention,
   ChatV2Message,
+  ChatV2MessageKind,
   ChatV2MessageCursor,
   ChatV2ReplyPreview,
   ChatV2RealtimeEvent,
@@ -194,13 +195,72 @@ export const useChatV2 = (currentUser: User, users: User[]) => {
 
   const sendStructuredMessage = useCallback(async (input: Omit<ChatV2SendMessageInput, 'conversationId'>) => {
     if (!activeConversationId || !currentUser?.id) return;
-    const messageId = await chatV2Service.sendStructuredMessage({ ...input, conversationId: activeConversationId }, currentUser.id);
-    const message = await chatV2Service.getMessage(messageId, currentUser.id);
-    if (message) {
-      mergeMessage('INSERT', message);
-      updateConversationPreview(message);
+
+    // 1. Instantly create an optimistic message object for 0ms UI latency
+    const tempId = `temp-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    const nowIso = new Date().toISOString();
+    const hasFiles = input.attachments && input.attachments.length > 0;
+    const isImg = hasFiles && input.attachments![0].type.startsWith('image/');
+    const kind: ChatV2MessageKind = input.kind || (isImg ? 'image' : hasFiles ? 'file' : 'text');
+
+    const optimisticMessage: ChatV2Message = {
+      id: tempId,
+      conversationId: activeConversationId,
+      senderId: currentUser.id,
+      body: input.body || '',
+      kind,
+      replyToMessageId: input.replyToMessageId || null,
+      metadata: input.metadata || {},
+      payload: input.payload || {},
+      replyPreview: input.replyPreview || null,
+      mentions: input.mentions || [],
+      createdAt: nowIso,
+      updatedAt: nowIso,
+      attachments: (input.attachments || []).map((file, idx) => ({
+        id: `temp-att-${idx}`,
+        conversationId: activeConversationId,
+        messageId: tempId,
+        uploadedBy: currentUser.id,
+        storageBucket: 'chat-attachments',
+        storagePath: '',
+        fileName: file.name,
+        mimeType: file.type,
+        sizeBytes: file.size,
+        signedUrl: file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined,
+      })),
+      reactions: [],
+      reactionSummary: [],
+      pollVotes: [],
+      checklistItems: (input.checklistItems || []).map((item, idx) => ({
+        id: `temp-chk-${idx}`,
+        conversationId: activeConversationId,
+        messageId: tempId,
+        content: item,
+        sortOrder: idx,
+        isDone: false,
+        createdAt: nowIso,
+      })),
+      quickConfirmResponses: [],
+      isOptimistic: true,
+    };
+
+    // 2. Immediate local state update
+    setMessages(prev => [...prev, optimisticMessage]);
+    updateConversationPreview(optimisticMessage);
+
+    // 3. Perform background DB insert & swap temp message with real server message
+    try {
+      const messageId = await chatV2Service.sendStructuredMessage({ ...input, conversationId: activeConversationId }, currentUser.id);
+      const realMessage = await chatV2Service.getMessage(messageId, currentUser.id);
+      if (realMessage) {
+        setMessages(prev => prev.map(msg => msg.id === tempId ? realMessage : msg));
+        updateConversationPreview(realMessage);
+      }
+    } catch (err) {
+      console.error('Chat v2 message send error:', err);
+      setMessages(prev => prev.map(msg => msg.id === tempId ? { ...msg, isFailed: true, isOptimistic: false } : msg));
     }
-  }, [activeConversationId, currentUser?.id, mergeMessage, updateConversationPreview]);
+  }, [activeConversationId, currentUser?.id, updateConversationPreview]);
 
   const sendMessage = useCallback(async (
     body: string,

@@ -165,6 +165,8 @@ export interface ChatV2Message {
   pollVotes: ChatV2PollVote[];
   checklistItems: ChatV2ChecklistItem[];
   quickConfirmResponses: ChatV2QuickConfirmResponse[];
+  isOptimistic?: boolean;
+  isFailed?: boolean;
 }
 
 export interface ChatV2MessageCursor {

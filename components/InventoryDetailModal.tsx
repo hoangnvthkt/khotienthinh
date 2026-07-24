@@ -1,14 +1,16 @@
 
 import React, { useMemo, useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   X, Package, MapPin, Tag, DollarSign, Ruler, ShieldAlert,
   PlusCircle, Send, Edit3, Save, RotateCcw, Trash2, Truck,
-  History, ArrowRight, ArrowDownLeft, ArrowUpRight, ArrowLeftRight, Flame, Printer, Loader2
+  History, ArrowRight, ArrowDownLeft, ArrowUpRight, ArrowLeftRight, Flame, Printer, Loader2, ExternalLink
 } from 'lucide-react';
 import { BusinessPartner, InventoryItem, Role, Transaction, TransactionType, TransactionStatus } from '../types';
 import { useApp } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import DeleteInventoryModal from './DeleteInventoryModal';
+import TransactionDetailModal from './TransactionDetailModal';
 import { QRCodeCanvas } from 'qrcode.react';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
 import { partnerService } from '../lib/partnerService';
@@ -21,6 +23,7 @@ interface InventoryDetailModalProps {
 }
 
 const InventoryDetailModal: React.FC<InventoryDetailModalProps> = ({ isOpen, onClose, item }) => {
+  const navigate = useNavigate();
   const {
     warehouses, user, addTransaction, logActivity, updateItem,
     removeItem, categories, units, suppliers, transactions, users
@@ -40,8 +43,9 @@ const InventoryDetailModal: React.FC<InventoryDetailModalProps> = ({ isOpen, onC
   const [editData, setEditData] = useState<Partial<InventoryItem>>({});
   const [supplierPartners, setSupplierPartners] = useState<BusinessPartner[]>([]);
 
-  // State cho Modal xoá
+  // State cho Modal xoá & Chi tiết Giao dịch (Deeplink)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
 
   useEffect(() => {
     if (item && isOpen) {
@@ -564,105 +568,131 @@ const InventoryDetailModal: React.FC<InventoryDetailModalProps> = ({ isOpen, onC
               </div>
             </section>
 
-            {/* Transaction History Section */}
-            {isAdmin && (
-              <section className="animate-in fade-in slide-in-from-bottom-2 duration-500">
-                <div className="flex items-center justify-between mb-3">
-                  <h4 className="font-bold text-slate-800 flex items-center text-sm">
-                    <History size={16} className="mr-2 text-slate-500" /> Thẻ kho - Lịch sử biến động
-                  </h4>
-                  <span className="text-[10px] font-black text-slate-400 uppercase bg-slate-100 px-2 py-0.5 rounded-full">
-                    {itemHistory.length} giao dịch
-                  </span>
-                </div>
+            {/* Transaction History Section (Visible for Admin & Storekeepers) */}
+            <section className="animate-in fade-in slide-in-from-bottom-2 duration-500">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="font-bold text-zinc-900 dark:text-zinc-100 flex items-center text-sm">
+                  <History size={16} className="mr-2 text-teal-700 dark:text-teal-400" /> Thẻ kho - Lịch sử biến động
+                </h4>
+                <span className="text-[10px] font-semibold text-teal-800 dark:text-teal-300 uppercase bg-teal-50 dark:bg-teal-950/40 border border-teal-200 dark:border-teal-800/60 px-2.5 py-0.5 rounded-full">
+                  {itemHistory.length} giao dịch
+                </span>
+              </div>
 
-                <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-[11px] md:text-xs min-w-[650px]">
-                      <thead className="bg-slate-50 text-slate-400 font-bold border-b border-slate-200 uppercase tracking-widest text-[9px] whitespace-nowrap">
-                        <tr>
-                          <th className="p-3">Thời gian</th>
-                          <th className="p-3">Loại hình</th>
-                          <th className="p-3">Kho liên quan</th>
-                          <th className="p-3 text-right">Số lượng</th>
-                          <th className="p-3">Người thực hiện</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {itemHistory.length > 0 ? (
-                          itemHistory.map(tx => {
-                            const badge = getTxTypeBadge(tx.type);
-                            const txItem = tx.items.find(ti => ti.itemId === item.id);
-                            const requester = users.find(u => u.id === tx.requesterId);
-                            const sourceWh = warehouses.find(w => w.id === tx.sourceWarehouseId);
-                            const targetWh = warehouses.find(w => w.id === tx.targetWarehouseId);
+              <div className="border border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden bg-white dark:bg-zinc-900 shadow-sm">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-[11px] md:text-xs min-w-[650px]">
+                    <thead className="bg-zinc-50 dark:bg-zinc-800/60 text-zinc-500 dark:text-zinc-400 font-semibold border-b border-zinc-200 dark:border-zinc-800 uppercase tracking-wider text-[9px] whitespace-nowrap">
+                      <tr>
+                        <th className="p-3">Thời gian</th>
+                        <th className="p-3">Loại hình</th>
+                        <th className="p-3">Kho liên quan</th>
+                        <th className="p-3 text-right">Số lượng</th>
+                        <th className="p-3">Người thực hiện</th>
+                        <th className="p-3 text-center">Chi tiết</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                      {itemHistory.length > 0 ? (
+                        itemHistory.map(tx => {
+                          const badge = getTxTypeBadge(tx.type);
+                          const txItem = tx.items.find(ti => ti.itemId === item.id);
+                          const requester = users.find(u => u.id === tx.requesterId);
+                          const sourceWh = warehouses.find(w => w.id === tx.sourceWarehouseId);
+                          const targetWh = warehouses.find(w => w.id === tx.targetWarehouseId);
 
-                            return (
-                              <tr key={tx.id} className="hover:bg-slate-50/50 transition-colors">
-                                <td className="p-3 text-slate-500 font-medium whitespace-nowrap">
-                                  {new Date(tx.date).toLocaleDateString('vi-VN')}
-                                  <div className="text-[9px] opacity-60 uppercase">{new Date(tx.date).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</div>
-                                </td>
-                                <td className="p-3 whitespace-nowrap">
-                                  <div className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] font-bold ${badge.color}`}>
-                                    {badge.icon} {badge.label}
-                                  </div>
-                                </td>
-                                <td className="p-3 max-w-[150px]">
-                                  <div className="flex items-center gap-1 truncate">
-                                    {tx.type === TransactionType.IMPORT && <span className="text-slate-800 font-bold">→ {targetWh?.name}</span>}
-                                    {tx.type === TransactionType.EXPORT && <span className="text-slate-800 font-bold">{sourceWh?.name} →</span>}
-                                    {tx.type === TransactionType.LIQUIDATION && <span className="text-red-600 font-bold">🗑 {sourceWh?.name}</span>}
-                                    {tx.type === TransactionType.TRANSFER && (
-                                      <div className="flex items-center gap-1 truncate">
-                                        <span className="text-slate-500">{sourceWh?.name}</span>
-                                        <ArrowRight size={10} className="text-slate-300" />
-                                        <span className="text-blue-600 font-bold">{targetWh?.name}</span>
-                                      </div>
-                                    )}
-                                  </div>
-                                </td>
-                                <td className={`p-3 text-right font-black whitespace-nowrap ${tx.type === TransactionType.IMPORT ? 'text-emerald-600' :
-                                  tx.type === TransactionType.LIQUIDATION ? 'text-red-600' : 'text-orange-600'
-                                  }`}>
-                                  {tx.type === TransactionType.IMPORT ? '+' : '-'}{txItem?.quantity.toLocaleString()} {item.unit}
-                                  {/* Hiển thị số liệu kế toán (KG) nếu có */}
-                                  {txItem?.accountingQty && txItem?.accountingUnit && (
-                                    <div className="text-[9px] text-amber-600 font-black mt-0.5">
-                                      = {txItem.accountingQty.toLocaleString('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {txItem.accountingUnit}
-                                      {txItem.accountingPrice && (
-                                        <span className="text-amber-500 ml-1">@ {txItem.accountingPrice.toLocaleString('vi-VN')}₫/{txItem.accountingUnit}</span>
-                                      )}
+                          return (
+                            <tr
+                              key={tx.id}
+                              onClick={() => setSelectedTransaction(tx)}
+                              className="hover:bg-teal-50/50 dark:hover:bg-teal-950/40 transition-colors cursor-pointer group"
+                              title={`Bấm để mở chi tiết giao dịch (Deeplink: ${tx.id})`}
+                            >
+                              <td className="p-3 text-zinc-600 dark:text-zinc-400 font-medium whitespace-nowrap">
+                                {new Date(tx.date).toLocaleDateString('vi-VN')}
+                                <div className="text-[9px] opacity-60 uppercase">{new Date(tx.date).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</div>
+                              </td>
+                              <td className="p-3 whitespace-nowrap">
+                                <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg border text-[10px] font-semibold ${badge.color}`}>
+                                  {badge.icon} {badge.label}
+                                </div>
+                              </td>
+                              <td className="p-3 max-w-[150px]">
+                                <div className="flex items-center gap-1 truncate">
+                                  {tx.type === TransactionType.IMPORT && <span className="text-zinc-900 dark:text-zinc-100 font-bold">→ {targetWh?.name}</span>}
+                                  {tx.type === TransactionType.EXPORT && <span className="text-zinc-900 dark:text-zinc-100 font-bold">{sourceWh?.name} →</span>}
+                                  {tx.type === TransactionType.LIQUIDATION && <span className="text-teal-800 dark:text-teal-300 font-bold">🗑 {sourceWh?.name}</span>}
+                                  {tx.type === TransactionType.TRANSFER && (
+                                    <div className="flex items-center gap-1 truncate">
+                                      <span className="text-zinc-500">{sourceWh?.name}</span>
+                                      <ArrowRight size={10} className="text-zinc-400" />
+                                      <span className="text-teal-700 dark:text-teal-400 font-bold">{targetWh?.name}</span>
                                     </div>
                                   )}
-                                </td>
-                                <td className="p-3 text-slate-500 truncate italic whitespace-nowrap">
-                                  {requester?.name || 'Hệ thống'}
-                                </td>
-                              </tr>
-                            );
-                          })
-                        ) : (
-                          <tr>
-                            <td colSpan={5} className="p-8 text-center text-slate-400 font-medium italic">
-                              Chưa có lịch sử giao dịch thành công cho vật tư này.
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
+                                </div>
+                              </td>
+                              <td className={`p-3 text-right font-bold whitespace-nowrap ${tx.type === TransactionType.IMPORT ? 'text-teal-700 dark:text-teal-400' :
+                                tx.type === TransactionType.LIQUIDATION ? 'text-teal-900 dark:text-teal-200' : 'text-teal-800 dark:text-teal-300'
+                                }`}>
+                                {tx.type === TransactionType.IMPORT ? '+' : '-'}{txItem?.quantity.toLocaleString()} {item.unit}
+                                {/* Hiển thị số liệu kế toán (KG) nếu có */}
+                                {txItem?.accountingQty && txItem?.accountingUnit && (
+                                  <div className="text-[9px] text-teal-700 dark:text-teal-400 font-semibold mt-0.5">
+                                    = {txItem.accountingQty.toLocaleString('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {txItem.accountingUnit}
+                                    {txItem.accountingPrice && (
+                                      <span className="text-teal-600 dark:text-teal-500 ml-1">@ {txItem.accountingPrice.toLocaleString('vi-VN')}₫/{txItem.accountingUnit}</span>
+                                    )}
+                                  </div>
+                                )}
+                              </td>
+                              <td className="p-3 text-zinc-500 dark:text-zinc-400 truncate italic whitespace-nowrap">
+                                {requester?.name || 'Hệ thống'}
+                              </td>
+                              <td className="p-3 text-center whitespace-nowrap">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedTransaction(tx);
+                                  }}
+                                  className="inline-flex items-center gap-1 text-[11px] font-semibold text-teal-700 hover:text-teal-800 dark:text-teal-400 dark:hover:text-teal-300 hover:underline"
+                                  title="Deeplink chi tiết phiếu"
+                                >
+                                  <ExternalLink size={13} /> Xem
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      ) : (
+                        <tr>
+                          <td colSpan={6} className="p-8 text-center text-zinc-400 font-medium italic">
+                            Chưa có lịch sử giao dịch thành công cho vật tư này.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
                 </div>
-              </section>
-            )}
+              </div>
+            </section>
           </div>
 
           {/* Footer */}
-          <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end items-center sticky bottom-0 z-10">
-            <button onClick={onClose} className="px-8 py-2 bg-slate-800 text-white rounded-lg font-bold text-sm hover:bg-slate-700 transition-colors shadow-md">
+          <div className="p-4 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 flex justify-end items-center sticky bottom-0 z-10">
+            <button onClick={onClose} className="px-8 py-2 bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 text-white rounded-xl font-bold text-sm transition-colors shadow-sm">
               Đóng
             </button>
           </div>
+
+          {/* Deeplink Transaction Detail Modal */}
+          {selectedTransaction && (
+            <TransactionDetailModal
+              isOpen={!!selectedTransaction}
+              onClose={() => setSelectedTransaction(null)}
+              transaction={selectedTransaction}
+            />
+          )}
         </div>
       </div>
     </>

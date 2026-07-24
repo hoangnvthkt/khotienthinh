@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useWorkflow } from '../../context/WorkflowContext';
 import { useApp } from '../../context/AppContext';
 import {
@@ -623,11 +623,14 @@ const WorkflowInstances: React.FC = () => {
     const [viewMode, setViewMode] = useState<'list' | 'board'>('list');
     const [boardTemplateId, setBoardTemplateId] = useState<string>('');
     const [boardDetailInstanceId, setBoardDetailInstanceId] = useState<string | null>(null);
-    const [expandedId, setExpandedId] = useState<string | null>(null);
+    const [searchParams, setSearchParams] = useSearchParams();
+    const targetInstanceId = useMemo(() => {
+        return searchParams.get('id') || searchParams.get('wf') || searchParams.get('instanceId');
+    }, [searchParams]);
+    const [expandedId, setExpandedId] = useState<string | null>(() => targetInstanceId);
     const [selectedTemplateIdFilter, setSelectedTemplateIdFilter] = useState('');
     const instanceRefs = useRef<Record<string, HTMLDivElement | null>>({});
     const loadedFormDataIdsRef = useRef<Set<string>>(new Set());
-    const targetInstanceId = useMemo(() => new URLSearchParams(location.search).get('instanceId'), [location.search]);
 
     // File preview state
     const [previewFile, setPreviewFile] = useState<any>(null);
@@ -779,11 +782,13 @@ const WorkflowInstances: React.FC = () => {
     const handleToggleExpand = useCallback(async (instance: WorkflowInstance) => {
         if (expandedId === instance.id) {
             setExpandedId(null);
+            setSearchParams({}, { replace: true });
             return;
         }
         setExpandedId(instance.id);
+        setSearchParams({ id: instance.id }, { replace: true });
         await ensureInstanceFormData(instance);
-    }, [expandedId, ensureInstanceFormData]);
+    }, [expandedId, ensureInstanceFormData, setSearchParams]);
 
     const handleStepFileUpload = useCallback(async (files: FileList | null) => {
         if (!files || files.length === 0) return;
@@ -1531,7 +1536,7 @@ const WorkflowInstances: React.FC = () => {
                             <div className="w-full h-full overflow-y-auto px-6 py-4 select-text">
                                 <WorkflowInstanceDetail
                                     instanceId={activeInstanceId}
-                                    onBack={() => setExpandedId(null)}
+                                    onBack={() => { setExpandedId(null); setSearchParams({}, { replace: true }); }}
                                 />
                             </div>
                         </main>
