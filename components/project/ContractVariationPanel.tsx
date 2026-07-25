@@ -12,6 +12,7 @@ import { useAsyncAction } from '../../hooks/useAsyncAction';
 import ProjectRoomSubmissionDialog from './ProjectRoomSubmissionDialog';
 import { formatPolicyMessage, getProjectDocumentPolicy } from '../../lib/projectDocumentPolicy';
 import { projectDocumentActionLogService } from '../../lib/projectDocumentActionLogService';
+import { parseNonNegativeLocaleNumber } from '../../lib/localeNumberInput';
 
 interface Props {
   contractId: string;
@@ -34,7 +35,7 @@ interface DraftLine {
 }
 
 const fmt = (n: number) => n.toLocaleString('vi-VN') + ' đ';
-const num = (value: unknown) => Number(value || 0);
+const num = (value: unknown) => parseNonNegativeLocaleNumber(value);
 
 const STATUS_PERMISSION: Record<string, ProjectPermissionCode> = {
   submitted: 'submit',
@@ -349,9 +350,9 @@ const ContractVariationPanel: React.FC<Props> = ({ contractId, contractType, pro
               <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Nội dung/lý do điều chỉnh *" className="md:col-span-2 px-2 py-1.5 rounded-lg border border-violet-200 text-xs" />
               <input type="date" value={adjustmentDate} onChange={e => setAdjustmentDate(e.target.value)} className="px-2 py-1.5 rounded-lg border border-violet-200 text-xs" />
               <input value={reason} onChange={e => setReason(e.target.value)} placeholder="Ghi chú nội bộ" className="px-2 py-1.5 rounded-lg border border-violet-200 text-xs" />
-              <input type="number" value={discountPercent || ''} onChange={e => setDiscountPercent(num(e.target.value))} placeholder="% Chiết khấu" className="px-2 py-1.5 rounded-lg border border-violet-200 text-xs" />
-              <input type="number" value={overheadCost || ''} onChange={e => setOverheadCost(num(e.target.value))} placeholder="Chi phí chung" className="px-2 py-1.5 rounded-lg border border-violet-200 text-xs" />
-              <input type="number" value={vatPercent || ''} onChange={e => setVatPercent(num(e.target.value))} placeholder="VAT (%)" className="px-2 py-1.5 rounded-lg border border-violet-200 text-xs" />
+              <input type="text" inputMode="decimal" value={discountPercent || ''} onChange={e => setDiscountPercent(num(e.target.value))} placeholder="% Chiết khấu" className="px-2 py-1.5 rounded-lg border border-violet-200 text-xs" />
+              <input type="text" inputMode="decimal" value={overheadCost || ''} onChange={e => setOverheadCost(num(e.target.value))} placeholder="Chi phí chung" className="px-2 py-1.5 rounded-lg border border-violet-200 text-xs" />
+              <input type="text" inputMode="decimal" value={vatPercent || ''} onChange={e => setVatPercent(num(e.target.value))} placeholder="VAT (%)" className="px-2 py-1.5 rounded-lg border border-violet-200 text-xs" />
               <input value={attachmentUrl} onChange={e => setAttachmentUrl(e.target.value)} placeholder="Link đính kèm/phụ lục" className="px-2 py-1.5 rounded-lg border border-violet-200 text-xs" />
             </div>
 
@@ -382,8 +383,8 @@ const ContractVariationPanel: React.FC<Props> = ({ contractId, contractType, pro
                       </select>
                     )}
                     <input value={line.unit} onChange={e => updateLine(index, { unit: e.target.value })} placeholder="ĐVT" className="col-span-3 md:col-span-1 px-2 py-1.5 rounded-lg border border-slate-200 text-xs" />
-                    <input type="number" value={line.afterQuantity || ''} onChange={e => updateLine(index, { afterQuantity: num(e.target.value) })} placeholder={beforeQty ? `KL ${beforeQty}` : 'KL sau'} className="col-span-3 md:col-span-1 px-2 py-1.5 rounded-lg border border-slate-200 text-xs text-right" />
-                    <input type="number" value={line.afterUnitPrice || ''} onChange={e => updateLine(index, { afterUnitPrice: num(e.target.value) })} placeholder={beforePrice ? `ĐG ${beforePrice}` : 'Đơn giá'} className="col-span-4 md:col-span-2 px-2 py-1.5 rounded-lg border border-slate-200 text-xs text-right" />
+                    <input type="text" inputMode="decimal" value={line.afterQuantity || ''} onChange={e => updateLine(index, { afterQuantity: num(e.target.value) })} placeholder={beforeQty ? `KL ${beforeQty}` : 'KL sau'} className="col-span-3 md:col-span-1 px-2 py-1.5 rounded-lg border border-slate-200 text-xs text-right" />
+                    <input type="text" inputMode="decimal" value={line.afterUnitPrice || ''} onChange={e => updateLine(index, { afterUnitPrice: num(e.target.value) })} placeholder={beforePrice ? `ĐG ${beforePrice}` : 'Đơn giá'} className="col-span-4 md:col-span-2 px-2 py-1.5 rounded-lg border border-slate-200 text-xs text-right" />
                     <button onClick={() => setLines(prev => prev.length > 1 ? prev.filter((_, i) => i !== index) : [emptyLine()])} className="col-span-2 md:col-span-1 text-red-400 hover:text-red-600 flex justify-center">
                       <X size={14} />
                     </button>

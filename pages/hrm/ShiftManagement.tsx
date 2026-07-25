@@ -11,11 +11,14 @@ import { usePermission } from '../../hooks/usePermission';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
+import { parseNonNegativeLocaleNumber } from '../../lib/localeNumberInput';
 
 const SHIFT_COLORS = [
   '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444',
   '#06b6d4', '#ec4899', '#14b8a6', '#f97316', '#6366f1',
 ];
+
+const readLocaleNumber = (value: unknown) => parseNonNegativeLocaleNumber(value ?? 0);
 
 const ShiftManagement: React.FC = () => {
   const { employees, shiftTypes, employeeShifts, addHrmItem, updateHrmItem, removeHrmItem } = useApp();
@@ -363,7 +366,7 @@ const ShiftManagement: React.FC = () => {
                     </div>
                     <div>
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Nghỉ trưa (phút)</label>
-                      <input type="number" value={form.breakMinutes} onChange={e => setForm(f => ({ ...f, breakMinutes: parseInt(e.target.value) || 0 }))}
+                      <input type="text" inputMode="decimal" value={form.breakMinutes} onChange={e => setForm(f => ({ ...f, breakMinutes: readLocaleNumber(e.target.value) }))}
                         className="w-full px-3 py-2 text-sm font-bold border border-border rounded-xl bg-card text-foreground outline-none" />
                     </div>
                   </div>
@@ -372,17 +375,17 @@ const ShiftManagement: React.FC = () => {
                   <div className="grid grid-cols-3 gap-3">
                     <div>
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Grace muộn (phút)</label>
-                      <input type="number" value={form.graceLateMins} onChange={e => setForm(f => ({ ...f, graceLateMins: parseInt(e.target.value) || 0 }))}
+                      <input type="text" inputMode="decimal" value={form.graceLateMins} onChange={e => setForm(f => ({ ...f, graceLateMins: readLocaleNumber(e.target.value) }))}
                         className="w-full px-3 py-2 text-sm font-bold border border-border rounded-xl bg-card text-foreground outline-none" />
                     </div>
                     <div>
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Grace sớm (phút)</label>
-                      <input type="number" value={form.graceEarlyMins} onChange={e => setForm(f => ({ ...f, graceEarlyMins: parseInt(e.target.value) || 0 }))}
+                      <input type="text" inputMode="decimal" value={form.graceEarlyMins} onChange={e => setForm(f => ({ ...f, graceEarlyMins: readLocaleNumber(e.target.value) }))}
                         className="w-full px-3 py-2 text-sm font-bold border border-border rounded-xl bg-card text-foreground outline-none" />
                     </div>
                     <div>
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Giờ chuẩn</label>
-                      <input type="number" step="0.5" value={form.standardWorkingHours} onChange={e => setForm(f => ({ ...f, standardWorkingHours: parseFloat(e.target.value) || 8 }))}
+                      <input type="text" inputMode="decimal" step="0.5" value={form.standardWorkingHours} onChange={e => setForm(f => ({ ...f, standardWorkingHours: readLocaleNumber(e.target.value) || 8 }))}
                         className="w-full px-3 py-2 text-sm font-bold border border-border rounded-xl bg-card text-foreground outline-none" />
                     </div>
                   </div>
@@ -393,17 +396,17 @@ const ShiftManagement: React.FC = () => {
                     <div className="grid grid-cols-3 gap-3">
                       <div className="bg-blue-500/10 rounded-xl p-3">
                         <span className="text-[9px] font-black text-blue-500 block mb-1">NGÀY THƯỜNG</span>
-                        <input type="number" step="0.1" value={form.otMultiplierNormal} onChange={e => setForm(f => ({ ...f, otMultiplierNormal: parseFloat(e.target.value) || 1.5 }))}
+                        <input type="text" inputMode="decimal" step="0.1" value={form.otMultiplierNormal} onChange={e => setForm(f => ({ ...f, otMultiplierNormal: readLocaleNumber(e.target.value) || 1.5 }))}
                           className="w-full px-2 py-1 text-sm font-black text-center border border-blue-300 dark:border-blue-700 rounded-lg bg-card text-foreground outline-none" />
                       </div>
                       <div className="bg-amber-500/10 rounded-xl p-3">
                         <span className="text-[9px] font-black text-amber-500 block mb-1">T7 / CN</span>
-                        <input type="number" step="0.1" value={form.otMultiplierWeekend} onChange={e => setForm(f => ({ ...f, otMultiplierWeekend: parseFloat(e.target.value) || 2.0 }))}
+                        <input type="text" inputMode="decimal" step="0.1" value={form.otMultiplierWeekend} onChange={e => setForm(f => ({ ...f, otMultiplierWeekend: readLocaleNumber(e.target.value) || 2.0 }))}
                           className="w-full px-2 py-1 text-sm font-black text-center border border-amber-300 dark:border-amber-700 rounded-lg bg-card text-foreground outline-none" />
                       </div>
                       <div className="bg-destructive/10 rounded-xl p-3">
                         <span className="text-[9px] font-black text-red-500 block mb-1">LỄ / TẾT</span>
-                        <input type="number" step="0.1" value={form.otMultiplierHoliday} onChange={e => setForm(f => ({ ...f, otMultiplierHoliday: parseFloat(e.target.value) || 3.0 }))}
+                        <input type="text" inputMode="decimal" step="0.1" value={form.otMultiplierHoliday} onChange={e => setForm(f => ({ ...f, otMultiplierHoliday: readLocaleNumber(e.target.value) || 3.0 }))}
                           className="w-full px-2 py-1 text-sm font-black text-center border border-destructive/30 dark:border-destructive/50 rounded-lg bg-card text-foreground outline-none" />
                       </div>
                     </div>
@@ -419,7 +422,7 @@ const ShiftManagement: React.FC = () => {
                     {form.isNightShift && (
                       <div className="flex items-center gap-2">
                         <span className="text-[10px] font-bold text-slate-400">Phụ cấp:</span>
-                        <input type="number" step="0.05" value={form.nightShiftPremium} onChange={e => setForm(f => ({ ...f, nightShiftPremium: parseFloat(e.target.value) || 0.3 }))}
+                        <input type="text" inputMode="decimal" step="0.05" value={form.nightShiftPremium} onChange={e => setForm(f => ({ ...f, nightShiftPremium: readLocaleNumber(e.target.value) || 0.3 }))}
                           className="w-16 px-2 py-1 text-xs font-bold text-center border border-border rounded-lg bg-card text-foreground outline-none" />
                         <span className="text-[10px] font-bold text-slate-400">(={(form.nightShiftPremium * 100).toFixed(0)}%)</span>
                       </div>

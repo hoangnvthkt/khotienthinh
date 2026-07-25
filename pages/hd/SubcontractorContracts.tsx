@@ -21,9 +21,13 @@ import {
   uploadContractDraftAttachments,
   type ContractAttachmentDraft,
 } from '../../lib/contractAttachmentService';
+import { parseNonNegativeLocaleNumber } from '../../lib/localeNumberInput';
 
-const formatCurrency = (v: number, currency = 'VND') =>
-  new Intl.NumberFormat('vi-VN', { style: 'currency', currency, maximumFractionDigits: 0 }).format(v);
+const asDraftNumber = (value: string) => value as unknown as number;
+const readLocaleNumber = (value: number | string | null | undefined) =>
+  parseNonNegativeLocaleNumber(value ?? 0);
+const formatCurrency = (v: number | string, currency = 'VND') =>
+  new Intl.NumberFormat('vi-VN', { style: 'currency', currency, maximumFractionDigits: 0 }).format(readLocaleNumber(v));
 const formatDate = (d?: string) => d ? new Date(d).toLocaleDateString('vi-VN') : '—';
 const daysUntil = (d?: string) => d ? Math.ceil((new Date(d).getTime() - Date.now()) / 86400000) : null;
 
@@ -85,8 +89,8 @@ const SubcontractorContracts: React.FC = () => {
         id: r.id, code: r.code, name: r.name,
         subcontractorName: r.subcontractor_name, subcontractorTaxCode: r.subcontractor_tax_code,
         scopeOfWork: r.scope_of_work, projectId: r.project_id, parentContractId: r.parent_contract_id,
-        value: Number(r.value), currency: r.currency, paymentMethod: r.payment_method,
-        paymentSchedule: r.payment_schedule, retentionPercent: Number(r.retention_percent),
+        value: readLocaleNumber(r.value), currency: r.currency, paymentMethod: r.payment_method,
+        paymentSchedule: r.payment_schedule, retentionPercent: readLocaleNumber(r.retention_percent),
         workLocation: r.work_location, guaranteeInfo: r.guarantee_info,
         signedDate: r.signed_date, effectiveDate: r.effective_date, completionDate: r.completion_date,
         managedByUserId: r.managed_by_user_id, managedByName: r.managed_by_name,
@@ -125,8 +129,8 @@ const SubcontractorContracts: React.FC = () => {
         subcontractor_name: form.subcontractorName, subcontractor_tax_code: form.subcontractorTaxCode || null,
         scope_of_work: form.scopeOfWork || null, project_id: form.projectId || null,
         parent_contract_id: form.parentContractId || null,
-        value: form.value, currency: form.currency, payment_method: form.paymentMethod || null,
-        payment_schedule: form.paymentSchedule || null, retention_percent: form.retentionPercent || 0,
+        value: readLocaleNumber(form.value), currency: form.currency, payment_method: form.paymentMethod || null,
+        payment_schedule: form.paymentSchedule || null, retention_percent: readLocaleNumber(form.retentionPercent),
         work_location: form.workLocation || null, guarantee_info: form.guaranteeInfo || null,
         signed_date: form.signedDate || null, effective_date: form.effectiveDate || null,
         completion_date: form.completionDate || null,
@@ -406,7 +410,7 @@ const SubcontractorContracts: React.FC = () => {
               <div className="grid grid-cols-3 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Giá trị HĐ</label>
-                  <input type="number" value={form.value} onChange={e => setForm({...form, value: Number(e.target.value)})}
+                  <input type="text" inputMode="decimal" value={String(form.value)} onChange={e => setForm({...form, value: asDraftNumber(e.target.value)})}
                     className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-sm bg-white dark:bg-slate-800 dark:text-white outline-none" />
                 </div>
                 <div>
@@ -419,7 +423,7 @@ const SubcontractorContracts: React.FC = () => {
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Giữ lại (%)</label>
-                  <input type="number" value={form.retentionPercent} onChange={e => setForm({...form, retentionPercent: Number(e.target.value)})}
+                  <input type="text" inputMode="decimal" value={String(form.retentionPercent)} onChange={e => setForm({...form, retentionPercent: asDraftNumber(e.target.value)})}
                     className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-sm bg-white dark:bg-slate-800 dark:text-white outline-none"
                     placeholder="5" />
                 </div>

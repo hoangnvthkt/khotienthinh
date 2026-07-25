@@ -12,6 +12,7 @@ import { paymentService } from '../../lib/projectService';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import CostAnalysisPanel from '../../components/project/CostAnalysisPanel';
+import { parseNonNegativeLocaleNumber } from '../../lib/localeNumberInput';
 
 interface CashFlowTabProps {
     constructionSiteId: string;
@@ -81,16 +82,17 @@ const CashFlowTab: React.FC<CashFlowTabProps> = ({ constructionSiteId, projectId
         if (!pDesc || !pAmount || !pDueDate) return;
         const now = new Date().toISOString().split('T')[0];
         const isOverdue = pDueDate < now;
+        const amount = parseNonNegativeLocaleNumber(pAmount);
 
         const item: PaymentSchedule = editingPayment ? {
             ...editingPayment,
-            description: pDesc, amount: Number(pAmount), dueDate: pDueDate,
+            description: pDesc, amount, dueDate: pDueDate,
             type: pType, contactName: pContact,
             status: editingPayment.status === 'paid' ? 'paid' : isOverdue ? 'overdue' : 'pending',
         } : {
             id: crypto.randomUUID(),
             constructionSiteId,
-            description: pDesc, amount: Number(pAmount), dueDate: pDueDate,
+            description: pDesc, amount, dueDate: pDueDate,
             status: isOverdue ? 'overdue' : 'pending',
             type: pType, contactName: pContact,
         };
@@ -425,8 +427,8 @@ const CashFlowTab: React.FC<CashFlowTabProps> = ({ constructionSiteId, projectId
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
                                     <label className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase block mb-1">Số tiền (VNĐ)</label>
-                                    <input type="number" value={pAmount} onChange={e => setPAmount(e.target.value)} placeholder="0"
-                                        className="w-full px-3 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-sm font-semibold text-zinc-800 dark:text-zinc-100 focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none" />
+	                                    <input type="text" inputMode="decimal" value={pAmount} onChange={e => setPAmount(e.target.value)} placeholder="0"
+	                                        className="w-full px-3 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-sm font-semibold text-zinc-800 dark:text-zinc-100 focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none" />
                                 </div>
                                 <div>
                                     <label className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase block mb-1">Hạn thanh toán</label>

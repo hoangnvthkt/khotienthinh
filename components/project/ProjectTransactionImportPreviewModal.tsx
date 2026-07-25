@@ -28,6 +28,7 @@ import {
   ProjectTransactionImportPreviewResult,
   downloadProjectTransactionImportTemplate,
 } from '../../lib/projectTransactionImport';
+import { parseNonNegativeLocaleNumber } from '../../lib/localeNumberInput';
 
 interface Props {
   isOpen: boolean;
@@ -50,8 +51,11 @@ const CATEGORY_TAGS: Record<ProjectCostCategory, { label: string; cls: string }>
   other: { label: 'Phát sinh/Khác', cls: 'bg-pink-50 text-pink-600 border-pink-200' },
 };
 
-const fmtVNND = (value: number) =>
-  new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 }).format(Number(value || 0));
+const asDraftNumber = (value: string) => value as unknown as number;
+const readLocaleNumber = (value: number | string | null | undefined) =>
+  parseNonNegativeLocaleNumber(value ?? 0);
+const fmtVNND = (value: number | string) =>
+  new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 }).format(readLocaleNumber(value));
 
 export const ProjectTransactionImportPreviewModal: React.FC<Props> = ({
   isOpen,
@@ -88,19 +92,21 @@ export const ProjectTransactionImportPreviewModal: React.FC<Props> = ({
     return true;
   });
 
-  const selectedItems = items.filter(item => item.selected && item.tx.amount > 0);
+  const getAmount = (item: ProjectTransactionImportPreviewItem) => readLocaleNumber(item.tx.amount);
+
+  const selectedItems = items.filter(item => item.selected && getAmount(item) > 0);
   const selectedExpenseTotal = selectedItems
     .filter(item => item.tx.type === 'expense')
-    .reduce((sum, item) => sum + Number(item.tx.amount || 0), 0);
+    .reduce((sum, item) => sum + getAmount(item), 0);
 
   const selectedRevenueTotal = selectedItems
     .filter(item => item.tx.type !== 'expense')
-    .reduce((sum, item) => sum + Number(item.tx.amount || 0), 0);
+    .reduce((sum, item) => sum + getAmount(item), 0);
 
   const warningCount = items.filter(item => item.status === 'warning_missing_cost_item').length;
 
   const toggleSelectAll = (checked: boolean) => {
-    setItems(prev => prev.map(item => item.tx.amount <= 0 ? item : { ...item, selected: checked }));
+    setItems(prev => prev.map(item => getAmount(item) <= 0 ? item : { ...item, selected: checked }));
   };
 
   const toggleSelectItem = (index: number, checked: boolean) => {
@@ -117,7 +123,7 @@ export const ProjectTransactionImportPreviewModal: React.FC<Props> = ({
       const current = next[index];
       const updatedTx = updater(current.tx);
       const isMissingCost = updatedTx.type === 'expense' && !updatedTx.contractCostItemId;
-      const isInvalidAmt = updatedTx.amount <= 0;
+      const isInvalidAmt = readLocaleNumber(updatedTx.amount) <= 0;
 
       let newStatus: ProjectTransactionImportPreviewItem['status'] = 'valid';
       let warningMessage: string | undefined;
@@ -179,8 +185,8 @@ export const ProjectTransactionImportPreviewModal: React.FC<Props> = ({
           return {
             ...item,
             tx: updatedTx,
-            status: updatedTx.amount <= 0 ? 'invalid_amount' : 'valid',
-            warningMessage: updatedTx.amount <= 0 ? 'Số tiền <= 0' : undefined,
+            status: readLocaleNumber(updatedTx.amount) <= 0 ? 'invalid_amount' : 'valid',
+            warningMessage: readLocaleNumber(updatedTx.amount) <= 0 ? 'Số tiền <= 0' : undefined,
           };
         }
         return item;
@@ -190,8 +196,8 @@ export const ProjectTransactionImportPreviewModal: React.FC<Props> = ({
 
   const handleConfirmImport = async () => {
     const validSelectedTxs = items
-      .filter(item => item.selected && item.tx.amount > 0)
-      .map(item => item.tx);
+      .filter(item => item.selected && getAmount(item) > 0)
+      .map(item => ({ ...item.tx, amount: getAmount(item) }));
 
     if (validSelectedTxs.length === 0) return;
     await onConfirm(validSelectedTxs);
@@ -477,9 +483,10 @@ export const ProjectTransactionImportPreviewModal: React.FC<Props> = ({
                       {/* Amount Input */}
                       <td className="px-3 py-2.5 text-right">
                         <input
-                          type="number"
-                          value={item.tx.amount || 0}
-                          onChange={e => updateItemTx(originalIndex, prev => ({ ...prev, amount: Number(e.target.value || 0) }))}
+                          type="text"
+                          inputMode="decimal"
+                          value={String(item.tx.amount || 0)}
+                          onChange={e => updateItemTx(originalIndex, prev => ({ ...prev, amount: asDraftNumber(e.target.value) }))}
                           className="w-full px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 font-mono text-xs font-black text-right outline-none"
                         />
                       </td>

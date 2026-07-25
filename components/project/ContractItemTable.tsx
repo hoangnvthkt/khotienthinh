@@ -18,6 +18,7 @@ import { useAsyncAction } from '../../hooks/useAsyncAction';
 import ExcelImportReviewModal from '../ExcelImportReviewModal';
 import { ExcelImportMode, ExcelImportPreview, applyImportChanges, buildImportPreview, parseExcelRows } from '../../lib/excelImport';
 import { loadXlsx } from '../../lib/loadXlsx';
+import { parseNonNegativeLocaleNumber } from '../../lib/localeNumberInput';
 
 interface ContractItemTableProps {
   contractId: string;
@@ -42,13 +43,11 @@ const EMPTY_ITEM: Partial<ContractItem> = {
 const ADMIN_PROJECT_PERMS: ProjectPermissionCode[] = ['view', 'edit', 'delete', 'submit', 'verify', 'confirm', 'approve'];
 
 const parseImportNumber = (value: unknown): number => {
-  const normalized = String(value ?? '')
-    .replace(/\s/g, '')
-    .replace(/\./g, '')
-    .replace(',', '.');
-  const parsed = Number(normalized);
+  const parsed = parseNonNegativeLocaleNumber(value);
   return Number.isFinite(parsed) ? parsed : NaN;
 };
+
+const asDraftNumber = (value: string) => value as unknown as number;
 
 const ContractItemTable: React.FC<ContractItemTableProps> = ({
   contractId, contractType, projectId, constructionSiteId, readOnly, readOnlyReason,
@@ -115,6 +114,8 @@ const ContractItemTable: React.FC<ContractItemTableProps> = ({
   // CRUD handlers
   const handleAdd = async () => {
     if (!newItem.code || !newItem.name) { toast.warning('Thiếu thông tin', 'Nhập mã và tên hạng mục'); return; }
+    const quantity = parseNonNegativeLocaleNumber(newItem.quantity || 0);
+    const unitPrice = parseNonNegativeLocaleNumber(newItem.unitPrice || 0);
     await run(async () => {
       if (user?.role !== 'ADMIN') {
         await projectStaffService.requireProjectPermission({
@@ -131,9 +132,9 @@ const ContractItemTable: React.FC<ContractItemTableProps> = ({
         contractType,
         projectId: projectId || constructionSiteId || null,
         constructionSiteId,
-        quantity: newItem.quantity || 0,
-        unitPrice: newItem.unitPrice || 0,
-        totalPrice: (newItem.quantity || 0) * (newItem.unitPrice || 0),
+        quantity,
+        unitPrice,
+        totalPrice: quantity * unitPrice,
         order: items.length,
       });
       setShowAddRow(false);
@@ -149,6 +150,11 @@ const ContractItemTable: React.FC<ContractItemTableProps> = ({
 
   const handleSaveEdit = async () => {
     if (!editingId) return;
+    const normalizedEditData = {
+      ...editData,
+      quantity: parseNonNegativeLocaleNumber(editData.quantity || 0),
+      unitPrice: parseNonNegativeLocaleNumber(editData.unitPrice || 0),
+    };
     await run(async () => {
       if (user?.role !== 'ADMIN') {
         await projectStaffService.requireProjectPermission({
@@ -159,7 +165,7 @@ const ContractItemTable: React.FC<ContractItemTableProps> = ({
           actionLabel: 'cập nhật hạng mục BOQ',
         });
       }
-      await contractItemService.update(editingId, editData);
+      await contractItemService.update(editingId, normalizedEditData);
       setEditingId(null);
       await load();
     }, { successTitle: 'Cập nhật hạng mục thành công', errorTitle: 'Không thể cập nhật hạng mục BOQ' });
@@ -362,8 +368,8 @@ const ContractItemTable: React.FC<ContractItemTableProps> = ({
           aliases: ['Khối lượng *', 'Khối lượng', 'KL'],
           requiredOnCreate: true,
           normalize: parseImportNumber,
-          validate: value => Number.isFinite(Number(value)) && Number(value) >= 0 ? undefined : 'Khối lượng phải là số không âm.',
-          format: value => Number(value || 0).toLocaleString('vi-VN'),
+          validate: value => Number.isFinite(parseNonNegativeLocaleNumber(value)) ? undefined : 'Khối lượng phải là số không âm.',
+          format: value => parseNonNegativeLocaleNumber(value || 0).toLocaleString('vi-VN'),
         },
         {
           key: 'unitPrice',
@@ -371,8 +377,8 @@ const ContractItemTable: React.FC<ContractItemTableProps> = ({
           aliases: ['Đơn giá *', 'Đơn giá', 'Giá'],
           requiredOnCreate: true,
           normalize: parseImportNumber,
-          validate: value => Number.isFinite(Number(value)) && Number(value) >= 0 ? undefined : 'Đơn giá phải là số không âm.',
-          format: value => Number(value || 0).toLocaleString('vi-VN'),
+          validate: value => Number.isFinite(parseNonNegativeLocaleNumber(value)) ? undefined : 'Đơn giá phải là số không âm.',
+          format: value => parseNonNegativeLocaleNumber(value || 0).toLocaleString('vi-VN'),
         },
         { key: 'description', label: 'Mô tả', aliases: ['Mô tả'], clearable: true },
         { key: 'category', label: 'Chủng loại', aliases: ['Chủng loại'], clearable: true },
@@ -517,9 +523,9 @@ const ContractItemTable: React.FC<ContractItemTableProps> = ({
           {/* Khối lượng */}
           <td className="px-2 py-2 text-xs text-right">
             {isEditing ? (
-              <input type="number" value={editData.quantity || 0}
-                onChange={e => setEditData({ ...editData, quantity: Number(e.target.value) })}
-                className="w-20 px-1 py-1 rounded border border-indigo-300 text-xs text-right outline-none" />
+	              <input type="text" inputMode="decimal" value={editData.quantity || ''}
+	                onChange={e => setEditData({ ...editData, quantity: asDraftNumber(e.target.value) })}
+	                className="w-20 px-1 py-1 rounded border border-indigo-300 text-xs text-right outline-none" />
             ) : (
               <span className="text-slate-700 dark:text-slate-200 font-medium">
                 {isGrp ? '' : (item.revisedQuantity !== undefined && item.revisedQuantity !== item.quantity ? `${fmt(item.quantity)} → ${fmt(item.revisedQuantity)}` : fmt(item.quantity))}
@@ -529,9 +535,9 @@ const ContractItemTable: React.FC<ContractItemTableProps> = ({
           {/* Đơn giá */}
           <td className="px-2 py-2 text-xs text-right">
             {isEditing ? (
-              <input type="number" value={editData.unitPrice || 0}
-                onChange={e => setEditData({ ...editData, unitPrice: Number(e.target.value) })}
-                className="w-24 px-1 py-1 rounded border border-indigo-300 text-xs text-right outline-none" />
+	              <input type="text" inputMode="decimal" value={editData.unitPrice || ''}
+	                onChange={e => setEditData({ ...editData, unitPrice: asDraftNumber(e.target.value) })}
+	                className="w-24 px-1 py-1 rounded border border-indigo-300 text-xs text-right outline-none" />
             ) : (
               <span className="text-slate-700 dark:text-slate-200">
                 {isGrp ? '' : (item.revisedUnitPrice !== undefined && item.revisedUnitPrice !== item.unitPrice ? `${fmt(item.unitPrice)} → ${fmt(item.revisedUnitPrice)}` : fmt(item.unitPrice))}
@@ -693,17 +699,17 @@ const ContractItemTable: React.FC<ContractItemTableProps> = ({
                         className="w-12 px-1 py-1 rounded border border-indigo-300 text-xs text-center outline-none bg-white dark:bg-slate-700" />
                     </td>
                     <td className="px-2 py-2 text-right">
-                      <input type="number" value={newItem.quantity || 0}
-                        onChange={e => setNewItem({ ...newItem, quantity: Number(e.target.value) })}
-                        className="w-20 px-1 py-1 rounded border border-indigo-300 text-xs text-right outline-none bg-white dark:bg-slate-700" />
+	                      <input type="text" inputMode="decimal" value={newItem.quantity || ''}
+	                        onChange={e => setNewItem({ ...newItem, quantity: asDraftNumber(e.target.value) })}
+	                        className="w-20 px-1 py-1 rounded border border-indigo-300 text-xs text-right outline-none bg-white dark:bg-slate-700" />
                     </td>
                     <td className="px-2 py-2 text-right">
-                      <input type="number" value={newItem.unitPrice || 0}
-                        onChange={e => setNewItem({ ...newItem, unitPrice: Number(e.target.value) })}
-                        className="w-24 px-1 py-1 rounded border border-indigo-300 text-xs text-right outline-none bg-white dark:bg-slate-700" />
+	                      <input type="text" inputMode="decimal" value={newItem.unitPrice || ''}
+	                        onChange={e => setNewItem({ ...newItem, unitPrice: asDraftNumber(e.target.value) })}
+	                        className="w-24 px-1 py-1 rounded border border-indigo-300 text-xs text-right outline-none bg-white dark:bg-slate-700" />
                     </td>
                     <td className="px-2 py-2 text-right text-xs font-bold text-emerald-600">
-                      {fmtMoney((newItem.quantity || 0) * (newItem.unitPrice || 0))}
+	                      {fmtMoney(parseNonNegativeLocaleNumber(newItem.quantity || 0) * parseNonNegativeLocaleNumber(newItem.unitPrice || 0))}
                     </td>
                     <td className="px-2 py-2"></td>
                     <td className="px-2 py-2 text-center">

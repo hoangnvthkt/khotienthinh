@@ -24,6 +24,7 @@ import { ProjectPermissionCode, projectStaffService } from '../../lib/projectSta
 import { formatPolicyMessage, getProjectDocumentPolicy } from '../../lib/projectDocumentPolicy';
 import { projectDocumentActionLogService } from '../../lib/projectDocumentActionLogService';
 import { EmptyState, StatusBadge } from '../erp';
+import { parseNonNegativeLocaleNumber } from '../../lib/localeNumberInput';
 
 interface Props {
   projectId?: string | null;
@@ -72,7 +73,8 @@ const numberInput = 'w-24 px-2 py-1 rounded-lg border border-slate-200 text-righ
 const textInput = 'w-full px-2 py-1 rounded-lg border border-slate-200 text-[10px] outline-none focus:ring-1 focus:ring-indigo-400';
 
 const lineConverted = (line: { convertedQuantity?: number; allocatedQuantity: number; conversionFactor: number }) =>
-  Number(line.convertedQuantity || 0) || Number(line.allocatedQuantity || 0) * (Number(line.conversionFactor || 0) || 1);
+  parseNonNegativeLocaleNumber(line.convertedQuantity || 0)
+  || parseNonNegativeLocaleNumber(line.allocatedQuantity || 0) * (parseNonNegativeLocaleNumber(line.conversionFactor || 0) || 1);
 
 const BoqReconciliationPanel: React.FC<Props> = ({ projectId, constructionSiteId }) => {
   const effectiveId = projectId || constructionSiteId || '';
@@ -658,12 +660,20 @@ const LineTable: React.FC<{
                 <td className="px-3 py-2 font-bold text-slate-700 max-w-[220px] truncate">{labelOf(line)}</td>
                 <td className="px-3 py-2 text-right">{fmt(line.originalQuantity)}</td>
                 <td className="px-3 py-2 text-center text-slate-500">{line.originalUnit || '-'}</td>
-                <td className="px-3 py-2 text-right">
-                  <input disabled={locked} type="number" className={numberInput} value={line.allocatedQuantity || ''} onChange={event => onChange({ ...line, allocatedQuantity: Number(event.target.value || 0) })} onBlur={() => onSave(line)} />
-                </td>
-                <td className="px-3 py-2 text-right">
-                  <input disabled={locked} type="number" step="0.0001" className={numberInput} value={line.conversionFactor || ''} onChange={event => onChange({ ...line, conversionFactor: Number(event.target.value || 1) })} onBlur={() => onSave(line)} />
-                </td>
+	                <td className="px-3 py-2 text-right">
+	                  <input disabled={locked} type="text" inputMode="decimal" className={numberInput} defaultValue={line.allocatedQuantity || ''} onBlur={event => {
+	                    const nextLine = { ...line, allocatedQuantity: parseNonNegativeLocaleNumber(event.target.value || 0) };
+	                    onChange(nextLine);
+	                    onSave(nextLine);
+	                  }} />
+	                </td>
+	                <td className="px-3 py-2 text-right">
+	                  <input disabled={locked} type="text" inputMode="decimal" className={numberInput} defaultValue={line.conversionFactor || ''} onBlur={event => {
+	                    const nextLine = { ...line, conversionFactor: parseNonNegativeLocaleNumber(event.target.value || 1) || 1 };
+	                    onChange(nextLine);
+	                    onSave(nextLine);
+	                  }} />
+	                </td>
                 <td className="px-3 py-2 text-right font-black text-indigo-600">{fmt(lineConverted(line))}</td>
                 <td className="px-3 py-2 text-center">
                   <input disabled={locked} className="w-20 px-2 py-1 rounded-lg border border-slate-200 text-center text-[10px] font-bold outline-none focus:ring-1 focus:ring-indigo-400" value={line.convertedUnit || ''} onChange={event => onChange({ ...line, convertedUnit: event.target.value })} onBlur={() => onSave(line)} />

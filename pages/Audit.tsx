@@ -13,6 +13,7 @@ import { loadXlsx } from '../lib/loadXlsx';
 import { useModuleData } from '../hooks/useModuleData';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
 import { matchesSearchQueryMultiple } from '../lib/searchUtils';
+import { parseNonNegativeLocaleNumber } from '../lib/localeNumberInput';
 
 const ScannerModal = React.lazy(() => import('../components/ScannerModal'));
 
@@ -44,8 +45,9 @@ const Audit: React.FC = () => {
   }, [items, searchTerm, selectedWhId]);
 
   const handleUpdateActual = (itemId: string, value: string) => {
-    const numValue = parseInt(value);
-    if (isNaN(numValue)) {
+    const hasDigit = /\d/.test(value);
+    const numValue = parseNonNegativeLocaleNumber(value);
+    if (!hasDigit || !Number.isFinite(numValue)) {
       const newData = { ...auditData };
       delete newData[itemId];
       setAuditData(newData);
@@ -689,7 +691,7 @@ const Audit: React.FC = () => {
                               </td>
                               <td className="p-4 text-center font-black text-slate-500">{systemStock}</td>
                               <td className="p-4 text-center">
-                                <input type="number" min="0" placeholder={isReadOnly ? "Chỉ xem" : "Nhập..."} value={actualStock === undefined ? '' : actualStock} onChange={(e) => handleUpdateActual(item.id, e.target.value)} disabled={isReadOnly}
+                                <input type="text" inputMode="decimal" min="0" placeholder={isReadOnly ? "Chỉ xem" : "Nhập..."} value={actualStock === undefined ? '' : actualStock} onChange={(e) => handleUpdateActual(item.id, e.target.value)} disabled={isReadOnly}
                                   className="w-24 px-3 py-2 text-center border border-slate-200 rounded-lg font-black text-slate-800 focus:ring-2 focus:ring-accent outline-none disabled:bg-slate-50 disabled:text-slate-400" />
                               </td>
                               <td className="p-4 text-center">

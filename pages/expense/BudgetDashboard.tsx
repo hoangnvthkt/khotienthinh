@@ -11,6 +11,7 @@ import {
   Receipt, Calendar, DollarSign, PlusCircle, Copy, Loader2
 } from 'lucide-react';
 import { BudgetCategory, BudgetEntry, BudgetSource, ExpenseRecord } from '../../types';
+import { parseNonNegativeLocaleNumber } from '../../lib/localeNumberInput';
 
 // Source labels
 const SOURCE_OPTIONS: { value: BudgetSource; label: string; icon: string }[] = [
@@ -22,6 +23,8 @@ const SOURCE_OPTIONS: { value: BudgetSource; label: string; icon: string }[] = [
   { value: 'inventory_import', label: 'Tự động: Nhập kho (vật tư)', icon: '📦' },
   { value: 'asset_maintenance', label: 'Tự động: Bảo trì tài sản', icon: '🔧' },
 ];
+
+const readLocaleNumber = (value: unknown) => parseNonNegativeLocaleNumber(value ?? 0);
 
 const BudgetDashboard: React.FC = () => {
   const {
@@ -224,7 +227,7 @@ const BudgetDashboard: React.FC = () => {
   const saveEdit = async () => {
     if (!editingCell) return;
     const { catId, month } = editingCell;
-    const numVal = Number(cellValue) || 0;
+    const numVal = readLocaleNumber(cellValue);
     const existing = getEntry(catId, month);
     try {
       if (existing) {
@@ -256,7 +259,7 @@ const BudgetDashboard: React.FC = () => {
       await addHrmItem('expense_records', {
         id: crypto.randomUUID(),
         categoryId: expCatId,
-        amount: Number(expAmount) || 0,
+        amount: readLocaleNumber(expAmount),
         date: expDate,
         description: expDesc,
         createdBy: user?.name || '',
@@ -546,7 +549,7 @@ const BudgetDashboard: React.FC = () => {
                   <div className={`flex-1 px-1.5 py-1 text-center text-[11px] ${isLeaf ? 'cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-950/20' : ''} rounded-l`}
                     onClick={() => isLeaf && startEdit(cat.id, m, 'planned')}>
                     {isEditingP ? (
-                      <input type="number" value={cellValue} onChange={e => setCellValue(e.target.value)}
+                      <input type="text" inputMode="decimal" value={cellValue} onChange={e => setCellValue(e.target.value)}
                         onKeyDown={e => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') cancelEdit(); }}
                         onBlur={saveEdit} autoFocus
                         className="w-full text-center text-[11px] font-bold border border-blue-300 rounded px-1 py-0.5 bg-white dark:bg-slate-800 outline-none" />
@@ -938,7 +941,7 @@ const BudgetDashboard: React.FC = () => {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-[10px] font-black text-slate-500 uppercase mb-1 block">Số tiền (VNĐ) *</label>
-                  <input type="number" value={expAmount} onChange={e => setExpAmount(e.target.value)} placeholder="1000000"
+                  <input type="text" inputMode="decimal" value={expAmount} onChange={e => setExpAmount(e.target.value)} placeholder="1000000"
                     className="w-full px-3 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 outline-none" />
                 </div>
                 <div>

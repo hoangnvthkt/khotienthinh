@@ -70,6 +70,7 @@ import {
   InternalPriceBookItem,
   SubcontractorContract,
 } from '../../types';
+import { parseNonNegativeLocaleNumber } from '../../lib/localeNumberInput';
 
 type PageTab = 'builder' | 'templates' | 'prices' | 'norms' | 'estimates';
 type BuilderStep = 1 | 2 | 3 | 4;
@@ -83,9 +84,10 @@ type NormalizationFormState = {
   normalizedMaterials: NormalizedTemplateMaterial[];
 };
 
-const money = (value: number) =>
-  new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 }).format(Number(value || 0));
-const num = (value: unknown) => Number(value || 0);
+const money = (value: number | string) =>
+  new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 }).format(parseNonNegativeLocaleNumber(value));
+const num = (value: unknown) => parseNonNegativeLocaleNumber(value);
+const asDraftNumber = (value: string) => value as unknown as number;
 const today = () => new Date().toISOString().slice(0, 10);
 
 const statusLabel: Record<string, string> = {
@@ -248,9 +250,9 @@ const rawToNormalizedMaterial = (material: RawTemplateMaterialSnapshot, index: n
   itemName: material.itemName || '',
   category: material.category || '',
   unit: material.unit || '',
-  quantity: Number(material.budgetQty || 0),
+  quantity: num(material.budgetQty || 0),
   conversionFactor: 1,
-  wastePercent: Number(material.wastePercent || 0),
+  wastePercent: num(material.wastePercent || 0),
   note: material.notes || '',
   sortOrder: material.sortOrder ?? index,
 });
@@ -861,12 +863,18 @@ const CostLibrary: React.FC = () => {
       await costTemplateService.updateItemNormalization(normalizationItem.id, {
         status: normalizationForm.status,
         standardUnit: normalizationForm.standardUnit.trim(),
-        standardBaseQuantity: normalizationForm.standardBaseQuantity === '' ? null : Number(normalizationForm.standardBaseQuantity),
+        standardBaseQuantity: normalizationForm.standardBaseQuantity === '' ? null : num(normalizationForm.standardBaseQuantity),
         standardWorkCode: normalizationForm.standardWorkCode.trim(),
         note: normalizationForm.note.trim(),
         actorId: user.id,
       });
-      await costTemplateService.updateItemRawMaterials(normalizationItem.id, normalizationForm.normalizedMaterials, user.id);
+      const normalizedMaterials = normalizationForm.normalizedMaterials.map(material => ({
+        ...material,
+        quantity: num(material.quantity),
+        conversionFactor: num(material.conversionFactor || 1),
+        wastePercent: num(material.wastePercent || 0),
+      }));
+      await costTemplateService.updateItemRawMaterials(normalizationItem.id, normalizedMaterials, user.id);
       setNormalizationItem(null);
     });
     if (normalizingTemplateId) await loadNormalizationReport(normalizingTemplateId);
@@ -916,7 +924,13 @@ const CostLibrary: React.FC = () => {
   const saveItem = async () => {
     if (!canManage || !selectedTemplate) return;
     await runSave('Đã lưu hạng mục template', async () => {
-      await costTemplateService.upsertItem({ ...itemForm, templateId: selectedTemplate.id });
+      await costTemplateService.upsertItem({
+        ...itemForm,
+        templateId: selectedTemplate.id,
+        overheadPercent: num(itemForm.overheadPercent || 0),
+        profitPercent: num(itemForm.profitPercent || 0),
+        riskBufferPercent: num(itemForm.riskBufferPercent || 0),
+      });
       setItemForm(emptyItem(selectedTemplate.id));
     });
   };
@@ -924,7 +938,12 @@ const CostLibrary: React.FC = () => {
   const savePrice = async () => {
     if (!canManage) return;
     await runSave('Đã lưu đơn giá', async () => {
-      await internalPriceBookService.upsert({ ...priceForm, createdBy: user.id, updatedBy: user.id });
+      await internalPriceBookService.upsert({
+        ...priceForm,
+        unitPrice: num(priceForm.unitPrice),
+        createdBy: user.id,
+        updatedBy: user.id,
+      });
       setPriceForm(emptyPrice());
     });
   };
@@ -932,7 +951,13 @@ const CostLibrary: React.FC = () => {
   const saveNorm = async () => {
     if (!canManage) return;
     await runSave('Đã lưu định mức', async () => {
-      await internalNormService.upsert({ ...normForm, createdBy: user.id, updatedBy: user.id });
+      await internalNormService.upsert({
+        ...normForm,
+        normQuantity: num(normForm.normQuantity),
+        wastePercent: num(normForm.wastePercent || 0),
+        createdBy: user.id,
+        updatedBy: user.id,
+      });
       setNormForm(emptyNorm());
     });
   };
@@ -1150,7 +1175,11 @@ const CostLibrary: React.FC = () => {
       const result = await costNormWorkbenchService.saveDraft({
         targetItemId: selectedNormPackageItem.id,
         referenceItemId: selectedNormItem.id,
-        lines: normWorkbenchLines,
+        lines: validRows.map(line => ({
+          ...line,
+          normQuantity: num(line.normQuantity),
+          wastePercent: num(line.wastePercent || 0),
+        })),
         markNormalized,
         actorId: user.id,
       });
@@ -1322,7 +1351,18 @@ const CostLibrary: React.FC = () => {
       return;
     }
     await runSave('Đã lưu draft định mức từ Excel', async () => {
-      const result = await costNormExcelImportService.saveDraft({ ...normExcelPreview, templateId }, user.id);
+      const result = await costNormExcelImportService.saveDraft({
+        ...normExcelPreview,
+        templateId,
+        packages: normExcelPreview.packages.map(pkg => ({
+          ...pkg,
+          baseQuantity: pkg.baseQuantity == null ? null : num(pkg.baseQuantity),
+          lines: pkg.lines.map(line => ({
+            ...line,
+            normQuantity: num(line.normQuantity),
+          })),
+        })),
+      }, user.id);
       toast.info('Import định mức', `Batch ${result.batchId.slice(0, 8)} • ${result.packageCount} gói • ${result.normCount} dòng draft.`);
       setNormExcelPreview(null);
       setNormExcelFile(null);
@@ -1381,7 +1421,7 @@ const CostLibrary: React.FC = () => {
         name: draftName,
         customerName: draftCustomer,
         inputParameters: draftInput,
-        marginPercent: draftMargin,
+        marginPercent: num(draftMargin),
         createdBy: user.id,
       });
       await loadEstimateDetail(draft.id);
@@ -1396,7 +1436,14 @@ const CostLibrary: React.FC = () => {
       return;
     }
     await runSave('Đã cập nhật dòng dự toán', async () => {
-      await estimateScenarioService.updateItemOverride(item, { ...draft, actorId: user.id, actorName: user.name || user.username });
+      await estimateScenarioService.updateItemOverride(item, {
+        ...draft,
+        quantity: num(draft.quantity),
+        unitPrice: num(draft.unitPrice),
+        quoteUnitPrice: num(draft.quoteUnitPrice),
+        actorId: user.id,
+        actorName: user.name || user.username,
+      });
       await loadEstimateDetail(item.estimateId);
     });
   };
@@ -1802,7 +1849,7 @@ const CostLibrary: React.FC = () => {
                 <input value={draftName} onChange={e => setDraftName(e.target.value)} className="rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Tên phương án" />
                 <input value={draftCustomer} onChange={e => setDraftCustomer(e.target.value)} className="rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Khách hàng" />
               </div>
-              {canSeeInternalCost && <input type="number" value={draftMargin} onChange={e => setDraftMargin(num(e.target.value))} className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Biên lợi nhuận bổ sung (%)" />}
+              {canSeeInternalCost && <input type="text" inputMode="decimal" value={draftMargin} onChange={e => setDraftMargin(asDraftNumber(e.target.value))} className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Biên lợi nhuận bổ sung (%)" />}
             </>
           )}
 
@@ -2082,7 +2129,7 @@ const CostLibrary: React.FC = () => {
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <input value={priceForm.region} onChange={e => setPriceForm(prev => ({ ...prev, region: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Khu vực" />
-                <input type="number" value={priceForm.unitPrice} onChange={e => setPriceForm(prev => ({ ...prev, unitPrice: num(e.target.value) }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Đơn giá" />
+                <input type="text" inputMode="decimal" value={priceForm.unitPrice} onChange={e => setPriceForm(prev => ({ ...prev, unitPrice: asDraftNumber(e.target.value) }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Đơn giá" />
               </div>
               <select value={priceForm.status} onChange={e => setPriceForm(prev => ({ ...prev, status: e.target.value as any }))} className="rounded-xl border px-3 py-2 text-sm">
                 <option value="draft">Nháp</option>
@@ -2215,7 +2262,7 @@ const CostLibrary: React.FC = () => {
                     <input value={pkg.workCode} onChange={e => updateNormExcelPackage(pkg.id, { workCode: e.target.value })} className="rounded-lg border px-2 py-1 text-xs font-mono font-black" placeholder="Mã gói" />
                     <input value={pkg.workName} onChange={e => updateNormExcelPackage(pkg.id, { workName: e.target.value })} className="rounded-lg border px-2 py-1 text-xs font-bold" placeholder="Tên gói/hạng mục" />
                     <input value={pkg.standardUnit || pkg.unit} onChange={e => updateNormExcelPackage(pkg.id, { standardUnit: e.target.value, unit: e.target.value })} className="rounded-lg border px-2 py-1 text-xs" placeholder="ĐVT" />
-                    <input type="number" value={pkg.baseQuantity ?? ''} onChange={e => updateNormExcelPackage(pkg.id, { baseQuantity: e.target.value === '' ? null : num(e.target.value) })} className="rounded-lg border px-2 py-1 text-xs" placeholder="Base" />
+                    <input type="text" inputMode="decimal" value={pkg.baseQuantity ?? ''} onChange={e => updateNormExcelPackage(pkg.id, { baseQuantity: e.target.value === '' ? null : asDraftNumber(e.target.value) })} className="rounded-lg border px-2 py-1 text-xs" placeholder="Base" />
                     <div className="flex items-center justify-end gap-2">
                       <span className={`rounded-full px-2 py-1 text-[10px] font-black ${pkg.needsReview ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
                         {pkg.needsReview ? 'Review' : 'OK'}
@@ -2245,7 +2292,7 @@ const CostLibrary: React.FC = () => {
                             <td className="px-3 py-2"><input value={line.resourceCode} onChange={e => updateNormExcelLine(pkg.id, line.id, { resourceCode: e.target.value })} className="w-28 rounded-lg border px-2 py-1 font-mono" /></td>
                             <td className="px-3 py-2"><input value={line.resourceName} onChange={e => updateNormExcelLine(pkg.id, line.id, { resourceName: e.target.value })} className="w-72 rounded-lg border px-2 py-1 font-bold" /></td>
                             <td className="px-3 py-2"><input value={line.unit} onChange={e => updateNormExcelLine(pkg.id, line.id, { unit: e.target.value })} className="w-20 rounded-lg border px-2 py-1" /></td>
-                            <td className="px-3 py-2"><input type="number" value={line.normQuantity} onChange={e => updateNormExcelLine(pkg.id, line.id, { normQuantity: num(e.target.value) })} className="w-28 rounded-lg border px-2 py-1" /></td>
+                            <td className="px-3 py-2"><input type="text" inputMode="decimal" value={line.normQuantity} onChange={e => updateNormExcelLine(pkg.id, line.id, { normQuantity: asDraftNumber(e.target.value) })} className="w-28 rounded-lg border px-2 py-1" /></td>
                             <td className="px-3 py-2"><input type="checkbox" checked={Boolean(line.needsReview)} onChange={e => updateNormExcelLine(pkg.id, line.id, { needsReview: e.target.checked })} /></td>
                             <td className="px-3 py-2 text-right"><button onClick={() => removeNormExcelLine(pkg.id, line.id)} className={BTN_MINI} title="Bỏ dòng"><Trash2 size={13} /></button></td>
                           </tr>
@@ -2448,7 +2495,7 @@ const CostLibrary: React.FC = () => {
                       className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold"
                     />
                     <input
-                      type="number"
+                      type="text" inputMode="decimal"
                       value={normPackageForm.baseQuantity}
                       onChange={e => setNormPackageForm(prev => ({ ...prev, baseQuantity: e.target.value }))}
                       placeholder="KL gói"
@@ -2519,7 +2566,7 @@ const CostLibrary: React.FC = () => {
                               <span className="block font-black text-slate-700">{material.itemName}</span>
                               <span className="block text-slate-400">{material.materialCode || '-'} • {material.category || '-'} • {String(material.budgetQty ?? '-')} {material.unit || ''}</span>
                               {baseQuantity && material.budgetQty !== null && material.budgetQty !== undefined && (
-                                <span className="mt-1 block font-bold text-emerald-600">Gợi ý: {Math.round((Number(material.budgetQty || 0) / baseQuantity) * 1_000_000) / 1_000_000} / {selectedNormItem.unit || 'đơn vị'}</span>
+                                <span className="mt-1 block font-bold text-emerald-600">Gợi ý: {Math.round((num(material.budgetQty || 0) / baseQuantity) * 1_000_000) / 1_000_000} / {selectedNormItem.unit || 'đơn vị'}</span>
                               )}
                             </span>
                           </label>
@@ -2550,8 +2597,8 @@ const CostLibrary: React.FC = () => {
                             <td className={TD}><input value={line.resourceCode || ''} onChange={e => setNormWorkbenchLine(line.id, { resourceCode: e.target.value })} className="w-32 rounded-lg border px-2 py-1 text-xs" /></td>
                             <td className={TD}><input value={line.unit} onChange={e => setNormWorkbenchLine(line.id, { unit: e.target.value })} className="w-20 rounded-lg border px-2 py-1 text-xs" /></td>
                             <td className={TD}>{line.rawQuantity ?? '-'}</td>
-                            <td className={TD}><input type="number" value={line.normQuantity} onChange={e => setNormWorkbenchLine(line.id, { normQuantity: num(e.target.value), needsReview: true })} className="w-28 rounded-lg border px-2 py-1 text-xs" /></td>
-                            <td className={TD}><input type="number" value={line.wastePercent} onChange={e => setNormWorkbenchLine(line.id, { wastePercent: num(e.target.value) })} className="w-24 rounded-lg border px-2 py-1 text-xs" /></td>
+                            <td className={TD}><input type="text" inputMode="decimal" value={line.normQuantity} onChange={e => setNormWorkbenchLine(line.id, { normQuantity: asDraftNumber(e.target.value), needsReview: true })} className="w-28 rounded-lg border px-2 py-1 text-xs" /></td>
+                            <td className={TD}><input type="text" inputMode="decimal" value={line.wastePercent} onChange={e => setNormWorkbenchLine(line.id, { wastePercent: asDraftNumber(e.target.value) })} className="w-24 rounded-lg border px-2 py-1 text-xs" /></td>
                             <td className={TD}><input type="checkbox" checked={Boolean(line.needsReview)} onChange={e => setNormWorkbenchLine(line.id, { needsReview: e.target.checked })} /></td>
                             <td className={TD}><input value={line.note || line.reason || ''} onChange={e => setNormWorkbenchLine(line.id, { note: e.target.value })} className="w-56 rounded-lg border px-2 py-1 text-xs" /></td>
                             <td className={`${TD} text-right`}>
@@ -2599,8 +2646,8 @@ const CostLibrary: React.FC = () => {
                 </div>
                 <div className="grid grid-cols-3 gap-2">
                   <input value={normForm.unit} onChange={e => setNormForm(prev => ({ ...prev, unit: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="ĐVT" />
-                  <input type="number" value={normForm.normQuantity} onChange={e => setNormForm(prev => ({ ...prev, normQuantity: num(e.target.value) }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Định mức" />
-                  <input type="number" value={normForm.wastePercent || 0} onChange={e => setNormForm(prev => ({ ...prev, wastePercent: num(e.target.value) }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Hao hụt %" />
+                  <input type="text" inputMode="decimal" value={normForm.normQuantity} onChange={e => setNormForm(prev => ({ ...prev, normQuantity: asDraftNumber(e.target.value) }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Định mức" />
+                  <input type="text" inputMode="decimal" value={normForm.wastePercent || 0} onChange={e => setNormForm(prev => ({ ...prev, wastePercent: asDraftNumber(e.target.value) }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Hao hụt %" />
                 </div>
                 <select value={normForm.status} onChange={e => setNormForm(prev => ({ ...prev, status: e.target.value as any }))} className="rounded-xl border px-3 py-2 text-sm">
                   <option value="draft">Nháp</option>
@@ -3031,9 +3078,9 @@ const TemplateChildren: React.FC<{
                   </div>
                   <input value={itemForm.quantityFormula || ''} onChange={e => setItemForm(prev => ({ ...prev, quantityFormula: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Công thức, ví dụ floor_area * 35" />
                   <div className="grid grid-cols-3 gap-2">
-                    <input type="number" value={itemForm.overheadPercent || 0} onChange={e => setItemForm(prev => ({ ...prev, overheadPercent: num(e.target.value) }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="CP chung %" />
-                    <input type="number" value={itemForm.profitPercent || 0} onChange={e => setItemForm(prev => ({ ...prev, profitPercent: num(e.target.value) }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="LN %" />
-                    <input type="number" value={itemForm.riskBufferPercent || 0} onChange={e => setItemForm(prev => ({ ...prev, riskBufferPercent: num(e.target.value) }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Risk %" />
+                    <input type="text" inputMode="decimal" value={itemForm.overheadPercent || 0} onChange={e => setItemForm(prev => ({ ...prev, overheadPercent: asDraftNumber(e.target.value) }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="CP chung %" />
+                    <input type="text" inputMode="decimal" value={itemForm.profitPercent || 0} onChange={e => setItemForm(prev => ({ ...prev, profitPercent: asDraftNumber(e.target.value) }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="LN %" />
+                    <input type="text" inputMode="decimal" value={itemForm.riskBufferPercent || 0} onChange={e => setItemForm(prev => ({ ...prev, riskBufferPercent: asDraftNumber(e.target.value) }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Risk %" />
                   </div>
                   <button onClick={onSaveItem} disabled={saving} className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-black text-white"><Plus size={13} className="inline" /> Thêm hạng mục</button>
                 </div>
@@ -3193,7 +3240,7 @@ const NormalizationItemModal: React.FC<{
           </label>
           <label className="text-xs font-bold text-slate-500">
             Khối lượng mẫu
-            <input type="number" value={form.standardBaseQuantity} onChange={e => setForm(prev => ({ ...prev, standardBaseQuantity: e.target.value }))} className="mt-1 w-full rounded-xl border px-3 py-2 text-sm" />
+            <input type="text" inputMode="decimal" value={form.standardBaseQuantity} onChange={e => setForm(prev => ({ ...prev, standardBaseQuantity: e.target.value }))} className="mt-1 w-full rounded-xl border px-3 py-2 text-sm" />
           </label>
           <label className="text-xs font-bold text-slate-500">
             Mã công việc chuẩn
@@ -3222,7 +3269,7 @@ const NormalizationItemModal: React.FC<{
                     <input value={material.itemName} onChange={e => setMaterial(index, { itemName: e.target.value })} className="rounded-lg border px-2 py-1 text-xs" placeholder="Tên vật tư chuẩn" />
                     <input value={material.materialCode || ''} onChange={e => setMaterial(index, { materialCode: e.target.value })} className="rounded-lg border px-2 py-1 text-xs" placeholder="Mã" />
                     <input value={material.unit} onChange={e => setMaterial(index, { unit: e.target.value })} className="rounded-lg border px-2 py-1 text-xs" placeholder="ĐVT" />
-                    <input type="number" value={material.quantity} onChange={e => setMaterial(index, { quantity: num(e.target.value) })} className="rounded-lg border px-2 py-1 text-xs" placeholder="Định mức/KL" />
+                    <input type="text" inputMode="decimal" value={material.quantity} onChange={e => setMaterial(index, { quantity: asDraftNumber(e.target.value) })} className="rounded-lg border px-2 py-1 text-xs" placeholder="Định mức/KL" />
                     <button onClick={() => removeMaterial(index)} className={BTN_MINI}><Trash2 size={13} /></button>
                   </div>
                   <input value={material.note || ''} onChange={e => setMaterial(index, { note: e.target.value })} className="mt-2 w-full rounded-lg border px-2 py-1 text-xs" placeholder="Ghi chú vật tư" />
@@ -3398,10 +3445,10 @@ const EstimateDetail: React.FC<{
                     <td className={`${TD} font-mono`}>{item.code}</td>
                     <td className={`${TD} font-bold`}>{item.name}</td>
                     <td className={TD}>{item.itemType}</td>
-                    <td className={TD}><input type="number" value={edit.quantity} onChange={e => setLine(item.id, { quantity: num(e.target.value) })} className="w-24 rounded-lg border px-2 py-1 text-xs" /></td>
-                    <td className={TD}>{canSeeInternalCost ? <input type="number" value={edit.unitPrice} onChange={e => setLine(item.id, { unitPrice: num(e.target.value) })} className="w-28 rounded-lg border px-2 py-1 text-xs" /> : 'Ẩn'}</td>
+                    <td className={TD}><input type="text" inputMode="decimal" value={edit.quantity} onChange={e => setLine(item.id, { quantity: asDraftNumber(e.target.value) })} className="w-24 rounded-lg border px-2 py-1 text-xs" /></td>
+                    <td className={TD}>{canSeeInternalCost ? <input type="text" inputMode="decimal" value={edit.unitPrice} onChange={e => setLine(item.id, { unitPrice: asDraftNumber(e.target.value) })} className="w-28 rounded-lg border px-2 py-1 text-xs" /> : 'Ẩn'}</td>
                     <td className={`${TD} font-bold`}>{canSeeInternalCost ? money(item.amount) : 'Ẩn'}</td>
-                    <td className={TD}><input type="number" value={edit.quoteUnitPrice} onChange={e => setLine(item.id, { quoteUnitPrice: num(e.target.value) })} className="w-28 rounded-lg border px-2 py-1 text-xs" /></td>
+                    <td className={TD}><input type="text" inputMode="decimal" value={edit.quoteUnitPrice} onChange={e => setLine(item.id, { quoteUnitPrice: asDraftNumber(e.target.value) })} className="w-28 rounded-lg border px-2 py-1 text-xs" /></td>
                     <td className={`${TD} font-black`}>{money(item.quoteAmount ?? item.amount)}</td>
                     <td className={TD}><input value={edit.overrideReason} onChange={e => setLine(item.id, { overrideReason: e.target.value })} className="w-44 rounded-lg border px-2 py-1 text-xs" placeholder="Bắt buộc nếu chỉnh" /></td>
                     <td className={`${TD} text-right`}><button onClick={() => onSaveLine(item)} className={BTN_MINI}><Save size={13} /></button></td>

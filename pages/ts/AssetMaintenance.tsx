@@ -10,9 +10,12 @@ import {
 import { AssetMaintenance as MaintenanceType, MaintenanceAttachment, AssetStatus } from '../../types';
 import { loadXlsx } from '../../lib/loadXlsx';
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
+import { parseNonNegativeLocaleNumber } from '../../lib/localeNumberInput';
 
 const TYPE_LABELS: Record<string, string> = { scheduled: 'Bảo trì định kỳ', repair: 'Sửa chữa', inspection: 'Kiểm tra', warranty: 'Bảo hành' };
 const STATUS_LABELS: Record<string, string> = { planned: 'Lên kế hoạch', in_progress: 'Đang thực hiện', completed: 'Hoàn thành' };
+const asDraftNumber = (value: string) => value as unknown as number;
+const readLocaleNumber = (value: unknown) => parseNonNegativeLocaleNumber(value ?? 0);
 
 // Helper: lấy chi phí thực tế (ưu tiên actualCost, fallback cost)
 const getEffectiveCost = (m: MaintenanceType) => m.actualCost ?? m.cost ?? 0;
@@ -102,8 +105,8 @@ const AssetMaintenancePage: React.FC = () => {
             toast.error('Lỗi', 'Vui lòng chọn tài sản và nhập mô tả');
             return;
         }
-        const estCost = Number(form.estimatedCost) || 0;
-        const actCost = Number(form.actualCost) || 0;
+        const estCost = readLocaleNumber(form.estimatedCost);
+        const actCost = readLocaleNumber(form.actualCost);
         const m: MaintenanceType = {
             id: `mt-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
             assetId: form.assetId, type: form.type, description: form.description,
@@ -144,8 +147,8 @@ const AssetMaintenancePage: React.FC = () => {
                         assetId: asset.id,
                         type: (() => { const t = (row['Loại'] || row['type'] || 'repair').toLowerCase(); if (t.includes('định kỳ')) return 'scheduled' as const; if (t.includes('kiểm tra')) return 'inspection' as const; if (t.includes('bảo hành')) return 'warranty' as const; return 'repair' as const; })(),
                         description: String(row['Mô tả'] || row['description'] || 'Bảo trì nhập từ Excel'),
-                        estimatedCost: Number(row['CP dự kiến'] || row['estimated_cost'] || row['Chi phí'] || row['cost'] || 0),
-                        actualCost: Number(row['CP thực tế'] || row['actual_cost'] || 0),
+                        estimatedCost: readLocaleNumber(row['CP dự kiến'] || row['estimated_cost'] || row['Chi phí'] || row['cost'] || 0),
+                        actualCost: readLocaleNumber(row['CP thực tế'] || row['actual_cost'] || 0),
                         cost: Number(row['CP thực tế'] || row['actual_cost'] || row['Chi phí'] || row['cost'] || 0),
                         vendor: String(row['Đơn vị'] || row['vendor'] || ''),
                         invoiceNumber: String(row['Số HĐ'] || row['invoice'] || ''),
@@ -404,12 +407,12 @@ const AssetMaintenancePage: React.FC = () => {
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Chi phí dự kiến (báo giá)</label>
-                                    <input type="number" value={form.estimatedCost} onChange={e => setForm(f => ({ ...f, estimatedCost: Number(e.target.value) }))}
+                                    <input type="text" inputMode="decimal" value={String(form.estimatedCost)} onChange={e => setForm(f => ({ ...f, estimatedCost: asDraftNumber(e.target.value) }))}
                                         className="w-full px-3 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 outline-none focus:ring-2 focus:ring-orange-500 font-bold" placeholder="0" />
                                 </div>
                                 <div>
                                     <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Chi phí thực tế</label>
-                                    <input type="number" value={form.actualCost} onChange={e => setForm(f => ({ ...f, actualCost: Number(e.target.value) }))}
+                                    <input type="text" inputMode="decimal" value={String(form.actualCost)} onChange={e => setForm(f => ({ ...f, actualCost: asDraftNumber(e.target.value) }))}
                                         className="w-full px-3 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 outline-none focus:ring-2 focus:ring-orange-500 font-bold" placeholder="0" />
                                 </div>
                             </div>

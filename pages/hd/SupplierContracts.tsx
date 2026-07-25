@@ -43,6 +43,7 @@ import {
   uploadContractDraftAttachments,
   type ContractAttachmentDraft,
 } from '../../lib/contractAttachmentService';
+import { parseNonNegativeLocaleNumber } from '../../lib/localeNumberInput';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 const formatCurrency = (v: number, currency = 'VND') =>
@@ -51,9 +52,11 @@ const formatCurrency = (v: number, currency = 'VND') =>
 const formatDate = (d?: string) => d ? new Date(d).toLocaleDateString('vi-VN') : '—';
 
 const moneyNumber = (value: unknown) => {
-  const amount = Number(value || 0);
+  const amount = parseNonNegativeLocaleNumber(value || 0);
   return Number.isFinite(amount) ? amount : 0;
 };
+
+const asDraftNumber = (value: string) => value as unknown as number;
 
 const daysUntil = (d?: string) => {
   if (!d) return null;
@@ -266,7 +269,7 @@ const SupplierContracts: React.FC = () => {
         construction_site_id: project?.constructionSiteId || form.constructionSiteId || null,
         supplier_id: form.supplierId || null, supplier_name: form.supplierName || null,
         supplier_representative: form.supplierRepresentative || null,
-        value: form.value, currency: form.currency,
+        value: moneyNumber(form.value), currency: form.currency,
         payment_method: form.paymentMethod || null, payment_terms: form.paymentTerms || null,
         guarantee_info: form.guaranteeInfo || null, purchase_order_number: form.purchaseOrderNumber || null,
         signed_date: form.signedDate || null, effective_date: form.effectiveDate || null, expiry_date: form.expiryDate || null,
@@ -302,7 +305,7 @@ const SupplierContracts: React.FC = () => {
       toast.warning('Thiếu tên vật tư', 'Nhập tên vật tư/điều khoản đơn giá trước khi lưu.');
       return;
     }
-    if (Number(contractLineForm.unitPrice || 0) < 0) {
+    if (moneyNumber(contractLineForm.unitPrice || 0) < 0) {
       toast.warning('Đơn giá không hợp lệ', 'Đơn giá HĐ không được âm.');
       return;
     }
@@ -314,10 +317,10 @@ const SupplierContracts: React.FC = () => {
         lineNo: contractLines.length + 1,
         itemNameSnapshot: contractLineForm.itemNameSnapshot.trim(),
         unitSnapshot: contractLineForm.unitSnapshot.trim() || null,
-        unitPrice: Number(contractLineForm.unitPrice || 0),
-        vatRate: Number(contractLineForm.vatRate || 0),
-        quantityLimit: contractLineForm.quantityLimit === '' ? null : Number(contractLineForm.quantityLimit || 0),
-        amountLimit: contractLineForm.amountLimit === '' ? null : Number(contractLineForm.amountLimit || 0),
+        unitPrice: moneyNumber(contractLineForm.unitPrice || 0),
+        vatRate: moneyNumber(contractLineForm.vatRate || 0),
+        quantityLimit: contractLineForm.quantityLimit === '' ? null : moneyNumber(contractLineForm.quantityLimit || 0),
+        amountLimit: contractLineForm.amountLimit === '' ? null : moneyNumber(contractLineForm.amountLimit || 0),
         deliveryTerms: contractLineForm.deliveryTerms.trim() || null,
         note: contractLineForm.note.trim() || null,
       };
@@ -614,9 +617,9 @@ const SupplierContracts: React.FC = () => {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Giá trị hợp đồng</label>
-                  <input type="number" value={form.value} onChange={e => setForm({...form, value: Number(e.target.value)})}
-                    className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-sm bg-white dark:bg-slate-800 dark:text-white outline-none"
-                    placeholder="0" />
+	                  <input type="text" inputMode="decimal" value={form.value} onChange={e => setForm({...form, value: asDraftNumber(e.target.value)})}
+	                    className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-sm bg-white dark:bg-slate-800 dark:text-white outline-none"
+	                    placeholder="0" />
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Tiền tệ</label>
@@ -805,19 +808,21 @@ const SupplierContracts: React.FC = () => {
                       className="col-span-1 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                       placeholder="ĐVT"
                     />
-                    <input
-                      type="number"
-                      value={contractLineForm.unitPrice}
-                      onChange={e => setContractLineForm({ ...contractLineForm, unitPrice: Number(e.target.value) })}
-                      className="col-span-2 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                      placeholder="Đơn giá"
-                    />
-                    <input
-                      type="number"
-                      value={contractLineForm.vatRate}
-                      onChange={e => setContractLineForm({ ...contractLineForm, vatRate: Number(e.target.value) })}
-                      className="col-span-1 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                      placeholder="VAT"
+	                    <input
+	                      type="text"
+	                      inputMode="decimal"
+	                      value={contractLineForm.unitPrice}
+	                      onChange={e => setContractLineForm({ ...contractLineForm, unitPrice: asDraftNumber(e.target.value) })}
+	                      className="col-span-2 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+	                      placeholder="Đơn giá"
+	                    />
+	                    <input
+	                      type="text"
+	                      inputMode="decimal"
+	                      value={contractLineForm.vatRate}
+	                      onChange={e => setContractLineForm({ ...contractLineForm, vatRate: asDraftNumber(e.target.value) })}
+	                      className="col-span-1 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+	                      placeholder="VAT"
                     />
                     <input
                       value={contractLineForm.deliveryTerms}

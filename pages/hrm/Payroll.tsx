@@ -16,6 +16,7 @@ import {
   AttendanceStatus
 } from '../../types';
 import { usePermission } from '../../hooks/usePermission';
+import { parseNonNegativeLocaleNumber } from '../../lib/localeNumberInput';
 
 const PAYROLL_STATUS_LABELS: Record<string, string> = { draft: 'Nháp', confirmed: 'Xác nhận', paid: 'Đã trả' };
 const PAYROLL_STATUS_COLORS: Record<string, string> = {
@@ -30,6 +31,11 @@ const FIELD_TYPE_COLORS: Record<PayrollFieldType, string> = {
   info: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400',
   formula: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
 };
+
+const asDraftNumber = (value: string) => value as unknown as number;
+const readLocaleNumber = (value: unknown) => parseNonNegativeLocaleNumber(value ?? 0);
+const normalizePayrollValues = (values: Record<string, unknown>): Record<string, number> =>
+  Object.fromEntries(Object.entries(values).map(([key, value]) => [key, readLocaleNumber(value)]));
 
 // ==================== FORMULA ENGINE ====================
 
@@ -46,7 +52,7 @@ function evaluateFormula(formula: string, fieldValues: Record<string, number>): 
       return String(val ?? 0);
     });
     // Handle percentage: "10.5%" → "* 0.105" ... but "* 10.5%" → "* 0.105"
-    expr = expr.replace(/(\d+\.?\d*)%/g, (_, num) => String(parseFloat(num) / 100));
+    expr = expr.replace(/(\d+(?:[.,]\d*)?)%/g, (_, num) => String(readLocaleNumber(num) / 100));
     // Sanitize: only allow numbers, operators, spaces, dots, parens
     if (!/^[\d\s+\-*/().]+$/.test(expr)) return 0;
     // eslint-disable-next-line no-eval
@@ -286,7 +292,7 @@ const Payroll: React.FC = () => {
     if (!tpl) return;
     // Merge edited values with existing template values, then recalculate formulas
     const oldValues: Record<string, number> = { ...((p as any).templateValues || {}) };
-    const merged = { ...oldValues, ...editingPayrollValues };
+    const merged = normalizePayrollValues({ ...oldValues, ...editingPayrollValues });
     // Recalculate formulas in order
     for (const field of tpl.fields.sort((a, b) => a.order - b.order)) {
       if (field.type === 'formula' && field.formula) {
@@ -597,7 +603,7 @@ const Payroll: React.FC = () => {
                                     {tpl.fields.sort((a, b) => a.order - b.order).map(field => {
                                       const rawVal = editingPayrollValues[field.name] ?? tplValues[field.name] ?? 0;
                                       const val = field.type === 'formula' && field.formula
-                                        ? evaluateFormula(field.formula, { ...tplValues, ...editingPayrollValues })
+                                        ? evaluateFormula(field.formula, normalizePayrollValues({ ...tplValues, ...editingPayrollValues }))
                                         : rawVal;
                                       const isFormula = field.type === 'formula';
                                       const isDeduction = field.type === 'deduction' || (isFormula && field.name.toLowerCase().includes('kh\u1ea5u tr\u1eeb'));
@@ -608,8 +614,8 @@ const Payroll: React.FC = () => {
                                         }`}>
                                           <span className="text-slate-600 dark:text-slate-400">{field.name}</span>
                                           {isEditable ? (
-                                            <input type="number" value={editingPayrollValues[field.name] ?? tplValues[field.name] ?? 0}
-                                              onChange={e => setEditingPayrollValues(prev => ({ ...prev, [field.name]: Number(e.target.value) }))}
+                                            <input type="text" inputMode="decimal" value={String(editingPayrollValues[field.name] ?? tplValues[field.name] ?? 0)}
+                                              onChange={e => setEditingPayrollValues(prev => ({ ...prev, [field.name]: asDraftNumber(e.target.value) }))}
                                               className="w-32 text-right px-2 py-1 text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 outline-none"
                                             />
                                           ) : (
@@ -677,7 +683,7 @@ const Payroll: React.FC = () => {
                   </div>
                   <div>
                     <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1 block">Ngày công chuẩn</label>
-                    <input type="number" value={standardDays} onChange={e => setStandardDays(Number(e.target.value))}
+                    <input type="text" inputMode="decimal" value={standardDays} onChange={e => setStandardDays(readLocaleNumber(e.target.value))}
                       className="w-full px-3 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 outline-none" />
                   </div>
                   {selectedTemplateId && (

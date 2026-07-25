@@ -13,6 +13,7 @@ import {
   LABOR_CONTRACT_LABELS
 } from '../../types';
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
+import { parseNonNegativeLocaleNumber } from '../../lib/localeNumberInput';
 
 const STATUS_LABELS: Record<LaborContractStatus, string> = {
   active: 'Hiệu lực', expired: 'Hết hạn', terminated: 'Chấm dứt', renewed: 'Đã gia hạn',
@@ -23,6 +24,9 @@ const STATUS_COLORS: Record<LaborContractStatus, string> = {
   terminated: 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400',
   renewed: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
 };
+
+const asDraftNumber = (value: string) => value as unknown as number;
+const readLocaleNumber = (value: unknown) => parseNonNegativeLocaleNumber(value ?? 0);
 
 const LaborContractPage: React.FC = () => {
   const { employees, laborContracts, salaryHistory, addHrmItem, updateHrmItem } = useApp();
@@ -86,42 +90,48 @@ const LaborContractPage: React.FC = () => {
   }), [laborContracts, expiringSoon]);
 
   const handleSave = () => {
-    if (!form.employeeId || !form.contractNumber || !form.startDate || form.baseSalary <= 0) return;
+    const normalizedForm = {
+      ...form,
+      baseSalary: readLocaleNumber(form.baseSalary),
+      allowancePosition: readLocaleNumber(form.allowancePosition),
+      allowanceOther: readLocaleNumber(form.allowanceOther),
+    };
+    if (!normalizedForm.employeeId || !normalizedForm.contractNumber || !normalizedForm.startDate || normalizedForm.baseSalary <= 0) return;
     if (editId) {
       // Auto-log salary change if salary or allowance changed
       const oldContract = laborContracts.find(c => c.id === editId);
-      if (oldContract && (oldContract.baseSalary !== form.baseSalary || (oldContract.allowancePosition || 0) !== form.allowancePosition)) {
+      if (oldContract && (oldContract.baseSalary !== normalizedForm.baseSalary || (oldContract.allowancePosition || 0) !== normalizedForm.allowancePosition)) {
         addHrmItem('hrm_salary_history', {
           id: crypto.randomUUID(),
-          employeeId: form.employeeId,
+          employeeId: normalizedForm.employeeId,
           contractId: editId,
           changeDate: new Date().toISOString().split('T')[0],
           previousSalary: oldContract.baseSalary,
-          newSalary: form.baseSalary,
+          newSalary: normalizedForm.baseSalary,
           previousAllowance: oldContract.allowancePosition || 0,
-          newAllowance: form.allowancePosition,
+          newAllowance: normalizedForm.allowancePosition,
           reason: 'Cập nhật hợp đồng',
           createdAt: new Date().toISOString(),
         });
       }
-      updateHrmItem('hrm_labor_contracts', { ...form, id: editId, status: 'active' as LaborContractStatus });
+      updateHrmItem('hrm_labor_contracts', { ...normalizedForm, id: editId, status: 'active' as LaborContractStatus });
     } else {
       const newId = crypto.randomUUID();
       addHrmItem('hrm_labor_contracts', {
-        ...form, id: newId, status: 'active' as LaborContractStatus,
+        ...normalizedForm, id: newId, status: 'active' as LaborContractStatus,
         createdAt: new Date().toISOString(),
       });
       // Log initial salary
       addHrmItem('hrm_salary_history', {
         id: crypto.randomUUID(),
-        employeeId: form.employeeId,
+        employeeId: normalizedForm.employeeId,
         contractId: newId,
-        changeDate: form.startDate,
+        changeDate: normalizedForm.startDate,
         previousSalary: 0,
-        newSalary: form.baseSalary,
+        newSalary: normalizedForm.baseSalary,
         previousAllowance: 0,
-        newAllowance: form.allowancePosition,
-        reason: 'Hợp đồng mới: ' + form.contractNumber,
+        newAllowance: normalizedForm.allowancePosition,
+        reason: 'Hợp đồng mới: ' + normalizedForm.contractNumber,
         createdAt: new Date().toISOString(),
       });
     }
@@ -370,19 +380,19 @@ const LaborContractPage: React.FC = () => {
 
               <div>
                 <label className="text-[10px] font-black text-slate-500 uppercase mb-1 block">Lương cơ bản *</label>
-                <input type="number" value={form.baseSalary} onChange={e => setForm({ ...form, baseSalary: Number(e.target.value) })}
+                <input type="text" inputMode="decimal" value={String(form.baseSalary)} onChange={e => setForm({ ...form, baseSalary: asDraftNumber(e.target.value) })}
                   className="w-full px-3 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 outline-none" placeholder="VNĐ / tháng" />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-[10px] font-black text-slate-500 uppercase mb-1 block">PC Chức vụ</label>
-                  <input type="number" value={form.allowancePosition} onChange={e => setForm({ ...form, allowancePosition: Number(e.target.value) })}
+                  <input type="text" inputMode="decimal" value={String(form.allowancePosition)} onChange={e => setForm({ ...form, allowancePosition: asDraftNumber(e.target.value) })}
                     className="w-full px-3 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 outline-none" />
                 </div>
                 <div>
                   <label className="text-[10px] font-black text-slate-500 uppercase mb-1 block">PC Khác</label>
-                  <input type="number" value={form.allowanceOther} onChange={e => setForm({ ...form, allowanceOther: Number(e.target.value) })}
+                  <input type="text" inputMode="decimal" value={String(form.allowanceOther)} onChange={e => setForm({ ...form, allowanceOther: asDraftNumber(e.target.value) })}
                     className="w-full px-3 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 outline-none" />
                 </div>
               </div>

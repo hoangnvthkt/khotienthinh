@@ -31,8 +31,11 @@ import { partnerService } from '../lib/partnerService';
 import { supplierContractService } from '../lib/hdService';
 import { buildWmsImportSupplySource, type WmsImportSupplySourceSelection } from '../lib/wmsSupplySource';
 import { dateInputToTransactionTimestamp } from '../lib/transactionVoucherDates';
+import { parseNonNegativeLocaleNumber } from '../lib/localeNumberInput';
 
 const ScannerModal = React.lazy(() => import('../components/ScannerModal'));
+
+const readLocaleNumber = (value: unknown) => parseNonNegativeLocaleNumber(value ?? 0);
 
 type HistoryColumnKey = 'import' | 'export' | 'transfer' | 'rejected';
 type SupplySourceTab = 'supplier_contract' | 'business_partner';
@@ -407,10 +410,10 @@ const Operations: React.FC = () => {
           ...ti,
           accountingQty,
           accountingUnit: product!.purchaseUnit,
-          accountingPrice: acc.price ? parseFloat(acc.price) : undefined,
+          accountingPrice: acc.price ? readLocaleNumber(acc.price) : undefined,
           // Cập nhật price (giá vốn mỗi cây) = tổng tiền / số lượng (nếu có đủ dữ liệu)
           price: (acc.qty && acc.price && ti.quantity > 0)
-            ? Math.round((accountingQty * parseFloat(acc.price)) / ti.quantity)
+            ? Math.round((accountingQty * readLocaleNumber(acc.price)) / ti.quantity)
             : ti.price
         };
       }
@@ -1412,7 +1415,7 @@ const Operations: React.FC = () => {
                             const hasDualUnit = activeTab === TransactionType.IMPORT && product?.purchaseUnit && product.purchaseUnit !== product.unit;
                             const accData = accountingData[item.itemId] || { qty: '', price: '' };
                             const totalAccValue = hasDualUnit && accData.qty && accData.price
-                              ? parseQuantityInput(accData.qty) * parseFloat(accData.price)
+                              ? parseQuantityInput(accData.qty) * readLocaleNumber(accData.price)
                               : undefined;
                             return (
                               <tr key={idx} className={`hover:bg-slate-50/50 ${
@@ -1498,7 +1501,7 @@ const Operations: React.FC = () => {
                                       <div className="space-y-1">
                                         <div className="flex items-center gap-1">
                                           <input
-                                            type="number" min="0"
+                                            type="text" inputMode="decimal" min="0"
                                             placeholder="0"
                                             value={accData.price}
                                             onChange={e => setAccountingData(prev => ({
@@ -1533,7 +1536,7 @@ const Operations: React.FC = () => {
                                   </div>
                                   {hasDualUnit && accData.qty && accData.price && item.quantity > 0 && (
                                     <div className="text-[9px] text-slate-400 font-bold text-center mt-1 italic">
-                                      Giá vốn/cây: {Math.round(parseQuantityInput(accData.qty) * parseFloat(accData.price) / item.quantity).toLocaleString('vi-VN')} ₫
+                                      Giá vốn/cây: {Math.round(parseQuantityInput(accData.qty) * readLocaleNumber(accData.price) / item.quantity).toLocaleString('vi-VN')} ₫
                                     </div>
                                   )}
                                 </td>
@@ -1614,7 +1617,7 @@ const Operations: React.FC = () => {
                               hasDualUnitItem = true;
                               const accData = accountingData[item.itemId] || { qty: '', price: '' };
                               const qty = parseQuantityInput(accData.qty);
-                              const price = parseFloat(accData.price);
+                              const price = readLocaleNumber(accData.price);
                               if (!isNaN(qty)) totalAccQty += qty;
                               if (!isNaN(qty) && !isNaN(price)) totalAccValue += qty * price;
                             }

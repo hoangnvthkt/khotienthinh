@@ -23,6 +23,7 @@ import { useToast } from '../../context/ToastContext';
 import { useConfirm, useReasonConfirm } from '../../context/ConfirmContext';
 import { useApp } from '../../context/AppContext';
 import ProjectRoomSubmissionDialog from './ProjectRoomSubmissionDialog';
+import { parseNonNegativeLocaleNumber } from '../../lib/localeNumberInput';
 
 interface Props {
   contractId: string;
@@ -36,6 +37,7 @@ const fmtMoney = (n: number) => Number(n || 0).toLocaleString('vi-VN');
 const fmtPct = (n?: number | null) => Number(n || 0).toLocaleString('vi-VN', { maximumFractionDigits: 2 });
 const clampPercent = (value: number) => Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0));
 const nonNegative = (value: number) => Math.max(0, Number.isFinite(value) ? value : 0);
+const parseAmountInput = (value: unknown) => nonNegative(parseNonNegativeLocaleNumber(value));
 const today = () => new Date().toISOString().slice(0, 10);
 
 const STATUS_PERMISSION: Record<string, ProjectPermissionCode> = {
@@ -524,28 +526,26 @@ const QuantityAcceptancePanel: React.FC<Props> = ({ contractId, contractType, pr
                             </td>
                             <td className="px-2 py-1.5 text-right">
                               {editable ? (
-                                <input
-                                  type="number"
-                                  min={0}
-                                  max={100}
-                                  step="0.01"
-                                  value={line.acceptedPercent || ''}
-                                  onChange={e => handleUpdateLine(item, idx, { acceptedPercent: Number(e.target.value) })}
-                                  className="w-20 rounded border border-emerald-200 bg-white px-1 py-0.5 text-right text-[10px] font-bold outline-none focus:ring-1 focus:ring-emerald-300"
-                                />
+	                                <input
+	                                  type="text"
+	                                  inputMode="decimal"
+	                                  defaultValue={line.acceptedPercent || ''}
+	                                  onBlur={e => handleUpdateLine(item, idx, { acceptedPercent: parseAmountInput(e.target.value) })}
+	                                  className="w-20 rounded border border-emerald-200 bg-white px-1 py-0.5 text-right text-[10px] font-bold outline-none focus:ring-1 focus:ring-emerald-300"
+	                                />
                               ) : (
                                 <span className="font-bold">{fmtPct(line.acceptedPercent)}%</span>
                               )}
                             </td>
                             <td className="px-2 py-1.5 text-right">
                               {editable ? (
-                                <input
-                                  type="number"
-                                  min={0}
-                                  value={line.acceptedAmount || ''}
-                                  onChange={e => handleUpdateLine(item, idx, { acceptedAmount: Number(e.target.value) })}
-                                  className="w-28 rounded border border-emerald-200 bg-white px-1 py-0.5 text-right text-[10px] font-bold outline-none focus:ring-1 focus:ring-emerald-300"
-                                />
+	                                <input
+	                                  type="text"
+	                                  inputMode="decimal"
+	                                  defaultValue={line.acceptedAmount || ''}
+	                                  onBlur={e => handleUpdateLine(item, idx, { acceptedAmount: parseAmountInput(e.target.value) })}
+	                                  className="w-28 rounded border border-emerald-200 bg-white px-1 py-0.5 text-right text-[10px] font-bold outline-none focus:ring-1 focus:ring-emerald-300"
+	                                />
                               ) : (
                                 <span className="font-black text-emerald-700">{fmtMoney(line.acceptedAmount)} đ</span>
                               )}

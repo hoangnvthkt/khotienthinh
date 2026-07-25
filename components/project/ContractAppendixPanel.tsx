@@ -9,6 +9,7 @@ import { useConfirm } from '../../context/ConfirmContext';
 import { useApp } from '../../context/AppContext';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
+import { parseNonNegativeLocaleNumber } from '../../lib/localeNumberInput';
 
 interface Props {
   contractId: string;
@@ -43,6 +44,8 @@ const sanitizeFileName = (name: string) =>
 
 const fmtMoney = (value: number) =>
   new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 }).format(Number(value || 0));
+
+const asDraftNumber = (value: string) => value as unknown as number;
 
 const ContractAppendixPanel: React.FC<Props> = ({ contractId, contractType, projectId, constructionSiteId }) => {
   const toast = useToast();
@@ -150,7 +153,7 @@ const ContractAppendixPanel: React.FC<Props> = ({ contractId, contractType, proj
         ...form,
         appendixNumber: form.appendixNumber.trim(),
         name: form.name.trim(),
-        value: Number(form.value || selectedVariationValue || 0),
+        value: parseNonNegativeLocaleNumber(form.value || selectedVariationValue || 0),
       });
       setForm(null);
       await load();
@@ -247,7 +250,7 @@ const ContractAppendixPanel: React.FC<Props> = ({ contractId, contractType, proj
                   <option value="cancelled">Huỷ</option>
                 </SelectField>
                 <Field label="Ngày ký" type="date" value={form.signedDate || ''} onChange={value => setForm({ ...form, signedDate: value })} />
-                <Field label="Giá trị" type="number" value={String(form.value || selectedVariationValue || 0)} onChange={value => setForm({ ...form, value: Number(value) })} />
+	                <Field label="Giá trị" inputMode="decimal" value={String(form.value || selectedVariationValue || '')} onChange={value => setForm({ ...form, value: asDraftNumber(value) })} />
                 <Field label="Ghi chú" className="md:col-span-2" value={form.note || ''} onChange={value => setForm({ ...form, note: value })} />
               </div>
 
@@ -321,12 +324,14 @@ const Field: React.FC<{
   value: string;
   onChange: (value: string) => void;
   type?: string;
+  inputMode?: React.HTMLAttributes<HTMLInputElement>['inputMode'];
   className?: string;
-}> = ({ label, value, onChange, type = 'text', className = '' }) => (
+}> = ({ label, value, onChange, type = 'text', inputMode, className = '' }) => (
   <label className={`block ${className}`}>
     <span className="block text-[10px] font-bold text-slate-400 uppercase mb-1">{label}</span>
     <input
       type={type}
+      inputMode={inputMode}
       value={value}
       onChange={event => onChange(event.target.value)}
       className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-indigo-500/20"

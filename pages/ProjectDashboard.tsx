@@ -73,6 +73,7 @@ import {
 } from '../lib/permissions/projectPermissionService';
 import { getProjectPermissionTemplateCodes, type ProjectPermissionTemplateKey } from '../lib/permissions/projectPermissionTemplates';
 import type { ProjectFinanceWorkspaceTab } from '../lib/projectFinanceWorkspaceService';
+import { parseNonNegativeLocaleNumber } from '../lib/localeNumberInput';
 import {
     BarChart3, TrendingUp, TrendingDown, DollarSign, Target, Percent,
     Plus, Edit2, Trash2, X, Check, Save, ChevronDown, ChevronLeft, ChevronRight, FileText,
@@ -218,6 +219,9 @@ const emptyFinance = (siteId: string): ProjectFinance => ({
     updatedAt: new Date().toISOString(),
 });
 
+const asDraftNumber = (value: string) => value as unknown as number;
+const readLocaleNumber = (value: unknown) => parseNonNegativeLocaleNumber(value ?? 0);
+
 type ProjectFormState = {
     name: string;
     code: string;
@@ -358,9 +362,7 @@ const parseProjectDate = (value: unknown): string | undefined => {
 };
 
 const parseProjectNumber = (value: unknown): number => {
-    if (typeof value === 'number') return value;
-    const cleaned = String(value || '').replace(/[^\d,.-]/g, '').replace(/\./g, '').replace(',', '.');
-    return Number(cleaned) || 0;
+    return readLocaleNumber(value);
 };
 
 const STATUS_IMPORT_ALIASES: Record<string, Project['status']> = {
@@ -1564,7 +1566,7 @@ const ProjectDashboard: React.FC = () => {
                         startDate: record.startDate,
                         endDate: record.endDate,
                         progressCalculationMode: record.progressCalculationMode,
-                        manualProgressPercent: Number(record.manualProgressPercent || 0),
+                        manualProgressPercent: readLocaleNumber(record.manualProgressPercent || 0),
                         createdBy: user.id,
                     });
                     await seedImportedProjectStaff(createdProject, record);
@@ -1753,7 +1755,7 @@ const ProjectDashboard: React.FC = () => {
                 return;
             }
         }
-        const manualProgressPercent = Math.max(0, Math.min(100, Number(projectForm.manualProgressPercent) || 0));
+        const manualProgressPercent = Math.max(0, Math.min(100, readLocaleNumber(projectForm.manualProgressPercent)));
         const projectType = selectedProjectType();
         const adminUserIds = expandParticipantUserIds(projectForm.adminUserIds, projectForm.adminGroupIds);
         setSavingProject(true);
@@ -1867,7 +1869,13 @@ const ProjectDashboard: React.FC = () => {
         const derivedProgress = taskProgressBySite[budgetData.constructionSiteId]?.progressPercent;
         const nextBudgetData = {
             ...budgetData,
-            progressPercent: derivedProgress ?? budgetData.progressPercent,
+            contractValue: readLocaleNumber(budgetData.contractValue),
+            budgetMaterials: readLocaleNumber(budgetData.budgetMaterials),
+            budgetLabor: readLocaleNumber(budgetData.budgetLabor),
+            budgetSubcontract: readLocaleNumber(budgetData.budgetSubcontract),
+            budgetMachinery: readLocaleNumber(budgetData.budgetMachinery),
+            budgetOverhead: readLocaleNumber(budgetData.budgetOverhead),
+            progressPercent: derivedProgress ?? readLocaleNumber(budgetData.progressPercent),
             updatedAt: new Date().toISOString(),
         };
         const existing = projectFinances.find(pf => pf.id === nextBudgetData.id);
@@ -1976,7 +1984,8 @@ const ProjectDashboard: React.FC = () => {
 
     const handleAddTx = async () => {
         if (!requireProjectTabManage('cashflow', editingTx ? 'cập nhật giao dịch dòng tiền' : 'thêm giao dịch dòng tiền')) return;
-        if (!effectiveSiteId || !txAmount || Number(txAmount) <= 0) {
+        const parsedTxAmount = readLocaleNumber(txAmount);
+        if (!effectiveSiteId || !txAmount || parsedTxAmount <= 0) {
             toast.warning('Thiếu dữ liệu giao dịch', 'Vui lòng chọn dự án có công trường và nhập số tiền hợp lệ.');
             return;
         }
@@ -2014,7 +2023,7 @@ const ProjectDashboard: React.FC = () => {
                     ...editingTx,
                     type: txType,
                     category: derivedCategory,
-                    amount: Number(txAmount),
+                    amount: parsedTxAmount,
                     description: txDesc,
                     date: txDate,
                     ...costItemSnapshot,
@@ -2034,7 +2043,7 @@ const ProjectDashboard: React.FC = () => {
                     constructionSiteId: effectiveSiteId,
                     type: txType,
                     category: derivedCategory,
-                    amount: Number(txAmount),
+                    amount: parsedTxAmount,
                     description: txDesc,
                     date: txDate,
                     source: 'manual',
@@ -2484,7 +2493,7 @@ const ProjectDashboard: React.FC = () => {
                                         {projectForm.progressCalculationMode === 'manual' && (
                                             <div>
                                                 <label className={labelCls}>Tiến độ thủ công (%)</label>
-                                                <input type="number" min={0} max={100} value={projectForm.manualProgressPercent}
+                                                <input type="text" inputMode="decimal" min={0} max={100} value={projectForm.manualProgressPercent}
                                                     onChange={e => setProjectForm({ ...projectForm, manualProgressPercent: e.target.value })}
                                                     className={`${inputCls} font-bold`} />
                                             </div>
@@ -2599,7 +2608,7 @@ const ProjectDashboard: React.FC = () => {
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                             <div>
                                 <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Giá trị HĐ (VNĐ)</label>
-                                <input type="number" value={budgetData.contractValue || ''} onChange={e => setBudgetData({ ...budgetData, contractValue: Number(e.target.value) })}
+                                <input type="text" inputMode="decimal" value={String(budgetData.contractValue || '')} onChange={e => setBudgetData({ ...budgetData, contractValue: asDraftNumber(e.target.value) })}
                                     className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold focus:ring-2 focus:ring-orange-500 outline-none" />
                             </div>
                             <div>
@@ -2628,8 +2637,8 @@ const ProjectDashboard: React.FC = () => {
                                     <div key={c.key} className="flex items-center gap-3">
                                         <span className="text-lg w-8">{c.icon}</span>
                                         <span className="text-sm font-bold text-slate-700 w-32">{c.label}</span>
-                                        <input type="number" value={(budgetData as any)[`budget${c.key}`] || ''}
-                                            onChange={e => setBudgetData({ ...budgetData, [`budget${c.key}`]: Number(e.target.value) })}
+                                        <input type="text" inputMode="decimal" value={String((budgetData as any)[`budget${c.key}`] || '')}
+                                            onChange={e => setBudgetData({ ...budgetData, [`budget${c.key}`]: asDraftNumber(e.target.value) })}
                                             className="flex-1 px-3 py-2 rounded-xl border border-slate-200 text-sm text-right font-bold focus:ring-2 focus:ring-blue-500 outline-none" placeholder="0" />
                                     </div>
                                 ))}
@@ -2707,7 +2716,7 @@ const ProjectDashboard: React.FC = () => {
                         <div className="grid grid-cols-2 gap-3">
                             <div>
                                 <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Số tiền (VNĐ)</label>
-                                <input type="number" value={txAmount} onChange={e => setTxAmount(e.target.value)} placeholder="0"
+                                <input type="text" inputMode="decimal" value={txAmount} onChange={e => setTxAmount(e.target.value)} placeholder="0"
                                     className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none" />
                             </div>
                             <div>
@@ -2808,7 +2817,7 @@ const ProjectDashboard: React.FC = () => {
                     )}
                     <div className="px-6 py-4 border-t border-zinc-200 dark:border-zinc-800 flex justify-end gap-3">
                         <button onClick={resetTxForm} className="px-4 py-2 rounded-lg text-sm font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800">Huỷ</button>
-                        <button onClick={handleAddTx} disabled={!txAmount || Number(txAmount) <= 0 || uploading}
+                        <button onClick={handleAddTx} disabled={!txAmount || readLocaleNumber(txAmount) <= 0 || uploading}
                             className="px-5 py-2 rounded-lg text-sm font-medium text-white bg-teal-700 hover:bg-teal-800 shadow-sm flex items-center gap-2 disabled:opacity-50 transition-colors">
                             {uploading ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Đang tải...</> : editingTx ? <><Save size={16} /> Lưu thay đổi</> : <><Check size={16} /> Thêm giao dịch</>}
                         </button>

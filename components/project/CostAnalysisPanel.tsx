@@ -8,6 +8,7 @@ import { projectCostItemService, ProjectContractCostAnalysisNode } from '../../l
 import { paymentCertificateService } from '../../lib/paymentCertificateService';
 import { buildFinancialSummary } from '../../lib/projectFinancialService';
 import { useToast } from '../../context/ToastContext';
+import { parseNonNegativeLocaleNumber } from '../../lib/localeNumberInput';
 
 interface Props {
   constructionSiteId: string;
@@ -20,6 +21,9 @@ const fmt = (n: number) => {
   if (Math.abs(n) >= 1e6) return (n / 1e6).toFixed(1) + ' tr';
   return n.toLocaleString('vi-VN') + ' đ';
 };
+
+const readLocaleNumber = (value: number | string | null | undefined) =>
+  parseNonNegativeLocaleNumber(value ?? 0);
 
 const TreeRow: React.FC<{
   node: ProjectContractCostAnalysisNode;
@@ -205,7 +209,7 @@ const CostAnalysisPanel: React.FC<Props> = ({ constructionSiteId, projectId, onS
     if (!editingNode) return;
     setSavingBudget(true);
     try {
-      const val = Number(editingBudgetValue || 0);
+      const val = readLocaleNumber(editingBudgetValue);
       await projectCostItemService.saveProjectCostBudget(
         constructionSiteId,
         projectId,
@@ -330,7 +334,8 @@ const CostAnalysisPanel: React.FC<Props> = ({ constructionSiteId, projectId, onS
               <div>
                 <label className="block text-[10px] font-bold uppercase text-zinc-400 mb-1">Số tiền Dự toán (VNĐ)</label>
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="decimal"
                   value={editingBudgetValue}
                   onChange={e => setEditingBudgetValue(e.target.value)}
                   placeholder="0"

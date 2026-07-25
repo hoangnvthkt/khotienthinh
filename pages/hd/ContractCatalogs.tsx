@@ -40,6 +40,7 @@ import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
+import { parseNonNegativeLocaleNumber } from '../../lib/localeNumberInput';
 
 type CatalogTab = 'services' | 'labor' | 'machines' | 'costItems' | 'materialNorms';
 type SimpleCatalogItem = ContractServiceCatalogItem | ContractLaborCatalogItem | ContractMachineCatalogItem;
@@ -113,8 +114,11 @@ const emptyCostItem = (parentId: string | null = null, sortOrder = 0): ContractC
   sortOrder,
 });
 
-const fmtMoney = (value: number) =>
-  new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 }).format(Number(value || 0));
+const asDraftNumber = (value: string) => value as unknown as number;
+const readLocaleNumber = (value: number | string | null | undefined) =>
+  parseNonNegativeLocaleNumber(value ?? 0);
+const fmtMoney = (value: number | string) =>
+  new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 }).format(readLocaleNumber(value));
 
 interface CostTreeRow {
   item: ContractCostItem;
@@ -271,7 +275,10 @@ const ContractCatalogs: React.FC = () => {
       return;
     }
     await run(async () => {
-      if ('unitPrice' in simpleForm) await contractServiceCatalogService.upsert(simpleForm);
+      if ('unitPrice' in simpleForm) await contractServiceCatalogService.upsert({
+        ...simpleForm,
+        unitPrice: readLocaleNumber(simpleForm.unitPrice),
+      });
       else if (activeTab === 'labor') await contractLaborCatalogService.upsert(simpleForm as ContractLaborCatalogItem);
       else await contractMachineCatalogService.upsert(simpleForm as ContractMachineCatalogItem);
       setSimpleForm(null);
@@ -286,7 +293,11 @@ const ContractCatalogs: React.FC = () => {
       return;
     }
     await run(async () => {
-      await contractMaterialNormService.upsert(normForm);
+      await contractMaterialNormService.upsert({
+        ...normForm,
+        wastePercent: readLocaleNumber(normForm.wastePercent),
+        norm: readLocaleNumber(normForm.norm),
+      });
       setNormForm(null);
       await load();
     }, { successTitle: 'Đã lưu định mức vật liệu' });
@@ -842,7 +853,7 @@ const SimpleCatalogModal: React.FC<{
           )}
           <Field label="Đơn vị" value={item.unit || ''} onChange={value => onChange({ ...item, unit: value })} placeholder="Đơn vị" />
           {'unitPrice' in item && (
-            <Field label="Đơn giá" type="number" value={String(item.unitPrice || 0)} onChange={value => onChange({ ...item, unitPrice: Number(value) } as SimpleCatalogItem)} placeholder="Đơn giá" />
+            <Field label="Đơn giá" type="number" value={String(item.unitPrice || 0)} onChange={value => onChange({ ...item, unitPrice: asDraftNumber(value) } as SimpleCatalogItem)} placeholder="Đơn giá" />
           )}
           <SelectField label="Trạng thái" value={item.status} onChange={value => onChange({ ...item, status: value as ContractCatalogStatus })}>
             <option value="active">Hoạt động</option>
@@ -877,8 +888,8 @@ const MaterialNormModal: React.FC<{
           <Field label="Tên vật liệu" value={item.materialName} onChange={value => onChange({ ...item, materialName: value })} placeholder="Nhập tên vật liệu nếu chưa có trong WMS" />
         )}
         <Field label="Đơn vị" value={item.unit || ''} onChange={value => onChange({ ...item, unit: value })} placeholder="Chọn đơn vị" />
-        <Field label="% Hao hụt" type="number" value={String(item.wastePercent || 0)} onChange={value => onChange({ ...item, wastePercent: Number(value) })} />
-        <Field label="Định mức" type="number" value={String(item.norm || 0)} onChange={value => onChange({ ...item, norm: Number(value) })} />
+        <Field label="% Hao hụt" type="number" value={String(item.wastePercent || 0)} onChange={value => onChange({ ...item, wastePercent: asDraftNumber(value) })} />
+        <Field label="Định mức" type="number" value={String(item.norm || 0)} onChange={value => onChange({ ...item, norm: asDraftNumber(value) })} />
         <label className="block">
           <span className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Ghi chú</span>
           <textarea
@@ -999,7 +1010,8 @@ const Field: React.FC<{
   <label className="block">
     <span className="block text-[10px] font-bold text-slate-400 uppercase mb-1">{label}</span>
     <input
-      type={type}
+      type={type === 'number' ? 'text' : type}
+      inputMode={type === 'number' ? 'decimal' : undefined}
       list={listId}
       value={value}
       onChange={event => onChange(event.target.value)}

@@ -2122,7 +2122,7 @@ const Settings: React.FC = () => {
                 itemId: lossNormForm.itemId || undefined,
                 categoryId: lossNormForm.categoryId || undefined,
                 lossType: lossNormForm.lossType as LossReason,
-                allowedPercentage: parseFloat(lossNormForm.allowedPercentage),
+                allowedPercentage: parseNonNegativeLocaleNumber(lossNormForm.allowedPercentage),
                 period: lossNormForm.period,
                 createdBy: currentUser.id,
                 createdAt: editingLossNorm?.createdAt || new Date().toISOString()
@@ -2157,7 +2157,7 @@ const Settings: React.FC = () => {
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tỷ lệ cho phép (%) *</label>
                   <div className="relative">
-                    <input type="number" step="0.1" min="0" max="100" required value={lossNormForm.allowedPercentage} onChange={(e) => setLossNormForm(f => ({ ...f, allowedPercentage: e.target.value }))} className="w-full p-3 pr-10 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-accent" placeholder="Ví dụ: 2.0" />
+                    <input type="text" inputMode="decimal" step="0.1" min="0" max="100" required value={lossNormForm.allowedPercentage} onChange={(e) => setLossNormForm(f => ({ ...f, allowedPercentage: e.target.value }))} className="w-full p-3 pr-10 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-accent" placeholder="Ví dụ: 2.0" />
                     <Percent size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
                   </div>
                 </div>

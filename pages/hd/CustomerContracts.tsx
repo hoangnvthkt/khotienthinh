@@ -49,6 +49,7 @@ import {
   uploadContractDraftAttachments,
   type ContractAttachmentDraft,
 } from '../../lib/contractAttachmentService';
+import { parseNonNegativeLocaleNumber } from '../../lib/localeNumberInput';
 
 const STATUS_CONFIG: Record<HdContractStatus, { label: string; color: string }> = {
   draft: { label: 'Nháp', color: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300' },
@@ -137,16 +138,20 @@ const emptyForm = (): ReceivedContractForm => ({
   customData: {},
 });
 
+const asDraftNumber = (value: string) => value as unknown as number;
+const readLocaleNumber = (value: number | string | null | undefined) =>
+  parseNonNegativeLocaleNumber(value ?? 0);
+
 const formatCurrency = (value: number | string | undefined, currency = 'VND') =>
-  new Intl.NumberFormat('vi-VN', { style: 'currency', currency, maximumFractionDigits: 0 }).format(Number(value || 0));
+  new Intl.NumberFormat('vi-VN', { style: 'currency', currency, maximumFractionDigits: 0 }).format(readLocaleNumber(value));
 
 const formatDate = (value?: string) => value ? new Date(value).toLocaleDateString('vi-VN') : '-';
 
 const calculateTotals = (form: ReceivedContractForm) => {
-  const goodsAmount = Number(form.goodsAmount || 0);
-  const discountPercent = Number(form.discountPercent || 0);
-  const overheadCost = Number(form.overheadCost || 0);
-  const vatPercent = Number(form.vatPercent || 0);
+  const goodsAmount = readLocaleNumber(form.goodsAmount);
+  const discountPercent = readLocaleNumber(form.discountPercent);
+  const overheadCost = readLocaleNumber(form.overheadCost);
+  const vatPercent = readLocaleNumber(form.vatPercent);
   const discountAmount = Math.round(goodsAmount * discountPercent / 100);
   const beforeVat = Math.max(0, goodsAmount - discountAmount + overheadCost);
   const vatAmount = Math.round(beforeVat * vatPercent / 100);
@@ -304,10 +309,10 @@ const CustomerContracts: React.FC = () => {
       website: customData.website || '',
       bankAccount: customData.bankAccount || '',
       bankName: customData.bankName || '',
-      goodsAmount: Number(customData.goodsAmount || contract.value || 0),
-      discountPercent: Number(customData.discountPercent || 0),
-      overheadCost: Number(customData.overheadCost || 0),
-      vatPercent: Number(contract.vatPercent ?? customData.vatPercent ?? 10),
+      goodsAmount: readLocaleNumber(customData.goodsAmount || contract.value || 0),
+      discountPercent: readLocaleNumber(customData.discountPercent || 0),
+      overheadCost: readLocaleNumber(customData.overheadCost || 0),
+      vatPercent: readLocaleNumber(contract.vatPercent ?? customData.vatPercent ?? 10),
       signedDate: contract.signedDate || '',
       effectiveDate: contract.effectiveDate || '',
       endDate: contract.endDate || '',
@@ -381,10 +386,10 @@ const CustomerContracts: React.FC = () => {
         bankAccount: form.bankAccount,
         bankName: form.bankName,
         goodsAmount: totals.goodsAmount,
-        discountPercent: Number(form.discountPercent || 0),
+        discountPercent: readLocaleNumber(form.discountPercent),
         discountAmount: totals.discountAmount,
-        overheadCost: Number(form.overheadCost || 0),
-        vatPercent: Number(form.vatPercent || 0),
+        overheadCost: readLocaleNumber(form.overheadCost),
+        vatPercent: readLocaleNumber(form.vatPercent),
         vatAmount: totals.vatAmount,
         durationText: form.durationText,
       };
@@ -419,11 +424,11 @@ const CustomerContracts: React.FC = () => {
         projectId: form.projectId,
         constructionSiteId: project?.constructionSiteId || null,
         value: totals.contractValue,
-        vatPercent: Number(form.vatPercent || 0),
+        vatPercent: readLocaleNumber(form.vatPercent),
         currency: 'VND',
         paymentMethod: 'bank_transfer',
         paymentSchedule: form.customData.paymentTerms || '',
-        warrantyMonths: Number(form.customData.warrantyMonths || 0),
+        warrantyMonths: Math.trunc(readLocaleNumber(form.customData.warrantyMonths || 0)),
         signedDate: form.signedDate || undefined,
         effectiveDate: form.effectiveDate || undefined,
         endDate: form.endDate || undefined,
@@ -528,8 +533,8 @@ const CustomerContracts: React.FC = () => {
         ...guaranteeForm,
         contractId: selectedContract.id,
         name: guaranteeForm.name,
-        amount: Number(guaranteeForm.amount || 0),
-        percent: Number(guaranteeForm.percent || 0),
+        amount: readLocaleNumber(guaranteeForm.amount || 0),
+        percent: readLocaleNumber(guaranteeForm.percent || 0),
       });
       setGuaranteeForm(null);
       setGuarantees(await contractGuaranteeService.listByContract(selectedContract.id));
@@ -702,11 +707,11 @@ const CustomerContracts: React.FC = () => {
               <section>
                 <h4 className="text-sm font-black text-slate-700 dark:text-slate-200 mb-3">Giá trị và thời hạn</h4>
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  <TextInput label="Tổng tiền hàng hóa" type="number" value={String(form.goodsAmount)} onChange={value => setForm({ ...form, goodsAmount: Number(value) })} />
-                  <TextInput label="% Chiết khấu" type="number" value={String(form.discountPercent)} onChange={value => setForm({ ...form, discountPercent: Number(value) })} />
+                  <TextInput label="Tổng tiền hàng hóa" type="number" value={String(form.goodsAmount)} onChange={value => setForm({ ...form, goodsAmount: asDraftNumber(value) })} />
+                  <TextInput label="% Chiết khấu" type="number" value={String(form.discountPercent)} onChange={value => setForm({ ...form, discountPercent: asDraftNumber(value) })} />
                   <ReadonlyMetric label="Tiền chiết khấu" value={formatCurrency(totals.discountAmount)} />
-                  <TextInput label="Chi phí chung" type="number" value={String(form.overheadCost)} onChange={value => setForm({ ...form, overheadCost: Number(value) })} />
-                  <TextInput label="VAT (%)" type="number" value={String(form.vatPercent)} onChange={value => setForm({ ...form, vatPercent: Number(value) })} />
+                  <TextInput label="Chi phí chung" type="number" value={String(form.overheadCost)} onChange={value => setForm({ ...form, overheadCost: asDraftNumber(value) })} />
+                  <TextInput label="VAT (%)" type="number" value={String(form.vatPercent)} onChange={value => setForm({ ...form, vatPercent: asDraftNumber(value) })} />
                   <ReadonlyMetric label="VAT (tiền)" value={formatCurrency(totals.vatAmount)} />
                   <ReadonlyMetric label="Giá trị hợp đồng" value={formatCurrency(totals.contractValue)} strong />
                   <SelectInput label="Trạng thái" value={form.status} onChange={value => setForm({ ...form, status: value as HdContractStatus })}>
@@ -862,8 +867,8 @@ const CustomerContracts: React.FC = () => {
                 {Object.entries(GUARANTEE_TYPES).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
               </SelectInput>
               <TextInput label="Tên bảo lãnh *" value={guaranteeForm.name || ''} onChange={value => setGuaranteeForm({ ...guaranteeForm, name: value })} />
-              <TextInput label="Giá trị" type="number" value={String(guaranteeForm.amount || 0)} onChange={value => setGuaranteeForm({ ...guaranteeForm, amount: Number(value) })} />
-              <TextInput label="Tỷ lệ (%)" type="number" value={String(guaranteeForm.percent || 0)} onChange={value => setGuaranteeForm({ ...guaranteeForm, percent: Number(value) })} />
+              <TextInput label="Giá trị" type="number" value={String(guaranteeForm.amount || 0)} onChange={value => setGuaranteeForm({ ...guaranteeForm, amount: asDraftNumber(value) })} />
+              <TextInput label="Tỷ lệ (%)" type="number" value={String(guaranteeForm.percent || 0)} onChange={value => setGuaranteeForm({ ...guaranteeForm, percent: asDraftNumber(value) })} />
               <TextInput label="Ngân hàng" value={guaranteeForm.bankName || ''} onChange={value => setGuaranteeForm({ ...guaranteeForm, bankName: value })} />
               <TextInput label="Số bảo lãnh" value={guaranteeForm.guaranteeNumber || ''} onChange={value => setGuaranteeForm({ ...guaranteeForm, guaranteeNumber: value })} />
               <TextInput label="Ngày phát hành" type="date" value={guaranteeForm.issueDate || ''} onChange={value => setGuaranteeForm({ ...guaranteeForm, issueDate: value })} />
@@ -989,12 +994,13 @@ const DynamicField: React.FC<{
       </SelectInput>
     );
   }
+  const isNumericField = field.fieldType === 'number' || field.fieldType === 'currency' || field.fieldType === 'percent';
   const inputType = field.fieldType === 'date' ? 'date'
-    : field.fieldType === 'number' || field.fieldType === 'currency' || field.fieldType === 'percent' ? 'number'
+    : isNumericField ? 'number'
       : field.fieldType === 'email' ? 'email'
         : field.fieldType === 'url' ? 'url'
           : 'text';
-  return <TextInput label={label} type={inputType} value={String(value ?? '')} onChange={val => onChange(inputType === 'number' ? Number(val) : val)} placeholder={field.placeholder} />;
+  return <TextInput label={label} type={inputType} value={String(value ?? '')} onChange={val => onChange(isNumericField ? asDraftNumber(val) : val)} placeholder={field.placeholder} />;
 };
 
 const TextInput: React.FC<{
@@ -1003,18 +1009,24 @@ const TextInput: React.FC<{
   onChange: (value: string) => void;
   type?: string;
   placeholder?: string;
-}> = ({ label, value, onChange, type = 'text', placeholder }) => (
-  <div>
-    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">{label}</label>
-    <input
-      type={type}
-      value={value}
-      onChange={e => onChange(e.target.value)}
-      placeholder={placeholder}
-      className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-sm bg-white dark:bg-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500/30"
-    />
-  </div>
-);
+  inputMode?: React.HTMLAttributes<HTMLInputElement>['inputMode'];
+}> = ({ label, value, onChange, type = 'text', placeholder, inputMode }) => {
+  const resolvedType = type === 'number' ? 'text' : type;
+  const resolvedInputMode = inputMode ?? (type === 'number' ? 'decimal' : undefined);
+  return (
+    <div>
+      <label className="block text-xs font-bold text-slate-500 uppercase mb-1">{label}</label>
+      <input
+        type={resolvedType}
+        inputMode={resolvedInputMode}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-sm bg-white dark:bg-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500/30"
+      />
+    </div>
+  );
+};
 
 const SelectInput: React.FC<{
   label: string;

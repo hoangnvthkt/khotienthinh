@@ -4,6 +4,7 @@ import { ContractItem, ContractItemResource, ContractItemResourceType, ContractI
 import { contractItemResourceService, contractItemService } from '../../lib/contractItemService';
 import { useToast } from '../../context/ToastContext';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
+import { parseNonNegativeLocaleNumber } from '../../lib/localeNumberInput';
 
 type ResourceDraft = Omit<ContractItemResource, 'id' | 'contractItemId' | 'createdAt'>;
 
@@ -54,7 +55,9 @@ const emptyForm = (): Partial<ContractItem> => ({
 });
 
 const calcResourceTotal = (resource: ResourceDraft) =>
-  Number(resource.quantity || 0) * Number(resource.unitPrice || 0);
+  parseNonNegativeLocaleNumber(resource.quantity || 0) * parseNonNegativeLocaleNumber(resource.unitPrice || 0);
+
+const asDraftNumber = (value: string) => value as unknown as number;
 
 const ContractItemDetailModal: React.FC<Props> = ({
   isOpen,
@@ -93,8 +96,8 @@ const ContractItemDetailModal: React.FC<Props> = ({
     const material = resources.filter(r => r.resourceType === 'material').reduce((sum, r) => sum + calcResourceTotal(r), 0);
     const labor = resources.filter(r => r.resourceType === 'labor').reduce((sum, r) => sum + calcResourceTotal(r), 0);
     const machine = resources.filter(r => r.resourceType === 'machine').reduce((sum, r) => sum + calcResourceTotal(r), 0);
-    const unitPrice = Number(form.unitPrice || 0) || material + labor + machine;
-    const total = Number(form.quantity || 0) * unitPrice;
+    const unitPrice = parseNonNegativeLocaleNumber(form.unitPrice || 0) || material + labor + machine;
+    const total = parseNonNegativeLocaleNumber(form.quantity || 0) * unitPrice;
     return { material, labor, machine, unitPrice, total };
   }, [form.quantity, form.unitPrice, resources]);
 
@@ -125,14 +128,17 @@ const ContractItemDetailModal: React.FC<Props> = ({
         code: form.code!.trim(),
         name: form.name!.trim(),
         unit: form.unit || 'm2',
-        quantity: Number(form.quantity || 0),
+        length: parseNonNegativeLocaleNumber(form.length || 0),
+        width: parseNonNegativeLocaleNumber(form.width || 0),
+        height: parseNonNegativeLocaleNumber(form.height || 0),
+        quantity: parseNonNegativeLocaleNumber(form.quantity || 0),
         unitPrice: totals.unitPrice,
         totalPrice: totals.total,
         materialUnitPrice: totals.material,
         laborUnitPrice: totals.labor,
         machineUnitPrice: totals.machine,
         revisedUnitPrice: totals.unitPrice,
-        revisedQuantity: Number(form.quantity || 0),
+        revisedQuantity: parseNonNegativeLocaleNumber(form.quantity || 0),
         revisedTotalPrice: totals.total,
         order: item?.order ?? parentOptions.length,
       } as Omit<ContractItem, 'id' | 'createdAt'>;
@@ -146,6 +152,10 @@ const ContractItemDetailModal: React.FC<Props> = ({
       }
       await contractItemResourceService.replaceForItem(itemId!, resources.map((resource, index) => ({
         ...resource,
+        norm: parseNonNegativeLocaleNumber(resource.norm || 0),
+        coefficient: parseNonNegativeLocaleNumber(resource.coefficient || 0),
+        quantity: parseNonNegativeLocaleNumber(resource.quantity || 0),
+        unitPrice: parseNonNegativeLocaleNumber(resource.unitPrice || 0),
         order: index,
         totalPrice: calcResourceTotal(resource),
       })));
@@ -190,10 +200,10 @@ const ContractItemDetailModal: React.FC<Props> = ({
                       className="w-full px-2 py-1 rounded border border-slate-200" />
                   </td>
                   <td className="p-1"><input value={resource.unit || ''} onChange={e => updateResource(index, { unit: e.target.value })} className="w-16 px-2 py-1 rounded border border-slate-200" /></td>
-                  <td className="p-1"><input type="number" value={resource.norm || ''} onChange={e => updateResource(index, { norm: Number(e.target.value) || 0 })} className="w-20 px-2 py-1 rounded border border-slate-200 text-right" /></td>
-                  <td className="p-1"><input type="number" value={resource.coefficient || ''} onChange={e => updateResource(index, { coefficient: Number(e.target.value) || 0 })} className="w-20 px-2 py-1 rounded border border-slate-200 text-right" /></td>
-                  <td className="p-1"><input type="number" value={resource.quantity || ''} onChange={e => updateResource(index, { quantity: Number(e.target.value) || 0 })} className="w-20 px-2 py-1 rounded border border-slate-200 text-right" /></td>
-                  <td className="p-1"><input type="number" value={resource.unitPrice || ''} onChange={e => updateResource(index, { unitPrice: Number(e.target.value) || 0 })} className="w-24 px-2 py-1 rounded border border-slate-200 text-right" /></td>
+	                  <td className="p-1"><input type="text" inputMode="decimal" value={resource.norm || ''} onChange={e => updateResource(index, { norm: asDraftNumber(e.target.value) })} className="w-20 px-2 py-1 rounded border border-slate-200 text-right" /></td>
+	                  <td className="p-1"><input type="text" inputMode="decimal" value={resource.coefficient || ''} onChange={e => updateResource(index, { coefficient: asDraftNumber(e.target.value) })} className="w-20 px-2 py-1 rounded border border-slate-200 text-right" /></td>
+	                  <td className="p-1"><input type="text" inputMode="decimal" value={resource.quantity || ''} onChange={e => updateResource(index, { quantity: asDraftNumber(e.target.value) })} className="w-20 px-2 py-1 rounded border border-slate-200 text-right" /></td>
+	                  <td className="p-1"><input type="text" inputMode="decimal" value={resource.unitPrice || ''} onChange={e => updateResource(index, { unitPrice: asDraftNumber(e.target.value) })} className="w-24 px-2 py-1 rounded border border-slate-200 text-right" /></td>
                   <td className="p-2 text-right font-bold text-slate-700">{calcResourceTotal(resource).toLocaleString('vi-VN')}</td>
                   <td className="p-1 text-center">
                     <button onClick={() => setResources(prev => prev.filter((_, i) => i !== index))} className="text-red-400 hover:text-red-600">
@@ -242,16 +252,16 @@ const ContractItemDetailModal: React.FC<Props> = ({
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
-            <input type="number" value={form.length || ''} onChange={e => setField('length', Number(e.target.value) || 0)} placeholder="Dài" className={inputCls} />
-            <input type="number" value={form.width || ''} onChange={e => setField('width', Number(e.target.value) || 0)} placeholder="Rộng" className={inputCls} />
-            <input type="number" value={form.height || ''} onChange={e => setField('height', Number(e.target.value) || 0)} placeholder="Cao" className={inputCls} />
-            <input type="number" value={form.quantity || ''} onChange={e => setField('quantity', Number(e.target.value) || 0)} placeholder="Khối lượng" className={inputCls} />
+	            <input type="text" inputMode="decimal" value={form.length || ''} onChange={e => setField('length', asDraftNumber(e.target.value))} placeholder="Dài" className={inputCls} />
+	            <input type="text" inputMode="decimal" value={form.width || ''} onChange={e => setField('width', asDraftNumber(e.target.value))} placeholder="Rộng" className={inputCls} />
+	            <input type="text" inputMode="decimal" value={form.height || ''} onChange={e => setField('height', asDraftNumber(e.target.value))} placeholder="Cao" className={inputCls} />
+	            <input type="text" inputMode="decimal" value={form.quantity || ''} onChange={e => setField('quantity', asDraftNumber(e.target.value))} placeholder="Khối lượng" className={inputCls} />
             <input value={form.unit || ''} onChange={e => setField('unit', e.target.value)} placeholder="Đơn vị" className={inputCls} />
             <input value={form.workCode || ''} onChange={e => setField('workCode', e.target.value)} placeholder="Mã công tác" className={inputCls} />
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <input type="number" value={form.unitPrice || ''} onChange={e => setField('unitPrice', Number(e.target.value) || 0)} placeholder="Đơn giá tổng" className={inputCls} />
+	            <input type="text" inputMode="decimal" value={form.unitPrice || ''} onChange={e => setField('unitPrice', asDraftNumber(e.target.value))} placeholder="Đơn giá tổng" className={inputCls} />
             <div className="px-3 py-2 rounded-xl bg-slate-50 text-xs"><span className="text-slate-400 block">VL/NC/MTC</span><b>{totals.material.toLocaleString('vi-VN')} / {totals.labor.toLocaleString('vi-VN')} / {totals.machine.toLocaleString('vi-VN')}</b></div>
             <div className="px-3 py-2 rounded-xl bg-emerald-50 text-xs"><span className="text-emerald-500 block">Đơn giá dùng tính</span><b>{totals.unitPrice.toLocaleString('vi-VN')}</b></div>
             <div className="px-3 py-2 rounded-xl bg-indigo-50 text-xs"><span className="text-indigo-500 block">Thành tiền</span><b>{totals.total.toLocaleString('vi-VN')}</b></div>

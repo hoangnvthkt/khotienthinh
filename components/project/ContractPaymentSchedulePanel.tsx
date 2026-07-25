@@ -25,6 +25,7 @@ import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
+import { parseNonNegativeLocaleNumber } from '../../lib/localeNumberInput';
 
 interface Props {
   contractId: string;
@@ -79,6 +80,7 @@ const getDefaultQualityStatus = (milestoneType: PaymentScheduleMilestoneType): P
   milestoneType === 'advance' ? 'not_applicable' : 'not_confirmed';
 const taskLabel = (task: ProjectTask) => `${task.wbsCode ? `${task.wbsCode} - ` : ''}${task.name}`;
 const lower = (value?: string | null) => (value || '').toLowerCase();
+const asDraftNumber = (value: string) => value as unknown as number;
 
 const defaultSchedule = (
   contractId: string,
@@ -260,8 +262,8 @@ const ContractPaymentSchedulePanel: React.FC<Props> = ({
         sequenceNo: Number(form.sequenceNo || 1),
         milestoneType,
         description: form.description.trim(),
-        amount: Number(form.amount || 0),
-        paidAmount: Number(form.paidAmount || 0),
+        amount: parseNonNegativeLocaleNumber(form.amount || 0),
+        paidAmount: parseNonNegativeLocaleNumber(form.paidAmount || 0),
         plannedTaskIds: form.plannedTaskIds || [],
         plannedScopeNote: form.plannedScopeNote || '',
         qualityStatus,
@@ -454,7 +456,7 @@ const ContractPaymentSchedulePanel: React.FC<Props> = ({
                 {Object.entries(milestoneLabel).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
               </SelectField>
               <Field label="Ngày dự kiến" type="date" value={form.dueDate} onChange={value => setForm({ ...form, dueDate: value })} />
-              <Field label="Số tiền dự kiến" type="number" value={String(form.amount || 0)} onChange={value => setForm({ ...form, amount: Number(value) })} />
+              <Field label="Số tiền dự kiến" inputMode="decimal" value={String(form.amount || '')} onChange={value => setForm({ ...form, amount: asDraftNumber(value) })} />
               <Field label="Mô tả đợt *" className="md:col-span-2" value={form.description} onChange={value => setForm({ ...form, description: value })} />
               <SelectField label="Loại dòng tiền" value={form.type} onChange={value => setForm({ ...form, type: value as PaymentSchedule['type'] })}>
                 <option value="receivable">Phải thu</option>
@@ -483,7 +485,7 @@ const ContractPaymentSchedulePanel: React.FC<Props> = ({
                   <p className="mt-1 text-[10px] font-bold text-amber-600">Chỉ người có quyền confirm/Chỉ huy trưởng mới được xác nhận chất lượng.</p>
                 ) : null}
               </div>
-              <Field label="Đã thanh toán" type="number" value={String(form.paidAmount || 0)} onChange={value => setForm({ ...form, paidAmount: Number(value) })} />
+              <Field label="Đã thanh toán" inputMode="decimal" value={String(form.paidAmount || '')} onChange={value => setForm({ ...form, paidAmount: asDraftNumber(value) })} />
               <Field label="Ngày thanh toán" type="date" value={form.paidDate || ''} onChange={value => setForm({ ...form, paidDate: value })} />
               <SelectField label="Phụ lục" value={form.appendixId || ''} onChange={value => setForm({ ...form, appendixId: value || undefined })}>
                 <option value="">Không gắn phụ lục</option>
@@ -541,12 +543,14 @@ const Field: React.FC<{
   value: string;
   onChange: (value: string) => void;
   type?: string;
+  inputMode?: React.HTMLAttributes<HTMLInputElement>['inputMode'];
   className?: string;
-}> = ({ label, value, onChange, type = 'text', className = '' }) => (
+}> = ({ label, value, onChange, type = 'text', inputMode, className = '' }) => (
   <label className={`block ${className}`}>
     <span className="block text-[10px] font-bold text-slate-400 uppercase mb-1">{label}</span>
     <input
       type={type}
+      inputMode={inputMode}
       value={value}
       onChange={event => onChange(event.target.value)}
       className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-500/20"

@@ -3,6 +3,7 @@ import { Plus, Trash2, Edit2, Save, X, Shield, Check, ToggleLeft, ToggleRight } 
 import { approvalService, ApprovalRule, ApprovalModule, ApprovalAction } from '../../lib/approvalService';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
+import { parseNonNegativeLocaleNumber } from '../../lib/localeNumberInput';
 
 interface Props {
   constructionSiteId?: string;
@@ -26,6 +27,9 @@ const fmtAmount = (n: number) => {
   if (n >= 1e6) return (n / 1e6).toFixed(0) + ' tr';
   return n.toLocaleString('vi-VN') + ' đ';
 };
+
+const readLocaleNumber = (value: number | string | null | undefined) =>
+  parseNonNegativeLocaleNumber(value ?? 0);
 
 const ApprovalMatrixPanel: React.FC<Props> = ({ constructionSiteId }) => {
   const toast = useToast();
@@ -111,8 +115,8 @@ const ApprovalMatrixPanel: React.FC<Props> = ({ constructionSiteId }) => {
         name: fName.trim(),
         module: fModule,
         action: fAction,
-        minAmount: Number(fMinAmount) || 0,
-        maxAmount: fMaxAmount ? Number(fMaxAmount) : undefined,
+        minAmount: readLocaleNumber(fMinAmount),
+        maxAmount: fMaxAmount ? readLocaleNumber(fMaxAmount) : undefined,
         approverRole: fApproverRole || undefined,
         approverUserId: fApproverUserId || undefined,
         approverModuleAdmin: fModuleAdmin,
@@ -197,12 +201,12 @@ const ApprovalMatrixPanel: React.FC<Props> = ({ constructionSiteId }) => {
 
               <div>
                 <label className="text-[9px] font-bold text-slate-500 uppercase block mb-1">Ngưỡng tối thiểu (VNĐ)</label>
-                <input type="number" value={fMinAmount} onChange={e => setFMinAmount(e.target.value)}
+                <input type="text" inputMode="decimal" value={fMinAmount} onChange={e => setFMinAmount(e.target.value)}
                   className="w-full px-3 py-2 rounded-xl border border-violet-200 text-xs dark:bg-slate-800 dark:border-slate-600" />
               </div>
               <div>
                 <label className="text-[9px] font-bold text-slate-500 uppercase block mb-1">Ngưỡng tối đa (để trống = ∞)</label>
-                <input type="number" value={fMaxAmount} onChange={e => setFMaxAmount(e.target.value)} placeholder="Không giới hạn"
+                <input type="text" inputMode="decimal" value={fMaxAmount} onChange={e => setFMaxAmount(e.target.value)} placeholder="Không giới hạn"
                   className="w-full px-3 py-2 rounded-xl border border-violet-200 text-xs dark:bg-slate-800 dark:border-slate-600" />
               </div>
               <div>

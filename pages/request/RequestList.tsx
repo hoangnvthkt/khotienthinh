@@ -1307,7 +1307,7 @@ const RequestList: React.FC = () => {
                                                     className="w-full px-4 py-2.5 bg-white/50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl outline-none text-sm resize-none text-slate-850 dark:text-white" />
                                             )}
                                             {field.type === 'number' && (
-                                                <input type="number" value={customFormData[field.name] || ''} onChange={e => setCustomFormData(p => ({ ...p, [field.name]: e.target.value }))}
+                                                <input type="text" inputMode="decimal" value={customFormData[field.name] || ''} onChange={e => setCustomFormData(p => ({ ...p, [field.name]: e.target.value }))}
                                                     className="w-full px-4 py-2.5 bg-white/50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl outline-none text-sm text-slate-850 dark:text-white" />
                                             )}
                                             {field.type === 'date' && (

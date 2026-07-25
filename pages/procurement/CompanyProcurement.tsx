@@ -42,6 +42,7 @@ import {
   purchaseOrderHasStockImpact,
   summarizePurchaseOrderWork,
 } from '../../lib/purchaseOrderMutationState';
+import { parseNonNegativeLocaleNumber } from '../../lib/localeNumberInput';
 import {
   BusinessPartner,
   CompanyProcurementCreateLine,
@@ -100,8 +101,10 @@ const formatQty = (value: number) =>
 const formatMoney = (value: number) =>
   Number(value || 0).toLocaleString('vi-VN', { maximumFractionDigits: 0 }) + ' đ';
 
+const parseLocaleNumber = (value: unknown) => parseNonNegativeLocaleNumber(value);
+
 const normalizeVatRate = (value?: string | number | null) => {
-  const parsed = Number(value || 0);
+  const parsed = parseLocaleNumber(value || 0);
   if (!Number.isFinite(parsed) || parsed <= 0) return 0;
   return Math.min(100, parsed);
 };
@@ -402,12 +405,12 @@ const CompanyProcurement: React.FC = () => {
 
   const selectedSummary = useMemo(() => selectedRows.reduce((acc, row) => ({
     qty: acc.qty + row.remainingQty,
-    value: acc.value + Number(draftByKey[row.key]?.orderStockQty || row.remainingQty) * Number(draftByKey[row.key]?.stockUnitPrice || itemById.get(row.itemId)?.priceIn || 0),
+    value: acc.value + parseLocaleNumber(draftByKey[row.key]?.orderStockQty || row.remainingQty) * parseLocaleNumber(draftByKey[row.key]?.stockUnitPrice || itemById.get(row.itemId)?.priceIn || 0),
   }), { qty: 0, value: 0 }), [draftByKey, itemById, selectedRows]);
 
   const selectedCustomSummary = useMemo(() => selectedCustomRows.reduce((acc, row) => ({
     qty: acc.qty + row.openQty,
-    value: acc.value + Number(row.line.quoteAmount || (Number(row.line.quoteUnitPrice || 0) * row.openQty) || 0),
+    value: acc.value + parseLocaleNumber(row.line.quoteAmount || (parseLocaleNumber(row.line.quoteUnitPrice || 0) * row.openQty) || 0),
   }), { qty: 0, value: 0 }), [selectedCustomRows]);
 
   const toggleRow = (row: CompanyProcurementDemandLine) => {
@@ -455,8 +458,8 @@ const CompanyProcurement: React.FC = () => {
         demandKey: row.key,
         vendorId: draft?.vendorId || '',
         vendorName: partner?.name || draft?.vendorName || null,
-        orderStockQty: Number(draft?.orderStockQty || 0),
-        stockUnitPrice: Number(draft?.stockUnitPrice || 0),
+        orderStockQty: parseLocaleNumber(draft?.orderStockQty || 0),
+        stockUnitPrice: parseLocaleNumber(draft?.stockUnitPrice || 0),
         neededDate: row.neededDate || null,
         note: `Gom mua từ ${row.request.code}`,
       };
@@ -519,7 +522,7 @@ const CompanyProcurement: React.FC = () => {
 
   const handleSaveCustomQuote = async () => {
     if (!customQuoteDraft || saving) return;
-    if (Number(customQuoteDraft.quoteUnitPrice || 0) <= 0 && Number(customQuoteDraft.quoteAmount || 0) <= 0) {
+    if (parseLocaleNumber(customQuoteDraft.quoteUnitPrice || 0) <= 0 && parseLocaleNumber(customQuoteDraft.quoteAmount || 0) <= 0) {
       toast.warning('Thiếu báo giá', 'Nhập đơn giá hoặc tổng giá trị báo giá.');
       return;
     }
@@ -529,8 +532,8 @@ const CompanyProcurement: React.FC = () => {
         rfqId: customQuoteDraft.rfqId,
         supplierId: customQuoteDraft.supplierId,
         supplierName: customQuoteDraft.supplierName,
-        quoteUnitPrice: Number(customQuoteDraft.quoteUnitPrice || 0),
-        quoteAmount: Number(customQuoteDraft.quoteAmount || 0) || null,
+        quoteUnitPrice: parseLocaleNumber(customQuoteDraft.quoteUnitPrice || 0),
+        quoteAmount: parseLocaleNumber(customQuoteDraft.quoteAmount || 0) || null,
         deliveryDate: customQuoteDraft.deliveryDate || null,
         note: customQuoteDraft.note || null,
       });
@@ -785,8 +788,8 @@ const CompanyProcurement: React.FC = () => {
 
     const lines = detail.batches.flatMap(batch => batch.lines).map(line => ({
       id: line.id,
-      issuedQty: Number(deliveryEditDraft.lines[line.id]?.issuedQty || 0),
-      deliveryUnitPrice: Number(deliveryEditDraft.lines[line.id]?.deliveryUnitPrice || 0),
+      issuedQty: parseLocaleNumber(deliveryEditDraft.lines[line.id]?.issuedQty || 0),
+      deliveryUnitPrice: parseLocaleNumber(deliveryEditDraft.lines[line.id]?.deliveryUnitPrice || 0),
     }));
     if (lines.some(line => !Number.isFinite(line.issuedQty) || line.issuedQty <= 0)) {
       toast.warning('Số lượng chưa hợp lệ', 'Số lượng của mỗi dòng phải lớn hơn 0.');
@@ -1016,10 +1019,10 @@ const CompanyProcurement: React.FC = () => {
                           const selected = selectedKeys.includes(row.key);
                           const draft = draftByKey[row.key];
                           const price = selected
-                            ? Number(draft?.stockUnitPrice || 0)
+                            ? parseLocaleNumber(draft?.stockUnitPrice || 0)
                             : Number(itemById.get(row.itemId)?.priceIn || 0);
                           const qty = selected
-                            ? Number(draft?.orderStockQty || 0)
+                            ? parseLocaleNumber(draft?.orderStockQty || 0)
                             : Number(row.remainingQty || 0);
                           const lineAmount = qty * price;
 
@@ -1057,8 +1060,9 @@ const CompanyProcurement: React.FC = () => {
 
                               <td className="w-32 px-2 py-3 text-right">
                                 {selected ? (
-                                  <input
-                                    value={draft?.orderStockQty || ''}
+	                                  <input
+	                                    inputMode="decimal"
+	                                    value={draft?.orderStockQty || ''}
                                     onChange={event => updateDraftLine(row.key, { orderStockQty: event.target.value })}
                                     className="w-full max-w-[110px] rounded-md border border-slate-200 bg-white px-2 py-1.5 text-right text-xs font-bold dark:border-slate-700 dark:bg-slate-950"
                                   />
@@ -1066,8 +1070,9 @@ const CompanyProcurement: React.FC = () => {
                               </td>
                               <td className="w-36 px-2 py-3 text-right">
                                 {selected ? (
-                                  <input
-                                    value={draft?.stockUnitPrice || ''}
+	                                  <input
+	                                    inputMode="decimal"
+	                                    value={draft?.stockUnitPrice || ''}
                                     onChange={event => updateDraftLine(row.key, { stockUnitPrice: event.target.value })}
                                     className="w-full max-w-[120px] rounded-md border border-slate-200 bg-white px-2 py-1.5 text-right text-xs font-bold dark:border-slate-700 dark:bg-slate-950"
                                   />
@@ -1381,8 +1386,8 @@ const CompanyProcurement: React.FC = () => {
                   const isExpandedGroup = isEditingGroup || expandedDeliveryGroupIds.includes(detail.group.id);
                   const total = detailLines.reduce((sum, { line }) => {
                     const editLine = isEditingGroup ? deliveryEditDraft.lines[line.id] : null;
-                    const issuedQty = Number(editLine?.issuedQty ?? line.issuedQty ?? 0);
-                    const unitPrice = Number(editLine?.deliveryUnitPrice ?? line.deliveryUnitPrice ?? 0);
+                    const issuedQty = parseLocaleNumber(editLine?.issuedQty ?? line.issuedQty ?? 0);
+                    const unitPrice = parseLocaleNumber(editLine?.deliveryUnitPrice ?? line.deliveryUnitPrice ?? 0);
                     return sum + issuedQty * unitPrice;
                   }, 0);
                   const isRejectedGroup = isRejectedDeliveryGroup(detail);
@@ -1509,8 +1514,8 @@ const CompanyProcurement: React.FC = () => {
                           <div className="grid gap-2">
                             {detailLines.map(({ batch, line }) => {
                               const editLine = isEditingGroup ? deliveryEditDraft.lines[line.id] : null;
-                              const issuedQty = Number(editLine?.issuedQty ?? line.issuedQty ?? 0);
-                              const unitPrice = Number(editLine?.deliveryUnitPrice ?? line.deliveryUnitPrice ?? 0);
+                              const issuedQty = parseLocaleNumber(editLine?.issuedQty ?? line.issuedQty ?? 0);
+                              const unitPrice = parseLocaleNumber(editLine?.deliveryUnitPrice ?? line.deliveryUnitPrice ?? 0);
                               return (
                                 <div key={line.id} className="grid grid-cols-1 gap-3 rounded-md border border-slate-100 px-3 py-3 text-sm dark:border-slate-800 md:grid-cols-[minmax(0,1fr)_160px_160px_160px] md:items-end">
                                   <div>
@@ -1522,11 +1527,10 @@ const CompanyProcurement: React.FC = () => {
                                       <label className="grid gap-1 text-xs font-black uppercase text-slate-500">
                                         Số lượng
                                         <div className="flex h-10 items-center overflow-hidden rounded-md border border-slate-200 bg-white focus-within:border-indigo-500 dark:border-slate-700 dark:bg-slate-950">
-                                          <input
-                                            type="number"
-                                            min="0.001"
-                                            step="0.001"
-                                            value={editLine?.issuedQty || ''}
+	                                          <input
+	                                            type="text"
+	                                            inputMode="decimal"
+	                                            value={editLine?.issuedQty || ''}
                                             onChange={event => updateDeliveryEditLine(line.id, { issuedQty: event.target.value })}
                                             className="min-w-0 flex-1 bg-transparent px-3 text-right text-sm font-bold text-slate-800 outline-none dark:text-slate-100"
                                           />
@@ -1535,11 +1539,10 @@ const CompanyProcurement: React.FC = () => {
                                       </label>
                                       <label className="grid gap-1 text-xs font-black uppercase text-slate-500">
                                         Đơn giá
-                                        <input
-                                          type="number"
-                                          min="0"
-                                          step="1"
-                                          value={editLine?.deliveryUnitPrice || ''}
+	                                        <input
+	                                          type="text"
+	                                          inputMode="decimal"
+	                                          value={editLine?.deliveryUnitPrice || ''}
                                           onChange={event => updateDeliveryEditLine(line.id, { deliveryUnitPrice: event.target.value })}
                                           className="h-10 rounded-md border border-slate-200 bg-white px-3 text-right text-sm font-bold text-slate-800 outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
                                         />
@@ -1642,20 +1645,20 @@ const CompanyProcurement: React.FC = () => {
             <div className="grid gap-4 p-5 md:grid-cols-2">
               <label className="grid gap-1 text-xs font-black uppercase text-slate-500">
                 Đơn giá
-                <input
-                  type="number"
-                  min="0"
-                  value={customQuoteDraft.quoteUnitPrice}
+	                <input
+	                  type="text"
+	                  inputMode="decimal"
+	                  value={customQuoteDraft.quoteUnitPrice}
                   onChange={event => setCustomQuoteDraft(prev => prev ? { ...prev, quoteUnitPrice: event.target.value } : prev)}
                   className="h-10 rounded-md border border-slate-200 bg-white px-3 text-right text-sm font-bold text-slate-800 outline-none focus:border-emerald-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
                 />
               </label>
               <label className="grid gap-1 text-xs font-black uppercase text-slate-500">
                 Tổng báo giá
-                <input
-                  type="number"
-                  min="0"
-                  value={customQuoteDraft.quoteAmount}
+	                <input
+	                  type="text"
+	                  inputMode="decimal"
+	                  value={customQuoteDraft.quoteAmount}
                   onChange={event => setCustomQuoteDraft(prev => prev ? { ...prev, quoteAmount: event.target.value } : prev)}
                   className="h-10 rounded-md border border-slate-200 bg-white px-3 text-right text-sm font-bold text-slate-800 outline-none focus:border-emerald-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
                 />

@@ -10,6 +10,7 @@ import { subcontractorContractService } from '../../lib/hdService';
 import { acceptanceService } from '../../lib/projectService';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
+import { parseNonNegativeLocaleNumber } from '../../lib/localeNumberInput';
 
 interface SubcontractTabProps {
     constructionSiteId?: string;
@@ -99,14 +100,14 @@ const SubcontractTab: React.FC<SubcontractTabProps> = ({ constructionSiteId, pro
     const handleSave = async () => {
         if (!ensureCanManage('lưu nghiệm thu')) return;
         if (!formContractId || !fValue || !fDesc) return;
-        const value = Number(fValue);
-        const retention = Number(fRetention);
+        const value = parseNonNegativeLocaleNumber(fValue);
+        const retention = parseNonNegativeLocaleNumber(fRetention);
         const retentionAmount = Math.round(value * retention / 100);
         const payableAmount = value - retentionAmount;
 
         const item: AcceptanceRecord = editing ? {
             ...editing,
-            periodNumber: Number(fPeriod), description: fDesc,
+            periodNumber: parseNonNegativeLocaleNumber(fPeriod), description: fDesc,
             periodStart: fStart, periodEnd: fEnd, approvedValue: value,
             retentionPercent: retention, retentionAmount, payableAmount,
             status: fStatus, note: fNote || undefined,
@@ -115,7 +116,7 @@ const SubcontractTab: React.FC<SubcontractTabProps> = ({ constructionSiteId, pro
             paidAt: fStatus === 'paid' && editing.status !== 'paid' ? new Date().toISOString() : editing.paidAt,
         } : {
             id: crypto.randomUUID(), contractId: formContractId, projectId: projectId || constructionSiteId || null, constructionSiteId: constructionSiteId || null,
-            periodNumber: Number(fPeriod), description: fDesc,
+            periodNumber: parseNonNegativeLocaleNumber(fPeriod), description: fDesc,
             periodStart: fStart, periodEnd: fEnd, approvedValue: value,
             retentionPercent: retention, retentionAmount, payableAmount,
             status: fStatus, note: fNote || undefined,
@@ -177,8 +178,8 @@ const SubcontractTab: React.FC<SubcontractTabProps> = ({ constructionSiteId, pro
     }, [contracts, acceptances]);
 
     const computedRetentionAmount = useMemo(() => {
-        const v = Number(fValue) || 0;
-        const r = Number(fRetention) || 0;
+        const v = parseNonNegativeLocaleNumber(fValue);
+        const r = parseNonNegativeLocaleNumber(fRetention);
         return Math.round(v * r / 100);
     }, [fValue, fRetention]);
 
@@ -426,8 +427,8 @@ const SubcontractTab: React.FC<SubcontractTabProps> = ({ constructionSiteId, pro
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
                                     <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Đợt NT</label>
-                                    <input type="number" value={fPeriod} onChange={e => setFPeriod(e.target.value)} placeholder="1"
-                                        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold focus:ring-2 focus:ring-emerald-500 outline-none" />
+	                                    <input type="text" inputMode="decimal" value={fPeriod} onChange={e => setFPeriod(e.target.value)} placeholder="1"
+	                                        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold focus:ring-2 focus:ring-emerald-500 outline-none" />
                                 </div>
                                 <div>
                                     <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Trạng thái</label>
@@ -460,22 +461,22 @@ const SubcontractTab: React.FC<SubcontractTabProps> = ({ constructionSiteId, pro
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
                                     <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Giá trị nghiệm thu (VNĐ)</label>
-                                    <input type="number" value={fValue} onChange={e => setFValue(e.target.value)} placeholder="0"
-                                        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold focus:ring-2 focus:ring-emerald-500 outline-none" />
+	                                    <input type="text" inputMode="decimal" value={fValue} onChange={e => setFValue(e.target.value)} placeholder="0"
+	                                        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold focus:ring-2 focus:ring-emerald-500 outline-none" />
                                 </div>
                                 <div>
                                     <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">% Giữ lại BH</label>
-                                    <input type="number" value={fRetention} onChange={e => setFRetention(e.target.value)} placeholder="5" min={0} max={100}
-                                        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold focus:ring-2 focus:ring-emerald-500 outline-none" />
+	                                    <input type="text" inputMode="decimal" value={fRetention} onChange={e => setFRetention(e.target.value)} placeholder="5"
+	                                        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold focus:ring-2 focus:ring-emerald-500 outline-none" />
                                 </div>
                             </div>
 
                             {/* Auto-calc preview */}
                             {fValue && (
                                 <div className="px-3 py-2.5 rounded-xl bg-emerald-50 border border-emerald-100 text-xs grid grid-cols-3 gap-2">
-                                    <div><span className="text-emerald-400 block">Giá trị NT</span><span className="font-black text-emerald-700">{fmt(Number(fValue))}</span></div>
+	                                    <div><span className="text-emerald-400 block">Giá trị NT</span><span className="font-black text-emerald-700">{fmt(parseNonNegativeLocaleNumber(fValue))}</span></div>
                                     <div><span className="text-amber-400 block">Giữ lại BH</span><span className="font-black text-amber-600">- {fmt(computedRetentionAmount)}</span></div>
-                                    <div><span className="text-violet-400 block">Thanh toán</span><span className="font-black text-violet-700">{fmt(Number(fValue) - computedRetentionAmount)}</span></div>
+	                                    <div><span className="text-violet-400 block">Thanh toán</span><span className="font-black text-violet-700">{fmt(parseNonNegativeLocaleNumber(fValue) - computedRetentionAmount)}</span></div>
                                 </div>
                             )}
 

@@ -14,6 +14,7 @@ import { useToast } from '../../context/ToastContext';
 import { useConfirm, useReasonConfirm } from '../../context/ConfirmContext';
 import { useApp } from '../../context/AppContext';
 import ProjectRoomSubmissionDialog from './ProjectRoomSubmissionDialog';
+import { parseNonNegativeLocaleNumber } from '../../lib/localeNumberInput';
 
 interface Props {
   contractId: string;
@@ -30,6 +31,7 @@ const fmtM = (n: number) => {
 };
 const fmtPct = (n?: number | null) => Number(n || 0).toLocaleString('vi-VN', { maximumFractionDigits: 2 });
 const nonNegative = (value: number) => Math.max(0, Number.isFinite(value) ? value : 0);
+const parseMoneyInput = (value: unknown) => nonNegative(parseNonNegativeLocaleNumber(value));
 const linePreviousAmount = (item: { cumulativeAmount?: number; currentAmount?: number }) =>
   Math.max(0, Number(item.cumulativeAmount || 0) - Number(item.currentAmount || 0));
 
@@ -374,22 +376,24 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, pr
 
   // Advance payment handlers
   const [showAddAdvance, setShowAddAdvance] = useState(false);
-  const [advForm, setAdvForm] = useState({ amount: 0, date: new Date().toISOString().slice(0, 10), recoveryPercent: 30, note: '' });
+  const [advForm, setAdvForm] = useState<{ amount: number | string; date: string; recoveryPercent: number | string; note: string }>({ amount: 0, date: new Date().toISOString().slice(0, 10), recoveryPercent: 30, note: '' });
 
   const handleAddAdvance = async () => {
-    if (advForm.amount <= 0) { toast.warning('Nhập số tiền tạm ứng'); return; }
+    const amount = parseMoneyInput(advForm.amount);
+    const recoveryPercent = parseMoneyInput(advForm.recoveryPercent);
+    if (amount <= 0) { toast.warning('Nhập số tiền tạm ứng'); return; }
     try {
       const ok = await confirm({
         title: 'Ghi nhận tạm ứng',
-        targetName: fmtM(advForm.amount),
-        subtitle: `Ngày ${advForm.date} - Thu hồi ${fmtPct(advForm.recoveryPercent)}%`,
+        targetName: fmtM(amount),
+        subtitle: `Ngày ${advForm.date} - Thu hồi ${fmtPct(recoveryPercent)}%`,
         warningText: 'Khoản tạm ứng sẽ được dùng để tính thu hồi trong các chứng từ thanh toán sau.',
         intent: 'warning',
         actionLabel: 'Ghi nhận',
         countdownSeconds: 0,
       });
       if (!ok) return;
-      await advancePaymentService.create({ contractId, contractType, constructionSiteId, amount: advForm.amount, date: advForm.date, recoveryPercent: advForm.recoveryPercent, note: advForm.note });
+      await advancePaymentService.create({ contractId, contractType, constructionSiteId, amount, date: advForm.date, recoveryPercent, note: advForm.note });
       setShowAddAdvance(false);
       setAdvForm({ amount: 0, date: new Date().toISOString().slice(0, 10), recoveryPercent: 30, note: '' });
       await load();
@@ -427,12 +431,12 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, pr
         </div>
         {showAddAdvance && (
           <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mb-3 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800">
-            <input type="number" placeholder="Số tiền" value={advForm.amount || ''} onChange={e => setAdvForm({ ...advForm, amount: Number(e.target.value) })}
-              className="px-2 py-1.5 rounded-lg border border-amber-300 text-xs outline-none" />
+	            <input type="text" inputMode="decimal" placeholder="Số tiền" value={advForm.amount || ''} onChange={e => setAdvForm({ ...advForm, amount: e.target.value })}
+	              className="px-2 py-1.5 rounded-lg border border-amber-300 text-xs outline-none" />
             <input type="date" value={advForm.date} onChange={e => setAdvForm({ ...advForm, date: e.target.value })}
               className="px-2 py-1.5 rounded-lg border border-amber-300 text-xs outline-none" />
-            <input type="number" placeholder="% thu hồi" value={advForm.recoveryPercent} onChange={e => setAdvForm({ ...advForm, recoveryPercent: Number(e.target.value) })}
-              className="px-2 py-1.5 rounded-lg border border-amber-300 text-xs outline-none" />
+	            <input type="text" inputMode="decimal" placeholder="% thu hồi" value={advForm.recoveryPercent} onChange={e => setAdvForm({ ...advForm, recoveryPercent: e.target.value })}
+	              className="px-2 py-1.5 rounded-lg border border-amber-300 text-xs outline-none" />
             <input placeholder="Ghi chú" value={advForm.note} onChange={e => setAdvForm({ ...advForm, note: e.target.value })}
               className="px-2 py-1.5 rounded-lg border border-amber-300 text-xs outline-none" />
             <div className="flex gap-1">
@@ -546,27 +550,26 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, pr
                                   <td className="px-2 py-1.5 text-[10px] text-right text-slate-500">{fmtM(previousAmount)}</td>
                                   <td className="px-2 py-1.5 text-right">
                                     {certEditable ? (
-                                      <input
-                                        type="number"
-                                        min={0}
-                                        step="0.01"
-                                        value={item.paymentPercent || ''}
-                                        onChange={e => handleUpdateItem(cert, idx, { paymentPercent: Number(e.target.value) })}
-                                        className="w-20 px-1 py-0.5 rounded border border-indigo-300 text-[10px] text-right outline-none focus:ring-1 focus:ring-indigo-400"
-                                      />
+	                                      <input
+	                                        type="text"
+	                                        inputMode="decimal"
+	                                        defaultValue={item.paymentPercent || ''}
+	                                        onBlur={e => handleUpdateItem(cert, idx, { paymentPercent: parseMoneyInput(e.target.value) })}
+	                                        className="w-20 px-1 py-0.5 rounded border border-indigo-300 text-[10px] text-right outline-none focus:ring-1 focus:ring-indigo-400"
+	                                      />
                                     ) : (
                                       <span className="text-[10px] font-bold">{fmtPct(item.paymentPercent)}%</span>
                                     )}
                                   </td>
                                   <td className="px-2 py-1.5 text-right">
                                     {certEditable ? (
-                                      <input
-                                        type="number"
-                                        min={0}
-                                        value={item.currentAmount || ''}
-                                        onChange={e => handleUpdateItem(cert, idx, { currentAmount: Number(e.target.value) })}
-                                        className="w-28 px-1 py-0.5 rounded border border-indigo-300 text-[10px] text-right font-bold outline-none focus:ring-1 focus:ring-indigo-400"
-                                      />
+	                                      <input
+	                                        type="text"
+	                                        inputMode="decimal"
+	                                        defaultValue={item.currentAmount || ''}
+	                                        onBlur={e => handleUpdateItem(cert, idx, { currentAmount: parseMoneyInput(e.target.value) })}
+	                                        className="w-28 px-1 py-0.5 rounded border border-indigo-300 text-[10px] text-right font-bold outline-none focus:ring-1 focus:ring-indigo-400"
+	                                      />
                                     ) : (
                                       <span className="text-[10px] font-black text-emerald-600">{fmtM(item.currentAmount)}</span>
                                     )}
@@ -627,13 +630,13 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, pr
                           <div key={row.label} className="flex items-center justify-between gap-3 text-xs">
                             <span className="text-slate-500">{row.label}</span>
                             {certEditable ? (
-                              <input
-                                type="number"
-                                min={0}
-                                value={row.value || ''}
-                                onChange={e => handleUpdateCertificateAmounts(cert, row.updates(nonNegative(Number(e.target.value))))}
-                                className="w-32 rounded border border-indigo-300 px-2 py-1 text-right text-[10px] font-bold outline-none focus:ring-1 focus:ring-indigo-400"
-                              />
+	                              <input
+	                                type="text"
+	                                inputMode="decimal"
+	                                defaultValue={row.value || ''}
+	                                onBlur={e => handleUpdateCertificateAmounts(cert, row.updates(parseMoneyInput(e.target.value)))}
+	                                className="w-32 rounded border border-indigo-300 px-2 py-1 text-right text-[10px] font-bold outline-none focus:ring-1 focus:ring-indigo-400"
+	                              />
                             ) : (
                               <span className="font-bold text-red-500">{fmtM(row.value)}</span>
                             )}
@@ -643,13 +646,13 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, pr
                           <span className="text-slate-500">(−) Phạt</span>
                           {certEditable ? (
                             <>
-                              <input
-                                type="number"
-                                min={0}
-                                value={cert.penaltyAmount || ''}
-                                onChange={e => handleUpdateCertificateAmounts(cert, { penaltyAmount: nonNegative(Number(e.target.value)) })}
-                                className="rounded border border-indigo-300 px-2 py-1 text-right text-[10px] font-bold outline-none focus:ring-1 focus:ring-indigo-400"
-                              />
+	                              <input
+	                                type="text"
+	                                inputMode="decimal"
+	                                defaultValue={cert.penaltyAmount || ''}
+	                                onBlur={e => handleUpdateCertificateAmounts(cert, { penaltyAmount: parseMoneyInput(e.target.value) })}
+	                                className="rounded border border-indigo-300 px-2 py-1 text-right text-[10px] font-bold outline-none focus:ring-1 focus:ring-indigo-400"
+	                              />
                               <input
                                 value={cert.penaltyReason || ''}
                                 onChange={e => handleUpdateCertificateAmounts(cert, { penaltyReason: e.target.value })}
@@ -668,13 +671,13 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, pr
                           <span className="text-slate-500">(−) Khấu trừ khác</span>
                           {certEditable ? (
                             <>
-                              <input
-                                type="number"
-                                min={0}
-                                value={cert.deductionAmount || ''}
-                                onChange={e => handleUpdateCertificateAmounts(cert, { deductionAmount: nonNegative(Number(e.target.value)) })}
-                                className="rounded border border-indigo-300 px-2 py-1 text-right text-[10px] font-bold outline-none focus:ring-1 focus:ring-indigo-400"
-                              />
+	                              <input
+	                                type="text"
+	                                inputMode="decimal"
+	                                defaultValue={cert.deductionAmount || ''}
+	                                onBlur={e => handleUpdateCertificateAmounts(cert, { deductionAmount: parseMoneyInput(e.target.value) })}
+	                                className="rounded border border-indigo-300 px-2 py-1 text-right text-[10px] font-bold outline-none focus:ring-1 focus:ring-indigo-400"
+	                              />
                               <input
                                 value={cert.deductionReason || ''}
                                 onChange={e => handleUpdateCertificateAmounts(cert, { deductionReason: e.target.value })}

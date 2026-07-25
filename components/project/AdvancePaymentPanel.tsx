@@ -3,6 +3,7 @@ import { Plus, X, DollarSign } from 'lucide-react';
 import { AdvancePayment, ContractItemType } from '../../types';
 import { advancePaymentService } from '../../lib/advancePaymentService';
 import { useToast } from '../../context/ToastContext';
+import { parseNonNegativeLocaleNumber } from '../../lib/localeNumberInput';
 
 interface Props {
   contractId: string;
@@ -34,14 +35,16 @@ const AdvancePaymentPanel: React.FC<Props> = ({ contractId, contractType, constr
   }), [items]);
 
   const handleCreate = async () => {
-    if (!Number(amount)) return;
+    const parsedAmount = parseNonNegativeLocaleNumber(amount);
+    const parsedRecoveryPercent = parseNonNegativeLocaleNumber(recoveryPercent);
+    if (!parsedAmount) return;
     await advancePaymentService.create({
       contractId,
       contractType,
       constructionSiteId,
-      amount: Number(amount),
+      amount: parsedAmount,
       date,
-      recoveryPercent: Number(recoveryPercent) || 0,
+      recoveryPercent: parsedRecoveryPercent,
       note,
     });
     setAmount('');
@@ -76,9 +79,9 @@ const AdvancePaymentPanel: React.FC<Props> = ({ contractId, contractType, constr
         </div>
         {showForm && (
           <div className="grid grid-cols-2 md:grid-cols-5 gap-2 p-3 bg-amber-50/60 border-b border-amber-100">
-            <input type="number" placeholder="Số tiền" value={amount} onChange={e => setAmount(e.target.value)} className="px-2 py-1.5 rounded-lg border border-amber-200 text-xs" />
+	            <input type="text" inputMode="decimal" placeholder="Số tiền" value={amount} onChange={e => setAmount(e.target.value)} className="px-2 py-1.5 rounded-lg border border-amber-200 text-xs" />
             <input type="date" value={date} onChange={e => setDate(e.target.value)} className="px-2 py-1.5 rounded-lg border border-amber-200 text-xs" />
-            <input type="number" placeholder="% thu hồi" value={recoveryPercent} onChange={e => setRecoveryPercent(e.target.value)} className="px-2 py-1.5 rounded-lg border border-amber-200 text-xs" />
+	            <input type="text" inputMode="decimal" placeholder="% thu hồi" value={recoveryPercent} onChange={e => setRecoveryPercent(e.target.value)} className="px-2 py-1.5 rounded-lg border border-amber-200 text-xs" />
             <input placeholder="Ghi chú" value={note} onChange={e => setNote(e.target.value)} className="px-2 py-1.5 rounded-lg border border-amber-200 text-xs" />
             <div className="flex gap-1">
               <button onClick={handleCreate} className="flex-1 px-2 py-1.5 rounded-lg bg-amber-500 text-white text-[10px] font-bold">Lưu</button>

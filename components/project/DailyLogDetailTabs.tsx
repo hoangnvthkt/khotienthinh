@@ -4,6 +4,7 @@ import {
   DailyLogVolume, DailyLogMaterial, DailyLogLabor, DailyLogMachine,
   Attachment, BusinessPartner, ContractLaborCatalogItem, ContractMachineCatalogItem, InventoryItem, ProjectTask, ProjectWorkBoqItem,
 } from '../../types';
+import { parseNonNegativeLocaleNumber } from '../../lib/localeNumberInput';
 
 interface Props {
   volumes: DailyLogVolume[];
@@ -55,14 +56,12 @@ const formatQuantity = (value?: number | null) =>
 const formatPercent = (value?: number | null) =>
   Number(value || 0).toLocaleString('vi-VN', { maximumFractionDigits: 2 });
 
-const normalizeDecimalInput = (value: string) => value.trim().replace(/\s/g, '').replace(',', '.');
-
 const parseNonNegativeDecimal = (value: string): number | null => {
-  const normalized = normalizeDecimalInput(value);
-  if (!normalized || normalized === '.' || normalized === ',') return 0;
-  if (!/^\d*(?:\.\d*)?$/.test(normalized)) return null;
-  const parsed = Number(normalized);
-  return Number.isFinite(parsed) ? Math.max(0, parsed) : null;
+  const raw = value.trim();
+  if (!raw || raw === '.' || raw === ',') return 0;
+  if (!/\d/.test(raw)) return null;
+  const parsed = parseNonNegativeLocaleNumber(raw);
+  return Number.isFinite(parsed) ? parsed : null;
 };
 
 const formatDecimalInput = (value?: number | null) => {
@@ -821,14 +820,15 @@ const DailyLogDetailTabs: React.FC<Props> = ({
                   <div>
                     <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Số lượng</label>
                     <input
-                      type="number"
+                      type="text"
+                      inputMode="decimal"
                       min={0}
                       max={hasSelectedWarehouseStock ? selectedStock : undefined}
                       placeholder="SL"
                       value={m.quantity || ''}
                       className={inputCls}
                       onChange={e => {
-                        const inputQty = Math.max(0, Number(e.target.value || 0));
+                        const inputQty = parseNonNegativeDecimal(e.target.value) ?? 0;
                         const u = [...materials];
                         u[i] = { ...m, quantity: hasSelectedWarehouseStock ? Math.min(inputQty, selectedStock) : inputQty };
                         onMaterialsChange(u);
@@ -1072,12 +1072,12 @@ const DailyLogDetailTabs: React.FC<Props> = ({
                   onTextChange={value => { const u = [...laborDetails]; u[i] = { ...l, taskName: value }; onLaborChange(u); }}
                   onPick={task => { const u = [...laborDetails]; u[i] = { ...l, taskId: task.id, taskName: task.name }; onLaborChange(u); }}
                 />
-                <input type="number" placeholder={mode === 'partner' ? 'Số người' : 'SL'} value={l.count || ''} className={`${inputCls} w-20`}
-                  onChange={e => { const u = [...laborDetails]; u[i] = { ...l, count: Number(e.target.value) }; onLaborChange(u); }} />
-                <input type="number" placeholder="Giờ" value={l.hours || ''} className={`${inputCls} w-16`}
-                  onChange={e => { const u = [...laborDetails]; u[i] = { ...l, hours: Number(e.target.value) }; onLaborChange(u); }} />
-                <input type="number" placeholder="Đơn giá" value={l.unitCost || ''} className={`${inputCls} w-24`}
-                  onChange={e => { const u = [...laborDetails]; u[i] = { ...l, unitCost: Number(e.target.value) }; onLaborChange(u); }} />
+                <input type="text" inputMode="decimal" placeholder={mode === 'partner' ? 'Số người' : 'SL'} value={l.count || ''} className={`${inputCls} w-20`}
+                  onChange={e => { const u = [...laborDetails]; u[i] = { ...l, count: parseNonNegativeDecimal(e.target.value) ?? 0 }; onLaborChange(u); }} />
+                <input type="text" inputMode="decimal" placeholder="Giờ" value={l.hours || ''} className={`${inputCls} w-16`}
+                  onChange={e => { const u = [...laborDetails]; u[i] = { ...l, hours: parseNonNegativeDecimal(e.target.value) ?? 0 }; onLaborChange(u); }} />
+                <input type="text" inputMode="decimal" placeholder="Đơn giá" value={l.unitCost || ''} className={`${inputCls} w-24`}
+                  onChange={e => { const u = [...laborDetails]; u[i] = { ...l, unitCost: parseNonNegativeDecimal(e.target.value) ?? 0 }; onLaborChange(u); }} />
                 <button onClick={() => onLaborChange(laborDetails.filter((_, idx) => idx !== i))} className="text-slate-400 hover:text-red-500"><X size={14} /></button>
               </div>
             );
@@ -1262,10 +1262,10 @@ const DailyLogDetailTabs: React.FC<Props> = ({
                 onTextChange={value => { const u = [...machines]; u[i] = { ...m, taskName: value }; onMachinesChange(u); }}
                 onPick={task => { const u = [...machines]; u[i] = { ...m, taskId: task.id, taskName: task.name }; onMachinesChange(u); }}
               />
-              <input type="number" step="0.5" placeholder="Số ca" value={m.shifts || ''} className={`${inputCls} w-16`}
-                onChange={e => { const u = [...machines]; u[i] = { ...m, shifts: Number(e.target.value) }; onMachinesChange(u); }} />
-              <input type="number" placeholder="ĐG/ca" value={m.unitCost || ''} className={`${inputCls} w-24`}
-                onChange={e => { const u = [...machines]; u[i] = { ...m, unitCost: Number(e.target.value) }; onMachinesChange(u); }} />
+              <input type="text" inputMode="decimal" step="0.5" placeholder="Số ca" value={m.shifts || ''} className={`${inputCls} w-16`}
+                onChange={e => { const u = [...machines]; u[i] = { ...m, shifts: parseNonNegativeDecimal(e.target.value) ?? 0 }; onMachinesChange(u); }} />
+              <input type="text" inputMode="decimal" placeholder="ĐG/ca" value={m.unitCost || ''} className={`${inputCls} w-24`}
+                onChange={e => { const u = [...machines]; u[i] = { ...m, unitCost: parseNonNegativeDecimal(e.target.value) ?? 0 }; onMachinesChange(u); }} />
               <button onClick={() => onMachinesChange(machines.filter((_, idx) => idx !== i))} className="text-slate-400 hover:text-red-500"><X size={14} /></button>
             </div>
           ))}

@@ -20,8 +20,12 @@ import { ExcelImportMode, ExcelImportPreview, applyImportChanges, buildImportPre
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
 import SearchableSelect from '../../components/common/SearchableSelect';
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
+import { parseNonNegativeLocaleNumber } from '../../lib/localeNumberInput';
 
 const ScannerModal = React.lazy(() => import('../../components/ScannerModal'));
+
+const asDraftNumber = (value: string) => value as unknown as number;
+const readLocaleNumber = (value: unknown) => parseNonNegativeLocaleNumber(value ?? 0);
 
 const AssetCatalog: React.FC = () => {
     const navigate = useNavigate();
@@ -127,10 +131,11 @@ const AssetCatalog: React.FC = () => {
           if (editingAsset) {
             await updateAsset({
                 ...editingAsset, ...form,
-                originalValue: Number(form.originalValue),
-                depreciationYears: Number(form.depreciationYears),
-                warrantyMonths: Number(form.warrantyMonths),
-                residualValue: Number(form.residualValue),
+                originalValue: readLocaleNumber(form.originalValue),
+                depreciationYears: readLocaleNumber(form.depreciationYears),
+                warrantyMonths: readLocaleNumber(form.warrantyMonths),
+                residualValue: readLocaleNumber(form.residualValue),
+                quantity: Math.max(1, readLocaleNumber(form.quantity)),
                 supplierId: form.supplierId || undefined,
                 supplierName: resolvedSupplierName,
                 updatedAt: now,
@@ -140,10 +145,11 @@ const AssetCatalog: React.FC = () => {
             await addAssetWithInitialStock({
                 id: `ast-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
                 ...form,
-                originalValue: Number(form.originalValue),
-                depreciationYears: Number(form.depreciationYears),
-                warrantyMonths: Number(form.warrantyMonths),
-                residualValue: Number(form.residualValue),
+                originalValue: readLocaleNumber(form.originalValue),
+                depreciationYears: readLocaleNumber(form.depreciationYears),
+                warrantyMonths: readLocaleNumber(form.warrantyMonths),
+                residualValue: readLocaleNumber(form.residualValue),
+                quantity: Math.max(1, readLocaleNumber(form.quantity)),
                 supplierId: form.supplierId || undefined,
                 supplierName: resolvedSupplierName,
                 status: AssetStatus.AVAILABLE,
@@ -207,7 +213,8 @@ const AssetCatalog: React.FC = () => {
 
     const handleBatchTransfer = async () => {
         if (!transferFromStock || !detailAsset) return;
-        if (tForm.qty <= 0 || tForm.qty > transferFromStock.qty) {
+        const transferQty = readLocaleNumber(tForm.qty);
+        if (transferQty <= 0 || transferQty > transferFromStock.qty) {
             toast.error('Lỗi', 'Số lượng xuất kho không hợp lệ');
             return;
         }
@@ -221,7 +228,7 @@ const AssetCatalog: React.FC = () => {
                 await transferAssetStock({
                     assetId: detailAsset.id,
                     fromStockId: transferFromStock.id,
-                    qty: tForm.qty,
+                    qty: transferQty,
                     toWarehouseId: tForm.toWarehouseId || undefined,
                     toUserId: tForm.userId || undefined,
                     reason: tForm.reason,
@@ -237,7 +244,7 @@ const AssetCatalog: React.FC = () => {
         }
 
         const nowIso = new Date().toISOString();
-        const oldStock = { ...transferFromStock, qty: transferFromStock.qty - tForm.qty, updatedAt: nowIso };
+        const oldStock = { ...transferFromStock, qty: transferFromStock.qty - transferQty, updatedAt: nowIso };
         
         let targetStock = assetLocationStocks.find(s => 
             s.assetId === detailAsset.id &&
@@ -247,13 +254,13 @@ const AssetCatalog: React.FC = () => {
 
         let newStock: AssetLocationStock;
         if (targetStock) {
-            newStock = { ...targetStock, qty: targetStock.qty + tForm.qty, updatedAt: nowIso };
+            newStock = { ...targetStock, qty: targetStock.qty + transferQty, updatedAt: nowIso };
         } else {
             newStock = {
                 id: `stock-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
                 assetId: detailAsset.id,
                 warehouseId: tForm.toWarehouseId || undefined,
-                qty: tForm.qty,
+                qty: transferQty,
                 assignedToUserId: tForm.userId || undefined,
                 assignedToName: users.find(u => u.id === tForm.userId)?.name || undefined,
                 updatedAt: nowIso
@@ -268,7 +275,7 @@ const AssetCatalog: React.FC = () => {
             assetId: detailAsset.id,
             assetCode: detailAsset.code,
             assetName: detailAsset.name,
-            qty: tForm.qty,
+            qty: transferQty,
             fromWarehouseId: oldStock.warehouseId,
             fromLocationLabel: oldStock.assignedToName || getWarehouseName(oldStock.warehouseId),
             toWarehouseId: newStock.warehouseId,
@@ -307,9 +314,10 @@ const AssetCatalog: React.FC = () => {
     ];
 
     const parseAssetNumber = (value: unknown): number => {
-        const normalized = String(value ?? '').replace(/\s/g, '').replace(/\./g, '').replace(',', '.');
-        const parsed = Number(normalized);
-        return Number.isFinite(parsed) ? parsed : NaN;
+        const raw = String(value ?? '').trim();
+        if (!raw) return 0;
+        if (!/\d/.test(raw)) return NaN;
+        return readLocaleNumber(value);
     };
 
     const parseAssetDate = (value: unknown) => {
@@ -939,7 +947,7 @@ const AssetCatalog: React.FC = () => {
                             {form.assetType === 'batch' && (
                                 <div className="bg-amber-50 dark:bg-amber-950/20 p-4 rounded-xl border border-amber-100 dark:border-amber-900/30">
                                     <label className="text-[10px] font-black text-amber-700 dark:text-amber-500 uppercase block mb-1">Số lượng lô xuất phát</label>
-                                    <input type="number" min={1} value={form.quantity} onChange={e => setForm(p => ({...p, quantity: Math.max(1, Number(e.target.value))}))}
+                                    <input type="text" inputMode="decimal" min={1} value={String(form.quantity)} onChange={e => setForm(p => ({...p, quantity: asDraftNumber(e.target.value)}))}
                                         className="w-full px-3 py-2.5 text-sm border border-amber-200 dark:border-amber-800 rounded-xl outline-none focus:ring-2 focus:ring-amber-500 bg-white dark:bg-slate-800" />
                                 </div>
                             )}
@@ -974,7 +982,7 @@ const AssetCatalog: React.FC = () => {
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Nguyên giá (VNĐ)</label>
-                                    <input type="number" value={form.originalValue} onChange={e => setForm(p => ({ ...p, originalValue: Number(e.target.value) }))}
+                                    <input type="text" inputMode="decimal" value={String(form.originalValue)} onChange={e => setForm(p => ({ ...p, originalValue: asDraftNumber(e.target.value) }))}
                                         className="w-full px-3 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 font-black outline-none focus:ring-2 focus:ring-rose-500" />
                                 </div>
                                 <div>
@@ -986,24 +994,24 @@ const AssetCatalog: React.FC = () => {
                             <div className="grid grid-cols-3 gap-4">
                                 <div>
                                     <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Khấu hao (năm)</label>
-                                    <input type="number" value={form.depreciationYears} onChange={e => setForm(p => ({ ...p, depreciationYears: Number(e.target.value) }))}
+                                    <input type="text" inputMode="decimal" value={String(form.depreciationYears)} onChange={e => setForm(p => ({ ...p, depreciationYears: asDraftNumber(e.target.value) }))}
                                         className="w-full px-3 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 font-bold outline-none focus:ring-2 focus:ring-rose-500" />
                                 </div>
                                 <div>
                                     <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Bảo hành (tháng)</label>
-                                    <input type="number" min={0} value={form.warrantyMonths} onChange={e => setForm(p => ({ ...p, warrantyMonths: Number(e.target.value) }))}
+                                    <input type="text" inputMode="decimal" min={0} value={String(form.warrantyMonths)} onChange={e => setForm(p => ({ ...p, warrantyMonths: asDraftNumber(e.target.value) }))}
                                         className="w-full px-3 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 font-bold outline-none focus:ring-2 focus:ring-rose-500" placeholder="12" />
                                 </div>
                                 <div>
                                     <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Giá trị thanh lý</label>
-                                    <input type="number" value={form.residualValue} onChange={e => setForm(p => ({ ...p, residualValue: Number(e.target.value) }))}
+                                    <input type="text" inputMode="decimal" value={String(form.residualValue)} onChange={e => setForm(p => ({ ...p, residualValue: asDraftNumber(e.target.value) }))}
                                         className="w-full px-3 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 outline-none focus:ring-2 focus:ring-rose-500" />
                                 </div>
                             </div>
                             {/* Warranty Preview */}
-                            {form.warrantyMonths > 0 && form.purchaseDate && (() => {
+                            {readLocaleNumber(form.warrantyMonths) > 0 && form.purchaseDate && (() => {
                                 const expiry = new Date(form.purchaseDate);
-                                expiry.setMonth(expiry.getMonth() + Number(form.warrantyMonths));
+                                expiry.setMonth(expiry.getMonth() + readLocaleNumber(form.warrantyMonths));
                                 const now = new Date();
                                 const purchase = new Date(form.purchaseDate);
                                 const totalMs = expiry.getTime() - purchase.getTime();
@@ -1338,7 +1346,7 @@ const AssetCatalog: React.FC = () => {
 
                             <div>
                                 <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Số lượng chuyển *</label>
-                                <input type="number" min={1} max={transferFromStock.qty} value={tForm.qty} onChange={e => setTForm(p => ({ ...p, qty: Number(e.target.value) }))}
+                                <input type="text" inputMode="decimal" min={1} max={transferFromStock.qty} value={String(tForm.qty)} onChange={e => setTForm(p => ({ ...p, qty: asDraftNumber(e.target.value) }))}
                                     className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 outline-none focus:ring-2 focus:ring-amber-500 font-black" />
                             </div>
 

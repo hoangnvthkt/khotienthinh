@@ -11,9 +11,12 @@ import {
 } from 'lucide-react';
 import { AssetStatus, ASSET_STATUS_LABELS, AssetMaintenance, MaintenanceAttachment } from '../../types';
 import { usePermission } from '../../hooks/usePermission';
+import { parseNonNegativeLocaleNumber } from '../../lib/localeNumberInput';
 
 const TYPE_LABELS: Record<string, string> = { scheduled: 'Bảo trì định kỳ', repair: 'Sửa chữa', inspection: 'Kiểm tra', warranty: 'Bảo hành' };
 const STATUS_LABELS: Record<string, string> = { planned: 'Lên kế hoạch', in_progress: 'Đang thực hiện', completed: 'Hoàn thành' };
+const asDraftNumber = (value: string) => value as unknown as number;
+const readLocaleNumber = (value: unknown) => parseNonNegativeLocaleNumber(value ?? 0);
 const getEffectiveCost = (m: AssetMaintenance) => m.actualCost ?? m.cost ?? 0;
 const getEstimatedCost = (m: AssetMaintenance) => m.estimatedCost ?? m.cost ?? 0;
 
@@ -112,8 +115,8 @@ const AssetProfile: React.FC = () => {
     // Handle quick-add maintenance
     const handleAddMaintenance = () => {
         if (!mForm.description.trim()) { toast.error('Lỗi', 'Vui lòng nhập mô tả'); return; }
-        const estCost = Number(mForm.estimatedCost) || 0;
-        const actCost = Number(mForm.actualCost) || 0;
+        const estCost = readLocaleNumber(mForm.estimatedCost);
+        const actCost = readLocaleNumber(mForm.actualCost);
         const m: AssetMaintenance = {
             id: `mt-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
             assetId: asset.id, type: mForm.type, description: mForm.description,
@@ -558,13 +561,13 @@ const AssetProfile: React.FC = () => {
                                 </div>
                                 <div>
                                     <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">CP Dự kiến (báo giá)</label>
-                                    <input type="number" value={mForm.estimatedCost} onChange={e => setMForm(f => ({ ...f, estimatedCost: Number(e.target.value) }))} className="w-full px-3 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 font-bold outline-none focus:ring-2 focus:ring-orange-500" />
+                                    <input type="text" inputMode="decimal" value={String(mForm.estimatedCost)} onChange={e => setMForm(f => ({ ...f, estimatedCost: asDraftNumber(e.target.value) }))} className="w-full px-3 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 font-bold outline-none focus:ring-2 focus:ring-orange-500" />
                                 </div>
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">CP Thực tế</label>
-                                    <input type="number" value={mForm.actualCost} onChange={e => setMForm(f => ({ ...f, actualCost: Number(e.target.value) }))} className="w-full px-3 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 font-bold outline-none focus:ring-2 focus:ring-orange-500" />
+                                    <input type="text" inputMode="decimal" value={String(mForm.actualCost)} onChange={e => setMForm(f => ({ ...f, actualCost: asDraftNumber(e.target.value) }))} className="w-full px-3 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 font-bold outline-none focus:ring-2 focus:ring-orange-500" />
                                 </div>
                             </div>
                             <div>

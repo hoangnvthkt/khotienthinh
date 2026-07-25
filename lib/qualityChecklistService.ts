@@ -17,6 +17,7 @@ import { fromDb, toDb } from './dbMapping';
 import { auditService } from './auditService';
 import { projectSubmissionService } from './projectSubmissionService';
 import { buildQualityChecklistForTask } from './qualityChecklistWorkflow';
+import { parseNonNegativeLocaleNumber } from './localeNumberInput';
 
 const TABLE = 'quality_checklists';
 const TPL_TABLE = 'inspection_templates';
@@ -67,8 +68,8 @@ function calculateInspectionResult(checklist: Partial<QualityChecklist>): {
         if (item.required && !val) {
           isPassed = false;
         } else if (val) {
-          const num = parseFloat(val);
-          if (isNaN(num)) {
+          const num = parseNonNegativeLocaleNumber(val);
+          if (!/\d/.test(val) || !Number.isFinite(num)) {
             isPassed = false;
           } else {
             if (item.minValue !== undefined && item.minValue !== null && num < item.minValue) {

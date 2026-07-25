@@ -17,6 +17,7 @@ import {
   InspectionTemplateItem,
   InspectionItemType
 } from '../../types';
+import { parseNonNegativeLocaleNumber } from '../../lib/localeNumberInput';
 
 const CATEGORY_ICONS: Record<string, string> = {
   'CAT-MONG': '🏗️',
@@ -47,6 +48,14 @@ const emptyItem = (sectionId: string): Partial<InspectionTemplateItem> => ({
   unit: '',
   minValue: undefined,
   maxValue: undefined,
+});
+
+const asDraftNumber = (value: string) => value as unknown as number;
+const readLocaleNumber = (value: unknown) => parseNonNegativeLocaleNumber(value ?? 0);
+const normalizeTemplateItemNumbers = (item: Partial<InspectionTemplateItem>): Partial<InspectionTemplateItem> => ({
+  ...item,
+  minValue: item.minValue === undefined || item.minValue === null || item.minValue === '' as any ? undefined : readLocaleNumber(item.minValue),
+  maxValue: item.maxValue === undefined || item.maxValue === null || item.maxValue === '' as any ? undefined : readLocaleNumber(item.maxValue),
 });
 
 const SettingsInspectionTemplates: React.FC = () => {
@@ -553,7 +562,7 @@ const SettingsInspectionTemplates: React.FC = () => {
     setSavingItem(true);
     try {
       await qualityChecklistService.createTemplateItem({
-        ...newItemForm,
+        ...normalizeTemplateItemNumbers(newItemForm),
         sectionId: secId
       });
       toast.success('Đã thêm tiêu chí mới');
@@ -586,7 +595,7 @@ const SettingsInspectionTemplates: React.FC = () => {
     }
     setSavingItem(true);
     try {
-      await qualityChecklistService.updateTemplateItem(itemId, itemForm);
+      await qualityChecklistService.updateTemplateItem(itemId, normalizeTemplateItemNumbers(itemForm));
       toast.success('Đã cập nhật tiêu chí');
       setEditingItemId(null);
       setItemForm({});
@@ -974,9 +983,10 @@ const SettingsInspectionTemplates: React.FC = () => {
                                 <div>
                                   <label className="text-[9px] font-black text-muted-foreground block mb-1">Sai số nhỏ nhất (Min)</label>
                                   <input
-                                    type="number"
+                                    type="text"
+                                    inputMode="decimal"
                                     value={newItemForm.minValue ?? ''}
-                                    onChange={e => setNewItemForm(p => ({ ...p, minValue: e.target.value ? Number(e.target.value) : undefined }))}
+                                    onChange={e => setNewItemForm(p => ({ ...p, minValue: e.target.value ? asDraftNumber(e.target.value) : undefined }))}
                                     placeholder="Không giới hạn"
                                     className="w-full border border-border bg-card text-foreground rounded-lg px-2.5 py-1 text-xs font-bold outline-none"
                                   />
@@ -984,9 +994,10 @@ const SettingsInspectionTemplates: React.FC = () => {
                                 <div>
                                   <label className="text-[9px] font-black text-muted-foreground block mb-1">Sai số lớn nhất (Max)</label>
                                   <input
-                                    type="number"
+                                    type="text"
+                                    inputMode="decimal"
                                     value={newItemForm.maxValue ?? ''}
-                                    onChange={e => setNewItemForm(p => ({ ...p, maxValue: e.target.value ? Number(e.target.value) : undefined }))}
+                                    onChange={e => setNewItemForm(p => ({ ...p, maxValue: e.target.value ? asDraftNumber(e.target.value) : undefined }))}
                                     placeholder="Không giới hạn"
                                     className="w-full border border-border bg-card text-foreground rounded-lg px-2.5 py-1 text-xs font-bold outline-none"
                                   />
@@ -1086,18 +1097,20 @@ const SettingsInspectionTemplates: React.FC = () => {
                                       <div>
                                         <label className="text-[9px] font-black text-muted-foreground block mb-1">Sai số nhỏ nhất (Min)</label>
                                         <input
-                                          type="number"
+                                          type="text"
+                                          inputMode="decimal"
                                           value={itemForm.minValue ?? ''}
-                                          onChange={e => setItemForm(p => ({ ...p, minValue: e.target.value ? Number(e.target.value) : undefined }))}
+                                          onChange={e => setItemForm(p => ({ ...p, minValue: e.target.value ? asDraftNumber(e.target.value) : undefined }))}
                                           className="w-full border border-border bg-card text-foreground rounded-lg px-2.5 py-1 text-xs font-bold outline-none"
                                         />
                                       </div>
                                       <div>
                                         <label className="text-[9px] font-black text-muted-foreground block mb-1">Sai số lớn nhất (Max)</label>
                                         <input
-                                          type="number"
+                                          type="text"
+                                          inputMode="decimal"
                                           value={itemForm.maxValue ?? ''}
-                                          onChange={e => setItemForm(p => ({ ...p, maxValue: e.target.value ? Number(e.target.value) : undefined }))}
+                                          onChange={e => setItemForm(p => ({ ...p, maxValue: e.target.value ? asDraftNumber(e.target.value) : undefined }))}
                                           className="w-full border border-border bg-card text-foreground rounded-lg px-2.5 py-1 text-xs font-bold outline-none"
                                         />
                                       </div>
