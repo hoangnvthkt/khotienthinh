@@ -2142,6 +2142,7 @@ export interface ProjectMaterialRequest extends ProjectSubmissionFields {
 
 // ==================== CUNG ỨNG ====================
 export type POStatus = 'draft' | 'sent' | 'confirmed' | 'in_transit' | 'partial' | 'delivered' | 'closed' | 'returned' | 'cancelled';
+export type PurchaseMode = 'single' | 'multiple';
 export type PurchaseOrderSourceMode =
   | 'from_request'
   | 'proactive_project'
@@ -2693,6 +2694,10 @@ export interface PurchaseOrder extends ProjectSubmissionFields {
   actualDeliveryDate?: string;
   status: POStatus;
   sourceMode?: PurchaseOrderSourceMode;
+  purchaseMode?: PurchaseMode;
+  referenceGrossAmount?: number;
+  closedNeedQty?: number;
+  fulfillmentMode?: MaterialRequestFulfillmentMode;
   approvalRequestTitle?: string | null;
   procurementGroupId?: string | null;
   procurementGroupNo?: string | null;
@@ -2722,7 +2727,17 @@ export interface PurchaseOrderDeliveryRemovalResult {
   poNumber: string;
 }
 
-export type PurchaseOrderDeliveryBatchStatus = 'planned' | 'supplemental_pending' | 'wms_pending' | 'received' | 'cancelled';
+export type PurchaseOrderDeliveryBatchStatus =
+  | 'planned'
+  | 'supplemental_pending'
+  | 'wms_pending'
+  | 'waiting_delivery'
+  | 'receiving'
+  | 'quality_approved'
+  | 'received'
+  | 'received_short'
+  | 'received_over'
+  | 'cancelled';
 
 export type PurchaseOrderSupplementalApprovalStatus = 'pending' | 'approved' | 'rejected';
 
@@ -2754,6 +2769,9 @@ export interface PurchaseOrderDeliveryLine {
   purchaseOrderLineId: string;
   itemId: string;
   plannedQty: number;
+  acceptedQty?: number;
+  acceptedStockQty?: number;
+  returnedQty?: number;
   unit?: string | null;
   deliveryUnitPrice?: number;
   stockPlannedQty?: number;
@@ -2767,9 +2785,22 @@ export interface PurchaseOrderDeliveryBatch {
   purchaseOrderId: string;
   projectId?: string | null;
   constructionSiteId?: string | null;
+  supplierId?: string | null;
+  supplierNameSnapshot?: string | null;
   deliveryNo: number;
   plannedDeliveryDate?: string | null;
   status: PurchaseOrderDeliveryBatchStatus;
+  fulfillmentMode?: MaterialRequestFulfillmentMode;
+  vatRate?: number;
+  qrToken?: string | null;
+  idempotencyKey?: string | null;
+  qualityResult?: 'passed' | 'partial' | 'rejected' | null;
+  varianceReason?: string | null;
+  qualityApprovedBy?: string | null;
+  qualityApprovedAt?: string | null;
+  receivedBy?: string | null;
+  receivedAt?: string | null;
+  acceptedGrossAmount?: number;
   fulfillmentBatchIds?: string[];
   wmsTransactionId?: string | null;
   supplementalApprovalId?: string | null;
