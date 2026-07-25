@@ -28,6 +28,7 @@ import { getDefaultMaterialRequestWorkflowStep, getMaterialRequestWorkflowPatch,
 import { materialRequestBoqLineSnapshotService } from '../lib/materialRequestBoqLineSnapshotService';
 import { materialRequestMaterialGroupSnapshotService } from '../lib/materialRequestMaterialGroupSnapshotService';
 import { materialRequestFulfillmentService } from '../lib/materialRequestFulfillmentService';
+import { purchaseReceiptService } from '../lib/purchaseReceiptService';
 import {
   formatStockDecreaseIssues,
   getStockDecreaseIssues,
@@ -1865,6 +1866,40 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     if (isSupabaseConfigured) {
+      if (status === TransactionStatus.COMPLETED && tx.sourceType === 'po_delivery_batch') {
+        if (!tx.sourceId) throw new Error('Phiếu nhận PO thiếu mã Đợt giao.');
+
+        await purchaseReceiptService.finalize({
+          deliveryBatchId: tx.sourceId,
+          wmsTransactionId: id,
+          actorUserId: approverId || user.id,
+        });
+
+        const { data: finalizedRow, error: finalizedError } = await supabase
+          .from('transactions')
+          .select('*')
+          .eq('id', id)
+          .maybeSingle();
+        if (finalizedError) {
+          logApiError('updateTransactionStatus.finalize_purchase_receipt_v2.reload', finalizedError);
+          throw finalizedError;
+        }
+
+        const storedTx = finalizedRow ? mapTransactionFromDb(finalizedRow) : {
+          ...tx,
+          status: TransactionStatus.COMPLETED,
+          approverId: approverId || user.id,
+          approvedAt: approval?.approvedAt || new Date().toISOString(),
+          approvalNote: approval?.approvalNote || null,
+        };
+        setTransactions(prev => prev.map(t => t.id === id ? storedTx : t));
+        await refreshWmsRecords({ itemIds: getTransactionItemIds(storedTx, tx), transactionIds: [id] });
+
+        const whId = tx?.targetWarehouseId || tx?.sourceWarehouseId;
+        logActivity('TRANSACTION', `Cập nhật phiếu`, `Phiếu mã ${id.slice(-6)} chuyển sang ${storedTx.status}`, 'SUCCESS', whId);
+        return;
+      }
+
       const { data, error } = await supabase.rpc('process_transaction_approval', {
         p_transaction_id: id,
         p_status: status,

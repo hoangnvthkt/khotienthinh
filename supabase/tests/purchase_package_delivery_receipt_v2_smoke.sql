@@ -14,6 +14,12 @@ begin
   if to_regprocedure('public.approve_purchase_package_and_prepare_single_batch_v2(text,uuid,uuid)') is null then
     raise exception 'Missing approve_purchase_package_and_prepare_single_batch_v2 RPC';
   end if;
+  if to_regprocedure('public.approve_receipt_quality_v2(uuid,text,uuid,text,jsonb,jsonb)') is null then
+    raise exception 'Missing approve_receipt_quality_v2 RPC';
+  end if;
+  if to_regprocedure('public.finalize_purchase_receipt_v2(uuid,text,uuid)') is null then
+    raise exception 'Missing finalize_purchase_receipt_v2 RPC';
+  end if;
 end $$;
 
 create temp table purchase_package_v2_smoke_ids (
@@ -105,10 +111,11 @@ values (
 
 insert into public.users (
   id, name, email, username, role, is_active, account_status,
-  allowed_modules, admin_modules, allowed_sub_modules, admin_sub_modules
+  assigned_warehouse_id, allowed_modules, admin_modules, allowed_sub_modules, admin_sub_modules
 )
 select actor_id, 'Purchase Package Smoke Actor', actor_id::text || '@vioo.local',
-       'purchase-package-v2-actor', 'EMPLOYEE'::public.user_role, true, 'ACTIVE',
+       'purchase-package-v2-actor', 'WAREHOUSE_KEEPER'::public.user_role, true, 'ACTIVE',
+       warehouse_id,
        '{}'::text[], '{}'::text[], '{}'::jsonb, '{}'::jsonb
 from purchase_package_v2_smoke_ids;
 
@@ -233,10 +240,10 @@ select
     'purchaseUnitSnapshot', 'Kg',
     'stockUnitSnapshot', 'Kg',
     'purchaseConversionFactor', 1,
-    'qty', 1000,
+    'qty', 100,
     'unitPrice', 10000
   )),
-  10000000, 10000000, 10, 'single', 'RECEIVE_TO_STOCK', 11000000,
+  1000000, 1000000, 10, 'single', 'RECEIVE_TO_STOCK', 1100000,
   current_date::text, 'sent', 'from_request', warehouse_id, actor_id::text, now(),
   approver_id::text, 'project.material_po.approve'
 from purchase_package_v2_smoke_ids;
@@ -356,6 +363,14 @@ declare
   v_single_retry jsonb;
   v_multiple_approval jsonb;
   v_over_result jsonb;
+  v_receipt_line_id uuid;
+  v_quality_result jsonb;
+  v_finalize_result jsonb;
+  v_finalize_retry jsonb;
+  v_stock_qty numeric;
+  v_received_qty numeric;
+  v_inventory_header_count integer;
+  v_inventory_entry_count integer;
 begin
   v_result := public.create_delivery_batch_with_wms_qr_v2(
     p_purchase_order_id := v_ids.po_id,
@@ -583,6 +598,153 @@ begin
 
   perform pg_temp.purchase_package_v2_set_user(v_ids.actor_id);
 
+  select line.id into v_receipt_line_id
+  from public.purchase_order_delivery_lines line
+  where line.delivery_batch_id = (v_single_approval #>> '{delivery,deliveryBatchId}')::uuid
+  order by line.id
+  limit 1;
+  if v_receipt_line_id is null then
+    raise exception 'Single approval delivery line missing for receipt smoke.';
+  end if;
+
+  v_quality_result := public.approve_receipt_quality_v2(
+    p_delivery_batch_id := (v_single_approval #>> '{delivery,deliveryBatchId}')::uuid,
+    p_wms_transaction_id := v_single_approval #>> '{delivery,wmsTransactionId}',
+    p_actor_user_id := v_ids.actor_id,
+    p_quality_result := 'partial',
+    p_lines := jsonb_build_array(jsonb_build_object(
+      'deliveryLineId', v_receipt_line_id,
+      'itemId', v_ids.item_id,
+      'acceptedPurchaseQty', 90,
+      'acceptedStockQty', 90,
+      'varianceReason', 'NCC giao thiếu 10 Kg'
+    )),
+    p_attachments := '[]'::jsonb
+  );
+
+  if v_quality_result ->> 'deliveryStatus' <> 'quality_approved'
+     or v_quality_result ->> 'transactionStatus' <> 'APPROVED'
+     or (v_quality_result ->> 'acceptedGrossAmount')::numeric <> 990000 then
+    raise exception 'Approve quality result invalid: %', v_quality_result;
+  end if;
+
+  if not exists (
+    select 1
+    from public.purchase_order_delivery_lines line
+    join public.purchase_order_delivery_batches batch on batch.id = line.delivery_batch_id
+    join public.transactions tx on tx.id = batch.wms_transaction_id
+    where line.id = v_receipt_line_id
+      and batch.status = 'quality_approved'
+      and batch.quality_result = 'partial'
+      and batch.accepted_gross_amount = 990000
+      and line.accepted_qty = 90
+      and line.accepted_stock_qty = 90
+      and tx.status::text = 'APPROVED'
+      and (tx.items -> 0 ->> 'quantity')::numeric = 90
+      and (tx.items -> 0 ->> 'accountingQty')::numeric = 90
+      and (tx.items -> 0 ->> 'varianceQty')::numeric = -10
+      and tx.items -> 0 ->> 'varianceReason' = 'NCC giao thiếu 10 Kg'
+  ) then
+    raise exception 'Approve quality did not update delivery line and WMS snapshots.';
+  end if;
+
+  select coalesce((coalesce(item.stock_by_warehouse, '{}'::jsonb) ->> v_ids.warehouse_id)::numeric, 0)
+  into v_stock_qty
+  from public.items item
+  where item.id = v_ids.item_id;
+  if v_stock_qty <> 0 then
+    raise exception 'Approve quality posted stock before finalize: %', v_stock_qty;
+  end if;
+
+  select coalesce(nullif(po.items -> 0 ->> 'receivedQty', '')::numeric, 0)
+  into v_received_qty
+  from public.purchase_orders po
+  where po.id = v_ids.approve_single_po_id;
+  if v_received_qty <> 0 then
+    raise exception 'Approve quality updated PO receipt before finalize: %', v_received_qty;
+  end if;
+
+  begin
+    perform public.approve_receipt_quality_v2(
+      (v_single_approval #>> '{delivery,deliveryBatchId}')::uuid,
+      v_single_approval #>> '{delivery,wmsTransactionId}',
+      v_ids.actor_id,
+      'passed',
+      jsonb_build_array(jsonb_build_object(
+        'deliveryLineId', v_receipt_line_id,
+        'itemId', v_ids.item_id,
+        'acceptedPurchaseQty', 100,
+        'acceptedStockQty', 100
+      )),
+      '[]'::jsonb
+    );
+    raise exception 'Re-approve quality with changed payload unexpectedly succeeded.';
+  exception
+    when invalid_parameter_value or raise_exception then
+      null;
+  end;
+
+  v_finalize_result := public.finalize_purchase_receipt_v2(
+    (v_single_approval #>> '{delivery,deliveryBatchId}')::uuid,
+    v_single_approval #>> '{delivery,wmsTransactionId}',
+    v_ids.actor_id
+  );
+
+  if v_finalize_result ->> 'deliveryStatus' <> 'received_short'
+     or v_finalize_result ->> 'transactionStatus' <> 'COMPLETED'
+     or (v_finalize_result ->> 'acceptedGrossAmount')::numeric <> 990000 then
+    raise exception 'Finalize receipt result invalid: %', v_finalize_result;
+  end if;
+
+  select coalesce((coalesce(item.stock_by_warehouse, '{}'::jsonb) ->> v_ids.warehouse_id)::numeric, 0)
+  into v_stock_qty
+  from public.items item
+  where item.id = v_ids.item_id;
+  if v_stock_qty <> 90 then
+    raise exception 'Finalize did not post exactly 90 stock qty: %', v_stock_qty;
+  end if;
+
+  select coalesce(nullif(po.items -> 0 ->> 'receivedQty', '')::numeric, 0)
+  into v_received_qty
+  from public.purchase_orders po
+  where po.id = v_ids.approve_single_po_id;
+  if v_received_qty <> 90 then
+    raise exception 'Finalize did not update PO receivedQty in purchase units: %', v_received_qty;
+  end if;
+
+  v_finalize_retry := public.finalize_purchase_receipt_v2(
+    (v_single_approval #>> '{delivery,deliveryBatchId}')::uuid,
+    v_single_approval #>> '{delivery,wmsTransactionId}',
+    v_ids.actor_id
+  );
+  if coalesce((v_finalize_retry ->> 'alreadyFinalized')::boolean, false) is not true then
+    raise exception 'Finalize retry did not return idempotent result: %', v_finalize_retry;
+  end if;
+
+  select coalesce((coalesce(item.stock_by_warehouse, '{}'::jsonb) ->> v_ids.warehouse_id)::numeric, 0)
+  into v_stock_qty
+  from public.items item
+  where item.id = v_ids.item_id;
+  if v_stock_qty <> 90 then
+    raise exception 'Finalize retry posted stock twice: %', v_stock_qty;
+  end if;
+
+  select count(*) into v_inventory_header_count
+  from public.inventory_transactions
+  where source_type = 'wms_transaction'
+    and source_id = v_single_approval #>> '{delivery,wmsTransactionId}';
+  if v_inventory_header_count <> 1 then
+    raise exception 'Finalize should create exactly one inventory transaction, got %.', v_inventory_header_count;
+  end if;
+
+  select count(*) into v_inventory_entry_count
+  from public.inventory_ledger_entries
+  where source_type = 'wms_transaction'
+    and source_id = v_single_approval #>> '{delivery,wmsTransactionId}';
+  if v_inventory_entry_count <> 1 then
+    raise exception 'Finalize should create exactly one inventory ledger entry, got %.', v_inventory_entry_count;
+  end if;
+
   v_over_result := public.create_delivery_batch_with_wms_qr_v2(
     p_purchase_order_id := v_ids.approve_multiple_po_id,
     p_idempotency_key := v_ids.approve_over_key,
@@ -783,7 +945,7 @@ begin
     join public.purchase_order_delivery_lines line on line.delivery_batch_id = batch.id
     join public.transactions tx on tx.id = batch.wms_transaction_id
     where po.id = v_ids.approve_single_po_id
-      and po.status = 'confirmed'
+      and po.status = 'partial'
       and po.last_action_by = v_ids.approver_id::text
       and po.last_action_at is not null
       and batch.id = v_ids.approve_single_batch_id
@@ -791,7 +953,7 @@ begin
       and batch.delivery_no = 1
       and batch.qr_token is not null
       and batch.wms_transaction_id = v_ids.approve_single_wms_transaction_id
-      and line.planned_qty = 1000
+      and line.planned_qty = 100
       and tx.source_type = 'po_delivery_batch'
       and tx.source_id = batch.id::text
   ) then
