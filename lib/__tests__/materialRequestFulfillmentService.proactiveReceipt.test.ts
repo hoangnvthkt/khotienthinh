@@ -1,21 +1,19 @@
-import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-
-const source = readFileSync(
-  new URL('../materialRequestFulfillmentService.ts', import.meta.url),
-  'utf8',
-);
+import { buildReceiptQuantitySnapshot } from '../materialUnitConversion';
 
 describe('proactive PO WMS receipt contract', () => {
-  it('branches before looking up material request links', () => {
-    expect(source).toContain("po.sourceMode !== 'from_request'");
-    expect(source).toContain('createProactivePoDeliveryReceiptBatch');
-  });
-
-  it('uses the delivery batch as the idempotent transaction source', () => {
-    expect(source).toContain("sourceType: 'po_delivery_batch'");
-    expect(source).toContain('sourceId: deliveryBatch.id');
-    expect(source).toContain('wmsTransactionId');
-    expect(source).toContain('orderedQty');
+  it('keeps accepted purchase and stock quantities in their own units', () => {
+    expect(buildReceiptQuantitySnapshot({
+      acceptedPurchaseQty: 9.5,
+      purchaseUnit: 'Cay',
+      stockUnit: 'Kg',
+      conversionFactor: 7.2,
+    })).toEqual({
+      acceptedPurchaseQty: 9.5,
+      acceptedStockQty: 68.4,
+      purchaseUnit: 'Cay',
+      stockUnit: 'Kg',
+      conversionFactor: 7.2,
+    });
   });
 });

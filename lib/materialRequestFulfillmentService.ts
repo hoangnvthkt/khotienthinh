@@ -18,9 +18,11 @@ import {
   Transaction,
   TransactionStatus,
   TransactionType,
+  WmsTransactionAttachment,
 } from '../types';
 import { createFulfillmentBatchQrToken } from './fulfillmentBatchQr';
 import {
+  buildReceiptQuantitySnapshot,
   getPoLinePurchaseUnit,
   getPoLineStockUnit,
   getPoLineStockUnitPrice,
@@ -29,6 +31,8 @@ import {
   poLineStockToPurchaseQty,
 } from './materialUnitConversion';
 import { buildActualReceiptItems, validateReceiptQuantityLines } from './poActualReceipt';
+import { isPurchasePackageV2EnabledForSite } from './featureFlags';
+import { purchaseReceiptService, type ReceiptQualityLineInput } from './purchaseReceiptService';
 
 const BATCH_TABLE = 'material_request_fulfillment_batches';
 const LINE_TABLE = 'material_request_fulfillment_lines';
@@ -299,6 +303,11 @@ export interface CreatePoDeliveryReceiptBatchInput {
 export interface PreparePoReceiptForQualityReviewInput {
   po: PurchaseOrder;
   receiptLines: RecordPoReceiptLineInput[];
+  deliveryBatch?: PurchaseOrderDeliveryBatch | null;
+  actorUserId?: string | null;
+  qualityResult?: 'passed' | 'partial' | 'rejected';
+  lines?: ReceiptQualityLineInput[];
+  attachments?: WmsTransactionAttachment[];
 }
 
 export interface PreparePoReceiptForQualityReviewResult {
@@ -668,6 +677,102 @@ const prepareProactivePoReceiptForQualityReview = async (
 
   return {
     transactionIds: pendingTransactions.map(tx => tx.id),
+    materialRequestIds: [],
+  };
+};
+
+const getDeliveryLineConversionFactor = (
+  poItem: PurchaseOrderItem | undefined,
+  deliveryLine: PurchaseOrderDeliveryBatch['lines'][number],
+) => {
+  const poFactor = Number(poItem?.purchaseConversionFactor || 0);
+  if (Number.isFinite(poFactor) && poFactor > 0) return poFactor;
+
+  const plannedQty = Number(deliveryLine.plannedQty || 0);
+  const stockPlannedQty = Number(deliveryLine.stockPlannedQty || 0);
+  if (plannedQty > 0 && stockPlannedQty > 0) return stockPlannedQty / plannedQty;
+  return 1;
+};
+
+const resolveReceiptLineForDeliveryLine = (
+  receiptLines: RecordPoReceiptLineInput[],
+  deliveryLine: PurchaseOrderDeliveryBatch['lines'][number],
+) => {
+  const directMatch = receiptLines.find(line =>
+    line.lineId === deliveryLine.purchaseOrderLineId
+    || line.lineId === deliveryLine.id
+  );
+  if (directMatch) return directMatch;
+
+  const itemMatches = receiptLines.filter(line => !line.lineId && line.itemId === deliveryLine.itemId);
+  return itemMatches.length === 1 ? itemMatches[0] : undefined;
+};
+
+const buildV2ReceiptQualityLines = (
+  input: PreparePoReceiptForQualityReviewInput,
+): ReceiptQualityLineInput[] => {
+  if (input.lines && input.lines.length > 0) return input.lines;
+  const deliveryBatch = input.deliveryBatch;
+  if (!deliveryBatch) return [];
+
+  const poItemByLineId = new Map((input.po.items || []).map(item => [item.lineId || item.itemId, item]));
+  const lines = (deliveryBatch.lines || []).map((deliveryLine): ReceiptQualityLineInput | null => {
+    const poItem = poItemByLineId.get(deliveryLine.purchaseOrderLineId);
+    const receiptLine = resolveReceiptLineForDeliveryLine(input.receiptLines, deliveryLine);
+    const acceptedPurchaseQty = Number(receiptLine?.quantity ?? deliveryLine.plannedQty ?? 0);
+    if (acceptedPurchaseQty <= 0) return null;
+
+    const purchaseUnit = deliveryLine.unit || (poItem ? getPoLinePurchaseUnit(poItem) : '');
+    const stockUnit = deliveryLine.stockUnit || (poItem ? getPoLineStockUnit(poItem) : purchaseUnit);
+    const snapshot = buildReceiptQuantitySnapshot({
+      acceptedPurchaseQty,
+      purchaseUnit,
+      stockUnit,
+      conversionFactor: getDeliveryLineConversionFactor(poItem, deliveryLine),
+    });
+
+    return {
+      deliveryLineId: deliveryLine.id,
+      itemId: deliveryLine.itemId,
+      acceptedPurchaseQty: snapshot.acceptedPurchaseQty,
+      acceptedStockQty: snapshot.acceptedStockQty,
+      varianceReason: receiptLine?.varianceReason || null,
+    };
+  }).filter((line): line is ReceiptQualityLineInput => !!line);
+
+  if (lines.length === 0) throw new Error('Chưa có số lượng thực nhận hợp lệ.');
+  return lines;
+};
+
+const shouldUsePurchasePackageReceiptV2 = (input: PreparePoReceiptForQualityReviewInput) =>
+  input.po.sourceMode === 'from_request'
+  && isPurchasePackageV2EnabledForSite(input.po.constructionSiteId || input.deliveryBatch?.constructionSiteId)
+  && !!input.deliveryBatch?.id
+  && !!input.deliveryBatch.wmsTransactionId;
+
+const approvePurchasePackageReceiptV2 = async (
+  input: PreparePoReceiptForQualityReviewInput,
+): Promise<PreparePoReceiptForQualityReviewResult> => {
+  const deliveryBatch = input.deliveryBatch;
+  const wmsTransactionId = deliveryBatch?.wmsTransactionId || '';
+  if (!deliveryBatch?.id || !wmsTransactionId) {
+    throw new Error('Thiếu Đợt giao hoặc phiếu WMS để ghi nhận thực nhận.');
+  }
+  if (!input.actorUserId) {
+    throw new Error('Thiếu người thao tác để ghi nhận thực nhận.');
+  }
+
+  const result = await purchaseReceiptService.approveQuality({
+    deliveryBatchId: deliveryBatch.id,
+    wmsTransactionId,
+    actorUserId: input.actorUserId,
+    qualityResult: input.qualityResult || 'passed',
+    lines: buildV2ReceiptQualityLines(input),
+    attachments: input.attachments || [],
+  });
+
+  return {
+    transactionIds: [result.wmsTransactionId],
     materialRequestIds: [],
   };
 };
@@ -1246,7 +1351,11 @@ export const materialRequestFulfillmentService = {
     if (input.po.sourceMode !== 'from_request') {
       return prepareProactivePoReceiptForQualityReview(input);
     }
+    if (shouldUsePurchasePackageReceiptV2(input)) {
+      return approvePurchasePackageReceiptV2(input);
+    }
 
+    // Legacy fulfillment-batch receipt fallback remains until Gate G4 confirms no legacy anomalies.
     const { data: linkRows, error: linkError } = await supabase
       .from('purchase_order_request_lines')
       .select('purchase_order_line_id,material_request_id')
@@ -1639,6 +1748,10 @@ export const materialRequestFulfillmentService = {
     }
     if (po.sourceMode !== 'from_request') {
       return createProactivePoDeliveryReceiptBatch(input);
+    }
+    if (isPurchasePackageV2EnabledForSite(po.constructionSiteId || deliveryBatch.constructionSiteId)) {
+      if (deliveryBatch.wmsTransactionId) return [];
+      throw new Error('Đợt giao V2 phải tạo WMS/QR bằng command tạo Đợt, không tạo bằng luồng legacy.');
     }
     if (deliveryBatch.status !== 'planned') {
       const { data: existingRows, error: existingError } = await supabase

@@ -1,30 +1,129 @@
-import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { PurchaseOrder, PurchaseOrderDeliveryBatch } from '../../types';
 
-const serviceSource = readFileSync(
-  new URL('../materialRequestFulfillmentService.ts', import.meta.url),
-  'utf8',
-);
-const migrationSource = readFileSync(
-  new URL('../../supabase/migrations/20260723061800_po_actual_receipt_wms.sql', import.meta.url),
-  'utf8',
-);
+const supabaseMocks = vi.hoisted(() => ({
+  from: vi.fn(),
+  rpc: vi.fn(),
+}));
+
+vi.mock('../supabase', () => ({
+  supabase: supabaseMocks,
+}));
+
+vi.mock('../featureFlags', () => ({
+  isPurchasePackageV2Enabled: true,
+  isPurchasePackageV2EnabledForSite: vi.fn(() => true),
+}));
+
+import { materialRequestFulfillmentService } from '../materialRequestFulfillmentService';
+
+const po: PurchaseOrder = {
+  id: 'po-1',
+  vendorId: 'vendor-1',
+  vendorName: 'NCC A',
+  poNumber: 'PO-001',
+  projectId: 'project-1',
+  constructionSiteId: 'site-1',
+  targetWarehouseId: 'warehouse-1',
+  items: [{
+    lineId: 'po-line-1',
+    itemId: 'item-1',
+    sku: 'VT001',
+    name: 'Thép D16',
+    unit: 'Cay',
+    unitSnapshot: 'Kg',
+    stockUnitSnapshot: 'Kg',
+    purchaseUnitSnapshot: 'Cay',
+    purchaseConversionFactor: 7.2,
+    qty: 10,
+    unitPrice: 72000,
+  }],
+  totalAmount: 720000,
+  orderDate: '2026-07-25',
+  status: 'in_transit',
+  sourceMode: 'from_request',
+  createdAt: '2026-07-25T00:00:00.000Z',
+};
+
+const deliveryBatch: PurchaseOrderDeliveryBatch = {
+  id: 'batch-1',
+  purchaseOrderId: 'po-1',
+  projectId: 'project-1',
+  constructionSiteId: 'site-1',
+  supplierId: 'vendor-1',
+  supplierNameSnapshot: 'NCC A',
+  deliveryNo: 1,
+  plannedDeliveryDate: '2026-07-25',
+  status: 'wms_pending',
+  vatRate: 0,
+  wmsTransactionId: 'tx-1',
+  lines: [{
+    id: 'delivery-line-1',
+    deliveryBatchId: 'batch-1',
+    purchaseOrderId: 'po-1',
+    purchaseOrderLineId: 'po-line-1',
+    itemId: 'item-1',
+    plannedQty: 10,
+    stockPlannedQty: 72,
+    unit: 'Cay',
+    stockUnit: 'Kg',
+    deliveryUnitPrice: 72000,
+  }],
+};
 
 describe('actual PO receipt contract', () => {
-  it('prepares proactive transactions without request links', () => {
-    expect(serviceSource).toContain('prepareProactivePoReceiptForQualityReview');
-    expect(serviceSource).toContain("input.po.sourceMode !== 'from_request'");
-    expect(serviceSource).toContain('materialRequestIds: []');
+  beforeEach(() => {
+    supabaseMocks.from.mockReset();
+    supabaseMocks.rpc.mockReset();
   });
 
-  it('preserves ordered baseline and sends variance reason to the RPC', () => {
-    expect(serviceSource).toContain('buildActualReceiptItems');
-    expect(serviceSource).toContain('orderedQty');
-    expect(serviceSource).toContain('varianceReason');
-  });
+  it('approves V2 actual receipt by delivery batch and WMS ids without PO-wide lookup', async () => {
+    supabaseMocks.from.mockImplementation(() => {
+      throw new Error('legacy PO-wide receipt lookup should not run for V2 batches');
+    });
+    supabaseMocks.rpc.mockResolvedValue({
+      data: {
+        deliveryBatchId: 'batch-1',
+        wmsTransactionId: 'tx-1',
+        deliveryStatus: 'quality_approved',
+        transactionStatus: 'APPROVED',
+        acceptedGrossAmount: 684000,
+      },
+      error: null,
+    });
 
-  it('syncs actual receipt without capping it to ordered quantity', () => {
-    expect(migrationSource).toContain('ir.current_received_qty + coalesce(r.received_qty, 0)');
-    expect(migrationSource).not.toContain('least(ir.ordered_qty');
+    const result = await materialRequestFulfillmentService.preparePoReceiptForQualityReview({
+      po,
+      deliveryBatch,
+      actorUserId: 'keeper-1',
+      qualityResult: 'partial',
+      receiptLines: [{
+        lineId: 'po-line-1',
+        itemId: 'item-1',
+        quantity: 9.5,
+        varianceReason: 'NCC giao thiếu',
+      }],
+      attachments: [],
+    });
+
+    expect(supabaseMocks.from).not.toHaveBeenCalled();
+    expect(supabaseMocks.rpc).toHaveBeenCalledWith('approve_receipt_quality_v2', {
+      p_delivery_batch_id: 'batch-1',
+      p_wms_transaction_id: 'tx-1',
+      p_actor_user_id: 'keeper-1',
+      p_quality_result: 'partial',
+      p_lines: [{
+        deliveryLineId: 'delivery-line-1',
+        itemId: 'item-1',
+        acceptedPurchaseQty: 9.5,
+        acceptedStockQty: 68.4,
+        varianceReason: 'NCC giao thiếu',
+      }],
+      p_attachments: [],
+    });
+    expect(result).toEqual({
+      transactionIds: ['tx-1'],
+      materialRequestIds: [],
+    });
   });
 });

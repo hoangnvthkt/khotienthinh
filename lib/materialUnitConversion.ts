@@ -6,6 +6,21 @@ type UnitConversionSource = {
   purchaseConversionFactor?: number | null;
 };
 
+export interface ReceiptQuantitySnapshotInput {
+  acceptedPurchaseQty: number;
+  purchaseUnit: string;
+  stockUnit: string;
+  conversionFactor: number;
+}
+
+export interface ReceiptQuantitySnapshot {
+  acceptedPurchaseQty: number;
+  acceptedStockQty: number;
+  purchaseUnit: string;
+  stockUnit: string;
+  conversionFactor: number;
+}
+
 const normalizeUnit = (value?: string | null) => String(value || '').trim().toLowerCase();
 
 export const roundMaterialQuantity = (value: number) => {
@@ -45,6 +60,30 @@ export const stockUnitPriceToPurchaseUnitPrice = (stockUnitPrice: number, item?:
   const price = Number(stockUnitPrice || 0);
   if (price <= 0) return 0;
   return roundMaterialQuantity(hasPurchaseUnitConversion(item) ? price * getPurchaseConversionFactor(item) : price);
+};
+
+export const buildReceiptQuantitySnapshot = (
+  input: ReceiptQuantitySnapshotInput,
+): ReceiptQuantitySnapshot => {
+  const purchaseUnit = input.purchaseUnit || '';
+  const stockUnit = input.stockUnit || purchaseUnit;
+  const conversionFactor = getPurchaseConversionFactor({
+    unit: stockUnit,
+    purchaseUnit,
+    purchaseConversionFactor: input.conversionFactor,
+  });
+  const acceptedPurchaseQty = roundMaterialQuantity(Number(input.acceptedPurchaseQty || 0));
+  return {
+    acceptedPurchaseQty,
+    acceptedStockQty: purchaseToStockQty(acceptedPurchaseQty, {
+      unit: stockUnit,
+      purchaseUnit,
+      purchaseConversionFactor: conversionFactor,
+    }),
+    purchaseUnit,
+    stockUnit,
+    conversionFactor,
+  };
 };
 
 export const buildPoUnitSnapshot = (item?: InventoryItem | null): Partial<PurchaseOrderItem> => {
