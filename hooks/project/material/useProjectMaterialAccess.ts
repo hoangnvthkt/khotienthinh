@@ -7,9 +7,14 @@ import {
 } from '../../../lib/projectTabPermissions';
 import {
     PROJECT_MATERIAL_ACTION_CODES,
+    getProjectMaterialActionCodesForRoomAction,
     getProjectMaterialCapabilities,
     type ProjectMaterialCapability,
 } from '../../../lib/permissions/projectMaterialPermissions';
+import type {
+    ProjectPermissionRoomCode,
+    ProjectRoomActionCode,
+} from '../../../lib/permissions/projectPermissionRooms';
 import { projectPermissionRoomService } from '../../../lib/projectPermissionRoomService';
 import { projectStaffService } from '../../../lib/projectStaffService';
 
@@ -65,6 +70,20 @@ type UseProjectMaterialAccessOptions = {
     user: User;
 };
 
+const MATERIAL_ROOM_ACTION_CHECKS: Array<{
+    roomCode: ProjectPermissionRoomCode;
+    actionCode: ProjectRoomActionCode;
+}> = [
+    { roomCode: 'material_request', actionCode: 'view' },
+    { roomCode: 'material_request', actionCode: 'submit' },
+    { roomCode: 'material_po', actionCode: 'view' },
+    { roomCode: 'material_po', actionCode: 'edit' },
+    { roomCode: 'material_po', actionCode: 'delete' },
+    { roomCode: 'material_po', actionCode: 'submit' },
+    { roomCode: 'material_po', actionCode: 'approve' },
+    { roomCode: 'material_po', actionCode: 'confirm' },
+];
+
 export const useProjectMaterialAccess = ({
     materialPermissions,
     canManageTab,
@@ -109,25 +128,24 @@ export const useProjectMaterialAccess = ({
                             permissionCode,
                         })).allowed,
                     }))),
-                    Promise.all((['view', 'submit'] as const).map(async actionCode => ({
+                    Promise.all(MATERIAL_ROOM_ACTION_CHECKS.map(async ({ roomCode, actionCode }) => ({
+                        roomCode,
                         actionCode,
                         allowed: await projectPermissionRoomService.hasAction(
                             user.id,
                             projectId || constructionSiteId || '',
                             constructionSiteId || null,
-                            'material_request',
+                            roomCode,
                             actionCode,
                         ),
                     }))),
                 ]);
                 if (!cancelled) {
                     const grantedCodes = new Set(results.filter(result => result.allowed).map(result => result.permissionCode));
-                    const roomActionsGranted = new Set(roomActions.filter(result => result.allowed).map(result => result.actionCode));
-                    if (roomActionsGranted.has('view')) grantedCodes.add('project.material_request.view');
-                    if (roomActionsGranted.has('submit')) {
-                        grantedCodes.add('project.material_request.create');
-                        grantedCodes.add('project.material_request.submit');
-                    }
+                    roomActions
+                        .filter(result => result.allowed)
+                        .flatMap(result => getProjectMaterialActionCodesForRoomAction(result.roomCode, result.actionCode))
+                        .forEach(permissionCode => grantedCodes.add(permissionCode));
                     setMaterialCapabilities(getProjectMaterialCapabilities(grantedCodes));
                 }
             } catch (error) {

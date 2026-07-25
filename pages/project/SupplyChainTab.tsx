@@ -910,6 +910,12 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         return false;
     };
 
+    const ensureCanSubmitPo = (po: PurchaseOrder, action: string) => {
+        if (legacyPoCanManageTab || canUserMutatePurchaseOrder(po, user, effectivePoCapabilities)) return true;
+        toast.warning('Không có quyền thao tác PO', `Bạn cần quyền gửi/tạo/sửa PO, quyền quản trị PO, hoặc là người tạo PO để ${action}.`);
+        return false;
+    };
+
     const ensureCanRemovePoDocument = (po: PurchaseOrder, action: string) => {
         if (canUserRemovePurchaseOrder(po, user, effectivePoCapabilities)) return true;
         toast.warning('Không có quyền thao tác PO', `Bạn cần quyền xoá PO, quyền quản trị PO, hoặc là người tạo PO để ${action}.`);
@@ -3659,19 +3665,21 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     };
 
     const updatePoStatus = async (id: string, status: POStatus, submissionTarget?: ProjectSubmissionTarget) => {
+        const po = pos.find(p => p.id === id);
+        if (!po) return;
         if (status === 'returned') {
             if (!ensureCanReturnSupplierPo('trả hàng/hoàn hàng PO')) return;
         } else if (status === 'cancelled') {
             if (!ensureCanRunRestrictedPoAction('huỷ PO')) return;
-        } else if (['sent', 'confirmed', 'draft'].includes(status)) {
+        } else if (status === 'sent') {
+            if (!ensureCanSubmitPo(po, 'gửi duyệt PO')) return;
+        } else if (['confirmed', 'draft'].includes(status)) {
             if (!ensureCanApprovePo('cập nhật trạng thái duyệt PO')) return;
         } else if (['in_transit', 'partial', 'delivered', 'closed'].includes(status)) {
             if (!ensureCanReceivePo('cập nhật trạng thái giao nhận PO')) return;
         } else if (!ensureCanCreatePo('cập nhật trạng thái PO')) {
             return;
         }
-        const po = pos.find(p => p.id === id);
-        if (!po) return;
         if (status === 'sent' && !submissionTarget) {
             setSubmittingPo(po);
             return;

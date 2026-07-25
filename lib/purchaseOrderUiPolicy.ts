@@ -132,6 +132,7 @@ export const getPurchaseOrderUiPolicy = ({
 }: PurchaseOrderUiPolicyInput): PurchaseOrderUiPolicy => {
   const isCompanyConsolidatedPo = po.sourceMode === 'company_consolidated';
   const mayApprovePo = canManagePo || canApprovePo || canManageTab;
+  const maySubmitPo = canManagePo || canCreatePo || canMutatePoDocument || canManageTab;
   const mayReceivePo = canManagePo || canReceivePo || canManageTab;
   const mayEditPo = canManagePo || canCreatePo || canMutatePoDocument;
   const mayDeletePo = canManagePo || canDeletePo || canMutatePoDocument;
@@ -179,7 +180,7 @@ export const getPurchaseOrderUiPolicy = ({
         supplementalApprovalId: pendingSupplementalApprovalId,
       });
       nextStep = 'Đợt mua đang vượt giá trị PO tổng đã duyệt. Duyệt bổ sung để mở tạo WMS/QR.';
-    } else if (po.status === 'draft' && mayApprovePo) {
+    } else if (po.status === 'draft' && maySubmitPo) {
       primaryAction = { id: 'request_approval', label: 'Đề nghị duyệt', intent: 'warning' };
       nextStep = 'Chọn người xác nhận và gửi PO vào luồng duyệt.';
     } else if (po.status === 'sent' && mayApprovePo) {

@@ -64,6 +64,18 @@ describe('purchaseOrderUiPolicy', () => {
     expect(policy.primaryAction?.label).toBe('Đề nghị duyệt');
   });
 
+  it('allows PO submitters to request approval without PO approval capability', () => {
+    const policy = getPurchaseOrderUiPolicy(baseInput({
+      po: makePo({ status: 'draft' }),
+      canManageTab: false,
+      canCreatePo: true,
+      canApprovePo: false,
+      canMutatePoDocument: true,
+    } as any));
+
+    expect(policy.primaryAction?.id).toBe('request_approval');
+  });
+
   it('maps sent purchase orders to approve primary action without exposing a rejected status action', () => {
     const policy = getPurchaseOrderUiPolicy(baseInput({ po: makePo({ status: 'sent' }) }));
     const allActionIds = [

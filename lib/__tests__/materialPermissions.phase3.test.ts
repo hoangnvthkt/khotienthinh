@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   PROJECT_MATERIAL_ACTION_CODES,
+  getProjectMaterialActionCodesForRoomAction,
   getProjectMaterialCapabilities,
 } from '../permissions/projectMaterialPermissions';
 
@@ -72,6 +73,14 @@ describe('Phase 3.3 Material permission capabilities', () => {
     expect(caps.canEditDirectPurchase).toBe(true);
     expect(caps.canDeleteDirectPurchase).toBe(true);
     expect(caps.canRecordDirectPurchaseAp).toBe(true);
+  });
+
+  it('maps PO Room actions to the same PO capabilities used by the UI', () => {
+    expect(getProjectMaterialActionCodesForRoomAction('material_po', 'submit')).toContain('project.material_po.create');
+    expect(getProjectMaterialActionCodesForRoomAction('material_po', 'edit')).toContain('project.material_po.create');
+    expect(getProjectMaterialActionCodesForRoomAction('material_po', 'approve')).toContain('project.material_po.approve');
+    expect(getProjectMaterialActionCodesForRoomAction('material_po', 'confirm')).toContain('project.material_po.receive');
+    expect(getProjectMaterialActionCodesForRoomAction('material_po', 'delete')).toContain('project.material_po.delete');
   });
 
   it('requires the dedicated available-stock action for stock exposure', () => {

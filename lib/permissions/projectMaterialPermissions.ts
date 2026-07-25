@@ -1,3 +1,8 @@
+import type {
+  ProjectPermissionRoomCode,
+  ProjectRoomActionCode,
+} from './projectPermissionRooms';
+
 export const PROJECT_MATERIAL_ACTION_CODES = Object.freeze([
   'project.material.view',
   'project.material_boq.view',
@@ -41,6 +46,30 @@ export const PROJECT_MATERIAL_ACTION_CODES = Object.freeze([
 ] as const);
 
 export type ProjectMaterialActionCode = (typeof PROJECT_MATERIAL_ACTION_CODES)[number];
+
+const PROJECT_MATERIAL_ROOM_ACTION_PERMISSION_CODES: Partial<Record<
+  ProjectPermissionRoomCode,
+  Partial<Record<ProjectRoomActionCode, readonly ProjectMaterialActionCode[]>>
+>> = {
+  material_request: {
+    view: ['project.material_request.view'],
+    submit: ['project.material_request.create', 'project.material_request.submit'],
+  },
+  material_po: {
+    view: ['project.material_po.view'],
+    edit: ['project.material_po.create'],
+    delete: ['project.material_po.delete'],
+    submit: ['project.material_po.create'],
+    approve: ['project.material_po.approve'],
+    confirm: ['project.material_po.receive'],
+  },
+};
+
+export const getProjectMaterialActionCodesForRoomAction = (
+  roomCode: ProjectPermissionRoomCode,
+  actionCode: ProjectRoomActionCode,
+): readonly ProjectMaterialActionCode[] =>
+  PROJECT_MATERIAL_ROOM_ACTION_PERMISSION_CODES[roomCode]?.[actionCode] || [];
 
 export type ProjectMaterialCapability = {
   canViewMaterialSummary: boolean;
