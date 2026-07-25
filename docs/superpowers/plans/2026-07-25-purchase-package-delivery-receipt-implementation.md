@@ -26,6 +26,12 @@
 - Quy doi don vi mua/ton chi dung snapshot va ham chuan trong `lib/materialUnitConversion.ts`.
 - Migration du lieu cu khong tu sinh Dot, WMS, chi phi hoac cong no.
 - Khong thay workflow duyet MR, khong xay lai man cong no theo NCC, va khong tu dong chuyen tien.
+- Migration V2 phai additive/idempotent: khong tao business row, khong xoa du lieu cu, constraint moi dung `drop constraint if exists` hoac DO-block kiem tra `pg_constraint`.
+- Supabase security: privileged write logic nam trong `app_private` voi `security definer` va `set search_path = ''`; function/view public chi la wrapper mong, revoke `public, anon`, grant dung vai tro.
+- Moi table public moi phai enable RLS, co policy/grant ro rang; moi view public moi dung `with (security_invoker = true)`.
+- Lock order cho RPC V2: `purchase_orders` -> `purchase_order_delivery_batches` -> `transactions` -> delivery lines -> MR/request rows -> finance/AP rows, cac tap row cung loai lock theo `id` tang dan.
+- `fulfillment_mode` default chi de tuong thich schema; command V2 chi duoc dung snapshot da xac thuc tu MR/Goi/Dot, khong ngam bien PO legacy thanh nhap kho.
+- Moi command tao/huy Dot, Duyet SL/CL va finalize receipt phai co test idempotency/double-submit ngay trong task sinh command, khong de toi acceptance gate moi bat loi.
 
 ---
 
@@ -59,6 +65,7 @@ cu tiep tuc hoat dong trong thoi gian G0-G3.
 - Modify `lib/projectService.ts`: map field moi; khong dung replace delete/insert cho Dot V2.
 - Modify `lib/materialRequestFulfillmentService.ts`: xoa duong suy dien receipt theo toan PO o V2.
 - Modify `lib/supplierPayableService.ts`: AP receipt la nguon chuan.
+- Modify `lib/purchaseOrderSupplierReturnService.ts`: return sau receipt dao cost/AP dung nguon Dot.
 
 **UI**
 
@@ -91,6 +98,7 @@ cu tiep tuc hoat dong trong thoi gian G0-G3.
 - Create `lib/__tests__/purchasePackageService.test.ts`.
 - Create `lib/__tests__/purchaseReceiptService.test.ts`.
 - Create `lib/__tests__/purchaseReceiptWorkflow.test.ts`.
+- Create `lib/__tests__/purchaseOrderSupplierReturnService.test.ts`.
 - Modify cac contract test PO/WMS/AP hien huu de khong con ky vong flow cu.
 - Create `docs/runbooks/purchase-package-v2-rollout.md`.
 
@@ -510,7 +518,10 @@ Expected: FAIL voi `Missing purchase_orders.purchase_mode`.
 
 - [ ] **Step 3: Viet migration chi bo sung schema, khong tao du lieu nghiep vu**
 
-Migration phai co day du cac lenh sau:
+Migration phai co day du cac lenh sau. Tat ca constraint tao moi phai idempotent:
+neu constraint da co the ton tai tu nhanh migration khac, dung `drop constraint if
+exists` truoc khi tao lai hoac DO-block kiem tra `pg_constraint`; khong dung cu
+phap khong hop le `add constraint if not exists`.
 
 ```sql
 alter table public.purchase_orders
@@ -525,8 +536,12 @@ alter table public.purchase_orders
   add constraint purchase_orders_purchase_mode_check
   check (purchase_mode in ('single', 'multiple'));
 alter table public.purchase_orders
+  drop constraint if exists purchase_orders_fulfillment_mode_check;
+alter table public.purchase_orders
   add constraint purchase_orders_fulfillment_mode_check
   check (fulfillment_mode in ('RECEIVE_TO_STOCK', 'DIRECT_CONSUMPTION'));
+alter table public.purchase_orders
+  drop constraint if exists purchase_orders_closed_need_qty_check;
 alter table public.purchase_orders
   add constraint purchase_orders_closed_need_qty_check
   check (closed_need_qty >= 0) not valid;
@@ -563,11 +578,16 @@ create unique index if not exists uq_po_delivery_batch_qr_token
 Drop/recreate constraint status de chap nhan ca legacy va V2:
 
 ```sql
+alter table public.purchase_order_delivery_batches
+  drop constraint if exists purchase_order_delivery_batches_status_check;
+
+alter table public.purchase_order_delivery_batches
+  add constraint purchase_order_delivery_batches_status_check
 check (status in (
   'planned', 'supplemental_pending', 'wms_pending',
   'waiting_delivery', 'receiving', 'quality_approved',
   'received', 'received_short', 'received_over', 'cancelled'
-))
+));
 ```
 
 Them check `fulfillment_mode in ('RECEIVE_TO_STOCK',
@@ -576,6 +596,23 @@ Them check `fulfillment_mode in ('RECEIVE_TO_STOCK',
 va `returned_qty <= accepted_qty` duoi dang `not valid`, sau do `validate
 constraint`. Khong update status, khong insert Dot, WMS, cost hoac AP trong
 migration nay.
+
+Them index phuc vu cac command V2, ngoai cac unique guard:
+
+```sql
+create index if not exists idx_po_delivery_batches_po_status_no_v2
+  on public.purchase_order_delivery_batches(purchase_order_id, status, delivery_no);
+
+create index if not exists idx_po_delivery_batches_wms_status_v2
+  on public.purchase_order_delivery_batches(wms_transaction_id, status)
+  where wms_transaction_id is not null;
+
+create index if not exists idx_po_delivery_lines_batch_line_v2
+  on public.purchase_order_delivery_lines(delivery_batch_id, purchase_order_line_id);
+```
+
+Smoke test phai assert `supplier_payable_documents` van co unique
+`(source_type, source_id)` vi Task 7 se upsert AP receipt dua tren cap nay.
 
 - [ ] **Step 4: Chay migration tren local database va smoke test**
 
@@ -735,6 +772,10 @@ Expected: FAIL vi service chua ton tai.
 
 Migration tao:
 
+Signature private helper phai dung, va function definition phai la `language
+plpgsql security definer set search_path = ''`; khong dat privileged writes
+trong public schema:
+
 ```sql
 app_private.create_delivery_batch_with_wms_qr_v2(
   p_purchase_order_id text,
@@ -751,7 +792,44 @@ app_private.create_delivery_batch_with_wms_qr_v2(
 ) returns jsonb
 ```
 
-va wrapper:
+va wrapper public mong:
+
+```sql
+create or replace function public.create_delivery_batch_with_wms_qr_v2(
+  p_purchase_order_id text,
+  p_idempotency_key uuid,
+  p_supplier_id text,
+  p_supplier_name text,
+  p_fulfillment_mode text,
+  p_vat_rate numeric,
+  p_target_warehouse_id text,
+  p_planned_delivery_date date default null,
+  p_note text default null,
+  p_actor_user_id uuid default null,
+  p_lines jsonb default '[]'::jsonb
+) returns jsonb
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  v_current_actor text := nullif(public.current_app_user_id()::text, '');
+  v_actor uuid := coalesce(p_actor_user_id, v_current_actor::uuid);
+begin
+  if v_current_actor is null or v_actor::text <> v_current_actor then
+    raise exception 'Nguoi thuc hien lenh khong hop le.' using errcode = '42501';
+  end if;
+
+  return app_private.create_delivery_batch_with_wms_qr_v2(
+    p_purchase_order_id, p_idempotency_key, p_supplier_id, p_supplier_name,
+    p_fulfillment_mode, p_vat_rate, p_target_warehouse_id,
+    p_planned_delivery_date, p_note, v_actor, p_lines
+  );
+end;
+$$;
+```
+
+Signature wrapper public phai dung:
 
 ```sql
 public.create_delivery_batch_with_wms_qr_v2(
@@ -772,7 +850,9 @@ public.create_delivery_batch_with_wms_qr_v2(
 Than ham phai khoa `purchase_orders for update`, xac nhan Goi o
 `confirmed|in_transit|partial`, kiem tra quyen
 `project.material_po.create`, va return ngay record cu neu trung
-`(purchase_order_id,idempotency_key)`. Trong mot transaction:
+`(purchase_order_id,idempotency_key)`. Khi kiem tra Room, dung document/action
+`material_po/create`; permission code `project.material_po.create` chi dung khi
+goi helper permission hien huu can permission string. Trong mot transaction:
 
 1. Lay `delivery_no = max(delivery_no) + 1`.
 2. Validate moi JSON line co qty/price khong am, item va PO line trung khop.
@@ -789,8 +869,10 @@ Than ham phai khoa `purchase_orders for update`, xac nhan Goi o
 7. Return JSON theo `PurchaseDeliveryCommandResult`.
 
 Public wrapper chi cho actor hien tai hoac `p_actor_user_id` trung actor hien
-tai; revoke `public, anon`, grant `authenticated`. Unique violation phai
-re-read va return cung ket qua, khong tao Dot thu hai.
+tai; revoke `public, anon`, grant `authenticated`. Private helper cung phai
+revoke `public, anon` va grant execute toi `authenticated` de wrapper goi duoc.
+Unique violation phai re-read va return cung ket qua, khong tao Dot thu hai.
+Ca private va public function deu `set search_path = ''`.
 
 - [ ] **Step 4: Tao atomic update va cancel commands**
 
@@ -802,6 +884,8 @@ da quality approve, command raise `Dot da Duyet SL/CL va khong con duoc sua.`
 
 `cancel_unreceived_delivery_batch_v2` chi chap nhan cung trang thai, bat buoc
 reason, set Dot va WMS `cancelled`, giu row de trace va khong tao stock/cost/AP.
+Hai command nay cung dung private helper `app_private` + public wrapper
+`security invoker`, `set search_path = ''`, revoke/grant nhu command create.
 
 - [ ] **Step 5: Tao wrapper TypeScript**
 
@@ -830,7 +914,9 @@ goi dung RPC/payload trong test va cung dung `assertCommandResult`.
 - [ ] **Step 6: Viet SQL smoke cho atomicity va idempotency**
 
 Trong `supabase/tests/purchase_package_delivery_receipt_v2_smoke.sql`, tao
-fixture trong transaction va goi command hai lan cung key. Assert:
+fixture trong transaction va goi command hai lan cung key. Them mot block
+`begin ... exception when unique_violation then ... end` de mo phong double-submit
+va verify RPC re-read ket qua thay vi de exception thoat ra ngoai. Assert:
 
 ```sql
 select count(*) = 1
@@ -845,7 +931,8 @@ where source_type = 'po_delivery_batch'
 ```
 
 Them case qty am phai raise va sau exception khong co batch/WMS moi. Cuoi file
-luon `rollback`.
+luon `rollback`. Test nay nam ngay Task 3, khong cho doi toi Task 14 moi bat loi
+double-create.
 
 - [ ] **Step 7: Chay test**
 
@@ -944,18 +1031,27 @@ Expected: FAIL vi `approvePackage` chua ton tai.
 
 RPC phai:
 
-1. Khoa Goi, kiem tra quyen Room `material_po/approve`.
-2. Cho phep retry neu Goi da `confirmed` va idempotency key da co Dot.
-3. Chuyen `sent -> confirmed` trong transition guard hien huu.
-4. Neu `purchase_mode='single'`, chuyen toan bo PO item snapshot thanh
+1. Dung private helper `app_private.approve_purchase_package_and_prepare_single_batch_v2`
+   voi `security definer set search_path = ''` va public wrapper
+   `security invoker set search_path = ''`; revoke `public, anon`, grant
+   `authenticated` nhu Task 3.
+2. Khoa Goi theo lock order toan cuc, kiem tra quyen Room `material_po/approve`.
+3. Cho phep retry neu Goi da `confirmed` va idempotency key da co Dot.
+4. Chuyen `sent -> confirmed` bang logic tuong duong
+   `transition_project_purchase_order_status`: giu audit/submission fields,
+   guard trang thai, `approved_by_id`, `approved_at` va error message hien huu.
+5. Neu `purchase_mode='single'`, chuyen toan bo PO item snapshot thanh
    `p_lines`, lay `fulfillment_mode` tu MR lien ket va goi private helper
    Task 3 trong cung SQL transaction.
-5. Neu `multiple`, khong tao Dot/WMS/QR.
-6. Khong tao supplemental approval du Goi/Dot vuot baseline.
-7. Return `ApprovePurchasePackageResult`.
+6. Neu `multiple`, khong tao Dot/WMS/QR.
+7. Khong tao supplemental approval du Goi/Dot vuot baseline.
+8. Return `ApprovePurchasePackageResult`.
 
 So stock qty va stock unit cua line phai lay tu snapshot da luu tren PO item.
 Neu snapshot thieu, RPC raise loi du lieu ro rang thay vi ngam dung factor 1.
+Khong doc `fulfillment_mode` tu default schema cua PO legacy neu PO khong co
+snapshot tu MR/Goi; truong hop do raise `Goi mua hang thieu snapshot hinh thuc
+nhan hang.`.
 
 - [ ] **Step 4: Chuyen duong approve V2 sang service moi**
 
@@ -963,6 +1059,8 @@ Trong `poService.updateStatus`, neu flag V2 bat, `sourceMode ===
 'from_request'` va patch status la `confirmed`, caller phai dung
 `purchasePackageService.approvePackage`; giu `updateStatus` cho document cu va
 nguon PO khac. Khong goi approval RPC roi tao Dot bang hai request frontend.
+Service moi phai tra ve ket qua da approve de UI refresh, nhung khong duoc
+bo qua permission/transition RPC hien huu cho cac status khac.
 
 - [ ] **Step 5: Mo rong SQL smoke**
 
@@ -1152,6 +1250,9 @@ Fixture Dot 100, WMS PENDING. Assert:
 5. `finalize_purchase_receipt_v2` chuyen WMS COMPLETED va Dot
    `received_short`.
 6. Retry finalize return `alreadyFinalized=true`, khong tang ton lan hai.
+7. Double-click finalize voi cung Dot/WMS trong smoke chi co mot inventory
+   movement, mot cost transaction va mot AP document; lan thu hai tra ket qua
+   idempotent hoac anomaly ro rang neu trang thai lech.
 
 - [ ] **Step 2: Chay SQL test RED**
 
@@ -1161,7 +1262,14 @@ Expected: FAIL vi hai RPC chua ton tai.
 
 - [ ] **Step 3: Implement `approve_receipt_quality_v2`**
 
-RPC security definer phai khoa Dot va WMS; xac nhan WMS source
+Tao private helper `app_private.approve_receipt_quality_v2(...) returns jsonb`
+voi `security definer set search_path = ''`; public
+`public.approve_receipt_quality_v2(...)` la wrapper `security invoker set
+search_path = ''`, chi xac nhan actor hien tai va goi private helper. Revoke
+`public, anon` tren ca hai function, grant execute cho `authenticated` theo
+pattern Task 3.
+
+RPC private helper phai khoa Dot va WMS; xac nhan WMS source
 `po_delivery_batch/source_id=delivery_batch_id`, actor la Thu kho cua
 `target_warehouse_id`, WMS PENDING va Dot `receiving`. Validate JSON line map
 1-1 voi delivery line, accepted khong am, stock qty khop conversion snapshot,
@@ -1199,8 +1307,11 @@ WMS item luu dong thoi `orderedQty`, `quantity` stock accepted,
 
 - [ ] **Step 4: Implement stock/MR/Package trong `finalize_purchase_receipt_v2`**
 
-RPC khoa Dot, WMS, PO va cac MR line lien quan theo thu tu co dinh. No chi
-chap nhan `quality_approved` + WMS APPROVED. Neu fulfillment mode la
+Tao private helper `app_private.finalize_purchase_receipt_v2(...) returns jsonb`
+voi public wrapper cung security pattern Task 3. RPC khoa PO, Dot, WMS, delivery
+lines, MR/request rows, inventory rows va finance/AP rows theo lock order toan
+cuc; voi nhieu row cung bang thi `order by id for update`. No chi chap nhan
+`quality_approved` + WMS APPROVED. Neu fulfillment mode la
 `RECEIVE_TO_STOCK`, goi private inventory posting logic cua
 `process_transaction_status` de tang ton theo `quantity` stock. Neu mode la
 `DIRECT_CONSUMPTION`, chuyen WMS sang COMPLETED nhung khong insert inventory
@@ -1221,7 +1332,8 @@ da post, raise `P0001` voi thong diep anomaly va khong tiep tuc.
 
 Trong `updateTransactionStatus`, neu transaction source la
 `po_delivery_batch` va next status COMPLETED, goi
-`purchaseReceiptService.finalize`. Khong condition theo
+`purchaseReceiptService.finalize` truoc bat ky nhanh legacy nao co the goi
+`process_transaction_status`. Khong condition theo
 `relatedRequestId && fulfillmentBatchId`; legacy fulfillment van dung
 `sync_fulfillment_receipt_for_transaction`.
 
@@ -1276,6 +1388,16 @@ expect(calculateDeliveryReceiptGross({
 SQL smoke assert sau finalize:
 
 ```sql
+if not exists (
+  select 1
+  from pg_constraint
+  where conrelid = 'public.supplier_payable_documents'::regclass
+    and contype = 'u'
+    and pg_get_constraintdef(oid) like '%source_type%source_id%'
+) then
+  raise exception 'Missing supplier payable source unique constraint';
+end if;
+
 select amount = 990000
 from public.project_transactions
 where source_ref = 'purchase_receipt:' || v_batch_id::text;
@@ -1315,6 +1437,8 @@ alter table public.supplier_payable_documents
 
 Khong tao unique invoice tren AP document vi mot hoa don co the doi soat
 nhieu receipt; Task 12 tao invoice header va bang link many-to-many.
+Giua cac lan drop/recreate constraint, migration khong duoc lam mat unique
+`supplier_payable_documents(source_type, source_id)`.
 
 - [ ] **Step 4: Post cost va AP o cuoi `finalize_purchase_receipt_v2`**
 
@@ -1362,6 +1486,9 @@ insert cost/AP; finalize van dong Dot thieu va giu remaining need.
 
 Neu MR line co nhieu `contract_cost_item_id`, tao mot cost transaction moi
 cost item voi source ref suffix line ID; AP van la mot document tong Dot.
+Moi insert `project_transactions` phai dung `source_ref` unique idempotent.
+Neu cost theo nhieu cost item, source ref la
+`purchase_receipt:{delivery_batch_id}:{delivery_line_id}:{contract_cost_item_id}`.
 
 - [ ] **Step 5: Bo payment-as-expense va PO fallback**
 
@@ -1375,6 +1502,8 @@ Trong `projectFinanceWorkspaceService.buildPayables`, luon dung
 rong. Trong `ProjectFinanceWorkspace`, bo
 `syncPurchaseOrderById` va nhanh tao `nextTransaction` expense; payment form
 chi tai AP documents cua NCC va post `supplierPaymentBatchService`.
+`supplierPayableService.syncFromPurchaseOrder` chi duoc giu cho legacy/manual
+flow sau flag tat; V2 receipt khong goi ham nay.
 
 - [ ] **Step 6: Chay test**
 
@@ -1400,8 +1529,8 @@ git commit -m "feat: recognize receipt cost and supplier payable"
 **Files:**
 - Create: `supabase/migrations/20260725123000_purchase_receipt_return_finance_v2.sql`
 - Modify: `supabase/tests/purchase_package_delivery_receipt_v2_smoke.sql`
-- Modify: `lib/supplierReturnService.ts`
-- Modify: `lib/__tests__/supplierReturnService.test.ts`
+- Modify: `lib/purchaseOrderSupplierReturnService.ts`
+- Create: `lib/__tests__/purchaseOrderSupplierReturnService.test.ts`
 
 **Interfaces:**
 - Consumes: supplier return flow hien huu va receipt AP source Task 7.
@@ -1427,7 +1556,8 @@ Expected: FAIL o cost/AP reversal.
 
 - [ ] **Step 3: Mo rong completion command cua supplier return**
 
-Trong transaction hoan NCC hien huu, sau inventory reversal:
+Trong transaction hoan NCC hien huu (`public.create_purchase_order_supplier_return`
+va trigger/logic hoan tat lien quan trong migrations cu), sau inventory reversal:
 
 ```sql
 insert into public.project_transactions (
@@ -1456,7 +1586,7 @@ vuot accepted qty.
 
 - [ ] **Step 4: Chay tests**
 
-Run: `npx vitest run lib/__tests__/supplierReturnService.test.ts`
+Run: `npx vitest run lib/__tests__/purchaseOrderSupplierReturnService.test.ts`
 
 Expected: PASS.
 
@@ -1467,7 +1597,7 @@ Expected: PASS tat ca receipt/return cases.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add supabase/migrations/20260725123000_purchase_receipt_return_finance_v2.sql supabase/tests/purchase_package_delivery_receipt_v2_smoke.sql lib/supplierReturnService.ts lib/__tests__/supplierReturnService.test.ts
+git add supabase/migrations/20260725123000_purchase_receipt_return_finance_v2.sql supabase/tests/purchase_package_delivery_receipt_v2_smoke.sql lib/purchaseOrderSupplierReturnService.ts lib/__tests__/purchaseOrderSupplierReturnService.test.ts
 git commit -m "feat: reverse receipt cost and payable on returns"
 ```
 
@@ -1666,6 +1796,10 @@ phan mua hang, bat buoc reason, close qty duong va khong vuot remaining need
 tung line. No insert `material_request_line_need_closures` theo PO/MR line,
 cap nhat `purchase_orders.closed_need_qty`, audit actor/reason va derive Goi
 `closed_short`; khong sua baseline MR/Goi va khong tao cost/AP.
+RPC nay dung cung pattern security Task 3: private helper trong `app_private`,
+public wrapper mong, `set search_path = ''`, revoke `public, anon`, grant
+`authenticated`, va check Room `material_po/create` hoac permission mua hang
+tuong duong theo permission model hien huu.
 
 `close_short` mo modal reason + line quantities va goi
 `purchasePackageService.closePackageShort`.
@@ -1886,7 +2020,7 @@ Expected: FAIL o reconciliation helper.
 Migration tao:
 
 ```sql
-create table public.supplier_invoices (
+create table if not exists public.supplier_invoices (
   id uuid primary key default gen_random_uuid(),
   supplier_id text not null,
   supplier_name_snapshot text not null,
@@ -1902,10 +2036,10 @@ create table public.supplier_invoices (
   updated_at timestamptz not null default now()
 );
 
-create unique index uq_supplier_invoice_header_number
+create unique index if not exists uq_supplier_invoice_header_number
   on public.supplier_invoices(supplier_id, lower(trim(invoice_number)));
 
-create table public.supplier_invoice_payable_links (
+create table if not exists public.supplier_invoice_payable_links (
   invoice_id uuid not null references public.supplier_invoices(id) on delete cascade,
   payable_document_id uuid not null references public.supplier_payable_documents(id) on delete restrict,
   allocated_gross_amount numeric not null check (allocated_gross_amount > 0),
@@ -1914,7 +2048,27 @@ create table public.supplier_invoice_payable_links (
 );
 ```
 
-Them RLS cung scope AP, audit trigger va trace hooks. Khong backfill
+Them index va quyen:
+
+```sql
+create index if not exists idx_supplier_invoices_supplier_date_v2
+  on public.supplier_invoices(supplier_id, invoice_date desc);
+
+create index if not exists idx_supplier_invoice_links_payable_v2
+  on public.supplier_invoice_payable_links(payable_document_id);
+
+alter table public.supplier_invoices enable row level security;
+alter table public.supplier_invoice_payable_links enable row level security;
+
+revoke all on table public.supplier_invoices from public, anon, authenticated;
+revoke all on table public.supplier_invoice_payable_links from public, anon, authenticated;
+grant select, insert, update on table public.supplier_invoices to authenticated;
+grant select, insert, update, delete on table public.supplier_invoice_payable_links to authenticated;
+```
+
+RLS policy dung cung scope AP: invoice duoc view/mutate khi actor co quyen tren
+tat ca AP documents duoc link; link table kiem tra scope qua
+`supplier_payable_documents`. Them audit trigger va trace hooks. Khong backfill
 `invoice_number` legacy tu AP neu trung; anomaly view Task 13 bao cao de ke
 toan doi soat.
 
@@ -1926,6 +2080,8 @@ allocation bang invoice gross va moi allocation duong. Allocation co the lech
 recognized hien tai; phan lech chinh la adjustment duoc post trong command.
 Ke toan nhap invoice number/date, net, VAT, gross, attachments va links toi
 mot hoac nhieu receipt AP.
+Command nay cung dung pattern private helper `app_private` security definer +
+public wrapper security invoker, `set search_path = ''`, revoke/grant ro rang.
 
 Neu invoice gross chenh tong estimated gross cua cac AP, bat buoc reason. Save
 khong sua WMS/accepted qty; no tao mot adjustment cost va AP source:
@@ -2006,7 +2162,17 @@ Expected: FAIL vi view chua ton tai.
 
 - [ ] **Step 3: Tao read-only anomaly view**
 
-View union cac loai:
+Tao `public.purchase_package_v2_anomalies` bang `create or replace view ... with
+(security_invoker = true) as` va union cac anomaly query ben duoi. Sau khi tao
+view, chay:
+
+```sql
+revoke all on table public.purchase_package_v2_anomalies from public, anon, authenticated;
+grant select on table public.purchase_package_v2_anomalies to authenticated;
+```
+
+Moi branch cua view phai filter scope bang cac bang co RLS hien huu hoac helper
+permission tuong duong, khong expose anomaly cua cong trinh khac. View union cac loai:
 
 - `completed_wms_batch_not_received`;
 - `received_batch_wms_not_completed`;
@@ -2139,7 +2305,7 @@ npx vitest run \
   lib/__tests__/purchaseOrderUiPolicy.test.ts \
   lib/__tests__/supplierPayableService.test.ts \
   lib/__tests__/supplierPaymentBatchService.test.ts \
-  lib/__tests__/supplierReturnService.test.ts
+  lib/__tests__/purchaseOrderSupplierReturnService.test.ts
 ```
 
 Expected: tat ca PASS, zero skipped test trong nhom V2.
