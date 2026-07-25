@@ -22,6 +22,7 @@ import { poService } from '../lib/projectService';
 import { extractPoToken, PO_QR_PARAM } from '../lib/poQr';
 import { extractFulfillmentBatchToken, FULFILLMENT_BATCH_QR_PARAM } from '../lib/fulfillmentBatchQr';
 import { materialRequestFulfillmentService } from '../lib/materialRequestFulfillmentService';
+import { formatInventoryQuantity } from '../lib/inventoryNumberFormat';
 import {
   ExcelImportMode,
   ExcelImportPreview,
@@ -52,7 +53,7 @@ const parseExcelNumber = (value: unknown): number => {
   return Number(normalized);
 };
 
-const formatNumber = (value: unknown) => Number(value || 0).toLocaleString('vi-VN');
+const formatNumber = formatInventoryQuantity;
 
 const validateNonNegativeNumber = (
   value: unknown,
@@ -830,7 +831,7 @@ const Inventory: React.FC = () => {
                     </td>
                     <td className="p-4 text-zinc-600 dark:text-zinc-400 font-medium">{item.category}</td>
                     <td className="p-4 text-right">
-                      <span className={`font-bold ${isLow ? 'text-teal-900 dark:text-teal-300' : 'text-zinc-900 dark:text-zinc-100'}`}>{stock.toLocaleString()}</span>
+                      <span className={`font-bold ${isLow ? 'text-teal-900 dark:text-teal-300' : 'text-zinc-900 dark:text-zinc-100'}`}>{formatInventoryQuantity(stock)}</span>
                       <span className="text-[10px] text-zinc-400 ml-1 uppercase font-semibold">{item.unit}</span>
                     </td>
                     <td className="p-4 text-center">
@@ -876,7 +877,7 @@ const Inventory: React.FC = () => {
                 <div className="flex justify-between items-center">
                   <span className="text-xs text-muted-foreground font-medium">{item.category}</span>
                   <div className="text-right">
-                    <span className={`font-black text-sm ${isLow ? 'text-red-600' : 'text-foreground'}`}>{stock.toLocaleString()}</span>
+                    <span className={`font-black text-sm ${isLow ? 'text-red-600' : 'text-foreground'}`}>{formatInventoryQuantity(stock)}</span>
                     <span className="text-[10px] text-muted-foreground ml-1 uppercase font-bold">{item.unit}</span>
                   </div>
                 </div>
