@@ -64,6 +64,48 @@ begin
   ) then
     raise exception 'Missing unique PO delivery source index';
   end if;
+
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'purchase_orders'
+      and column_name = 'purchase_mode'
+  ) then
+    raise exception 'Missing purchase_orders.purchase_mode';
+  end if;
+
+  if not exists (
+    select 1 from pg_indexes
+    where schemaname = 'public'
+      and indexname = 'uq_po_delivery_batch_idempotency'
+  ) then
+    raise exception 'Missing delivery idempotency guard';
+  end if;
+
+  if not exists (
+    select 1 from pg_indexes
+    where schemaname = 'public'
+      and indexname = 'uq_po_delivery_batch_qr_token'
+  ) then
+    raise exception 'Missing delivery QR guard';
+  end if;
+
+  if not exists (
+    select 1
+    from pg_constraint con
+    join pg_class rel on rel.oid = con.conrelid
+    join pg_namespace nsp on nsp.oid = rel.relnamespace
+    where nsp.nspname = 'public'
+      and rel.relname = 'supplier_payable_documents'
+      and con.contype = 'u'
+      and (
+        select array_agg(att.attname::text order by cols.ordinality)
+        from unnest(con.conkey) with ordinality as cols(attnum, ordinality)
+        join pg_attribute att on att.attrelid = rel.oid and att.attnum = cols.attnum
+      ) = array['source_type', 'source_id']
+  ) then
+    raise exception 'Missing supplier_payable_documents(source_type, source_id) unique guard';
+  end if;
 end $$;
 
 rollback;
