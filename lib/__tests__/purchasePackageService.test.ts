@@ -95,6 +95,50 @@ describe('purchasePackageService', () => {
     );
   });
 
+  it('returns the auto-created first delivery for a single package approval', async () => {
+    supabaseMocks.rpc.mockResolvedValue({
+      data: {
+        purchaseOrderId: 'po-1',
+        status: 'confirmed',
+        purchaseMode: 'single',
+        delivery: commandResult,
+      },
+      error: null,
+    });
+
+    const result = await purchasePackageService.approvePackage({
+      purchaseOrderId: 'po-1',
+      actorUserId: 'leader-1',
+      idempotencyKey: '11111111-1111-4111-8111-111111111111',
+    });
+
+    expect(supabaseMocks.rpc).toHaveBeenCalledWith('approve_purchase_package_and_prepare_single_batch_v2', {
+      p_purchase_order_id: 'po-1',
+      p_actor_user_id: 'leader-1',
+      p_idempotency_key: '11111111-1111-4111-8111-111111111111',
+    });
+    expect(result.delivery?.deliveryCode).toBe('PO01-01');
+  });
+
+  it('does not expect a delivery for a multiple package approval', async () => {
+    supabaseMocks.rpc.mockResolvedValue({
+      data: {
+        purchaseOrderId: 'po-2',
+        status: 'confirmed',
+        purchaseMode: 'multiple',
+      },
+      error: null,
+    });
+
+    const result = await purchasePackageService.approvePackage({
+      purchaseOrderId: 'po-2',
+      actorUserId: 'leader-1',
+      idempotencyKey: '22222222-2222-4222-8222-222222222222',
+    });
+
+    expect(result.delivery).toBeUndefined();
+  });
+
   it('cancels an unreceived delivery with its actor and reason', async () => {
     supabaseMocks.rpc.mockResolvedValue({ data: null, error: null });
 

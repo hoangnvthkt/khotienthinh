@@ -50,9 +50,12 @@ declare
   v_qr_token text := 'pod_' || replace(gen_random_uuid()::text, '-', '');
   v_tx_id text := 'tx-po-delivery-' || replace(gen_random_uuid()::text, '-', '');
   v_wms_items jsonb := '[]'::jsonb;
+  v_delivery_lines jsonb := '[]'::jsonb;
   v_line jsonb;
   v_po_line jsonb;
   v_line_id uuid;
+  v_line_key text;
+  v_seen_line_keys text[] := '{}'::text[];
   v_purchase_order_line_id text;
   v_item_id text;
   v_purchase_qty numeric;
@@ -66,6 +69,9 @@ begin
     raise exception 'Idempotency key is required.' using errcode = '22023';
   end if;
   if p_actor_user_id is null then
+    raise exception 'Nguoi thuc hien lenh khong hop le.' using errcode = '42501';
+  end if;
+  if public.current_app_user_id() is null or p_actor_user_id <> public.current_app_user_id() then
     raise exception 'Nguoi thuc hien lenh khong hop le.' using errcode = '42501';
   end if;
   if p_fulfillment_mode not in ('RECEIVE_TO_STOCK', 'DIRECT_CONSUMPTION') then
@@ -163,14 +169,23 @@ begin
       raise exception 'Dong Dot giao khong khop voi Goi mua hang.' using errcode = '22023';
     end if;
 
-    insert into public.purchase_order_delivery_lines (
-      delivery_batch_id, purchase_order_id, purchase_order_line_id, item_id,
-      planned_qty, unit, delivery_unit_price, stock_planned_qty, stock_unit
-    ) values (
-      v_batch_id, v_po.id, v_purchase_order_line_id, v_item_id,
-      v_purchase_qty, v_purchase_unit, v_purchase_unit_price, v_stock_qty, v_stock_unit
-    )
-    returning id into v_line_id;
+    v_line_key := v_purchase_order_line_id || ':' || v_item_id;
+    if v_line_key = any(v_seen_line_keys) then
+      raise exception 'Dong Dot giao bi lap trong lenh tao.' using errcode = '22023';
+    end if;
+    v_seen_line_keys := array_append(v_seen_line_keys, v_line_key);
+    v_line_id := gen_random_uuid();
+
+    v_delivery_lines := v_delivery_lines || jsonb_build_array(jsonb_build_object(
+      'id', v_line_id,
+      'purchaseOrderLineId', v_purchase_order_line_id,
+      'itemId', v_item_id,
+      'purchaseQty', v_purchase_qty,
+      'purchaseUnit', v_purchase_unit,
+      'stockQty', v_stock_qty,
+      'stockUnit', v_stock_unit,
+      'purchaseUnitPrice', v_purchase_unit_price
+    ));
 
     v_wms_items := v_wms_items || jsonb_build_array(jsonb_build_object(
       'itemId', v_item_id,
@@ -197,6 +212,19 @@ begin
     coalesce(v_po.po_number, v_po.id) || '-' || lpad(v_delivery_no::text, 2, '0') || ' dang giao',
     null, nullif(p_supplier_name, ''), 'po_delivery_batch', v_batch_id::text
   );
+
+  for v_line in
+    select value from jsonb_array_elements(v_delivery_lines) as line(value)
+  loop
+    insert into public.purchase_order_delivery_lines (
+      id, delivery_batch_id, purchase_order_id, purchase_order_line_id, item_id,
+      planned_qty, unit, delivery_unit_price, stock_planned_qty, stock_unit
+    ) values (
+      (v_line ->> 'id')::uuid, v_batch_id, v_po.id, v_line ->> 'purchaseOrderLineId', v_line ->> 'itemId',
+      (v_line ->> 'purchaseQty')::numeric, v_line ->> 'purchaseUnit', (v_line ->> 'purchaseUnitPrice')::numeric,
+      (v_line ->> 'stockQty')::numeric, v_line ->> 'stockUnit'
+    );
+  end loop;
 
   update public.purchase_order_delivery_batches
   set wms_transaction_id = v_tx_id,
@@ -303,6 +331,9 @@ declare
   v_stock_unit_price numeric;
 begin
   if p_actor_user_id is null then
+    raise exception 'Nguoi thuc hien lenh khong hop le.' using errcode = '42501';
+  end if;
+  if public.current_app_user_id() is null or p_actor_user_id <> public.current_app_user_id() then
     raise exception 'Nguoi thuc hien lenh khong hop le.' using errcode = '42501';
   end if;
   if p_fulfillment_mode not in ('RECEIVE_TO_STOCK', 'DIRECT_CONSUMPTION') then
@@ -540,6 +571,9 @@ declare
   v_batch_purchase_order_id text;
 begin
   if p_actor_user_id is null then
+    raise exception 'Nguoi thuc hien lenh khong hop le.' using errcode = '42501';
+  end if;
+  if public.current_app_user_id() is null or p_actor_user_id <> public.current_app_user_id() then
     raise exception 'Nguoi thuc hien lenh khong hop le.' using errcode = '42501';
   end if;
   if nullif(trim(coalesce(p_reason, '')), '') is null then

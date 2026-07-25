@@ -14,6 +14,8 @@ import { projectTransactionService } from './projectTransactionService';
 import { projectDocumentDependencyService } from './projectDocumentDependencyService';
 import { projectSubmissionService } from './projectSubmissionService';
 import type { PurchaseOrderSupplementalDraft } from './purchaseOrderReleaseApproval';
+import { isPurchasePackageV2Enabled, isPurchasePackageV2EnabledForSite } from './featureFlags';
+import { purchasePackageService, type ApprovePurchasePackageResult } from './purchasePackageService';
 
 // ==================== HELPER ====================
 // snake_case ↔ camelCase mapping
@@ -703,6 +705,25 @@ const isActivePurchaseOrder = (po: PurchaseOrder): boolean => !po.archivedAt;
 const PO_SUBMITTED_STATUSES = new Set(['sent', 'confirmed', 'in_transit', 'partial', 'delivered', 'closed', 'returned']);
 const poStatusMarksSubmitted = (status?: string | null): boolean => PO_SUBMITTED_STATUSES.has(String(status || 'draft'));
 
+const deterministicUuidFromText = (input: string): string => {
+    const bytes = new Uint8Array(16);
+    for (let index = 0; index < bytes.length; index += 1) {
+        let hash = 0x811c9dc5 ^ index;
+        for (let charIndex = 0; charIndex < input.length; charIndex += 1) {
+            hash ^= input.charCodeAt(charIndex) + index;
+            hash = Math.imul(hash, 0x01000193);
+        }
+        bytes[index] = hash & 0xff;
+    }
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const hex = Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+};
+
+const purchasePackageApprovalIdempotencyKey = (purchaseOrderId: string): string =>
+    deterministicUuidFromText(`purchase-package-approval:${purchaseOrderId}`);
+
 const poRequestLineLinkToDb = (link: PurchaseOrderRequestLineLink): any => {
     const row = toDb(link);
     delete row.created_at;
@@ -1045,11 +1066,31 @@ export const poService = {
             .upsert(poToDb(item), { onConflict: 'id' });
         if (error) throw error;
     },
-    async updateStatus(id: string, patch: Partial<PurchaseOrder>): Promise<void> {
+    async updateStatus(id: string, patch: Partial<PurchaseOrder>): Promise<void | ApprovePurchasePackageResult> {
         const row = toDb(patch);
         if (patch.receivedTransactionIds) row.received_transaction_ids = patch.receivedTransactionIds;
         delete row.id;
         delete row.created_at;
+        if (row.status === 'confirmed' && isPurchasePackageV2Enabled) {
+            const { data: poRow, error: poError } = await supabase
+                .from('purchase_orders')
+                .select('id,source_mode,construction_site_id')
+                .eq('id', id)
+                .maybeSingle();
+            if (poError) throw poError;
+            if (
+                poRow?.source_mode === 'from_request'
+                && isPurchasePackageV2EnabledForSite(poRow.construction_site_id)
+            ) {
+                const actorUserId = String(patch.lastActionBy || '').trim();
+                if (!actorUserId) throw new Error('Thiếu người thao tác duyệt Gói mua hàng.');
+                return purchasePackageService.approvePackage({
+                    purchaseOrderId: id,
+                    actorUserId,
+                    idempotencyKey: purchasePackageApprovalIdempotencyKey(id),
+                });
+            }
+        }
         const workflowColumns = new Set([
             'status',
             'submitted_to_user_id',

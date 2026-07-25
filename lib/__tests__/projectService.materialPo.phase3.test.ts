@@ -9,6 +9,11 @@ vi.mock('../supabase', () => ({
   supabase: supabaseMock,
 }));
 
+vi.mock('../featureFlags', () => ({
+  isPurchasePackageV2Enabled: true,
+  isPurchasePackageV2EnabledForSite: vi.fn(() => true),
+}));
+
 beforeEach(() => {
   supabaseMock.from.mockReset();
   supabaseMock.rpc.mockReset();
@@ -62,6 +67,53 @@ describe('poService Phase 3.3 workflow transitions', () => {
       }),
     });
     expect(supabaseMock.from).not.toHaveBeenCalledWith('purchase_orders');
+  });
+
+  it('routes V2 from-request package approval through the purchase package command', async () => {
+    const maybeSingle = vi.fn().mockResolvedValue({
+      data: {
+        id: 'po-1',
+        source_mode: 'from_request',
+        construction_site_id: 'site-1',
+      },
+      error: null,
+    });
+    const eq = vi.fn().mockReturnValue({ maybeSingle });
+    const select = vi.fn().mockReturnValue({ eq });
+    supabaseMock.from.mockReturnValueOnce({ select });
+    supabaseMock.rpc.mockResolvedValueOnce({
+      data: {
+        purchaseOrderId: 'po-1',
+        status: 'confirmed',
+        purchaseMode: 'multiple',
+      },
+      error: null,
+    });
+    const { poService } = await import('../projectService');
+
+    const result = await poService.updateStatus('po-1', {
+      status: 'confirmed',
+      lastActionBy: 'leader-1',
+    } as any);
+
+    expect(result).toEqual({
+      purchaseOrderId: 'po-1',
+      status: 'confirmed',
+      purchaseMode: 'multiple',
+      delivery: undefined,
+    });
+    expect(supabaseMock.rpc).toHaveBeenCalledWith(
+      'approve_purchase_package_and_prepare_single_batch_v2',
+      expect.objectContaining({
+        p_purchase_order_id: 'po-1',
+        p_actor_user_id: 'leader-1',
+        p_idempotency_key: expect.stringMatching(/^[0-9a-f-]{36}$/),
+      }),
+    );
+    expect(supabaseMock.rpc).not.toHaveBeenCalledWith(
+      'transition_project_purchase_order_status',
+      expect.anything(),
+    );
   });
 
   it('syncs pending supplemental approvals with the selected approver target', async () => {

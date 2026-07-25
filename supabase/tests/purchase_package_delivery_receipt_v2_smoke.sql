@@ -11,6 +11,9 @@ begin
   if to_regprocedure('public.cancel_unreceived_delivery_batch_v2(uuid,uuid,text)') is null then
     raise exception 'Missing cancel_unreceived_delivery_batch_v2 RPC';
   end if;
+  if to_regprocedure('public.approve_purchase_package_and_prepare_single_batch_v2(text,uuid,uuid)') is null then
+    raise exception 'Missing approve_purchase_package_and_prepare_single_batch_v2 RPC';
+  end if;
 end $$;
 
 create temp table purchase_package_v2_smoke_ids (
@@ -20,23 +23,39 @@ create temp table purchase_package_v2_smoke_ids (
   item_id text not null,
   supplier_id text not null,
   actor_id uuid not null,
+  approver_id uuid not null,
   position_id uuid not null,
   staff_id uuid not null,
+  approver_staff_id uuid not null,
   room_member_id uuid not null,
+  approver_room_member_id uuid not null,
   po_id text not null,
   po_number text not null,
   po_line_id text not null,
+  approve_single_po_id text not null,
+  approve_single_po_number text not null,
+  approve_single_line_id text not null,
+  approve_multiple_po_id text not null,
+  approve_multiple_po_number text not null,
+  approve_multiple_line_id text not null,
   idempotency_key uuid not null,
   cancel_key uuid not null,
   mislink_key uuid not null,
   bad_key uuid not null,
+  impersonation_key uuid not null,
+  approve_single_key uuid not null,
+  approve_multiple_key uuid not null,
+  approve_over_key uuid not null,
   created_batch_id uuid,
   created_wms_transaction_id text,
   cancel_batch_id uuid,
   cancel_wms_transaction_id text,
   mislink_batch_id uuid,
   mislink_original_wms_transaction_id text,
-  mislink_wrong_wms_transaction_id text
+  mislink_wrong_wms_transaction_id text,
+  approve_single_batch_id uuid,
+  approve_single_wms_transaction_id text,
+  approve_over_batch_id uuid
 ) on commit drop;
 
 grant select, update on table purchase_package_v2_smoke_ids to authenticated;
@@ -52,13 +71,29 @@ values (
   gen_random_uuid(),
   gen_random_uuid(),
   gen_random_uuid(),
+  gen_random_uuid(),
+  gen_random_uuid(),
+  gen_random_uuid(),
   'purchase-package-v2-po-' || gen_random_uuid()::text,
   'PO-' || (1000000000 + floor(random() * 899999999)::bigint)::text,
   'purchase-package-v2-line-' || gen_random_uuid()::text,
+  'purchase-package-v2-approve-single-po-' || gen_random_uuid()::text,
+  'PO-' || (1000000000 + floor(random() * 899999999)::bigint)::text,
+  'purchase-package-v2-approve-single-line-' || gen_random_uuid()::text,
+  'purchase-package-v2-approve-multiple-po-' || gen_random_uuid()::text,
+  'PO-' || (1000000000 + floor(random() * 899999999)::bigint)::text,
+  'purchase-package-v2-approve-multiple-line-' || gen_random_uuid()::text,
   gen_random_uuid(),
   gen_random_uuid(),
   gen_random_uuid(),
   gen_random_uuid(),
+  gen_random_uuid(),
+  gen_random_uuid(),
+  gen_random_uuid(),
+  gen_random_uuid(),
+  null,
+  null,
+  null,
   null,
   null,
   null,
@@ -74,6 +109,15 @@ insert into public.users (
 )
 select actor_id, 'Purchase Package Smoke Actor', actor_id::text || '@vioo.local',
        'purchase-package-v2-actor', 'EMPLOYEE'::public.user_role, true, 'ACTIVE',
+       '{}'::text[], '{}'::text[], '{}'::jsonb, '{}'::jsonb
+from purchase_package_v2_smoke_ids;
+
+insert into public.users (
+  id, name, email, username, role, is_active, account_status,
+  allowed_modules, admin_modules, allowed_sub_modules, admin_sub_modules
+)
+select approver_id, 'Purchase Package Smoke Approver', approver_id::text || '@vioo.local',
+       'purchase-package-v2-approver', 'EMPLOYEE'::public.user_role, true, 'ACTIVE',
        '{}'::text[], '{}'::text[], '{}'::jsonb, '{}'::jsonb
 from purchase_package_v2_smoke_ids;
 
@@ -101,22 +145,50 @@ insert into public.project_staff (id, project_id, construction_site_id, user_id,
 select staff_id, project_id, site_id, actor_id::text, position_id, current_date, 'purchase package v2 smoke actor'
 from purchase_package_v2_smoke_ids;
 
+insert into public.project_staff (id, project_id, construction_site_id, user_id, position_id, start_date, note)
+select approver_staff_id, project_id, site_id, approver_id::text, position_id, current_date, 'purchase package v2 smoke approver'
+from purchase_package_v2_smoke_ids;
+
 insert into public.project_permission_room_members (
   id, project_id, construction_site_id, room_code, project_staff_id, is_active, created_by
 )
 select room_member_id, project_id, site_id, 'material_po', staff_id, true, actor_id
 from purchase_package_v2_smoke_ids;
 
+insert into public.project_permission_room_members (
+  id, project_id, construction_site_id, room_code, project_staff_id, is_active, created_by
+)
+select approver_room_member_id, project_id, site_id, 'material_po', approver_staff_id, true, actor_id
+from purchase_package_v2_smoke_ids;
+
 insert into public.project_permission_room_member_actions (room_member_id, action_code, is_active, granted_by)
 select room_member_id, 'submit', true, actor_id
+from purchase_package_v2_smoke_ids;
+
+insert into public.project_permission_room_member_actions (room_member_id, action_code, is_active, granted_by)
+select approver_room_member_id, 'approve', true, actor_id
 from purchase_package_v2_smoke_ids;
 
 insert into public.user_permission_grants (user_id, permission_code, scope_type, scope_id, is_active)
 select actor_id, 'project.material_po.create', 'project', project_id, true
 from purchase_package_v2_smoke_ids;
 
+insert into public.user_permission_grants (user_id, permission_code, scope_type, scope_id, is_active)
+select approver_id, 'project.material_po.approve', 'project', project_id, true
+from purchase_package_v2_smoke_ids;
+
 insert into app_private.purchase_order_number_registry(po_number)
 select po_number
+from purchase_package_v2_smoke_ids
+on conflict (po_number) do nothing;
+
+insert into app_private.purchase_order_number_registry(po_number)
+select approve_single_po_number
+from purchase_package_v2_smoke_ids
+on conflict (po_number) do nothing;
+
+insert into app_private.purchase_order_number_registry(po_number)
+select approve_multiple_po_number
 from purchase_package_v2_smoke_ids
 on conflict (po_number) do nothing;
 
@@ -143,6 +215,58 @@ select
   current_date::text, 'confirmed', 'from_request', warehouse_id, actor_id::text, now()
 from purchase_package_v2_smoke_ids;
 
+insert into public.purchase_orders (
+  id, project_id, construction_site_id, vendor_id, vendor_name, po_number, items,
+  total_amount, approved_total_amount, vat_rate, purchase_mode, fulfillment_mode, reference_gross_amount,
+  order_date, status, source_mode, target_warehouse_id, created_by_id, created_at,
+  submitted_to_user_id, submitted_to_permission
+)
+select
+  approve_single_po_id, project_id, site_id, supplier_id, 'NCC Smoke', approve_single_po_number,
+  jsonb_build_array(jsonb_build_object(
+    'lineId', approve_single_line_id,
+    'itemId', item_id,
+    'sku', 'PP-V2-SMOKE',
+    'name', 'Purchase Package V2 Item',
+    'unit', 'Kg',
+    'unitSnapshot', 'Kg',
+    'purchaseUnitSnapshot', 'Kg',
+    'stockUnitSnapshot', 'Kg',
+    'purchaseConversionFactor', 1,
+    'qty', 1000,
+    'unitPrice', 10000
+  )),
+  10000000, 10000000, 10, 'single', 'RECEIVE_TO_STOCK', 11000000,
+  current_date::text, 'sent', 'from_request', warehouse_id, actor_id::text, now(),
+  approver_id::text, 'project.material_po.approve'
+from purchase_package_v2_smoke_ids;
+
+insert into public.purchase_orders (
+  id, project_id, construction_site_id, vendor_id, vendor_name, po_number, items,
+  total_amount, approved_total_amount, vat_rate, purchase_mode, fulfillment_mode, reference_gross_amount,
+  order_date, status, source_mode, target_warehouse_id, created_by_id, created_at,
+  submitted_to_user_id, submitted_to_permission
+)
+select
+  approve_multiple_po_id, project_id, site_id, supplier_id, 'NCC Smoke', approve_multiple_po_number,
+  jsonb_build_array(jsonb_build_object(
+    'lineId', approve_multiple_line_id,
+    'itemId', item_id,
+    'sku', 'PP-V2-SMOKE',
+    'name', 'Purchase Package V2 Item',
+    'unit', 'Kg',
+    'unitSnapshot', 'Kg',
+    'purchaseUnitSnapshot', 'Kg',
+    'stockUnitSnapshot', 'Kg',
+    'purchaseConversionFactor', 1,
+    'qty', 1000,
+    'unitPrice', 10000
+  )),
+  10000000, 10000000, 10, 'multiple', 'RECEIVE_TO_STOCK', 11000000,
+  current_date::text, 'sent', 'from_request', warehouse_id, actor_id::text, now(),
+  approver_id::text, 'project.material_po.approve'
+from purchase_package_v2_smoke_ids;
+
 set role authenticated;
 
 create or replace function pg_temp.purchase_package_v2_set_user(p_user_id uuid)
@@ -161,6 +285,63 @@ $$;
 select pg_temp.purchase_package_v2_set_user(actor_id)
 from purchase_package_v2_smoke_ids;
 
+select set_config('request.jwt.claim.email', 'purchase-package-v2-intruder@vioo.local', true);
+select set_config('request.jwt.claim.sub', gen_random_uuid()::text, true);
+select set_config(
+  'request.jwt.claims',
+  jsonb_build_object('email', 'purchase-package-v2-intruder@vioo.local', 'sub', gen_random_uuid()::text)::text,
+  true
+);
+
+do $$
+declare
+  v_ids purchase_package_v2_smoke_ids%rowtype := (select ids from purchase_package_v2_smoke_ids ids);
+begin
+  begin
+    perform app_private.create_delivery_batch_with_wms_qr_v2(
+      p_purchase_order_id := v_ids.po_id,
+      p_idempotency_key := v_ids.impersonation_key,
+      p_supplier_id := v_ids.supplier_id,
+      p_supplier_name := 'NCC Smoke',
+      p_fulfillment_mode := 'RECEIVE_TO_STOCK',
+      p_vat_rate := 10,
+      p_target_warehouse_id := v_ids.warehouse_id,
+      p_planned_delivery_date := current_date,
+      p_note := 'private helper impersonation should fail',
+      p_actor_user_id := v_ids.actor_id,
+      p_lines := jsonb_build_array(jsonb_build_object(
+        'purchaseOrderLineId', v_ids.po_line_id,
+        'itemId', v_ids.item_id,
+        'purchaseQty', 1,
+        'purchaseUnit', 'Kg',
+        'stockQty', 1,
+        'stockUnit', 'Kg',
+        'purchaseUnitPrice', 10000,
+        'stockUnitPrice', 10000
+      ))
+    );
+    raise exception 'Private delivery helper impersonation unexpectedly succeeded.';
+  exception
+    when insufficient_privilege then
+      null;
+  end;
+
+  begin
+    perform app_private.approve_purchase_package_and_prepare_single_batch_v2(
+      v_ids.approve_single_po_id,
+      v_ids.actor_id,
+      gen_random_uuid()
+    );
+    raise exception 'Private approval helper impersonation unexpectedly succeeded.';
+  exception
+    when insufficient_privilege then
+      null;
+  end;
+end $$;
+
+select pg_temp.purchase_package_v2_set_user(actor_id)
+from purchase_package_v2_smoke_ids;
+
 do $$
 declare
   v_ids purchase_package_v2_smoke_ids%rowtype := (select ids from purchase_package_v2_smoke_ids ids);
@@ -171,6 +352,10 @@ declare
   v_cancel_batch_id uuid;
   v_mislink_result jsonb;
   v_mislink_batch_id uuid;
+  v_single_approval jsonb;
+  v_single_retry jsonb;
+  v_multiple_approval jsonb;
+  v_over_result jsonb;
 begin
   v_result := public.create_delivery_batch_with_wms_qr_v2(
     p_purchase_order_id := v_ids.po_id,
@@ -361,6 +546,69 @@ begin
     raise exception 'Create command did not return mislink delivery result: %', v_mislink_result;
   end if;
 
+  perform pg_temp.purchase_package_v2_set_user(v_ids.approver_id);
+
+  v_single_approval := public.approve_purchase_package_and_prepare_single_batch_v2(
+    v_ids.approve_single_po_id,
+    v_ids.approver_id,
+    v_ids.approve_single_key
+  );
+  if v_single_approval ->> 'status' <> 'confirmed'
+     or v_single_approval ->> 'purchaseMode' <> 'single'
+     or nullif(v_single_approval #>> '{delivery,deliveryBatchId}', '') is null
+     or nullif(v_single_approval #>> '{delivery,wmsTransactionId}', '') is null
+     or nullif(v_single_approval #>> '{delivery,qrToken}', '') is null then
+    raise exception 'Single approval did not return confirmed package and delivery: %', v_single_approval;
+  end if;
+
+  v_single_retry := public.approve_purchase_package_and_prepare_single_batch_v2(
+    v_ids.approve_single_po_id,
+    v_ids.approver_id,
+    v_ids.approve_single_key
+  );
+  if v_single_retry #>> '{delivery,deliveryBatchId}' is distinct from v_single_approval #>> '{delivery,deliveryBatchId}' then
+    raise exception 'Single approval retry returned a different delivery.';
+  end if;
+
+  v_multiple_approval := public.approve_purchase_package_and_prepare_single_batch_v2(
+    v_ids.approve_multiple_po_id,
+    v_ids.approver_id,
+    v_ids.approve_multiple_key
+  );
+  if v_multiple_approval ->> 'status' <> 'confirmed'
+     or v_multiple_approval ->> 'purchaseMode' <> 'multiple'
+     or v_multiple_approval ? 'delivery' then
+    raise exception 'Multiple approval unexpectedly returned delivery: %', v_multiple_approval;
+  end if;
+
+  perform pg_temp.purchase_package_v2_set_user(v_ids.actor_id);
+
+  v_over_result := public.create_delivery_batch_with_wms_qr_v2(
+    p_purchase_order_id := v_ids.approve_multiple_po_id,
+    p_idempotency_key := v_ids.approve_over_key,
+    p_supplier_id := v_ids.supplier_id,
+    p_supplier_name := 'NCC Smoke',
+    p_fulfillment_mode := 'RECEIVE_TO_STOCK',
+    p_vat_rate := 10,
+    p_target_warehouse_id := v_ids.warehouse_id,
+    p_planned_delivery_date := current_date,
+    p_note := 'multiple delivery over baseline',
+    p_actor_user_id := v_ids.actor_id,
+    p_lines := jsonb_build_array(jsonb_build_object(
+      'purchaseOrderLineId', v_ids.approve_multiple_line_id,
+      'itemId', v_ids.item_id,
+      'purchaseQty', 1010,
+      'purchaseUnit', 'Kg',
+      'stockQty', 1010,
+      'stockUnit', 'Kg',
+      'purchaseUnitPrice', 10000,
+      'stockUnitPrice', 10000
+    ))
+  );
+  if nullif(v_over_result ->> 'deliveryBatchId', '') is null then
+    raise exception 'Over-baseline multiple delivery did not return a batch: %', v_over_result;
+  end if;
+
   begin
     perform public.create_delivery_batch_with_wms_qr_v2(
       p_purchase_order_id := v_ids.po_id,
@@ -399,7 +647,10 @@ begin
     cancel_batch_id = v_cancel_batch_id,
     cancel_wms_transaction_id = v_cancel_result ->> 'wmsTransactionId',
     mislink_batch_id = v_mislink_batch_id,
-    mislink_original_wms_transaction_id = v_mislink_result ->> 'wmsTransactionId';
+    mislink_original_wms_transaction_id = v_mislink_result ->> 'wmsTransactionId',
+    approve_single_batch_id = (v_single_approval #>> '{delivery,deliveryBatchId}')::uuid,
+    approve_single_wms_transaction_id = v_single_approval #>> '{delivery,wmsTransactionId}',
+    approve_over_batch_id = (v_over_result ->> 'deliveryBatchId')::uuid;
 end $$;
 
 reset role;
@@ -523,6 +774,77 @@ begin
       and original_tx.status::text = 'PENDING'
   ) then
     raise exception 'Mislinked WMS cancel changed delivery or transaction state.';
+  end if;
+
+  if not exists (
+    select 1
+    from public.purchase_orders po
+    join public.purchase_order_delivery_batches batch on batch.purchase_order_id = po.id
+    join public.purchase_order_delivery_lines line on line.delivery_batch_id = batch.id
+    join public.transactions tx on tx.id = batch.wms_transaction_id
+    where po.id = v_ids.approve_single_po_id
+      and po.status = 'confirmed'
+      and po.last_action_by = v_ids.approver_id::text
+      and po.last_action_at is not null
+      and batch.id = v_ids.approve_single_batch_id
+      and batch.idempotency_key = v_ids.approve_single_key
+      and batch.delivery_no = 1
+      and batch.qr_token is not null
+      and batch.wms_transaction_id = v_ids.approve_single_wms_transaction_id
+      and line.planned_qty = 1000
+      and tx.source_type = 'po_delivery_batch'
+      and tx.source_id = batch.id::text
+  ) then
+    raise exception 'Single approval did not create exactly the expected default delivery.';
+  end if;
+
+  if (
+    select count(*)
+    from public.purchase_order_delivery_batches
+    where purchase_order_id = v_ids.approve_single_po_id
+      and status <> 'cancelled'
+  ) <> 1 then
+    raise exception 'Single approval retry created duplicate deliveries.';
+  end if;
+
+  if exists (
+    select 1
+    from public.purchase_order_delivery_batches
+    where purchase_order_id = v_ids.approve_multiple_po_id
+      and idempotency_key = v_ids.approve_multiple_key
+  ) then
+    raise exception 'Multiple approval unexpectedly created default delivery.';
+  end if;
+
+  if not exists (
+    select 1
+    from public.purchase_orders
+    where id = v_ids.approve_multiple_po_id
+      and status = 'confirmed'
+      and last_action_by = v_ids.approver_id::text
+      and last_action_at is not null
+  ) then
+    raise exception 'Multiple approval did not record approval action metadata.';
+  end if;
+
+  if not exists (
+    select 1
+    from public.purchase_order_delivery_batches batch
+    join public.purchase_order_delivery_lines line on line.delivery_batch_id = batch.id
+    where batch.id = v_ids.approve_over_batch_id
+      and batch.purchase_order_id = v_ids.approve_multiple_po_id
+      and batch.idempotency_key = v_ids.approve_over_key
+      and line.planned_qty = 1010
+  ) then
+    raise exception 'Multiple package did not allow over-baseline delivery quantity.';
+  end if;
+
+  if exists (
+    select 1
+    from public.purchase_order_supplemental_approvals
+    where purchase_order_id in (v_ids.approve_single_po_id, v_ids.approve_multiple_po_id)
+  ) then
+    raise exception 'Purchase package v2 approval created supplemental approval rows.';
   end if;
 end $$;
 rollback;
