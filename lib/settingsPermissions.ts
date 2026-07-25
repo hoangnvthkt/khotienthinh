@@ -29,6 +29,19 @@ export const getSettingsFeatureToken = (featureId: Exclude<SettingsFeatureId, 'a
 const hasExplicitSettingsModule = (user: Pick<User, 'allowedModules' | 'adminModules'>): boolean =>
   Boolean(user.allowedModules?.includes(SETTINGS_MODULE_KEY) || user.adminModules?.includes(SETTINGS_MODULE_KEY));
 
+const DEFAULT_SETTINGS_USER_MODULE_KEYS = ['WMS', 'HRM', 'WF'];
+
+export const isSettingsUserAdmin = (user: Pick<User, 'role' | 'adminModules'>): boolean =>
+  user.role === Role.ADMIN || Boolean(user.adminModules?.length);
+
+export const getSettingsUserModuleKeys = (
+  user: Pick<User, 'role' | 'allowedModules' | 'adminModules'>,
+  moduleKeys: string[],
+): string[] => {
+  if (isSettingsUserAdmin(user)) return [...moduleKeys];
+  return user.allowedModules?.length ? user.allowedModules : [...DEFAULT_SETTINGS_USER_MODULE_KEYS];
+};
+
 export const canAccessSettingsFeature = (
   user: Pick<User, 'role' | 'allowedModules' | 'allowedSubModules' | 'adminModules' | 'adminSubModules'>,
   featureId: SettingsFeatureId,

@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { User, Role, Warehouse } from '../../types';
+import { User, Role, Warehouse, UserAccountLifecycleAction } from '../../types';
 import {
   Plus, MapPin, Shield, Mail, Phone, MoreVertical, RotateCcw, UserX,
   Search, ChevronDown, MessageCircle, Key, Edit, Calendar,
@@ -11,6 +11,7 @@ import {
 import UserModal from '../../components/UserModal';
 import UserAccountStatusModal from '../../components/UserAccountStatusModal';
 import { isChatEnabled } from '../../lib/featureFlags';
+import { getSettingsUserModuleKeys, isSettingsUserAdmin } from '../../lib/settingsPermissions';
 import { useToast } from '../../context/ToastContext';
 
 interface SettingsUsersProps {
@@ -74,6 +75,7 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [matchMode, setMatchMode] = useState<'exact' | 'contains'>('contains');
   const [activeTab, setActiveTab] = useState<'all' | 'admin' | 'online' | 'disabled' | 'logs'>('all');
+  const accountFilter = activeTab === 'disabled' ? 'disabled' : 'all';
   
   // Interactive UI Popover & Drawer states
   const [selectedUserForPopover, setSelectedUserForPopover] = useState<User | null>(null);
@@ -104,7 +106,7 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
   const stats = useMemo(() => {
     const total = users.length;
     const active = users.filter(u => u.isActive !== false && u.accountStatus !== 'DISABLED').length;
-    const admin = users.filter(u => u.role === Role.ADMIN || (u.adminModules && u.adminModules.length > 0)).length;
+    const admin = users.filter(isSettingsUserAdmin).length;
     const online = users.filter(u => u.isOnline !== false).length; // Default to online in demo/mock
     const disabled = total - active;
     return { total, active, admin, online, disabled };
@@ -114,13 +116,13 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
   const filteredUsers = useMemo(() => {
     return users.filter(u => {
       const isDisabled = u.accountStatus === 'DISABLED' || u.isActive === false;
-      const isAdmin = u.role === Role.ADMIN || (u.adminModules && u.adminModules.length > 0);
+      const isAdmin = isSettingsUserAdmin(u);
       const isOnline = u.isOnline !== false;
 
       // Tab filter
+      if (accountFilter === 'disabled' && !isDisabled) return false;
       if (activeTab === 'admin' && !isAdmin) return false;
       if (activeTab === 'online' && !isOnline) return false;
-      if (activeTab === 'disabled' && !isDisabled) return false;
 
       // Search query filter
       if (!searchQuery.trim()) return true;
@@ -142,7 +144,7 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
         position.includes(q)
       );
     });
-  }, [users, activeTab, searchQuery, matchMode]);
+  }, [users, activeTab, accountFilter, searchQuery, matchMode]);
 
   // Open Popover
   const handleOpenPopover = (e: React.MouseEvent, u: User) => {
@@ -175,6 +177,16 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
       toast.error('Lỗi phân vai trò', err.message || 'Không thể đổi vai trò.');
     }
   };
+
+  const getUserLifecycleAction = (targetUser: User): UserAccountLifecycleAction => {
+    const disabled = targetUser.accountStatus === 'DISABLED' || targetUser.isActive === false;
+    return targetUser.accountOperationStatus !== 'IDLE' && targetUser.accountOperationAction
+      ? targetUser.accountOperationAction
+      : disabled ? 'REACTIVATE' : 'DISABLE';
+  };
+
+  const lifecycleAction = selectedUserForPopover ? getUserLifecycleAction(selectedUserForPopover) : 'DISABLE';
+  const isLifecycleReactivate = lifecycleAction === 'REACTIVATE';
 
   return (
     <div className="space-y-4 animate-in slide-in-from-right-4 duration-300">
@@ -311,16 +323,14 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
               ) : (
                 filteredUsers.map(u => {
                   const disabled = u.accountStatus === 'DISABLED' || u.isActive === false;
-                  const isAdmin = u.role === Role.ADMIN || (u.adminModules && u.adminModules.length > 0);
+                  const isAdmin = isSettingsUserAdmin(u);
                   const isOnline = u.isOnline !== false;
                   const manager = users.find(m => m.id === u.managerId);
                   const username = u.username || u.email.split('@')[0];
                   const position = u.position || (u.role === Role.ADMIN ? 'Quản trị viên' : u.role === Role.WAREHOUSE_KEEPER ? 'Thủ kho' : 'Cán bộ');
                   
                   // Compute modules for app icons row
-                  const allowedMods = isAdmin 
-                    ? Object.keys(MODULE_BADGE_MAP) 
-                    : (u.allowedModules && u.allowedModules.length > 0 ? u.allowedModules : ['WMS', 'HRM', 'WF']);
+                  const allowedMods = getSettingsUserModuleKeys(u, Object.keys(MODULE_BADGE_MAP));
 
                   return (
                     <tr
@@ -562,19 +572,19 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
                   setSelectedUserForPopover(null);
                   openAccountAction(
                     targetUser,
-                    targetUser.accountStatus === 'DISABLED' || targetUser.isActive === false ? 'REACTIVATE' : 'DISABLE'
+                    lifecycleAction
                   );
                 }}
                 disabled={selectedUserForPopover.id === currentUser.id}
                 className={`w-full text-left px-3 py-1.5 rounded-lg flex items-center gap-2.5 font-medium transition ${
                   selectedUserForPopover.id === currentUser.id
                     ? 'text-slate-300 cursor-not-allowed'
-                    : selectedUserForPopover.accountStatus === 'DISABLED' || selectedUserForPopover.isActive === false
+                    : isLifecycleReactivate
                     ? 'text-emerald-600 hover:bg-emerald-50'
                     : 'text-red-600 hover:bg-red-50'
                 }`}
               >
-                {selectedUserForPopover.accountStatus === 'DISABLED' || selectedUserForPopover.isActive === false ? (
+                {isLifecycleReactivate ? (
                   <><RotateCcw className="w-3.5 h-3.5" /> Khôi phục tài khoản này</>
                 ) : (
                   <><UserX className="w-3.5 h-3.5" /> Vô hiệu hoá tài khoản này</>

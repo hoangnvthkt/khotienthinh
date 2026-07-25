@@ -14,7 +14,8 @@ describe('purchase order drawer regression guard', () => {
     expect(source).toContain('const [selectedPoId, setSelectedPoId]');
     expect(combinedSource).toContain('fixed inset-0 z-[1000]');
     expect(combinedSource).toContain('max-w-[min(1320px,calc(100vw-24px))]');
-    expect(source).toContain('Xử lý');
+    expect(source).toContain('const openPoDetail = (po: PurchaseOrder) => {');
+    expect(source).toContain('setSelectedPoId(po.id);');
     expect(source).toContain('PurchaseOrderCockpitDrawer');
 
     expect(source).not.toContain('const [expandedPoId, setExpandedPoId]');
