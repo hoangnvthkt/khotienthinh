@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { InventoryItem, PurchaseOrderDeliveryBatch, PurchaseOrderItem } from '../../types';
+import { calculateLineTotal } from '../poSpecsUtils';
+import { getPurchaseOrderReleaseSummary } from '../purchaseOrderReleaseApproval';
 import * as deliveryDraft from '../purchaseOrderDeliveryDraft';
 import {
   getPoDeliveryDraftInitialLineValues,
   getPoDeliveryScheduleLineInitialValues,
   makePoDeliveryLineDraft,
+  resolvePurchaseOrderItemsForScheduledPricing,
   shouldAutoCreatePoDeliveryScheduleForForm,
   syncPoItemPricesFromDeliverySchedule,
   syncPoItemsFromDeliverySchedule,
@@ -310,5 +313,51 @@ describe('purchaseOrderDeliveryDraft', () => {
 
     expect(synced.qty).toBe(16);
     expect(synced.unitPrice).toBe(0);
+  });
+
+  it('uses request PO delivery schedule prices before validating supplemental approval', () => {
+    const schedule: PurchaseOrderDeliveryBatch[] = [
+      {
+        id: 'batch-1',
+        purchaseOrderId: 'po-1',
+        deliveryNo: 1,
+        plannedDeliveryDate: '2026-07-25',
+        status: 'planned',
+        lines: [
+          {
+            id: 'line-1-b1',
+            deliveryBatchId: 'batch-1',
+            purchaseOrderId: 'po-1',
+            purchaseOrderLineId: 'line-1',
+            itemId: 'item-1',
+            plannedQty: 7000,
+            deliveryUnitPrice: 5600,
+          },
+        ],
+      },
+    ];
+
+    const [synced] = resolvePurchaseOrderItemsForScheduledPricing({
+      items: [{ ...poItem, qty: 7000, unitPrice: 0 }],
+      batches: schedule,
+      sourceMode: 'from_request',
+    });
+    const totalAmount = calculateLineTotal(synced);
+    const summary = getPurchaseOrderReleaseSummary({
+      id: 'po-1',
+      vendorId: 'vendor-1',
+      poNumber: 'PO-157',
+      items: [synced],
+      totalAmount,
+      approvedTotalAmount: totalAmount,
+      orderDate: '2026-07-25',
+      status: 'draft',
+      sourceMode: 'from_request',
+      createdAt: '2026-07-25T00:00:00.000Z',
+    }, schedule);
+
+    expect(totalAmount).toBe(39200000);
+    expect(summary.actualPlannedAmount).toBe(39200000);
+    expect(summary.overAmount).toBe(0);
   });
 });

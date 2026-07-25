@@ -200,3 +200,20 @@ export const syncPoItemPricesFromDeliverySchedule = (
     };
   });
 };
+
+export const resolvePurchaseOrderItemsForScheduledPricing = ({
+  items,
+  batches = [],
+  sourceMode,
+}: {
+  items: PurchaseOrderItem[];
+  batches?: PurchaseOrderDeliveryBatch[];
+  sourceMode?: PurchaseOrderSourceMode | null;
+}): PurchaseOrderItem[] => {
+  if (sourceMode !== 'from_request') return items;
+
+  return syncPoItemPricesFromDeliverySchedule(items, batches, {
+    emptyScheduleBehavior: 'zero_price',
+    unmatchedLineBehavior: 'zero_price',
+  });
+};

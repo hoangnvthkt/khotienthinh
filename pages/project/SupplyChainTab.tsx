@@ -126,6 +126,7 @@ import {
     getPoDeliveryDraftInitialLineValues,
     getPoDeliveryScheduleLineInitialValues,
     makePoDeliveryLineDraft as buildPoDeliveryLineDraft,
+    resolvePurchaseOrderItemsForScheduledPricing,
     shouldAutoCreatePoDeliveryScheduleForForm,
 } from '../../lib/purchaseOrderDeliveryDraft';
 import {
@@ -3376,7 +3377,20 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             toast.warning('PO chỉ nhận mã vật tư có trong hệ thống', `${uncodedItem.name || uncodedItem.itemNameSnapshot || uncodedItem.itemId || 'Dòng vật tư'} chưa có mã kho. Vui lòng tạo Đề xuất cấp mã vật tư/vật liệu trước.`);
             return;
         }
-        const validItems = preparedItems.filter(i => i.itemId && i.qty > 0 && i.sku && i.name);
+        const pricingBatches = getPoDeliveryBatchesForForm(
+            pDeliveryBatches,
+            preparedItems,
+            pExpDate,
+            editingPo?.id || '',
+            pSourceMode,
+            Boolean(editingPo),
+            pDeliveryScheduleMode,
+        );
+        const validItems = resolvePurchaseOrderItemsForScheduledPricing({
+            items: preparedItems,
+            batches: pricingBatches,
+            sourceMode: pSourceMode,
+        }).filter(i => i.itemId && i.qty > 0 && i.sku && i.name);
         if (validItems.length === 0) {
             toast.warning('Chưa có vật tư', 'Vui lòng chọn ít nhất một dòng vật tư có mã trong hệ thống và khối lượng đặt.');
             return;
@@ -5402,9 +5416,17 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         () => getPoDeliveryBatchesForForm(),
         [constructionSiteId, editingPo, inventoryItems, pDeliveryBatches, pDeliveryScheduleMode, pExpDate, pItems, pSourceMode, projectId, user?.id],
     );
+    const normalizedPItems = useMemo(
+        () => pItems.map(item => normalizePoItem(item, inventoryItems)),
+        [inventoryItems, pItems],
+    );
     const scheduledPItems = useMemo(
-        () => pItems.map(item => ({ ...item })),
-        [pItems],
+        () => resolvePurchaseOrderItemsForScheduledPricing({
+            items: normalizedPItems,
+            batches: poDeliveryBatchesForForm,
+            sourceMode: pSourceMode,
+        }),
+        [normalizedPItems, poDeliveryBatchesForForm, pSourceMode],
     );
     const scheduledPItemByLineKey = useMemo(() => {
         const map = new Map<string, PurchaseOrderItem>();
@@ -5412,8 +5434,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         return map;
     }, [scheduledPItems]);
     const poTotalCalc = scheduledPItems.reduce((sum, item) => {
-        const normalizedLine = normalizePoItem(item, inventoryItems);
-        const previewLine = pSourceMode === 'proactive_stock' ? normalizedLine : buildPoBudgetSnapshot(normalizedLine);
+        const previewLine = pSourceMode === 'proactive_stock' ? item : buildPoBudgetSnapshot(item);
         return sum + calculateLineTotal(previewLine);
     }, 0);
     const poReleaseSummaryPreview = useMemo(() => {
