@@ -1,0 +1,134 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { MaterialRequestFulfillmentMode } from '../../types';
+
+const supabaseMocks = vi.hoisted(() => ({
+  rpc: vi.fn(),
+}));
+
+vi.mock('../supabase', () => ({
+  supabase: {
+    rpc: supabaseMocks.rpc,
+  },
+}));
+
+import {
+  purchasePackageService,
+  type CreatePurchaseDeliveryInput,
+} from '../purchasePackageService';
+
+const commandResult = {
+  deliveryBatchId: 'batch-1',
+  deliveryNo: 1,
+  deliveryCode: 'PO01-01',
+  wmsTransactionId: 'tx-1',
+  qrToken: 'pod_batch_1',
+};
+
+const input: CreatePurchaseDeliveryInput = {
+  purchaseOrderId: 'po-1',
+  idempotencyKey: '11111111-1111-4111-8111-111111111111',
+  supplierId: 'vendor-1',
+  supplierNameSnapshot: 'NCC 1',
+  fulfillmentMode: MaterialRequestFulfillmentMode.RECEIVE_TO_STOCK,
+  vatRate: 10,
+  targetWarehouseId: 'warehouse-1',
+  plannedDeliveryDate: null,
+  note: null,
+  actorUserId: 'user-1',
+  lines: [{
+    purchaseOrderLineId: 'po-line-1',
+    itemId: 'item-1',
+    purchaseQty: 2,
+    purchaseUnit: 'kg',
+    stockQty: 2,
+    stockUnit: 'kg',
+    purchaseUnitPrice: 100,
+    stockUnitPrice: 100,
+  }],
+};
+
+describe('purchasePackageService', () => {
+  beforeEach(() => {
+    supabaseMocks.rpc.mockReset();
+  });
+
+  it('sends one create command containing delivery, WMS, and QR data', async () => {
+    supabaseMocks.rpc.mockResolvedValue({ data: commandResult, error: null });
+
+    const result = await purchasePackageService.createDelivery(input);
+
+    expect(supabaseMocks.rpc).toHaveBeenCalledWith('create_delivery_batch_with_wms_qr_v2', {
+      p_purchase_order_id: 'po-1',
+      p_idempotency_key: input.idempotencyKey,
+      p_supplier_id: 'vendor-1',
+      p_supplier_name: 'NCC 1',
+      p_fulfillment_mode: 'RECEIVE_TO_STOCK',
+      p_vat_rate: 10,
+      p_target_warehouse_id: 'warehouse-1',
+      p_planned_delivery_date: null,
+      p_note: null,
+      p_actor_user_id: 'user-1',
+      p_lines: input.lines,
+    });
+    expect(result).toEqual(commandResult);
+  });
+
+  it('updates the same unreceived delivery and WMS', async () => {
+    supabaseMocks.rpc.mockResolvedValue({ data: [commandResult], error: null });
+
+    await purchasePackageService.updateUnreceivedDelivery({
+      ...input,
+      vatRate: 8,
+      deliveryBatchId: 'batch-1',
+      wmsTransactionId: 'tx-1',
+    });
+
+    expect(supabaseMocks.rpc).toHaveBeenCalledWith(
+      'update_unreceived_delivery_batch_v2',
+      expect.objectContaining({
+        p_delivery_batch_id: 'batch-1',
+        p_wms_transaction_id: 'tx-1',
+        p_purchase_order_id: 'po-1',
+        p_idempotency_key: input.idempotencyKey,
+        p_vat_rate: 8,
+      }),
+    );
+  });
+
+  it('cancels an unreceived delivery with its actor and reason', async () => {
+    supabaseMocks.rpc.mockResolvedValue({ data: null, error: null });
+
+    await purchasePackageService.cancelUnreceivedDelivery({
+      deliveryBatchId: 'batch-1',
+      actorUserId: 'user-1',
+      reason: 'Nhà cung cấp giao sai hàng',
+    });
+
+    expect(supabaseMocks.rpc).toHaveBeenCalledWith('cancel_unreceived_delivery_batch_v2', {
+      p_delivery_batch_id: 'batch-1',
+      p_actor_user_id: 'user-1',
+      p_reason: 'Nhà cung cấp giao sai hàng',
+    });
+  });
+
+  it('surfaces RPC errors from cancel', async () => {
+    const error = new Error('cancel failed');
+    supabaseMocks.rpc.mockResolvedValue({ data: null, error });
+
+    await expect(purchasePackageService.cancelUnreceivedDelivery({
+      deliveryBatchId: 'batch-1',
+      actorUserId: 'user-1',
+      reason: 'Không còn nhu cầu',
+    })).rejects.toBe(error);
+  });
+
+  it('rejects an incomplete command result', async () => {
+    supabaseMocks.rpc.mockResolvedValue({
+      data: { deliveryBatchId: 'batch-1', wmsTransactionId: 'tx-1', qrToken: null },
+      error: null,
+    });
+
+    await expect(purchasePackageService.createDelivery(input))
+      .rejects.toThrow('Đợt giao, WMS hoặc QR chưa được tạo đầy đủ.');
+  });
+});

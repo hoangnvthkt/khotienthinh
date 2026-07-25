@@ -129,4 +129,101 @@ describe('poService Phase 3.3 workflow transitions', () => {
       p_note: 'ok',
     });
   });
+
+  it('maps purchase package v2 delivery fields from delivery schedule rows', async () => {
+    const batchOrder = vi.fn().mockResolvedValue({
+      data: [{
+        id: 'batch-1',
+        purchase_order_id: 'po-1',
+        project_id: 'project-1',
+        construction_site_id: 'site-1',
+        supplier_id: 'supplier-1',
+        supplier_name_snapshot: 'NCC 1',
+        delivery_no: 2,
+        planned_delivery_date: '2026-07-25',
+        status: 'receiving',
+        fulfillment_mode: 'RECEIVE_TO_STOCK',
+        vat_rate: '8',
+        qr_token: 'pod-token',
+        idempotency_key: '11111111-1111-4111-8111-111111111111',
+        quality_result: 'partial',
+        variance_reason: 'Thiếu 1 bao',
+        accepted_gross_amount: '90000',
+        fulfillment_batch_ids: [],
+        wms_transaction_id: 'tx-1',
+        supplemental_approval_id: null,
+        note: 'delivery note',
+      }],
+      error: null,
+    });
+    const batchIn = vi.fn().mockReturnValue({ order: batchOrder });
+    const batchSelect = vi.fn().mockReturnValue({ in: batchIn });
+    const lineOrder = vi.fn().mockResolvedValue({
+      data: [{
+        id: 'line-1',
+        delivery_batch_id: 'batch-1',
+        purchase_order_id: 'po-1',
+        purchase_order_line_id: 'po-line-1',
+        item_id: 'item-1',
+        planned_qty: '10',
+        accepted_qty: '9',
+        accepted_stock_qty: '9',
+        returned_qty: '1',
+        unit: 'Kg',
+        delivery_unit_price: '10000',
+        stock_planned_qty: '10',
+        stock_unit: 'Kg',
+      }],
+      error: null,
+    });
+    const lineIn = vi.fn().mockReturnValue({ order: lineOrder });
+    const lineSelect = vi.fn().mockReturnValue({ in: lineIn });
+    supabaseMock.from
+      .mockReturnValueOnce({ select: batchSelect })
+      .mockReturnValueOnce({ select: lineSelect });
+
+    const { poDeliveryScheduleService } = await import('../projectService');
+
+    const result = await poDeliveryScheduleService.listByPurchaseOrderIds(['po-1']);
+
+    expect(result['po-1'][0]).toEqual(expect.objectContaining({
+      supplierId: 'supplier-1',
+      supplierNameSnapshot: 'NCC 1',
+      vatRate: 8,
+      qrToken: 'pod-token',
+      idempotencyKey: '11111111-1111-4111-8111-111111111111',
+      qualityResult: 'partial',
+      varianceReason: 'Thiếu 1 bao',
+      acceptedGrossAmount: 90000,
+      wmsTransactionId: 'tx-1',
+    }));
+    expect(result['po-1'][0].lines[0]).toEqual(expect.objectContaining({
+      plannedQty: 10,
+      acceptedQty: 9,
+      acceptedStockQty: 9,
+      returnedQty: 1,
+      deliveryUnitPrice: 10000,
+      stockPlannedQty: 10,
+    }));
+  });
+
+  it('blocks PO-form replacement when an existing delivery batch was created by command/WMS/QR', async () => {
+    const eq = vi.fn().mockResolvedValue({
+      data: [{
+        id: 'batch-1',
+        status: 'cancelled',
+        idempotency_key: '11111111-1111-4111-8111-111111111111',
+        qr_token: null,
+        wms_transaction_id: null,
+      }],
+      error: null,
+    });
+    const select = vi.fn().mockReturnValue({ eq });
+    supabaseMock.from.mockReturnValueOnce({ select });
+    const { poDeliveryScheduleService } = await import('../projectService');
+
+    await expect(poDeliveryScheduleService.replaceForPurchaseOrder({ id: 'po-1' } as any, []))
+      .rejects.toThrow('command/WMS/QR');
+    expect(supabaseMock.from).toHaveBeenCalledTimes(1);
+  });
 });

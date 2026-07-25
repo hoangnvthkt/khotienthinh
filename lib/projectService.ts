@@ -722,9 +722,22 @@ const poDeliveryBatchToDb = (batch: PurchaseOrderDeliveryBatch): any => {
         purchaseOrderId: batch.purchaseOrderId,
         projectId: batch.projectId || null,
         constructionSiteId: batch.constructionSiteId || null,
+        supplierId: batch.supplierId || null,
+        supplierNameSnapshot: batch.supplierNameSnapshot || null,
         deliveryNo: Number(batch.deliveryNo || 1),
         plannedDeliveryDate: batch.plannedDeliveryDate || null,
         status: batch.status || 'planned',
+        fulfillmentMode: batch.fulfillmentMode || null,
+        vatRate: Number(batch.vatRate || 0),
+        qrToken: batch.qrToken || null,
+        idempotencyKey: batch.idempotencyKey || null,
+        qualityResult: batch.qualityResult || null,
+        varianceReason: batch.varianceReason || null,
+        qualityApprovedBy: batch.qualityApprovedBy || null,
+        qualityApprovedAt: batch.qualityApprovedAt || null,
+        receivedBy: batch.receivedBy || null,
+        receivedAt: batch.receivedAt || null,
+        acceptedGrossAmount: Number(batch.acceptedGrossAmount || 0),
         fulfillmentBatchIds: batch.fulfillmentBatchIds || [],
         wmsTransactionId: batch.wmsTransactionId || null,
         supplementalApprovalId: batch.supplementalApprovalId || null,
@@ -745,6 +758,9 @@ const poDeliveryLineToDb = (line: PurchaseOrderDeliveryLine): any => {
         purchaseOrderLineId: line.purchaseOrderLineId,
         itemId: line.itemId,
         plannedQty: Number(line.plannedQty || 0),
+        acceptedQty: Number(line.acceptedQty || 0),
+        acceptedStockQty: Number(line.acceptedStockQty || 0),
+        returnedQty: Number(line.returnedQty || 0),
         unit: line.unit || null,
         deliveryUnitPrice: Number(line.deliveryUnitPrice || 0),
         stockPlannedQty: Number(line.stockPlannedQty || 0),
@@ -760,11 +776,22 @@ const poDeliveryBatchFromRows = (batch: any, lineRows: any[]): PurchaseOrderDeli
     fulfillmentBatchIds: batch.fulfillment_batch_ids || [],
     wmsTransactionId: batch.wms_transaction_id || null,
     supplementalApprovalId: batch.supplemental_approval_id || null,
+    supplierId: batch.supplier_id || null,
+    supplierNameSnapshot: batch.supplier_name_snapshot || null,
     deliveryNo: Number(batch.delivery_no || 1),
     status: (batch.status || 'planned') as PurchaseOrderDeliveryBatch['status'],
+    vatRate: Number(batch.vat_rate || 0),
+    qrToken: batch.qr_token || null,
+    idempotencyKey: batch.idempotency_key || null,
+    qualityResult: batch.quality_result || null,
+    varianceReason: batch.variance_reason || null,
+    acceptedGrossAmount: Number(batch.accepted_gross_amount || 0),
     lines: lineRows.map(row => ({
         ...(fromDb(row) as PurchaseOrderDeliveryLine),
         plannedQty: Number(row.planned_qty || 0),
+        acceptedQty: Number(row.accepted_qty || 0),
+        acceptedStockQty: Number(row.accepted_stock_qty || 0),
+        returnedQty: Number(row.returned_qty || 0),
         deliveryUnitPrice: Number(row.delivery_unit_price || 0),
         stockPlannedQty: Number(row.stock_planned_qty || 0),
     })),
@@ -1275,15 +1302,18 @@ export const poDeliveryScheduleService = {
     async replaceForPurchaseOrder(po: PurchaseOrder, batches: PurchaseOrderDeliveryBatch[]): Promise<void> {
         const { data: existingRows, error: existingError } = await supabase
             .from('purchase_order_delivery_batches')
-            .select('id,status')
+            .select('id,status,idempotency_key,qr_token,wms_transaction_id')
             .eq('purchase_order_id', po.id);
         if (existingError) {
             if (existingError.code === '42P01') return;
             throw existingError;
         }
-        const lockedBatch = (existingRows || []).find(row => !['planned', 'supplemental_pending', 'cancelled'].includes(row.status));
+        const lockedBatch = (existingRows || []).find(row =>
+            row.idempotency_key || row.qr_token || row.wms_transaction_id ||
+            !['planned', 'supplemental_pending', 'cancelled'].includes(row.status)
+        );
         if (lockedBatch) {
-            throw new Error('PO đã có đợt giao tạo WMS/đã nhận nên không thể thay lịch giao từ form PO. Vui lòng huỷ hoặc xử lý đợt giao hiện tại trước.');
+            throw new Error('PO đã có đợt giao tạo bằng command/WMS/QR nên không thể thay lịch giao từ form PO. Vui lòng xử lý đợt giao hiện tại trước.');
         }
 
         const { error: deleteError } = await supabase
