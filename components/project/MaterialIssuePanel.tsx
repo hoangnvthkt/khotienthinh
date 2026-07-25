@@ -571,6 +571,7 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
           };
         }),
       });
+      setExpandedOrderIds(prev => new Set([...prev, created.id]));
       toast.success('Đã tạo phiếu xuất cấp', `${created.issueNo} đang chờ kho xuất duyệt.`);
       resetCreateForm();
       await Promise.all([
@@ -584,6 +585,7 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
       onChanged?.();
     } catch (error) {
       logApiError('materialIssueService.createAndSubmit', error);
+      void loadOrders();
       toast.error('Không thể tạo phiếu xuất cấp', getApiErrorMessage(error, 'Vui lòng kiểm tra quyền và dữ liệu.'));
     } finally {
       setSubmitting(false);

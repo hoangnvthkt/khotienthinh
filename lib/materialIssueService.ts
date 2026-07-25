@@ -238,18 +238,10 @@ export const materialIssueService = {
       p_needed_date: normalizeDate(input.neededDate),
       p_note: input.note || null,
       p_lines: input.lines,
+      p_recipient_source_type: input.recipientSourceType || null,
+      p_recipient_source_id: input.recipientSourceId || null,
     });
     if (error) throw error;
-    if (input.recipientSourceType && input.recipientSourceId) {
-      const { error: sourceError } = await supabase
-        .from(ORDER_TABLE)
-        .update({
-          recipient_source_type: input.recipientSourceType,
-          recipient_source_id: input.recipientSourceId,
-        })
-        .eq('id', data);
-      if (sourceError) throw sourceError;
-    }
     return orderOrThrow(data);
   },
 
