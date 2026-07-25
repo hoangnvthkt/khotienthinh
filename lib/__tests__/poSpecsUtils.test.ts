@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatPoApprovalLineDetails } from '../poSpecsUtils';
+import { calculateLineTotal, formatPoApprovalLineDetails, getSpecNumeric } from '../poSpecsUtils';
 import type { PurchaseOrderItem } from '../../types';
 
 const makePoItem = (patch: Partial<PurchaseOrderItem>): PurchaseOrderItem => ({
@@ -41,5 +41,23 @@ describe('poSpecsUtils', () => {
     });
 
     expect(formatPoApprovalLineDetails(item)).toEqual([]);
+  });
+
+  it('parses Vietnamese number text in dynamic PO specs', () => {
+    expect(getSpecNumeric({ length: { value: '1.500', unit: 'mm' } }, 'length')).toBe(1500);
+    expect(getSpecNumeric({ weight: { value: '2,5', unit: 'kg' } }, 'weight')).toBe(2.5);
+  });
+
+  it('uses localized numeric specs when calculating PO line totals', () => {
+    const item = makePoItem({
+      qty: 2,
+      unitPrice: 10000,
+      pricingMode: 'by_weight',
+      specs: {
+        weight: { value: '2,5', label: 'Trong luong', unit: 'kg' },
+      },
+    });
+
+    expect(calculateLineTotal(item)).toBe(50000);
   });
 });

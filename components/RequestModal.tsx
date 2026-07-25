@@ -46,6 +46,7 @@ import { materialRequestFulfillmentService, getCommittedQty, getRequestLineId } 
 import { buildFulfillmentBatchReceiveUrl } from '../lib/fulfillmentBatchQr';
 import { formatReservationSourceList } from '../lib/inventoryStockGuard';
 import { getMaterialIssueDraftQty } from '../lib/materialRequestIssueDraft';
+import { formatLocaleDecimalInput, parseNonNegativeLocaleNumber } from '../lib/localeNumberInput';
 import { BoqSummaryStrip } from './erp';
 
 const ScannerModal = React.lazy(() => import('./ScannerModal'));
@@ -174,7 +175,7 @@ export type MaterialRequestInitialDraft = {
 type RequestLineDraft = {
     lineId: string;
     itemId: string;
-    qty: number;
+    qty: number | string;
     workBoqItemId?: string | null;
     workBoqItemName?: string | null;
     materialBudgetItemId?: string | null;
@@ -325,7 +326,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
     const [fulfillmentMode, setFulfillmentMode] = useState<MaterialRequestFulfillmentMode>(MaterialRequestFulfillmentMode.RECEIVE_TO_STOCK);
     const [overrideReason, setOverrideReason] = useState('');
     const [reqItems, setReqItems] = useState<RequestLineDraft[]>([]);
-    const [approvedItems, setApprovedItems] = useState<{ lineId?: string, itemId: string, qty: number }[]>([]);
+    const [approvedItems, setApprovedItems] = useState<{ lineId?: string, itemId: string, qty: number, qtyInput?: string }[]>([]);
     const [selectedWorkBoqItemIds, setSelectedWorkBoqItemIds] = useState<Set<string>>(() => new Set());
     const [boqSectionExpanded, setBoqSectionExpanded] = useState(false);
     const [draftWorkBoqSearch, setDraftWorkBoqSearch] = useState('');
@@ -491,7 +492,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
         if (!materialBudgetItemId) return 0;
         return reqItems
             .filter(line => line.lineId !== excludeLineId && line.materialBudgetItemId === materialBudgetItemId)
-            .reduce((sum, line) => sum + Number(line.qty || 0), 0);
+            .reduce((sum, line) => sum + parseNonNegativeLocaleNumber(line.qty), 0);
     };
 
     const buildLineBudgetSnapshot = (line: RequestLineDraft, excludeRequestId?: string, draftBeforeQtyOverride?: number) => {
@@ -501,7 +502,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
         const draftRequested = draftBeforeQtyOverride ?? getDraftRequestedQty(line.materialBudgetItemId, line.lineId);
         const budgetQty = reservation.budgetQty;
         const reservedBeforeQty = previousRequested + draftRequested;
-        const totalRequested = reservedBeforeQty + Number(line.qty || 0);
+        const totalRequested = reservedBeforeQty + parseNonNegativeLocaleNumber(line.qty);
         const overBeforeQty = budgetQty > 0 ? Math.max(0, reservedBeforeQty - budgetQty) : 0;
         const overAfterQty = budgetQty > 0 ? Math.max(0, totalRequested - budgetQty) : 0;
         const overBudgetQty = Math.max(0, overAfterQty - overBeforeQty);
@@ -525,7 +526,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
             const budgetId = line.materialBudgetItemId || '';
             const draftBeforeQty = budgetId ? runningDraftQtyByBudget.get(budgetId) || 0 : 0;
             const snapshot = buildLineBudgetSnapshot(line, excludeRequestId, draftBeforeQty);
-            if (budgetId) runningDraftQtyByBudget.set(budgetId, draftBeforeQty + Number(line.qty || 0));
+            if (budgetId) runningDraftQtyByBudget.set(budgetId, draftBeforeQty + parseNonNegativeLocaleNumber(line.qty));
             return [line.lineId, snapshot] as const;
         }));
     };
@@ -534,7 +535,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
         const reservation = getBudgetReservationSnapshot(materialBudgetItemId, excludeRequestId);
         const draftRequested = getDraftRequestedQty(materialBudgetItemId);
         const reservedBeforeQty = reservation.reservedQty + draftRequested;
-        const totalRequested = reservedBeforeQty + Number(currentQty || 0);
+        const totalRequested = reservedBeforeQty + parseNonNegativeLocaleNumber(currentQty);
         const budgetQty = reservation.budgetQty;
         const overBeforeQty = budgetQty > 0 ? Math.max(0, reservedBeforeQty - budgetQty) : 0;
         const overAfterQty = budgetQty > 0 ? Math.max(0, totalRequested - budgetQty) : 0;
@@ -578,7 +579,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
         return {
             lineId: crypto.randomUUID(),
             itemId: inventoryItem.id,
-            qty: Math.max(0, Number(qty || 0)),
+            qty: parseNonNegativeLocaleNumber(qty),
             workBoqItemId: budget.workBoqItemId || initialDraft?.workBoqItemId || null,
             workBoqItemName: work?.name || '',
             materialBudgetItemId: budget.id,
@@ -605,7 +606,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
         return {
             lineId: crypto.randomUUID(),
             itemId: inventoryItem.id,
-            qty: Math.max(0, Number(line.qty || 0)),
+            qty: parseNonNegativeLocaleNumber(line.qty),
             workBoqItemId: initialDraft?.workBoqItemId || null,
             workBoqItemName: '',
             materialBudgetItemId: null,
@@ -819,7 +820,12 @@ const RequestModal: React.FC<RequestModalProps> = ({
                 setFulfillmentMode(request.fulfillmentMode || MaterialRequestFulfillmentMode.RECEIVE_TO_STOCK);
                 setOverrideReason(request.overrideReason || '');
                 setReqItems(request.items.map(toDraftLine));
-                setApprovedItems(request.items.map(i => ({ lineId: i.lineId, itemId: i.itemId, qty: i.approvedQty })));
+                setApprovedItems(request.items.map(i => ({
+                    lineId: i.lineId,
+                    itemId: i.itemId,
+                    qty: i.approvedQty,
+                    qtyInput: formatLocaleDecimalInput(i.approvedQty, 6),
+                })));
             } else {
                 setStep('CREATE');
                 setSiteWarehouseId(defaultSiteWarehouseId || user.assignedWarehouseId || '');
@@ -889,30 +895,40 @@ const RequestModal: React.FC<RequestModalProps> = ({
         setReqItems(newItems);
     };
 
-    const handleUpdateApprovedItem = (line: RequestItem, qty: number) => {
+    const getApprovedItemDraft = (line: RequestItem) =>
+        approvedItems.find(i => (line.lineId && i.lineId === line.lineId) || (!line.lineId && i.itemId === line.itemId));
+
+    const getApprovedQtyInput = (line: RequestItem, fallbackQty: number) =>
+        getApprovedItemDraft(line)?.qtyInput ?? formatLocaleDecimalInput(fallbackQty, 6);
+
+    const handleUpdateApprovedItem = (line: RequestItem, rawQty: unknown) => {
         const itemId = line.itemId;
         const item = items.find(i => i.id === itemId);
         const stockSummary = getAggregateStockSummary(itemId, sourceWarehouseId, request?.id);
         const availableStock = stockSummary.available;
         const sourceStock = line.isManualItem || !item ? 0 : (isProjectRequest || isAdmin(user) ? Number.MAX_SAFE_INTEGER : availableStock);
+        let qty = parseNonNegativeLocaleNumber(rawQty);
+        let qtyInput = String(rawQty ?? '');
 
         if (line.isManualItem || !item) {
             toast.warning('Dòng chưa có mã kho', 'Vui lòng tạo đề xuất cấp mã vật tư/vật liệu trước khi duyệt xuất hoặc đặt hàng.');
             qty = 0;
+            qtyInput = '0';
         }
 
         // Ràng buộc 1: Không vượt quá tồn kho
         if (!isProjectRequest && qty > sourceStock) {
             toast.warning('Vượt tồn khả dụng', `${sourceWarehouseId ? 'Kho nguồn' : 'Tổng các kho'} chỉ còn ${sourceStock} ${item?.unit || line.unitSnapshot || ''}.`);
             qty = sourceStock;
+            qtyInput = formatLocaleDecimalInput(qty, 6);
         }
 
         setApprovedItems(prev => {
             const existing = prev.find(i => (line.lineId && i.lineId === line.lineId) || (!line.lineId && i.itemId === itemId));
             if (existing) {
-                return prev.map(i => ((line.lineId && i.lineId === line.lineId) || (!line.lineId && i.itemId === itemId)) ? { ...i, qty } : i);
+                return prev.map(i => ((line.lineId && i.lineId === line.lineId) || (!line.lineId && i.itemId === itemId)) ? { ...i, qty, qtyInput } : i);
             }
-            return [...prev, { lineId: line.lineId, itemId, qty }];
+            return [...prev, { lineId: line.lineId, itemId, qty, qtyInput }];
         });
     };
 
@@ -976,7 +992,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                 missingInventory.push(budget.itemName);
                 return;
             }
-            const qty = Math.max(0, Number(draftBudgetQtyById[budget.id] || 0));
+            const qty = parseNonNegativeLocaleNumber(draftBudgetQtyById[budget.id]);
             if (qty <= 0) {
                 missingQty.push(budget.itemName);
                 return;
@@ -1017,7 +1033,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                             : line.note;
                         return {
                             ...line,
-                            qty: Number(line.qty || 0) + qty,
+                            qty: parseNonNegativeLocaleNumber(line.qty) + qty,
                             neededDate: draftNeededDate || line.neededDate,
                             note: nextNote,
                         };
@@ -1180,7 +1196,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                 return {
                     lineId: i.lineId,
                     itemId: i.itemId,
-                    requestQty: Number(i.qty),
+                    requestQty: parseNonNegativeLocaleNumber(i.qty),
                     approvedQty: 0,
                     workBoqItemId: i.workBoqItemId || null,
                     workBoqItemName: i.workBoqItemName || work?.name || null,
@@ -1226,7 +1242,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
             return false;
         }
 
-        const invalidQtyLine = reqItems.find(line => Number(line.qty || 0) <= 0);
+        const invalidQtyLine = reqItems.find(line => parseNonNegativeLocaleNumber(line.qty) <= 0);
         if (invalidQtyLine) {
             const item = items.find(i => i.id === invalidQtyLine.itemId);
             toast.warning('Thiếu khối lượng đề xuất', `${item?.name || invalidQtyLine.itemNameSnapshot || invalidQtyLine.itemId} cần nhập số lượng lớn hơn 0.`);
@@ -1250,11 +1266,11 @@ const RequestModal: React.FC<RequestModalProps> = ({
         const shortages = sourceWarehouseId ? reqItems
             .filter(line => !line.isManualItem && !!getLineInventory(line.itemId))
             .map(line => ({ ...line, summary: getStockSummary(line.itemId, sourceWarehouseId) }))
-            .filter(line => Number(line.qty) > line.summary.available) : [];
+            .filter(line => parseNonNegativeLocaleNumber(line.qty) > line.summary.available) : [];
         if (!isProjectRequest && shortages.length > 0) {
             const shortageText = shortages.map(line => {
                 const item = getLineInventory(line.itemId);
-                const missing = Number(line.qty) - line.summary.available;
+                const missing = parseNonNegativeLocaleNumber(line.qty) - line.summary.available;
                 return `${item?.name || line.itemId}: khả dụng ${line.summary.available}, thiếu ${missing}`;
             }).join('\n');
             const ok = await confirm({
@@ -1639,7 +1655,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
             return;
         }
         const validLines = issueLines
-            .map(line => ({ ...line, issuedQty: Number(line.qty || 0) }))
+            .map(line => ({ ...line, issuedQty: parseNonNegativeLocaleNumber(line.qty) }))
             .filter(line => line.issuedQty > 0);
         if (validLines.length === 0) {
             toast.warning('Thiếu số lượng cấp', 'Vui lòng nhập ít nhất một dòng có số lượng cấp lớn hơn 0.');
@@ -1726,7 +1742,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
         }
 
         const draft = receiveLines.find(line => line.lineId === batchLine.id);
-        const quantity = Number(draft?.qty || 0);
+        const quantity = parseNonNegativeLocaleNumber(draft?.qty);
         const reason = draft?.reason?.trim() || '';
 
         if (!Number.isFinite(quantity) || quantity < 0) {
@@ -1806,7 +1822,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
         }
         const hasVariance = receivingBatch.lines.some(line => {
             const draft = receiveLines.find(item => item.lineId === line.id);
-            return Number(draft?.qty || 0) !== Number(line.issuedQty || 0);
+            return parseNonNegativeLocaleNumber(draft?.qty) !== Number(line.issuedQty || 0);
         });
         const ok = await confirm({
             title: 'Xác nhận thực nhận đợt cấp',
@@ -1831,7 +1847,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                 allowOverCommit: isAdmin(user),
                 lines: receiveLines.map(line => ({
                     lineId: line.lineId,
-                    receivedQty: Number(line.qty || 0),
+                    receivedQty: parseNonNegativeLocaleNumber(line.qty),
                     varianceReason: line.reason.trim() || undefined,
                 })),
             });
@@ -2426,7 +2442,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
             : itemId
                 ? `item:${itemId}`
                 : `name:${(row.materialBudgetItemName || name || '').toLowerCase()}::${unit || ''}`;
-        const requestQty = isEditable ? Number((row as RequestLineDraft).qty || 0) : Number((row as RequestItem).requestQty || 0);
+        const requestQty = isEditable ? parseNonNegativeLocaleNumber((row as RequestLineDraft).qty) : Number((row as RequestItem).requestQty || 0);
         const lineId = row.lineId;
         const requestLineId = request && !isEditable ? getRequestLineId(request, row as RequestItem, index) : lineId;
         const lineFulfillment = requestLineId ? fulfillmentLineSummaryMap.get(requestLineId) : undefined;
@@ -2948,7 +2964,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
 		                                        ) : (
 		                                            budgetOptions.map(item => {
 		                                                const checked = selectedMaterialBudgetIds.has(item.id);
-		                                                const reservation = getNewLineBudgetSnapshot(item.id, Number(draftBudgetQtyById[item.id] || 0), request?.id);
+			                                                const reservation = getNewLineBudgetSnapshot(item.id, parseNonNegativeLocaleNumber(draftBudgetQtyById[item.id]), request?.id);
 		                                                const inventoryItem = getBudgetInventoryItem(item);
 		                                                const work = item.workBoqItemId ? workBoqMap.get(item.workBoqItemId) : undefined;
 		                                                const overQty = Math.max(0, reservation.totalRequested - reservation.budgetQty);
@@ -2986,9 +3002,9 @@ const RequestModal: React.FC<RequestModalProps> = ({
 	                                                                </div>
 	                                                            </div>
 	                                                        </div>
-	                                                        <input
-	                                                            type="number"
-	                                                            min={0}
+		                                                        <input
+		                                                            type="text"
+		                                                            inputMode="decimal"
 	                                                            value={draftBudgetQtyById[item.id] || ''}
 	                                                            onChange={event => {
 	                                                                const value = event.target.value;
@@ -3115,7 +3131,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                                                 <BoqSummaryStrip
                                                                                     budgetQty={budgetSnapshot.budgetQty}
                                                                                     reservedQty={budgetSnapshot.reservedBeforeQty}
-                                                                                    currentQty={Number((primaryRow as RequestLineDraft).qty || 0)}
+                                                                                    currentQty={parseNonNegativeLocaleNumber((primaryRow as RequestLineDraft).qty)}
                                                                                     availableQty={budgetSnapshot.availableQty}
                                                                                     overBudgetQty={budgetSnapshot.overBudgetQty}
                                                                                     unit={budgetSnapshot.budget?.unit}
@@ -3141,9 +3157,10 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                 <td className="p-4 text-center text-muted-foreground font-medium">{group.unit || '-'}</td>
                                                 <td className="p-4 text-right">
                                                     {canEditGroupQty ? (
-                                                        <input
-                                                            type="number" min="1"
-                                                            value={primary.requestQty}
+	                                                        <input
+	                                                            type="text"
+	                                                            inputMode="decimal"
+	                                                            value={(primaryRow as RequestLineDraft).qty ?? ''}
                                                             onChange={(e) => handleUpdateItem(primary.index, 'qty', e.target.value)}
                                                             className="w-28 text-right px-3 py-2 border border-border bg-card text-foreground rounded-xl font-bold text-sm"
                                                         />
@@ -3164,10 +3181,11 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                         <td className="p-4 text-right">
                                                             {canEditGroupApproval ? (
                                                                 <div className="flex flex-col items-end">
-                                                                    <input
-                                                                        type="number" min="0" max={!isProjectRequest && itemInfo ? sourceStock : undefined}
-                                                                        value={primary.approvedQty}
-                                                                        onChange={(e) => handleUpdateApprovedItem(primaryRow as RequestItem, Number(e.target.value))}
+	                                                                    <input
+	                                                                        type="text"
+	                                                                        inputMode="decimal"
+	                                                                        value={getApprovedQtyInput(primaryRow as RequestItem, primary.approvedQty)}
+	                                                                        onChange={(e) => handleUpdateApprovedItem(primaryRow as RequestItem, e.target.value)}
                                                                         className={`w-20 text-right p-1 border rounded font-bold bg-card text-foreground focus:ring-2 outline-none transition-colors ${group.isExcess ? 'border-orange-400 text-orange-700 dark:text-orange-400 focus:ring-orange-500' : 'border-emerald-250 text-emerald-705 focus:ring-emerald-500'}`}
                                                                     />
                                                                     {group.isExcess && <span className="text-[9px] text-orange-600 dark:text-orange-400 font-bold mt-1 uppercase">Duyệt vượt mức</span>}
@@ -3222,9 +3240,10 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                                         <div className="col-span-6 md:col-span-2 text-right">
                                                                             <div className="text-[9px] uppercase font-bold text-muted-foreground">Số lượng</div>
                                                                             {isEditable ? (
-                                                                                <input
-                                                                                    type="number" min="1"
-                                                                                    value={source.requestQty}
+	                                                                                <input
+	                                                                                    type="text"
+	                                                                                    inputMode="decimal"
+	                                                                                    value={(sourceRow as RequestLineDraft).qty ?? ''}
                                                                                     onChange={(e) => handleUpdateItem(source.index, 'qty', e.target.value)}
                                                                                     className="mt-1 w-20 text-right p-1 border border-border bg-card text-foreground rounded font-bold"
                                                                                 />
@@ -3337,7 +3356,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                     <BoqSummaryStrip
                                                         budgetQty={budgetSnapshot.budgetQty}
                                                         reservedQty={budgetSnapshot.reservedBeforeQty}
-                                                        currentQty={Number((primaryRow as RequestLineDraft).qty || 0)}
+                                                        currentQty={parseNonNegativeLocaleNumber((primaryRow as RequestLineDraft).qty)}
                                                         availableQty={budgetSnapshot.availableQty}
                                                         overBudgetQty={budgetSnapshot.overBudgetQty}
                                                         unit={budgetSnapshot.budget?.unit}
@@ -3365,9 +3384,10 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                         <div className="flex-1">
                                             <div className="text-[9px] uppercase font-bold text-muted-foreground mb-0.5">SL yêu cầu</div>
                                             {canEditGroupQty ? (
-                                                <input
-                                                    type="number" min="1"
-                                                    value={primary.requestQty}
+	                                                <input
+	                                                    type="text"
+	                                                    inputMode="decimal"
+	                                                    value={(primaryRow as RequestLineDraft).qty ?? ''}
                                                     onChange={(e) => handleUpdateItem(primary.index, 'qty', e.target.value)}
                                                     className="w-full text-center p-2 border border-border bg-card text-foreground rounded-lg font-bold text-sm"
                                                 />
@@ -3386,10 +3406,11 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                             <div className="flex-1">
                                                 <div className="text-[9px] uppercase font-bold text-emerald-500 mb-0.5">Duyệt</div>
                                                 {canEditGroupApproval ? (
-                                                    <input
-                                                        type="number" min="0" max={!isProjectRequest && itemInfo ? sourceStock : undefined}
-                                                        value={primary.approvedQty}
-                                                        onChange={(e) => handleUpdateApprovedItem(primaryRow as RequestItem, Number(e.target.value))}
+	                                                    <input
+	                                                        type="text"
+	                                                        inputMode="decimal"
+	                                                        value={getApprovedQtyInput(primaryRow as RequestItem, primary.approvedQty)}
+	                                                        onChange={(e) => handleUpdateApprovedItem(primaryRow as RequestItem, e.target.value)}
                                                         className={`w-full text-center p-2 border rounded-lg font-bold bg-card text-foreground text-sm ${group.isExcess ? 'border-orange-400 text-orange-700 dark:text-orange-450' : 'border-emerald-250 text-emerald-705'}`}
                                                     />
                                                 ) : (
@@ -3430,9 +3451,10 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                             <div className="flex-1">
                                                                 <div className="text-[9px] uppercase font-bold text-muted-foreground">Số lượng</div>
                                                                 {isEditable ? (
-                                                                    <input
-                                                                        type="number" min="1"
-                                                                        value={source.requestQty}
+	                                                                    <input
+	                                                                        type="text"
+	                                                                        inputMode="decimal"
+	                                                                        value={(sourceRow as RequestLineDraft).qty ?? ''}
                                                                         onChange={(e) => handleUpdateItem(source.index, 'qty', e.target.value)}
                                                                         className="mt-1 w-full text-center p-1.5 border border-border bg-card text-foreground rounded-lg font-bold text-sm"
                                                                     />
@@ -3717,8 +3739,8 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                     <td className="p-3 text-right font-bold text-blue-600">{onHand.toLocaleString('vi-VN')}</td>
                                                     <td className="p-3 text-right">
                                                         <input
-                                                            type="number"
-                                                            min={0}
+                                                            type="text"
+                                                            inputMode="decimal"
                                                             value={line.qty}
                                                             onChange={event => updateIssueLine(line.requestLineId, { qty: event.target.value })}
                                                             className="w-24 rounded-lg border border-indigo-200 dark:border-indigo-800/40 bg-card px-2 py-1 text-right font-black text-indigo-700 dark:text-indigo-400 outline-none focus:ring-2 focus:ring-indigo-300"
@@ -4069,7 +4091,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                         {receivingBatch.lines.map(line => {
                                             const requestLine = request.items.find((item, index) => getRequestLineId(request, item, index) === line.requestLineId);
                                             const draft = receiveLines.find(item => item.lineId === line.id);
-                                            const draftQty = Number(draft?.qty || 0);
+                                            const draftQty = parseNonNegativeLocaleNumber(draft?.qty);
                                             const unitPrice = Number(line.deliveryUnitPrice || 0);
                                             return (
                                                 <tr key={line.id}>
@@ -4078,8 +4100,8 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                     <td className="p-3 text-right font-bold text-muted-foreground">{unitPrice > 0 ? `${unitPrice.toLocaleString('vi-VN')} đ` : '-'}</td>
                                                     <td className="p-3 text-right">
                                                         <input
-                                                            type="number"
-                                                            min={0}
+                                                            type="text"
+                                                            inputMode="decimal"
                                                             value={draft?.qty || '0'}
                                                             onChange={event => updateReceiveLine(line.id, { qty: event.target.value })}
                                                             className={`w-24 rounded-lg border bg-card px-2 py-1 text-right font-black outline-none focus:ring-2 ${

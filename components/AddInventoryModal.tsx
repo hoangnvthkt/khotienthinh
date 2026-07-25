@@ -7,12 +7,49 @@ import { getApiErrorMessage, logApiError } from '../lib/apiError';
 import { partnerService } from '../lib/partnerService';
 import { supplierPartnerBridge } from '../lib/supplierPartnerBridge';
 import { matchesSearchQueryMultiple } from '../lib/searchUtils';
+import { parseNonNegativeLocaleNumber } from '../lib/localeNumberInput';
 
 interface AddInventoryModalProps {
   isOpen: boolean;
   onClose: () => void;
   onAdd: (item: InventoryItem) => void | Promise<void>;
 }
+
+type LocaleNumberDraft = number | string;
+
+type AddInventoryFormData = {
+  sku: string;
+  name: string;
+  category: string;
+  unit: string;
+  purchaseUnit: string;
+  purchaseConversionFactor: LocaleNumberDraft;
+  supplierId: string;
+  priceIn: LocaleNumberDraft;
+  priceOut: LocaleNumberDraft;
+  minStock: LocaleNumberDraft;
+  defaultLeadTimeDays: LocaleNumberDraft;
+  location: string;
+  initialWarehouseId: string;
+  initialStock: LocaleNumberDraft;
+};
+
+const makeInitialFormData = (): AddInventoryFormData => ({
+  sku: '',
+  name: '',
+  category: '',
+  unit: '',
+  purchaseUnit: '',
+  purchaseConversionFactor: 1,
+  supplierId: '',
+  priceIn: 0,
+  priceOut: 0,
+  minStock: 0,
+  defaultLeadTimeDays: 7,
+  location: '',
+  initialWarehouseId: '',
+  initialStock: 0,
+});
 
 const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, onAdd }) => {
   const { warehouses, categories, units, user, addTransaction, logActivity } = useApp();
@@ -23,22 +60,7 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
   const [supplierOpen, setSupplierOpen] = useState(false);
   const [supplierLoading, setSupplierLoading] = useState(false);
 
-  const [formData, setFormData] = useState({
-    sku: '',
-    name: '',
-    category: '',
-    unit: '',
-    purchaseUnit: '', // Đơn vị mua (KG, Tấn...) - để trống nếu giống đơn vị tồn kho
-    purchaseConversionFactor: 1,
-    supplierId: '',
-    priceIn: 0,
-    priceOut: 0,
-    minStock: 0,
-    defaultLeadTimeDays: 7,
-    location: '',
-    initialWarehouseId: '',
-    initialStock: 0,
-  });
+  const [formData, setFormData] = useState<AddInventoryFormData>(() => makeInitialFormData());
 
   // Khởi tạo giá trị kho mặc định cho Thủ kho
   useEffect(() => {
@@ -105,11 +127,9 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    const numberFields = ['purchaseConversionFactor', 'priceIn', 'priceOut', 'minStock', 'defaultLeadTimeDays', 'initialStock'];
-
     setFormData(prev => ({
       ...prev,
-      [name]: numberFields.includes(name) ? Number(value) : value
+      [name]: value,
     }));
   };
 
@@ -120,11 +140,16 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
       return;
     }
     const purchaseUnit = formData.purchaseUnit && formData.purchaseUnit !== formData.unit ? formData.purchaseUnit : undefined;
-    const purchaseConversionFactor = purchaseUnit ? Number(formData.purchaseConversionFactor || 0) : 1;
+    const purchaseConversionFactor = purchaseUnit ? parseNonNegativeLocaleNumber(formData.purchaseConversionFactor) : 1;
     if (purchaseUnit && (!Number.isFinite(purchaseConversionFactor) || purchaseConversionFactor <= 0)) {
       toast.error('Hệ số quy đổi không hợp lệ', 'Khi đơn vị mua khác đơn vị kho, hệ số quy đổi phải lớn hơn 0.');
       return;
     }
+    const priceIn = parseNonNegativeLocaleNumber(formData.priceIn);
+    const priceOut = parseNonNegativeLocaleNumber(formData.priceOut);
+    const minStock = parseNonNegativeLocaleNumber(formData.minStock);
+    const defaultLeadTimeDays = parseNonNegativeLocaleNumber(formData.defaultLeadTimeDays);
+    const initialStock = parseNonNegativeLocaleNumber(formData.initialStock);
 
     // 1. Tạo vật tư mới trong danh mục
     const newItem: InventoryItem = {
@@ -136,10 +161,10 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
       purchaseUnit,
       purchaseConversionFactor,
       supplierId: formData.supplierId || undefined,
-      priceIn: formData.priceIn,
-      priceOut: formData.priceOut,
-      minStock: formData.minStock,
-      defaultLeadTimeDays: formData.defaultLeadTimeDays,
+      priceIn,
+      priceOut,
+      minStock,
+      defaultLeadTimeDays,
       location: formData.location || undefined,
       stockByWarehouse: {}
     };
@@ -150,7 +175,7 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
       await onAdd(newItem);
 
       // 2. Nếu có nhập số lượng ban đầu, tạo Transaction
-      if (formData.initialWarehouseId && formData.initialStock > 0) {
+      if (formData.initialWarehouseId && initialStock > 0) {
       // Mọi tài khoản (kể cả Admin) đều phải qua bước duyệt phiếu khi nhập tồn kho ban đầu
       const status = TransactionStatus.PENDING;
 
@@ -158,7 +183,7 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
         id: `tx-init-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
         type: TransactionType.IMPORT,
         date: new Date().toISOString(),
-        items: [{ itemId: newItem.id, quantity: formData.initialStock, price: formData.priceIn }],
+        items: [{ itemId: newItem.id, quantity: initialStock, price: priceIn }],
         targetWarehouseId: formData.initialWarehouseId,
         supplierId: formData.supplierId || undefined,
         requesterId: user.id,
@@ -167,19 +192,15 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
       };
 
         await addTransaction(pendingTx);
-        logActivity('REQUEST', 'Đề xuất vật tư mới', `Tạo vật tư "${newItem.name}" và đề xuất nhập ${formData.initialStock} ${newItem.unit} vào kho.`, 'INFO');
-        toast.success('Đã tạo vật tư', `Số lượng ${formData.initialStock} ${newItem.unit} đang chờ Admin phê duyệt để vào kho.`);
+        logActivity('REQUEST', 'Đề xuất vật tư mới', `Tạo vật tư "${newItem.name}" và đề xuất nhập ${initialStock.toLocaleString('vi-VN')} ${newItem.unit} vào kho.`, 'INFO');
+        toast.success('Đã tạo vật tư', `Số lượng ${initialStock.toLocaleString('vi-VN')} ${newItem.unit} đang chờ Admin phê duyệt để vào kho.`);
       } else {
         logActivity('INVENTORY', 'Thêm danh mục', `Đã thêm vật tư mới "${newItem.name}" vào hệ thống.`, 'SUCCESS');
         toast.success('Thêm vật tư thành công', `"${newItem.name}" đã được thêm vào danh mục.`);
       }
 
       onClose();
-      setFormData({
-        sku: '', name: '', category: '', unit: '', purchaseUnit: '', purchaseConversionFactor: 1, supplierId: '',
-        priceIn: 0, priceOut: 0, minStock: 0, defaultLeadTimeDays: 7, location: '',
-        initialWarehouseId: '', initialStock: 0
-      });
+      setFormData(makeInitialFormData());
       setSupplierSearch('');
     } catch (err: any) {
       logApiError('addInventory.save', err);
@@ -274,26 +295,32 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
                   </div>
                 )}
               </div>
-              {formData.purchaseUnit && formData.purchaseUnit !== formData.unit && (
-                <div className="grid grid-cols-1 md:grid-cols-[180px_1fr] gap-2 items-center">
-                  <input
-                    type="number"
-                    min={0.000001}
-                    step="any"
-                    name="purchaseConversionFactor"
-                    value={formData.purchaseConversionFactor || ''}
-                    onChange={handleChange}
-                    placeholder="Hệ số quy đổi"
-                    className="w-full p-2.5 border border-amber-250 dark:border-amber-800/60 rounded-lg focus:ring-2 focus:ring-amber-400 outline-none bg-white dark:bg-muted text-slate-900 dark:text-[#CBD5E1] text-sm font-bold"
-                  />
-                  <div className="text-[10px] text-amber-600 dark:text-amber-400 font-bold">
-                    <p>1 {formData.purchaseUnit} = {(Number(formData.purchaseConversionFactor || 0) || 0).toLocaleString('vi-VN')} {formData.unit || 'đơn vị kho'}</p>
-                    <p className="text-amber-500 dark:text-amber-500">
-                      1 {formData.unit || 'đơn vị kho'} = {((Number(formData.purchaseConversionFactor || 0) || 1) > 0 ? 1 / (Number(formData.purchaseConversionFactor || 0) || 1) : 0).toLocaleString('vi-VN', { maximumFractionDigits: 6 })} {formData.purchaseUnit}
-                    </p>
-                  </div>
-                </div>
-              )}
+	              {formData.purchaseUnit && formData.purchaseUnit !== formData.unit && (
+	                <div className="grid grid-cols-1 md:grid-cols-[180px_1fr] gap-2 items-center">
+	                  {(() => {
+	                    const factor = parseNonNegativeLocaleNumber(formData.purchaseConversionFactor);
+	                    return (
+	                      <>
+	                  <input
+	                    type="text"
+	                    inputMode="decimal"
+	                    name="purchaseConversionFactor"
+	                    value={formData.purchaseConversionFactor || ''}
+	                    onChange={handleChange}
+	                    placeholder="Hệ số quy đổi"
+	                    className="w-full p-2.5 border border-amber-250 dark:border-amber-800/60 rounded-lg focus:ring-2 focus:ring-amber-400 outline-none bg-white dark:bg-muted text-slate-900 dark:text-[#CBD5E1] text-sm font-bold"
+	                  />
+	                  <div className="text-[10px] text-amber-600 dark:text-amber-400 font-bold">
+	                    <p>1 {formData.purchaseUnit} = {(factor || 0).toLocaleString('vi-VN')} {formData.unit || 'đơn vị kho'}</p>
+	                    <p className="text-amber-500 dark:text-amber-500">
+	                      1 {formData.unit || 'đơn vị kho'} = {(factor > 0 ? 1 / factor : 0).toLocaleString('vi-VN', { maximumFractionDigits: 6 })} {formData.purchaseUnit}
+	                    </p>
+	                  </div>
+	                      </>
+	                    );
+	                  })()}
+	                </div>
+	              )}
             </div>
 
             <div className="space-y-2 md:col-span-2">
@@ -359,35 +386,35 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-700 dark:text-slate-350">Giá nhập (VNĐ)</label>
-              <input
-                type="number" name="priceIn" value={formData.priceIn} onChange={handleChange} min="0"
-                className="w-full p-2.5 border border-slate-200 dark:border-border rounded-lg focus:ring-2 focus:ring-accent outline-none font-bold text-slate-700 dark:text-[#CBD5E1] bg-white dark:bg-muted"
-              />
+	              <label className="text-sm font-medium text-slate-700 dark:text-slate-350">Giá nhập (VNĐ)</label>
+	              <input
+	                type="text" inputMode="decimal" name="priceIn" value={formData.priceIn} onChange={handleChange}
+	                className="w-full p-2.5 border border-slate-200 dark:border-border rounded-lg focus:ring-2 focus:ring-accent outline-none font-bold text-slate-700 dark:text-[#CBD5E1] bg-white dark:bg-muted"
+	              />
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-700 dark:text-slate-350">Giá xuất (VNĐ)</label>
-              <input
-                type="number" name="priceOut" value={formData.priceOut} onChange={handleChange} min="0"
-                className="w-full p-2.5 border border-slate-200 dark:border-border rounded-lg focus:ring-2 focus:ring-accent outline-none font-bold text-accent bg-white dark:bg-muted"
-              />
+	              <label className="text-sm font-medium text-slate-700 dark:text-slate-350">Giá xuất (VNĐ)</label>
+	              <input
+	                type="text" inputMode="decimal" name="priceOut" value={formData.priceOut} onChange={handleChange}
+	                className="w-full p-2.5 border border-slate-200 dark:border-border rounded-lg focus:ring-2 focus:ring-accent outline-none font-bold text-accent bg-white dark:bg-muted"
+	              />
             </div>
 
             <div className="space-y-2 md:col-span-2">
-              <label className="text-sm font-medium text-slate-700 dark:text-slate-350">Mức tồn tối thiểu (Cảnh báo)</label>
-              <input
-                type="number" name="minStock" value={formData.minStock} onChange={handleChange} min="0"
-                className="w-full p-2.5 border border-slate-200 dark:border-border rounded-lg focus:ring-2 focus:ring-accent outline-none bg-white dark:bg-muted text-slate-900 dark:text-[#CBD5E1]"
-              />
+	              <label className="text-sm font-medium text-slate-700 dark:text-slate-350">Mức tồn tối thiểu (Cảnh báo)</label>
+	              <input
+	                type="text" inputMode="decimal" name="minStock" value={formData.minStock} onChange={handleChange}
+	                className="w-full p-2.5 border border-slate-200 dark:border-border rounded-lg focus:ring-2 focus:ring-accent outline-none bg-white dark:bg-muted text-slate-900 dark:text-[#CBD5E1]"
+	              />
             </div>
 
             <div className="space-y-2 md:col-span-2">
-              <label className="text-sm font-medium text-slate-700 dark:text-slate-350">Lead time mặc định cho kế hoạch vật tư (ngày)</label>
-              <input
-                type="number" name="defaultLeadTimeDays" value={formData.defaultLeadTimeDays} onChange={handleChange} min="0" max="365"
-                className="w-full p-2.5 border border-slate-200 dark:border-border rounded-lg focus:ring-2 focus:ring-accent outline-none font-bold text-slate-700 dark:text-[#CBD5E1] bg-white dark:bg-muted"
-              />
+	              <label className="text-sm font-medium text-slate-700 dark:text-slate-350">Lead time mặc định cho kế hoạch vật tư (ngày)</label>
+	              <input
+	                type="text" inputMode="decimal" name="defaultLeadTimeDays" value={formData.defaultLeadTimeDays} onChange={handleChange}
+	                className="w-full p-2.5 border border-slate-200 dark:border-border rounded-lg focus:ring-2 focus:ring-accent outline-none font-bold text-slate-700 dark:text-[#CBD5E1] bg-white dark:bg-muted"
+	              />
               <p className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">Dùng khi dự án chưa khai báo rule lead time riêng cho vật tư này.</p>
             </div>
 
@@ -432,16 +459,16 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-xs font-bold text-muted-foreground uppercase">Số lượng ban đầu</label>
-                  <input
-                    type="number"
-                    name="initialStock"
-                    value={formData.initialStock}
-                    onChange={handleChange}
-                    min="0"
-                    className="w-full p-2.5 border border-slate-200 dark:border-border rounded-lg focus:ring-2 focus:ring-accent outline-none font-bold text-accent bg-white dark:bg-muted"
-                    placeholder="0"
-                  />
+	                  <label className="text-xs font-bold text-muted-foreground uppercase">Số lượng ban đầu</label>
+	                  <input
+	                    type="text"
+	                    inputMode="decimal"
+	                    name="initialStock"
+	                    value={formData.initialStock}
+	                    onChange={handleChange}
+	                    className="w-full p-2.5 border border-slate-200 dark:border-border rounded-lg focus:ring-2 focus:ring-accent outline-none font-bold text-accent bg-white dark:bg-muted"
+	                    placeholder="0"
+	                  />
                 </div>
               </div>
               {hasAssignedWarehouse && (

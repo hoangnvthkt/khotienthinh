@@ -31,6 +31,7 @@ import type {
   CustomMaterialTemplateKey,
 } from '../../../types';
 import { customMaterialRequestService } from '../../../lib/customMaterialRequestService';
+import { parseNonNegativeLocaleNumber } from '../../../lib/localeNumberInput';
 import {
   CUSTOM_MATERIAL_SMART_IMPORT_FIELDS,
   customMaterialSmartImportService,
@@ -184,9 +185,11 @@ const makeBlankLine = (index: number, templateKey: CustomMaterialTemplateKey = '
 };
 
 const numberOrNull = (value: unknown) => {
-  const num = Number(value);
+  const num = parseNonNegativeLocaleNumber(value);
   return Number.isFinite(num) && num !== 0 ? num : null;
 };
+
+const draftNumericInput = (value: string) => (value === '' ? null : value) as unknown as number;
 
 const smartImportSourceLabel = {
   local: 'Local',
@@ -210,13 +213,18 @@ const rebuildXaGoPreviewRow = (
       ...specPatch,
     },
   };
-  const specJson = buildXaGoSpec(nextLine);
-  const quantity = Number(nextLine.quantity || 0);
-  const lengthMm = getSpecNumber(specJson, 'length_mm');
-  const kgPerM = getSpecNumber(specJson, 'kg_per_m');
+  const normalizedSpecJson = buildXaGoSpec(nextLine);
+  const draftSpecJson = {
+    ...normalizedSpecJson,
+    ...(nextLine.specJson || {}),
+    calculated_weight_kg: normalizedSpecJson.calculated_weight_kg,
+  };
+  const quantity = parseNonNegativeLocaleNumber(nextLine.quantity || 0);
+  const lengthMm = getSpecNumber(normalizedSpecJson, 'length_mm');
+  const kgPerM = getSpecNumber(normalizedSpecJson, 'kg_per_m');
   const lengthM = lengthMm > 0 ? lengthMm / 1000 : 0;
   const calculatedWeight = calculateXaGoWeightKg(quantity, lengthMm, kgPerM);
-  const weightKg = getSpecNumber(specJson, 'weight_kg');
+  const weightKg = getSpecNumber(normalizedSpecJson, 'weight_kg');
   const errors: string[] = [];
   const warnings: string[] = [];
 
@@ -238,13 +246,13 @@ const rebuildXaGoPreviewRow = (
       description: String(nextLine.description || '').trim(),
       effectiveWidth: null,
       length: lengthM || null,
-      quantity,
+      quantity: nextLine.quantity as number,
       areaM2: null,
       lengthMd: quantity > 0 && lengthM > 0 ? quantity * lengthM : null,
       thickness: null,
       color: null,
       technicalNote: nextLine.technicalNote || null,
-      specJson,
+      specJson: draftSpecJson,
     },
   };
 };
@@ -300,9 +308,9 @@ const buildPrintHtml = (request: CustomMaterialRequest) => {
       </tr>
     `;
   }).join('');
-  const totalQty = request.lines.reduce((sum, line) => sum + Number(line.quantity || 0), 0);
-  const totalArea = request.lines.reduce((sum, line) => sum + Number(line.areaM2 || 0), 0);
-  const totalMd = request.lines.reduce((sum, line) => sum + Number(line.lengthMd || 0), 0);
+  const totalQty = request.lines.reduce((sum, line) => sum + parseNonNegativeLocaleNumber(line.quantity || 0), 0);
+  const totalArea = request.lines.reduce((sum, line) => sum + parseNonNegativeLocaleNumber(line.areaM2 || 0), 0);
+  const totalMd = request.lines.reduce((sum, line) => sum + parseNonNegativeLocaleNumber(line.lengthMd || 0), 0);
   const totalWeight = request.lines.reduce((sum, line) => sum + getSpecNumber(line.specJson, 'weight_kg'), 0);
   const headerHtml = isXaGo
     ? '<th>STT</th><th>Diễn giải</th><th>Chủng loại</th><th>Quy cách</th><th>SL CK</th><th>Dài (mm)</th><th>Kg/m</th><th>Khối lượng (kg)</th><th>Ghi chú</th>'
@@ -427,9 +435,9 @@ export const CustomMaterialRequestTab: React.FC<Props> = ({
     ].filter(Boolean).join(' ').toLowerCase().includes(lower));
   }, [query, requests]);
   const totals = useMemo(() => form.lines.reduce((acc, line) => ({
-    qty: acc.qty + Number(line.quantity || 0),
-    area: acc.area + Number(line.areaM2 || 0),
-    md: acc.md + Number(line.lengthMd || 0),
+    qty: acc.qty + parseNonNegativeLocaleNumber(line.quantity || 0),
+    area: acc.area + parseNonNegativeLocaleNumber(line.areaM2 || 0),
+    md: acc.md + parseNonNegativeLocaleNumber(line.lengthMd || 0),
     kg: acc.kg + getSpecNumber(line.specJson, 'weight_kg'),
   }), { qty: 0, area: 0, md: 0, kg: 0 }), [form.lines]);
 
@@ -539,17 +547,22 @@ export const CustomMaterialRequestTab: React.FC<Props> = ({
             ...specPatch,
           },
         };
-        const specJson = buildXaGoSpec(next);
-        const lengthMm = getSpecNumber(specJson, 'length_mm');
-        const quantity = Number(next.quantity || 0);
+        const normalizedSpecJson = buildXaGoSpec(next);
+        const draftSpecJson = {
+          ...normalizedSpecJson,
+          ...(next.specJson || {}),
+          calculated_weight_kg: normalizedSpecJson.calculated_weight_kg,
+        };
+        const lengthMm = getSpecNumber(normalizedSpecJson, 'length_mm');
+        const quantity = parseNonNegativeLocaleNumber(next.quantity || 0);
         const lengthM = lengthMm > 0 ? lengthMm / 1000 : null;
         const lengthMd = lengthM && quantity > 0 ? quantity * lengthM : null;
         return {
           ...next,
           length: lengthM,
           lengthMd,
-          specJson,
-          specDraft: JSON.stringify(specJson, null, 2),
+          specJson: draftSpecJson,
+          specDraft: JSON.stringify(draftSpecJson, null, 2),
         };
       }),
     }));
@@ -568,7 +581,7 @@ export const CustomMaterialRequestTab: React.FC<Props> = ({
         unit: 'cấu kiện',
       });
       const lengthMm = getSpecNumber(specJson, 'length_mm');
-      const quantity = Number(line.quantity || 0);
+      const quantity = parseNonNegativeLocaleNumber(line.quantity || 0);
       const lengthM = lengthMm > 0 ? lengthMm / 1000 : null;
       return {
         ...line,
@@ -604,7 +617,7 @@ export const CustomMaterialRequestTab: React.FC<Props> = ({
       description: String(line.description || '').trim(),
       effectiveWidth: numberOrNull(line.effectiveWidth),
       length: numberOrNull(line.length),
-      quantity: Number(line.quantity || 0),
+      quantity: parseNonNegativeLocaleNumber(line.quantity || 0),
       areaM2: numberOrNull(line.areaM2),
       lengthMd: numberOrNull(line.lengthMd),
       thickness: numberOrNull(line.thickness),
@@ -628,7 +641,7 @@ export const CustomMaterialRequestTab: React.FC<Props> = ({
       const invalidLineIndex = form.lines.findIndex(line => {
         const spec = line.specJson || {};
         return !String(line.description || '').trim()
-          || Number(line.quantity || 0) <= 0
+          || parseNonNegativeLocaleNumber(line.quantity || 0) <= 0
           || getSpecNumber(spec, 'length_mm') <= 0
           || getSpecNumber(spec, 'kg_per_m') <= 0;
       });
@@ -638,7 +651,7 @@ export const CustomMaterialRequestTab: React.FC<Props> = ({
       }
       return true;
     }
-    const invalidLine = form.lines.find(line => !String(line.description || '').trim() || Number(line.quantity || 0) <= 0);
+    const invalidLine = form.lines.find(line => !String(line.description || '').trim() || parseNonNegativeLocaleNumber(line.quantity || 0) <= 0);
     if (invalidLine) {
       toast.warning('Dòng chưa hợp lệ', 'Mỗi dòng cần có diễn giải và số lượng lớn hơn 0.');
       return false;
@@ -1188,22 +1201,22 @@ export const CustomMaterialRequestTab: React.FC<Props> = ({
                         )}
                         <td className="px-3 py-2 text-right">
                           {isXaGoTemplate ? (
-                            <input type="number" value={row.line.quantity || ''} onChange={event => updatePreviewXaGoRow(rowIndex, { quantity: event.target.value === '' ? 0 : Number(event.target.value) })}
+                            <input type="text" inputMode="decimal" value={row.line.quantity ?? ''} onChange={event => updatePreviewXaGoRow(rowIndex, { quantity: draftNumericInput(event.target.value) })}
                               className="h-9 w-24 rounded-lg border border-amber-200 px-2 text-right text-xs font-bold outline-none focus:border-amber-400" />
                           ) : row.line.quantity}
                         </td>
                         {isXaGoTemplate ? (
                           <>
                             <td className="px-3 py-2 text-right">
-                              <input type="number" value={String(spec.length_mm || '')} onChange={event => updatePreviewXaGoRow(rowIndex, {}, { length_mm: event.target.value === '' ? null : Number(event.target.value) })}
+                              <input type="text" inputMode="decimal" value={String(spec.length_mm ?? '')} onChange={event => updatePreviewXaGoRow(rowIndex, {}, { length_mm: event.target.value === '' ? null : event.target.value })}
                                 className="h-9 w-24 rounded-lg border border-amber-200 px-2 text-right text-xs font-bold outline-none focus:border-amber-400" />
                             </td>
                             <td className="px-3 py-2 text-right">
-                              <input type="number" step="0.001" value={String(spec.kg_per_m || '')} onChange={event => updatePreviewXaGoRow(rowIndex, {}, { kg_per_m: event.target.value === '' ? null : Number(event.target.value) })}
+                              <input type="text" inputMode="decimal" value={String(spec.kg_per_m ?? '')} onChange={event => updatePreviewXaGoRow(rowIndex, {}, { kg_per_m: event.target.value === '' ? null : event.target.value })}
                                 className="h-9 w-20 rounded-lg border border-amber-200 px-2 text-right text-xs font-bold outline-none focus:border-amber-400" />
                             </td>
                             <td className="px-3 py-2 text-right">
-                              <input type="number" step="0.01" value={String(spec.weight_kg || '')} onChange={event => updatePreviewXaGoRow(rowIndex, {}, { weight_kg: event.target.value === '' ? null : Number(event.target.value) })}
+                              <input type="text" inputMode="decimal" value={String(spec.weight_kg ?? '')} onChange={event => updatePreviewXaGoRow(rowIndex, {}, { weight_kg: event.target.value === '' ? null : event.target.value })}
                                 className="h-9 w-28 rounded-lg border border-amber-200 px-2 text-right text-xs font-bold outline-none focus:border-amber-400" />
                             </td>
                             <td className="px-3 py-2">
@@ -1266,8 +1279,8 @@ export const CustomMaterialRequestTab: React.FC<Props> = ({
                     <td colSpan={12} className="px-3 py-12 text-center text-xs font-bold text-slate-400">Chưa có dòng Xà gồ. Nhập trực tiếp hoặc import Excel mẫu Xà gồ.</td>
                   </tr>
                 ) : form.lines.map((line, index) => {
-                  const spec = buildXaGoSpec(line);
-                  const calculatedWeight = calculateXaGoWeightKg(Number(line.quantity || 0), getSpecNumber(spec, 'length_mm'), getSpecNumber(spec, 'kg_per_m'));
+                  const spec = line.specJson || {};
+                  const calculatedWeight = calculateXaGoWeightKg(parseNonNegativeLocaleNumber(line.quantity || 0), getSpecNumber(spec, 'length_mm'), getSpecNumber(spec, 'kg_per_m'));
                   const warning = getSpecNumber(spec, 'weight_kg') > 0 && calculatedWeight > 0 && Math.abs(getSpecNumber(spec, 'weight_kg') - calculatedWeight) > 0.5;
                   return (
                     <tr key={line.id || index} className="align-top hover:bg-slate-50/80 dark:hover:bg-slate-800/60">
@@ -1285,19 +1298,19 @@ export const CustomMaterialRequestTab: React.FC<Props> = ({
                           className="h-9 w-44 rounded-lg border border-slate-200 px-2 text-xs font-bold outline-none focus:border-blue-400 disabled:bg-slate-50" />
                       </td>
                       <td className="px-2 py-2">
-                        <input type="number" value={line.quantity ?? ''} disabled={!canEdit} onChange={event => updateXaGoLine(index, { quantity: event.target.value === '' ? 0 : Number(event.target.value) })}
+                        <input type="text" inputMode="decimal" value={line.quantity ?? ''} disabled={!canEdit} onChange={event => updateXaGoLine(index, { quantity: draftNumericInput(event.target.value) })}
                           className="h-9 w-24 rounded-lg border border-slate-200 px-2 text-right text-xs font-bold outline-none focus:border-blue-400 disabled:bg-slate-50" />
                       </td>
                       <td className="px-2 py-2">
-                        <input type="number" value={getSpecNumber(spec, 'length_mm') || ''} disabled={!canEdit} onChange={event => updateXaGoLine(index, {}, { length_mm: event.target.value === '' ? null : Number(event.target.value) })}
+                        <input type="text" inputMode="decimal" value={String(spec.length_mm ?? '')} disabled={!canEdit} onChange={event => updateXaGoLine(index, {}, { length_mm: event.target.value === '' ? null : event.target.value })}
                           className="h-9 w-24 rounded-lg border border-slate-200 px-2 text-right text-xs font-bold outline-none focus:border-blue-400 disabled:bg-slate-50" />
                       </td>
                       <td className="px-2 py-2">
-                        <input type="number" step="0.001" value={getSpecNumber(spec, 'kg_per_m') || ''} disabled={!canEdit} onChange={event => updateXaGoLine(index, {}, { kg_per_m: event.target.value === '' ? null : Number(event.target.value) })}
+                        <input type="text" inputMode="decimal" value={String(spec.kg_per_m ?? '')} disabled={!canEdit} onChange={event => updateXaGoLine(index, {}, { kg_per_m: event.target.value === '' ? null : event.target.value })}
                           className="h-9 w-20 rounded-lg border border-slate-200 px-2 text-right text-xs font-bold outline-none focus:border-blue-400 disabled:bg-slate-50" />
                       </td>
                       <td className="px-2 py-2">
-                        <input type="number" step="0.01" value={getSpecNumber(spec, 'weight_kg') || ''} disabled={!canEdit} onChange={event => updateXaGoLine(index, {}, { weight_kg: event.target.value === '' ? null : Number(event.target.value) })}
+                        <input type="text" inputMode="decimal" value={String(spec.weight_kg ?? '')} disabled={!canEdit} onChange={event => updateXaGoLine(index, {}, { weight_kg: event.target.value === '' ? null : event.target.value })}
                           className={`h-9 w-28 rounded-lg border px-2 text-right text-xs font-bold outline-none focus:border-blue-400 disabled:bg-slate-50 ${warning ? 'border-amber-300 bg-amber-50' : 'border-slate-200'}`} />
                         {warning && <div className="mt-1 text-[10px] font-bold text-amber-700">CT: {formatCustomMaterialNumber(calculatedWeight)} kg</div>}
                       </td>
@@ -1372,7 +1385,7 @@ export const CustomMaterialRequestTab: React.FC<Props> = ({
                     </td>
                     {(['effectiveWidth', 'length', 'quantity', 'areaM2', 'lengthMd', 'thickness'] as const).map(key => (
                       <td key={key} className="px-2 py-2">
-                        <input type="number" value={(line as any)[key] ?? ''} disabled={!canEdit} onChange={event => updateLine(index, { [key]: event.target.value === '' ? null : Number(event.target.value) } as Partial<DraftLine>)}
+                        <input type="text" inputMode="decimal" value={(line as any)[key] ?? ''} disabled={!canEdit} onChange={event => updateLine(index, { [key]: event.target.value === '' ? null : event.target.value } as Partial<DraftLine>)}
                           className="h-9 w-20 rounded-lg border border-slate-200 px-2 text-right text-xs font-bold outline-none focus:border-blue-400 disabled:bg-slate-50" />
                       </td>
                     ))}

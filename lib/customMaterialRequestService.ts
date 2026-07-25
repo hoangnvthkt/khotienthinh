@@ -4,6 +4,7 @@ import { loadXlsx } from './loadXlsx';
 import { poService } from './projectService';
 import { createPoQrToken } from './poQr';
 import { customMaterialSmartImportService } from './customMaterialSmartImportService';
+import { parseNonNegativeLocaleNumber } from './localeNumberInput';
 import {
   buildXaGoSpec,
   calculateXaGoWeightKg,
@@ -54,14 +55,8 @@ const PROFILE_KEYWORDS: Array<{ key: CustomMaterialProfileType; words: string[] 
 
 const toFiniteNumber = (value: unknown, fallback = 0) => {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
-  const raw = String(value ?? '').trim().replace(/\s/g, '');
-  if (!raw) return fallback;
-  const normalized = raw.includes(',')
-    ? raw.replace(/\./g, '').replace(',', '.')
-    : /^\d{1,3}(\.\d{3})+(\.\d+)?$/.test(raw)
-      ? raw.replace(/\./g, '')
-      : raw;
-  const num = Number(normalized);
+  if (String(value ?? '').trim() === '') return fallback;
+  const num = parseNonNegativeLocaleNumber(value);
   return Number.isFinite(num) ? num : fallback;
 };
 
@@ -152,11 +147,11 @@ const buildLineRows = (requestId: string, requestCode: string, lines: Partial<Cu
     const id = line.id || newUuid();
     const lineCode = line.lineCode || `${requestCode}-L${String(index + 1).padStart(3, '0')}`;
     const profileType = line.profileType || line.groupKey || inferProfile(line.description || '');
-    const quantity = Number(line.quantity || 0);
+    const quantity = parseNonNegativeLocaleNumber(line.quantity || 0);
     const specJson = profileType === 'xa_go' || line.groupKey === 'xa_go'
       ? buildXaGoSpec({ ...line, quantity })
       : line.specJson || {};
-    const lengthMm = Number(specJson.length_mm || 0);
+    const lengthMm = parseNonNegativeLocaleNumber(specJson.length_mm || 0);
     const xaGoLength = lengthMm > 0 ? lengthMm / 1000 : null;
     const xaGoLengthMd = lengthMm > 0 && quantity > 0 ? quantity * (lengthMm / 1000) : null;
     return {

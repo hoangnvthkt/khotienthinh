@@ -23,6 +23,7 @@ import { extractPoToken, PO_QR_PARAM } from '../lib/poQr';
 import { extractFulfillmentBatchToken, FULFILLMENT_BATCH_QR_PARAM } from '../lib/fulfillmentBatchQr';
 import { materialRequestFulfillmentService } from '../lib/materialRequestFulfillmentService';
 import { formatInventoryQuantity } from '../lib/inventoryNumberFormat';
+import { parseNonNegativeLocaleNumber } from '../lib/localeNumberInput';
 import {
   ExcelImportMode,
   ExcelImportPreview,
@@ -43,14 +44,7 @@ type InventoryExcelRecord = InventoryItem & {
 const normalizeText = (value: unknown) => String(value || '').trim().toLowerCase();
 
 const parseExcelNumber = (value: unknown): number => {
-  const raw = String(value ?? '').trim().replace(/\s/g, '');
-  if (!raw) return 0;
-  const lastComma = raw.lastIndexOf(',');
-  const lastDot = raw.lastIndexOf('.');
-  const normalized = lastComma > lastDot
-    ? raw.replace(/\./g, '').replace(',', '.')
-    : raw.replace(/,/g, '');
-  return Number(normalized);
+  return parseNonNegativeLocaleNumber(value);
 };
 
 const formatNumber = formatInventoryQuantity;
@@ -60,7 +54,7 @@ const validateNonNegativeNumber = (
   label: string,
   options: { integer?: boolean; max?: number } = {},
 ): string | undefined => {
-  const number = Number(value);
+  const number = parseNonNegativeLocaleNumber(value);
   if (!Number.isFinite(number) || number < 0) return `${label} phải là số không âm.`;
   if (options.integer && !Number.isInteger(number)) return `${label} phải là số nguyên.`;
   if (options.max !== undefined && number > options.max) return `${label} không được vượt quá ${options.max}.`;
@@ -454,7 +448,7 @@ const Inventory: React.FC = () => {
           label: 'Hệ số quy đổi',
           aliases: ['Hệ số quy đổi', 'He so quy doi', '1 đơn vị mua =', 'Hệ số ĐV mua -> ĐV kho'],
           normalize: value => value === undefined ? undefined : parseExcelNumber(value),
-          validate: value => value === undefined || Number(value) > 0 ? undefined : 'Hệ số quy đổi phải lớn hơn 0.',
+	          validate: value => value === undefined || parseNonNegativeLocaleNumber(value) > 0 ? undefined : 'Hệ số quy đổi phải lớn hơn 0.',
           format: formatNumber,
         },
         {
@@ -520,7 +514,7 @@ const Inventory: React.FC = () => {
             validate: (value: unknown, row: Record<string, unknown>) => {
               const numberError = validateNonNegativeNumber(value, 'Số lượng ban đầu');
               if (numberError) return numberError;
-              if (Number(value) > 0 && !getExcelCell(row, warehouseAliases)) {
+	              if (parseNonNegativeLocaleNumber(value) > 0 && !getExcelCell(row, warehouseAliases)) {
                 return 'Thiếu Kho nhận hàng khi Số lượng ban đầu > 0.';
               }
               return undefined;

@@ -49,6 +49,7 @@ import {
 } from '../lib/inventoryItemDeleteGuard';
 import { canAccessSettingsFeature, hasAnySettingsManagementFeature, type SettingsFeatureId } from '../lib/settingsPermissions';
 import { canPerform } from '../lib/permissions/permissionService';
+import { parseNonNegativeLocaleNumber } from '../lib/localeNumberInput';
 
 type MaterialCatalogForm = {
   sku: string;
@@ -56,8 +57,8 @@ type MaterialCatalogForm = {
   category: string;
   unit: string;
   purchaseUnit: string;
-  purchaseConversionFactor: number;
-  defaultLeadTimeDays: number;
+  purchaseConversionFactor: number | string;
+  defaultLeadTimeDays: number | string;
 };
 
 const emptyMaterialCatalogForm = (): MaterialCatalogForm => ({
@@ -73,10 +74,10 @@ const emptyMaterialCatalogForm = (): MaterialCatalogForm => ({
 const normalizeText = (value: unknown) => String(value || '').trim().toLowerCase();
 const roundConversionFactor = (value: number) => Math.round(value * 1_000_000_000_000) / 1_000_000_000_000;
 const invertConversionFactor = (value: unknown) => {
-  const factor = Number(value || 0);
+  const factor = parseNonNegativeLocaleNumber(value || 0);
   return Number.isFinite(factor) && factor > 0 ? roundConversionFactor(1 / factor) : 0;
 };
-const formatConversionInput = (value: number) => value > 0 ? String(value) : '';
+const formatConversionInput = (value: unknown) => parseNonNegativeLocaleNumber(value) > 0 ? String(value) : '';
 const normalizeWarehouseTypeCodeInput = (value: string) =>
   value.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '');
 
@@ -625,25 +626,25 @@ const Settings: React.FC = () => {
             'He so quy doi',
             '1 đơn vị mua =',
             'Hệ số ĐV mua -> ĐV kho',
-          ],
-          normalize: (value, row) => {
-            const stockToPurchaseValue = getExcelCell(row, [
-              'Hệ số quy đổi từ ĐVT Chính >> ĐVT phụ',
-              'Hệ số quy đổi chính >> phụ',
-              'Hệ số ĐVT chính -> ĐVT phụ',
-            ]);
-            if (stockToPurchaseValue) return invertConversionFactor(Number(stockToPurchaseValue) || 0);
-            return value === undefined ? undefined : Number(value) || 0;
-          },
-          validate: value => value === undefined || Number(value) > 0 ? undefined : 'Hệ số quy đổi phải > 0.',
-        },
+	          ],
+	          normalize: (value, row) => {
+	            const stockToPurchaseValue = getExcelCell(row, [
+	              'Hệ số quy đổi từ ĐVT Chính >> ĐVT phụ',
+	              'Hệ số quy đổi chính >> phụ',
+	              'Hệ số ĐVT chính -> ĐVT phụ',
+	            ]);
+	            if (stockToPurchaseValue) return invertConversionFactor(stockToPurchaseValue);
+	            return value === undefined ? undefined : parseNonNegativeLocaleNumber(value);
+	          },
+	          validate: value => value === undefined || parseNonNegativeLocaleNumber(value) > 0 ? undefined : 'Hệ số quy đổi phải > 0.',
+	        },
         {
           key: 'defaultLeadTimeDays',
-          label: 'Lead time mặc định',
-          aliases: ['Lead time mặc định', 'Lead time', 'Default lead time', 'Số ngày lead time'],
-          normalize: value => value === undefined ? undefined : Math.max(0, Math.min(365, Number(value) || 0)),
-          validate: value => value === undefined || Number(value) >= 0 ? undefined : 'Lead time phải >= 0.',
-        },
+	          label: 'Lead time mặc định',
+	          aliases: ['Lead time mặc định', 'Lead time', 'Default lead time', 'Số ngày lead time'],
+	          normalize: value => value === undefined ? undefined : Math.max(0, Math.min(365, parseNonNegativeLocaleNumber(value))),
+	          validate: value => value === undefined || parseNonNegativeLocaleNumber(value) >= 0 ? undefined : 'Lead time phải >= 0.',
+	        },
       ],
     }, rows);
 
@@ -654,7 +655,8 @@ const Settings: React.FC = () => {
     const unit = findUnitName(materialForm.unit);
     const purchaseUnit = materialForm.purchaseUnit ? findUnitName(materialForm.purchaseUnit) : '';
     const normalizedPurchaseUnit = purchaseUnit && purchaseUnit !== unit ? purchaseUnit : undefined;
-    const purchaseConversionFactor = normalizedPurchaseUnit ? Number(materialForm.purchaseConversionFactor || 0) : 1;
+    const purchaseConversionFactor = normalizedPurchaseUnit ? parseNonNegativeLocaleNumber(materialForm.purchaseConversionFactor || 0) : 1;
+    const defaultLeadTimeDays = Math.max(0, Math.min(365, parseNonNegativeLocaleNumber(materialForm.defaultLeadTimeDays ?? 7)));
 
     if (!sku || !name || !category || !unit) {
       toast.warning('Thiếu thông tin', 'Vui lòng nhập Mã SKU, Tên vật tư, Danh mục và ĐVT Chính.');
@@ -684,7 +686,7 @@ const Settings: React.FC = () => {
           unit,
           purchaseUnit: normalizedPurchaseUnit,
           purchaseConversionFactor,
-          defaultLeadTimeDays: Math.max(0, Math.min(365, Number(materialForm.defaultLeadTimeDays) || 0)),
+          defaultLeadTimeDays,
         });
       } else {
         await addItem({
@@ -698,7 +700,7 @@ const Settings: React.FC = () => {
           priceIn: 0,
           priceOut: 0,
           minStock: 0,
-          defaultLeadTimeDays: Math.max(0, Math.min(365, Number(materialForm.defaultLeadTimeDays) || 0)),
+          defaultLeadTimeDays,
           stockByWarehouse: {},
         });
       }
@@ -867,9 +869,9 @@ const Settings: React.FC = () => {
           ...record,
           purchaseUnit: record.purchaseUnit && record.purchaseUnit !== record.unit ? record.purchaseUnit : undefined,
           purchaseConversionFactor: record.purchaseUnit && record.purchaseUnit !== record.unit
-            ? Math.max(Number(record.purchaseConversionFactor || 1), 0.000001)
+            ? Math.max(parseNonNegativeLocaleNumber(record.purchaseConversionFactor || 1), 0.000001)
             : 1,
-          defaultLeadTimeDays: Math.max(0, Math.min(365, Number(record.defaultLeadTimeDays ?? 7) || 0)),
+          defaultLeadTimeDays: Math.max(0, Math.min(365, parseNonNegativeLocaleNumber(record.defaultLeadTimeDays ?? 7))),
         };
         const existing = items.find(item => normalizeText(item.sku) === normalizeText(normalizedRecord.sku));
         if (materialImportPreview.mode === 'create') {
@@ -1297,29 +1299,29 @@ const Settings: React.FC = () => {
                             <div>
                               <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">
                                 Hệ số quy đổi từ ĐVT phụ &gt;&gt; ĐVT Chính
-                              </label>
-                              <input
-                                type="number"
-                                min={0.000001}
-                                step="any"
-                                disabled={!materialForm.purchaseUnit || materialForm.purchaseUnit === materialForm.unit}
-                                value={materialForm.purchaseConversionFactor || ''}
-                                onChange={event => {
-                                  const purchaseToStockFactor = Number(event.target.value || 0);
-                                  setMaterialForm(prev => ({ ...prev, purchaseConversionFactor: purchaseToStockFactor }));
-                                  setStockToPurchaseFactorInput(formatConversionInput(invertConversionFactor(purchaseToStockFactor)));
-                                }}
+	                              </label>
+	                              <input
+	                                type="text"
+	                                inputMode="decimal"
+	                                disabled={!materialForm.purchaseUnit || materialForm.purchaseUnit === materialForm.unit}
+	                                value={materialForm.purchaseConversionFactor || ''}
+	                                onChange={event => {
+	                                  const purchaseToStockFactorInput = event.target.value;
+	                                  const purchaseToStockFactor = parseNonNegativeLocaleNumber(purchaseToStockFactorInput);
+	                                  setMaterialForm(prev => ({ ...prev, purchaseConversionFactor: purchaseToStockFactorInput }));
+	                                  setStockToPurchaseFactorInput(formatConversionInput(invertConversionFactor(purchaseToStockFactor)));
+	                                }}
                                 placeholder="VD: 1 kg = 10 cây thì nhập 10"
                                 className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-500/20 disabled:bg-slate-100 disabled:text-slate-400"
                               />
                               <div className="mt-1 text-[10px] font-bold text-slate-400">
                                 Nhập số lượng ĐVT Chính nhận được từ 1 Đơn vị phụ.
                               </div>
-                              {materialForm.purchaseUnit && materialForm.purchaseUnit !== materialForm.unit && materialForm.unit && (
-                                <div className="mt-1 text-[10px] font-bold text-amber-600">
-                                  <div>1 {materialForm.purchaseUnit} = {Number(materialForm.purchaseConversionFactor || 0).toLocaleString('vi-VN')} {materialForm.unit}</div>
-                                  <div className="text-amber-500">
-                                    1 {materialForm.unit} = {invertConversionFactor(materialForm.purchaseConversionFactor).toLocaleString('vi-VN', { maximumFractionDigits: 6 })} {materialForm.purchaseUnit}
+	                              {materialForm.purchaseUnit && materialForm.purchaseUnit !== materialForm.unit && materialForm.unit && (
+	                                <div className="mt-1 text-[10px] font-bold text-amber-600">
+	                                  <div>1 {materialForm.purchaseUnit} = {parseNonNegativeLocaleNumber(materialForm.purchaseConversionFactor || 0).toLocaleString('vi-VN')} {materialForm.unit}</div>
+	                                  <div className="text-amber-500">
+	                                    1 {materialForm.unit} = {invertConversionFactor(materialForm.purchaseConversionFactor).toLocaleString('vi-VN', { maximumFractionDigits: 6 })} {materialForm.purchaseUnit}
                                   </div>
                                 </div>
                               )}
@@ -1327,20 +1329,19 @@ const Settings: React.FC = () => {
                             <div>
                               <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">
                                 Hệ số quy đổi từ ĐVT Chính &gt;&gt; ĐVT phụ
-                              </label>
-                              <input
-                                type="number"
-                                min={0.000001}
-                                step="any"
-                                disabled={!materialForm.purchaseUnit || materialForm.purchaseUnit === materialForm.unit}
-                                value={stockToPurchaseFactorInput}
+	                              </label>
+	                              <input
+	                                type="text"
+	                                inputMode="decimal"
+	                                disabled={!materialForm.purchaseUnit || materialForm.purchaseUnit === materialForm.unit}
+	                                value={stockToPurchaseFactorInput}
                                 onChange={event => {
-                                  const rawValue = event.target.value;
-                                  setStockToPurchaseFactorInput(rawValue);
-                                  const stockToPurchaseFactor = Number(rawValue || 0);
-                                  setMaterialForm(prev => ({
-                                    ...prev,
-                                    purchaseConversionFactor: stockToPurchaseFactor > 0 ? invertConversionFactor(stockToPurchaseFactor) : 0,
+	                                  const rawValue = event.target.value;
+	                                  setStockToPurchaseFactorInput(rawValue);
+	                                  const stockToPurchaseFactor = parseNonNegativeLocaleNumber(rawValue || 0);
+	                                  setMaterialForm(prev => ({
+	                                    ...prev,
+	                                    purchaseConversionFactor: stockToPurchaseFactor > 0 ? invertConversionFactor(stockToPurchaseFactor) : 0,
                                   }));
                                 }}
                                 placeholder="VD: 1 cây = 10 kg thì nhập 10"
@@ -1351,23 +1352,22 @@ const Settings: React.FC = () => {
                               </div>
                               {materialForm.purchaseUnit && materialForm.purchaseUnit !== materialForm.unit && materialForm.unit && (
                                 <div className="mt-1 text-[10px] font-bold text-cyan-600">
-                                  <div>1 {materialForm.unit} = {invertConversionFactor(materialForm.purchaseConversionFactor).toLocaleString('vi-VN', { maximumFractionDigits: 6 })} {materialForm.purchaseUnit}</div>
-                                  <div className="text-cyan-500">
-                                    1 {materialForm.purchaseUnit} = {Number(materialForm.purchaseConversionFactor || 0).toLocaleString('vi-VN', { maximumFractionDigits: 6 })} {materialForm.unit}
-                                  </div>
+	                                  <div>1 {materialForm.unit} = {invertConversionFactor(materialForm.purchaseConversionFactor).toLocaleString('vi-VN', { maximumFractionDigits: 6 })} {materialForm.purchaseUnit}</div>
+	                                  <div className="text-cyan-500">
+	                                    1 {materialForm.purchaseUnit} = {parseNonNegativeLocaleNumber(materialForm.purchaseConversionFactor || 0).toLocaleString('vi-VN', { maximumFractionDigits: 6 })} {materialForm.unit}
+	                                  </div>
                                 </div>
                               )}
                             </div>
                             <div>
-                              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Lead time</label>
-                              <input
-                                type="number"
-                                min={0}
-                                max={365}
-                                value={materialForm.defaultLeadTimeDays}
-                                onChange={event => setMaterialForm(prev => ({ ...prev, defaultLeadTimeDays: Number(event.target.value) }))}
-                                className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-500/20"
-                              />
+	                              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Lead time</label>
+	                              <input
+	                                type="text"
+	                                inputMode="decimal"
+	                                value={materialForm.defaultLeadTimeDays}
+	                                onChange={event => setMaterialForm(prev => ({ ...prev, defaultLeadTimeDays: event.target.value }))}
+	                                className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-500/20"
+	                              />
                             </div>
                           </div>
                           <div className="flex flex-col sm:flex-row gap-3 justify-end">

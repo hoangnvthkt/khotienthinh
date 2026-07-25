@@ -2,6 +2,7 @@ import type {
   CustomMaterialRequestLine,
   CustomMaterialTemplateKey,
 } from '../types';
+import { parseNonNegativeLocaleNumber } from './localeNumberInput';
 
 export const CUSTOM_MATERIAL_TEMPLATE_OPTIONS: Array<{
   key: CustomMaterialTemplateKey;
@@ -47,8 +48,7 @@ export const calculateXaGoWeightKg = (quantity: number, lengthMm: number, kgPerM
 };
 
 export const getSpecNumber = (spec: Record<string, unknown> | undefined, key: string) => {
-  const value = Number(spec?.[key] ?? 0);
-  return Number.isFinite(value) ? value : 0;
+  return parseNonNegativeLocaleNumber(spec?.[key] ?? 0);
 };
 
 export const formatCustomMaterialNumber = (value?: number | null, maximumFractionDigits = 2) => {
@@ -58,7 +58,7 @@ export const formatCustomMaterialNumber = (value?: number | null, maximumFractio
 
 export const buildXaGoSpec = (line: Partial<CustomMaterialRequestLine>) => {
   const spec = { ...(line.specJson || {}) } as Record<string, unknown>;
-  const quantity = Number(line.quantity || 0);
+  const quantity = parseNonNegativeLocaleNumber(line.quantity || 0);
   const lengthMm = getSpecNumber(spec, 'length_mm');
   const kgPerM = getSpecNumber(spec, 'kg_per_m');
   const calculatedWeightKg = calculateXaGoWeightKg(quantity, lengthMm, kgPerM);
@@ -89,9 +89,9 @@ export const formatCustomMaterialLineSpec = (line: Partial<CustomMaterialRequest
   }
 
   return [
-    line.effectiveWidth ? `Khổ ${formatCustomMaterialNumber(Number(line.effectiveWidth), 3)}` : '',
-    line.length ? `Dài ${formatCustomMaterialNumber(Number(line.length), 3)}` : '',
-    line.thickness ? `Dày ${formatCustomMaterialNumber(Number(line.thickness), 3)}` : '',
+    line.effectiveWidth ? `Khổ ${formatCustomMaterialNumber(parseNonNegativeLocaleNumber(line.effectiveWidth), 3)}` : '',
+    line.length ? `Dài ${formatCustomMaterialNumber(parseNonNegativeLocaleNumber(line.length), 3)}` : '',
+    line.thickness ? `Dày ${formatCustomMaterialNumber(parseNonNegativeLocaleNumber(line.thickness), 3)}` : '',
     line.color || '',
   ].filter(Boolean).join(' • ');
 };

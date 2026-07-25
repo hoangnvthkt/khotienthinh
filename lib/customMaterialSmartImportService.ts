@@ -6,6 +6,7 @@ import {
   formatCustomMaterialNumber,
   normalizeCustomMaterialTemplateKey,
 } from './customMaterialTemplates';
+import { parseNonNegativeLocaleNumber } from './localeNumberInput';
 import type {
   CustomMaterialImportPreviewRow,
   CustomMaterialSmartImportColumnMapping,
@@ -86,14 +87,8 @@ const columnName = (index: number) => {
 
 const toFiniteNumber = (value: unknown, fallback = 0) => {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
-  const raw = String(value ?? '').trim().replace(/\s/g, '');
-  if (!raw) return fallback;
-  const normalized = raw.includes(',')
-    ? raw.replace(/\./g, '').replace(',', '.')
-    : /^\d{1,3}(\.\d{3})+(\.\d+)?$/.test(raw)
-      ? raw.replace(/\./g, '')
-      : raw;
-  const num = Number(normalized);
+  if (String(value ?? '').trim() === '') return fallback;
+  const num = parseNonNegativeLocaleNumber(value);
   return Number.isFinite(num) ? num : fallback;
 };
 

@@ -34,6 +34,7 @@ import {
     ProjectSubmissionTarget,
     PurchaseOrder,
     PurchaseOrderDeliveryBatch,
+    PurchaseOrderDeliveryLine,
     PurchaseOrderItem,
     PurchaseOrderRequestLineLink,
     PurchaseOrderSupplementalApproval,
@@ -148,6 +149,7 @@ import {
 } from '../../lib/purchaseOrderRequestCart';
 import { getPurchaseOrderUiPolicy, type PurchaseOrderUiAction } from '../../lib/purchaseOrderUiPolicy';
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
+import { formatLocaleDecimalInput, parseNonNegativeLocaleNumber } from '../../lib/localeNumberInput';
 
 interface SupplyChainTabProps {
     constructionSiteId?: string;
@@ -293,9 +295,14 @@ const fmtMoney = (n: number) => Number(n || 0).toLocaleString('vi-VN', { maximum
 const fmtQty = (n: number) => Number(n || 0).toLocaleString('vi-VN', { maximumFractionDigits: 6 });
 
 const normalizeVatRate = (value?: string | number | null) => {
-    const parsed = Number(value || 0);
+    const parsed = parseNonNegativeLocaleNumber(value);
     if (!Number.isFinite(parsed) || parsed <= 0) return 0;
     return Math.min(100, parsed);
+};
+
+const formatNumberInputValue = (value: unknown, maximumFractionDigits = 6) => {
+    const parsed = parseNonNegativeLocaleNumber(value);
+    return parsed > 0 ? formatLocaleDecimalInput(parsed, maximumFractionDigits) : '';
 };
 
 const calculateVatAmount = (amount: number, vatRate?: string | number | null) =>
@@ -429,6 +436,14 @@ type PoDeliveryDraftLine = {
     issuedQty: string;
     deliveryUnitPrice: string;
 };
+type PurchaseOrderDeliveryFormLine = PurchaseOrderDeliveryLine & {
+    plannedQtyInput?: string;
+    stockPlannedQtyInput?: string;
+    deliveryUnitPriceInput?: string;
+};
+type PurchaseOrderDeliveryFormBatch = Omit<PurchaseOrderDeliveryBatch, 'lines'> & {
+    lines: PurchaseOrderDeliveryFormLine[];
+};
 type PoDeliveryPrintGroup = {
     key: string;
     label: string;
@@ -449,6 +464,11 @@ type PoApprovalDeliveryBatch = {
         plannedQty: number;
         unitPrice?: number | null;
     }>;
+};
+
+type PurchaseOrderFormItem = PurchaseOrderItem & {
+    qtyInput?: string;
+    unitPriceInput?: string;
 };
 
 type SiteDirectPurchaseDetailState = {
@@ -558,9 +578,9 @@ const hydrateDirectPurchaseFormLine = (line: SiteDirectPurchaseLine): SiteDirect
 });
 
 const normalizeDirectPurchaseFormLine = (line: SiteDirectPurchaseFormLine, index: number, directPurchaseId: string): SiteDirectPurchaseLine => {
-    const quantity = Number(line.quantityInput ?? line.quantity ?? 0);
-    const unitPrice = Number(line.unitPriceInput ?? line.unitPrice ?? 0);
-    const vatRate = Number(line.vatRateInput ?? line.vatRate ?? 0);
+    const quantity = parseNonNegativeLocaleNumber(line.quantityInput ?? line.quantity);
+    const unitPrice = parseNonNegativeLocaleNumber(line.unitPriceInput ?? line.unitPrice);
+    const vatRate = normalizeVatRate(line.vatRateInput ?? line.vatRate);
     const lineAmount = Math.round(quantity * unitPrice);
     const vatAmount = Math.round(lineAmount * Math.max(0, vatRate) / 100);
     return {
@@ -647,7 +667,7 @@ const normalizeSupplierDeliveryFormLine = (
     deliveryNoteId: string,
     supplierContractId: string,
 ): SupplierDirectDeliveryLine => {
-    const quantity = Number(line.quantityInput ?? line.quantity ?? 0);
+    const quantity = parseNonNegativeLocaleNumber(line.quantityInput ?? line.quantity);
     const wmsFlowMode = line.wmsFlowMode || 'none';
     return {
         ...line,
@@ -684,7 +704,7 @@ const procurementPanelClass = 'bg-card rounded-lg border border-border shadow-sm
 const procurementTableHeadClass = 'bg-slate-50 text-[10px] font-black uppercase tracking-wide text-slate-500 sticky top-0 z-10 dark:bg-slate-800 dark:text-slate-400';
 const procurementInputClass = 'rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-bold text-slate-800 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-500/15 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100';
 
-const createEmptyPoItem = (): PurchaseOrderItem => ({
+const createEmptyPoItem = (): PurchaseOrderFormItem => ({
     lineId: crypto.randomUUID(),
     itemId: '',
     vendorId: null,
@@ -705,9 +725,11 @@ const createEmptyPoItem = (): PurchaseOrderItem => ({
     computedArea: undefined,
     computedWeight: undefined,
     computedLineTotal: undefined,
+    qtyInput: '',
+    unitPriceInput: '',
 });
 
-const normalizePoItem = (item: Partial<PurchaseOrderItem>, inventoryItems: InventoryItem[]): PurchaseOrderItem => {
+const normalizePoItem = (item: Partial<PurchaseOrderFormItem>, inventoryItems: InventoryItem[]): PurchaseOrderItem => {
     const matched = inventoryItems.find(inv =>
         inv.id === item.itemId ||
         (!!item.sku && inv.sku.toLowerCase() === item.sku.toLowerCase()) ||
@@ -729,8 +751,8 @@ const normalizePoItem = (item: Partial<PurchaseOrderItem>, inventoryItems: Inven
         sku: item.sku || matched?.sku || '',
         name: item.name || matched?.name || '',
         unit: purchaseUnitSnapshot || item.unit || matched?.unit || '',
-        qty: Number(item.qty) || 0,
-        unitPrice: Number(item.unitPrice) || 0,
+        qty: parseNonNegativeLocaleNumber(item.qtyInput ?? item.qty),
+        unitPrice: parseNonNegativeLocaleNumber(item.unitPriceInput ?? item.unitPrice),
         receivedQty: Number(item.receivedQty) || 0,
         neededDate: item.neededDate || '',
         workBoqItemId: item.workBoqItemId || null,
@@ -766,6 +788,15 @@ const normalizePoItem = (item: Partial<PurchaseOrderItem>, inventoryItems: Inven
         computedArea: item.computedArea != null ? Number(item.computedArea) : undefined,
         computedWeight: item.computedWeight != null ? Number(item.computedWeight) : undefined,
         computedLineTotal: item.computedLineTotal != null ? Number(item.computedLineTotal) : undefined,
+    };
+};
+
+const hydratePoFormItem = (item: Partial<PurchaseOrderFormItem>, inventoryItems: InventoryItem[]): PurchaseOrderFormItem => {
+    const normalized = normalizePoItem(item, inventoryItems);
+    return {
+        ...normalized,
+        qtyInput: item.qtyInput ?? formatNumberInputValue(normalized.qty, 6),
+        unitPriceInput: item.unitPriceInput ?? formatNumberInputValue(normalized.unitPrice, 0),
     };
 };
 
@@ -1078,8 +1109,8 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     const [pDate, setPDate] = useState(new Date().toISOString().split('T')[0]);
     const [pExpDate, setPExpDate] = useState('');
     const [pVatRate, setPVatRate] = useState('0');
-    const [pItems, setPItems] = useState<PurchaseOrderItem[]>([createEmptyPoItem()]);
-    const [pDeliveryBatches, setPDeliveryBatches] = useState<PurchaseOrderDeliveryBatch[]>([]);
+    const [pItems, setPItems] = useState<PurchaseOrderFormItem[]>([createEmptyPoItem()]);
+    const [pDeliveryBatches, setPDeliveryBatches] = useState<PurchaseOrderDeliveryFormBatch[]>([]);
     const [pDeliveryScheduleMode, setPDeliveryScheduleMode] = useState<PoDeliveryScheduleMode>('unknown');
     const [pApprovalRequestTitle, setPApprovalRequestTitle] = useState('');
     const [pNote, setPNote] = useState('');
@@ -1349,7 +1380,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         const normalizedLines = sdLines.map((line, index) => normalizeSupplierDeliveryFormLine(line, index, sdId, contract.id));
         const invalidLine = normalizedLines.find(line =>
             !line.itemNameSnapshot.trim()
-            || Number(line.quantity || 0) <= 0
+            || parseNonNegativeLocaleNumber(line.quantity) <= 0
         );
         if (invalidLine) {
             toast.warning('Kiểm tra dòng giao nhận', 'Mỗi dòng cần tên vật tư và số lượng lớn hơn 0.');
@@ -1542,8 +1573,8 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         if (!pricing) return;
         if (!ensureSupplierDelivery(effectiveSupplierDeliveryCapabilities.canReconcileSupplierDelivery, 'ghi đối soát/AP phiếu giao HĐ NCC')) return;
         const invalidLine = pricing.lines.find(line => {
-            const unitPrice = Number(line.unitPriceInput || 0);
-            const vatRate = Number(line.vatRateInput || 0);
+            const unitPrice = parseNonNegativeLocaleNumber(line.unitPriceInput);
+            const vatRate = normalizeVatRate(line.vatRateInput);
             return !Number.isFinite(unitPrice) || unitPrice < 0 || !Number.isFinite(vatRate) || vatRate < 0 || vatRate > 100;
         });
         if (invalidLine) {
@@ -1551,8 +1582,8 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             return;
         }
         const pricedLines = pricing.lines.map(line => {
-            const acceptedQuantity = Number(line.acceptedQuantity || line.quantity || 0);
-            const unitPriceSnapshot = Number(line.unitPriceInput || 0);
+            const acceptedQuantity = parseNonNegativeLocaleNumber(line.acceptedQuantity || line.quantity);
+            const unitPriceSnapshot = parseNonNegativeLocaleNumber(line.unitPriceInput);
             const vatRateSnapshot = normalizeVatRate(line.vatRateInput);
             const lineAmount = Math.round(acceptedQuantity * unitPriceSnapshot);
             const vatAmount = Math.round(lineAmount * vatRateSnapshot / 100);
@@ -2374,7 +2405,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     const updatePoDeliveryBatch = (batchId: string, patch: Partial<PurchaseOrderDeliveryBatch>) => {
         setPDeliveryBatches(prev => prev.map(batch => batch.id === batchId ? { ...batch, ...patch } : batch));
     };
-    const getEditablePoDeliveryBatches = (currentBatches: PurchaseOrderDeliveryBatch[], renderedBatchId: string) => {
+    const getEditablePoDeliveryBatches = (currentBatches: PurchaseOrderDeliveryFormBatch[], renderedBatchId: string): PurchaseOrderDeliveryFormBatch[] => {
         if (currentBatches.length > 0) return currentBatches;
         if (!shouldAutoCreatePoDeliveryScheduleForForm({ isEditing: Boolean(editingPo), sourceMode: pSourceMode })) return [];
         return buildDefaultPoDeliveryBatches(pItems, pExpDate).map((batch, index) => {
@@ -2386,7 +2417,9 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             };
         });
     };
-    const updatePoDeliveryLineQty = (batchId: string, purchaseOrderLineId: string, plannedQty: number) => {
+    const updatePoDeliveryLineQty = (batchId: string, purchaseOrderLineId: string, rawPlannedQty: unknown) => {
+        const plannedQty = parseNonNegativeLocaleNumber(rawPlannedQty);
+        const plannedQtyInput = String(rawPlannedQty ?? '');
         setPDeliveryBatches(prev => getEditablePoDeliveryBatches(prev, batchId).map(batch => {
             if (batch.id !== batchId) return batch;
             const existingLine = batch.lines.find(line => line.purchaseOrderLineId === purchaseOrderLineId);
@@ -2398,13 +2431,16 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     ...batch,
                     lines: [
                         ...batch.lines,
-                        makePoDeliveryLineDraft(
-                            batch.id,
-                            editingPo?.id || '',
-                            sourceItem,
-                            plannedQty,
-                            pSourceMode === 'from_request' ? 0 : undefined,
-                        ),
+                        {
+                            ...makePoDeliveryLineDraft(
+                                batch.id,
+                                editingPo?.id || '',
+                                sourceItem,
+                                plannedQty,
+                                pSourceMode === 'from_request' ? 0 : undefined,
+                            ),
+                            plannedQtyInput,
+                        },
                     ],
                 };
             }
@@ -2414,19 +2450,22 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     if (line.purchaseOrderLineId !== purchaseOrderLineId) return line;
                     const sourceItem = pItems.map(item => normalizePoItem(item, inventoryItems))
                         .find(item => (item.lineId || item.itemId) === purchaseOrderLineId);
-                    if (!sourceItem) return { ...line, plannedQty: Number(plannedQty || 0) };
+                    if (!sourceItem) return { ...line, plannedQty, plannedQtyInput };
                     const inventory = inventoryItems.find(item => item.id === sourceItem.itemId);
                     return {
                         ...line,
-                        plannedQty: Number(plannedQty || 0),
-                        stockPlannedQty: poLinePurchaseToStockQty(sourceItem, Number(plannedQty || 0), inventory),
+                        plannedQty,
+                        plannedQtyInput,
+                        stockPlannedQty: poLinePurchaseToStockQty(sourceItem, plannedQty, inventory),
                         stockUnit: getPoLineStockUnit(sourceItem, inventory) || line.stockUnit || null,
                     };
                 }),
             };
         }));
     };
-    const updatePoDeliveryLineStockQty = (batchId: string, purchaseOrderLineId: string, stockPlannedQty: number) => {
+    const updatePoDeliveryLineStockQty = (batchId: string, purchaseOrderLineId: string, rawStockPlannedQty: unknown) => {
+        const stockPlannedQty = parseNonNegativeLocaleNumber(rawStockPlannedQty);
+        const stockPlannedQtyInput = String(rawStockPlannedQty ?? '');
         setPDeliveryBatches(prev => getEditablePoDeliveryBatches(prev, batchId).map(batch => {
             if (batch.id !== batchId) return batch;
             const existingLine = batch.lines.find(line => line.purchaseOrderLineId === purchaseOrderLineId);
@@ -2439,15 +2478,18 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     ...batch,
                     lines: [
                         ...batch.lines,
-                        makePoDeliveryLineDraft(
-                            batch.id,
-                            editingPo?.id || '',
-                            sourceItem,
-                            0,
-                            pSourceMode === 'from_request' ? 0 : undefined,
-                            undefined,
-                            stockPlannedQty,
-                        ),
+                        {
+                            ...makePoDeliveryLineDraft(
+                                batch.id,
+                                editingPo?.id || '',
+                                sourceItem,
+                                0,
+                                pSourceMode === 'from_request' ? 0 : undefined,
+                                undefined,
+                                stockPlannedQty,
+                            ),
+                            stockPlannedQtyInput,
+                        },
                     ],
                 };
             }
@@ -2456,14 +2498,17 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 lines: batch.lines.map(line => line.purchaseOrderLineId === purchaseOrderLineId
                     ? {
                         ...line,
-                        stockPlannedQty: Number(stockPlannedQty || 0),
+                        stockPlannedQty,
+                        stockPlannedQtyInput,
                         stockUnit: getPoLineStockUnit(sourceItem, inventory) || line.stockUnit || null,
                     }
                     : line),
             };
         }));
     };
-    const updatePoDeliveryLinePrice = (batchId: string, purchaseOrderLineId: string, deliveryUnitPrice: number) => {
+    const updatePoDeliveryLinePrice = (batchId: string, purchaseOrderLineId: string, rawDeliveryUnitPrice: unknown) => {
+        const deliveryUnitPrice = parseNonNegativeLocaleNumber(rawDeliveryUnitPrice);
+        const deliveryUnitPriceInput = String(rawDeliveryUnitPrice ?? '');
         setPDeliveryBatches(prev => getEditablePoDeliveryBatches(prev, batchId).map(batch => {
             if (batch.id !== batchId) return batch;
             const existingLine = batch.lines.find(line => line.purchaseOrderLineId === purchaseOrderLineId);
@@ -2475,14 +2520,17 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     ...batch,
                     lines: [
                         ...batch.lines,
-                        makePoDeliveryLineDraft(batch.id, editingPo?.id || '', sourceItem, 0, deliveryUnitPrice),
+                        {
+                            ...makePoDeliveryLineDraft(batch.id, editingPo?.id || '', sourceItem, 0, deliveryUnitPrice),
+                            deliveryUnitPriceInput,
+                        },
                     ],
                 };
             }
             return {
                 ...batch,
                 lines: batch.lines.map(line => line.purchaseOrderLineId === purchaseOrderLineId
-                    ? { ...line, deliveryUnitPrice: Number(deliveryUnitPrice || 0) }
+                    ? { ...line, deliveryUnitPrice, deliveryUnitPriceInput }
                     : line),
             };
         }));
@@ -3194,8 +3242,8 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         const validLines = deliveryDraftLines
             .map(line => ({
                 ...line,
-                issuedQtyNumber: Number(line.issuedQty || 0),
-                deliveryUnitPriceNumber: Number(line.deliveryUnitPrice || 0),
+                issuedQtyNumber: parseNonNegativeLocaleNumber(line.issuedQty),
+                deliveryUnitPriceNumber: parseNonNegativeLocaleNumber(line.deliveryUnitPrice),
             }))
             .filter(line => line.issuedQtyNumber > 0);
         if (validLines.length === 0) {
@@ -3938,7 +3986,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         }
     };
 
-    const updatePoItem = (index: number, patch: Partial<PurchaseOrderItem>) => {
+    const updatePoItem = (index: number, patch: Partial<PurchaseOrderFormItem>) => {
         setPItems(prev => prev.map((item, i) => i === index ? { ...item, ...patch } : item));
     };
 
@@ -3946,6 +3994,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         const selected = inventoryItems.find(item => item.id === itemId);
         const currentLine = pItems[index];
         const supplierPatch = currentLine?.vendorId ? {} : getDefaultSupplierPatchForInventory(selected);
+        const nextUnitPrice = stockUnitPriceToPurchaseUnitPrice(Number(selected?.priceIn || 0), selected);
         updatePoItem(index, {
             itemId,
             ...supplierPatch,
@@ -3958,7 +4007,8 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             }),
             sku: selected?.sku || '',
             name: selected?.name || '',
-            unitPrice: stockUnitPriceToPurchaseUnitPrice(Number(selected?.priceIn || 0), selected),
+            unitPrice: nextUnitPrice,
+            unitPriceInput: formatNumberInputValue(nextUnitPrice, 0),
             isManualItem: false,
             itemNameSnapshot: selected?.name || '',
             unitSnapshot: selected?.unit || '',
@@ -3999,15 +4049,17 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             return;
         }
         const defaultStockUnitPrice = Number(inventory.priceIn || budget.budgetUnitPrice || 0);
+        const nextUnitPrice = defaultStockUnitPrice > 0
+            ? stockUnitPriceToPurchaseUnitPrice(defaultStockUnitPrice, inventory)
+            : parseNonNegativeLocaleNumber(pItems[index]?.unitPriceInput ?? pItems[index]?.unitPrice);
         updatePoItem(index, {
             itemId: inventory.id,
             ...(pItems[index]?.vendorId ? {} : getDefaultSupplierPatchForInventory(inventory)),
             ...buildPoUnitSnapshot(inventory),
             sku: inventory.sku,
             name: inventory.name,
-            unitPrice: defaultStockUnitPrice > 0
-                ? stockUnitPriceToPurchaseUnitPrice(defaultStockUnitPrice, inventory)
-                : Number(pItems[index]?.unitPrice || 0),
+            unitPrice: nextUnitPrice,
+            unitPriceInput: formatNumberInputValue(nextUnitPrice, 0),
             isManualItem: false,
             itemNameSnapshot: inventory.name,
             unitSnapshot: inventory.unit,
@@ -4056,6 +4108,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             ['Cập nhật', 'Dùng sheet Cap_nhat hoặc file chỉ gồm Mã SKU và cột muốn sửa. SKU phải đang có trong PO form.'],
             ['Ô trống', 'Trong chế độ Cập nhật, ô trống nghĩa là không đổi dữ liệu.'],
             ['ĐVT mua', 'PO đặt theo Đơn vị mua của NCC trong danh mục vật tư. Khi nhập kho, hệ thống tự quy đổi sang ĐVT kho theo hệ số vật tư.'],
+            ['Định dạng số', 'Nên nhập số nguyên dạng 1500 hoặc 1.500; số lẻ dùng dấu phẩy như 12,5. Tránh nhập 1,500 nếu ý là một nghìn năm trăm.'],
         ]);
         guideWs['!cols'] = [{ wch: 24 }, { wch: 100 }];
         XLSX.utils.book_append_sheet(wb, guideWs, 'Huong_dan');
@@ -4105,15 +4158,15 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     label: 'Khối lượng đặt',
                     aliases: ['Khối lượng đặt *', 'Khối lượng đặt', 'Số lượng', 'KL'],
                     requiredOnCreate: true,
-                    normalize: value => Number(value) || 0,
-                    validate: value => Number(value) > 0 ? undefined : 'Khối lượng đặt phải lớn hơn 0.',
+                    normalize: value => parseNonNegativeLocaleNumber(value),
+                    validate: value => parseNonNegativeLocaleNumber(value) > 0 ? undefined : 'Khối lượng đặt phải lớn hơn 0.',
                 },
                 {
                     key: 'unitPrice',
                     label: 'Đơn giá',
                     aliases: ['Đơn giá', 'Giá'],
-                    normalize: value => Number(value) || 0,
-                    validate: value => Number(value) >= 0 ? undefined : 'Đơn giá không hợp lệ.',
+                    normalize: value => parseNonNegativeLocaleNumber(value),
+                    validate: value => parseNonNegativeLocaleNumber(value) >= 0 ? undefined : 'Đơn giá không hợp lệ.',
                 },
                 {
                     key: 'neededDate',
@@ -5409,7 +5462,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     const supplierDeliveryFormSummary = useMemo(
         () => supplierDeliveryFormLines.reduce((sum, line) => ({
             lineCount: sum.lineCount + 1,
-            totalQuantity: sum.totalQuantity + Number(line.quantity || 0),
+            totalQuantity: sum.totalQuantity + parseNonNegativeLocaleNumber(line.quantity),
         }), { lineCount: 0, totalQuantity: 0 }),
         [supplierDeliveryFormLines],
     );
@@ -7074,7 +7127,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                             )}
                                                         </td>
                                                         <td className="px-3 py-2">
-                                                            <input type="number" min={0} step="any" value={line.quantityInput ?? ''} onChange={event => updateSupplierDeliveryLine(line.id, { quantityInput: event.target.value })} className={`${procurementInputClass} w-full text-right`} />
+                                                            <input type="text" inputMode="decimal" value={line.quantityInput ?? ''} onChange={event => updateSupplierDeliveryLine(line.id, { quantityInput: event.target.value })} className={`${procurementInputClass} w-full text-right`} />
                                                         </td>
                                                         <td className="px-3 py-2">
                                                             <input value={line.unitSnapshot || ''} onChange={event => updateSupplierDeliveryLine(line.id, { unitSnapshot: event.target.value })} className={`${procurementInputClass} w-full`} placeholder="m3/tấn/bao" />
@@ -7111,8 +7164,8 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             {supplierDeliveryStatementPricing && (() => {
                 const pricing = supplierDeliveryStatementPricing;
                 const totals = pricing.lines.reduce((sum, line) => {
-                    const acceptedQuantity = Number(line.acceptedQuantity || line.quantity || 0);
-                    const unitPrice = Number(line.unitPriceInput || 0);
+                    const acceptedQuantity = parseNonNegativeLocaleNumber(line.acceptedQuantity || line.quantity);
+                    const unitPrice = parseNonNegativeLocaleNumber(line.unitPriceInput);
                     const vatRate = normalizeVatRate(line.vatRateInput);
                     const grossAmount = Math.round(acceptedQuantity * unitPrice);
                     const vatAmount = Math.round(grossAmount * vatRate / 100);
@@ -7149,8 +7202,8 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                         </thead>
                                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                                             {pricing.lines.map(line => {
-                                                const acceptedQuantity = Number(line.acceptedQuantity || line.quantity || 0);
-                                                const unitPrice = Number(line.unitPriceInput || 0);
+                                                const acceptedQuantity = parseNonNegativeLocaleNumber(line.acceptedQuantity || line.quantity);
+                                                const unitPrice = parseNonNegativeLocaleNumber(line.unitPriceInput);
                                                 const vatRate = normalizeVatRate(line.vatRateInput);
                                                 const grossAmount = Math.round(acceptedQuantity * unitPrice);
                                                 const totalAmount = grossAmount + Math.round(grossAmount * vatRate / 100);
@@ -7163,10 +7216,10 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                         <td className="px-3 py-2 text-right font-black text-slate-700 dark:text-slate-200">{fmtQty(acceptedQuantity)}</td>
                                                         <td className="px-3 py-2 font-bold text-slate-500">{line.unitSnapshot || '—'}</td>
                                                         <td className="px-3 py-2">
-                                                            <input type="number" min={0} step="any" value={line.unitPriceInput} onChange={event => updateSupplierDeliveryStatementPrice(line.id, { unitPriceInput: event.target.value })} className={`${procurementInputClass} w-full text-right`} />
+                                                            <input type="text" inputMode="decimal" value={line.unitPriceInput} onChange={event => updateSupplierDeliveryStatementPrice(line.id, { unitPriceInput: event.target.value })} className={`${procurementInputClass} w-full text-right`} />
                                                         </td>
                                                         <td className="px-3 py-2">
-                                                            <input type="number" min={0} max={100} step="any" value={line.vatRateInput} onChange={event => updateSupplierDeliveryStatementPrice(line.id, { vatRateInput: event.target.value })} className={`${procurementInputClass} w-full text-right`} />
+                                                            <input type="text" inputMode="decimal" value={line.vatRateInput} onChange={event => updateSupplierDeliveryStatementPrice(line.id, { vatRateInput: event.target.value })} className={`${procurementInputClass} w-full text-right`} />
                                                         </td>
                                                         <td className="px-3 py-2 text-right font-black text-blue-700 whitespace-nowrap">{fmtMoney(totalAmount)} đ</td>
                                                     </tr>
@@ -7398,16 +7451,16 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                         <input value={line.note || ''} onChange={event => updateDirectPurchaseLine(line.id, { note: event.target.value })} className={`${procurementInputClass} mt-1 w-full`} placeholder="Ghi chú dòng" />
                                                     </td>
                                                     <td className="px-3 py-2">
-                                                        <input type="number" min={0} step="any" value={line.quantityInput ?? ''} onChange={event => updateDirectPurchaseLine(line.id, { quantityInput: event.target.value })} className={`${procurementInputClass} w-full text-right`} />
+                                                        <input type="text" inputMode="decimal" value={line.quantityInput ?? ''} onChange={event => updateDirectPurchaseLine(line.id, { quantityInput: event.target.value })} className={`${procurementInputClass} w-full text-right`} />
                                                     </td>
                                                     <td className="px-3 py-2">
                                                         <input value={line.unitSnapshot || ''} onChange={event => updateDirectPurchaseLine(line.id, { unitSnapshot: event.target.value })} className={`${procurementInputClass} w-full`} />
                                                     </td>
                                                     <td className="px-3 py-2">
-                                                        <input type="number" min={0} step="any" value={line.unitPriceInput ?? ''} onChange={event => updateDirectPurchaseLine(line.id, { unitPriceInput: event.target.value })} className={`${procurementInputClass} w-full text-right`} />
+                                                        <input type="text" inputMode="decimal" value={line.unitPriceInput ?? ''} onChange={event => updateDirectPurchaseLine(line.id, { unitPriceInput: event.target.value })} className={`${procurementInputClass} w-full text-right`} />
                                                     </td>
                                                     <td className="px-3 py-2">
-                                                        <input type="number" min={0} max={100} step="any" value={line.vatRateInput ?? '0'} onChange={event => updateDirectPurchaseLine(line.id, { vatRateInput: event.target.value })} className={`${procurementInputClass} w-full text-right`} />
+                                                        <input type="text" inputMode="decimal" value={line.vatRateInput ?? '0'} onChange={event => updateDirectPurchaseLine(line.id, { vatRateInput: event.target.value })} className={`${procurementInputClass} w-full text-right`} />
                                                     </td>
                                                     <td className="px-3 py-2 text-right font-black text-orange-700 whitespace-nowrap">{fmtMoney(total)} đ</td>
                                                     <td className="px-3 py-2 text-right">
@@ -7762,8 +7815,8 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                     </thead>
                                     <tbody className="divide-y divide-slate-50 dark:divide-slate-700/40">
                                         {deliveryDraftLines.map(line => {
-                                            const qty = Number(line.issuedQty || 0);
-                                            const price = Number(line.deliveryUnitPrice || 0);
+                                            const qty = parseNonNegativeLocaleNumber(line.issuedQty);
+                                            const price = parseNonNegativeLocaleNumber(line.deliveryUnitPrice);
                                             const amount = qty * price;
                                             return (
                                                 <tr key={line.key} className="hover:bg-indigo-50/40">
@@ -7785,8 +7838,8 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                     </td>
                                                     <td className="px-4 py-3 text-right">
                                                         <input
-                                                            type="number"
-                                                            min={0}
+                                                            type="text"
+                                                            inputMode="decimal"
                                                             value={line.issuedQty}
                                                             onChange={event => updateDeliveryDraftLine(line.key, { issuedQty: event.target.value })}
                                                             className={`${procurementInputClass} w-28 text-right text-indigo-700`}
@@ -7794,8 +7847,8 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                     </td>
                                                     <td className="px-4 py-3 text-right">
                                                         <input
-                                                            type="number"
-                                                            min={0}
+                                                            type="text"
+                                                            inputMode="decimal"
                                                             value={line.deliveryUnitPrice}
                                                             onChange={event => updateDeliveryDraftLine(line.key, { deliveryUnitPrice: event.target.value })}
                                                             className={`${procurementInputClass} w-28 text-right text-emerald-700`}
@@ -7815,7 +7868,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                             <div className="text-xs font-bold text-slate-500">
                                 Tổng đợt giao:{' '}
                                 <span className="font-black text-emerald-700">
-                                    {deliveryDraftLines.reduce((sum, line) => sum + Number(line.issuedQty || 0) * Number(line.deliveryUnitPrice || 0), 0).toLocaleString('vi-VN')} đ
+                                    {deliveryDraftLines.reduce((sum, line) => sum + parseNonNegativeLocaleNumber(line.issuedQty) * parseNonNegativeLocaleNumber(line.deliveryUnitPrice), 0).toLocaleString('vi-VN')} đ
                                 </span>
                             </div>
                             <div className="flex justify-end gap-3">
@@ -7995,10 +8048,8 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                 <div>
                                     <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">VAT (%)</label>
                                     <input
-                                        type="number"
-                                        min={0}
-                                        max={100}
-                                        step="any"
+                                        type="text"
+                                        inputMode="decimal"
                                         value={pVatRate}
                                         onChange={e => setPVatRate(e.target.value)}
                                         className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-emerald-700 focus:ring-2 focus:ring-blue-500 outline-none"
@@ -8061,9 +8112,11 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                             unitPrice: scheduleUnitPricePreview,
                                         });
                                         const pricingPreviewLine = {
-                                            ...item,
-                                            qty: pSourceMode === 'from_request' ? scheduleQtyPreview : Number(item.qty || 0),
-                                            unitPrice: pSourceMode === 'from_request' ? scheduleUnitPricePreview : Number(item.unitPrice || 0),
+                                            ...normalizedLine,
+                                            specs: item.specs,
+                                            pricingMode: item.pricingMode,
+                                            qty: pSourceMode === 'from_request' ? scheduleQtyPreview : normalizedLine.qty,
+                                            unitPrice: pSourceMode === 'from_request' ? scheduleUnitPricePreview : normalizedLine.unitPrice,
                                         };
                                         const hasUnitConversion = hasPurchaseUnitConversion({
                                             unit: stockUnit,
@@ -8116,11 +8169,10 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                     </div>
                                                 ) : (
                                                     <input
-                                                        type="number"
-                                                        min={0}
-                                                        step={1}
-                                                        value={item.qty || ''}
-                                                        onChange={e => updatePoItem(i, { qty: Number(e.target.value) || 0 })}
+                                                        type="text"
+                                                        inputMode="decimal"
+                                                        value={item.qtyInput ?? formatNumberInputValue(item.qty, 6)}
+                                                        onChange={e => updatePoItem(i, { qtyInput: e.target.value })}
                                                         placeholder="SL"
                                                         className="col-span-4 md:col-span-1 px-2.5 py-2 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-blue-500 outline-none"
                                                     />
@@ -8132,10 +8184,10 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                     </div>
                                                 ) : (
                                                     <input
-                                                        type="number"
-                                                        min={0}
-                                                        value={item.unitPrice || ''}
-                                                        onChange={e => updatePoItem(i, { unitPrice: Number(e.target.value) || 0 })}
+                                                        type="text"
+                                                        inputMode="decimal"
+                                                        value={item.unitPriceInput ?? formatNumberInputValue(item.unitPrice, 0)}
+                                                        onChange={e => updatePoItem(i, { unitPriceInput: e.target.value })}
                                                         placeholder="Đơn giá"
                                                         className="col-span-4 md:col-span-2 px-2.5 py-2 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-blue-500 outline-none"
                                                     />
@@ -8274,14 +8326,15 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                                             </label>
                                                                             <div className="relative flex items-center">
                                                                                 <input
-                                                                                    type={isText ? 'text' : 'number'}
+                                                                                    type="text"
+                                                                                    inputMode={isText ? undefined : 'decimal'}
                                                                                     value={specVal.value ?? ''}
                                                                                     onChange={e => {
                                                                                         const val = e.target.value;
                                                                                         const nextSpecs = { ...(item.specs || {}) };
                                                                                         nextSpecs[key] = {
                                                                                             ...specVal,
-                                                                                            value: isText ? val : (Number(val) || 0)
+                                                                                            value: val
                                                                                         };
                                                                                         const area = item.pricingMode === 'by_area' ? calculateArea(nextSpecs) : undefined;
                                                                                         const weight = item.pricingMode === 'by_weight' ? getSpecNumeric(nextSpecs, 'weight') : undefined;
@@ -8521,7 +8574,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                         <tbody className="divide-y divide-slate-100">
                                                             {activeItems.map(item => {
                                                                 const lineKey = item.lineId || item.itemId;
-                                                                const currentLine = batch.lines.find(line => line.purchaseOrderLineId === lineKey);
+                                                                const currentLine = batch.lines.find(line => line.purchaseOrderLineId === lineKey) as PurchaseOrderDeliveryFormLine | undefined;
                                                                 const deliveryInventory = inventoryItems.find(inv => inv.id === item.itemId);
                                                                 const stockUnit = getPoLineStockUnit(item, deliveryInventory) || item.unit;
                                                                 const purchaseUnit = getPoLinePurchaseUnit(item, deliveryInventory) || item.unit;
@@ -8541,8 +8594,8 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                                         ? 'text-amber-600'
                                                                         : 'text-emerald-600';
                                                                 const deliveryPriceInputValue = currentLine
-                                                                    ? (Number(currentLine.deliveryUnitPrice || 0) > 0 ? currentLine.deliveryUnitPrice : '')
-                                                                    : (pSourceMode === 'from_request' ? '' : item.unitPrice ?? '');
+                                                                    ? (currentLine.deliveryUnitPriceInput ?? (Number(currentLine.deliveryUnitPrice || 0) > 0 ? formatNumberInputValue(currentLine.deliveryUnitPrice, 0) : ''))
+                                                                    : (pSourceMode === 'from_request' ? '' : formatNumberInputValue(item.unitPrice, 0));
                                                                 return (
                                                                     <tr key={lineKey}>
                                                                         <td className="px-2 py-2">
@@ -8553,20 +8606,18 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                                         <td className="px-2 py-2 text-right">
                                                                             {itemHasConversion ? (
                                                                                 <input
-                                                                                    type="number"
-                                                                                    min={0}
-                                                                                    step="any"
-                                                                                    value={Number.isFinite(stockQty) ? stockQty : ''}
-                                                                                    onChange={e => updatePoDeliveryLineStockQty(batch.id, lineKey, Number(e.target.value) || 0)}
+                                                                                    type="text"
+                                                                                    inputMode="decimal"
+                                                                                    value={currentLine?.stockPlannedQtyInput ?? (Number.isFinite(stockQty) ? formatNumberInputValue(stockQty, 6) : '')}
+                                                                                    onChange={e => updatePoDeliveryLineStockQty(batch.id, lineKey, e.target.value)}
                                                                                     className="w-28 rounded-lg border border-slate-200 px-2 py-1.5 text-right text-xs font-bold text-slate-700"
                                                                                 />
                                                                             ) : (
                                                                                 <input
-                                                                                    type="number"
-                                                                                    min={0}
-                                                                                    step="any"
-                                                                                    value={currentLine?.plannedQty || ''}
-                                                                                    onChange={e => updatePoDeliveryLineQty(batch.id, lineKey, Number(e.target.value) || 0)}
+                                                                                    type="text"
+                                                                                    inputMode="decimal"
+                                                                                    value={currentLine?.plannedQtyInput ?? formatNumberInputValue(currentLine?.plannedQty, 6)}
+                                                                                    onChange={e => updatePoDeliveryLineQty(batch.id, lineKey, e.target.value)}
                                                                                     className="w-28 rounded-lg border border-slate-200 px-2 py-1.5 text-right text-xs font-bold"
                                                                                 />
                                                                             )}
@@ -8577,11 +8628,10 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                                                 <td className="px-2 py-2 text-right">
                                                                                     {itemHasConversion ? (
                                                                                         <input
-                                                                                            type="number"
-                                                                                            min={0}
-                                                                                            step="any"
-                                                                                            value={currentLine?.plannedQty || ''}
-                                                                                            onChange={e => updatePoDeliveryLineQty(batch.id, lineKey, Number(e.target.value) || 0)}
+                                                                                            type="text"
+                                                                                            inputMode="decimal"
+                                                                                            value={currentLine?.plannedQtyInput ?? formatNumberInputValue(currentLine?.plannedQty, 6)}
+                                                                                            onChange={e => updatePoDeliveryLineQty(batch.id, lineKey, e.target.value)}
                                                                                             className="w-28 rounded-lg border border-slate-200 px-2 py-1.5 text-right text-xs font-bold"
                                                                                         />
                                                                                     ) : (
@@ -8592,11 +8642,10 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                                         )}
                                                                         <td className="px-2 py-2 text-right">
                                                                             <input
-                                                                                type="number"
-                                                                                min={0}
-                                                                                step="any"
+                                                                                type="text"
+                                                                                inputMode="decimal"
                                                                                 value={deliveryPriceInputValue}
-                                                                                onChange={e => updatePoDeliveryLinePrice(batch.id, lineKey, Number(e.target.value) || 0)}
+                                                                                onChange={e => updatePoDeliveryLinePrice(batch.id, lineKey, e.target.value)}
                                                                                 className="w-32 rounded-lg border border-slate-200 px-2 py-1.5 text-right text-xs font-bold text-emerald-700"
                                                                             />
                                                                         </td>

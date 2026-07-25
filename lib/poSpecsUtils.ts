@@ -4,6 +4,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 import type { PurchaseOrderItem } from '../types';
+import { parseNonNegativeLocaleNumber } from './localeNumberInput';
 
 // ─── Types ───────────────────────────────────────────────────
 
@@ -153,7 +154,7 @@ export const SPEC_PRESETS: Record<string, SpecPreset> = {
 /** Get numeric value from specs by key, returns 0 if not found */
 export function getSpecNumeric(specs: Record<string, SpecValue> | undefined, key: string): number {
   if (!specs || !specs[key]) return 0;
-  return Number(specs[key].value) || 0;
+  return parseNonNegativeLocaleNumber(specs[key].value);
 }
 
 /** Calculate area in m² from width × height (both in mm) */
@@ -186,8 +187,8 @@ export function getLengthMeters(specs?: Record<string, SpecValue>): number {
 
 /** Calculate the line total for a PO item based on its pricingMode */
 export function calculateLineTotal(item: PurchaseOrderItem): number {
-  const qty = Number(item.qty) || 0;
-  const unitPrice = Number(item.unitPrice) || 0;
+  const qty = parseNonNegativeLocaleNumber(item.qty);
+  const unitPrice = parseNonNegativeLocaleNumber(item.unitPrice);
   const mode: PricingMode = (item as any).pricingMode || 'standard';
   const specs = (item as any).specs as Record<string, SpecValue> | undefined;
 

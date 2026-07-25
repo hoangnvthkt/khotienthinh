@@ -10,6 +10,7 @@ import { materialCodeRequestService } from '../lib/materialCodeRequestService';
 import { isGlobalWarehouseKeeper } from '../lib/wmsPermissions';
 import SearchableSelect from '../components/common/SearchableSelect';
 import { matchesSearchQueryMultiple } from '../lib/searchUtils';
+import { parseNonNegativeLocaleNumber } from '../lib/localeNumberInput';
 
 const statusLabel: Record<MaterialCodeRequest['status'], string> = {
   pending: 'Chờ cấp mã',
@@ -21,6 +22,18 @@ const statusClass: Record<MaterialCodeRequest['status'], string> = {
   pending: 'bg-amber-50 text-amber-700 border-amber-200',
   approved: 'bg-emerald-50 text-emerald-700 border-emerald-200',
   rejected: 'bg-rose-50 text-rose-700 border-rose-200',
+};
+
+type ApprovalForm = {
+  sku: string;
+  name: string;
+  category: string;
+  unit: string;
+  supplierId: string;
+  priceIn: number | string;
+  priceOut: number | string;
+  minStock: number | string;
+  location: string;
 };
 
 const MaterialCodeRequests: React.FC = () => {
@@ -43,7 +56,7 @@ const MaterialCodeRequests: React.FC = () => {
     reason: '',
   });
   const [approving, setApproving] = useState<MaterialCodeRequest | null>(null);
-  const [approvalForm, setApprovalForm] = useState({
+  const [approvalForm, setApprovalForm] = useState<ApprovalForm>({
     sku: '',
     name: '',
     category: '',
@@ -166,11 +179,11 @@ const MaterialCodeRequests: React.FC = () => {
         name: approvalForm.name.trim(),
         category: approvalForm.category.trim(),
         unit: approvalForm.unit.trim(),
-        purchaseConversionFactor: 1,
-        supplierId: approvalForm.supplierId || undefined,
-        priceIn: Number(approvalForm.priceIn) || 0,
-        priceOut: Number(approvalForm.priceOut) || 0,
-        minStock: Number(approvalForm.minStock) || 0,
+	        purchaseConversionFactor: 1,
+	        supplierId: approvalForm.supplierId || undefined,
+	        priceIn: parseNonNegativeLocaleNumber(approvalForm.priceIn),
+	        priceOut: parseNonNegativeLocaleNumber(approvalForm.priceOut),
+	        minStock: parseNonNegativeLocaleNumber(approvalForm.minStock),
         location: approvalForm.location.trim() || undefined,
         stockByWarehouse: {},
       };
@@ -508,34 +521,34 @@ const MaterialCodeRequests: React.FC = () => {
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-600">Giá nhập tham khảo</label>
-                <input
-                  type="number"
-                  min={0}
-                  value={approvalForm.priceIn}
-                  onChange={e => setApprovalForm(prev => ({ ...prev, priceIn: Number(e.target.value) }))}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-emerald-500"
-                />
+	                <label className="text-xs font-bold text-slate-600">Giá nhập tham khảo</label>
+	                <input
+	                  type="text"
+	                  inputMode="decimal"
+	                  value={approvalForm.priceIn}
+	                  onChange={e => setApprovalForm(prev => ({ ...prev, priceIn: e.target.value }))}
+	                  className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-emerald-500"
+	                />
               </div>
               <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-600">Giá xuất/tham chiếu</label>
-                <input
-                  type="number"
-                  min={0}
-                  value={approvalForm.priceOut}
-                  onChange={e => setApprovalForm(prev => ({ ...prev, priceOut: Number(e.target.value) }))}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-emerald-500"
-                />
+	                <label className="text-xs font-bold text-slate-600">Giá xuất/tham chiếu</label>
+	                <input
+	                  type="text"
+	                  inputMode="decimal"
+	                  value={approvalForm.priceOut}
+	                  onChange={e => setApprovalForm(prev => ({ ...prev, priceOut: e.target.value }))}
+	                  className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-emerald-500"
+	                />
               </div>
               <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-600">Tồn tối thiểu</label>
-                <input
-                  type="number"
-                  min={0}
-                  value={approvalForm.minStock}
-                  onChange={e => setApprovalForm(prev => ({ ...prev, minStock: Number(e.target.value) }))}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-emerald-500"
-                />
+	                <label className="text-xs font-bold text-slate-600">Tồn tối thiểu</label>
+	                <input
+	                  type="text"
+	                  inputMode="decimal"
+	                  value={approvalForm.minStock}
+	                  onChange={e => setApprovalForm(prev => ({ ...prev, minStock: e.target.value }))}
+	                  className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-emerald-500"
+	                />
               </div>
               <div className="space-y-2">
                 <label className="text-xs font-bold text-slate-600">Vị trí/kệ mặc định</label>

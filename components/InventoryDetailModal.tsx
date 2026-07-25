@@ -15,6 +15,7 @@ import { QRCodeCanvas } from 'qrcode.react';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
 import { partnerService } from '../lib/partnerService';
 import SupplierCombobox from './SupplierCombobox';
+import { parseNonNegativeLocaleNumber } from '../lib/localeNumberInput';
 
 interface InventoryDetailModalProps {
   isOpen: boolean;
@@ -32,7 +33,7 @@ const InventoryDetailModal: React.FC<InventoryDetailModalProps> = ({ isOpen, onC
 
   // State cho Đề xuất nhập kho trực tiếp
   const [showRequestForm, setShowRequestForm] = useState(false);
-  const [reqQty, setReqQty] = useState<number>(0);
+  const [reqQty, setReqQty] = useState<number | string>(0);
   const [reqWarehouseId, setReqWarehouseId] = useState('');
   const [reqNote, setReqNote] = useState('');
   const [requestSaving, setRequestSaving] = useState(false);
@@ -72,7 +73,8 @@ const InventoryDetailModal: React.FC<InventoryDetailModalProps> = ({ isOpen, onC
   }, [isOpen]);
 
   const handleSendRequest = async () => {
-    if (!item || reqQty <= 0 || !reqWarehouseId) {
+    const requestQuantity = parseNonNegativeLocaleNumber(reqQty);
+    if (!item || requestQuantity <= 0 || !reqWarehouseId) {
       toast.error('Thiếu thông tin', 'Vui lòng nhập số lượng hợp lệ và chọn kho.');
       return;
     }
@@ -81,7 +83,7 @@ const InventoryDetailModal: React.FC<InventoryDetailModalProps> = ({ isOpen, onC
       id: `tx-direct-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       type: TransactionType.IMPORT,
       date: new Date().toISOString(),
-      items: [{ itemId: item.id, quantity: reqQty, price: item.priceIn }],
+      items: [{ itemId: item.id, quantity: requestQuantity, price: item.priceIn }],
       targetWarehouseId: reqWarehouseId,
       supplierId: item.supplierId,
       requesterId: user.id,
@@ -92,8 +94,8 @@ const InventoryDetailModal: React.FC<InventoryDetailModalProps> = ({ isOpen, onC
     setRequestSaving(true);
     try {
       await addTransaction(newTx);
-      logActivity('REQUEST', 'Đề xuất nhập kho', `Gửi đề xuất nhập ${reqQty} ${item.unit} "${item.name}" chờ Admin duyệt.`, 'INFO');
-      toast.success('Đã gửi đề xuất', `${reqQty} ${item.unit} "${item.name}" đang chờ Admin phê duyệt.`);
+      logActivity('REQUEST', 'Đề xuất nhập kho', `Gửi đề xuất nhập ${requestQuantity.toLocaleString('vi-VN')} ${item.unit} "${item.name}" chờ Admin duyệt.`, 'INFO');
+      toast.success('Đã gửi đề xuất', `${requestQuantity.toLocaleString('vi-VN')} ${item.unit} "${item.name}" đang chờ Admin phê duyệt.`);
       setShowRequestForm(false);
     } catch (err: any) {
       logApiError('inventoryDetail.sendRequest', err);
@@ -106,15 +108,22 @@ const InventoryDetailModal: React.FC<InventoryDetailModalProps> = ({ isOpen, onC
   const handleAdminSave = async () => {
     if (!item) return;
     const purchaseUnit = editData.purchaseUnit && editData.purchaseUnit !== editData.unit ? editData.purchaseUnit : undefined;
-    const purchaseConversionFactor = purchaseUnit ? Number(editData.purchaseConversionFactor || 0) : 1;
+    const purchaseConversionFactor = purchaseUnit ? parseNonNegativeLocaleNumber(editData.purchaseConversionFactor || 0) : 1;
     if (purchaseUnit && (!Number.isFinite(purchaseConversionFactor) || purchaseConversionFactor <= 0)) {
       toast.error('Hệ số quy đổi không hợp lệ', 'Khi đơn vị mua khác đơn vị kho, hệ số quy đổi phải lớn hơn 0.');
       return;
     }
+    const normalizedEditData = {
+      ...editData,
+      priceIn: parseNonNegativeLocaleNumber(editData.priceIn ?? item.priceIn),
+      priceOut: parseNonNegativeLocaleNumber(editData.priceOut ?? item.priceOut),
+      minStock: parseNonNegativeLocaleNumber(editData.minStock ?? item.minStock),
+      defaultLeadTimeDays: parseNonNegativeLocaleNumber(editData.defaultLeadTimeDays ?? item.defaultLeadTimeDays ?? 7),
+    };
     setAdminSaving(true);
     try {
       await updateItem({
-        ...editData,
+        ...normalizedEditData,
         purchaseUnit,
         purchaseConversionFactor,
       } as InventoryItem);
@@ -339,13 +348,13 @@ const InventoryDetailModal: React.FC<InventoryDetailModalProps> = ({ isOpen, onC
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-1">
-                        <label className="text-[10px] font-black text-blue-400 uppercase">Số lượng cần nhập</label>
-                        <input
-                          type="number" value={reqQty}
-                          onChange={e => setReqQty(Number(e.target.value))}
-                          className="w-full p-2 border border-blue-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 font-bold text-blue-700"
-                          placeholder="0"
-                        />
+	                        <label className="text-[10px] font-black text-blue-400 uppercase">Số lượng cần nhập</label>
+	                        <input
+	                          type="text" inputMode="decimal" value={reqQty}
+	                          onChange={e => setReqQty(e.target.value)}
+	                          className="w-full p-2 border border-blue-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 font-bold text-blue-700"
+	                          placeholder="0"
+	                        />
                       </div>
                       <div className="space-y-1">
                         <label className="text-[10px] font-black text-blue-400 uppercase">Kho nhận hàng</label>
@@ -431,25 +440,31 @@ const InventoryDetailModal: React.FC<InventoryDetailModalProps> = ({ isOpen, onC
               {((editData.purchaseUnit && editData.purchaseUnit !== editData.unit) || (item.purchaseUnit && item.purchaseUnit !== item.unit && !isEditing)) && (
                 <div className="p-3 bg-amber-50 rounded-lg border border-amber-200">
                   <div className="text-amber-600 mb-1 text-[10px] uppercase font-bold tracking-tight">Hệ số quy đổi</div>
-                  {isEditing ? (
-                    <div className="space-y-1">
-                      <input
-                        type="number"
-                        min={0.000001}
-                        step="any"
-                        className="w-full bg-white border border-amber-200 text-sm font-bold p-1 rounded outline-none focus:ring-2 focus:ring-amber-400"
-                        value={editData.purchaseConversionFactor ?? 1}
-                        onChange={e => setEditData({ ...editData, purchaseConversionFactor: Number(e.target.value) })}
-                      />
-                      <div className="text-[10px] font-bold text-amber-700">
-                        1 {editData.purchaseUnit} = {Number(editData.purchaseConversionFactor || 1).toLocaleString('vi-VN')} {editData.unit}
-                        <br />
-                        <span className="text-amber-500">
-                          1 {editData.unit} = {(1 / Number(editData.purchaseConversionFactor || 1)).toLocaleString('vi-VN', { maximumFractionDigits: 6 })} {editData.purchaseUnit}
-                        </span>
-                      </div>
-                    </div>
-                  ) : (
+	                  {isEditing ? (
+	                    <div className="space-y-1">
+	                      {(() => {
+	                        const factor = parseNonNegativeLocaleNumber(editData.purchaseConversionFactor || 1);
+	                        return (
+	                          <>
+	                      <input
+	                        type="text"
+	                        inputMode="decimal"
+	                        className="w-full bg-white border border-amber-200 text-sm font-bold p-1 rounded outline-none focus:ring-2 focus:ring-amber-400"
+	                        value={editData.purchaseConversionFactor ?? 1}
+	                        onChange={e => setEditData({ ...editData, purchaseConversionFactor: e.target.value as unknown as number })}
+	                      />
+	                      <div className="text-[10px] font-bold text-amber-700">
+	                        1 {editData.purchaseUnit} = {factor.toLocaleString('vi-VN')} {editData.unit}
+	                        <br />
+	                        <span className="text-amber-500">
+	                          1 {editData.unit} = {(factor > 0 ? 1 / factor : 0).toLocaleString('vi-VN', { maximumFractionDigits: 6 })} {editData.purchaseUnit}
+	                        </span>
+	                      </div>
+	                          </>
+	                        );
+	                      })()}
+	                    </div>
+	                  ) : (
                     <div className="font-bold text-amber-800 text-sm">
                       1 {item.purchaseUnit} = {Number(item.purchaseConversionFactor || 1).toLocaleString('vi-VN')} {item.unit}
                       <br />
@@ -462,41 +477,42 @@ const InventoryDetailModal: React.FC<InventoryDetailModalProps> = ({ isOpen, onC
               )}
               <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">
                 <div className="text-slate-400 mb-1 text-[10px] uppercase font-bold tracking-tight">Giá nhập</div>
-                {isEditing ? (
-                  <input
-                    type="number"
-                    className="w-full bg-white border border-slate-200 text-sm font-bold p-1 rounded outline-none"
-                    value={editData.priceIn}
-                    onChange={e => setEditData({ ...editData, priceIn: Number(e.target.value) })}
-                  />
+	                {isEditing ? (
+	                  <input
+	                    type="text"
+	                    inputMode="decimal"
+	                    className="w-full bg-white border border-slate-200 text-sm font-bold p-1 rounded outline-none"
+	                    value={editData.priceIn}
+	                    onChange={e => setEditData({ ...editData, priceIn: e.target.value as unknown as number })}
+	                  />
                 ) : (
                   <div className="font-bold text-slate-800 text-sm">{item.priceIn.toLocaleString()} ₫</div>
                 )}
               </div>
               <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">
                 <div className="text-slate-400 mb-1 text-[10px] uppercase font-bold tracking-tight">Tồn tối thiểu</div>
-                {isEditing ? (
-                  <input
-                    type="number"
-                    className="w-full bg-white border border-slate-200 text-sm font-bold p-1 rounded outline-none text-red-600"
-                    value={editData.minStock}
-                    onChange={e => setEditData({ ...editData, minStock: Number(e.target.value) })}
-                  />
+	                {isEditing ? (
+	                  <input
+	                    type="text"
+	                    inputMode="decimal"
+	                    className="w-full bg-white border border-slate-200 text-sm font-bold p-1 rounded outline-none text-red-600"
+	                    value={editData.minStock}
+	                    onChange={e => setEditData({ ...editData, minStock: e.target.value as unknown as number })}
+	                  />
                 ) : (
                   <div className="font-bold text-red-600 text-sm">{item.minStock.toLocaleString()}</div>
                 )}
               </div>
               <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">
                 <div className="text-slate-400 mb-1 text-[10px] uppercase font-bold tracking-tight">Lead time kế hoạch</div>
-                {isEditing ? (
-                  <input
-                    type="number"
-                    min={0}
-                    max={365}
-                    className="w-full bg-white border border-slate-200 text-sm font-bold p-1 rounded outline-none"
-                    value={editData.defaultLeadTimeDays ?? 7}
-                    onChange={e => setEditData({ ...editData, defaultLeadTimeDays: Number(e.target.value) })}
-                  />
+	                {isEditing ? (
+	                  <input
+	                    type="text"
+	                    inputMode="decimal"
+	                    className="w-full bg-white border border-slate-200 text-sm font-bold p-1 rounded outline-none"
+	                    value={editData.defaultLeadTimeDays ?? 7}
+	                    onChange={e => setEditData({ ...editData, defaultLeadTimeDays: e.target.value as unknown as number })}
+	                  />
                 ) : (
                   <div className="font-bold text-slate-800 text-sm">{Number(item.defaultLeadTimeDays ?? 7).toLocaleString()} ngày</div>
                 )}
