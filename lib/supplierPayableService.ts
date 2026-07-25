@@ -40,6 +40,20 @@ export const calculatePurchaseOrderCommittedAmount = (po: Pick<PurchaseOrder, 'i
   return money(itemTotal || po.totalAmount);
 };
 
+export const calculateDeliveryReceiptGross = (input: {
+  vatRate?: number | null;
+  lines: Array<{
+    acceptedQty: number;
+    deliveryUnitPrice: number;
+  }>;
+}) => {
+  const net = (input.lines || []).reduce(
+    (sum, line) => sum + numeric(line.acceptedQty) * numeric(line.deliveryUnitPrice),
+    0,
+  );
+  return money(net * (1 + numeric(input.vatRate) / 100));
+};
+
 const documentStatus = (recognizedAmount: number, paidAmount: number, creditAmount = 0): SupplierPayableDocument['status'] => {
   const outstandingAmount = Math.max(0, recognizedAmount - paidAmount - creditAmount);
   if (recognizedAmount <= 0) return 'draft';

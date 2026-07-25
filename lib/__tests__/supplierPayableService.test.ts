@@ -19,6 +19,7 @@ vi.mock('../supabase', () => ({
 import {
   buildPayableDocumentFromPurchaseOrder,
   buildSupplierPayableBalances,
+  calculateDeliveryReceiptGross,
   calculatePurchaseOrderRecognizedAmount,
   supplierPayableService,
 } from '../supplierPayableService';
@@ -97,6 +98,13 @@ describe('supplierPayableService helpers', () => {
         returnedQty: 10,
       }],
     }))).toBe(40_000_000);
+  });
+
+  it('calculates delivery receipt gross from accepted quantities and VAT', () => {
+    expect(calculateDeliveryReceiptGross({
+      vatRate: 10,
+      lines: [{ acceptedQty: 90, deliveryUnitPrice: 10_000 }],
+    })).toBe(990_000);
   });
 
   it('builds an AP document snapshot from a received purchase order', () => {

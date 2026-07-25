@@ -275,6 +275,7 @@ const statusTone = (status: string) => {
 const supplierPayableSourceLabel = (sourceType: SupplierPayableDocument['sourceType']) => {
   const labels: Record<SupplierPayableDocument['sourceType'], string> = {
     purchase_order: 'PO',
+    purchase_delivery_receipt: 'Nhận hàng NCC',
     site_direct_purchase: 'Mua nóng',
     supplier_delivery_statement: 'Đối soát HĐ NCC',
     supplier_return_credit: 'Bù trừ/hoàn trả',
@@ -2763,7 +2764,7 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
       setSupplierPaymentForm(createSupplierPaymentBatchForm({ batchId }));
       return;
     }
-    if (row.sourceType !== 'purchase_order' && row.sourceType !== 'supplier_payable') {
+    if (row.sourceType !== 'supplier_payable') {
       openSource(row.sourceTab);
       return;
     }
@@ -2775,48 +2776,15 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
       toast.success('Khoản phải trả đã thanh toán đủ');
       return;
     }
-
-    if (row.sourceType === 'supplier_payable') {
-      const supplierId = row.sourceRoute?.params?.supplierId || row.sourceId;
-      setSupplierPaymentForm(createSupplierPaymentBatchForm({
-        batchId,
-        supplierId,
-        supplierName: row.counterpartyName,
-        amount: row.outstandingAmount,
-        loadingDocuments: true,
-      }));
-      await loadSupplierPaymentDocumentsIntoForm(batchId, supplierId, row.outstandingAmount);
-      return;
-    }
-
+    const supplierId = row.sourceRoute?.params?.supplierId || row.sourceId;
     setSupplierPaymentForm(createSupplierPaymentBatchForm({
       batchId,
-      supplierId: row.sourceId,
+      supplierId,
       supplierName: row.counterpartyName,
       amount: row.outstandingAmount,
       loadingDocuments: true,
-      lockedDocumentIds: [row.sourceId],
     }));
-    try {
-      const document = await supplierPayableService.syncPurchaseOrderById(row.sourceId);
-      setSupplierPaymentForm(prev => prev?.batchId === batchId ? {
-        ...prev,
-        supplierId: document.supplierId || row.sourceId,
-        supplierName: document.supplierNameSnapshot || row.counterpartyName,
-        documents: Number(document.outstandingAmount || 0) > 0 ? [document] : [],
-        amount: Math.min(row.outstandingAmount, Number(document.outstandingAmount || row.outstandingAmount)),
-        loadingDocuments: false,
-        documentError: null,
-        lockedDocumentIds: [document.id],
-      } : prev);
-    } catch (err: any) {
-      setSupplierPaymentForm(prev => prev?.batchId === batchId ? {
-        ...prev,
-        documents: [],
-        loadingDocuments: false,
-        documentError: err?.message || 'Không đồng bộ được AP từ PO.',
-      } : prev);
-    }
+    await loadSupplierPaymentDocumentsIntoForm(batchId, supplierId, row.outstandingAmount);
   }, [canRecordPoPayment, loadSupplierPaymentDocumentsIntoForm, openSource, toast]);
 
   const selectSupplierForPaymentForm = (supplierId: string) => {
@@ -3135,104 +3103,61 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
       return;
     }
 
-    const paymentId = crypto.randomUUID();
     const documentRef = poPaymentForm.documentRef.trim();
     const note = poPaymentForm.note.trim();
-    const description = [
-      `Thanh toán PO ${poPaymentForm.row.documentNo} - ${poPaymentForm.row.counterpartyName}`,
-      documentRef ? `CT: ${documentRef}` : '',
-      note,
-    ].filter(Boolean).join(' - ');
-    const nextTransaction: ProjectTransaction = {
-      id: paymentId,
-      projectId: projectId || null,
-      projectFinanceId: '',
-      constructionSiteId,
-      type: 'expense',
-      category: 'materials',
-      amount,
-      description,
-      date: poPaymentForm.date || todayIso(),
-      source: 'manual',
-      sourceRef: `purchase_order:${poPaymentForm.row.sourceId}:payment:${paymentId}`,
-      attachments: [],
-      createdBy: user?.id,
-      createdAt: new Date().toISOString(),
-    };
 
     setSavingPoPayment(true);
     try {
-      if (poPaymentForm.row.sourceType === 'supplier_payable' || poPaymentForm.row.sourceType === 'purchase_order') {
-        try {
-          const batchId = crypto.randomUUID();
-          const payableDocuments = poPaymentForm.row.sourceType === 'purchase_order'
-            ? [await supplierPayableService.syncPurchaseOrderById(poPaymentForm.row.sourceId)]
-            : await supplierPayableService.listDocuments({
-              projectId: projectId || null,
-              constructionSiteId,
-              supplierId: poPaymentForm.row.sourceId,
-            });
-          const openDocuments = payableDocuments.filter(document => Number(document.outstandingAmount || 0) > 0);
-          const allocations = allocateSupplierPayment({
-            mode: 'fifo',
-            paymentBatchId: batchId,
-            amount,
-            documents: openDocuments,
-          });
-          if (allocations.length === 0) throw new Error('Không tìm thấy chứng từ AP còn phải trả để phân bổ.');
-          const batchCode = `PAY-${(poPaymentForm.date || todayIso()).replaceAll('-', '')}-${batchId.slice(0, 8).toUpperCase()}`;
-          await supplierPaymentBatchService.createDraft({
-            id: batchId,
-            code: batchCode,
-            projectId: projectId || null,
-            constructionSiteId,
-            supplierId: poPaymentForm.row.sourceType === 'supplier_payable' ? poPaymentForm.row.sourceId : openDocuments[0]?.supplierId || null,
-            supplierNameSnapshot: poPaymentForm.row.counterpartyName,
-            periodMonth: `${(poPaymentForm.date || todayIso()).slice(0, 7)}-01`,
-            paymentDate: poPaymentForm.date || todayIso(),
-            paymentMethod: 'bank_transfer',
-            documentRef: documentRef || null,
-            totalRecognizedSnapshot: poPaymentForm.row.recognizedAmount,
-            amount,
-            paymentAmount: amount,
-            currency: 'VND',
-            allocationMode: 'fifo',
-            status: 'draft',
-            qrToken: `pay_${batchId.replaceAll('-', '')}`,
-            attachments: [],
-            metadata: {
-              shortcut: poPaymentForm.row.sourceType,
-              note,
-            },
-            createdBy: user?.id || null,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            note: note || null,
-          }, allocations);
-          await supplierPaymentBatchService.post(batchId, user?.id || null);
-          setPoPaymentForm(null);
-          toast.success('Đã tạo đợt thanh toán NCC', `${poPaymentForm.row.counterpartyName} đã được ghi nhận qua AP batch.`);
-          await load();
-          return;
-        } catch (batchError: any) {
-          if (poPaymentForm.row.sourceType === 'supplier_payable') throw batchError;
-          console.warn('Fallback to legacy PO payment transaction', batchError);
-        }
+      if (poPaymentForm.row.sourceType !== 'supplier_payable') {
+        throw new Error('Chỉ thanh toán NCC từ chứng từ AP đã ghi nhận.');
       }
-
-      await addProjectTransaction(nextTransaction);
+      const batchId = crypto.randomUUID();
+      const payableDocuments = await supplierPayableService.listDocuments({
+        projectId: projectId || null,
+        constructionSiteId,
+        supplierId: poPaymentForm.row.sourceId,
+      });
+      const openDocuments = payableDocuments.filter(document => Number(document.outstandingAmount || 0) > 0);
+      const allocations = allocateSupplierPayment({
+        mode: 'fifo',
+        paymentBatchId: batchId,
+        amount,
+        documents: openDocuments,
+      });
+      if (allocations.length === 0) throw new Error('Không tìm thấy chứng từ AP còn phải trả để phân bổ.');
+      const batchCode = `PAY-${(poPaymentForm.date || todayIso()).replaceAll('-', '')}-${batchId.slice(0, 8).toUpperCase()}`;
+      await supplierPaymentBatchService.createDraft({
+        id: batchId,
+        code: batchCode,
+        projectId: projectId || null,
+        constructionSiteId,
+        supplierId: poPaymentForm.row.sourceId,
+        supplierNameSnapshot: poPaymentForm.row.counterpartyName,
+        periodMonth: `${(poPaymentForm.date || todayIso()).slice(0, 7)}-01`,
+        paymentDate: poPaymentForm.date || todayIso(),
+        paymentMethod: 'bank_transfer',
+        documentRef: documentRef || null,
+        totalRecognizedSnapshot: poPaymentForm.row.recognizedAmount,
+        amount,
+        paymentAmount: amount,
+        currency: 'VND',
+        allocationMode: 'fifo',
+        status: 'draft',
+        qrToken: `pay_${batchId.replaceAll('-', '')}`,
+        attachments: [],
+        metadata: {
+          shortcut: poPaymentForm.row.sourceType,
+          note,
+        },
+        createdBy: user?.id || null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        note: note || null,
+      }, allocations);
+      await supplierPaymentBatchService.post(batchId, user?.id || null);
       setPoPaymentForm(null);
-      toast.success('Đã ghi thanh toán PO', `${poPaymentForm.row.documentNo} đã được cập nhật trong công nợ phải trả.`);
-      const nextTransactions = [nextTransaction, ...transactions.filter(item => item.id !== nextTransaction.id)];
-      try {
-        setData(await projectFinanceWorkspaceService.getWorkspace({
-          projectId,
-          constructionSiteId,
-          transactions: nextTransactions,
-        }));
-      } catch (refreshError) {
-        console.warn('Cannot refresh finance workspace after PO payment', refreshError);
-      }
+      toast.success('Đã tạo đợt thanh toán NCC', `${poPaymentForm.row.counterpartyName} đã được ghi nhận qua AP batch.`);
+      await load();
     } catch (err: any) {
       toast.error('Không ghi được thanh toán PO', err?.message || 'Vui lòng thử lại.');
     } finally {

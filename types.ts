@@ -2153,6 +2153,7 @@ export type PurchaseOrderSourceMode =
 
 export type SupplierPayableSourceType =
   | 'purchase_order'
+  | 'purchase_delivery_receipt'
   | 'site_direct_purchase'
   | 'supplier_delivery_statement'
   | 'supplier_return_credit'

@@ -116,7 +116,7 @@ insert into public.users (
 select actor_id, 'Purchase Package Smoke Actor', actor_id::text || '@vioo.local',
        'purchase-package-v2-actor', 'WAREHOUSE_KEEPER'::public.user_role, true, 'ACTIVE',
        warehouse_id,
-       '{}'::text[], '{}'::text[], '{}'::jsonb, '{}'::jsonb
+       '{}'::text[], '{DA}'::text[], '{}'::jsonb, '{}'::jsonb
 from purchase_package_v2_smoke_ids;
 
 insert into public.users (
@@ -371,6 +371,14 @@ declare
   v_received_qty numeric;
   v_inventory_header_count integer;
   v_inventory_entry_count integer;
+  v_cost_count integer;
+  v_ap_count integer;
+  v_direct_result jsonb;
+  v_direct_line_id uuid;
+  v_direct_quality_result jsonb;
+  v_direct_finalize_result jsonb;
+  v_direct_stock_before numeric;
+  v_direct_inventory_count integer;
 begin
   v_result := public.create_delivery_batch_with_wms_qr_v2(
     p_purchase_order_id := v_ids.po_id,
@@ -745,6 +753,144 @@ begin
     raise exception 'Finalize should create exactly one inventory ledger entry, got %.', v_inventory_entry_count;
   end if;
 
+  if not exists (
+    select 1
+    from pg_constraint
+    where conrelid = 'public.supplier_payable_documents'::regclass
+      and contype = 'u'
+      and pg_get_constraintdef(oid) like '%source_type%source_id%'
+  ) then
+    raise exception 'Missing supplier payable source unique constraint.';
+  end if;
+
+  select count(*) into v_cost_count
+  from public.project_transactions
+  where source_ref = 'purchase_receipt:' || (v_single_approval #>> '{delivery,deliveryBatchId}');
+  if v_cost_count <> 1 then
+    raise exception 'Finalize should create exactly one receipt cost transaction, got %.', v_cost_count;
+  end if;
+  if not exists (
+    select 1
+    from public.project_transactions
+    where source_ref = 'purchase_receipt:' || (v_single_approval #>> '{delivery,deliveryBatchId}')
+      and amount = 990000
+  ) then
+    raise exception 'Receipt cost transaction amount is not 990000.';
+  end if;
+
+  select count(*) into v_ap_count
+  from public.supplier_payable_documents
+  where source_type = 'purchase_delivery_receipt'
+    and source_id = v_single_approval #>> '{delivery,deliveryBatchId}';
+  if v_ap_count <> 1 then
+    raise exception 'Finalize should create exactly one receipt AP document, got %.', v_ap_count;
+  end if;
+  if not exists (
+    select 1
+    from public.supplier_payable_documents
+    where source_type = 'purchase_delivery_receipt'
+      and source_id = v_single_approval #>> '{delivery,deliveryBatchId}'
+      and recognized_amount = 990000
+      and committed_amount = 1100000
+  ) then
+    raise exception 'Receipt AP document did not record committed 1100000 and recognized 990000.';
+  end if;
+
+  select coalesce((coalesce(item.stock_by_warehouse, '{}'::jsonb) ->> v_ids.warehouse_id)::numeric, 0)
+  into v_direct_stock_before
+  from public.items item
+  where item.id = v_ids.item_id;
+
+  v_direct_result := public.create_delivery_batch_with_wms_qr_v2(
+    p_purchase_order_id := v_ids.approve_multiple_po_id,
+    p_idempotency_key := gen_random_uuid(),
+    p_supplier_id := v_ids.supplier_id,
+    p_supplier_name := 'NCC Smoke',
+    p_fulfillment_mode := 'DIRECT_CONSUMPTION',
+    p_vat_rate := 10,
+    p_target_warehouse_id := v_ids.warehouse_id,
+    p_planned_delivery_date := current_date,
+    p_note := 'direct consumption receipt',
+    p_actor_user_id := v_ids.actor_id,
+    p_lines := jsonb_build_array(jsonb_build_object(
+      'purchaseOrderLineId', v_ids.approve_multiple_line_id,
+      'itemId', v_ids.item_id,
+      'purchaseQty', 90,
+      'purchaseUnit', 'Kg',
+      'stockQty', 90,
+      'stockUnit', 'Kg',
+      'purchaseUnitPrice', 10000,
+      'stockUnitPrice', 10000
+    ))
+  );
+
+  select line.id into v_direct_line_id
+  from public.purchase_order_delivery_lines line
+  where line.delivery_batch_id = (v_direct_result ->> 'deliveryBatchId')::uuid
+  order by line.id
+  limit 1;
+
+  v_direct_quality_result := public.approve_receipt_quality_v2(
+    (v_direct_result ->> 'deliveryBatchId')::uuid,
+    v_direct_result ->> 'wmsTransactionId',
+    v_ids.actor_id,
+    'passed',
+    jsonb_build_array(jsonb_build_object(
+      'deliveryLineId', v_direct_line_id,
+      'itemId', v_ids.item_id,
+      'acceptedPurchaseQty', 90,
+      'acceptedStockQty', 90
+    )),
+    '[]'::jsonb
+  );
+  if v_direct_quality_result ->> 'transactionStatus' <> 'APPROVED' then
+    raise exception 'Direct consumption approve quality failed: %', v_direct_quality_result;
+  end if;
+
+  v_direct_finalize_result := public.finalize_purchase_receipt_v2(
+    (v_direct_result ->> 'deliveryBatchId')::uuid,
+    v_direct_result ->> 'wmsTransactionId',
+    v_ids.actor_id
+  );
+  if v_direct_finalize_result ->> 'transactionStatus' <> 'COMPLETED' then
+    raise exception 'Direct consumption finalize failed: %', v_direct_finalize_result;
+  end if;
+
+  select coalesce((coalesce(item.stock_by_warehouse, '{}'::jsonb) ->> v_ids.warehouse_id)::numeric, 0)
+  into v_stock_qty
+  from public.items item
+  where item.id = v_ids.item_id;
+  if v_stock_qty <> v_direct_stock_before then
+    raise exception 'Direct consumption receipt changed stock from % to %.', v_direct_stock_before, v_stock_qty;
+  end if;
+
+  select count(*) into v_direct_inventory_count
+  from public.inventory_transactions
+  where source_type = 'wms_transaction'
+    and source_id = v_direct_result ->> 'wmsTransactionId';
+  if v_direct_inventory_count <> 0 then
+    raise exception 'Direct consumption receipt created inventory transaction.';
+  end if;
+
+  if not exists (
+    select 1
+    from public.project_transactions
+    where source_ref = 'purchase_receipt:' || (v_direct_result ->> 'deliveryBatchId')
+      and amount = 990000
+  ) then
+    raise exception 'Direct consumption receipt did not create 990000 cost.';
+  end if;
+
+  if not exists (
+    select 1
+    from public.supplier_payable_documents
+    where source_type = 'purchase_delivery_receipt'
+      and source_id = v_direct_result ->> 'deliveryBatchId'
+      and recognized_amount = 990000
+  ) then
+    raise exception 'Direct consumption receipt did not create 990000 AP.';
+  end if;
+
   v_over_result := public.create_delivery_batch_with_wms_qr_v2(
     p_purchase_order_id := v_ids.approve_multiple_po_id,
     p_idempotency_key := v_ids.approve_over_key,
@@ -982,7 +1128,7 @@ begin
     select 1
     from public.purchase_orders
     where id = v_ids.approve_multiple_po_id
-      and status = 'confirmed'
+      and status in ('confirmed', 'partial')
       and last_action_by = v_ids.approver_id::text
       and last_action_at is not null
   ) then

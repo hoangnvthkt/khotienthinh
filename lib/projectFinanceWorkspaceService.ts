@@ -390,13 +390,9 @@ const buildPayables = (
   supplierPayableBalances: SupplierPayableBalance[] = [],
 ): ProjectFinancePayableRow[] => {
   const subcontractById = new Map(subcontractors.map(contract => [contract.id, contract]));
-  const materialPayableRows: ProjectFinancePayableRow[] = supplierPayableBalances.length > 0
-    ? supplierPayableBalances
-      .filter(balance => money(balance.recognizedAmount) > 0 || money(balance.outstandingAmount) > 0)
-      .map(buildSupplierPayableRowFromBalance)
-    : purchaseOrders
-      .filter(po => !['cancelled', 'returned'].includes(String(po.status || '')))
-      .map(po => buildPurchaseOrderPayableRow(po, transactions));
+  const materialPayableRows: ProjectFinancePayableRow[] = supplierPayableBalances
+    .filter(balance => money(balance.recognizedAmount) > 0 || money(balance.outstandingAmount) > 0)
+    .map(buildSupplierPayableRowFromBalance);
 
   const certRows: ProjectFinancePayableRow[] = paymentCertificates
     .filter(cert => cert.contractType === 'subcontractor')
