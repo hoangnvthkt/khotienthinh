@@ -1,4 +1,4 @@
-import type { MaterialRequestFulfillmentMode, PurchaseMode, PurchaseOrder, PurchaseOrderDeliveryBatch, PurchaseOrderDeliveryLine } from '../types';
+import type { MaterialRequestFulfillmentMode, PurchaseMode, PurchaseOrder, PurchaseOrderDeliveryBatch, PurchaseOrderDeliveryLine, Transaction } from '../types';
 import { fromDb } from './dbMapping';
 import { supabase } from './supabase';
 
@@ -50,17 +50,20 @@ type UpdatePurchaseDeliveryInput = CreatePurchaseDeliveryInput & {
   wmsTransactionId: string;
 };
 
+const readField = (value: Record<string, unknown>, camelKey: string, snakeKey: string) =>
+  value[camelKey] ?? value[snakeKey];
+
 export const assertCommandResult = (data: unknown): PurchaseDeliveryCommandResult => {
   const row = Array.isArray(data) ? data[0] : data;
   if (!row || typeof row !== 'object') throw new Error('Command tạo Đợt không trả về kết quả.');
 
   const value = row as Record<string, unknown>;
   const result = {
-    deliveryBatchId: String(value.deliveryBatchId || ''),
-    deliveryNo: Number(value.deliveryNo || 0),
-    deliveryCode: String(value.deliveryCode || ''),
-    wmsTransactionId: String(value.wmsTransactionId || ''),
-    qrToken: String(value.qrToken || ''),
+    deliveryBatchId: String(readField(value, 'deliveryBatchId', 'delivery_batch_id') || ''),
+    deliveryNo: Number(readField(value, 'deliveryNo', 'delivery_no') || 0),
+    deliveryCode: String(readField(value, 'deliveryCode', 'delivery_code') || ''),
+    wmsTransactionId: String(readField(value, 'wmsTransactionId', 'wms_transaction_id') || ''),
+    qrToken: String(readField(value, 'qrToken', 'qr_token') || ''),
   };
 
   if (!result.deliveryBatchId || !result.wmsTransactionId || !result.qrToken) {
@@ -171,6 +174,17 @@ export const purchasePackageService = {
         lines,
       },
     };
+  },
+
+  async getWmsTransactionById(transactionId: string): Promise<Transaction | null> {
+    if (!transactionId) return null;
+    const { data, error } = await supabase
+      .from('transactions')
+      .select('*')
+      .eq('id', transactionId)
+      .maybeSingle();
+    if (error) throw error;
+    return data ? (fromDb(data) as Transaction) : null;
   },
 
   async approvePackage(input: {

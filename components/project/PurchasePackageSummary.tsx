@@ -14,8 +14,11 @@ export default function PurchasePackageSummary({
   deliveryBatches = [],
 }: PurchasePackageSummaryProps) {
   const summary = getPurchasePackageSummary(purchaseOrder, deliveryBatches);
-  const hasVariance = Math.abs(summary.releasedVarianceQty) > 0.000001
-    || Math.abs(summary.releasedGrossVariance) > 0.5;
+  const hasVariance = summary.releasedQty > 0.000001
+    && (
+      summary.releasedVarianceQty > 0.000001
+      || summary.releasedGrossVariance > 0.5
+    );
 
   return (
     <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">

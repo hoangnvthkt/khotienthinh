@@ -64,4 +64,19 @@ describe('purchase order drawer regression guard', () => {
     expect(cockpitSource).toContain("batch.status === 'planned'");
     expect(cockpitSource).not.toContain("po.sourceMode === 'from_request' &&");
   });
+
+  it('routes purchase package approval and delivery save through the V2 command contract', () => {
+    expect(source).toContain("case 'approve_package':");
+    expect(source).toContain('purchasePackageService.approvePackage');
+    expect(source).toContain('result?.delivery?.wmsTransactionId');
+    expect(source).toContain('refreshWmsRecords({ transactionIds: [result.delivery.wmsTransactionId] })');
+    expect(source).toContain('existingBatches={poDeliveryBatchesByPo[packageDeliveryEditor.po.id] || []}');
+  });
+
+  it('renders a real delivery QR instead of falling back to a token toast', () => {
+    expect(source).toContain('purchaseDeliveryQrPreview');
+    expect(source).toContain('buildPurchaseDeliveryReceiveUrl');
+    expect(source).toContain('<QRCodeSVG value={purchaseDeliveryQrPreview.url}');
+    expect(source).not.toContain("toast.info('QR đợt giao', action.qrToken ? `Token: ${action.qrToken}` : 'Đợt giao chưa có WMS/QR đang tải.');");
+  });
 });

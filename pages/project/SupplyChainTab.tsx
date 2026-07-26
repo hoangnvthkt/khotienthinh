@@ -75,6 +75,7 @@ import { useConfirm, useReasonConfirm } from '../../context/ConfirmContext';
 import { useApp } from '../../context/AppContext';
 import { loadXlsx } from '../../lib/loadXlsx';
 import { buildPoReceiveUrl, createPoQrToken } from '../../lib/poQr';
+import { buildPurchaseDeliveryReceiveUrl } from '../../lib/purchaseDeliveryQr';
 import { buildDocumentTracePath } from '../../lib/documentTraceService';
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
 import ExcelImportReviewModal from '../../components/ExcelImportReviewModal';
@@ -1061,6 +1062,13 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     const [packageDeliveryEditor, setPackageDeliveryEditor] = useState<{
         po: PurchaseOrder;
         cloneFromBatch?: PurchaseOrderDeliveryBatch | null;
+    } | null>(null);
+    const [purchaseDeliveryQrPreview, setPurchaseDeliveryQrPreview] = useState<{
+        title: string;
+        subtitle: string;
+        token: string;
+        url: string;
+        transactionId?: string | null;
     } | null>(null);
     const [poPayableDocumentsByPoId, setPoPayableDocumentsByPoId] = useState<Record<string, SupplierPayableDocument[]>>({});
     const [loadingPoPayableId, setLoadingPoPayableId] = useState<string | null>(null);
@@ -2229,20 +2237,31 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             setDirectActionLoading(null);
         }
     };
-    const openWmsTransactionById = (transactionId?: string | null) => {
+    const openWmsTransactionById = async (transactionId?: string | null) => {
         if (!transactionId) return;
         const tx = transactions.find(item => item.id === transactionId);
-        if (!tx) {
-            toast.info('Chưa tải phiếu WMS', 'Phiếu WMS có thể chưa nằm trong dữ liệu hiện tại. Vui lòng mở module Phiếu kho hoặc tải lại dữ liệu.');
+        if (tx) {
+            setSelectedWmsTransaction(tx);
             return;
         }
-        setSelectedWmsTransaction(tx);
+        try {
+            const loadedTransaction = await purchasePackageService.getWmsTransactionById(transactionId);
+            if (!loadedTransaction) {
+                toast.warning('Chưa tìm thấy phiếu WMS', 'Phiếu kho liên quan chưa được tải hoặc đã bị xoá.');
+                return;
+            }
+            setSelectedWmsTransaction(loadedTransaction);
+            await refreshWmsRecords({ transactionIds: [transactionId] });
+        } catch (error: any) {
+            logApiError('supplyChain.openWmsTransaction', error);
+            toast.error('Không thể tải phiếu WMS', getApiErrorMessage(error, 'Vui lòng thử lại.'));
+        }
     };
     const openDocumentTrace = (path: string) => {
         window.location.hash = path;
     };
     const openDirectPurchaseWmsTransaction = (purchase: SiteDirectPurchase) => {
-        openWmsTransactionById(purchase.wmsTransactionId);
+        void openWmsTransactionById(purchase.wmsTransactionId);
     };
     const makePoDeliveryLineDraft = (
         batchId: string,
@@ -5320,7 +5339,30 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             case 'request_approval':
                 await updatePoStatus(po.id, 'sent');
                 return;
-            case 'approve_package':
+            case 'approve_package': {
+                if (!ensureCanApprovePo('duyệt gói mua hàng')) return;
+                try {
+                    const result = await purchasePackageService.approvePackage({
+                        purchaseOrderId: po.id,
+                        actorUserId: user?.id || '',
+                        idempotencyKey: crypto.randomUUID(),
+                    });
+                    if (result?.delivery?.wmsTransactionId) {
+                        await refreshWmsRecords({ transactionIds: [result.delivery.wmsTransactionId] });
+                    }
+                    const approvedPo = { ...po, status: 'confirmed' as POStatus };
+                    await loadSupplyData();
+                    await loadPoDeliveryPrintGroups(approvedPo, true);
+                    toast.success(
+                        'Đã duyệt gói mua hàng',
+                        result.delivery ? 'Đợt giao đầu tiên đã có WMS/QR.' : 'Gói mua hàng đã sẵn sàng để thêm từng đợt giao.',
+                    );
+                } catch (error: any) {
+                    logApiError('supplyChain.approvePackage', error);
+                    toast.error('Không thể duyệt gói mua hàng', getApiErrorMessage(error, 'Vui lòng kiểm tra lại quyền duyệt và dữ liệu gói.'));
+                }
+                return;
+            }
             case 'approve_po':
                 await updatePoStatus(po.id, 'confirmed');
                 return;
@@ -5412,12 +5454,21 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 return;
             }
             case 'open_delivery_qr': {
-                const transaction = transactions.find(tx => tx.id === action.transactionId);
-                if (transaction) {
-                    setSelectedWmsTransaction(transaction);
+                if (action.qrToken) {
+                    setPurchaseDeliveryQrPreview({
+                        title: `${po.poNumber} • Đợt giao`,
+                        subtitle: po.vendorName || 'Nhà cung cấp',
+                        token: action.qrToken,
+                        url: buildPurchaseDeliveryReceiveUrl(action.qrToken),
+                        transactionId: action.transactionId || null,
+                    });
                     return;
                 }
-                toast.info('QR đợt giao', action.qrToken ? `Token: ${action.qrToken}` : 'Đợt giao chưa có WMS/QR đang tải.');
+                if (action.transactionId) {
+                    await openWmsTransactionById(action.transactionId);
+                    return;
+                }
+                toast.warning('Đợt giao chưa có QR', 'Đợt giao này chưa được gắn QR/WMS. Vui lòng tải lại dữ liệu hoặc kiểm tra migration repair.');
                 return;
             }
             case 'close_short': {
@@ -5492,12 +5543,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 setSupplierReturnPo(po);
                 return;
             case 'open_wms_transaction': {
-                const transaction = transactions.find(tx => tx.id === action.transactionId);
-                if (!transaction) {
-                    toast.warning('Chưa tìm thấy phiếu WMS', 'Phiếu kho liên quan chưa được tải hoặc đã bị xoá.');
-                    return;
-                }
-                setSelectedWmsTransaction(transaction);
+                await openWmsTransactionById(action.transactionId);
                 return;
             }
             case 'create_supplier_payable':
@@ -6303,12 +6349,12 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                             </button>
                                                         )}
                                                         {wmsSummary.importTransactionIds.map((transactionId, index) => (
-                                                            <button key={`import-${transactionId}`} type="button" onClick={() => openWmsTransactionById(transactionId)} className="rounded-md px-2 py-1 text-[10px] font-black text-blue-700 hover:bg-blue-50">
+                                                            <button key={`import-${transactionId}`} type="button" onClick={() => void openWmsTransactionById(transactionId)} className="rounded-md px-2 py-1 text-[10px] font-black text-blue-700 hover:bg-blue-50">
                                                                 <ExternalLink size={11} className="inline" /> Nhập {index + 1}
                                                             </button>
                                                         ))}
                                                         {wmsSummary.exportTransactionIds.map((transactionId, index) => (
-                                                            <button key={`export-${transactionId}`} type="button" onClick={() => openWmsTransactionById(transactionId)} className="rounded-md px-2 py-1 text-[10px] font-black text-emerald-700 hover:bg-emerald-50">
+                                                            <button key={`export-${transactionId}`} type="button" onClick={() => void openWmsTransactionById(transactionId)} className="rounded-md px-2 py-1 text-[10px] font-black text-emerald-700 hover:bg-emerald-50">
                                                                 <ExternalLink size={11} className="inline" /> Xuất {index + 1}
                                                             </button>
                                                         ))}
@@ -7159,12 +7205,12 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                     </div>
                                                     <div className="flex shrink-0 flex-wrap justify-start gap-1 lg:justify-end">
                                                         {line.wmsImportTransactionId && (
-                                                            <button type="button" onClick={() => openWmsTransactionById(line.wmsImportTransactionId)} className="rounded-md px-2 py-1 text-[10px] font-black text-blue-700 hover:bg-blue-50">
+                                                            <button type="button" onClick={() => void openWmsTransactionById(line.wmsImportTransactionId)} className="rounded-md px-2 py-1 text-[10px] font-black text-blue-700 hover:bg-blue-50">
                                                                 <ExternalLink size={11} className="inline" /> Nhập
                                                             </button>
                                                         )}
                                                         {line.wmsExportTransactionId && (
-                                                            <button type="button" onClick={() => openWmsTransactionById(line.wmsExportTransactionId)} className="rounded-md px-2 py-1 text-[10px] font-black text-emerald-700 hover:bg-emerald-50">
+                                                            <button type="button" onClick={() => void openWmsTransactionById(line.wmsExportTransactionId)} className="rounded-md px-2 py-1 text-[10px] font-black text-emerald-700 hover:bg-emerald-50">
                                                                 <ExternalLink size={11} className="inline" /> Xuất
                                                             </button>
                                                         )}
@@ -8975,15 +9021,66 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                 actorUserId={user?.id || ''}
                                 targetWarehouseId={packageDeliveryEditor.po.targetWarehouseId || ''}
                                 cloneFromBatch={packageDeliveryEditor.cloneFromBatch || null}
+                                existingBatches={poDeliveryBatchesByPo[packageDeliveryEditor.po.id] || []}
                                 onCancel={() => setPackageDeliveryEditor(null)}
-                                onSaved={async () => {
+                                onSaved={async (result) => {
                                     const sourcePo = packageDeliveryEditor.po;
+                                    const saved = result as { wmsTransactionId?: string } | null;
                                     setPackageDeliveryEditor(null);
+                                    if (saved?.wmsTransactionId) {
+                                        await refreshWmsRecords({ transactionIds: [saved.wmsTransactionId] });
+                                    }
                                     await loadSupplyData();
                                     await loadPoDeliveryPrintGroups(sourcePo, true);
                                     toast.success('Đã lưu đợt giao');
                                 }}
                             />
+                        </div>
+                    </div>
+                </div>
+            )}
+            {purchaseDeliveryQrPreview && (
+                <div className="fixed inset-0 z-[1160] flex items-center justify-center bg-black/40 px-4 backdrop-blur-sm">
+                    <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white shadow-2xl">
+                        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
+                            <div>
+                                <div className="text-sm font-black text-slate-800">{purchaseDeliveryQrPreview.title}</div>
+                                <div className="text-[11px] font-bold text-slate-400">{purchaseDeliveryQrPreview.subtitle}</div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setPurchaseDeliveryQrPreview(null)}
+                                className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                                title="Đóng"
+                            >
+                                <X size={18} />
+                            </button>
+                        </div>
+                        <div className="flex flex-col items-center gap-4 p-5">
+                            <div className="rounded-xl border border-slate-200 bg-white p-4">
+                                <QRCodeSVG value={purchaseDeliveryQrPreview.url} size={184} level="H" includeMargin />
+                            </div>
+                            <div className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-center">
+                                <div className="break-all text-xs font-bold text-slate-500">{purchaseDeliveryQrPreview.url}</div>
+                            </div>
+                            <div className="flex w-full justify-end gap-2">
+                                {purchaseDeliveryQrPreview.transactionId && (
+                                    <button
+                                        type="button"
+                                        onClick={() => void openWmsTransactionById(purchaseDeliveryQrPreview.transactionId)}
+                                        className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-black text-blue-700 hover:bg-blue-100"
+                                    >
+                                        <ExternalLink size={13} /> Mở WMS
+                                    </button>
+                                )}
+                                <button
+                                    type="button"
+                                    onClick={() => setPurchaseDeliveryQrPreview(null)}
+                                    className="rounded-lg bg-slate-900 px-3 py-2 text-xs font-black text-white hover:bg-slate-800"
+                                >
+                                    Đóng
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>

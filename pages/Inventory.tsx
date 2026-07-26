@@ -67,7 +67,7 @@ const warehouseAliases = ['Kho nhận hàng', 'Kho', 'Tên kho'];
 
 const Inventory: React.FC = () => {
   const location = useLocation();
-  const { items, warehouses, requests, transactions, addItem, updateItem, removeItem, addTransaction, user, categories, units } = useApp();
+  const { items, warehouses, requests, transactions, addItem, updateItem, removeItem, addTransaction, user, categories, units, refreshWmsRecords } = useApp();
   useModuleData('wms');
   const toast = useToast();
   const [searchTerm, setSearchTerm] = useState('');
@@ -185,10 +185,14 @@ const Inventory: React.FC = () => {
           toast.warning('Đợt giao chưa có WMS', 'Vui lòng kiểm tra lại đợt giao trong Cung ứng dự án.');
           return;
         }
-        const transaction = transactions.find(item => item.id === lookup.deliveryBatch.wmsTransactionId);
+        let transaction = transactions.find(item => item.id === lookup.deliveryBatch.wmsTransactionId) || null;
         if (!transaction) {
-          toast.warning('Chưa tải phiếu WMS', 'Đợt giao tồn tại nhưng phiếu WMS chưa có trong dữ liệu hiện tại. Vui lòng tải lại dữ liệu WMS.');
-          return;
+          transaction = await purchasePackageService.getWmsTransactionById(lookup.deliveryBatch.wmsTransactionId);
+          if (!transaction) {
+            toast.warning('Chưa tải phiếu WMS', 'Đợt giao tồn tại nhưng phiếu WMS chưa có trong dữ liệu hiện tại. Vui lòng tải lại dữ liệu WMS.');
+            return;
+          }
+          await refreshWmsRecords({ transactionIds: [transaction.id] });
         }
         setReceivingPo(lookup.purchaseOrder);
         setReceivingDelivery(lookup.deliveryBatch);

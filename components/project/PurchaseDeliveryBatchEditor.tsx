@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
-import { Loader2, Save } from 'lucide-react';
+import { AlertTriangle, Calculator, Loader2, Save } from 'lucide-react';
 import { MaterialRequestFulfillmentMode, type PurchaseOrder, type PurchaseOrderDeliveryBatch } from '../../types';
+import { buildPurchaseDeliveryLineDrafts, getPurchaseDeliveryDraftSummary } from '../../lib/purchaseDeliveryBatchEditorModel';
 import { purchasePackageService } from '../../lib/purchasePackageService';
 
 interface PurchaseDeliveryBatchEditorProps {
@@ -10,6 +11,7 @@ interface PurchaseDeliveryBatchEditorProps {
   onSaved?(result: unknown): void;
   onCancel?(): void;
   cloneFromBatch?: PurchaseOrderDeliveryBatch | null;
+  existingBatches?: PurchaseOrderDeliveryBatch[];
 }
 
 const numberValue = (value: unknown) => {
@@ -24,6 +26,7 @@ export default function PurchaseDeliveryBatchEditor({
   onSaved,
   onCancel,
   cloneFromBatch = null,
+  existingBatches = [],
 }: PurchaseDeliveryBatchEditorProps) {
   const idempotencyKeyRef = useRef(crypto.randomUUID());
   const [saving, setSaving] = useState(false);
@@ -32,17 +35,16 @@ export default function PurchaseDeliveryBatchEditor({
   const [vatRate, setVatRate] = useState(String(cloneFromBatch?.vatRate ?? purchaseOrder.vatRate ?? 0));
   const [plannedDeliveryDate, setPlannedDeliveryDate] = useState(cloneFromBatch?.plannedDeliveryDate || purchaseOrder.expectedDeliveryDate || '');
   const [note, setNote] = useState(cloneFromBatch?.note || '');
-  const [lineDrafts, setLineDrafts] = useState(() => (purchaseOrder.items || []).map(item => ({
-    purchaseOrderLineId: item.lineId || item.itemId,
-    itemId: item.itemId,
-    itemName: item.name || item.sku || item.itemId,
-    purchaseQty: numberValue(item.qty) - numberValue(item.receivedQty) + numberValue(item.returnedQty),
-    purchaseUnit: item.purchaseUnitSnapshot || item.unit,
-    stockQty: numberValue(item.qty) - numberValue(item.receivedQty) + numberValue(item.returnedQty),
-    stockUnit: item.stockUnitSnapshot || item.unit,
-    purchaseUnitPrice: numberValue(cloneFromBatch?.lines?.find(line => line.purchaseOrderLineId === (item.lineId || item.itemId))?.deliveryUnitPrice ?? item.unitPrice),
-    stockUnitPrice: numberValue(cloneFromBatch?.lines?.find(line => line.purchaseOrderLineId === (item.lineId || item.itemId))?.deliveryUnitPrice ?? item.unitPrice),
-  })));
+  const [lineDrafts, setLineDrafts] = useState(() => buildPurchaseDeliveryLineDrafts({
+    purchaseOrder,
+    existingBatches,
+    cloneFromBatch,
+  }));
+  const summary = useMemo(() => getPurchaseDeliveryDraftSummary({
+    purchaseOrder,
+    existingBatches,
+    draftLines: lineDrafts,
+  }), [existingBatches, lineDrafts, purchaseOrder]);
 
   const canSave = useMemo(() => (
     supplierName.trim()
@@ -89,26 +91,106 @@ export default function PurchaseDeliveryBatchEditor({
   };
 
   return (
-    <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-3">
-      <div className="grid gap-2 sm:grid-cols-4">
-        <input value={supplierName} onChange={event => setSupplierName(event.target.value)} className="rounded-md border border-slate-200 px-2 py-1.5 text-xs font-bold" placeholder="NCC" />
-        <input value={supplierId} onChange={event => setSupplierId(event.target.value)} className="rounded-md border border-slate-200 px-2 py-1.5 text-xs font-bold" placeholder="Ma NCC" />
-        <input type="date" value={plannedDeliveryDate} onChange={event => setPlannedDeliveryDate(event.target.value)} className="rounded-md border border-slate-200 px-2 py-1.5 text-xs font-bold" />
-        <input value={vatRate} onChange={event => setVatRate(event.target.value)} className="rounded-md border border-slate-200 px-2 py-1.5 text-xs font-bold" placeholder="VAT %" />
+    <div className="space-y-4 rounded-lg border border-slate-200 bg-white p-4">
+      <div className="grid gap-3 sm:grid-cols-4">
+        <label className="space-y-1 text-xs font-bold text-slate-600">
+          <span className="block text-[10px] font-black uppercase text-slate-400">Nhà cung cấp</span>
+          <input value={supplierName} onChange={event => setSupplierName(event.target.value)} className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm font-bold text-slate-900" placeholder="Tên NCC" />
+        </label>
+        <label className="space-y-1 text-xs font-bold text-slate-600">
+          <span className="block text-[10px] font-black uppercase text-slate-400">Mã NCC</span>
+          <input value={supplierId} onChange={event => setSupplierId(event.target.value)} className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm font-bold text-slate-900" placeholder="vendor-id" />
+        </label>
+        <label className="space-y-1 text-xs font-bold text-slate-600">
+          <span className="block text-[10px] font-black uppercase text-slate-400">Ngày dự kiến giao</span>
+          <input type="date" value={plannedDeliveryDate} onChange={event => setPlannedDeliveryDate(event.target.value)} className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm font-bold text-slate-900" />
+        </label>
+        <label className="space-y-1 text-xs font-bold text-slate-600">
+          <span className="block text-[10px] font-black uppercase text-slate-400">VAT (%)</span>
+          <input value={vatRate} inputMode="decimal" onChange={event => setVatRate(event.target.value)} className="h-10 w-full rounded-md border border-slate-200 px-3 text-right text-sm font-bold text-slate-900" placeholder="0" />
+        </label>
       </div>
-      <div className="divide-y divide-slate-100 rounded-md border border-slate-100">
-        {lineDrafts.map(line => (
-          <div key={line.purchaseOrderLineId} className="grid gap-2 px-2 py-2 text-xs sm:grid-cols-[1fr_110px_130px]">
-            <div className="font-bold text-slate-700">{line.itemName}</div>
-            <input value={line.purchaseQty} onChange={event => updateLine(line.purchaseOrderLineId, { purchaseQty: numberValue(event.target.value), stockQty: numberValue(event.target.value) })} className="rounded-md border border-slate-200 px-2 py-1 text-right font-bold" />
-            <input value={line.purchaseUnitPrice} onChange={event => updateLine(line.purchaseOrderLineId, { purchaseUnitPrice: numberValue(event.target.value), stockUnitPrice: numberValue(event.target.value) })} className="rounded-md border border-slate-200 px-2 py-1 text-right font-bold" />
-          </div>
-        ))}
+
+      <div className="grid gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs sm:grid-cols-5">
+        <div>
+          <div className="text-[10px] font-black uppercase text-slate-400">Gốc PO</div>
+          <div className="mt-0.5 font-black text-slate-800">{summary.orderedQty.toLocaleString('vi-VN')}</div>
+        </div>
+        <div>
+          <div className="text-[10px] font-black uppercase text-slate-400">Đã lập đợt</div>
+          <div className="mt-0.5 font-black text-slate-800">{summary.alreadyReleasedQty.toLocaleString('vi-VN')}</div>
+        </div>
+        <div>
+          <div className="text-[10px] font-black uppercase text-slate-400">Đợt này</div>
+          <div className="mt-0.5 font-black text-blue-700">{summary.draftQty.toLocaleString('vi-VN')}</div>
+        </div>
+        <div>
+          <div className="text-[10px] font-black uppercase text-slate-400">Sau khi lưu</div>
+          <div className={`mt-0.5 font-black ${summary.varianceQty > 0 ? 'text-amber-700' : 'text-emerald-700'}`}>{summary.nextReleasedQty.toLocaleString('vi-VN')}</div>
+        </div>
+        <div>
+          <div className="flex items-center gap-1 text-[10px] font-black uppercase text-slate-400"><Calculator size={12} /> Giá trị đợt</div>
+          <div className="mt-0.5 font-black text-slate-800">{summary.draftAmount.toLocaleString('vi-VN')} đ</div>
+        </div>
       </div>
-      <textarea value={note} onChange={event => setNote(event.target.value)} rows={2} className="w-full rounded-md border border-slate-200 px-2 py-1.5 text-xs font-bold" placeholder="Ghi chú đợt giao" />
+      {summary.varianceQty > 0 && (
+        <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">
+          <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+          <span>Đợt này làm tổng số lượng giao vượt PO gốc {summary.varianceQty.toLocaleString('vi-VN')}. Hệ thống cho lưu nhưng sẽ ghi nhận chênh lệch.</span>
+        </div>
+      )}
+
+      <div className="overflow-x-auto rounded-md border border-slate-200">
+        <table className="min-w-full text-left text-xs">
+          <thead className="bg-slate-50 text-[10px] font-black uppercase text-slate-400">
+            <tr>
+              <th className="px-3 py-2">Vật tư</th>
+              <th className="px-3 py-2 text-right">Đã lập đợt</th>
+              <th className="px-3 py-2 text-right">Còn lại</th>
+              <th className="px-3 py-2 text-right">SL giao</th>
+              <th className="px-3 py-2 text-right">SL nhập kho</th>
+              <th className="px-3 py-2 text-right">Đơn giá mua</th>
+              <th className="px-3 py-2 text-right">Thành tiền</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100 bg-white">
+            {lineDrafts.map(line => (
+              <tr key={line.purchaseOrderLineId}>
+                <td className="px-3 py-2">
+                  <div className="font-black text-slate-800">{line.itemName}</div>
+                  <div className="mt-0.5 text-[10px] font-bold text-slate-400">PO: {line.orderedQty.toLocaleString('vi-VN')} {line.purchaseUnit}</div>
+                </td>
+                <td className="px-3 py-2 text-right font-bold text-slate-600">{line.alreadyReleasedQty.toLocaleString('vi-VN')}</td>
+                <td className="px-3 py-2 text-right font-bold text-slate-600">{line.remainingQty.toLocaleString('vi-VN')}</td>
+                <td className="px-3 py-2">
+                  <div className="flex items-center justify-end gap-1">
+                    <input value={line.purchaseQty} inputMode="decimal" onChange={event => updateLine(line.purchaseOrderLineId, { purchaseQty: numberValue(event.target.value), stockQty: numberValue(event.target.value) })} className="h-9 w-28 rounded-md border border-slate-200 px-2 text-right font-black text-slate-900" />
+                    <span className="w-10 text-[10px] font-bold text-slate-400">{line.purchaseUnit}</span>
+                  </div>
+                </td>
+                <td className="px-3 py-2">
+                  <div className="flex items-center justify-end gap-1">
+                    <input value={line.stockQty} inputMode="decimal" onChange={event => updateLine(line.purchaseOrderLineId, { stockQty: numberValue(event.target.value) })} className="h-9 w-28 rounded-md border border-slate-200 px-2 text-right font-black text-slate-900" />
+                    <span className="w-10 text-[10px] font-bold text-slate-400">{line.stockUnit}</span>
+                  </div>
+                </td>
+                <td className="px-3 py-2">
+                  <input value={line.purchaseUnitPrice} inputMode="decimal" onChange={event => updateLine(line.purchaseOrderLineId, { purchaseUnitPrice: numberValue(event.target.value), stockUnitPrice: numberValue(event.target.value) })} className="h-9 w-32 rounded-md border border-slate-200 px-2 text-right font-black text-slate-900" />
+                </td>
+                <td className="px-3 py-2 text-right font-black text-blue-700">{(numberValue(line.purchaseQty) * numberValue(line.purchaseUnitPrice)).toLocaleString('vi-VN')} đ</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <label className="block space-y-1 text-xs font-bold text-slate-600">
+        <span className="block text-[10px] font-black uppercase text-slate-400">Ghi chú đợt giao</span>
+        <textarea value={note} onChange={event => setNote(event.target.value)} rows={2} className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm font-bold text-slate-900" placeholder="Ví dụ: giao buổi sáng, xe 5 tấn..." />
+      </label>
       <div className="flex justify-end gap-2">
-        {onCancel && <button type="button" onClick={onCancel} className="rounded-md px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-100">Hủy</button>}
-        <button type="button" disabled={!canSave || saving} onClick={save} className="inline-flex items-center gap-1 rounded-md bg-slate-900 px-3 py-1.5 text-xs font-black text-white disabled:opacity-50">
+        {onCancel && <button type="button" onClick={onCancel} className="rounded-md px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-100">Hủy</button>}
+        <button type="button" disabled={!canSave || saving} onClick={save} className="inline-flex items-center gap-2 rounded-md bg-slate-900 px-4 py-2 text-sm font-black text-white disabled:opacity-50">
           {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
           Lưu đợt giao
         </button>

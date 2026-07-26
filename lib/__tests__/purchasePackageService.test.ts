@@ -3,11 +3,13 @@ import { MaterialRequestFulfillmentMode } from '../../types';
 
 const supabaseMocks = vi.hoisted(() => ({
   rpc: vi.fn(),
+  from: vi.fn(),
 }));
 
 vi.mock('../supabase', () => ({
   supabase: {
     rpc: supabaseMocks.rpc,
+    from: supabaseMocks.from,
   },
 }));
 
@@ -50,6 +52,7 @@ const input: CreatePurchaseDeliveryInput = {
 describe('purchasePackageService', () => {
   beforeEach(() => {
     supabaseMocks.rpc.mockReset();
+    supabaseMocks.from.mockReset();
   });
 
   it('sends one create command containing delivery, WMS, and QR data', async () => {
@@ -71,6 +74,48 @@ describe('purchasePackageService', () => {
       p_lines: input.lines,
     });
     expect(result).toEqual(commandResult);
+  });
+
+  it('accepts snake_case command result fields from PostgREST JSON responses', async () => {
+    supabaseMocks.rpc.mockResolvedValue({
+      data: {
+        delivery_batch_id: 'batch-1',
+        delivery_no: 1,
+        delivery_code: 'PO01-01',
+        wms_transaction_id: 'tx-1',
+        qr_token: 'pod_batch_1',
+      },
+      error: null,
+    });
+
+    const result = await purchasePackageService.createDelivery(input);
+
+    expect(result).toEqual(commandResult);
+  });
+
+  it('loads a WMS transaction by id when the cockpit has only the linked id', async () => {
+    const maybeSingle = vi.fn().mockResolvedValue({
+      data: {
+        id: 'tx-1',
+        type: 'IMPORT',
+        status: 'PENDING',
+        source_type: 'po_delivery_batch',
+        source_id: 'batch-1',
+        items: [],
+      },
+      error: null,
+    });
+    const eq = vi.fn().mockReturnValue({ maybeSingle });
+    const select = vi.fn().mockReturnValue({ eq });
+    supabaseMocks.from.mockReturnValue({ select });
+
+    const result = await purchasePackageService.getWmsTransactionById('tx-1');
+
+    expect(supabaseMocks.from).toHaveBeenCalledWith('transactions');
+    expect(select).toHaveBeenCalledWith('*');
+    expect(eq).toHaveBeenCalledWith('id', 'tx-1');
+    expect(result?.sourceType).toBe('po_delivery_batch');
+    expect(result?.sourceId).toBe('batch-1');
   });
 
   it('updates the same unreceived delivery and WMS', async () => {
