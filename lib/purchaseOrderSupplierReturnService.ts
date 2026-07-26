@@ -6,6 +6,14 @@ const LINE_TABLE = 'purchase_order_supplier_return_lines';
 
 const toCamel = (value: string) => value.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
 
+export interface CreatePurchaseOrderSupplierReturnInput {
+  purchaseOrderId: string;
+  sourceWarehouseId: string;
+  reason: string;
+  note?: string;
+  lines: Array<{ purchaseOrderLineId: string; quantity: number }>;
+}
+
 const mapKeys = (value: any): any => {
   if (Array.isArray(value)) return value.map(mapKeys);
   if (value && typeof value === 'object') {
@@ -51,13 +59,7 @@ export const purchaseOrderSupplierReturnService = {
     return mapReturns(returnRows, lineRows || []);
   },
 
-  async create(input: {
-    purchaseOrderId: string;
-    sourceWarehouseId: string;
-    reason: string;
-    note?: string;
-    lines: Array<{ purchaseOrderLineId: string; quantity: number }>;
-  }): Promise<PurchaseOrderSupplierReturn> {
+  async create(input: CreatePurchaseOrderSupplierReturnInput): Promise<PurchaseOrderSupplierReturn> {
     const { data, error } = await supabase.rpc('create_purchase_order_supplier_return', {
       p_purchase_order_id: input.purchaseOrderId,
       p_source_warehouse_id: input.sourceWarehouseId,

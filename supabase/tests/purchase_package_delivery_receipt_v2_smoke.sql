@@ -373,6 +373,10 @@ declare
   v_inventory_entry_count integer;
   v_cost_count integer;
   v_ap_count integer;
+  v_supplier_return public.purchase_order_supplier_returns%rowtype;
+  v_returned_qty numeric;
+  v_return_reversal_count integer;
+  v_return_credit_amount numeric;
   v_direct_result jsonb;
   v_direct_line_id uuid;
   v_direct_quality_result jsonb;
@@ -794,6 +798,97 @@ begin
       and committed_amount = 1100000
   ) then
     raise exception 'Receipt AP document did not record committed 1100000 and recognized 990000.';
+  end if;
+
+  select * into v_supplier_return
+  from public.create_purchase_order_supplier_return(
+    v_ids.approve_single_po_id,
+    v_ids.warehouse_id,
+    jsonb_build_array(jsonb_build_object(
+      'purchaseOrderLineId', v_ids.approve_single_line_id,
+      'quantity', 10
+    )),
+    'Tra lai 10 Kg sau nghiem thu',
+    'Purchase package v2 return smoke'
+  );
+  if v_supplier_return.status <> 'pending' then
+    raise exception 'Supplier return should start pending: %', v_supplier_return;
+  end if;
+
+  perform public.process_transaction_status(
+    v_supplier_return.transaction_id,
+    'COMPLETED'::public.transaction_status,
+    v_ids.actor_id
+  );
+
+  select coalesce((coalesce(item.stock_by_warehouse, '{}'::jsonb) ->> v_ids.warehouse_id)::numeric, 0)
+  into v_stock_qty
+  from public.items item
+  where item.id = v_ids.item_id;
+  if v_stock_qty <> 80 then
+    raise exception 'Supplier return did not leave net stock 80 after receipt 90 and return 10: %', v_stock_qty;
+  end if;
+
+  select coalesce(nullif(po.items -> 0 ->> 'returnedQty', '')::numeric, 0)
+  into v_returned_qty
+  from public.purchase_orders po
+  where po.id = v_ids.approve_single_po_id;
+  if v_returned_qty <> 10 then
+    raise exception 'Supplier return did not update PO returnedQty to 10: %', v_returned_qty;
+  end if;
+
+  if not exists (
+    select 1
+    from public.purchase_order_delivery_lines line
+    where line.id = v_receipt_line_id
+      and line.accepted_qty = 90
+      and line.returned_qty = 10
+      and line.accepted_qty - line.returned_qty = 80
+  ) then
+    raise exception 'Supplier return did not update delivery-line net receipt to 80.';
+  end if;
+
+  if not exists (
+    select 1
+    from public.project_transactions
+    where source_ref = 'purchase_receipt_return:' || v_supplier_return.id::text
+      and amount = -110000
+  ) then
+    raise exception 'Supplier return did not create -110000 cost reversal.';
+  end if;
+
+  select coalesce(sum(credit_amount), 0)
+  into v_return_credit_amount
+  from public.supplier_payable_documents
+  where source_type = 'purchase_delivery_receipt'
+    and source_id = v_single_approval #>> '{delivery,deliveryBatchId}';
+  if v_return_credit_amount <> 110000 then
+    raise exception 'Supplier return did not credit receipt AP by 110000: %', v_return_credit_amount;
+  end if;
+
+  if not exists (
+    select 1
+    from public.supplier_payable_balances balance
+    where balance.project_id = v_ids.project_id
+      and balance.construction_site_id = v_ids.site_id
+      and balance.supplier_id = v_ids.supplier_id
+      and balance.recognized_amount >= 990000
+      and balance.credit_amount >= 110000
+      and balance.outstanding_amount >= 880000
+  ) then
+    raise exception 'Supplier return credit was not reflected in AP balances.';
+  end if;
+
+  perform public.process_transaction_status(
+    v_supplier_return.transaction_id,
+    'COMPLETED'::public.transaction_status,
+    v_ids.actor_id
+  );
+  select count(*) into v_return_reversal_count
+  from public.project_transactions
+  where source_ref = 'purchase_receipt_return:' || v_supplier_return.id::text;
+  if v_return_reversal_count <> 1 then
+    raise exception 'Supplier return retry created duplicate cost reversal: %', v_return_reversal_count;
   end if;
 
   select coalesce((coalesce(item.stock_by_warehouse, '{}'::jsonb) ->> v_ids.warehouse_id)::numeric, 0)
