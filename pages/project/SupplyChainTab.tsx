@@ -89,10 +89,12 @@ import { isAdmin, isGlobalWarehouseKeeper } from '../../lib/wmsPermissions';
 import { purchaseOrderSupplierReturnService } from '../../lib/purchaseOrderSupplierReturnService';
 import PurchaseOrderSupplierReturnDialog from '../../components/project/PurchaseOrderSupplierReturnDialog';
 import PurchaseOrderCockpitDrawer from '../../components/project/PurchaseOrderCockpitDrawer';
+import PurchaseDeliveryBatchEditor from '../../components/project/PurchaseDeliveryBatchEditor';
 import PurchaseModeControl from '../../components/project/PurchaseModeControl';
 import PurchasePackageSummary from '../../components/project/PurchasePackageSummary';
 import TransactionDetailModal from '../../components/TransactionDetailModal';
 import { supplierPayableService } from '../../lib/supplierPayableService';
+import { purchasePackageService } from '../../lib/purchasePackageService';
 import { calculateSiteDirectPurchaseTotals, siteDirectPurchaseService } from '../../lib/siteDirectPurchaseService';
 import { siteSmallToolService } from '../../lib/siteSmallToolService';
 import { supplierContractService } from '../../lib/hdService';
@@ -1056,6 +1058,10 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     const [editingPo, setEditingPo] = useState<PurchaseOrder | null>(null);
     const [selectedPoId, setSelectedPoId] = useState<string | null>(null);
     const [selectedWmsTransaction, setSelectedWmsTransaction] = useState<Transaction | null>(null);
+    const [packageDeliveryEditor, setPackageDeliveryEditor] = useState<{
+        po: PurchaseOrder;
+        cloneFromBatch?: PurchaseOrderDeliveryBatch | null;
+    } | null>(null);
     const [poPayableDocumentsByPoId, setPoPayableDocumentsByPoId] = useState<Record<string, SupplierPayableDocument[]>>({});
     const [loadingPoPayableId, setLoadingPoPayableId] = useState<string | null>(null);
     const [poPayableErrorsByPoId, setPoPayableErrorsByPoId] = useState<Record<string, string | null>>({});
@@ -5285,12 +5291,12 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         if (action.id === 'remove_po') return <Trash2 size={13} />;
         if (action.id === 'supplier_return') return <PackageX size={13} />;
         if (action.id === 'view_history') return <FileText size={13} />;
-        if (action.id === 'approve_po' || action.id === 'approve_supplemental' || action.id === 'close_partial' || action.id === 'close_po') return <CheckCircle2 size={13} />;
+        if (action.id === 'approve_po' || action.id === 'approve_package' || action.id === 'approve_supplemental' || action.id === 'close_partial' || action.id === 'close_short' || action.id === 'close_po') return <CheckCircle2 size={13} />;
         if (action.id === 'reject_supplemental') return <Ban size={13} />;
-        if (action.id === 'request_approval') return <Send size={13} />;
+        if (action.id === 'request_approval' || action.id === 'submit_package') return <Send size={13} />;
         if (action.id === 'request_revision') return <RefreshCcw size={13} />;
-        if (action.id === 'create_delivery' || action.id === 'create_supplemental_delivery') return <Truck size={13} />;
-        if (action.id === 'create_receipt') return <QrCode size={13} />;
+        if (action.id === 'create_delivery' || action.id === 'create_supplemental_delivery' || action.id === 'add_delivery' || action.id === 'clone_delivery' || action.id === 'cancel_delivery') return <Truck size={13} />;
+        if (action.id === 'create_receipt' || action.id === 'open_delivery_qr') return <QrCode size={13} />;
         return <FileText size={13} />;
     };
 
@@ -5310,9 +5316,11 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         }
         setPoPrintMenuId(null);
         switch (action.id) {
+            case 'submit_package':
             case 'request_approval':
                 await updatePoStatus(po.id, 'sent');
                 return;
+            case 'approve_package':
             case 'approve_po':
                 await updatePoStatus(po.id, 'confirmed');
                 return;
@@ -5354,6 +5362,44 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             case 'create_supplemental_delivery':
                 await openPoDeliveryDraft(po);
                 return;
+            case 'add_delivery':
+                setPackageDeliveryEditor({ po });
+                return;
+            case 'clone_delivery': {
+                const cloneFromBatch = (poDeliveryBatchesByPo[po.id] || []).find(batch => batch.id === action.deliveryBatchId) || null;
+                setPackageDeliveryEditor({ po, cloneFromBatch });
+                return;
+            }
+            case 'cancel_delivery': {
+                if (!ensureCanCreatePo('hủy đợt giao')) return;
+                if (!action.deliveryBatchId) {
+                    toast.warning('Thiếu đợt giao', 'Không tìm thấy đợt giao cần hủy.');
+                    return;
+                }
+                const reason = await reasonConfirm({
+                    title: 'Hủy đợt giao',
+                    targetName: po.poNumber,
+                    reasonLabel: 'Lý do hủy',
+                    reasonPlaceholder: 'Ví dụ: Nhà cung cấp báo không giao đợt này',
+                    actionLabel: 'Hủy đợt giao',
+                    intent: 'danger',
+                });
+                if (!reason) return;
+                try {
+                    await purchasePackageService.cancelUnreceivedDelivery({
+                        deliveryBatchId: action.deliveryBatchId,
+                        actorUserId: user?.id || '',
+                        reason,
+                    });
+                    await loadSupplyData();
+                    await loadPoDeliveryPrintGroups(po, true);
+                    toast.success('Đã hủy đợt giao');
+                } catch (error: any) {
+                    logApiError('supplyChain.cancelPackageDelivery', error);
+                    toast.error('Không thể hủy đợt giao', getApiErrorMessage(error, 'Vui lòng thử lại.'));
+                }
+                return;
+            }
             case 'create_receipt': {
                 const deliveryBatch = (poDeliveryBatchesByPo[po.id] || []).find(batch => batch.id === action.deliveryBatchId)
                     || (poDeliveryBatchesByPo[po.id] || []).find(batch => batch.status === 'planned');
@@ -5363,6 +5409,58 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     return;
                 }
                 await handleCreatePoDeliveryReceipt(po, deliveryBatch);
+                return;
+            }
+            case 'open_delivery_qr': {
+                const transaction = transactions.find(tx => tx.id === action.transactionId);
+                if (transaction) {
+                    setSelectedWmsTransaction(transaction);
+                    return;
+                }
+                toast.info('QR đợt giao', action.qrToken ? `Token: ${action.qrToken}` : 'Đợt giao chưa có WMS/QR đang tải.');
+                return;
+            }
+            case 'close_short': {
+                if (!ensureCanCreatePo('kết thúc thiếu gói mua hàng')) return;
+                const demandStats = getPurchaseOrderDemandStats(po, poRequestLinks, inventoryItems);
+                if (Number(demandStats.remainingQty || 0) <= 0) {
+                    toast.info('Không còn nhu cầu thiếu', 'Gói mua hàng này không còn khối lượng cần kết thúc thiếu.');
+                    return;
+                }
+                const reason = await reasonConfirm({
+                    title: 'Kết thúc thiếu gói mua hàng',
+                    targetName: po.poNumber,
+                    subtitle: `Còn thiếu ${fmtQty(demandStats.remainingQty)}. Hệ thống sẽ chốt thiếu theo từng dòng còn nhu cầu.`,
+                    reasonLabel: 'Lý do kết thúc thiếu',
+                    reasonPlaceholder: 'Ví dụ: Công trường không còn nhu cầu nhận phần còn lại',
+                    actionLabel: 'Kết thúc thiếu',
+                    intent: 'warning',
+                });
+                if (!reason) return;
+                const closeLines = po.items
+                    .map(item => {
+                        const purchaseOrderLineId = item.lineId || item.itemId;
+                        const orderedQty = Number(item.qty || 0);
+                        const netReceivedQty = Math.max(0, Number(item.receivedQty || 0) - Number(item.returnedQty || 0));
+                        return {
+                            purchaseOrderLineId,
+                            closeQty: Math.max(0, orderedQty - netReceivedQty),
+                        };
+                    })
+                    .filter(line => line.purchaseOrderLineId && line.closeQty > 0);
+                try {
+                    await purchasePackageService.closePackageShort({
+                        purchaseOrderId: po.id,
+                        actorUserId: user?.id || '',
+                        reason,
+                        lines: closeLines,
+                    });
+                    await loadSupplyData();
+                    toast.success('Đã kết thúc thiếu gói mua hàng');
+                } catch (error: any) {
+                    logApiError('supplyChain.closePackageShort', error);
+                    toast.error('Không thể kết thúc thiếu', getApiErrorMessage(error, 'Vui lòng kiểm tra lại khối lượng còn thiếu.'));
+                }
                 return;
             }
             case 'close_partial':
@@ -8846,6 +8944,46 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                 {savingPo ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
                                 {savingPo ? (editingPo ? 'Đang lưu...' : 'Đang tạo...') : (editingPo ? 'Lưu' : 'Tạo')}
                             </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {packageDeliveryEditor && (
+                <div className="fixed inset-0 z-[1150] flex items-center justify-center bg-black/40 px-4 backdrop-blur-sm">
+                    <div className="w-full max-w-4xl rounded-2xl border border-slate-200 bg-white shadow-2xl">
+                        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
+                            <div>
+                                <div className="text-sm font-black text-slate-800">
+                                    {packageDeliveryEditor.cloneFromBatch ? 'Clone đợt giao' : 'Thêm đợt giao'}
+                                </div>
+                                <div className="text-[11px] font-bold text-slate-400">
+                                    {packageDeliveryEditor.po.poNumber} • {packageDeliveryEditor.po.vendorName || 'Nhà cung cấp'}
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setPackageDeliveryEditor(null)}
+                                className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                                title="Đóng"
+                            >
+                                <X size={18} />
+                            </button>
+                        </div>
+                        <div className="p-4">
+                            <PurchaseDeliveryBatchEditor
+                                purchaseOrder={packageDeliveryEditor.po}
+                                actorUserId={user?.id || ''}
+                                targetWarehouseId={packageDeliveryEditor.po.targetWarehouseId || ''}
+                                cloneFromBatch={packageDeliveryEditor.cloneFromBatch || null}
+                                onCancel={() => setPackageDeliveryEditor(null)}
+                                onSaved={async () => {
+                                    const sourcePo = packageDeliveryEditor.po;
+                                    setPackageDeliveryEditor(null);
+                                    await loadSupplyData();
+                                    await loadPoDeliveryPrintGroups(sourcePo, true);
+                                    toast.success('Đã lưu đợt giao');
+                                }}
+                            />
                         </div>
                     </div>
                 </div>

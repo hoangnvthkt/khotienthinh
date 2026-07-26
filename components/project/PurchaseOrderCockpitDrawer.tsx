@@ -44,6 +44,7 @@ import {
 } from '../../lib/materialUnitConversion';
 import { getPurchaseOrderDisplayLineAmount } from '../../lib/purchaseOrderAmount';
 import { getPurchaseOrderLineDemandQty } from '../../lib/purchaseOrderDemand';
+import { getPurchasePackageSummary } from '../../lib/purchasePackageDomain';
 import type {
   PurchaseOrderReceiptStats,
   PurchaseOrderUiAction,
@@ -133,11 +134,11 @@ const formatDate = (value?: string | null) => {
 };
 
 const actionIcon = (action: PurchaseOrderUiAction) => {
-  if (action.id === 'request_approval') return <Send size={14} />;
-  if (action.id === 'approve_po' || action.id === 'approve_supplemental') return <CheckCircle2 size={14} />;
+  if (action.id === 'request_approval' || action.id === 'submit_package') return <Send size={14} />;
+  if (action.id === 'approve_po' || action.id === 'approve_package' || action.id === 'approve_supplemental' || action.id === 'close_short') return <CheckCircle2 size={14} />;
   if (action.id === 'request_revision' || action.id === 'reject_supplemental') return <RefreshCcw size={14} />;
-  if (action.id === 'create_delivery' || action.id === 'create_supplemental_delivery') return <Truck size={14} />;
-  if (action.id === 'create_receipt') return <QrCode size={14} />;
+  if (action.id === 'create_delivery' || action.id === 'create_supplemental_delivery' || action.id === 'add_delivery' || action.id === 'clone_delivery' || action.id === 'cancel_delivery') return <Truck size={14} />;
+  if (action.id === 'create_receipt' || action.id === 'open_delivery_qr') return <QrCode size={14} />;
   if (action.id === 'open_wms_transaction') return <ShieldCheck size={14} />;
   if (action.id === 'create_supplier_payable') return <WalletCards size={14} />;
   if (action.id === 'supplier_return') return <PackageX size={14} />;
@@ -261,6 +262,8 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
   const payableOutstanding = supplierPayableDocuments.reduce((sum, document) => sum + Number(document.outstandingAmount || 0), 0);
   const payableStatus = supplierPayableDocuments[0]?.status || 'none';
   const payableView = payableStatusView(payableStatus);
+  const isPackageV2 = (po.purchaseMode === 'single' || po.purchaseMode === 'multiple') && po.sourceMode === 'from_request';
+  const packageSummary = useMemo(() => getPurchasePackageSummary(po, deliveryBatches), [deliveryBatches, po]);
   const uniqueSpecKeys = useMemo(() => Array.from(
     new Set(
       po.items.flatMap(item =>
@@ -343,16 +346,29 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
   const hasReceivedDelivery = deliveryTimelineGroups.some(group => normalizeDeliveryTimelineStatus(group.status) === 'received') || receiptStats.receivedQty > 0;
   const hasDelivery = deliveryTimelineGroups.length > 0;
 
-  const stepper = [
-    { key: 'created', label: 'Tạo PO', done: true, current: po.status === 'draft' },
-    { key: 'approved', label: 'Duyệt PO', done: !['draft', 'sent'].includes(po.status), current: po.status === 'sent' },
-    { key: 'delivery', label: 'Giao hàng', done: hasDelivery || ['partial', 'delivered', 'closed'].includes(po.status), current: ['confirmed', 'in_transit'].includes(po.status) && !hasReceivedDelivery },
-    { key: 'receipt', label: 'Nhập kho', done: hasReceivedDelivery, current: hasWmsPending || po.status === 'partial' },
-    { key: 'payable', label: 'Công nợ NCC', done: supplierPayableDocuments.length > 0, current: hasReceivedDelivery && supplierPayableDocuments.length === 0 },
-    { key: 'payment', label: 'Thanh toán', done: payableStatus === 'paid', current: supplierPayableDocuments.length > 0 && payableOutstanding > 0 },
-  ];
+  const stepper = isPackageV2
+    ? [
+      { key: 'created', label: 'Tạo gói', done: true, current: po.status === 'draft' },
+      { key: 'approved', label: 'Duyệt gói', done: !['draft', 'sent'].includes(po.status), current: po.status === 'sent' },
+      { key: 'delivery', label: 'Đợt giao', done: hasDelivery || ['partial', 'delivered', 'closed'].includes(po.status), current: ['confirmed', 'in_transit'].includes(po.status) && !hasReceivedDelivery },
+      { key: 'receipt', label: 'SL/CL', done: hasReceivedDelivery, current: hasWmsPending || po.status === 'partial' },
+      { key: 'closed', label: 'Hoàn tất', done: ['delivered', 'closed'].includes(po.status), current: po.status === 'partial' },
+    ]
+    : [
+      { key: 'created', label: 'Tạo PO', done: true, current: po.status === 'draft' },
+      { key: 'approved', label: 'Duyệt PO', done: !['draft', 'sent'].includes(po.status), current: po.status === 'sent' },
+      { key: 'delivery', label: 'Giao hàng', done: hasDelivery || ['partial', 'delivered', 'closed'].includes(po.status), current: ['confirmed', 'in_transit'].includes(po.status) && !hasReceivedDelivery },
+      { key: 'receipt', label: 'Nhập kho', done: hasReceivedDelivery, current: hasWmsPending || po.status === 'partial' },
+      { key: 'payable', label: 'Công nợ NCC', done: supplierPayableDocuments.length > 0, current: hasReceivedDelivery && supplierPayableDocuments.length === 0 },
+      { key: 'payment', label: 'Thanh toán', done: payableStatus === 'paid', current: supplierPayableDocuments.length > 0 && payableOutstanding > 0 },
+    ];
 
-  const statusCards = [
+  const statusCards = isPackageV2 ? [
+    { label: 'Giá trị chủ trương', value: `${fmtMoney(packageSummary.referenceGross)} đ`, tone: 'blue', note: `${fmtQty(packageSummary.referenceQty)} nhu cầu gốc` },
+    { label: 'Tổng các đợt', value: `${fmtMoney(packageSummary.releasedGross)} đ`, tone: packageSummary.releasedGrossVariance > 0.5 ? 'amber' : 'slate', note: packageSummary.releasedGrossVariance > 0.5 ? 'Vượt mốc tham chiếu' : `${fmtQty(packageSummary.releasedQty)} đã lập đợt` },
+    { label: 'Đã nhận gồm VAT', value: `${fmtMoney(packageSummary.receivedGross)} đ`, tone: packageSummary.receivedNetQty > 0 ? 'emerald' : 'slate', note: `${fmtQty(packageSummary.receivedNetQty)} thực nhận ròng` },
+    { label: 'Nhu cầu còn lại', value: fmtQty(packageSummary.remainingNeedQty), tone: packageSummary.remainingNeedQty > 0 ? 'amber' : 'emerald', note: packageSummary.uiStatus },
+  ] : [
     { label: 'Trạng thái PO', value: statusLabel, tone: 'blue', note: sourceLabel },
     {
       label: 'Trạng thái đợt giao',
@@ -419,8 +435,8 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
             </div>
             <div className="flex shrink-0 items-center justify-between gap-3 lg:justify-end">
               <div className="text-right">
-                <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">Tổng thanh toán</div>
-                <div className="text-xl font-black text-emerald-700 dark:text-emerald-300">{fmtMoney(paymentTotal)} đ</div>
+                <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">{isPackageV2 ? 'Giá trị chủ trương' : 'Tổng thanh toán'}</div>
+                <div className="text-xl font-black text-emerald-700 dark:text-emerald-300">{fmtMoney(isPackageV2 ? packageSummary.referenceGross : paymentTotal)} đ</div>
                 <div className="text-[10px] font-bold text-slate-400">Trước VAT {fmtMoney(displayAmount)} đ</div>
               </div>
               <div className="relative">
@@ -543,11 +559,11 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
                       )}
                     </div>
                     <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950">
-                      <h4 className="text-xs font-black uppercase tracking-wider text-slate-500">Giá trị</h4>
+                      <h4 className="text-xs font-black uppercase tracking-wider text-slate-500">{isPackageV2 ? 'Baseline gói' : 'Giá trị'}</h4>
                       <div className="mt-4 space-y-2 text-xs">
                         <div className="flex justify-between"><span className="text-slate-500">Trước VAT</span><strong>{fmtMoney(displayAmount)} đ</strong></div>
                         <div className="flex justify-between"><span className="text-slate-500">VAT {vatRate.toLocaleString('vi-VN')}%</span><strong>{fmtMoney(vatAmount)} đ</strong></div>
-                        <div className="flex justify-between border-t border-slate-100 pt-2 text-sm"><span className="font-black text-slate-700">Tổng thanh toán</span><strong className="text-emerald-700">{fmtMoney(paymentTotal)} đ</strong></div>
+                        <div className="flex justify-between border-t border-slate-100 pt-2 text-sm"><span className="font-black text-slate-700">{isPackageV2 ? 'Chủ trương gồm VAT' : 'Tổng thanh toán'}</span><strong className="text-emerald-700">{fmtMoney(isPackageV2 ? packageSummary.referenceGross : paymentTotal)} đ</strong></div>
                       </div>
                     </div>
                   </div>
@@ -660,7 +676,7 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
                         const printPoKey = `${po.id}:${printGroup.key}:purchase_order`;
                         const printApprovalKey = `${po.id}:${printGroup.key}:approval_request`;
                         const normalizedStatus = normalizeDeliveryTimelineStatus(group.status);
-                        const canEditPlannedBatch = !!batch && canMutatePoDocument && ['planned', 'supplemental_pending'].includes(batch.status) && !poHasStockImpact;
+                        const canEditPlannedBatch = !isPackageV2 && !!batch && canMutatePoDocument && ['planned', 'supplemental_pending'].includes(batch.status) && !poHasStockImpact;
                         const isDeletingBatch = batch
                           ? deletingDeliveryKey === `batch:${batch.id}`
                           : deletingDeliveryKey === `group:${printGroup.key}`;
@@ -716,7 +732,22 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
                                     </button>
                                   </>
                                 )}
-                                {batch && canReceivePo && ['confirmed', 'in_transit'].includes(po.status) && batch.status === 'planned' && (
+                                {isPackageV2 && batch && (batch.qrToken || wmsTransactionId) && (
+                                  <button type="button" onClick={() => void onRunAction({ id: 'open_delivery_qr', label: 'Mở QR', intent: 'primary', deliveryBatchId: batch.id, transactionId: wmsTransactionId || undefined, qrToken: batch.qrToken || null })} className="inline-flex h-9 items-center gap-1 rounded-lg bg-blue-600 px-3 text-[10px] font-black text-white hover:bg-blue-700">
+                                    <QrCode size={13} /> Mở QR
+                                  </button>
+                                )}
+                                {isPackageV2 && batch && po.purchaseMode === 'multiple' && (
+                                  <button type="button" onClick={() => void onRunAction({ id: 'clone_delivery', label: 'Clone đợt', intent: 'neutral', deliveryBatchId: batch.id })} className="inline-flex h-9 items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 text-[10px] font-black text-slate-600 hover:bg-slate-50">
+                                    <RefreshCcw size={13} /> Clone
+                                  </button>
+                                )}
+                                {isPackageV2 && batch && po.purchaseMode === 'multiple' && ['planned', 'wms_pending', 'receiving'].includes(batch.status) && (
+                                  <button type="button" onClick={() => void onRunAction({ id: 'cancel_delivery', label: 'Hủy đợt giao', intent: 'danger', deliveryBatchId: batch.id })} disabled={isDeletingBatch} className="inline-flex h-9 items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 text-[10px] font-black text-red-700 hover:bg-red-100 disabled:opacity-60">
+                                    {isDeletingBatch ? <Loader2 size={13} className="animate-spin" /> : <Ban size={13} />} Hủy
+                                  </button>
+                                )}
+                                {!isPackageV2 && batch && canReceivePo && ['confirmed', 'in_transit'].includes(po.status) && batch.status === 'planned' && (
                                   <button type="button" onClick={() => void onCreateDeliveryReceipt(batch)} disabled={creatingDeliveryBatchId === batch.id} className="inline-flex h-9 items-center gap-1 rounded-lg bg-indigo-600 px-3 text-[10px] font-black text-white hover:bg-indigo-700 disabled:opacity-60">
                                     {creatingDeliveryBatchId === batch.id ? <Loader2 size={13} className="animate-spin" /> : <QrCode size={13} />} Tạo WMS
                                   </button>
@@ -807,8 +838,8 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
               <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">Tổng thanh toán</div>
-                    <div className="mt-1 text-2xl font-black text-slate-900 dark:text-slate-100">{fmtMoney(paymentTotal)} đ</div>
+                    <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">{isPackageV2 ? 'Giá trị chủ trương' : 'Tổng thanh toán'}</div>
+                    <div className="mt-1 text-2xl font-black text-slate-900 dark:text-slate-100">{fmtMoney(isPackageV2 ? packageSummary.referenceGross : paymentTotal)} đ</div>
                   </div>
                   <WalletCards className="text-emerald-600" size={22} />
                 </div>

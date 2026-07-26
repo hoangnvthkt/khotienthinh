@@ -38,6 +38,22 @@ const plannedBatch = (patch: Partial<PurchaseOrderDeliveryBatch> = {}): Purchase
   ...patch,
 });
 
+const packagePo = (patch: Partial<PurchaseOrder> = {}) => makePo({
+  status: 'confirmed',
+  purchaseMode: 'single',
+  referenceGrossAmount: 100_000,
+  ...patch,
+});
+
+const packageActions = (patch: Parameters<typeof getPurchaseOrderUiPolicy>[0]) => {
+  const policy = getPurchaseOrderUiPolicy(baseInput(patch));
+  return [
+    policy.primaryAction?.id,
+    ...policy.secondaryActions.map(action => action.id),
+    ...policy.menuActions.map(action => action.id),
+  ].filter(Boolean);
+};
+
 const baseInput = (patch: Parameters<typeof getPurchaseOrderUiPolicy>[0]) => ({
   receiptStats: {
     orderedQty: 100,
@@ -242,5 +258,37 @@ describe('purchaseOrderUiPolicy', () => {
     const policy = getPurchaseOrderUiPolicy(baseInput({ po: makePo({ status: 'confirmed' }) }));
 
     expect(policy.menuActions.map(action => action.id)).toContain('view_history');
+  });
+
+  it('uses V2 package actions for approved package flows', () => {
+    expect(packageActions({
+      po: packagePo({ purchaseMode: 'single' }),
+      deliveryBatches: [plannedBatch({ qrToken: 'qr-1', wmsTransactionId: 'tx-1' })],
+    })).toEqual(['open_delivery_qr', 'print_purchase_order', 'print_approval_request', 'view_history', 'edit_po', 'remove_po']);
+
+    expect(packageActions({
+      po: packagePo({ purchaseMode: 'multiple' }),
+      deliveryBatches: [],
+    })).toContain('add_delivery');
+
+    expect(packageActions({
+      po: packagePo({ supplementalApprovalStatus: 'pending' as any }),
+      deliveryBatches: [plannedBatch({ status: 'supplemental_pending' as any })],
+      pendingSupplementalApprovalId: 'supp-1',
+      supplementalOverAmount: 14_000,
+    })).not.toContain('approve_supplemental');
+
+    expect(packageActions({
+      po: packagePo({ status: 'delivered' }),
+      receiptStats: { orderedQty: 100, receivedQty: 100, remainingQty: 0 },
+      recognizedPayableAmount: 100_000,
+      supplierPayableStatus: 'none',
+    })).not.toContain('create_supplier_payable');
+
+    expect(packageActions({
+      po: packagePo({ status: 'partial' }),
+      receiptStats: { orderedQty: 100, receivedQty: 70, remainingQty: 30 },
+      deliveryBatches: [],
+    })).toContain('close_short');
   });
 });

@@ -635,7 +635,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
         const labels = getBatchPoIds(batch).map(poId => poSourceLabelsById[poId]).filter(Boolean);
         if (labels.length > 0) return Array.from(new Set(labels)).join(', ');
         if (batch.note?.toLowerCase().includes('po')) return batch.note;
-        return 'Nhà cung cấp / PO';
+        return 'Chờ mua/cấp hàng';
     };
 
     const getFulfillmentSourceLabel = (batch?: MaterialRequestFulfillmentBatch | null) => {
@@ -3844,23 +3844,17 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                             <th className="p-3 text-left">Vật tư</th>
                                             <th className="p-3 text-right">Xuất</th>
                                             <th className="p-3 text-right">Thực nhận</th>
-                                            <th className="p-3 text-right">Giá đợt</th>
-                                            <th className="p-3 text-right">Thành tiền</th>
                                             <th className="p-3 text-left">Lý do lệch</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-border">
                                         {selectedFulfillmentBatch.lines.map(line => {
                                             const requestLine = request.items.find((item, index) => getRequestLineId(request, item, index) === line.requestLineId);
-                                            const unitPrice = Number(line.deliveryUnitPrice || 0);
-                                            const amountQty = Number(line.receivedQty || line.issuedQty || 0);
                                             return (
                                                 <tr key={line.id}>
                                                     <td className="p-3 font-bold text-foreground">{requestLine ? getLineName(requestLine) : line.itemId}</td>
                                                     <td className="p-3 text-right font-black text-indigo-600">{Number(line.issuedQty || 0).toLocaleString('vi-VN')}</td>
                                                     <td className="p-3 text-right font-black text-cyan-600">{Number(line.receivedQty || 0).toLocaleString('vi-VN')}</td>
-                                                    <td className="p-3 text-right font-bold text-muted-foreground">{unitPrice > 0 ? `${unitPrice.toLocaleString('vi-VN')} đ` : '-'}</td>
-                                                    <td className="p-3 text-right font-black text-emerald-600">{unitPrice > 0 ? `${(amountQty * unitPrice).toLocaleString('vi-VN')} đ` : '-'}</td>
                                                     <td className="p-3 text-slate-400">{line.varianceReason || '-'}</td>
                                                 </tr>
                                             );

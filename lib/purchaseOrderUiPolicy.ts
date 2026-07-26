@@ -5,6 +5,13 @@ import type {
 } from '../types';
 
 export type PurchaseOrderUiActionId =
+  | 'submit_package'
+  | 'approve_package'
+  | 'add_delivery'
+  | 'clone_delivery'
+  | 'cancel_delivery'
+  | 'open_delivery_qr'
+  | 'close_short'
   | 'request_approval'
   | 'approve_po'
   | 'request_revision'
@@ -37,6 +44,7 @@ export interface PurchaseOrderUiAction {
   deliveryBatchId?: string;
   transactionId?: string;
   supplementalApprovalId?: string;
+  qrToken?: string | null;
 }
 
 export interface PurchaseOrderUiAlert {
@@ -93,6 +101,12 @@ const hasActiveDeliveryBatch = (deliveryBatches: PurchaseOrderDeliveryBatch[]) =
 const firstPlannedBatch = (deliveryBatches: PurchaseOrderDeliveryBatch[]) =>
   deliveryBatches.find(batch => batch.status === 'planned');
 
+const isPurchasePackageV2 = (po: PurchaseOrder) =>
+  po.sourceMode === 'from_request' && (po.purchaseMode === 'single' || po.purchaseMode === 'multiple');
+
+const firstOpenPackageBatch = (deliveryBatches: PurchaseOrderDeliveryBatch[]) =>
+  deliveryBatches.find(batch => !['cancelled'].includes(batch.status));
+
 const hasSupplementalPendingBatch = (deliveryBatches: PurchaseOrderDeliveryBatch[]) =>
   deliveryBatches.some(batch => batch.status === 'supplemental_pending');
 
@@ -131,6 +145,7 @@ export const getPurchaseOrderUiPolicy = ({
   supplierPayableStatus = 'none',
 }: PurchaseOrderUiPolicyInput): PurchaseOrderUiPolicy => {
   const isCompanyConsolidatedPo = po.sourceMode === 'company_consolidated';
+  const isPackageV2 = isPurchasePackageV2(po);
   const mayApprovePo = canManagePo || canApprovePo || canManageTab;
   const maySubmitPo = canManagePo || canCreatePo || canMutatePoDocument || canManageTab;
   const mayReceivePo = canManagePo || canReceivePo || canManageTab;
@@ -163,7 +178,61 @@ export const getPurchaseOrderUiPolicy = ({
     alerts.push({ id: 'rejected_before_receipt', label: 'Đợt giao bị từ chối', tone: 'danger' });
   }
 
-  if (!isCompanyConsolidatedPo) {
+  if (isPackageV2) {
+    const openBatch = firstOpenPackageBatch(deliveryBatches);
+    const canOpenDeliveryQr = Boolean(openBatch?.qrToken || openBatch?.wmsTransactionId);
+    if (po.status === 'draft' && maySubmitPo) {
+      primaryAction = { id: 'submit_package', label: 'Gửi duyệt gói', intent: 'warning' };
+      nextStep = 'Gửi Gói mua hàng vào luồng duyệt.';
+    } else if (po.status === 'sent' && mayApprovePo) {
+      primaryAction = { id: 'approve_package', label: 'Duyệt gói', intent: 'success' };
+      secondaryActions.push({ id: 'request_revision', label: 'Yêu cầu chỉnh sửa', intent: 'neutral' });
+      nextStep = po.purchaseMode === 'single'
+        ? 'Duyệt Gói mua hàng và tạo sẵn đợt giao đầu tiên.'
+        : 'Duyệt Gói mua hàng, sau đó thêm từng đợt giao khi có lịch.';
+    } else if (['confirmed', 'in_transit', 'partial'].includes(po.status)) {
+      if (canOpenDeliveryQr && openBatch) {
+        primaryAction = {
+          id: 'open_delivery_qr',
+          label: 'Mở QR đợt giao',
+          intent: 'primary',
+          deliveryBatchId: openBatch.id,
+          transactionId: openBatch.wmsTransactionId || undefined,
+          qrToken: openBatch.qrToken || null,
+        };
+        nextStep = 'Theo dõi đợt giao hiện tại qua QR/WMS.';
+      } else if (mayReceivePo) {
+        primaryAction = { id: 'add_delivery', label: 'Thêm đợt giao', intent: 'primary' };
+        nextStep = 'Tạo đợt giao để nhà cung cấp giao hàng và kho xử lý QR/WMS.';
+      }
+
+      if (mayReceivePo && po.purchaseMode === 'multiple' && primaryAction?.id !== 'add_delivery') {
+        secondaryActions.push({ id: 'add_delivery', label: 'Thêm đợt giao', intent: 'primary' });
+      }
+      if (mayReceivePo && po.purchaseMode === 'multiple' && openBatch) {
+        secondaryActions.push({
+          id: 'clone_delivery',
+          label: 'Clone đợt',
+          intent: 'neutral',
+          deliveryBatchId: openBatch.id,
+        });
+        if (['planned', 'wms_pending'].includes(openBatch.status)) {
+          secondaryActions.push({
+            id: 'cancel_delivery',
+            label: 'Hủy đợt giao',
+            intent: 'danger',
+            deliveryBatchId: openBatch.id,
+          });
+        }
+      }
+      if (mayReceivePo && hasOpenReceiptNeed(receiptStats) && !openBatch) {
+        secondaryActions.push({ id: 'close_short', label: 'Kết thúc thiếu', intent: 'warning' });
+      }
+    } else if (po.status === 'closed') {
+      primaryAction = { id: 'print_purchase_order', label: 'In chứng từ', intent: 'neutral' };
+      nextStep = 'Gói mua hàng đã đóng, chỉ còn tra cứu và in chứng từ.';
+    }
+  } else if (!isCompanyConsolidatedPo) {
     if (hasPendingSupplemental && mayApprovePo && pendingSupplementalApprovalId) {
       primaryAction = {
         id: 'approve_supplemental',
@@ -231,7 +300,7 @@ export const getPurchaseOrderUiPolicy = ({
     nextStep = 'PO đã kết thúc trạng thái, chỉ xem chi tiết và lịch sử.';
   }
 
-  if (pendingWmsTransactionId && deliveryBatches.some(batch => batch.status === 'wms_pending')) {
+  if (!isPackageV2 && pendingWmsTransactionId && deliveryBatches.some(batch => batch.status === 'wms_pending')) {
     primaryAction = {
       id: 'open_wms_transaction',
       label: 'Mở phiếu WMS',
@@ -244,7 +313,7 @@ export const getPurchaseOrderUiPolicy = ({
   const canCreateSupplierPayable = Number(recognizedPayableAmount || 0) > 0
     && (supplierPayableStatus === 'none' || supplierPayableStatus === 'draft')
     && !['draft', 'sent', 'confirmed', 'in_transit', 'cancelled', 'returned'].includes(po.status);
-  if (canCreateSupplierPayable) {
+  if (!isPackageV2 && canCreateSupplierPayable) {
     const action: PurchaseOrderUiAction = {
       id: 'create_supplier_payable',
       label: 'Tạo công nợ NCC',

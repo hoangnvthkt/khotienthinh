@@ -151,4 +151,19 @@ export const purchasePackageService = {
     });
     if (error) throw error;
   },
+
+  async closePackageShort(input: {
+    purchaseOrderId: string;
+    actorUserId: string;
+    reason: string;
+    lines: Array<{ purchaseOrderLineId: string; closeQty: number }>;
+  }): Promise<void> {
+    const { error } = await supabase.rpc('close_purchase_package_short_v2', {
+      p_purchase_order_id: input.purchaseOrderId,
+      p_actor_user_id: input.actorUserId,
+      p_reason: input.reason,
+      p_lines: input.lines,
+    });
+    if (error) throw error;
+  },
 };

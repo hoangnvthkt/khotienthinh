@@ -166,6 +166,24 @@ describe('purchasePackageService', () => {
     })).rejects.toBe(error);
   });
 
+  it('closes package shortage with actor, reason, and line quantities', async () => {
+    supabaseMocks.rpc.mockResolvedValue({ data: null, error: null });
+
+    await purchasePackageService.closePackageShort({
+      purchaseOrderId: 'po-1',
+      actorUserId: 'user-1',
+      reason: 'Công trường không còn nhu cầu',
+      lines: [{ purchaseOrderLineId: 'po-line-1', closeQty: 3 }],
+    });
+
+    expect(supabaseMocks.rpc).toHaveBeenCalledWith('close_purchase_package_short_v2', {
+      p_purchase_order_id: 'po-1',
+      p_actor_user_id: 'user-1',
+      p_reason: 'Công trường không còn nhu cầu',
+      p_lines: [{ purchaseOrderLineId: 'po-line-1', closeQty: 3 }],
+    });
+  });
+
   it('rejects an incomplete command result', async () => {
     supabaseMocks.rpc.mockResolvedValue({
       data: { deliveryBatchId: 'batch-1', wmsTransactionId: 'tx-1', qrToken: null },

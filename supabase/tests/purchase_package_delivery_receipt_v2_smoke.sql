@@ -1250,4 +1250,161 @@ begin
     raise exception 'Purchase package v2 approval created supplemental approval rows.';
   end if;
 end $$;
+
+create temp table purchase_package_close_short_smoke_ids (
+  request_id text not null,
+  request_code text not null,
+  request_line_id text not null,
+  po_id text not null,
+  po_number text not null,
+  po_line_id text not null
+) on commit drop;
+
+grant select on table purchase_package_close_short_smoke_ids to authenticated;
+
+insert into purchase_package_close_short_smoke_ids
+select
+  'purchase-package-v2-close-request-' || gen_random_uuid()::text,
+  'MR-2026-' || lpad((1000 + floor(random() * 8999)::integer)::text, 4, '0'),
+  'purchase-package-v2-close-request-line-' || gen_random_uuid()::text,
+  'purchase-package-v2-close-po-' || gen_random_uuid()::text,
+  'PO-' || (1000000000 + floor(random() * 899999999)::bigint)::text,
+  'purchase-package-v2-close-po-line-' || gen_random_uuid()::text;
+
+do $$
+declare
+  v_ids purchase_package_v2_smoke_ids%rowtype := (select ids from purchase_package_v2_smoke_ids ids);
+  v_close purchase_package_close_short_smoke_ids%rowtype := (select ids from purchase_package_close_short_smoke_ids ids);
+begin
+  insert into app_private.material_request_code_registry(code)
+  values (v_close.request_code)
+  on conflict (code) do nothing;
+
+  insert into app_private.purchase_order_number_registry(po_number)
+  values (v_close.po_number)
+  on conflict (po_number) do nothing;
+
+  insert into public.requests(
+    id, code, site_warehouse_id, requester_id, status, items,
+    created_date, expected_date, project_id, construction_site_id,
+    request_origin, workflow_step, title
+  )
+  values (
+    v_close.request_id,
+    v_close.request_code,
+    v_ids.warehouse_id,
+    v_ids.actor_id,
+    'APPROVED'::public.request_status,
+    jsonb_build_array(jsonb_build_object(
+      'lineId', v_close.request_line_id,
+      'itemId', v_ids.item_id,
+      'itemNameSnapshot', 'Purchase Package V2 Close Item',
+      'skuSnapshot', 'PP-V2-CLOSE',
+      'unitSnapshot', 'Kg',
+      'requestQty', 100,
+      'approvedQty', 100
+    )),
+    now(),
+    now() + interval '7 days',
+    v_ids.project_id,
+    v_ids.site_id,
+    'project',
+    'site_quality_check',
+    'Close short smoke request'
+  );
+
+  insert into public.purchase_orders (
+    id, project_id, construction_site_id, vendor_id, vendor_name, po_number, items,
+    total_amount, approved_total_amount, vat_rate, purchase_mode, fulfillment_mode, reference_gross_amount,
+    order_date, status, source_mode, target_warehouse_id, created_by_id, created_at
+  )
+  values (
+    v_close.po_id,
+    v_ids.project_id,
+    v_ids.site_id,
+    v_ids.supplier_id,
+    'NCC Smoke',
+    v_close.po_number,
+    jsonb_build_array(jsonb_build_object(
+      'lineId', v_close.po_line_id,
+      'itemId', v_ids.item_id,
+      'sku', 'PP-V2-CLOSE',
+      'name', 'Purchase Package V2 Close Item',
+      'unit', 'Kg',
+      'unitSnapshot', 'Kg',
+      'purchaseUnitSnapshot', 'Kg',
+      'stockUnitSnapshot', 'Kg',
+      'purchaseConversionFactor', 1,
+      'qty', 100,
+      'receivedQty', 70,
+      'returnedQty', 0,
+      'unitPrice', 10000,
+      'requestId', v_close.request_id,
+      'requestLineId', v_close.request_line_id
+    )),
+    1000000,
+    1000000,
+    10,
+    'multiple',
+    'RECEIVE_TO_STOCK',
+    1100000,
+    current_date::text,
+    'partial',
+    'from_request',
+    v_ids.warehouse_id,
+    v_ids.actor_id::text,
+    now()
+  );
+end $$;
+
+set role authenticated;
+
+select pg_temp.purchase_package_v2_set_user(actor_id)
+from purchase_package_v2_smoke_ids;
+
+do $$
+declare
+  v_ids purchase_package_v2_smoke_ids%rowtype := (select ids from purchase_package_v2_smoke_ids ids);
+  v_close purchase_package_close_short_smoke_ids%rowtype := (select ids from purchase_package_close_short_smoke_ids ids);
+begin
+  perform public.close_purchase_package_short_v2(
+    v_close.po_id,
+    v_ids.actor_id,
+    'Cong truong khong con nhu cau',
+    jsonb_build_array(jsonb_build_object(
+      'purchaseOrderLineId', v_close.po_line_id,
+      'closeQty', 30
+    ))
+  );
+end $$;
+
+reset role;
+
+do $$
+declare
+  v_close purchase_package_close_short_smoke_ids%rowtype := (select ids from purchase_package_close_short_smoke_ids ids);
+begin
+  if not exists (
+    select 1
+    from public.purchase_orders
+    where id = v_close.po_id
+      and status = 'closed'
+      and closed_need_qty = 30
+  ) then
+    raise exception 'Close-short RPC did not close package and update closed need qty.';
+  end if;
+
+  if not exists (
+    select 1
+    from public.material_request_line_need_closures closure
+    where closure.material_request_id = v_close.request_id
+      and closure.request_line_id = v_close.request_line_id
+      and closure.closed_qty = 30
+      and closure.actual_received_qty_snapshot = 70
+      and closure.status = 'active'
+      and closure.reason = 'Cong truong khong con nhu cau'
+  ) then
+    raise exception 'Close-short RPC did not write expected MR need closure.';
+  end if;
+end $$;
 rollback;
