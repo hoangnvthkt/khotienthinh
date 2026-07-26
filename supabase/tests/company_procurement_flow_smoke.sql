@@ -235,6 +235,7 @@ language plpgsql
 as $$
 declare
   v_link_id uuid;
+  v_previous_guard text := current_setting('app.material_transition_context', true);
 begin
   select link.id into v_link_id
   from public.purchase_order_request_lines link
@@ -304,12 +305,14 @@ begin
     85000, p_variance_reason
   );
 
+  perform set_config('app.material_transition_context', 'on', true);
   perform public.process_transaction_status(
     p_transaction_id,
     'COMPLETED'::public.transaction_status,
     p_actor_id
   );
   perform public.sync_fulfillment_receipt_for_transaction(p_transaction_id, p_actor_id);
+  perform set_config('app.material_transition_context', coalesce(v_previous_guard, ''), true);
 
   update public.purchase_order_delivery_groups delivery_group
   set status = case
@@ -322,6 +325,10 @@ begin
     else 'issued'
   end
   where delivery_group.id = p_group_id;
+exception
+  when others then
+    perform set_config('app.material_transition_context', coalesce(v_previous_guard, ''), true);
+    raise;
 end;
 $$;
 
@@ -372,6 +379,7 @@ declare
   v_return public.purchase_order_supplier_returns%rowtype;
   v_returned_qty numeric;
   v_status text;
+  v_previous_guard text;
   i integer;
 begin
   select u.id, u.auth_id
@@ -559,11 +567,14 @@ begin
     raise exception 'Active partial PO did not suppress duplicate purchasing.';
   end if;
 
+  v_previous_guard := current_setting('app.material_transition_context', true);
+  perform set_config('app.material_transition_context', 'on', true);
   update public.purchase_orders
   set status = 'delivered',
       actual_delivery_date = current_date::text,
       delivery_note = 'Smoke: ket thuc PO sau khi nhan 80/100'
   where id = v_po_close;
+  perform set_config('app.material_transition_context', coalesce(v_previous_guard, ''), true);
 
   if pg_temp.smoke_active_ordered(v_request_close, v_line_close) <> 0
      or pg_temp.smoke_open_need(v_request_close, v_line_close, 100) <> 20
@@ -665,9 +676,12 @@ begin
     'CANCELLED'::public.transaction_status,
     v_admin_id
   );
+  v_previous_guard := current_setting('app.material_transition_context', true);
+  perform set_config('app.material_transition_context', 'on', true);
   update public.purchase_orders
   set status = 'cancelled', delivery_note = 'Huy truoc khi nhap kho'
   where id = v_po_return_before;
+  perform set_config('app.material_transition_context', coalesce(v_previous_guard, ''), true);
 
   if pg_temp.smoke_stock(v_item_id, v_warehouse_id) <> v_stock_before
      or pg_temp.smoke_gross_received(v_request_return_before, v_line_return_before) <> 0
