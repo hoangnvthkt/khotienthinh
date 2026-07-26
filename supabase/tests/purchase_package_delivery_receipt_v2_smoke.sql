@@ -20,6 +20,9 @@ begin
   if to_regprocedure('public.finalize_purchase_receipt_v2(uuid,text,uuid)') is null then
     raise exception 'Missing finalize_purchase_receipt_v2 RPC';
   end if;
+  if to_regclass('public.purchase_package_v2_anomalies') is null then
+    raise exception 'Missing purchase package anomaly view';
+  end if;
 end $$;
 
 create temp table purchase_package_v2_smoke_ids (
