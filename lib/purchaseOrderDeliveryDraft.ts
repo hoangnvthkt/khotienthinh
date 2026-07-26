@@ -3,6 +3,7 @@ import type {
   PurchaseOrderDeliveryBatch,
   PurchaseOrderDeliveryLine,
   PurchaseOrderItem,
+  PurchaseMode,
   PurchaseOrderSourceMode,
 } from '../types';
 import {
@@ -36,7 +37,16 @@ export const shouldAutoCreatePoDeliveryScheduleForForm = ({
 }: {
   isEditing: boolean;
   sourceMode?: PurchaseOrderSourceMode | null;
-}) => !(isEditing && sourceMode === 'from_request');
+}) => sourceMode === 'from_request' ? false : !isEditing;
+
+export const getDefaultPurchaseMode = (
+  sourceMode?: PurchaseOrderSourceMode | null,
+): PurchaseMode => sourceMode === 'from_request' ? 'single' : 'multiple';
+
+export const shouldCreateBatchDuringDraftSave = (_purchaseMode?: PurchaseMode | null) => false;
+
+export const shouldAutoCreateBatchOnApproval = (purchaseMode?: PurchaseMode | null) =>
+  purchaseMode === 'single';
 
 export const getPoDeliveryDraftInitialLineValues = ({
   remainingQty,
@@ -203,7 +213,6 @@ export const syncPoItemPricesFromDeliverySchedule = (
 
 export const resolvePurchaseOrderItemsForScheduledPricing = ({
   items,
-  batches = [],
   sourceMode,
 }: {
   items: PurchaseOrderItem[];
@@ -212,8 +221,5 @@ export const resolvePurchaseOrderItemsForScheduledPricing = ({
 }): PurchaseOrderItem[] => {
   if (sourceMode !== 'from_request') return items;
 
-  return syncPoItemPricesFromDeliverySchedule(items, batches, {
-    emptyScheduleBehavior: 'zero_price',
-    unmatchedLineBehavior: 'zero_price',
-  });
+  return items;
 };

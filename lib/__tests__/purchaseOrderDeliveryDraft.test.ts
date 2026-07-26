@@ -6,8 +6,11 @@ import * as deliveryDraft from '../purchaseOrderDeliveryDraft';
 import {
   getPoDeliveryDraftInitialLineValues,
   getPoDeliveryScheduleLineInitialValues,
+  getDefaultPurchaseMode,
   makePoDeliveryLineDraft,
   resolvePurchaseOrderItemsForScheduledPricing,
+  shouldAutoCreateBatchOnApproval,
+  shouldCreateBatchDuringDraftSave,
   shouldAutoCreatePoDeliveryScheduleForForm,
   syncPoItemPricesFromDeliverySchedule,
   syncPoItemsFromDeliverySchedule,
@@ -137,11 +140,16 @@ describe('purchaseOrderDeliveryDraft', () => {
     })).toBe(false);
   });
 
-  it('auto-creates default delivery schedule for new request PO drafts', () => {
+  it('uses the default package flow for request PO drafts', () => {
+    expect(getDefaultPurchaseMode('from_request')).toBe('single');
+    expect(shouldCreateBatchDuringDraftSave('single')).toBe(false);
+    expect(shouldCreateBatchDuringDraftSave('multiple')).toBe(false);
+    expect(shouldAutoCreateBatchOnApproval('single')).toBe(true);
+    expect(shouldAutoCreateBatchOnApproval('multiple')).toBe(false);
     expect(shouldAutoCreatePoDeliveryScheduleForForm({
       isEditing: false,
       sourceMode: 'from_request',
-    })).toBe(true);
+    })).toBe(false);
   });
 
   it('starts new delivery draft lines empty for request POs after deleted batches', () => {
@@ -315,7 +323,19 @@ describe('purchaseOrderDeliveryDraft', () => {
     expect(synced.unitPrice).toBe(0);
   });
 
-  it('uses request PO delivery schedule prices before validating supplemental approval', () => {
+  it('keeps MR package baseline values even when no delivery batch exists yet', () => {
+    const [synced] = resolvePurchaseOrderItemsForScheduledPricing({
+      items: [{ ...poItem, qty: 7000, unitPrice: 5600 }],
+      batches: [],
+      sourceMode: 'from_request',
+    });
+
+    expect(synced.qty).toBe(7000);
+    expect(synced.unitPrice).toBe(5600);
+    expect(calculateLineTotal(synced)).toBe(39200000);
+  });
+
+  it('keeps request PO baseline prices instead of syncing them from delivery schedules', () => {
     const schedule: PurchaseOrderDeliveryBatch[] = [
       {
         id: 'batch-1',
@@ -338,7 +358,7 @@ describe('purchaseOrderDeliveryDraft', () => {
     ];
 
     const [synced] = resolvePurchaseOrderItemsForScheduledPricing({
-      items: [{ ...poItem, qty: 7000, unitPrice: 0 }],
+      items: [{ ...poItem, qty: 7000, unitPrice: 5600 }],
       batches: schedule,
       sourceMode: 'from_request',
     });
@@ -356,6 +376,8 @@ describe('purchaseOrderDeliveryDraft', () => {
       createdAt: '2026-07-25T00:00:00.000Z',
     }, schedule);
 
+    expect(synced.qty).toBe(7000);
+    expect(synced.unitPrice).toBe(5600);
     expect(totalAmount).toBe(39200000);
     expect(summary.actualPlannedAmount).toBe(39200000);
     expect(summary.overAmount).toBe(0);

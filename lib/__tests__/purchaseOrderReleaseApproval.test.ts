@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { PurchaseOrder, PurchaseOrderDeliveryBatch } from '../../types';
 import {
   applyPurchaseOrderSupplementalState,
+  getVarianceSeverity,
   getPurchaseOrderReleaseSummary,
   getPurchaseOrderScheduleQuantityBlockReason,
 } from '../purchaseOrderReleaseApproval';
@@ -83,6 +84,19 @@ describe('purchaseOrderReleaseApproval', () => {
     expect(reason).toContain('vượt khối lượng PO tổng');
   });
 
+  it('treats V2 package variance as a warning instead of a hard block', () => {
+    const overBatches = [
+      batch('batch-1', 1, 700, 100),
+      batch('batch-2', 2, 400, 100),
+    ];
+
+    expect(getPurchaseOrderScheduleQuantityBlockReason(makePo(), overBatches, {
+      allowOverRelease: true,
+    })).toBeNull();
+    expect(getVarianceSeverity(10)).toBe('warning');
+    expect(getVarianceSeverity(0)).toBe('none');
+  });
+
   it('marks the first release that exceeds the approved master amount as supplemental pending', () => {
     const { batches, supplementalRequests } = applyPurchaseOrderSupplementalState(makePo(), [
       batch('batch-1', 1, 300, 100),
@@ -99,6 +113,20 @@ describe('purchaseOrderReleaseApproval', () => {
         overAmount: 14000,
       }),
     ]);
+  });
+
+  it('keeps V2 package releases open and does not create supplemental requests', () => {
+    const { batches, supplementalRequests } = applyPurchaseOrderSupplementalState(makePo({
+      purchaseMode: 'single',
+    }), [
+      batch('batch-1', 1, 300, 100),
+      batch('batch-2', 2, 700, 120),
+    ], {
+      enableSupplementalApproval: false,
+    });
+
+    expect(batches.map(item => item.status)).toEqual(['planned', 'planned']);
+    expect(supplementalRequests).toEqual([]);
   });
 
   it('opens supplemental-pending releases after approved amount covers them', () => {

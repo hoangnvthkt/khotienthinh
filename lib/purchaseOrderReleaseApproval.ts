@@ -1,4 +1,5 @@
 import type {
+  PurchaseMode,
   PurchaseOrder,
   PurchaseOrderDeliveryBatch,
   PurchaseOrderItem,
@@ -54,6 +55,8 @@ export type PurchaseOrderSupplementalDraft = {
   overAmount: number;
 };
 
+export type PurchaseOrderVarianceSeverity = 'none' | 'warning';
+
 export const getPurchaseOrderApprovedTotalAmount = (po: PurchaseOrder) =>
   money(po.approvedTotalAmount ?? po.totalAmount ?? 0);
 
@@ -100,17 +103,35 @@ export const getPurchaseOrderReleaseSummary = (
 export const getPurchaseOrderScheduleQuantityBlockReason = (
   po: PurchaseOrder,
   batches: PurchaseOrderDeliveryBatch[] = [],
+  options: { allowOverRelease?: boolean } = {},
 ): string | null => {
+  if (options.allowOverRelease) return null;
   const exceededLine = getPurchaseOrderReleaseSummary(po, batches).lineSummaries
     .find(line => line.remainingQty < -EPSILON);
   if (!exceededLine) return null;
   return `${exceededLine.itemName} vượt khối lượng PO tổng ${Math.abs(exceededLine.remainingQty).toLocaleString('vi-VN')}.`;
 };
 
+export const getVarianceSeverity = (variance: number): PurchaseOrderVarianceSeverity =>
+  Math.abs(toNumber(variance)) > EPSILON ? 'warning' : 'none';
+
+export const shouldUseSupplementalApprovalForRelease = (purchaseMode?: PurchaseMode | null) =>
+  purchaseMode !== 'single' && purchaseMode !== 'multiple';
+
 export const applyPurchaseOrderSupplementalState = (
   po: PurchaseOrder,
   batches: PurchaseOrderDeliveryBatch[] = [],
+  options: { enableSupplementalApproval?: boolean } = {},
 ): { batches: PurchaseOrderDeliveryBatch[]; supplementalRequests: PurchaseOrderSupplementalDraft[] } => {
+  if (options.enableSupplementalApproval === false) {
+    return {
+      batches: batches.map(batch => batch.status === 'supplemental_pending'
+        ? { ...batch, status: 'planned' as const, supplementalApprovalId: null }
+        : batch),
+      supplementalRequests: [],
+    };
+  }
+
   const approvedTotalAmount = getPurchaseOrderApprovedTotalAmount(po);
   let runningAmount = 0;
   const supplementalRequests: PurchaseOrderSupplementalDraft[] = [];
