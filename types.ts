@@ -2154,6 +2154,7 @@ export type PurchaseOrderSourceMode =
 export type SupplierPayableSourceType =
   | 'purchase_order'
   | 'purchase_delivery_receipt'
+  | 'supplier_invoice_adjustment'
   | 'site_direct_purchase'
   | 'supplier_delivery_statement'
   | 'supplier_return_credit'
@@ -2207,6 +2208,29 @@ export interface SupplierPayableBalance {
   latestDocumentDate?: string | null;
   isOverdue?: boolean;
   updatedAt?: string;
+}
+
+export interface SupplierInvoice {
+  id: string;
+  supplierId: string;
+  supplierNameSnapshot: string;
+  invoiceNumber: string;
+  invoiceDate: string;
+  netAmount: number;
+  vatAmount: number;
+  grossAmount: number;
+  varianceReason?: string | null;
+  attachments: Attachment[];
+  createdBy?: string | null;
+  createdAt?: string;
+  updatedAt?: string | null;
+}
+
+export interface SupplierInvoicePayableLink {
+  invoiceId: string;
+  payableDocumentId: string;
+  allocatedGrossAmount: number;
+  createdAt?: string;
 }
 
 export type SupplierPaymentAllocationMode = 'fifo' | 'manual' | 'proportional';
@@ -2598,6 +2622,7 @@ export type DocumentTraceNodeType =
   | 'supplier_direct_delivery_note'
   | 'supplier_delivery_statement'
   | 'supplier_payable_document'
+  | 'supplier_invoice'
   | 'supplier_payment_batch'
   | 'project_transaction'
   | 'site_direct_purchase'

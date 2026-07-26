@@ -17,11 +17,13 @@ vi.mock('../supabase', () => ({
 }));
 
 import {
+  buildInvoiceReconciliation,
   buildPayableDocumentFromPurchaseOrder,
   buildSupplierPayableBalances,
   calculateDeliveryReceiptGross,
   calculatePurchaseOrderRecognizedAmount,
   supplierPayableService,
+  validateSupplierInvoiceLinks,
 } from '../supplierPayableService';
 
 const basePo = (overrides: Partial<PurchaseOrder> = {}): PurchaseOrder => ({
@@ -105,6 +107,61 @@ describe('supplierPayableService helpers', () => {
       vatRate: 10,
       lines: [{ acceptedQty: 90, deliveryUnitPrice: 10_000 }],
     })).toBe(990_000);
+  });
+
+  it('calculates supplier invoice variance against linked receipt AP gross', () => {
+    expect(buildInvoiceReconciliation({
+      linkedPayablesGross: 990_000,
+      invoiceGross: 1_000_000,
+    })).toEqual({
+      varianceAmount: 10_000,
+      hasVariance: true,
+    });
+  });
+
+  it('validates supplier invoice many-to-many payable allocations', () => {
+    expect(validateSupplierInvoiceLinks({
+      supplierId: 'vendor-1',
+      grossAmount: 1_000_000,
+      links: [
+        { payableSupplierId: 'vendor-1', allocatedGrossAmount: 600_000 },
+        { payableSupplierId: 'vendor-1', allocatedGrossAmount: 400_000 },
+      ],
+    })).toEqual({ allocatedGrossAmount: 1_000_000 });
+
+    expect(() => validateSupplierInvoiceLinks({
+      supplierId: 'vendor-1',
+      grossAmount: 1_000_000,
+      links: [
+        { payableSupplierId: 'vendor-2', allocatedGrossAmount: 1_000_000 },
+      ],
+    })).toThrow('Tất cả AP được link phải cùng nhà cung cấp với hóa đơn.');
+  });
+
+  it('maps duplicate supplier invoice numbers to a Vietnamese error', async () => {
+    supabaseMocks.rpc.mockResolvedValueOnce({
+      data: null,
+      error: {
+        code: '23505',
+        message: 'duplicate key value violates unique constraint "uq_supplier_invoice_header_number"',
+      },
+    });
+
+    await expect(supplierPayableService.recordSupplierInvoiceReconciliation({
+      invoice: {
+        supplierId: 'vendor-1',
+        supplierNameSnapshot: 'NCC 1',
+        invoiceNumber: 'HD-001',
+        invoiceDate: '2026-07-26',
+        netAmount: 900_000,
+        vatAmount: 100_000,
+        grossAmount: 1_000_000,
+        varianceReason: null,
+        attachments: [],
+      },
+      links: [{ payableDocumentId: 'ap-1', allocatedGrossAmount: 1_000_000 }],
+      actorUserId: 'user-1',
+    })).rejects.toThrow('Số hóa đơn đã tồn tại cho NCC này.');
   });
 
   it('builds an AP document snapshot from a received purchase order', () => {

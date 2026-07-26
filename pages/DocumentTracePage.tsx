@@ -26,6 +26,7 @@ const traceNodeTypes: DocumentTraceNodeType[] = [
   'supplier_direct_delivery_note',
   'supplier_delivery_statement',
   'supplier_payable_document',
+  'supplier_invoice',
   'supplier_payment_batch',
   'project_transaction',
   'site_direct_purchase',
@@ -40,6 +41,7 @@ const nodeLabels: Record<DocumentTraceNodeType, string> = {
   supplier_direct_delivery_note: 'Phiếu giao HĐ NCC',
   supplier_delivery_statement: 'Đối soát HĐ NCC',
   supplier_payable_document: 'AP',
+  supplier_invoice: 'Hóa đơn NCC',
   supplier_payment_batch: 'Thanh toán NCC',
   project_transaction: 'Dòng tiền dự án',
   site_direct_purchase: 'Mua nóng công trường',
@@ -138,6 +140,7 @@ const openNode = (navigate: ReturnType<typeof useNavigate>, node: DocumentTraceN
       navigate(`/da?tab=material&materialTab=direct&supplierDeliveryStatementId=${encodeURIComponent(node.id)}`);
       break;
     case 'supplier_payable_document':
+    case 'supplier_invoice':
     case 'supplier_payment_batch':
       navigate('/da?tab=finance&financeTab=payables');
       break;

@@ -383,6 +383,11 @@ declare
   v_direct_finalize_result jsonb;
   v_direct_stock_before numeric;
   v_direct_inventory_count integer;
+  v_receipt_ap_id uuid;
+  v_direct_ap_id uuid;
+  v_invoice public.supplier_invoices%rowtype;
+  v_other_supplier_id text := 'purchase-package-v2-other-supplier-' || gen_random_uuid()::text;
+  v_other_ap_id uuid := gen_random_uuid();
 begin
   v_result := public.create_delivery_batch_with_wms_qr_v2(
     p_purchase_order_id := v_ids.po_id,
@@ -985,6 +990,129 @@ begin
   ) then
     raise exception 'Direct consumption receipt did not create 990000 AP.';
   end if;
+
+  select id into v_receipt_ap_id
+  from public.supplier_payable_documents
+  where source_type = 'purchase_delivery_receipt'
+    and source_id = v_single_approval #>> '{delivery,deliveryBatchId}';
+
+  select id into v_direct_ap_id
+  from public.supplier_payable_documents
+  where source_type = 'purchase_delivery_receipt'
+    and source_id = v_direct_result ->> 'deliveryBatchId';
+
+  if v_receipt_ap_id is null or v_direct_ap_id is null then
+    raise exception 'Missing AP ids for supplier invoice smoke.';
+  end if;
+
+  select * into v_invoice
+  from public.record_supplier_invoice_reconciliation_v2(
+    jsonb_build_object(
+      'supplierId', v_ids.supplier_id,
+      'supplierNameSnapshot', 'NCC Smoke',
+      'invoiceNumber', 'INV-SMOKE-001',
+      'invoiceDate', current_date::text,
+      'netAmount', 1709090.91,
+      'vatAmount', 170909.09,
+      'grossAmount', 1880000,
+      'varianceReason', 'Invoice smoke variance',
+      'attachments', '[]'::jsonb
+    ),
+    jsonb_build_array(
+      jsonb_build_object('payableDocumentId', v_receipt_ap_id, 'allocatedGrossAmount', 890000),
+      jsonb_build_object('payableDocumentId', v_direct_ap_id, 'allocatedGrossAmount', 990000)
+    ),
+    v_ids.actor_id
+  );
+
+  if v_invoice.id is null then
+    raise exception 'Supplier invoice reconciliation did not return invoice.';
+  end if;
+
+  if (select count(*) from public.supplier_invoice_payable_links where invoice_id = v_invoice.id) <> 2 then
+    raise exception 'Supplier invoice should link exactly two AP documents.';
+  end if;
+
+  if not exists (
+    select 1
+    from public.project_transactions
+    where source_ref = 'supplier_invoice_adjustment:' || v_invoice.id::text
+      and amount = 10000
+  ) then
+    raise exception 'Supplier invoice variance did not create 10000 cost adjustment.';
+  end if;
+
+  if not exists (
+    select 1
+    from public.supplier_payable_documents
+    where source_type = 'supplier_invoice_adjustment'
+      and source_id = v_invoice.id::text
+      and recognized_amount = 10000
+  ) then
+    raise exception 'Supplier invoice variance did not create 10000 AP adjustment.';
+  end if;
+
+  begin
+    perform public.record_supplier_invoice_reconciliation_v2(
+      jsonb_build_object(
+        'supplierId', v_ids.supplier_id,
+        'supplierNameSnapshot', 'NCC Smoke',
+        'invoiceNumber', 'INV-SMOKE-001',
+        'invoiceDate', current_date::text,
+        'netAmount', 900000,
+        'vatAmount', 90000,
+        'grossAmount', 990000,
+        'varianceReason', null,
+        'attachments', '[]'::jsonb
+      ),
+      jsonb_build_array(jsonb_build_object('payableDocumentId', v_direct_ap_id, 'allocatedGrossAmount', 990000)),
+      v_ids.actor_id
+    );
+    raise exception 'Duplicate invoice number for same supplier unexpectedly succeeded.';
+  exception
+    when unique_violation then
+      null;
+  end;
+
+  insert into public.supplier_payable_documents (
+    id, code, source_type, source_id, project_id, construction_site_id,
+    supplier_id, supplier_name_snapshot, document_no, document_date,
+    committed_amount, recognized_amount, credit_amount, status, qr_token, metadata, created_by
+  ) values (
+    v_other_ap_id,
+    'AP-OTHER-' || replace(v_other_ap_id::text, '-', ''),
+    'manual_adjustment',
+    v_other_ap_id::text,
+    v_ids.project_id,
+    v_ids.site_id,
+    v_other_supplier_id,
+    'NCC Smoke Other',
+    'AP-OTHER-' || left(v_other_ap_id::text, 8),
+    current_date,
+    123000,
+    123000,
+    0,
+    'open',
+    'ap_other_' || replace(v_other_ap_id::text, '-', ''),
+    '{}'::jsonb,
+    v_ids.actor_id
+  );
+
+  perform public.record_supplier_invoice_reconciliation_v2(
+    jsonb_build_object(
+      'supplierId', v_other_supplier_id,
+      'supplierNameSnapshot', 'NCC Smoke Other',
+      'invoiceNumber', 'INV-SMOKE-001',
+      'invoiceDate', current_date::text,
+      'netAmount', 111818.18,
+      'vatAmount', 11181.82,
+      'grossAmount', 123000,
+      'varianceReason', null,
+      'attachments', '[]'::jsonb
+    ),
+    jsonb_build_array(jsonb_build_object('payableDocumentId', v_other_ap_id, 'allocatedGrossAmount', 123000)),
+    v_ids.actor_id
+  );
 
   v_over_result := public.create_delivery_batch_with_wms_qr_v2(
     p_purchase_order_id := v_ids.approve_multiple_po_id,

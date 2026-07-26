@@ -1,5 +1,8 @@
 import type {
+  Attachment,
   PurchaseOrder,
+  SupplierInvoice,
+  SupplierInvoicePayableLink,
   SupplierPayableBalance,
   SupplierPayableDocument,
   SupplierPayableSourceType,
@@ -52,6 +55,40 @@ export const calculateDeliveryReceiptGross = (input: {
     0,
   );
   return money(net * (1 + numeric(input.vatRate) / 100));
+};
+
+export const buildInvoiceReconciliation = (input: {
+  linkedPayablesGross: number;
+  invoiceGross: number;
+}) => {
+  const varianceAmount = money(numeric(input.invoiceGross) - numeric(input.linkedPayablesGross));
+  return {
+    varianceAmount,
+    hasVariance: Math.abs(varianceAmount) >= 0.01,
+  };
+};
+
+export const validateSupplierInvoiceLinks = (input: {
+  supplierId: string;
+  grossAmount: number;
+  links: Array<{
+    payableSupplierId?: string | null;
+    allocatedGrossAmount: number;
+  }>;
+}) => {
+  if (!input.links.length) throw new Error('Hóa đơn phải link ít nhất một AP.');
+  const allocatedGrossAmount = money(input.links.reduce((sum, link) => {
+    const amount = numeric(link.allocatedGrossAmount);
+    if (amount <= 0) throw new Error('Số tiền phân bổ hóa đơn phải lớn hơn 0.');
+    if ((link.payableSupplierId || '') !== input.supplierId) {
+      throw new Error('Tất cả AP được link phải cùng nhà cung cấp với hóa đơn.');
+    }
+    return sum + amount;
+  }, 0));
+  if (allocatedGrossAmount !== money(input.grossAmount)) {
+    throw new Error('Tổng phân bổ AP phải bằng tổng tiền hóa đơn.');
+  }
+  return { allocatedGrossAmount };
 };
 
 const documentStatus = (recognizedAmount: number, paidAmount: number, creditAmount = 0): SupplierPayableDocument['status'] => {
@@ -184,6 +221,24 @@ const normalizeDocument = (row: any): SupplierPayableDocument => {
   };
 };
 
+const normalizeInvoice = (row: any): SupplierInvoice => ({
+  ...(fromDb(row) as SupplierInvoice),
+  netAmount: money(row.net_amount ?? row.netAmount),
+  vatAmount: money(row.vat_amount ?? row.vatAmount),
+  grossAmount: money(row.gross_amount ?? row.grossAmount),
+  attachments: row.attachments || [],
+});
+
+const mapSupplierInvoiceError = (error: any): Error => {
+  if (
+    error?.code === '23505'
+    && String(error?.message || '').includes('uq_supplier_invoice_header_number')
+  ) {
+    return new Error('Số hóa đơn đã tồn tại cho NCC này.');
+  }
+  return error;
+};
+
 export const supplierPayableService = {
   async listDocuments(input: {
     projectId?: string | null;
@@ -275,6 +330,22 @@ export const supplierPayableService = {
     });
     if (error) throw error;
     return normalizeDocument(Array.isArray(data) ? data[0] : data);
+  },
+
+  async recordSupplierInvoiceReconciliation(input: {
+    invoice: Omit<SupplierInvoice, 'id' | 'createdAt' | 'updatedAt' | 'createdBy'> & {
+      attachments?: Attachment[];
+    };
+    links: Array<Omit<SupplierInvoicePayableLink, 'invoiceId' | 'createdAt'>>;
+    actorUserId: string;
+  }): Promise<SupplierInvoice> {
+    const { data, error } = await supabase.rpc('record_supplier_invoice_reconciliation_v2', {
+      p_invoice: input.invoice,
+      p_links: input.links,
+      p_actor_user_id: input.actorUserId,
+    });
+    if (error) throw mapSupplierInvoiceError(error);
+    return normalizeInvoice(Array.isArray(data) ? data[0] : data);
   },
 
   async backfillFromPurchaseOrders(purchaseOrders: PurchaseOrder[]): Promise<SupplierPayableDocument[]> {

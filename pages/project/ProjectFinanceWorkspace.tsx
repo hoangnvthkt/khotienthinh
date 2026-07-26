@@ -276,6 +276,7 @@ const supplierPayableSourceLabel = (sourceType: SupplierPayableDocument['sourceT
   const labels: Record<SupplierPayableDocument['sourceType'], string> = {
     purchase_order: 'PO',
     purchase_delivery_receipt: 'Nhận hàng NCC',
+    supplier_invoice_adjustment: 'Chênh lệch hóa đơn',
     site_direct_purchase: 'Mua nóng',
     supplier_delivery_statement: 'Đối soát HĐ NCC',
     supplier_return_credit: 'Bù trừ/hoàn trả',

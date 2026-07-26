@@ -23,6 +23,7 @@ const TRACE_NODE_TYPES: DocumentTraceNodeType[] = [
   'supplier_direct_delivery_note',
   'supplier_delivery_statement',
   'supplier_payable_document',
+  'supplier_invoice',
   'supplier_payment_batch',
   'project_transaction',
   'site_direct_purchase',
@@ -385,6 +386,18 @@ const traceNodeConfig: Record<DocumentTraceNodeType, TraceNodeConfig> = {
       metadata: row,
     }),
   },
+  supplier_invoice: {
+    table: 'supplier_invoices',
+    toNode: row => ({
+      id: row.id,
+      type: 'supplier_invoice',
+      label: firstText(row.supplier_name_snapshot, row.invoice_number, row.id),
+      documentNo: firstText(row.invoice_number, row.id),
+      status: null,
+      amount: money(row.gross_amount),
+      metadata: row,
+    }),
+  },
   supplier_payment_batch: {
     table: 'supplier_payment_batches',
     tokenColumn: 'qr_token',
@@ -649,6 +662,11 @@ const loadFallbackLinks = async (seed: DocumentTraceSeed): Promise<ProjectDocume
     const doc = docRows?.[0];
     const sourceType = doc ? sourceNodeTypeByPayableSource[doc.source_type as SupplierPayableDocument['sourceType']] : null;
     if (sourceType && doc.source_id) push(sourceType, doc.source_id, 'supplier_payable_document', seed.id, 'recognizes');
+    if (doc?.source_type === 'purchase_delivery_receipt' && doc.metadata?.wmsTransactionId) {
+      push('wms_transaction', doc.metadata.wmsTransactionId, 'supplier_payable_document', seed.id, 'recognizes', {
+        deliveryBatchId: doc.metadata.deliveryBatchId,
+      });
+    }
 
     const { data: allocationRows } = await supabase
       .from('supplier_payment_allocations')
@@ -657,6 +675,28 @@ const loadFallbackLinks = async (seed: DocumentTraceSeed): Promise<ProjectDocume
     (allocationRows || []).forEach((allocation: any) => {
       push('supplier_payable_document', seed.id, 'supplier_payment_batch', allocation.payment_batch_id, 'paid_by', {
         allocatedAmount: allocation.allocated_amount,
+      });
+    });
+
+    const { data: invoiceLinkRows } = await supabase
+      .from('supplier_invoice_payable_links')
+      .select('*')
+      .eq('payable_document_id', seed.id);
+    (invoiceLinkRows || []).forEach((link: any) => {
+      push('supplier_payable_document', seed.id, 'supplier_invoice', link.invoice_id, 'invoiced_by', {
+        allocatedGrossAmount: link.allocated_gross_amount,
+      });
+    });
+  }
+
+  if (seed.type === 'supplier_invoice') {
+    const { data: invoiceLinkRows } = await supabase
+      .from('supplier_invoice_payable_links')
+      .select('*')
+      .eq('invoice_id', seed.id);
+    (invoiceLinkRows || []).forEach((link: any) => {
+      push('supplier_payable_document', link.payable_document_id, 'supplier_invoice', seed.id, 'invoiced_by', {
+        allocatedGrossAmount: link.allocated_gross_amount,
       });
     });
   }
