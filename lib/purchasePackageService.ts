@@ -1,4 +1,5 @@
-import type { MaterialRequestFulfillmentMode, PurchaseMode } from '../types';
+import type { MaterialRequestFulfillmentMode, PurchaseMode, PurchaseOrder, PurchaseOrderDeliveryBatch, PurchaseOrderDeliveryLine } from '../types';
+import { fromDb } from './dbMapping';
 import { supabase } from './supabase';
 
 export interface CreatePurchaseDeliveryInput {
@@ -37,6 +38,11 @@ export interface ApprovePurchasePackageResult {
   status: 'confirmed';
   purchaseMode: PurchaseMode;
   delivery?: PurchaseDeliveryCommandResult;
+}
+
+export interface PurchaseDeliveryQrLookup {
+  purchaseOrder: PurchaseOrder;
+  deliveryBatch: PurchaseOrderDeliveryBatch;
 }
 
 type UpdatePurchaseDeliveryInput = CreatePurchaseDeliveryInput & {
@@ -113,6 +119,60 @@ const assertApproveResult = (data: unknown): ApprovePurchasePackageResult => {
 };
 
 export const purchasePackageService = {
+  async getDeliveryByQrToken(token: string): Promise<PurchaseDeliveryQrLookup | null> {
+    const { data: batchRow, error: batchError } = await supabase
+      .from('purchase_order_delivery_batches')
+      .select('*')
+      .eq('qr_token', token)
+      .maybeSingle();
+    if (batchError) throw batchError;
+    if (!batchRow) return null;
+
+    const { data: lineRows, error: lineError } = await supabase
+      .from('purchase_order_delivery_lines')
+      .select('*')
+      .eq('delivery_batch_id', batchRow.id);
+    if (lineError) throw lineError;
+
+    const { data: poRow, error: poError } = await supabase
+      .from('purchase_orders')
+      .select('*')
+      .eq('id', batchRow.purchase_order_id)
+      .single();
+    if (poError) throw poError;
+
+    const lines = (lineRows || []).map(row => ({
+      ...(fromDb(row) as PurchaseOrderDeliveryLine),
+      plannedQty: Number(row.planned_qty || 0),
+      acceptedQty: Number(row.accepted_qty || 0),
+      acceptedStockQty: Number(row.accepted_stock_qty || 0),
+      returnedQty: Number(row.returned_qty || 0),
+      deliveryUnitPrice: Number(row.delivery_unit_price || 0),
+      stockPlannedQty: Number(row.stock_planned_qty || 0),
+    }));
+
+    return {
+      purchaseOrder: fromDb(poRow) as PurchaseOrder,
+      deliveryBatch: {
+        ...(fromDb(batchRow) as PurchaseOrderDeliveryBatch),
+        fulfillmentBatchIds: batchRow.fulfillment_batch_ids || [],
+        wmsTransactionId: batchRow.wms_transaction_id || null,
+        supplementalApprovalId: batchRow.supplemental_approval_id || null,
+        supplierId: batchRow.supplier_id || null,
+        supplierNameSnapshot: batchRow.supplier_name_snapshot || null,
+        deliveryNo: Number(batchRow.delivery_no || 1),
+        status: batchRow.status || 'planned',
+        vatRate: Number(batchRow.vat_rate || 0),
+        qrToken: batchRow.qr_token || null,
+        idempotencyKey: batchRow.idempotency_key || null,
+        qualityResult: batchRow.quality_result || null,
+        varianceReason: batchRow.variance_reason || null,
+        acceptedGrossAmount: Number(batchRow.accepted_gross_amount || 0),
+        lines,
+      },
+    };
+  },
+
   async approvePackage(input: {
     purchaseOrderId: string;
     actorUserId: string;

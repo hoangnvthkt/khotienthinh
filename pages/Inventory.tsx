@@ -13,15 +13,17 @@ import ExcelImportReviewModal from '../components/ExcelImportReviewModal';
 import Pagination from '../components/Pagination';
 import { usePagination } from '../hooks/usePagination';
 import { loadXlsx } from '../lib/loadXlsx';
-import { InventoryItem, Transaction, TransactionType, TransactionStatus, PurchaseOrder, MaterialRequest, MaterialRequestFulfillmentBatch } from '../types';
+import { InventoryItem, Transaction, TransactionType, TransactionStatus, PurchaseOrder, PurchaseOrderDeliveryBatch, MaterialRequest, MaterialRequestFulfillmentBatch } from '../types';
 import { usePermission } from '../hooks/usePermission';
 import { useModuleData } from '../hooks/useModuleData';
 import { matchesSearchQueryMultiple } from '../lib/searchUtils';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
 import { poService } from '../lib/projectService';
 import { extractPoToken, PO_QR_PARAM } from '../lib/poQr';
+import { extractPurchaseDeliveryToken, PURCHASE_DELIVERY_QR_PARAM } from '../lib/purchaseDeliveryQr';
 import { extractFulfillmentBatchToken, FULFILLMENT_BATCH_QR_PARAM } from '../lib/fulfillmentBatchQr';
 import { materialRequestFulfillmentService } from '../lib/materialRequestFulfillmentService';
+import { purchasePackageService } from '../lib/purchasePackageService';
 import { formatInventoryQuantity } from '../lib/inventoryNumberFormat';
 import { parseNonNegativeLocaleNumber } from '../lib/localeNumberInput';
 import {
@@ -65,7 +67,7 @@ const warehouseAliases = ['Kho nhận hàng', 'Kho', 'Tên kho'];
 
 const Inventory: React.FC = () => {
   const location = useLocation();
-  const { items, warehouses, requests, addItem, updateItem, removeItem, addTransaction, user, categories, units } = useApp();
+  const { items, warehouses, requests, transactions, addItem, updateItem, removeItem, addTransaction, user, categories, units } = useApp();
   useModuleData('wms');
   const toast = useToast();
   const [searchTerm, setSearchTerm] = useState('');
@@ -99,6 +101,8 @@ const Inventory: React.FC = () => {
   const [importPreview, setImportPreview] = useState<ExcelImportPreview<InventoryExcelRecord> | null>(null);
   const [deletingItem, setDeletingItem] = useState(false);
   const [receivingPo, setReceivingPo] = useState<PurchaseOrder | null>(null);
+  const [receivingDelivery, setReceivingDelivery] = useState<PurchaseOrderDeliveryBatch | null>(null);
+  const [receivingTransaction, setReceivingTransaction] = useState<Transaction | null>(null);
   const [receivingFulfillmentBatch, setReceivingFulfillmentBatch] = useState<MaterialRequestFulfillmentBatch | null>(null);
   const [receivingFulfillmentRequest, setReceivingFulfillmentRequest] = useState<MaterialRequest | null>(null);
   const [loadingQr, setLoadingQr] = useState(false);
@@ -157,15 +161,41 @@ const Inventory: React.FC = () => {
   }, [filteredItems, filterWarehouse]);
 
   const loadDocumentFromQr = async (raw: string) => {
+    const deliveryToken = extractPurchaseDeliveryToken(raw);
     const fulfillmentToken = extractFulfillmentBatchToken(raw);
     const poToken = extractPoToken(raw);
-    if (!fulfillmentToken && !poToken) {
+    if (!deliveryToken && !fulfillmentToken && !poToken) {
       toast.error('QR không hợp lệ', 'Mã QR không phải phiếu NCC hoặc phiếu xuất kho nội bộ hợp lệ.');
       return;
     }
 
     setLoadingQr(true);
     try {
+      if (deliveryToken) {
+        const lookup = await purchasePackageService.getDeliveryByQrToken(deliveryToken);
+        if (!lookup) {
+          toast.error('Không tìm thấy đợt giao', 'Mã QR không phải đợt giao NCC hợp lệ.');
+          return;
+        }
+        if (user.assignedWarehouseId && lookup.purchaseOrder.targetWarehouseId && user.assignedWarehouseId !== lookup.purchaseOrder.targetWarehouseId) {
+          toast.warning('Sai kho nhận', 'Tài khoản của bạn không được phân công kho nhận của đợt giao này.');
+          return;
+        }
+        if (!lookup.deliveryBatch.wmsTransactionId) {
+          toast.warning('Đợt giao chưa có WMS', 'Vui lòng kiểm tra lại đợt giao trong Cung ứng dự án.');
+          return;
+        }
+        const transaction = transactions.find(item => item.id === lookup.deliveryBatch.wmsTransactionId);
+        if (!transaction) {
+          toast.warning('Chưa tải phiếu WMS', 'Đợt giao tồn tại nhưng phiếu WMS chưa có trong dữ liệu hiện tại. Vui lòng tải lại dữ liệu WMS.');
+          return;
+        }
+        setReceivingPo(lookup.purchaseOrder);
+        setReceivingDelivery(lookup.deliveryBatch);
+        setReceivingTransaction(transaction);
+        return;
+      }
+
       if (fulfillmentToken) {
         const batch = await materialRequestFulfillmentService.getByQrToken(fulfillmentToken);
         if (!batch) {
@@ -197,6 +227,8 @@ const Inventory: React.FC = () => {
           return;
         }
         setReceivingPo(po);
+        setReceivingDelivery(null);
+        setReceivingTransaction(null);
       }
     } catch (err: any) {
       logApiError('inventory.loadDocumentQr', err);
@@ -208,7 +240,7 @@ const Inventory: React.FC = () => {
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
-    const token = params.get(FULFILLMENT_BATCH_QR_PARAM) || params.get(PO_QR_PARAM);
+    const token = params.get(PURCHASE_DELIVERY_QR_PARAM) || params.get(FULFILLMENT_BATCH_QR_PARAM) || params.get(PO_QR_PARAM);
     const loadKey = `${token || ''}:${requests.length}`;
     if (!token || lastLoadedQrTokenRef.current === loadKey) return;
     lastLoadedQrTokenRef.current = loadKey;
@@ -665,7 +697,13 @@ const Inventory: React.FC = () => {
       <ReceivePurchaseOrderModal
         isOpen={!!receivingPo}
         po={receivingPo}
-        onClose={() => setReceivingPo(null)}
+        deliveryBatch={receivingDelivery}
+        transaction={receivingTransaction}
+        onClose={() => {
+          setReceivingPo(null);
+          setReceivingDelivery(null);
+          setReceivingTransaction(null);
+        }}
         onReceived={(po) => setReceivingPo(po)}
       />
       <ReceiveFulfillmentBatchModal

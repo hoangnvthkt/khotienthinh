@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { X, PackageCheck, Loader2, AlertTriangle, Building2 } from 'lucide-react';
-import { PurchaseOrder, Role } from '../types';
+import { PurchaseOrder, PurchaseOrderDeliveryBatch, Transaction, Role } from '../types';
 import { useApp } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import { materialRequestFulfillmentService } from '../lib/materialRequestFulfillmentService';
+import { purchaseReceiptService } from '../lib/purchaseReceiptService';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
 import { usePermission } from '../hooks/usePermission';
 import { parseQuantityInput, sanitizeQuantityInput } from '../lib/quantityInput';
@@ -17,6 +18,8 @@ import {
 interface ReceivePurchaseOrderModalProps {
   isOpen: boolean;
   po: PurchaseOrder | null;
+  deliveryBatch?: PurchaseOrderDeliveryBatch | null;
+  transaction?: Transaction | null;
   onClose: () => void;
   onReceived?: (po: PurchaseOrder) => void;
 }
@@ -24,6 +27,8 @@ interface ReceivePurchaseOrderModalProps {
 const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
   isOpen,
   po,
+  deliveryBatch = null,
+  transaction = null,
   onClose,
   onReceived,
 }) => {
@@ -43,6 +48,37 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
 
   const lines = useMemo(() => {
     if (!po) return [];
+    if (deliveryBatch) {
+      return deliveryBatch.lines.map((deliveryLine, index) => {
+        const poItem = po.items.find(item => (item.lineId || item.itemId) === deliveryLine.purchaseOrderLineId) || po.items[index];
+        const orderedQty = Number(deliveryLine.plannedQty) || 0;
+        const receivedQty = Number(deliveryLine.acceptedQty) || 0;
+        const remainingQty = Math.max(orderedQty - receivedQty, 0);
+        const key = deliveryLine.id;
+        const inventoryItem = items.find(candidate => candidate.id === deliveryLine.itemId);
+        const purchaseUnit = deliveryLine.unit || getPoLinePurchaseUnit(poItem, inventoryItem);
+        const stockUnit = deliveryLine.stockUnit || getPoLineStockUnit(poItem, inventoryItem);
+        const hasUnitConversion = hasPurchaseUnitConversion({
+          unit: stockUnit,
+          purchaseUnit,
+          purchaseConversionFactor: poItem?.purchaseConversionFactor ?? inventoryItem?.purchaseConversionFactor ?? 1,
+        });
+        return {
+          ...(poItem || {}),
+          key,
+          deliveryLineId: deliveryLine.id,
+          itemId: deliveryLine.itemId,
+          orderedQty,
+          receivedQty,
+          remainingQty,
+          inventoryItem,
+          purchaseUnit,
+          stockUnit,
+          hasUnitConversion,
+          plannedStockQty: Number(deliveryLine.stockPlannedQty || deliveryLine.plannedQty || 0),
+        };
+      });
+    }
     return po.items.map((item, index) => {
       const orderedQty = Number(item.qty) || 0;
       const receivedQty = Number(item.receivedQty) || 0;
@@ -58,26 +94,37 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
       });
       return { ...item, key, orderedQty, receivedQty, remainingQty, inventoryItem, purchaseUnit, stockUnit, hasUnitConversion };
     });
-  }, [items, po]);
+  }, [deliveryBatch, items, po]);
 
   useEffect(() => {
     if (!po || !isOpen) return;
     const defaults: Record<string, string> = {};
-    po.items.forEach((item, index) => {
+    if (deliveryBatch) {
+      deliveryBatch.lines.forEach(line => {
+        const remainingQty = Math.max((Number(line.plannedQty) || 0) - (Number(line.acceptedQty) || 0), 0);
+        defaults[line.id] = String(remainingQty);
+      });
+    } else {
+      po.items.forEach((item, index) => {
       const remainingQty = Math.max((Number(item.qty) || 0) - (Number(item.receivedQty) || 0), 0);
       defaults[`${item.itemId}-${index}`] = String(remainingQty);
-    });
+      });
+    }
     setQuantities(defaults);
     setVarianceReasons({});
-  }, [po, isOpen]);
+  }, [deliveryBatch, po, isOpen]);
 
   if (!isOpen || !po) return null;
 
+  const isDeliveryReceipt = !!deliveryBatch && !!transaction;
   const totalRemaining = lines.reduce((sum, line) => sum + line.remainingQty, 0);
   const hasReceivableLine = totalRemaining > 0;
   const hasInvalidQty = lines.some(line => {
     const qty = parseQuantityInput(quantities[line.key]);
     const reason = (varianceReasons[line.key] || '').trim();
+    if (line.remainingQty <= 0) return false;
+    if (qty < 0) return true;
+    if (isDeliveryReceipt && qty === 0) return !reason;
     return line.remainingQty > 0 && (qty <= 0 || (qty !== line.remainingQty && !reason));
   });
   const receiptLines = lines
@@ -89,7 +136,9 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
       varianceReason: (varianceReasons[line.key] || '').trim() || undefined,
     }))
     .filter(line => line.quantity > 0);
-  const unlinkedReceiptLines = receiptLines.filter(line => !items.some(item => item.id === line.itemId));
+  const submittedItemIds = isDeliveryReceipt ? lines.map(line => line.itemId) : receiptLines.map(line => line.itemId);
+  const hasSubmittedQuantity = isDeliveryReceipt ? lines.length > 0 : receiptLines.length > 0;
+  const unlinkedReceiptLines = submittedItemIds.filter(itemId => !items.some(item => item.id === itemId));
 
   const updateReceiptQuantity = (lineKey: string, rawValue: string) => {
     setQuantities(prev => ({
@@ -110,8 +159,10 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
       toast.warning('PO đã nhận đủ', 'Không còn khối lượng cần nhập kho.');
       return;
     }
-    if (hasInvalidQty || receiptLines.length === 0) {
-      toast.warning('Kiểm tra số lượng', 'Số thực nhận phải lớn hơn 0; nếu lệch phần còn lại, cần nhập lý do.');
+    if (hasInvalidQty || !hasSubmittedQuantity) {
+      toast.warning('Kiểm tra số lượng', isDeliveryReceipt
+        ? 'Số thực nhận không được âm; nếu lệch hoặc bằng 0, cần nhập lý do.'
+        : 'Số thực nhận phải lớn hơn 0; nếu lệch phần còn lại, cần nhập lý do.');
       return;
     }
     if (unlinkedReceiptLines.length > 0) {
@@ -121,6 +172,41 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
 
     setSaving(true);
     try {
+      if (deliveryBatch && transaction) {
+        const acceptedLines = lines.map(line => parseQuantityInput(quantities[line.key]) || 0);
+        const qualityResult = acceptedLines.every(qty => qty === 0)
+          ? 'rejected'
+          : lines.every((line, index) => acceptedLines[index] === line.remainingQty) ? 'passed' : 'partial';
+        const result = await purchaseReceiptService.approveQuality({
+          deliveryBatchId: deliveryBatch.id,
+          wmsTransactionId: transaction.id,
+          actorUserId: user.id,
+          qualityResult,
+          lines: lines.map(line => {
+            const acceptedPurchaseQty = parseQuantityInput(quantities[line.key]) || 0;
+            const acceptedStockQty = line.plannedStockQty && line.orderedQty > 0
+              ? acceptedPurchaseQty * (Number(line.plannedStockQty) / Number(line.orderedQty))
+              : poLinePurchaseToStockQty(line, acceptedPurchaseQty, line.inventoryItem);
+            return {
+              deliveryLineId: line.deliveryLineId || '',
+              itemId: line.itemId,
+              acceptedPurchaseQty,
+              acceptedStockQty,
+              varianceReason: (varianceReasons[line.key] || '').trim() || null,
+            };
+          }),
+          attachments: [],
+        });
+        await refreshWmsRecords({
+          itemIds: lines.map(line => line.itemId),
+          transactionIds: [result.wmsTransactionId],
+        });
+        toast.success('Đã duyệt SL/CL', 'Số liệu đã khóa. Mở phiếu WMS để xác nhận nhập kho.');
+        onReceived?.(po);
+        onClose();
+        return;
+      }
+
       const result = await materialRequestFulfillmentService.preparePoReceiptForQualityReview({
         po,
         receiptLines,
@@ -213,7 +299,8 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
                     const qty = parseQuantityInput(quantities[line.key]) || 0;
                     const reason = (varianceReasons[line.key] || '').trim();
                     const hasVariance = qty !== line.remainingQty;
-                    const invalid = qty < 0 || (qty <= 0 && line.remainingQty > 0) || (hasVariance && !reason);
+                    const canRejectLine = isDeliveryReceipt && qty === 0 && !!reason;
+                    const invalid = qty < 0 || ((qty <= 0 && line.remainingQty > 0) && !canRejectLine) || (hasVariance && !reason);
                     const stockQty = poLinePurchaseToStockQty(line, qty, line.inventoryItem);
                     return (
                       <tr key={line.key} className={line.remainingQty <= 0 ? 'bg-slate-50/60 opacity-70' : ''}>
@@ -245,7 +332,7 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
                               Nhập kho: {stockQty.toLocaleString('vi-VN', { maximumFractionDigits: 6 })} {line.stockUnit}
                             </div>
                           )}
-                          {hasVariance && qty > 0 && (
+                          {hasVariance && (qty > 0 || isDeliveryReceipt) && (
                             <input
                               type="text"
                               value={varianceReasons[line.key] || ''}
@@ -268,7 +355,8 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
                 const qty = parseQuantityInput(quantities[line.key]) || 0;
                 const reason = (varianceReasons[line.key] || '').trim();
                 const hasVariance = qty !== line.remainingQty;
-                const invalid = qty < 0 || (qty <= 0 && line.remainingQty > 0) || (hasVariance && !reason);
+                const canRejectLine = isDeliveryReceipt && qty === 0 && !!reason;
+                const invalid = qty < 0 || ((qty <= 0 && line.remainingQty > 0) && !canRejectLine) || (hasVariance && !reason);
                 const stockQty = poLinePurchaseToStockQty(line, qty, line.inventoryItem);
                 return (
                   <div key={line.key} className={`p-4 space-y-3 ${line.remainingQty <= 0 ? 'bg-slate-50/60 opacity-70' : ''}`}>
@@ -315,7 +403,7 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
                             Nhập kho: {stockQty.toLocaleString('vi-VN', { maximumFractionDigits: 6 })} {line.stockUnit}
                           </div>
                         )}
-                        {hasVariance && qty > 0 && (
+                        {hasVariance && (qty > 0 || isDeliveryReceipt) && (
                           <input
                             type="text"
                             value={varianceReasons[line.key] || ''}
@@ -340,7 +428,7 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
           </button>
           <button
             onClick={handleConfirm}
-            disabled={saving || !canReceive || !hasReceivableLine || hasInvalidQty || receiptLines.length === 0}
+            disabled={saving || !canReceive || !hasReceivableLine || hasInvalidQty || !hasSubmittedQuantity}
             className="px-6 py-2.5 rounded-xl text-sm font-black text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
             {saving ? <Loader2 size={16} className="animate-spin" /> : <PackageCheck size={16} />}

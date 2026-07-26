@@ -7,6 +7,8 @@ import { canApproveWmsTransaction, canReceiveWmsTransaction, isFulfillmentBatchT
 import { useToast } from '../context/ToastContext';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
 import { materialRequestFulfillmentService } from '../lib/materialRequestFulfillmentService';
+import { purchaseReceiptService } from '../lib/purchaseReceiptService';
+import { buildPurchaseReceiptQualityPayloadFromTransaction, getPurchaseReceiptStep } from '../lib/purchaseReceiptWorkflow';
 import { formatQuantityInput, parseQuantityInput, sanitizeQuantityInput } from '../lib/quantityInput';
 import { dateInputToTransactionTimestamp } from '../lib/transactionVoucherDates';
 import { canEditTransactionVoucher } from '../lib/transactionVoucherMetadata';
@@ -25,9 +27,10 @@ interface TransactionDetailModalProps {
   onUpdated?: (transaction: Transaction) => void;
 }
 
-const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen, onClose, transaction, onUpdated }) => {
-  const { items, warehouses, users, suppliers, transactions, user, updateTransactionStatus, updateTransactionVoucher } = useApp();
+const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen, onClose, transaction: transactionProp, onUpdated }) => {
+  const { items, warehouses, users, suppliers, transactions, user, updateTransactionStatus, updateTransactionVoucher, refreshWmsRecords } = useApp();
   const toast = useToast();
+  const [localTransaction, setLocalTransaction] = useState<Transaction | null>(null);
   const [quantityDrafts, setQuantityDrafts] = useState<Record<number, { quantity: string; reason: string }>>({});
   const [processing, setProcessing] = useState(false);
   const [voucherDate, setVoucherDate] = useState('');
@@ -38,18 +41,21 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
   const [attachmentLoadingId, setAttachmentLoadingId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (transaction) {
+    if (transactionProp) {
+      setLocalTransaction(transactionProp);
       setQuantityDrafts(Object.fromEntries(
-        transaction.items.map((ti, index) => [index, { quantity: formatQuantityInput(ti.quantity), reason: ti.varianceReason || '' }])
+        transactionProp.items.map((ti, index) => [index, { quantity: formatQuantityInput(ti.quantity), reason: ti.varianceReason || '' }])
       ));
-      setVoucherDate(transaction.date.slice(0, 10));
-      setVoucherNote(transaction.note || '');
+      setVoucherDate(transactionProp.date.slice(0, 10));
+      setVoucherNote(transactionProp.note || '');
       setAttachmentDrafts([]);
       setAttachmentUrls({});
     }
-  }, [transaction]);
+  }, [transactionProp]);
 
-  if (!isOpen || !transaction) return null;
+  if (!isOpen || !localTransaction) return null;
+
+  const transaction = localTransaction;
 
   const isPending = transaction.status === TransactionStatus.PENDING;
   const isApproved = transaction.status === TransactionStatus.APPROVED;
@@ -59,10 +65,13 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
     && (transaction.type === TransactionType.IMPORT || transaction.type === TransactionType.TRANSFER)
     && canReceiveWmsTransaction(user, transaction);
   const actionMode: 'approval' | 'receipt' | null = canApprove ? 'approval' : canReceive ? 'receipt' : null;
-  const canAdjustQuantities = !!actionMode && (transaction.type === TransactionType.IMPORT || transaction.type === TransactionType.TRANSFER);
   const isFulfillmentTx = isFulfillmentBatchTransaction(transaction);
   const isPoDeliveryTx = transaction.sourceType === 'po_delivery_batch';
   const isQualityApprovalTx = isFulfillmentTx || isPoDeliveryTx;
+  const receiptStep = getPurchaseReceiptStep(transaction.status, transaction.sourceType);
+  const canAdjustQuantities = !!actionMode
+    && (transaction.type === TransactionType.IMPORT || transaction.type === TransactionType.TRANSFER)
+    && (!isPoDeliveryTx || receiptStep === 'quality');
 
   const requester = users.find(u => u.id === transaction.requesterId);
   const approver = users.find(u => u.id === transaction.approverId);
@@ -134,11 +143,77 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
   const handlePrimaryAction = async () => {
     setProcessing(true);
     let uploadedPaths: string[] = [];
-    const latestTransaction = transactions.find(candidate => candidate.id === transaction.id) || transaction;
+    const locallyAdvanced = transactionProp?.id === transaction.id && transaction.status !== transactionProp.status;
+    const latestTransaction = locallyAdvanced ? transaction : (transactions.find(candidate => candidate.id === transaction.id) || transaction);
     const previousAttachments = latestTransaction.attachments || [];
     try {
       if (actionMode === 'approval' && latestTransaction.status !== TransactionStatus.PENDING) {
         throw new Error('Phiếu kho đã thay đổi trạng thái. Vui lòng đóng và mở lại để xử lý dữ liệu mới nhất.');
+      }
+      if (isPoDeliveryTx) {
+        const deliveryBatchId = latestTransaction.sourceId || '';
+        if (!deliveryBatchId) throw new Error('Phiếu WMS thiếu liên kết Đợt giao.');
+
+        if (actionMode === 'approval') {
+          const receiptPayload = buildPurchaseReceiptQualityPayloadFromTransaction(
+            latestTransaction,
+            buildQuantityLines(latestTransaction),
+          );
+          let nextAttachments = previousAttachments;
+          if (attachmentDrafts.length > 0) {
+            const uploadResult = await uploadTransactionAttachments({
+              transactionId: latestTransaction.id,
+              actorUserId: user.id,
+              files: attachmentDrafts,
+              existing: previousAttachments,
+            });
+            uploadedPaths = uploadResult.uploadedPaths;
+            nextAttachments = uploadResult.attachments;
+          }
+
+          const result = await purchaseReceiptService.approveQuality({
+            deliveryBatchId,
+            wmsTransactionId: latestTransaction.id,
+            actorUserId: user.id,
+            qualityResult: receiptPayload.qualityResult,
+            lines: receiptPayload.lines,
+            attachments: nextAttachments,
+          });
+          await refreshWmsRecords({
+            itemIds: receiptPayload.lines.map(line => line.itemId),
+            transactionIds: [result.wmsTransactionId],
+          });
+          const updatedTransaction = {
+            ...latestTransaction,
+            status: TransactionStatus.APPROVED,
+            approverId: user.id,
+            approvedAt: new Date().toISOString(),
+            attachments: nextAttachments,
+          };
+          setLocalTransaction(updatedTransaction);
+          onUpdated?.(updatedTransaction);
+          setAttachmentDrafts([]);
+          toast.success('Đã duyệt SL/CL', 'Số liệu đã khóa. Tiếp tục bấm Xác nhận nhập để cộng tồn.');
+          return;
+        }
+
+        if (actionMode === 'receipt') {
+          if (latestTransaction.status !== TransactionStatus.APPROVED) {
+            throw new Error('Phiếu WMS chưa ở trạng thái chờ xác nhận nhập.');
+          }
+          const result = await purchaseReceiptService.finalize({
+            deliveryBatchId,
+            wmsTransactionId: latestTransaction.id,
+            actorUserId: user.id,
+          });
+          await refreshWmsRecords({
+            itemIds: latestTransaction.items.map(item => item.itemId),
+            transactionIds: [result.wmsTransactionId],
+          });
+          onClose();
+          toast.success('Đã xác nhận nhập kho');
+          return;
+        }
       }
       if (canAdjustQuantities) {
         await materialRequestFulfillmentService.updateTransactionReceiptQuantities({
