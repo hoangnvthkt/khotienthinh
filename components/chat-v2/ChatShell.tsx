@@ -59,6 +59,12 @@ import {
   isImageAttachment,
 } from '../../lib/chatV2Service';
 
+import ZaloDockBar from './ZaloDockBar';
+import ZaloMentionPicker, { MentionCandidate } from './ZaloMentionPicker';
+import ZaloImageGrid from './ZaloImageGrid';
+import ZaloPinnedBanner from './ZaloPinnedBanner';
+import ZaloInputToolbar from './ZaloInputToolbar';
+
 const CHAT_V2_ATTACHMENT_BUCKET = 'chat-attachments';
 
 interface ChatShellProps {
@@ -212,23 +218,29 @@ const AttachmentView: React.FC<{ attachment: ChatV2Attachment; messageCreatedAt?
   );
 };
 
-const TextMessage: React.FC<{ message: ChatV2Message }> = ({ message }) => (
-  <>
-    {message.body && <MessageText body={message.body} mentions={message.mentions} />}
-    {message.attachments.length > 0 && (
-      <div className={`mt-2 grid gap-2 ${message.attachments.length > 1 ? 'sm:grid-cols-2' : ''}`}>
-        {message.attachments.map(attachment => (
-          <AttachmentView
-            key={attachment.id}
-            attachment={attachment}
-            messageCreatedAt={message.createdAt}
-            messageMetadata={message.metadata}
-          />
-        ))}
-      </div>
-    )}
-  </>
-);
+const TextMessage: React.FC<{ message: ChatV2Message }> = ({ message }) => {
+  const images = message.attachments.filter(isImageAttachment);
+  const otherFiles = message.attachments.filter(att => !isImageAttachment(att));
+
+  return (
+    <>
+      {message.body && <MessageText body={message.body} mentions={message.mentions} />}
+      {images.length > 0 && <ZaloImageGrid attachments={images} />}
+      {otherFiles.length > 0 && (
+        <div className="mt-2 space-y-1.5">
+          {otherFiles.map(attachment => (
+            <AttachmentView
+              key={attachment.id}
+              attachment={attachment}
+              messageCreatedAt={message.createdAt}
+              messageMetadata={message.metadata}
+            />
+          ))}
+        </div>
+      )}
+    </>
+  );
+};
 
 const ImageMessage: React.FC<{ message: ChatV2Message }> = ({ message }) => <TextMessage message={message} />;
 
@@ -786,20 +798,80 @@ const StructuredMessageModal: React.FC<{
 const MessageComposer: React.FC<{
   disabled: boolean;
   replyTo: ReplyDraft | null;
+  conversation: ChatV2Conversation | null;
+  users: User[];
+  employees: any[];
+  currentUserId: string;
   onCancelReply: () => void;
-  onSend: (body: string, files: File[]) => Promise<void>;
+  onSend: (body: string, files: File[], options?: { replyToMessageId?: string | null; replyPreview?: any | null; mentions?: any[] }) => Promise<void>;
   onSendStructured: (input: { kind: ChatV2MessageKind; payload: Record<string, any>; checklistItems?: string[] }) => Promise<void>;
   onTyping: (isTyping: boolean) => void;
-}> = ({ disabled, replyTo, onCancelReply, onSend, onSendStructured, onTyping }) => {
+}> = ({ disabled, replyTo, conversation, users, employees, currentUserId, onCancelReply, onSend, onSendStructured, onTyping }) => {
   const [body, setBody] = useState('');
   const [files, setFiles] = useState<File[]>([]);
   const [showEmoji, setShowEmoji] = useState(false);
   const [structuredMode, setStructuredMode] = useState<Extract<ChatV2MessageKind, 'poll' | 'checklist' | 'quick_confirm'> | null>(null);
   const [showStructuredMenu, setShowStructuredMenu] = useState(false);
   const [sending, setSending] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Mention State
+  const [showMentionPicker, setShowMentionPicker] = useState(false);
+  const [mentionQuery, setMentionQuery] = useState('');
+  const [mentionPos, setMentionPos] = useState<number | null>(null);
+  const [mentionIndex, setMentionIndex] = useState(0);
+  const [collectedMentions, setCollectedMentions] = useState<{ userId: string; displayName: string }[]>([]);
+
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [selectionStart, setSelectionStart] = useState<number | null>(null);
+
+  const handleInputChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const val = event.target.value;
+    const cursor = event.target.selectionStart;
+    setBody(val);
+    setSelectionStart(cursor);
+    onTyping(Boolean(val.trim()));
+
+    // Detect @mention trigger
+    const textBeforeCursor = val.slice(0, cursor);
+    const lastAtIndex = textBeforeCursor.lastIndexOf('@');
+    if (lastAtIndex !== -1) {
+      const afterAt = textBeforeCursor.slice(lastAtIndex + 1);
+      if (!/\s/.test(afterAt)) {
+        setShowMentionPicker(true);
+        setMentionQuery(afterAt);
+        setMentionPos(lastAtIndex);
+        setMentionIndex(0);
+        return;
+      }
+    }
+    setShowMentionPicker(false);
+    setMentionQuery('');
+  };
+
+  const selectMentionCandidate = (candidate: MentionCandidate) => {
+    if (mentionPos === null) return;
+    const cursor = selectionStart ?? body.length;
+    const before = body.slice(0, mentionPos);
+    const after = body.slice(cursor);
+    const tag = candidate.isAll ? '@All ' : `@${candidate.name} `;
+    const nextBody = before + tag + after;
+
+    setBody(nextBody);
+    setShowMentionPicker(false);
+
+    if (!candidate.isAll) {
+      setCollectedMentions(prev => [
+        ...prev.filter(m => m.userId !== candidate.id),
+        { userId: candidate.id, displayName: candidate.name }
+      ]);
+    }
+
+    const nextCaret = mentionPos + tag.length;
+    setTimeout(() => {
+      textareaRef.current?.focus();
+      textareaRef.current?.setSelectionRange(nextCaret, nextCaret);
+    }, 50);
+  };
 
   const insertEmoji = (emoji: string) => {
     const start = selectionStart ?? body.length;
@@ -819,9 +891,10 @@ const MessageComposer: React.FC<{
     if (!body.trim() && files.length === 0) return;
     setSending(true);
     try {
-      await onSend(body, files);
+      await onSend(body, files, { mentions: collectedMentions });
       setBody('');
       setFiles([]);
+      setCollectedMentions([]);
       onCancelReply();
       onTyping(false);
     } finally {
@@ -829,142 +902,120 @@ const MessageComposer: React.FC<{
     }
   };
 
+  const handleQuickLike = async () => {
+    if (sending || disabled) return;
+    setSending(true);
+    try {
+      await onSend('👍', []);
+    } finally {
+      setSending(false);
+    }
+  };
+
   return (
-    <div className="shrink-0 border-t border-slate-200 dark:border-slate-850 bg-white dark:bg-[#313338] p-3">
-      {replyTo && <ReplyQuote preview={replyTo} onClear={onCancelReply} />}
-      {files.length > 0 && (
-        <div className="mb-2 flex gap-2 overflow-x-auto pb-1 select-none">
-          {files.map((file, index) => (
-            <div key={`${file.name}-${index}`} className="flex h-11 max-w-[220px] shrink-0 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800 px-2">
-              {file.type.startsWith('image/') ? <ImageIcon size={16} className="text-emerald-500" /> : <FileText size={16} className="text-slate-500" />}
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-xs font-bold text-slate-800 dark:text-slate-200">{file.name}</div>
-                <div className="text-[10px] font-medium text-slate-500 dark:text-slate-400">{formatFileSize(file.size)}</div>
+    <div className="shrink-0 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1e1f22] select-none">
+      {/* Zalo Input Toolbar */}
+      <ZaloInputToolbar
+        onSelectImage={fileList => {
+          const selected = Array.from(fileList);
+          setFiles(prev => [...prev, ...selected].slice(0, 8));
+        }}
+        onSelectFile={fileList => {
+          const selected = Array.from(fileList);
+          setFiles(prev => [...prev, ...selected].slice(0, 8));
+        }}
+        onToggleEmoji={() => setShowEmoji(prev => !prev)}
+        onQuickLike={handleQuickLike}
+        onSendUrgent={() => setBody(prev => `[QUAN TRỌNG] ${prev}`)}
+        onOpenCard={() => setShowStructuredMenu(prev => !prev)}
+      />
+
+      <div className="p-2.5 relative">
+        {replyTo && <ReplyQuote preview={replyTo} onClear={onCancelReply} />}
+
+        {/* Mention Picker Popover */}
+        {showMentionPicker && (
+          <ZaloMentionPicker
+            conversation={conversation}
+            users={users}
+            employees={employees}
+            currentUserId={currentUserId}
+            query={mentionQuery}
+            selectedIndex={mentionIndex}
+            onSelect={selectMentionCandidate}
+            onClose={() => setShowMentionPicker(false)}
+          />
+        )}
+
+        {files.length > 0 && (
+          <div className="mb-2 flex gap-2 overflow-x-auto pb-1 select-none">
+            {files.map((file, index) => (
+              <div key={`${file.name}-${index}`} className="flex h-11 max-w-[220px] shrink-0 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800 px-2">
+                {file.type.startsWith('image/') ? <ImageIcon size={16} className="text-[#0068ff]" /> : <FileText size={16} className="text-slate-500" />}
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-xs font-bold text-slate-800 dark:text-slate-200">{file.name}</div>
+                  <div className="text-[10px] font-medium text-slate-500 dark:text-slate-400">{formatFileSize(file.size)}</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setFiles(prev => prev.filter((_, itemIndex) => itemIndex !== index))}
+                  title="Bỏ tệp"
+                  className="text-slate-500 hover:text-red-500 dark:text-slate-400 dark:hover:text-red-400"
+                >
+                  <X size={14} />
+                </button>
               </div>
+            ))}
+          </div>
+        )}
+
+        {showEmoji && (
+          <div className="mb-2 flex flex-wrap gap-1 rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-[#2b2d31] p-2 max-h-36 overflow-y-auto shadow-lg">
+            {CHAT_V2_REACTION_EMOJIS.map(emoji => (
               <button
+                key={emoji}
                 type="button"
-                onClick={() => setFiles(prev => prev.filter((_, itemIndex) => itemIndex !== index))}
-                title="Bỏ tệp"
-                className="text-slate-500 hover:text-red-500 dark:text-slate-400 dark:hover:text-red-400"
+                onClick={() => insertEmoji(emoji)}
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-lg transition hover:bg-slate-200 dark:hover:bg-slate-700"
               >
-                <X size={14} />
+                {emoji}
               </button>
-            </div>
-          ))}
-        </div>
-      )}
+            ))}
+          </div>
+        )}
 
-      {showEmoji && (
-        <div className="mb-2 flex flex-wrap gap-1 rounded-lg border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800 p-2 max-h-36 overflow-y-auto">
-          {CHAT_V2_REACTION_EMOJIS.map(emoji => (
-            <button
-              key={emoji}
-              type="button"
-              onClick={() => insertEmoji(emoji)}
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-base transition hover:bg-slate-200 dark:hover:bg-slate-700"
-            >
-              {emoji}
-            </button>
-          ))}
-        </div>
-      )}
+        <div className="flex items-end gap-2 relative">
+          <textarea
+            ref={textareaRef}
+            value={body}
+            onChange={handleInputChange}
+            onSelect={event => setSelectionStart(event.currentTarget.selectionStart)}
+            onClick={event => setSelectionStart(event.currentTarget.selectionStart)}
+            onKeyUp={event => setSelectionStart(event.currentTarget.selectionStart)}
+            onKeyDown={event => {
+              if (event.key === 'Enter' && !event.shiftKey && !showMentionPicker) {
+                event.preventDefault();
+                submit();
+              } else if (event.key === 'Escape' && showMentionPicker) {
+                setShowMentionPicker(false);
+              }
+            }}
+            rows={1}
+            placeholder={`| Nhập @, tin nhắn tới ${conversation?.name || 'phòng chat'}...`}
+            disabled={disabled || sending}
+            className="max-h-32 min-h-[42px] flex-1 resize-none rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-750 dark:bg-[#2b2d31] px-3 py-2.5 text-xs font-medium text-slate-900 dark:text-slate-100 outline-none transition focus:border-[#0068ff] focus:ring-1 focus:ring-[#0068ff] placeholder:text-slate-400 dark:placeholder:text-slate-500 disabled:opacity-50"
+          />
 
-      <div className="grid grid-cols-[auto_auto_auto_1fr_auto] items-end gap-2">
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          className="hidden"
-          onChange={event => {
-            const selected = Array.from(event.target.files || []);
-            setFiles(prev => [...prev, ...selected].slice(0, 8));
-            event.currentTarget.value = '';
-          }}
-        />
-        <button
-          type="button"
-          onClick={() => fileInputRef.current?.click()}
-          title="Đính kèm"
-          disabled={disabled || sending}
-          className="flex h-11 w-11 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-500 transition hover:border-slate-400 hover:text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:border-slate-550 dark:hover:text-white disabled:opacity-50"
-        >
-          <Paperclip size={18} />
-        </button>
-        <div className="relative">
           <button
             type="button"
-            onClick={() => setShowStructuredMenu(prev => !prev)}
-            title="Tạo nội dung"
-            disabled={disabled || sending}
-            className="flex h-11 w-11 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-500 transition hover:border-slate-400 hover:text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:border-slate-550 dark:hover:text-white disabled:opacity-50"
+            onClick={submit}
+            title="Gửi tin nhắn (Enter)"
+            disabled={disabled || sending || (!body.trim() && files.length === 0)}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#0068ff] text-white shadow-md shadow-blue-500/20 hover:bg-blue-600 active:scale-95 transition disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 dark:disabled:bg-slate-800 dark:disabled:text-slate-600"
           >
-            <Plus size={18} />
+            <Send size={16} />
           </button>
-          {showStructuredMenu && (
-            <div className="absolute bottom-12 left-0 z-20 w-44 overflow-hidden rounded-lg border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800 p-1 shadow-xl">
-              {[
-                { mode: 'poll' as const, label: 'Bình chọn', icon: BarChart3 },
-                { mode: 'checklist' as const, label: 'Checklist', icon: ListChecks },
-                { mode: 'quick_confirm' as const, label: 'Xác nhận nhanh', icon: BadgeCheck },
-              ].map(item => {
-                const Icon = item.icon;
-                return (
-                  <button
-                    key={item.mode}
-                    type="button"
-                    onClick={() => {
-                      setStructuredMode(item.mode);
-                      setShowStructuredMenu(false);
-                    }}
-                    className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs font-bold text-slate-700 dark:text-slate-200 transition hover:bg-slate-200 dark:hover:bg-slate-700"
-                  >
-                    <Icon size={15} /> {item.label}
-                  </button>
-                );
-              })}
-            </div>
-          )}
         </div>
-        <button
-          type="button"
-          onClick={() => setShowEmoji(prev => !prev)}
-          title="Emoji"
-          disabled={disabled || sending}
-          className="flex h-11 w-11 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-500 transition hover:border-slate-400 hover:text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:border-slate-550 dark:hover:text-white disabled:opacity-50"
-        >
-          <Smile size={18} />
-        </button>
-        <textarea
-          ref={textareaRef}
-          value={body}
-          onChange={event => {
-            setBody(event.target.value);
-            setSelectionStart(event.target.selectionStart);
-            onTyping(Boolean(event.target.value.trim()));
-          }}
-          onSelect={event => setSelectionStart(event.currentTarget.selectionStart)}
-          onClick={event => setSelectionStart(event.currentTarget.selectionStart)}
-          onKeyUp={event => setSelectionStart(event.currentTarget.selectionStart)}
-          onKeyDown={event => {
-            if (event.key === 'Enter' && !event.shiftKey) {
-              event.preventDefault();
-              submit();
-            }
-          }}
-          rows={1}
-          placeholder="Gõ và nhấn Enter để gửi tin nhắn..."
-          disabled={disabled || sending}
-          className="max-h-32 min-h-11 resize-none rounded-xl border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 px-3.5 py-3 text-xs font-semibold text-zinc-900 dark:text-zinc-100 outline-none transition focus:border-teal-500/50 focus:ring-2 focus:ring-teal-500/20 disabled:opacity-50"
-        />
-        <button
-          type="button"
-          onClick={submit}
-          title="Gửi (Enter)"
-          disabled={disabled || sending || (!body.trim() && files.length === 0)}
-          className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white shadow-md shadow-teal-600/20 active:scale-95 transition-all disabled:cursor-not-allowed disabled:bg-none disabled:bg-zinc-200 disabled:text-zinc-400 dark:disabled:bg-zinc-800 dark:disabled:text-zinc-600"
-        >
-          <Send size={18} />
-        </button>
       </div>
       {structuredMode && (
         <StructuredMessageModal
@@ -1423,31 +1474,31 @@ const ConversationList: React.FC<{
         onClick={() => onSelect(conversation.id)}
         className={`grid w-full grid-cols-[auto_1fr_auto] gap-3 rounded-xl px-2.5 py-2.5 text-left transition-all select-none border-l-4 ${
           isActive
-            ? 'bg-teal-50 dark:bg-teal-950/40 text-teal-800 dark:text-teal-200 font-bold border-teal-600 shadow-sm'
-            : 'border-transparent text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800/60 hover:text-zinc-900 dark:hover:text-zinc-200'
+            ? 'bg-[#e5efff] text-[#0068ff] font-bold border-[#0068ff] dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-500 shadow-xs'
+            : 'border-transparent text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-white'
         }`}
       >
         {conversation.type === 'direct' ? (
           <Avatar user={otherUser} label={title} online={isOnline} size="sm" />
         ) : (
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-teal-700 text-white font-bold text-xs shadow-sm self-center">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#0068ff] text-white font-bold text-xs shadow-xs self-center">
             <Users size={14} />
           </div>
         )}
         <div className="min-w-0 self-center">
           <div className="flex min-w-0 items-center gap-1">
-            {conversation.currentParticipant?.isPinned && <Pin size={11} className="shrink-0 text-teal-700 dark:text-teal-400" />}
-            <span className="truncate text-xs font-extrabold">{title}</span>
+            {conversation.currentParticipant?.isPinned && <Pin size={11} className="shrink-0 text-[#0068ff] dark:text-blue-400 rotate-45" />}
+            <span className="truncate text-xs font-bold">{title}</span>
           </div>
-          <div className="mt-0.5 truncate text-[10px] text-zinc-500 dark:text-zinc-400 leading-tight">
+          <div className="mt-0.5 truncate text-[11px] text-slate-500 dark:text-slate-400 leading-tight">
             {lastMsgPreview || ' '}
           </div>
         </div>
         <div className="flex flex-col items-end justify-center gap-1 select-none">
-          <span className="text-[9px] font-semibold text-zinc-400 dark:text-zinc-500">{formatTime(conversation.lastMessageAt || conversation.updatedAt)}</span>
+          <span className="text-[9px] font-medium text-slate-400 dark:text-slate-500">{formatTime(conversation.lastMessageAt || conversation.updatedAt)}</span>
           {conversation.unreadCount > 0 && (
-            <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-teal-700 text-white px-1.5 text-[8px] font-extrabold shadow-sm">
-              {conversation.unreadCount > 9 ? '9+' : conversation.unreadCount}
+            <span className="flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-red-500 text-white px-1.5 text-[9px] font-black shadow-xs">
+              {conversation.unreadCount > 99 ? '99+' : conversation.unreadCount}
             </span>
           )}
         </div>
@@ -1456,39 +1507,62 @@ const ConversationList: React.FC<{
   };
 
   return (
-    <aside className="flex h-full w-full flex-col bg-slate-50 border-r border-slate-200 dark:bg-[#2b2d31] dark:border-[#1f2023]/60 w-[280px]">
-      {/* Profile Header */}
-      <div className="flex h-16 shrink-0 items-center justify-between border-b border-slate-200 dark:border-[#1f2023]/60 px-4">
-        <div className="flex items-center gap-2 min-w-0">
-          <div className="relative">
-            <Avatar size="sm" user={currentUser} label={employeeName} />
-            <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border border-slate-50 dark:border-[#2b2d31] bg-[#23a55a]" />
+    <aside className="flex h-full w-full flex-col bg-white border-r border-slate-200 dark:bg-[#2b2d31] dark:border-[#1f2023]/60 w-[310px]">
+      {/* Top Search & Actions */}
+      <div className="p-3 shrink-0 border-b border-slate-100 dark:border-slate-800 space-y-2.5">
+        <div className="flex items-center gap-2">
+          <div className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-lg bg-slate-100 dark:bg-[#1e1f22] px-2.5 text-slate-500 dark:text-slate-400">
+            <Search size={14} />
+            <input
+              value={search}
+              onChange={event => onSearch(event.target.value)}
+              placeholder="Tìm kiếm"
+              className="h-full min-w-0 flex-1 bg-transparent text-xs font-medium text-slate-800 dark:text-[#dbdee1] outline-none placeholder:text-slate-400 dark:placeholder:text-slate-500"
+            />
           </div>
-          <div className="min-w-0 flex flex-col justify-center leading-tight">
-            <div className="text-xs font-black text-slate-800 dark:text-white truncate max-w-[140px]">{employeeName}</div>
-            <div className="text-[9px] font-semibold text-slate-500 dark:text-slate-400">@{usernameHandle}</div>
-          </div>
+          <button
+            type="button"
+            onClick={onNew}
+            title="Thêm bạn"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800 transition"
+          >
+            <UserPlus size={16} />
+          </button>
+          <button
+            type="button"
+            onClick={onNew}
+            title="Tạo nhóm chat"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800 transition"
+          >
+            <Users size={16} />
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={onNew}
-          title="Tạo cuộc hội thoại"
-          className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-200 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white transition"
-        >
-          <Plus size={16} />
-        </button>
-      </div>
 
-      {/* Search box */}
-      <div className="p-3 shrink-0">
-        <div className="flex h-9 items-center gap-2 rounded-lg bg-slate-200/60 border border-slate-300/80 dark:bg-[#1e1f22] dark:border-none px-2.5 text-slate-500 dark:text-slate-400">
-          <Search size={14} />
-          <input
-            value={search}
-            onChange={event => onSearch(event.target.value)}
-            placeholder="Tìm kiếm (Ctrl + F)"
-            className="h-full min-w-0 flex-1 bg-transparent text-xs font-bold text-slate-850 dark:text-[#dbdee1] outline-none placeholder:text-slate-400 dark:placeholder:text-slate-550"
-          />
+        {/* Zalo Tabs: Ưu tiên | Khác | Phân loại */}
+        <div className="flex items-center justify-between text-xs font-semibold border-b border-slate-100 dark:border-slate-800 pb-1 pt-1 select-none">
+          <div className="flex items-center gap-4">
+            <button
+              type="button"
+              className="text-[#0068ff] font-bold border-b-2 border-[#0068ff] pb-1 dark:text-blue-400 dark:border-blue-400"
+            >
+              Ưu tiên
+            </button>
+            <button
+              type="button"
+              className="text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 pb-1"
+            >
+              Khác
+            </button>
+          </div>
+          <div className="flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400">
+            <button type="button" className="hover:text-slate-850 dark:hover:text-white flex items-center gap-0.5">
+              Phân loại <span>∨</span>
+            </button>
+            <span>·</span>
+            <button type="button" className="hover:text-slate-850 dark:hover:text-white">
+              ...
+            </button>
+          </div>
         </div>
       </div>
 
@@ -2033,11 +2107,10 @@ const MessagePane: React.FC<{
 
           {/* Action triggers */}
           <div className="flex items-center gap-1.5 select-none">
-            {/* Phone/Call shortcut */}
             <button
               type="button"
               title="Gọi điện"
-              className="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-500/10 text-indigo-500 hover:bg-indigo-500 hover:text-white transition"
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-500/10 text-[#0068ff] hover:bg-[#0068ff] hover:text-white transition"
             >
               <Phone size={14} />
             </button>
@@ -2079,8 +2152,14 @@ const MessagePane: React.FC<{
         </div>
       </header>
 
+      {/* Zalo Pinned Message Banner */}
+      <ZaloPinnedBanner
+        conversation={conversation}
+        pinnedMessages={messages.filter(m => m.isPinned)}
+      />
+
       {/* Messages scrolling */}
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-3 space-y-2.5">
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-3 space-y-2.5 bg-[#f4f5f7] dark:bg-[#1e1f22]">
         {loading && messages.length === 0 ? (
           <div className="space-y-3">
             {[0, 1, 2, 3].map(item => (
@@ -2133,8 +2212,12 @@ const MessagePane: React.FC<{
       <MessageComposer
         disabled={!conversation}
         replyTo={replyingTo}
+        conversation={conversation}
+        users={users}
+        employees={employees}
+        currentUserId={currentUser.id}
         onCancelReply={() => setReplyingTo(null)}
-        onSend={(body, fFiles) => onSend(body, fFiles, { replyToMessageId: replyingTo?.messageId || null, replyPreview: replyingTo })}
+        onSend={(bodyText, fFiles, opts) => onSend(bodyText, fFiles, { replyToMessageId: replyingTo?.messageId || null, replyPreview: replyingTo, mentions: opts?.mentions })}
         onSendStructured={onSendStructured}
         onTyping={onTyping}
       />
@@ -2148,6 +2231,7 @@ const ChatShell: React.FC<ChatShellProps> = ({ currentUser, users }) => {
   const [showNewChat, setShowNewChat] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showListOnMobile, setShowListOnMobile] = useState(true);
+  const [activeNav, setActiveNav] = useState<'chat' | 'contacts' | 'tasks'>('chat');
 
   // Layout Sidebars Custom States
   const [showGroupsOnly, setShowGroupsOnly] = useState(false);
@@ -2176,65 +2260,16 @@ const ChatShell: React.FC<ChatShellProps> = ({ currentUser, users }) => {
   const totalUnreadCount = useChatV2UnreadCount(currentUser?.id);
 
   return (
-    <div className="h-full w-full overflow-hidden bg-white dark:bg-[#1e1f22] text-slate-800 dark:text-[#dbdee1] flex">
-      {/* Column 1: Mini Sidebar (60px) */}
-      <div className="w-[60px] bg-slate-100 dark:bg-[#1e1f22] flex flex-col items-center py-4 border-r border-slate-200 dark:border-[#111214]/65 justify-between shrink-0 select-none">
-        <div className="flex flex-col items-center gap-5 w-full">
-          {/* Logo */}
-          <div className="w-10 h-10 rounded-2xl bg-indigo-650 flex items-center justify-center text-white font-black text-sm shadow-md shadow-indigo-500/10 cursor-pointer hover:rounded-xl transition-all">
-            KT
-          </div>
-
-          {/* Unread badge message trigger */}
-          <button
-            type="button"
-            onClick={() => setShowGroupsOnly(false)}
-            title="Tất cả tin nhắn"
-            className="w-10 h-10 rounded-full bg-slate-200 hover:bg-slate-300 dark:bg-[#313338] dark:hover:bg-[#35373c] flex items-center justify-center text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white transition relative hover:rounded-xl group"
-          >
-            <MessageSquare size={18} />
-            {totalUnreadCount > 0 && (
-              <span className="absolute -top-1.5 -right-1 flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-red-500 px-1 text-[8px] font-black text-white ring-1 ring-red-400">
-                {totalUnreadCount > 99 ? '99+' : totalUnreadCount}
-              </span>
-            )}
-            <span className="absolute left-[66px] bg-slate-900 border border-slate-755 text-white text-[9px] font-bold py-1 px-2 rounded shadow-xl hidden group-hover:block whitespace-nowrap z-50">
-              Tất cả tin nhắn
-            </span>
-          </button>
-
-          {/* Group list toggle filter */}
-          <button
-            type="button"
-            onClick={() => setShowGroupsOnly(!showGroupsOnly)}
-            title="Nhóm chat"
-            className={`w-10 h-10 rounded-full flex items-center justify-center transition relative hover:rounded-xl group ${
-              showGroupsOnly ? 'bg-indigo-500 text-white rounded-xl' : 'bg-slate-200 hover:bg-slate-300 dark:bg-[#313338] text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-[#35373c] dark:hover:text-white'
-            }`}
-          >
-            <Users size={18} />
-            <span className="absolute left-[66px] bg-slate-900 border border-slate-755 text-white text-[9px] font-bold py-1 px-2 rounded shadow-xl hidden group-hover:block whitespace-nowrap z-50">
-              Chỉ hiện nhóm chat
-            </span>
-          </button>
-        </div>
-
-        {/* Column 1 bottom actions */}
-        <div className="flex flex-col items-center gap-4 w-full">
-          {/* New Chat Modal (+) */}
-          <button
-            type="button"
-            onClick={() => setShowNewChat(true)}
-            title="Tạo hội thoại mới"
-            className="w-10 h-10 rounded-full bg-emerald-600/10 hover:bg-emerald-600 hover:text-white flex items-center justify-center text-emerald-400 transition hover:rounded-xl group"
-          >
-            <Plus size={18} />
-            <span className="absolute left-[66px] bg-slate-900 border border-slate-700 text-white text-[9px] font-bold py-1 px-2 rounded shadow-xl hidden group-hover:block whitespace-nowrap z-50">
-              Tạo hội thoại mới
-            </span>
-          </button>
-        </div>
-      </div>
+    <div className="h-full w-full overflow-hidden bg-white dark:bg-[#1e1f22] text-slate-800 dark:text-[#dbdee1] flex select-none">
+      {/* Column 1: Zalo Navigation Rail (64px) */}
+      <ZaloDockBar
+        currentUser={currentUser}
+        unreadCount={totalUnreadCount}
+        activeNav={activeNav}
+        setActiveNav={setActiveNav}
+        onNewChat={() => setShowNewChat(true)}
+        onOpenSettings={() => setShowSettings(true)}
+      />
 
       {/* Main columns container */}
       <div className="flex h-full min-w-0 flex-1">

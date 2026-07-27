@@ -167,6 +167,7 @@ export interface ChatV2Message {
   quickConfirmResponses: ChatV2QuickConfirmResponse[];
   isOptimistic?: boolean;
   isFailed?: boolean;
+  isPinned?: boolean;
 }
 
 export interface ChatV2MessageCursor {
@@ -521,6 +522,7 @@ const mapMessage = (
     pollVotes,
     checklistItems,
     quickConfirmResponses,
+    isPinned: Boolean(row.is_pinned || metadata.isPinned),
   };
 };
 
