@@ -1,6 +1,13 @@
 import type { PurchaseOrder, PurchaseOrderDeliveryBatch, PurchaseOrderItem } from '../types';
+import {
+  getPoLinePurchaseUnit,
+  getPoLineStockUnit,
+  getPurchaseConversionFactor,
+  purchaseToStockQty,
+} from './materialUnitConversion';
 
 export interface PurchaseDeliveryLineDraft {
+  included: boolean;
   purchaseOrderLineId: string;
   itemId: string;
   itemName: string;
@@ -11,6 +18,7 @@ export interface PurchaseDeliveryLineDraft {
   purchaseUnit: string;
   stockQty: number;
   stockUnit: string;
+  conversionFactor: number;
   purchaseUnitPrice: number;
   stockUnitPrice: number;
 }
@@ -57,12 +65,21 @@ export const buildPurchaseDeliveryLineDrafts = ({
   const alreadyReleasedQty = getReleasedQtyForLine(purchaseOrderLineId, existingBatches);
   const remainingQty = Math.max(orderedQty - alreadyReleasedQty, 0);
   const purchaseQty = cloneLine ? numberValue(cloneLine.plannedQty) : remainingQty;
+  const purchaseUnit = cloneLine?.unit || getPoLinePurchaseUnit(item) || item.unit;
+  const stockUnit = cloneLine?.stockUnit || getPoLineStockUnit(item) || item.unit;
+  const conversionFactor = getPurchaseConversionFactor({
+    unit: stockUnit,
+    purchaseUnit,
+    purchaseConversionFactor: item.purchaseConversionFactor,
+  });
   const stockQty = cloneLine
     ? numberValue(cloneLine.stockPlannedQty || cloneLine.plannedQty)
-    : purchaseQty;
+    : purchaseToStockQty(purchaseQty, { unit: stockUnit, purchaseUnit, purchaseConversionFactor: conversionFactor });
   const purchaseUnitPrice = numberValue(cloneLine?.deliveryUnitPrice ?? item.unitPrice);
+  const included = cloneLine ? purchaseQty > 0 : remainingQty > 0;
 
   return {
+    included,
     purchaseOrderLineId,
     itemId: item.itemId,
     itemName: item.name || item.sku || item.itemId,
@@ -70,9 +87,10 @@ export const buildPurchaseDeliveryLineDrafts = ({
     alreadyReleasedQty,
     remainingQty,
     purchaseQty,
-    purchaseUnit: cloneLine?.unit || item.purchaseUnitSnapshot || item.unit,
+    purchaseUnit,
     stockQty,
-    stockUnit: cloneLine?.stockUnit || item.stockUnitSnapshot || item.unit,
+    stockUnit,
+    conversionFactor,
     purchaseUnitPrice,
     stockUnitPrice: purchaseUnitPrice,
   };
@@ -92,8 +110,9 @@ export const getPurchaseDeliveryDraftSummary = ({
     (sum, item) => sum + getReleasedQtyForLine(getPoLineId(item), existingBatches),
     0,
   );
-  const draftQty = draftLines.reduce((sum, line) => sum + numberValue(line.purchaseQty), 0);
-  const draftAmount = draftLines.reduce(
+  const selectedLines = getSelectedPurchaseDeliveryLinesForSave(draftLines);
+  const draftQty = selectedLines.reduce((sum, line) => sum + numberValue(line.purchaseQty), 0);
+  const draftAmount = selectedLines.reduce(
     (sum, line) => sum + numberValue(line.purchaseQty) * numberValue(line.purchaseUnitPrice),
     0,
   );
@@ -108,3 +127,16 @@ export const getPurchaseDeliveryDraftSummary = ({
     draftAmount,
   };
 };
+
+export const getSelectedPurchaseDeliveryLinesForSave = (
+  draftLines: PurchaseDeliveryLineDraft[],
+) => draftLines.filter(line => line.included && numberValue(line.purchaseQty) > 0);
+
+export const getStockQtyForPurchaseDeliveryLine = (
+  line: PurchaseDeliveryLineDraft,
+  purchaseQty: number,
+) => purchaseToStockQty(purchaseQty, {
+  unit: line.stockUnit,
+  purchaseUnit: line.purchaseUnit,
+  purchaseConversionFactor: line.conversionFactor,
+});

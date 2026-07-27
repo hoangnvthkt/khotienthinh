@@ -291,4 +291,19 @@ describe('purchaseOrderUiPolicy', () => {
       deliveryBatches: [],
     })).toContain('close_short');
   });
+
+  it('offers a recreate delivery action after a single-delivery package batch is rejected', () => {
+    const policy = getPurchaseOrderUiPolicy(baseInput({
+      po: packagePo({ purchaseMode: 'single' }),
+      deliveryBatches: [plannedBatch({ status: 'cancelled' })],
+      receiptStats: { orderedQty: 100, receivedQty: 0, remainingQty: 100 },
+    }));
+
+    expect(policy.primaryAction).toEqual(expect.objectContaining({
+      id: 'add_delivery',
+      label: 'Tạo lại đợt giao',
+      intent: 'primary',
+    }));
+    expect(policy.nextStep).toBe('Đợt giao trước đã bị từ chối. Tạo lại đợt giao để gửi Kho xử lý WMS/QR.');
+  });
 });

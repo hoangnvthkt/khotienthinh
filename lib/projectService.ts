@@ -1371,6 +1371,7 @@ export const poDeliveryScheduleService = {
                 constructionSiteId: po.constructionSiteId || null,
                 deliveryNo: index + 1,
                 status: batch.status || 'planned',
+                fulfillmentMode: (batch.fulfillmentMode || po.fulfillmentMode || 'RECEIVE_TO_STOCK') as PurchaseOrderDeliveryBatch['fulfillmentMode'],
                 fulfillmentBatchIds: batch.fulfillmentBatchIds || [],
                 lines: (batch.lines || []).filter(line => Number(line.plannedQty || 0) > 0),
             }))

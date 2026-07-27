@@ -137,6 +137,7 @@ import {
     resolvePurchaseOrderItemsForScheduledPricing,
     shouldCreateBatchDuringDraftSave,
     shouldAutoCreatePoDeliveryScheduleForForm,
+    shouldEditInlineRequestUnitPrice,
 } from '../../lib/purchaseOrderDeliveryDraft';
 import {
     applyPurchaseOrderSupplementalState,
@@ -480,6 +481,7 @@ type PoApprovalDeliveryBatch = {
 type PurchaseOrderFormItem = PurchaseOrderItem & {
     qtyInput?: string;
     unitPriceInput?: string;
+    noteEnabled?: boolean;
 };
 
 type SiteDirectPurchaseDetailState = {
@@ -731,6 +733,7 @@ const createEmptyPoItem = (): PurchaseOrderFormItem => ({
     unitPrice: 0,
     neededDate: '',
     note: '',
+    noteEnabled: false,
     specs: undefined,
     pricingMode: undefined,
     computedArea: undefined,
@@ -739,6 +742,12 @@ const createEmptyPoItem = (): PurchaseOrderFormItem => ({
     qtyInput: '',
     unitPriceInput: '',
 });
+
+const hasPoItemNote = (item: Partial<PurchaseOrderFormItem>) =>
+    String(item.note || '').trim().length > 0;
+
+const getPoItemNoteForSave = (item: Partial<PurchaseOrderFormItem>) =>
+    item.noteEnabled ? item.note || '' : '';
 
 const normalizePoItem = (item: Partial<PurchaseOrderFormItem>, inventoryItems: InventoryItem[]): PurchaseOrderItem => {
     const matched = inventoryItems.find(inv =>
@@ -806,6 +815,7 @@ const hydratePoFormItem = (item: Partial<PurchaseOrderFormItem>, inventoryItems:
     const normalized = normalizePoItem(item, inventoryItems);
     return {
         ...normalized,
+        noteEnabled: item.noteEnabled ?? hasPoItemNote(normalized),
         qtyInput: item.qtyInput ?? formatNumberInputValue(normalized.qty, 6),
         unitPriceInput: item.unitPriceInput ?? formatNumberInputValue(normalized.unitPrice, 0),
     };
@@ -1220,6 +1230,14 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         else next.add(idx);
         return next;
     }), []);
+    const [expandedLineDetailsIdx, setExpandedLineDetailsIdx] = useState<Set<number>>(new Set());
+    const toggleLineDetailsPanel = useCallback((idx: number) => setExpandedLineDetailsIdx(prev => {
+        const next = new Set(prev);
+        if (next.has(idx)) next.delete(idx);
+        else next.add(idx);
+        return next;
+    }), []);
+    const [showPackageReconcileDetails, setShowPackageReconcileDetails] = useState(false);
     const poSubmitLockRef = useRef(false);
     const poImportModeRef = useRef<ExcelImportMode>('create');
     const poBoqMetaScopeRef = useRef<string | null>(null);
@@ -2391,6 +2409,17 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             return buildDefaultPoDeliveryBatches(pItems, pExpDate);
         });
     };
+    const setPurchaseModeWithDeliveryDraft = (mode: PurchaseMode) => {
+        setPPurchaseMode(mode);
+        if (!isPurchasePackageV2FormEnabled()) return;
+        setPDeliveryScheduleMode(mode === 'multiple' ? 'multiple_batches' : 'first_batch');
+        setPDeliveryBatches(prev => {
+            const next = prev.length > 0 ? prev : buildDefaultPoDeliveryBatches(pItems, pExpDate);
+            return mode === 'multiple'
+                ? next.map((batch, index) => ({ ...batch, deliveryNo: index + 1 }))
+                : next.slice(0, 1).map((batch, index) => ({ ...batch, deliveryNo: index + 1 }));
+        });
+    };
     const resetPoDeliveryDraftFromItems = (items = pItems, plannedDate = pExpDate) => {
         setPDeliveryScheduleMode('first_batch');
         setPDeliveryBatches(buildDefaultPoDeliveryBatches(items, plannedDate));
@@ -2620,7 +2649,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             await loadPoBoqMetaData().catch(error => console.warn('Failed to load PO BOQ metadata for planning draft:', error));
             if (cancelled) return;
             const normalizedItems = initialDraftPo.items.length > 0
-                ? initialDraftPo.items.map(item => normalizePoItem(item, inventoryItems))
+                ? initialDraftPo.items.map(item => hydratePoFormItem(item, inventoryItems))
                 : [createEmptyPoItem()];
             const sourceMode = initialDraftPo.sourceMode || 'proactive_project';
             const nextPoNumber = initialDraftPo.poNumber || await loadNextPoNumber(sourceMode);
@@ -2645,6 +2674,9 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             setPDeliveryBatches([]);
             setPApprovalRequestTitle('');
             setPNote(initialDraftPo.note || '');
+            setExpandedSpecsIdx(new Set());
+            setExpandedLineDetailsIdx(new Set());
+            setShowPackageReconcileDetails(false);
         })().catch(error => {
             console.error('Failed to allocate PO number:', error);
             toast.error('Không thể cấp số PO', getApiErrorMessage(error, 'Vui lòng thử lại.'));
@@ -2888,6 +2920,9 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         setPendingPoSupplementalSubmission(null);
         setRequestPickerMode('create_po');
         setSelectedRequestLineKeys([]);
+        setExpandedSpecsIdx(new Set());
+        setExpandedLineDetailsIdx(new Set());
+        setShowPackageReconcileDetails(false);
     };
     const openCreatePo = async () => {
         if (!ensureCanCreatePo('tạo PO')) return;
@@ -2965,7 +3000,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             return;
         }
         await loadPoBoqMetaData().catch(error => console.warn('Failed to load PO BOQ metadata:', error));
-        const normalizedItems = po.items.map(i => normalizePoItem({
+        const normalizedItems = po.items.map(i => hydratePoFormItem({
             ...i,
             vendorId: i.vendorId || po.vendorId,
             vendorName: i.vendorName || po.vendorName,
@@ -2983,6 +3018,9 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         setPDeliveryBatches(existingDeliveryBatches);
         setPApprovalRequestTitle(po.approvalRequestTitle || '');
         setPNote(po.note || ''); setRequestPickerMode('create_po'); setSelectedRequestLineKeys([]); setShowPoForm(true);
+        setExpandedSpecsIdx(new Set());
+        setExpandedLineDetailsIdx(new Set());
+        setShowPackageReconcileDetails(false);
     };
 
     const openPoFromSelectedRequests = async () => {
@@ -3009,7 +3047,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             const budget = row.line.materialBudgetItemId ? budgetLookup.get(row.line.materialBudgetItemId) : undefined;
             const work = row.line.workBoqItemId ? workLookup.get(row.line.workBoqItemId) : undefined;
             const supplierPatch = getDefaultSupplierPatchForInventory(inventory);
-            return normalizePoItem({
+            return hydratePoFormItem({
                 lineId: crypto.randomUUID(),
                 itemId: row.line.itemId,
                 ...supplierPatch,
@@ -3052,7 +3090,8 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 purchaseConversionFactor: Number(inventory?.purchaseConversionFactor || 1),
                 specification: row.line.specification,
                 manualReason: '',
-                note: row.line.note || `Từ đề xuất ${row.request.code}`,
+                note: '',
+                noteEnabled: false,
             }, inventoryItems);
         });
         let nextPoNumber: string;
@@ -3071,6 +3110,10 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         setPVatRate('0');
         const selectedTargetWarehouses = Array.from(new Set(selectedRows.map(row => row.request.siteWarehouseId).filter(Boolean)));
         const selectedRequests = Array.from(new Map(selectedRows.map(row => [row.request.id, row.request])).values());
+        const selectedNeededDates = selectedRows
+            .map(row => row.line.neededDate || row.request.expectedDate || '')
+            .filter(Boolean);
+        const defaultExpectedDeliveryDate = selectedNeededDates[0] || new Date().toISOString().split('T')[0];
         const selectedRequestTitles = selectedRequests
             .map(request => (request.title || request.code || '').trim())
             .filter(Boolean);
@@ -3078,11 +3121,15 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             ? `${selectedRequestTitles[0]} +${selectedRequestTitles.length - 1} đề xuất`
             : selectedRequestTitles[0] || '';
         setPTargetWarehouseId(selectedTargetWarehouses.length === 1 ? selectedTargetWarehouses[0] : '');
+        setPExpDate(defaultExpectedDeliveryDate);
         setPItems(rows);
-        setPDeliveryScheduleMode('unknown');
-        setPDeliveryBatches([]);
+        setPDeliveryScheduleMode('first_batch');
+        setPDeliveryBatches(buildDefaultPoDeliveryBatches(rows, defaultExpectedDeliveryDate));
         setPApprovalRequestTitle(selectedApprovalTitle);
         setPNote(`Gom từ ${new Set(selectedRows.map(row => row.request.code)).size} đề xuất công trường`);
+        setExpandedSpecsIdx(new Set());
+        setExpandedLineDetailsIdx(new Set());
+        setShowPackageReconcileDetails(false);
         setShowRequestPicker(false);
         setShowPoForm(true);
     };
@@ -3124,7 +3171,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             workBoqItems,
             supplierPatch,
             lineIdFactory: () => crypto.randomUUID(),
-        }).map(item => normalizePoItem(item, inventoryItems)));
+        }).map(item => hydratePoFormItem(item, inventoryItems)));
 
         const selectedTargetWarehouses = Array.from(new Set(selectedRows.map(row => row.request.siteWarehouseId).filter(Boolean)));
         if (!pTargetWarehouseId && selectedTargetWarehouses.length === 1) {
@@ -3400,7 +3447,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             return;
         }
         const preparedItems = pItems
-            .map(i => normalizePoItem(i, inventoryItems))
+            .map(item => normalizePoItem({ ...item, note: getPoItemNoteForSave(item) }, inventoryItems))
             .map(i => pSourceMode === 'proactive_stock' ? {
                 ...i,
                 workBoqItemId: null,
@@ -4312,7 +4359,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     const handleConfirmPoImport = () => {
         if (!ensureCanCreatePo('áp dụng import PO')) return;
         if (!poImportPreview) return;
-        const records = applyImportChanges(poImportPreview).map(item => normalizePoItem(item, inventoryItems));
+        const records = applyImportChanges(poImportPreview).map(item => hydratePoFormItem(item, inventoryItems));
         if (records.length === 0) {
             toast.warning('Không có dữ liệu cần ghi', 'File không có dòng PO hợp lệ để nạp.');
             return;
@@ -4324,7 +4371,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         } else {
             setPItems(prev => prev.map(item => {
                 const patch = records.find(record => record.sku.toLowerCase() === item.sku.toLowerCase());
-                return patch ? normalizePoItem({ ...item, ...patch }, inventoryItems) : item;
+                return patch ? hydratePoFormItem({ ...item, ...patch }, inventoryItems) : item;
             }));
         }
         toast.success(
@@ -8226,14 +8273,14 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             {/* PO Form Modal */}
             {showPoForm && (
                 <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/40 backdrop-blur-sm">
-                    <div className="bg-card border border-border rounded-3xl shadow-2xl w-full max-w-5xl mx-4 max-h-[90vh] overflow-y-auto">
-                        <div className="px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-t-3xl flex items-center justify-between">
+                    <div className="bg-card border border-border rounded-3xl shadow-2xl w-full max-w-5xl mx-4 max-h-[90vh] overflow-hidden flex flex-col">
+                        <div className="shrink-0 px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-t-3xl flex items-center justify-between">
                             <span className="font-bold text-lg text-white flex items-center gap-2">
                                 {editingPo ? <><Edit2 size={18} /> Sửa PO</> : <><Plus size={18} /> Tạo đơn hàng</>}
                             </span>
                             <button onClick={savingPo ? undefined : resetPoForm} disabled={savingPo} className="w-8 h-8 rounded-xl bg-white/20 hover:bg-white/30 text-white flex items-center justify-center disabled:opacity-50"><X size={18} /></button>
                         </div>
-                        <div className="p-6 space-y-4">
+                        <div className="min-h-0 flex-1 overflow-y-auto p-6 space-y-4">
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
                                     <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Số PO · Tự sinh</label>
@@ -8270,8 +8317,8 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                         setPSourceMode(nextSourceMode);
                                         setPPurchaseMode(getDefaultPurchaseMode(nextSourceMode));
                                         if (nextSourceMode === 'from_request' && isPurchasePackageV2EnabledForSite(constructionSiteId ?? null)) {
-                                            setPDeliveryScheduleMode('unknown');
-                                            setPDeliveryBatches([]);
+                                            setPDeliveryScheduleMode('first_batch');
+                                            setPDeliveryBatches(buildDefaultPoDeliveryBatches(pItems, pExpDate));
                                         }
                                         if (!editingPo && pNumAutoGenerated) {
                                             void loadNextPoNumber(nextSourceMode).then(setPNum);
@@ -8299,7 +8346,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                         <PurchaseModeControl
                                             value={pPurchaseMode}
                                             disabled={savingPo}
-                                            onChange={setPPurchaseMode}
+                                            onChange={setPurchaseModeWithDeliveryDraft}
                                         />
                                     </div>
                                 </div>
@@ -8347,7 +8394,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                             <div>
                                 <label className="text-[10px] font-bold text-slate-500 uppercase mb-1 flex items-center justify-between">
                                     <span>Danh sách vật tư</span>
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 text-[10px]">
                                         <button onClick={handleDownloadPoTemplate}
                                             className="text-emerald-600 hover:text-emerald-700 flex items-center gap-0.5"><FileSpreadsheet size={10} /> Mẫu</button>
                                         <label onClick={() => openPoImport('create')} className={`text-blue-500 hover:text-blue-700 flex items-center gap-0.5 cursor-pointer ${importingPo ? 'opacity-60 pointer-events-none' : ''}`}>
@@ -8398,13 +8445,28 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                             qty: pSourceMode === 'from_request' ? scheduleQtyPreview : normalizedLine.qty,
                                             unitPrice: pSourceMode === 'from_request' ? scheduleUnitPricePreview : normalizedLine.unitPrice,
                                         };
+                                        const editInlineRequestUnitPrice = shouldEditInlineRequestUnitPrice({
+                                            sourceMode: pSourceMode,
+                                            purchaseMode: pPurchaseMode,
+                                            isPurchasePackageV2Form,
+                                        });
                                         const hasUnitConversion = hasPurchaseUnitConversion({
                                             unit: stockUnit,
                                             purchaseUnit,
                                             purchaseConversionFactor: previewLine.purchaseConversionFactor ?? inventory?.purchaseConversionFactor ?? 1,
                                         });
+                                        const hasLineDetails = item.isManualItem
+                                            || item.requestCode
+                                            || item.materialBudgetItemName
+                                            || item.workBoqItemName
+                                            || rowWork?.name
+                                            || overBudgetQty > 0
+                                            || hasUnitConversion
+                                            || (item.specs && Object.keys(item.specs).length > 0);
+                                        const lineDetailsExpanded = expandedLineDetailsIdx.has(i);
+                                        const noteEnabled = Boolean(item.noteEnabled);
                                         return (
-                                            <div key={i} className="grid grid-cols-12 gap-2 items-start rounded-xl border border-slate-100 bg-slate-50/60 p-2">
+                                            <div key={i} className="grid grid-cols-12 gap-2 items-start rounded-xl border border-slate-100 bg-slate-50/60 p-3">
                                                 {pSourceMode !== 'proactive_stock' && (
                                                     <select
                                                         value={item.materialBudgetItemId || ''}
@@ -8437,7 +8499,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                         vendorName: supplier?.name || null,
                                                     })}
                                                     placeholder="NCC dòng vật tư..."
-                                                    className="col-span-12 md:col-span-4"
+                                                    className="col-span-12 md:col-span-3"
                                                 />
                                                 <div className="col-span-4 md:col-span-1 px-2.5 py-2 rounded-lg border border-border bg-muted/30 text-xs text-muted-foreground font-bold truncate">
                                                     {purchaseUnit || item.unit || 'ĐVT'}
@@ -8459,13 +8521,28 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                         className="col-span-4 md:col-span-1 px-2.5 py-2 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-blue-500 outline-none"
                                                     />
                                                 )}
-                                                {pSourceMode === 'from_request' ? (
+                                                {pSourceMode === 'from_request' && !editInlineRequestUnitPrice ? (
                                                     <div className="col-span-4 md:col-span-2 rounded-lg border border-emerald-100 bg-emerald-50 px-2.5 py-1.5">
                                                         <span className="block text-[9px] font-black uppercase text-emerald-500">
                                                             {isPurchasePackageV2Form ? 'Giá duyệt' : 'Giá theo đợt'}
                                                         </span>
                                                         <span className="block truncate text-xs font-black text-emerald-700">{fmtMoney(scheduleUnitPricePreview)} đ</span>
                                                     </div>
+                                                ) : editInlineRequestUnitPrice ? (
+                                                    <label className="col-span-4 md:col-span-3 rounded-lg border border-emerald-200 bg-white px-2.5 py-1.5 focus-within:ring-2 focus-within:ring-emerald-500">
+                                                        <span className="block whitespace-nowrap text-[9px] font-black uppercase text-emerald-600">Giá duyệt</span>
+                                                        <span className="flex min-w-0 items-center gap-1">
+                                                            <input
+                                                                type="text"
+                                                                inputMode="decimal"
+                                                                value={item.unitPriceInput ?? formatNumberInputValue(item.unitPrice, 0)}
+                                                                onChange={e => updatePoItem(i, { unitPriceInput: e.target.value })}
+                                                                placeholder="Nhập đơn giá"
+                                                                className="min-w-0 flex-1 bg-transparent text-right text-xs font-black text-emerald-800 outline-none placeholder:text-[10px]"
+                                                            />
+                                                            <span className="shrink-0 text-[10px] font-black text-emerald-600">đ</span>
+                                                        </span>
+                                                    </label>
                                                 ) : (
                                                     <input
                                                         type="text"
@@ -8482,12 +8559,37 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                     onChange={e => updatePoItem(i, { neededDate: e.target.value })}
                                                     className="col-span-6 md:col-span-2 px-2.5 py-2 rounded-lg border border-border text-xs focus:ring-2 focus:ring-blue-500 outline-none bg-muted/30 text-foreground"
                                                 />
-                                                <input
-                                                    value={item.note || ''}
-                                                    onChange={e => updatePoItem(i, { note: e.target.value })}
-                                                    placeholder="Ghi chú"
-                                                    className="col-span-2 md:col-span-7 px-2.5 py-2 rounded-lg border border-border text-xs focus:ring-2 focus:ring-blue-500 outline-none bg-muted/30 text-foreground"
-                                                />
+                                                <label className="col-span-6 md:col-span-2 flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 text-[11px] font-black text-slate-600">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={noteEnabled}
+                                                        onChange={e => updatePoItem(i, {
+                                                            noteEnabled: e.target.checked,
+                                                            note: e.target.checked ? item.note || '' : '',
+                                                        })}
+                                                        className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                                    />
+                                                    <span className="truncate">Thêm ghi chú</span>
+                                                </label>
+                                                {noteEnabled && (
+                                                    <input
+                                                        value={item.note || ''}
+                                                        onChange={e => updatePoItem(i, { note: e.target.value, noteEnabled: true })}
+                                                        placeholder="Ghi chú dòng"
+                                                        className="col-span-12 md:col-span-3 px-2.5 py-2 rounded-lg border border-border text-xs focus:ring-2 focus:ring-blue-500 outline-none bg-muted/30 text-foreground"
+                                                    />
+                                                )}
+                                                {hasLineDetails && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => toggleLineDetailsPanel(i)}
+                                                        aria-expanded={lineDetailsExpanded}
+                                                        className={`col-span-6 ${noteEnabled ? 'md:col-span-2' : 'md:col-span-3'} h-9 rounded-lg border border-amber-200 bg-amber-50 px-2 text-[11px] font-black text-amber-700 hover:bg-amber-100 inline-flex items-center justify-center gap-1`}
+                                                    >
+                                                        Chi tiết đối soát
+                                                        <ChevronDown size={13} className={`transition-transform ${lineDetailsExpanded ? 'rotate-180' : ''}`} />
+                                                    </button>
+                                                )}
                                                 <button
                                                     type="button"
                                                     onClick={() => toggleSpecsPanel(i)}
@@ -8499,12 +8601,13 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                     📐 QC {expandedSpecsIdx.has(i) ? '▲' : '▼'}
                                                 </button>
                                                 <button
+                                                    type="button"
                                                     onClick={() => setPItems(pItems.length > 1 ? pItems.filter((_, j) => j !== i) : [createEmptyPoItem()])}
                                                     className="col-span-1 h-9 rounded-lg text-red-300 hover:text-red-500 hover:bg-red-50 flex items-center justify-center bg-transparent border-0 cursor-pointer"
                                                 >
                                                     <X size={14} />
                                                 </button>
-                                                {(item.isManualItem || item.requestCode || item.materialBudgetItemName || item.workBoqItemName || rowWork?.name || overBudgetQty > 0 || hasUnitConversion || (item.specs && Object.keys(item.specs).length > 0)) && (
+                                                {hasLineDetails && lineDetailsExpanded && (
                                                     <div className="col-span-12 flex flex-wrap gap-1">
                                                         {item.isManualItem && <span className="px-1.5 py-0.5 rounded border border-rose-100 bg-rose-50 text-[9px] font-bold text-rose-700">Cần cấp mã vật tư trước</span>}
                                                         {item.requestCode && <span className="px-1.5 py-0.5 rounded border border-amber-100 bg-amber-50 text-[9px] font-bold text-amber-700">YC {item.requestCode}</span>}
@@ -8728,17 +8831,35 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                 </div>
                             </div>
                             {isPurchasePackageV2Form && (
-                                <PurchasePackageSummary
-                                    purchaseOrder={purchasePackagePreviewPo}
-                                    deliveryBatches={poDeliveryBatchesForForm}
-                                />
+                                <div className="space-y-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowPackageReconcileDetails(prev => !prev)}
+                                        aria-expanded={showPackageReconcileDetails}
+                                        className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-700 hover:bg-slate-50"
+                                    >
+                                        Chi tiết đối soát gói
+                                        <ChevronDown size={14} className={`transition-transform ${showPackageReconcileDetails ? 'rotate-180' : ''}`} />
+                                    </button>
+                                    {showPackageReconcileDetails && (
+                                        <PurchasePackageSummary
+                                            purchaseOrder={purchasePackagePreviewPo}
+                                            deliveryBatches={poDeliveryBatchesForForm}
+                                        />
+                                    )}
+                                </div>
                             )}
-                            {!isPurchasePackageV2Form && (
                             <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-3 space-y-3">
                                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                                     <div>
-                                        <div className="text-[10px] font-black uppercase tracking-wider text-slate-500">Lịch giao hàng</div>
-                                        <div className="text-[10px] font-bold text-slate-400">PO giữ tổng đã duyệt; từng đợt có số lượng và giá riêng.</div>
+                                        <div className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+                                            {isPurchasePackageV2Form ? 'Lịch giao dự kiến' : 'Lịch giao hàng'}
+                                        </div>
+                                        <div className="text-[10px] font-bold text-slate-400">
+                                            {isPurchasePackageV2Form
+                                                ? 'Gói mua hàng giữ tổng duyệt; từng đợt bên dưới có số lượng và giá riêng để nhập kho thực tế.'
+                                                : 'PO giữ tổng đã duyệt; từng đợt có số lượng và giá riêng.'}
+                                        </div>
                                     </div>
                                     <div className="flex flex-wrap gap-2">
                                         {([
@@ -8960,7 +9081,6 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                     })}
                                 </div>
                             </div>
-                            )}
                             {poTotalCalc > 0 && (
                                 <div className="rounded-xl border border-blue-100 bg-blue-50 px-3 py-2.5 text-xs">
                                     <div className="flex items-center justify-between">
@@ -8983,7 +9103,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                     className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-none" />
                             </div>
                         </div>
-                        <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3">
+                        <div className="shrink-0 px-6 py-4 border-t border-slate-100 bg-white flex justify-end gap-3">
                             <button onClick={resetPoForm} disabled={savingPo} className="px-5 py-2.5 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-50">Huỷ</button>
                             <button onClick={() => void handleSavePo()} disabled={savingPo || !pNum || (!pTargetWarehouseId && !(pSourceMode === 'from_request' && pItems.some(item => !!scopedMaterialRequests.find(req => req.id === item.requestId)?.siteWarehouseId)))}
                                 className="px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-blue-500 to-indigo-500 shadow-lg flex items-center gap-2 disabled:opacity-50">
@@ -8996,8 +9116,8 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             )}
             {packageDeliveryEditor && (
                 <div className="fixed inset-0 z-[1150] flex items-center justify-center bg-black/40 px-4 backdrop-blur-sm">
-                    <div className="w-full max-w-4xl rounded-2xl border border-slate-200 bg-white shadow-2xl">
-                        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
+                    <div className="flex max-h-[92vh] w-full max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+                        <div className="shrink-0 flex items-center justify-between border-b border-slate-100 px-5 py-3">
                             <div>
                                 <div className="text-sm font-black text-slate-800">
                                     {packageDeliveryEditor.cloneFromBatch ? 'Clone đợt giao' : 'Thêm đợt giao'}
@@ -9015,7 +9135,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                 <X size={18} />
                             </button>
                         </div>
-                        <div className="p-4">
+                        <div className="min-h-0 flex-1 overflow-y-auto p-4">
                             <PurchaseDeliveryBatchEditor
                                 purchaseOrder={packageDeliveryEditor.po}
                                 actorUserId={user?.id || ''}

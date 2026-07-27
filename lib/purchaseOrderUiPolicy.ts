@@ -107,6 +107,9 @@ const isPurchasePackageV2 = (po: PurchaseOrder) =>
 const firstOpenPackageBatch = (deliveryBatches: PurchaseOrderDeliveryBatch[]) =>
   deliveryBatches.find(batch => !['cancelled'].includes(batch.status));
 
+const hasRejectedPackageBatch = (deliveryBatches: PurchaseOrderDeliveryBatch[]) =>
+  deliveryBatches.some(batch => batch.status === 'cancelled');
+
 const hasSupplementalPendingBatch = (deliveryBatches: PurchaseOrderDeliveryBatch[]) =>
   deliveryBatches.some(batch => batch.status === 'supplemental_pending');
 
@@ -202,8 +205,15 @@ export const getPurchaseOrderUiPolicy = ({
         };
         nextStep = 'Theo dõi đợt giao hiện tại qua QR/WMS.';
       } else if (mayReceivePo) {
-        primaryAction = { id: 'add_delivery', label: 'Thêm đợt giao', intent: 'primary' };
-        nextStep = 'Tạo đợt giao để nhà cung cấp giao hàng và kho xử lý QR/WMS.';
+        const isRecreateAfterRejectedSingleBatch = po.purchaseMode === 'single' && hasRejectedPackageBatch(deliveryBatches);
+        primaryAction = {
+          id: 'add_delivery',
+          label: isRecreateAfterRejectedSingleBatch ? 'Tạo lại đợt giao' : 'Thêm đợt giao',
+          intent: 'primary',
+        };
+        nextStep = isRecreateAfterRejectedSingleBatch
+          ? 'Đợt giao trước đã bị từ chối. Tạo lại đợt giao để gửi Kho xử lý WMS/QR.'
+          : 'Tạo đợt giao để nhà cung cấp giao hàng và kho xử lý QR/WMS.';
       }
 
       if (mayReceivePo && po.purchaseMode === 'multiple' && primaryAction?.id !== 'add_delivery') {

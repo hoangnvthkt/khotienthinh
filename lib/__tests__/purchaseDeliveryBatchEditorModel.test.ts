@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { MaterialRequestFulfillmentMode, type PurchaseOrder, type PurchaseOrderDeliveryBatch } from '../../types';
-import { buildPurchaseDeliveryLineDrafts, getPurchaseDeliveryDraftSummary } from '../purchaseDeliveryBatchEditorModel';
+import {
+  buildPurchaseDeliveryLineDrafts,
+  getPurchaseDeliveryDraftSummary,
+  getSelectedPurchaseDeliveryLinesForSave,
+} from '../purchaseDeliveryBatchEditorModel';
 
 const makePo = (): PurchaseOrder => ({
   id: 'po-1',
@@ -70,6 +74,37 @@ describe('purchase delivery batch editor model', () => {
     });
   });
 
+  it('defaults stock-unit delivery quantity from the purchase conversion factor while keeping it editable', () => {
+    const [draft] = buildPurchaseDeliveryLineDrafts({
+      purchaseOrder: {
+        ...makePo(),
+        items: [{
+          ...(makePo().items?.[0] || {}),
+          lineId: 'steel-line',
+          itemId: 'steel-1',
+          sku: 'VT000826',
+          name: 'Thép XD D12',
+          unit: 'Cây',
+          qty: 3,
+          unitPrice: 15170,
+          purchaseUnitSnapshot: 'Cây',
+          stockUnitSnapshot: 'Kg',
+          unitSnapshot: 'Kg',
+          purchaseConversionFactor: 10,
+        }],
+      },
+      existingBatches: [],
+    });
+
+    expect(draft).toMatchObject({
+      purchaseQty: 3,
+      purchaseUnit: 'Cây',
+      stockQty: 30,
+      stockUnit: 'Kg',
+      conversionFactor: 10,
+    });
+  });
+
   it('keeps clone quantities and prices from the source delivery batch', () => {
     const sourceBatch = makeBatch({
       lines: [{
@@ -102,6 +137,7 @@ describe('purchase delivery batch editor model', () => {
       purchaseOrder: makePo(),
       existingBatches: [makeBatch({})],
       draftLines: [{
+        included: true,
         purchaseOrderLineId: 'line-1',
         itemId: 'item-1',
         itemName: 'Sika màu xám',
@@ -112,6 +148,7 @@ describe('purchase delivery batch editor model', () => {
         purchaseUnit: 'Kg',
         stockQty: 4100,
         stockUnit: 'Kg',
+        conversionFactor: 1,
         purchaseUnitPrice: 5600,
         stockUnitPrice: 5600,
       }],
@@ -125,5 +162,67 @@ describe('purchase delivery batch editor model', () => {
       varianceQty: 100,
       draftAmount: 22_960_000,
     });
+  });
+
+  it('ignores unselected lines when summarizing and saving a partial delivery batch', () => {
+    const draftLines = [
+      {
+        included: true,
+        purchaseOrderLineId: 'line-1',
+        itemId: 'item-1',
+        itemName: 'Sika màu xám',
+        orderedQty: 7000,
+        alreadyReleasedQty: 3000,
+        remainingQty: 4000,
+        purchaseQty: 1500,
+        purchaseUnit: 'Kg',
+        stockQty: 1500,
+        stockUnit: 'Kg',
+        conversionFactor: 1,
+        purchaseUnitPrice: 5600,
+        stockUnitPrice: 5600,
+      },
+      {
+        included: false,
+        purchaseOrderLineId: 'line-2',
+        itemId: 'item-2',
+        itemName: 'Áo lưới vàng',
+        orderedQty: 100,
+        alreadyReleasedQty: 0,
+        remainingQty: 100,
+        purchaseQty: 100,
+        purchaseUnit: 'Cái',
+        stockQty: 100,
+        stockUnit: 'Cái',
+        conversionFactor: 1,
+        purchaseUnitPrice: 25000,
+        stockUnitPrice: 25000,
+      },
+    ];
+
+    const summary = getPurchaseDeliveryDraftSummary({
+      purchaseOrder: {
+        ...makePo(),
+        items: [
+          ...(makePo().items || []),
+          {
+            lineId: 'line-2',
+            itemId: 'item-2',
+            sku: 'VT002',
+            name: 'Áo lưới vàng',
+            unit: 'Cái',
+            qty: 100,
+            unitPrice: 25000,
+            receivedQty: 0,
+          },
+        ],
+      },
+      existingBatches: [makeBatch({})],
+      draftLines,
+    });
+
+    expect(summary.draftQty).toBe(1500);
+    expect(summary.draftAmount).toBe(8_400_000);
+    expect(getSelectedPurchaseDeliveryLinesForSave(draftLines)).toEqual([draftLines[0]]);
   });
 });

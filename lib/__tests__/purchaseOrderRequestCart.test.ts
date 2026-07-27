@@ -119,8 +119,22 @@ describe('purchaseOrderRequestCart', () => {
       purchaseUnitSnapshot: 'Hop',
       materialBudgetItemId: 'budget-1',
       materialBudgetItemName: 'Bien bao chu A',
-      note: 'Can bo sung',
+      note: '',
     });
+  });
+
+  it('does not auto-fill the PO line note from the source request', () => {
+    const item = buildPurchaseOrderItemFromRequestCartRow({
+      row: cartRow('mr-b', 'line-b'),
+      inventory,
+      budget,
+      supplierPatch: { vendorId: 'vendor-po', vendorName: 'NCC PO' },
+      lineId: 'po-line-b',
+    });
+
+    expect(item.note).toBe('');
+    expect(item.note).not.toContain('Từ đề xuất');
+    expect(item.note).not.toContain('Can bo sung');
   });
 
   it('appends new request rows without mutating existing PO items', () => {

@@ -12,6 +12,7 @@ import {
   shouldAutoCreateBatchOnApproval,
   shouldCreateBatchDuringDraftSave,
   shouldAutoCreatePoDeliveryScheduleForForm,
+  shouldEditInlineRequestUnitPrice,
   syncPoItemPricesFromDeliverySchedule,
   syncPoItemsFromDeliverySchedule,
 } from '../purchaseOrderDeliveryDraft';
@@ -140,15 +141,35 @@ describe('purchaseOrderDeliveryDraft', () => {
     })).toBe(false);
   });
 
-  it('uses the default package flow for request PO drafts', () => {
+  it('uses the default package flow for request PO drafts with an editable delivery schedule', () => {
     expect(getDefaultPurchaseMode('from_request')).toBe('single');
-    expect(shouldCreateBatchDuringDraftSave('single')).toBe(false);
-    expect(shouldCreateBatchDuringDraftSave('multiple')).toBe(false);
+    expect(shouldCreateBatchDuringDraftSave('single')).toBe(true);
+    expect(shouldCreateBatchDuringDraftSave('multiple')).toBe(true);
     expect(shouldAutoCreateBatchOnApproval('single')).toBe(true);
     expect(shouldAutoCreateBatchOnApproval('multiple')).toBe(false);
     expect(shouldAutoCreatePoDeliveryScheduleForForm({
       isEditing: false,
       sourceMode: 'from_request',
+    })).toBe(true);
+  });
+
+  it('shows an inline approved price editor for request packages before total package approval', () => {
+    expect(shouldEditInlineRequestUnitPrice({
+      sourceMode: 'from_request',
+      purchaseMode: 'single',
+      isPurchasePackageV2Form: true,
+    })).toBe(true);
+
+    expect(shouldEditInlineRequestUnitPrice({
+      sourceMode: 'from_request',
+      purchaseMode: 'multiple',
+      isPurchasePackageV2Form: true,
+    })).toBe(true);
+
+    expect(shouldEditInlineRequestUnitPrice({
+      sourceMode: 'from_request',
+      purchaseMode: 'single',
+      isPurchasePackageV2Form: false,
     })).toBe(false);
   });
 

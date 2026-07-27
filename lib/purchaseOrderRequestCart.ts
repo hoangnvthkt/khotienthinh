@@ -122,7 +122,7 @@ export const buildPurchaseOrderItemFromRequestCartRow = ({
     purchaseConversionFactor: toNumber(unitPatch.purchaseConversionFactor || inventory?.purchaseConversionFactor || 1) || 1,
     specification: row.line.specification,
     manualReason: '',
-    note: row.line.note || `Từ đề xuất ${row.request.code}`,
+    note: '',
   };
 };
 

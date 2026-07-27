@@ -278,4 +278,50 @@ describe('poService Phase 3.3 workflow transitions', () => {
       .rejects.toThrow('command/WMS/QR');
     expect(supabaseMock.from).toHaveBeenCalledTimes(1);
   });
+
+  it('defaults fulfillment mode when replacing draft delivery schedule from the PO form', async () => {
+    const existingEq = vi.fn().mockResolvedValue({ data: [], error: null });
+    const existingSelect = vi.fn().mockReturnValue({ eq: existingEq });
+    const deleteEq = vi.fn().mockResolvedValue({ error: null });
+    const deleteFn = vi.fn().mockReturnValue({ eq: deleteEq });
+    const batchInsert = vi.fn().mockResolvedValue({ error: null });
+    const lineInsert = vi.fn().mockResolvedValue({ error: null });
+
+    supabaseMock.from
+      .mockReturnValueOnce({ select: existingSelect })
+      .mockReturnValueOnce({ delete: deleteFn })
+      .mockReturnValueOnce({ insert: batchInsert })
+      .mockReturnValueOnce({ insert: lineInsert });
+
+    const { poDeliveryScheduleService } = await import('../projectService');
+
+    await poDeliveryScheduleService.replaceForPurchaseOrder({
+      id: 'po-1',
+      projectId: 'project-1',
+      constructionSiteId: 'site-1',
+      fulfillmentMode: 'RECEIVE_TO_STOCK',
+    } as any, [{
+      id: 'batch-1',
+      purchaseOrderId: '',
+      deliveryNo: 1,
+      plannedDeliveryDate: '2026-07-27',
+      status: 'planned',
+      lines: [{
+        id: 'line-1',
+        deliveryBatchId: 'batch-1',
+        purchaseOrderId: '',
+        purchaseOrderLineId: 'po-line-1',
+        itemId: 'item-1',
+        plannedQty: 5000,
+        deliveryUnitPrice: 15212,
+        stockPlannedQty: 160,
+      }],
+    } as any]);
+
+    expect(batchInsert).toHaveBeenCalledWith([
+      expect.objectContaining({
+        fulfillment_mode: 'RECEIVE_TO_STOCK',
+      }),
+    ]);
+  });
 });

@@ -33,20 +33,30 @@ const toNumber = (value: unknown) => {
 
 export const shouldAutoCreatePoDeliveryScheduleForForm = ({
   isEditing,
-  sourceMode,
 }: {
   isEditing: boolean;
   sourceMode?: PurchaseOrderSourceMode | null;
-}) => sourceMode === 'from_request' ? false : !isEditing;
+}) => !isEditing;
 
 export const getDefaultPurchaseMode = (
   sourceMode?: PurchaseOrderSourceMode | null,
 ): PurchaseMode => sourceMode === 'from_request' ? 'single' : 'multiple';
 
-export const shouldCreateBatchDuringDraftSave = (_purchaseMode?: PurchaseMode | null) => false;
+export const shouldCreateBatchDuringDraftSave = (purchaseMode?: PurchaseMode | null) =>
+  purchaseMode === 'single' || purchaseMode === 'multiple';
 
 export const shouldAutoCreateBatchOnApproval = (purchaseMode?: PurchaseMode | null) =>
   purchaseMode === 'single';
+
+export const shouldEditInlineRequestUnitPrice = ({
+  sourceMode,
+  isPurchasePackageV2Form,
+}: {
+  sourceMode?: PurchaseOrderSourceMode | null;
+  purchaseMode?: PurchaseMode | null;
+  isPurchasePackageV2Form: boolean;
+}) => sourceMode === 'from_request'
+  && isPurchasePackageV2Form;
 
 export const getPoDeliveryDraftInitialLineValues = ({
   remainingQty,
