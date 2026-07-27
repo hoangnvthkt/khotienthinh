@@ -231,7 +231,7 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+    <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
       <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-4xl max-h-[92vh] overflow-hidden flex flex-col">
         <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
           <div>

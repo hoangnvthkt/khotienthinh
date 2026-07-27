@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatLocaleDecimalInput, parseNonNegativeLocaleNumber } from '../localeNumberInput';
+import { formatLocaleDecimalInput, formatViLiveInput, parseNonNegativeLocaleNumber } from '../localeNumberInput';
 
 describe('locale number input', () => {
   it('parses a Vietnamese decimal separator before saving', () => {
@@ -19,4 +19,13 @@ describe('locale number input', () => {
   it('formats persisted numbers with the Vietnamese decimal separator for editing', () => {
     expect(formatLocaleDecimalInput(420.04)).toBe('420,04');
   });
+
+  it('formats live inputs with dot for thousands and comma for decimal', () => {
+    expect(formatViLiveInput('35680')).toBe('35.680');
+    expect(formatViLiveInput('35680,')).toBe('35.680,');
+    expect(formatViLiveInput('35680,5')).toBe('35.680,5');
+    expect(formatViLiveInput('32112000')).toBe('32.112.000');
+    expect(formatViLiveInput(35680)).toBe('35.680');
+  });
 });
+

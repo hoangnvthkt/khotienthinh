@@ -77,7 +77,7 @@ const GateStateMachineModal: React.FC<GateStateMachineModalProps> = ({ task, onC
 
     return (
         <div
-            className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+            className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/60 backdrop-blur-sm"
             onClick={e => e.target === e.currentTarget && onClose()}
         >
             <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-md mx-4 animate-in zoom-in-95 duration-200 overflow-hidden">

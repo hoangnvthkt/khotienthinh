@@ -211,7 +211,7 @@ const ProjectWorkflowActionDialog: React.FC<Props> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-slate-950/45 p-4 sm:p-6">
+    <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-slate-950/45 p-4 sm:p-6">
       <div className="w-full max-w-xl flex flex-col max-h-[85vh] sm:max-h-[90vh] overflow-hidden rounded-2xl bg-white shadow-2xl">
         <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-4 shrink-0">
           <div>

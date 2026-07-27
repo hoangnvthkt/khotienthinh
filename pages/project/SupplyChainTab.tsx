@@ -161,7 +161,7 @@ import {
 } from '../../lib/purchaseOrderRequestCart';
 import { getPurchaseOrderUiPolicy, type PurchaseOrderUiAction } from '../../lib/purchaseOrderUiPolicy';
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
-import { formatLocaleDecimalInput, parseNonNegativeLocaleNumber } from '../../lib/localeNumberInput';
+import { formatLocaleDecimalInput, formatViLiveInput, parseNonNegativeLocaleNumber } from '../../lib/localeNumberInput';
 
 interface SupplyChainTabProps {
     constructionSiteId?: string;
@@ -4446,6 +4446,12 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         pageBreak = false,
         deliveryBatches: PoApprovalDeliveryBatch[] = poDeliveryBatchesByPo[po.id] || [],
         qrSvg = '',
+        options: {
+            title?: string;
+            intro?: string;
+            totalAmountOverride?: number | null;
+            vatRateOverride?: number | null;
+        } = {},
     ) => {
         const poHasConversion = po.items.some(item => {
             const conversionSource = {
@@ -4458,14 +4464,17 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
 
         const itemByLineId = new Map(po.items.map(item => [item.lineId || item.itemId, item]));
         const hasDeliveryBatchLines = deliveryBatches.some(batch => batch.lines.length > 0);
-        const totalAmount = Math.round(hasDeliveryBatchLines
+        const calculatedTotalAmount = hasDeliveryBatchLines
             ? deliveryBatches.reduce((sum, batch) => sum + batch.lines.reduce((batchSum, line) => {
                 const item = itemByLineId.get(line.purchaseOrderLineId);
                 const unitPrice = Number(line.unitPrice ?? item?.unitPrice ?? 0);
                 return batchSum + Number(line.plannedQty || 0) * unitPrice;
             }, 0), 0)
-            : po.items.reduce((sum, item) => sum + calculateLineTotal(item), 0));
-        const vatRate = normalizeVatRate(po.vatRate);
+            : po.items.reduce((sum, item) => sum + calculateLineTotal(item), 0);
+        const totalAmount = Math.round(options.totalAmountOverride == null
+            ? calculatedTotalAmount
+            : Number(options.totalAmountOverride || 0));
+        const vatRate = normalizeVatRate(options.vatRateOverride ?? po.vatRate);
         const vatAmount = calculateVatAmount(totalAmount, vatRate);
         const paymentTotal = totalAmount + vatAmount;
         const approvalQrHtml = qrSvg
@@ -4540,7 +4549,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 <table class="approval-header-table">
                     <tbody>
                         <tr>
-                            <td colspan="12" class="approval-title">ĐỀ NGHỊ DUYỆT ĐƠN HÀNG</td>
+                            <td colspan="12" class="approval-title">${escapeHtml(options.title || 'ĐỀ NGHỊ DUYỆT ĐƠN HÀNG')}</td>
                         </tr>
                         <tr>
                             <td colspan="12" class="approval-date"><em>${escapeHtml(formatPoPrintDate(po.orderDate))}</em></td>
@@ -4562,7 +4571,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                             <td colspan="10" class="approval-value-cell"><strong>${escapeHtml(po.poNumber)}</strong></td>
                         </tr>
                         <tr>
-                            <td colspan="12" class="approval-intro"><em>Đề nghị BGD duyệt đơn hàng:</em></td>
+                            <td colspan="12" class="approval-intro"><em>${escapeHtml(options.intro || 'Đề nghị BGD duyệt đơn hàng:')}</em></td>
                         </tr>
                         <tr>
                             <td colspan="12" class="approval-subject">${escapeHtml(buildPoApprovalSubject(po))}</td>
@@ -5223,6 +5232,12 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                         false,
                         buildPrintablePoApprovalDeliveryBatch(printablePo, group),
                         qrSvg,
+                        {
+                            title: 'ĐỀ NGHỊ DUYỆT ĐỢT GIAO',
+                            intro: 'Đề nghị BGD duyệt đợt giao:',
+                            totalAmountOverride: getDeliveryPrintGroupSummary(group).totalAmount,
+                            vatRateOverride: 0,
+                        },
                     ),
                 );
             } else {
@@ -8281,128 +8296,141 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                             <button onClick={savingPo ? undefined : resetPoForm} disabled={savingPo} className="w-8 h-8 rounded-xl bg-white/20 hover:bg-white/30 text-white flex items-center justify-center disabled:opacity-50"><X size={18} /></button>
                         </div>
                         <div className="min-h-0 flex-1 overflow-y-auto p-6 space-y-4">
-                            <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Số PO · Tự sinh</label>
-                                    <input value={pNum} readOnly aria-readonly="true" placeholder="Đang cấp số..."
-                                        className="w-full cursor-not-allowed rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 font-mono text-sm font-bold text-slate-600 outline-none" />
-                                </div>
-                                <div>
-                                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">NCC mặc định</label>
-                                    <SupplierCombobox
-                                        value={pVendorId}
-                                        suppliers={partners}
-                                        onChange={supplier => {
-                                            setPVendorId(supplier?.id || '');
-                                            if (supplier) {
-                                                setPItems(prev => prev.map(item => item.vendorId ? item : {
-                                                    ...item,
-                                                    vendorId: supplier.id,
-                                                    vendorName: supplier.name,
-                                                }));
-                                            }
-                                        }}
-                                        inputClassName="rounded-xl py-2.5 text-sm"
-                                    />
-                                    <p className="mt-1 text-[10px] font-bold text-slate-400">Dùng để tự điền NCC cho các dòng chưa chọn. Mỗi dòng vẫn có thể chọn NCC riêng.</p>
-                                </div>
-                            </div>
-                            <div>
-                                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Nguồn mua hàng</label>
-                                <select
-                                    value={pSourceMode}
-                                    disabled={poHasRequestLines}
-                                    onChange={e => {
-                                        const nextSourceMode = e.target.value as PurchaseOrderSourceMode;
-                                        setPSourceMode(nextSourceMode);
-                                        setPPurchaseMode(getDefaultPurchaseMode(nextSourceMode));
-                                        if (nextSourceMode === 'from_request' && isPurchasePackageV2EnabledForSite(constructionSiteId ?? null)) {
-                                            setPDeliveryScheduleMode('first_batch');
-                                            setPDeliveryBatches(buildDefaultPoDeliveryBatches(pItems, pExpDate));
-                                        }
-                                        if (!editingPo && pNumAutoGenerated) {
-                                            void loadNextPoNumber(nextSourceMode).then(setPNum);
-                                        }
-                                    }}
-                                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-slate-50 disabled:text-slate-400"
-                                >
-                                    <option value="proactive_project">Mua chủ động cho dự án</option>
-                                    <option value="proactive_stock">Mua dự trữ kho tổng</option>
-                                    <option value="from_request">Từ đề xuất công trường</option>
-                                </select>
-                                {poHasRequestLines && <p className="mt-1 text-[10px] font-bold text-amber-600">PO đang có dòng từ đề xuất nên giữ nguồn “Từ đề xuất công trường”.</p>}
-                            </div>
-                            {isPurchasePackageV2Form && (
-                                <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2.5">
-                                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                            {/* Card 1 & 2: Header Grid 2 Cột */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {/* Card 1: Thông tin chung & Kho nhận */}
+                                <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3 shadow-sm">
+                                    <div className="text-xs font-black uppercase text-blue-600 tracking-wider flex items-center gap-1.5 border-b border-slate-100 pb-2">
+                                        <FileText size={14} /> Thông tin đơn hàng
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2.5">
                                         <div>
-                                            <div className="text-[10px] font-black uppercase tracking-wider text-emerald-700">Gói mua hàng</div>
-                                            <div className="mt-0.5 text-xs font-bold text-emerald-800">
-                                                {purchasePackagePreviewPo.fulfillmentMode === MaterialRequestFulfillmentMode.DIRECT_CONSUMPTION
-                                                    ? 'Giao thẳng sử dụng'
-                                                    : 'Nhập kho công trường'}
-                                            </div>
+                                            <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Số PO · Tự sinh</label>
+                                            <input value={pNum} readOnly aria-readonly="true" placeholder="Đang cấp số..."
+                                                className="w-full cursor-not-allowed rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-xs font-bold text-slate-600 outline-none" />
                                         </div>
-                                        <PurchaseModeControl
-                                            value={pPurchaseMode}
-                                            disabled={savingPo}
-                                            onChange={setPurchaseModeWithDeliveryDraft}
-                                        />
+                                        <div>
+                                            <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Kho nhận *</label>
+                                            <select value={pTargetWarehouseId} onChange={e => setPTargetWarehouseId(e.target.value)}
+                                                className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none">
+                                                <option value="">— Chọn kho —</option>
+                                                {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-3 gap-2.5">
+                                        <div>
+                                            <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Ngày đặt</label>
+                                            <input type="date" value={pDate} onChange={e => setPDate(e.target.value)}
+                                                className="w-full px-2.5 py-2 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-blue-500 outline-none" />
+                                        </div>
+                                        <div>
+                                            <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Ngày giao dự kiến</label>
+                                            <input type="date" value={pExpDate} onChange={e => setPExpDate(e.target.value)}
+                                                className="w-full px-2.5 py-2 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-blue-500 outline-none" />
+                                        </div>
+                                        <div>
+                                            <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">VAT (%)</label>
+                                            <input
+                                                type="text"
+                                                inputMode="decimal"
+                                                value={pVatRate}
+                                                onChange={e => setPVatRate(formatViLiveInput(e.target.value))}
+                                                className="w-full px-2.5 py-2 rounded-xl border border-slate-200 text-xs font-bold text-emerald-700 focus:ring-2 focus:ring-blue-500 outline-none"
+                                            />
+                                        </div>
                                     </div>
                                 </div>
-                            )}
+
+                                {/* Card 2: Đối tác & Nguồn hàng */}
+                                <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3 shadow-sm">
+                                    <div className="text-xs font-black uppercase text-indigo-600 tracking-wider flex items-center gap-1.5 border-b border-slate-100 pb-2">
+                                        <Users size={14} /> Đối tác & Nguồn mua
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">NCC mặc định</label>
+                                        <SupplierCombobox
+                                            value={pVendorId}
+                                            suppliers={partners}
+                                            onChange={supplier => {
+                                                setPVendorId(supplier?.id || '');
+                                                if (supplier) {
+                                                    setPItems(prev => prev.map(item => item.vendorId ? item : {
+                                                        ...item,
+                                                        vendorId: supplier.id,
+                                                        vendorName: supplier.name,
+                                                    }));
+                                                }
+                                            }}
+                                            inputClassName="rounded-xl py-2 text-xs"
+                                        />
+                                        <p className="mt-1 text-[9px] font-medium text-slate-400">Tự điền NCC cho dòng chưa chọn.</p>
+                                    </div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                        <div>
+                                            <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Nguồn mua hàng</label>
+                                            <select
+                                                value={pSourceMode}
+                                                disabled={poHasRequestLines}
+                                                onChange={e => {
+                                                    const nextSourceMode = e.target.value as PurchaseOrderSourceMode;
+                                                    setPSourceMode(nextSourceMode);
+                                                    setPPurchaseMode(getDefaultPurchaseMode(nextSourceMode));
+                                                    if (nextSourceMode === 'from_request' && isPurchasePackageV2EnabledForSite(constructionSiteId ?? null)) {
+                                                        setPDeliveryScheduleMode('first_batch');
+                                                        setPDeliveryBatches(buildDefaultPoDeliveryBatches(pItems, pExpDate));
+                                                    }
+                                                    if (!editingPo && pNumAutoGenerated) {
+                                                        void loadNextPoNumber(nextSourceMode).then(setPNum);
+                                                    }
+                                                }}
+                                                className="w-full px-2.5 py-2 rounded-xl border border-slate-200 text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-slate-50 disabled:text-slate-400"
+                                            >
+                                                <option value="proactive_project">Mua chủ động dự án</option>
+                                                <option value="proactive_stock">Mua dự trữ kho tổng</option>
+                                                <option value="from_request">Từ đề xuất công trường</option>
+                                            </select>
+                                            {poHasRequestLines && <p className="mt-0.5 text-[9px] font-bold text-amber-600">PO từ đề xuất công trường.</p>}
+                                        </div>
+                                        {isPurchasePackageV2Form && (
+                                            <div>
+                                                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Gói mua hàng</label>
+                                                <PurchaseModeControl
+                                                    value={pPurchaseMode}
+                                                    disabled={savingPo}
+                                                    onChange={setPurchaseModeWithDeliveryDraft}
+                                                />
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Dòng Nội dung đề nghị duyệt */}
                             <div>
                                 <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Nội dung đề nghị duyệt</label>
-                                <textarea
+                                <input
+                                    type="text"
                                     value={pApprovalRequestTitle}
                                     onChange={e => setPApprovalRequestTitle(e.target.value)}
-                                    rows={2}
-                                    placeholder="Ví dụ: Bạt mực và 1 vật tư khác Công trường Sơn miền Bắc --> Cửa hàng Thủy Cách"
-                                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-blue-500 outline-none resize-none"
+                                    placeholder="Ví dụ: Dầu DO cho máy xúc và xe cẩu công trường..."
+                                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 focus:ring-2 focus:ring-blue-500 outline-none"
                                 />
                             </div>
-                            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                                <div>
-                                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Ngày đặt</label>
-                                    <input type="date" value={pDate} onChange={e => setPDate(e.target.value)}
-                                        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
-                                </div>
-                                <div>
-                                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Ngày giao dự kiến</label>
-                                    <input type="date" value={pExpDate} onChange={e => setPExpDate(e.target.value)}
-                                        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
-                                </div>
-                                <div>
-                                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">VAT (%)</label>
-                                    <input
-                                        type="text"
-                                        inputMode="decimal"
-                                        value={pVatRate}
-                                        onChange={e => setPVatRate(e.target.value)}
-                                        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-emerald-700 focus:ring-2 focus:ring-blue-500 outline-none"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Kho nhận *</label>
-                                    <select value={pTargetWarehouseId} onChange={e => setPTargetWarehouseId(e.target.value)}
-                                        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none">
-                                        <option value="">— Chọn kho —</option>
-                                        {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
-                                    </select>
-                                </div>
-                            </div>
-                            <div>
-                                <label className="text-[10px] font-bold text-slate-500 uppercase mb-1 flex items-center justify-between">
-                                    <span>Danh sách vật tư</span>
-                                    <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 text-[10px]">
-                                        <button onClick={handleDownloadPoTemplate}
-                                            className="text-emerald-600 hover:text-emerald-700 flex items-center gap-0.5"><FileSpreadsheet size={10} /> Mẫu</button>
-                                        <label onClick={() => openPoImport('create')} className={`text-blue-500 hover:text-blue-700 flex items-center gap-0.5 cursor-pointer ${importingPo ? 'opacity-60 pointer-events-none' : ''}`}>
-                                            {importingPo && poImportMode === 'create' ? <Loader2 size={10} className="animate-spin" /> : <Upload size={10} />} Nhập mới
-                                            <input type="file" accept=".xlsx,.xls" className="hidden" onChange={handleImportPoExcel} disabled={importingPo} />
-                                        </label>
-                                        <label onClick={() => openPoImport('update')} className={`text-violet-500 hover:text-violet-700 flex items-center gap-0.5 cursor-pointer ${importingPo ? 'opacity-60 pointer-events-none' : ''}`}>
-                                            {importingPo && poImportMode === 'update' ? <Loader2 size={10} className="animate-spin" /> : <RefreshCcw size={10} />} Cập nhật
+
+                            {/* Bảng Danh sách Vật tư */}
+                            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-3">
+                                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2">
+                                    <span className="text-xs font-black uppercase text-slate-700 tracking-wider flex items-center gap-1.5">
+                                        <ShoppingCart size={14} className="text-blue-600" /> Danh sách vật tư ({pItems.length})
+                                    </span>
+                                    <div className="flex flex-wrap items-center gap-2 text-xs">
+                                        <button onClick={handleDownloadPoTemplate} type="button"
+                                            className="px-2.5 py-1 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 text-[11px] font-bold flex items-center gap-1">
+                                            <FileSpreadsheet size={12} /> Mẫu Excel
+                                        </button>
+                                        <label onClick={() => openPoImport('create')} className={`px-2.5 py-1 rounded-lg border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 text-[11px] font-bold flex items-center gap-1 cursor-pointer ${importingPo ? 'opacity-60 pointer-events-none' : ''}`}>
+                                            {importingPo && poImportMode === 'create' ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />} Nhập Excel
                                             <input type="file" accept=".xlsx,.xls" className="hidden" onChange={handleImportPoExcel} disabled={importingPo} />
                                         </label>
                                         {editingPo && pSourceMode === 'from_request' && (
@@ -8410,16 +8438,19 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                 type="button"
                                                 onClick={openAppendRequestPicker}
                                                 disabled={appendableRequestLines.length === 0}
-                                                className="text-amber-600 hover:text-amber-700 disabled:text-slate-300 disabled:cursor-not-allowed flex items-center gap-0.5"
+                                                className="px-2.5 py-1 rounded-lg border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 text-[11px] font-bold disabled:opacity-50 flex items-center gap-1"
                                             >
-                                                <Package size={10} /> Thêm đề xuất
+                                                <Package size={12} /> + Đề xuất
                                             </button>
                                         )}
                                         <button type="button" onClick={() => setPItems([...pItems, createEmptyPoItem()])}
-                                            className="text-blue-500 hover:text-blue-700 flex items-center gap-0.5"><Plus size={10} /> Thêm dòng</button>
+                                            className="px-3 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold flex items-center gap-1 shadow-sm">
+                                            <Plus size={12} /> Thêm dòng
+                                        </button>
                                     </div>
-                                </label>
-                                <div className="space-y-2 mt-2">
+                                </div>
+
+                                <div className="space-y-3">
                                     {pItems.map((item, i) => {
                                         const normalizedLine = normalizePoItem(item, inventoryItems);
                                         const previewLine = pSourceMode === 'proactive_stock' ? normalizedLine : buildPoBudgetSnapshot(normalizedLine);
@@ -8465,148 +8496,141 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                             || (item.specs && Object.keys(item.specs).length > 0);
                                         const lineDetailsExpanded = expandedLineDetailsIdx.has(i);
                                         const noteEnabled = Boolean(item.noteEnabled);
+
                                         return (
-                                            <div key={i} className="grid grid-cols-12 gap-2 items-start rounded-xl border border-slate-100 bg-slate-50/60 p-3">
+                                            <div key={i} className="rounded-xl border border-slate-200 bg-slate-50/40 p-3 hover:border-blue-200 transition-colors">
                                                 {pSourceMode !== 'proactive_stock' && (
-                                                    <select
-                                                        value={item.materialBudgetItemId || ''}
-                                                        onChange={e => selectPoBudgetItem(i, e.target.value)}
-                                                        disabled={!!item.requestId}
-                                                        className="col-span-12 px-2.5 py-2 rounded-lg border border-border bg-muted/30 text-foreground text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-muted disabled:text-muted-foreground"
-                                                    >
-                                                        <option value="">Gắn BOQ triển khai / định mức vật tư (tuỳ chọn)</option>
-                                                        {materialBudgetItems.map(budget => {
-                                                            const work = budget.workBoqItemId ? workBoqMap.get(budget.workBoqItemId) : undefined;
-                                                            return (
-                                                                <option key={budget.id} value={budget.id}>
-                                                                    {work?.wbsCode ? `${work.wbsCode} - ` : ''}{budget.itemName} ({Number(budget.budgetQty || 0).toLocaleString('vi-VN')} {budget.unit})
-                                                                </option>
-                                                            );
-                                                        })}
-                                                    </select>
-                                                )}
-                                                <InventoryItemCombobox
-                                                    value={item.isManualItem ? '' : item.itemId}
-                                                    items={inventoryItems}
-                                                    onChange={selected => selectPoInventoryItem(i, selected?.id || '')}
-                                                    className="col-span-12 md:col-span-4"
-                                                />
-                                                <SupplierCombobox
-                                                    value={item.vendorId || ''}
-                                                    suppliers={partners}
-                                                    onChange={supplier => updatePoItem(i, {
-                                                        vendorId: supplier?.id || null,
-                                                        vendorName: supplier?.name || null,
-                                                    })}
-                                                    placeholder="NCC dòng vật tư..."
-                                                    className="col-span-12 md:col-span-3"
-                                                />
-                                                <div className="col-span-4 md:col-span-1 px-2.5 py-2 rounded-lg border border-border bg-muted/30 text-xs text-muted-foreground font-bold truncate">
-                                                    {purchaseUnit || item.unit || 'ĐVT'}
-                                                </div>
-                                                {pSourceMode === 'from_request' ? (
-                                                    <div className="col-span-4 md:col-span-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5">
-                                                        <span className="block text-[9px] font-black uppercase text-slate-400">
-                                                            {isPurchasePackageV2Form ? 'SL gốc' : 'Đã lập lịch'}
-                                                        </span>
-                                                        <span className="block truncate text-xs font-black text-slate-800">{fmtQty(scheduleQtyPreview)}</span>
+                                                    <div className="mb-2">
+                                                        <select
+                                                            value={item.materialBudgetItemId || ''}
+                                                            onChange={e => selectPoBudgetItem(i, e.target.value)}
+                                                            disabled={!!item.requestId}
+                                                            className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-slate-100 disabled:text-slate-400"
+                                                        >
+                                                            <option value="">Gắn BOQ triển khai / định mức vật tư (tuỳ chọn)</option>
+                                                            {materialBudgetItems.map(budget => {
+                                                                const work = budget.workBoqItemId ? workBoqMap.get(budget.workBoqItemId) : undefined;
+                                                                return (
+                                                                    <option key={budget.id} value={budget.id}>
+                                                                        {work?.wbsCode ? `${work.wbsCode} - ` : ''}{budget.itemName} ({Number(budget.budgetQty || 0).toLocaleString('vi-VN')} {budget.unit})
+                                                                    </option>
+                                                                );
+                                                            })}
+                                                        </select>
                                                     </div>
-                                                ) : (
-                                                    <input
-                                                        type="text"
-                                                        inputMode="decimal"
-                                                        value={item.qtyInput ?? formatNumberInputValue(item.qty, 6)}
-                                                        onChange={e => updatePoItem(i, { qtyInput: e.target.value })}
-                                                        placeholder="SL"
-                                                        className="col-span-4 md:col-span-1 px-2.5 py-2 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-blue-500 outline-none"
-                                                    />
                                                 )}
-                                                {pSourceMode === 'from_request' && !editInlineRequestUnitPrice ? (
-                                                    <div className="col-span-4 md:col-span-2 rounded-lg border border-emerald-100 bg-emerald-50 px-2.5 py-1.5">
-                                                        <span className="block text-[9px] font-black uppercase text-emerald-500">
-                                                            {isPurchasePackageV2Form ? 'Giá duyệt' : 'Giá theo đợt'}
-                                                        </span>
-                                                        <span className="block truncate text-xs font-black text-emerald-700">{fmtMoney(scheduleUnitPricePreview)} đ</span>
+
+                                                <div className="grid grid-cols-12 gap-2 items-center">
+                                                    <div className="col-span-12 md:col-span-3">
+                                                        <InventoryItemCombobox
+                                                            value={item.isManualItem ? '' : item.itemId}
+                                                            items={inventoryItems}
+                                                            onChange={selected => selectPoInventoryItem(i, selected?.id || '')}
+                                                            className="w-full"
+                                                        />
                                                     </div>
-                                                ) : editInlineRequestUnitPrice ? (
-                                                    <label className="col-span-4 md:col-span-3 rounded-lg border border-emerald-200 bg-white px-2.5 py-1.5 focus-within:ring-2 focus-within:ring-emerald-500">
-                                                        <span className="block whitespace-nowrap text-[9px] font-black uppercase text-emerald-600">Giá duyệt</span>
-                                                        <span className="flex min-w-0 items-center gap-1">
+                                                    <div className="col-span-12 md:col-span-3">
+                                                        <SupplierCombobox
+                                                            value={item.vendorId || ''}
+                                                            suppliers={partners}
+                                                            onChange={supplier => updatePoItem(i, {
+                                                                vendorId: supplier?.id || null,
+                                                                vendorName: supplier?.name || null,
+                                                            })}
+                                                            placeholder="NCC dòng vật tư..."
+                                                            className="w-full"
+                                                        />
+                                                    </div>
+                                                    <div className="col-span-3 md:col-span-1 px-2 py-2 rounded-lg border border-slate-200 bg-white text-xs text-slate-600 font-bold text-center truncate">
+                                                        {purchaseUnit || item.unit || 'ĐVT'}
+                                                    </div>
+                                                    <div className="col-span-4 md:col-span-1">
+                                                        {pSourceMode === 'from_request' ? (
+                                                            <div className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-center">
+                                                                <span className="block text-[8px] font-black uppercase text-slate-400">SL gốc</span>
+                                                                <span className="block truncate text-xs font-black text-slate-800">{fmtQty(scheduleQtyPreview)}</span>
+                                                            </div>
+                                                        ) : (
+                                                            <input
+                                                                type="text"
+                                                                inputMode="decimal"
+                                                                value={item.qtyInput ?? formatNumberInputValue(item.qty, 6)}
+                                                                onChange={e => updatePoItem(i, { qtyInput: formatViLiveInput(e.target.value) })}
+                                                                placeholder="SL"
+                                                                className="w-full px-2.5 py-2 rounded-lg border border-slate-200 text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none text-right"
+                                                            />
+                                                        )}
+                                                    </div>
+                                                    <div className="col-span-5 md:col-span-2">
+                                                        {pSourceMode === 'from_request' && !editInlineRequestUnitPrice ? (
+                                                            <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-2 py-1.5 text-right">
+                                                                <span className="block text-[8px] font-black uppercase text-emerald-500">Giá duyệt</span>
+                                                                <span className="block truncate text-xs font-black text-emerald-700">{fmtMoney(scheduleUnitPricePreview)} đ</span>
+                                                            </div>
+                                                        ) : (
                                                             <input
                                                                 type="text"
                                                                 inputMode="decimal"
                                                                 value={item.unitPriceInput ?? formatNumberInputValue(item.unitPrice, 0)}
-                                                                onChange={e => updatePoItem(i, { unitPriceInput: e.target.value })}
-                                                                placeholder="Nhập đơn giá"
-                                                                className="min-w-0 flex-1 bg-transparent text-right text-xs font-black text-emerald-800 outline-none placeholder:text-[10px]"
+                                                                onChange={e => updatePoItem(i, { unitPriceInput: formatViLiveInput(e.target.value) })}
+                                                                placeholder="Đơn giá"
+                                                                className="w-full px-2.5 py-2 rounded-lg border border-slate-200 text-xs font-black text-emerald-700 focus:ring-2 focus:ring-blue-500 outline-none text-right"
                                                             />
-                                                            <span className="shrink-0 text-[10px] font-black text-emerald-600">đ</span>
-                                                        </span>
+                                                        )}
+                                                    </div>
+                                                    <div className="col-span-12 md:col-span-2 flex items-center justify-end gap-1.5">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => toggleSpecsPanel(i)}
+                                                            className={`shrink-0 whitespace-nowrap px-2.5 py-1.5 rounded-lg text-[11px] font-bold border transition-colors flex items-center gap-1 ${(item.pricingMode && item.pricingMode !== 'standard') || (item.specs && Object.keys(item.specs).length > 0)
+                                                                ? 'bg-violet-50 text-violet-700 border-violet-200'
+                                                                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                                                                }`}
+                                                            title="Quy cách / Phương thức tính giá"
+                                                        >
+                                                            QC {expandedSpecsIdx.has(i) ? '▲' : '▼'}
+                                                        </button>
+                                                        {hasLineDetails && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => toggleLineDetailsPanel(i)}
+                                                                aria-expanded={lineDetailsExpanded}
+                                                                className="shrink-0 whitespace-nowrap px-2 py-1.5 rounded-lg border border-amber-200 bg-amber-50 text-[11px] font-black text-amber-700 hover:bg-amber-100 flex items-center gap-0.5"
+                                                                title="Chi tiết đối soát"
+                                                            >
+                                                                <ChevronDown size={13} className={`transition-transform ${lineDetailsExpanded ? 'rotate-180' : ''}`} />
+                                                            </button>
+                                                        )}
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setPItems(pItems.length > 1 ? pItems.filter((_, j) => j !== i) : [createEmptyPoItem()])}
+                                                            className="shrink-0 p-1.5 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors"
+                                                            title="Xóa dòng"
+                                                        >
+                                                            <X size={16} />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
+                                                    <label className="inline-flex shrink-0 items-center gap-1.5 text-[11px] font-black text-slate-600">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={noteEnabled}
+                                                            onChange={e => updatePoItem(i, { noteEnabled: e.target.checked })}
+                                                            className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                                        />
+                                                        Thêm ghi chú
                                                     </label>
-                                                ) : (
-                                                    <input
-                                                        type="text"
-                                                        inputMode="decimal"
-                                                        value={item.unitPriceInput ?? formatNumberInputValue(item.unitPrice, 0)}
-                                                        onChange={e => updatePoItem(i, { unitPriceInput: e.target.value })}
-                                                        placeholder="Đơn giá"
-                                                        className="col-span-4 md:col-span-2 px-2.5 py-2 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-blue-500 outline-none"
-                                                    />
-                                                )}
-                                                <input
-                                                    type="date"
-                                                    value={item.neededDate || ''}
-                                                    onChange={e => updatePoItem(i, { neededDate: e.target.value })}
-                                                    className="col-span-6 md:col-span-2 px-2.5 py-2 rounded-lg border border-border text-xs focus:ring-2 focus:ring-blue-500 outline-none bg-muted/30 text-foreground"
-                                                />
-                                                <label className="col-span-6 md:col-span-2 flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 text-[11px] font-black text-slate-600">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={noteEnabled}
-                                                        onChange={e => updatePoItem(i, {
-                                                            noteEnabled: e.target.checked,
-                                                            note: e.target.checked ? item.note || '' : '',
-                                                        })}
-                                                        className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                                                    />
-                                                    <span className="truncate">Thêm ghi chú</span>
-                                                </label>
-                                                {noteEnabled && (
-                                                    <input
-                                                        value={item.note || ''}
-                                                        onChange={e => updatePoItem(i, { note: e.target.value, noteEnabled: true })}
-                                                        placeholder="Ghi chú dòng"
-                                                        className="col-span-12 md:col-span-3 px-2.5 py-2 rounded-lg border border-border text-xs focus:ring-2 focus:ring-blue-500 outline-none bg-muted/30 text-foreground"
-                                                    />
-                                                )}
-                                                {hasLineDetails && (
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => toggleLineDetailsPanel(i)}
-                                                        aria-expanded={lineDetailsExpanded}
-                                                        className={`col-span-6 ${noteEnabled ? 'md:col-span-2' : 'md:col-span-3'} h-9 rounded-lg border border-amber-200 bg-amber-50 px-2 text-[11px] font-black text-amber-700 hover:bg-amber-100 inline-flex items-center justify-center gap-1`}
-                                                    >
-                                                        Chi tiết đối soát
-                                                        <ChevronDown size={13} className={`transition-transform ${lineDetailsExpanded ? 'rotate-180' : ''}`} />
-                                                    </button>
-                                                )}
-                                                <button
-                                                    type="button"
-                                                    onClick={() => toggleSpecsPanel(i)}
-                                                    className={`col-span-3 md:col-span-2 h-9 rounded-lg text-xs font-bold border transition-colors flex items-center justify-center gap-1 ${(item.pricingMode && item.pricingMode !== 'standard') || (item.specs && Object.keys(item.specs).length > 0)
-                                                        ? 'bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100'
-                                                        : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
-                                                        }`}
-                                                >
-                                                    📐 QC {expandedSpecsIdx.has(i) ? '▲' : '▼'}
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setPItems(pItems.length > 1 ? pItems.filter((_, j) => j !== i) : [createEmptyPoItem()])}
-                                                    className="col-span-1 h-9 rounded-lg text-red-300 hover:text-red-500 hover:bg-red-50 flex items-center justify-center bg-transparent border-0 cursor-pointer"
-                                                >
-                                                    <X size={14} />
-                                                </button>
+                                                    {noteEnabled && (
+                                                        <input
+                                                            type="text"
+                                                            value={item.note || ''}
+                                                            onChange={e => updatePoItem(i, { note: e.target.value })}
+                                                            placeholder="Ghi chú dòng vật tư"
+                                                            className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500"
+                                                        />
+                                                    )}
+                                                </div>
                                                 {hasLineDetails && lineDetailsExpanded && (
                                                     <div className="col-span-12 flex flex-wrap gap-1">
                                                         {item.isManualItem && <span className="px-1.5 py-0.5 rounded border border-rose-100 bg-rose-50 text-[9px] font-bold text-rose-700">Cần cấp mã vật tư trước</span>}
@@ -8849,266 +8873,279 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                     )}
                                 </div>
                             )}
-                            <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-3 space-y-3">
-                                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                                    <div>
-                                        <div className="text-[10px] font-black uppercase tracking-wider text-slate-500">
-                                            {isPurchasePackageV2Form ? 'Lịch giao dự kiến' : 'Lịch giao hàng'}
+                            {(pPurchaseMode === 'multiple' || pDeliveryScheduleMode === 'multiple_batches') && (
+                                <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-3 space-y-3">
+                                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                        <div>
+                                            <div className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+                                                {isPurchasePackageV2Form ? 'Lịch giao dự kiến' : 'Lịch giao hàng'}
+                                            </div>
+                                            <div className="text-[10px] font-bold text-slate-400">
+                                                {isPurchasePackageV2Form
+                                                    ? 'Gói mua hàng giữ tổng duyệt; từng đợt bên dưới có số lượng và giá riêng để nhập kho thực tế.'
+                                                    : 'PO giữ tổng đã duyệt; từng đợt có số lượng và giá riêng.'}
+                                            </div>
                                         </div>
-                                        <div className="text-[10px] font-bold text-slate-400">
-                                            {isPurchasePackageV2Form
-                                                ? 'Gói mua hàng giữ tổng duyệt; từng đợt bên dưới có số lượng và giá riêng để nhập kho thực tế.'
-                                                : 'PO giữ tổng đã duyệt; từng đợt có số lượng và giá riêng.'}
-                                        </div>
-                                    </div>
-                                    <div className="flex flex-wrap gap-2">
-                                        {([
-                                            ['unknown', 'Chưa biết lịch'],
-                                            ['first_batch', 'Tạo đợt đầu tiên'],
-                                            ['multiple_batches', 'Chia nhiều đợt'],
-                                        ] as const).map(([mode, label]) => (
+                                        <div className="flex flex-wrap gap-2">
+                                            {([
+                                                ['unknown', 'Chưa biết lịch'],
+                                                ['first_batch', 'Tạo đợt đầu tiên'],
+                                                ['multiple_batches', 'Chia nhiều đợt'],
+                                            ] as const).map(([mode, label]) => (
+                                                <button
+                                                    key={mode}
+                                                    type="button"
+                                                    onClick={() => setPoDeliveryScheduleModeWithDraft(mode)}
+                                                    className={`px-3 py-1.5 rounded-lg border text-[10px] font-black ${pDeliveryScheduleMode === mode
+                                                        ? 'border-blue-500 bg-blue-600 text-white'
+                                                        : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-100'
+                                                        }`}
+                                                >
+                                                    {label}
+                                                </button>
+                                            ))}
                                             <button
-                                                key={mode}
                                                 type="button"
-                                                onClick={() => setPoDeliveryScheduleModeWithDraft(mode)}
-                                                className={`px-3 py-1.5 rounded-lg border text-[10px] font-black ${pDeliveryScheduleMode === mode
-                                                    ? 'border-blue-500 bg-blue-600 text-white'
-                                                    : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-100'
-                                                    }`}
+                                                onClick={() => resetPoDeliveryDraftFromItems()}
+                                                className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-[10px] font-black text-slate-600 hover:bg-slate-100"
                                             >
-                                                {label}
+                                                Tạo lại lịch
                                             </button>
-                                        ))}
-                                        <button
-                                            type="button"
-                                            onClick={() => resetPoDeliveryDraftFromItems()}
-                                            className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-[10px] font-black text-slate-600 hover:bg-slate-100"
-                                        >
-                                            Tạo lại lịch
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={addPoDeliveryBatch}
-                                            className="px-3 py-1.5 rounded-lg border border-blue-200 bg-blue-50 text-[10px] font-black text-blue-700 hover:bg-blue-100 inline-flex items-center gap-1"
-                                        >
-                                            <Plus size={12} /> Tạo giao đợt tiếp
-                                        </button>
+                                            <button
+                                                type="button"
+                                                onClick={addPoDeliveryBatch}
+                                                className="px-3 py-1.5 rounded-lg border border-blue-200 bg-blue-50 text-[10px] font-black text-blue-700 hover:bg-blue-100 inline-flex items-center gap-1"
+                                            >
+                                                <Plus size={12} /> Tạo giao đợt tiếp
+                                            </button>
+                                        </div>
                                     </div>
-                                </div>
-                                <div className="grid gap-2 text-[11px] font-bold text-slate-500 sm:grid-cols-4">
-                                    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
-                                        <span className="block text-[9px] font-black uppercase text-slate-400">Tổng đã duyệt</span>
-                                        <strong className="text-slate-800">{fmtMoney(poReleaseSummaryPreview.approvedTotalAmount)} đ</strong>
+                                    <div className="grid gap-2 text-[11px] font-bold text-slate-500 sm:grid-cols-4">
+                                        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                                            <span className="block text-[9px] font-black uppercase text-slate-400">Tổng đã duyệt</span>
+                                            <strong className="text-slate-800">{fmtMoney(poReleaseSummaryPreview.approvedTotalAmount)} đ</strong>
+                                        </div>
+                                        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                                            <span className="block text-[9px] font-black uppercase text-slate-400">Giá trị đợt</span>
+                                            <strong className="text-blue-700">{fmtMoney(poReleaseSummaryPreview.actualPlannedAmount)} đ</strong>
+                                        </div>
+                                        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                                            <span className="block text-[9px] font-black uppercase text-slate-400">Phần vượt duyệt</span>
+                                            <strong className={poReleaseSummaryPreview.overAmount > 0 ? 'text-amber-700' : 'text-emerald-700'}>{fmtMoney(poReleaseSummaryPreview.overAmount)} đ</strong>
+                                        </div>
+                                        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                                            <span className="block text-[9px] font-black uppercase text-slate-400">Còn lại theo SL</span>
+                                            <strong className="text-slate-800">
+                                                {poReleaseSummaryPreview.lineSummaries.some(line => line.remainingQty < -0.000001)
+                                                    ? 'Có dòng vượt SL'
+                                                    : `${poReleaseSummaryPreview.lineSummaries.filter(line => line.remainingQty > 0.000001).length} dòng còn`}
+                                            </strong>
+                                        </div>
                                     </div>
-                                    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
-                                        <span className="block text-[9px] font-black uppercase text-slate-400">Giá trị đợt</span>
-                                        <strong className="text-blue-700">{fmtMoney(poReleaseSummaryPreview.actualPlannedAmount)} đ</strong>
-                                    </div>
-                                    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
-                                        <span className="block text-[9px] font-black uppercase text-slate-400">Phần vượt duyệt</span>
-                                        <strong className={poReleaseSummaryPreview.overAmount > 0 ? 'text-amber-700' : 'text-emerald-700'}>{fmtMoney(poReleaseSummaryPreview.overAmount)} đ</strong>
-                                    </div>
-                                    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
-                                        <span className="block text-[9px] font-black uppercase text-slate-400">Còn lại theo SL</span>
-                                        <strong className="text-slate-800">
-                                            {poReleaseSummaryPreview.lineSummaries.some(line => line.remainingQty < -0.000001)
-                                                ? 'Có dòng vượt SL'
-                                                : `${poReleaseSummaryPreview.lineSummaries.filter(line => line.remainingQty > 0.000001).length} dòng còn`}
-                                        </strong>
-                                    </div>
-                                </div>
-                                {poReleaseSummaryPreview.overAmount > 0 && (
-                                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">
-                                        Giá trị các đợt đang vượt tổng đã duyệt. Khi lưu, hệ thống sẽ gửi duyệt bổ sung và khóa WMS/QR cho đợt vượt.
-                                    </div>
-                                )}
-                                <div className="space-y-2">
-                                    {poDeliveryBatchesForForm.length === 0 && (
-                                        <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-center text-xs font-bold text-slate-400">
-                                            Chưa có lịch mua/giao. PO vẫn lưu tổng khối lượng và tổng giá trị duyệt ban đầu; có thể thêm đợt khi biết lịch.
+                                    {poReleaseSummaryPreview.overAmount > 0 && (
+                                        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">
+                                            Giá trị các đợt đang vượt tổng đã duyệt. Khi lưu, hệ thống sẽ gửi duyệt bổ sung và khóa WMS/QR cho đợt vượt.
                                         </div>
                                     )}
-                                    {poDeliveryBatchesForForm.map((batch, batchIndex, displayBatches) => {
-                                        const activeItems = pItems.map(item => normalizePoItem(item, inventoryItems)).filter(item => item.itemId && Number(item.qty || 0) > 0);
-                                        const showPurchaseColumns = activeItems.some(item => {
-                                            const inventory = inventoryItems.find(inv => inv.id === item.itemId);
-                                            return hasPurchaseUnitConversion({
-                                                unit: getPoLineStockUnit(item, inventory),
-                                                purchaseUnit: getPoLinePurchaseUnit(item, inventory),
-                                                purchaseConversionFactor: item.purchaseConversionFactor ?? inventory?.purchaseConversionFactor ?? 1,
+                                    <div className="space-y-2">
+                                        {poDeliveryBatchesForForm.length === 0 && (
+                                            <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-center text-xs font-bold text-slate-400">
+                                                Chưa có lịch mua/giao. PO vẫn lưu tổng khối lượng và tổng giá trị duyệt ban đầu; có thể thêm đợt khi biết lịch.
+                                            </div>
+                                        )}
+                                        {poDeliveryBatchesForForm.map((batch, batchIndex, displayBatches) => {
+                                            const activeItems = pItems.map(item => normalizePoItem(item, inventoryItems)).filter(item => item.itemId && Number(item.qty || 0) > 0);
+                                            const showPurchaseColumns = activeItems.some(item => {
+                                                const inventory = inventoryItems.find(inv => inv.id === item.itemId);
+                                                return hasPurchaseUnitConversion({
+                                                    unit: getPoLineStockUnit(item, inventory),
+                                                    purchaseUnit: getPoLinePurchaseUnit(item, inventory),
+                                                    purchaseConversionFactor: item.purchaseConversionFactor ?? inventory?.purchaseConversionFactor ?? 1,
+                                                });
                                             });
-                                        });
-                                        return (
-                                            <div key={batch.id} className="rounded-xl border border-slate-200 bg-white p-3">
-                                                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-50 text-xs font-black text-indigo-700">{batchIndex + 1}</span>
-                                                        <div>
-                                                            <div className="text-xs font-black text-slate-700">Đợt giao {batchIndex + 1}</div>
-                                                            <div className="text-[10px] font-bold text-slate-400">{batch.lines.filter(line => Number(line.plannedQty || 0) > 0).length} dòng có số lượng</div>
+                                            return (
+                                                <div key={batch.id} className="rounded-xl border border-slate-200 bg-white p-3">
+                                                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-50 text-xs font-black text-indigo-700">{batchIndex + 1}</span>
+                                                            <div>
+                                                                <div className="text-xs font-black text-slate-700">Đợt giao {batchIndex + 1}</div>
+                                                                <div className="text-[10px] font-bold text-slate-400">{batch.lines.filter(line => Number(line.plannedQty || 0) > 0).length} dòng có số lượng</div>
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                            <input
+                                                                type="date"
+                                                                value={batch.plannedDeliveryDate || ''}
+                                                                onChange={e => updatePoDeliveryBatch(batch.id, { plannedDeliveryDate: e.target.value || null })}
+                                                                className="px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs font-bold"
+                                                            />
+                                                            {poDeliveryBatchesForForm.length > 1 && (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => removePoDeliveryBatch(batch.id)}
+                                                                    className="h-8 w-8 rounded-lg text-red-300 hover:bg-red-50 hover:text-red-600"
+                                                                    title="Xoá đợt giao"
+                                                                >
+                                                                    <X size={14} />
+                                                                </button>
+                                                            )}
                                                         </div>
                                                     </div>
-                                                    <div className="flex items-center gap-2">
-                                                        <input
-                                                            type="date"
-                                                            value={batch.plannedDeliveryDate || ''}
-                                                            onChange={e => updatePoDeliveryBatch(batch.id, { plannedDeliveryDate: e.target.value || null })}
-                                                            className="px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs font-bold"
-                                                        />
-                                                        {poDeliveryBatchesForForm.length > 1 && (
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => removePoDeliveryBatch(batch.id)}
-                                                                className="h-8 w-8 rounded-lg text-red-300 hover:bg-red-50 hover:text-red-600"
-                                                                title="Xoá đợt giao"
-                                                            >
-                                                                <X size={14} />
-                                                            </button>
-                                                        )}
+                                                    <div className="mt-3 overflow-x-auto">
+                                                        <table className={`w-full text-xs ${showPurchaseColumns ? 'min-w-[960px]' : 'min-w-[720px]'}`}>
+                                                            <thead>
+                                                                <tr className="border-b border-slate-100 text-[9px] font-black uppercase text-slate-400">
+                                                                    <th className="px-2 py-2 text-left">Vật tư</th>
+                                                                    <th className="px-2 py-2 text-center">ĐVT</th>
+                                                                    <th className="px-2 py-2 text-right">SL</th>
+                                                                    {showPurchaseColumns && (
+                                                                        <>
+                                                                            <th className="px-2 py-2 text-center">ĐVT(m)</th>
+                                                                            <th className="px-2 py-2 text-right">SL(m)</th>
+                                                                        </>
+                                                                    )}
+                                                                    <th className="px-2 py-2 text-right">Giá đợt</th>
+                                                                    <th className="px-2 py-2 text-right">{showPurchaseColumns ? 'Còn lại(m)' : 'Còn lại'}</th>
+                                                                    <th className="px-2 py-2 text-right">Thành tiền</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody className="divide-y divide-slate-100">
+                                                                {activeItems.map(item => {
+                                                                    const lineKey = item.lineId || item.itemId;
+                                                                    const currentLine = batch.lines.find(line => line.purchaseOrderLineId === lineKey) as PurchaseOrderDeliveryFormLine | undefined;
+                                                                    const deliveryInventory = inventoryItems.find(inv => inv.id === item.itemId);
+                                                                    const stockUnit = getPoLineStockUnit(item, deliveryInventory) || item.unit;
+                                                                    const purchaseUnit = getPoLinePurchaseUnit(item, deliveryInventory) || item.unit;
+                                                                    const itemHasConversion = hasPurchaseUnitConversion({
+                                                                        unit: stockUnit,
+                                                                        purchaseUnit,
+                                                                        purchaseConversionFactor: item.purchaseConversionFactor ?? deliveryInventory?.purchaseConversionFactor ?? 1,
+                                                                    });
+                                                                    const purchaseQty = Number(currentLine?.plannedQty || 0);
+                                                                    const stockQty = itemHasConversion
+                                                                        ? Number(currentLine?.stockPlannedQty ?? poLinePurchaseToStockQty(item, purchaseQty, deliveryInventory))
+                                                                        : purchaseQty;
+                                                                    const remainingQty = getPoDeliveryRemainingQty(displayBatches, lineKey, Number(item.qty || 0), batchIndex);
+                                                                    const remainingTone = remainingQty < -0.000001
+                                                                        ? 'text-red-600'
+                                                                        : remainingQty > 0.000001
+                                                                            ? 'text-amber-600'
+                                                                            : 'text-emerald-600';
+                                                                    const deliveryPriceInputValue = currentLine
+                                                                        ? (currentLine.deliveryUnitPriceInput ?? (Number(currentLine.deliveryUnitPrice || 0) > 0 ? formatNumberInputValue(currentLine.deliveryUnitPrice, 0) : ''))
+                                                                        : (pSourceMode === 'from_request' ? '' : formatNumberInputValue(item.unitPrice, 0));
+                                                                    return (
+                                                                        <tr key={lineKey}>
+                                                                            <td className="px-2 py-2">
+                                                                                <div className="font-bold text-slate-700">{item.name || item.sku}</div>
+                                                                                <div className="text-[10px] font-mono text-slate-400">{item.sku}</div>
+                                                                            </td>
+                                                                            <td className="px-2 py-2 text-center font-bold text-slate-500">{stockUnit || '—'}</td>
+                                                                            <td className="px-2 py-2 text-right">
+                                                                                {itemHasConversion ? (
+                                                                                    <input
+                                                                                        type="text"
+                                                                                        inputMode="decimal"
+                                                                                        value={currentLine?.stockPlannedQtyInput ?? (Number.isFinite(stockQty) ? formatNumberInputValue(stockQty, 6) : '')}
+                                                                                        onChange={e => updatePoDeliveryLineStockQty(batch.id, lineKey, formatViLiveInput(e.target.value))}
+                                                                                        className="w-28 rounded-lg border border-slate-200 px-2 py-1.5 text-right text-xs font-bold text-slate-700"
+                                                                                    />
+                                                                                ) : (
+                                                                                    <input
+                                                                                        type="text"
+                                                                                        inputMode="decimal"
+                                                                                        value={currentLine?.plannedQtyInput ?? formatNumberInputValue(currentLine?.plannedQty, 6)}
+                                                                                        onChange={e => updatePoDeliveryLineQty(batch.id, lineKey, formatViLiveInput(e.target.value))}
+                                                                                        className="w-28 rounded-lg border border-slate-200 px-2 py-1.5 text-right text-xs font-bold"
+                                                                                    />
+                                                                                )}
+                                                                            </td>
+                                                                            {showPurchaseColumns && (
+                                                                                <>
+                                                                                    <td className="px-2 py-2 text-center font-bold text-slate-500">{itemHasConversion ? purchaseUnit || '—' : '—'}</td>
+                                                                                    <td className="px-2 py-2 text-right">
+                                                                                        {itemHasConversion ? (
+                                                                                            <input
+                                                                                                type="text"
+                                                                                                inputMode="decimal"
+                                                                                                value={currentLine?.plannedQtyInput ?? formatNumberInputValue(currentLine?.plannedQty, 6)}
+                                                                                                onChange={e => updatePoDeliveryLineQty(batch.id, lineKey, formatViLiveInput(e.target.value))}
+                                                                                                className="w-28 rounded-lg border border-slate-200 px-2 py-1.5 text-right text-xs font-bold"
+                                                                                            />
+                                                                                        ) : (
+                                                                                            <span className="text-slate-300">—</span>
+                                                                                        )}
+                                                                                    </td>
+                                                                                </>
+                                                                            )}
+                                                                            <td className="px-2 py-2 text-right">
+                                                                                <input
+                                                                                    type="text"
+                                                                                    inputMode="decimal"
+                                                                                    value={deliveryPriceInputValue}
+                                                                                    onChange={e => updatePoDeliveryLinePrice(batch.id, lineKey, formatViLiveInput(e.target.value))}
+                                                                                    className="w-32 rounded-lg border border-slate-200 px-2 py-1.5 text-right text-xs font-bold text-emerald-700"
+                                                                                />
+                                                                            </td>
+                                                                            <td className={`px-2 py-2 text-right font-black ${remainingTone}`}>
+                                                                                {remainingQty < -0.000001 ? `Vượt ${fmtQty(Math.abs(remainingQty))}` : fmtQty(remainingQty)}
+                                                                            </td>
+                                                                            <td className="px-2 py-2 text-right font-bold text-blue-600">
+                                                                                {fmtQty(Number(currentLine?.deliveryUnitPrice ?? 0) * Number(currentLine?.plannedQty ?? 0))}
+                                                                            </td>
+                                                                        </tr>
+                                                                    );
+                                                                })}
+                                                            </tbody>
+                                                        </table>
                                                     </div>
                                                 </div>
-                                                <div className="mt-3 overflow-x-auto">
-                                                    <table className={`w-full text-xs ${showPurchaseColumns ? 'min-w-[960px]' : 'min-w-[720px]'}`}>
-                                                        <thead>
-                                                            <tr className="border-b border-slate-100 text-[9px] font-black uppercase text-slate-400">
-                                                                <th className="px-2 py-2 text-left">Vật tư</th>
-                                                                <th className="px-2 py-2 text-center">ĐVT</th>
-                                                                <th className="px-2 py-2 text-right">SL</th>
-                                                                {showPurchaseColumns && (
-                                                                    <>
-                                                                        <th className="px-2 py-2 text-center">ĐVT(m)</th>
-                                                                        <th className="px-2 py-2 text-right">SL(m)</th>
-                                                                    </>
-                                                                )}
-                                                                <th className="px-2 py-2 text-right">Giá đợt</th>
-                                                                <th className="px-2 py-2 text-right">{showPurchaseColumns ? 'Còn lại(m)' : 'Còn lại'}</th>
-                                                                <th className="px-2 py-2 text-right">Thành tiền</th>
-                                                            </tr>
-                                                        </thead>
-                                                        <tbody className="divide-y divide-slate-100">
-                                                            {activeItems.map(item => {
-                                                                const lineKey = item.lineId || item.itemId;
-                                                                const currentLine = batch.lines.find(line => line.purchaseOrderLineId === lineKey) as PurchaseOrderDeliveryFormLine | undefined;
-                                                                const deliveryInventory = inventoryItems.find(inv => inv.id === item.itemId);
-                                                                const stockUnit = getPoLineStockUnit(item, deliveryInventory) || item.unit;
-                                                                const purchaseUnit = getPoLinePurchaseUnit(item, deliveryInventory) || item.unit;
-                                                                const itemHasConversion = hasPurchaseUnitConversion({
-                                                                    unit: stockUnit,
-                                                                    purchaseUnit,
-                                                                    purchaseConversionFactor: item.purchaseConversionFactor ?? deliveryInventory?.purchaseConversionFactor ?? 1,
-                                                                });
-                                                                const purchaseQty = Number(currentLine?.plannedQty || 0);
-                                                                const stockQty = itemHasConversion
-                                                                    ? Number(currentLine?.stockPlannedQty ?? poLinePurchaseToStockQty(item, purchaseQty, deliveryInventory))
-                                                                    : purchaseQty;
-                                                                const remainingQty = getPoDeliveryRemainingQty(displayBatches, lineKey, Number(item.qty || 0), batchIndex);
-                                                                const remainingTone = remainingQty < -0.000001
-                                                                    ? 'text-red-600'
-                                                                    : remainingQty > 0.000001
-                                                                        ? 'text-amber-600'
-                                                                        : 'text-emerald-600';
-                                                                const deliveryPriceInputValue = currentLine
-                                                                    ? (currentLine.deliveryUnitPriceInput ?? (Number(currentLine.deliveryUnitPrice || 0) > 0 ? formatNumberInputValue(currentLine.deliveryUnitPrice, 0) : ''))
-                                                                    : (pSourceMode === 'from_request' ? '' : formatNumberInputValue(item.unitPrice, 0));
-                                                                return (
-                                                                    <tr key={lineKey}>
-                                                                        <td className="px-2 py-2">
-                                                                            <div className="font-bold text-slate-700">{item.name || item.sku}</div>
-                                                                            <div className="text-[10px] font-mono text-slate-400">{item.sku}</div>
-                                                                        </td>
-                                                                        <td className="px-2 py-2 text-center font-bold text-slate-500">{stockUnit || '—'}</td>
-                                                                        <td className="px-2 py-2 text-right">
-                                                                            {itemHasConversion ? (
-                                                                                <input
-                                                                                    type="text"
-                                                                                    inputMode="decimal"
-                                                                                    value={currentLine?.stockPlannedQtyInput ?? (Number.isFinite(stockQty) ? formatNumberInputValue(stockQty, 6) : '')}
-                                                                                    onChange={e => updatePoDeliveryLineStockQty(batch.id, lineKey, e.target.value)}
-                                                                                    className="w-28 rounded-lg border border-slate-200 px-2 py-1.5 text-right text-xs font-bold text-slate-700"
-                                                                                />
-                                                                            ) : (
-                                                                                <input
-                                                                                    type="text"
-                                                                                    inputMode="decimal"
-                                                                                    value={currentLine?.plannedQtyInput ?? formatNumberInputValue(currentLine?.plannedQty, 6)}
-                                                                                    onChange={e => updatePoDeliveryLineQty(batch.id, lineKey, e.target.value)}
-                                                                                    className="w-28 rounded-lg border border-slate-200 px-2 py-1.5 text-right text-xs font-bold"
-                                                                                />
-                                                                            )}
-                                                                        </td>
-                                                                        {showPurchaseColumns && (
-                                                                            <>
-                                                                                <td className="px-2 py-2 text-center font-bold text-slate-500">{itemHasConversion ? purchaseUnit || '—' : '—'}</td>
-                                                                                <td className="px-2 py-2 text-right">
-                                                                                    {itemHasConversion ? (
-                                                                                        <input
-                                                                                            type="text"
-                                                                                            inputMode="decimal"
-                                                                                            value={currentLine?.plannedQtyInput ?? formatNumberInputValue(currentLine?.plannedQty, 6)}
-                                                                                            onChange={e => updatePoDeliveryLineQty(batch.id, lineKey, e.target.value)}
-                                                                                            className="w-28 rounded-lg border border-slate-200 px-2 py-1.5 text-right text-xs font-bold"
-                                                                                        />
-                                                                                    ) : (
-                                                                                        <span className="text-slate-300">—</span>
-                                                                                    )}
-                                                                                </td>
-                                                                            </>
-                                                                        )}
-                                                                        <td className="px-2 py-2 text-right">
-                                                                            <input
-                                                                                type="text"
-                                                                                inputMode="decimal"
-                                                                                value={deliveryPriceInputValue}
-                                                                                onChange={e => updatePoDeliveryLinePrice(batch.id, lineKey, e.target.value)}
-                                                                                className="w-32 rounded-lg border border-slate-200 px-2 py-1.5 text-right text-xs font-bold text-emerald-700"
-                                                                            />
-                                                                        </td>
-                                                                        <td className={`px-2 py-2 text-right font-black ${remainingTone}`}>
-                                                                            {remainingQty < -0.000001 ? `Vượt ${fmtQty(Math.abs(remainingQty))}` : fmtQty(remainingQty)}
-                                                                        </td>
-                                                                        {/* thành tiền */}
-                                                                        <td className="px-2 py-2 text-right font-bold text-blue-600 " >
-                                                                            {fmtQty(Number(currentLine?.deliveryUnitPrice ?? 0) * Number(currentLine?.plannedQty ?? 0))}
-                                                                        </td>
-                                                                    </tr>
-                                                                );
-                                                            })}
-                                                        </tbody>
-                                                    </table>
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-                            {poTotalCalc > 0 && (
-                                <div className="rounded-xl border border-blue-100 bg-blue-50 px-3 py-2.5 text-xs">
-                                    <div className="flex items-center justify-between">
-                                        <span className="text-blue-400">Tổng cộng:</span>
-                                        <span className="font-black text-blue-700 text-sm">{fmtMoney(poTotalCalc)} đ</span>
-                                    </div>
-                                    <div className="mt-1 flex items-center justify-between">
-                                        <span className="text-blue-400">VAT {poVatRateCalc.toLocaleString('vi-VN')}%:</span>
-                                        <span className="font-black text-blue-700 text-sm">{fmtMoney(poVatAmountCalc)} đ</span>
-                                    </div>
-                                    <div className="mt-1 flex items-center justify-between border-t border-blue-100 pt-1">
-                                        <span className="font-black text-blue-500">Tổng thanh toán:</span>
-                                        <span className="font-black text-emerald-700 text-base">{fmtMoney(poPaymentTotalCalc)} đ</span>
+                                            );
+                                        })}
                                     </div>
                                 </div>
                             )}
-                            <div>
-                                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Ghi chú</label>
-                                <textarea value={pNote} onChange={e => setPNote(e.target.value)} rows={2} placeholder="..."
-                                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-none" />
+
+                            {/* Sticky/Summary Footer: Ghi chú & Tổng tiền */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end pt-2">
+                                <div>
+                                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Ghi chú đơn hàng</label>
+                                    <input
+                                        type="text"
+                                        value={pNote}
+                                        onChange={e => setPNote(e.target.value)}
+                                        placeholder="Ví dụ: Gom từ 1 đề xuất công trường..."
+                                        className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 focus:ring-2 focus:ring-blue-500 outline-none"
+                                    />
+                                </div>
+
+                                {poTotalCalc > 0 && (
+                                    <div className="rounded-2xl border border-blue-100 bg-gradient-to-br from-blue-50/80 to-indigo-50/50 p-3.5 space-y-1.5 text-xs shadow-sm">
+                                        <div className="flex items-center justify-between text-slate-600">
+                                            <span>Tổng tiền hàng (trước thuế):</span>
+                                            <span className="font-bold text-slate-800">{fmtMoney(poTotalCalc)} đ</span>
+                                        </div>
+                                        <div className="flex items-center justify-between text-slate-600">
+                                            <span>Thuế VAT ({poVatRateCalc.toLocaleString('vi-VN')}%):</span>
+                                            <span className="font-bold text-slate-800">{fmtMoney(poVatAmountCalc)} đ</span>
+                                        </div>
+                                        <div className="flex items-center justify-between border-t border-blue-200/60 pt-2 mt-1">
+                                            <span className="font-black text-blue-900 uppercase text-[11px] tracking-wider">Tổng thanh toán:</span>
+                                            <span className="font-black text-emerald-600 text-lg">{fmtMoney(poPaymentTotalCalc)} đ</span>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         </div>
-                        <div className="shrink-0 px-6 py-4 border-t border-slate-100 bg-white flex justify-end gap-3">
-                            <button onClick={resetPoForm} disabled={savingPo} className="px-5 py-2.5 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-50">Huỷ</button>
+
+                        {/* Modal Action Footer */}
+                        <div className="shrink-0 px-6 py-3.5 border-t border-slate-100 bg-white flex items-center justify-end gap-3 shadow-md">
+                            <button onClick={resetPoForm} disabled={savingPo} className="px-5 py-2.5 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition-colors disabled:opacity-50">Huỷ</button>
                             <button onClick={() => void handleSavePo()} disabled={savingPo || !pNum || (!pTargetWarehouseId && !(pSourceMode === 'from_request' && pItems.some(item => !!scopedMaterialRequests.find(req => req.id === item.requestId)?.siteWarehouseId)))}
-                                className="px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-blue-500 to-indigo-500 shadow-lg flex items-center gap-2 disabled:opacity-50">
+                                className="px-6 py-2.5 rounded-xl text-xs font-black text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-md flex items-center gap-2 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
                                 {savingPo ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-                                {savingPo ? (editingPo ? 'Đang lưu...' : 'Đang tạo...') : (editingPo ? 'Lưu' : 'Tạo')}
+                                {savingPo ? (editingPo ? 'Đang lưu...' : 'Đang tạo...') : (editingPo ? 'Lưu đơn hàng' : '💾 Tạo đơn hàng (Ctrl+S)')}
                             </button>
                         </div>
                     </div>
@@ -9160,7 +9197,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 </div>
             )}
             {purchaseDeliveryQrPreview && (
-                <div className="fixed inset-0 z-[1160] flex items-center justify-center bg-black/40 px-4 backdrop-blur-sm">
+                <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/40 px-4 backdrop-blur-sm">
                     <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white shadow-2xl">
                         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
                             <div>

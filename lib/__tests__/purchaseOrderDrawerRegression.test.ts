@@ -79,4 +79,10 @@ describe('purchase order drawer regression guard', () => {
     expect(source).toContain('<QRCodeSVG value={purchaseDeliveryQrPreview.url}');
     expect(source).not.toContain("toast.info('QR đợt giao', action.qrToken ? `Token: ${action.qrToken}` : 'Đợt giao chưa có WMS/QR đang tải.');");
   });
+
+  it('prints delivery approval requests with the delivery batch amount instead of the package total', () => {
+    expect(source).toContain('totalAmountOverride: getDeliveryPrintGroupSummary(group).totalAmount');
+    expect(source).toContain('vatRateOverride: 0');
+    expect(source).toContain('ĐỀ NGHỊ DUYỆT ĐỢT GIAO');
+  });
 });
