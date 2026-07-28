@@ -54,7 +54,13 @@ as $$
   from public.request_template_versions version
   join public.request_templates template
     on template.id = version.request_template_id
-  where version.id = p_template_version_id;
+  where version.id = p_template_version_id
+    and (
+      app_private.request_user_can_manage(public.current_app_user_id())
+      or app_private.request_template_version_can_select(
+        version.id, public.current_app_user_id()
+      )
+    );
 $$;
 
 create or replace function app_private.request_template_summary(
@@ -91,7 +97,13 @@ as $$
   from public.request_templates template
   left join public.request_template_versions current_version
     on current_version.id = template.current_version_id
-  where template.id = p_template_id;
+  where template.id = p_template_id
+    and (
+      app_private.request_user_can_manage(public.current_app_user_id())
+      or app_private.request_template_can_select(
+        template.id, public.current_app_user_id()
+      )
+    );
 $$;
 
 create or replace function app_private.save_request_template_draft(
@@ -135,6 +147,16 @@ begin
   end if;
   if jsonb_array_length(v_blocks) = 0 then
     raise exception using errcode = '22023', message = 'REQUEST_TEMPLATE_BLOCK_REQUIRED';
+  end if;
+  if coalesce(v_usage_scope ->> 'companyWide', 'false') not in ('true', 'false')
+     or jsonb_typeof(coalesce(v_usage_scope -> 'orgUnitIds', '[]'::jsonb)) <> 'array'
+     or jsonb_typeof(coalesce(v_usage_scope -> 'permissionCodes', '[]'::jsonb)) <> 'array'
+     or jsonb_typeof(coalesce(v_usage_scope -> 'userIds', '[]'::jsonb)) <> 'array' then
+    raise exception using errcode = '22023', message = 'REQUEST_TEMPLATE_SCOPE_INVALID';
+  end if;
+  if p_payload ? 'requestSlaHours'
+     and nullif(p_payload ->> 'requestSlaHours', '')::numeric < 0 then
+    raise exception using errcode = '22023', message = 'REQUEST_TEMPLATE_SLA_INVALID';
   end if;
 
   v_template_id := nullif(p_payload ->> 'templateId', '')::uuid;
@@ -234,8 +256,13 @@ begin
       where app_user.id is null
          or not coalesce(app_user.is_active, true)
          or coalesce(app_user.account_status, 'ACTIVE') <> 'ACTIVE'
-    ) then
+       ) then
       raise exception using errcode = '22023', message = 'REQUEST_APPROVER_INACTIVE';
+    end if;
+    if coalesce((v_block ->> 'sortOrder')::integer, 0) < 0
+       or nullif(v_block ->> 'slaHours', '')::numeric < 0
+       or nullif(v_block ->> 'minimumDynamicApprovers', '')::integer < 1 then
+      raise exception using errcode = '22023', message = 'REQUEST_TEMPLATE_BLOCK_INVALID';
     end if;
     insert into public.request_approval_blocks(
       request_template_version_id, block_key, name, sort_order,
@@ -262,12 +289,15 @@ begin
       lifecycle_status = 'DRAFT'
   where id = v_template.id
     and current_version_id = v_version.id;
+  select * into v_template
+  from public.request_templates
+  where id = v_template.id;
 
   return jsonb_build_object(
     'id', v_version.request_template_id,
     'status', v_version.status,
     'versionNumber', v_version.version_number,
-    'updatedAt', v_version.updated_at,
+    'updatedAt', v_template.updated_at,
     'payload', app_private.request_template_draft_payload(v_version.id)
   );
 end;
@@ -302,6 +332,9 @@ begin
   if v_actor is null or not app_private.request_user_can_manage(v_actor) then
     raise exception using errcode = '42501', message = 'REQUEST_TEMPLATE_FORBIDDEN';
   end if;
+  if p_expected_updated_at is null then
+    raise exception using errcode = '22023', message = 'REQUEST_TEMPLATE_EXPECTED_UPDATED_AT_REQUIRED';
+  end if;
   select * into v_template
   from public.request_templates
   where id = p_request_template_id
@@ -322,12 +355,30 @@ begin
   if not found then
     raise exception using errcode = '22023', message = 'REQUEST_TEMPLATE_DRAFT_REQUIRED';
   end if;
-  if jsonb_array_length(v_draft.form_schema) < 0
+  if jsonb_typeof(v_draft.form_schema) <> 'array'
+     or jsonb_array_length(v_draft.form_schema) = 0
      or not exists (
        select 1 from public.request_approval_blocks block
        where block.request_template_version_id = v_draft.id
      ) then
-    raise exception using errcode = '22023', message = 'REQUEST_TEMPLATE_BLOCK_REQUIRED';
+    raise exception using errcode = '22023', message = 'REQUEST_FORM_SCHEMA_INVALID';
+  end if;
+  if exists (
+    select 1
+    from jsonb_array_elements(v_draft.form_schema) field
+    where jsonb_typeof(field) <> 'object'
+       or nullif(trim(field ->> 'key'), '') is null
+       or nullif(trim(field ->> 'label'), '') is null
+       or coalesce(field ->> 'fieldType', '') not in (
+         'text', 'textarea', 'number', 'date', 'select', 'user', 'file'
+       )
+  ) or exists (
+    select field ->> 'key'
+    from jsonb_array_elements(v_draft.form_schema) field
+    group by field ->> 'key'
+    having count(*) > 1
+  ) then
+    raise exception using errcode = '22023', message = 'REQUEST_FORM_SCHEMA_INVALID';
   end if;
   if exists (
     select 1
@@ -362,27 +413,61 @@ begin
     ) then
       raise exception using errcode = '22023', message = 'REQUEST_PRINT_TEMPLATE_INVALID';
     end if;
+    if exists (
+      select 1
+      from public.request_print_templates print_template
+      cross join lateral jsonb_object_keys(
+        case
+          when jsonb_typeof(print_template.placeholder_schema) = 'object'
+            then print_template.placeholder_schema
+          else '{}'::jsonb
+        end
+      ) placeholder_key
+      where print_template.request_template_version_id = v_draft.id
+        and print_template.storage_path = v_docx_path
+        and print_template.validation_status = 'VALID'
+        and placeholder_key not in (
+          select field ->> 'key'
+          from jsonb_array_elements(v_draft.form_schema) field
+          union all
+          select value from jsonb_array_elements_text(
+            '["title","description","requestCode","createdAt","createdBy"]'::jsonb
+          )
+        )
+    ) then
+      raise exception using errcode = '22023', message = 'REQUEST_PRINT_PLACEHOLDER_UNKNOWN';
+    end if;
+    if exists (
+      select 1
+      from public.request_print_templates print_template
+      where print_template.request_template_version_id = v_draft.id
+        and print_template.storage_path = v_docx_path
+        and jsonb_typeof(print_template.placeholder_schema) <> 'object'
+    ) then
+      raise exception using errcode = '22023', message = 'REQUEST_PRINT_PLACEHOLDER_INVALID';
+    end if;
   end if;
 
-  if v_template.workflow_template_id is null then
-    insert into public.workflow_templates(
-      name, description, created_by, is_active, custom_fields,
-      managers, default_watchers
-    ) values (
-      '[Request] ' || v_template.name,
-      coalesce(v_template.description, ''),
-      v_actor,
-      true,
-      jsonb_build_array(jsonb_build_object('_requestTemplateId', v_template.id)),
-      '{}'::text[],
-      '{}'::text[]
-    ) returning id into v_workflow_template_id;
-    update public.request_templates
-    set workflow_template_id = v_workflow_template_id
-    where id = v_template.id;
-  else
-    v_workflow_template_id := v_template.workflow_template_id;
-  end if;
+  -- Every publish receives a fresh hidden workflow graph. Keeping old graphs
+  -- intact makes workflow snapshots immutable and prevents stale nodes from
+  -- leaking into a later request submission.
+  v_workflow_template_id := gen_random_uuid();
+  insert into public.workflow_templates(
+    id, name, description, created_by, is_active, custom_fields,
+    managers, default_watchers
+  ) values (
+    v_workflow_template_id,
+    '[Request] ' || v_template.name,
+    coalesce(v_template.description, ''),
+    v_actor,
+    true,
+    jsonb_build_array(jsonb_build_object('_requestTemplateId', v_template.id)),
+    '{}'::text[],
+    '{}'::text[]
+  );
+  update public.request_templates
+  set workflow_template_id = v_workflow_template_id
+  where id = v_template.id;
 
   insert into public.workflow_nodes(id, template_id, type, label, config, position_x, position_y)
   values (
@@ -607,6 +692,13 @@ begin
   where request_template_id = v_template.id and status = 'PUBLISHED'
   order by version_number desc limit 1;
   if not found then raise exception using errcode = '22023', message = 'REQUEST_TEMPLATE_PUBLISHED_REQUIRED'; end if;
+  if exists (
+    select 1
+    from public.request_print_templates print_template
+    where print_template.request_template_version_id = v_published.id
+  ) then
+    raise exception using errcode = '22023', message = 'REQUEST_PRINT_TEMPLATE_CLONE_DOCX_UNSUPPORTED';
+  end if;
   select coalesce(max(version_number), 0) + 1 into v_number
   from public.request_template_versions where request_template_id = v_template.id;
   insert into public.request_template_versions(
@@ -627,12 +719,15 @@ begin
   insert into public.request_template_watchers(request_template_version_id, user_id)
   select v_draft.id, user_id from public.request_template_watchers
   where request_template_version_id = v_published.id;
-  update public.request_templates set lifecycle_status = 'DRAFT' where id = v_template.id;
+  update public.request_templates
+  set lifecycle_status = 'DRAFT'
+  where id = v_template.id
+  returning * into v_template;
   return jsonb_build_object(
     'id', v_draft.request_template_id,
     'status', v_draft.status,
     'versionNumber', v_draft.version_number,
-    'updatedAt', v_draft.updated_at,
+    'updatedAt', v_template.updated_at,
     'payload', app_private.request_template_draft_payload(v_draft.id)
   );
 end;
@@ -654,6 +749,9 @@ begin
   if v_actor is null or not app_private.request_user_can_manage(v_actor) then
     raise exception using errcode = '42501', message = 'REQUEST_TEMPLATE_FORBIDDEN';
   end if;
+  if p_expected_updated_at is null then
+    raise exception using errcode = '22023', message = 'REQUEST_TEMPLATE_EXPECTED_UPDATED_AT_REQUIRED';
+  end if;
   select * into v_template from public.request_templates where id = p_request_template_id for update;
   if not found then raise exception using errcode = 'P0002', message = 'REQUEST_TEMPLATE_NOT_FOUND'; end if;
   if v_template.updated_at <> p_expected_updated_at then
@@ -674,12 +772,16 @@ security definer
 set search_path = ''
 as $$
 declare
+  v_actor uuid := public.current_app_user_id();
   v_block jsonb;
   v_source text;
   v_ids uuid[];
   v_resolved uuid;
   v_result jsonb := '[]'::jsonb;
 begin
+  if v_actor is null or not app_private.request_user_can_manage(v_actor) then
+    raise exception using errcode = '42501', message = 'REQUEST_TEMPLATE_FORBIDDEN';
+  end if;
   for v_block in select value from jsonb_array_elements(coalesce(p_payload -> 'blocks', '[]'::jsonb))
   loop
     v_source := v_block ->> 'source';
@@ -758,6 +860,12 @@ revoke all on function app_private.save_request_template_draft(jsonb)
   from public, anon, authenticated;
 revoke all on function app_private.publish_request_template_version(uuid, timestamptz)
   from public, anon, authenticated;
+revoke all on function app_private.create_request_template_draft_from_published(uuid)
+  from public, anon, authenticated;
+revoke all on function app_private.deactivate_request_template(uuid, timestamptz)
+  from public, anon, authenticated;
+revoke all on function app_private.preview_request_template_resolvers(jsonb, uuid)
+  from public, anon, authenticated;
 grant execute on function app_private.request_template_draft_payload(uuid) to authenticated;
 grant execute on function app_private.request_template_summary(uuid) to authenticated;
 grant execute on function app_private.save_request_template_draft(jsonb) to authenticated;
@@ -765,3 +873,18 @@ grant execute on function app_private.publish_request_template_version(uuid, tim
 grant execute on function app_private.create_request_template_draft_from_published(uuid) to authenticated;
 grant execute on function app_private.deactivate_request_template(uuid, timestamptz) to authenticated;
 grant execute on function app_private.preview_request_template_resolvers(jsonb, uuid) to authenticated;
+
+revoke all on function public.save_request_template_draft(jsonb) from public, anon;
+revoke all on function public.publish_request_template_version(uuid, timestamptz) from public, anon;
+revoke all on function public.get_request_template_draft(uuid) from public, anon;
+revoke all on function public.list_request_templates(jsonb) from public, anon;
+revoke all on function public.create_request_template_draft_from_published(uuid) from public, anon;
+revoke all on function public.deactivate_request_template(uuid, timestamptz) from public, anon;
+revoke all on function public.preview_request_template_resolvers(jsonb, uuid) from public, anon;
+grant execute on function public.save_request_template_draft(jsonb) to authenticated;
+grant execute on function public.publish_request_template_version(uuid, timestamptz) to authenticated;
+grant execute on function public.get_request_template_draft(uuid) to authenticated;
+grant execute on function public.list_request_templates(jsonb) to authenticated;
+grant execute on function public.create_request_template_draft_from_published(uuid) to authenticated;
+grant execute on function public.deactivate_request_template(uuid, timestamptz) to authenticated;
+grant execute on function public.preview_request_template_resolvers(jsonb, uuid) to authenticated;

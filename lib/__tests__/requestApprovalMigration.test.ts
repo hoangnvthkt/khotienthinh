@@ -85,4 +85,21 @@ describe('request approval phase 1 schema', () => {
       'preview_request_template_resolvers',
     ]) expect(publishSql).toContain(`public.${name}`);
   });
+
+  it('guards publish concurrency, form/DOCX schema, and resolver preview', () => {
+    expect(publishSql).toContain('p_expected_updated_at is null');
+    expect(publishSql).toContain('jsonb_array_length(v_draft.form_schema) = 0');
+    expect(publishSql).toContain('REQUEST_PRINT_PLACEHOLDER_UNKNOWN');
+    expect(publishSql).toContain('REQUEST_PRINT_TEMPLATE_CLONE_DOCX_UNSUPPORTED');
+    expect(publishSql).toContain('app_private.request_user_can_manage(v_actor)');
+    expect(publishSql).toMatch(
+      /revoke all on function app_private\.preview_request_template_resolvers\(jsonb, uuid\)[\s\S]*?from public, anon, authenticated/i,
+    );
+  });
+
+  it('isolates each published workflow graph and preserves validated DOCX clones', () => {
+    expect(publishSql).toContain('v_workflow_template_id := gen_random_uuid()');
+    expect(publishSql).toContain('request_print_templates');
+    expect(publishSql).toContain('validation_status = \'VALID\'');
+  });
 });
