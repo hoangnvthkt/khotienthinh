@@ -4340,6 +4340,60 @@ export enum RQStatus {
 
 export type RQPriority = 'low' | 'medium' | 'high' | 'urgent';
 
+export type RequestFlowMode = 'SEQUENTIAL' | 'PARALLEL';
+export type RequestCompletionPolicy = 'ALL' | 'ANY_ONE';
+export type RequestApproverSource =
+  | 'FIXED_SINGLE' | 'FIXED_MULTI'
+  | 'DIRECT_MANAGER' | 'DYNAMIC_CREATOR_SELECT';
+export type RequestFieldType =
+  | 'text' | 'textarea' | 'number' | 'date' | 'select' | 'user' | 'file';
+
+export interface RequestTemplateFieldSchema {
+  key: string;
+  label: string;
+  fieldType: RequestFieldType;
+  required: boolean;
+  options: string[];
+  sortOrder: number;
+}
+
+export interface RequestApprovalBlock {
+  key: string;
+  name: string;
+  source: RequestApproverSource;
+  fixedUserIds: string[];
+  minimumDynamicApprovers: number | null;
+  slaHours: number | null;
+  sortOrder: number;
+}
+
+export type RequestRuntimeStatus =
+  | 'DRAFT' | 'PENDING' | 'RETURNED'
+  | 'APPROVED' | 'REJECTED' | 'CANCELLED';
+export type RequestAssignmentStatus =
+  | 'PENDING' | 'APPROVED' | 'REJECTED'
+  | 'RETURNED' | 'SKIPPED' | 'CANCELLED';
+
+export interface RequestApprovalPolicyInput {
+  flowMode: RequestFlowMode;
+  completionPolicy: RequestCompletionPolicy;
+  orderedBlockKeys: string[];
+  currentBlockKey?: string;
+  assignments: Array<{
+    id: string;
+    blockKey: string;
+    status: RequestAssignmentStatus;
+    sortOrder: number;
+  }>;
+}
+
+export interface RequestApprovalProjection {
+  isApproved: boolean;
+  activeBlockKeys: string[];
+  assignmentIdsToSkip: string[];
+  nextBlockKey?: string;
+}
+
 export interface RequestCategory {
   id: string;
   name: string;
