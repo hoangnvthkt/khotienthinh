@@ -6,6 +6,9 @@ const dir = join(process.cwd(), 'supabase/migrations');
 const file = readdirSync(dir).find(name =>
   name.endsWith('_request_approval_phase1_schema.sql'));
 const sql = file ? readFileSync(join(dir, file), 'utf8') : '';
+const publishFile = readdirSync(dir).find(name =>
+  name.endsWith('_request_template_publish_phase1.sql'));
+const publishSql = publishFile ? readFileSync(join(dir, publishFile), 'utf8') : '';
 
 describe('request approval phase 1 schema', () => {
   it('creates versioned request tables and private runtime support tables', () => {
@@ -53,5 +56,33 @@ describe('request approval phase 1 schema', () => {
     expect(sql).toMatch(
       /function app_private\.request_instance_can_select[\s\S]*?app_user\.account_status[\s\S]*?'ACTIVE'/i,
     );
+  });
+
+  it('publishes immutable request versions through the shared workflow engine', () => {
+    expect(publishSql).toContain('app_private.publish_request_template_version');
+    expect(publishSql).toContain('public.publish_request_template_version');
+    expect(publishSql).toContain("'AUTO_ADVANCE_APPROVAL'");
+    expect(publishSql).toContain("'START'::public.workflow_node_type");
+    expect(publishSql).toContain("'END'::public.workflow_node_type");
+    expect(publishSql).toContain("'APPROVAL'::public.workflow_node_type");
+    expect(publishSql).toContain('workflow_template_versions');
+    expect(publishSql).toContain("status = 'SUPERSEDED'");
+  });
+
+  it('keeps privileged commands private and exposes invoker wrappers', () => {
+    expect(publishSql).toMatch(
+      /create or replace function app_private\.publish_request_template_version[\s\S]*?security definer[\s\S]*?set search_path = ''/i,
+    );
+    expect(publishSql).toMatch(
+      /create or replace function public\.publish_request_template_version[\s\S]*?security invoker[\s\S]*?set search_path = ''/i,
+    );
+    for (const name of [
+      'save_request_template_draft',
+      'get_request_template_draft',
+      'list_request_templates',
+      'create_request_template_draft_from_published',
+      'deactivate_request_template',
+      'preview_request_template_resolvers',
+    ]) expect(publishSql).toContain(`public.${name}`);
   });
 });
