@@ -36,4 +36,22 @@ describe('request approval phase 1 schema', () => {
     expect(sql).toContain("'CANCELLED'");
     expect(sql).toContain('assignment_round_id');
   });
+
+  it('allows managers to delete only canonical draft DOCX templates', () => {
+    expect(sql).toMatch(
+      /create policy request_template_docx_delete_gate[\s\S]*?for delete[\s\S]*?request_template_docx_can_manage/i,
+    );
+    expect(sql).toMatch(
+      /create policy request_template_docx_delete\s+on storage\.objects[\s\S]*?for delete[\s\S]*?request_template_docx_can_manage/i,
+    );
+  });
+
+  it('requires an ACTIVE account at request visibility entry points', () => {
+    expect(sql).toMatch(
+      /function app_private\.request_template_version_can_use[\s\S]*?app_user\.account_status[\s\S]*?'ACTIVE'/i,
+    );
+    expect(sql).toMatch(
+      /function app_private\.request_instance_can_select[\s\S]*?app_user\.account_status[\s\S]*?'ACTIVE'/i,
+    );
+  });
 });

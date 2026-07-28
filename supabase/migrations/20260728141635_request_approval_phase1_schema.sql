@@ -642,13 +642,19 @@ stable
 security definer
 set search_path = ''
 as $$
-  select p_user_id is not null
-    and app_private.has_permission(
-      p_user_id,
-      'request.template.manage',
-      'global',
-      '*'
-    );
+  select exists (
+    select 1
+    from public.users app_user
+    where app_user.id = p_user_id
+      and coalesce(app_user.is_active, true)
+      and coalesce(app_user.account_status, 'ACTIVE') = 'ACTIVE'
+      and app_private.has_permission(
+        p_user_id,
+        'request.template.manage',
+        'global',
+        '*'
+      )
+  );
 $$;
 
 create or replace function app_private.request_template_version_can_use(
@@ -667,6 +673,7 @@ as $$
     join public.users app_user
       on app_user.id = p_user_id
      and coalesce(app_user.is_active, true)
+     and coalesce(app_user.account_status, 'ACTIVE') = 'ACTIVE'
     where version.id = p_request_template_version_id
       and (
         version.usage_scope @> '{"companyWide": true}'::jsonb
@@ -780,6 +787,7 @@ as $$
     from public.users app_user
     where app_user.id = p_user_id
       and coalesce(app_user.is_active, true)
+      and coalesce(app_user.account_status, 'ACTIVE') = 'ACTIVE'
   )
   and (
     app_private.request_user_can_manage(p_user_id)
@@ -1133,6 +1141,7 @@ drop policy if exists request_template_docx_insert_gate on storage.objects;
 drop policy if exists request_template_docx_update_gate on storage.objects;
 drop policy if exists request_template_docx_select_gate on storage.objects;
 drop policy if exists request_template_docx_delete_gate on storage.objects;
+drop policy if exists request_template_docx_delete on storage.objects;
 
 -- Storage policies are permissive by default. These restrictive gates prevent
 -- any broader legacy workflow-template policy from exposing the request path.
@@ -1194,6 +1203,10 @@ to authenticated
 using (
   bucket_id <> 'workflow-templates'
   or name not like 'request-template-versions/%'
+  or app_private.request_template_docx_can_manage(
+    name,
+    (select public.current_app_user_id())
+  )
 );
 
 create policy request_template_docx_insert
@@ -1234,6 +1247,18 @@ to authenticated
 using (
   bucket_id = 'workflow-templates'
   and app_private.request_template_docx_can_select(
+    name,
+    (select public.current_app_user_id())
+  )
+);
+
+create policy request_template_docx_delete
+on storage.objects
+for delete
+to authenticated
+using (
+  bucket_id = 'workflow-templates'
+  and app_private.request_template_docx_can_manage(
     name,
     (select public.current_app_user_id())
   )
