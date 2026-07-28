@@ -4,7 +4,7 @@ const mocks = vi.hoisted(() => ({ rpc: vi.fn() }));
 
 vi.mock('../supabase', () => ({ supabase: { rpc: mocks.rpc } }));
 
-import { requestRuntimeService } from '../requestRuntimeService';
+import { mapRequestRpcError, requestRuntimeService } from '../requestRuntimeService';
 
 describe('requestRuntimeService.submit', () => {
   beforeEach(() => mocks.rpc.mockReset());
@@ -62,5 +62,64 @@ describe('requestRuntimeService.submit', () => {
       dynamicApproversByBlock: {},
       idempotencyKey: '11111111-1111-4111-8111-111111111113',
     })).rejects.toThrow('submit_request không trả về dữ liệu.');
+  });
+});
+
+describe('requestRuntimeService.act', () => {
+  beforeEach(() => mocks.rpc.mockReset());
+
+  it('sends approve with stale-state and idempotency guards', async () => {
+    mocks.rpc.mockResolvedValue({
+      data: {
+        requestId: 'rq-1',
+        requestCode: 'RQ-2026-000001',
+        status: 'APPROVED',
+        workflowInstanceId: 'wf-1',
+        workflowSubjectId: 'ws-1',
+        currentBlockKeys: [],
+        updatedAt: '2026-07-28T10:01:00.000Z',
+      },
+      error: null,
+    });
+
+    await requestRuntimeService.act({
+      requestId: 'rq-1',
+      action: 'APPROVE',
+      comment: 'Đồng ý',
+      idempotencyKey: '22222222-2222-4222-8222-222222222222',
+      expectedUpdatedAt: '2026-07-28T00:00:00.000Z',
+    });
+
+    expect(mocks.rpc).toHaveBeenCalledWith('act_on_request', expect.objectContaining({
+      p_request_id: 'rq-1',
+      p_action: 'APPROVE',
+      p_expected_updated_at: '2026-07-28T00:00:00.000Z',
+      p_idempotency_key: '22222222-2222-4222-8222-222222222222',
+    }));
+  });
+
+  it('maps stable database request codes while preserving diagnostics', async () => {
+    mocks.rpc.mockResolvedValue({
+      data: null,
+      error: { code: 'P0001', message: 'REQUEST_STALE_STATE: updated_at changed' },
+    });
+    await expect(requestRuntimeService.act({
+      requestId: 'rq-1',
+      action: 'APPROVE',
+      idempotencyKey: '22222222-2222-4222-8222-222222222223',
+      expectedUpdatedAt: '2026-07-28T00:00:00.000Z',
+    })).rejects.toMatchObject({
+      name: 'RequestRpcError',
+      code: 'REQUEST_STALE_STATE',
+      message: 'REQUEST_STALE_STATE: updated_at changed',
+    });
+  });
+
+  it('falls back to a stable forbidden code for unknown diagnostics', () => {
+    const error = mapRequestRpcError({ code: '42501', message: 'permission denied' });
+    expect(error).toMatchObject({
+      code: 'REQUEST_NOT_FOUND_OR_FORBIDDEN',
+      message: 'permission denied',
+    });
   });
 });

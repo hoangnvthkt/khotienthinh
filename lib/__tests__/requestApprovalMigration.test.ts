@@ -12,6 +12,9 @@ const publishSql = publishFile ? readFileSync(join(dir, publishFile), 'utf8') : 
 const submitFile = readdirSync(dir).find(name =>
   name.endsWith('_request_submit_phase1.sql'));
 const submitSql = submitFile ? readFileSync(join(dir, submitFile), 'utf8') : '';
+const actionsFile = readdirSync(dir).find(name =>
+  name.endsWith('_request_actions_phase1.sql'));
+const actionsSql = actionsFile ? readFileSync(join(dir, actionsFile), 'utf8') : '';
 
 describe('request approval phase 1 schema', () => {
   it('creates versioned request tables and private runtime support tables', () => {
@@ -124,5 +127,17 @@ describe('request approval phase 1 schema', () => {
     expect(submitSql).toMatch(
       /create or replace function public\.submit_request[\s\S]*?security invoker[\s\S]*?set search_path = ''/i,
     );
+  });
+
+  it('exposes atomic actions with stale-state, idempotency and round guards', () => {
+    expect(actionsSql).toContain('create or replace function app_private.act_on_request');
+    expect(actionsSql).toContain('create or replace function public.act_on_request');
+    expect(actionsSql).toContain('for update');
+    expect(actionsSql).toContain('REQUEST_STALE_STATE');
+    expect(actionsSql).toContain('REQUEST_ALREADY_PROCESSED');
+    expect(actionsSql).toContain("'CANCELLED'");
+    expect(actionsSql).toContain('assignment_round_id');
+    expect(actionsSql).toContain('app_private.request_notification_outbox');
+    expect(actionsSql).toContain('workflow_instance_logs');
   });
 });
