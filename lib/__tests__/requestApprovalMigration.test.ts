@@ -9,6 +9,9 @@ const sql = file ? readFileSync(join(dir, file), 'utf8') : '';
 const publishFile = readdirSync(dir).find(name =>
   name.endsWith('_request_template_publish_phase1.sql'));
 const publishSql = publishFile ? readFileSync(join(dir, publishFile), 'utf8') : '';
+const submitFile = readdirSync(dir).find(name =>
+  name.endsWith('_request_submit_phase1.sql'));
+const submitSql = submitFile ? readFileSync(join(dir, submitFile), 'utf8') : '';
 
 describe('request approval phase 1 schema', () => {
   it('creates versioned request tables and private runtime support tables', () => {
@@ -101,5 +104,23 @@ describe('request approval phase 1 schema', () => {
     expect(publishSql).toContain('v_workflow_template_id := gen_random_uuid()');
     expect(publishSql).toContain('request_print_templates');
     expect(publishSql).toContain('validation_status = \'VALID\'');
+  });
+
+  it('submits through a private atomic command with sequence, snapshots and outbox', () => {
+    expect(submitSql).toContain('app_private.next_request_code');
+    expect(submitSql).toContain("'RQ-' || v_year::text || '-' || lpad(v_next::text, 6, '0')");
+    expect(submitSql).toContain('app_private.resolve_request_block_approvers');
+    expect(submitSql).toContain('app_private.request_command_idempotency');
+    expect(submitSql).toContain('form_schema_snapshot');
+    expect(submitSql).toContain('approval_config_snapshot');
+    expect(submitSql).toContain('workflow_subjects');
+    expect(submitSql).toContain('workflow_step_assignments');
+    expect(submitSql).toContain('request_notification_outbox');
+    expect(submitSql).toMatch(
+      /create or replace function app_private\.submit_request[\s\S]*?security definer[\s\S]*?set search_path = ''/i,
+    );
+    expect(submitSql).toMatch(
+      /create or replace function public\.submit_request[\s\S]*?security invoker[\s\S]*?set search_path = ''/i,
+    );
   });
 });
