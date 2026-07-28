@@ -30,7 +30,8 @@ security definer
 set search_path = ''
 as $$
   select case
-    when not app_private.request_instance_can_select(r.id, p_user_id) then null
+    when p_user_id is distinct from public.current_app_user_id()
+      or not app_private.request_instance_can_select(r.id, p_user_id) then null
     else jsonb_build_object(
       'id', r.id,
       'code', r.code,
@@ -389,7 +390,8 @@ as $$
     'approved', approved_count,
     'rejected', rejected_count
   )
-  from counts;
+  from counts
+  where p_user_id is not distinct from public.current_app_user_id();
 $$;
 
 create or replace function public.list_request_instances(
