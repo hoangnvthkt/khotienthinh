@@ -96,6 +96,13 @@ begin
   if v_status is not null and v_status not in ('PENDING', 'RETURNED', 'APPROVED', 'REJECTED', 'CANCELLED') then
     raise exception using errcode = '22023', message = 'REQUEST_QUERY_FILTER_INVALID';
   end if;
+  if (
+    nullif(trim(p_filters ->> 'cursorCreatedAt'), '') is null
+  ) <> (
+    nullif(trim(p_filters ->> 'cursorId'), '') is null
+  ) then
+    raise exception using errcode = '22023', message = 'REQUEST_QUERY_CURSOR_INVALID';
+  end if;
   if nullif(trim(p_filters ->> 'cursorCreatedAt'), '') is not null then
     v_cursor_created_at := (p_filters ->> 'cursorCreatedAt')::timestamptz;
     v_cursor_id := nullif(trim(p_filters ->> 'cursorId'), '')::uuid;
@@ -185,10 +192,11 @@ returns jsonb
 language sql
 stable
 security definer
-set search_path = ''
+  set search_path = ''
 as $$
   select case
-    when not app_private.request_instance_can_select(r.id, p_user_id) then null
+    when p_user_id is distinct from public.current_app_user_id()
+      or not app_private.request_instance_can_select(r.id, p_user_id) then null
     else app_private.request_list_item(r.id, p_user_id)
       || jsonb_build_object(
         'description', coalesce(r.description, ''),

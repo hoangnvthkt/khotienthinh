@@ -166,6 +166,10 @@ describe('request approval phase 1 schema', () => {
     expect(querySql).toContain('canResubmit');
     expect(querySql).toContain('p_user_id is distinct from public.current_app_user_id()');
     expect(querySql).toMatch(
+      /function app_private\.request_detail_payload\([\s\S]*?p_user_id uuid[\s\S]*?p_user_id is distinct from public\.current_app_user_id\(\)/i,
+    );
+    expect(querySql).toContain("REQUEST_QUERY_CURSOR_INVALID");
+    expect(querySql).toMatch(
       /revoke all on function public\.list_request_instances\(jsonb, integer\)[\s\S]*?from public, anon/i,
     );
   });
