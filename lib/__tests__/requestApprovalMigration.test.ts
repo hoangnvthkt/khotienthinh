@@ -108,6 +108,8 @@ describe('request approval phase 1 schema', () => {
 
   it('submits through a private atomic command with sequence, snapshots and outbox', () => {
     expect(submitSql).toContain('app_private.next_request_code');
+    expect(submitSql).toContain('create sequence if not exists app_private.request_code_sequence');
+    expect(submitSql).toContain("nextval('app_private.request_code_sequence'::regclass)");
     expect(submitSql).toContain("'RQ-' || v_year::text || '-' || lpad(v_next::text, 6, '0')");
     expect(submitSql).toContain('app_private.resolve_request_block_approvers');
     expect(submitSql).toContain('app_private.request_command_idempotency');

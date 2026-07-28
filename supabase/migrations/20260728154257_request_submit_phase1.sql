@@ -4,6 +4,24 @@
 
 create extension if not exists pgcrypto;
 
+-- PostgreSQL sequences are non-transactional: a request code allocated by a
+-- failed submission is intentionally consumed and can never be reused.
+create sequence if not exists app_private.request_code_sequence;
+
+do $request_code_sequence_seed$
+declare
+  v_existing bigint;
+begin
+  select coalesce(max((regexp_match(code, '^RQ-[0-9]{4}-([0-9]+)$'))[1]::bigint), 0)
+    into v_existing
+  from public.request_instances
+  where code ~ '^RQ-[0-9]{4}-[0-9]+$';
+  if v_existing > 0 then
+    perform setval('app_private.request_code_sequence'::regclass, v_existing, true);
+  end if;
+end;
+$request_code_sequence_seed$;
+
 create or replace function app_private.next_request_code()
 returns text
 language plpgsql
@@ -14,12 +32,7 @@ declare
   v_year integer := extract(year from now())::integer;
   v_next bigint;
 begin
-  insert into public.request_sequence_counters(year, last_value)
-  values (v_year, 1)
-  on conflict (year) do update
-    set last_value = public.request_sequence_counters.last_value + 1,
-        updated_at = now()
-  returning last_value into v_next;
+  v_next := nextval('app_private.request_code_sequence'::regclass);
 
   return 'RQ-' || v_year::text || '-' || lpad(v_next::text, 6, '0');
 end;
