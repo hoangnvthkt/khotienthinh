@@ -7,6 +7,8 @@ import {
   canReceiveWmsTransaction,
   canViewMaterialRequest,
   canViewWmsTransaction,
+  getDefaultWmsWarehouseFilter,
+  getWmsWarehouseAccess,
 } from '../wmsPermissions';
 
 const user = (overrides: Partial<User> = {}): User => ({
@@ -112,5 +114,31 @@ describe('Phase 4 WMS permission adapter', () => {
 
     expect(canViewWmsTransaction(keeper, tx)).toBe(true);
     expect(canApproveWmsTransaction(keeper, tx)).toBe(true);
+  });
+
+  it('treats explicit grants for every warehouse as all-warehouse WMS access even when a legacy warehouse is still assigned', () => {
+    const warehouses = [
+      { id: 'wh-rico', name: 'Rico' },
+      { id: 'wh-main', name: 'Kho tổng' },
+      { id: 'wh-site', name: 'Kho công trình' },
+    ] as any;
+    const keeper = user({
+      role: Role.WAREHOUSE_KEEPER,
+      assignedWarehouseId: 'wh-rico',
+      permissionGrants: warehouses.map(warehouse => ({
+        id: `grant-${warehouse.id}`,
+        userId: 'user-1',
+        permissionCode: 'wms.transaction.view',
+        scopeType: 'warehouse',
+        scopeId: warehouse.id,
+        isActive: true,
+      })),
+    });
+
+    expect(getWmsWarehouseAccess(keeper, warehouses, 'wms.transaction.view')).toMatchObject({
+      canViewAll: true,
+      warehouseIds: ['wh-rico', 'wh-main', 'wh-site'],
+    });
+    expect(getDefaultWmsWarehouseFilter(keeper, warehouses, 'wms.transaction.view')).toBe('ALL');
   });
 });

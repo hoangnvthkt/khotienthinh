@@ -22,7 +22,7 @@ import MaterialIssuePanel from '../components/project/MaterialIssuePanel';
 import { usePagination } from '../hooks/usePagination';
 import { useReservedStock } from '../hooks/useReservedStock';
 import { useModuleData } from '../hooks/useModuleData';
-import { canApproveWmsTransaction, canReceiveWmsTransaction, isFulfillmentBatchTransaction, isWarehouseKeeper } from '../lib/wmsPermissions';
+import { canApproveWmsTransaction, canReceiveWmsTransaction, canViewWmsTransaction, getWmsWarehouseAccess, isFulfillmentBatchTransaction, isWarehouseKeeper } from '../lib/wmsPermissions';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
 import { clampQuantity, formatQuantityInput, parseQuantityInput, sanitizeQuantityInput } from '../lib/quantityInput';
 import { getTransactionNextAction, getTransactionTypeLabel } from '../lib/erpWorkflow';
@@ -125,6 +125,10 @@ const Operations: React.FC = () => {
   const hasAssignedWh = !!user.assignedWarehouseId;
   const isAdmin = user.role === Role.ADMIN;
   const isKeeper = isWarehouseKeeper(user);
+  const wmsViewAccess = useMemo(
+    () => getWmsWarehouseAccess(user, warehouses, 'wms.transaction.view'),
+    [user, warehouses],
+  );
 
   // State quản lý kho bãi
   // - Nhập kho: selectedWarehouseId = kho nhận (kho của thủ kho)
@@ -261,15 +265,8 @@ const Operations: React.FC = () => {
       t.status === TransactionStatus.COMPLETED || t.status === TransactionStatus.CANCELLED
     );
     if (isAdmin) return baseHistory;
-    if (isKeeper && user.assignedWarehouseId) {
-      return baseHistory.filter(t =>
-        t.targetWarehouseId === user.assignedWarehouseId ||
-        t.sourceWarehouseId === user.assignedWarehouseId ||
-        t.requesterId === user.id
-      );
-    }
-    return baseHistory.filter(t => t.requesterId === user.id);
-  }, [transactions, isAdmin, isKeeper, user]);
+    return baseHistory.filter(t => canViewWmsTransaction(user, t));
+  }, [transactions, isAdmin, user]);
 
   const filteredHistoryTransactions = useMemo(() => {
     const keyword = historySearch.trim().toLowerCase();
@@ -592,6 +589,13 @@ const Operations: React.FC = () => {
   }, [activeTab]);
 
   const activeWarehouse = warehouses.find(w => w.id === user.assignedWarehouseId);
+  const scopeBadgeLabel = wmsViewAccess.canViewAll
+    ? 'Phạm vi: Tất cả kho'
+    : activeWarehouse
+      ? `Phạm vi: ${activeWarehouse.name}`
+      : wmsViewAccess.warehouseIds.length > 1
+        ? `Phạm vi: ${wmsViewAccess.warehouseIds.length} kho`
+        : '';
 
   const handlePrintTransaction = (tx: Transaction, mode: 'print' | 'pdf' = 'print') => {
     const title = getVoucherTitle(tx);
@@ -839,8 +843,8 @@ const Operations: React.FC = () => {
             <StatusBadge status="pending" label={`${pendingAdminTxs.length} chờ duyệt`} tone={pendingAdminTxs.length > 0 ? 'warning' : 'success'} size="md" />
             <StatusBadge status="approved" label={`${pendingReceiptTxs.length} chờ nhận`} tone={pendingReceiptTxs.length > 0 ? 'info' : 'success'} size="md" />
             <StatusBadge status="completed" label={`${historyTransactions.length} đã xử lý`} tone="neutral" size="md" />
-            {hasAssignedWh && activeWarehouse && (
-              <StatusBadge status="scope" label={`Phạm vi: ${activeWarehouse.name}`} tone="info" size="md" />
+            {scopeBadgeLabel && (
+              <StatusBadge status="scope" label={scopeBadgeLabel} tone="info" size="md" />
             )}
           </>
         }

@@ -27,7 +27,6 @@ import {
 import {
   InventoryLedgerEntry,
   InventoryLedgerTransactionType,
-  Role,
   TransactionStatus,
   TransactionType,
 } from '../types';
@@ -35,6 +34,7 @@ import { loadXlsx } from '../lib/loadXlsx';
 import { useModuleData } from '../hooks/useModuleData';
 import { useInventoryLedger } from '../hooks/useInventoryLedger';
 import { buildDocumentTracePath } from '../lib/documentTraceService';
+import { getDefaultWmsWarehouseFilter, getWmsWarehouseAccess } from '../lib/wmsPermissions';
 
 type ReportView = 'summary' | 'material_card' | 'warehouse_card' | 'history';
 
@@ -168,9 +168,26 @@ const Reports: React.FC = () => {
   const { items, transactions, warehouses, users, user } = useApp();
   useModuleData('wms');
 
-  const isAdmin = user.role === Role.ADMIN;
-  const hasAssignedWh = !!user.assignedWarehouseId;
   const assignedWarehouse = warehouses.find(w => w.id === user.assignedWarehouseId);
+  const warehouseAccess = useMemo(
+    () => getWmsWarehouseAccess(user, warehouses, 'wms.transaction.view'),
+    [user, warehouses],
+  );
+  const warehouseAccessKey = warehouseAccess.warehouseIds.join('|');
+  const defaultWarehouseFilter = useMemo(
+    () => getDefaultWmsWarehouseFilter(user, warehouses, 'wms.transaction.view'),
+    [user, warehouses],
+  );
+  const visibleWarehouses = useMemo(
+    () => warehouseAccess.canViewAll
+      ? warehouses.filter(warehouse => !warehouse.isArchived)
+      : warehouses.filter(warehouse => warehouseAccess.warehouseIds.includes(warehouse.id)),
+    [warehouseAccess.canViewAll, warehouseAccess.warehouseIds, warehouses],
+  );
+  const canSelectWarehouse = warehouseAccess.canViewAll || visibleWarehouses.length > 1;
+  const scopeLabel = warehouseAccess.canViewAll
+    ? 'Tất cả kho'
+    : assignedWarehouse?.name || (visibleWarehouses.length > 1 ? `${visibleWarehouses.length} kho` : visibleWarehouses[0]?.name);
 
   const [activeView, setActiveView] = useState<ReportView>('summary');
   const [startDate, setStartDate] = useState(() => {
@@ -179,7 +196,7 @@ const Reports: React.FC = () => {
     return d.toISOString().split('T')[0];
   });
   const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
-  const [selectedWh, setSelectedWh] = useState(user.assignedWarehouseId || 'ALL');
+  const [selectedWh, setSelectedWh] = useState(() => getDefaultWmsWarehouseFilter(user, warehouses, 'wms.transaction.view'));
   const [selectedMaterialId, setSelectedMaterialId] = useState('ALL');
   const [selectedType, setSelectedType] = useState<InventoryLedgerTransactionType | 'all'>('all');
   const [searchTerm, setSearchTerm] = useState('');
@@ -200,6 +217,19 @@ const Reports: React.FC = () => {
   const itemById = useMemo(() => new Map(items.map(item => [item.id, item])), [items]);
   const warehouseById = useMemo(() => new Map(warehouses.map(warehouse => [warehouse.id, warehouse])), [warehouses]);
   const userById = useMemo(() => new Map(users.map(appUser => [appUser.id, appUser])), [users]);
+  const visibleWarehouseIdSet = useMemo(() => new Set(warehouseAccess.warehouseIds), [warehouseAccessKey]);
+
+  useEffect(() => {
+    setSelectedWh(prev => {
+      if (warehouseAccess.canViewAll) {
+        if (prev === 'ALL') return prev;
+        if (!prev || prev === user.assignedWarehouseId || !warehouseAccess.warehouseIds.includes(prev)) return 'ALL';
+        return prev;
+      }
+      if (prev !== 'ALL' && warehouseAccess.warehouseIds.includes(prev)) return prev;
+      return defaultWarehouseFilter;
+    });
+  }, [defaultWarehouseFilter, user.assignedWarehouseId, warehouseAccess.canViewAll, warehouseAccess.warehouseIds, warehouseAccessKey]);
 
   const filteredLedgerEntries = useMemo(() => {
     if (ledgerAvailable && ledgerReport) return ledgerReport.entriesPage;
@@ -295,8 +325,11 @@ const Reports: React.FC = () => {
 
     return items
       .filter(item => {
-        if (hasAssignedWh && user.assignedWarehouseId) return user.assignedWarehouseId in item.stockByWarehouse;
         if (selectedMaterialId !== 'ALL') return item.id === selectedMaterialId;
+        if (selectedWh !== 'ALL') return selectedWh in item.stockByWarehouse;
+        if (!warehouseAccess.canViewAll && visibleWarehouseIdSet.size > 0) {
+          return Object.keys(item.stockByWarehouse || {}).some(warehouseId => visibleWarehouseIdSet.has(warehouseId));
+        }
         return true;
       })
       .map(item => {
@@ -357,7 +390,7 @@ const Reports: React.FC = () => {
         };
       })
       .filter(row => !search || `${row.sku} ${row.name}`.toLowerCase().includes(search));
-  }, [endDate, hasAssignedWh, items, searchTerm, selectedMaterialId, selectedWh, startDate, transactions, user.assignedWarehouseId]);
+  }, [endDate, items, searchTerm, selectedMaterialId, selectedWh, startDate, transactions, visibleWarehouseIdSet, warehouseAccess.canViewAll]);
 
   const reportData = ledgerAvailable && ledgerReport ? ledgerReport.stockRows : (ledgerAvailable ? reportDataFromLedger : fallbackReportData);
 
@@ -499,9 +532,9 @@ const Reports: React.FC = () => {
             <p className="mt-1 text-sm text-slate-300 font-medium">
               Sổ cái vật tư theo kho, vật tư, chứng từ và người thao tác.
             </p>
-            {hasAssignedWh && assignedWarehouse && (
+            {scopeLabel && (
               <div className="mt-3 inline-flex items-center gap-2 rounded-xl bg-blue-500/10 border border-blue-400/30 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-blue-100">
-                <Warehouse size={13} /> Phạm vi: {assignedWarehouse.name}
+                <Warehouse size={13} /> Phạm vi: {scopeLabel}
               </div>
             )}
           </div>
@@ -539,9 +572,9 @@ const Reports: React.FC = () => {
               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1">
                 <Building size={12} /> Kho
               </label>
-              <select disabled={hasAssignedWh || !isAdmin} value={selectedWh} onChange={event => setSelectedWh(event.target.value)} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-300 disabled:opacity-60">
-                {isAdmin && <option value="ALL">Tất cả kho</option>}
-                {warehouses.map(warehouse => <option key={warehouse.id} value={warehouse.id}>{warehouse.name}</option>)}
+              <select disabled={!canSelectWarehouse} value={selectedWh} onChange={event => setSelectedWh(event.target.value)} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-300 disabled:opacity-60">
+                {warehouseAccess.canViewAll && <option value="ALL">Tất cả kho</option>}
+                {visibleWarehouses.map(warehouse => <option key={warehouse.id} value={warehouse.id}>{warehouse.name}</option>)}
               </select>
             </div>
             <div className="space-y-1">

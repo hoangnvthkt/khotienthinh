@@ -1,5 +1,31 @@
-import { MaterialRequest, MaterialRequestFulfillmentMode, RequestStatus, Role, Transaction, TransactionType, User } from '../types';
+import { MaterialRequest, MaterialRequestFulfillmentMode, RequestStatus, Role, Transaction, TransactionType, User, Warehouse } from '../types';
 import { canPerform } from './permissions/permissionService';
+
+type WmsWarehouseGrantScope = 'global' | 'warehouse';
+
+export type WmsWarehouseAccess = {
+  canViewAll: boolean;
+  warehouseIds: string[];
+};
+
+const isActiveGrant = (grant: NonNullable<User['permissionGrants']>[number], now = new Date()): boolean =>
+  grant.isActive !== false && (!grant.expiresAt || new Date(grant.expiresAt).getTime() > now.getTime());
+
+const hasExplicitWmsGrant = (
+  user: User,
+  permissionCode: string,
+  scopeType: WmsWarehouseGrantScope,
+  scopeId: string,
+): boolean =>
+  Boolean(user.permissionGrants?.some(grant =>
+    grant.permissionCode === permissionCode &&
+    grant.scopeType === scopeType &&
+    (grant.scopeId === '*' || grant.scopeId === scopeId) &&
+    isActiveGrant(grant)
+  ));
+
+const getActiveWarehouseIds = (warehouses: Warehouse[]): string[] =>
+  warehouses.filter(warehouse => !warehouse.isArchived).map(warehouse => warehouse.id);
 
 const hasWmsPermission = (user: User, permissionCode: string, scopes: Array<{ scopeType: 'global' | 'warehouse' | 'own' | 'assigned'; scopeId: string | undefined }>): boolean =>
   scopes.some(scope => canPerform(user, permissionCode, {
@@ -28,6 +54,59 @@ export const isGlobalWarehouseKeeper = (user: User): boolean =>
 
 export const isWarehouseKeeperFor = (user: User, warehouseId?: string): boolean =>
   isWarehouseKeeper(user) && !!warehouseId && user.assignedWarehouseId === warehouseId;
+
+export const getWmsWarehouseAccess = (
+  user: User,
+  warehouses: Warehouse[],
+  permissionCode = 'wms.transaction.view',
+): WmsWarehouseAccess => {
+  const activeWarehouseIds = getActiveWarehouseIds(warehouses);
+  const activeWarehouseSet = new Set(activeWarehouseIds);
+
+  if (
+    isAdmin(user) ||
+    isGlobalWarehouseKeeper(user) ||
+    hasExplicitWmsGrant(user, permissionCode, 'global', '*') ||
+    hasExplicitWmsGrant(user, permissionCode, 'warehouse', '*')
+  ) {
+    return { canViewAll: true, warehouseIds: activeWarehouseIds };
+  }
+
+  const visibleWarehouseIds = new Set<string>();
+  if (isWarehouseKeeper(user) && user.assignedWarehouseId) visibleWarehouseIds.add(user.assignedWarehouseId);
+  user.permissionGrants?.forEach(grant => {
+    if (
+      grant.permissionCode === permissionCode &&
+      grant.scopeType === 'warehouse' &&
+      grant.scopeId &&
+      grant.scopeId !== '*' &&
+      isActiveGrant(grant)
+    ) {
+      visibleWarehouseIds.add(grant.scopeId);
+    }
+  });
+
+  const orderedIds = activeWarehouseIds.filter(id => visibleWarehouseIds.has(id));
+  visibleWarehouseIds.forEach(id => {
+    if (!activeWarehouseSet.has(id)) orderedIds.push(id);
+  });
+
+  const coversEveryWarehouse = activeWarehouseIds.length > 0 && activeWarehouseIds.every(id => visibleWarehouseIds.has(id));
+  return {
+    canViewAll: coversEveryWarehouse,
+    warehouseIds: coversEveryWarehouse ? activeWarehouseIds : orderedIds,
+  };
+};
+
+export const getDefaultWmsWarehouseFilter = (
+  user: User,
+  warehouses: Warehouse[],
+  permissionCode = 'wms.transaction.view',
+): string => {
+  const access = getWmsWarehouseAccess(user, warehouses, permissionCode);
+  if (access.canViewAll) return 'ALL';
+  return access.warehouseIds[0] || user.assignedWarehouseId || 'ALL';
+};
 
 export const isFulfillmentBatchTransaction = (tx: Transaction): boolean =>
   (tx.items || []).some(item => !!item.fulfillmentBatchId);
