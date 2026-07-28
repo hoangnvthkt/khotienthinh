@@ -15,6 +15,9 @@ const submitSql = submitFile ? readFileSync(join(dir, submitFile), 'utf8') : '';
 const actionsFile = readdirSync(dir).find(name =>
   name.endsWith('_request_actions_phase1.sql'));
 const actionsSql = actionsFile ? readFileSync(join(dir, actionsFile), 'utf8') : '';
+const queryFile = readdirSync(dir).find(name =>
+  name.endsWith('_request_queries_phase1.sql'));
+const querySql = queryFile ? readFileSync(join(dir, queryFile), 'utf8') : '';
 
 describe('request approval phase 1 schema', () => {
   it('creates versioned request tables and private runtime support tables', () => {
@@ -148,5 +151,21 @@ describe('request approval phase 1 schema', () => {
     expect(actionsSql).toContain('v_all_pending_user_ids uuid[]');
     expect(actionsSql).toContain("'{assignmentRoundId}', to_jsonb(v_assignment_round)");
     expect(actionsSql).toContain("message = 'REQUEST_ASSIGNMENT_NOT_ACTIVE'");
+  });
+
+  it('exposes secure cursor, detail and summary query RPCs', () => {
+    expect(querySql).toContain('public.list_request_instances');
+    expect(querySql).toContain('public.get_request_detail');
+    expect(querySql).toContain('public.get_request_summary');
+    expect(querySql).toContain('security invoker');
+    expect(querySql).toContain('request_instance_can_select');
+    expect(querySql).toContain('(r.created_at, r.id) < (v_cursor_created_at, v_cursor_id)');
+    expect(querySql).toContain("assignment.status = 'PENDING'");
+    expect(querySql).toContain('due_at < now()');
+    expect(querySql).toContain('canApprove');
+    expect(querySql).toContain('canResubmit');
+    expect(querySql).toMatch(
+      /revoke all on function public\.list_request_instances\(jsonb, integer\)[\s\S]*?from public, anon/i,
+    );
   });
 });

@@ -10,6 +10,7 @@
     "test": "vitest run",
     "preview": "vite preview",
     "qa:pwa": "npm run lint && npm run build && node scripts/verify-pwa-build.mjs",
+    "smoke:request": "npx supabase db query --local -f supabase/tests/request_approval_phase1_smoke.sql",
     "smoke:project": "supabase db query --linked -f scripts/smoke-project-construction-flow.sql",
     "smoke:procurement": "npx supabase db query --linked --agent=no -f supabase/tests/company_procurement_flow_smoke.sql"
   },

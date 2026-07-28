@@ -1,4 +1,10 @@
-import type { RequestRuntimeStatus } from '../types';
+import type {
+  RequestAssignmentStatus,
+  RequestCompletionPolicy,
+  RequestFlowMode,
+  RequestRuntimeStatus,
+  RequestTemplateFieldSchema,
+} from '../types';
 import { supabase } from './supabase';
 
 export interface SubmitRequestInput {
@@ -18,6 +24,104 @@ export interface RequestCommandResult {
   workflowSubjectId: string;
   currentBlockKeys: string[];
   updatedAt: string;
+}
+
+export interface RequestListFilters {
+  view: 'ALL' | 'ASSIGNED_TO_ME' | 'CREATED_BY_ME' | 'WATCHING';
+  status?: 'PENDING' | 'RETURNED' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
+  overdue?: boolean;
+  search?: string;
+  templateId?: string;
+  cursor?: { createdAt: string; id: string };
+  limit: number;
+}
+
+export interface RequestUserSnapshot {
+  id: string;
+  name: string;
+  avatarUrl: string | null;
+  position: string | null;
+}
+
+export interface RequestListItem {
+  id: string;
+  code: string;
+  title: string;
+  status: RequestRuntimeStatus;
+  templateId: string;
+  templateName: string;
+  creator: RequestUserSnapshot;
+  activeApprovers: Array<RequestUserSnapshot & { assignmentStatus: RequestAssignmentStatus }>;
+  dueAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RequestListPage {
+  items: RequestListItem[];
+  nextCursor?: { createdAt: string; id: string };
+}
+
+export interface RequestActionCapabilities {
+  canApprove: boolean;
+  canReject: boolean;
+  canReturn: boolean;
+  canResubmit: boolean;
+  canCancel: boolean;
+  canReassign: boolean;
+  canPrint: boolean;
+}
+
+export interface RequestApprovalBlockSnapshot {
+  key: string;
+  name: string;
+  sortOrder: number;
+  status: 'NOT_ACTIVE' | 'ACTIVE' | 'COMPLETED' | 'RETURNED' | 'CANCELLED';
+  slaHours: number | null;
+  assignments: Array<{
+    id: string;
+    roundId: string;
+    approver: RequestUserSnapshot;
+    status: RequestAssignmentStatus;
+    actedAt: string | null;
+    comment: string | null;
+  }>;
+}
+
+export interface RequestDetail extends RequestListItem {
+  description: string;
+  templateVersionId: string;
+  templateVersionNumber: number;
+  flowMode: RequestFlowMode;
+  completionPolicy: RequestCompletionPolicy;
+  formSchema: RequestTemplateFieldSchema[];
+  formData: Record<string, unknown>;
+  approvalBlocks: RequestApprovalBlockSnapshot[];
+  watcherIds: string[];
+  timeline: Array<{
+    id: string;
+    eventType: string;
+    actor: RequestUserSnapshot | null;
+    comment: string | null;
+    createdAt: string;
+  }>;
+  printConfig: {
+    browserPrintEnabled: boolean;
+    docxStoragePath: string | null;
+  };
+  capabilities: RequestActionCapabilities;
+}
+
+export interface RequestSummary {
+  all: number;
+  assignedToMe: number;
+  createdByMe: number;
+  watching: number;
+  pending: number;
+  returned: number;
+  overdue: number;
+  approved: number;
+  rejected: number;
 }
 
 export type RequestAction =
@@ -86,6 +190,118 @@ export const assertRequestCommandResult = (value: unknown, commandName = 'reques
   return result as RequestCommandResult;
 };
 
+const isRecord = (value: unknown): value is Record<string, unknown> => (
+  !!value && typeof value === 'object' && !Array.isArray(value)
+);
+
+const isString = (value: unknown): value is string => typeof value === 'string';
+
+const isNullableString = (value: unknown): value is string | null => (
+  value === null || isString(value)
+);
+
+const isUserSnapshot = (value: unknown): value is RequestUserSnapshot => {
+  if (!isRecord(value)) return false;
+  return isString(value.id)
+    && isString(value.name)
+    && isNullableString(value.avatarUrl)
+    && isNullableString(value.position);
+};
+
+const REQUEST_ASSIGNMENT_STATUSES = new Set<RequestAssignmentStatus>([
+  'PENDING', 'APPROVED', 'REJECTED', 'RETURNED', 'SKIPPED', 'CANCELLED',
+]);
+
+const REQUEST_BLOCK_STATUSES = new Set<RequestApprovalBlockSnapshot['status']>([
+  'NOT_ACTIVE', 'ACTIVE', 'COMPLETED', 'RETURNED', 'CANCELLED',
+]);
+
+const isListItem = (value: unknown): value is RequestListItem => {
+  if (!isRecord(value)) return false;
+  const activeApprovers = value.activeApprovers;
+  return isString(value.id)
+    && isString(value.code)
+    && isString(value.title)
+    && isString(value.status)
+    && REQUEST_RUNTIME_STATUSES.has(value.status as RequestRuntimeStatus)
+    && isString(value.templateId)
+    && isString(value.templateName)
+    && isUserSnapshot(value.creator)
+    && Array.isArray(activeApprovers)
+    && activeApprovers.every(item => {
+      if (!isRecord(item) || !isUserSnapshot(item)) return false;
+      const assignmentStatus = (item as unknown as { assignmentStatus?: unknown }).assignmentStatus;
+      return isString(assignmentStatus)
+        && REQUEST_ASSIGNMENT_STATUSES.has(assignmentStatus as RequestAssignmentStatus);
+    })
+    && isNullableString(value.dueAt)
+    && isString(value.createdAt)
+    && isString(value.updatedAt);
+};
+
+const isListPage = (value: unknown): value is RequestListPage => {
+  if (!isRecord(value) || !Array.isArray(value.items) || !value.items.every(isListItem)) {
+    return false;
+  }
+  return value.nextCursor === undefined
+    || value.nextCursor === null
+    || (isRecord(value.nextCursor)
+      && isString(value.nextCursor.createdAt)
+      && isString(value.nextCursor.id));
+};
+
+const isCapabilities = (value: unknown): value is RequestActionCapabilities => {
+  if (!isRecord(value)) return false;
+  return [
+    'canApprove', 'canReject', 'canReturn', 'canResubmit',
+    'canCancel', 'canReassign', 'canPrint',
+  ].every(key => typeof value[key] === 'boolean');
+};
+
+const isDetail = (value: unknown): value is RequestDetail => {
+  if (!isRecord(value) || !isListItem(value)) return false;
+  const printConfig = value.printConfig;
+  return isString(value.description)
+    && isString(value.templateVersionId)
+    && typeof value.templateVersionNumber === 'number'
+    && (value.flowMode === 'SEQUENTIAL' || value.flowMode === 'PARALLEL')
+    && (value.completionPolicy === 'ALL' || value.completionPolicy === 'ANY_ONE')
+    && Array.isArray(value.formSchema)
+    && isRecord(value.formData)
+    && Array.isArray(value.approvalBlocks)
+    && value.approvalBlocks.every(block => {
+      if (!isRecord(block)) return false;
+      return isString(block.key)
+        && isString(block.name)
+        && typeof block.sortOrder === 'number'
+        && isString(block.status)
+        && REQUEST_BLOCK_STATUSES.has(block.status as RequestApprovalBlockSnapshot['status'])
+        && (block.slaHours === null || typeof block.slaHours === 'number')
+        && Array.isArray(block.assignments);
+    })
+    && Array.isArray(value.watcherIds)
+    && value.watcherIds.every(isString)
+    && Array.isArray(value.timeline)
+    && value.timeline.every(event => isRecord(event)
+      && isString(event.id)
+      && isString(event.eventType)
+      && (event.actor === null || isUserSnapshot(event.actor))
+      && isNullableString(event.comment)
+      && isString(event.createdAt))
+    && isRecord(printConfig)
+    && typeof printConfig.browserPrintEnabled === 'boolean'
+    && isNullableString(printConfig.docxStoragePath)
+    && isCapabilities(value.capabilities);
+};
+
+const isSummary = (value: unknown): value is RequestSummary => {
+  if (!isRecord(value)) return false;
+  return [
+    'all', 'assignedToMe', 'createdByMe', 'watching',
+    'pending', 'returned', 'overdue', 'approved', 'rejected',
+  ].every(key => typeof value[key] === 'number' && Number.isFinite(value[key]));
+};
+
 const REQUEST_RPC_ERROR_CODES = new Set<RequestRpcErrorCode>([
   'REQUEST_STALE_STATE',
   'REQUEST_ACTION_FORBIDDEN',
@@ -145,5 +361,46 @@ export const requestRuntimeService = {
     });
     if (error) throw mapRequestRpcError(error);
     return assertRequestCommandResult(data, 'act_on_request');
+  },
+
+  async list(filters: RequestListFilters): Promise<RequestListPage> {
+    const pFilters: Record<string, unknown> = {
+      view: filters.view,
+    };
+    if (filters.status !== undefined) pFilters.status = filters.status;
+    if (filters.overdue !== undefined) pFilters.overdue = filters.overdue;
+    if (filters.search !== undefined) pFilters.search = filters.search;
+    if (filters.templateId !== undefined) pFilters.templateId = filters.templateId;
+    if (filters.cursor !== undefined) {
+      pFilters.cursorCreatedAt = filters.cursor.createdAt;
+      pFilters.cursorId = filters.cursor.id;
+    }
+
+    const result = await run<unknown>('list_request_instances', {
+      p_filters: pFilters,
+      p_limit: filters.limit,
+    });
+    if (!isListPage(result)) {
+      throw new Error('list_request_instances trả về dữ liệu không hợp lệ.');
+    }
+    return result.nextCursor === null ? { ...result, nextCursor: undefined } : result;
+  },
+
+  async getDetail(requestId: string): Promise<RequestDetail> {
+    const result = await run<unknown>('get_request_detail', {
+      p_request_id: requestId,
+    });
+    if (!isDetail(result)) {
+      throw new Error('get_request_detail trả về dữ liệu không hợp lệ.');
+    }
+    return result;
+  },
+
+  async getSummary(): Promise<RequestSummary> {
+    const result = await run<unknown>('get_request_summary', {});
+    if (!isSummary(result)) {
+      throw new Error('get_request_summary trả về dữ liệu không hợp lệ.');
+    }
+    return result;
   },
 };

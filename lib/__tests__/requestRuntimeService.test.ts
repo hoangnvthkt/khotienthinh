@@ -4,7 +4,10 @@ const mocks = vi.hoisted(() => ({ rpc: vi.fn() }));
 
 vi.mock('../supabase', () => ({ supabase: { rpc: mocks.rpc } }));
 
-import { mapRequestRpcError, requestRuntimeService } from '../requestRuntimeService';
+import {
+  mapRequestRpcError,
+  requestRuntimeService,
+} from '../requestRuntimeService';
 
 describe('requestRuntimeService.submit', () => {
   beforeEach(() => mocks.rpc.mockReset());
@@ -134,5 +137,123 @@ describe('requestRuntimeService.act', () => {
       idempotencyKey: '22222222-2222-4222-8222-222222222224',
       expectedUpdatedAt: '2026-07-28T00:00:00.000Z',
     })).rejects.toThrow('act_on_request trả về dữ liệu không hợp lệ.');
+  });
+});
+
+describe('requestRuntimeService queries', () => {
+  beforeEach(() => mocks.rpc.mockReset());
+
+  it('requests the next page with a composite cursor and server-side filters', async () => {
+    mocks.rpc.mockResolvedValue({
+      data: { items: [], nextCursor: null },
+      error: null,
+    });
+
+    await requestRuntimeService.list({
+      view: 'ASSIGNED_TO_ME',
+      status: 'PENDING',
+      overdue: true,
+      search: 'RQ-2026',
+      templateId: 'template-1',
+      cursor: { createdAt: '2026-07-28T10:00:00Z', id: 'rq-9' },
+      limit: 50,
+    });
+
+    expect(mocks.rpc).toHaveBeenCalledWith('list_request_instances', {
+      p_filters: {
+        view: 'ASSIGNED_TO_ME',
+        status: 'PENDING',
+        overdue: true,
+        search: 'RQ-2026',
+        templateId: 'template-1',
+        cursorCreatedAt: '2026-07-28T10:00:00Z',
+        cursorId: 'rq-9',
+      },
+      p_limit: 50,
+    });
+  });
+
+  it('gets a detail snapshot and summary through the secure RPC boundary', async () => {
+    mocks.rpc
+      .mockResolvedValueOnce({
+        data: {
+          id: 'rq-1',
+          code: 'RQ-2026-000001',
+          title: 'Request',
+          status: 'PENDING',
+          templateId: 'template-1',
+          templateName: 'Template',
+          creator: { id: 'u-1', name: 'Creator', avatarUrl: null, position: null },
+          activeApprovers: [],
+          dueAt: null,
+          createdAt: '2026-07-28T10:00:00Z',
+          updatedAt: '2026-07-28T10:00:00Z',
+          description: '',
+          templateVersionId: 'version-1',
+          templateVersionNumber: 1,
+          flowMode: 'SEQUENTIAL',
+          completionPolicy: 'ALL',
+          formSchema: [],
+          formData: {},
+          approvalBlocks: [],
+          watcherIds: [],
+          timeline: [],
+          printConfig: { browserPrintEnabled: true, docxStoragePath: null },
+          capabilities: {
+            canApprove: true,
+            canReject: true,
+            canReturn: true,
+            canResubmit: false,
+            canCancel: false,
+            canReassign: false,
+            canPrint: true,
+          },
+        },
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: {
+          all: 1,
+          assignedToMe: 1,
+          createdByMe: 0,
+          watching: 0,
+          pending: 1,
+          returned: 0,
+          overdue: 0,
+          approved: 0,
+          rejected: 0,
+        },
+        error: null,
+      });
+
+    const detail = await requestRuntimeService.getDetail('rq-1');
+    const summary = await requestRuntimeService.getSummary();
+
+    expect(detail).toMatchObject({ id: 'rq-1', capabilities: { canApprove: true } });
+    expect(summary).toEqual({
+      all: 1,
+      assignedToMe: 1,
+      createdByMe: 0,
+      watching: 0,
+      pending: 1,
+      returned: 0,
+      overdue: 0,
+      approved: 0,
+      rejected: 0,
+    });
+    expect(mocks.rpc).toHaveBeenNthCalledWith(1, 'get_request_detail', {
+      p_request_id: 'rq-1',
+    });
+    expect(mocks.rpc).toHaveBeenNthCalledWith(2, 'get_request_summary', {});
+  });
+
+  it('rejects malformed list and summary responses', async () => {
+    mocks.rpc.mockResolvedValueOnce({ data: { items: [{ id: 'rq-1' }] }, error: null });
+    await expect(requestRuntimeService.list({ view: 'ALL', limit: 20 }))
+      .rejects.toThrow('list_request_instances trả về dữ liệu không hợp lệ.');
+
+    mocks.rpc.mockResolvedValueOnce({ data: { all: 1 }, error: null });
+    await expect(requestRuntimeService.getSummary())
+      .rejects.toThrow('get_request_summary trả về dữ liệu không hợp lệ.');
   });
 });
