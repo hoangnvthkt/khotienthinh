@@ -122,4 +122,17 @@ describe('requestRuntimeService.act', () => {
       message: 'permission denied',
     });
   });
+
+  it('rejects malformed action command results instead of casting them', async () => {
+    mocks.rpc.mockResolvedValue({
+      data: { requestId: 'rq-1', status: 'APPROVED' },
+      error: null,
+    });
+    await expect(requestRuntimeService.act({
+      requestId: 'rq-1',
+      action: 'APPROVE',
+      idempotencyKey: '22222222-2222-4222-8222-222222222224',
+      expectedUpdatedAt: '2026-07-28T00:00:00.000Z',
+    })).rejects.toThrow('act_on_request trả về dữ liệu không hợp lệ.');
+  });
 });

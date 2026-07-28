@@ -60,6 +60,32 @@ export class RequestRpcError extends Error {
   }
 }
 
+const REQUEST_RUNTIME_STATUSES = new Set<RequestRuntimeStatus>([
+  'DRAFT', 'PENDING', 'RETURNED', 'APPROVED', 'REJECTED', 'CANCELLED',
+]);
+
+export const assertRequestCommandResult = (value: unknown, commandName = 'request command'):
+  RequestCommandResult => {
+  if (!value || typeof value !== 'object') {
+    throw new Error(`${commandName} không trả về dữ liệu.`);
+  }
+  const result = value as Partial<RequestCommandResult>;
+  if (
+    typeof result.requestId !== 'string'
+    || typeof result.requestCode !== 'string'
+    || typeof result.status !== 'string'
+    || !REQUEST_RUNTIME_STATUSES.has(result.status as RequestRuntimeStatus)
+    || typeof result.workflowInstanceId !== 'string'
+    || typeof result.workflowSubjectId !== 'string'
+    || !Array.isArray(result.currentBlockKeys)
+    || result.currentBlockKeys.some(key => typeof key !== 'string')
+    || typeof result.updatedAt !== 'string'
+  ) {
+    throw new Error(`${commandName} trả về dữ liệu không hợp lệ.`);
+  }
+  return result as RequestCommandResult;
+};
+
 const REQUEST_RPC_ERROR_CODES = new Set<RequestRpcErrorCode>([
   'REQUEST_STALE_STATE',
   'REQUEST_ACTION_FORBIDDEN',
@@ -104,7 +130,7 @@ export const requestRuntimeService = {
       p_form_data: input.formData,
       p_dynamic_approvers_by_block: input.dynamicApproversByBlock,
       p_idempotency_key: input.idempotencyKey,
-    });
+    }).then(result => assertRequestCommandResult(result, 'submit_request'));
   },
 
   async act(input: ActOnRequestInput): Promise<RequestCommandResult> {
@@ -118,7 +144,6 @@ export const requestRuntimeService = {
       p_expected_updated_at: input.expectedUpdatedAt,
     });
     if (error) throw mapRequestRpcError(error);
-    if (!data) throw new Error('act_on_request không trả về dữ liệu.');
-    return data as RequestCommandResult;
+    return assertRequestCommandResult(data, 'act_on_request');
   },
 };

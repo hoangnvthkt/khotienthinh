@@ -1,6 +1,8 @@
 -- Request approval actions.  All state transitions are private, transaction
 -- local commands; the public RPC is an invoker-only boundary.
 
+alter type public.workflow_instance_action add value if not exists 'REASSIGNED';
+
 create or replace function app_private.request_action_is_admin(p_user_id uuid)
 returns boolean
 language sql
@@ -221,8 +223,19 @@ declare
   v_pending_count integer;
   v_approved_count integer;
   v_current_sort integer;
+  v_pending_user_ids uuid[] := '{}'::uuid[];
+  v_all_pending_user_ids uuid[] := '{}'::uuid[];
 begin
   if v_actor is null then
+    raise exception using errcode = 'P0001', message = 'REQUEST_ACTION_FORBIDDEN';
+  end if;
+  if not exists (
+    select 1
+    from public.users app_user
+    where app_user.id = v_actor
+      and coalesce(app_user.is_active, true)
+      and coalesce(app_user.account_status, 'ACTIVE') = 'ACTIVE'
+  ) then
     raise exception using errcode = 'P0001', message = 'REQUEST_ACTION_FORBIDDEN';
   end if;
   if p_action not in ('APPROVE', 'REJECT', 'RETURN', 'RESUBMIT', 'CANCEL', 'REASSIGN') then
@@ -287,6 +300,10 @@ begin
       and assignment.status = 'PENDING'
     order by assignment.id
     limit 1;
+  end if;
+
+  if p_action = 'REASSIGN' and not found then
+    raise exception using errcode = 'P0001', message = 'REQUEST_ASSIGNMENT_NOT_ACTIVE';
   end if;
 
   if p_action in ('APPROVE', 'REJECT', 'RETURN') and not found then
@@ -388,7 +405,13 @@ begin
     set status = 'RETURNED', acted_at = now(), action_comment = p_comment,
         metadata = coalesce(metadata, '{}'::jsonb) || jsonb_build_object('returnedBlockKey', v_block_key)
     where id = v_assignment.id;
-    perform app_private.close_request_pending_assignments(p_request_id, 'CANCELLED', v_assignment_round, v_block_key, p_comment);
+    perform app_private.close_request_pending_assignments(
+      p_request_id,
+      'CANCELLED',
+      v_assignment_round,
+      case when v_flow_mode = 'PARALLEL' then null else v_block_key end,
+      p_comment
+    );
     update public.request_instances
     set status = 'RETURNED', approval_config_snapshot = coalesce(approval_config_snapshot, '{}'::jsonb)
       || jsonb_build_object('returnedBlockKey', v_block_key), updated_at = now()
@@ -410,7 +433,10 @@ begin
     v_assignment_round := gen_random_uuid();
     update public.request_instances
     set status = 'PENDING', form_data = coalesce(p_form_data, form_data),
-        approval_config_snapshot = approval_config_snapshot - 'returnedBlockKey', updated_at = now()
+        approval_config_snapshot = jsonb_set(
+          approval_config_snapshot - 'returnedBlockKey',
+          '{assignmentRoundId}', to_jsonb(v_assignment_round), true
+        ), updated_at = now()
     where id = p_request_id;
     perform app_private.activate_request_block(p_request_id, v_block_key, v_assignment_round, v_actor);
     update public.workflow_subjects set status = 'RUNNING', updated_at = now() where id = v_subject.id;
@@ -461,6 +487,53 @@ begin
       v_assignment.assignment_group_id, v_assignment.assignment_round_id,
       coalesce(v_assignment.metadata, '{}'::jsonb) || jsonb_build_object('reassignedFrom', v_assignment.assignee_user_id)
     );
+    select coalesce(array_agg(assignment.assignee_user_id order by assignment.id), '{}'::uuid[])
+      into v_pending_user_ids
+    from public.workflow_step_assignments assignment
+    where assignment.workflow_subject_id = v_assignment.workflow_subject_id
+      and assignment.assignment_round_id = v_assignment.assignment_round_id
+      and assignment.metadata ->> 'requestBlockKey' = v_block_key
+      and assignment.status = 'PENDING';
+    select coalesce(array_agg(assignment.assignee_user_id order by assignment.id), '{}'::uuid[])
+      into v_all_pending_user_ids
+    from public.workflow_step_assignments assignment
+    where assignment.workflow_subject_id = v_assignment.workflow_subject_id
+      and assignment.assignment_round_id = v_assignment.assignment_round_id
+      and assignment.status = 'PENDING';
+    update public.workflow_subjects
+    set current_assignee_user_id = v_all_pending_user_ids[1],
+        current_assignee_user_ids = v_all_pending_user_ids,
+        current_node_id = v_assignment.node_id,
+        current_instance_node_id = v_assignment.instance_node_id,
+        updated_at = now()
+    where id = v_assignment.workflow_subject_id;
+    update public.workflow_instances
+    set current_node_id = v_assignment.node_id,
+        current_instance_node_id = v_assignment.instance_node_id,
+        step_assignees = coalesce(step_assignees, '{}'::jsonb)
+          || jsonb_build_object(v_assignment.node_id::text, to_jsonb(v_pending_user_ids)),
+        updated_at = now()
+    where id = v_assignment.workflow_instance_id;
+    update public.request_instances request_instance
+    set approval_config_snapshot = jsonb_set(
+      coalesce(request_instance.approval_config_snapshot, '{}'::jsonb),
+      '{blocks}',
+      coalesce((
+        select jsonb_agg(
+          case
+            when block ->> 'key' = v_block_key
+            then jsonb_set(block, '{resolvedUserIds}', to_jsonb(v_pending_user_ids), true)
+            else block
+          end
+          order by block_order
+        )
+        from jsonb_array_elements(
+          coalesce(request_instance.approval_config_snapshot -> 'blocks', '[]'::jsonb)
+        ) with ordinality as block_items(block, block_order)
+      ), '[]'::jsonb),
+      true
+    ), updated_at = now()
+    where request_instance.id = p_request_id;
     perform app_private.project_workflow_register_participant(
       v_assignment.workflow_subject_id, v_assignment.workflow_instance_id,
       p_assignee_user_id, 'ASSIGNEE', 'request_reassign', v_block_key,
@@ -474,6 +547,14 @@ begin
       jsonb_build_object('requestId', p_request_id, 'requestCode', v_request.code,
         'blockKey', v_block_key, 'reassigned', true)
     ) on conflict (event_key) do nothing;
+    insert into public.workflow_instance_logs(instance_id, node_id, action, acted_by, comment)
+    values (
+      v_assignment.workflow_instance_id,
+      v_assignment.node_id,
+      'REASSIGNED'::public.workflow_instance_action,
+      v_actor,
+      'REASSIGNED: ' || p_comment
+    );
   end if;
 
   update public.request_instances set updated_at = now() where id = p_request_id;

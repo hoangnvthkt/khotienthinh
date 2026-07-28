@@ -139,5 +139,14 @@ describe('request approval phase 1 schema', () => {
     expect(actionsSql).toContain('assignment_round_id');
     expect(actionsSql).toContain('app_private.request_notification_outbox');
     expect(actionsSql).toContain('workflow_instance_logs');
+    expect(actionsSql).toContain("'REASSIGNED'::public.workflow_instance_action");
+    expect(actionsSql).toContain("case when v_flow_mode = 'PARALLEL' then null else v_block_key end");
+    expect(actionsSql).toContain("coalesce(app_user.account_status, 'ACTIVE') = 'ACTIVE'");
+    expect(actionsSql).toContain('step_assignees = coalesce(step_assignees');
+    expect(actionsSql).toContain('to_jsonb(v_pending_user_ids)');
+    expect(actionsSql).toContain('current_assignee_user_ids = v_all_pending_user_ids');
+    expect(actionsSql).toContain('v_all_pending_user_ids uuid[]');
+    expect(actionsSql).toContain("'{assignmentRoundId}', to_jsonb(v_assignment_round)");
+    expect(actionsSql).toContain("message = 'REQUEST_ASSIGNMENT_NOT_ACTIVE'");
   });
 });
