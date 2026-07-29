@@ -54,4 +54,13 @@ describe('request deep links', () => {
     expect(app).not.toContain('<RequestProvider>');
     expect(app).not.toContain("./context/RequestContext");
   });
+
+  it('keeps the phase 1 request workspace behind an environment rollback flag', () => {
+    const flags = readFileSync('lib/featureFlags.ts', 'utf8');
+    const app = readFileSync('App.tsx', 'utf8');
+
+    expect(flags).toContain('VITE_ENABLE_REQUEST_APPROVAL_PHASE1');
+    expect(app).toContain('isRequestApprovalPhase1Enabled');
+    expect(app).toContain('<RequestApprovalPhase1Guard>');
+  });
 });

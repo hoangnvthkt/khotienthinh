@@ -14,7 +14,7 @@ import { CelebrationProvider } from './components/Celebration';
 import ErrorBoundary from './components/ErrorBoundary';
 import ReleaseNotesModal from './components/ReleaseNotesModal';
 import { getProjectAllowedSubModuleRedirect, hasProjectTabPermissionRoute } from './lib/projectTabPermissions';
-import { isChatEnabled, isChatV2Enabled } from './lib/featureFlags';
+import { isChatEnabled, isChatV2Enabled, isRequestApprovalPhase1Enabled } from './lib/featureFlags';
 import { hasAnySettingsManagementFeature } from './lib/settingsPermissions';
 import { useLatestReleaseNotice } from './hooks/useLatestReleaseNotice';
 import { canAccessRoute, getRouteModuleKey } from './lib/routeAccess';
@@ -164,6 +164,9 @@ const RequestListRoute: React.FC = () => {
   return requestId ? <Navigate to={`/rq/${encodeURIComponent(requestId)}`} replace /> : <RequestList />;
 };
 
+const RequestApprovalPhase1Guard: React.FC<{ children: React.ReactNode }> = ({ children }) =>
+  isRequestApprovalPhase1Enabled ? <>{children}</> : <Navigate to="/" replace />;
+
 const AppRoutes: React.FC = () => {
   return (
     <Suspense fallback={<LoadingSpinner />}>
@@ -218,13 +221,13 @@ const AppRoutes: React.FC = () => {
           <Route path="analytics" element={<PredictiveAnalytics />} />
           <Route path="leaderboard" element={<Leaderboard />} />
           <Route path="feedback" element={<FeedbackHub />} />
-          <Route path="rq" element={<RequestListRoute />} />
-          <Route path="rq/:requestId" element={<RequestList />} />
-          <Route path="rq/dashboard" element={<RequestDashboard />} />
-          <Route path="rq/templates" element={<RequestTemplates />} />
-          <Route path="rq/templates/new" element={<RequestTemplateEditor />} />
-          <Route path="rq/templates/:templateId" element={<RequestTemplateEditor />} />
-          <Route path="rq/categories" element={<Navigate to="/rq/templates" replace />} />
+          <Route path="rq" element={<RequestApprovalPhase1Guard><RequestListRoute /></RequestApprovalPhase1Guard>} />
+          <Route path="rq/:requestId" element={<RequestApprovalPhase1Guard><RequestList /></RequestApprovalPhase1Guard>} />
+          <Route path="rq/dashboard" element={<RequestApprovalPhase1Guard><RequestDashboard /></RequestApprovalPhase1Guard>} />
+          <Route path="rq/templates" element={<RequestApprovalPhase1Guard><RequestTemplates /></RequestApprovalPhase1Guard>} />
+          <Route path="rq/templates/new" element={<RequestApprovalPhase1Guard><RequestTemplateEditor /></RequestApprovalPhase1Guard>} />
+          <Route path="rq/templates/:templateId" element={<RequestApprovalPhase1Guard><RequestTemplateEditor /></RequestApprovalPhase1Guard>} />
+          <Route path="rq/categories" element={<RequestApprovalPhase1Guard><Navigate to="/rq/templates" replace /></RequestApprovalPhase1Guard>} />
           <Route path="ts/dashboard" element={<AssetDashboard />} />
           <Route path="ts/catalog" element={<AssetCatalog />} />
           <Route path="ts/assignment" element={<AssetAssignment />} />

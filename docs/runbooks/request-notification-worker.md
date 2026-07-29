@@ -11,6 +11,10 @@
 - Scheduler chạy trong môi trường tin cậy, có thể lưu secret; không dùng frontend, URL public hay source control để lưu secret.
 - Scheduler có `SUPABASE_URL` và `SUPABASE_SERVICE_ROLE_KEY` của đúng Cloud project.
 
+## Rollback UI Phase 1
+
+`VITE_ENABLE_REQUEST_APPROVAL_PHASE1` mặc định là bật. Khi cần dừng nhanh UI Request Phase 1, đặt biến này thành `false` trong môi trường frontend rồi redeploy. Các route `/rq` sẽ chuyển về Home; dữ liệu và migration không bị xóa. Bật lại bằng cách bỏ biến hoặc đặt `true` sau khi đã xử lý sự cố.
+
 ## Lịch gọi khuyến nghị
 
 Gọi `POST /functions/v1/process-request-notifications` mỗi phút. Khi tải cao, có thể gọi mỗi 30 giây; worker claim tối đa 50 item mỗi lượt, hỗ trợ nhiều invocation song song bằng `FOR UPDATE SKIP LOCKED`.
