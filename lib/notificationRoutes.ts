@@ -80,9 +80,10 @@ export const resolveNotificationPath = (notification: AppNotification): string |
   }
 
   // ── Request instances (Yêu cầu / RQ module) ──────────
-  if (sourceType.startsWith('rq') || sourceType === 'request') {
-    const requestId = getMetaValue(metadata, ['requestId', 'request_instance_id', 'requestInstanceId']);
-    return withQuery('/rq', { requestId });
+  if (sourceType.startsWith('rq') || sourceType === 'request' || sourceType === 'request_instance') {
+    const requestId = getMetaValue(metadata, ['requestId', 'request_instance_id', 'requestInstanceId'])
+      || (sourceType === 'request_instance' ? notification.sourceId : undefined);
+    return requestId ? `/rq/${encodeURIComponent(requestId)}` : '/rq';
   }
 
   // ── Material Request (Phiếu vật tư dự án) ────────────
