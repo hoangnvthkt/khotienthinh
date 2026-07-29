@@ -85,6 +85,21 @@ export const createFieldKey = (label: string, existing: string[]): string => {
   return candidate;
 };
 
+export const createApproverBlock = (
+  source: RequestApproverSource,
+  sortOrder: number,
+): RequestApproverBlockDraft => ({
+  key: crypto.randomUUID(),
+  name: source === 'DIRECT_MANAGER' ? 'Quản lý trực tiếp'
+    : source === 'DYNAMIC_CREATOR_SELECT' ? 'Người duyệt được chọn khi gửi'
+      : 'Khối người duyệt',
+  source,
+  fixedUserIds: [],
+  minimumDynamicApprovers: source === 'DYNAMIC_CREATOR_SELECT' ? 1 : null,
+  slaHours: null,
+  sortOrder,
+});
+
 export const reorderByKeys = <T extends { key: string; sortOrder: number }>(items: T[], orderedKeys: string[]): T[] => {
   const byKey = new Map(items.map(item => [item.key, item]));
   if (orderedKeys.length !== items.length || orderedKeys.some(key => !byKey.has(key))) return items;
@@ -104,7 +119,7 @@ export const requestTemplateDraftReducer = (draft: RequestTemplateDraft, action:
     case 'UPSERT_FIELD': return { ...draft, fields: upsert(draft.fields, action.field) };
     case 'REMOVE_FIELD': return { ...draft, fields: draft.fields.filter(field => field.key !== action.key) };
     case 'REORDER_FIELDS': return { ...draft, fields: reorderByKeys(draft.fields, action.orderedKeys) };
-    case 'UPSERT_APPROVER_BLOCK': return { ...draft, approverBlocks: upsert(draft.approverBlocks, action.block) };
+    case 'UPSERT_APPROVER_BLOCK': return { ...draft, approverBlocks: upsert(draft.approverBlocks, { ...action.block, fixedUserIds: [...new Set(action.block.fixedUserIds)] }) };
     case 'REMOVE_APPROVER_BLOCK': return { ...draft, approverBlocks: draft.approverBlocks.filter(block => block.key !== action.key) };
     case 'REORDER_APPROVER_BLOCKS': return { ...draft, approverBlocks: reorderByKeys(draft.approverBlocks, action.orderedKeys) };
     case 'SET_SCOPES': return { ...draft, scopes: action.scopes };
