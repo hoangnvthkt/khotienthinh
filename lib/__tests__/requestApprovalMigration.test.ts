@@ -19,6 +19,24 @@ const queryFile = readdirSync(dir).find(name =>
   name.endsWith('_request_queries_phase1.sql'));
 const querySql = queryFile ? readFileSync(join(dir, queryFile), 'utf8') : '';
 const smokeSql = readFileSync(join(process.cwd(), 'supabase', 'tests', 'request_approval_phase1_smoke.sql'), 'utf8');
+const schedulerFile = readdirSync(dir).find(name =>
+  name.endsWith('_schedule_request_notification_worker.sql'));
+const schedulerSql = schedulerFile ? readFileSync(join(dir, schedulerFile), 'utf8') : '';
+const workerSchemaAccessFile = readdirSync(dir).find(name =>
+  name.endsWith('_request_notification_worker_schema_access.sql'));
+const workerSchemaAccessSql = workerSchemaAccessFile
+  ? readFileSync(join(dir, workerSchemaAccessFile), 'utf8')
+  : '';
+const workerPrivateRpcFile = readdirSync(dir).find(name =>
+  name.endsWith('_request_notification_worker_private_rpc.sql'));
+const workerPrivateRpcSql = workerPrivateRpcFile
+  ? readFileSync(join(dir, workerPrivateRpcFile), 'utf8')
+  : '';
+const pgcryptoSearchPathFile = readdirSync(dir).find(name =>
+  name.endsWith('_request_pgcrypto_search_path.sql'));
+const pgcryptoSearchPathSql = pgcryptoSearchPathFile
+  ? readFileSync(join(dir, pgcryptoSearchPathFile), 'utf8')
+  : '';
 const packageJson = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')) as { scripts?: Record<string, string> };
 
 describe('request approval phase 1 schema', () => {
@@ -34,6 +52,36 @@ describe('request approval phase 1 schema', () => {
     expect(smokeSql).toContain('v_manager_auth_id uuid');
     expect(smokeSql).toContain("jsonb_build_object('sub', v_admin_auth_id, 'role', 'authenticated')");
     expect(smokeSql).toContain("jsonb_build_object('sub', v_manager_auth_id, 'role', 'authenticated')");
+  });
+
+  it('schedules the notification worker with a Vault-backed secret key', () => {
+    expect(schedulerSql).toContain("'process-request-notifications-every-minute'");
+    expect(schedulerSql).toContain('cron.schedule');
+    expect(schedulerSql).toContain('net.http_post');
+    expect(schedulerSql).toContain("name = 'request_notification_worker_service_key'");
+    expect(schedulerSql).toContain('/functions/v1/process-request-notifications');
+  });
+
+  it('grants the service worker only schema access needed to execute its public RPC boundary', () => {
+    expect(workerSchemaAccessSql).toContain('grant usage on schema app_private to service_role');
+  });
+
+  it('grants the worker service role the three private outbox RPCs and nothing broader', () => {
+    expect(workerPrivateRpcSql).toContain(
+      'grant execute on function app_private.claim_request_notification_outbox(integer) to service_role',
+    );
+    expect(workerPrivateRpcSql).toContain(
+      'grant execute on function app_private.deliver_request_notification(uuid) to service_role',
+    );
+    expect(workerPrivateRpcSql).toContain(
+      'grant execute on function app_private.fail_request_notification_outbox(uuid, text) to service_role',
+    );
+  });
+
+  it('resolves pgcrypto digest from the extensions schema in request commands', () => {
+    expect(pgcryptoSearchPathSql).toContain('alter function app_private.submit_request');
+    expect(pgcryptoSearchPathSql).toContain('alter function app_private.act_on_request');
+    expect(pgcryptoSearchPathSql).toContain('set search_path = extensions');
   });
 
   it('creates versioned request tables and private runtime support tables', () => {

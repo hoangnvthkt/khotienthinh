@@ -5,10 +5,19 @@ type ClaimedOutboxItem = { id: string };
 
 export default {
   fetch: withSupabase({ auth: 'secret' }, async (request, context) => {
+    if (request.method === 'GET' && new URL(request.url).searchParams.has('health')) {
+      return Response.json({ ok: true });
+    }
     if (request.method !== 'POST') return Response.json({ error: 'Method not allowed' }, { status: 405 });
     const { limit } = await request.json().catch(() => ({}));
     const { data, error } = await context.supabaseAdmin.rpc('claim_request_notification_outbox', { p_limit: limit ?? 50 });
-    if (error) throw error;
+    if (error) {
+      console.error('Unable to claim request notification jobs', error);
+      return Response.json(
+        { error: 'Unable to claim request notification jobs', detail: error.message },
+        { status: 500 },
+      );
+    }
     const claimed = Array.isArray(data) ? data as ClaimedOutboxItem[] : [];
     let delivered = 0;
     let failed = 0;

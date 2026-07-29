@@ -12,6 +12,9 @@ entrypoint = "./functions/request-print-docx-url/index.ts"
 
 [functions.process-request-notifications]
 enabled = true
-verify_jwt = true
+# Cron authenticates this internal worker with the Vault-held secret API key.
+# Gateway JWT verification must stay off so `withSupabase({ auth: 'secret' })`
+# can validate that key at the function boundary.
+verify_jwt = false
 import_map = "./functions/process-request-notifications/deno.json"
 entrypoint = "./functions/process-request-notifications/index.ts"

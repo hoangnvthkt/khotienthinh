@@ -6,10 +6,9 @@
 
 ## Điều kiện trước khi bật scheduler
 
-- Edge Function `process-request-notifications` đã ở trạng thái `ACTIVE` và yêu cầu JWT.
-- Migration `20260729073147_request_notification_delivery_phase1.sql` đã được áp dụng.
-- Scheduler chạy trong môi trường tin cậy, có thể lưu secret; không dùng frontend, URL public hay source control để lưu secret.
-- Scheduler có `SUPABASE_URL` và `SUPABASE_SERVICE_ROLE_KEY` của đúng Cloud project.
+- Edge Function `process-request-notifications` đã ở trạng thái `ACTIVE`, tắt gateway JWT và xác thực bằng Supabase secret API key tại runtime.
+- Các migration `20260729073147_request_notification_delivery_phase1.sql`, `20260729082919_schedule_request_notification_worker.sql`, `20260729083646_request_notification_worker_schema_access.sql` và `20260729083734_request_notification_worker_private_rpc.sql` đã được áp dụng.
+- Scheduler là Supabase Cron; secret API key được lưu trong Supabase Vault với tên `request_notification_worker_service_key`. Không dùng frontend, URL public hay source control để lưu secret.
 
 ## Rollback UI Phase 1
 
@@ -19,19 +18,27 @@
 
 Gọi `POST /functions/v1/process-request-notifications` mỗi phút. Khi tải cao, có thể gọi mỗi 30 giây; worker claim tối đa 50 item mỗi lượt, hỗ trợ nhiều invocation song song bằng `FOR UPDATE SKIP LOCKED`.
 
-Body có thể là `{}` hoặc `{ "limit": 50 }`. Giới hạn tối đa được database kiểm soát là 50.
+Body có thể là `{}` hoặc `{ "limit": 50 }`. Giới hạn tối đa được database kiểm soát là 50. Cron gửi secret API key chỉ trong header `apikey`; không gửi key qua `Authorization`.
 
 Ví dụ cho môi trường scheduler (thay biến môi trường tại runner, không hard-code secret):
 
 ```sh
 curl --fail-with-body --request POST "$SUPABASE_URL/functions/v1/process-request-notifications" \
-  --header "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
-  --header "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
+  --header "apikey: $SUPABASE_SECRET_KEY" \
   --header "Content-Type: application/json" \
   --data '{"limit":50}'
 ```
 
 Response thành công có dạng `{ "claimed": 3, "delivered": 3, "failed": 0 }`.
+
+Kiểm tra liveness của worker bằng secret API key (không claim outbox):
+
+```sh
+curl --fail-with-body "$SUPABASE_URL/functions/v1/process-request-notifications?health=1" \
+  --header "apikey: $SUPABASE_SECRET_KEY"
+```
+
+Response thành công là `{ "ok": true }`.
 
 ## Retry và xử lý sự cố
 

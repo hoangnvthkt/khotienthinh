@@ -89,7 +89,8 @@ begin
     id, request_template_id, version_number, form_schema, usage_scope,
     flow_mode, completion_policy, status, created_by
   ) values (
-    gen_random_uuid(), v_template, 1, '[]'::jsonb,
+    gen_random_uuid(), v_template, 1,
+    '[{"key":"purpose","label":"Purpose","fieldType":"text","required":false}]'::jsonb,
     jsonb_build_object('companyWide', true, 'departmentIds', '[]'::jsonb,
       'orgUnitIds', '[]'::jsonb, 'permissionCodes', '[]'::jsonb, 'userIds', '[]'::jsonb),
     'SEQUENTIAL', 'ALL', 'DRAFT', v_admin
@@ -170,7 +171,8 @@ begin
     id, request_template_id, version_number, form_schema, usage_scope,
     flow_mode, completion_policy, status, created_by
   ) values (
-    gen_random_uuid(), v_parallel_template, 1, '[]'::jsonb,
+    gen_random_uuid(), v_parallel_template, 1,
+    '[{"key":"purpose","label":"Purpose","fieldType":"text","required":false}]'::jsonb,
     jsonb_build_object('companyWide', true), 'PARALLEL', 'ANY_ONE', 'DRAFT', v_admin
   ) returning id into v_parallel_version;
   insert into public.request_approval_blocks(request_template_version_id, block_key, name, sort_order, approver_source, fixed_user_ids)
@@ -198,7 +200,11 @@ begin
   insert into public.request_templates(id, name, created_by)
   values (v_reject_template, 'Smoke reject request', v_admin);
   insert into public.request_template_versions(id, request_template_id, version_number, form_schema, usage_scope, flow_mode, completion_policy, status, created_by)
-  values (gen_random_uuid(), v_reject_template, 1, '[]'::jsonb, jsonb_build_object('companyWide', true), 'SEQUENTIAL', 'ALL', 'DRAFT', v_admin)
+  values (
+    gen_random_uuid(), v_reject_template, 1,
+    '[{"key":"purpose","label":"Purpose","fieldType":"text","required":false}]'::jsonb,
+    jsonb_build_object('companyWide', true), 'SEQUENTIAL', 'ALL', 'DRAFT', v_admin
+  )
   returning id into v_reject_version;
   insert into public.request_approval_blocks(request_template_version_id, block_key, name, sort_order, approver_source, fixed_user_ids)
   values

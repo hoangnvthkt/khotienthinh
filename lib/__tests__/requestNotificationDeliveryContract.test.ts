@@ -15,5 +15,15 @@ describe('request notification delivery boundary', () => {
     expect(source).toContain("withSupabase({ auth: 'secret' }");
     expect(source).toContain("claim_request_notification_outbox");
     expect(source).toContain("deliver_request_notification");
+    expect(source).toContain("searchParams.has('health')");
+    expect(source).toContain("Unable to claim request notification jobs");
+  });
+
+  it('accepts the Vault-held secret key at the worker boundary without gateway JWT validation', () => {
+    const config = readFileSync('supabase/config.toml', 'utf8');
+
+    expect(config).toMatch(
+      /\[functions\.process-request-notifications\][\s\S]*?verify_jwt\s*=\s*false/,
+    );
   });
 });
