@@ -101,9 +101,10 @@ const Leaderboard = React.lazy(() => import('./pages/Leaderboard'));
 const FeedbackHub = React.lazy(() => import('./pages/FeedbackHub'));
 
 // Request pages
-const RequestCategories = React.lazy(() => import('./pages/request/RequestCategories'));
 const RequestList = React.lazy(() => import('./pages/request/RequestList'));
 const RequestDashboard = React.lazy(() => import('./pages/request/RequestDashboard'));
+const RequestTemplates = React.lazy(() => import('./pages/request/RequestTemplates'));
+const RequestTemplateEditor = React.lazy(() => import('./pages/request/RequestTemplateEditor'));
 
 // Asset management pages
 const AssetCatalog = React.lazy(() => import('./pages/ts/AssetCatalog'));
@@ -214,7 +215,10 @@ const AppRoutes: React.FC = () => {
           <Route path="feedback" element={<FeedbackHub />} />
           <Route path="rq" element={<RequestList />} />
           <Route path="rq/dashboard" element={<RequestDashboard />} />
-          <Route path="rq/categories" element={<RequestCategories />} />
+          <Route path="rq/templates" element={<RequestTemplates />} />
+          <Route path="rq/templates/new" element={<RequestTemplateEditor />} />
+          <Route path="rq/templates/:templateId" element={<RequestTemplateEditor />} />
+          <Route path="rq/categories" element={<Navigate to="/rq/templates" replace />} />
           <Route path="ts/dashboard" element={<AssetDashboard />} />
           <Route path="ts/catalog" element={<AssetCatalog />} />
           <Route path="ts/assignment" element={<AssetAssignment />} />
