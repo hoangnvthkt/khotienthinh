@@ -44,6 +44,7 @@ export interface RequestTemplateDraft {
 }
 
 export type RequestTemplateDraftAction =
+  | { type: 'REPLACE_DRAFT'; draft: RequestTemplateDraft }
   | { type: 'PATCH_GENERAL'; patch: Pick<Partial<RequestTemplateDraft>, 'name' | 'description' | 'requestSlaHours'> }
   | { type: 'SET_FLOW'; flowMode: RequestFlowMode; completionPolicy: RequestCompletionPolicy }
   | { type: 'UPSERT_FIELD'; field: RequestTemplateFieldDraft }
@@ -84,6 +85,7 @@ const upsert = <T extends { key: string }>(items: T[], item: T): T[] => {
 
 export const requestTemplateDraftReducer = (draft: RequestTemplateDraft, action: RequestTemplateDraftAction): RequestTemplateDraft => {
   switch (action.type) {
+    case 'REPLACE_DRAFT': return action.draft;
     case 'PATCH_GENERAL': return { ...draft, ...action.patch };
     case 'SET_FLOW': return { ...draft, flowMode: action.flowMode, completionPolicy: action.completionPolicy };
     case 'UPSERT_FIELD': return { ...draft, fields: upsert(draft.fields, action.field) };
