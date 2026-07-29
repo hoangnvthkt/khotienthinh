@@ -18,8 +18,24 @@ const actionsSql = actionsFile ? readFileSync(join(dir, actionsFile), 'utf8') : 
 const queryFile = readdirSync(dir).find(name =>
   name.endsWith('_request_queries_phase1.sql'));
 const querySql = queryFile ? readFileSync(join(dir, queryFile), 'utf8') : '';
+const smokeSql = readFileSync(join(process.cwd(), 'supabase', 'tests', 'request_approval_phase1_smoke.sql'), 'utf8');
+const packageJson = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')) as { scripts?: Record<string, string> };
 
 describe('request approval phase 1 schema', () => {
+  it('runs request smoke against the linked Supabase Cloud project only', () => {
+    const command = packageJson.scripts?.['smoke:request'] || '';
+
+    expect(command).toContain('db query --linked');
+    expect(command).not.toContain('--local');
+  });
+
+  it('uses auth IDs for simulated JWT subjects while retaining app-user IDs for request records', () => {
+    expect(smokeSql).toContain('v_admin_auth_id uuid');
+    expect(smokeSql).toContain('v_manager_auth_id uuid');
+    expect(smokeSql).toContain("jsonb_build_object('sub', v_admin_auth_id, 'role', 'authenticated')");
+    expect(smokeSql).toContain("jsonb_build_object('sub', v_manager_auth_id, 'role', 'authenticated')");
+  });
+
   it('creates versioned request tables and private runtime support tables', () => {
     for (const table of [
       'request_templates',

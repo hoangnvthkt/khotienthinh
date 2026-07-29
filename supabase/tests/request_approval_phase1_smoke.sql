@@ -11,6 +11,11 @@ declare
   v_director_a uuid;
   v_director_b uuid;
   v_outsider uuid;
+  v_admin_auth_id uuid;
+  v_manager_auth_id uuid;
+  v_director_a_auth_id uuid;
+  v_director_b_auth_id uuid;
+  v_outsider_auth_id uuid;
   v_template uuid;
   v_version uuid;
   v_request uuid;
@@ -58,10 +63,20 @@ begin
   v_director_b := v_users[3];
   v_outsider := v_users[4];
 
-  perform set_config('request.jwt.claim.sub', v_admin::text, true);
+  select auth_id into v_admin_auth_id from public.users where id = v_admin;
+  select auth_id into v_manager_auth_id from public.users where id = v_manager;
+  select auth_id into v_director_a_auth_id from public.users where id = v_director_a;
+  select auth_id into v_director_b_auth_id from public.users where id = v_director_b;
+  select auth_id into v_outsider_auth_id from public.users where id = v_outsider;
+  if v_admin_auth_id is null or v_manager_auth_id is null or v_director_a_auth_id is null
+     or v_director_b_auth_id is null or v_outsider_auth_id is null then
+    raise exception 'request smoke requires auth_id for every selected active user';
+  end if;
+
+  perform set_config('request.jwt.claim.sub', v_admin_auth_id::text, true);
   perform set_config(
     'request.jwt.claims',
-    jsonb_build_object('sub', v_admin, 'role', 'authenticated')::text,
+    jsonb_build_object('sub', v_admin_auth_id, 'role', 'authenticated')::text,
     true
   );
 
@@ -107,8 +122,8 @@ begin
     raise exception 'idempotency replay created a different request: %', v_replay;
   end if;
 
-  perform set_config('request.jwt.claim.sub', v_manager::text, true);
-  perform set_config('request.jwt.claims', jsonb_build_object('sub', v_manager, 'role', 'authenticated')::text, true);
+  perform set_config('request.jwt.claim.sub', v_manager_auth_id::text, true);
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', v_manager_auth_id, 'role', 'authenticated')::text, true);
   v_result := public.act_on_request(v_request, 'APPROVE', 'Manager approved', null, null, gen_random_uuid()::text, v_first_updated_at);
   v_updated_at := (v_result ->> 'updatedAt')::timestamptz;
   if not exists (
@@ -119,12 +134,12 @@ begin
     raise exception 'sequential approval did not activate the director block';
   end if;
 
-  perform set_config('request.jwt.claim.sub', v_director_a::text, true);
-  perform set_config('request.jwt.claims', jsonb_build_object('sub', v_director_a, 'role', 'authenticated')::text, true);
+  perform set_config('request.jwt.claim.sub', v_director_a_auth_id::text, true);
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', v_director_a_auth_id, 'role', 'authenticated')::text, true);
   v_result := public.act_on_request(v_request, 'RETURN', 'Please revise', null, null, gen_random_uuid()::text, v_updated_at);
   v_updated_at := (v_result ->> 'updatedAt')::timestamptz;
-  perform set_config('request.jwt.claim.sub', v_creator::text, true);
-  perform set_config('request.jwt.claims', jsonb_build_object('sub', v_creator, 'role', 'authenticated')::text, true);
+  perform set_config('request.jwt.claim.sub', v_admin_auth_id::text, true);
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', v_admin_auth_id, 'role', 'authenticated')::text, true);
   v_result := public.act_on_request(v_request, 'RESUBMIT', 'Resubmitted', '{}'::jsonb, null, gen_random_uuid()::text, v_updated_at);
   v_updated_at := (v_result ->> 'updatedAt')::timestamptz;
   select count(distinct assignment.assignment_round_id)::integer into v_round_count
@@ -134,20 +149,20 @@ begin
     raise exception 'resubmit did not create a new assignment round';
   end if;
 
-  perform set_config('request.jwt.claim.sub', v_director_a::text, true);
-  perform set_config('request.jwt.claims', jsonb_build_object('sub', v_director_a, 'role', 'authenticated')::text, true);
+  perform set_config('request.jwt.claim.sub', v_director_a_auth_id::text, true);
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', v_director_a_auth_id, 'role', 'authenticated')::text, true);
   v_result := public.act_on_request(v_request, 'APPROVE', 'Director A approved', null, null, gen_random_uuid()::text, v_updated_at);
   v_updated_at := (v_result ->> 'updatedAt')::timestamptz;
-  perform set_config('request.jwt.claim.sub', v_director_b::text, true);
-  perform set_config('request.jwt.claims', jsonb_build_object('sub', v_director_b, 'role', 'authenticated')::text, true);
+  perform set_config('request.jwt.claim.sub', v_director_b_auth_id::text, true);
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', v_director_b_auth_id, 'role', 'authenticated')::text, true);
   v_result := public.act_on_request(v_request, 'APPROVE', 'Director B approved', null, null, gen_random_uuid()::text, v_updated_at);
   if v_result ->> 'status' <> 'APPROVED' then
     raise exception 'sequential ALL request did not finish after both directors: %', v_result;
   end if;
 
   -- Parallel ANY_ONE: one approval completes the request and skips the other.
-  perform set_config('request.jwt.claim.sub', v_admin::text, true);
-  perform set_config('request.jwt.claims', jsonb_build_object('sub', v_admin, 'role', 'authenticated')::text, true);
+  perform set_config('request.jwt.claim.sub', v_admin_auth_id::text, true);
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', v_admin_auth_id, 'role', 'authenticated')::text, true);
   v_parallel_template := gen_random_uuid();
   insert into public.request_templates(id, name, created_by)
   values (v_parallel_template, 'Smoke parallel request', v_admin);
@@ -164,8 +179,8 @@ begin
   v_result := public.submit_request(v_parallel_version, 'Parallel smoke request', '', '{}'::jsonb, '{}'::jsonb, v_parallel_key);
   v_parallel_request := (v_result ->> 'requestId')::uuid;
   v_updated_at := (v_result ->> 'updatedAt')::timestamptz;
-  perform set_config('request.jwt.claim.sub', v_manager::text, true);
-  perform set_config('request.jwt.claims', jsonb_build_object('sub', v_manager, 'role', 'authenticated')::text, true);
+  perform set_config('request.jwt.claim.sub', v_manager_auth_id::text, true);
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', v_manager_auth_id, 'role', 'authenticated')::text, true);
   v_result := public.act_on_request(v_parallel_request, 'APPROVE', 'One is enough', null, null, gen_random_uuid()::text, v_updated_at);
   if v_result ->> 'status' <> 'APPROVED'
      or not exists (
@@ -177,8 +192,8 @@ begin
   end if;
 
   -- Reject is terminal and cancels every remaining pending assignment.
-  perform set_config('request.jwt.claim.sub', v_admin::text, true);
-  perform set_config('request.jwt.claims', jsonb_build_object('sub', v_admin, 'role', 'authenticated')::text, true);
+  perform set_config('request.jwt.claim.sub', v_admin_auth_id::text, true);
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', v_admin_auth_id, 'role', 'authenticated')::text, true);
   v_reject_template := gen_random_uuid();
   insert into public.request_templates(id, name, created_by)
   values (v_reject_template, 'Smoke reject request', v_admin);
@@ -193,8 +208,8 @@ begin
   v_result := public.submit_request(v_reject_version, 'Reject smoke request', '', '{}'::jsonb, '{}'::jsonb, v_reject_key);
   v_reject_request := (v_result ->> 'requestId')::uuid;
   v_updated_at := (v_result ->> 'updatedAt')::timestamptz;
-  perform set_config('request.jwt.claim.sub', v_manager::text, true);
-  perform set_config('request.jwt.claims', jsonb_build_object('sub', v_manager, 'role', 'authenticated')::text, true);
+  perform set_config('request.jwt.claim.sub', v_manager_auth_id::text, true);
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', v_manager_auth_id, 'role', 'authenticated')::text, true);
   v_result := public.act_on_request(v_reject_request, 'REJECT', 'Rejected by smoke', null, null, gen_random_uuid()::text, v_updated_at);
   if v_result ->> 'status' <> 'REJECTED'
      or exists (
@@ -206,14 +221,14 @@ begin
   end if;
 
   -- Visibility is checked inside the RPC, not by trusting a client filter.
-  perform set_config('request.jwt.claim.sub', v_outsider::text, true);
-  perform set_config('request.jwt.claims', jsonb_build_object('sub', v_outsider, 'role', 'authenticated')::text, true);
+  perform set_config('request.jwt.claim.sub', v_outsider_auth_id::text, true);
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', v_outsider_auth_id, 'role', 'authenticated')::text, true);
   if public.get_request_detail(v_request) is not null then
     raise exception 'outsider unexpectedly received request detail';
   end if;
 
-  perform set_config('request.jwt.claim.sub', v_admin::text, true);
-  perform set_config('request.jwt.claims', jsonb_build_object('sub', v_admin, 'role', 'authenticated')::text, true);
+  perform set_config('request.jwt.claim.sub', v_admin_auth_id::text, true);
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', v_admin_auth_id, 'role', 'authenticated')::text, true);
   if not (public.get_request_summary() ? 'all') then
     raise exception 'request summary did not return aggregate counters';
   end if;
