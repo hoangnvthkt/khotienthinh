@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { useWorkflow } from '../context/WorkflowContext';
-import { useRequest } from '../context/RequestContext';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   LineChart, Line, PieChart, Pie, Cell, AreaChart, Area
@@ -419,7 +418,6 @@ const CustomDashboard: React.FC = () => {
   useModuleData('da');
   useModuleData('ts');
   const { instances: wfInstances } = useWorkflow();
-  const { requests: rqRequests } = useRequest();
 
   const [layout, setLayout] = useState<WidgetConfig[]>(DEFAULT_LAYOUT);
   const [savedLayout, setSavedLayout] = useState<DashboardLayout | null>(null);

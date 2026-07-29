@@ -2,7 +2,7 @@ import React, { useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { useWorkflow } from '../context/WorkflowContext';
-import { useRequest } from '../context/RequestContext';
+import { useRequestList } from '../hooks/useRequestList';
 import {
     User as UserIcon, Briefcase, Calendar, MapPin, Clock,
     Award, Hash, ChevronRight, Shield, TrendingUp,
@@ -11,12 +11,13 @@ import {
     ClipboardList, ArrowRight, Zap, Sparkles, CalendarCheck,
     Timer, CircleDot, XCircle, CheckCheck
 } from 'lucide-react';
-import { WorkflowInstanceStatus, WorkflowNodeType, RQStatus } from '../types';
+import { WorkflowInstanceStatus, WorkflowNodeType } from '../types';
 import { AnimatedNumber, LastUpdated } from '../components/LiveDashboardWidgets';
 import DailyMissions from '../components/DailyMissions';
 import { getTimeGreeting, getRandomQuote } from '../lib/funMessages';
 import { isChatEnabled } from '../lib/featureFlags';
 import { canAccessRoute } from '../lib/routeAccess';
+import { buildRequestRoute } from '../lib/requestRoutes';
 
 // ═══════════════════════════════════════════════════════
 //  EMPLOYEE DASHBOARD — Mobile-First Todo-List Style
@@ -31,7 +32,8 @@ const EmployeeDashboard: React.FC = () => {
         loadModuleData, hrmConstructionSites, lastRealtimeEvent,
     } = useApp();
     const { instances: wfInstances, templates: wfTemplates, nodes: wfNodes } = useWorkflow();
-    const { requests: rqRequests, categories: rqCategories } = useRequest();
+    const assignedRequestList = useRequestList({ view: 'ASSIGNED_TO_ME' });
+    const createdRequestList = useRequestList({ view: 'CREATED_BY_ME' });
 
     // Eagerly load HRM + Asset data on mount
     useEffect(() => {
@@ -122,24 +124,10 @@ const EmployeeDashboard: React.FC = () => {
 
     const myRunningWf = myWorkflowInstances.filter(i => i.status === WorkflowInstanceStatus.RUNNING);
 
-    // ─── Request Todo Items (requests where I'm the current approver) ───
-    const myRequestTodos = useMemo(() => {
-        return rqRequests.filter(req => {
-            if (req.status !== RQStatus.PENDING) return false;
-            const sorted = [...(req.approvers || [])].sort((a, b) => a.order - b.order);
-            const currentStep = sorted.find(a => a.status === 'waiting');
-            return currentStep?.userId === user.id;
-        });
-    }, [rqRequests, user.id]);
-
-    // Request items I created
-    const myRequests = useMemo(() => {
-        return rqRequests.filter(req => req.createdBy === user.id);
-    }, [rqRequests, user.id]);
-
-    const myOpenRequests = myRequests.filter(r =>
-        r.status === RQStatus.PENDING || r.status === RQStatus.IN_PROGRESS || r.status === RQStatus.DRAFT
-    );
+    // ─── Request runtime read models ───
+    const myRequestTodos = assignedRequestList.items;
+    const myRequests = createdRequestList.items;
+    const myOpenRequests = myRequests.filter(r => r.status === 'PENDING' || r.status === 'RETURNED');
 
     // ─── Assets assigned to me ───
     const myAssets = useMemo(() => {
@@ -211,14 +199,6 @@ const EmployeeDashboard: React.FC = () => {
         },
     ];
 
-    // ─── Priority config ───
-    const priorityConfig: Record<string, { color: string; label: string }> = {
-        urgent: { color: 'bg-red-500/15 text-red-500 border-red-500/30', label: 'Khẩn cấp' },
-        high: { color: 'bg-orange-500/15 text-orange-500 border-orange-500/30', label: 'Cao' },
-        medium: { color: 'bg-blue-500/15 text-blue-500 border-blue-500/30', label: 'Trung bình' },
-        low: { color: 'bg-slate-500/15 text-slate-500 border-slate-500/30', label: 'Thấp' },
-    };
-
     const statusConfig: Record<string, { icon: React.ReactNode; color: string; label: string }> = {
         RUNNING: { icon: <Timer size={12} />, color: 'text-blue-500 bg-blue-500/10', label: 'Đang chạy' },
         COMPLETED: { icon: <CheckCheck size={12} />, color: 'text-emerald-500 bg-emerald-500/10', label: 'Hoàn thành' },
@@ -229,6 +209,7 @@ const EmployeeDashboard: React.FC = () => {
         IN_PROGRESS: { icon: <Timer size={12} />, color: 'text-blue-500 bg-blue-500/10', label: 'Đang xử lý' },
         DONE: { icon: <CheckCheck size={12} />, color: 'text-emerald-500 bg-emerald-500/10', label: 'Hoàn thành' },
         DRAFT: { icon: <FileText size={12} />, color: 'text-slate-400 bg-slate-400/10', label: 'Nháp' },
+        RETURNED: { icon: <Timer size={12} />, color: 'text-orange-500 bg-orange-500/10', label: 'Đã trả lại' },
     };
 
     // ═══════════════════════════════════════════════════════
@@ -417,12 +398,10 @@ const EmployeeDashboard: React.FC = () => {
                 <SectionCard title="Yêu cầu cần duyệt" icon={<Inbox size={14} />} count={myRequestTodos.length} action={{ label: 'Xem tất cả', onClick: () => navigate('/rq') }}>
                     <div className="space-y-2">
                         {myRequestTodos.slice(0, 5).map(req => {
-                            const cat = rqCategories.find(c => c.id === req.categoryId);
-                            const prio = priorityConfig[req.priority] || priorityConfig.medium;
                             return (
                                 <button
                                     key={req.id}
-                                    onClick={() => navigate('/rq')}
+                                    onClick={() => navigate(buildRequestRoute(req.id))}
                                     className="w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-200 hover:bg-cyan-50 dark:hover:bg-cyan-500/10 hover:shadow-md group text-left border border-transparent hover:border-cyan-200 dark:hover:border-cyan-500/20"
                                 >
                                     <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center text-white shrink-0 shadow-md shadow-cyan-500/20 group-hover:scale-110 transition-transform">
@@ -432,8 +411,7 @@ const EmployeeDashboard: React.FC = () => {
                                         <div className="text-sm font-bold text-slate-800 dark:text-white truncate">{req.title}</div>
                                         <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                                             <span className="text-[9px] font-mono font-bold text-cyan-500 bg-cyan-500/10 px-1.5 py-0.5 rounded">{req.code}</span>
-                                            {cat && <span className="text-[9px] text-slate-400">{cat.name}</span>}
-                                            <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded border ${prio.color}`}>{prio.label}</span>
+                                            <span className="text-[9px] text-slate-400">{req.templateName}</span>
                                         </div>
                                     </div>
                                     <div className="text-right shrink-0">
@@ -486,13 +464,11 @@ const EmployeeDashboard: React.FC = () => {
                 <SectionCard title="Yêu cầu của tôi" icon={<FileText size={14} />} action={{ label: 'Xem tất cả', onClick: () => navigate('/rq') }}>
                     <div className="space-y-2">
                         {myRequests.slice(0, 5).map(req => {
-                            const cat = rqCategories.find(c => c.id === req.categoryId);
                             const st = statusConfig[req.status] || statusConfig.PENDING;
-                            const prio = priorityConfig[req.priority] || priorityConfig.medium;
                             return (
                                 <button
                                     key={req.id}
-                                    onClick={() => navigate('/rq')}
+                                    onClick={() => navigate(buildRequestRoute(req.id))}
                                     className="w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-200 hover:bg-slate-50 dark:hover:bg-slate-700/50 group text-left"
                                 >
                                     <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${st.color} shrink-0`}>
@@ -502,8 +478,7 @@ const EmployeeDashboard: React.FC = () => {
                                         <div className="text-sm font-bold text-slate-700 dark:text-slate-200 truncate">{req.title}</div>
                                         <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                                             <span className="text-[9px] font-mono text-slate-400">{req.code}</span>
-                                            {cat && <span className="text-[9px] text-slate-400">• {cat.name}</span>}
-                                            <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded border ${prio.color}`}>{prio.label}</span>
+                                            <span className="text-[9px] text-slate-400">• {req.templateName}</span>
                                         </div>
                                     </div>
                                     <div className="text-right shrink-0 flex flex-col items-end">

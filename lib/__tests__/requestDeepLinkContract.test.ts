@@ -29,4 +29,18 @@ describe('request deep links', () => {
     expect(dashboard).not.toContain("../../context/RequestContext");
     expect(dashboard).not.toContain("from 'recharts'");
   });
+
+  it('keeps the employee request cards on runtime lists', () => {
+    const employeeDashboard = readFileSync('pages/EmployeeDashboard.tsx', 'utf8');
+
+    expect(employeeDashboard).toContain("import { useRequestList } from '../hooks/useRequestList';");
+    expect(employeeDashboard).toContain("useRequestList({ view: 'ASSIGNED_TO_ME' })");
+    expect(employeeDashboard).toContain("useRequestList({ view: 'CREATED_BY_ME' })");
+    expect(employeeDashboard).toContain('navigate(buildRequestRoute(req.id))');
+    expect(employeeDashboard).not.toContain("../context/RequestContext");
+  });
+
+  it('does not mount the retired request context in the custom dashboard', () => {
+    expect(readFileSync('pages/CustomDashboard.tsx', 'utf8')).not.toContain("../context/RequestContext");
+  });
 });
