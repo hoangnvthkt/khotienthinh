@@ -33,6 +33,7 @@ export interface SaveRequestTemplateDraftInput {
 
 export interface RequestTemplateDraftRecord {
   id: string;
+  draftVersionId?: string;
   status: 'DRAFT' | 'PUBLISHED' | 'DEACTIVATED';
   versionNumber: number | null;
   updatedAt: string;
@@ -125,6 +126,14 @@ export const requestTemplateService = {
     return run<RequestResolverPreview>('preview_request_template_resolvers', {
       p_payload: input,
       p_sample_creator_id: sampleCreatorId,
+    });
+  },
+
+  registerDocxDraft(input: { draftVersionId: string; storagePath: string; placeholderSchema: Record<string, boolean> }) {
+    return run<{ id: string; storagePath: string; validationStatus: 'VALID'; placeholderSchema: Record<string, boolean> }>('register_request_template_docx_draft', {
+      p_request_template_version_id: input.draftVersionId,
+      p_storage_path: input.storagePath,
+      p_placeholder_schema: input.placeholderSchema,
     });
   },
 };

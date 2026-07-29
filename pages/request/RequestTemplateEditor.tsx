@@ -48,6 +48,7 @@ const RequestTemplateEditor: React.FC = () => {
   const [draft, dispatch] = useReducer(requestTemplateDraftReducer, undefined, createEmptyRequestTemplateDraft);
   const [activeSection, setActiveSection] = useState<RequestTemplateSection>('GENERAL');
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
+  const [draftVersionId, setDraftVersionId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(Boolean(templateId));
   const [isSaving, setIsSaving] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
@@ -65,6 +66,7 @@ const RequestTemplateEditor: React.FC = () => {
         if (!active) return;
         dispatch({ type: 'REPLACE_DRAFT', draft: fromRecord(record) });
         setUpdatedAt(record.updatedAt);
+        setDraftVersionId(record.draftVersionId ?? null);
         setIsDirty(false);
       } catch (cause) {
         console.error('Load request template draft failed:', cause);
@@ -91,6 +93,7 @@ const RequestTemplateEditor: React.FC = () => {
       const record = await requestTemplateService.saveDraft(toSaveDraftInput(draft, updatedAt ?? undefined));
       dispatch({ type: 'REPLACE_DRAFT', draft: fromRecord(record) });
       setUpdatedAt(record.updatedAt);
+      setDraftVersionId(record.draftVersionId ?? null);
       setIsDirty(false);
       if (!automatic) toast.success('Đã lưu bản nháp', 'Các thay đổi của mẫu yêu cầu đã được lưu.');
       if (!templateId) navigate(`/rq/templates/${record.id}`, { replace: true });
@@ -150,7 +153,7 @@ const RequestTemplateEditor: React.FC = () => {
   const form = <RequestFormBuilder fields={draft.fields} dispatch={apply} issues={validationIssues} />;
   const approval = <RequestApprovalBuilder draft={draft} dispatch={apply} issues={validationIssues} />;
   const watchers = <RequestTemplateWatcherSection watcherIds={draft.fixedWatcherIds} dispatch={apply} />;
-  const print = <RequestTemplatePrintSection draft={draft} dispatch={apply} />;
+  const print = <RequestTemplatePrintSection draft={draft} draftVersionId={draftVersionId} dispatch={apply} />;
   const notifications = <RequestTemplateNotificationSection draft={draft} dispatch={apply} />;
 
   return <div className="-m-4 flex min-h-[calc(100vh-5rem)] flex-col bg-slate-50 dark:bg-slate-950 sm:-m-6">
