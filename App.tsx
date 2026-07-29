@@ -159,6 +159,12 @@ const LandingPage: React.FC = () => {
   return <Home />;
 };
 
+const RequestListRoute: React.FC = () => {
+  const location = useLocation();
+  const requestId = new URLSearchParams(location.search).get('requestId');
+  return requestId ? <Navigate to={`/rq/${encodeURIComponent(requestId)}`} replace /> : <RequestList />;
+};
+
 const AppRoutes: React.FC = () => {
   return (
     <Suspense fallback={<LoadingSpinner />}>
@@ -213,7 +219,8 @@ const AppRoutes: React.FC = () => {
           <Route path="analytics" element={<PredictiveAnalytics />} />
           <Route path="leaderboard" element={<Leaderboard />} />
           <Route path="feedback" element={<FeedbackHub />} />
-          <Route path="rq" element={<RequestList />} />
+          <Route path="rq" element={<RequestListRoute />} />
+          <Route path="rq/:requestId" element={<RequestList />} />
           <Route path="rq/dashboard" element={<RequestDashboard />} />
           <Route path="rq/templates" element={<RequestTemplates />} />
           <Route path="rq/templates/new" element={<RequestTemplateEditor />} />

@@ -16,6 +16,22 @@ export interface SubmitRequestInput {
   idempotencyKey: string;
 }
 
+export interface UsableRequestTemplate {
+  templateId: string;
+  templateVersionId: string;
+  name: string;
+  description: string;
+  versionNumber: number;
+  formSchema: RequestTemplateFieldSchema[];
+  approvalBlocks: Array<{
+    key: string;
+    name: string;
+    source: 'FIXED_SINGLE' | 'FIXED_MULTI' | 'DIRECT_MANAGER' | 'DYNAMIC_CREATOR_SELECT';
+    minimumDynamicApprovers: number | null;
+    sortOrder: number;
+  }>;
+}
+
 export interface RequestCommandResult {
   requestId: string;
   requestCode: string;
@@ -250,6 +266,14 @@ const isListPage = (value: unknown): value is RequestListPage => {
       && isString(value.nextCursor.id));
 };
 
+const isUsableTemplate = (value: unknown): value is UsableRequestTemplate => {
+  if (!isRecord(value)) return false;
+  return isString(value.templateId) && isString(value.templateVersionId)
+    && isString(value.name) && isString(value.description)
+    && typeof value.versionNumber === 'number'
+    && Array.isArray(value.formSchema) && Array.isArray(value.approvalBlocks);
+};
+
 const isCapabilities = (value: unknown): value is RequestActionCapabilities => {
   if (!isRecord(value)) return false;
   return [
@@ -402,5 +426,13 @@ export const requestRuntimeService = {
       throw new Error('get_request_summary trả về dữ liệu không hợp lệ.');
     }
     return result;
+  },
+
+  async listUsableTemplates(): Promise<UsableRequestTemplate[]> {
+    const result = await run<unknown>('list_usable_request_templates', {});
+    if (!isRecord(result) || !Array.isArray(result.items) || !result.items.every(isUsableTemplate)) {
+      throw new Error('list_usable_request_templates trả về dữ liệu không hợp lệ.');
+    }
+    return result.items;
   },
 };
