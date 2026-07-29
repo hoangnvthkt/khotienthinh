@@ -1,0 +1,1 @@
+drop index if exists app_private.request_export_audit_request_created_idx;
