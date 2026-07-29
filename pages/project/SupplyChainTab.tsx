@@ -8519,8 +8519,8 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                     </div>
                                                 )}
 
-                                                <div className="grid grid-cols-12 gap-2 items-center">
-                                                    <div className="col-span-12 md:col-span-3">
+                                                <div className="grid grid-cols-12 gap-2 items-center lg:grid-cols-[minmax(220px,1.35fr)_minmax(220px,1.35fr)_72px_minmax(150px,0.8fr)_minmax(170px,0.9fr)_max-content]">
+                                                    <div className="col-span-12 md:col-span-3 lg:col-auto">
                                                         <InventoryItemCombobox
                                                             value={item.isManualItem ? '' : item.itemId}
                                                             items={inventoryItems}
@@ -8528,7 +8528,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                             className="w-full"
                                                         />
                                                     </div>
-                                                    <div className="col-span-12 md:col-span-3">
+                                                    <div className="col-span-12 md:col-span-3 lg:col-auto">
                                                         <SupplierCombobox
                                                             value={item.vendorId || ''}
                                                             suppliers={partners}
@@ -8540,15 +8540,22 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                             className="w-full"
                                                         />
                                                     </div>
-                                                    <div className="col-span-3 md:col-span-1 px-2 py-2 rounded-lg border border-slate-200 bg-white text-xs text-slate-600 font-bold text-center truncate">
+                                                    <div className="col-span-3 md:col-span-1 lg:col-auto px-2 py-2 rounded-lg border border-slate-200 bg-white text-xs text-slate-600 font-bold text-center truncate">
                                                         {purchaseUnit || item.unit || 'ĐVT'}
                                                     </div>
-                                                    <div className="col-span-4 md:col-span-1">
+                                                    <div className="col-span-5 md:col-span-2 lg:col-auto">
                                                         {pSourceMode === 'from_request' ? (
-                                                            <div className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-center">
-                                                                <span className="block text-[8px] font-black uppercase text-slate-400">SL gốc</span>
-                                                                <span className="block truncate text-xs font-black text-slate-800">{fmtQty(scheduleQtyPreview)}</span>
-                                                            </div>
+                                                            <label className="block rounded-lg border border-blue-100 bg-blue-50 px-2 py-1.5">
+                                                                <span className="block text-[8px] font-black uppercase text-blue-500">SL mua</span>
+                                                                <input
+                                                                    type="text"
+                                                                    inputMode="decimal"
+                                                                    value={item.qtyInput ?? formatNumberInputValue(item.qty, 6)}
+                                                                    onChange={e => updatePoItem(i, { qtyInput: formatViLiveInput(e.target.value) })}
+                                                                    placeholder="SL mua"
+                                                                    className="mt-0.5 w-full bg-transparent text-right text-sm font-black text-slate-900 outline-none"
+                                                                />
+                                                            </label>
                                                         ) : (
                                                             <input
                                                                 type="text"
@@ -8560,7 +8567,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                             />
                                                         )}
                                                     </div>
-                                                    <div className="col-span-5 md:col-span-2">
+                                                    <div className="col-span-4 md:col-span-2 lg:col-auto min-w-0">
                                                         {pSourceMode === 'from_request' && !editInlineRequestUnitPrice ? (
                                                             <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-2 py-1.5 text-right">
                                                                 <span className="block text-[8px] font-black uppercase text-emerald-500">Giá duyệt</span>
@@ -8577,7 +8584,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                             />
                                                         )}
                                                     </div>
-                                                    <div className="col-span-12 md:col-span-2 flex items-center justify-end gap-1.5">
+                                                    <div className="col-span-12 md:col-span-1 lg:col-auto flex min-w-max items-center justify-end gap-1.5">
                                                         <button
                                                             type="button"
                                                             onClick={() => toggleSpecsPanel(i)}

@@ -21,11 +21,15 @@ describe('locale number input', () => {
   });
 
   it('formats live inputs with dot for thousands and comma for decimal', () => {
+    expect(formatViLiveInput('1000')).toBe('1.000');
     expect(formatViLiveInput('35680')).toBe('35.680');
     expect(formatViLiveInput('35680,')).toBe('35.680,');
     expect(formatViLiveInput('35680,5')).toBe('35.680,5');
     expect(formatViLiveInput('32112000')).toBe('32.112.000');
     expect(formatViLiveInput(35680)).toBe('35.680');
   });
-});
 
+  it('normalizes comma-grouped live inputs to Vietnamese thousand dots', () => {
+    expect(formatViLiveInput('1,000')).toBe('1.000');
+  });
+});

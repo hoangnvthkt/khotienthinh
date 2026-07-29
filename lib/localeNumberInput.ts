@@ -56,7 +56,11 @@ export const formatViLiveInput = (value: unknown): string => {
   let decimalPartStr = '';
   let hasDecimal = false;
 
-  if (cleaned.includes(',')) {
+  const isCommaGroupedInteger = /^\d{1,3}(?:,\d{3})+$/.test(cleaned);
+
+  if (isCommaGroupedInteger) {
+    integerPartStr = cleaned.replace(/,/g, '');
+  } else if (cleaned.includes(',')) {
     const parts = cleaned.split(',');
     integerPartStr = parts[0].replace(/\./g, '');
     decimalPartStr = parts.slice(1).join('');
@@ -83,4 +87,3 @@ export const formatViLiveInput = (value: unknown): string => {
   }
   return `${prefix}${formattedInteger}`;
 };
-
