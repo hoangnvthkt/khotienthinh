@@ -4,6 +4,7 @@ import { useApp } from '../context/AppContext';
 import { useWorkflow } from '../context/WorkflowContext';
 import { useRequest } from '../context/RequestContext';
 import { canAccessRoute, getRouteModuleKey } from '../lib/routeAccess';
+import { buildRequestRoute } from '../lib/requestRoutes';
 import {
   Search, X, Users, Package, ArrowLeftRight, ClipboardCheck, Briefcase,
   FileText, Hash, ArrowRight, Command, CornerDownLeft, ChevronUp, User,
@@ -272,7 +273,7 @@ const CommandPalette: React.FC = () => {
         subtitle: `${cat?.name || 'Yêu cầu'} • ${rq.status}`,
         category: 'Yêu cầu',
         icon: <ClipboardCheck size={16} />,
-        route: '/rq',
+        route: buildRequestRoute(rq.id),
         keywords: `${rq.code} ${rq.title} ${rq.status} ${cat?.name || ''} yeu cau phieu`,
       });
     });

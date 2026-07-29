@@ -24,6 +24,7 @@ import { useWorkflow } from '../context/WorkflowContext';
 import { useRequest } from '../context/RequestContext';
 import { AppNotification, notificationService } from '../lib/notificationService';
 import { resolveNotificationPath } from '../lib/notificationRoutes';
+import { buildRequestRoute } from '../lib/requestRoutes';
 import { canUseModule, resolveHomeCapabilities } from '../lib/homeCapabilities';
 import {
   MaterialRequest,
@@ -329,7 +330,7 @@ const Home: React.FC = () => {
         nextAction: `Bạn cần duyệt phiếu ${category?.name || 'yêu cầu nội bộ'}.`,
         actorName: getUserName(users, request.createdBy),
         dueAt: request.dueDate || request.createdAt,
-        href: `/rq?requestId=${request.id}`,
+        href: buildRequestRoute(request.id),
         actionLabel: 'Duyệt phiếu',
       } as HomeActionItem;
     })
@@ -399,7 +400,7 @@ const Home: React.FC = () => {
         statusLabel: rqStatusLabel(item.status),
         nextAction: item.status === RQStatus.DRAFT ? 'Phiếu đang nháp, cần gửi khi đã đủ thông tin.' : 'Phiếu của bạn đang trong luồng xử lý.',
         dueAt: item.dueDate || item.updatedAt,
-        href: `/rq?requestId=${item.id}`,
+        href: buildRequestRoute(item.id),
         actionLabel: 'Xem phiếu',
       }));
 
