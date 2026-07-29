@@ -44,6 +44,14 @@ export const renderRequestDocx = async (detail: RequestDetail, templateBytes: Ar
   return { fileName: buildRequestPrintFileName(detail.code, detail.title), mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', bytes: document.getZip().generate({ type: 'uint8array', compression: 'DEFLATE' }) };
 };
 
+export const getRequestDocxTemplateBytes = async (requestId: string): Promise<ArrayBuffer> => {
+  const { data, error } = await supabase.functions.invoke('request-print-docx-url', { body: { requestId } });
+  if (error || !data || typeof data.signedUrl !== 'string') throw error || new Error('Không thể lấy mẫu DOCX.');
+  const response = await fetch(data.signedUrl);
+  if (!response.ok) throw new Error('Không thể tải mẫu DOCX.');
+  return response.arrayBuffer();
+};
+
 export const recordRequestExportAudit = async (input: { requestId: string; format: 'PRINT' | 'PDF' | 'WORD'; result: 'SUCCEEDED' | 'FAILED'; errorMessage?: string; clientActionId: string }): Promise<void> => {
   const { error } = await supabase.rpc('record_request_export_audit', { p_request_id: input.requestId, p_format: input.format, p_result: input.result, p_error_message: input.errorMessage ?? null, p_client_action_id: input.clientActionId });
   if (error) throw error;
