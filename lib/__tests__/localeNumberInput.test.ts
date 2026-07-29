@@ -32,4 +32,25 @@ describe('locale number input', () => {
   it('normalizes comma-grouped live inputs to Vietnamese thousand dots', () => {
     expect(formatViLiveInput('1,000')).toBe('1.000');
   });
+
+  it('keeps Vietnamese grouped decimal money stable while typing', () => {
+    const typed = '2.783.932,347';
+    const rendered = [...typed].reduce((value, char) => formatViLiveInput(`${value}${char}`), '');
+
+    expect(rendered).toBe('2.783.932,347');
+    expect(parseNonNegativeLocaleNumber(rendered)).toBe(2783932.347);
+  });
+
+  it('keeps raw typed Vietnamese decimal money stable while live grouping', () => {
+    const typed = '2783932,347';
+    const rendered = [...typed].reduce((value, char) => formatViLiveInput(`${value}${char}`), '');
+
+    expect(rendered).toBe('2.783.932,347');
+    expect(parseNonNegativeLocaleNumber(rendered)).toBe(2783932.347);
+  });
+
+  it('recovers a previously collapsed Vietnamese money input', () => {
+    expect(formatViLiveInput('2,783932347')).toBe('2.783.932,347');
+    expect(parseNonNegativeLocaleNumber(formatViLiveInput('2,783932347'))).toBe(2783932.347);
+  });
 });

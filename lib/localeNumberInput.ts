@@ -57,10 +57,35 @@ export const formatViLiveInput = (value: unknown): string => {
   let hasDecimal = false;
 
   const isCommaGroupedInteger = /^\d{1,3}(?:,\d{3})+$/.test(cleaned);
+  const recoverCollapsedVietnameseDecimal = (input: string) => {
+    const match = input.match(/^(\d{1,3}),(\d{7,})$/);
+    if (!match) return null;
+    const integerDigits = `${match[1]}${match[2].slice(0, -3)}`;
+    const decimalDigits = match[2].slice(-3);
+    return `${Number(integerDigits).toLocaleString('vi-VN')},${decimalDigits}`;
+  };
+  const isVietnameseGroupedIntegerDraft = (input: string) => {
+    if (!input.includes('.') || input.includes(',')) return false;
+    const groups = input.split('.');
+    if (!/^\d{1,3}$/.test(groups[0] || '')) return false;
+    return groups.slice(1).every(group => /^\d*$/.test(group));
+  };
+  const formatVietnameseGroupedIntegerDraft = (input: string) => {
+    const groups = input.split('.').map(group => group.replace(/\D/g, ''));
+    const hasTrailingDot = input.endsWith('.');
+    const hasOverflowGroup = groups.slice(1).some(group => group.length > 3);
+    const hasOnlyCompleteGroups = groups.slice(1).every(group => group.length === 3);
+    const digitsOnly = groups.join('');
+    if (!digitsOnly) return '0';
+    if (hasOverflowGroup || (hasOnlyCompleteGroups && !hasTrailingDot)) return Number(digitsOnly).toLocaleString('vi-VN');
+    return groups.join('.');
+  };
 
   if (isCommaGroupedInteger) {
     integerPartStr = cleaned.replace(/,/g, '');
   } else if (cleaned.includes(',')) {
+    const recovered = recoverCollapsedVietnameseDecimal(cleaned);
+    if (recovered) return `${isNegative ? '-' : ''}${recovered}`;
     const parts = cleaned.split(',');
     integerPartStr = parts[0].replace(/\./g, '');
     decimalPartStr = parts.slice(1).join('');
@@ -69,7 +94,10 @@ export const formatViLiveInput = (value: unknown): string => {
     const lastDotIdx = cleaned.lastIndexOf('.');
     const digitsAfterLastDot = cleaned.slice(lastDotIdx + 1);
     const isThousandDot = /\.\d{3}(?:\.|$)/.test(cleaned);
-    if (isThousandDot) {
+    if (isVietnameseGroupedIntegerDraft(cleaned)) {
+      const prefix = isNegative ? '-' : '';
+      return `${prefix}${formatVietnameseGroupedIntegerDraft(cleaned)}`;
+    } else if (isThousandDot) {
       integerPartStr = cleaned.replace(/\./g, '');
     } else {
       integerPartStr = cleaned.slice(0, lastDotIdx).replace(/\./g, '');

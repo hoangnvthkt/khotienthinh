@@ -4,6 +4,7 @@ import {
   buildPurchaseOrderPrintLineAmounts,
   getPurchaseOrderDisplayAmount,
   getPurchaseOrderDisplayLineAmount,
+  getPurchaseOrderPrintAmount,
 } from '../purchaseOrderAmount';
 
 const po: PurchaseOrder = {
@@ -194,5 +195,58 @@ describe('purchaseOrderAmount', () => {
       }),
     ]);
     expect(lines.reduce((sum: number, line: { totalAmount: number }) => sum + line.totalAmount, 0)).toBe(542056800);
+  });
+
+  it('prints package-v2 request POs from the approved reference amount instead of delivery stock pricing', () => {
+    const packagePo: PurchaseOrder = {
+      ...po,
+      id: 'po-229',
+      poNumber: 'PO-229',
+      purchaseMode: 'single',
+      sourceMode: 'from_request',
+      vatRate: 0,
+      items: [
+        {
+          lineId: 'alc-panel',
+          itemId: 'item-alc',
+          sku: 'ALC-001',
+          name: 'Tam vach ALC be tong',
+          unit: 'tam',
+          qty: 473,
+          unitPrice: 2_567_000,
+        },
+      ],
+      totalAmount: 1_214_191_000,
+      approvedTotalAmount: 1_214_191_000,
+      referenceGrossAmount: 1_316_800_000_131,
+    };
+    const warehousePricedDelivery: PurchaseOrderDeliveryBatch = {
+      id: 'batch-229',
+      purchaseOrderId: packagePo.id,
+      deliveryNo: 1,
+      plannedDeliveryDate: '2026-07-29',
+      status: 'planned',
+      lines: [
+        {
+          id: 'batch-229-alc-panel',
+          deliveryBatchId: 'batch-229',
+          purchaseOrderId: packagePo.id,
+          purchaseOrderLineId: 'alc-panel',
+          itemId: 'item-alc',
+          plannedQty: 473,
+          deliveryUnitPrice: 2_567_000,
+        },
+      ],
+    };
+
+    expect(getPurchaseOrderPrintAmount(packagePo, [warehousePricedDelivery])).toBe(1_316_800_000_131);
+    expect(buildPurchaseOrderPrintLineAmounts(packagePo, [warehousePricedDelivery])).toEqual([
+      expect.objectContaining({
+        lineKey: 'alc-panel',
+        scheduledQty: 473,
+        totalAmount: 1_316_800_000_131,
+        unitPrice: 2_783_932_347,
+      }),
+    ]);
   });
 });

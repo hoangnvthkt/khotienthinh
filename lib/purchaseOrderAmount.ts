@@ -6,6 +6,40 @@ const toNumber = (value: unknown) => {
   return Number.isFinite(num) ? num : 0;
 };
 
+const isPackageV2RequestPo = (po: PurchaseOrder) =>
+  po.sourceMode === 'from_request'
+  && (po.purchaseMode === 'single' || po.purchaseMode === 'multiple')
+  && toNumber(po.referenceGrossAmount) > 0;
+
+const getPackageReferencePrintAmount = (po: PurchaseOrder) => {
+  if (!isPackageV2RequestPo(po)) return null;
+  const referenceGross = toNumber(po.referenceGrossAmount);
+  const vatRate = toNumber(po.vatRate);
+  const divisor = 1 + vatRate / 100;
+  return Math.round(referenceGross / (divisor > 0 ? divisor : 1));
+};
+
+const alignLineAmountsToTarget = (
+  lines: PurchaseOrderPrintLineAmount[],
+  targetAmount: number,
+): PurchaseOrderPrintLineAmount[] => {
+  if (targetAmount <= 0 || lines.length === 0) return lines;
+  const sourceAmount = lines.reduce((sum, line) => sum + toNumber(line.totalAmount), 0);
+  if (sourceAmount <= 0) return lines;
+
+  let allocated = 0;
+  return lines.map((line, index) => {
+    const totalAmount = index === lines.length - 1
+      ? targetAmount - allocated
+      : Math.round((line.totalAmount / sourceAmount) * targetAmount);
+    allocated += totalAmount;
+    const unitPrice = line.scheduledQty > 0
+      ? Math.round((totalAmount / line.scheduledQty) * 100000) / 100000
+      : 0;
+    return { ...line, unitPrice, totalAmount };
+  });
+};
+
 const usesDeliveryScheduleForDisplay = (
   po: PurchaseOrder,
   deliveryBatches: PurchaseOrderDeliveryBatch[] = [],
@@ -82,7 +116,7 @@ export const buildPurchaseOrderPrintLineAmounts = (
     .filter(line => toNumber(line.plannedQty) > 0);
   const hasActiveSchedule = activeLines.length > 0;
 
-  return (po.items || []).map(item => {
+  const lines = (po.items || []).map(item => {
     const lineKey = item.lineId || item.itemId;
     if (!hasActiveSchedule) {
       return {
@@ -111,6 +145,11 @@ export const buildPurchaseOrderPrintLineAmounts = (
       totalAmount,
     };
   });
+
+  const packageReferenceAmount = getPackageReferencePrintAmount(po);
+  return packageReferenceAmount == null
+    ? lines
+    : alignLineAmountsToTarget(lines, packageReferenceAmount);
 };
 
 export const getPurchaseOrderPrintAmount = (
