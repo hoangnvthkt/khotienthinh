@@ -72,6 +72,19 @@ export const createEmptyRequestTemplateDraft = (): RequestTemplateDraft => ({
   notificationEvents: ['SUBMITTED', 'ASSIGNED', 'RETURNED', 'APPROVED', 'REJECTED'],
 });
 
+export const createFieldKey = (label: string, existing: string[]): string => {
+  const base = label.normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .replace(/đ/gi, 'd')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_|_$/g, '') || 'field';
+  let candidate = base;
+  let suffix = 2;
+  while (existing.includes(candidate)) candidate = `${base}_${suffix++}`;
+  return candidate;
+};
+
 export const reorderByKeys = <T extends { key: string; sortOrder: number }>(items: T[], orderedKeys: string[]): T[] => {
   const byKey = new Map(items.map(item => [item.key, item]));
   if (orderedKeys.length !== items.length || orderedKeys.some(key => !byKey.has(key))) return items;
@@ -109,6 +122,7 @@ export const validateRequestTemplateForPublish = (draft: RequestTemplateDraft): 
   if (!validSla(draft.requestSlaHours)) issues.push({ section: 'GENERAL', code: 'REQUEST_SLA_INVALID', message: 'SLA đề xuất phải từ 1 đến 8760 giờ.' });
   if (!draft.fields.length) issues.push({ section: 'FORM', code: 'FORM_FIELD_REQUIRED', message: 'Mẫu cần ít nhất một trường dữ liệu.' });
   if (new Set(draft.fields.map(field => field.key.trim())).size !== draft.fields.length || draft.fields.some(field => !field.key.trim())) issues.push({ section: 'FORM', code: 'FIELD_KEY_INVALID', message: 'Mã trường dữ liệu phải duy nhất và không được rỗng.' });
+  if (draft.fields.some(field => field.fieldType === 'select' && !field.options.some(option => option.trim()))) issues.push({ section: 'FORM', code: 'SELECT_OPTION_REQUIRED', message: 'Trường danh sách chọn cần ít nhất một lựa chọn.' });
   if (!draft.scopes.length || draft.scopes.some(scope => scope.kind === 'COMPANY' ? scope.targetId !== null : !scope.targetId)) issues.push({ section: 'SCOPE', code: 'SCOPE_INVALID', message: 'Phạm vi sử dụng mẫu chưa hợp lệ.' });
   if (!draft.approverBlocks.length) issues.push({ section: 'APPROVAL', code: 'APPROVER_REQUIRED', message: 'Mẫu cần ít nhất một khối người duyệt.' });
   for (const block of draft.approverBlocks) {
@@ -125,7 +139,7 @@ export const validateRequestTemplateForPublish = (draft: RequestTemplateDraft): 
 
 export const toSaveDraftInput = (draft: RequestTemplateDraft, expectedUpdatedAt?: string): SaveRequestTemplateDraftInput => ({
   templateId: draft.id, expectedUpdatedAt, name: draft.name.trim(), description: draft.description.trim(),
-  formSchema: draft.fields.map(field => ({ ...field, label: field.label.trim(), options: field.fieldType === 'select' ? field.options : [] })),
+  formSchema: draft.fields.map(field => ({ ...field, label: field.label.trim(), options: field.fieldType === 'select' ? field.options.map(option => option.trim()).filter(Boolean) : [] })),
   usageScope: {
     companyWide: draft.scopes.some(scope => scope.kind === 'COMPANY'),
     orgUnitIds: draft.scopes.filter(scope => scope.kind === 'ORG_UNIT').map(scope => scope.targetId!).filter(Boolean),
