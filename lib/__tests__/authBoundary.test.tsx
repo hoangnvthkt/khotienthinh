@@ -420,7 +420,6 @@ describe('authenticated provider architecture', () => {
     for (const child of [
       '<AppProvider>',
       '<WorkflowProvider>',
-      '<RequestProvider>',
       '<ChatProvider>',
       '<AppDataWarmup />',
       '<ReleaseNoticeHost />',

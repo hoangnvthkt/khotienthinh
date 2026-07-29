@@ -10,7 +10,6 @@ import { ConfirmProvider } from './context/ConfirmContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { WorkflowProvider, useWorkflow } from './context/WorkflowContext';
 import { ChatProvider, useChat } from './context/ChatContext';
-import { RequestProvider, useRequest } from './context/RequestContext';
 import { CelebrationProvider } from './components/Celebration';
 import ErrorBoundary from './components/ErrorBoundary';
 import ReleaseNotesModal from './components/ReleaseNotesModal';
@@ -274,7 +273,6 @@ const AppDataWarmup: React.FC = () => {
     realtimeStatus,
   } = useApp();
   const { refreshData: refreshWorkflowData } = useWorkflow();
-  const { refreshData: refreshRequestData } = useRequest();
   const { loadChatData } = useChat();
   const lastFocusRefreshAtRef = useRef(0);
   const previousRealtimeStatusRef = useRef(realtimeStatus);
@@ -400,12 +398,6 @@ const AppDataWarmup: React.FC = () => {
   }, [loadModuleData, moduleLoadedAt.admin, moduleLoadedAt.hrm, pathname, realtimeStatus, refreshWorkflowData]);
 
   useEffect(() => {
-    const needsRequestData = pathname.startsWith('/rq') || pathname === '/employee-dashboard' || pathname === '/custom-dashboard';
-    if (!needsRequestData) return;
-    refreshRequestData().catch(err => console.warn('Request warmup failed:', err));
-  }, [pathname, refreshRequestData]);
-
-  useEffect(() => {
     if (isChatEnabled && !isChatV2Enabled && pathname === '/chat') {
       loadChatData().catch(err => console.warn('Chat warmup failed:', err));
     }
@@ -468,17 +460,15 @@ export const AuthenticatedApplication: React.FC = () => (
     <ConfirmProvider>
       <AppProvider>
         <WorkflowProvider>
-          <RequestProvider>
-            <ChatProvider>
-              <CelebrationProvider>
-                <RouteErrorBoundary>
-                  <AppDataWarmup />
-                  <ReleaseNoticeHost />
-                  <AppRoutes />
-                </RouteErrorBoundary>
-              </CelebrationProvider>
-            </ChatProvider>
-          </RequestProvider>
+          <ChatProvider>
+            <CelebrationProvider>
+              <RouteErrorBoundary>
+                <AppDataWarmup />
+                <ReleaseNoticeHost />
+                <AppRoutes />
+              </RouteErrorBoundary>
+            </CelebrationProvider>
+          </ChatProvider>
         </WorkflowProvider>
       </AppProvider>
     </ConfirmProvider>

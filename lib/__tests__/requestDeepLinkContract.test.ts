@@ -16,9 +16,13 @@ describe('request deep links', () => {
     const commandPalette = readFileSync('components/CommandPalette.tsx', 'utf8');
 
     expect(home).toContain("import { buildRequestRoute } from '../lib/requestRoutes';");
+    expect(home).toContain("import { useRequestList } from '../hooks/useRequestList';");
     expect(home).not.toContain('/rq?requestId=');
+    expect(home).not.toContain("../context/RequestContext");
     expect(commandPalette).toContain("import { buildRequestRoute } from '../lib/requestRoutes';");
+    expect(commandPalette).toContain("import { useRequestList } from '../hooks/useRequestList';");
     expect(commandPalette).toContain('route: buildRequestRoute(rq.id)');
+    expect(commandPalette).not.toContain("../context/RequestContext");
   });
 
   it('keeps the request dashboard on the runtime read model', () => {
@@ -42,5 +46,12 @@ describe('request deep links', () => {
 
   it('does not mount the retired request context in the custom dashboard', () => {
     expect(readFileSync('pages/CustomDashboard.tsx', 'utf8')).not.toContain("../context/RequestContext");
+  });
+
+  it('does not mount the retired request context at application scope', () => {
+    const app = readFileSync('App.tsx', 'utf8');
+
+    expect(app).not.toContain('<RequestProvider>');
+    expect(app).not.toContain("./context/RequestContext");
   });
 });

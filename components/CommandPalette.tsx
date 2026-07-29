@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { useWorkflow } from '../context/WorkflowContext';
-import { useRequest } from '../context/RequestContext';
+import { useRequestList } from '../hooks/useRequestList';
 import { canAccessRoute, getRouteModuleKey } from '../lib/routeAccess';
 import { buildRequestRoute } from '../lib/requestRoutes';
 import {
@@ -91,7 +91,7 @@ const CommandPalette: React.FC = () => {
 
   const { user, employees, items, transactions, requests: appRequests, users, warehouses, suppliers, hrmConstructionSites, assets } = useApp();
   const { instances: wfInstances } = useWorkflow();
-  const { requests: rqRequests, categories: rqCategories } = useRequest();
+  const requestSearchList = useRequestList({ view: 'ALL' });
 
   // Build search index
   const allResults = useMemo<SearchResult[]>(() => {
@@ -265,21 +265,20 @@ const CommandPalette: React.FC = () => {
     });
 
     // Request Instances
-    if (canSearchRoute('/rq')) rqRequests.forEach((rq: any) => {
-      const cat = rqCategories.find(c => c.id === rq.categoryId);
+    if (canSearchRoute('/rq')) requestSearchList.items.forEach(rq => {
       pushResult({
         id: `rq-${rq.id}`,
         title: `${rq.code} — ${rq.title}`,
-        subtitle: `${cat?.name || 'Yêu cầu'} • ${rq.status}`,
+        subtitle: `${rq.templateName || 'Yêu cầu'} • ${rq.status}`,
         category: 'Yêu cầu',
         icon: <ClipboardCheck size={16} />,
         route: buildRequestRoute(rq.id),
-        keywords: `${rq.code} ${rq.title} ${rq.status} ${cat?.name || ''} yeu cau phieu`,
+        keywords: `${rq.code} ${rq.title} ${rq.status} ${rq.templateName || ''} yeu cau phieu`,
       });
     });
 
     return results;
-  }, [user, employees, items, transactions, appRequests, users, warehouses, suppliers, hrmConstructionSites, assets, wfInstances, rqRequests, rqCategories]);
+  }, [user, employees, items, transactions, appRequests, users, warehouses, suppliers, hrmConstructionSites, assets, wfInstances, requestSearchList.items]);
 
   // Filter results
   const filteredResults = useMemo(() => {

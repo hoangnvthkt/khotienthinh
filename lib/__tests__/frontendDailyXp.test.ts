@@ -60,7 +60,7 @@ describe('frontend daily XP integration', () => {
   });
 
   it('removes client-side XP awards from request and workflow mutations', () => {
-    const requestSource = readFileSync(join(process.cwd(), 'context', 'RequestContext.tsx'), 'utf8');
+    const requestSource = readFileSync(join(process.cwd(), 'lib', 'requestRuntimeService.ts'), 'utf8');
     const workflowSource = readFileSync(join(process.cwd(), 'context', 'WorkflowContext.tsx'), 'utf8');
 
     expect(requestSource).not.toMatch(/awardXP|awardDailyXP|create_rq|approve_rq/);
