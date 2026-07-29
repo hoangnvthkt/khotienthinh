@@ -197,7 +197,7 @@ describe('purchaseOrderAmount', () => {
     expect(lines.reduce((sum: number, line: { totalAmount: number }) => sum + line.totalAmount, 0)).toBe(542056800);
   });
 
-  it('prints package-v2 request POs from the approved reference amount instead of delivery stock pricing', () => {
+  it('displays and prints package-v2 request POs from the approved reference amount instead of delivery stock pricing', () => {
     const packagePo: PurchaseOrder = {
       ...po,
       id: 'po-229',
@@ -213,12 +213,12 @@ describe('purchaseOrderAmount', () => {
           name: 'Tam vach ALC be tong',
           unit: 'tam',
           qty: 473,
-          unitPrice: 2_567_000,
+          unitPrice: 2_783_932.347,
         },
       ],
-      totalAmount: 1_214_191_000,
-      approvedTotalAmount: 1_214_191_000,
-      referenceGrossAmount: 1_316_800_000_131,
+      totalAmount: 1_316_800_000,
+      approvedTotalAmount: 1_316_800_000,
+      referenceGrossAmount: 1_316_800_000,
     };
     const warehousePricedDelivery: PurchaseOrderDeliveryBatch = {
       id: 'batch-229',
@@ -239,14 +239,17 @@ describe('purchaseOrderAmount', () => {
       ],
     };
 
-    expect(getPurchaseOrderPrintAmount(packagePo, [warehousePricedDelivery])).toBe(1_316_800_000_131);
-    expect(buildPurchaseOrderPrintLineAmounts(packagePo, [warehousePricedDelivery])).toEqual([
-      expect.objectContaining({
-        lineKey: 'alc-panel',
-        scheduledQty: 473,
-        totalAmount: 1_316_800_000_131,
-        unitPrice: 2_783_932_347,
-      }),
-    ]);
+    const displayLine = getPurchaseOrderDisplayLineAmount(packagePo, packagePo.items[0], [warehousePricedDelivery]);
+    expect(getPurchaseOrderDisplayAmount(packagePo, [warehousePricedDelivery])).toBe(1_316_800_000);
+    expect(displayLine.scheduledQty).toBe(473);
+    expect(displayLine.totalAmount).toBe(1_316_800_000);
+    expect(displayLine.unitPrice).toBeCloseTo(2_783_932.34672, 5);
+
+    const [printLine] = buildPurchaseOrderPrintLineAmounts(packagePo, [warehousePricedDelivery]);
+    expect(getPurchaseOrderPrintAmount(packagePo, [warehousePricedDelivery])).toBe(1_316_800_000);
+    expect(printLine.lineKey).toBe('alc-panel');
+    expect(printLine.scheduledQty).toBe(473);
+    expect(printLine.totalAmount).toBe(1_316_800_000);
+    expect(printLine.unitPrice).toBeCloseTo(2_783_932.34672, 5);
   });
 });

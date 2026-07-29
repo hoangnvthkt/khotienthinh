@@ -126,6 +126,7 @@ const PO_DETAIL_TABS: Array<{ key: DetailTabKey; label: string; icon: React.Reac
 {/* role="tab" */}
 
 const fmtMoney = (n: number) => Number(n || 0).toLocaleString('vi-VN', { maximumFractionDigits: 0 });
+const fmtUnitPrice = (n: number) => Number(n || 0).toLocaleString('vi-VN', { maximumFractionDigits: 3 });
 const fmtQty = (n: number) => Number(n || 0).toLocaleString('vi-VN', { maximumFractionDigits: 6 });
 
 const formatDate = (value?: string | null) => {
@@ -628,7 +629,7 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
                               <td className="px-3 py-3.5 text-right font-black text-slate-800 dark:text-slate-100">{fmtQty(demandQty)} {stockUnit || item.unit}</td>
                               <td className="px-3 py-3.5 text-right font-black text-emerald-700">{fmtQty(netReceivedQty)}</td>
                               <td className={`px-3 py-3.5 text-right font-black ${remainingQty > 0 ? 'text-amber-700' : 'text-emerald-700'}`}>{fmtQty(remainingQty)}</td>
-                              <td className="px-3 py-3.5 text-right font-bold text-slate-700">{fmtMoney(lineAmount.unitPrice)}</td>
+                              <td className="px-3 py-3.5 text-right font-bold text-slate-700">{fmtUnitPrice(lineAmount.unitPrice)}</td>
                               <td className="px-3 py-3.5 text-right font-black text-slate-900 dark:text-slate-100">{fmtMoney(lineAmount.totalAmount)} đ</td>
                               <td className="px-4 py-3.5"><StatusBadge status={lineStatus.label} label={lineStatus.label} tone={lineStatus.tone} showDot={false} /></td>
                             </tr>

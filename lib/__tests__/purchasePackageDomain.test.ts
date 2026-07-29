@@ -106,4 +106,35 @@ describe('getPurchasePackageSummary', () => {
     expect(summary.receivedGross).toBe(990_000);
     expect(summary.remainingNeedQty).toBe(10);
   });
+
+  it('uses the request package reference amount when delivery schedule price is stale', () => {
+    const summary = getPurchasePackageSummary({
+      id: 'po-251',
+      vendorId: 'vendor-1',
+      poNumber: 'PO-251',
+      items: [{
+        lineId: 'alc-panel',
+        itemId: 'item-alc',
+        sku: 'VT0000861',
+        name: 'Tam vach ALC be tong',
+        unit: 'm3',
+        qty: 473,
+        unitPrice: 2_783_932.347,
+      }],
+      totalAmount: 1_316_800_000,
+      approvedTotalAmount: 1_316_800_000,
+      referenceGrossAmount: 1_316_800_000,
+      purchaseMode: 'single',
+      vatRate: 0,
+      orderDate: '2026-07-29',
+      status: 'draft',
+      sourceMode: 'from_request',
+      createdAt: '2026-07-29T00:00:00.000Z',
+    }, [
+      makeBatch({ id: 'batch-1', plannedQty: 473, acceptedQty: 0, unitPrice: 2_567_000, vatRate: 0 }),
+    ]);
+
+    expect(summary.releasedGross).toBe(1_316_800_000);
+    expect(summary.releasedGrossVariance).toBe(0);
+  });
 });

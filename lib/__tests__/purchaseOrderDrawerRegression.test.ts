@@ -48,6 +48,12 @@ describe('purchase order drawer regression guard', () => {
     expect(source).not.toContain('aria-expanded={isPoMetaExpanded}');
   });
 
+  it('renders PO unit prices with decimal precision when needed', () => {
+    expect(cockpitSource).toContain('const fmtUnitPrice =');
+    expect(cockpitSource).toContain('maximumFractionDigits: 3');
+    expect(cockpitSource).toContain('{fmtUnitPrice(lineAmount.unitPrice)}');
+  });
+
   it('renders supplemental delivery groups in the delivery tab even without schedule batches', () => {
     expect(cockpitSource).toContain('deliveryTimelineGroups');
     expect(cockpitSource).toContain("source: 'print_group'");

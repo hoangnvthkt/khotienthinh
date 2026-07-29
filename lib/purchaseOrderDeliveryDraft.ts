@@ -96,6 +96,24 @@ export const getPoDeliveryScheduleLineInitialValues = ({
   };
 };
 
+export const getPoDeliveryScheduleUnitPriceForSave = ({
+  item,
+  sourceMode,
+  purchaseMode,
+  existingDeliveryUnitPrice,
+}: {
+  item: PurchaseOrderItem;
+  sourceMode?: PurchaseOrderSourceMode | null;
+  purchaseMode?: PurchaseMode | null;
+  existingDeliveryUnitPrice?: number | null;
+}) => {
+  if (sourceMode === 'from_request' && (purchaseMode === 'single' || purchaseMode === 'multiple')) {
+    return toNumber(item.unitPrice);
+  }
+
+  return toNumber(existingDeliveryUnitPrice ?? item.unitPrice);
+};
+
 export const makePoDeliveryLineDraft = ({
   id,
   batchId,
