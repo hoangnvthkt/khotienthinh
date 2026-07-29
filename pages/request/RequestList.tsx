@@ -16,6 +16,7 @@ import { saveAs } from 'file-saver';
 import { supabase } from '../../lib/supabase';
 import { useCelebration } from '../../components/Celebration';
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
+import { RequestCreateDialog } from '../../components/request/RequestCreateDialog';
 
 const STATUS_MAP: Record<RQStatus, { label: string; color: string; icon: any }> = {
     DRAFT: { label: 'Nháp', color: 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400', icon: FileText },
@@ -139,6 +140,7 @@ const RequestList: React.FC = () => {
 
     // Create form
     const [showCreateModal, setShowCreateModal] = useState(false);
+    const [showRuntimeCreateDialog, setShowRuntimeCreateDialog] = useState(false);
     const [selectedCategoryId, setSelectedCategoryId] = useState('');
     const [newTitle, setNewTitle] = useState('');
     const [newDesc, setNewDesc] = useState('');
@@ -461,18 +463,10 @@ const RequestList: React.FC = () => {
                             <button
                                 type="button"
                                 onClick={() => {
-                                    setSelectedCategoryId('');
-                                    setNewTitle('');
-                                    setNewDesc('');
-                                    setNewPriority('medium');
-                                    setCustomFormData({});
-                                    setNewDueDate('');
-                                    setApproverList([]);
-                                    setShowCreateModal(true);
+                                    setShowRuntimeCreateDialog(true);
                                 }}
-                                disabled={activeCategories.length === 0}
                                 title="Tạo đề xuất mới"
-                                className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent text-white hover:bg-emerald-600 transition disabled:opacity-50"
+                                className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent text-white hover:bg-emerald-600 transition"
                             >
                                 <Plus size={16} />
                             </button>
@@ -1037,7 +1031,7 @@ const RequestList: React.FC = () => {
                                         <LayoutGrid size={14} /> Bảng
                                     </button>
                                 </div>
-                                <button onClick={() => setShowCreateModal(true)} disabled={activeCategories.length === 0}
+                                <button onClick={() => setShowRuntimeCreateDialog(true)}
                                     className="flex items-center px-4 py-2.5 bg-accent text-white rounded-xl hover:bg-emerald-600 transition font-bold shadow-lg shadow-emerald-500/20 disabled:opacity-50">
                                     <Plus size={18} className="mr-2" /> Tạo phiếu mới
                                 </button>
@@ -1339,6 +1333,8 @@ const RequestList: React.FC = () => {
                     </div>
                 </div>
             )}
+
+            <RequestCreateDialog isOpen={showRuntimeCreateDialog} onClose={() => setShowRuntimeCreateDialog(false)} />
 
             {/* Shared Delete Confirm */}
             {deleteConfirmId && (
