@@ -132,6 +132,7 @@ import {
 import {
     getPoDeliveryDraftInitialLineValues,
     getPoDeliveryScheduleLineInitialValues,
+    getPoDeliveryScheduleUnitPriceForSave,
     getDefaultPurchaseMode,
     makePoDeliveryLineDraft as buildPoDeliveryLineDraft,
     resolvePurchaseOrderItemsForScheduledPricing,
@@ -2355,6 +2356,10 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             Boolean(editingPo),
             pDeliveryScheduleMode,
         );
+        const isV2Package = isPurchasePackageV2FormEnabled(
+            po.sourceMode || pSourceMode,
+            po.constructionSiteId || constructionSiteId || null,
+        );
         const activeItems = items.filter(item => item.itemId && Number(item.qty || 0) > 0);
         const normalized = sourceBatches.map((batch, index) => {
             const batchId = batch.purchaseOrderId === po.id && batch.id ? batch.id : crypto.randomUUID();
@@ -2373,7 +2378,12 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                         po.id,
                         item,
                         plannedQty,
-                        existing?.deliveryUnitPrice,
+                        getPoDeliveryScheduleUnitPriceForSave({
+                            item,
+                            sourceMode: po.sourceMode || pSourceMode,
+                            purchaseMode: isV2Package ? po.purchaseMode : undefined,
+                            existingDeliveryUnitPrice: existing?.deliveryUnitPrice,
+                        }),
                         existing?.purchaseOrderId === po.id ? existing.id : undefined,
                         existing?.stockPlannedQty,
                     );

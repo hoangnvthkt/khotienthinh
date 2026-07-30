@@ -51,6 +51,18 @@ export const getPurchaseOrderDisplayLineAmount = (
   deliveryBatches: PurchaseOrderDeliveryBatch[] = [],
 ) => {
   const lineKey = item.lineId || item.itemId;
+  if (getPackageReferencePrintAmount(po) != null) {
+    const referenceLine = buildPurchaseOrderPrintLineAmounts(po, deliveryBatches)
+      .find(line => line.lineKey === lineKey);
+    if (referenceLine) {
+      return {
+        unitPrice: referenceLine.unitPrice,
+        totalAmount: referenceLine.totalAmount,
+        scheduledQty: referenceLine.scheduledQty,
+      };
+    }
+  }
+
   const activeLines = deliveryBatches
     .filter(batch => batch.status !== 'cancelled')
     .flatMap(batch => batch.lines || [])
@@ -81,6 +93,9 @@ export const getPurchaseOrderDisplayAmount = (
   po: PurchaseOrder,
   deliveryBatches: PurchaseOrderDeliveryBatch[] = [],
 ): number => {
+  const packageReferenceAmount = getPackageReferencePrintAmount(po);
+  if (packageReferenceAmount != null) return packageReferenceAmount;
+
   const itemByLineId = new Map((po.items || []).map(item => [item.lineId || item.itemId, item]));
   const usesDeliverySchedule = usesDeliveryScheduleForDisplay(po, deliveryBatches);
   const activeLines = deliveryBatches

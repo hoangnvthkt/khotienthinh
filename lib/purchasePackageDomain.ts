@@ -49,6 +49,21 @@ const gross = (qty: number, price: number, vatRate: number) =>
 const activeBatch = (batch: PurchaseOrderDeliveryBatch) =>
   batch.status !== 'cancelled';
 
+const hasReferencePackageAmount = (po: PurchaseOrder, referenceQty: number) =>
+  po.sourceMode === 'from_request'
+  && (po.purchaseMode === 'single' || po.purchaseMode === 'multiple')
+  && referenceQty > 0
+  && numberValue(po.referenceGrossAmount) > 0;
+
+const allocatedReferenceGross = (
+  po: PurchaseOrder,
+  referenceQty: number,
+  qty: number,
+) => {
+  if (!hasReferencePackageAmount(po, referenceQty)) return null;
+  return Math.round((numberValue(po.referenceGrossAmount) * Math.max(0, qty) / referenceQty) * 100) / 100;
+};
+
 const derivePurchasePackageUiStatus = (
   po: PurchaseOrder,
   context: {
@@ -88,7 +103,7 @@ export const getPurchasePackageSummary = (
       (sum, line) => sum + gross(numberValue(line.qty), numberValue(line.unitPrice), numberValue(po.vatRate)),
       0,
     );
-  const releasedGross = active.reduce(
+  const scheduleReleasedGross = active.reduce(
     (sum, batch) => sum + (batch.lines || []).reduce(
       (batchSum, line) => batchSum + gross(
         numberValue(line.plannedQty),
@@ -99,7 +114,7 @@ export const getPurchasePackageSummary = (
     ),
     0,
   );
-  const receivedGross = active.reduce(
+  const scheduleReceivedGross = active.reduce(
     (sum, batch) => sum + (batch.lines || []).reduce(
       (batchSum, line) => batchSum + gross(
         numberValue(line.acceptedQty) - numberValue(line.returnedQty),
@@ -110,6 +125,14 @@ export const getPurchasePackageSummary = (
     ),
     0,
   );
+  const referenceReleasedGross = allocatedReferenceGross(po, referenceQty, releasedQty);
+  const referenceReceivedGross = allocatedReferenceGross(po, referenceQty, receivedNetQty);
+  const releasedGross = referenceReleasedGross == null
+    ? scheduleReleasedGross
+    : Math.max(scheduleReleasedGross, referenceReleasedGross);
+  const receivedGross = referenceReceivedGross == null
+    ? scheduleReceivedGross
+    : Math.max(scheduleReceivedGross, referenceReceivedGross);
 
   return {
     referenceQty,

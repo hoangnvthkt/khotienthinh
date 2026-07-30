@@ -6,6 +6,7 @@ import * as deliveryDraft from '../purchaseOrderDeliveryDraft';
 import {
   getPoDeliveryDraftInitialLineValues,
   getPoDeliveryScheduleLineInitialValues,
+  getPoDeliveryScheduleUnitPriceForSave,
   getDefaultPurchaseMode,
   makePoDeliveryLineDraft,
   resolvePurchaseOrderItemsForScheduledPricing,
@@ -402,5 +403,14 @@ describe('purchaseOrderDeliveryDraft', () => {
     expect(totalAmount).toBe(39200000);
     expect(summary.actualPlannedAmount).toBe(39200000);
     expect(summary.overAmount).toBe(0);
+  });
+
+  it('uses the edited request package PO item price when saving a stale delivery schedule price', () => {
+    expect(getPoDeliveryScheduleUnitPriceForSave({
+      item: { ...poItem, unitPrice: 2_783_932.347 },
+      sourceMode: 'from_request',
+      purchaseMode: 'single',
+      existingDeliveryUnitPrice: 2_567_000,
+    })).toBe(2_783_932.347);
   });
 });
