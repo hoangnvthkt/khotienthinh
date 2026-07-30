@@ -286,6 +286,7 @@ export const mapUserProfileRow = (row: any): User => ({
   adminModules: row.admin_modules ?? row.adminModules ?? undefined,
   allowedSubModules: row.allowed_sub_modules ?? row.allowedSubModules ?? undefined,
   adminSubModules: row.admin_sub_modules ?? row.adminSubModules ?? undefined,
+  managerId: row.manager_id ?? row.managerId ?? undefined,
   isActive: row.is_active ?? row.isActive,
   accountStatus: row.account_status ?? row.accountStatus ?? (row.is_active === false ? 'DISABLED' : 'ACTIVE'),
   accountOperationStatus: row.account_operation_status ?? row.accountOperationStatus ?? 'IDLE',

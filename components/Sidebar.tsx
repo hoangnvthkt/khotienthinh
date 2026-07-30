@@ -247,7 +247,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
     RQ: [
       { to: '/rq/dashboard', icon: BarChart3, label: 'Dashboard RQ' },
       { to: '/rq', icon: Inbox, label: 'Phiếu yêu cầu' },
-      { to: '/rq/categories', icon: Settings, label: 'Danh mục yêu cầu', roles: [Role.ADMIN] },
+      { to: '/rq/templates', icon: Settings, label: 'Mẫu yêu cầu', roles: [Role.ADMIN] },
     ],
     EX: [
       { to: '/expense', icon: BarChart3, label: 'Kế hoạch chi phí' },

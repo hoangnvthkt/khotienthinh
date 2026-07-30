@@ -10,12 +10,11 @@ import { ConfirmProvider } from './context/ConfirmContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { WorkflowProvider, useWorkflow } from './context/WorkflowContext';
 import { ChatProvider, useChat } from './context/ChatContext';
-import { RequestProvider, useRequest } from './context/RequestContext';
 import { CelebrationProvider } from './components/Celebration';
 import ErrorBoundary from './components/ErrorBoundary';
 import ReleaseNotesModal from './components/ReleaseNotesModal';
 import { getProjectAllowedSubModuleRedirect, hasProjectTabPermissionRoute } from './lib/projectTabPermissions';
-import { isChatEnabled, isChatV2Enabled } from './lib/featureFlags';
+import { isChatEnabled, isChatV2Enabled, isRequestApprovalPhase1Enabled } from './lib/featureFlags';
 import { hasAnySettingsManagementFeature } from './lib/settingsPermissions';
 import { useLatestReleaseNotice } from './hooks/useLatestReleaseNotice';
 import { canAccessRoute, getRouteModuleKey } from './lib/routeAccess';
@@ -101,9 +100,10 @@ const Leaderboard = React.lazy(() => import('./pages/Leaderboard'));
 const FeedbackHub = React.lazy(() => import('./pages/FeedbackHub'));
 
 // Request pages
-const RequestCategories = React.lazy(() => import('./pages/request/RequestCategories'));
 const RequestList = React.lazy(() => import('./pages/request/RequestList'));
 const RequestDashboard = React.lazy(() => import('./pages/request/RequestDashboard'));
+const RequestTemplates = React.lazy(() => import('./pages/request/RequestTemplates'));
+const RequestTemplateEditor = React.lazy(() => import('./pages/request/RequestTemplateEditor'));
 
 // Asset management pages
 const AssetCatalog = React.lazy(() => import('./pages/ts/AssetCatalog'));
@@ -157,6 +157,15 @@ const SubModuleGuard: React.FC<{ children: React.ReactNode }> = ({ children }) =
 const LandingPage: React.FC = () => {
   return <Home />;
 };
+
+const RequestListRoute: React.FC = () => {
+  const location = useLocation();
+  const requestId = new URLSearchParams(location.search).get('requestId');
+  return requestId ? <Navigate to={`/rq/${encodeURIComponent(requestId)}`} replace /> : <RequestList />;
+};
+
+const RequestApprovalPhase1Guard: React.FC<{ children: React.ReactNode }> = ({ children }) =>
+  isRequestApprovalPhase1Enabled ? <>{children}</> : <Navigate to="/" replace />;
 
 const AppRoutes: React.FC = () => {
   return (
@@ -212,9 +221,13 @@ const AppRoutes: React.FC = () => {
           <Route path="analytics" element={<PredictiveAnalytics />} />
           <Route path="leaderboard" element={<Leaderboard />} />
           <Route path="feedback" element={<FeedbackHub />} />
-          <Route path="rq" element={<RequestList />} />
-          <Route path="rq/dashboard" element={<RequestDashboard />} />
-          <Route path="rq/categories" element={<RequestCategories />} />
+          <Route path="rq" element={<RequestApprovalPhase1Guard><RequestListRoute /></RequestApprovalPhase1Guard>} />
+          <Route path="rq/:requestId" element={<RequestApprovalPhase1Guard><RequestList /></RequestApprovalPhase1Guard>} />
+          <Route path="rq/dashboard" element={<RequestApprovalPhase1Guard><RequestDashboard /></RequestApprovalPhase1Guard>} />
+          <Route path="rq/templates" element={<RequestApprovalPhase1Guard><RequestTemplates /></RequestApprovalPhase1Guard>} />
+          <Route path="rq/templates/new" element={<RequestApprovalPhase1Guard><RequestTemplateEditor /></RequestApprovalPhase1Guard>} />
+          <Route path="rq/templates/:templateId" element={<RequestApprovalPhase1Guard><RequestTemplateEditor /></RequestApprovalPhase1Guard>} />
+          <Route path="rq/categories" element={<RequestApprovalPhase1Guard><Navigate to="/rq/templates" replace /></RequestApprovalPhase1Guard>} />
           <Route path="ts/dashboard" element={<AssetDashboard />} />
           <Route path="ts/catalog" element={<AssetCatalog />} />
           <Route path="ts/assignment" element={<AssetAssignment />} />
@@ -263,7 +276,6 @@ const AppDataWarmup: React.FC = () => {
     realtimeStatus,
   } = useApp();
   const { refreshData: refreshWorkflowData } = useWorkflow();
-  const { refreshData: refreshRequestData } = useRequest();
   const { loadChatData } = useChat();
   const lastFocusRefreshAtRef = useRef(0);
   const previousRealtimeStatusRef = useRef(realtimeStatus);
@@ -304,6 +316,13 @@ const AppDataWarmup: React.FC = () => {
         loadModuleData('admin'),
         loadModuleData('hrm'),
       ]).catch(err => console.warn('Procurement lazy load failed:', err));
+      return;
+    }
+
+    if (pathname.startsWith('/rq')) {
+      const forceAdmin = users.length <= 1;
+      setActiveRealtimeModules(['admin']);
+      loadModuleData('admin', forceAdmin).catch(err => console.warn('Request people lazy load failed:', err));
       return;
     }
 
@@ -389,12 +408,6 @@ const AppDataWarmup: React.FC = () => {
   }, [loadModuleData, moduleLoadedAt.admin, moduleLoadedAt.hrm, pathname, realtimeStatus, refreshWorkflowData]);
 
   useEffect(() => {
-    const needsRequestData = pathname.startsWith('/rq') || pathname === '/employee-dashboard' || pathname === '/custom-dashboard';
-    if (!needsRequestData) return;
-    refreshRequestData().catch(err => console.warn('Request warmup failed:', err));
-  }, [pathname, refreshRequestData]);
-
-  useEffect(() => {
     if (isChatEnabled && !isChatV2Enabled && pathname === '/chat') {
       loadChatData().catch(err => console.warn('Chat warmup failed:', err));
     }
@@ -457,17 +470,15 @@ export const AuthenticatedApplication: React.FC = () => (
     <ConfirmProvider>
       <AppProvider>
         <WorkflowProvider>
-          <RequestProvider>
-            <ChatProvider>
-              <CelebrationProvider>
-                <RouteErrorBoundary>
-                  <AppDataWarmup />
-                  <ReleaseNoticeHost />
-                  <AppRoutes />
-                </RouteErrorBoundary>
-              </CelebrationProvider>
-            </ChatProvider>
-          </RequestProvider>
+          <ChatProvider>
+            <CelebrationProvider>
+              <RouteErrorBoundary>
+                <AppDataWarmup />
+                <ReleaseNoticeHost />
+                <AppRoutes />
+              </RouteErrorBoundary>
+            </CelebrationProvider>
+          </ChatProvider>
         </WorkflowProvider>
       </AppProvider>
     </ConfirmProvider>

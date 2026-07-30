@@ -159,7 +159,7 @@ export const ERP_PERMISSION_APPLICATIONS: readonly PermissionApplicationDefiniti
         ['view', 'Xem', 10],
         ['manage', 'Quản trị danh mục', 20],
       ])),
-      module('request.template', 'Mẫu yêu cầu', 'RQ', ['/rq/categories'], 30, actions('request.template', 'RQ', '/rq/categories', WORKFLOW_SCOPE, [
+      module('request.template', 'Mẫu yêu cầu', 'RQ', ['/rq/templates'], 30, actions('request.template', 'RQ', '/rq/templates', WORKFLOW_SCOPE, [
         ['view', 'Xem', 10],
         ['manage', 'Quản trị mẫu', 20],
       ])),

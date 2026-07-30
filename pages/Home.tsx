@@ -21,15 +21,14 @@ import {
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useWorkflow } from '../context/WorkflowContext';
-import { useRequest } from '../context/RequestContext';
+import { useRequestList } from '../hooks/useRequestList';
 import { AppNotification, notificationService } from '../lib/notificationService';
 import { resolveNotificationPath } from '../lib/notificationRoutes';
+import { buildRequestRoute } from '../lib/requestRoutes';
 import { canUseModule, resolveHomeCapabilities } from '../lib/homeCapabilities';
 import {
   MaterialRequest,
-  RequestInstance,
   RequestStatus,
-  RQStatus,
   Transaction,
   TransactionStatus,
   User,
@@ -81,15 +80,6 @@ const requestStatusLabel = (status: RequestStatus | string) => {
   if (status === RequestStatus.IN_TRANSIT) return 'Đang giao';
   if (status === RequestStatus.COMPLETED) return 'Đã nhận';
   if (status === RequestStatus.REJECTED) return 'Từ chối';
-  return 'Nháp';
-};
-
-const rqStatusLabel = (status: RQStatus | string) => {
-  if (status === RQStatus.PENDING) return 'Chờ duyệt';
-  if (status === RQStatus.IN_PROGRESS) return 'Đang xử lý';
-  if (status === RQStatus.DONE) return 'Hoàn thành';
-  if (status === RQStatus.REJECTED) return 'Từ chối';
-  if (status === RQStatus.CANCELLED) return 'Đã huỷ';
   return 'Nháp';
 };
 
@@ -213,9 +203,6 @@ const buildMaterialRequestAction = (request: MaterialRequest, user: User, users:
   return null;
 };
 
-const getCurrentRqApprover = (request: RequestInstance) =>
-  [...(request.approvers || [])].sort((a, b) => a.order - b.order).find(item => item.status === 'waiting') || null;
-
 const Home: React.FC = () => {
   const navigate = useNavigate();
   const scrollToSection = (id: string) => {
@@ -240,11 +227,8 @@ const Home: React.FC = () => {
     nodes: workflowNodes,
     refreshData: refreshWorkflowData,
   } = useWorkflow();
-  const {
-    requests: rqRequests,
-    categories: rqCategories,
-    refreshData: refreshRequestData,
-  } = useRequest();
+  const assignedRequestList = useRequestList({ view: 'ASSIGNED_TO_ME' });
+  const createdRequestList = useRequestList({ view: 'CREATED_BY_ME' });
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
 
   const moduleCapabilities = useMemo(() => resolveHomeCapabilities(user), [user]);
@@ -253,8 +237,7 @@ const Home: React.FC = () => {
 
   useEffect(() => {
     refreshWorkflowData().catch(error => console.warn('Home workflow refresh failed:', error));
-    refreshRequestData().catch(error => console.warn('Home request refresh failed:', error));
-  }, [refreshRequestData, refreshWorkflowData]);
+  }, [refreshWorkflowData]);
 
   useEffect(() => {
     loadModuleData('admin').catch(error => console.warn('Home admin load failed:', error));
@@ -312,28 +295,24 @@ const Home: React.FC = () => {
     })
     .filter(Boolean) as HomeActionItem[], [materialRequests, user, users, workflowInstances, workflowNodes, workflowTemplates]);
 
-  const rqTodos = useMemo<HomeActionItem[]>(() => rqRequests
-    .filter(request => request.status === RQStatus.PENDING)
+  const rqTodos = useMemo<HomeActionItem[]>(() => assignedRequestList.items
     .map(request => {
-      const currentApprover = getCurrentRqApprover(request);
-      if (currentApprover?.userId !== user.id) return null;
-      const category = rqCategories.find(item => item.id === request.categoryId);
       return {
         id: `rq-${request.id}`,
         category: 'rq',
-        score: request.priority === 'urgent' ? 95 : request.priority === 'high' ? 89 : 78,
+        score: 78,
         title: request.title,
         code: request.code,
         status: request.status,
         statusLabel: 'Chờ duyệt',
-        nextAction: `Bạn cần duyệt phiếu ${category?.name || 'yêu cầu nội bộ'}.`,
-        actorName: getUserName(users, request.createdBy),
-        dueAt: request.dueDate || request.createdAt,
-        href: `/rq?requestId=${request.id}`,
+        nextAction: `Bạn cần duyệt phiếu ${request.templateName || 'yêu cầu nội bộ'}.`,
+        actorName: request.creator.name,
+        dueAt: request.dueAt || request.createdAt,
+        href: buildRequestRoute(request.id),
         actionLabel: 'Duyệt phiếu',
       } as HomeActionItem;
     })
-    .filter(Boolean) as HomeActionItem[], [rqCategories, rqRequests, user.id, users]);
+    , [assignedRequestList.items]);
 
   const wmsTodos = useMemo<HomeActionItem[]>(() => {
     if (!shouldLoadWms) return [];
@@ -386,8 +365,8 @@ const Home: React.FC = () => {
         actionLabel: 'Theo dõi',
       }));
 
-    const rq = rqRequests
-      .filter(item => item.createdBy === user.id && [RQStatus.DRAFT, RQStatus.PENDING, RQStatus.IN_PROGRESS].includes(item.status))
+    const rq = createdRequestList.items
+      .filter(item => item.status === 'PENDING' || item.status === 'RETURNED')
       .slice(0, 4)
       .map(item => ({
         id: `track-rq-${item.id}`,
@@ -396,10 +375,10 @@ const Home: React.FC = () => {
         title: item.title,
         code: item.code,
         status: item.status,
-        statusLabel: rqStatusLabel(item.status),
-        nextAction: item.status === RQStatus.DRAFT ? 'Phiếu đang nháp, cần gửi khi đã đủ thông tin.' : 'Phiếu của bạn đang trong luồng xử lý.',
-        dueAt: item.dueDate || item.updatedAt,
-        href: `/rq?requestId=${item.id}`,
+        statusLabel: item.status === 'RETURNED' ? 'Đã trả lại' : 'Chờ duyệt',
+        nextAction: item.status === 'RETURNED' ? 'Phiếu đã được trả lại, cần bổ sung và gửi lại.' : 'Phiếu của bạn đang trong luồng xử lý.',
+        dueAt: item.dueAt || item.updatedAt,
+        href: buildRequestRoute(item.id),
         actionLabel: 'Xem phiếu',
       }));
 
@@ -421,7 +400,7 @@ const Home: React.FC = () => {
       })) : [];
 
     return [...wf, ...rq, ...material].slice(0, 6);
-  }, [materialRequests, rqRequests, shouldLoadWms, user.id, workflowInstances]);
+  }, [createdRequestList.items, materialRequests, shouldLoadWms, user.id, workflowInstances]);
 
   const visibleNotifications = useMemo(
     () => notifications

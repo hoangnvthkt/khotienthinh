@@ -139,7 +139,7 @@ const SUB_MODULE_CONFIG: Record<string, { to: string; label: string; icon: any }
   RQ: [
     { to: '/rq/dashboard', icon: BarChart3, label: 'Dashboard RQ' },
     { to: '/rq', icon: Inbox, label: 'Phiếu yêu cầu' },
-    { to: '/rq/categories', icon: Shield, label: 'Danh mục yêu cầu' },
+    { to: '/rq/templates', icon: Shield, label: 'Mẫu yêu cầu' },
   ],
   EX: [
     { to: '/expense', icon: BarChart3, label: 'Kế hoạch chi phí' },

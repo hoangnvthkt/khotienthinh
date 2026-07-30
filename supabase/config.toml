@@ -1,0 +1,20 @@
+
+[functions.request-print-docx-url]
+enabled = true
+verify_jwt = true
+import_map = "./functions/request-print-docx-url/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/request-print-docx-url/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/request-print-docx-url/*.html" ]
+
+[functions.process-request-notifications]
+enabled = true
+# Cron authenticates this internal worker with the Vault-held secret API key.
+# Gateway JWT verification must stay off so `withSupabase({ auth: 'secret' })`
+# can validate that key at the function boundary.
+verify_jwt = false
+import_map = "./functions/process-request-notifications/deno.json"
+entrypoint = "./functions/process-request-notifications/index.ts"

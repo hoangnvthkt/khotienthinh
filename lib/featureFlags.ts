@@ -3,6 +3,9 @@ const isEnabledByDefault = (value: string | undefined): boolean => value !== 'fa
 export const isChatEnabled = isEnabledByDefault(import.meta.env.VITE_ENABLE_CHAT);
 export const isChatV2Enabled = isEnabledByDefault(import.meta.env.VITE_ENABLE_CHAT_V2);
 
+export const isRequestApprovalPhase1Enabled =
+  isEnabledByDefault(import.meta.env.VITE_ENABLE_REQUEST_APPROVAL_PHASE1);
+
 export const isPurchasePackageV2Enabled =
   isEnabledByDefault(import.meta.env.VITE_ENABLE_PURCHASE_PACKAGE_V2);
 
