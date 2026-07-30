@@ -4,6 +4,7 @@ import type {
   PurchaseOrderDeliveryBatch,
   PurchaseOrderItem,
 } from '../types';
+import { getPurchaseOrderScheduleLineUnitPrice } from './purchaseOrderSchedulePricing';
 
 const EPSILON = 0.000001;
 
@@ -26,7 +27,7 @@ const getBatchAmount = (
   const itemByLineId = new Map((po.items || []).map(item => [getLineKey(item), item]));
   return money((batch.lines || []).reduce((sum, line) => {
     const sourceItem = itemByLineId.get(line.purchaseOrderLineId);
-    const unitPrice = toNumber(line.deliveryUnitPrice ?? sourceItem?.unitPrice);
+    const unitPrice = getPurchaseOrderScheduleLineUnitPrice({ po, item: sourceItem, line });
     return sum + toNumber(line.plannedQty) * unitPrice;
   }, 0));
 };

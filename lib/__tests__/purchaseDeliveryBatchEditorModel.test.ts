@@ -132,6 +132,47 @@ describe('purchase delivery batch editor model', () => {
     expect(drafts[0].purchaseUnitPrice).toBe(5700);
   });
 
+  it('uses the edited request package PO unit price when cloning a stale delivery batch', () => {
+    const sourceBatch = makeBatch({
+      lines: [{
+        id: 'delivery-line-1',
+        deliveryBatchId: 'batch-1',
+        purchaseOrderId: 'po-1',
+        purchaseOrderLineId: 'line-1',
+        itemId: 'item-1',
+        plannedQty: 473,
+        stockPlannedQty: 473,
+        unit: 'm3',
+        stockUnit: 'm3',
+        deliveryUnitPrice: 2_567_000,
+      }],
+    });
+
+    const drafts = buildPurchaseDeliveryLineDrafts({
+      purchaseOrder: {
+        ...makePo(),
+        poNumber: 'MR-2026-9775',
+        purchaseMode: 'single',
+        referenceGrossAmount: 1_316_800_000.131,
+        items: [{
+          ...(makePo().items?.[0] || {}),
+          lineId: 'line-1',
+          itemId: 'item-1',
+          sku: 'VT0000861',
+          name: 'Tam vach ALC be tong',
+          unit: 'm3',
+          qty: 473,
+          unitPrice: 2_783_932.347,
+        }],
+      },
+      existingBatches: [],
+      cloneFromBatch: sourceBatch,
+    });
+
+    expect(drafts[0].purchaseQty).toBe(473);
+    expect(drafts[0].purchaseUnitPrice).toBe(2_783_932.347);
+  });
+
   it('summarizes release totals and variance for the operator before saving', () => {
     const summary = getPurchaseDeliveryDraftSummary({
       purchaseOrder: makePo(),

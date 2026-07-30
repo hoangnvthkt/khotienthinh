@@ -1,5 +1,6 @@
 import type { PurchaseOrder, PurchaseOrderDeliveryBatch, PurchaseOrderItem } from '../types';
 import { calculateLineTotal } from './poSpecsUtils';
+import { getPurchaseOrderScheduleLineUnitPrice } from './purchaseOrderSchedulePricing';
 
 const toNumber = (value: unknown) => {
   const num = Number(value);
@@ -81,7 +82,7 @@ export const getPurchaseOrderDisplayLineAmount = (
   const scheduledQty = activeLines.reduce((sum, line) => sum + toNumber(line.plannedQty), 0);
   const totalAmount = Math.round(activeLines.reduce((sum, line) => {
     const plannedQty = toNumber(line.plannedQty);
-    const unitPrice = toNumber(line.deliveryUnitPrice ?? item.unitPrice);
+    const unitPrice = getPurchaseOrderScheduleLineUnitPrice({ po, item, line });
     return sum + plannedQty * unitPrice;
   }, 0));
   const unitPrice = scheduledQty > 0 ? Math.round((totalAmount / scheduledQty) * 100000) / 100000 : 0;
@@ -108,7 +109,7 @@ export const getPurchaseOrderDisplayAmount = (
   return Math.round(activeLines.reduce((sum, line) => {
     const sourceItem = itemByLineId.get(line.purchaseOrderLineId);
     const plannedQty = toNumber(line.plannedQty);
-    const unitPrice = toNumber(line.deliveryUnitPrice ?? sourceItem?.unitPrice);
+    const unitPrice = getPurchaseOrderScheduleLineUnitPrice({ po, item: sourceItem, line });
     return sum + plannedQty * unitPrice;
   }, 0));
 };
@@ -147,7 +148,7 @@ export const buildPurchaseOrderPrintLineAmounts = (
     const scheduledQty = matchingLines.reduce((sum, line) => sum + toNumber(line.plannedQty), 0);
     const totalAmount = Math.round(matchingLines.reduce((sum, line) => {
       const plannedQty = toNumber(line.plannedQty);
-      const unitPrice = toNumber(line.deliveryUnitPrice ?? item.unitPrice);
+      const unitPrice = getPurchaseOrderScheduleLineUnitPrice({ po, item, line });
       return sum + plannedQty * unitPrice;
     }, 0));
     const unitPrice = scheduledQty > 0 ? Math.round((totalAmount / scheduledQty) * 100000) / 100000 : 0;

@@ -33,6 +33,7 @@ import {
 import { buildActualReceiptItems, validateReceiptQuantityLines } from './poActualReceipt';
 import { isPurchasePackageV2EnabledForSite } from './featureFlags';
 import { purchaseReceiptService, type ReceiptQualityLineInput } from './purchaseReceiptService';
+import { getPurchaseOrderScheduleLineUnitPrice } from './purchaseOrderSchedulePricing';
 
 const BATCH_TABLE = 'material_request_fulfillment_batches';
 const LINE_TABLE = 'material_request_fulfillment_lines';
@@ -552,7 +553,11 @@ const createProactivePoDeliveryReceiptBatch = async (
     let stockQty = Number(deliveryLine.stockPlannedQty || 0);
     if (stockQty <= 0) stockQty = poLinePurchaseToStockQty(poItem, Number(deliveryLine.plannedQty || 0), inventory);
     if (stockQty <= 0) return null;
-    const purchaseUnitPrice = Number(deliveryLine.deliveryUnitPrice ?? poItem.unitPrice ?? 0);
+    const purchaseUnitPrice = getPurchaseOrderScheduleLineUnitPrice({
+      po,
+      item: poItem,
+      line: deliveryLine,
+    });
     return buildPoReceiptTransactionItem(poItem, stockQty, inventory, {
       quantity: stockQty,
       orderedQty: stockQty,
@@ -1855,7 +1860,11 @@ export const materialRequestFulfillmentService = {
       const linePayloads = requestLinks.map(item => {
         const inventory = inventoryById.get(item.poItem.itemId);
         const stockUnit = getPoLineStockUnit(item.poItem, inventory) || item.link.unit || null;
-        const deliveryPurchaseUnitPrice = Number(item.deliveryLine.deliveryUnitPrice ?? item.poItem.unitPrice ?? 0);
+        const deliveryPurchaseUnitPrice = getPurchaseOrderScheduleLineUnitPrice({
+          po,
+          item: item.poItem,
+          line: item.deliveryLine,
+        });
         return {
           id: newId(),
           batchId,

@@ -87,7 +87,8 @@ describe('purchase order drawer regression guard', () => {
   });
 
   it('prints delivery approval requests with the delivery batch amount instead of the package total', () => {
-    expect(source).toContain('totalAmountOverride: getDeliveryPrintGroupSummary(group).totalAmount');
+    expect(source).toContain('totalAmountOverride: getDeliveryPrintGroupSummary(po, group).totalAmount');
+    expect(source).toContain('buildPurchaseOrderApprovalDeliveryBatches(printablePo, approvalGroups)');
     expect(source).toContain('vatRateOverride: 0');
     expect(source).toContain('ĐỀ NGHỊ DUYỆT ĐỢT GIAO');
   });

@@ -45,6 +45,7 @@ import {
 import { getPurchaseOrderDisplayLineAmount } from '../../lib/purchaseOrderAmount';
 import { getPurchaseOrderLineDemandQty } from '../../lib/purchaseOrderDemand';
 import { getPurchasePackageSummary } from '../../lib/purchasePackageDomain';
+import { getPurchaseOrderScheduleLineUnitPrice } from '../../lib/purchaseOrderSchedulePricing';
 import type {
   PurchaseOrderReceiptStats,
   PurchaseOrderUiAction,
@@ -286,11 +287,18 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
   }), [po.items]);
 
   const deliveryTimelineGroups = useMemo(() => {
+    const itemByLineId = new Map((po.items || []).map(item => [item.lineId || item.itemId, item]));
     const scheduleGroups = deliveryBatches.map(batch => {
       const printGroup = getPrintGroupForBatch(batch);
       const targetWarehouse = warehouses.find(row => row.id === (batch as any).targetWarehouseId)?.name || targetWarehouseName || '—';
       const totalQty = batch.lines.reduce((sum, line) => sum + Number(line.stockPlannedQty ?? line.plannedQty ?? 0), 0);
-      const totalAmount = batch.lines.reduce((sum, line) => sum + Number(line.plannedQty || 0) * Number(line.deliveryUnitPrice || 0), 0);
+      const totalAmount = batch.lines.reduce((sum, line) => (
+        sum + Number(line.plannedQty || 0) * getPurchaseOrderScheduleLineUnitPrice({
+          po,
+          item: itemByLineId.get(line.purchaseOrderLineId),
+          line,
+        })
+      ), 0);
       return {
         key: `schedule:${batch.id}`,
         source: 'schedule' as const,
@@ -343,7 +351,7 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
       if (dateCompare !== 0) return dateCompare;
       return a.label.localeCompare(b.label, 'vi');
     });
-  }, [deliveryBatches, deliveryPrintGroups, getPrintGroupForBatch, getWmsTransactionIdForBatch, targetWarehouseName, warehouses]);
+  }, [deliveryBatches, deliveryPrintGroups, getPrintGroupForBatch, getWmsTransactionIdForBatch, po, targetWarehouseName, warehouses]);
 
   const hasWmsPending = deliveryTimelineGroups.some(group => normalizeDeliveryTimelineStatus(group.status) === 'wms_pending');
   const hasReceivedDelivery = deliveryTimelineGroups.some(group => normalizeDeliveryTimelineStatus(group.status) === 'received') || receiptStats.receivedQty > 0;

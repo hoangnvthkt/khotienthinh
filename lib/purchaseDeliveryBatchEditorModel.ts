@@ -5,6 +5,7 @@ import {
   getPurchaseConversionFactor,
   purchaseToStockQty,
 } from './materialUnitConversion';
+import { getPurchaseOrderScheduleLineUnitPrice } from './purchaseOrderSchedulePricing';
 
 export interface PurchaseDeliveryLineDraft {
   included: boolean;
@@ -75,7 +76,11 @@ export const buildPurchaseDeliveryLineDrafts = ({
   const stockQty = cloneLine
     ? numberValue(cloneLine.stockPlannedQty || cloneLine.plannedQty)
     : purchaseToStockQty(purchaseQty, { unit: stockUnit, purchaseUnit, purchaseConversionFactor: conversionFactor });
-  const purchaseUnitPrice = numberValue(cloneLine?.deliveryUnitPrice ?? item.unitPrice);
+  const purchaseUnitPrice = getPurchaseOrderScheduleLineUnitPrice({
+    po: purchaseOrder,
+    item,
+    line: cloneLine,
+  });
   const included = cloneLine ? purchaseQty > 0 : remainingQty > 0;
 
   return {

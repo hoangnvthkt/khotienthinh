@@ -75,6 +75,30 @@ describe('purchaseOrderReleaseApproval', () => {
     expect(summary.overAmount).toBe(0);
   });
 
+  it('uses the edited request package PO unit price when delivery schedule price is stale', () => {
+    const summary = getPurchaseOrderReleaseSummary(makePo({
+      poNumber: 'MR-2026-9775',
+      purchaseMode: 'single',
+      items: [{
+        lineId: 'line-1',
+        itemId: 'item-1',
+        sku: 'VT0000861',
+        name: 'Tam vach ALC be tong',
+        unit: 'm3',
+        qty: 473,
+        unitPrice: 2_783_932.347,
+      }],
+      totalAmount: 1_316_800_000.131,
+      approvedTotalAmount: 1_316_800_000.131,
+      referenceGrossAmount: 1_316_800_000.131,
+    }), [
+      batch('batch-1', 1, 473, 2_567_000),
+    ]);
+
+    expect(summary.actualPlannedAmount).toBe(1_316_800_000);
+    expect(summary.overAmount).toBe(0);
+  });
+
   it('hard-blocks schedules that exceed the master PO quantity', () => {
     const reason = getPurchaseOrderScheduleQuantityBlockReason(makePo(), [
       batch('batch-1', 1, 700, 100),

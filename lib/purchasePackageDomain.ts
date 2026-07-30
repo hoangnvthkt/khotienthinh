@@ -1,4 +1,5 @@
 import type { PurchaseMode, PurchaseOrder, PurchaseOrderDeliveryBatch } from '../types';
+import { getPurchaseOrderScheduleLineUnitPrice } from './purchaseOrderSchedulePricing';
 
 export type { PurchaseMode };
 
@@ -92,6 +93,7 @@ export const getPurchasePackageSummary = (
 ): PurchasePackageSummary => {
   const active = batches.filter(activeBatch);
   const activeLines = active.flatMap(batch => batch.lines || []);
+  const itemByLineId = new Map((po.items || []).map(item => [item.lineId || item.itemId, item]));
   const referenceQty = po.items.reduce((sum, line) => sum + numberValue(line.qty), 0);
   const releasedQty = activeLines.reduce((sum, line) => sum + numberValue(line.plannedQty), 0);
   const acceptedQty = activeLines.reduce((sum, line) => sum + numberValue(line.acceptedQty), 0);
@@ -107,7 +109,7 @@ export const getPurchasePackageSummary = (
     (sum, batch) => sum + (batch.lines || []).reduce(
       (batchSum, line) => batchSum + gross(
         numberValue(line.plannedQty),
-        numberValue(line.deliveryUnitPrice),
+        getPurchaseOrderScheduleLineUnitPrice({ po, item: itemByLineId.get(line.purchaseOrderLineId), line }),
         numberValue(batch.vatRate),
       ),
       0,
@@ -118,7 +120,7 @@ export const getPurchasePackageSummary = (
     (sum, batch) => sum + (batch.lines || []).reduce(
       (batchSum, line) => batchSum + gross(
         numberValue(line.acceptedQty) - numberValue(line.returnedQty),
-        numberValue(line.deliveryUnitPrice),
+        getPurchaseOrderScheduleLineUnitPrice({ po, item: itemByLineId.get(line.purchaseOrderLineId), line }),
         numberValue(batch.vatRate),
       ),
       0,

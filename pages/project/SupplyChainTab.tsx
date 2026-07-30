@@ -153,6 +153,13 @@ import {
     getPurchaseOrderDisplayAmount,
     getPurchaseOrderPrintAmount,
 } from '../../lib/purchaseOrderAmount';
+import {
+    buildPurchaseOrderApprovalDeliveryBatches,
+    getPurchaseOrderDeliveryPrintGroupSummary,
+    getPurchaseOrderDeliveryPrintLineUnitPrice,
+    type PurchaseOrderApprovalDeliveryBatch,
+} from '../../lib/purchaseOrderDeliveryPrint';
+import { getPurchaseOrderScheduleLineUnitPrice } from '../../lib/purchaseOrderSchedulePricing';
 import { isPurchasePackageV2EnabledForSite } from '../../lib/featureFlags';
 import {
     appendRequestRowsToPoItems,
@@ -471,15 +478,6 @@ type PoDeliveryPrintGroup = {
     scheduleBatch?: PurchaseOrderDeliveryBatch | null;
     batches: MaterialRequestFulfillmentBatch[];
     lines: MaterialRequestFulfillmentLine[];
-};
-type PoApprovalDeliveryBatch = {
-    deliveryNo?: string | number | null;
-    plannedDeliveryDate?: string | null;
-    lines: Array<{
-        purchaseOrderLineId: string;
-        plannedQty: number;
-        unitPrice?: number | null;
-    }>;
 };
 
 type PurchaseOrderFormItem = PurchaseOrderItem & {
@@ -4432,21 +4430,10 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         return `${itemLabel}${projectLabel ? ` ${projectLabel}` : ''}${vendorLabel}`.toUpperCase();
     };
 
-    const buildPoApprovalDeliveryBatches = (groups: PoDeliveryPrintGroup[]): PoApprovalDeliveryBatch[] =>
-        groups.map((group, index) => ({
-            deliveryNo: group.label || index + 1,
-            plannedDeliveryDate: group.plannedDate || null,
-            lines: group.lines.map(line => ({
-                purchaseOrderLineId: line.poLineId || line.itemId,
-                plannedQty: Number(line.issuedQty || 0),
-                unitPrice: Number(line.deliveryUnitPrice || 0),
-            })).filter(line => line.purchaseOrderLineId && line.plannedQty > 0),
-        })).filter(batch => batch.lines.length > 0);
-
     const buildPrintablePoApprovalDeliveryBatch = (
         printablePo: PurchaseOrder,
         group?: Pick<PoDeliveryPrintGroup, 'label' | 'plannedDate'>,
-    ): PoApprovalDeliveryBatch[] => [{
+    ): PurchaseOrderApprovalDeliveryBatch[] => [{
         deliveryNo: group?.label || printablePo.poNumber,
         plannedDeliveryDate: group?.plannedDate || printablePo.expectedDeliveryDate || null,
         lines: printablePo.items
@@ -4461,7 +4448,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     const buildPoApprovalRequestSection = (
         po: PurchaseOrder,
         pageBreak = false,
-        deliveryBatches: PoApprovalDeliveryBatch[] = poDeliveryBatchesByPo[po.id] || [],
+        deliveryBatches: PurchaseOrderApprovalDeliveryBatch[] = poDeliveryBatchesByPo[po.id] || [],
         qrSvg = '',
         options: {
             title?: string;
@@ -4484,7 +4471,11 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         const calculatedTotalAmount = hasDeliveryBatchLines
             ? deliveryBatches.reduce((sum, batch) => sum + batch.lines.reduce((batchSum, line) => {
                 const item = itemByLineId.get(line.purchaseOrderLineId);
-                const unitPrice = Number(line.unitPrice ?? item?.unitPrice ?? 0);
+                const unitPrice = getPurchaseOrderScheduleLineUnitPrice({
+                    po,
+                    item,
+                    deliveryUnitPrice: line.unitPrice,
+                });
                 return batchSum + Number(line.plannedQty || 0) * unitPrice;
             }, 0), 0)
             : po.items.reduce((sum, item) => sum + calculateLineTotal(item), 0);
@@ -4515,7 +4506,11 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 .map(line => `<div class="approval-muted">${escapeHtml(line)}</div>`)
                 .join('');
 
-            const displayUnitPrice = Number(unitPriceOverride ?? item.unitPrice ?? 0);
+            const displayUnitPrice = getPurchaseOrderScheduleLineUnitPrice({
+                po,
+                item,
+                deliveryUnitPrice: unitPriceOverride,
+            });
             const lineAmount = Math.round(Number(qty || 0) * displayUnitPrice);
 
             return `
@@ -4971,7 +4966,11 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             const requestLink = (linksByPoLine.get(line.purchaseOrderLineId) || [])[0];
             const purchaseUnit = line.unit || (sourceItem ? getPoLinePurchaseUnit(sourceItem, inventory) : inventory?.purchaseUnit || inventory?.unit) || '';
             const purchaseQty = Number(line.plannedQty || 0);
-            const purchaseUnitPrice = Number(line.deliveryUnitPrice ?? sourceItem?.unitPrice ?? 0);
+            const purchaseUnitPrice = getPurchaseOrderScheduleLineUnitPrice({
+                po,
+                item: sourceItem,
+                line,
+            });
             return {
                 id: line.id || `${batch.id}:${line.purchaseOrderLineId}:${index}`,
                 batchId: batch.id,
@@ -5020,25 +5019,8 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         return 'Đang giao';
     };
 
-    const getDeliveryPrintGroupSummary = (group: PoDeliveryPrintGroup) => {
-        const totalQty = group.lines.reduce((sum, line) => sum + Number(line.issuedQty || 0), 0);
-        const totalAmount = group.lines.reduce((sum, line) => sum + Number(line.issuedQty || 0) * Number(line.deliveryUnitPrice || 0), 0);
-        const units = Array.from(new Set(group.lines.map(line => line.deliveryUnit || line.unit).filter(Boolean)));
-        const prices = Array.from(
-            new Set(
-                group.lines
-                    .map(line => Number(line.deliveryUnitPrice || 0))
-                    .filter(price => Number.isFinite(price))
-            )
-        );
-
-        return {
-            totalQty,
-            totalAmount,
-            unitLabel: units.length === 1 ? units[0] : units.length > 1 ? 'nhiều ĐVT' : '',
-            unitPriceLabel: prices.length === 1 ? `${prices[0].toLocaleString('vi-VN')} đ` : prices.length > 1 ? 'Nhiều đơn giá' : '0 đ',
-        };
-    };
+    const getDeliveryPrintGroupSummary = (po: PurchaseOrder, group: PoDeliveryPrintGroup) =>
+        getPurchaseOrderDeliveryPrintGroupSummary(po, group);
 
     const loadPoDeliveryPrintGroups = async (
         po: PurchaseOrder,
@@ -5161,7 +5143,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             const purchaseQty = sourceItem && itemHasConversion && !lineQtyIsPurchaseUnit
                 ? poLineStockToPurchaseQty(sourceItem, issuedQty, inventory)
                 : issuedQty;
-            const purchaseUnitPrice = Number(line.deliveryUnitPrice ?? sourceItem?.unitPrice ?? inventory?.priceIn ?? 0);
+            const purchaseUnitPrice = getPurchaseOrderDeliveryPrintLineUnitPrice(po, line);
             const detailNotes = [
                 `Đợt: ${group.label}`,
                 request?.code ? `Phiếu YC: ${request.code}` : null,
@@ -5252,7 +5234,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                         {
                             title: 'ĐỀ NGHỊ DUYỆT ĐỢT GIAO',
                             intro: 'Đề nghị BGD duyệt đợt giao:',
-                            totalAmountOverride: getDeliveryPrintGroupSummary(group).totalAmount,
+                            totalAmountOverride: getDeliveryPrintGroupSummary(po, group).totalAmount,
                             vatRateOverride: 0,
                         },
                     ),
@@ -5287,7 +5269,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     setPos(prev => prev.map(item => item.id === po.id ? printablePo : item));
                 }
                 const approvalGroups = await loadPoDeliveryPrintGroups(po);
-                const approvalDeliveryBatches = buildPoApprovalDeliveryBatches(approvalGroups);
+                const approvalDeliveryBatches = buildPurchaseOrderApprovalDeliveryBatches(printablePo, approvalGroups);
                 const receiveUrl = buildPoReceiveUrl(printablePo.qrToken!);
                 const qrSvg = renderToStaticMarkup(<QRCodeSVG value={receiveUrl} size={90} level="H" includeMargin />);
                 html = buildPoPrintHtml(
@@ -5343,7 +5325,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     return buildPoApprovalRequestSection(
                         po,
                         index > 0,
-                        buildPoApprovalDeliveryBatches(deliveryGroupsByPoId.get(po.id) || []),
+                        buildPurchaseOrderApprovalDeliveryBatches(po, deliveryGroupsByPoId.get(po.id) || []),
                         qrSvg,
                     );
                 }).join('');

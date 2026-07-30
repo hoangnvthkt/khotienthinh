@@ -87,12 +87,12 @@ describe('PurchasePackageSummary', () => {
     expect(html).toContain(VARIANCE_WARNING);
   });
 
-  it('warns when delivery batches exceed the package gross baseline', () => {
+  it('does not warn when only the stale delivery batch price exceeds the package gross baseline', () => {
     const html = renderSummary(
       makePackage({ status: 'confirmed' }),
       [makeBatch({ plannedQty: 100, unitPrice: 1_200 })],
     );
 
-    expect(html).toContain(VARIANCE_WARNING);
+    expect(html).not.toContain(VARIANCE_WARNING);
   });
 });

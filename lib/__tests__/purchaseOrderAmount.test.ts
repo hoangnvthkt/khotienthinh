@@ -252,4 +252,76 @@ describe('purchaseOrderAmount', () => {
     expect(printLine.totalAmount).toBe(1_316_800_000);
     expect(printLine.unitPrice).toBeCloseTo(2_783_932.34672, 5);
   });
+
+  it('shows each request package item at the edited PO price when schedule line prices are zero', () => {
+    const packagePo: PurchaseOrder = {
+      ...po,
+      id: 'po-261',
+      poNumber: 'PO-261',
+      purchaseMode: 'single',
+      sourceMode: 'from_request',
+      vatRate: 0,
+      items: [
+        {
+          lineId: 'd300',
+          itemId: 'item-d300',
+          sku: 'VT0001217',
+          name: 'Cong bi thuong D300',
+          unit: 'Met',
+          qty: 20,
+          unitPrice: 300_000,
+        },
+        {
+          lineId: 'd400',
+          itemId: 'item-d400',
+          sku: 'VT0000167',
+          name: 'Cong bi thuong D400',
+          unit: 'Met',
+          qty: 217.5,
+          unitPrice: 360_000,
+        },
+      ],
+      totalAmount: 84_300_000,
+      approvedTotalAmount: 84_300_000,
+      referenceGrossAmount: 84_300_000,
+    };
+    const staleSchedule: PurchaseOrderDeliveryBatch = {
+      id: 'batch-261',
+      purchaseOrderId: packagePo.id,
+      deliveryNo: 1,
+      plannedDeliveryDate: '2026-08-10',
+      status: 'planned',
+      lines: [
+        {
+          id: 'batch-261-d300',
+          deliveryBatchId: 'batch-261',
+          purchaseOrderId: packagePo.id,
+          purchaseOrderLineId: 'd300',
+          itemId: 'item-d300',
+          plannedQty: 20,
+          deliveryUnitPrice: 0,
+        },
+        {
+          id: 'batch-261-d400',
+          deliveryBatchId: 'batch-261',
+          purchaseOrderId: packagePo.id,
+          purchaseOrderLineId: 'd400',
+          itemId: 'item-d400',
+          plannedQty: 217.5,
+          deliveryUnitPrice: 0,
+        },
+      ],
+    };
+
+    expect(getPurchaseOrderDisplayLineAmount(packagePo, packagePo.items[0], [staleSchedule])).toEqual({
+      scheduledQty: 20,
+      unitPrice: 300_000,
+      totalAmount: 6_000_000,
+    });
+    expect(getPurchaseOrderDisplayLineAmount(packagePo, packagePo.items[1], [staleSchedule])).toEqual({
+      scheduledQty: 217.5,
+      unitPrice: 360_000,
+      totalAmount: 78_300_000,
+    });
+  });
 });
