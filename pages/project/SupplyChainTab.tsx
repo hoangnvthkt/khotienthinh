@@ -158,7 +158,10 @@ import {
     appendRequestRowsToPoItems,
     buildPurchaseOrderRequestLineLinks,
     filterRequestRowsForPoCart,
+    getPurchaseOrderRequestCartGroupSelectionState,
+    groupPurchaseOrderRequestCartRows,
     hasRequestRowDefaultSupplierMismatch,
+    setPurchaseOrderRequestCartGroupSelection,
 } from '../../lib/purchaseOrderRequestCart';
 import { getPurchaseOrderUiPolicy, type PurchaseOrderUiAction } from '../../lib/purchaseOrderUiPolicy';
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
@@ -2800,6 +2803,10 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         [pItems, scopedRequestLines],
     );
     const requestPickerRows = requestPickerMode === 'append_to_po' ? appendableRequestLines : scopedRequestLines;
+    const requestPickerGroups = useMemo(
+        () => groupPurchaseOrderRequestCartRows(requestPickerRows),
+        [requestPickerRows],
+    );
     const requestedQtyByBudget = useMemo(() => {
         const map = new Map<string, number>();
         scopedMaterialRequests
@@ -8007,7 +8014,27 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-50 dark:divide-slate-700/40">
-                                        {requestPickerRows.map(row => {
+                                        {requestPickerGroups.map(group => {
+                                            const selectionState = getPurchaseOrderRequestCartGroupSelectionState(group.rows, selectedRequestLineKeys);
+                                            return (
+                                                <React.Fragment key={group.requestId}>
+                                                    <tr className="bg-indigo-50/70 dark:bg-indigo-950/25">
+                                                        <td className="px-4 py-2 text-center">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={selectionState === 'all'}
+                                                                ref={input => { if (input) input.indeterminate = selectionState === 'partial'; }}
+                                                                onChange={event => setSelectedRequestLineKeys(prev =>
+                                                                    setPurchaseOrderRequestCartGroupSelection(group.rows, prev, event.target.checked))}
+                                                                aria-label={`Chọn toàn bộ phiếu ${group.requestCode}`}
+                                                                className="accent-amber-500"
+                                                            />
+                                                        </td>
+                                                        <td colSpan={12} className="px-4 py-2 font-black text-indigo-700 dark:text-indigo-300">
+                                                            {group.requestCode} <span className="font-bold text-slate-500">• {group.rows.length} vật tư</span>
+                                                        </td>
+                                                    </tr>
+                                                    {group.rows.map(row => {
                                             const inv = inventoryItems.find(item => item.id === row.line.itemId);
                                             const work = row.line.workBoqItemId ? workBoqMap.get(row.line.workBoqItemId) : undefined;
                                             const remaining = row.remainingQty;
@@ -8087,6 +8114,9 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                         </button>
                                                     </td>
                                                 </tr>
+                                            );
+                                                    })}
+                                                </React.Fragment>
                                             );
                                         })}
                                     </tbody>
