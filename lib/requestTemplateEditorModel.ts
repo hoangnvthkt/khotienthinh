@@ -131,6 +131,31 @@ export const requestTemplateDraftReducer = (draft: RequestTemplateDraft, action:
 
 const validSla = (value: number | null) => value === null || (Number.isInteger(value) && value >= 1 && value <= 8760);
 
+export const validateRequestTemplateForSave = (draft: RequestTemplateDraft): RequestTemplateValidationIssue[] => {
+  const issues: RequestTemplateValidationIssue[] = [];
+
+  if (!draft.name.trim()) {
+    issues.push({ section: 'GENERAL', code: 'NAME_REQUIRED', message: 'Tên mẫu yêu cầu là bắt buộc.' });
+  }
+  if (!draft.approverBlocks.length) {
+    issues.push({ section: 'APPROVAL', code: 'APPROVER_REQUIRED', message: 'Mẫu cần ít nhất một khối người duyệt.' });
+  }
+  for (const block of draft.approverBlocks) {
+    if (
+      (block.source === 'FIXED_SINGLE' || block.source === 'FIXED_MULTI')
+      && block.fixedUserIds.length === 0
+    ) {
+      issues.push({
+        section: 'APPROVAL',
+        code: 'FIXED_APPROVER_REQUIRED',
+        message: `Khối “${block.name || 'Người duyệt cố định'}” cần chọn ít nhất một người duyệt.`,
+      });
+    }
+  }
+
+  return issues;
+};
+
 export const validateRequestTemplateForPublish = (draft: RequestTemplateDraft): RequestTemplateValidationIssue[] => {
   const issues: RequestTemplateValidationIssue[] = [];
   if (!draft.name.trim()) issues.push({ section: 'GENERAL', code: 'NAME_REQUIRED', message: 'Tên mẫu yêu cầu là bắt buộc.' });

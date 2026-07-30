@@ -3,6 +3,7 @@ import {
   createEmptyRequestTemplateDraft,
   requestTemplateDraftReducer,
   toSaveDraftInput,
+  validateRequestTemplateForSave,
   validateRequestTemplateForPublish,
 } from '../requestTemplateEditorModel';
 
@@ -51,6 +52,23 @@ describe('request template editor model', () => {
       section: 'APPROVAL',
       code: 'DYNAMIC_MINIMUM_REQUIRED',
       message: 'Khối người duyệt linh động cần số người duyệt tối thiểu từ 1.',
+    });
+  });
+
+  it('identifies a fixed approval block without an approver before saving a draft', () => {
+    const draft = {
+      ...createEmptyRequestTemplateDraft(),
+      name: 'Đề xuất mua thiết bị',
+      approverBlocks: [{
+        key: 'manager', name: 'Quản lý trực tiếp', source: 'FIXED_SINGLE' as const,
+        fixedUserIds: [], minimumDynamicApprovers: null, slaHours: 24, sortOrder: 1,
+      }],
+    };
+
+    expect(validateRequestTemplateForSave(draft)).toContainEqual({
+      section: 'APPROVAL',
+      code: 'FIXED_APPROVER_REQUIRED',
+      message: 'Khối “Quản lý trực tiếp” cần chọn ít nhất một người duyệt.',
     });
   });
 

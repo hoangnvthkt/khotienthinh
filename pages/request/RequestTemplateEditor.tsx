@@ -12,7 +12,7 @@ import RequestTemplateNotificationSection from '../../components/request/templat
 import RequestTemplatePreview from '../../components/request/template/RequestTemplatePreview';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
-import { createEmptyRequestTemplateDraft, requestTemplateDraftReducer, toSaveDraftInput, validateRequestTemplateForPublish, type RequestTemplateDraft } from '../../lib/requestTemplateEditorModel';
+import { createEmptyRequestTemplateDraft, requestTemplateDraftReducer, toSaveDraftInput, validateRequestTemplateForPublish, validateRequestTemplateForSave, type RequestTemplateDraft } from '../../lib/requestTemplateEditorModel';
 import { requestTemplateService, type RequestTemplateDraftRecord } from '../../lib/requestTemplateService';
 
 const fromRecord = (record: RequestTemplateDraftRecord): RequestTemplateDraft => ({
@@ -87,6 +87,14 @@ const RequestTemplateEditor: React.FC = () => {
 
   const save = useCallback(async (automatic = false) => {
     if (isSaving || !isStructurallySaveable(draft)) return false;
+    const saveIssues = validateRequestTemplateForSave(draft);
+    if (saveIssues.length) {
+      const issue = saveIssues[0];
+      setActiveSection(issue.section === 'SCOPE' ? 'GENERAL' : issue.section);
+      setSaveError(issue.message);
+      if (!automatic) toast.error('Chưa thể lưu bản nháp', issue.message);
+      return false;
+    }
     setIsSaving(true);
     setSaveError(null);
     try {
@@ -110,7 +118,7 @@ const RequestTemplateEditor: React.FC = () => {
   }, [draft, isSaving, navigate, templateId, toast, updatedAt]);
 
   useEffect(() => {
-    if (!draft.id || !isDirty || !isStructurallySaveable(draft)) return;
+    if (!draft.id || !isDirty || !isStructurallySaveable(draft) || validateRequestTemplateForSave(draft).length) return;
     const timer = window.setTimeout(() => { void save(true); }, 800);
     return () => window.clearTimeout(timer);
   }, [draft, isDirty, save]);
