@@ -18,6 +18,29 @@ const actionsSql = actionsFile ? readFileSync(join(dir, actionsFile), 'utf8') : 
 const queryFile = readdirSync(dir).find(name =>
   name.endsWith('_request_queries_phase1.sql'));
 const querySql = queryFile ? readFileSync(join(dir, queryFile), 'utf8') : '';
+const docxDraftFile = readdirSync(dir).find(name =>
+  name.endsWith('_request_template_docx_draft_contract.sql'));
+const docxDraftSql = docxDraftFile ? readFileSync(join(dir, docxDraftFile), 'utf8') : '';
+const draftConcurrencyFixFile = readdirSync(dir).find(name =>
+  name.endsWith('_fix_request_template_draft_concurrency_token.sql'));
+const draftConcurrencyFixSql = draftConcurrencyFixFile
+  ? readFileSync(join(dir, draftConcurrencyFixFile), 'utf8')
+  : '';
+const templatePermissionFixFile = readdirSync(dir).find(name =>
+  name.endsWith('_fix_request_template_manage_permission.sql'));
+const templatePermissionFixSql = templatePermissionFixFile
+  ? readFileSync(join(dir, templatePermissionFixFile), 'utf8')
+  : '';
+const templatePermissionExecuteFixFile = readdirSync(dir).find(name =>
+  name.endsWith('_restore_request_template_manage_execute.sql'));
+const templatePermissionExecuteFixSql = templatePermissionExecuteFixFile
+  ? readFileSync(join(dir, templatePermissionExecuteFixFile), 'utf8')
+  : '';
+const templatePublishWrapperFixFile = readdirSync(dir).find(name =>
+  name.endsWith('_restore_request_template_publish_wrapper.sql'));
+const templatePublishWrapperFixSql = templatePublishWrapperFixFile
+  ? readFileSync(join(dir, templatePublishWrapperFixFile), 'utf8')
+  : '';
 const smokeSql = readFileSync(join(process.cwd(), 'supabase', 'tests', 'request_approval_phase1_smoke.sql'), 'utf8');
 const schedulerFile = readdirSync(dir).find(name =>
   name.endsWith('_schedule_request_notification_worker.sql'));
@@ -167,6 +190,46 @@ describe('request approval phase 1 schema', () => {
     expect(publishSql).toContain('app_private.request_user_can_manage(v_actor)');
     expect(publishSql).toMatch(
       /revoke all on function app_private\.preview_request_template_resolvers\(jsonb, uuid\)[\s\S]*?from public, anon, authenticated/i,
+    );
+  });
+
+  it('uses the template updated_at as the draft concurrency token', () => {
+    expect(publishSql).toMatch(
+      /public\.get_request_template_draft[\s\S]*?'updatedAt',\s*template\.updated_at/i,
+    );
+    expect(docxDraftSql).toMatch(
+      /public\.get_request_template_draft[\s\S]*?'updatedAt',\s*template\.updated_at/i,
+    );
+    expect(draftConcurrencyFixSql).toMatch(
+      /public\.get_request_template_draft[\s\S]*?'updatedAt',\s*template\.updated_at/i,
+    );
+  });
+
+  it('updates an existing draft version with one valid SET clause', () => {
+    expect(publishSql).not.toMatch(/set\s+form_schema\s*=\s*v_form_schema,\s*set\s+form_schema/i);
+  });
+
+  it('recognizes RQ module administrators as request template managers', () => {
+    expect(templatePermissionFixSql).toMatch(
+      /function app_private\.request_user_can_manage[\s\S]*?'RQ'\s*=\s*any\(coalesce\(app_user\.admin_modules/i,
+    );
+    expect(templatePermissionFixSql).toMatch(
+      /app_user\.admin_sub_modules\s*->\s*'RQ'[\s\S]*?\/rq\/templates/i,
+    );
+  });
+
+  it('allows authenticated RPC wrappers to execute the template manager guard', () => {
+    expect(templatePermissionExecuteFixSql).toContain(
+      'grant execute on function app_private.request_user_can_manage(uuid) to authenticated',
+    );
+  });
+
+  it('restores publish as an invoker wrapper around the private command', () => {
+    expect(templatePublishWrapperFixSql).toMatch(
+      /create or replace function public\.publish_request_template_version[\s\S]*?language sql[\s\S]*?security invoker/i,
+    );
+    expect(templatePublishWrapperFixSql).toContain(
+      'app_private.publish_request_template_version(',
     );
   });
 

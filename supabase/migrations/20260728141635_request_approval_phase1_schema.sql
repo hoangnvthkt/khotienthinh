@@ -648,11 +648,22 @@ as $$
     where app_user.id = p_user_id
       and coalesce(app_user.is_active, true)
       and coalesce(app_user.account_status, 'ACTIVE') = 'ACTIVE'
-      and app_private.has_permission(
-        p_user_id,
-        'request.template.manage',
-        'global',
-        '*'
+      and (
+        app_user.role = 'ADMIN'
+        or 'RQ' = any(coalesce(app_user.admin_modules, '{}'::text[]))
+        or exists (
+          select 1
+          from jsonb_array_elements_text(
+            coalesce(app_user.admin_sub_modules -> 'RQ', '[]'::jsonb)
+          ) as admin_route(route)
+          where admin_route.route = '/rq/templates'
+        )
+        or app_private.has_permission(
+          p_user_id,
+          'request.template.manage',
+          'global',
+          '*'
+        )
       )
   );
 $$;

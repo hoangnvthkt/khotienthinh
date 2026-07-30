@@ -6629,7 +6629,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     </div>
 
                     {/* Filter bar */}
-                    {partners.length > 0 && inventoryItems.length > 0 && warehouses.length > 0 && pos.length > 0 && (
+                    {pos.length > 0 && (
                         <div className="px-4 py-3 bg-slate-50/40 dark:bg-slate-900/10 border-b border-slate-100 dark:border-slate-800 flex flex-col md:flex-row gap-3 md:items-center justify-between">
                             {/* Search Box */}
                             <div className="relative flex-grow max-w-md">
@@ -6686,17 +6686,15 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                         </div>
                     )}
 
-                    {partners.length === 0 ? (
+                    {pos.length === 0 ? (
                         <div className="p-4">
-                            <EmptyState icon={<AlertTriangle size={18} />} title="Cần có đối tác trước khi tạo PO" message="Tạo đối tác tại Hợp đồng - Đối tác để chọn nhà cung cấp cho đơn hàng." compact />
-                        </div>
-                    ) : inventoryItems.length === 0 || warehouses.length === 0 ? (
-                        <div className="p-4">
-                            <EmptyState icon={<AlertTriangle size={18} />} title="Thiếu danh mục vật tư hoặc kho nhận" message="Cần có vật tư WMS và kho nhận trước khi tạo PO." compact />
-                        </div>
-                    ) : pos.length === 0 ? (
-                        <div className="p-4">
-                            <EmptyState icon={<FileText size={18} />} title="Chưa có đơn hàng" message="Tạo PO thủ công hoặc tạo từ đề xuất công trường để bắt đầu theo dõi." />
+                            {partners.length === 0 ? (
+                                <EmptyState icon={<AlertTriangle size={18} />} title="Cần có đối tác trước khi tạo PO" message="Tạo đối tác tại Hợp đồng - Đối tác để chọn nhà cung cấp cho đơn hàng." compact />
+                            ) : inventoryItems.length === 0 || warehouses.length === 0 ? (
+                                <EmptyState icon={<AlertTriangle size={18} />} title="Thiếu danh mục vật tư hoặc kho nhận" message="Cần có vật tư WMS và kho nhận trước khi tạo PO." compact />
+                            ) : (
+                                <EmptyState icon={<FileText size={18} />} title="Chưa có đơn hàng" message="Tạo PO thủ công hoặc tạo từ đề xuất công trường để bắt đầu theo dõi." />
+                            )}
                         </div>
                     ) : filteredPos.length === 0 ? (
                         <div className="p-8 text-center bg-white dark:bg-slate-950 rounded-b-2xl">
@@ -6721,8 +6719,16 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                             </div>
                         </div>
                     ) : (
-                        <div className="divide-y divide-slate-50 dark:divide-slate-700/40">
-                            {pagedPos.map(po => {
+                        <>
+                            {(partners.length === 0 || inventoryItems.length === 0 || warehouses.length === 0) && (
+                                <div className="border-b border-amber-100 bg-amber-50/80 px-4 py-2.5 text-xs font-bold text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
+                                    {partners.length === 0
+                                        ? 'Danh sách đối tác đang trống hoặc chưa tải xong. Danh sách PO vẫn được hiển thị, thao tác tạo/sửa có thể tạm khóa.'
+                                        : 'Danh mục vật tư hoặc kho nhận chưa tải xong. Danh sách PO vẫn được hiển thị, thao tác tạo/sửa có thể tạm khóa.'}
+                                </div>
+                            )}
+                            <div className="divide-y divide-slate-50 dark:divide-slate-700/40">
+                                {pagedPos.map(po => {
                                 const stCfg = PO_STATUS[po.status];
                                 const sourceCfg = PO_SOURCE_MODE[po.sourceMode || 'proactive_project'];
                                 const groupSize = po.procurementGroupId ? (procurementGroupCounts[po.procurementGroupId] || 0) : 0;
@@ -6836,34 +6842,35 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                         </div>
                                     </div>
                                 );
-                            })}
-                            <div className="flex flex-col gap-3 bg-slate-50/60 px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
-                                <div className="text-xs font-bold text-slate-500">
-                                    Đang xem {poPageStart}-{poPageEnd} trên {sortedPos.length} PO
-                                </div>
-                                <div className="flex items-center justify-end gap-2">
-                                    <button
-                                        type="button"
-                                        onClick={() => setPoPage(prev => Math.max(1, prev - 1))}
-                                        disabled={poPage <= 1}
-                                        className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                                    >
-                                        <ChevronLeft size={14} /> Trước
-                                    </button>
-                                    <span className="min-w-[82px] text-center text-xs font-black text-slate-500">
-                                        {poPage}/{poPageCount}
-                                    </span>
-                                    <button
-                                        type="button"
-                                        onClick={() => setPoPage(prev => Math.min(poPageCount, prev + 1))}
-                                        disabled={poPage >= poPageCount}
-                                        className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                                    >
-                                        Sau <ChevronRight size={14} />
-                                    </button>
+                                })}
+                                <div className="flex flex-col gap-3 bg-slate-50/60 px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
+                                    <div className="text-xs font-bold text-slate-500">
+                                        Đang xem {poPageStart}-{poPageEnd} trên {sortedPos.length} PO
+                                    </div>
+                                    <div className="flex items-center justify-end gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => setPoPage(prev => Math.max(1, prev - 1))}
+                                            disabled={poPage <= 1}
+                                            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                        >
+                                            <ChevronLeft size={14} /> Trước
+                                        </button>
+                                        <span className="min-w-[82px] text-center text-xs font-black text-slate-500">
+                                            {poPage}/{poPageCount}
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={() => setPoPage(prev => Math.min(poPageCount, prev + 1))}
+                                            disabled={poPage >= poPageCount}
+                                            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                        >
+                                            Sau <ChevronRight size={14} />
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
+                        </>
                     )}
                 </div>
             )}

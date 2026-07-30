@@ -41,7 +41,10 @@ export const validateRequestSubmission = ({
 
   for (const field of fields) {
     const value = formData[field.key];
-    const isEmpty = value === null || value === undefined || (typeof value === 'string' && !value.trim());
+    const isEmpty = value === null
+      || value === undefined
+      || (typeof value === 'string' && !value.trim())
+      || (Array.isArray(value) && (value.length === 0 || value.every(row => typeof row === 'object' && row !== null && Object.values(row).every(v => !String(v ?? '').trim()))));
     if (field.required && isEmpty) errors.push(`${field.label} là bắt buộc.`);
   }
 

@@ -15,4 +15,10 @@ describe('request template routes', () => {
     expect(permissions).toContain("['/rq/templates']");
     expect(permissions).toContain("'request.template'");
   });
+
+  it('warms up admin people data for request routes', () => {
+    expect(app).toMatch(
+      /if \(pathname\.startsWith\('\/rq'\)\)[\s\S]*?loadModuleData\('admin'[\s\S]*?return;/,
+    );
+  });
 });

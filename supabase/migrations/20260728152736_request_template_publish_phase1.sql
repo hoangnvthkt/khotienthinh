@@ -251,8 +251,8 @@ begin
     end if;
     if exists (
       select 1
-      from unnest(v_fixed_ids) id
-      left join public.users app_user on app_user.id = id
+      from unnest(v_fixed_ids) as target_user(fixed_id)
+      left join public.users app_user on app_user.id = target_user.fixed_id
       where app_user.id is null
          or not coalesce(app_user.is_active, true)
          or coalesce(app_user.account_status, 'ACTIVE') <> 'ACTIVE'
@@ -370,7 +370,7 @@ begin
        or nullif(trim(field ->> 'key'), '') is null
        or nullif(trim(field ->> 'label'), '') is null
        or coalesce(field ->> 'fieldType', '') not in (
-         'text', 'textarea', 'number', 'date', 'select', 'user', 'file'
+         'text', 'textarea', 'number', 'date', 'select', 'table', 'user', 'file'
        )
   ) or exists (
     select field ->> 'key'
@@ -624,12 +624,14 @@ as $$
         'id', version.request_template_id,
         'status', version.status,
         'versionNumber', version.version_number,
-        'updatedAt', version.updated_at,
+        'updatedAt', template.updated_at,
         'payload', app_private.request_template_draft_payload(version.id)
       )
     else null
   end
   from public.request_template_versions version
+  join public.request_templates template
+    on template.id = version.request_template_id
   where version.request_template_id = p_request_template_id
     and version.status = 'DRAFT'
   order by version.version_number desc

@@ -20,4 +20,18 @@ describe('request form builder model', () => {
       section: 'FORM', code: 'SELECT_OPTION_REQUIRED',
     }));
   });
+
+  it('requires at least one column header for table fields', () => {
+    const draft = {
+      ...createEmptyRequestTemplateDraft(),
+      name: 'Đề xuất mua vật tư',
+      scopes: [{ kind: 'COMPANY' as const, targetId: null }],
+      approverBlocks: [{ key: 'manager', name: 'Quản lý', source: 'DIRECT_MANAGER' as const, fixedUserIds: [], minimumDynamicApprovers: null, slaHours: null, sortOrder: 1 }],
+      fields: [{ key: 'items', label: 'Danh sách vật tư', fieldType: 'table' as const, required: true, options: [''], sortOrder: 1 }],
+    };
+
+    expect(validateRequestTemplateForPublish(draft)).toContainEqual(expect.objectContaining({
+      section: 'FORM', code: 'TABLE_COLUMN_REQUIRED',
+    }));
+  });
 });

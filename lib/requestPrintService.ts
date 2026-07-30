@@ -12,6 +12,10 @@ export interface RequestPrintModel {
 
 const tokenValue = (value: unknown): string => {
   if (value === null || value === undefined) return '';
+  if (Array.isArray(value)) {
+    if (value.length === 0) return '';
+    return value.map(row => typeof row === 'object' && row !== null ? Object.values(row).join(' | ') : String(row)).join('\n');
+  }
   if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value);
   return JSON.stringify(value);
 };

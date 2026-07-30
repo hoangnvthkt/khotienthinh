@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, Plus, Send, UserRound, X } from 'lucide-react';
+import { Loader2, Plus, Send, Trash2, UserRound, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
@@ -11,6 +11,9 @@ import {
 import { buildRequestRoute } from '../../lib/requestRoutes';
 import { normalizeDynamicApprovers, validateRequestSubmission } from '../../lib/requestCreateModel';
 
+import type { User } from '../../types';
+import UserSearchSelect from '../common/UserSearchSelect';
+
 const newIdempotencyKey = () => (
   globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`
 );
@@ -19,34 +22,117 @@ const FieldInput: React.FC<{
   field: UsableRequestTemplate['formSchema'][number];
   value: unknown;
   onChange: (value: unknown) => void;
-}> = ({ field, value, onChange }) => {
+  users: User[];
+  isSubmitting?: boolean;
+}> = ({ field, value, onChange, users, isSubmitting }) => {
   const className = 'w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-100 dark:border-slate-700 dark:bg-slate-800 dark:text-white';
   const stringValue = typeof value === 'string' ? value : '';
 
   if (field.fieldType === 'textarea') {
-    return <textarea rows={3} value={stringValue} onChange={event => onChange(event.target.value)} className={className} />;
+    return <textarea rows={3} value={stringValue} onChange={event => onChange(event.target.value)} className={className} disabled={isSubmitting} />;
   }
   if (field.fieldType === 'select') {
     return (
-      <select value={stringValue} onChange={event => onChange(event.target.value)} className={className}>
+      <select value={stringValue} onChange={event => onChange(event.target.value)} className={className} disabled={isSubmitting}>
         <option value="">Chọn {field.label}</option>
         {field.options.map(option => <option key={option} value={option}>{option}</option>)}
       </select>
     );
   }
+  if (field.fieldType === 'table') {
+    const cols = field.options.filter(Boolean).length > 0 ? field.options.filter(Boolean) : ['Nội dung', 'Số lượng', 'Ghi chú'];
+    const rows = (Array.isArray(value) && value.length > 0) ? (value as Array<Record<string, string>>) : [Object.fromEntries(cols.map(c => [c, '']))];
+    const updateCell = (rowIndex: number, col: string, val: string) => {
+      const next = rows.map((r, i) => i === rowIndex ? { ...r, [col]: val } : r);
+      onChange(next);
+    };
+    const addRow = () => {
+      onChange([...rows, Object.fromEntries(cols.map(c => [c, '']))]);
+    };
+    const removeRow = (rowIndex: number) => {
+      const next = rows.filter((_, i) => i !== rowIndex);
+      onChange(next.length > 0 ? next : [Object.fromEntries(cols.map(c => [c, '']))]);
+    };
+
+    return (
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800/50">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead>
+              <tr className="border-b border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-800">
+                <th className="w-8 px-2 py-2 text-center text-slate-400">#</th>
+                {cols.map(col => (
+                  <th key={col} className="px-3 py-2 font-bold text-slate-700 dark:text-slate-200">{col}</th>
+                ))}
+                <th className="w-8 px-2 py-2"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+              {rows.map((row, rIdx) => (
+                <tr key={rIdx}>
+                  <td className="px-2 py-2 text-center font-medium text-slate-400">{rIdx + 1}</td>
+                  {cols.map(col => (
+                    <td key={col} className="p-1">
+                      <input
+                        type="text"
+                        value={row[col] ?? ''}
+                        onChange={e => updateCell(rIdx, col, e.target.value)}
+                        disabled={isSubmitting}
+                        className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-200 dark:border-slate-600 dark:bg-slate-900 dark:text-white"
+                        placeholder={`Nhập ${col.toLowerCase()}`}
+                      />
+                    </td>
+                  ))}
+                  <td className="px-1 py-2 text-center">
+                    <button
+                      type="button"
+                      onClick={() => removeRow(rIdx)}
+                      disabled={rows.length <= 1 || isSubmitting}
+                      className="rounded p-1 text-slate-400 hover:text-rose-500 disabled:opacity-30"
+                      title="Xóa dòng"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="border-t border-slate-200 p-2 dark:border-slate-700">
+          <button
+            type="button"
+            onClick={addRow}
+            disabled={isSubmitting}
+            className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold text-violet-600 hover:bg-violet-50 dark:text-violet-400 dark:hover:bg-violet-950/40"
+          >
+            <Plus size={14} /> Thêm dòng
+          </button>
+        </div>
+      </div>
+    );
+  }
   if (field.fieldType === 'date') {
-    return <input type="date" value={stringValue} onChange={event => onChange(event.target.value)} className={className} />;
+    return <input type="date" value={stringValue} onChange={event => onChange(event.target.value)} className={className} disabled={isSubmitting} />;
   }
   if (field.fieldType === 'number') {
-    return <input type="number" value={stringValue} onChange={event => onChange(event.target.value)} className={className} />;
+    return <input type="number" value={stringValue} onChange={event => onChange(event.target.value)} className={className} disabled={isSubmitting} />;
   }
   if (field.fieldType === 'user') {
-    return <input type="text" value={stringValue} onChange={event => onChange(event.target.value)} className={className} placeholder="Nhập hoặc chọn người dùng" />;
+    return (
+      <UserSearchSelect
+        users={users}
+        value={stringValue}
+        onChange={userId => onChange(userId || '')}
+        placeholder="Gõ tên hoặc vị trí để tìm người dùng..."
+        disabled={isSubmitting}
+      />
+    );
   }
   if (field.fieldType === 'file') {
     return <p className="rounded-lg border border-dashed border-slate-300 px-3 py-2.5 text-xs text-slate-500 dark:border-slate-600 dark:text-slate-400">Tệp đính kèm sẽ được hỗ trợ khi hoàn tất hợp đồng lưu trữ tệp của Module Yêu cầu.</p>;
   }
-  return <input type="text" value={stringValue} onChange={event => onChange(event.target.value)} className={className} />;
+  return <input type="text" value={stringValue} onChange={event => onChange(event.target.value)} className={className} disabled={isSubmitting} />;
 };
 
 export const RequestCreateDialog: React.FC<{
@@ -89,18 +175,6 @@ export const RequestCreateDialog: React.FC<{
   }, [isOpen]);
 
   if (!isOpen) return null;
-
-  const updateDynamicApprovers = (blockKey: string, userId: string) => {
-    if (!userId) return;
-    setDynamicApprovers(previous => ({
-      ...previous,
-      [blockKey]: [...new Set([...(previous[blockKey] ?? []), userId])],
-    }));
-  };
-
-  const removeDynamicApprover = (blockKey: string, userId: string) => {
-    setDynamicApprovers(previous => ({ ...previous, [blockKey]: (previous[blockKey] ?? []).filter(value => value !== userId) }));
-  };
 
   const submit = async () => {
     if (!selectedTemplate) {
@@ -175,15 +249,22 @@ export const RequestCreateDialog: React.FC<{
               <h3 className="text-sm font-bold text-slate-900 dark:text-white">Thông tin đề xuất</h3>
               {[...selectedTemplate.formSchema].sort((left, right) => left.sortOrder - right.sortOrder).map(field => <label key={field.key} className="block">
                 <span className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">{field.label}{field.required && <span className="ml-1 text-rose-500">*</span>}</span>
-                <FieldInput field={field} value={formData[field.key]} onChange={value => setFormData(previous => ({ ...previous, [field.key]: value }))} />
+                <FieldInput field={field} value={formData[field.key]} onChange={value => setFormData(previous => ({ ...previous, [field.key]: value }))} users={users} isSubmitting={isSubmitting} />
               </label>)}
             </section>}
             {dynamicBlocks.length > 0 && <section className="space-y-4 border-t border-slate-100 pt-5 dark:border-slate-800">
               <div><h3 className="text-sm font-bold text-slate-900 dark:text-white">Người duyệt được chọn khi gửi</h3><p className="text-xs text-slate-500">Các khối sau sẽ được kích hoạt theo cấu hình luồng duyệt của mẫu.</p></div>
               {dynamicBlocks.map(block => <div key={block.key} className="rounded-xl border border-slate-200 p-4 dark:border-slate-700">
                 <div className="mb-3 flex items-center gap-2"><UserRound size={16} className="text-violet-600" /><div><p className="text-sm font-semibold text-slate-800 dark:text-white">{block.name}</p><p className="text-xs text-slate-500">Tối thiểu {block.minimumDynamicApprovers ?? 1} người duyệt</p></div></div>
-                <div className="mb-3 flex flex-wrap gap-2">{(dynamicApprovers[block.key] ?? []).map(userId => { const selectedUser = users.find(candidate => candidate.id === userId); return <span key={userId} className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2.5 py-1 text-xs font-medium text-violet-700 dark:bg-violet-950/50 dark:text-violet-200">{selectedUser?.name ?? userId}<button type="button" onClick={() => removeDynamicApprover(block.key, userId)} disabled={isSubmitting} aria-label={`Bỏ ${selectedUser?.name ?? userId}`}><X size={13} /></button></span>; })}</div>
-                <select value="" onChange={event => updateDynamicApprovers(block.key, event.target.value)} disabled={isSubmitting} className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-violet-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"><option value="">Thêm người duyệt</option>{users.filter(candidate => candidate.id !== user.id && candidate.isActive !== false && !(dynamicApprovers[block.key] ?? []).includes(candidate.id)).map(candidate => <option key={candidate.id} value={candidate.id}>{candidate.name}{candidate.position ? ` · ${candidate.position}` : ''}</option>)}</select>
+                <UserSearchSelect
+                  users={users}
+                  excludeUserIds={[user.id]}
+                  multiple
+                  values={dynamicApprovers[block.key] ?? []}
+                  onValuesChange={userIds => setDynamicApprovers(previous => ({ ...previous, [block.key]: userIds }))}
+                  placeholder="Gõ tên hoặc vị trí để tìm người duyệt..."
+                  disabled={isSubmitting}
+                />
               </div>)}
             </section>}
           </>}

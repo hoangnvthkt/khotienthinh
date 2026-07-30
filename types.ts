@@ -4346,7 +4346,7 @@ export type RequestApproverSource =
   | 'FIXED_SINGLE' | 'FIXED_MULTI'
   | 'DIRECT_MANAGER' | 'DYNAMIC_CREATOR_SELECT';
 export type RequestFieldType =
-  | 'text' | 'textarea' | 'number' | 'date' | 'select' | 'user' | 'file';
+  | 'text' | 'textarea' | 'number' | 'date' | 'select' | 'user' | 'file' | 'table';
 
 export interface RequestTemplateFieldSchema {
   key: string;

@@ -319,6 +319,13 @@ const AppDataWarmup: React.FC = () => {
       return;
     }
 
+    if (pathname.startsWith('/rq')) {
+      const forceAdmin = users.length <= 1;
+      setActiveRealtimeModules(['admin']);
+      loadModuleData('admin', forceAdmin).catch(err => console.warn('Request people lazy load failed:', err));
+      return;
+    }
+
     if (pathname.startsWith('/wf')) {
       const forceAdmin = users.length <= 1;
       const forceHrm = employees.length === 0 || orgUnits.length === 0;

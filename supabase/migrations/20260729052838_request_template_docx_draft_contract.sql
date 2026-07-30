@@ -36,12 +36,14 @@ as $$
         'draftVersionId', version.id,
         'status', version.status,
         'versionNumber', version.version_number,
-        'updatedAt', version.updated_at,
+        'updatedAt', template.updated_at,
         'payload', app_private.request_template_draft_payload(version.id)
       )
     else null
   end
   from public.request_template_versions version
+  join public.request_templates template
+    on template.id = version.request_template_id
   where version.request_template_id = p_request_template_id
     and version.status = 'DRAFT'
   order by version.version_number desc
