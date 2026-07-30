@@ -6,6 +6,9 @@ import {
   buildPurchaseOrderItemFromRequestCartRow,
   buildPurchaseOrderRequestLineLinks,
   filterRequestRowsForPoCart,
+  getPurchaseOrderRequestCartGroupSelectionState,
+  groupPurchaseOrderRequestCartRows,
+  setPurchaseOrderRequestCartGroupSelection,
   type PurchaseOrderRequestCartRow,
 } from '../purchaseOrderRequestCart';
 
@@ -93,6 +96,37 @@ describe('purchaseOrderRequestCart', () => {
     const available = filterRequestRowsForPoCart(rows, [existingPoItem]);
 
     expect(available.map(row => row.key)).toEqual(['mr-b:line-b']);
+  });
+
+  it('groups material rows by source request while retaining their order', () => {
+    const groups = groupPurchaseOrderRequestCartRows([
+      cartRow('mr-a', 'line-a1'),
+      cartRow('mr-a', 'line-a2'),
+      cartRow('mr-b', 'line-b1'),
+    ]);
+
+    expect(groups.map(group => [group.requestId, group.requestCode, group.rows.map(row => row.key)])).toEqual([
+      ['mr-a', 'MR-A', ['mr-a:line-a1', 'mr-a:line-a2']],
+      ['mr-b', 'MR-B', ['mr-b:line-b1']],
+    ]);
+  });
+
+  it('reports none, partial, and all selection for a request group', () => {
+    const rows = [cartRow('mr-a', 'line-a1'), cartRow('mr-a', 'line-a2')];
+
+    expect(getPurchaseOrderRequestCartGroupSelectionState(rows, [])).toBe('none');
+    expect(getPurchaseOrderRequestCartGroupSelectionState(rows, ['mr-a:line-a1'])).toBe('partial');
+    expect(getPurchaseOrderRequestCartGroupSelectionState(rows, ['mr-a:line-a1', 'mr-a:line-a2'])).toBe('all');
+  });
+
+  it('selects or clears only the toggled request group', () => {
+    const groupRows = [cartRow('mr-a', 'line-a1'), cartRow('mr-a', 'line-a2')];
+    const initiallySelected = ['mr-b:line-b1', 'mr-a:line-a1'];
+
+    expect(setPurchaseOrderRequestCartGroupSelection(groupRows, initiallySelected, true))
+      .toEqual(['mr-b:line-b1', 'mr-a:line-a1', 'mr-a:line-a2']);
+    expect(setPurchaseOrderRequestCartGroupSelection(groupRows, initiallySelected, false))
+      .toEqual(['mr-b:line-b1']);
   });
 
   it('converts a selected request line into a traceable PO item for the current PO supplier', () => {

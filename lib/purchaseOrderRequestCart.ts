@@ -25,6 +25,14 @@ export type PurchaseOrderRequestCartRow = {
   remainingQty: number;
 };
 
+export type PurchaseOrderRequestCartGroup<T extends PurchaseOrderRequestCartRow = PurchaseOrderRequestCartRow> = {
+  requestId: string;
+  requestCode: string;
+  rows: T[];
+};
+
+export type PurchaseOrderRequestCartGroupSelectionState = 'none' | 'partial' | 'all';
+
 type SupplierPatch = Pick<PurchaseOrderItem, 'vendorId' | 'vendorName'>;
 
 const newId = () =>
@@ -48,6 +56,49 @@ export const filterRequestRowsForPoCart = <T extends PurchaseOrderRequestCartRow
       .filter(Boolean),
   );
   return rows.filter(row => !existingKeys.has(row.key));
+};
+
+export const groupPurchaseOrderRequestCartRows = <T extends PurchaseOrderRequestCartRow>(rows: T[]) => {
+  const groups = new Map<string, PurchaseOrderRequestCartGroup<T>>();
+
+  rows.forEach(row => {
+    const group = groups.get(row.request.id);
+    if (group) {
+      group.rows.push(row);
+      return;
+    }
+    groups.set(row.request.id, {
+      requestId: row.request.id,
+      requestCode: row.request.code,
+      rows: [row],
+    });
+  });
+
+  return [...groups.values()];
+};
+
+export const getPurchaseOrderRequestCartGroupSelectionState = (
+  rows: PurchaseOrderRequestCartRow[],
+  selectedKeys: readonly string[],
+): PurchaseOrderRequestCartGroupSelectionState => {
+  if (rows.length === 0) return 'none';
+  const selected = new Set(selectedKeys);
+  const selectedCount = rows.filter(row => selected.has(row.key)).length;
+  if (selectedCount === 0) return 'none';
+  return selectedCount === rows.length ? 'all' : 'partial';
+};
+
+export const setPurchaseOrderRequestCartGroupSelection = (
+  rows: PurchaseOrderRequestCartRow[],
+  selectedKeys: readonly string[],
+  isSelected: boolean,
+) => {
+  const groupKeys = new Set(rows.map(row => row.key));
+  const outsideGroup = selectedKeys.filter(key => !groupKeys.has(key));
+  if (!isSelected) return outsideGroup;
+
+  const selected = new Set(selectedKeys);
+  return [...selectedKeys, ...rows.map(row => row.key).filter(key => !selected.has(key))];
 };
 
 export const hasRequestRowDefaultSupplierMismatch = (
