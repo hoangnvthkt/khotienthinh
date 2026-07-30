@@ -226,7 +226,7 @@ const Layout: React.FC = () => {
           </div>
         </header>
 
-        <main className={isFullBleedRoute ? "flex-1 overflow-hidden relative" : "flex-1 overflow-auto p-2 sm:p-4 md:p-8 pb-20 lg:pb-8 transparent"}>
+        <main className={isFullBleedRoute ? "flex-1 min-h-0 overflow-auto relative" : "flex-1 overflow-auto p-2 sm:p-4 md:p-8 pb-20 lg:pb-8 transparent"}>
           {isLoading || isRefreshing ? (
             <div className="h-full w-full flex flex-col items-center justify-center relative overflow-hidden">
               {/* Background animated particles */}
