@@ -191,3 +191,35 @@ export const toSaveDraftInput = (draft: RequestTemplateDraft, expectedUpdatedAt?
   blocks: draft.approverBlocks, watcherUserIds: draft.fixedWatcherIds, printConfig: draft.print,
   notificationConfig: Object.fromEntries(draft.notificationEvents.map(event => [event, true])),
 });
+
+export const buildRequestTemplateSaveInput = (
+  draft: RequestTemplateDraft,
+  updatedAt: string | null,
+): SaveRequestTemplateDraftInput => {
+  if (draft.id && !updatedAt) {
+    throw new Error('REQUEST_TEMPLATE_EXPECTED_UPDATED_AT_REQUIRED');
+  }
+
+  return toSaveDraftInput(
+    draft,
+    draft.id ? updatedAt : undefined,
+  );
+};
+
+export const shouldScheduleRequestTemplateAutosave = ({
+  hasTemplateId,
+  isDirty,
+  isBlocked,
+  isStructurallySaveable,
+  hasValidationIssues,
+}: {
+  hasTemplateId: boolean;
+  isDirty: boolean;
+  isBlocked: boolean;
+  isStructurallySaveable: boolean;
+  hasValidationIssues: boolean;
+}): boolean => hasTemplateId
+  && isDirty
+  && !isBlocked
+  && isStructurallySaveable
+  && !hasValidationIssues;

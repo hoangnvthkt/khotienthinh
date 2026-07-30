@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import * as requestTemplateEditorModel from '../requestTemplateEditorModel';
 import {
   createEmptyRequestTemplateDraft,
   requestTemplateDraftReducer,
@@ -6,6 +7,22 @@ import {
   validateRequestTemplateForSave,
   validateRequestTemplateForPublish,
 } from '../requestTemplateEditorModel';
+
+type PersistenceModelApi = {
+  buildRequestTemplateSaveInput?: (
+    draft: ReturnType<typeof createEmptyRequestTemplateDraft>,
+    updatedAt: string | null,
+  ) => { expectedUpdatedAt?: string };
+  shouldScheduleRequestTemplateAutosave?: (input: {
+    hasTemplateId: boolean;
+    isDirty: boolean;
+    isBlocked: boolean;
+    isStructurallySaveable: boolean;
+    hasValidationIssues: boolean;
+  }) => boolean;
+};
+
+const persistenceModel = requestTemplateEditorModel as typeof requestTemplateEditorModel & PersistenceModelApi;
 
 describe('request template editor model', () => {
   it('reorders approver blocks with consecutive sort orders', () => {
@@ -109,5 +126,39 @@ describe('request template editor model', () => {
       notificationConfig: { SUBMITTED: true, APPROVED: true },
       formSchema: [{ key: 'device_type', label: 'Loại thiết bị', options: ['Laptop'] }],
     });
+  });
+
+  it('includes the loaded concurrency token when saving an existing draft', () => {
+    const draft = {
+      ...createEmptyRequestTemplateDraft(),
+      id: 'template-1',
+    };
+    const updatedAt = '2026-07-30T07:50:51.141207Z';
+
+    expect(persistenceModel.buildRequestTemplateSaveInput).toBeTypeOf('function');
+    expect(persistenceModel.buildRequestTemplateSaveInput!(draft, updatedAt))
+      .toMatchObject({ expectedUpdatedAt: updatedAt });
+  });
+
+  it('refuses to save an existing draft without its concurrency token', () => {
+    const draft = {
+      ...createEmptyRequestTemplateDraft(),
+      id: 'template-1',
+    };
+
+    expect(persistenceModel.buildRequestTemplateSaveInput).toBeTypeOf('function');
+    expect(() => persistenceModel.buildRequestTemplateSaveInput!(draft, null))
+      .toThrow('REQUEST_TEMPLATE_EXPECTED_UPDATED_AT_REQUIRED');
+  });
+
+  it('does not schedule autosave after an automatic save failure blocks it', () => {
+    expect(persistenceModel.shouldScheduleRequestTemplateAutosave).toBeTypeOf('function');
+    expect(persistenceModel.shouldScheduleRequestTemplateAutosave!({
+      hasTemplateId: true,
+      isDirty: true,
+      isBlocked: true,
+      isStructurallySaveable: true,
+      hasValidationIssues: false,
+    })).toBe(false);
   });
 });

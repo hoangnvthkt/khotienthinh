@@ -47,3 +47,5 @@ service-account*.json
 *.njsproj
 *.sln
 *.sw?
+.vercel/
+.env.local

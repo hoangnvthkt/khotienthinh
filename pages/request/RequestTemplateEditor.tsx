@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useReducer, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { ArrowLeft, Check, Eye, LoaderCircle, Save } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import RequestTemplateSettingsNav, { type RequestTemplateSection } from '../../components/request/template/RequestTemplateSettingsNav';
@@ -12,7 +12,7 @@ import RequestTemplateNotificationSection from '../../components/request/templat
 import RequestTemplatePreview from '../../components/request/template/RequestTemplatePreview';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
-import { createEmptyRequestTemplateDraft, requestTemplateDraftReducer, toSaveDraftInput, validateRequestTemplateForPublish, validateRequestTemplateForSave, type RequestTemplateDraft } from '../../lib/requestTemplateEditorModel';
+import { buildRequestTemplateSaveInput, createEmptyRequestTemplateDraft, requestTemplateDraftReducer, shouldScheduleRequestTemplateAutosave, validateRequestTemplateForPublish, validateRequestTemplateForSave, type RequestTemplateDraft } from '../../lib/requestTemplateEditorModel';
 import { requestTemplateService, type RequestTemplateDraftRecord } from '../../lib/requestTemplateService';
 
 const fromRecord = (record: RequestTemplateDraftRecord): RequestTemplateDraft => ({
@@ -48,8 +48,11 @@ const formatTemplateSaveError = (cause: unknown): string => {
   if (errorObj.name === 'AbortError' || rawMsg.includes('aborted') || rawMsg.includes('AbortError')) {
     return 'Kết nối bị ngắt quãng hoặc yêu cầu lưu trước bị hủy. Vui lòng nhấn Lưu nháp để thử lại.';
   }
-  if (rawMsg.includes('CONFLICT') || errorObj.code === '40001') {
+  if (rawMsg.includes('CONFLICT') || errorObj.code === '40001' || errorObj.code === 'PT409') {
     return 'Bản nháp đã được cập nhật bởi phiên khác. Vui lòng tải lại trang để lấy dữ liệu mới nhất.';
+  }
+  if (rawMsg.includes('REQUEST_TEMPLATE_EXPECTED_UPDATED_AT_REQUIRED')) {
+    return 'Thiếu phiên bản bản nháp để kiểm tra xung đột. Vui lòng tải lại trang rồi thử lại.';
   }
   if (rawMsg.includes('REQUEST_APPROVER_INACTIVE')) {
     return 'Một hoặc nhiều người duyệt trong khối không còn hoạt động hoặc bị khóa tài khoản.';
@@ -81,9 +84,11 @@ const RequestTemplateEditor: React.FC = () => {
   const [isLoading, setIsLoading] = useState(Boolean(templateId));
   const [isSaving, setIsSaving] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
+  const [isAutosaveBlocked, setIsAutosaveBlocked] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isPublishing, setIsPublishing] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
+  const saveInFlightRef = useRef(false);
 
   useEffect(() => {
     if (!templateId) return;
@@ -97,6 +102,7 @@ const RequestTemplateEditor: React.FC = () => {
         setUpdatedAt(record.updatedAt);
         setDraftVersionId(record.draftVersionId ?? null);
         setIsDirty(false);
+        setIsAutosaveBlocked(false);
       } catch (cause) {
         console.error('Load request template draft failed:', cause);
         if (active) setSaveError('Không thể tải bản nháp mẫu yêu cầu.');
@@ -115,7 +121,7 @@ const RequestTemplateEditor: React.FC = () => {
   }, []);
 
   const save = useCallback(async (automatic = false) => {
-    if (isSaving || !isStructurallySaveable(draft)) return false;
+    if (saveInFlightRef.current || !isStructurallySaveable(draft)) return false;
     const saveIssues = validateRequestTemplateForSave(draft);
     if (saveIssues.length) {
       const issue = saveIssues[0];
@@ -124,19 +130,24 @@ const RequestTemplateEditor: React.FC = () => {
       if (!automatic) toast.error('Chưa thể lưu bản nháp', issue.message);
       return false;
     }
+    saveInFlightRef.current = true;
     setIsSaving(true);
     setSaveError(null);
     try {
-      const record = await requestTemplateService.saveDraft(toSaveDraftInput(draft));
+      const record = await requestTemplateService.saveDraft(
+        buildRequestTemplateSaveInput(draft, updatedAt),
+      );
       dispatch({ type: 'REPLACE_DRAFT', draft: fromRecord(record) });
       setUpdatedAt(record.updatedAt);
       setDraftVersionId(record.draftVersionId ?? null);
       setIsDirty(false);
+      setIsAutosaveBlocked(false);
       if (!automatic) toast.success('Đã lưu bản nháp', 'Các thay đổi của mẫu yêu cầu đã được lưu.');
       if (!templateId) navigate(`/rq/templates/${record.id}`, { replace: true });
       return true;
     } catch (cause) {
       console.error('Save request template draft failed:', cause);
+      if (automatic) setIsAutosaveBlocked(true);
       const isAbort = (cause as { name?: string; message?: string })?.name === 'AbortError' || String((cause as { message?: string })?.message).includes('aborted');
       if (automatic && isAbort) {
         // Silently ignore aborted automatic saves
@@ -147,15 +158,22 @@ const RequestTemplateEditor: React.FC = () => {
       if (!automatic) toast.error('Lưu bản nháp thất bại', message);
       return false;
     } finally {
+      saveInFlightRef.current = false;
       setIsSaving(false);
     }
-  }, [draft, isSaving, navigate, templateId, toast]);
+  }, [draft, navigate, templateId, toast, updatedAt]);
 
   useEffect(() => {
-    if (!draft.id || !isDirty || !isStructurallySaveable(draft) || validateRequestTemplateForSave(draft).length) return;
+    if (!shouldScheduleRequestTemplateAutosave({
+      hasTemplateId: Boolean(draft.id),
+      isDirty,
+      isBlocked: isAutosaveBlocked,
+      isStructurallySaveable: isStructurallySaveable(draft),
+      hasValidationIssues: validateRequestTemplateForSave(draft).length > 0,
+    })) return;
     const timer = window.setTimeout(() => { void save(true); }, 1500);
     return () => window.clearTimeout(timer);
-  }, [draft, isDirty, save]);
+  }, [draft, isAutosaveBlocked, isDirty, save]);
 
   useEffect(() => {
     const preventUnload = (event: BeforeUnloadEvent) => { if (isDirty) { event.preventDefault(); event.returnValue = ''; } };
@@ -175,7 +193,9 @@ const RequestTemplateEditor: React.FC = () => {
     if (!accepted) return;
     setIsPublishing(true); setSaveError(null);
     try {
-      const saved = await requestTemplateService.saveDraft(toSaveDraftInput(draft));
+      const saved = await requestTemplateService.saveDraft(
+        buildRequestTemplateSaveInput(draft, updatedAt),
+      );
       const templateId = saved.id;
       const expectedUpdatedAt = saved.updatedAt;
       const result = await requestTemplateService.publish({ templateId, expectedUpdatedAt });
