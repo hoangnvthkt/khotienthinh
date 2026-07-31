@@ -10,13 +10,14 @@ export type NextActionCardProps = {
   status?: string | null;
   statusLabel?: string;
   tone?: ErpStatusTone;
-  nextAction: string;
+  nextAction?: string;
   actorName?: string;
   dueAt?: string | null;
   href?: string;
   onClick?: () => void;
   actionLabel?: string;
   category?: 'workflow' | 'rq' | 'material' | 'transaction' | 'tracking' | 'warning';
+  compact?: boolean;
 };
 
 const formatDue = (value?: string | null) => {
@@ -78,6 +79,7 @@ const NextActionCard: React.FC<NextActionCardProps> = ({
   onClick,
   actionLabel = 'Mở',
   category,
+  compact = false,
 }) => {
   const style = CATEGORY_STYLES[category || 'tracking'] || CATEGORY_STYLES.tracking;
 
@@ -86,22 +88,24 @@ const NextActionCard: React.FC<NextActionCardProps> = ({
       {/* Decorative circle shape */}
       <div className={`absolute top-0 right-0 w-20 h-20 rounded-bl-full pointer-events-none transition-transform duration-300 group-hover:scale-110 ${style.bgDecor}`} />
 
-      <div className="relative z-10 flex flex-col h-full justify-between">
+      <div className="relative z-10 flex flex-col h-full justify-between gap-2.5">
         <div>
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
-              {code && <div className={`mb-1 font-mono text-[10px] font-bold uppercase tracking-wider ${style.text}`}>{code}</div>}
-              <h3 className="line-clamp-2 text-sm font-black leading-5 text-slate-800 dark:text-white">{title}</h3>
+              {code && <div className={`mb-0.5 font-mono text-[10px] font-bold uppercase tracking-wider ${style.text}`}>{code}</div>}
+              <h3 className="line-clamp-2 text-sm font-black leading-snug text-slate-800 dark:text-white">{title}</h3>
             </div>
             <StatusBadge status={status} label={statusLabel} tone={tone} />
           </div>
-          <div className="mt-3 bg-slate-50/70 dark:bg-slate-800/40 p-3 rounded-xl border border-slate-100/50 dark:border-slate-800/30">
-            <p className="text-xs font-bold leading-relaxed text-slate-600 dark:text-slate-300">{nextAction}</p>
-          </div>
+          {!compact && nextAction && (
+            <div className="mt-3 bg-slate-50/70 dark:bg-slate-800/40 p-3 rounded-xl border border-slate-100/50 dark:border-slate-800/30">
+              <p className="text-xs font-bold leading-relaxed text-slate-600 dark:text-slate-300">{nextAction}</p>
+            </div>
+          )}
         </div>
 
-        <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/60 flex items-end justify-between gap-3 min-w-0">
-          <div className="flex flex-col gap-1.5 min-w-0 flex-1">
+        <div className="mt-2 pt-2.5 border-t border-slate-100 dark:border-slate-800/60 flex items-end justify-between gap-3 min-w-0">
+          <div className="flex flex-col gap-1 min-w-0 flex-1">
             {actorName && (
               <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-slate-500 dark:text-slate-350 min-w-0">
                 <UserRound size={11} className="text-slate-400 dark:text-slate-500 shrink-0" />
@@ -116,7 +120,7 @@ const NextActionCard: React.FC<NextActionCardProps> = ({
             )}
           </div>
           {(href || onClick) && (
-            <div className={`whitespace-nowrap inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider px-2.5 py-1.5 rounded-xl transition-all hover:scale-[1.02] active:scale-95 shrink-0 self-end ${style.button}`}>
+            <div className={`whitespace-nowrap inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-xl transition-all hover:scale-[1.02] active:scale-95 shrink-0 self-end ${style.button}`}>
               {actionLabel} <ArrowRight size={11} className="group-hover:translate-x-0.5 transition-transform duration-300 shrink-0" />
             </div>
           )}
@@ -125,7 +129,7 @@ const NextActionCard: React.FC<NextActionCardProps> = ({
     </>
   );
 
-  const className = `relative overflow-hidden block h-full rounded-2xl border border-slate-100/80 bg-gradient-to-br from-white to-slate-50/50 p-5 text-left shadow-sm transition-all duration-300 hover:shadow-md hover:scale-[1.01] hover:-translate-y-0.5 dark:border-slate-750 dark:from-slate-800 dark:to-slate-900/50 group ${style.border}`;
+  const className = `relative overflow-hidden block h-full rounded-2xl border border-slate-100/80 bg-gradient-to-br from-white to-slate-50/50 ${compact ? 'p-4' : 'p-5'} text-left shadow-sm transition-all duration-300 hover:shadow-md hover:scale-[1.01] hover:-translate-y-0.5 dark:border-slate-750 dark:from-slate-800 dark:to-slate-900/50 group ${style.border}`;
 
   if (href) return <Link to={href} className={className}>{content}</Link>;
   return <button type="button" onClick={onClick} className={className}>{content}</button>;

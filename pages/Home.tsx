@@ -41,6 +41,7 @@ import {
   NextActionCard,
   NextActionCardProps,
   StatusBadge,
+  NeuralAppHub,
 } from '../components/erp';
 import {
   canApproveMaterialRequest,
@@ -469,42 +470,32 @@ const Home: React.FC = () => {
     else navigate(target);
   };
 
-  return (
-    <div className="mx-auto max-w-7xl space-y-6 pb-8">
-      {/* Custom Header Section */}
-      <div className="flex flex-col gap-4 border-b border-slate-200 pb-4 dark:border-slate-800 lg:flex-row lg:items-end lg:justify-between">
-        <div className="min-w-0">
-          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">HÔM NAY</div>
-          <h1 className="text-2xl font-black tracking-tight text-slate-900 dark:text-white">Chào {user.name}</h1>
-          <p className="mt-1 max-w-3xl text-xs font-medium leading-5 text-slate-500 dark:text-slate-400">
-            {formatToday()}. Màn hình này gom các việc cần xử lý, cảnh báo và lối tắt theo quyền của bạn.
-          </p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <StatusBadge status="pending" label={`${actionItems.length} việc cần xử lý`} tone={actionItems.length > 0 ? 'attention' : 'success'} size="md" />
-            {roleLabels.map(label => <StatusBadge key={label as string} status="info" label={label as string} tone="neutral" size="md" />)}
-          </div>
-        </div>
-        <div className="flex flex-wrap gap-2 items-center lg:justify-end">
-          {/* Nút phụ - Xem thông báo */}
-          <Link
-            to="/notifications"
-            className="flex items-center gap-1.5 rounded-xl border border-teal-200 bg-teal-50 px-3 py-1.5 text-[10px] font-black text-teal-700 dark:text-teal-400 dark:bg-teal-950/20 dark:border-teal-800 transition-colors hover:bg-teal-100 dark:hover:bg-teal-900/40 uppercase tracking-wider"
-          >
-            <Bell size={13} /> Xem thông báo
-          </Link>
-          {/* Nút chính - AI Trợ lý */}
-          {/* <Link
-            to="/ai"
-            className="group flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-gradient-to-r from-rose-500 to-pink-600 text-white text-xs font-black uppercase tracking-wider shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-95 transition-all"
-          >
-            <Sparkles size={14} className="group-hover:rotate-12 transition-transform" />
-            🤖 AI Trợ lý
-          </Link> */}
-        </div>
-      </div>
+  const homeTaskCounts = useMemo<Record<string, number>>(() => {
+    const counts: Record<string, number> = {};
+    for (const item of actionItems) {
+      if (item.category === 'workflow') counts.WF = (counts.WF || 0) + 1;
+      else if (item.category === 'material' || item.category === 'transaction') counts.WMS = (counts.WMS || 0) + 1;
+      else if (item.category === 'rq') counts.RQ = (counts.RQ || 0) + 1;
+    }
+    if (projectSummary) {
+      counts.DA = projectSummary.activeFinances || projectSummary.activeSites || 0;
+    }
+    return counts;
+  }, [actionItems, projectSummary]);
 
-      {/* 4 KPI Cards Section */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+  return (
+    <div className="w-full max-w-full space-y-6 pb-8">
+      {/* Hero Section: Neural Network App Hub (Gộp Header Lời chào & Mạng Nơ-ron) */}
+      <NeuralAppHub
+        user={user}
+        taskCounts={homeTaskCounts}
+        totalPendingTasks={actionItems.length}
+        roleLabels={roleLabels.filter(Boolean) as string[]}
+        todayFormatted={formatToday()}
+      />
+
+      {/* Top KPI Summary Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {/* Card 1: Việc cần xử lý */}
         <button
           onClick={() => scrollToSection('todo-section')}
@@ -539,24 +530,7 @@ const Home: React.FC = () => {
           </div>
         </button>
 
-        {/* Card 3: Cảnh báo rủi ro */}
-        <button
-          onClick={() => scrollToSection('warning-section')}
-          className="relative text-left w-full overflow-hidden bg-gradient-to-br from-white to-slate-50/50 dark:from-slate-800 dark:to-slate-900/50 rounded-2xl p-5 border border-slate-100/80 dark:border-slate-700/60 shadow-sm transition-all duration-300 hover:shadow-md hover:scale-[1.02] active:scale-[0.98] group cursor-pointer"
-        >
-          <div className="absolute top-0 right-0 w-24 h-24 bg-amber-500/5 dark:bg-amber-400/5 rounded-bl-full pointer-events-none transition-transform duration-300 group-hover:scale-110" />
-          <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
-            <AlertTriangle size={11} className="text-amber-500" /> CẢNH BÁO RỦI RO
-          </div>
-          <div className="text-3xl font-black text-amber-500 dark:text-amber-450 leading-none tracking-tight">
-            {visibleNotifications.length}
-          </div>
-          <div className="text-[10px] text-muted-foreground font-medium mt-2">
-            Thông báo quan trọng cần chú ý
-          </div>
-        </button>
-
-        {/* Card 4: Dự án theo dõi */}
+        {/* Card 3: Dự án theo dõi */}
         <Link
           to="/da"
           className="relative text-left block overflow-hidden bg-gradient-to-br from-white to-slate-50/50 dark:from-slate-800 dark:to-slate-900/50 rounded-2xl p-5 border border-slate-100/80 dark:border-slate-700/60 shadow-sm transition-all duration-300 hover:shadow-md hover:scale-[1.02] active:scale-[0.98] group cursor-pointer w-full"
@@ -574,6 +548,7 @@ const Home: React.FC = () => {
         </Link>
       </div>
 
+      {/* Section 1: Cần tôi xử lý (Gọn gàng tập trung tên công việc) */}
       <section className="space-y-3 scroll-mt-6" id="todo-section">
         <div className="flex items-center justify-between gap-3">
           <div>
@@ -590,146 +565,35 @@ const Home: React.FC = () => {
             message="Các hồ sơ chờ bạn duyệt hoặc xác nhận sẽ xuất hiện ở đây."
           />
         ) : (
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-            {actionItems.map(item => <NextActionCard key={item.id} {...item} />)}
+          <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {actionItems.map(item => <NextActionCard key={item.id} {...item} compact />)}
           </div>
         )}
       </section>
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1fr_360px]">
-        <div className="space-y-6">
-          <section className="space-y-3 scroll-mt-6" id="tracking-section">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h2 className="text-base font-black text-slate-900 dark:text-white">Theo dõi của tôi</h2>
-                <p className="text-xs font-bold text-slate-400">Những hồ sơ bạn tạo đang còn mở.</p>
-              </div>
-              <Link to="/rq" className="inline-flex items-center gap-1 text-xs font-black text-slate-650 hover:text-slate-900 dark:text-slate-300">
-                Xem yêu cầu <FileText size={13} />
-              </Link>
-            </div>
-            {trackingItems.length === 0 ? (
-              <EmptyState
-                icon={<FileText size={20} />}
-                title="Chưa có hồ sơ đang mở"
-                message="Các phiếu nháp, chờ duyệt hoặc đang xử lý do bạn tạo sẽ được gom ở đây."
-              />
-            ) : (
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                {trackingItems.map(item => <NextActionCard key={item.id} {...item} />)}
-              </div>
-            )}
-          </section>
-
-          <section className="space-y-3">
-            <div>
-              <h2 className="text-base font-black text-slate-900 dark:text-white">Lối tắt nghiệp vụ</h2>
-              <p className="text-xs font-bold text-slate-400">Chỉ hiện những khu vực phù hợp với quyền hiện tại.</p>
-            </div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              {shortcuts.map(item => (
-                <Link
-                  key={item.to}
-                  to={item.to}
-                  className="rounded-2xl border border-slate-100/80 bg-gradient-to-br from-white to-slate-50/50 p-4 shadow-sm transition-all duration-300 hover:shadow-md hover:scale-[1.02] hover:-translate-y-0.5 dark:border-slate-750 dark:from-slate-800 dark:to-slate-900/50 group"
-                >
-                  <div className="flex items-start gap-3">
-                    <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border transition-all duration-300 group-hover:scale-110 ${item.color}`}>
-                      {item.icon}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-2">
-                        <h3 className="text-sm font-black text-slate-900 dark:text-white">{item.title}</h3>
-                        <ArrowRight size={14} className="text-slate-350 dark:text-slate-600 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all duration-300 shrink-0" />
-                      </div>
-                      <p className="mt-1 text-xs font-medium leading-5 text-slate-450 dark:text-slate-400">{item.description}</p>
-                    </div>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </section>
+      {/* Section 2: Theo dõi của tôi */}
+      <section className="space-y-3 scroll-mt-6" id="tracking-section">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-base font-black text-slate-900 dark:text-white">Theo dõi của tôi</h2>
+            <p className="text-xs font-bold text-slate-400">Những hồ sơ bạn tạo đang còn mở.</p>
+          </div>
+          <Link to="/rq" className="inline-flex items-center gap-1 text-xs font-black text-slate-650 hover:text-slate-900 dark:text-slate-300">
+            Xem yêu cầu <FileText size={13} />
+          </Link>
         </div>
-
-        <aside className="space-y-6">
-          <section className="space-y-3 scroll-mt-6" id="warning-section">
-            <div>
-              <h2 className="text-base font-black text-slate-900 dark:text-white">Cảnh báo</h2>
-              <p className="text-xs font-bold text-slate-400">Thông tin cần chú ý để giảm sai sót vận hành.</p>
-            </div>
-            <div className="space-y-3">
-              {visibleNotifications.length === 0 ? (
-                <EmptyState
-                  icon={<ShieldCheck size={20} />}
-                  title="Chưa có cảnh báo quan trọng"
-                  message="Các thông báo quan trọng khác sẽ xuất hiện ở đây."
-                />
-              ) : (
-                visibleNotifications.map(notification => (
-                  <button
-                    key={notification.id}
-                    onClick={() => openNotification(notification)}
-                    className="block w-full rounded-2xl border border-slate-100/80 border-l-4 border-l-red-500 bg-gradient-to-br from-white to-slate-50/50 p-3.5 text-left shadow-sm transition-all duration-300 hover:shadow-md hover:scale-[1.01] hover:-translate-y-0.5 dark:border-slate-750 dark:from-slate-800 dark:to-slate-900/50 group"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-xl bg-red-50 dark:bg-red-950/20 border border-red-100 dark:border-red-900/30 flex items-center justify-center text-red-500 shrink-0 transition-transform duration-300 group-hover:scale-110">
-                        <Bell size={15} />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-1.5">
-                          <h4 className="truncate text-xs font-black text-slate-800 dark:text-white leading-tight">{notification.title}</h4>
-                          <span className="shrink-0 text-[9px] font-black bg-red-50 text-red-650 px-1.5 py-0.5 rounded-md dark:bg-red-950/40 dark:text-red-400 border border-red-150/45 dark:border-red-900/30">
-                            KHẨN CẤP
-                          </span>
-                        </div>
-                        <p className="mt-0.5 truncate text-[10px] font-medium text-slate-450 dark:text-slate-400">{notification.message}</p>
-                      </div>
-                    </div>
-                  </button>
-                ))
-              )}
-            </div>
-          </section>
-
-          {projectSummary && (
-            <section className="rounded-2xl border border-slate-100/80 bg-gradient-to-br from-white to-slate-50/50 p-5 shadow-sm transition-all duration-300 hover:shadow-md dark:border-slate-750 dark:from-slate-800 dark:to-slate-900/50 group">
-              <div className="flex items-start gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-100 bg-slate-50/50 text-slate-655 dark:border-slate-750 dark:bg-slate-900 dark:text-slate-350 transition-transform duration-300 group-hover:scale-110">
-                  <BriefcaseBusiness size={18} />
-                </div>
-                <div className="min-w-0">
-                  <h2 className="text-sm font-black text-slate-900 dark:text-white">Dự án đang theo dõi</h2>
-                  <p className="mt-1 text-xs font-medium leading-5 text-slate-455 dark:text-slate-400">
-                    {projectSummary.activeFinances || projectSummary.activeSites} hồ sơ/dự án có dữ liệu đang mở.
-                  </p>
-                  <Link to="/da" className="mt-3 inline-flex items-center gap-1 text-xs font-black text-slate-900 dark:text-white hover:translate-x-0.5 transition-transform">
-                    Mở dự án <FolderKanban size={13} />
-                  </Link>
-                </div>
-              </div>
-            </section>
-          )}
-
-          {isWarehouseKeeper(user) && (
-            <section className="rounded-2xl border border-slate-100/80 bg-gradient-to-br from-white to-slate-50/50 p-5 shadow-sm transition-all duration-300 hover:shadow-md dark:border-slate-755 dark:from-slate-800 dark:to-slate-900/50 group">
-              <div className="flex items-start gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-100 bg-slate-50/50 text-slate-655 dark:border-slate-755 dark:bg-slate-900 dark:text-slate-355 transition-transform duration-300 group-hover:scale-110">
-                  <ArrowRightLeft size={18} />
-                </div>
-                <div className="min-w-0">
-                  <h2 className="text-sm font-black text-slate-900 dark:text-white">Kho của bạn</h2>
-                  <p className="mt-1 text-xs font-medium leading-5 text-slate-455 dark:text-slate-400">
-                    Ưu tiên xử lý phiếu chờ duyệt, chờ xuất và chờ nhận để tồn kho luôn đáng tin.
-                  </p>
-                  <Link to="/operations" className="mt-3 inline-flex items-center gap-1 text-xs font-black text-slate-900 dark:text-white hover:translate-x-0.5 transition-transform">
-                    Mở phiếu kho <Warehouse size={13} />
-                  </Link>
-                </div>
-              </div>
-            </section>
-          )}
-        </aside>
-      </div>
+        {trackingItems.length === 0 ? (
+          <EmptyState
+            icon={<FileText size={20} />}
+            title="Chưa có hồ sơ đang mở"
+            message="Các phiếu nháp, chờ duyệt hoặc đang xử lý do bạn tạo sẽ được gom ở đây."
+          />
+        ) : (
+          <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {trackingItems.map(item => <NextActionCard key={item.id} {...item} compact />)}
+          </div>
+        )}
+      </section>
     </div>
   );
 };

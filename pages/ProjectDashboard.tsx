@@ -3042,21 +3042,38 @@ const ProjectDashboard: React.FC = () => {
             : normalizeFinanceWorkspaceTab(routeParams.get('financeTab')) || 'overview';
 
         return (
-            <div className="space-y-6">
-                {/* Header Banner */}
-                <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-5 text-zinc-900 dark:text-zinc-100 shadow-sm">
-                    <div className="flex items-center justify-between flex-wrap gap-3">
-                        <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-lg bg-teal-700/10 text-teal-700 dark:bg-teal-500/20 dark:text-teal-400 flex items-center justify-center shrink-0"><HardHat size={20} /></div>
-                            <div>
-                                <h2 className="text-lg font-semibold leading-snug">{selectedProject.name}</h2>
-                                <p className="text-zinc-500 dark:text-zinc-400 text-xs mt-0.5">
-                                    {selectedProject.code} • {selectedSite ? `Công trường: ${selectedSite.name}` : 'Chưa liên kết công trường HRM'}
-                                </p>
+            <div className="space-y-3">
+                {/* Header Banner - Ultra Compact */}
+                <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-3 text-zinc-900 dark:text-zinc-100 shadow-sm">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                            {/* GREEN "Dự án khác" Button */}
+                            <button
+                                onClick={() => { setActiveView('list'); setSelectedSiteId(null); setSelectedProjectId(null); }}
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm transition-all shrink-0 cursor-pointer"
+                                title="Quay lại danh sách dự án"
+                            >
+                                ← Dự án khác
+                            </button>
+
+                            <div className="w-8 h-8 rounded-lg bg-teal-700/10 text-teal-700 dark:bg-teal-500/20 dark:text-teal-400 flex items-center justify-center shrink-0">
+                                <HardHat size={18} />
+                            </div>
+
+                            <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                    <h2 className="text-base font-black leading-snug truncate">{selectedProject.name}</h2>
+                                    <span className="text-xs text-zinc-500 dark:text-zinc-400 font-mono">({selectedProject.code})</span>
+                                    {selectedSite && (
+                                        <span className="text-xs text-zinc-400 dark:text-zinc-500 truncate">
+                                            • {selectedSite.name}
+                                        </span>
+                                    )}
+                                </div>
                                 {metaChips.length > 0 && (
-                                    <div className="mt-1.5 flex flex-wrap gap-1">
+                                    <div className="mt-1 flex flex-wrap gap-1">
                                         {metaChips.map(chip => (
-                                            <span key={chip.label} className="px-2 py-0.5 rounded-md bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 text-[11px] font-medium border border-zinc-200 dark:border-zinc-700">
+                                            <span key={chip.label} className="px-2 py-0.5 rounded-md bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 text-[10px] font-medium border border-zinc-200 dark:border-zinc-700">
                                                 {chip.label}
                                             </span>
                                         ))}
@@ -3064,54 +3081,49 @@ const ProjectDashboard: React.FC = () => {
                                 )}
                             </div>
                         </div>
-                        <div className="text-right">
-                            <StatusBadge status={statusKey} label={STATUS_CONFIG[statusKey]?.label || statusKey} size="md" />
-                            <div className="text-xl font-bold mt-1 text-teal-700 dark:text-teal-400">{displayProgress}%</div>
+
+                        {/* Right side: Action buttons + Status + Progress */}
+                        <div className="flex items-center gap-2 flex-wrap shrink-0">
+                            {canManageProjects && (
+                                <button onClick={() => openEditProject(selectedProject)}
+                                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-zinc-700 dark:text-zinc-200 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200 transition-colors shrink-0">
+                                    <Edit2 size={12} /> Sửa
+                                </button>
+                            )}
+                            {hasSiteLink && (
+                                <>
+                                    {canManageCashflowTab && (
+                                        <>
+                                            <button onClick={() => { resetTxForm(); setShowTxForm(true); }}
+                                                className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold text-teal-700 bg-teal-50 border border-teal-200 hover:bg-teal-100 dark:bg-teal-950/40 dark:text-teal-300 dark:border-teal-900 transition-colors shrink-0">
+                                                <Plus size={12} /> Giao dịch
+                                            </button>
+                                            <button onClick={() => fileInputRef.current?.click()}
+                                                className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-zinc-700 dark:text-zinc-200 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200 transition-colors shrink-0">
+                                                <Upload size={12} /> Import
+                                            </button>
+                                            <button onClick={handleDownloadTransactionTemplate}
+                                                className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-zinc-700 dark:text-zinc-200 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200 transition-colors shrink-0">
+                                                <Download size={12} /> Mẫu
+                                            </button>
+                                        </>
+                                    )}
+                                    <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleImportExcel} />
+                                    {canManageBudgetTab && (
+                                        <button onClick={() => effectiveSiteId && openBudgetForm(effectiveSiteId)}
+                                            className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-zinc-700 dark:text-zinc-200 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200 transition-colors shrink-0">
+                                            <Edit2 size={12} /> Ngân sách
+                                        </button>
+                                    )}
+                                </>
+                            )}
+
+                            <StatusBadge status={statusKey} label={STATUS_CONFIG[statusKey]?.label || statusKey} size="sm" />
+                            <div className="text-sm font-black text-teal-700 dark:text-teal-400 shrink-0">{displayProgress}%</div>
                         </div>
                     </div>
 
-                    {/* Action buttons inside header card */}
-                    <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-zinc-100 dark:border-zinc-800 pt-3">
-                        <button onClick={() => { setActiveView('list'); setSelectedSiteId(null); setSelectedProjectId(null); }}
-                            className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 transition-colors shrink-0">
-                            ← Dự án khác
-                        </button>
-                        {canManageProjects && (
-                            <button onClick={() => openEditProject(selectedProject)}
-                                className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium text-zinc-700 dark:text-zinc-200 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200 transition-colors shrink-0">
-                                <Edit2 size={13} /> Sửa dự án
-                            </button>
-                        )}
-                        {hasSiteLink && (
-                            <>
-                                {canManageCashflowTab && (
-                                    <>
-                                        <button onClick={() => { resetTxForm(); setShowTxForm(true); }}
-                                            className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium text-teal-700 bg-teal-50 border border-teal-200 hover:bg-teal-100 dark:bg-teal-950/40 dark:text-teal-300 dark:border-teal-900 transition-colors shrink-0">
-                                            <Plus size={13} /> Giao dịch
-                                        </button>
-                                        <button onClick={() => fileInputRef.current?.click()}
-                                            className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium text-zinc-700 dark:text-zinc-200 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200 transition-colors shrink-0">
-                                            <Upload size={13} /> Import Excel
-                                        </button>
-                                        <button onClick={handleDownloadTransactionTemplate}
-                                            className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium text-zinc-700 dark:text-zinc-200 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200 transition-colors shrink-0">
-                                            <Download size={13} /> Mẫu import
-                                        </button>
-                                    </>
-                                )}
-                                <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleImportExcel} />
-                                {canManageBudgetTab && (
-                                    <button onClick={() => effectiveSiteId && openBudgetForm(effectiveSiteId)}
-                                        className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium text-zinc-700 dark:text-zinc-200 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200 transition-colors shrink-0">
-                                        <Edit2 size={13} /> Ngân sách
-                                    </button>
-                                )}
-                            </>
-                        )}
-                    </div>
-
-                    <div className="mt-3 h-2 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
+                    <div className="mt-2 h-1.5 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
                         <div className="h-full bg-teal-700 dark:bg-teal-500 rounded-full transition-all duration-700" style={{ width: `${displayProgress}%` }} />
                     </div>
                 </div>

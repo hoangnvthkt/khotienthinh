@@ -9,4 +9,7 @@ export { default as PageHeader } from './PageHeader';
 export type { ErpAction } from './PageHeader';
 export { default as PriorityBadge } from './PriorityBadge';
 export { default as StatusBadge } from './StatusBadge';
+export { NeuralAppHub } from './NeuralAppHub';
+export type { ModuleAppDefinition } from './NeuralAppHub';
 export * from './status';
+

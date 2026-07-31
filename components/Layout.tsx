@@ -18,6 +18,9 @@ import { RefreshCw, Menu, AlertTriangle, ExternalLink, Moon, Sun } from 'lucide-
 import { Role } from '../types';
 import { useAuth } from '../context/AuthContext';
 
+import MacOSDockLauncher from './common/MacOSDockLauncher';
+import FloatingChatBubble from './common/FloatingChatBubble';
+
 const SESSION_TIMEOUT_MS = 12 * 60 * 60 * 1000; // 12 tiếng làm việc (tránh tự động logout trong ngày)
 const WARN_BEFORE_MS = 5 * 60 * 1000; // Cảnh báo 5 phút trước
 
@@ -25,7 +28,30 @@ const Layout: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     const saved = localStorage.getItem('sidebar_collapsed');
+    return saved !== null ? saved === 'true' : true; // Mặc định thu gọn Sidebar theo yêu cầu
+  });
+  const [isSidebarPinned, setIsSidebarPinned] = useState(() => {
+    const saved = localStorage.getItem('sidebar_pinned');
     return saved === 'true';
+  });
+
+  const toggleSidebarPin = () => {
+    setIsSidebarPinned(prev => {
+      const next = !prev;
+      localStorage.setItem('sidebar_pinned', String(next));
+      if (next) {
+        setSidebarCollapsed(false);
+        localStorage.setItem('sidebar_collapsed', 'false');
+      } else {
+        setSidebarCollapsed(true);
+        localStorage.setItem('sidebar_collapsed', 'true');
+      }
+      return next;
+    });
+  };
+  const [isMacOSDockEnabled, setIsMacOSDockEnabled] = useState(() => {
+    const saved = localStorage.getItem('macos_dock_enabled');
+    return saved !== null ? saved === 'true' : true;
   });
   const [sessionWarning, setSessionWarning] = useState(false);
   const [countdown, setCountdown] = useState(300); // 5 minutes in seconds
@@ -193,7 +219,35 @@ const Layout: React.FC = () => {
         </div>
       )}
 
-      <Sidebar isOpen={sidebarOpen} toggle={() => setSidebarOpen(!sidebarOpen)} collapsed={sidebarCollapsed} setCollapsed={(v) => { setSidebarCollapsed(v); localStorage.setItem('sidebar_collapsed', String(v)); }} />
+      <Sidebar
+        isOpen={sidebarOpen}
+        toggle={() => setSidebarOpen(!sidebarOpen)}
+        collapsed={isSidebarPinned ? false : sidebarCollapsed}
+        setCollapsed={(v) => {
+          if (!isSidebarPinned) {
+            setSidebarCollapsed(v);
+            localStorage.setItem('sidebar_collapsed', String(v));
+          }
+        }}
+        isPinned={isSidebarPinned}
+        onTogglePin={toggleSidebarPin}
+      />
+
+      {/* Left Edge Hover Trigger for Traditional Sidebar when NOT pinned */}
+      {!isSidebarPinned && sidebarCollapsed && (
+        <div
+          onMouseEnter={() => {
+            setSidebarCollapsed(false);
+            localStorage.setItem('sidebar_collapsed', 'false');
+          }}
+          onMouseMove={() => {
+            setSidebarCollapsed(false);
+            localStorage.setItem('sidebar_collapsed', 'false');
+          }}
+          className="hidden lg:block fixed left-0 top-0 z-[60] h-full w-6 cursor-pointer"
+          title="Rê chuột vào mép trái để hiển thị Sidebar"
+        />
+      )}
 
       <div className="flex-1 flex flex-col h-[100dvh] min-h-[100dvh] overflow-hidden relative">
         {/* Mobile Header */}
@@ -351,7 +405,7 @@ const Layout: React.FC = () => {
                 <Outlet />
               </React.Suspense>
             ) : (
-              <div className="max-w-[1600px] mx-auto w-full">
+              <div className="w-full max-w-full">
                 <React.Suspense fallback={<LoadingSpinner />}>
                   <Outlet />
                 </React.Suspense>
@@ -363,6 +417,8 @@ const Layout: React.FC = () => {
         <PWAInstallPrompt />
       </div>
       <QuickActionFab />
+      {user && <MacOSDockLauncher user={user} isEnabled={isMacOSDockEnabled} />}
+      {user && <FloatingChatBubble user={user} />}
       <OfflineIndicator isOnline={isOnline} isSyncing={isSyncing} pendingCount={pendingCount} onSync={syncNow} />
       {/* Easter Eggs & Dino Pet */}
       {(() => {
