@@ -90,7 +90,7 @@ begin
     flow_mode, completion_policy, status, created_by
   ) values (
     gen_random_uuid(), v_template, 1,
-    '[{"key":"purpose","label":"Purpose","fieldType":"text","required":false}]'::jsonb,
+    '[{"key":"items","label":"Items","fieldType":"table","required":false,"options":["Name","Quantity"]}]'::jsonb,
     jsonb_build_object('companyWide', true, 'departmentIds', '[]'::jsonb,
       'orgUnitIds', '[]'::jsonb, 'permissionCodes', '[]'::jsonb, 'userIds', '[]'::jsonb),
     'SEQUENTIAL', 'ALL', 'DRAFT', v_admin

@@ -12,17 +12,21 @@ import {
 } from 'lucide-react';
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 import { isMaterialRequestWorkflowTemplate } from '../../lib/workflowVisibility';
+import { useToast } from '../../context/ToastContext';
+import { getApiErrorMessage } from '../../lib/apiError';
 
 const WorkflowTemplates: React.FC = () => {
     const navigate = useNavigate();
     const { templates, createTemplate, updateTemplate, deleteTemplate, instances, getTemplateNodes } = useWorkflow();
     const { user, users } = useApp();
     const { canManage } = usePermission();
+    const toast = useToast();
     const [searchTerm, setSearchTerm] = useState('');
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [newName, setNewName] = useState('');
     const [newDesc, setNewDesc] = useState('');
     const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+    const [isDeleting, setIsDeleting] = useState(false);
     const [editingTemplate, setEditingTemplate] = useState<typeof templates[0] | null>(null);
     const [editName, setEditName] = useState('');
     const [editDesc, setEditDesc] = useState('');
@@ -133,8 +137,21 @@ const WorkflowTemplates: React.FC = () => {
     };
 
     const handleDelete = async (id: string) => {
-        await deleteTemplate(id);
-        setDeleteConfirmId(null);
+        if (isDeleting) return;
+        setIsDeleting(true);
+        try {
+            await deleteTemplate(id);
+            setDeleteConfirmId(null);
+            toast.success('Đã xóa mẫu quy trình');
+        } catch (error) {
+            console.error('Delete workflow template failed:', error);
+            toast.error(
+                'Không thể xóa mẫu quy trình',
+                getApiErrorMessage(error, 'Không thể xóa mẫu quy trình. Vui lòng thử lại.'),
+            );
+        } finally {
+            setIsDeleting(false);
+        }
     };
 
     const openEditModal = (t: typeof templates[0]) => {
@@ -337,10 +354,10 @@ const WorkflowTemplates: React.FC = () => {
                 <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
                     <div className="glass-card bg-white dark:bg-slate-800 rounded-2xl p-6 w-full max-w-sm mx-4 shadow-2xl">
                         <h2 className="text-lg font-bold text-red-600 mb-2">Xóa quy trình?</h2>
-                        <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">Tất cả các bước và phiếu liên quan sẽ bị xóa vĩnh viễn. Hành động này không thể hoàn tác.</p>
+                        <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">Chỉ xóa được mẫu chưa có phiếu, phiên bản hoặc liên kết sử dụng. Mẫu đã sử dụng cần được tắt thay vì xóa.</p>
                         <div className="flex gap-3">
                             <button onClick={() => setDeleteConfirmId(null)} className="flex-1 px-4 py-2.5 border border-slate-200 dark:border-slate-600 rounded-xl font-bold text-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition">Hủy</button>
-                            <button onClick={() => handleDelete(deleteConfirmId)} className="flex-1 px-4 py-2.5 bg-red-500 text-white rounded-xl font-bold text-sm hover:bg-red-600 transition shadow-lg shadow-red-500/20">Xóa</button>
+                            <button disabled={isDeleting} onClick={() => handleDelete(deleteConfirmId)} className="flex-1 px-4 py-2.5 bg-red-500 text-white rounded-xl font-bold text-sm hover:bg-red-600 transition shadow-lg shadow-red-500/20 disabled:cursor-not-allowed disabled:opacity-60">{isDeleting ? 'Đang xóa...' : 'Xóa'}</button>
                         </div>
                     </div>
                 </div>
