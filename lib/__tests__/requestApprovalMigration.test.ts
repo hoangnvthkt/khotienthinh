@@ -277,6 +277,28 @@ describe('request approval phase 1 schema', () => {
     );
   });
 
+  it('serializes source reads and copy-name allocation during duplication', () => {
+    expect(templateDuplicateSql).toMatch(
+      /select \* into v_source_template[\s\S]*?where id = p_request_template_id[\s\S]*?for update/i,
+    );
+    expect(templateDuplicateSql).toContain(
+      'pg_advisory_xact_lock(hashtextextended(lower(v_base_name), 0))',
+    );
+  });
+
+  it('lets published templates with DOCX metadata enter the same-lineage edit flow', () => {
+    expect(templateDuplicateSql).toContain(
+      'app_private.create_request_template_draft_from_published',
+    );
+    expect(templateDuplicateSql).not.toContain(
+      'REQUEST_PRINT_TEMPLATE_CLONE_DOCX_UNSUPPORTED',
+    );
+    expect(templateDuplicateSql).toMatch(
+      /create_request_template_draft_from_published[\s\S]*?insert into public\.request_print_templates[\s\S]*?from public\.request_print_templates/i,
+    );
+    expect(templateDuplicateSql).toContain("'draftVersionId', v_draft.id");
+  });
+
   it('repairs publish validation so table fields are accepted', () => {
     expect(templateDuplicateSql).toContain(
       'app_private.publish_request_template_version',

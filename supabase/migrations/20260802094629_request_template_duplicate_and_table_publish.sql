@@ -285,6 +285,99 @@ begin
 end;
 $$;
 
+-- Preparing a new version of an existing template must also preserve a
+-- validated DOCX registration. The binary remains at its immutable path.
+create or replace function app_private.create_request_template_draft_from_published(
+  p_request_template_id uuid
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_actor uuid := public.current_app_user_id();
+  v_template public.request_templates%rowtype;
+  v_published public.request_template_versions%rowtype;
+  v_draft public.request_template_versions%rowtype;
+  v_number integer;
+begin
+  if v_actor is null or not app_private.request_user_can_manage(v_actor) then
+    raise exception using errcode = '42501', message = 'REQUEST_TEMPLATE_FORBIDDEN';
+  end if;
+
+  select * into v_template
+  from public.request_templates
+  where id = p_request_template_id
+  for update;
+  if not found then
+    raise exception using errcode = 'P0002', message = 'REQUEST_TEMPLATE_NOT_FOUND';
+  end if;
+
+  select * into v_published
+  from public.request_template_versions
+  where request_template_id = v_template.id
+    and status = 'PUBLISHED'
+  order by version_number desc
+  limit 1;
+  if not found then
+    raise exception using errcode = '22023', message = 'REQUEST_TEMPLATE_PUBLISHED_REQUIRED';
+  end if;
+
+  select coalesce(max(version_number), 0) + 1 into v_number
+  from public.request_template_versions
+  where request_template_id = v_template.id;
+
+  insert into public.request_template_versions(
+    request_template_id, version_number, form_schema, usage_scope, flow_mode,
+    completion_policy, request_sla_hours, print_config, notification_config,
+    status, created_by
+  ) values (
+    v_template.id, v_number, v_published.form_schema, v_published.usage_scope,
+    v_published.flow_mode, v_published.completion_policy, v_published.request_sla_hours,
+    v_published.print_config, v_published.notification_config, 'DRAFT', v_actor
+  ) returning * into v_draft;
+
+  insert into public.request_approval_blocks(
+    request_template_version_id, block_key, name, sort_order, approver_source,
+    fixed_user_ids, minimum_dynamic_approvers, sla_hours, is_required
+  )
+  select v_draft.id, block_key, name, sort_order, approver_source,
+    fixed_user_ids, minimum_dynamic_approvers, sla_hours, is_required
+  from public.request_approval_blocks
+  where request_template_version_id = v_published.id;
+
+  insert into public.request_template_watchers(request_template_version_id, user_id)
+  select v_draft.id, user_id
+  from public.request_template_watchers
+  where request_template_version_id = v_published.id
+  on conflict do nothing;
+
+  insert into public.request_print_templates(
+    request_template_version_id, name, file_name, storage_path,
+    validation_status, placeholder_schema
+  )
+  select v_draft.id, name, file_name, storage_path,
+    validation_status, placeholder_schema
+  from public.request_print_templates
+  where request_template_version_id = v_published.id;
+
+  update public.request_templates
+  set lifecycle_status = 'DRAFT'
+  where id = v_template.id
+  returning * into v_template;
+
+  return jsonb_build_object(
+    'id', v_draft.request_template_id,
+    'draftVersionId', v_draft.id,
+    'status', v_draft.status,
+    'versionNumber', v_draft.version_number,
+    'updatedAt', v_template.updated_at,
+    'payload', app_private.request_template_draft_payload(v_draft.id)
+  );
+end;
+$$;
+
 -- A copy is a new template lineage. The source version remains immutable and
 -- the target starts as version 1 in DRAFT state.
 create or replace function app_private.duplicate_request_template(
@@ -311,7 +404,8 @@ begin
 
   select * into v_source_template
   from public.request_templates
-  where id = p_request_template_id;
+  where id = p_request_template_id
+  for update;
   if not found then
     raise exception using errcode = 'P0002', message = 'REQUEST_TEMPLATE_NOT_FOUND';
   end if;
@@ -333,6 +427,7 @@ begin
   end if;
 
   v_base_name := v_source_template.name || ' - Bản sao';
+  perform pg_advisory_xact_lock(hashtextextended(lower(v_base_name), 0));
   v_copy_name := v_base_name;
   while exists (
     select 1
