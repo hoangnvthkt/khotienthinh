@@ -1048,6 +1048,7 @@ export interface DailyLogLabor {
   taskName?: string;
   count: number;              // Số lượng
   hours?: number;             // Giờ làm (default 8)
+  unit?: string;              // Đơn vị nhân công từ danh mục
   unitCost?: number;          // Đơn giá / ngày
   totalCost?: number;         // Auto = count × unitCost
   note?: string;
@@ -1071,9 +1072,13 @@ export interface DailyLogMachine {
   catalogCode?: string;
   catalogName?: string;
   groupName?: string;
+  partnerId?: string;
+  partnerName?: string;
   taskId?: string;
   taskName?: string;
   shifts: number;             // Số ca (0.5, 1, 1.5, 2)
+  hours?: number;             // Giờ máy thực tế, không quy đổi từ số ca
+  unit?: string;              // Đơn vị từ danh mục máy
   unitCost?: number;          // Đơn giá / ca
   totalCost?: number;         // Auto = shifts × unitCost
   note?: string;

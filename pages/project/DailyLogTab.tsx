@@ -25,12 +25,14 @@ import { buildDailyLogVolumesFromDailyProgress } from '../../lib/dailyLogProgres
 import { getProjectScopeKey, projectWeeklyProgressService } from '../../lib/projectWeeklyProgressService';
 import {
     buildDailyLogSourceSnapshot,
-    buildDailyLogSummaryVolumes,
+    buildDailyLogSummaryDetails,
     canReturnDailyLogSource,
     getDailyLogSummarySourceLogs,
     getDailyLogSourceReviewState,
     getDailyLogSummarySourceSnapshots,
     isDailyLogSummaryEditable,
+    resolveDailyLogSummaryDetails,
+    withDailyLogSummaryDetails,
     type DailyLogSourceReviewState,
     type DailyLogSummarySourceSnapshot,
 } from '../../lib/dailyLogWorkflow';
@@ -260,11 +262,11 @@ const VoiceTextarea: React.FC<{
             const textarea = e.currentTarget;
             const start = textarea.selectionStart;
             const end = textarea.selectionEnd;
-            
+
             // Insert newline and bullet point
             const nextVal = value.slice(0, start) + '\n- ' + value.slice(end);
             onChange(nextVal);
-            
+
             const targetPos = start + 3; // length of '\n- '
             setTimeout(() => {
                 textarea.setSelectionRange(targetPos, targetPos);
@@ -314,8 +316,8 @@ const VoiceTextarea: React.FC<{
                     type="button"
                     onClick={toggleListening}
                     className={`absolute top-2 right-2 w-7 h-7 rounded-lg flex items-center justify-center transition-all ${isListening
-                            ? 'bg-red-500 text-white shadow-lg shadow-red-500/30 animate-pulse'
-                            : 'bg-muted text-muted-foreground hover:bg-teal-500/10 hover:text-teal-400'
+                        ? 'bg-red-500 text-white shadow-lg shadow-red-500/30 animate-pulse'
+                        : 'bg-muted text-muted-foreground hover:bg-teal-500/10 hover:text-teal-400'
                         }`}
                     title={isListening ? 'Dừng ghi âm' : 'Voice input (tiếng Việt)'}
                 >
@@ -382,9 +384,10 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
     onReturnSourceLog,
 }) => {
     const materialRows = log.materials || [];
-    const displayVolumes = (log.volumes || []).length > 0
-        ? (log.volumes || [])
-        : buildDailyLogSummaryVolumes(summarySourceLogs);
+    const detailResolution = resolveDailyLogSummaryDetails(log, [log, ...summarySourceLogs]);
+    const displayVolumes = detailResolution.details.volumes;
+    const displayLaborDetails = detailResolution.details.laborDetails;
+    const displayMachines = detailResolution.details.machines;
     const materialQuantity = materialRows.reduce((sum, row) => sum + Number(row.quantity || 0), 0);
     const materialUnits = Array.from(new Set(materialRows.map(row => row.unit).filter(Boolean)));
     const materialSummary = materialRows.length === 0
@@ -392,8 +395,9 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
         : materialUnits.length === 1
             ? `${formatNumber(materialQuantity)} ${materialUnits[0]}`
             : `${materialRows.length} dòng`;
-    const laborCount = (log.laborDetails || []).reduce((sum, row) => sum + Number(row.count || 0), 0);
-    const machineShifts = (log.machines || []).reduce((sum, row) => sum + Number(row.shifts || 0), 0);
+    const laborCount = detailResolution.details.workerCount;
+    const machineShifts = displayMachines.reduce((sum, row) => sum + Number(row.shifts || 0), 0);
+    const machineHours = displayMachines.reduce((sum, row) => sum + Number(row.hours || 0), 0);
     const participatingStaff = (log.staffIds || [])
         .map(id => siteStaff.find(s => s.userId === id))
         .filter(Boolean) as ProjectStaff[];
@@ -411,7 +415,7 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
                         <p className="text-xs font-bold text-muted-foreground">
                             {new Date(log.date).toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })}
                             <span className="mx-2 text-muted-foreground/30">•</span>{weatherLabel}
-                            <span className="mx-2 text-muted-foreground/30">•</span>{log.workerCount || 0} nhân công
+                            <span className="mx-2 text-muted-foreground/30">•</span>{laborCount} nhân công
                         </p>
                     </div>
                     <button onClick={onClose} className="w-9 h-9 rounded-xl flex items-center justify-center text-slate-400 hover:bg-muted shrink-0">
@@ -420,6 +424,11 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
                 </div>
 
                 <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-4 sm:space-y-5">
+                    {detailResolution.source === 'unresolved' && (
+                        <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">
+                            Dữ liệu nguồn của bản tổng hợp cũ đã thay đổi hoặc thiếu snapshot. Hệ thống đang giữ nguyên chi tiết đã lưu để tránh làm sai hồ sơ đã duyệt.
+                        </div>
+                    )}
                     <div className="grid grid-cols-1 lg:grid-cols-[1.15fr_0.85fr] gap-4">
                         <div className="rounded-2xl border border-border p-4 space-y-4">
                             <div>
@@ -504,13 +513,14 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
                                 <div className="rounded-xl bg-purple-500/10 p-3">
                                     <div className="text-[9px] font-black text-purple-500 uppercase">Máy TC</div>
                                     <div className="text-sm font-black text-purple-400">{formatNumber(machineShifts)} ca</div>
+                                    <div className="text-[10px] font-bold text-purple-500/80">{formatNumber(machineHours)} giờ</div>
                                 </div>
                             </div>
 
                             {/* Cán bộ tham gia */}
                             {participatingStaff.length > 0 && (
                                 <div className="rounded-xl border border-border bg-muted/20 p-3 space-y-2">
-                                    <div className="text-[10px] font-black text-muted-foreground uppercase">Cán bộ tham gia ({participatingStaff.length})</div>
+                                    <div className="text-[10px] font-black text-muted-foreground uppercase">Cán bộ công trường ({participatingStaff.length})</div>
                                     <div className="flex flex-wrap gap-1.5">
                                         {participatingStaff.map(staff => (
                                             <span key={staff.userId} className="inline-flex flex-col px-2.5 py-1 bg-background border border-border rounded-lg text-xs">
@@ -612,8 +622,8 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
                             <h4 className="text-xs font-black text-muted-foreground uppercase mb-3 flex items-center gap-1"><Camera size={13} /> Ảnh công trường</h4>
                             <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-3">
                                 {(log.photos || []).map((photo, index) => (
-                                    <div 
-                                        key={`${photo.url}-${index}`} 
+                                    <div
+                                        key={`${photo.url}-${index}`}
                                         onClick={() => {
                                             if (onPreviewImage) {
                                                 const galleryList = (log.photos || []).map((p, idx) => ({
@@ -676,12 +686,12 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
                                                             const label = file.name || file.fileName || 'Bằng chứng';
                                                             const attachmentUrl = normalizeAttachmentUrl(file);
                                                             const isImg = attachmentUrl && isImageAttachment({ ...file, url: attachmentUrl });
-                                                            
+
                                                             if (isImg) {
                                                                 const imgIndexInGallery = imageAttachments.findIndex(img => img.url === attachmentUrl);
                                                                 return (
-                                                                    <div 
-                                                                        key={file.id || attachmentUrl} 
+                                                                    <div
+                                                                        key={file.id || attachmentUrl}
                                                                         onClick={(e) => {
                                                                             e.stopPropagation();
                                                                             if (onPreviewImage) {
@@ -735,16 +745,16 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
                         </section>
                         <section className="rounded-2xl border-blue-500/20 p-4">
                             <h4 className="text-xs font-black text-muted-foreground uppercase mb-3 flex items-center gap-1"><Users size={13} className="text-blue-500" /> Nhân công</h4>
-                            {(log.laborDetails || []).length === 0 ? <p className="text-xs font-bold text-muted-foreground">Chưa có nhân công.</p> : (
+                            {displayLaborDetails.length === 0 ? <p className="text-xs font-bold text-muted-foreground">Chưa có nhân công.</p> : (
                                 <div className="space-y-2">
-                                    {(log.laborDetails || []).map((row, index) => (
+                                    {displayLaborDetails.map((row, index) => (
                                         <div key={index} className="text-xs rounded-xl bg-blue-500/5 p-2">
                                             <div className="flex items-start justify-between gap-2">
                                                 <div className="min-w-0">
                                                     <div className="font-black text-foreground truncate">{row.catalogName || row.partnerName || row.groupName || row.laborType}</div>
                                                     <div className="text-muted-foreground truncate">{row.taskName || 'Chưa gắn hạng mục'}</div>
                                                 </div>
-                                                <div className="font-black text-blue-400 shrink-0">{formatNumber(row.count)} người</div>
+                                                <div className="font-black text-blue-400 shrink-0">{formatNumber(row.count)} {row.unit || 'người'}</div>
                                             </div>
                                             <div className="mt-1 text-[10px] text-slate-400">Giờ: {formatNumber(row.hours || 0)} • Đơn giá: {formatMoney(row.unitCost)}</div>
                                         </div>
@@ -754,18 +764,19 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
                         </section>
                         <section className="rounded-2xl border-purple-500/20 p-4">
                             <h4 className="text-xs font-black text-muted-foreground uppercase mb-3 flex items-center gap-1"><Wrench size={13} className="text-purple-500" /> Máy thi công</h4>
-                            {(log.machines || []).length === 0 ? <p className="text-xs font-bold text-muted-foreground">Chưa có máy thi công.</p> : (
+                            {displayMachines.length === 0 ? <p className="text-xs font-bold text-muted-foreground">Chưa có máy thi công.</p> : (
                                 <div className="space-y-2">
-                                    {(log.machines || []).map((row, index) => (
+                                    {displayMachines.map((row, index) => (
                                         <div key={index} className="text-xs rounded-xl bg-purple-500/5 p-2">
                                             <div className="flex items-start justify-between gap-2">
                                                 <div className="min-w-0">
                                                     <div className="font-black text-foreground truncate">{row.catalogName || row.machineName}</div>
                                                     <div className="text-muted-foreground truncate">{row.taskName || row.groupName || 'Chưa gắn hạng mục'}</div>
+                                                    {row.partnerName && <div className="text-[10px] text-muted-foreground truncate">{row.partnerName}</div>}
                                                 </div>
                                                 <div className="font-black text-purple-400 shrink-0">{formatNumber(row.shifts)} ca</div>
                                             </div>
-                                            <div className="mt-1 text-[10px] text-slate-400">Đơn giá: {formatMoney(row.unitCost)}</div>
+                                            <div className="mt-1 text-[10px] text-slate-400">Giờ máy: {formatNumber(row.hours || 0)} • ĐVT: {row.unit || '—'} • Đơn giá: {formatMoney(row.unitCost)}</div>
                                         </div>
                                     ))}
                                 </div>
@@ -1390,16 +1401,17 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         setSummarySaving(true);
         try {
             const existing = logs.find(log => log.id === summaryLogId);
-            const summaryVolumes = buildDailyLogSummaryVolumes(selectedLegacyLogs);
+            const summaryDetails = buildDailyLogSummaryDetails(selectedLegacyLogs);
             const sourceSnapshots = selectedLegacyLogs.reduce<Record<string, DailyLogSummarySourceSnapshot>>((acc, log) => {
-                acc[log.id] = summarySourceSnapshots[log.id] || buildDailyLogSourceSnapshot(log);
+                acc[log.id] = buildDailyLogSourceSnapshot(log);
                 return acc;
             }, {});
             const summarySourceMetadata = {
-                legacyDailyLogIds: selectedSummaryLegacyLogIds,
+                aggregationVersion: 2,
+                legacyDailyLogIds: selectedLegacyLogs.map(log => log.id),
                 sourceSnapshots,
             };
-            const item: DailyLog = existing ? {
+            const baseItem: DailyLog = existing ? {
                 ...existing,
                 date: summaryDate,
                 weather: summaryWeather,
@@ -1407,7 +1419,6 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                 issues: summaryIssues.trim() || undefined,
                 nextDayPlan: summaryNextPlan.trim() || undefined,
                 photos: summaryPhotos,
-                volumes: summaryVolumes,
                 summarySourceType: DAILY_SUMMARY_SOURCE_TYPE,
                 summaryContributionCount: selectedLegacyLogs.length,
                 summarySourceMetadata,
@@ -1438,11 +1449,8 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                 createdBy: user?.name || user?.id || 'admin',
                 createdById: user?.id,
                 createdAt: new Date().toISOString(),
-                volumes: summaryVolumes,
-                materials: [],
-                laborDetails: [],
-                machines: [],
             };
+            const item = withDailyLogSummaryDetails(baseItem, summaryDetails);
             await dailyLogService.upsert(item);
             if (submitNow) {
                 await dailyLogService.updateStatus({
@@ -2146,10 +2154,13 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         () => logs.filter(log => selectedSummaryLegacyLogIds.includes(log.id)),
         [logs, selectedSummaryLegacyLogIds],
     );
-    const activeSummaryVolumes = useMemo(
-        () => buildDailyLogSummaryVolumes(selectedSummarySourceLogs),
+    const activeSummaryDetails = useMemo(
+        () => buildDailyLogSummaryDetails(selectedSummarySourceLogs),
         [selectedSummarySourceLogs],
     );
+    const activeSummaryLaborHours = activeSummaryDetails.laborDetails.reduce((sum, row) => sum + Number(row.hours || 0), 0);
+    const activeSummaryMachineShifts = activeSummaryDetails.machines.reduce((sum, row) => sum + Number(row.shifts || 0), 0);
+    const activeSummaryMachineHours = activeSummaryDetails.machines.reduce((sum, row) => sum + Number(row.hours || 0), 0);
 
     const returnSourceLog = async (log: DailyLog) => {
         const reason = await reasonConfirm({
@@ -2310,8 +2321,8 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                         <button
                             onClick={() => setShowAdvanced(!showAdvanced)}
                             className={`flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all border ${showAdvanced || filterStatus !== 'all' || filterWeather !== 'all'
-                                    ? 'text-teal-600 bg-teal-50 border-teal-200 dark:bg-teal-950/30 dark:border-teal-800 dark:text-teal-400'
-                                    : 'text-foreground bg-card border-border hover:bg-muted'
+                                ? 'text-teal-600 bg-teal-50 border-teal-200 dark:bg-teal-950/30 dark:border-teal-800 dark:text-teal-400'
+                                : 'text-foreground bg-card border-border hover:bg-muted'
                                 }`}
                         >
                             <SlidersHorizontal size={14} />
@@ -2338,8 +2349,8 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                     <button
                                         onClick={() => setFilterStatus('all')}
                                         className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${filterStatus === 'all'
-                                                ? 'bg-slate-800 text-white border-slate-800 dark:bg-slate-200 dark:text-slate-900 dark:border-slate-200'
-                                                : 'bg-card text-foreground border-border hover:bg-muted'
+                                            ? 'bg-slate-800 text-white border-slate-800 dark:bg-slate-200 dark:text-slate-900 dark:border-slate-200'
+                                            : 'bg-card text-foreground border-border hover:bg-muted'
                                             }`}
                                     >
                                         Tất cả
@@ -2352,8 +2363,8 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                                 key={statusKey}
                                                 onClick={() => setFilterStatus(statusKey)}
                                                 className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border flex items-center gap-1.5 ${active
-                                                        ? 'bg-teal-600 text-white border-teal-600 dark:bg-teal-500 dark:border-teal-500'
-                                                        : 'bg-card text-foreground border-border hover:bg-muted'
+                                                    ? 'bg-teal-600 text-white border-teal-600 dark:bg-teal-500 dark:border-teal-500'
+                                                    : 'bg-card text-foreground border-border hover:bg-muted'
                                                     }`}
                                             >
                                                 <span className={`w-1.5 h-1.5 rounded-full ${active ? 'bg-white' : STATUS_DOT[statusKey]}`} />
@@ -2373,8 +2384,8 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                     <button
                                         onClick={() => setFilterWeather('all')}
                                         className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${filterWeather === 'all'
-                                                ? 'bg-slate-800 text-white border-slate-800 dark:bg-slate-200 dark:text-slate-900 dark:border-slate-200'
-                                                : 'bg-card text-foreground border-border hover:bg-muted'
+                                            ? 'bg-slate-800 text-white border-slate-800 dark:bg-slate-200 dark:text-slate-900 dark:border-slate-200'
+                                            : 'bg-card text-foreground border-border hover:bg-muted'
                                             }`}
                                     >
                                         Tất cả
@@ -2387,8 +2398,8 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                                 key={weatherKey}
                                                 onClick={() => setFilterWeather(weatherKey)}
                                                 className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border flex items-center gap-1.5 ${active
-                                                        ? 'bg-teal-600 text-white border-teal-600 dark:bg-teal-500 dark:border-teal-500'
-                                                        : 'bg-card text-foreground border-border hover:bg-muted'
+                                                    ? 'bg-teal-600 text-white border-teal-600 dark:bg-teal-500 dark:border-teal-500'
+                                                    : 'bg-card text-foreground border-border hover:bg-muted'
                                                     }`}
                                             >
                                                 <span>{cfg.emoji}</span>
@@ -2476,12 +2487,12 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                             const status = row.officialStatus;
                             const statusCfg = status ? STATUS_CFG[status] : null;
                             const w = officialLog ? WEATHER[officialLog.weather] : null;
-                            const borderAccentCls = 
+                            const borderAccentCls =
                                 status === 'verified' ? 'bg-emerald-500 dark:bg-emerald-400' :
-                                status === 'submitted' ? 'bg-amber-500 dark:bg-amber-400' :
-                                status === 'rejected' ? 'bg-rose-500 dark:bg-rose-400' :
-                                row.submittedCount > 0 ? 'bg-blue-500 dark:bg-blue-400' :
-                                'bg-slate-400 dark:bg-slate-500';
+                                    status === 'submitted' ? 'bg-amber-500 dark:bg-amber-400' :
+                                        status === 'rejected' ? 'bg-rose-500 dark:bg-rose-400' :
+                                            row.submittedCount > 0 ? 'bg-blue-500 dark:bg-blue-400' :
+                                                'bg-slate-400 dark:bg-slate-500';
                             const dayLabel = new Date(`${row.date}T00:00:00`).toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' });
                             const summaryLabel = officialLog?.summarySourceType === DAILY_SUMMARY_SOURCE_TYPE && status === 'submitted'
                                 ? 'Chờ CHT duyệt'
@@ -2505,9 +2516,8 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                     key={row.date}
                                     ref={el => { if (officialLog) logRefs.current[officialLog.id] = el; }}
                                     onClick={() => officialLog ? openView(officialLog) : canSummarizeDay ? openSummaryForDate(row.date) : openCreateForDate(row.date)}
-                                    className={`group flex items-center justify-between px-4 sm:px-6 py-3.5 bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800/60 border-b border-zinc-200 dark:border-zinc-800 transition-colors cursor-pointer ${
-                                        officialLog && highlightLogId === officialLog.id ? 'bg-teal-50/50 dark:bg-teal-950/20' : ''
-                                    }`}
+                                    className={`group flex items-center justify-between px-4 sm:px-6 py-3.5 bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800/60 border-b border-zinc-200 dark:border-zinc-800 transition-colors cursor-pointer ${officialLog && highlightLogId === officialLog.id ? 'bg-teal-50/50 dark:bg-teal-950/20' : ''
+                                        }`}
                                 >
                                     {/* Left: Date info & Status badge */}
                                     <div className="flex items-center gap-3 sm:gap-4 min-w-0">
@@ -2523,7 +2533,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                                 {dayLabel}
                                             </span>
                                             {w && <span className="text-xs sm:text-sm" title={w.label}>{w.emoji}</span>}
-                                            
+
                                             {/* Status Badge */}
                                             <span className={`text-[10px] font-medium px-2.5 py-0.5 rounded-full border ${statusCfg?.cls || 'bg-zinc-100 text-zinc-600 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:border-zinc-700'}`}>
                                                 {summaryLabel}
@@ -2763,16 +2773,38 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                         ))}
                                     </div>
                                 </div>
-                                <div className="mt-4 rounded-xl border border-amber-100 bg-amber-50/60 p-3">
+                                <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
+                                    <div className="rounded-xl border border-amber-100 bg-amber-50/60 p-2.5">
+                                        <div className="text-[9px] font-black uppercase text-amber-700">Hạng mục</div>
+                                        <div className="mt-1 text-base font-black text-amber-800">{activeSummaryDetails.volumes.length}</div>
+                                    </div>
+                                    <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-2.5">
+                                        <div className="text-[9px] font-black uppercase text-blue-700">Nhân công</div>
+                                        <div className="mt-1 text-base font-black text-blue-800">{formatNumber(activeSummaryDetails.workerCount)} người</div>
+                                    </div>
+                                    <div className="rounded-xl border border-cyan-100 bg-cyan-50/60 p-2.5">
+                                        <div className="text-[9px] font-black uppercase text-cyan-700">Giờ công</div>
+                                        <div className="mt-1 text-base font-black text-cyan-800">{formatNumber(activeSummaryLaborHours)} giờ</div>
+                                    </div>
+                                    <div className="rounded-xl border border-purple-100 bg-purple-50/60 p-2.5">
+                                        <div className="text-[9px] font-black uppercase text-purple-700">Ca máy</div>
+                                        <div className="mt-1 text-base font-black text-purple-800">{formatNumber(activeSummaryMachineShifts)} ca</div>
+                                    </div>
+                                    <div className="rounded-xl border border-violet-100 bg-violet-50/60 p-2.5">
+                                        <div className="text-[9px] font-black uppercase text-violet-700">Giờ máy</div>
+                                        <div className="mt-1 text-base font-black text-violet-800">{formatNumber(activeSummaryMachineHours)} giờ</div>
+                                    </div>
+                                </div>
+                                <div className="mt-3 rounded-xl border border-amber-100 bg-amber-50/60 p-3">
                                     <div className="mb-2 flex items-center justify-between gap-2">
                                         <div className="text-[10px] font-black uppercase text-amber-700">Hạng mục thi công từ chốt ngày</div>
-                                        <span className="rounded-full bg-white px-2 py-0.5 text-[9px] font-black text-amber-700">{activeSummaryVolumes.length}</span>
+                                        <span className="rounded-full bg-white px-2 py-0.5 text-[9px] font-black text-amber-700">{activeSummaryDetails.volumes.length}</span>
                                     </div>
-                                    {activeSummaryVolumes.length === 0 ? (
+                                    {activeSummaryDetails.volumes.length === 0 ? (
                                         <div className="text-[11px] font-bold text-amber-700/70">Chưa có dữ liệu khối lượng từ phiếu nguồn đã chọn.</div>
                                     ) : (
                                         <div className="max-h-40 space-y-1.5 overflow-y-auto pr-1">
-                                            {activeSummaryVolumes.map((volume, index) => (
+                                            {activeSummaryDetails.volumes.map((volume, index) => (
                                                 <div key={`${volume.workBoqItemId || volume.taskId || volume.contractItemName || index}-${index}`} className="rounded-lg bg-white px-2 py-1.5">
                                                     <div className="truncate text-[11px] font-black text-slate-700">
                                                         {volume.workBoqItemName || volume.taskName || volume.contractItemName || 'Hạng mục chưa đặt tên'}
@@ -3217,9 +3249,9 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                     <div className="flex gap-2 flex-wrap">
                                         {fPhotos.map((p, i) => (
                                             <div key={i} className="relative group">
-                                                <img 
-                                                    src={p.url} 
-                                                    alt={p.name} 
+                                                <img
+                                                    src={p.url}
+                                                    alt={p.name}
                                                     onClick={() => {
                                                         const galleryList = fPhotos.map((photo, idx) => ({
                                                             url: photo.url,
@@ -3229,7 +3261,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                                         setGalleryAttachments(galleryList);
                                                         setGalleryIndex(i);
                                                     }}
-                                                    className="w-12 h-12 object-cover rounded-lg border border-slate-200 dark:border-slate-700 cursor-zoom-in hover:scale-105 transition-transform duration-150" 
+                                                    className="w-12 h-12 object-cover rounded-lg border border-slate-200 dark:border-slate-700 cursor-zoom-in hover:scale-105 transition-transform duration-150"
                                                 />
                                                 <button onClick={() => setFPhotos(fPhotos.filter((_, idx) => idx !== i))}
                                                     className="absolute -top-1.5 -right-1.5 w-4.5 h-4.5 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-md">

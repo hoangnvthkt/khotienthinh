@@ -5,6 +5,7 @@ import {
   CalendarDays,
   CheckCircle2,
   CloudRain,
+  Clock,
   Download,
   Eye,
   FileText,
@@ -177,6 +178,8 @@ const buildPdfHtml = (
       <td class="num">${escapeHtml(period.workers.total)}</td>
       <td class="num">${escapeHtml(period.workers.averagePerActiveDay)}</td>
       <td class="num">${escapeHtml(period.machines.reduce((sum, item) => sum + item.value, 0))}</td>
+      <td class="num">${escapeHtml(period.machineHours.reduce((sum, item) => sum + item.value, 0))}</td>
+      <td>${escapeHtml(period.volumes.slice(0, 3).map(item => `${item.label}: ${formatNumber(item.value, 2)} ${item.unit || ''}`).join('; ') || '-')}</td>
       <td class="num">${escapeHtml(period.rainyDays)}</td>
       <td class="num">${escapeHtml(period.delays.totalDays)}</td>
       <td>${escapeHtml(period.issues.slice(0, 2).map(item => item.text).join('; ') || '-')}</td>
@@ -189,6 +192,9 @@ const buildPdfHtml = (
       <td>${escapeHtml(item.createdBy)}</td>
       <td>${escapeHtml(item.text)}</td>
     </tr>
+  `).join('');
+  const volumeRows = (selectedPeriod?.volumes || []).map(item => `
+    <tr><td>${escapeHtml(item.label)}</td><td class="num">${formatNumber(item.value, 2)}</td><td>${escapeHtml(item.unit || '')}</td></tr>
   `).join('');
 
   return `<!doctype html>
@@ -221,6 +227,7 @@ const buildPdfHtml = (
         <div class="kpi"><div class="label">Ngày thiếu nhật ký</div><div class="value">${overview.missingDays}</div></div>
         <div class="kpi"><div class="label">Nhân sự TB/ngày</div><div class="value">${overview.avgWorkers}</div></div>
         <div class="kpi"><div class="label">Ca máy</div><div class="value">${formatNumber(overview.totalMachineShifts, 2)}</div></div>
+        <div class="kpi"><div class="label">Giờ máy</div><div class="value">${formatNumber(overview.totalMachineHours, 2)}</div></div>
         <div class="kpi"><div class="label">Ngày mưa/bão</div><div class="value">${overview.rainyDays}</div></div>
         <div class="kpi"><div class="label">Ngày chậm</div><div class="value">${overview.delayDays}</div></div>
         <div class="kpi"><div class="label">Vấn đề/sự cố</div><div class="value">${overview.issueCount}</div></div>
@@ -230,10 +237,15 @@ const buildPdfHtml = (
       <table>
         <thead>
           <tr>
-            <th>Kỳ</th><th>Đã duyệt/Tổng</th><th>Nhân sự</th><th>TB/ngày</th><th>Ca máy</th><th>Mưa/bão</th><th>Ngày chậm</th><th>Vấn đề chính</th>
+            <th>Kỳ</th><th>Đã duyệt/Tổng</th><th>Nhân sự</th><th>TB/ngày</th><th>Ca máy</th><th>Giờ máy</th><th>Khối lượng</th><th>Mưa/bão</th><th>Ngày chậm</th><th>Vấn đề chính</th>
           </tr>
         </thead>
-        <tbody>${rows || '<tr><td colspan="8">Không có dữ liệu.</td></tr>'}</tbody>
+        <tbody>${rows || '<tr><td colspan="10">Không có dữ liệu.</td></tr>'}</tbody>
+      </table>
+      <h2>Khối lượng triển khai${selectedPeriod ? ` - ${escapeHtml(selectedPeriod.label)}` : ''}</h2>
+      <table>
+        <thead><tr><th>Hạng mục</th><th>Khối lượng</th><th>Đơn vị</th></tr></thead>
+        <tbody>${volumeRows || '<tr><td colspan="3">Không có khối lượng triển khai.</td></tr>'}</tbody>
       </table>
       <h2>Vấn đề / sự cố / đề nghị nổi bật${selectedPeriod ? ` - ${escapeHtml(selectedPeriod.label)}` : ''}</h2>
       <table>
@@ -386,24 +398,26 @@ const DailyLogSummaryReport: React.FC<DailyLogSummaryReportProps> = ({ dailyLogs
         </div>
       ) : (
         <>
-          {(summary.overview.unverifiedLogCount > 0 || summary.overview.missingDays > 0) && (
+          {(summary.overview.unverifiedLogCount > 0 || summary.overview.missingDays > 0 || summary.overview.unresolvedLegacySummaryCount > 0) && (
             <div className="flex flex-col gap-2 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs font-bold text-amber-800 md:flex-row md:items-center md:justify-between">
               <div className="flex items-center gap-2">
                 <AlertTriangle size={16} className="shrink-0" />
                 <span>
                   Có {summary.overview.unverifiedLogCount} nhật ký chưa được duyệt và {summary.overview.missingDays} ngày chưa có nhật ký đã duyệt trong kỳ.
+                  {summary.overview.unresolvedLegacySummaryCount > 0 && ` Có ${summary.overview.unresolvedLegacySummaryCount} bản tổng hợp cũ không thể tái lập vì dữ liệu nguồn đã thay đổi hoặc thiếu snapshot.`}
                 </span>
               </div>
               <span className="text-[11px] uppercase tracking-wider">KPI chính vẫn đang tính theo nhật ký đã duyệt</span>
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-8">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-9">
             <SummaryKpiCard label="Đã duyệt" value={summary.overview.officialLogCount} sub={`${summary.overview.unverifiedLogCount} chưa chốt`} icon={<CheckCircle2 size={16} />} tone="bg-emerald-50 text-emerald-600" />
             <SummaryKpiCard label="Ngày thiếu" value={summary.overview.missingDays} sub={`${summary.overview.activeDays} ngày có dữ liệu`} icon={<CalendarDays size={16} />} tone="bg-amber-50 text-amber-600" />
             <SummaryKpiCard label="Nhân sự TB" value={summary.overview.avgWorkers} sub={`Đỉnh: ${summary.overview.peakWorkers}`} icon={<Users size={16} />} tone="bg-blue-50 text-blue-600" />
             <SummaryKpiCard label="Tổng nhân sự" value={summary.overview.totalWorkers} sub="Lũy kế theo ngày" icon={<Users size={16} />} tone="bg-cyan-50 text-cyan-600" />
             <SummaryKpiCard label="Ca máy" value={formatNumber(summary.overview.totalMachineShifts, 2)} sub="Tổng ca trong kỳ" icon={<Wrench size={16} />} tone="bg-violet-50 text-violet-600" />
+            <SummaryKpiCard label="Giờ máy" value={formatNumber(summary.overview.totalMachineHours, 2)} sub="Giờ chạy thực tế" icon={<Clock size={16} />} tone="bg-purple-50 text-purple-600" />
             <SummaryKpiCard label="Mưa/bão" value={summary.overview.rainyDays} sub="Ngày ảnh hưởng" icon={<CloudRain size={16} />} tone="bg-sky-50 text-sky-600" />
             <SummaryKpiCard label="Ngày chậm" value={summary.overview.delayDays} sub="Từ nhật ký" icon={<AlertTriangle size={16} />} tone="bg-red-50 text-red-600" />
             <SummaryKpiCard label="Ảnh/GPS" value={`${summary.overview.photoCompliance}%`} sub={`GPS ${summary.overview.gpsCompliance}%`} icon={<MapPin size={16} />} tone="bg-slate-100 text-slate-600" />
@@ -501,6 +515,8 @@ const DailyLogSummaryReport: React.FC<DailyLogSummaryReportProps> = ({ dailyLogs
                       <th className="px-4 py-3 text-right">Nhật ký</th>
                       <th className="px-4 py-3 text-right">Nhân sự</th>
                       <th className="px-4 py-3 text-right">Ca máy</th>
+                      <th className="px-4 py-3 text-right">Giờ máy</th>
+                      <th className="px-4 py-3 text-left">Khối lượng</th>
                       <th className="px-4 py-3 text-right">Mưa/bão</th>
                       <th className="px-4 py-3 text-right">Chậm</th>
                       <th className="px-4 py-3 text-left">Trạng thái</th>
@@ -525,6 +541,10 @@ const DailyLogSummaryReport: React.FC<DailyLogSummaryReportProps> = ({ dailyLogs
                             <div className="text-[10px] text-slate-400">TB {period.workers.averagePerActiveDay}</div>
                           </td>
                           <td className="px-4 py-3 text-right font-bold text-violet-700">{formatNumber(period.machines.reduce((sum, item) => sum + item.value, 0), 2)}</td>
+                          <td className="px-4 py-3 text-right font-bold text-purple-700">{formatNumber(period.machineHours.reduce((sum, item) => sum + item.value, 0), 2)}</td>
+                          <td className="max-w-52 px-4 py-3 text-[10px] font-bold text-amber-700">
+                            {period.volumes.slice(0, 2).map(item => `${item.label}: ${formatNumber(item.value, 2)} ${item.unit || ''}`).join(' · ') || '—'}
+                          </td>
                           <td className="px-4 py-3 text-right font-bold text-sky-700">{period.rainyDays}</td>
                           <td className="px-4 py-3 text-right font-bold text-red-600">{period.delays.totalDays}</td>
                           <td className="px-4 py-3 text-slate-500">{getPeriodStatusText(period)}</td>
@@ -606,7 +626,7 @@ const DailyLogSummaryReport: React.FC<DailyLogSummaryReportProps> = ({ dailyLogs
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
                     <div className="rounded-xl bg-slate-50 p-3">
                       <div className="mb-2 flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-slate-400"><Users size={11} /> Top nhân công</div>
                       {selectedPeriod.labor.slice(0, 5).map(item => (
@@ -622,10 +642,23 @@ const DailyLogSummaryReport: React.FC<DailyLogSummaryReportProps> = ({ dailyLogs
                       {selectedPeriod.machines.slice(0, 5).map(item => (
                         <div key={item.key} className="flex justify-between gap-3 py-1 text-xs font-bold text-slate-600">
                           <span className="truncate">{item.label}</span>
-                          <span>{formatNumber(item.value, 2)} {item.unit}</span>
+                          <span className="shrink-0">
+                            {formatNumber(item.value, 2)} {item.unit}
+                            {selectedPeriod.machineHours.find(hours => hours.key === item.key) && ` · ${formatNumber(selectedPeriod.machineHours.find(hours => hours.key === item.key)?.value || 0, 2)} giờ`}
+                          </span>
                         </div>
                       ))}
                       {selectedPeriod.machines.length === 0 && <div className="text-xs font-bold text-slate-400">Không có chi tiết.</div>}
+                    </div>
+                    <div className="rounded-xl bg-slate-50 p-3">
+                      <div className="mb-2 flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-slate-400"><FileText size={11} /> Khối lượng triển khai</div>
+                      {selectedPeriod.volumes.slice(0, 6).map(item => (
+                        <div key={item.key} className="flex justify-between gap-3 py-1 text-xs font-bold text-slate-600">
+                          <span className="truncate">{item.label}</span>
+                          <span className="shrink-0">{formatNumber(item.value, 2)} {item.unit}</span>
+                        </div>
+                      ))}
+                      {selectedPeriod.volumes.length === 0 && <div className="text-xs font-bold text-slate-400">Không có khối lượng triển khai.</div>}
                     </div>
                   </div>
                 </div>

@@ -1,5 +1,21 @@
-import React, { useMemo, useState } from 'react';
-import { Activity, AlertTriangle, Calendar, ChevronDown, ChevronRight, Clock, LayoutGrid, ListChecks, Loader2, Package, Plus, Search } from 'lucide-react';
+import React, { useMemo, useRef, useState } from 'react';
+import {
+    Activity,
+    AlertTriangle,
+    Calendar,
+    ChevronDown,
+    ChevronRight,
+    Clock,
+    Download,
+    FileSpreadsheet,
+    LayoutGrid,
+    ListChecks,
+    Loader2,
+    Package,
+    Plus,
+    Search,
+    Upload,
+} from 'lucide-react';
 import {
     InventoryItem,
     MaterialRequest,
@@ -8,6 +24,7 @@ import {
     MaterialRequestFulfillmentSummary,
     MaterialRequestKanbanLaneId,
     ProjectWorkflowBoardFilter,
+    RequestItem,
     RequestStatus,
     ProjectWorkflowConfiguration,
     ProjectWorkflowSubject,
@@ -19,8 +36,20 @@ import {
 } from '../../../types';
 import { EmptyState, StatusBadge } from '../../erp';
 import { getMaterialRequestNextAction, getMaterialRequestStatusView } from '../../../lib/erpWorkflow';
-import { getMaterialRequestSlaState } from '../../../lib/materialRequestService';
+import { getMaterialRequestSlaState, materialRequestService } from '../../../lib/materialRequestService';
 import { matchesSearchQueryMultiple } from '../../../lib/searchUtils';
+import { useApp } from '../../../context/AppContext';
+import { useToast } from '../../../context/ToastContext';
+import {
+    generateMaterialRequestTemplate,
+    parseMaterialRequestExcel,
+    type MaterialRequestColumnMapping,
+    type MaterialRequestImportGroup,
+    type MaterialRequestImportPreview,
+    type MaterialRequestImportRow,
+} from '../../../lib/materialRequestImportService';
+import { MaterialRequestImportPreviewModal } from './MaterialRequestImportPreviewModal';
+import { MaterialRequestColumnMapModal } from './MaterialRequestColumnMapModal';
 
 const MaterialRequestKanbanBoard = React.lazy(() => import('../MaterialRequestKanbanBoard'));
 const ProjectWorkflowAnalyticsPanel = React.lazy(() => import('../ProjectWorkflowAnalyticsPanel'));
@@ -107,11 +136,166 @@ export const MaterialRequestTab: React.FC<MaterialRequestTabProps> = ({
     onMoveMaterialRequest,
     onOpenRequest,
 }) => {
+    const { addRequest, warehouses } = useApp();
+    const toast = useToast();
+
     const [viewMode, setViewMode] = useState<'list' | 'kanban'>('kanban');
+    const [importPreview, setImportPreview] = useState<MaterialRequestImportPreview | null>(null);
+    const [importStep, setImportStep] = useState<'none' | 'column_mapping' | 'preview'>('none');
+    const [selectedFileBuffer, setSelectedFileBuffer] = useState<ArrayBuffer | null>(null);
+    const [selectedFileName, setSelectedFileName] = useState<string>('');
+    const [isImporting, setIsImporting] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
     const workflowTemplateNodes = workflowConfiguration?.binding
         ? workflowNodes.filter(node => node.templateId === workflowConfiguration.binding?.workflowTemplateId)
         : [];
     const currentUser = userById.get(currentUserId) || users.find(item => item.id === currentUserId);
+
+    const handleDownloadTemplate = async () => {
+        try {
+            await generateMaterialRequestTemplate();
+            toast.success('Đã tải xuống file mẫu Đề xuất vật tư thành công!');
+        } catch (err: any) {
+            toast.error('Lỗi khi tải file mẫu', err?.message || String(err));
+        }
+    };
+
+    const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        try {
+            const buffer = await file.arrayBuffer();
+            setSelectedFileBuffer(buffer);
+            setSelectedFileName(file.name);
+
+            const inventoryItemsList = Array.from(inventoryItemById.values());
+            const workBoqItemsList = Array.from(workBoqItemById.values());
+
+            const preview = await parseMaterialRequestExcel(
+                buffer,
+                file.name,
+                inventoryItemsList,
+                workBoqItemsList,
+                warehouses
+            );
+
+            setImportPreview(preview);
+
+            // If required fields were auto-mapped confidently, go straight to preview; else open column mapping step
+            if (preview.fileStructure.isAutoMapped) {
+                setImportStep('preview');
+            } else {
+                setImportStep('column_mapping');
+            }
+        } catch (err: any) {
+            toast.error('Lỗi đọc file Excel', err?.message || String(err));
+        } finally {
+            if (fileInputRef.current) {
+                fileInputRef.current.value = '';
+            }
+        }
+    };
+
+    const handleCustomMappingConfirm = async (newMapping: MaterialRequestColumnMapping) => {
+        if (!selectedFileBuffer) return;
+
+        try {
+            const inventoryItemsList = Array.from(inventoryItemById.values());
+            const workBoqItemsList = Array.from(workBoqItemById.values());
+
+            const preview = await parseMaterialRequestExcel(
+                selectedFileBuffer,
+                selectedFileName,
+                inventoryItemsList,
+                workBoqItemsList,
+                warehouses,
+                newMapping
+            );
+
+            setImportPreview(preview);
+            setImportStep('preview');
+        } catch (err: any) {
+            toast.error('Lỗi khi áp dụng ánh xạ cột mới', err?.message || String(err));
+        }
+    };
+
+    const handleConfirmImport = async (
+        validRows: MaterialRequestImportRow[],
+        importGroups: MaterialRequestImportGroup[],
+        selectedSiteWarehouseId: string
+    ) => {
+        if (importGroups.length === 0) return;
+
+        setIsImporting(true);
+        let createdCount = 0;
+
+        try {
+            const targetWarehouseId = selectedSiteWarehouseId || warehouses[0]?.id || '';
+
+            for (const group of importGroups) {
+                if (group.rows.length === 0) continue;
+
+                let nextCode = `MR-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`;
+                try {
+                    nextCode = await materialRequestService.nextCode();
+                } catch {
+                    // Fallback local format if RPC fails
+                }
+
+                const requestItems: RequestItem[] = group.rows.map(row => ({
+                    lineId: `line-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+                    itemId: row.matchedInventoryItem?.id || row.materialCode || `custom-${Date.now()}`,
+                    requestQty: row.requestQty,
+                    approvedQty: row.requestQty,
+                    workBoqItemId: row.matchedWorkBoqItem?.id || null,
+                    workBoqItemName: row.matchedWorkBoqItem?.name || null,
+                    neededDate: row.neededDate,
+                    note: row.note,
+                    isOverBoq: row.isOverBoq,
+                    overQty: row.overQty,
+                }));
+
+                const validDates = group.rows.map(r => r.neededDate).filter(Boolean) as string[];
+                const expectedDate = validDates.length > 0
+                    ? validDates.sort().reverse()[0]
+                    : new Date(Date.now() + 3 * 86400000).toISOString().split('T')[0];
+
+                const newRequest: MaterialRequest = {
+                    id: `req-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+                    code: nextCode,
+                    title: group.requestTitle,
+                    projectId: projectId || null,
+                    constructionSiteId: constructionSiteId || null,
+                    requestOrigin: 'project',
+                    siteWarehouseId: group.rows[0]?.matchedSiteWarehouseId || targetWarehouseId,
+                    requesterId: currentUserId,
+                    status: RequestStatus.DRAFT,
+                    items: requestItems,
+                    createdDate: new Date().toISOString(),
+                    date: new Date().toISOString().split('T')[0],
+                    expectedDate,
+                    note: `Nhập hàng loạt từ Excel: ${importPreview?.fileName || ''}`,
+                    logs: [],
+                };
+
+                const success = await addRequest(newRequest);
+                if (success) {
+                    createdCount++;
+                }
+            }
+
+            toast.success(`Đã tạo thành công ${createdCount} phiếu đề xuất vật tư với ${validRows.length} dòng vật tư!`);
+            setImportPreview(null);
+            setImportStep('none');
+            setSelectedFileBuffer(null);
+        } catch (err: any) {
+            toast.error('Lỗi khi tạo phiếu đề xuất vật tư', err?.message || String(err));
+        } finally {
+            setIsImporting(false);
+        }
+    };
 
     const filteredListRequests = useMemo(() => {
         return sortedRequests.filter(request => {
@@ -151,13 +335,6 @@ export const MaterialRequestTab: React.FC<MaterialRequestTabProps> = ({
         });
     }, [currentUserId, requestWorkflowSubjects, sortedRequests, userById, workflowBoardFilter, workflowBoardSearch]);
 
-    const actionCount = useMemo(() => (
-        filteredListRequests.filter(request => {
-            if (!currentUser) return false;
-            return getMaterialRequestNextAction(request, currentUser).isActionable;
-        }).length
-    ), [currentUser, filteredListRequests]);
-
     const renderListMode = () => {
         if (filteredListRequests.length === 0) {
             return (
@@ -193,107 +370,51 @@ export const MaterialRequestTab: React.FC<MaterialRequestTabProps> = ({
                             actionLabel: 'Mở phiếu',
                             isActionable: false,
                         };
-                    const summary = requestFulfillmentSummaries[request.id];
                     const overLines = (request.items || []).filter(line =>
                         !line.materialBudgetItemId ||
                         line.isOverBoq ||
-                        Number(line.overQty || 0) > 0 ||
-                        Number(line.overBudgetQtySnapshot || 0) > 0
+                        Number(line.overQty || 0) > 0
                     );
-                    const slaState = getMaterialRequestSlaState(request);
-                    const materialSummary = `${request.items?.length || 0} dòng vật tư${summary ? ` • nhận ${summary.receivedQty.toLocaleString('vi-VN')}/${summary.committedQty.toLocaleString('vi-VN')}` : ''}`;
-
-                    // Xác định màu trạng thái để làm viền accent trái
-                    let statusAccentBg = 'bg-slate-400';
-                    if (request.status === RequestStatus.DRAFT) statusAccentBg = 'bg-slate-300';
-                    else if (request.status === RequestStatus.REJECTED) statusAccentBg = 'bg-rose-500';
-                    else if (request.status === RequestStatus.APPROVED || request.status === RequestStatus.COMPLETED || request.status === RequestStatus.LEGACY_APPROVED) statusAccentBg = 'bg-emerald-500';
-                    else if (request.status === RequestStatus.IN_TRANSIT) statusAccentBg = 'bg-indigo-500';
-                    else if (request.status === RequestStatus.PENDING || request.status === RequestStatus.LEGACY_PENDING) statusAccentBg = 'bg-amber-500';
-
-                    if (slaState === 'overdue') {
-                        statusAccentBg = 'bg-rose-600';
-                    }
-
-                    // Avatar Initials
-                    const requesterName = requester?.name || request.requesterId || 'U';
-                    const initials = requesterName.split(' ').map(n => n[0]).filter(Boolean).slice(-2).join('').toUpperCase();
+                    const requesterName = requester?.name || request.requestedBy || 'Không rõ';
+                    const initials = requesterName.split(' ').slice(-2).map(part => part[0]).join('').toUpperCase() || 'MR';
 
                     return (
                         <button
                             key={request.id}
                             type="button"
                             onClick={() => onOpenRequest(request)}
-                            className="group relative grid w-full grid-cols-1 gap-4 rounded-2xl border border-slate-100 bg-white p-5 pl-7 text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800/80 dark:bg-slate-900/60 lg:grid-cols-[minmax(160px,0.8fr)_minmax(280px,1.4fr)_minmax(180px,0.85fr)_minmax(160px,0.75fr)_auto] lg:items-center"
+                            className="group flex w-full flex-col justify-between rounded-2xl border border-slate-200/80 bg-white p-4 text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-md dark:border-slate-700/80 dark:bg-slate-850 dark:hover:border-indigo-900/60 lg:flex-row lg:items-center"
                         >
-                            {/* Left accent border */}
-                            <div className={`absolute left-0 top-0 bottom-0 w-1.5 rounded-l-2xl ${statusAccentBg}`} />
-
-                            <div className="min-w-0">
-                                <div className="truncate text-sm font-extrabold text-slate-800 dark:text-white group-hover:text-indigo-650 dark:group-hover:text-indigo-400 transition-colors">{request.title || 'Đề xuất vật tư'}</div>
-                                <div className="mt-1 font-mono text-[10px] font-semibold text-purple-650 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/40 px-1.5 py-0.5 rounded w-fit">{request.code} - Đề xuất</div>
-                                <div className="mt-2 flex flex-wrap gap-1.5">
+                            <div className="space-y-1.5 min-w-0 pr-4">
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <span className="font-mono text-xs font-black text-indigo-650 dark:text-indigo-400">
+                                        {request.code}
+                                    </span>
                                     <StatusBadge status={request.status} label={statusView.label} tone={statusView.tone} />
-                                    {slaState === 'overdue' && <StatusBadge status="overdue" label="Quá hạn SLA" tone="attention" />}
                                 </div>
-                            </div>
-
-                            <div className="min-w-0">
-                                <div className="truncate text-sm font-black text-slate-800 dark:text-white">{materialSummary}</div>
-                                <div className="mt-1.5 line-clamp-2 text-xs font-bold leading-relaxed text-slate-500 dark:text-slate-400 border-l-2 border-slate-200 dark:border-slate-700 pl-2.5">{statusView.nextAction}</div>
-                                <div className="mt-2.5 flex flex-wrap gap-1.5">
+                                <div className="font-bold text-slate-800 dark:text-slate-100 text-sm truncate">
+                                    {request.title || 'Phiếu đề xuất vật tư'}
+                                </div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <span className="text-[11px] font-medium text-slate-500">
+                                        {request.items?.length || 0} đầu mục vật tư
+                                    </span>
                                     {overLines.length > 0 && (
-                                        <span className="flex items-center gap-1 text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded-full border border-amber-200/60 dark:border-amber-900/60">
-                                            <AlertTriangle size={10} /> {overLines.length} dòng ngoài BOQ
-                                        </span>
-                                    )}
-                                    {request.overrideReason && (
-                                        <span className="flex items-center gap-1 text-[10px] font-bold text-orange-650 dark:text-orange-400 bg-orange-50 dark:bg-orange-950/40 px-2 py-0.5 rounded-full border border-orange-200/60 dark:border-orange-900/60">
-                                            <AlertTriangle size={10} /> Có lý do override
+                                        <span className="flex items-center gap-1 text-[10px] font-bold text-amber-650 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded-full border border-amber-200/60 dark:border-amber-900/60">
+                                            <AlertTriangle size={10} /> {overLines.length} vật tư vượt BOQ
                                         </span>
                                     )}
                                 </div>
                             </div>
 
-                            <div className="flex items-start gap-2.5 min-w-0 text-xs">
-                                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-50 text-[11px] font-bold text-indigo-650 dark:bg-indigo-950/40 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-900/50">
+                            <div className="flex items-center space-x-3 mt-3 lg:mt-0">
+                                <div className="text-right">
+                                    <div className="text-[10px] font-bold text-slate-400">Người yêu cầu</div>
+                                    <div className="text-xs font-bold text-slate-700 dark:text-slate-200">{requesterName}</div>
+                                </div>
+                                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-50 font-bold text-indigo-600 text-xs dark:bg-indigo-950/50 dark:text-indigo-400">
                                     {initials}
                                 </div>
-                                <div className="min-w-0">
-                                    <div className="font-semibold uppercase tracking-wider text-[9px] text-slate-400">Người yêu cầu</div>
-                                    <div className="mt-0.5 truncate font-bold text-slate-700 dark:text-slate-200">{requesterName}</div>
-                                    {handlerLabel && (
-                                        <div className="mt-0.5 truncate text-[10px] font-medium text-slate-400 dark:text-slate-500">
-                                            Xử lý: <span className="font-semibold text-slate-600 dark:text-slate-300">{handlerLabel}</span>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-
-                            <div className="min-w-0 text-xs space-y-1">
-                                <div className="font-semibold uppercase tracking-wider text-[9px] text-slate-400">Hạn / ngày tạo</div>
-                                <div className="flex items-center gap-1.5 font-bold text-slate-700 dark:text-slate-200">
-                                    <Calendar size={12} className="text-slate-400" />
-                                    <span>{formatDate(request.workflowStepDueAt || request.expectedDate || request.createdDate)}</span>
-                                </div>
-                                <div className="flex items-center gap-1.5 text-[10px] font-medium text-slate-400 dark:text-slate-500">
-                                    <Clock size={12} className="text-slate-400" />
-                                    <span>Tạo: {formatDate(request.createdDate)}</span>
-                                </div>
-                            </div>
-
-                            <div className="justify-self-start lg:justify-self-end">
-                                {statusView.isActionable ? (
-                                    <div className="flex items-center gap-1 rounded-xl bg-indigo-600 hover:bg-indigo-700 px-3.5 py-2 text-[10px] font-black uppercase text-white shadow-sm shadow-indigo-200 dark:shadow-none transition-all duration-200 active:scale-95 group-hover:translate-x-0.5">
-                                        <span>{statusView.actionLabel}</span>
-                                        <ChevronRight size={12} />
-                                    </div>
-                                ) : (
-                                    <div className="flex items-center gap-1 rounded-xl border border-slate-200 dark:border-slate-700/80 hover:bg-slate-50 dark:hover:bg-slate-800 px-3.5 py-2 text-[10px] font-bold uppercase text-slate-650 dark:text-slate-400 transition-colors group-hover:border-indigo-200 dark:group-hover:border-indigo-900 group-hover:text-indigo-650 dark:group-hover:text-indigo-400">
-                                        <span>{statusView.actionLabel}</span>
-                                        <ChevronRight size={12} className="opacity-0 group-hover:opacity-100 transition-all duration-200 transform group-hover:translate-x-0.5" />
-                                    </div>
-                                )}
                             </div>
                         </button>
                     );
@@ -304,44 +425,88 @@ export const MaterialRequestTab: React.FC<MaterialRequestTabProps> = ({
 
     return (
         <div className="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm dark:border-slate-700/60 dark:bg-slate-800">
+            {/* Hidden Excel File Input */}
+            <input
+                type="file"
+                ref={fileInputRef}
+                accept=".xlsx, .xls"
+                onChange={handleFileSelect}
+                className="hidden"
+            />
+
             <div className="flex items-center justify-between border-b border-slate-100 p-5">
                 <div>
-                    <h3 className="flex items-center gap-2 text-sm font-black text-slate-700"><Package size={16} className="text-emerald-600" /> Đề xuất vật tư ({requests.length})</h3>
-                    <p className="mt-1 text-[10px] font-bold text-slate-400">Danh sách vận hành nhanh và Kanban SLA theo luồng công trường - phòng vật tư - kho công trường</p>
+                    <h3 className="flex items-center gap-2 text-sm font-black text-slate-700 dark:text-slate-200">
+                        <Package size={16} className="text-emerald-600" /> Đề xuất vật tư ({requests.length})
+                    </h3>
+                    <p className="mt-1 text-[10px] font-bold text-slate-400">
+                        Danh sách vận hành nhanh và Kanban SLA theo luồng công trường - phòng vật tư - kho công trường
+                    </p>
                 </div>
                 <div className="flex flex-wrap items-center justify-end gap-2">
-                  <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1">
-                      <button
-                          type="button"
-                          onClick={() => setViewMode('list')}
-                          className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-[10px] font-black ${viewMode === 'list' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                      >
-                          <ListChecks size={12} /> Danh sách
-                      </button>
-                      <button
-                          type="button"
-                          onClick={() => setViewMode('kanban')}
-                          className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-[10px] font-black ${viewMode === 'kanban' ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                      >
-                          <LayoutGrid size={12} /> Kanban
-                      </button>
-                  </div>
-                  <React.Suspense fallback={null}>
-                      <ProjectWorkflowBindingPanel
-                          projectId={projectId || null}
-                          constructionSiteId={constructionSiteId || null}
-                          templates={workflowTemplates}
-                          onConfigurationChange={onConfigurationChange}
-                      />
-                  </React.Suspense>
-                  {canCreateMaterialRequest && (
-                    <button
-                        onClick={onCreateRequest}
-                        className="flex items-center gap-1 rounded-xl border border-purple-200 bg-purple-50 px-3 py-1.5 text-[10px] font-bold text-purple-600 hover:bg-purple-100"
-                    >
-                        <Plus size={12} /> Tạo đề xuất
-                    </button>
-                  )}
+                    <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1 dark:border-slate-700 dark:bg-slate-800">
+                        <button
+                            type="button"
+                            onClick={() => setViewMode('list')}
+                            className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-[10px] font-black ${
+                                viewMode === 'list'
+                                    ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white'
+                                    : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'
+                            }`}
+                        >
+                            <ListChecks size={12} /> Danh sách
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setViewMode('kanban')}
+                            className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-[10px] font-black ${
+                                viewMode === 'kanban'
+                                    ? 'bg-emerald-600 text-white shadow-sm'
+                                    : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'
+                            }`}
+                        >
+                            <LayoutGrid size={12} /> Kanban
+                        </button>
+                    </div>
+
+                    <React.Suspense fallback={null}>
+                        <ProjectWorkflowBindingPanel
+                            projectId={projectId || null}
+                            constructionSiteId={constructionSiteId || null}
+                            templates={workflowTemplates}
+                            onConfigurationChange={onConfigurationChange}
+                        />
+                    </React.Suspense>
+
+                    {canCreateMaterialRequest && (
+                        <>
+                            <button
+                                type="button"
+                                onClick={handleDownloadTemplate}
+                                className="flex items-center gap-1 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[10px] font-bold text-emerald-700 hover:bg-emerald-100 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-900/60 transition-all"
+                                title="Tải xuống file Excel mẫu để nhập hàng loạt"
+                            >
+                                <FileSpreadsheet size={12} /> Tải mẫu Excel
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={() => fileInputRef.current?.click()}
+                                className="flex items-center gap-1 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-[10px] font-bold text-indigo-700 hover:bg-indigo-100 dark:border-indigo-900/60 dark:bg-indigo-950/40 dark:text-indigo-300 dark:hover:bg-indigo-900/60 transition-all"
+                                title="Tải file Excel đề xuất vật tư (hỗ trợ cả file mẫu lẫn file tự do)"
+                            >
+                                <Upload size={12} /> Nhập từ Excel
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={onCreateRequest}
+                                className="flex items-center gap-1 rounded-xl border border-purple-200 bg-purple-50 px-3 py-1.5 text-[10px] font-bold text-purple-600 hover:bg-purple-100 dark:border-purple-900/60 dark:bg-purple-950/40 dark:text-purple-300 dark:hover:bg-purple-900/60 transition-all"
+                            >
+                                <Plus size={12} /> Tạo đề xuất
+                            </button>
+                        </>
+                    )}
                 </div>
             </div>
 
@@ -356,84 +521,11 @@ export const MaterialRequestTab: React.FC<MaterialRequestTabProps> = ({
                 </div>
             )}
 
-            {requests.length > 0 && (
-                <>
-                    <details className="group border-b border-zinc-200 dark:border-zinc-800">
-                        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-3 bg-zinc-50 dark:bg-zinc-800/40 text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800">
-                            <span className="flex items-center gap-2">
-                                <Activity size={14} className="text-teal-700 dark:text-teal-400" />
-                                Theo dõi workflow & Hộp việc SLA ({sortedRequests.length} phiếu)
-                            </span>
-                            <ChevronDown size={14} className="text-zinc-400 transition-transform group-open:rotate-180" />
-                        </summary>
-                        <div className="p-4 space-y-4 border-t border-zinc-200 dark:border-zinc-800">
-                            <React.Suspense fallback={<LazyPanelFallback label="Đang tải hộp việc workflow..." />}>
-                                <ProjectWorkflowInbox
-                                    requests={sortedRequests}
-                                    subjectsByRequestId={requestWorkflowSubjects}
-                                    users={users}
-                                    currentUserId={currentUserId}
-                                    onOpenRequest={onOpenRequest}
-                                />
-                                <ProjectWorkflowAnalyticsPanel
-                                    requests={sortedRequests}
-                                    subjectsByRequestId={requestWorkflowSubjects}
-                                    users={users}
-                                />
-                            </React.Suspense>
-                        </div>
-                    </details>
-                    <div className="flex flex-col gap-3 border-b border-zinc-200 bg-white px-5 py-3 dark:border-zinc-800 dark:bg-zinc-900 lg:flex-row lg:items-center lg:justify-between">
-                        <div className="flex flex-wrap gap-1.5">
-                            {([
-                                ['all', 'Tất cả'],
-                                ['mine', 'Của tôi'],
-                                ['overdue', 'Quá hạn'],
-                                ['returned', 'Đã trả lại'],
-                                ['watching', 'Theo dõi'],
-                            ] as Array<[ProjectWorkflowBoardFilter, string]>).map(([filter, label]) => (
-                                <button
-                                    key={filter}
-                                    type="button"
-                                    onClick={() => onWorkflowBoardFilterChange(filter)}
-                                    className={`rounded-lg border px-3 py-1.5 text-[10px] font-black transition ${workflowBoardFilter === filter ? 'border-indigo-200 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'}`}
-                                >
-                                    {label}
-                                </button>
-                            ))}
-                        </div>
-                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                            <div className="inline-flex items-center gap-1 rounded-lg border border-orange-100 bg-orange-50 px-2.5 py-2 text-[10px] font-black text-orange-700">
-                                <AlertTriangle size={12} /> {actionCount} cần xử lý
-                            </div>
-                            <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-500">
-                                <input
-                                    type="checkbox"
-                                    checked={hideEmptyWorkflowLanes}
-                                    onChange={event => onHideEmptyWorkflowLanesChange(event.target.checked)}
-                                    className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-200"
-                                />
-                                Chỉ hiện bước có phiếu
-                            </label>
-                            <div className="flex min-w-[260px] items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
-                                <Search size={14} className="shrink-0 text-slate-300" />
-                                <input
-                                    value={workflowBoardSearch}
-                                    onChange={event => onWorkflowBoardSearchChange(event.target.value)}
-                                    placeholder="Tìm mã phiếu, người yêu cầu, người xử lý..."
-                                    className="w-full border-none bg-transparent text-xs font-bold text-slate-600 outline-none placeholder:text-slate-300"
-                                />
-                            </div>
-                        </div>
-                    </div>
-                </>
-            )}
-
             {requests.length === 0 ? (
                 <div className="p-12 text-center">
                     <Package size={36} className="mx-auto mb-2 text-slate-200" />
                     <p className="text-sm font-bold text-slate-400">Chưa có phiếu đề xuất vật tư</p>
-                    <p className="mt-1 text-[10px] text-slate-300">Tạo đề xuất mới để yêu cầu vật tư từ Kho Tổng</p>
+                    <p className="mt-1 text-[10px] text-slate-300">Tạo đề xuất mới hoặc nhập hàng loạt từ Excel</p>
                 </div>
             ) : viewMode === 'list' ? (
                 renderListMode()
@@ -460,6 +552,36 @@ export const MaterialRequestTab: React.FC<MaterialRequestTabProps> = ({
                         onOpenRequest={onOpenRequest}
                     />
                 </React.Suspense>
+            )}
+
+            {/* Bước 1: Modal Ánh xạ Cột Column Mapping (Hiển thị khi file tự do hoặc người dùng muốn chỉnh lại cột) */}
+            {importStep === 'column_mapping' && importPreview && (
+                <MaterialRequestColumnMapModal
+                    fileStructure={importPreview.fileStructure}
+                    activeMapping={importPreview.activeMapping}
+                    onCancel={() => {
+                        setImportStep('none');
+                        setImportPreview(null);
+                        setSelectedFileBuffer(null);
+                    }}
+                    onConfirmMapping={handleCustomMappingConfirm}
+                />
+            )}
+
+            {/* Bước 2: Modal Import Preview Xem trước & Kiểm tra lỗi */}
+            {importStep === 'preview' && importPreview && (
+                <MaterialRequestImportPreviewModal
+                    importPreview={importPreview}
+                    isImporting={isImporting}
+                    warehouses={warehouses}
+                    onCancel={() => {
+                        setImportStep('none');
+                        setImportPreview(null);
+                        setSelectedFileBuffer(null);
+                    }}
+                    onOpenColumnMapping={() => setImportStep('column_mapping')}
+                    onConfirm={handleConfirmImport}
+                />
             )}
         </div>
     );

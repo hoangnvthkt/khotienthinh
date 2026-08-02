@@ -1576,8 +1576,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
 
     // ====== GĐ3: Excel Import / Export ======
     const downloadTemplate = () => {
-        const makeSheet = (headers: string[]) => {
-            const sheet = XLSX.utils.aoa_to_sheet([headers]);
+        const makeSheet = (headers: string[], rowsData?: (string | number)[][]) => {
+            const sheet = XLSX.utils.aoa_to_sheet([headers, ...(rowsData || [])]);
             sheet['!cols'] = [
                 { wch: 15 }, // WBS
                 { wch: 30 }, // Name
@@ -1594,10 +1594,30 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
             ];
             return sheet;
         };
+
+        const existingTasksData = sortedTasks.map(task => {
+            const linkedIds = taskContractLinks[task.id] || [];
+            const { derivedStart, derivedEnd } = deriveActualDates(task, dailyLogs, linkedIds);
+            return [
+                task.wbsCode || '',
+                task.name || '',
+                task.assignee || '',
+                fmtDate(task.startDate),
+                fmtDate(task.endDate),
+                derivedStart ? fmtDate(derivedStart) : (task.actualStartDate ? fmtDate(task.actualStartDate) : ''),
+                derivedEnd ? fmtDate(derivedEnd) : (task.actualEndDate ? fmtDate(task.actualEndDate) : ''),
+                getTaskUnit(task, linkedIds, contractItems) || task.fallbackUnit || '',
+                task.provisionalQuantity || 0,
+                task.resourceCount ?? 1,
+                task.progress || 0,
+                task.notes || ''
+            ];
+        });
+
         const guideRows = [
             ['Sheet', 'Mục đích', 'Cột bắt buộc', 'Ghi chú'],
             [SCHEDULE_CREATE_SHEET, 'Nhập mới hạng mục tiến độ', 'Công việc (*), Bắt đầu KH (*), Kết thúc KH (*)', 'Mã WBS không được trùng với dữ liệu đang có. Mã cha nhập bằng Mã WBS của hạng mục cha.'],
-            [SCHEDULE_UPDATE_SHEET, 'Cập nhật đơn lẻ hạng mục đang có', 'Mã WBS', 'Hệ thống tìm hạng mục theo Mã WBS rồi chỉ cập nhật các ô có nhập dữ liệu. Để trống ô nào thì giữ nguyên ô đó.'],
+            [SCHEDULE_UPDATE_SHEET, 'Cập nhật hạng mục đang có theo WBS', 'Mã WBS', 'Hệ thống tìm hạng mục theo Mã WBS rồi cập nhật các ô có nhập dữ liệu. Để trống ô nào thì giữ nguyên ô đó. Đã được điền sẵn toàn bộ dữ liệu hiện tại của dự án.'],
             ['Ngày', 'Định dạng ngày', 'yyyy-mm-dd hoặc dd/mm/yyyy', 'Ví dụ: 2026-05-01 hoặc 01/05/2026.'],
             ['Số', 'KL tạm tính, Nhân công dự kiến, Tiến độ (%)', 'Số không âm', 'Tiến độ nằm trong khoảng 0-100.'],
         ];
@@ -1607,8 +1627,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, guideSheet, SCHEDULE_GUIDE_SHEET);
         XLSX.utils.book_append_sheet(wb, makeSheet(SCHEDULE_CREATE_HEADERS), SCHEDULE_CREATE_SHEET);
-        XLSX.utils.book_append_sheet(wb, makeSheet(SCHEDULE_UPDATE_HEADERS), SCHEDULE_UPDATE_SHEET);
-        XLSX.writeFile(wb, 'Tien_do_mau.xlsx');
+        XLSX.utils.book_append_sheet(wb, makeSheet(SCHEDULE_UPDATE_HEADERS, existingTasksData), SCHEDULE_UPDATE_SHEET);
+        XLSX.writeFile(wb, `Tien_do_mau_${new Date().toISOString().split('T')[0]}.xlsx`);
     };
 
     const getSheetRows = (workbook: XLSX.WorkBook, sheetName: string): ExcelImportRow[] => {
@@ -1625,7 +1645,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
             const end = parseExcelDate(getExcelValue(row, ['Kết thúc KH (*)', 'Kết thúc KH']));
             const actualStart = parseExcelDate(getExcelValue(row, ['Bắt đầu thực tế']));
             const actualEnd = parseExcelDate(getExcelValue(row, ['Kết thúc thực tế']));
-            const rawProgressValue = getExcelValue(row, ['Tiến độ (%)']);
+            const rawProgressValue = getExcelValue(row, ['Tiến độ (%)', 'Tiến độ']);
             const rawProgress = rawProgressValue === '' ? 0 : Number(rawProgressValue);
             const rawProvisionalValue = getExcelValue(row, ['Khối lượng tạm tính']);
             const rawProvisionalQty = rawProvisionalValue === '' ? 0 : Number(rawProvisionalValue);
@@ -1640,12 +1660,12 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                 if (!wbs) errors[idx] = 'Thiếu Mã WBS để cập nhật';
                 else if (!isValidWbsCode(wbs)) errors[idx] = 'Mã WBS không hợp lệ';
                 else if (seenWbs.has(wbs.toLowerCase())) errors[idx] = 'Mã WBS bị trùng trong file';
-                else if (!existingByWbs) errors[idx] = `Không tìm thấy Mã WBS "${wbs}"`;
-                else if (hasExcelValue(row, ['Bắt đầu KH']) && !start) errors[idx] = 'Sai ngày BĐ kế hoạch';
-                else if (hasExcelValue(row, ['Kết thúc KH']) && !end) errors[idx] = 'Sai ngày KT kế hoạch';
+                else if (!existingByWbs) errors[idx] = `Không tìm thấy Mã WBS "${wbs}" trong dự án`;
+                else if (hasExcelValue(row, ['Bắt đầu KH', 'Bắt đầu KH (*)']) && !start) errors[idx] = 'Sai ngày BĐ kế hoạch';
+                else if (hasExcelValue(row, ['Kết thúc KH', 'Kết thúc KH (*)']) && !end) errors[idx] = 'Sai ngày KT kế hoạch';
                 else if (nextStart && nextEnd && nextStart > nextEnd) errors[idx] = 'Ngày kết thúc KH phải sau ngày BĐ KH';
             } else {
-                if (!row['Công việc (*)']) errors[idx] = 'Thiếu tên công việc';
+                if (!row['Công việc (*)'] && !row['Công việc']) errors[idx] = 'Thiếu tên công việc';
                 else if (wbs && !isValidWbsCode(wbs)) errors[idx] = 'Mã WBS không hợp lệ';
                 else if (wbs && (seenWbs.has(wbs.toLowerCase()) || tasks.some(t => t.wbsCode?.trim().toLowerCase() === wbs.toLowerCase()))) errors[idx] = 'Mã WBS bị trùng';
                 else if (!start) errors[idx] = 'Thiếu/sai ngày BĐ kế hoạch';
@@ -1661,6 +1681,12 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
         return errors;
     };
 
+    const handleSwitchImportMode = (newMode: ScheduleImportMode) => {
+        setImportMode(newMode);
+        const errors = validateScheduleImportRows(importRows, newMode);
+        setImportErrors(errors);
+    };
+
     const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -1669,12 +1695,37 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
             try {
                 const bstr = evt.target?.result;
                 const wb = XLSX.read(bstr, { type: 'binary', cellDates: true });
-                const updateRows = getSheetRows(wb, SCHEDULE_UPDATE_SHEET);
-                const createRows = getSheetRows(wb, SCHEDULE_CREATE_SHEET);
-                const legacySheetName = wb.SheetNames.find(name => ![SCHEDULE_GUIDE_SHEET, SCHEDULE_CREATE_SHEET, SCHEDULE_UPDATE_SHEET].includes(name));
+                const updateSheetName = wb.SheetNames.find(name => 
+                    ['cap_nhat', 'capnhat', 'cập nhật', 'cập nhật tiến độ', 'cap nhat'].includes(name.trim().toLowerCase())
+                );
+                const createSheetName = wb.SheetNames.find(name => 
+                    ['nhap_moi', 'nhapmoi', 'nhập mới', 'nhap moi'].includes(name.trim().toLowerCase())
+                );
+                const updateRows = updateSheetName ? getSheetRows(wb, updateSheetName) : [];
+                const createRows = createSheetName ? getSheetRows(wb, createSheetName) : [];
+                const legacySheetName = wb.SheetNames.find(name => 
+                    !['huong_dan', 'huongdan', 'hướng dẫn', 'huong dan', updateSheetName, createSheetName].filter((n): n is string => Boolean(n)).includes(name.trim().toLowerCase())
+                );
                 const legacyRows = legacySheetName ? getSheetRows(wb, legacySheetName) : [];
-                const mode: ScheduleImportMode = updateRows.length > 0 ? 'update' : 'create';
-                const data = updateRows.length > 0 ? updateRows : (createRows.length > 0 ? createRows : legacyRows);
+
+                let data: ExcelImportRow[] = [];
+                let mode: ScheduleImportMode = 'create';
+
+                if (updateRows.length > 0) {
+                    data = updateRows;
+                    mode = 'update';
+                } else if (createRows.length > 0) {
+                    data = createRows;
+                    mode = 'create';
+                } else {
+                    data = legacyRows;
+                    const hasMatchingWbs = data.some(row => {
+                        const wbs = getExcelText(row, ['Mã WBS']);
+                        return wbs && tasks.some(t => t.wbsCode?.trim().toLowerCase() === wbs.toLowerCase());
+                    });
+                    mode = hasMatchingWbs ? 'update' : 'create';
+                }
+
                 const errors = validateScheduleImportRows(data, mode);
                 setImportMode(mode);
                 setImportRows(data);
@@ -1699,15 +1750,15 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                     const wbs = getExcelText(row, ['Mã WBS']);
                     const existing = tasks.find(t => t.wbsCode?.trim().toLowerCase() === wbs.toLowerCase());
                     if (!existing) continue;
-                    const start = parseExcelDate(getExcelValue(row, ['Bắt đầu KH']));
-                    const end = parseExcelDate(getExcelValue(row, ['Kết thúc KH']));
+                    const start = parseExcelDate(getExcelValue(row, ['Bắt đầu KH (*)', 'Bắt đầu KH']));
+                    const end = parseExcelDate(getExcelValue(row, ['Kết thúc KH (*)', 'Kết thúc KH']));
                     const actualStart = parseExcelDate(getExcelValue(row, ['Bắt đầu thực tế']));
                     const actualEnd = parseExcelDate(getExcelValue(row, ['Kết thúc thực tế']));
                     const nextStart = start || existing.startDate;
                     const nextEnd = end || existing.endDate;
                     const next: ProjectTask = {
                         ...existing,
-                        name: getExcelText(row, ['Công việc']) || existing.name,
+                        name: getExcelText(row, ['Công việc (*)', 'Công việc']) || existing.name,
                         assignee: getExcelText(row, ['Người thực hiện']) || existing.assignee,
                         startDate: nextStart,
                         endDate: nextEnd,
@@ -1716,12 +1767,12 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                         provisionalQuantity: hasExcelValue(row, ['Khối lượng tạm tính']) ? parseNonNegativeNumber(getExcelValue(row, ['Khối lượng tạm tính'])) : existing.provisionalQuantity,
                         resourceCount: hasExcelValue(row, ['Nhân công dự kiến']) ? parseNonNegativeNumber(getExcelValue(row, ['Nhân công dự kiến'])) : existing.resourceCount,
                         resourceType: hasExcelValue(row, ['Nhân công dự kiến']) ? 'worker' : existing.resourceType,
-                        progress: hasExcelValue(row, ['Tiến độ (%)']) ? parseProgress(getExcelValue(row, ['Tiến độ (%)'])) : existing.progress,
+                        progress: hasExcelValue(row, ['Tiến độ (%)', 'Tiến độ']) ? parseProgress(getExcelValue(row, ['Tiến độ (%)', 'Tiến độ'])) : existing.progress,
                         actualStartDate: actualStart || existing.actualStartDate,
                         actualEndDate: actualEnd || existing.actualEndDate,
                         notes: getExcelText(row, ['Ghi chú']) || existing.notes,
                     };
-                    updatedTasks.push(hasExcelValue(row, ['Tiến độ (%)']) ? applyProgressGateTransition(next, next.progress) : next);
+                    updatedTasks.push(hasExcelValue(row, ['Tiến độ (%)', 'Tiến độ']) ? applyProgressGateTransition(next, next.progress) : next);
                 }
                 if (updatedTasks.length > 0) await taskService.upsertMany(updatedTasks);
                 const rawNextTasks = await taskService.list(effectiveId, constructionSiteId || null);
@@ -1738,24 +1789,25 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
             const codeToId: Record<string, string> = {};
 
             for (const row of validRows) {
-                const start = parseExcelDate(getExcelValue(row, ['Bắt đầu KH (*)']));
-                const end = parseExcelDate(getExcelValue(row, ['Kết thúc KH (*)']));
+                const start = parseExcelDate(getExcelValue(row, ['Bắt đầu KH (*)', 'Bắt đầu KH']));
+                const end = parseExcelDate(getExcelValue(row, ['Kết thúc KH (*)', 'Kết thúc KH']));
                 if (!start || !end) continue;
                 const id = crypto.randomUUID();
 
                 const wbs = getExcelText(row, ['Mã WBS']) || undefined;
                 if (wbs) codeToId[wbs] = id;
-                codeToId[String(row['Công việc (*)'])] = id;
+                const taskName = getExcelText(row, ['Công việc (*)', 'Công việc']);
+                codeToId[taskName] = id;
 
                 newTasks.push({
                     id,
                     projectId: effectiveId,
                     constructionSiteId: constructionSiteId || null,
-                    name: String(row['Công việc (*)']),
+                    name: taskName,
                     startDate: start,
                     endDate: end,
                     duration: daysBetween(start, end),
-                    progress: parseProgress(getExcelValue(row, ['Tiến độ (%)'])),
+                    progress: parseProgress(getExcelValue(row, ['Tiến độ (%)', 'Tiến độ'])),
                     progressMode: 'weekly_report',
                     assignee: getExcelText(row, ['Người thực hiện']) || undefined,
                     wbsCode: wbs,
@@ -1821,8 +1873,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                 'Thời gian (ngày)': task.duration,
                 'Bắt đầu KH': fmtDate(task.startDate),
                 'Kết thúc KH': fmtDate(task.endDate),
-                'Bắt đầu thực tế': derivedStart ? fmtDate(derivedStart) : '',
-                'Kết thúc thực tế': derivedEnd ? fmtDate(derivedEnd) : '',
+                'Bắt đầu thực tế': derivedStart ? fmtDate(derivedStart) : (task.actualStartDate ? fmtDate(task.actualStartDate) : ''),
+                'Kết thúc thực tế': derivedEnd ? fmtDate(derivedEnd) : (task.actualEndDate ? fmtDate(task.actualEndDate) : ''),
                 'Đơn vị': getTaskUnit(task, linkedIds, contractItems),
                 'Khối lượng tạm tính': task.provisionalQuantity || 0,
                 'Nhân công dự kiến': task.resourceCount ?? 1,
@@ -1832,7 +1884,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                 'Tổng giá trị hợp đồng': valueProgressMetric.contractTotalValue,
                 'Trạng thái': getStatusLabel(status),
                 'Mã cha': task.parentId ? tasks.find(t => t.id === task.parentId)?.wbsCode || '' : '',
-                'Công việc cha': parentName
+                'Công việc cha': parentName,
+                'Ghi chú': task.notes || ''
             };
         });
 
@@ -1840,10 +1893,10 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
         ws['!cols'] = [
             { wch: 15 }, { wch: 30 }, { wch: 20 }, { wch: 15 }, { wch: 15 }, { wch: 15 },
             { wch: 15 }, { wch: 15 }, { wch: 10 }, { wch: 18 }, { wch: 18 }, { wch: 10 },
-            { wch: 20 }, { wch: 18 }, { wch: 20 }, { wch: 15 }, { wch: 20 }, { wch: 24 }
+            { wch: 20 }, { wch: 18 }, { wch: 20 }, { wch: 15 }, { wch: 20 }, { wch: 24 }, { wch: 24 }
         ];
         const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, 'TienDo');
+        XLSX.utils.book_append_sheet(wb, ws, SCHEDULE_UPDATE_SHEET);
         XLSX.writeFile(wb, `Tien_do_DA_${new Date().toISOString().split('T')[0]}.xlsx`);
     };
 
@@ -4478,6 +4531,17 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                 </div>
                             </div>
                             <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-1.5 px-2.5 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-sm">
+                                    <span className="text-[11px] font-semibold text-slate-500">Chế độ:</span>
+                                    <select
+                                        value={importMode}
+                                        onChange={(e) => handleSwitchImportMode(e.target.value as ScheduleImportMode)}
+                                        className="text-xs font-bold text-slate-700 dark:text-slate-200 bg-transparent focus:outline-none cursor-pointer pr-1"
+                                    >
+                                        <option value="update">Cập nhật (Theo Mã WBS)</option>
+                                        <option value="create">Nhập mới hạng mục</option>
+                                    </select>
+                                </div>
                                 <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
                                     <Upload size={14} /> Chọn file khác
                                 </button>
