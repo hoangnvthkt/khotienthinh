@@ -90,6 +90,12 @@ describe('permissionService', () => {
     }), '/wf/instances/instance-1')).toBe(true);
   });
 
+  it('opens request details from a legacy request list grant', () => {
+    expect(canViewRoute(user({
+      allowedSubModules: { RQ: ['/rq'] },
+    }), '/rq/request-1')).toBe(true);
+  });
+
   it('does not expose workflow template routes from a legacy workflow list grant', () => {
     const workflowUser = user({ allowedSubModules: { WF: ['/wf'] } });
 

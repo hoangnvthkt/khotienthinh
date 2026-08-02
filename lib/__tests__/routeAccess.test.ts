@@ -63,3 +63,19 @@ describe('phase 0 route containment', () => {
     expect(canAccessRoute(null, safetyCardRoute)).toBe(false);
   });
 });
+
+describe('request detail route access', () => {
+  it('maps request detail deep links to the RQ module', () => {
+    expect(getRouteModuleKey('/rq/f2995dba-4718-4e70-b1a8-19cc4a659e2a')).toBe('RQ');
+  });
+
+  it('allows an RQ user to open an assigned request detail', () => {
+    expect(canAccessRoute({
+      ...user(['RQ']),
+      allowedSubModules: { RQ: ['/rq'] },
+      adminSubModules: {},
+      adminModules: [],
+      permissionGrants: [],
+    }, '/rq/f2995dba-4718-4e70-b1a8-19cc4a659e2a')).toBe(true);
+  });
+});

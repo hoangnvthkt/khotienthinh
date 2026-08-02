@@ -110,6 +110,11 @@ const canOpenLegacyRoute = (
     route.startsWith('/wf/builder/') &&
     (allowedSubs.includes('/wf/templates') || adminSubs.includes('/wf/templates'))
   ) return true;
+  if (
+    legacyModuleKey === 'RQ' &&
+    routeMatches('/rq/:requestId', route) &&
+    (allowedSubs.includes('/rq') || adminSubs.includes('/rq'))
+  ) return true;
   if (legacyModuleKey === 'DA' && route === '/da' && allowedSubs.some(allowedRoute => allowedRoute.startsWith('/da/tabs/'))) {
     return true;
   }
