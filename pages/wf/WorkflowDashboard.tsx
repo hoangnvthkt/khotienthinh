@@ -15,7 +15,10 @@ import {
   PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip,
   ResponsiveContainer, Legend
 } from 'recharts';
-import { isMaterialRequestWorkflowTemplate } from '../../lib/workflowVisibility';
+import {
+  isMaterialRequestWorkflowTemplate,
+  isRequestModuleWorkflowTemplate,
+} from '../../lib/workflowVisibility';
 
 // ========== Types ==========
 interface DrillDownData {
@@ -96,7 +99,9 @@ const WorkflowDashboard: React.FC = () => {
 
   // Filter instances by date range
   const visibleTemplates = useMemo(
-    () => templates.filter(t => user.role === Role.ADMIN || !isMaterialRequestWorkflowTemplate(t)),
+    () => templates
+      .filter(t => !isRequestModuleWorkflowTemplate(t))
+      .filter(t => user.role === Role.ADMIN || !isMaterialRequestWorkflowTemplate(t)),
     [templates, user.role],
   );
   const visibleTemplateIds = useMemo(() => new Set(visibleTemplates.map(t => t.id)), [visibleTemplates]);

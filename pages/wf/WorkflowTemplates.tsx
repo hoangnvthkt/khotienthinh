@@ -11,7 +11,10 @@ import {
     Search, Layers, Clock, User, ShieldAlert, ChevronRight, Edit2, Shield, Eye, X
 } from 'lucide-react';
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
-import { isMaterialRequestWorkflowTemplate } from '../../lib/workflowVisibility';
+import {
+    isMaterialRequestWorkflowTemplate,
+    isRequestModuleWorkflowTemplate,
+} from '../../lib/workflowVisibility';
 import { useToast } from '../../context/ToastContext';
 import { getApiErrorMessage } from '../../lib/apiError';
 
@@ -100,6 +103,7 @@ const WorkflowTemplates: React.FC = () => {
     // Assigned managers only see templates they manage. WF module admins can
     // manage every template but only System Admin can create or delete one.
     const visibleTemplates = (canViewAllTemplates ? templates : templates.filter(t => t.managers?.includes(user.id)))
+        .filter(t => !isRequestModuleWorkflowTemplate(t))
         .filter(t => user.role === Role.ADMIN || !isMaterialRequestWorkflowTemplate(t));
 
     const filtered = visibleTemplates.filter(t =>
