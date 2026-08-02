@@ -8,6 +8,7 @@ export interface RequestPrintModel {
   code: string; title: string; description: string; creatorName: string; createdAt: string;
   fields: Array<{ label: string; value: string }>;
   approvals: Array<{ blockName: string; status: string; approvers: string }>;
+  notes: Array<{ eventType: string; actorName: string; comment: string; createdAt: string }>;
 }
 
 const tokenValue = (value: unknown): string => {
@@ -39,6 +40,16 @@ export const buildBrowserPrintModel = (detail: RequestDetail): RequestPrintModel
   code: detail.code, title: detail.title, description: detail.description, creatorName: detail.creator.name, createdAt: detail.createdAt,
   fields: [...detail.formSchema].sort((a, b) => a.sortOrder - b.sortOrder).map(field => ({ label: field.label, value: tokenValue(detail.formData[field.key]) || '—' })),
   approvals: detail.approvalBlocks.map(block => ({ blockName: block.name, status: block.status, approvers: block.assignments.map(assignment => `${assignment.approver.name} · ${assignment.status}`).join(', ') || 'Chưa có người duyệt' })),
+  notes: detail.timeline.flatMap(event => {
+    const comment = event.comment?.trim();
+    if (!comment) return [];
+    return [{
+      eventType: event.eventType,
+      actorName: event.actor?.name ?? 'Hệ thống',
+      comment,
+      createdAt: event.createdAt,
+    }];
+  }),
 });
 
 export const renderRequestDocx = async (detail: RequestDetail, templateBytes: ArrayBuffer): Promise<RequestPrintDocument> => {
