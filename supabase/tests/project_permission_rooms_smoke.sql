@@ -18,14 +18,14 @@ end $$;
 
 create temp table project_permission_rooms_smoke_ids (
   admin_id uuid not null,
-  po_approver_id uuid not null,
+  boq_deleter_id uuid not null,
   daily_approver_id uuid not null,
   project_id text not null,
   position_id uuid not null,
-  po_staff_id uuid not null,
+  boq_staff_id uuid not null,
   daily_staff_id uuid not null,
   admin_email text not null,
-  po_approver_email text not null,
+  boq_deleter_email text not null,
   daily_approver_email text not null
 ) on commit drop;
 
@@ -39,12 +39,14 @@ values (
   'permission-room-daily@vioo.local'
 );
 
+grant select on project_permission_rooms_smoke_ids to authenticated;
+
 insert into public.users (id, name, email, username, role, is_active, allowed_modules, admin_modules, allowed_sub_modules, admin_sub_modules)
 select admin_id, 'Permission Room Smoke Admin', admin_email, 'permission-room-admin', 'ADMIN', true, '{}'::text[], '{}'::text[], '{}'::jsonb, '{}'::jsonb
 from project_permission_rooms_smoke_ids;
 
 insert into public.users (id, name, email, username, role, is_active, allowed_modules, admin_modules, allowed_sub_modules, admin_sub_modules)
-select po_approver_id, 'PO Approver', po_approver_email, 'permission-room-po', 'EMPLOYEE', true, '{}'::text[], '{}'::text[], '{}'::jsonb, '{}'::jsonb
+select boq_deleter_id, 'BOQ Deleter', boq_deleter_email, 'permission-room-boq', 'EMPLOYEE', true, '{}'::text[], '{}'::text[], '{}'::jsonb, '{}'::jsonb
 from project_permission_rooms_smoke_ids;
 
 insert into public.users (id, name, email, username, role, is_active, allowed_modules, admin_modules, allowed_sub_modules, admin_sub_modules)
@@ -60,7 +62,7 @@ select position_id, 'Permission Room Smoke Position', 1, 'PERMISSION-ROOM-SMOKE'
 from project_permission_rooms_smoke_ids;
 
 insert into public.project_staff (id, project_id, user_id, position_id, start_date, note)
-select po_staff_id, project_id, po_approver_id::text, position_id, current_date, 'PO approver'
+select boq_staff_id, project_id, boq_deleter_id::text, position_id, current_date, 'BOQ deleter'
 from project_permission_rooms_smoke_ids;
 
 insert into public.project_staff (id, project_id, user_id, position_id, start_date, note)
@@ -78,10 +80,10 @@ select set_config('request.jwt.claims', jsonb_build_object(
 select public.replace_project_permission_room_members(
   (select project_id from project_permission_rooms_smoke_ids),
   null,
-  'material_po',
+  'material_planning',
   jsonb_build_array(jsonb_build_object(
-    'project_staff_id', (select po_staff_id from project_permission_rooms_smoke_ids),
-    'action_codes', jsonb_build_array('approve')
+    'project_staff_id', (select boq_staff_id from project_permission_rooms_smoke_ids),
+    'action_codes', jsonb_build_array('delete')
   ))
 );
 
@@ -98,23 +100,23 @@ select public.replace_project_permission_room_members(
 do $$
 declare
   v_project_id text := (select project_id from project_permission_rooms_smoke_ids);
-  v_po_approver_id uuid := (select po_approver_id from project_permission_rooms_smoke_ids);
+  v_boq_deleter_id uuid := (select boq_deleter_id from project_permission_rooms_smoke_ids);
   v_daily_approver_id uuid := (select daily_approver_id from project_permission_rooms_smoke_ids);
 begin
-  if not public.project_user_has_room_action(v_project_id, null, 'material_po', 'approve', v_po_approver_id) then
-    raise exception 'PO approver is missing material_po.approve';
+  if not public.project_user_has_room_action(v_project_id, null, 'material_planning', 'delete', v_boq_deleter_id) then
+    raise exception 'BOQ deleter is missing material_planning.delete';
   end if;
-  if public.project_user_has_room_action(v_project_id, null, 'daily_log', 'approve', v_po_approver_id) then
-    raise exception 'PO approver leaked into daily_log.approve';
+  if public.project_user_has_room_action(v_project_id, null, 'daily_log', 'approve', v_boq_deleter_id) then
+    raise exception 'BOQ deleter leaked into daily_log.approve';
   end if;
   if not public.project_user_has_room_action(v_project_id, null, 'daily_log', 'approve', v_daily_approver_id) then
     raise exception 'Daily log approver is missing daily_log.approve';
   end if;
-  if public.project_user_has_room_action(v_project_id, null, 'material_po', 'approve', v_daily_approver_id) then
-    raise exception 'Daily log approver leaked into material_po.approve';
+  if public.project_user_has_room_action(v_project_id, null, 'material_planning', 'delete', v_daily_approver_id) then
+    raise exception 'Daily log approver leaked into material_planning.delete';
   end if;
-  if (select count(*) from public.list_project_room_action_recipients(v_project_id, null, 'material_po', 'approve')) <> 1 then
-    raise exception 'PO recipient list must contain only the PO approver';
+  if (select count(*) from public.list_project_room_action_recipients(v_project_id, null, 'material_planning', 'delete')) <> 1 then
+    raise exception 'BOQ recipient list must contain only the BOQ deleter';
   end if;
   if (select count(*) from public.list_project_room_action_recipients(v_project_id, null, 'daily_log', 'approve')) <> 1 then
     raise exception 'Daily log recipient list must contain only the daily log approver';
@@ -124,13 +126,13 @@ end $$;
 do $$
 declare
   v_project_id text := (select project_id from project_permission_rooms_smoke_ids);
-  v_staff_id uuid := (select po_staff_id from project_permission_rooms_smoke_ids);
+  v_staff_id uuid := (select boq_staff_id from project_permission_rooms_smoke_ids);
 begin
   begin
     perform public.replace_project_permission_room_members(
       v_project_id,
       null,
-      'material_po',
+      'material_planning',
       jsonb_build_array(jsonb_build_object(
         'project_staff_id', v_staff_id,
         'action_codes', jsonb_build_array('view_available_stock')
@@ -142,8 +144,8 @@ begin
   end;
 
   if not public.project_user_has_room_action(
-    v_project_id, null, 'material_po', 'approve',
-    (select po_approver_id from project_permission_rooms_smoke_ids)
+    v_project_id, null, 'material_planning', 'delete',
+    (select boq_deleter_id from project_permission_rooms_smoke_ids)
   ) then
     raise exception 'Invalid batch did not rollback the previous Room assignment';
   end if;

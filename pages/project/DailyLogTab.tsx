@@ -9,6 +9,8 @@ import { contractLaborCatalogService, contractMachineCatalogService } from '../.
 import { partnerService } from '../../lib/partnerService';
 import { projectStaffService } from '../../lib/projectStaffService';
 import { projectPermissionRoomService } from '../../lib/projectPermissionRoomService';
+import { getDailyLogPermissionCodesForEffectiveRoomActions } from '../../lib/permissions/projectRoomEffectiveActions';
+import type { ProjectRoomActionCode } from '../../lib/permissions/projectPermissionRooms';
 import { notificationService } from '../../lib/notificationService';
 import { delayEventService } from '../../lib/projectScheduleForecastService';
 import { projectDocumentActionLogService } from '../../lib/projectDocumentActionLogService';
@@ -866,7 +868,8 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     const [selectedSummaryLegacyLogIds, setSelectedSummaryLegacyLogIds] = useState<string[]>([]);
     const [summarySourceSnapshots, setSummarySourceSnapshots] = useState<Record<string, DailyLogSummarySourceSnapshot>>({});
 
-    // ── PBAC v2: Load explicit Daily Log actions ──
+    // Effective Room actions are the UI capability source. The backend RPC
+    // resolves System Admin, Room membership and the temporary PBAC fallback.
     const [dailyLogPerms, setDailyLogPerms] = useState<Set<DailyLogActionCode>>(new Set());
     const [pbacLoaded, setPbacLoaded] = useState(false);
 
@@ -909,21 +912,27 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                     return;
                 }
 
-                const permsToCheck = ALL_DAILY_LOG_PERMISSION_CODES;
-                const results = await Promise.all(
-                    permsToCheck.map(async code => {
-                        const r = await projectStaffService.checkProjectAction({
-                            userId: user.id,
-                            projectId: projectId || null,
-                            constructionSiteId: constructionSiteId || null,
-                            permissionCode: code,
-                        });
-                        return { code, allowed: r.allowed };
-                    })
-                );
-                setDailyLogPerms(new Set(results.filter(r => r.allowed).map(r => r.code)));
+                const permissionScope = projectId || effectiveId;
+                const [effectiveActions, pbacExceptions] = await Promise.all([
+                    projectPermissionRoomService.listMyActions(permissionScope, constructionSiteId || null),
+                    projectPermissionRoomService.listMyPbacExceptions(permissionScope, constructionSiteId || null),
+                ]);
+                const dailyLogRoomActions = effectiveActions
+                    .filter(action => action.roomCode === 'daily_log')
+                    .map(action => action.actionCode as ProjectRoomActionCode);
+                const mappedPermissionCodes = getDailyLogPermissionCodesForEffectiveRoomActions(dailyLogRoomActions);
+                const compatibilityPermissionCodes = pbacExceptions
+                    .filter(exception => exception.roomCode === 'daily_log')
+                    .map(exception => exception.permissionCode)
+                    .filter((code): code is DailyLogActionCode => (
+                        ALL_DAILY_LOG_PERMISSION_CODES.includes(code as DailyLogActionCode)
+                    ));
+                setDailyLogPerms(new Set([
+                    ...mappedPermissionCodes as DailyLogActionCode[],
+                    ...compatibilityPermissionCodes,
+                ]));
             } catch (err) {
-                console.warn('PBAC load failed', err);
+                console.warn('Effective Daily Log Room action load failed', err);
                 setDailyLogPerms(new Set());
             } finally {
                 setPbacLoaded(true);
@@ -951,23 +960,8 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
 
     const requireDailyLogAction = useCallback(async (code: DailyLogActionCode, actionLabel: string) => {
         if (!ensureDailyLogAction(code, actionLabel)) return false;
-        if (user?.role === 'ADMIN') return true;
-        if (!user?.id) return false;
-
-        try {
-            await projectStaffService.requireProjectAction({
-                userId: user.id,
-                projectId: projectId || null,
-                constructionSiteId: constructionSiteId || null,
-                permissionCode: code,
-                actionLabel,
-            });
-            return true;
-        } catch (err: any) {
-            toast.error('Không có quyền', err?.message || `Bạn cần quyền "${code}" để ${actionLabel}.`);
-            return false;
-        }
-    }, [constructionSiteId, ensureDailyLogAction, projectId, toast, user?.id, user?.role]);
+        return true;
+    }, [ensureDailyLogAction]);
 
     const requireDailyLogResponsibilityRoom = useCallback(async (
         log: DailyLog,

@@ -29,6 +29,12 @@ type HealthFinding = {
   projectId?: string;
   warehouseId?: string;
   columns?: string[];
+  roomCode?: string;
+  actionCode?: string;
+  userId?: string;
+  userName?: string;
+  enforcementStatus?: string;
+  issueCode?: string;
 };
 
 type PermissionHealthSummary = {
@@ -36,6 +42,13 @@ type PermissionHealthSummary = {
   status?: HealthStatus;
   legacyProjectionEnabled?: boolean;
   legacyFallbackDisabled?: boolean;
+  projectRoomPbacFallbackEnabled?: boolean;
+  checks?: Record<string, HealthFinding[]>;
+};
+
+type ProjectRoomHealthSummary = {
+  generatedAt?: string;
+  projectRoomPbacFallbackEnabled?: boolean;
   checks?: Record<string, HealthFinding[]>;
 };
 
@@ -50,6 +63,10 @@ const CHECK_LABELS: Record<string, string> = {
   projectsWithoutScopedGrants: 'Dự án thiếu scoped grant',
   warehousesWithoutScopedGrants: 'Kho thiếu scoped grant',
   departmentsWithoutScopedGrants: 'Phòng ban thiếu scoped grant',
+  roomActionsNotConnected: 'Room/action chưa nối đủ',
+  roomFallbackOnlyUsers: 'User chỉ có PBAC fallback',
+  roomUnmappedGrants: 'Grant chưa ánh xạ Room',
+  roomInvalidScopeOrStaff: 'Sai scope, staff hết hiệu lực hoặc Room mồ côi',
 };
 
 const severityClass: Record<FindingSeverity, string> = {
@@ -92,6 +109,11 @@ const formatDateTime = (value?: string) => {
 };
 
 const describeFinding = (finding: HealthFinding) => {
+  if (finding.roomCode) {
+    const action = finding.actionCode ? `.${finding.actionCode}` : '';
+    const actor = finding.userName || finding.userId;
+    return `${finding.roomCode}${action}${actor ? ` / ${actor}` : ''}${finding.issueCode ? ` / ${finding.issueCode}` : ''}`;
+  }
   if (finding.policy) return `${finding.schema}.${finding.table} / ${finding.policy}`;
   if (finding.privilege) return `${finding.schema}.${finding.table} / ${finding.privilege}`;
   if (finding.function) return `${finding.schema}.${finding.function}(${finding.identityArguments || ''})`;
@@ -124,9 +146,23 @@ const SettingsPermissionHealth: React.FC = () => {
     setLoading(true);
     setErrorMessage(null);
     try {
-      const { data, error } = await supabase.rpc('get_permission_health_summary');
-      if (error) throw error;
-      setSummary((data || {}) as PermissionHealthSummary);
+      const [baseResult, roomResult] = await Promise.all([
+        supabase.rpc('get_permission_health_summary'),
+        supabase.rpc('get_project_permission_room_health_summary'),
+      ]);
+      if (baseResult.error) throw baseResult.error;
+      if (roomResult.error) throw roomResult.error;
+      const base = (baseResult.data || {}) as PermissionHealthSummary;
+      const room = (roomResult.data || {}) as ProjectRoomHealthSummary;
+      const roomChecks = room.checks || {};
+      const hasRoomFindings = Object.values(roomChecks).some(findings => findings.length > 0);
+      setSummary({
+        ...base,
+        generatedAt: room.generatedAt || base.generatedAt,
+        status: base.status === 'critical' ? 'critical' : hasRoomFindings ? 'warning' : base.status,
+        projectRoomPbacFallbackEnabled: room.projectRoomPbacFallbackEnabled,
+        checks: { ...(base.checks || {}), ...roomChecks },
+      });
     } catch (error: any) {
       logApiError('settings.permissionHealth.load', error);
       setErrorMessage(getApiErrorMessage(error, 'Không thể tải permission health.'));
@@ -192,7 +228,7 @@ const SettingsPermissionHealth: React.FC = () => {
           </div>
         )}
 
-        <div className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-4">
+        <div className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-5">
           <div className={`rounded-xl border p-4 ${status.className}`}>
             <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest">
               <StatusIcon size={16} />
@@ -219,6 +255,13 @@ const SettingsPermissionHealth: React.FC = () => {
             <div className="mt-2 flex items-center gap-2 text-sm font-black text-slate-800">
               {summary?.legacyFallbackDisabled ? <CheckCircle2 size={16} className="text-emerald-600" /> : <AlertTriangle size={16} className="text-amber-500" />}
               {summary?.legacyFallbackDisabled ? 'Disabled' : 'Enabled'}
+            </div>
+          </div>
+          <div className="rounded-xl border border-slate-100 bg-white p-4">
+            <div className="text-xs font-black uppercase tracking-widest text-slate-500">Room PBAC fallback</div>
+            <div className="mt-2 flex items-center gap-2 text-sm font-black text-slate-800">
+              {summary?.projectRoomPbacFallbackEnabled ? <AlertTriangle size={16} className="text-amber-500" /> : <CheckCircle2 size={16} className="text-emerald-600" />}
+              {summary?.projectRoomPbacFallbackEnabled ? 'Enabled' : 'Disabled'}
             </div>
           </div>
         </div>

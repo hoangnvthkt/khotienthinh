@@ -7,6 +7,11 @@ import {
   type ProjectPermissionRoomCode,
   type ProjectRoomActionCode,
 } from './permissions/projectPermissionRooms';
+import type {
+  EffectiveProjectRoomAction,
+  ProjectRoomAuthorizationSource,
+  ProjectRoomEnforcementStatus,
+} from './permissions/projectRoomEffectiveActions';
 
 export interface ReplaceProjectRoomMemberInput {
   staffId: string;
@@ -22,6 +27,7 @@ export interface ProjectPermissionRoomMember {
   positionName?: string | null;
   constructionSiteId?: string | null;
   actionCodes: ProjectRoomActionCode[];
+  legacyPermissionCodes: string[];
   isActive: boolean;
 }
 
@@ -36,6 +42,8 @@ export interface ProjectPermissionRoomSummary {
   memberPreview: Array<{ userId: string; userName: string; userAvatar?: string | null }>;
   actionCounts: Partial<Record<ProjectRoomActionCode, number>>;
   missingRequiredActions: ProjectRoomActionCode[];
+  actionEnforcement: Partial<Record<ProjectRoomActionCode, ProjectRoomEnforcementStatus>>;
+  fallbackOnlyUserCount: number;
 }
 
 export interface ProjectRoomStaffCandidate {
@@ -49,6 +57,11 @@ export interface ProjectRoomStaffCandidate {
   disabledReason?: string | null;
 }
 
+export interface ProjectRoomPbacException {
+  roomCode: ProjectPermissionRoomCode;
+  permissionCode: string;
+}
+
 type RoomRow = {
   code: ProjectPermissionRoomCode;
   group_code: string;
@@ -56,6 +69,8 @@ type RoomRow = {
   description: string;
   allowed_actions: string[];
   required_actions: string[];
+  action_enforcement_statuses?: Record<string, unknown> | null;
+  fallback_only_user_count?: number | string | null;
 };
 
 const asRoomActionCodes = (values: unknown): ProjectRoomActionCode[] =>
@@ -63,6 +78,22 @@ const asRoomActionCodes = (values: unknown): ProjectRoomActionCode[] =>
     ? values.filter((value): value is ProjectRoomActionCode =>
       typeof value === 'string' && PROJECT_ROOM_ACTION_CODES.includes(value as ProjectRoomActionCode))
     : [];
+
+const asEnforcementMap = (
+  value: unknown,
+): Partial<Record<ProjectRoomActionCode, ProjectRoomEnforcementStatus>> => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return Object.entries(value).reduce<Partial<Record<ProjectRoomActionCode, ProjectRoomEnforcementStatus>>>(
+    (result, [action, status]) => {
+      if (
+        PROJECT_ROOM_ACTION_CODES.includes(action as ProjectRoomActionCode)
+        && ['audit_only', 'pilot', 'enforced'].includes(String(status))
+      ) result[action as ProjectRoomActionCode] = status as ProjectRoomEnforcementStatus;
+      return result;
+    },
+    {},
+  );
+};
 
 const assertRoomAction = (roomCode: ProjectPermissionRoomCode, actionCode: ProjectRoomActionCode) => {
   if (!isRoomActionAllowed(roomCode, actionCode)) {
@@ -88,6 +119,9 @@ const toRoomMember = (row: any): ProjectPermissionRoomMember | null => {
     positionName: row.position_name ?? null,
     constructionSiteId: row.construction_site_id ?? null,
     actionCodes: asRoomActionCodes(row.action_codes),
+    legacyPermissionCodes: Array.isArray(row.legacy_permission_codes)
+      ? row.legacy_permission_codes.filter((code: unknown): code is string => typeof code === 'string')
+      : [],
     isActive: true,
   };
 };
@@ -107,11 +141,48 @@ const getRoomRows = async (
 };
 
 export const projectPermissionRoomService = {
+  async listMyActions(
+    projectId: string,
+    constructionSiteId?: string | null,
+  ): Promise<EffectiveProjectRoomAction[]> {
+    const { data, error } = await supabase.rpc('get_my_project_room_actions', {
+      p_project_id: projectId,
+      p_construction_site_id: constructionSiteId || null,
+    });
+    if (error) throw error;
+
+    return (data || []).map((row: any): EffectiveProjectRoomAction => ({
+      roomCode: ensureRoomCode(row.room_code),
+      actionCode: row.action_code as ProjectRoomActionCode,
+      source: row.authorization_source as ProjectRoomAuthorizationSource,
+      enforcementStatus: row.enforcement_status as ProjectRoomEnforcementStatus,
+    }));
+  },
+
+  async listMyPbacExceptions(
+    projectId: string,
+    constructionSiteId?: string | null,
+  ): Promise<ProjectRoomPbacException[]> {
+    const { data, error } = await supabase.rpc('get_my_project_room_pbac_exceptions', {
+      p_project_id: projectId,
+      p_construction_site_id: constructionSiteId || null,
+    });
+    if (error) throw error;
+
+    return (data || []).map((row: any): ProjectRoomPbacException => ({
+      roomCode: ensureRoomCode(row.room_code),
+      permissionCode: String(row.permission_code),
+    }));
+  },
+
   async listRooms(
     projectId: string,
     constructionSiteId?: string | null,
   ): Promise<ProjectPermissionRoomSummary[]> {
-    const { data, error } = await supabase.rpc('list_project_permission_rooms');
+    const { data, error } = await supabase.rpc('list_project_permission_rooms', {
+      p_project_id: projectId,
+      p_construction_site_id: constructionSiteId || null,
+    });
     if (error) throw error;
 
     const rooms = (data || []) as RoomRow[];
@@ -144,6 +215,8 @@ export const projectPermissionRoomService = {
         })),
         actionCounts,
         missingRequiredActions: requiredActions.filter(action => !actionCounts[action]),
+        actionEnforcement: asEnforcementMap(room.action_enforcement_statuses),
+        fallbackOnlyUserCount: Number(room.fallback_only_user_count || 0),
       };
     });
   },

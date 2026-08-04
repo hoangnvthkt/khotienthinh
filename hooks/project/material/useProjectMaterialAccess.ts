@@ -9,12 +9,9 @@ import {
     PROJECT_MATERIAL_ACTION_CODES,
     getProjectMaterialActionCodesForRoomAction,
     getProjectMaterialCapabilities,
+    type ProjectMaterialActionCode,
     type ProjectMaterialCapability,
 } from '../../../lib/permissions/projectMaterialPermissions';
-import type {
-    ProjectPermissionRoomCode,
-    ProjectRoomActionCode,
-} from '../../../lib/permissions/projectPermissionRooms';
 import { projectPermissionRoomService } from '../../../lib/projectPermissionRoomService';
 import { projectStaffService } from '../../../lib/projectStaffService';
 
@@ -70,19 +67,15 @@ type UseProjectMaterialAccessOptions = {
     user: User;
 };
 
-const MATERIAL_ROOM_ACTION_CHECKS: Array<{
-    roomCode: ProjectPermissionRoomCode;
-    actionCode: ProjectRoomActionCode;
-}> = [
-    { roomCode: 'material_request', actionCode: 'view' },
-    { roomCode: 'material_request', actionCode: 'submit' },
-    { roomCode: 'material_po', actionCode: 'view' },
-    { roomCode: 'material_po', actionCode: 'edit' },
-    { roomCode: 'material_po', actionCode: 'delete' },
-    { roomCode: 'material_po', actionCode: 'submit' },
-    { roomCode: 'material_po', actionCode: 'approve' },
-    { roomCode: 'material_po', actionCode: 'confirm' },
-];
+const BOQ_PBAC_ACTION_CODES = new Set<ProjectMaterialActionCode>([
+    'project.material_boq.view',
+    'project.material_boq.edit',
+    'project.material_boq.delete',
+]);
+
+const NON_BOQ_PBAC_ACTION_CODES = PROJECT_MATERIAL_ACTION_CODES.filter(
+    permissionCode => !BOQ_PBAC_ACTION_CODES.has(permissionCode),
+);
 
 export const useProjectMaterialAccess = ({
     materialPermissions,
@@ -119,7 +112,7 @@ export const useProjectMaterialAccess = ({
 
             try {
                 const [results, roomActions] = await Promise.all([
-                    Promise.all(PROJECT_MATERIAL_ACTION_CODES.map(async permissionCode => ({
+                    Promise.all(NON_BOQ_PBAC_ACTION_CODES.map(async permissionCode => ({
                         permissionCode,
                         allowed: (await projectStaffService.checkProjectAction({
                             userId: user.id,
@@ -128,23 +121,18 @@ export const useProjectMaterialAccess = ({
                             permissionCode,
                         })).allowed,
                     }))),
-                    Promise.all(MATERIAL_ROOM_ACTION_CHECKS.map(async ({ roomCode, actionCode }) => ({
-                        roomCode,
-                        actionCode,
-                        allowed: await projectPermissionRoomService.hasAction(
-                            user.id,
-                            projectId || constructionSiteId || '',
-                            constructionSiteId || null,
-                            roomCode,
-                            actionCode,
-                        ),
-                    }))),
+                    projectPermissionRoomService.listMyActions(
+                        projectId || constructionSiteId || '',
+                        constructionSiteId || null,
+                    ),
                 ]);
                 if (!cancelled) {
                     const grantedCodes = new Set(results.filter(result => result.allowed).map(result => result.permissionCode));
                     roomActions
-                        .filter(result => result.allowed)
-                        .flatMap(result => getProjectMaterialActionCodesForRoomAction(result.roomCode, result.actionCode))
+                        .filter(action => action.roomCode === 'material_planning')
+                        .flatMap(action => getProjectMaterialActionCodesForRoomAction(
+                            'material_planning', action.actionCode,
+                        ))
                         .forEach(permissionCode => grantedCodes.add(permissionCode));
                     setMaterialCapabilities(getProjectMaterialCapabilities(grantedCodes));
                 }

@@ -9,11 +9,11 @@ const migrationFile = readdirSync(migrationDirectory)
 const migration = migrationFile ? readFileSync(join(migrationDirectory, migrationFile), 'utf8') : '';
 
 describe('material-request Room capability alignment', () => {
-  it('allows the material-request Room submit action to unlock creation in the UI', () => {
+  it('does not consume raw audit-only Room actions as frontend capabilities', () => {
     const source = read('hooks/project/material/useProjectMaterialAccess.ts');
-    expect(source).toContain('projectPermissionRoomService.hasAction');
-    expect(source).toContain("'material_request'");
-    expect(source).toContain("'submit'");
+    expect(source).toContain('projectPermissionRoomService.listMyActions');
+    expect(source).not.toContain('projectPermissionRoomService.hasAction');
+    expect(source).not.toContain('MATERIAL_ROOM_ACTION_CHECKS');
   });
 
   it('uses Room recipients as the authoritative candidate pool for a handoff', () => {

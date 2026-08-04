@@ -51,6 +51,11 @@ const PROJECT_MATERIAL_ROOM_ACTION_PERMISSION_CODES: Partial<Record<
   ProjectPermissionRoomCode,
   Partial<Record<ProjectRoomActionCode, readonly ProjectMaterialActionCode[]>>
 >> = {
+  material_planning: {
+    view: ['project.material_boq.view'],
+    edit: ['project.material_boq.edit'],
+    delete: ['project.material_boq.delete'],
+  },
   material_request: {
     view: ['project.material_request.view'],
     submit: ['project.material_request.create', 'project.material_request.submit'],

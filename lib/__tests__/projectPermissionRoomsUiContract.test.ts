@@ -30,4 +30,15 @@ describe('project permission Rooms UI', () => {
     expect(drawerSource).toContain('Hủy thay đổi');
     expect(drawerSource).toContain('Lưu thay đổi');
   });
+
+  it('locks audit-only actions and identifies legacy PBAC exceptions', () => {
+    const drawerSource = read('components/project/permissions/ProjectPermissionRoomDrawer.tsx');
+    const cardSource = read('components/project/permissions/ProjectPermissionRoomCard.tsx');
+
+    expect(drawerSource).toContain('canConfigureProjectRoomAction');
+    expect(drawerSource).toContain('Chưa áp dụng đầy đủ');
+    expect(drawerSource).toContain('PBAC ngoại lệ');
+    expect(drawerSource).toContain('disabled');
+    expect(cardSource).toContain('fallbackOnlyUserCount');
+  });
 });

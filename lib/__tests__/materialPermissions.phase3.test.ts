@@ -83,6 +83,15 @@ describe('Phase 3.3 Material permission capabilities', () => {
     expect(getProjectMaterialActionCodesForRoomAction('material_po', 'delete')).toContain('project.material_po.delete');
   });
 
+  it('maps the material-planning Room to the dedicated BOQ capabilities', () => {
+    expect(getProjectMaterialActionCodesForRoomAction('material_planning', 'view'))
+      .toEqual(['project.material_boq.view']);
+    expect(getProjectMaterialActionCodesForRoomAction('material_planning', 'edit'))
+      .toEqual(['project.material_boq.edit']);
+    expect(getProjectMaterialActionCodesForRoomAction('material_planning', 'delete'))
+      .toEqual(['project.material_boq.delete']);
+  });
+
   it('requires the dedicated available-stock action for stock exposure', () => {
     const withoutStock = capabilitiesFor([
       'project.material_request.view',
