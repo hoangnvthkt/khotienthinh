@@ -12,9 +12,8 @@ const LOCKED_SCHEDULE_STATUSES = new Set(['wms_pending']);
 const FAILED_SCHEDULE_STATUSES = new Set(['cancelled']);
 
 export type PurchaseOrderMutationCapabilities = {
-  canCreatePo?: boolean;
+  canEditPo?: boolean;
   canDeletePo?: boolean;
-  canManagePo?: boolean;
 };
 
 const hasAnyReceivedQty = (batch: MaterialRequestFulfillmentBatch): boolean =>
@@ -46,25 +45,29 @@ export const canUserMutatePurchaseOrder = (
   po: PurchaseOrder,
   user?: User | null,
   capabilities: PurchaseOrderMutationCapabilities = {},
-): boolean =>
-  Boolean(user && (
-    capabilities.canManagePo ||
-    capabilities.canCreatePo ||
-    isAdmin(user) ||
-    isPurchaseOrderCreator(po, user)
-  ));
+): boolean => {
+  if (!user) return false;
+  if (isAdmin(user)) return true;
+  const usesProjectRoomContract = Object.prototype.hasOwnProperty.call(capabilities, 'canEditPo');
+  if (!usesProjectRoomContract) return isPurchaseOrderCreator(po, user);
+  return Boolean(
+    capabilities.canEditPo
+    && isPurchaseOrderCreator(po, user)
+    && ['draft', 'returned'].includes(po.status),
+  );
+};
 
 export const canUserRemovePurchaseOrder = (
   po: PurchaseOrder,
   user?: User | null,
   capabilities: PurchaseOrderMutationCapabilities = {},
-): boolean =>
-  Boolean(user && (
-    capabilities.canManagePo ||
-    capabilities.canDeletePo ||
-    isAdmin(user) ||
-    isPurchaseOrderCreator(po, user)
-  ));
+): boolean => {
+  if (!user) return false;
+  if (isAdmin(user)) return true;
+  const usesProjectRoomContract = Object.prototype.hasOwnProperty.call(capabilities, 'canDeletePo');
+  if (!usesProjectRoomContract) return isPurchaseOrderCreator(po, user);
+  return Boolean(capabilities.canDeletePo && isPurchaseOrderCreator(po, user));
+};
 
 export const purchaseOrderHasStockImpact = (
   po: PurchaseOrder,
@@ -137,7 +140,7 @@ export const getPurchaseOrderRemovalBlockReason = (
   capabilities: PurchaseOrderMutationCapabilities = {},
 ): string | null => {
   if (!canUserRemovePurchaseOrder(po, user, capabilities)) {
-    return 'Bạn cần quyền xoá PO, quyền quản trị PO, hoặc là người tạo PO để xoá/lưu trữ phiếu này.';
+    return 'Bạn phải là người tạo PO và có quyền Xóa trong Room Đơn hàng PO để xoá/lưu trữ phiếu này.';
   }
   const work = summarizePurchaseOrderWork(po, fulfillmentBatches, scheduleBatches);
   if (work.hasPendingWork) {
@@ -158,7 +161,7 @@ export const getPurchaseOrderEditBlockReason = (
   capabilities: PurchaseOrderMutationCapabilities = {},
 ): string | null => {
   if (!canUserMutatePurchaseOrder(po, user, capabilities)) {
-    return 'Bạn cần quyền tạo/sửa PO, quyền quản trị PO, hoặc là người tạo PO để sửa phiếu này.';
+    return 'Bạn phải là người tạo PO, có quyền Sửa trong Room Đơn hàng PO và PO đang ở trạng thái Nháp/Trả lại.';
   }
   const work = summarizePurchaseOrderWork(po, fulfillmentBatches, scheduleBatches);
   if (work.hasPendingWork) {

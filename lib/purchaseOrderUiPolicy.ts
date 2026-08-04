@@ -64,14 +64,12 @@ export interface PurchaseOrderUiPolicyInput {
   receiptStats?: PurchaseOrderReceiptStats;
   deliveryBatches?: PurchaseOrderDeliveryBatch[];
   supplierReturnableQty?: number;
-  canManageTab?: boolean;
-  canCreatePo?: boolean;
-  canApprovePo?: boolean;
-  canReceivePo?: boolean;
-  canDeletePo?: boolean;
-  canManagePo?: boolean;
+  canEditPoDocument?: boolean;
+  canSubmitPoDocument?: boolean;
+  canApprovePoDocument?: boolean;
+  canDeletePoDocument?: boolean;
+  canConfirmPo?: boolean;
   canRunRestrictedPoActions?: boolean;
-  canMutatePoDocument?: boolean;
   editBlockReason?: string | null;
   removalBlockReason?: string | null;
   hasStockImpact?: boolean;
@@ -128,14 +126,12 @@ export const getPurchaseOrderUiPolicy = ({
   receiptStats,
   deliveryBatches = [],
   supplierReturnableQty = 0,
-  canManageTab = false,
-  canCreatePo = false,
-  canApprovePo = false,
-  canReceivePo = false,
-  canDeletePo = false,
-  canManagePo = false,
+  canEditPoDocument = false,
+  canSubmitPoDocument = false,
+  canApprovePoDocument = false,
+  canDeletePoDocument = false,
+  canConfirmPo = false,
   canRunRestrictedPoActions = false,
-  canMutatePoDocument = false,
   editBlockReason = null,
   removalBlockReason = null,
   hasStockImpact = false,
@@ -149,12 +145,12 @@ export const getPurchaseOrderUiPolicy = ({
 }: PurchaseOrderUiPolicyInput): PurchaseOrderUiPolicy => {
   const isCompanyConsolidatedPo = po.sourceMode === 'company_consolidated';
   const isPackageV2 = isPurchasePackageV2(po);
-  const mayApprovePo = canManagePo || canApprovePo || canManageTab;
-  const maySubmitPo = canManagePo || canCreatePo || canMutatePoDocument || canManageTab;
-  const mayReceivePo = canManagePo || canReceivePo || canManageTab;
-  const mayEditPo = canManagePo || canCreatePo || canMutatePoDocument;
-  const mayDeletePo = canManagePo || canDeletePo || canMutatePoDocument;
-  const mayReturnSupplier = canManagePo || canRunRestrictedPoActions;
+  const mayApprovePo = canApprovePoDocument;
+  const maySubmitPo = canSubmitPoDocument;
+  const mayReceivePo = canConfirmPo;
+  const mayEditPo = canEditPoDocument;
+  const mayDeletePo = canDeletePoDocument;
+  const mayReturnSupplier = canRunRestrictedPoActions;
   const plannedBatch = firstPlannedBatch(deliveryBatches);
   const hasPendingSupplemental = Boolean(pendingSupplementalApprovalId)
     || po.supplementalApprovalStatus === 'pending'

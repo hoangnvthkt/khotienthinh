@@ -145,4 +145,32 @@ describe('projectPermissionRoomService', () => {
       p_construction_site_id: 'site-1',
     });
   });
+
+  it('loads candidate PBAC exceptions even before the user joins the Room', async () => {
+    supabaseMocks.rpc
+      .mockResolvedValueOnce({
+        data: [{
+          project_staff_id: 'staff-1',
+          user_id: 'user-1',
+          user_name: 'Phạm Ngọc Sơn',
+          legacy_permission_codes: ['project.material_po.manage'],
+        }],
+        error: null,
+      })
+      .mockResolvedValueOnce({ data: [], error: null });
+
+    const candidates = await projectPermissionRoomService.listCandidates(
+      'project-1', 'site-1', 'material_po',
+    );
+
+    expect(candidates[0]).toEqual(expect.objectContaining({
+      isRoomMember: false,
+      legacyPermissionCodes: ['project.material_po.manage'],
+    }));
+    expect(supabaseMocks.rpc).toHaveBeenNthCalledWith(1, 'list_project_room_staff_candidates', {
+      p_project_id: 'project-1',
+      p_construction_site_id: 'site-1',
+      p_room_code: 'material_po',
+    });
+  });
 });

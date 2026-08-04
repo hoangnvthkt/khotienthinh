@@ -13,7 +13,7 @@ with action_matrix as (
     binding.verified_at,
     binding.verified_source,
     case
-      when binding.room_code in ('daily_log', 'material_planning') then true
+      when binding.room_code in ('daily_log', 'material_planning', 'material_po') then true
       else false
     end as frontend_capability_verified,
     case
@@ -27,6 +27,11 @@ with action_matrix as (
           and policy.tablename in ('material_budget_items', 'project_work_boq_items')
           and coalesce(policy.qual, policy.with_check, '') like '%project_actor_has_effective_room_action%'
       )
+      when binding.room_code = 'material_po' then
+        pg_get_functiondef('public.transition_project_purchase_order_status(text,text,jsonb)'::regprocedure)
+          like '%project_actor_has_effective_room_action%'
+        and pg_get_functiondef('app_private.guard_project_purchase_order_room_write()'::regprocedure)
+          like '%material_po%'
       else false
     end as backend_enforcement_verified,
     case
@@ -51,6 +56,14 @@ with action_matrix as (
             'project_work_boq_items_update',
             'project_work_boq_items_delete'
           )
+      )
+      when binding.room_code = 'material_po' then exists (
+        select 1 from pg_policies policy
+        where policy.schemaname = 'public'
+          and policy.tablename = 'purchase_orders'
+          and policy.policyname in ('purchase_orders_select', 'purchase_orders_insert', 'purchase_orders_update')
+        group by policy.tablename
+        having count(*) = 3
       )
       else false
     end as database_policy_verified

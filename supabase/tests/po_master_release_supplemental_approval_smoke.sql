@@ -141,7 +141,7 @@ as $$
   );
 $$;
 
-select pg_temp.po_master_release_smoke_set_user(po_creator_id)
+select pg_temp.po_master_release_smoke_set_user(po_receiver_id)
 from po_master_release_smoke_ids;
 
 insert into public.purchase_order_supplemental_approvals(
@@ -151,7 +151,7 @@ insert into public.purchase_order_supplemental_approvals(
 )
 select approval_id, po_id, delivery_batch_id, project_id, site_id,
        100, 120, 20,
-       'pending', po_creator_id::text, po_approver_id::text, 'PO approver', 'project.material_po.approve'
+       'pending', po_receiver_id::text, po_approver_id::text, 'PO approver', 'project.material_po.approve'
 from po_master_release_smoke_ids;
 
 reset role;
@@ -242,13 +242,16 @@ select pg_temp.po_master_release_smoke_set_user(po_approver_id)
 from po_master_release_smoke_ids;
 
 do $$
+declare v_updated integer := 0;
 begin
   begin
     update public.purchase_order_supplemental_approvals
     set status = 'rejected'
     where id = (select approval_id from po_master_release_smoke_ids);
-
-    raise exception 'Direct supplemental status update was not blocked.';
+    get diagnostics v_updated = row_count;
+    if v_updated > 0 then
+      raise exception 'Direct supplemental status update was not blocked.';
+    end if;
   exception
     when insufficient_privilege then
       null;

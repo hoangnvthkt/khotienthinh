@@ -139,11 +139,11 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         canReturnMaterialRequest,
         canConfirmFulfillment,
         canEditPlanning,
-        canCreatePo,
+        canEditPo,
+        canSubmitPo,
         canApprovePo,
-        canReceivePo,
+        canConfirmPo,
         canDeletePo,
-        canManagePoPermission,
         canViewDirectPurchase,
         canCreateDirectPurchase,
         canEditDirectPurchase,
@@ -2419,14 +2419,14 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     }, []);
 
     const handleCreatePlanningDraftPo = useCallback((draft: MaterialPlanningDraftPo) => {
-        if (!materialAccess.po.canView || !canCreatePo) {
-            toast.warning('Không có quyền tạo PO', 'Bạn cần quyền "project.material_po.create" để tạo PO từ kế hoạch vật tư.');
+        if (!materialAccess.po.canView || !canEditPo) {
+            toast.warning('Không có quyền tạo PO', 'Bạn cần quyền Sửa trong Room Đơn hàng PO để tạo PO từ kế hoạch vật tư.');
             return;
         }
         setPlanningDraftPo(draft);
         setPlanningDraftPoKey(prev => prev + 1);
         setActiveSubTab('po');
-    }, [canCreatePo, materialAccess.po.canView, toast]);
+    }, [canEditPo, materialAccess.po.canView, toast]);
 
     const materialTabLabels: Record<ProjectMaterialTabKey, string> = {
         summary: '🔗 Tổng hợp',
@@ -2895,13 +2895,13 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                     <SupplyChainTab
                         constructionSiteId={constructionSiteId}
                         projectId={projectId}
-                        canManageTab={canCreatePo || canApprovePo || canReceivePo || canDeletePo || canManagePoPermission || canCreateDirectPurchase || canEditDirectPurchase || canDeleteDirectPurchase || canRecordDirectPurchaseAp || canCreateSupplierDelivery || canEditSupplierDelivery || canDeleteSupplierDelivery || canRecordSupplierDelivery || canUnrecordSupplierDelivery || canReconcileSupplierDelivery}
+                        canManageTab={canEditPo || canSubmitPo || canApprovePo || canConfirmPo || canDeletePo || canCreateDirectPurchase || canEditDirectPurchase || canDeleteDirectPurchase || canRecordDirectPurchaseAp || canCreateSupplierDelivery || canEditSupplierDelivery || canDeleteSupplierDelivery || canRecordSupplierDelivery || canUnrecordSupplierDelivery || canReconcileSupplierDelivery}
                         poCapabilities={{
-                            canCreatePo,
+                            canEditPo,
+                            canSubmitPo,
                             canApprovePo,
-                            canReceivePo,
+                            canConfirmPo,
                             canDeletePo,
-                            canManagePo: canManagePoPermission,
                         }}
                         directPurchaseCapabilities={{
                             canViewDirectPurchase,

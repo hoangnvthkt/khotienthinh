@@ -117,6 +117,7 @@ import {
     getPurchaseOrderEditBlockReason,
     getPurchaseOrderRemovalBlockReason,
     purchaseOrderHasStockImpact,
+    isPurchaseOrderCreator,
     summarizePurchaseOrderWork,
 } from '../../lib/purchaseOrderMutationState';
 import {
@@ -188,11 +189,11 @@ interface SupplyChainTabProps {
 }
 
 type PurchaseOrderCapabilities = {
-    canCreatePo?: boolean;
+    canEditPo?: boolean;
+    canSubmitPo?: boolean;
     canApprovePo?: boolean;
-    canReceivePo?: boolean;
+    canConfirmPo?: boolean;
     canDeletePo?: boolean;
-    canManagePo?: boolean;
 };
 
 type DirectPurchaseCapabilities = {
@@ -228,20 +229,19 @@ const resolvePurchaseOrderCapabilities = (
 ): Required<PurchaseOrderCapabilities> => {
     if (!poCapabilities) {
         return {
-            canCreatePo: canManageTab,
-            canApprovePo: canManageTab,
-            canReceivePo: canManageTab,
-            canDeletePo: canManageTab,
-            canManagePo: canManageTab,
+            canEditPo: false,
+            canSubmitPo: false,
+            canApprovePo: false,
+            canConfirmPo: false,
+            canDeletePo: false,
         };
     }
-    const canManagePo = Boolean(poCapabilities.canManagePo);
     return {
-        canCreatePo: canManagePo || Boolean(poCapabilities.canCreatePo),
-        canApprovePo: canManagePo || Boolean(poCapabilities.canApprovePo),
-        canReceivePo: canManagePo || Boolean(poCapabilities.canReceivePo),
-        canDeletePo: canManagePo || Boolean(poCapabilities.canDeletePo),
-        canManagePo,
+        canEditPo: Boolean(poCapabilities.canEditPo),
+        canSubmitPo: Boolean(poCapabilities.canSubmitPo),
+        canApprovePo: Boolean(poCapabilities.canApprovePo),
+        canConfirmPo: Boolean(poCapabilities.canConfirmPo),
+        canDeletePo: Boolean(poCapabilities.canDeletePo),
     };
 };
 
@@ -870,7 +870,6 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     const effectivePoCapabilities = resolvePurchaseOrderCapabilities(canManageTab, poCapabilities);
     const effectiveDirectPurchaseCapabilities = resolveDirectPurchaseCapabilities(canManageTab, directPurchaseCapabilities);
     const effectiveSupplierDeliveryCapabilities = resolveSupplierDeliveryCapabilities(canManageTab, supplierDeliveryCapabilities);
-    const legacyPoCanManageTab = poCapabilities ? false : canManageTab;
 
     const ensureCanManage = (action: string) => {
         if (canManageTab) return true;
@@ -890,33 +889,30 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         return false;
     };
 
-    const ensureCanCreatePo = (action: string) => {
-        if (effectivePoCapabilities.canCreatePo) return true;
-        toast.warning('Không có quyền thao tác PO', `Bạn cần quyền tạo/sửa PO để ${action}.`);
+    const ensureCanEditPo = (action: string) => {
+        if (effectivePoCapabilities.canEditPo) return true;
+        toast.warning('Không có quyền thao tác PO', `Bạn cần quyền Sửa trong Room Đơn hàng PO để ${action}.`);
         return false;
     };
 
-    const ensureCanApprovePo = (action: string) => {
-        if (effectivePoCapabilities.canApprovePo) return true;
-        toast.warning('Không có quyền thao tác PO', `Bạn cần quyền duyệt PO để ${action}.`);
+    const isPoApprovalAssignee = (po: PurchaseOrder) => isAdmin(user)
+        || Boolean(po.submittedToUserId && [user.id, user.authId].filter(Boolean).includes(po.submittedToUserId));
+
+    const ensureCanApprovePo = (po: PurchaseOrder, action: string) => {
+        if (effectivePoCapabilities.canApprovePo && isPoApprovalAssignee(po)) return true;
+        toast.warning('Không có quyền thao tác PO', `Bạn cần quyền Duyệt và phải là người được giao xử lý PO để ${action}.`);
         return false;
     };
 
-    const ensureCanReceivePo = (action: string) => {
-        if (effectivePoCapabilities.canReceivePo) return true;
-        toast.warning('Không có quyền thao tác PO', `Bạn cần quyền nhận hàng PO để ${action}.`);
-        return false;
-    };
-
-    const ensureCanDeletePo = (action: string) => {
-        if (effectivePoCapabilities.canDeletePo) return true;
-        toast.warning('Không có quyền thao tác PO', `Bạn cần quyền xoá PO để ${action}.`);
+    const ensureCanConfirmPo = (action: string) => {
+        if (effectivePoCapabilities.canConfirmPo) return true;
+        toast.warning('Không có quyền thao tác PO', `Bạn cần quyền Xác nhận trong Room Đơn hàng PO để ${action}.`);
         return false;
     };
 
     const ensureCanReturnSupplierPo = (action: string) => {
-        if (effectivePoCapabilities.canManagePo || canRunRestrictedPoActions) return true;
-        toast.warning('Không có quyền thao tác PO', `Bạn cần quyền quản trị PO hoặc quyền kho tổng để ${action}.`);
+        if (canRunRestrictedPoActions) return true;
+        toast.warning('Không có quyền thao tác PO', `Bạn cần quyền kho tổng để ${action}.`);
         return false;
     };
 
@@ -928,19 +924,19 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
 
     const ensureCanMutatePoDocument = (po: PurchaseOrder, action: string) => {
         if (canUserMutatePurchaseOrder(po, user, effectivePoCapabilities)) return true;
-        toast.warning('Không có quyền thao tác PO', `Bạn cần quyền tạo/sửa PO, quyền quản trị PO, hoặc là người tạo PO để ${action}.`);
+        toast.warning('Không có quyền thao tác PO', `Bạn phải là người tạo, có quyền Sửa và PO đang ở trạng thái Nháp/Trả lại để ${action}.`);
         return false;
     };
 
     const ensureCanSubmitPo = (po: PurchaseOrder, action: string) => {
-        if (legacyPoCanManageTab || canUserMutatePurchaseOrder(po, user, effectivePoCapabilities)) return true;
-        toast.warning('Không có quyền thao tác PO', `Bạn cần quyền gửi/tạo/sửa PO, quyền quản trị PO, hoặc là người tạo PO để ${action}.`);
+        if (isAdmin(user) || (effectivePoCapabilities.canSubmitPo && isPurchaseOrderCreator(po, user))) return true;
+        toast.warning('Không có quyền thao tác PO', `Bạn phải là người tạo PO và có quyền Gửi trong Room Đơn hàng PO để ${action}.`);
         return false;
     };
 
     const ensureCanRemovePoDocument = (po: PurchaseOrder, action: string) => {
         if (canUserRemovePurchaseOrder(po, user, effectivePoCapabilities)) return true;
-        toast.warning('Không có quyền thao tác PO', `Bạn cần quyền xoá PO, quyền quản trị PO, hoặc là người tạo PO để ${action}.`);
+        toast.warning('Không có quyền thao tác PO', `Bạn phải là người tạo PO và có quyền Xóa trong Room Đơn hàng PO để ${action}.`);
         return false;
     };
 
@@ -2940,7 +2936,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         setShowPackageReconcileDetails(false);
     };
     const openCreatePo = async () => {
-        if (!ensureCanCreatePo('tạo PO')) return;
+        if (!ensureCanEditPo('tạo PO')) return;
         await loadPoBoqMetaData().catch(error => console.warn('Failed to load PO BOQ metadata:', error));
         try {
             const nextPoNumber = await loadNextPoNumber('proactive_project');
@@ -2956,7 +2952,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     };
 
     const openRequestPicker = async () => {
-        if (!ensureCanCreatePo('tạo PO từ đề xuất')) return;
+        if (!ensureCanEditPo('tạo PO từ đề xuất')) return;
         await loadPoBoqMetaData().catch(error => console.warn('Failed to load PO BOQ metadata:', error));
         setRequestPickerMode('create_po');
         setSelectedRequestLineKeys([]);
@@ -3039,7 +3035,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     };
 
     const openPoFromSelectedRequests = async () => {
-        if (!ensureCanCreatePo('tạo PO từ đề xuất')) return;
+        if (!ensureCanEditPo('tạo PO từ đề xuất')) return;
         const { workRows, budgetRows } = await loadPoBoqMetaData().catch(error => {
             console.warn('Failed to load PO BOQ metadata:', error);
             return { workRows: workBoqItems, budgetRows: materialBudgetItems };
@@ -3254,7 +3250,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     };
 
     const openPoDeliveryDraft = async (po: PurchaseOrder) => {
-        if (!ensureCanReceivePo('tạo đợt giao PO')) return;
+        if (!ensureCanConfirmPo('tạo đợt giao PO')) return;
         if ((poDeliveryBatchesByPo[po.id] || []).some(batch => batch.status === 'supplemental_pending')) {
             toast.warning('Đang chờ duyệt bổ sung', 'PO còn đợt mua vượt giá trị đã duyệt nên chưa thể tạo WMS/đợt giao mới.');
             return;
@@ -3345,7 +3341,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
 
     const submitPoDeliveryDraft = async () => {
         if (!deliveryDraftPo || savingDeliveryDraft) return;
-        if (!ensureCanReceivePo('tạo đợt giao PO')) return;
+        if (!ensureCanConfirmPo('tạo đợt giao PO')) return;
         if (!user?.id) {
             toast.warning('Thiếu người thao tác', 'Không xác định được tài khoản tạo đợt giao.');
             return;
@@ -3450,7 +3446,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     };
 
     const handleSavePo = async (supplementalSubmissionTarget?: ProjectSubmissionTarget | null) => {
-        if (!ensureCanCreatePo('lưu đơn hàng')) return;
+        if (!ensureCanEditPo('lưu đơn hàng')) return;
         if (poSubmitLockRef.current) return;
         let finalPoNumber = pNum.trim();
         const hasRequestLineTargets = pSourceMode === 'from_request' && pItems.some(item => {
@@ -3800,23 +3796,23 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         const po = pos.find(p => p.id === id);
         if (!po) return;
         if (status === 'returned') {
-            if (!ensureCanReturnSupplierPo('trả hàng/hoàn hàng PO')) return;
+            if (!ensureCanApprovePo(po, 'trả lại PO')) return;
         } else if (status === 'cancelled') {
             if (!ensureCanRunRestrictedPoAction('huỷ PO')) return;
         } else if (status === 'sent') {
             if (!ensureCanSubmitPo(po, 'gửi duyệt PO')) return;
         } else if (['confirmed', 'draft'].includes(status)) {
-            if (!ensureCanApprovePo('cập nhật trạng thái duyệt PO')) return;
+            if (!ensureCanApprovePo(po, 'cập nhật trạng thái duyệt PO')) return;
         } else if (['in_transit', 'partial', 'delivered', 'closed'].includes(status)) {
-            if (!ensureCanReceivePo('cập nhật trạng thái giao nhận PO')) return;
-        } else if (!ensureCanCreatePo('cập nhật trạng thái PO')) {
+            if (!ensureCanConfirmPo('cập nhật trạng thái giao nhận PO')) return;
+        } else if (!ensureCanEditPo('cập nhật trạng thái PO')) {
             return;
         }
         if (status === 'sent' && !submissionTarget) {
             setSubmittingPo(po);
             return;
         }
-        if (status === 'draft') {
+        if (['draft', 'returned'].includes(status)) {
             const receivedQty = po.items.reduce((sum, item) => sum + (Number(item.receivedQty) || 0), 0);
             if (receivedQty > 0 || (po.receivedTransactionIds || []).length > 0) {
                 toast.warning('Không thể huỷ duyệt', 'PO đã phát sinh nhập kho nên không thể trả về nháp.');
@@ -3824,21 +3820,13 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             }
             const ok = await confirm({
                 targetName: po.poNumber,
-                title: 'Huỷ duyệt PO',
-                confirmText: 'Đưa về nháp',
-                warningText: 'PO sẽ trở về trạng thái nháp để chỉnh sửa và gửi duyệt lại khi cần.',
+                title: status === 'returned' ? 'Trả lại PO' : 'Huỷ duyệt PO',
+                confirmText: status === 'returned' ? 'Trả lại' : 'Đưa về nháp',
+                warningText: status === 'returned'
+                    ? 'PO sẽ chuyển sang Trả lại, gỡ người duyệt cũ để người tạo chỉnh sửa và gửi lại.'
+                    : 'PO sẽ trở về trạng thái nháp để chỉnh sửa và gửi duyệt lại khi cần.',
             });
             if (!ok) return;
-        }
-        if (status === 'returned') {
-            const receivedQty = po.items.reduce((sum, item) => sum + (Number(item.receivedQty) || 0), 0);
-            if (['partial', 'delivered', 'closed'].includes(po.status) || receivedQty > 0) {
-                setSupplierReturnPo(po);
-                toast.info('Tạo phiếu trả NCC', 'PO đã phát sinh nhập kho nên hoàn trả sẽ đi qua phiếu SR và WMS duyệt xuất kho.');
-                return;
-            }
-            toast.warning('Chưa thể hoàn NCC', 'PO chưa phát sinh nhập kho nên không ghi nhận Hoàn NCC. Hãy huỷ PO hoặc xoá các đợt giao bị từ chối trước nhập.');
-            return;
         }
         const receiptStats = getPurchaseOrderDemandStats(po, poRequestLinks, inventoryItems);
         let partialCloseReason = '';
@@ -3864,7 +3852,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             }
         }
         const statusPatch =
-            status === 'draft'
+            ['draft', 'returned'].includes(status)
                 ? {
                     submittedToUserId: null,
                     submittedToName: null,
@@ -3877,7 +3865,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         const updated = {
             status,
             ...statusPatch,
-            ...projectSubmissionService.actionMeta(user?.id, !['draft', 'cancelled'].includes(status)),
+            ...projectSubmissionService.actionMeta(user?.id, !['draft', 'returned', 'cancelled'].includes(status)),
             actualDeliveryDate: status === 'delivered' ? new Date().toISOString().split('T')[0] : po.actualDeliveryDate,
             deliveryNote: status === 'delivered' && po.status === 'partial'
                 ? [
@@ -3936,7 +3924,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 setSubmittingPo(null);
             }
             await loadSupplyData();
-            toast.success(status === 'draft' ? 'Đã đưa PO về nháp' : 'Cập nhật trạng thái PO');
+            toast.success(status === 'returned' ? 'Đã trả lại PO' : status === 'draft' ? 'Đã đưa PO về nháp' : 'Cập nhật trạng thái PO');
         } catch (e: any) {
             logApiError('supplyChain.updatePoStatus', e);
             toast.error('Không thể cập nhật PO', getApiErrorMessage(e, 'Không thể cập nhật trạng thái PO trên Supabase.'));
@@ -3945,7 +3933,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     };
 
     const handleCreatePoDeliveryReceipt = async (po: PurchaseOrder, deliveryBatch: PurchaseOrderDeliveryBatch) => {
-        if (!ensureCanReceivePo('tạo phiếu nhận WMS/QR cho đợt giao')) return;
+        if (!ensureCanConfirmPo('tạo phiếu nhận WMS/QR cho đợt giao')) return;
         if (!['confirmed', 'in_transit'].includes(po.status)) {
             toast.warning('Chưa thể tạo WMS', 'Chỉ tạo phiếu nhận theo đợt khi PO đã được duyệt hoặc đang giao.');
             return;
@@ -4038,7 +4026,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     };
 
     const handleRemoveFailedDeliveryBatch = async (po: PurchaseOrder, deliveryBatch: PurchaseOrderDeliveryBatch) => {
-        if (!ensureCanDeletePo('xoá đợt giao thất bại')) return;
+        if (!ensureCanConfirmPo('xoá đợt giao thất bại')) return;
         const ok = await confirm({
             targetName: `${po.poNumber} - Đợt ${deliveryBatch.deliveryNo}`,
             title: 'Xoá đợt giao bị từ chối',
@@ -4066,7 +4054,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     };
 
     const handleRemoveFailedDeliveryGroup = async (po: PurchaseOrder, group: PoDeliveryPrintGroup) => {
-        if (!ensureCanDeletePo('xoá đợt giao thất bại')) return;
+        if (!ensureCanConfirmPo('xoá đợt giao thất bại')) return;
         const ok = await confirm({
             targetName: `${po.poNumber} - ${group.label}`,
             title: 'Xoá đợt giao bị từ chối',
@@ -4340,13 +4328,13 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     };
 
     const openPoImport = (mode: ExcelImportMode) => {
-        if (!ensureCanCreatePo('import PO')) return;
+        if (!ensureCanEditPo('import PO')) return;
         poImportModeRef.current = mode;
         setPoImportMode(mode);
     };
 
     const handleImportPoExcel = async (event: React.ChangeEvent<HTMLInputElement>) => {
-        if (!ensureCanCreatePo('import PO')) {
+        if (!ensureCanEditPo('import PO')) {
             event.target.value = '';
             return;
         }
@@ -4372,7 +4360,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     };
 
     const handleConfirmPoImport = () => {
-        if (!ensureCanCreatePo('áp dụng import PO')) return;
+        if (!ensureCanEditPo('áp dụng import PO')) return;
         if (!poImportPreview) return;
         const records = applyImportChanges(poImportPreview).map(item => hydratePoFormItem(item, inventoryItems));
         if (records.length === 0) {
@@ -5401,7 +5389,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 await updatePoStatus(po.id, 'sent');
                 return;
             case 'approve_package': {
-                if (!ensureCanApprovePo('duyệt gói mua hàng')) return;
+                if (!ensureCanApprovePo(po, 'duyệt gói mua hàng')) return;
                 try {
                     const result = await purchasePackageService.approvePackage({
                         purchaseOrderId: po.id,
@@ -5428,10 +5416,10 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 await updatePoStatus(po.id, 'confirmed');
                 return;
             case 'request_revision':
-                await updatePoStatus(po.id, 'draft');
+                await updatePoStatus(po.id, 'returned');
                 return;
             case 'approve_supplemental':
-                if (!ensureCanApprovePo('duyệt bổ sung PO')) return;
+                if (!ensureCanApprovePo(po, 'duyệt bổ sung PO')) return;
                 if (!action.supplementalApprovalId) {
                     toast.warning('Thiếu yêu cầu duyệt', 'Không tìm thấy phiếu duyệt bổ sung của đợt mua này.');
                     return;
@@ -5441,7 +5429,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 toast.success('Đã duyệt bổ sung PO', 'Đợt mua đã được mở để tạo WMS/QR.');
                 return;
             case 'reject_supplemental':
-                if (!ensureCanApprovePo('từ chối duyệt bổ sung PO')) return;
+                if (!ensureCanApprovePo(po, 'từ chối duyệt bổ sung PO')) return;
                 if (!action.supplementalApprovalId) {
                     toast.warning('Thiếu yêu cầu duyệt', 'Không tìm thấy phiếu duyệt bổ sung của đợt mua này.');
                     return;
@@ -5474,7 +5462,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 return;
             }
             case 'cancel_delivery': {
-                if (!ensureCanCreatePo('hủy đợt giao')) return;
+                if (!ensureCanConfirmPo('hủy đợt giao')) return;
                 if (!action.deliveryBatchId) {
                     toast.warning('Thiếu đợt giao', 'Không tìm thấy đợt giao cần hủy.');
                     return;
@@ -5533,7 +5521,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 return;
             }
             case 'close_short': {
-                if (!ensureCanCreatePo('kết thúc thiếu gói mua hàng')) return;
+                if (!ensureCanConfirmPo('kết thúc thiếu gói mua hàng')) return;
                 const demandStats = getPurchaseOrderDemandStats(po, poRequestLinks, inventoryItems);
                 if (Number(demandStats.remainingQty || 0) <= 0) {
                     toast.info('Không còn nhu cầu thiếu', 'Gói mua hàng này không còn khối lượng cần kết thúc thiếu.');
@@ -6610,7 +6598,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                 className="inline-flex min-h-9 items-center gap-1 whitespace-nowrap rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[10px] font-black text-emerald-700 transition hover:bg-emerald-100 active:scale-[0.98] dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-300">
                                 <FileSpreadsheet size={12} /> Mẫu Excel
                             </button>
-                            {effectivePoCapabilities.canCreatePo && (
+                            {effectivePoCapabilities.canEditPo && (
                                 <>
                                     <button onClick={openRequestPicker}
                                         disabled={scopedRequestLines.length === 0}
@@ -6752,6 +6740,16 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                 const poRemovalBlockReason = getPurchaseOrderRemovalBlockReason(po, user, fulfillmentBatchesForPo, deliveryBatches, supplierReturns, effectivePoCapabilities);
                                 const pendingSupplementalApproval = getPendingSupplementalApprovalForPo(po.id, deliveryBatches);
                                 const canMutatePoDocument = canUserMutatePurchaseOrder(po, user, effectivePoCapabilities);
+                                const canSubmitPoDocument = Boolean(
+                                    (isAdmin(user) || (effectivePoCapabilities.canSubmitPo && isPurchaseOrderCreator(po, user)))
+                                    && ['draft', 'returned'].includes(po.status),
+                                );
+                                const canApprovePoDocument = Boolean(
+                                    effectivePoCapabilities.canApprovePo
+                                    && isPoApprovalAssignee(po)
+                                    && po.status === 'sent',
+                                );
+                                const canDeletePoDocument = canUserRemovePurchaseOrder(po, user, effectivePoCapabilities);
                                 const poHasStockImpact = hasPoStockImpactHint(po, supplierReturns);
                                 const isCompanyConsolidatedPo = po.sourceMode === 'company_consolidated';
                                 const editBlockReason = isCompanyConsolidatedPo
@@ -6763,14 +6761,12 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                     receiptStats,
                                     deliveryBatches,
                                     supplierReturnableQty,
-                                    canManageTab: legacyPoCanManageTab,
-                                    canCreatePo: effectivePoCapabilities.canCreatePo,
-                                    canApprovePo: effectivePoCapabilities.canApprovePo,
-                                    canReceivePo: effectivePoCapabilities.canReceivePo,
-                                    canDeletePo: effectivePoCapabilities.canDeletePo,
-                                    canManagePo: effectivePoCapabilities.canManagePo,
+                                    canEditPoDocument: canMutatePoDocument,
+                                    canSubmitPoDocument,
+                                    canApprovePoDocument,
+                                    canDeletePoDocument,
+                                    canConfirmPo: effectivePoCapabilities.canConfirmPo,
                                     canRunRestrictedPoActions,
-                                    canMutatePoDocument,
                                     editBlockReason,
                                     removalBlockReason: poRemovalBlockReason,
                                     hasStockImpact: poHasStockImpact,
@@ -6903,6 +6899,16 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 const poRemovalBlockReason = getPurchaseOrderRemovalBlockReason(po, user, fulfillmentBatchesForPo, deliveryBatches, supplierReturns, effectivePoCapabilities);
                 const pendingSupplementalApproval = getPendingSupplementalApprovalForPo(po.id, deliveryBatches);
                 const canMutatePoDocument = canUserMutatePurchaseOrder(po, user, effectivePoCapabilities);
+                const canSubmitPoDocument = Boolean(
+                    (isAdmin(user) || (effectivePoCapabilities.canSubmitPo && isPurchaseOrderCreator(po, user)))
+                    && ['draft', 'returned'].includes(po.status),
+                );
+                const canApprovePoDocument = Boolean(
+                    effectivePoCapabilities.canApprovePo
+                    && isPoApprovalAssignee(po)
+                    && po.status === 'sent',
+                );
+                const canDeletePoDocument = canUserRemovePurchaseOrder(po, user, effectivePoCapabilities);
                 const poHasStockImpact = hasPoStockImpactHint(po, supplierReturns);
                 const editBlockReason = isCompanyConsolidatedPo
                     ? 'PO công ty cần sửa tại màn Mua hàng công ty.'
@@ -6933,14 +6939,12 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     receiptStats,
                     deliveryBatches,
                     supplierReturnableQty,
-                    canManageTab: legacyPoCanManageTab,
-                    canCreatePo: effectivePoCapabilities.canCreatePo,
-                    canApprovePo: effectivePoCapabilities.canApprovePo,
-                    canReceivePo: effectivePoCapabilities.canReceivePo,
-                    canDeletePo: effectivePoCapabilities.canDeletePo,
-                    canManagePo: effectivePoCapabilities.canManagePo,
+                    canEditPoDocument: canMutatePoDocument,
+                    canSubmitPoDocument,
+                    canApprovePoDocument,
+                    canDeletePoDocument,
+                    canConfirmPo: effectivePoCapabilities.canConfirmPo,
                     canRunRestrictedPoActions,
-                    canMutatePoDocument,
                     editBlockReason,
                     removalBlockReason: poRemovalBlockReason,
                     hasStockImpact: poHasStockImpact,
@@ -6982,8 +6986,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                         completedReturnQty={completedReturnQty}
                         pendingReturnQty={pendingReturnQty}
                         canMutatePoDocument={canMutatePoDocument}
-                        canReceivePo={effectivePoCapabilities.canReceivePo}
-                        canDeletePo={effectivePoCapabilities.canDeletePo}
+                        canConfirmPo={effectivePoCapabilities.canConfirmPo}
                         poHasStockImpact={poHasStockImpact}
                         creatingDeliveryBatchId={creatingDeliveryBatchId}
                         deletingDeliveryKey={deletingDeliveryKey}

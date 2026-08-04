@@ -97,8 +97,7 @@ export type PurchaseOrderCockpitDrawerProps = {
   completedReturnQty: number;
   pendingReturnQty: number;
   canMutatePoDocument: boolean;
-  canReceivePo: boolean;
-  canDeletePo: boolean;
+  canConfirmPo: boolean;
   poHasStockImpact: boolean;
   creatingDeliveryBatchId?: string | null;
   deletingDeliveryKey?: string | null;
@@ -232,8 +231,7 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
   completedReturnQty,
   pendingReturnQty,
   canMutatePoDocument,
-  canReceivePo,
-  canDeletePo,
+  canConfirmPo,
   poHasStockImpact,
   creatingDeliveryBatchId,
   deletingDeliveryKey,
@@ -733,17 +731,17 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
                                     <QrCode size={14} /> Mở QR
                                   </button>
                                 )}
-                                {isPackageV2 && batch && po.purchaseMode === 'multiple' && (
+                                {isPackageV2 && batch && canConfirmPo && po.purchaseMode === 'multiple' && (
                                   <button type="button" onClick={() => void onRunAction({ id: 'clone_delivery', label: 'Clone đợt', intent: 'neutral', deliveryBatchId: batch.id })} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3.5 text-xs font-black text-slate-600 hover:bg-slate-50">
                                     <RefreshCcw size={14} /> Clone
                                   </button>
                                 )}
-                                {isPackageV2 && batch && po.purchaseMode === 'multiple' && ['planned', 'wms_pending', 'receiving'].includes(batch.status) && (
+                                {isPackageV2 && batch && canConfirmPo && po.purchaseMode === 'multiple' && ['planned', 'wms_pending', 'receiving'].includes(batch.status) && (
                                   <button type="button" onClick={() => void onRunAction({ id: 'cancel_delivery', label: 'Hủy đợt giao', intent: 'danger', deliveryBatchId: batch.id })} disabled={isDeletingBatch} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3.5 text-xs font-black text-red-700 hover:bg-red-100 disabled:opacity-60">
                                     {isDeletingBatch ? <Loader2 size={14} className="animate-spin" /> : <Ban size={14} />} Hủy
                                   </button>
                                 )}
-                                {!isPackageV2 && batch && canReceivePo && ['confirmed', 'in_transit'].includes(po.status) && batch.status === 'planned' && (
+                                {!isPackageV2 && batch && canConfirmPo && ['confirmed', 'in_transit'].includes(po.status) && batch.status === 'planned' && (
                                   <button type="button" onClick={() => void onCreateDeliveryReceipt(batch)} disabled={creatingDeliveryBatchId === batch.id} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-indigo-600 px-3.5 text-xs font-black text-white hover:bg-indigo-700 disabled:opacity-60">
                                     {creatingDeliveryBatchId === batch.id ? <Loader2 size={14} className="animate-spin" /> : <QrCode size={14} />} Tạo WMS
                                   </button>
@@ -753,7 +751,7 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
                                     <ShieldCheck size={14} /> Mở WMS
                                   </button>
                                 )}
-                                {canDeletePo && normalizedStatus === 'cancelled' && (
+                                {canConfirmPo && normalizedStatus === 'cancelled' && (
                                   <button type="button" onClick={() => batch ? void onRemoveFailedDeliveryBatch(batch) : void onRemoveFailedDeliveryGroup(printGroup)} disabled={isDeletingBatch} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3.5 text-xs font-black text-red-700 hover:bg-red-100 disabled:opacity-60">
                                     {isDeletingBatch ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />} Xóa đợt bị từ chối
                                   </button>

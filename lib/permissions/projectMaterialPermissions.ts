@@ -96,10 +96,12 @@ export type ProjectMaterialCapability = {
   canCreateCustomMaterial: boolean;
   canApproveCustomMaterial: boolean;
   canViewPo: boolean;
-  canCreatePo: boolean;
+  canEditPo: boolean;
+  canSubmitPo: boolean;
   canApprovePo: boolean;
-  canReceivePo: boolean;
+  canConfirmPo: boolean;
   canDeletePo: boolean;
+  /** Legacy PBAC exception only. It must never imply another PO capability. */
   canManagePo: boolean;
   canViewDirectPurchase: boolean;
   canCreateDirectPurchase: boolean;
@@ -136,10 +138,8 @@ export const getProjectMaterialCapabilities = (
   const can = (code: ProjectMaterialActionCode) =>
     Boolean(options.isAdmin) || hasPermission(grantedPermissions, code);
   const canManagePo = can('project.material_po.manage');
-  const canPo = (code: Extract<ProjectMaterialActionCode, `project.material_po.${string}`>) =>
-    canManagePo || can(code);
   const canDirectPurchase = (code: Extract<ProjectMaterialActionCode, `project.material_direct_purchase.${string}`>) =>
-    canManagePo || can(code);
+    can(code);
   const canSupplierDelivery = (code: Extract<ProjectMaterialActionCode, `project.material_supplier_delivery.${string}`>) =>
     can(code);
 
@@ -162,11 +162,12 @@ export const getProjectMaterialCapabilities = (
     canViewCustomMaterial: can('project.custom_material.view'),
     canCreateCustomMaterial: can('project.custom_material.create'),
     canApproveCustomMaterial: can('project.custom_material.approve'),
-    canViewPo: canPo('project.material_po.view'),
-    canCreatePo: canPo('project.material_po.create'),
-    canApprovePo: canPo('project.material_po.approve'),
-    canReceivePo: canPo('project.material_po.receive'),
-    canDeletePo: canPo('project.material_po.delete'),
+    canViewPo: can('project.material_po.view'),
+    canEditPo: can('project.material_po.create'),
+    canSubmitPo: can('project.material_po.create'),
+    canApprovePo: can('project.material_po.approve'),
+    canConfirmPo: can('project.material_po.receive'),
+    canDeletePo: can('project.material_po.delete'),
     canManagePo,
     canViewDirectPurchase: canDirectPurchase('project.material_direct_purchase.view'),
     canCreateDirectPurchase: canDirectPurchase('project.material_direct_purchase.create'),

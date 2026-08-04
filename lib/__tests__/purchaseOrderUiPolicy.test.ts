@@ -62,9 +62,12 @@ const baseInput = (patch: Parameters<typeof getPurchaseOrderUiPolicy>[0]) => ({
   },
   deliveryBatches: [],
   supplierReturnableQty: 0,
-  canManageTab: true,
+  canEditPoDocument: true,
+  canSubmitPoDocument: true,
+  canApprovePoDocument: true,
+  canDeletePoDocument: true,
+  canConfirmPo: true,
   canRunRestrictedPoActions: true,
-  canMutatePoDocument: true,
   editBlockReason: null,
   removalBlockReason: null,
   hasStockImpact: false,
@@ -83,11 +86,9 @@ describe('purchaseOrderUiPolicy', () => {
   it('allows PO submitters to request approval without PO approval capability', () => {
     const policy = getPurchaseOrderUiPolicy(baseInput({
       po: makePo({ status: 'draft' }),
-      canManageTab: false,
-      canCreatePo: true,
-      canApprovePo: false,
-      canMutatePoDocument: true,
-    } as any));
+      canSubmitPoDocument: true,
+      canApprovePoDocument: false,
+    }));
 
     expect(policy.primaryAction?.id).toBe('request_approval');
   });
@@ -115,9 +116,8 @@ describe('purchaseOrderUiPolicy', () => {
   it('allows PO receive capability to create delivery without legacy manage access', () => {
     const policy = getPurchaseOrderUiPolicy(baseInput({
       po: makePo({ status: 'confirmed' }),
-      canManageTab: false,
-      canReceivePo: true,
-    } as any));
+      canConfirmPo: true,
+    }));
 
     expect(policy.primaryAction?.id).toBe('create_delivery');
   });
@@ -137,7 +137,7 @@ describe('purchaseOrderUiPolicy', () => {
     const policy = getPurchaseOrderUiPolicy(baseInput({
       po: makePo({ status: 'in_transit', sourceMode: 'from_request' }),
       deliveryBatches: [plannedBatch({ status: 'supplemental_pending' as any })],
-      canReceivePo: true,
+      canConfirmPo: true,
     }));
 
     expect(policy.primaryAction?.id).not.toBe('create_receipt');
@@ -148,12 +148,11 @@ describe('purchaseOrderUiPolicy', () => {
     const policy = getPurchaseOrderUiPolicy(baseInput({
       po: makePo({ status: 'in_transit', sourceMode: 'from_request', supplementalApprovalStatus: 'pending' as any }),
       deliveryBatches: [plannedBatch({ status: 'supplemental_pending' as any })],
-      canManageTab: false,
-      canApprovePo: true,
-      canReceivePo: false,
+      canApprovePoDocument: true,
+      canConfirmPo: false,
       pendingSupplementalApprovalId: 'supp-1',
       supplementalOverAmount: 14000,
-    } as any));
+    }));
 
     expect(policy.primaryAction?.id).toBe('approve_supplemental');
     expect(policy.primaryAction?.label).toContain('Duyệt bổ sung');
@@ -232,24 +231,20 @@ describe('purchaseOrderUiPolicy', () => {
     expect(policy.menuActions.find(action => action.id === 'remove_po')?.disabled).toBe(true);
   });
 
-  it('shows edit action from PO create capability without creator fallback', () => {
+  it('shows edit action only from the document-scoped edit decision', () => {
     const policy = getPurchaseOrderUiPolicy(baseInput({
       po: makePo({ status: 'draft' }),
-      canManageTab: false,
-      canMutatePoDocument: false,
-      canCreatePo: true,
-    } as any));
+      canEditPoDocument: true,
+    }));
 
     expect(policy.menuActions.find(action => action.id === 'edit_po')?.disabled).toBeFalsy();
   });
 
-  it('shows remove action from PO delete capability without creator fallback', () => {
+  it('shows remove action only from the document-scoped delete decision', () => {
     const policy = getPurchaseOrderUiPolicy(baseInput({
       po: makePo({ status: 'draft' }),
-      canManageTab: false,
-      canMutatePoDocument: false,
-      canDeletePo: true,
-    } as any));
+      canDeletePoDocument: true,
+    }));
 
     expect(policy.menuActions.find(action => action.id === 'remove_po')?.disabled).toBeFalsy();
   });

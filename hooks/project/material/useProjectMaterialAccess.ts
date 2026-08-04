@@ -14,6 +14,7 @@ import {
 } from '../../../lib/permissions/projectMaterialPermissions';
 import { projectPermissionRoomService } from '../../../lib/projectPermissionRoomService';
 import { projectStaffService } from '../../../lib/projectStaffService';
+import { getMaterialPoEffectiveCapabilities } from '../../../lib/permissions/projectRoomEffectiveActions';
 
 export interface ProjectMaterialAccessState {
     materialAccess: ProjectMaterialTabPermissionMap;
@@ -35,11 +36,11 @@ export interface ProjectMaterialAccessState {
     canReturnMaterialRequest: boolean;
     canConfirmFulfillment: boolean;
     canEditPlanning: boolean;
-    canCreatePo: boolean;
+    canEditPo: boolean;
+    canSubmitPo: boolean;
     canApprovePo: boolean;
-    canReceivePo: boolean;
+    canConfirmPo: boolean;
     canDeletePo: boolean;
-    canManagePoPermission: boolean;
     canViewDirectPurchase: boolean;
     canCreateDirectPurchase: boolean;
     canEditDirectPurchase: boolean;
@@ -73,8 +74,17 @@ const BOQ_PBAC_ACTION_CODES = new Set<ProjectMaterialActionCode>([
     'project.material_boq.delete',
 ]);
 
+const PO_PBAC_ACTION_CODES = new Set<ProjectMaterialActionCode>([
+    'project.material_po.view',
+    'project.material_po.create',
+    'project.material_po.approve',
+    'project.material_po.receive',
+    'project.material_po.delete',
+    'project.material_po.manage',
+]);
+
 const NON_BOQ_PBAC_ACTION_CODES = PROJECT_MATERIAL_ACTION_CODES.filter(
-    permissionCode => !BOQ_PBAC_ACTION_CODES.has(permissionCode),
+    permissionCode => !BOQ_PBAC_ACTION_CODES.has(permissionCode) && !PO_PBAC_ACTION_CODES.has(permissionCode),
 );
 
 export const useProjectMaterialAccess = ({
@@ -134,7 +144,10 @@ export const useProjectMaterialAccess = ({
                             'material_planning', action.actionCode,
                         ))
                         .forEach(permissionCode => grantedCodes.add(permissionCode));
-                    setMaterialCapabilities(getProjectMaterialCapabilities(grantedCodes));
+                    setMaterialCapabilities({
+                        ...getProjectMaterialCapabilities(grantedCodes),
+                        ...getMaterialPoEffectiveCapabilities(roomActions),
+                    });
                 }
             } catch (error) {
                 console.warn('Failed to check project material permissions', error);
@@ -175,9 +188,11 @@ export const useProjectMaterialAccess = ({
             const scoped = materialPermissions?.[tab.key];
             const canManage = canManageTab || Boolean(scoped?.canManage);
             acc[tab.key] = {
-                canView: Boolean(explicitViews[tab.key as ProjectMaterialTabKey])
-                    || canManage
-                    || (hasScopedPermissions ? Boolean(scoped?.canView) : true),
+                canView: tab.key === 'po'
+                    ? Boolean(explicitViews.po)
+                    : Boolean(explicitViews[tab.key as ProjectMaterialTabKey])
+                        || canManage
+                        || (hasScopedPermissions ? Boolean(scoped?.canView) : true),
                 canManage,
             };
             return acc;
@@ -222,11 +237,11 @@ export const useProjectMaterialAccess = ({
         canReturnMaterialRequest: materialCapabilities.canReturnMaterialRequest,
         canConfirmFulfillment: materialCapabilities.canConfirmFulfillment,
         canEditPlanning: materialCapabilities.canEditPlanning,
-        canCreatePo: materialCapabilities.canCreatePo,
+        canEditPo: materialCapabilities.canEditPo,
+        canSubmitPo: materialCapabilities.canSubmitPo,
         canApprovePo: materialCapabilities.canApprovePo,
-        canReceivePo: materialCapabilities.canReceivePo,
+        canConfirmPo: materialCapabilities.canConfirmPo,
         canDeletePo: materialCapabilities.canDeletePo,
-        canManagePoPermission: materialCapabilities.canManagePo,
         canViewDirectPurchase: materialCapabilities.canViewDirectPurchase,
         canCreateDirectPurchase: materialCapabilities.canCreateDirectPurchase,
         canEditDirectPurchase: materialCapabilities.canEditDirectPurchase,

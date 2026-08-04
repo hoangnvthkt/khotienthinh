@@ -38,6 +38,7 @@ describe('project permission Rooms UI', () => {
     expect(drawerSource).toContain('canConfigureProjectRoomAction');
     expect(drawerSource).toContain('Chưa áp dụng đầy đủ');
     expect(drawerSource).toContain('PBAC ngoại lệ');
+    expect(drawerSource).toContain('candidate.legacyPermissionCodes');
     expect(drawerSource).toContain('disabled');
     expect(cardSource).toContain('fallbackOnlyUserCount');
   });

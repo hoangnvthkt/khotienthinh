@@ -49,30 +49,31 @@ describe('Phase 3.3 Material permission capabilities', () => {
 
     expect(caps.canApproveMaterialRequest).toBe(true);
     expect(caps.canApprovePo).toBe(true);
-    expect(caps.canReceivePo).toBe(false);
+    expect(caps.canConfirmPo).toBe(false);
     expect(caps.canDeletePo).toBe(false);
     expect(caps.canManagePo).toBe(false);
   });
 
-  it('lets PO manage imply every PO action', () => {
+  it('keeps PO manage as an exception without implying any PO action', () => {
     const caps = capabilitiesFor(['project.material_po.manage']);
 
-    expect(caps.canViewPo).toBe(true);
-    expect(caps.canCreatePo).toBe(true);
-    expect(caps.canApprovePo).toBe(true);
-    expect(caps.canReceivePo).toBe(true);
-    expect(caps.canDeletePo).toBe(true);
+    expect(caps.canViewPo).toBe(false);
+    expect(caps.canEditPo).toBe(false);
+    expect(caps.canSubmitPo).toBe(false);
+    expect(caps.canApprovePo).toBe(false);
+    expect(caps.canConfirmPo).toBe(false);
+    expect(caps.canDeletePo).toBe(false);
     expect(caps.canManagePo).toBe(true);
   });
 
-  it('lets PO manage cover the direct-purchase lifecycle in the same purchasing room', () => {
+  it('does not let PO manage cover the direct-purchase lifecycle', () => {
     const caps = capabilitiesFor(['project.material_po.manage']);
 
-    expect(caps.canViewDirectPurchase).toBe(true);
-    expect(caps.canCreateDirectPurchase).toBe(true);
-    expect(caps.canEditDirectPurchase).toBe(true);
-    expect(caps.canDeleteDirectPurchase).toBe(true);
-    expect(caps.canRecordDirectPurchaseAp).toBe(true);
+    expect(caps.canViewDirectPurchase).toBe(false);
+    expect(caps.canCreateDirectPurchase).toBe(false);
+    expect(caps.canEditDirectPurchase).toBe(false);
+    expect(caps.canDeleteDirectPurchase).toBe(false);
+    expect(caps.canRecordDirectPurchaseAp).toBe(false);
   });
 
   it('maps PO Room actions to the same PO capabilities used by the UI', () => {

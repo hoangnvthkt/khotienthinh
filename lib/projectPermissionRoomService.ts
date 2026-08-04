@@ -54,6 +54,7 @@ export interface ProjectRoomStaffCandidate {
   positionName?: string | null;
   constructionSiteId?: string | null;
   isRoomMember: boolean;
+  legacyPermissionCodes: string[];
   disabledReason?: string | null;
 }
 
@@ -242,6 +243,7 @@ export const projectPermissionRoomService = {
       supabase.rpc('list_project_room_staff_candidates', {
         p_project_id: projectId,
         p_construction_site_id: constructionSiteId || null,
+        p_room_code: roomCode,
       }),
       this.getRoom(projectId, constructionSiteId, roomCode),
     ]);
@@ -256,6 +258,9 @@ export const projectPermissionRoomService = {
       positionName: row.position_name ?? null,
       constructionSiteId: row.construction_site_id ?? null,
       isRoomMember: memberIds.has(row.project_staff_id),
+      legacyPermissionCodes: Array.isArray(row.legacy_permission_codes)
+        ? row.legacy_permission_codes.filter((code: unknown): code is string => typeof code === 'string')
+        : [],
       disabledReason: null,
     }));
   },

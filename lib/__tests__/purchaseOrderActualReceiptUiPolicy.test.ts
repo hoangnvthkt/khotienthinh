@@ -30,7 +30,7 @@ describe('purchaseOrderActualReceiptUiPolicy', () => {
       po: po(sourceMode),
       receiptStats: { orderedQty: 100, receivedQty: 0, remainingQty: 100 },
       deliveryBatches: [batch],
-      canReceivePo: true,
+      canConfirmPo: true,
     });
 
     expect(policy.primaryAction?.id).toBe('create_receipt');
@@ -42,7 +42,7 @@ describe('purchaseOrderActualReceiptUiPolicy', () => {
       po: po('company_consolidated'),
       receiptStats: { orderedQty: 100, receivedQty: 0, remainingQty: 100 },
       deliveryBatches: [batch],
-      canReceivePo: true,
+      canConfirmPo: true,
     });
     expect(policy.primaryAction?.id).not.toBe('create_receipt');
   });

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   canConfigureProjectRoomAction,
   getDailyLogPermissionCodesForEffectiveRoomActions,
+  getMaterialPoEffectiveCapabilities,
 } from '../permissions/projectRoomEffectiveActions';
 
 describe('effective Project Room actions', () => {
@@ -10,6 +11,33 @@ describe('effective Project Room actions', () => {
     expect(canConfigureProjectRoomAction('audit_only')).toBe(false);
     expect(canConfigureProjectRoomAction('pilot')).toBe(true);
     expect(canConfigureProjectRoomAction('enforced')).toBe(true);
+  });
+
+  it('keeps all six Material PO Room capabilities independent', () => {
+    const editOnly = getMaterialPoEffectiveCapabilities([{
+      roomCode: 'material_po',
+      actionCode: 'edit',
+      source: 'room',
+      enforcementStatus: 'pilot',
+    }]);
+
+    expect(editOnly).toEqual({
+      canViewPo: false,
+      canEditPo: true,
+      canDeletePo: false,
+      canSubmitPo: false,
+      canApprovePo: false,
+      canConfirmPo: false,
+    });
+  });
+
+  it('ignores actions belonging to another Room', () => {
+    expect(getMaterialPoEffectiveCapabilities([{
+      roomCode: 'daily_log',
+      actionCode: 'approve',
+      source: 'room',
+      enforcementStatus: 'pilot',
+    }]).canApprovePo).toBe(false);
   });
 
   it('maps Daily Log edit and delete to owner-scoped permissions only', () => {

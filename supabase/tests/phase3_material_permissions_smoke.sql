@@ -216,26 +216,27 @@ from phase3_material_smoke_ids;
 
 insert into public.purchase_orders(
   id, project_id, construction_site_id, vendor_id, vendor_name, po_number, items,
-  total_amount, order_date, status, source_mode, target_warehouse_id, created_by_id, created_at
+  total_amount, order_date, status, source_mode, target_warehouse_id, created_by_id, created_at,
+  submitted_to_user_id
 )
 select 'phase3-po-approve', project_id, site_id, 'phase3-vendor', 'NCC Smoke', 'PO-20269301', '[]'::jsonb,
-       0, current_date::text, 'draft', 'proactive_project', warehouse_id, po_creator_id::text, now()
+       0, current_date::text, 'sent', 'proactive_project', warehouse_id, po_creator_id::text, now(), po_approver_id::text
 from phase3_material_smoke_ids
 union all
 select 'phase3-po-receive', project_id, site_id, 'phase3-vendor', 'NCC Smoke', 'PO-20269302', '[]'::jsonb,
-       0, current_date::text, 'confirmed', 'proactive_project', warehouse_id, po_creator_id::text, now()
+       0, current_date::text, 'confirmed', 'proactive_project', warehouse_id, po_creator_id::text, now(), null
 from phase3_material_smoke_ids
 union all
 select 'phase3-po-manage', project_id, site_id, 'phase3-vendor', 'NCC Smoke', 'PO-20269303', '[]'::jsonb,
-       0, current_date::text, 'draft', 'proactive_project', warehouse_id, po_creator_id::text, now()
+       0, current_date::text, 'draft', 'proactive_project', warehouse_id, po_creator_id::text, now(), null
 from phase3_material_smoke_ids
 union all
 select 'phase3-po-delete', project_id, site_id, 'phase3-vendor', 'NCC Smoke', 'PO-20269304', '[]'::jsonb,
-       0, current_date::text, 'draft', 'proactive_project', warehouse_id, po_creator_id::text, now()
+       0, current_date::text, 'draft', 'proactive_project', warehouse_id, po_delete_id::text, now(), null
 from phase3_material_smoke_ids
 union all
 select 'phase3-po-create-delete-deny', project_id, site_id, 'phase3-vendor', 'NCC Smoke', 'PO-20269305', '[]'::jsonb,
-       0, current_date::text, 'draft', 'proactive_project', warehouse_id, po_approver_id::text, now()
+       0, current_date::text, 'draft', 'proactive_project', warehouse_id, po_approver_id::text, now(), null
 from phase3_material_smoke_ids;
 
 insert into public.custom_material_requests (
@@ -403,10 +404,21 @@ end $$;
 select pg_temp.phase3_material_smoke_set_user(po_receiver_id)
 from phase3_material_smoke_ids;
 
+do $$
+begin
+  begin
+    perform public.transition_project_purchase_order_status(
+      'phase3-po-receive',
+      'delivered',
+      jsonb_build_object('status','delivered','received_transaction_ids',jsonb_build_array('phase3-tx'))
+    );
+    raise exception 'project.material_po.receive incorrectly replaced WMS stock authority';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+
 select public.transition_project_purchase_order_status(
-  'phase3-po-receive',
-  'delivered',
-  jsonb_build_object('status','delivered','received_transaction_ids',jsonb_build_array('phase3-tx'))
+  'phase3-po-receive', 'delivered', jsonb_build_object('status','delivered')
 );
 
 select pg_temp.phase3_material_smoke_set_user(po_creator_id)
@@ -463,54 +475,33 @@ from phase3_material_smoke_ids;
 do $$
 declare
   v_seen integer := 0;
-  v_updated integer := 0;
-  v_action text;
 begin
   select count(*)
   into v_seen
   from public.purchase_orders
   where id = 'phase3-po-manage';
 
-  if v_seen <> 1 then
-    raise exception 'project.material_po.manage did not imply PO view';
+  if v_seen <> 0 then
+    raise exception 'project.material_po.manage incorrectly implied PO view';
   end if;
 
-  insert into public.purchase_orders(
-    id, project_id, construction_site_id, vendor_id, vendor_name, po_number, items,
-    total_amount, order_date, status, source_mode, target_warehouse_id, created_by_id, created_at
-  )
-  select 'phase3-po-manage-created', project_id, site_id, 'phase3-vendor', 'NCC Smoke', 'PO-20269306', '[]'::jsonb,
-         0, current_date::text, 'draft', 'proactive_project', warehouse_id, po_manager_id::text, now()
-  from phase3_material_smoke_ids;
+  begin
+    insert into public.purchase_orders(
+      id, project_id, construction_site_id, vendor_id, vendor_name, po_number, items,
+      total_amount, order_date, status, source_mode, target_warehouse_id, created_by_id, created_at
+    )
+    select 'phase3-po-manage-created', project_id, site_id, 'phase3-vendor', 'NCC Smoke', 'PO-20269306', '[]'::jsonb,
+           0, current_date::text, 'draft', 'proactive_project', warehouse_id, po_manager_id::text, now()
+    from phase3_material_smoke_ids;
+    raise exception 'project.material_po.manage incorrectly implied PO insert';
+  exception when insufficient_privilege then null;
+  end;
 
-  update public.purchase_orders
-  set note = 'manager content update'
-  where id = 'phase3-po-manage';
-  get diagnostics v_updated = row_count;
-
-  if v_updated <> 1 then
-    raise exception 'project.material_po.manage did not imply PO content update';
-  end if;
-
-  perform public.transition_project_purchase_order_status(
-    'phase3-po-manage',
-    'confirmed',
-    jsonb_build_object('status','confirmed')
-  );
-
-  perform public.transition_project_purchase_order_status(
-    'phase3-po-manage',
-    'delivered',
-    jsonb_build_object('status','delivered','received_transaction_ids',jsonb_build_array('phase3-manage-tx'))
-  );
-
-  select r.action
-  into v_action
-  from public.remove_purchase_order_v1('phase3-po-manage-created') r;
-
-  if v_action <> 'deleted' then
-    raise exception 'project.material_po.manage did not imply PO delete';
-  end if;
+  begin
+    perform public.remove_purchase_order_v1('phase3-po-manage');
+    raise exception 'project.material_po.manage incorrectly implied PO delete';
+  exception when insufficient_privilege then null;
+  end;
 end $$;
 
 select pg_temp.phase3_material_smoke_set_user(custom_approver_id)

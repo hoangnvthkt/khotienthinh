@@ -82,27 +82,28 @@ const deliveryBatch = (status: PurchaseOrderDeliveryBatch['status']): PurchaseOr
 
 describe('purchaseOrderMutationState', () => {
   it('allows admin and creator to mutate purchase orders', () => {
-    const item = po();
+    const item = po({ status: 'draft', sourceMode: 'proactive_project' });
 
     expect(canUserMutatePurchaseOrder(item, user('admin-1', Role.ADMIN))).toBe(true);
     expect(canUserMutatePurchaseOrder(item, user('creator-1'))).toBe(true);
     expect(canUserMutatePurchaseOrder(item, user('other-1'))).toBe(false);
   });
 
-  it('allows scoped PO create/manage capabilities to mutate purchase orders', () => {
-    const item = po();
-    const otherUser = user('other-1');
-
-    expect(canUserMutatePurchaseOrder(item, otherUser, { canCreatePo: true } as any)).toBe(true);
-    expect(canUserMutatePurchaseOrder(item, otherUser, { canManagePo: true } as any)).toBe(true);
-  });
-
-  it('allows scoped PO delete/manage capabilities to remove purchase orders', () => {
+  it('requires both PO edit and creator ownership to mutate project purchase orders', () => {
     const item = po({ status: 'draft', sourceMode: 'proactive_project' });
     const otherUser = user('other-1');
 
-    expect(getPurchaseOrderRemovalBlockReason(item, otherUser, [], [], [], { canDeletePo: true } as any)).toBeNull();
-    expect(getPurchaseOrderRemovalBlockReason(item, otherUser, [], [], [], { canManagePo: true } as any)).toBeNull();
+    expect(canUserMutatePurchaseOrder(item, user('creator-1'), { canEditPo: true })).toBe(true);
+    expect(canUserMutatePurchaseOrder(item, otherUser, { canEditPo: true })).toBe(false);
+    expect(canUserMutatePurchaseOrder(item, user('creator-1'), { canEditPo: false })).toBe(false);
+  });
+
+  it('requires both PO delete and creator ownership to remove project purchase orders', () => {
+    const item = po({ status: 'draft', sourceMode: 'proactive_project' });
+    const otherUser = user('other-1');
+
+    expect(getPurchaseOrderRemovalBlockReason(item, user('creator-1'), [], [], [], { canDeletePo: true })).toBeNull();
+    expect(getPurchaseOrderRemovalBlockReason(item, otherUser, [], [], [], { canDeletePo: true })).toContain('người tạo');
   });
 
   it('marks cancelled/legacy-returned in-transit PO before receipt and blocks parent removal until failed delivery is deleted', () => {

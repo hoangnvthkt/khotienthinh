@@ -35,3 +35,39 @@ export const getDailyLogPermissionCodesForEffectiveRoomActions = (
 ): string[] => Array.from(new Set(actionCodes.flatMap(
   actionCode => DAILY_LOG_ROOM_ACTION_PERMISSION_CODES[actionCode] || [],
 )));
+
+export interface MaterialPoEffectiveCapabilities {
+  canViewPo: boolean;
+  canEditPo: boolean;
+  canDeletePo: boolean;
+  canSubmitPo: boolean;
+  canApprovePo: boolean;
+  canConfirmPo: boolean;
+}
+
+const MATERIAL_PO_ACTION_CODES = [
+  'view',
+  'edit',
+  'delete',
+  'submit',
+  'approve',
+  'confirm',
+] as const satisfies readonly ProjectRoomActionCode[];
+
+export const getMaterialPoEffectiveCapabilities = (
+  actions: readonly EffectiveProjectRoomAction[],
+): MaterialPoEffectiveCapabilities => {
+  const granted = new Set(actions
+    .filter(action => action.roomCode === 'material_po')
+    .map(action => action.actionCode));
+  const has = (actionCode: (typeof MATERIAL_PO_ACTION_CODES)[number]) => granted.has(actionCode);
+
+  return {
+    canViewPo: has('view'),
+    canEditPo: has('edit'),
+    canDeletePo: has('delete'),
+    canSubmitPo: has('submit'),
+    canApprovePo: has('approve'),
+    canConfirmPo: has('confirm'),
+  };
+};

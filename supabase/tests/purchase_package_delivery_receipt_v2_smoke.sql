@@ -176,11 +176,19 @@ select room_member_id, 'submit', true, actor_id
 from purchase_package_v2_smoke_ids;
 
 insert into public.project_permission_room_member_actions (room_member_id, action_code, is_active, granted_by)
+select room_member_id, 'confirm', true, actor_id
+from purchase_package_v2_smoke_ids;
+
+insert into public.project_permission_room_member_actions (room_member_id, action_code, is_active, granted_by)
 select approver_room_member_id, 'approve', true, actor_id
 from purchase_package_v2_smoke_ids;
 
 insert into public.user_permission_grants (user_id, permission_code, scope_type, scope_id, is_active)
 select actor_id, 'project.material_po.create', 'project', project_id, true
+from purchase_package_v2_smoke_ids;
+
+insert into public.user_permission_grants (user_id, permission_code, scope_type, scope_id, is_active)
+select actor_id, 'project.material_po.manage', 'project', project_id, true
 from purchase_package_v2_smoke_ids;
 
 insert into public.user_permission_grants (user_id, permission_code, scope_type, scope_id, is_active)
@@ -1188,6 +1196,9 @@ begin
 end $$;
 
 reset role;
+select set_config('request.jwt.claim.email', '', true);
+select set_config('request.jwt.claim.sub', '', true);
+select set_config('request.jwt.claims', '{}'::text, true);
 
 do $$
 declare
@@ -1236,6 +1247,9 @@ begin
 end $$;
 
 reset role;
+select set_config('request.jwt.claim.email', '', true);
+select set_config('request.jwt.claim.sub', '', true);
+select set_config('request.jwt.claims', '{}'::text, true);
 
 do $$
 declare

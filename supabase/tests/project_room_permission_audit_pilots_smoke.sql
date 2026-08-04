@@ -15,12 +15,12 @@ begin
   if (select count(*) from app_private.project_permission_room_action_bindings) <> v_expected_actions then
     raise exception 'Every active Room/action must appear exactly once in the binding registry';
   end if;
-  if (select count(*) from app_private.project_permission_room_action_bindings where enforcement_status = 'pilot') <> 9 then
-    raise exception 'Expected exactly six Daily Log and three material BOQ pilot actions';
+  if (select count(*) from app_private.project_permission_room_action_bindings where enforcement_status = 'pilot') <> 15 then
+    raise exception 'Expected six Daily Log, three material BOQ and six Material PO pilot actions';
   end if;
   if exists (
     select 1 from app_private.project_permission_room_action_bindings
-    where enforcement_status = 'pilot' and room_code not in ('daily_log', 'material_planning')
+    where enforcement_status = 'pilot' and room_code not in ('daily_log', 'material_planning', 'material_po')
   ) then
     raise exception 'A non-pilot Room was accidentally enabled';
   end if;
@@ -212,7 +212,7 @@ begin
     perform public.replace_project_permission_room_members(
       (select project_id from project_room_pilot_smoke_ids),
       null,
-      'material_po',
+      'material_request',
       jsonb_build_array(jsonb_build_object(
         'project_staff_id', (select room_staff_id from project_room_pilot_smoke_ids),
         'action_codes', jsonb_build_array('view')
