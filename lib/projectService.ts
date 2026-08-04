@@ -1041,6 +1041,19 @@ const listAllPurchaseOrderRequestLineLinks = async (
     return dedupeRowsById(rows);
 };
 
+const currentActorCanViewProjectPurchaseOrders = async (
+    projectIdOrSiteId: string,
+    constructionSiteId?: string | null,
+): Promise<boolean> => {
+    const { data, error } = await supabase.rpc('get_my_project_room_actions', {
+        p_project_id: projectIdOrSiteId,
+        p_construction_site_id: constructionSiteId || null,
+    });
+    if (error) throw error;
+    return (data || []).some((action: any) =>
+        action.room_code === 'material_po' && action.action_code === 'view');
+};
+
 export const poService = {
     async nextNumber(projectIdOrSiteId?: string | null, constructionSiteId?: string | null): Promise<string> {
         const { data, error } = await supabase.rpc('next_purchase_order_number_v2');
@@ -1050,6 +1063,7 @@ export const poService = {
         return poNumber;
     },
     async list(projectIdOrSiteId: string, constructionSiteId?: string | null): Promise<PurchaseOrder[]> {
+        if (!await currentActorCanViewProjectPurchaseOrders(projectIdOrSiteId, constructionSiteId)) return [];
         return listAllPurchaseOrders(projectIdOrSiteId, constructionSiteId);
     },
     async listPage(input: {
@@ -1058,6 +1072,9 @@ export const poService = {
         limit?: number | null;
         cursor?: string | null;
     }): Promise<ListPage<PurchaseOrder>> {
+        if (!await currentActorCanViewProjectPurchaseOrders(input.projectIdOrSiteId, input.constructionSiteId)) {
+            return { rows: [], nextCursor: null, hasMore: false };
+        }
         return listPurchaseOrdersPage(input);
     },
     async upsert(item: PurchaseOrder): Promise<void> {

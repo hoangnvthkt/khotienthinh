@@ -139,6 +139,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         canReturnMaterialRequest,
         canConfirmFulfillment,
         canEditPlanning,
+        canViewPo,
         canEditPo,
         canSubmitPo,
         canApprovePo,
@@ -2897,6 +2898,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                         projectId={projectId}
                         canManageTab={canEditPo || canSubmitPo || canApprovePo || canConfirmPo || canDeletePo || canCreateDirectPurchase || canEditDirectPurchase || canDeleteDirectPurchase || canRecordDirectPurchaseAp || canCreateSupplierDelivery || canEditSupplierDelivery || canDeleteSupplierDelivery || canRecordSupplierDelivery || canUnrecordSupplierDelivery || canReconcileSupplierDelivery}
                         poCapabilities={{
+                            canViewPo,
                             canEditPo,
                             canSubmitPo,
                             canApprovePo,

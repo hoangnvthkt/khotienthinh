@@ -69,12 +69,14 @@ describe('projectPermissionRoomService', () => {
           action_code: 'edit',
           authorization_source: 'room',
           enforcement_status: 'pilot',
+          pbac_fallback_enabled: true,
         },
         {
           room_code: 'material_planning',
           action_code: 'delete',
           authorization_source: 'pbac_fallback',
           enforcement_status: 'pilot',
+          pbac_fallback_enabled: true,
         },
       ],
       error: null,
@@ -84,10 +86,10 @@ describe('projectPermissionRoomService', () => {
 
     expect(actions).toEqual([
       {
-        roomCode: 'daily_log', actionCode: 'edit', source: 'room', enforcementStatus: 'pilot',
+        roomCode: 'daily_log', actionCode: 'edit', source: 'room', enforcementStatus: 'pilot', pbacFallbackEnabled: true,
       },
       {
-        roomCode: 'material_planning', actionCode: 'delete', source: 'pbac_fallback', enforcementStatus: 'pilot',
+        roomCode: 'material_planning', actionCode: 'delete', source: 'pbac_fallback', enforcementStatus: 'pilot', pbacFallbackEnabled: true,
       },
     ]);
     expect(supabaseMocks.rpc).toHaveBeenCalledWith('get_my_project_room_actions', {

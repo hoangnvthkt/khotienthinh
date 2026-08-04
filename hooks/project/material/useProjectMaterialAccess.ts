@@ -36,6 +36,7 @@ export interface ProjectMaterialAccessState {
     canReturnMaterialRequest: boolean;
     canConfirmFulfillment: boolean;
     canEditPlanning: boolean;
+    canViewPo: boolean;
     canEditPo: boolean;
     canSubmitPo: boolean;
     canApprovePo: boolean;
@@ -190,6 +191,8 @@ export const useProjectMaterialAccess = ({
             acc[tab.key] = {
                 canView: tab.key === 'po'
                     ? Boolean(explicitViews.po)
+                        || canManage
+                        || (hasScopedPermissions ? Boolean(scoped?.canView) : false)
                     : Boolean(explicitViews[tab.key as ProjectMaterialTabKey])
                         || canManage
                         || (hasScopedPermissions ? Boolean(scoped?.canView) : true),
@@ -237,6 +240,7 @@ export const useProjectMaterialAccess = ({
         canReturnMaterialRequest: materialCapabilities.canReturnMaterialRequest,
         canConfirmFulfillment: materialCapabilities.canConfirmFulfillment,
         canEditPlanning: materialCapabilities.canEditPlanning,
+        canViewPo: materialCapabilities.canViewPo,
         canEditPo: materialCapabilities.canEditPo,
         canSubmitPo: materialCapabilities.canSubmitPo,
         canApprovePo: materialCapabilities.canApprovePo,

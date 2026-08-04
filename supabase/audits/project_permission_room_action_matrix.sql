@@ -8,6 +8,7 @@ with action_matrix as (
     room.name as room_name,
     binding.action_code,
     binding.enforcement_status,
+    binding.pbac_fallback_enabled,
     binding.legacy_permission_codes,
     binding.relationship_description,
     binding.verified_at,
@@ -79,8 +80,9 @@ with action_matrix as (
   from public.project_staff staff
   join public.users user_row
     on user_row.id::text = staff.user_id and coalesce(user_row.is_active, true)
-  join app_private.project_permission_room_action_bindings binding
+    join app_private.project_permission_room_action_bindings binding
     on binding.enforcement_status in ('pilot', 'enforced')
+    and binding.pbac_fallback_enabled
   where staff.end_date is null
     and user_row.role <> 'ADMIN'
     and app_private.project_actor_has_effective_room_action(
@@ -112,6 +114,25 @@ left join fallback_only fallback
   on fallback.room_code = matrix.room_code
   and fallback.action_code = matrix.action_code
 order by matrix.group_code, matrix.room_code, matrix.action_code;
+
+-- Legacy grants retained for audit after their per-action fallback is cut off.
+select
+  binding.room_code,
+  binding.action_code,
+  grant_row.user_id,
+  user_row.name as user_name,
+  grant_row.permission_code,
+  grant_row.scope_type,
+  grant_row.scope_id,
+  grant_row.expires_at
+from public.user_permission_grants grant_row
+join public.users user_row on user_row.id = grant_row.user_id
+join app_private.project_permission_room_action_bindings binding
+  on grant_row.permission_code = any(binding.legacy_permission_codes)
+  and not binding.pbac_fallback_enabled
+where grant_row.is_active
+  and (grant_row.expires_at is null or grant_row.expires_at > now())
+order by binding.room_code, binding.action_code, user_row.name;
 
 -- Active PBAC grants not mapped to a Room action. Broad grants such as
 -- edit_all/delete_all/return/manage/confirm intentionally remain in this list.

@@ -11,6 +11,7 @@ import type {
   EffectiveProjectRoomAction,
   ProjectRoomAuthorizationSource,
   ProjectRoomEnforcementStatus,
+  ProjectRoomGrantSource,
 } from './permissions/projectRoomEffectiveActions';
 
 export interface ReplaceProjectRoomMemberInput {
@@ -27,6 +28,7 @@ export interface ProjectPermissionRoomMember {
   positionName?: string | null;
   constructionSiteId?: string | null;
   actionCodes: ProjectRoomActionCode[];
+  actionGrantSources: Partial<Record<ProjectRoomActionCode, ProjectRoomGrantSource>>;
   legacyPermissionCodes: string[];
   isActive: boolean;
 }
@@ -43,6 +45,7 @@ export interface ProjectPermissionRoomSummary {
   actionCounts: Partial<Record<ProjectRoomActionCode, number>>;
   missingRequiredActions: ProjectRoomActionCode[];
   actionEnforcement: Partial<Record<ProjectRoomActionCode, ProjectRoomEnforcementStatus>>;
+  actionPbacFallbackEnabled: Partial<Record<ProjectRoomActionCode, boolean>>;
   fallbackOnlyUserCount: number;
 }
 
@@ -71,6 +74,7 @@ type RoomRow = {
   allowed_actions: string[];
   required_actions: string[];
   action_enforcement_statuses?: Record<string, unknown> | null;
+  action_pbac_fallback_enabled?: Record<string, unknown> | null;
   fallback_only_user_count?: number | string | null;
 };
 
@@ -93,6 +97,31 @@ const asEnforcementMap = (
       return result;
     },
     {},
+  );
+};
+
+const asBooleanMap = (value: unknown): Partial<Record<ProjectRoomActionCode, boolean>> => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return Object.entries(value).reduce<Partial<Record<ProjectRoomActionCode, boolean>>>((result, [action, enabled]) => {
+    if (PROJECT_ROOM_ACTION_CODES.includes(action as ProjectRoomActionCode)) {
+      result[action as ProjectRoomActionCode] = Boolean(enabled);
+    }
+    return result;
+  }, {});
+};
+
+const asGrantSourceMap = (
+  value: unknown,
+): Partial<Record<ProjectRoomActionCode, ProjectRoomGrantSource>> => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return Object.entries(value).reduce<Partial<Record<ProjectRoomActionCode, ProjectRoomGrantSource>>>(
+    (result, [action, source]) => {
+      if (PROJECT_ROOM_ACTION_CODES.includes(action as ProjectRoomActionCode)
+        && ['manual_room', 'pbac_backfill'].includes(String(source))) {
+        result[action as ProjectRoomActionCode] = source as ProjectRoomGrantSource;
+      }
+      return result;
+    }, {},
   );
 };
 
@@ -120,6 +149,7 @@ const toRoomMember = (row: any): ProjectPermissionRoomMember | null => {
     positionName: row.position_name ?? null,
     constructionSiteId: row.construction_site_id ?? null,
     actionCodes: asRoomActionCodes(row.action_codes),
+    actionGrantSources: asGrantSourceMap(row.action_grant_sources),
     legacyPermissionCodes: Array.isArray(row.legacy_permission_codes)
       ? row.legacy_permission_codes.filter((code: unknown): code is string => typeof code === 'string')
       : [],
@@ -157,6 +187,7 @@ export const projectPermissionRoomService = {
       actionCode: row.action_code as ProjectRoomActionCode,
       source: row.authorization_source as ProjectRoomAuthorizationSource,
       enforcementStatus: row.enforcement_status as ProjectRoomEnforcementStatus,
+      pbacFallbackEnabled: row.pbac_fallback_enabled !== false,
     }));
   },
 
@@ -217,6 +248,7 @@ export const projectPermissionRoomService = {
         actionCounts,
         missingRequiredActions: requiredActions.filter(action => !actionCounts[action]),
         actionEnforcement: asEnforcementMap(room.action_enforcement_statuses),
+        actionPbacFallbackEnabled: asBooleanMap(room.action_pbac_fallback_enabled),
         fallbackOnlyUserCount: Number(room.fallback_only_user_count || 0),
       };
     });

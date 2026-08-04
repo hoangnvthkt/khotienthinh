@@ -65,6 +65,7 @@ const CHECK_LABELS: Record<string, string> = {
   departmentsWithoutScopedGrants: 'Phòng ban thiếu scoped grant',
   roomActionsNotConnected: 'Room/action chưa nối đủ',
   roomFallbackOnlyUsers: 'User chỉ có PBAC fallback',
+  roomInactiveLegacyPbacGrants: 'PBAC lưu để audit, không còn hiệu lực',
   roomUnmappedGrants: 'Grant chưa ánh xạ Room',
   roomInvalidScopeOrStaff: 'Sai scope, staff hết hiệu lực hoặc Room mồ côi',
 };

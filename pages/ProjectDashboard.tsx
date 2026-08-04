@@ -71,7 +71,7 @@ import {
     canViewProjectMaterialTab as canViewProjectMaterialTabV2,
     canViewProjectTab as canViewProjectTabV2,
 } from '../lib/permissions/projectPermissionService';
-import { getProjectPermissionTemplateCodes, type ProjectPermissionTemplateKey } from '../lib/permissions/projectPermissionTemplates';
+import { getProjectPermissionTemplateCodes, ROOM_MANAGED_MATERIAL_PO_PERMISSION_CODES, type ProjectPermissionTemplateKey } from '../lib/permissions/projectPermissionTemplates';
 import type { ProjectFinanceWorkspaceTab } from '../lib/projectFinanceWorkspaceService';
 import { parseNonNegativeLocaleNumber } from '../lib/localeNumberInput';
 import {
@@ -121,7 +121,9 @@ const seedProjectRoleTemplates: Record<SeedProjectRole, ProjectPermissionTemplat
 };
 
 const getSeedProjectRoleGrantCodes = (role: SeedProjectRole): string[] =>
-    [...new Set(seedProjectRoleTemplates[role].flatMap(templateKey => getProjectPermissionTemplateCodes(templateKey)))];
+    [...new Set(seedProjectRoleTemplates[role]
+        .flatMap(templateKey => getProjectPermissionTemplateCodes(templateKey))
+        .filter(code => !ROOM_MANAGED_MATERIAL_PO_PERMISSION_CODES.has(code)))];
 
 const buildSeedProjectRoleGrants = (
     targetUserId: string,

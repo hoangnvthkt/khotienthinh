@@ -189,6 +189,7 @@ interface SupplyChainTabProps {
 }
 
 type PurchaseOrderCapabilities = {
+    canViewPo?: boolean;
     canEditPo?: boolean;
     canSubmitPo?: boolean;
     canApprovePo?: boolean;
@@ -229,6 +230,7 @@ const resolvePurchaseOrderCapabilities = (
 ): Required<PurchaseOrderCapabilities> => {
     if (!poCapabilities) {
         return {
+            canViewPo: false,
             canEditPo: false,
             canSubmitPo: false,
             canApprovePo: false,
@@ -237,6 +239,7 @@ const resolvePurchaseOrderCapabilities = (
         };
     }
     return {
+        canViewPo: Boolean(poCapabilities.canViewPo),
         canEditPo: Boolean(poCapabilities.canEditPo),
         canSubmitPo: Boolean(poCapabilities.canSubmitPo),
         canApprovePo: Boolean(poCapabilities.canApprovePo),
@@ -870,6 +873,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     const effectivePoCapabilities = resolvePurchaseOrderCapabilities(canManageTab, poCapabilities);
     const effectiveDirectPurchaseCapabilities = resolveDirectPurchaseCapabilities(canManageTab, directPurchaseCapabilities);
     const effectiveSupplierDeliveryCapabilities = resolveSupplierDeliveryCapabilities(canManageTab, supplierDeliveryCapabilities);
+    const canViewPo = effectivePoCapabilities.canViewPo;
 
     const ensureCanManage = (action: string) => {
         if (canManageTab) return true;
@@ -946,7 +950,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
 
     useEffect(() => {
         let cancelled = false;
-        if (!projectId) {
+        if (!projectId || !canViewPo) {
             setProjectMaterialRequests([]);
             return;
         }
@@ -959,7 +963,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 if (!cancelled) setProjectMaterialRequests([]);
             });
         return () => { cancelled = true; };
-    }, [projectId]);
+    }, [canViewPo, projectId]);
 
     const loadSupplyData = async () => {
         if (!effectiveId) return;
@@ -968,29 +972,29 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             setLoadingSmallTools(true);
             const [partnerRows, poRows, stockPoRows, linkRows, directPurchaseRows, smallToolRows, supplierContractRows, supplierDeliveryRows, supplierStatementRows] = await Promise.all([
                 partnerService.list({ classification: 'supplier' }),
-                poService.list(effectiveId, constructionSiteId || null),
-                poService.listStockOrders().catch(() => [] as PurchaseOrder[]),
-                poService.listRequestLineLinks(effectiveId, constructionSiteId || null).catch(() => [] as PurchaseOrderRequestLineLink[]),
-                siteDirectPurchaseService.list({ projectId: projectId || null, constructionSiteId: constructionSiteId || null }).catch(error => {
+                canViewPo ? poService.list(effectiveId, constructionSiteId || null) : Promise.resolve([] as PurchaseOrder[]),
+                canViewPo ? poService.listStockOrders().catch(() => [] as PurchaseOrder[]) : Promise.resolve([] as PurchaseOrder[]),
+                canViewPo ? poService.listRequestLineLinks(effectiveId, constructionSiteId || null).catch(() => [] as PurchaseOrderRequestLineLink[]) : Promise.resolve([] as PurchaseOrderRequestLineLink[]),
+                effectiveDirectPurchaseCapabilities.canViewDirectPurchase ? siteDirectPurchaseService.list({ projectId: projectId || null, constructionSiteId: constructionSiteId || null }).catch(error => {
                     console.warn('Failed to load site direct purchases', error);
                     return [] as SiteDirectPurchase[];
-                }),
-                siteSmallToolService.list({ projectId: projectId || null, constructionSiteId: constructionSiteId || null }).catch(error => {
+                }) : Promise.resolve([] as SiteDirectPurchase[]),
+                effectiveDirectPurchaseCapabilities.canViewDirectPurchase ? siteSmallToolService.list({ projectId: projectId || null, constructionSiteId: constructionSiteId || null }).catch(error => {
                     console.warn('Failed to load site small tools', error);
                     return [] as SiteSmallToolRecord[];
-                }),
-                supplierContractService.listBySite(projectId || constructionSiteId || '', constructionSiteId || null).catch(error => {
+                }) : Promise.resolve([] as SiteSmallToolRecord[]),
+                effectiveSupplierDeliveryCapabilities.canViewSupplierDelivery ? supplierContractService.listBySite(projectId || constructionSiteId || '', constructionSiteId || null).catch(error => {
                     console.warn('Failed to load supplier contracts', error);
                     return [] as SupplierContract[];
-                }),
-                supplierDirectDeliveryService.list({ projectId: projectId || null, constructionSiteId: constructionSiteId || null }).catch(error => {
+                }) : Promise.resolve([] as SupplierContract[]),
+                effectiveSupplierDeliveryCapabilities.canViewSupplierDelivery ? supplierDirectDeliveryService.list({ projectId: projectId || null, constructionSiteId: constructionSiteId || null }).catch(error => {
                     console.warn('Failed to load supplier direct deliveries', error);
                     return [] as SupplierDirectDeliveryNote[];
-                }),
-                supplierDeliveryStatementService.list({ projectId: projectId || null, constructionSiteId: constructionSiteId || null }).catch(error => {
+                }) : Promise.resolve([] as SupplierDirectDeliveryNote[]),
+                effectiveSupplierDeliveryCapabilities.canViewSupplierDelivery ? supplierDeliveryStatementService.list({ projectId: projectId || null, constructionSiteId: constructionSiteId || null }).catch(error => {
                     console.warn('Failed to load supplier delivery statements', error);
                     return [] as SupplierDeliveryStatement[];
-                }),
+                }) : Promise.resolve([] as SupplierDeliveryStatement[]),
             ]);
             setPartners(partnerRows);
             setVendors([]);
@@ -1019,19 +1023,19 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             }
             const scopedStockRows = stockPoRows.filter(po => !po.projectId && !po.constructionSiteId);
             const linkedPoIds = Array.from(new Set(linkRows.map(link => link.purchaseOrderId).filter(Boolean)));
-            const linkedCompanyPoRows = await poService.listByIds(linkedPoIds)
+            const linkedCompanyPoRows = canViewPo ? await poService.listByIds(linkedPoIds)
                 .then(rows => rows.filter(po => po.sourceMode === 'company_consolidated'))
                 .catch(error => {
                     console.warn('Failed to load linked company purchase orders', error);
                     return [] as PurchaseOrder[];
-                });
+                }) : [];
             const byId = new Map<string, PurchaseOrder>();
             [...poRows, ...scopedStockRows, ...linkedCompanyPoRows].forEach(po => byId.set(po.id, po));
             const allPos = [...byId.values()];
             setPos(allPos);
             setPoRequestLinks(linkRows);
 
-            const [supplierReturnRows, deliveryScheduleRows, supplementalApprovalRows] = await Promise.all([
+            const [supplierReturnRows, deliveryScheduleRows, supplementalApprovalRows] = canViewPo ? await Promise.all([
                 purchaseOrderSupplierReturnService.listByPurchaseOrderIds(allPos.map(po => po.id)),
                 poDeliveryScheduleService.listByPurchaseOrderIds(allPos.map(po => po.id)),
                 poSupplementalApprovalService.listByPurchaseOrderIds(allPos.map(po => po.id)),
@@ -1042,7 +1046,11 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     {} as Record<string, PurchaseOrderDeliveryBatch[]>,
                     {} as Record<string, PurchaseOrderSupplementalApproval[]>,
                 ] as const;
-            });
+            }) : [
+                [] as PurchaseOrderSupplierReturn[],
+                {} as Record<string, PurchaseOrderDeliveryBatch[]>,
+                {} as Record<string, PurchaseOrderSupplementalApproval[]>,
+            ] as const;
             setSupplierReturnsByPo(supplierReturnRows.reduce<Record<string, PurchaseOrderSupplierReturn[]>>((acc, item) => {
                 acc[item.purchaseOrderId] = [...(acc[item.purchaseOrderId] || []), item];
                 return acc;
@@ -1059,7 +1067,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
 
     useEffect(() => {
         loadSupplyData();
-    }, [effectiveId, constructionSiteId]);
+    }, [canViewPo, constructionSiteId, effectiveDirectPurchaseCapabilities.canViewDirectPurchase, effectiveId, effectiveSupplierDeliveryCapabilities.canViewSupplierDelivery]);
 
     const [showVendorForm, setShowVendorForm] = useState(false);
     const [editingVendor, setEditingVendor] = useState<ProjectVendor | null>(null);
@@ -5860,13 +5868,14 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     }, [constructionSiteId, projectId]);
 
     useEffect(() => {
-        if (!selectedPo) return;
+        if (!canViewPo || !selectedPo) return;
         void loadPoPayableDocuments(selectedPo);
-    }, [loadPoPayableDocuments, selectedPo]);
+    }, [canViewPo, loadPoPayableDocuments, selectedPo]);
 
     useEffect(() => {
-        if (!deepLinkPoId) {
+        if (!canViewPo || !deepLinkPoId) {
             lastDeepLinkPoIdRef.current = null;
+            setSelectedPoId(null);
             return;
         }
         if (lastDeepLinkPoIdRef.current === deepLinkPoId) return;
@@ -5878,7 +5887,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         setSelectedPoId(deepLinkPoId);
         setPoPrintMenuId(null);
         void loadPoDeliveryPrintGroups(targetPo);
-    }, [deepLinkPoId, sortedPos]);
+    }, [canViewPo, deepLinkPoId, sortedPos]);
 
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
@@ -5957,7 +5966,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 </button>
             </div>
             {/* KPI */}
-            {subTab === 'po' && (
+            {subTab === 'po' && canViewPo && (
                 <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
                     {[
                         {
@@ -6035,6 +6044,16 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                             </button>
                         );
                     })}
+                </div>
+            )}
+
+            {subTab === 'po' && !canViewPo && (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-6 py-10 text-center dark:border-amber-900/60 dark:bg-amber-950/20">
+                    <FileText size={32} className="mx-auto mb-3 text-amber-500" />
+                    <h3 className="text-sm font-black text-amber-900 dark:text-amber-100">Chưa có quyền xem Đơn hàng PO</h3>
+                    <p className="mx-auto mt-2 max-w-xl text-xs font-bold leading-5 text-amber-700 dark:text-amber-200">
+                        Module Vật tư chỉ mở khu vực Cung ứng. Để tải danh sách và chi tiết PO của dự án này, anh/chị cần quyền <strong>Xem</strong> trong Room Đơn hàng PO.
+                    </p>
                 </div>
             )}
 
@@ -6584,7 +6603,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             )}
 
             {/* PO Tab */}
-            {subTab === 'po' && (
+            {subTab === 'po' && canViewPo && (
                 <div className={procurementPanelClass}>
                     <div className="flex flex-col gap-3 border-b border-slate-100 p-4 dark:border-slate-800 lg:flex-row lg:items-center lg:justify-between">
                         <div>
@@ -6870,7 +6889,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 </div>
             )}
 
-            {selectedPo && (() => {
+            {canViewPo && selectedPo && (() => {
                 const po = selectedPo;
                 const stCfg = PO_STATUS[po.status];
                 const sourceCfg = PO_SOURCE_MODE[po.sourceMode || 'proactive_project'];
@@ -8317,7 +8336,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             )}
 
             {/* PO Form Modal */}
-            {showPoForm && (
+            {canViewPo && showPoForm && (
                 <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/40 backdrop-blur-sm">
                     <div className="bg-card border border-border rounded-3xl shadow-2xl w-full max-w-5xl mx-4 max-h-[90vh] overflow-hidden flex flex-col">
                         <div className="shrink-0 px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-t-3xl flex items-center justify-between">
@@ -9189,7 +9208,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     </div>
                 </div>
             )}
-            {packageDeliveryEditor && (
+            {canViewPo && packageDeliveryEditor && (
                 <div className="fixed inset-0 z-[1150] flex items-center justify-center bg-black/40 px-4 backdrop-blur-sm">
                     <div className="flex max-h-[92vh] w-full max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
                         <div className="shrink-0 flex items-center justify-between border-b border-slate-100 px-5 py-3">

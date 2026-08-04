@@ -1,5 +1,14 @@
 import { getAllPermissionActions } from './permissionRegistry';
 
+export const ROOM_MANAGED_MATERIAL_PO_PERMISSION_CODES = new Set([
+  'project.material_po.view',
+  'project.material_po.create',
+  'project.material_po.delete',
+  'project.material_po.approve',
+  'project.material_po.receive',
+  'project.material_po.manage',
+]);
+
 export const PROJECT_PERMISSION_TEMPLATES = [
   { key: 'viewer', label: 'Viewer' },
   { key: 'field_engineer', label: 'Field engineer' },
@@ -17,7 +26,9 @@ export type ProjectPermissionTemplateKey = typeof PROJECT_PERMISSION_TEMPLATES[n
 
 const allProjectActionCodes = (actions: readonly string[]) =>
   getAllPermissionActions()
-    .filter(action => action.permissionCode.startsWith('project.') && actions.includes(action.action))
+    .filter(action => action.permissionCode.startsWith('project.')
+      && actions.includes(action.action)
+      && !ROOM_MANAGED_MATERIAL_PO_PERMISSION_CODES.has(action.permissionCode))
     .map(action => action.permissionCode);
 
 const DEPRECATED_PROJECT_TEMPLATE_CODES = new Set([
@@ -93,8 +104,6 @@ export const getProjectPermissionTemplateCodes = (templateKey: ProjectPermission
         'project.material_request.view',
         'project.material_request.confirm_fulfillment',
         'project.material_request.view_available_stock',
-        'project.material_po.view',
-        'project.material_po.receive',
       ];
     case 'qa_qc':
       return [

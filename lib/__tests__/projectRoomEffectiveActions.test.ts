@@ -13,7 +13,7 @@ describe('effective Project Room actions', () => {
     expect(canConfigureProjectRoomAction('enforced')).toBe(true);
   });
 
-  it('keeps all six Material PO Room capabilities independent', () => {
+  it('requires Room view before exposing any Material PO workflow capability', () => {
     const editOnly = getMaterialPoEffectiveCapabilities([{
       roomCode: 'material_po',
       actionCode: 'edit',
@@ -23,12 +23,20 @@ describe('effective Project Room actions', () => {
 
     expect(editOnly).toEqual({
       canViewPo: false,
-      canEditPo: true,
+      canEditPo: false,
       canDeletePo: false,
       canSubmitPo: false,
       canApprovePo: false,
       canConfirmPo: false,
     });
+
+    const viewAndEdit = getMaterialPoEffectiveCapabilities([
+      { roomCode: 'material_po', actionCode: 'view', source: 'room', enforcementStatus: 'pilot' },
+      { roomCode: 'material_po', actionCode: 'edit', source: 'room', enforcementStatus: 'pilot' },
+    ]);
+    expect(viewAndEdit.canViewPo).toBe(true);
+    expect(viewAndEdit.canEditPo).toBe(true);
+    expect(viewAndEdit.canDeletePo).toBe(false);
   });
 
   it('ignores actions belonging to another Room', () => {

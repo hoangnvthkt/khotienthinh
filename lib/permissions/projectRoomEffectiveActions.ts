@@ -2,12 +2,14 @@ import type { ProjectRoomActionCode } from './projectPermissionRooms';
 
 export type ProjectRoomEnforcementStatus = 'audit_only' | 'pilot' | 'enforced';
 export type ProjectRoomAuthorizationSource = 'admin' | 'room' | 'pbac_fallback';
+export type ProjectRoomGrantSource = 'manual_room' | 'pbac_backfill';
 
 export interface EffectiveProjectRoomAction {
   roomCode: string;
   actionCode: ProjectRoomActionCode;
   source: ProjectRoomAuthorizationSource;
   enforcementStatus: ProjectRoomEnforcementStatus;
+  pbacFallbackEnabled?: boolean;
 }
 
 export const canConfigureProjectRoomAction = (
@@ -61,13 +63,14 @@ export const getMaterialPoEffectiveCapabilities = (
     .filter(action => action.roomCode === 'material_po')
     .map(action => action.actionCode));
   const has = (actionCode: (typeof MATERIAL_PO_ACTION_CODES)[number]) => granted.has(actionCode);
+  const canViewPo = has('view');
 
   return {
-    canViewPo: has('view'),
-    canEditPo: has('edit'),
-    canDeletePo: has('delete'),
-    canSubmitPo: has('submit'),
-    canApprovePo: has('approve'),
-    canConfirmPo: has('confirm'),
+    canViewPo,
+    canEditPo: canViewPo && has('edit'),
+    canDeletePo: canViewPo && has('delete'),
+    canSubmitPo: canViewPo && has('submit'),
+    canApprovePo: canViewPo && has('approve'),
+    canConfirmPo: canViewPo && has('confirm'),
   };
 };
