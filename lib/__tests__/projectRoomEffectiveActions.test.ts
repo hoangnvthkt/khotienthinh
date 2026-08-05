@@ -4,6 +4,7 @@ import {
   canConfigureProjectRoomAction,
   getDailyLogPermissionCodesForEffectiveRoomActions,
   getMaterialPoEffectiveCapabilities,
+  getMaterialRequestEffectiveCapabilities,
 } from '../permissions/projectRoomEffectiveActions';
 
 describe('effective Project Room actions', () => {
@@ -46,6 +47,20 @@ describe('effective Project Room actions', () => {
       source: 'room',
       enforcementStatus: 'pilot',
     }]).canApprovePo).toBe(false);
+  });
+
+  it('keeps Material Request actions independent and requires view', () => {
+    const editOnly = getMaterialRequestEffectiveCapabilities([{
+      roomCode: 'material_request', actionCode: 'edit', source: 'room', enforcementStatus: 'pilot',
+    }]);
+    expect(editOnly.canCreateMaterialRequest).toBe(false);
+    const viewAndEdit = getMaterialRequestEffectiveCapabilities([
+      { roomCode: 'material_request', actionCode: 'view', source: 'room', enforcementStatus: 'pilot' },
+      { roomCode: 'material_request', actionCode: 'edit', source: 'room', enforcementStatus: 'pilot' },
+    ]);
+    expect(viewAndEdit.canCreateMaterialRequest).toBe(true);
+    expect(viewAndEdit.canSubmitMaterialRequest).toBe(false);
+    expect(viewAndEdit.canDeleteMaterialRequest).toBe(false);
   });
 
   it('maps Daily Log edit and delete to owner-scoped permissions only', () => {

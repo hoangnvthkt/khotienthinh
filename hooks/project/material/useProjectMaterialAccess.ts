@@ -14,7 +14,7 @@ import {
 } from '../../../lib/permissions/projectMaterialPermissions';
 import { projectPermissionRoomService } from '../../../lib/projectPermissionRoomService';
 import { projectStaffService } from '../../../lib/projectStaffService';
-import { getMaterialPoEffectiveCapabilities } from '../../../lib/permissions/projectRoomEffectiveActions';
+import { getMaterialPoEffectiveCapabilities, getMaterialRequestEffectiveCapabilities } from '../../../lib/permissions/projectRoomEffectiveActions';
 
 export interface ProjectMaterialAccessState {
     materialAccess: ProjectMaterialTabPermissionMap;
@@ -32,6 +32,8 @@ export interface ProjectMaterialAccessState {
     canApproveProjectRequest: boolean;
     canViewAvailableStock: boolean;
     canCreateMaterialRequest: boolean;
+    canEditOwnMaterialRequest: boolean;
+    canDeleteMaterialRequest: boolean;
     canSubmitMaterialRequest: boolean;
     canReturnMaterialRequest: boolean;
     canConfirmFulfillment: boolean;
@@ -84,8 +86,24 @@ const PO_PBAC_ACTION_CODES = new Set<ProjectMaterialActionCode>([
     'project.material_po.manage',
 ]);
 
+const MATERIAL_REQUEST_PBAC_ACTION_CODES = new Set<ProjectMaterialActionCode>([
+    'project.material_request.view',
+    'project.material_request.create',
+    'project.material_request.edit_own',
+    'project.material_request.edit_all',
+    'project.material_request.delete_own',
+    'project.material_request.delete_all',
+    'project.material_request.submit',
+    'project.material_request.return',
+    'project.material_request.approve',
+    'project.material_request.confirm_fulfillment',
+    'project.material_request.view_available_stock',
+]);
+
 const NON_BOQ_PBAC_ACTION_CODES = PROJECT_MATERIAL_ACTION_CODES.filter(
-    permissionCode => !BOQ_PBAC_ACTION_CODES.has(permissionCode) && !PO_PBAC_ACTION_CODES.has(permissionCode),
+    permissionCode => !BOQ_PBAC_ACTION_CODES.has(permissionCode)
+        && !PO_PBAC_ACTION_CODES.has(permissionCode)
+        && !MATERIAL_REQUEST_PBAC_ACTION_CODES.has(permissionCode),
 );
 
 export const useProjectMaterialAccess = ({
@@ -147,6 +165,7 @@ export const useProjectMaterialAccess = ({
                         .forEach(permissionCode => grantedCodes.add(permissionCode));
                     setMaterialCapabilities({
                         ...getProjectMaterialCapabilities(grantedCodes),
+                        ...getMaterialRequestEffectiveCapabilities(roomActions),
                         ...getMaterialPoEffectiveCapabilities(roomActions),
                     });
                 }
@@ -193,6 +212,8 @@ export const useProjectMaterialAccess = ({
                     ? Boolean(explicitViews.po)
                         || canManage
                         || (hasScopedPermissions ? Boolean(scoped?.canView) : false)
+                    : tab.key === 'request'
+                        ? Boolean(explicitViews.request)
                     : Boolean(explicitViews[tab.key as ProjectMaterialTabKey])
                         || canManage
                         || (hasScopedPermissions ? Boolean(scoped?.canView) : true),
@@ -236,6 +257,8 @@ export const useProjectMaterialAccess = ({
         canApproveProjectRequest,
         canViewAvailableStock,
         canCreateMaterialRequest,
+        canEditOwnMaterialRequest: materialCapabilities.canEditOwnMaterialRequest,
+        canDeleteMaterialRequest: materialCapabilities.canDeleteMaterialRequest,
         canSubmitMaterialRequest: materialCapabilities.canSubmitMaterialRequest,
         canReturnMaterialRequest: materialCapabilities.canReturnMaterialRequest,
         canConfirmFulfillment: materialCapabilities.canConfirmFulfillment,

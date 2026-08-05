@@ -46,6 +46,7 @@ export interface ProjectPermissionRoomSummary {
   missingRequiredActions: ProjectRoomActionCode[];
   actionEnforcement: Partial<Record<ProjectRoomActionCode, ProjectRoomEnforcementStatus>>;
   actionPbacFallbackEnabled: Partial<Record<ProjectRoomActionCode, boolean>>;
+  actionPrerequisites: Partial<Record<ProjectRoomActionCode, ProjectRoomActionCode[]>>;
   fallbackOnlyUserCount: number;
 }
 
@@ -75,6 +76,7 @@ type RoomRow = {
   required_actions: string[];
   action_enforcement_statuses?: Record<string, unknown> | null;
   action_pbac_fallback_enabled?: Record<string, unknown> | null;
+  action_prerequisite_actions?: Record<string, unknown> | null;
   fallback_only_user_count?: number | string | null;
 };
 
@@ -119,6 +121,20 @@ const asGrantSourceMap = (
       if (PROJECT_ROOM_ACTION_CODES.includes(action as ProjectRoomActionCode)
         && ['manual_room', 'pbac_backfill'].includes(String(source))) {
         result[action as ProjectRoomActionCode] = source as ProjectRoomGrantSource;
+      }
+      return result;
+    }, {},
+  );
+};
+
+const asPrerequisiteMap = (
+  value: unknown,
+): Partial<Record<ProjectRoomActionCode, ProjectRoomActionCode[]>> => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return Object.entries(value).reduce<Partial<Record<ProjectRoomActionCode, ProjectRoomActionCode[]>>>(
+    (result, [action, prerequisites]) => {
+      if (PROJECT_ROOM_ACTION_CODES.includes(action as ProjectRoomActionCode)) {
+        result[action as ProjectRoomActionCode] = asRoomActionCodes(prerequisites);
       }
       return result;
     }, {},
@@ -249,6 +265,7 @@ export const projectPermissionRoomService = {
         missingRequiredActions: requiredActions.filter(action => !actionCounts[action]),
         actionEnforcement: asEnforcementMap(room.action_enforcement_statuses),
         actionPbacFallbackEnabled: asBooleanMap(room.action_pbac_fallback_enabled),
+        actionPrerequisites: asPrerequisiteMap(room.action_prerequisite_actions),
         fallbackOnlyUserCount: Number(room.fallback_only_user_count || 0),
       };
     });

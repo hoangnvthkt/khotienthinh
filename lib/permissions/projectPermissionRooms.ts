@@ -70,8 +70,8 @@ const defineRoom = (
 export const PROJECT_PERMISSION_ROOMS = Object.freeze([
   defineRoom('daily_log', 'daily_log', 'Nhật ký công trường', 'Lập, kiểm tra và duyệt nhật ký.', ['view', 'edit', 'delete', 'submit', 'verify', 'approve'], ['verify', 'approve'], 10),
   defineRoom('material_planning', 'material', 'Kế hoạch & BOQ vật tư', 'Quản lý kế hoạch và BOQ vật tư.', ['view', 'edit', 'delete'], [], 20),
-  defineRoom('material_request', 'material', 'Đề xuất vật tư', 'Gửi, kiểm tra, duyệt và xác nhận cấp vật tư.', ['view', 'edit', 'delete', 'submit', 'verify', 'confirm', 'approve', 'view_available_stock'], ['approve', 'confirm'], 30),
-  defineRoom('material_po', 'material', 'Đơn hàng PO', 'Tạo, gửi duyệt, duyệt và xác nhận nhận hàng.', ['view', 'edit', 'delete', 'submit', 'approve', 'confirm'], ['approve'], 40),
+  defineRoom('material_request', 'material', 'Đề xuất vật tư', 'Gửi, kiểm tra, duyệt và xác nhận cấp vật tư.', ['view', 'edit', 'delete', 'submit', 'verify', 'confirm', 'approve', 'view_available_stock'], [], 30),
+  defineRoom('material_po', 'material', 'Đơn hàng PO', 'Tạo, gửi duyệt, duyệt và xác nhận nhận hàng.', ['view', 'edit', 'delete', 'submit', 'approve', 'confirm'], [], 40),
   defineRoom('material_waste', 'material', 'Hao hụt vật tư', 'Ghi nhận và duyệt hao hụt.', ['view', 'edit', 'approve'], ['approve'], 50),
   defineRoom('custom_material', 'material', 'Vật tư phi tiêu chuẩn', 'Tạo, sửa và duyệt vật tư phi tiêu chuẩn.', ['view', 'edit', 'approve'], ['approve'], 60),
   defineRoom('gantt', 'progress', 'Tiến độ Gantt', 'Quản lý công việc và xác nhận hoàn thành.', ['view', 'edit', 'delete', 'submit', 'verify', 'approve'], ['verify', 'approve'], 70),

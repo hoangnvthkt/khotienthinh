@@ -18,7 +18,7 @@ import { contractItemService } from '../../lib/contractItemService';
 import { loadXlsx } from '../../lib/loadXlsx';
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 import type { ProjectMaterialTabKey, ProjectMaterialTabPermissionMap } from '../../lib/projectTabPermissions';
-import { materialRequestService } from '../../lib/materialRequestService';
+import { materialRequestService, type MaterialRequestAggregateRow } from '../../lib/materialRequestService';
 import { projectSubmissionService } from '../../lib/projectSubmissionService';
 import { projectWorkflowService } from '../../lib/projectWorkflowService';
 import { projectWorkflowBoardService } from '../../lib/projectWorkflowBoardService';
@@ -135,6 +135,8 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         canApproveProjectRequest,
         canViewAvailableStock,
         canCreateMaterialRequest,
+        canEditOwnMaterialRequest,
+        canDeleteMaterialRequest,
         canSubmitMaterialRequest,
         canReturnMaterialRequest,
         canConfirmFulfillment,
@@ -197,6 +199,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     const boqImportRef = useRef<HTMLInputElement>(null);
     const loadedBoqScopeRef = useRef<string | null>(null);
     const [projectRequests, setProjectRequests] = useState<MaterialRequest[]>([]);
+    const [requestAggregateRows, setRequestAggregateRows] = useState<MaterialRequestAggregateRow[]>([]);
     const [projectRequestsLoaded, setProjectRequestsLoaded] = useState(false);
     const [, setProjectRequestBoardHydrated] = useState(false);
     const [requestEventsByRequest, setRequestEventsByRequest] = useState<Record<string, MaterialRequestEvent[]>>({});
@@ -246,7 +249,8 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         () => new URLSearchParams(location.search).get('poId'),
         [location.search],
     );
-    const needsProjectRequestData = PROJECT_REQUEST_DATA_TABS.has(activeSubTab) || isReqModalOpen || Boolean(activeMaterialRequestDeepLinkId);
+    const needsProjectRequestData = materialAccess.request.canView
+        && (PROJECT_REQUEST_DATA_TABS.has(activeSubTab) || isReqModalOpen || Boolean(activeMaterialRequestDeepLinkId));
     const needsProjectWorkflowBoard = activeSubTab === 'request' || Boolean(activeMaterialRequestDeepLinkId);
     const needsRequestFulfillmentDetails = PROJECT_REQUEST_FULFILLMENT_TABS.has(activeSubTab) || isReqModalOpen;
 
@@ -328,7 +332,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     }, [activeSubTab, loadModuleData]);
 
     const loadProjectRequests = useCallback(async () => {
-        if (!projectId) {
+        if (!projectId || !materialAccess.request.canView) {
             setProjectRequests([]);
             setRequestWorkflowSubjects({});
             setRequestWorkflowAssignments({});
@@ -465,7 +469,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         } finally {
             setProjectRequestsLoaded(true);
         }
-    }, [constructionSiteId, needsProjectWorkflowBoard, projectId, toast]);
+    }, [constructionSiteId, materialAccess.request.canView, needsProjectWorkflowBoard, projectId, toast]);
 
     useEffect(() => {
         setProjectRequests([]);
@@ -486,6 +490,21 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         setProjectRequestsLoaded(false);
         void loadProjectRequests();
     }, [loadProjectRequests, needsProjectRequestData]);
+
+    useEffect(() => {
+        let cancelled = false;
+        if (!projectId || (!materialAccess.boq.canView && !materialAccess.dashboard.canView)) {
+            setRequestAggregateRows([]);
+            return;
+        }
+        materialRequestService.getProjectAggregate(projectId, constructionSiteId || null)
+            .then(rows => { if (!cancelled) setRequestAggregateRows(rows); })
+            .catch(error => {
+                console.warn('Material Request aggregate projection unavailable', error);
+                if (!cancelled) setRequestAggregateRows([]);
+            });
+        return () => { cancelled = true; };
+    }, [constructionSiteId, materialAccess.boq.canView, materialAccess.dashboard.canView, projectId]);
 
     const closeRequestModal = () => {
         setReqModalOpen(false);
@@ -556,7 +575,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
 
     // Material Requests — project screens only show rows explicitly tied to this project.
     const requests = useMemo(() => {
-        if (!projectId) return [];
+        if (!projectId || !materialAccess.request.canView) return [];
         const scopedProjectRequests = projectRequests.filter(request => request.requestOrigin === 'project' && request.projectId === projectId);
         if (projectRequestsLoaded) return scopedProjectRequests;
         const byId = new Map<string, MaterialRequest>();
@@ -565,7 +584,23 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             .forEach(request => byId.set(request.id, request));
         scopedProjectRequests.forEach(request => byId.set(request.id, request));
         return [...byId.values()];
-    }, [allRequests, projectId, projectRequests, projectRequestsLoaded]);
+    }, [allRequests, materialAccess.request.canView, projectId, projectRequests, projectRequestsLoaded]);
+
+    const requestAggregateByBudgetOrItem = useMemo(() => {
+        const map = new Map<string, MaterialRequestAggregateRow>();
+        requestAggregateRows.forEach(row => {
+            const key = row.materialBudgetItemId ? `budget:${row.materialBudgetItemId}` : `item:${row.itemId}`;
+            const current = map.get(key);
+            map.set(key, current ? {
+                ...current,
+                requestedQty: current.requestedQty + row.requestedQty,
+                approvedQty: current.approvedQty + row.approvedQty,
+                receivedQty: current.receivedQty + row.receivedQty,
+                remainingQty: current.remainingQty + row.remainingQty,
+            } : row);
+        });
+        return map;
+    }, [requestAggregateRows]);
 
     const sortedRequests = useMemo(
         () => [...requests].sort((a, b) => (b.createdDate || '').localeCompare(a.createdDate || '')),
@@ -871,19 +906,16 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         await loadProjectRequests();
     };
 
-    const canManageProjectWorkflow = (request: MaterialRequest) =>
-        user.role === Role.ADMIN ||
-        isModuleAdmin('WF') ||
-        isWorkflowTemplateManager(request);
+    const canManageProjectWorkflow = (_request: MaterialRequest) => user.role === Role.ADMIN;
 
     const canActOnProjectRequest = (request: MaterialRequest) => {
         const dynamicSubject = getRequestWorkflowSubject(request);
         if (dynamicSubject?.workflowInstanceId) {
-            return dynamicSubject.status === 'RUNNING'
+            return canApproveProjectRequest
+                && dynamicSubject.status === 'RUNNING'
                 && getWorkflowAssigneeUserIds(request).includes(user.id);
         }
-        return canManageProjectWorkflow(request)
-            || ((canApproveProjectRequest || canReturnMaterialRequest || canConfirmFulfillment) && getWorkflowAssigneeUserIds(request).includes(user.id));
+        return canApproveProjectRequest && getWorkflowAssigneeUserIds(request).includes(user.id);
     };
 
     const canReassignProjectWorkflow = (request: MaterialRequest) =>
@@ -1694,6 +1726,12 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                     }
                 });
             });
+            if (!materialAccess.request.canView) {
+                const aggregate = requestAggregateByBudgetOrItem.get(`budget:${b.id}`)
+                    || (b.inventoryItemId ? requestAggregateByBudgetOrItem.get(`item:${b.inventoryItemId}`) : undefined);
+                totalRequested = aggregate?.requestedQty || 0;
+                totalReceived = aggregate?.receivedQty || 0;
+            }
             const actualQty = totalReceived;
             const wasteQty = actualQty - derivedBudgetQty;
             const wastePercent = derivedBudgetQty > 0 ? Math.round((wasteQty / derivedBudgetQty) * 1000) / 10 : 0;
@@ -1714,7 +1752,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                 autoAlert: budgetOverPercent > 0 ? 'Vượt ngân sách' : wasteQty > 0 ? 'Vượt định mức hao hụt' : undefined,
             };
         });
-    }, [boqItems, requestFulfillmentBatchCounts, requestFulfillmentLineSummaries, requests, workBoqItemById]);
+    }, [boqItems, materialAccess.request.canView, requestAggregateByBudgetOrItem, requestFulfillmentBatchCounts, requestFulfillmentLineSummaries, requests, workBoqItemById]);
 
     const materialAggregateSummaryRows = useMemo(
         () => projectMaterialPlanningService.buildAggregateSummary({
@@ -1838,6 +1876,13 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                 }
             });
         });
+        if (!materialAccess.request.canView) {
+            const aggregate = requestAggregateByBudgetOrItem.get(`budget:${material.id}`)
+                || (material.inventoryItemId ? requestAggregateByBudgetOrItem.get(`item:${material.inventoryItemId}`) : undefined);
+            requestedQty = aggregate?.requestedQty || 0;
+            receivedQty = aggregate?.receivedQty || 0;
+            reservedQty = requestedQty;
+        }
         const budgetQty = Number(material.budgetQty || 0);
         const availableQty = budgetQty - reservedQty;
         return {
@@ -1849,7 +1894,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             requestableQty: Math.max(0, availableQty),
             inventoryItem: findBoqInventoryItem(material),
         };
-    }, [findBoqInventoryItem, requestFulfillmentLineSummaries, requests]);
+    }, [findBoqInventoryItem, materialAccess.request.canView, requestAggregateByBudgetOrItem, requestFulfillmentLineSummaries, requests]);
 
     const getWorkSupplyStatus = useCallback((materials: MaterialBudgetItem[]) => {
         if (materials.length === 0) return { label: 'Chưa kê khai', className: 'bg-slate-100 text-slate-500 border-slate-200' };
@@ -2844,6 +2889,12 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             )}
 
             {/* Material Request Tab — using MaterialRequest from Inventory module */}
+            {!materialAccess.request.canView && activeSubTab === 'request' && (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-center dark:border-amber-900/50 dark:bg-amber-950/20">
+                    <p className="text-sm font-black text-amber-900 dark:text-amber-200">Chưa có quyền xem Yêu cầu vật tư</p>
+                    <p className="mt-1 text-xs font-medium text-amber-700 dark:text-amber-300">Vui lòng cấp quyền <strong>Xem</strong> trong Room Yêu cầu của đúng dự án/công trường.</p>
+                </div>
+            )}
             {materialAccess.request.canView && activeSubTab === 'request' && (
                 <MaterialRequestTab
                     projectId={projectId}
@@ -3111,6 +3162,11 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                         initialAction={requestModalInitialAction}
                         canProcessProjectWorkflow={selectedRequestLive ? canActOnProjectRequest(selectedRequestLive) : false}
                         canManageProjectWorkflow={selectedRequestLive ? canManageProjectWorkflow(selectedRequestLive) : false}
+                        canEditProjectRequest={canEditOwnMaterialRequest}
+                        canDeleteProjectRequest={canDeleteMaterialRequest}
+                        canSubmitProjectRequest={canSubmitMaterialRequest}
+                        canApproveProjectRequest={canApproveProjectRequest}
+                        canConfirmProjectRequest={canConfirmFulfillment}
                         projectWorkflowSubject={selectedRequestLive ? requestWorkflowSubjects[selectedRequestLive.id] : undefined}
                         projectWorkflowAssignments={
                             selectedRequestLive && requestWorkflowSubjects[selectedRequestLive.id]

@@ -954,7 +954,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             setProjectMaterialRequests([]);
             return;
         }
-        materialRequestService.listByProject(projectId)
+        materialRequestService.listProcurementDemand(projectId, constructionSiteId || null)
             .then(rows => {
                 if (!cancelled) setProjectMaterialRequests(rows);
             })
@@ -963,7 +963,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 if (!cancelled) setProjectMaterialRequests([]);
             });
         return () => { cancelled = true; };
-    }, [canViewPo, projectId]);
+    }, [canViewPo, constructionSiteId, projectId]);
 
     const loadSupplyData = async () => {
         if (!effectiveId) return;
@@ -2735,11 +2735,8 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         if (!projectId) return [];
         const byId = new Map<string, MaterialRequest>();
         projectMaterialRequests.forEach(req => byId.set(req.id, req));
-        materialRequests
-            .filter(req => req.requestOrigin === 'project' && req.projectId === projectId)
-            .forEach(req => byId.set(req.id, req));
         return [...byId.values()].sort((a, b) => (b.createdDate || '').localeCompare(a.createdDate || ''));
-    }, [materialRequests, projectId, projectMaterialRequests]);
+    }, [projectId, projectMaterialRequests]);
     const reloadRequestFulfillmentSummaries = useCallback(async (requestsToLoad = scopedMaterialRequests) => {
         if (requestsToLoad.length === 0) {
             setRequestFulfillmentSummaries({});

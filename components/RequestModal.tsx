@@ -143,6 +143,11 @@ interface RequestModalProps {
     initialAction?: 'createFulfillmentBatch';
     canProcessProjectWorkflow?: boolean;
     canManageProjectWorkflow?: boolean;
+    canEditProjectRequest?: boolean;
+    canDeleteProjectRequest?: boolean;
+    canSubmitProjectRequest?: boolean;
+    canApproveProjectRequest?: boolean;
+    canConfirmProjectRequest?: boolean;
     projectWorkflowSubject?: ProjectWorkflowSubject;
     projectWorkflowAssignments?: WorkflowStepAssignment[];
     projectWorkflowNodes?: WorkflowNode[];
@@ -298,6 +303,11 @@ const RequestModal: React.FC<RequestModalProps> = ({
     initialAction,
     canProcessProjectWorkflow = false,
     canManageProjectWorkflow = false,
+    canEditProjectRequest = false,
+    canDeleteProjectRequest = false,
+    canSubmitProjectRequest = false,
+    canApproveProjectRequest = false,
+    canConfirmProjectRequest = false,
     projectWorkflowSubject,
     projectWorkflowAssignments = [],
     projectWorkflowNodes = [],
@@ -353,6 +363,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
     const [returnReceivedReason, setReturnReceivedReason] = useState('');
     const [expandedMaterialGroupKeys, setExpandedMaterialGroupKeys] = useState<Set<string>>(() => new Set());
     const [poSourceLabelsById, setPoSourceLabelsById] = useState<Record<string, string>>({});
+    const [projectAvailableStock, setProjectAvailableStock] = useState<Record<string, { onHand: number; reserved: number; available: number }>>({});
 
     useEffect(() => {
         if (isOpen) {
@@ -370,6 +381,30 @@ const RequestModal: React.FC<RequestModalProps> = ({
     const isProjectRequest = requestOrigin === 'project' || request?.requestOrigin === 'project' || !!projectId || !!constructionSiteId;
     const effectiveProjectId = projectId || request?.projectId || null;
     const effectiveConstructionSiteId = constructionSiteId || request?.constructionSiteId || null;
+    const projectStockWarehouseId = stockPreviewWarehouseId || sourceWarehouseId || siteWarehouseId;
+
+    useEffect(() => {
+        let cancelled = false;
+        const itemIds = [...new Set(reqItems.map(line => line.itemId).filter(Boolean))];
+        if (!isOpen || !isProjectRequest || !canViewAvailableStock || !effectiveProjectId || !projectStockWarehouseId || itemIds.length === 0) {
+            setProjectAvailableStock({});
+            return;
+        }
+        materialRequestService.getAvailableStock({
+            projectId: effectiveProjectId,
+            constructionSiteId: effectiveConstructionSiteId,
+            warehouseId: projectStockWarehouseId,
+            itemIds,
+        }).then(rows => {
+            if (!cancelled) setProjectAvailableStock(Object.fromEntries(rows.map(row => [row.itemId, {
+                onHand: row.onHandQty, reserved: row.reservedQty, available: row.availableQty,
+            }])));
+        }).catch(error => {
+            logApiError('requestModal.availableStockProjection', error);
+            if (!cancelled) setProjectAvailableStock({});
+        });
+        return () => { cancelled = true; };
+    }, [canViewAvailableStock, effectiveConstructionSiteId, effectiveProjectId, isOpen, isProjectRequest, projectStockWarehouseId, reqItems]);
     const isProjectWorkflowReviewStep = !!request
         && isProjectRequest
         && request.status === RequestStatus.PENDING
@@ -378,15 +413,15 @@ const RequestModal: React.FC<RequestModalProps> = ({
             || request.workflowStep === 'site_manager_review'
             || request.workflowStep === 'material_department_review'
         );
-    const canReviewProjectWorkflow = isProjectWorkflowReviewStep && canProcessProjectWorkflow;
+    const canReviewProjectWorkflow = isProjectWorkflowReviewStep && canApproveProjectRequest && canProcessProjectWorkflow;
     const canPlanProjectFulfillment = !!request
         && isProjectRequest
+        && canConfirmProjectRequest
         && request.status === RequestStatus.APPROVED
         && (request.workflowStep === 'batch_planning' || !request.workflowStep)
         && (
             request.submittedToUserId === user.id
             || canProcessProjectWorkflow
-            || canManageProjectWorkflow
         );
     const workBoqMap = useMemo(() => new Map(workBoqItems.map(item => [item.id, item])), [workBoqItems]);
     const materialBudgetMap = useMemo(() => new Map(materialBudgetItems.map(item => [item.id, item])), [materialBudgetItems]);
@@ -647,6 +682,18 @@ const RequestModal: React.FC<RequestModalProps> = ({
     };
 
     const getAggregateStockSummary = (itemId: string, warehouseId?: string, excludeRequestId?: string) => {
+        if (isProjectRequest) {
+            const projected = warehouseId ? projectAvailableStock[itemId] : undefined;
+            return {
+                onHand: projected?.onHand || 0,
+                softReserved: projected?.reserved || 0,
+                hardReserved: 0,
+                reserved: projected?.reserved || 0,
+                available: projected?.available || 0,
+                hasConflict: false,
+                isCritical: false,
+            };
+        }
         if (!getLineInventory(itemId)) {
             return { onHand: 0, softReserved: 0, hardReserved: 0, reserved: 0, available: 0, hasConflict: false, isCritical: false };
         }
@@ -805,7 +852,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
             if (request) {
                 if (request.status === RequestStatus.PENDING && (canReviewProjectWorkflow || (!isProjectRequest && canApproveMaterialRequest(user, request)))) {
                     setStep('APPROVE');
-                } else if (request.status === RequestStatus.DRAFT && request.requesterId === user.id) {
+                } else if (request.status === RequestStatus.DRAFT && request.requesterId === user.id && (!isProjectRequest || canEditProjectRequest)) {
                     setStep('CREATE');
                 } else {
                     setStep('VIEW');
@@ -827,7 +874,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                     qtyInput: formatLocaleDecimalInput(i.approvedQty, 6),
                 })));
             } else {
-                setStep('CREATE');
+                setStep(!isProjectRequest || canEditProjectRequest ? 'CREATE' : 'VIEW');
                 setSiteWarehouseId(defaultSiteWarehouseId || user.assignedWarehouseId || '');
                 setSourceWarehouseId('');
                 setStockPreviewWarehouseId('');
@@ -850,7 +897,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                 setDraftLineNote('');
             }
         }
-    }, [canReviewProjectWorkflow, defaultSiteWarehouseId, initialDraft, isOpen, isProjectRequest, items, materialBudgetMap, request, user]);
+    }, [canEditProjectRequest, canReviewProjectWorkflow, defaultSiteWarehouseId, initialDraft, isOpen, isProjectRequest, items, materialBudgetMap, request, user]);
 
     useEffect(() => {
         if (!isOpen || !request) {
@@ -2270,6 +2317,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
     const canCreateFulfillmentBatch = !!request
         && isBatchFulfillmentRequest
         && (request.status === RequestStatus.APPROVED || request.status === RequestStatus.IN_TRANSIT)
+        && (!isProjectRequest || canConfirmProjectRequest)
         && (
             canPlanProjectFulfillment
             ||
@@ -2499,6 +2547,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
     };
     const canDeleteRequest = !!request
         && [RequestStatus.DRAFT, RequestStatus.PENDING, RequestStatus.REJECTED].includes(request.status)
+        && (!isProjectRequest || canDeleteProjectRequest)
         && (
             isAdmin(user)
             || (request.requesterId === user.id && (request.status === RequestStatus.DRAFT || request.status === RequestStatus.REJECTED))
@@ -2510,6 +2559,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
     const canSubmitDraft = !!request
         && request.status === RequestStatus.DRAFT
         && request.requesterId === user.id
+        && (!isProjectRequest || canSubmitProjectRequest)
         && projectWorkflowSubject?.status !== 'RETURNED';
 
     return (
@@ -2695,7 +2745,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                             returnTargetNode={projectWorkflowReturnTargetNode}
                             canAct={canReviewProjectWorkflow}
                             canReassign={canReviewProjectWorkflow || canManageProjectWorkflow}
-                            canResubmit={isDynamicReturnedDraft && request.requesterId === user.id}
+                            canResubmit={isDynamicReturnedDraft && request.requesterId === user.id && canSubmitProjectRequest}
                             canRollback={canManageProjectWorkflow}
                             completionHandoff={{
                                 required: true,
@@ -3614,18 +3664,18 @@ const RequestModal: React.FC<RequestModalProps> = ({
                             </button>
                         )}
 
-                        {isEditable && isProjectRequest && !request && (
+                        {isEditable && isProjectRequest && !request && canEditProjectRequest && (
                             <>
                                 <button disabled={isSaving} onClick={handleSaveDraft} className="px-3 py-1.5 sm:px-5 sm:py-2 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs sm:text-sm font-bold hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed flex items-center whitespace-nowrap">
                                     {isSaving ? <Loader2 size={14} className="mr-1.5 sm:mr-2 animate-spin" /> : <Save size={14} className="mr-1.5 sm:mr-2" />} Lưu nháp
                                 </button>
-                                <button disabled={isSaving} onClick={handleCreateAndSend} className="px-3 py-1.5 sm:px-6 sm:py-2 rounded-lg bg-emerald-600 text-white text-xs sm:text-sm font-bold hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed flex items-center shadow-lg shadow-emerald-500/20 whitespace-nowrap">
+                                <button disabled={isSaving || !canSubmitProjectRequest} onClick={handleCreateAndSend} className="px-3 py-1.5 sm:px-6 sm:py-2 rounded-lg bg-emerald-600 text-white text-xs sm:text-sm font-bold hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed flex items-center shadow-lg shadow-emerald-500/20 whitespace-nowrap">
                                     {isSaving ? <Loader2 size={14} className="mr-1.5 sm:mr-2 animate-spin" /> : <Send size={14} className="mr-1.5 sm:mr-2" />} {isSaving ? 'Đang gửi...' : 'Tạo và gửi duyệt'}
                                 </button>
                             </>
                         )}
 
-                        {isEditable && (!isProjectRequest || !!request) && (
+                        {isEditable && (!isProjectRequest || (!!request && canEditProjectRequest)) && (
                             <button disabled={isSaving} onClick={handleSaveDraft} className="px-3 py-1.5 sm:px-6 sm:py-2 rounded-lg bg-slate-700 text-white text-xs sm:text-sm font-bold hover:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed flex items-center shadow-lg shadow-slate-500/20 whitespace-nowrap">
                                 {isSaving ? <Loader2 size={14} className="mr-1.5 sm:mr-2 animate-spin" /> : <Save size={14} className="mr-1.5 sm:mr-2" />} {isSaving ? 'Đang lưu...' : request ? 'Lưu nháp' : 'Tạo đề xuất'}
                             </button>

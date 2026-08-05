@@ -47,6 +47,25 @@ export interface MaterialPoEffectiveCapabilities {
   canConfirmPo: boolean;
 }
 
+export interface MaterialRequestEffectiveCapabilities {
+  canViewMaterialRequest: boolean;
+  canCreateMaterialRequest: boolean;
+  canEditOwnMaterialRequest: boolean;
+  canDeleteMaterialRequest: boolean;
+  canSubmitMaterialRequest: boolean;
+  canReturnMaterialRequest: boolean;
+  canApproveMaterialRequest: boolean;
+  canConfirmFulfillment: boolean;
+  canViewAvailableStock: boolean;
+}
+
+export const getEffectiveProjectRoomActionSet = (
+  actions: readonly EffectiveProjectRoomAction[],
+  roomCode: string,
+): ReadonlySet<ProjectRoomActionCode> => new Set(actions
+  .filter(action => action.roomCode === roomCode)
+  .map(action => action.actionCode));
+
 const MATERIAL_PO_ACTION_CODES = [
   'view',
   'edit',
@@ -59,9 +78,7 @@ const MATERIAL_PO_ACTION_CODES = [
 export const getMaterialPoEffectiveCapabilities = (
   actions: readonly EffectiveProjectRoomAction[],
 ): MaterialPoEffectiveCapabilities => {
-  const granted = new Set(actions
-    .filter(action => action.roomCode === 'material_po')
-    .map(action => action.actionCode));
+  const granted = getEffectiveProjectRoomActionSet(actions, 'material_po');
   const has = (actionCode: (typeof MATERIAL_PO_ACTION_CODES)[number]) => granted.has(actionCode);
   const canViewPo = has('view');
 
@@ -72,5 +89,24 @@ export const getMaterialPoEffectiveCapabilities = (
     canSubmitPo: canViewPo && has('submit'),
     canApprovePo: canViewPo && has('approve'),
     canConfirmPo: canViewPo && has('confirm'),
+  };
+};
+
+export const getMaterialRequestEffectiveCapabilities = (
+  actions: readonly EffectiveProjectRoomAction[],
+): MaterialRequestEffectiveCapabilities => {
+  const granted = getEffectiveProjectRoomActionSet(actions, 'material_request');
+  const canViewMaterialRequest = granted.has('view');
+  const has = (action: ProjectRoomActionCode) => canViewMaterialRequest && granted.has(action);
+  return {
+    canViewMaterialRequest,
+    canCreateMaterialRequest: has('edit'),
+    canEditOwnMaterialRequest: has('edit'),
+    canDeleteMaterialRequest: has('delete'),
+    canSubmitMaterialRequest: has('submit'),
+    canReturnMaterialRequest: has('approve'),
+    canApproveMaterialRequest: has('approve'),
+    canConfirmFulfillment: has('confirm'),
+    canViewAvailableStock: has('view_available_stock'),
   };
 };

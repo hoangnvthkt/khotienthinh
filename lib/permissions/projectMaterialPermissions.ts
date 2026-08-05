@@ -14,6 +14,8 @@ export const PROJECT_MATERIAL_ACTION_CODES = Object.freeze([
   'project.material_request.create',
   'project.material_request.edit_own',
   'project.material_request.edit_all',
+  'project.material_request.delete_own',
+  'project.material_request.delete_all',
   'project.material_request.submit',
   'project.material_request.return',
   'project.material_request.approve',
@@ -87,6 +89,7 @@ export type ProjectMaterialCapability = {
   canCreateMaterialRequest: boolean;
   canEditOwnMaterialRequest: boolean;
   canEditAllMaterialRequest: boolean;
+  canDeleteMaterialRequest: boolean;
   canSubmitMaterialRequest: boolean;
   canReturnMaterialRequest: boolean;
   canApproveMaterialRequest: boolean;
@@ -154,6 +157,7 @@ export const getProjectMaterialCapabilities = (
     canCreateMaterialRequest: can('project.material_request.create'),
     canEditOwnMaterialRequest: can('project.material_request.edit_own'),
     canEditAllMaterialRequest: can('project.material_request.edit_all'),
+    canDeleteMaterialRequest: can('project.material_request.delete_own'),
     canSubmitMaterialRequest: can('project.material_request.submit'),
     canReturnMaterialRequest: can('project.material_request.return'),
     canApproveMaterialRequest: can('project.material_request.approve'),

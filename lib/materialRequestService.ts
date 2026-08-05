@@ -23,6 +23,46 @@ export type MaterialRequestListPage = {
   hasMore: boolean;
 };
 
+export type MaterialRequestAggregateRow = {
+  itemId: string;
+  materialBudgetItemId?: string | null;
+  requestedQty: number;
+  approvedQty: number;
+  receivedQty: number;
+  remainingQty: number;
+};
+
+export type MaterialRequestAvailableStockRow = {
+  itemId: string;
+  onHandQty: number;
+  reservedQty: number;
+  availableQty: number;
+};
+
+type MaterialRequestProcurementDemandRow = {
+  material_request_id: string;
+  request_code: string;
+  construction_site_id?: string | null;
+  site_warehouse_id?: string | null;
+  fulfillment_mode?: string | null;
+  request_status: string;
+  created_date: string;
+  expected_date?: string | null;
+  request_line_id: string;
+  item_id: string;
+  material_budget_item_id?: string | null;
+  work_boq_item_id?: string | null;
+  requested_qty: number | string;
+  approved_qty: number | string;
+  received_qty: number | string;
+  closed_qty: number | string;
+  needed_date?: string | null;
+  item_name?: string | null;
+  sku?: string | null;
+  unit?: string | null;
+  is_manual_item?: boolean | null;
+};
+
 const normalizePageLimit = (limit?: number | null): number =>
   Math.max(1, Math.min(Math.floor(Number(limit || DEFAULT_PROJECT_REQUEST_PAGE_SIZE)), 1000));
 
@@ -244,6 +284,93 @@ export const mapMaterialRequestFromDb = (row: any): MaterialRequest => ({
 });
 
 export const materialRequestService = {
+  async getAvailableStock(input: {
+    projectId: string;
+    constructionSiteId?: string | null;
+    warehouseId: string;
+    itemIds?: string[];
+  }): Promise<MaterialRequestAvailableStockRow[]> {
+    const { data, error } = await supabase.rpc('get_project_material_request_available_stock', {
+      p_project_id: input.projectId,
+      p_construction_site_id: input.constructionSiteId || null,
+      p_warehouse_id: input.warehouseId,
+      p_item_ids: input.itemIds?.length ? input.itemIds : null,
+    });
+    if (error) throw error;
+    return (data || []).map((row: any) => ({
+      itemId: row.item_id,
+      onHandQty: Number(row.on_hand_qty || 0),
+      reservedQty: Number(row.reserved_qty || 0),
+      availableQty: Number(row.available_qty || 0),
+    }));
+  },
+
+  async getProjectAggregate(projectId: string, constructionSiteId?: string | null): Promise<MaterialRequestAggregateRow[]> {
+    if (!projectId) return [];
+    const { data, error } = await supabase.rpc('get_project_material_request_aggregate', {
+      p_project_id: projectId,
+      p_construction_site_id: constructionSiteId || null,
+    });
+    if (error) throw error;
+    return (data || []).map((row: any) => ({
+      itemId: row.item_id,
+      materialBudgetItemId: row.material_budget_item_id || null,
+      requestedQty: Number(row.requested_qty || 0),
+      approvedQty: Number(row.approved_qty || 0),
+      receivedQty: Number(row.received_qty || 0),
+      remainingQty: Number(row.remaining_qty || 0),
+    }));
+  },
+
+  async listProcurementDemand(projectId: string, constructionSiteId?: string | null): Promise<MaterialRequest[]> {
+    if (!projectId) return [];
+    const { data, error } = await supabase.rpc('list_project_material_request_procurement_demand', {
+      p_project_id: projectId,
+      p_construction_site_id: constructionSiteId || null,
+    });
+    if (error) throw error;
+    const grouped = new Map<string, MaterialRequest>();
+    (data || []).forEach((row: MaterialRequestProcurementDemandRow) => {
+      let request = grouped.get(row.material_request_id);
+      if (!request) {
+        request = {
+          id: row.material_request_id,
+          code: row.request_code,
+          title: row.request_code,
+          projectId,
+          constructionSiteId: row.construction_site_id || null,
+          requestOrigin: 'project',
+          siteWarehouseId: row.site_warehouse_id || '',
+          requesterId: '',
+          status: row.request_status as RequestStatus,
+          items: [],
+          createdDate: row.created_date,
+          expectedDate: row.expected_date || row.created_date,
+          fulfillmentMode: (row.fulfillment_mode || MaterialRequestFulfillmentMode.RECEIVE_TO_STOCK) as MaterialRequestFulfillmentMode,
+          logs: [],
+        };
+        grouped.set(row.material_request_id, request);
+      }
+      const receivedQty = Number(row.received_qty || 0);
+      const closedQty = Number(row.closed_qty || 0);
+      request.items.push({
+        lineId: row.request_line_id,
+        itemId: row.item_id,
+        requestQty: Number(row.requested_qty || 0),
+        approvedQty: Number(row.approved_qty || 0),
+        issuedQty: receivedQty + closedQty,
+        materialBudgetItemId: row.material_budget_item_id || null,
+        workBoqItemId: row.work_boq_item_id || null,
+        neededDate: row.needed_date || undefined,
+        itemNameSnapshot: row.item_name || undefined,
+        skuSnapshot: row.sku || undefined,
+        unitSnapshot: row.unit || undefined,
+        isManualItem: Boolean(row.is_manual_item),
+      });
+    });
+    return [...grouped.values()].sort((left, right) => right.createdDate.localeCompare(left.createdDate));
+  },
+
   async nextCode(): Promise<string> {
     if (!isSupabaseConfigured) {
       return `MR-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`;
