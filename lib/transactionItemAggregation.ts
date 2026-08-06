@@ -18,12 +18,18 @@ export const aggregateTransactionItemsForInventory = (
 
   const quantity = matchingItems.reduce((total, item) => total + numberOrZero(item.quantity), 0);
   const accountingQty = matchingItems.reduce((total, item) => total + numberOrZero(item.accountingQty), 0);
+  const accountingItems = matchingItems.filter(item =>
+    item.accountingQty !== undefined || item.accountingUnit !== undefined || item.accountingPrice !== undefined,
+  );
+  const hasMissingAccountingUnit = accountingItems.some(item => !item.accountingUnit?.trim());
   const accountingUnits = new Set(
-    matchingItems
+    accountingItems
       .map(item => item.accountingUnit?.trim())
       .filter((unit): unit is string => Boolean(unit)),
   );
-  const accountingUnit = accountingUnits.size === 1 ? [...accountingUnits][0] : null;
+  const accountingUnit = !hasMissingAccountingUnit && accountingUnits.size === 1
+    ? [...accountingUnits][0]
+    : null;
   const accountingAmount = matchingItems.reduce(
     (total, item) => total + numberOrZero(item.accountingQty) * numberOrZero(item.accountingPrice),
     0,
