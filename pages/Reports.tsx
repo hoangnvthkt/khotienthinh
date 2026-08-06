@@ -35,6 +35,7 @@ import { useModuleData } from '../hooks/useModuleData';
 import { useInventoryLedger } from '../hooks/useInventoryLedger';
 import { buildDocumentTracePath } from '../lib/documentTraceService';
 import { getDefaultWmsWarehouseFilter, getWmsWarehouseAccess } from '../lib/wmsPermissions';
+import { aggregateTransactionItemsForInventory } from '../lib/transactionItemAggregation';
 
 type ReportView = 'summary' | 'material_card' | 'warehouse_card' | 'history';
 
@@ -344,9 +345,9 @@ const Reports: React.FC = () => {
         transactions.forEach(tx => {
           if (tx.status !== TransactionStatus.COMPLETED) return;
           const txDate = new Date(tx.date);
-          const txLine = tx.items.find(line => line.itemId === item.id);
-          if (!txLine) return;
-          const qty = Number(txLine.quantity || 0);
+          const txItem = aggregateTransactionItemsForInventory(tx.items, item.id);
+          if (!txItem) return;
+          const qty = txItem.quantity;
           const isRelatedToWh = selectedWh === 'ALL' || tx.targetWarehouseId === selectedWh || tx.sourceWarehouseId === selectedWh;
           if (!isRelatedToWh) return;
 

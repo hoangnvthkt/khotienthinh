@@ -16,6 +16,7 @@ import { getApiErrorMessage, logApiError } from '../lib/apiError';
 import { partnerService } from '../lib/partnerService';
 import SupplierCombobox from './SupplierCombobox';
 import { parseNonNegativeLocaleNumber } from '../lib/localeNumberInput';
+import { aggregateTransactionItemsForInventory } from '../lib/transactionItemAggregation';
 
 interface InventoryDetailModalProps {
   isOpen: boolean;
@@ -612,7 +613,7 @@ const InventoryDetailModal: React.FC<InventoryDetailModalProps> = ({ isOpen, onC
                       {itemHistory.length > 0 ? (
                         itemHistory.map(tx => {
                           const badge = getTxTypeBadge(tx.type);
-                          const txItem = tx.items.find(ti => ti.itemId === item.id);
+                          const txItem = aggregateTransactionItemsForInventory(tx.items, item.id);
                           const requester = users.find(u => u.id === tx.requesterId);
                           const sourceWh = warehouses.find(w => w.id === tx.sourceWarehouseId);
                           const targetWh = warehouses.find(w => w.id === tx.targetWarehouseId);
@@ -652,10 +653,10 @@ const InventoryDetailModal: React.FC<InventoryDetailModalProps> = ({ isOpen, onC
                                 }`}>
                                 {tx.type === TransactionType.IMPORT ? '+' : '-'}{txItem?.quantity.toLocaleString()} {item.unit}
                                 {/* Hiển thị số liệu kế toán (KG) nếu có */}
-                                {txItem?.accountingQty && txItem?.accountingUnit && (
+                                {txItem && txItem.accountingQty !== 0 && txItem.accountingUnit && (
                                   <div className="text-[9px] text-teal-700 dark:text-teal-400 font-semibold mt-0.5">
                                     = {txItem.accountingQty.toLocaleString('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {txItem.accountingUnit}
-                                    {txItem.accountingPrice && (
+                                    {txItem.accountingPrice !== null && (
                                       <span className="text-teal-600 dark:text-teal-500 ml-1">@ {txItem.accountingPrice.toLocaleString('vi-VN')}₫/{txItem.accountingUnit}</span>
                                     )}
                                   </div>
