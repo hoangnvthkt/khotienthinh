@@ -38,3 +38,35 @@ Migration: `20260804095711_material_po_room_authoritative_cutover.sql`
   - delivery view helper: `db4cce7a4328862609ea79bb0c50ca20`
 - Security advisor completed with existing project-wide warnings (mutable search paths, exposed security-definer RPCs and extensions in `public`); no cutover smoke failure.
 - Performance advisor completed: 108 existing findings; no PO/Room-specific finding was returned.
+
+## UPSERT RLS hotfix — 2026-08-06
+
+Migration: `20260806022402_material_po_upsert_rls_fix.sql`
+
+- Root cause: `purchase_orders_select` delegated to
+  `app_private.purchase_order_can_view(id)`. A non-admin Room member could
+  perform a plain INSERT, but `INSERT ... ON CONFLICT` evaluated SELECT before
+  the candidate id was queryable and failed with RLS error `42501`.
+- Regression RED: the new migration contract failed because the hotfix
+  migration did not exist.
+- Focused GREEN: 3 test files, 9 tests passed.
+- Current-workspace suite: 170 test files, 806 tests passed. The repository-wide
+  default Vitest discovery also sees a separate `.worktrees/request-approval-phase1`
+  checkout with three unrelated stale contract failures; verification excluded
+  `.worktrees/**` and did not modify that checkout.
+- Production build: passed with Vite 6.4.1 (`3668` modules transformed).
+- Linked-Cloud migration + UPSERT smoke dry-run: passed in a transaction and
+  rolled back. No diagnostic PO or number-registry attachment remained.
+- Applied directly with `supabase db query --linked`; migration history was not
+  repaired because the repository already records intentional local/remote
+  history divergence.
+- Post-apply UPSERT smoke: `material_po_upsert_rls_fix_smoke_passed`, followed
+  by rollback with zero diagnostic PO and registry rows.
+- Pre-apply `purchase_orders_select` hash:
+  `73dcb4816f87f6ba361e88e37da2c04d`.
+- Post-apply `purchase_orders_select` hash:
+  `60487cbd09537255c36ce2e0147b8cad`.
+- Rollback: recreate `purchase_orders_select` with
+  `using (app_private.purchase_order_can_view(id))`, then notify PostgREST to
+  reload its schema. This restores the previous policy but also restores the
+  non-admin UPSERT failure.
