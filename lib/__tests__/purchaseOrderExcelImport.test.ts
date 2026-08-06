@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import type { PurchaseOrderItem } from '../../types';
 import {
   getPoExcelCreateCommercialKey,
+  getPoExcelCreateImportKey,
   preparePoExcelUpdateRows,
+  replacePoExcelCreateDuplicateErrors,
 } from '../purchaseOrderExcelImport';
 
 const makeItem = (overrides: Partial<PurchaseOrderItem>): PurchaseOrderItem => ({
@@ -21,6 +23,31 @@ describe('PO Excel commercial-line identity', () => {
     expect(getPoExcelCreateCommercialKey(' SKU-1 ', '10.000')).toBe('sku-1|10000');
     expect(getPoExcelCreateCommercialKey('SKU-1', '10000')).toBe('sku-1|10000');
     expect(getPoExcelCreateCommercialKey('SKU-1', '11.000')).toBe('sku-1|11000');
+  });
+
+  it('uses commercial identity only for proactive project and stock source modes', () => {
+    expect(getPoExcelCreateImportKey('from_request', 'SKU-1', '10.000')).toBe('sku-1');
+    expect(getPoExcelCreateImportKey('from_request', 'SKU-1', '11.000')).toBe('sku-1');
+    expect(getPoExcelCreateImportKey('proactive_project', 'SKU-1', '10.000')).toBe('sku-1|10000');
+    expect(getPoExcelCreateImportKey('proactive_project', 'SKU-1', '11.000')).toBe('sku-1|11000');
+    expect(getPoExcelCreateImportKey('proactive_stock', 'SKU-1', '10.000')).toBe('sku-1|10000');
+    expect(getPoExcelCreateImportKey('proactive_stock', 'SKU-1', '11.000')).toBe('sku-1|11000');
+  });
+
+  it('replaces a workbook duplicate with merge-quantity guidance that names SKU and price', () => {
+    expect(replacePoExcelCreateDuplicateErrors(
+      ['Mã SKU "sku-1|10000" bị trùng với dòng 2.'],
+      'SKU-1',
+      '10.000',
+    )).toEqual(['SKU "SKU-1" với Đơn giá 10.000 bị trùng. Vui lòng gộp số lượng.']);
+  });
+
+  it('replaces an existing-line conflict with the same actionable merge guidance', () => {
+    expect(replacePoExcelCreateDuplicateErrors(
+      ['Mã SKU "sku-1|10000" đã tồn tại.'],
+      'SKU-1',
+      10_000,
+    )).toEqual(['SKU "SKU-1" với Đơn giá 10.000 bị trùng. Vui lòng gộp số lượng.']);
   });
 
   it('resolves an update by Mã dòng PO before considering the SKU', () => {

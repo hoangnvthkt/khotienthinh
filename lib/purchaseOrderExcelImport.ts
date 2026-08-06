@@ -1,4 +1,4 @@
-import type { PurchaseOrderItem } from '../types';
+import type { PurchaseOrderItem, PurchaseOrderSourceMode } from '../types';
 import { getExcelCell, normalizeImportKey } from './excelImport';
 import { parseNonNegativeLocaleNumber } from './localeNumberInput';
 
@@ -6,6 +6,25 @@ const PO_EXCEL_SKU_ALIASES = ['Mã SKU *', 'Mã SKU', 'SKU'];
 
 export const getPoExcelCreateCommercialKey = (sku: unknown, unitPrice: unknown): string =>
   `${normalizeImportKey(sku)}|${parseNonNegativeLocaleNumber(unitPrice)}`;
+
+export const getPoExcelCreateImportKey = (
+  sourceMode: PurchaseOrderSourceMode,
+  sku: unknown,
+  unitPrice: unknown,
+): string => sourceMode === 'proactive_project' || sourceMode === 'proactive_stock'
+  ? getPoExcelCreateCommercialKey(sku, unitPrice)
+  : normalizeImportKey(sku);
+
+export const replacePoExcelCreateDuplicateErrors = (
+  errors: string[],
+  sku: unknown,
+  unitPrice: unknown,
+): string[] => {
+  const duplicateMessage = `SKU "${String(sku ?? '').trim()}" với Đơn giá ${parseNonNegativeLocaleNumber(unitPrice).toLocaleString('vi-VN')} bị trùng. Vui lòng gộp số lượng.`;
+  return errors.map(error => error.includes('bị trùng với dòng') || error.includes('đã tồn tại')
+    ? duplicateMessage
+    : error);
+};
 
 export const preparePoExcelUpdateRows = (input: {
   rows: Record<string, unknown>[];

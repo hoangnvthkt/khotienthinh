@@ -81,7 +81,7 @@ import { getApiErrorMessage, logApiError } from '../../lib/apiError';
 import ExcelImportReviewModal from '../../components/ExcelImportReviewModal';
 import InventoryItemCombobox from '../../components/InventoryItemCombobox';
 import { ExcelImportMode, ExcelImportPreview, applyImportChanges, buildImportPreview, getExcelCell, parseExcelRows } from '../../lib/excelImport';
-import { getPoExcelCreateCommercialKey, preparePoExcelUpdateRows } from '../../lib/purchaseOrderExcelImport';
+import { getPoExcelCreateImportKey, preparePoExcelUpdateRows, replacePoExcelCreateDuplicateErrors } from '../../lib/purchaseOrderExcelImport';
 import ProjectSubmissionDialog from '../../components/project/ProjectSubmissionDialog';
 import ProjectRoomSubmissionDialog from '../../components/project/ProjectRoomSubmissionDialog';
 import { projectSubmissionService } from '../../lib/projectSubmissionService';
@@ -4265,7 +4265,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
 
         const guideWs = XLSX.utils.aoa_to_sheet([
             ['Chức năng', 'Cách dùng'],
-            ['Nhập mới', 'Dùng sheet Nhap_moi để nạp danh sách vật tư vào PO đang tạo/sửa. Các dòng cùng SKU được phân biệt bằng Đơn giá; cặp SKU và Đơn giá trùng sẽ báo lỗi.'],
+            ['Nhập mới', 'Dùng sheet Nhap_moi để nạp danh sách vật tư vào PO đang tạo/sửa. Các dòng cùng SKU được phân biệt bằng Đơn giá; cặp SKU và Đơn giá trùng sẽ báo lỗi. Vui lòng gộp số lượng.'],
             ['Cập nhật', 'Dùng sheet Cap_nhat hoặc file chỉ gồm Mã SKU và cột muốn sửa. SKU phải đang có trong PO form.'],
             ['Mã dòng PO', 'Khi một SKU có nhiều dòng giá, Mã dòng PO là bắt buộc để cập nhật đúng dòng.'],
             ['Ô trống', 'Trong chế độ Cập nhật, ô trống nghĩa là không đổi dữ liệu.'],
@@ -4294,19 +4294,17 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         const preparedRows = mode === 'create'
             ? rows.map(row => ({
                 ...row,
-                __poImportKey: getPoExcelCreateCommercialKey(
-                    getExcelCell(row, skuAliases),
-                    getExcelCell(row, unitPriceAliases),
-                ),
+                __poImportKey: getPoExcelCreateImportKey(pSourceMode,
+                    getExcelCell(row, skuAliases), getExcelCell(row, unitPriceAliases)),
             }))
             : preparePoExcelUpdateRows({ rows, existingItems: activeItems });
-        return buildImportPreview<PurchaseOrderItem>({
+        const preview = buildImportPreview<PurchaseOrderItem>({
             mode,
             keyLabel: 'Mã SKU',
             keyAliases: mode === 'create' ? ['__poImportKey'] : ['__poImportKey', ...skuAliases],
             existingRecords: activeItems,
             getRecordKey: item => mode === 'create'
-                ? getPoExcelCreateCommercialKey(item.sku, item.unitPrice)
+                ? getPoExcelCreateImportKey(pSourceMode, item.sku, item.unitPrice)
                 : item.lineId || item.itemId,
             validateKey: (_key, row) => {
                 if (row.__poImportError) return String(row.__poImportError);
@@ -4364,6 +4362,18 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 },
             ],
         }, preparedRows);
+        if (mode === 'update') return preview;
+        return {
+            ...preview,
+            rows: preview.rows.map(row => ({
+                ...row,
+                errors: replacePoExcelCreateDuplicateErrors(
+                    row.errors,
+                    getExcelCell(row.source, skuAliases),
+                    getExcelCell(row.source, unitPriceAliases),
+                ),
+            })),
+        };
     };
 
     const openPoImport = (mode: ExcelImportMode) => {
