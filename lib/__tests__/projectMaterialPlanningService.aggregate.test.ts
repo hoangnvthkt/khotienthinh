@@ -97,7 +97,7 @@ describe('projectMaterialPlanningService.buildAggregateSummary', () => {
     expect(rows[0].shortageQty['30d']).toBe(500);
   });
 
-  it('weights matching commercial lines from the newest confirmed PO for planning price', () => {
+  it('weights mixed purchase-unit lines from the newest confirmed PO for planning price', () => {
     const forecast = projectMaterialPlanningService.buildForecast({
       projectId: 'project-1',
       constructionSiteId: 'site-1',
@@ -131,12 +131,77 @@ describe('projectMaterialPlanningService.buildAggregateSummary', () => {
           name: 'Thép XD D8',
           category: 'Thép',
           unit: 'Kg',
+          purchaseUnit: 'Tấn',
+          purchaseConversionFactor: 1000,
           priceIn: 14570,
           priceOut: 14570,
           minStock: 0,
           stockByWarehouse: { 'wh-site': 0 },
         },
       ],
+      purchaseOrders: [
+        {
+          id: 'po-older',
+          vendorId: 'vendor-1',
+          poNumber: 'PO-OLDER',
+          items: [{ itemId: 'item-steel-d8', sku: 'VT-D8', name: 'Thép XD D8', unit: 'Kg', qty: 1, unitPrice: 20000, stockUnitSnapshot: 'Kg', purchaseUnitSnapshot: 'Kg', purchaseConversionFactor: 1 }],
+          totalAmount: 20000,
+          orderDate: '2026-06-01',
+          status: 'confirmed',
+          createdAt: '2026-06-01T00:00:00.000Z',
+        },
+        {
+          id: 'po-newest',
+          vendorId: 'vendor-1',
+          poNumber: 'PO-NEWEST',
+          items: [
+            { itemId: 'item-steel-d8', sku: 'VT-D8', name: 'Thép XD D8', unit: 'Tấn', qty: 3, unitPrice: 10000000, stockUnitSnapshot: 'Kg', purchaseUnitSnapshot: 'Tấn', purchaseConversionFactor: 1000 },
+            { itemId: 'item-steel-d8', sku: 'VT-D8', name: 'Thép XD D8', unit: 'Kg', qty: 7000, unitPrice: 12000, stockUnitSnapshot: 'Kg', purchaseUnitSnapshot: 'Kg', purchaseConversionFactor: 1 },
+          ],
+          totalAmount: 114000000,
+          orderDate: '2026-06-20',
+          status: 'confirmed',
+          createdAt: '2026-06-20T00:00:00.000Z',
+        },
+      ],
+      transactions: [],
+      rules: [{ scopeKey: 'project-1_site-1', inventoryItemId: 'item-steel-d8', leadTimeDays: 0, distributionMethod: 'pre_start' }],
+      curveTemplates: [],
+    });
+
+    expect(forecast.rows).toHaveLength(1);
+    expect(forecast.rows[0].planningUnitPrice).toBe(11400);
+    expect(forecast.rows[0].planningUnitPriceSource).toBe('latest_confirmed_po');
+  });
+
+  it('does not revive an older PO when the newest positive-price PO has no stock quantity', () => {
+    const forecast = projectMaterialPlanningService.buildForecast({
+      projectId: 'project-1',
+      constructionSiteId: 'site-1',
+      siteWarehouseId: 'wh-site',
+      tasks: [],
+      workBoqItems: [],
+      materialBudgetItems: [{
+        id: 'mb-1',
+        inventoryItemId: 'item-steel-d8',
+        materialCode: 'VT-D8',
+        category: 'Thép',
+        itemName: 'Thép XD D8',
+        unit: 'Kg',
+        budgetQty: 0,
+        budgetUnitPrice: 14570,
+      } as any],
+      inventoryItems: [{
+        id: 'item-steel-d8',
+        sku: 'VT-D8',
+        name: 'Thép XD D8',
+        category: 'Thép',
+        unit: 'Kg',
+        priceIn: 14570,
+        priceOut: 14570,
+        minStock: 0,
+        stockByWarehouse: { 'wh-site': 0 },
+      }],
       purchaseOrders: [
         {
           id: 'po-older',
@@ -152,23 +217,20 @@ describe('projectMaterialPlanningService.buildAggregateSummary', () => {
           id: 'po-newest',
           vendorId: 'vendor-1',
           poNumber: 'PO-NEWEST',
-          items: [
-            { itemId: 'item-steel-d8', sku: 'VT-D8', name: 'Thép XD D8', unit: 'Kg', qty: 3, unitPrice: 10000 },
-            { itemId: 'item-steel-d8', sku: 'VT-D8', name: 'Thép XD D8', unit: 'Kg', qty: 7, unitPrice: 12000 },
-          ],
-          totalAmount: 114000,
+          items: [{ itemId: 'item-steel-d8', sku: 'VT-D8', name: 'Thép XD D8', unit: 'Kg', qty: 0, unitPrice: 30000 }],
+          totalAmount: 0,
           orderDate: '2026-06-20',
           status: 'confirmed',
           createdAt: '2026-06-20T00:00:00.000Z',
         },
       ],
       transactions: [],
-      rules: [{ scopeKey: 'project-1_site-1', inventoryItemId: 'item-steel-d8', leadTimeDays: 0, distributionMethod: 'pre_start' }],
+      rules: [],
       curveTemplates: [],
     });
 
     expect(forecast.rows).toHaveLength(1);
-    expect(forecast.rows[0].planningUnitPrice).toBe(11400);
-    expect(forecast.rows[0].planningUnitPriceSource).toBe('latest_confirmed_po');
+    expect(forecast.rows[0].planningUnitPrice).toBe(14570);
+    expect(forecast.rows[0].planningUnitPriceSource).toBe('material_master');
   });
 });

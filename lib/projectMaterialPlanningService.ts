@@ -174,22 +174,15 @@ const getPlanningUnitPrice = (input: {
     .filter(po => VALID_PRICE_PO_STATUSES.has(po.status))
     .map(po => {
       const matchingLines = (po.items || [])
-        .filter(line => line.itemId === itemId && Number(line.unitPrice || 0) > 0)
+        .filter(line => line.itemId === itemId)
         .map(line => ({
-          stockQty: poLinePurchaseToStockQty(line, Number(line.qty || 0), input.item),
           stockUnitPrice: getPoLineStockUnitPrice(line, input.item),
+          line,
         }))
-        .filter(line => line.stockQty > 0 && line.stockUnitPrice > 0);
-      const stockQty = matchingLines.reduce((sum, line) => sum + line.stockQty, 0);
-      return {
-        po,
-        stockQty,
-        weightedPrice: stockQty > 0
-          ? matchingLines.reduce((sum, line) => sum + line.stockQty * line.stockUnitPrice, 0) / stockQty
-          : 0,
-      };
+        .filter(line => line.stockUnitPrice > 0);
+      return { po, matchingLines };
     })
-    .filter(({ stockQty }) => stockQty > 0)
+    .filter(({ matchingLines }) => matchingLines.length > 0)
     .sort((a, b) => {
       const aDate = a.po.orderDate || a.po.expectedDeliveryDate || a.po.createdAt || '';
       const bDate = b.po.orderDate || b.po.expectedDeliveryDate || b.po.createdAt || '';
@@ -198,7 +191,17 @@ const getPlanningUnitPrice = (input: {
         || String(b.po.id || '').localeCompare(String(a.po.id || ''));
     })[0];
   if (latestConfirmedPo) {
-    return { planningUnitPrice: latestConfirmedPo.weightedPrice, planningUnitPriceSource: 'latest_confirmed_po' };
+    const weightedLines = latestConfirmedPo.matchingLines
+      .map(({ line, stockUnitPrice }) => ({
+        stockQty: poLinePurchaseToStockQty(line, Number(line.qty || 0), input.item),
+        stockUnitPrice,
+      }))
+      .filter(line => line.stockQty > 0);
+    const stockQty = weightedLines.reduce((sum, line) => sum + line.stockQty, 0);
+    if (stockQty > 0) {
+      const weightedPrice = weightedLines.reduce((sum, line) => sum + line.stockQty * line.stockUnitPrice, 0) / stockQty;
+      return { planningUnitPrice: weightedPrice, planningUnitPriceSource: 'latest_confirmed_po' };
+    }
   }
 
   const latestReceivedLine = input.transactions
