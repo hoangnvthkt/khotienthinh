@@ -34,12 +34,15 @@ export const aggregateTransactionItemsForInventory = (
     (total, item) => total + numberOrZero(item.accountingQty) * numberOrZero(item.accountingPrice),
     0,
   );
+  const hasMissingAccountingPrice = matchingItems.some(item =>
+    numberOrZero(item.accountingQty) !== 0 && !Number.isFinite(item.accountingPrice),
+  );
 
   return {
     quantity,
     accountingQty,
     accountingUnit,
-    accountingPrice: accountingUnit && accountingQty !== 0
+    accountingPrice: accountingUnit && accountingQty !== 0 && !hasMissingAccountingPrice
       ? accountingAmount / accountingQty
       : null,
   };

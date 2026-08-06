@@ -60,6 +60,59 @@ describe('aggregateTransactionItemsForInventory', () => {
     });
   });
 
+  it.each([
+    ['omitted price', undefined],
+    ['null price', null],
+    ['NaN price', Number.NaN],
+    ['infinite price', Number.POSITIVE_INFINITY],
+  ])('withholds the accounting price when a non-zero accounting line has an %s', (_description, accountingPrice) => {
+    const items: TransactionItem[] = [
+      { itemId: 'item-1', quantity: 3, accountingQty: 3, accountingUnit: 'KG', accountingPrice: 10_000 },
+      {
+        itemId: 'item-1',
+        quantity: 7,
+        accountingQty: 7,
+        accountingUnit: 'KG',
+        accountingPrice: accountingPrice as number | undefined,
+      },
+    ];
+
+    expect(aggregateTransactionItemsForInventory(items, 'item-1')).toEqual({
+      quantity: 10,
+      accountingQty: 10,
+      accountingUnit: 'KG',
+      accountingPrice: null,
+    });
+  });
+
+  it('includes an explicit zero accounting price in the weighted accounting price', () => {
+    const items: TransactionItem[] = [
+      { itemId: 'item-1', quantity: 3, accountingQty: 3, accountingUnit: 'KG', accountingPrice: 10_000 },
+      { itemId: 'item-1', quantity: 7, accountingQty: 7, accountingUnit: 'KG', accountingPrice: 0 },
+    ];
+
+    expect(aggregateTransactionItemsForInventory(items, 'item-1')).toEqual({
+      quantity: 10,
+      accountingQty: 10,
+      accountingUnit: 'KG',
+      accountingPrice: 3_000,
+    });
+  });
+
+  it('does not withhold a complete accounting price because a zero accounting quantity omits its price', () => {
+    const items: TransactionItem[] = [
+      { itemId: 'item-1', quantity: 3, accountingQty: 3, accountingUnit: 'KG', accountingPrice: 10_000 },
+      { itemId: 'item-1', quantity: 7, accountingQty: 0, accountingUnit: 'KG' },
+    ];
+
+    expect(aggregateTransactionItemsForInventory(items, 'item-1')).toEqual({
+      quantity: 10,
+      accountingQty: 3,
+      accountingUnit: 'KG',
+      accountingPrice: 10_000,
+    });
+  });
+
   it('returns a null accounting price when the total accounting quantity is zero', () => {
     const items: TransactionItem[] = [
       { itemId: 'item-1', quantity: 3, accountingQty: 0, accountingUnit: 'KG', accountingPrice: 10_000 },
