@@ -1,48 +1,61 @@
-import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import type { MaterialBudgetItem, PurchaseOrderItem } from '../../types';
 import {
   calculateSequentialPoBudgetSnapshots,
-  getSequentialPoBudgetSnapshot,
+  createPurchaseOrderBudgetSnapshotBuilder,
+  ensurePurchaseOrderLineIds,
 } from '../purchaseOrderBudgetSnapshots';
 
-const source = readFileSync(
-  new URL('../../pages/project/SupplyChainTab.tsx', import.meta.url),
-  'utf8',
-);
+const poLine = (lineId: string): PurchaseOrderItem => ({
+  lineId,
+  itemId: 'same-item',
+  materialBudgetItemId: 'budget-1',
+  sku: 'SAME-SKU',
+  name: 'Repeated material',
+  unit: 'kg',
+  qty: 60,
+  unitPrice: 0,
+});
 
-const sourceSection = (start: string, end: string) =>
-  source.slice(source.indexOf(start), source.indexOf(end, source.indexOf(start)));
+describe('purchase order BOQ snapshot save and preview integration', () => {
+  it('keeps repeated form rows stable and applies their distinct snapshots in preview and save', () => {
+    let generatedId = 0;
+    const initializedRows = ensurePurchaseOrderLineIds([
+      { lineId: null },
+      { lineId: null },
+    ], () => `stable-row-${++generatedId}`);
+    const formRows = ensurePurchaseOrderLineIds(
+      initializedRows,
+      () => `unexpected-row-${++generatedId}`,
+    );
+    const lines = formRows.map(row => poLine(row.lineId));
+    const snapshotsByLineId = calculateSequentialPoBudgetSnapshots(
+      lines.map(line => ({
+        lineId: line.lineId,
+        materialBudgetItemId: line.materialBudgetItemId,
+        stockQty: line.qty,
+      })),
+      new Map([
+        ['budget-1', { budgetQty: 100, previousRequestedQty: 0, previousOrderedQty: 0 }],
+      ]),
+    );
+    const buildPoBudgetSnapshot = createPurchaseOrderBudgetSnapshotBuilder({
+      materialBudgetMap: new Map([
+        ['budget-1', { id: 'budget-1', budgetQty: 100, itemName: 'Repeated material' } as MaterialBudgetItem],
+      ]),
+      workBoqMap: new Map(),
+      previousRequestedQtyByBudget: new Map(),
+      previousOrderedQtyByBudget: new Map(),
+      snapshotsByLineId,
+    });
 
-describe('purchase order BOQ snapshot UI contract', () => {
-  it('keeps repeated same-item rows distinct when the preview and saved row read their line snapshots', () => {
-    const snapshots = calculateSequentialPoBudgetSnapshots([
-      { lineId: 'row-1', materialBudgetItemId: 'budget-1', stockQty: 60 },
-      { lineId: 'row-2', materialBudgetItemId: 'budget-1', stockQty: 60 },
-    ], new Map([
-      ['budget-1', { budgetQty: 100, previousRequestedQty: 0, previousOrderedQty: 0 }],
-    ]));
+    const previewItems = lines.map(buildPoBudgetSnapshot);
+    const savedItems = lines.map(buildPoBudgetSnapshot);
 
-    const previewRow = getSequentialPoBudgetSnapshot(snapshots, 'row-2');
-    const savedRow = getSequentialPoBudgetSnapshot(snapshots, 'row-2');
-
-    expect(getSequentialPoBudgetSnapshot(snapshots, 'row-1')?.overBudgetQtySnapshot).toBe(0);
-    expect(previewRow?.overBudgetQtySnapshot).toBe(20);
-    expect(savedRow).toEqual(previewRow);
-  });
-
-  it('routes stable line IDs through both PO preview and save paths', () => {
-    const snapshotBuilder = sourceSection('const poBudgetSnapshotsByLineId', 'const findInventoryForBudget');
-    const buildSnapshot = sourceSection('const buildPoBudgetSnapshot', '// Vendor CRUD');
-    const savePo = sourceSection('const handleSavePo', 'const updatePoStatus');
-    const totalPreview = sourceSection('const poTotalCalc', 'const poReleaseSummaryPreview');
-    const rowPreview = sourceSection('{pItems.map((item, i) => {', 'const overBudgetQty =');
-
-    expect(source).toContain('const [pItems, setRawPItems]');
-    expect(source).toContain('return ensurePurchaseOrderLineIds(next, () => crypto.randomUUID());');
-    expect(snapshotBuilder).toContain('lineId: line.lineId,');
-    expect(buildSnapshot).toContain('getSequentialPoBudgetSnapshot(poBudgetSnapshotsByLineId, line.lineId)');
-    expect(savePo).toContain('} : buildPoBudgetSnapshot(i))');
-    expect(totalPreview).toContain('buildPoBudgetSnapshot(item)');
-    expect(rowPreview).toContain('buildPoBudgetSnapshot(normalizedLine)');
+    expect(formRows.map(row => row.lineId)).toEqual(['stable-row-1', 'stable-row-2']);
+    expect(generatedId).toBe(2);
+    expect(previewItems.map(item => item.reservedBeforeQtySnapshot)).toEqual([0, 60]);
+    expect(previewItems.map(item => item.overBudgetQtySnapshot)).toEqual([0, 20]);
+    expect(savedItems).toEqual(previewItems);
   });
 });

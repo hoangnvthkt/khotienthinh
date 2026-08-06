@@ -151,8 +151,8 @@ import { buildPurchaseOrderListSummary } from '../../lib/purchaseOrderDisplay';
 import { getPurchaseOrderDemandStats } from '../../lib/purchaseOrderDemand';
 import {
     calculateSequentialPoBudgetSnapshots,
+    createPurchaseOrderBudgetSnapshotBuilder,
     ensurePurchaseOrderLineIds,
-    getSequentialPoBudgetSnapshot,
 } from '../../lib/purchaseOrderBudgetSnapshots';
 import {
     buildPurchaseOrderPrintLineAmounts,
@@ -2882,6 +2882,13 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         });
         return calculateSequentialPoBudgetSnapshots(lines, baselines);
     }, [existingOrderedQtyByBudget, inventoryItems, materialBudgetMap, normalizedPItems, requestedQtyByBudget]);
+    const buildPoBudgetSnapshot = useMemo(() => createPurchaseOrderBudgetSnapshotBuilder({
+        materialBudgetMap,
+        workBoqMap,
+        previousRequestedQtyByBudget: requestedQtyByBudget,
+        previousOrderedQtyByBudget: existingOrderedQtyByBudget,
+        snapshotsByLineId: poBudgetSnapshotsByLineId,
+    }), [existingOrderedQtyByBudget, materialBudgetMap, poBudgetSnapshotsByLineId, requestedQtyByBudget, workBoqMap]);
     const findInventoryForBudget = (budget?: MaterialBudgetItem) => {
         if (!budget) return undefined;
         return inventoryItems.find(item =>
@@ -2890,37 +2897,6 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             item.name.toLowerCase() === budget.itemName.toLowerCase()
         );
     };
-    const buildPoBudgetSnapshot = (line: PurchaseOrderItem): PurchaseOrderItem => {
-        if (!line.materialBudgetItemId) return line;
-        const budget = materialBudgetMap.get(line.materialBudgetItemId);
-        if (!budget) return line;
-        const work = budget.workBoqItemId ? workBoqMap.get(budget.workBoqItemId) : undefined;
-        const previousRequested = requestedQtyByBudget.get(budget.id) || 0;
-        const previousOrdered = existingOrderedQtyByBudget.get(budget.id) || 0;
-        const allocationSnapshot = getSequentialPoBudgetSnapshot(poBudgetSnapshotsByLineId, line.lineId);
-        const reservedBeforeQty = allocationSnapshot?.reservedBeforeQtySnapshot || 0;
-        const overBudgetQty = allocationSnapshot?.overBudgetQtySnapshot || 0;
-        const overBudgetPercent = allocationSnapshot?.overBudgetPercentSnapshot || 0;
-        return {
-            ...line,
-            workBoqItemId: line.workBoqItemId || budget.workBoqItemId || null,
-            workBoqItemName: line.workBoqItemName || work?.name || null,
-            materialBudgetItemId: budget.id,
-            materialBudgetItemName: line.materialBudgetItemName || budget.itemName,
-            budgetQtySnapshot: Number(budget.budgetQty || 0),
-            reservedBeforeQtySnapshot: reservedBeforeQty,
-            previousRequestedQtySnapshot: previousRequested,
-            previousOrderedQtySnapshot: previousOrdered,
-            previousReceivedQtySnapshot: Number(budget.cumulativeImported || 0),
-            isOverBoq: overBudgetQty > 0,
-            overQty: overBudgetQty,
-            overPercent: overBudgetPercent,
-            overReason: line.overReason || line.overBudgetReason || '',
-            overBudgetQtySnapshot: overBudgetQty,
-            overBudgetPercentSnapshot: overBudgetPercent,
-        };
-    };
-
     // Vendor CRUD
     const resetVendorForm = () => {
         setEditingVendor(null); setShowVendorForm(false);

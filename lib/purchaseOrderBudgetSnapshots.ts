@@ -1,3 +1,5 @@
+import type { MaterialBudgetItem, ProjectWorkBoqItem, PurchaseOrderItem } from '../types';
+
 export type PurchaseOrderBudgetLineInput = {
   lineId: string;
   materialBudgetItemId: string | null;
@@ -28,6 +30,52 @@ export const getSequentialPoBudgetSnapshot = (
   snapshots: Map<string, PurchaseOrderBudgetSnapshot>,
   lineId: string,
 ) => snapshots.get(lineId);
+
+export type PurchaseOrderBudgetSnapshotBuilderInput = {
+  materialBudgetMap: Map<string, MaterialBudgetItem>;
+  workBoqMap: Map<string, ProjectWorkBoqItem>;
+  previousRequestedQtyByBudget: Map<string, number>;
+  previousOrderedQtyByBudget: Map<string, number>;
+  snapshotsByLineId: Map<string, PurchaseOrderBudgetSnapshot>;
+};
+
+export const createPurchaseOrderBudgetSnapshotBuilder = ({
+  materialBudgetMap,
+  workBoqMap,
+  previousRequestedQtyByBudget,
+  previousOrderedQtyByBudget,
+  snapshotsByLineId,
+}: PurchaseOrderBudgetSnapshotBuilderInput) => (line: PurchaseOrderItem): PurchaseOrderItem => {
+  if (!line.materialBudgetItemId) return line;
+  const budget = materialBudgetMap.get(line.materialBudgetItemId);
+  if (!budget) return line;
+  const work = budget.workBoqItemId ? workBoqMap.get(budget.workBoqItemId) : undefined;
+  const previousRequested = previousRequestedQtyByBudget.get(budget.id) || 0;
+  const previousOrdered = previousOrderedQtyByBudget.get(budget.id) || 0;
+  const allocationSnapshot = getSequentialPoBudgetSnapshot(snapshotsByLineId, line.lineId);
+  const reservedBeforeQty = allocationSnapshot?.reservedBeforeQtySnapshot || 0;
+  const overBudgetQty = allocationSnapshot?.overBudgetQtySnapshot || 0;
+  const overBudgetPercent = allocationSnapshot?.overBudgetPercentSnapshot || 0;
+
+  return {
+    ...line,
+    workBoqItemId: line.workBoqItemId || budget.workBoqItemId || null,
+    workBoqItemName: line.workBoqItemName || work?.name || null,
+    materialBudgetItemId: budget.id,
+    materialBudgetItemName: line.materialBudgetItemName || budget.itemName,
+    budgetQtySnapshot: Number(budget.budgetQty || 0),
+    reservedBeforeQtySnapshot: reservedBeforeQty,
+    previousRequestedQtySnapshot: previousRequested,
+    previousOrderedQtySnapshot: previousOrdered,
+    previousReceivedQtySnapshot: Number(budget.cumulativeImported || 0),
+    isOverBoq: overBudgetQty > 0,
+    overQty: overBudgetQty,
+    overPercent: overBudgetPercent,
+    overReason: line.overReason || line.overBudgetReason || '',
+    overBudgetQtySnapshot: overBudgetQty,
+    overBudgetPercentSnapshot: overBudgetPercent,
+  };
+};
 
 export const calculateSequentialPoBudgetSnapshots = (
   lines: PurchaseOrderBudgetLineInput[],
