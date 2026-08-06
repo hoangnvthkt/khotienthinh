@@ -16,6 +16,14 @@ export type PurchaseOrderBudgetSnapshot = {
   overBudgetPercentSnapshot: number;
 };
 
+export const ensurePurchaseOrderLineIds = <T extends { lineId?: string | null }>(
+  lines: T[],
+  createLineId: () => string,
+): Array<Omit<T, 'lineId'> & { lineId: string }> => lines.map(line => ({
+  ...line,
+  lineId: line.lineId || createLineId(),
+}));
+
 export const calculateSequentialPoBudgetSnapshots = (
   lines: PurchaseOrderBudgetLineInput[],
   baselines: Map<string, PurchaseOrderBudgetBaseline>,

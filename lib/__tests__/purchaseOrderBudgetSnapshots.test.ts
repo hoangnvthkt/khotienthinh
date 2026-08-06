@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { calculateSequentialPoBudgetSnapshots } from '../purchaseOrderBudgetSnapshots';
+import {
+  calculateSequentialPoBudgetSnapshots,
+  ensurePurchaseOrderLineIds,
+} from '../purchaseOrderBudgetSnapshots';
 
 describe('calculateSequentialPoBudgetSnapshots', () => {
   it('assigns a shared budget overage only to the later PO line that crosses the budget', () => {
@@ -63,5 +66,24 @@ describe('calculateSequentialPoBudgetSnapshots', () => {
       overBudgetQtySnapshot: 20,
       overBudgetPercentSnapshot: 20,
     });
+  });
+
+  it('keeps repeated item rows distinct through preview and save snapshot builds', () => {
+    let generatedId = 0;
+    const formRows = ensurePurchaseOrderLineIds([
+      { lineId: null, itemId: 'same-item', materialBudgetItemId: 'budget-1', stockQty: 60 },
+      { lineId: null, itemId: 'same-item', materialBudgetItemId: 'budget-1', stockQty: 60 },
+    ], () => `generated-row-${++generatedId}`);
+    const baselines = new Map([
+      ['budget-1', { budgetQty: 100, previousRequestedQty: 0, previousOrderedQty: 0 }],
+    ]);
+
+    const previewSnapshots = calculateSequentialPoBudgetSnapshots(formRows, baselines);
+    const savedSnapshots = calculateSequentialPoBudgetSnapshots(formRows, baselines);
+
+    expect(formRows.map(row => row.lineId)).toEqual(['generated-row-1', 'generated-row-2']);
+    expect(previewSnapshots.get('generated-row-1')?.overBudgetQtySnapshot).toBe(0);
+    expect(previewSnapshots.get('generated-row-2')?.overBudgetQtySnapshot).toBe(20);
+    expect(savedSnapshots).toEqual(previewSnapshots);
   });
 });

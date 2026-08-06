@@ -149,7 +149,10 @@ import {
 } from '../../lib/purchaseOrderReleaseApproval';
 import { buildPurchaseOrderListSummary } from '../../lib/purchaseOrderDisplay';
 import { getPurchaseOrderDemandStats } from '../../lib/purchaseOrderDemand';
-import { calculateSequentialPoBudgetSnapshots } from '../../lib/purchaseOrderBudgetSnapshots';
+import {
+    calculateSequentialPoBudgetSnapshots,
+    ensurePurchaseOrderLineIds,
+} from '../../lib/purchaseOrderBudgetSnapshots';
 import {
     buildPurchaseOrderPrintLineAmounts,
     getPurchaseOrderDisplayAmount,
@@ -772,7 +775,7 @@ const normalizePoItem = (item: Partial<PurchaseOrderFormItem>, inventoryItems: I
 
     return {
         itemId: item.itemId || matched?.id || '',
-        lineId: item.lineId || crypto.randomUUID(),
+        lineId: item.lineId || '',
         vendorId: item.vendorId || null,
         vendorName: item.vendorName || null,
         sku: item.sku || matched?.sku || '',
@@ -1156,7 +1159,13 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     const [pExpDate, setPExpDate] = useState('');
     const [pVatRate, setPVatRate] = useState('0');
     const [pPurchaseMode, setPPurchaseMode] = useState<PurchaseMode>('multiple');
-    const [pItems, setPItems] = useState<PurchaseOrderFormItem[]>([createEmptyPoItem()]);
+    const [pItems, setRawPItems] = useState<PurchaseOrderFormItem[]>([createEmptyPoItem()]);
+    const setPItems = useCallback((action: React.SetStateAction<PurchaseOrderFormItem[]>) => {
+        setRawPItems(previous => {
+            const next = typeof action === 'function' ? action(previous) : action;
+            return ensurePurchaseOrderLineIds(next, () => crypto.randomUUID());
+        });
+    }, []);
     const [pDeliveryBatches, setPDeliveryBatches] = useState<PurchaseOrderDeliveryFormBatch[]>([]);
     const [pDeliveryScheduleMode, setPDeliveryScheduleMode] = useState<PoDeliveryScheduleMode>('unknown');
     const [pApprovalRequestTitle, setPApprovalRequestTitle] = useState('');
@@ -2865,7 +2874,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             }
             const inventory = inventoryItems.find(item => item.id === line.itemId);
             return {
-                lineId: line.lineId || line.itemId,
+                lineId: line.lineId,
                 materialBudgetItemId: line.materialBudgetItemId,
                 stockQty: poLinePurchaseToStockQty(line, Number(line.qty || 0), inventory),
             };
@@ -2887,7 +2896,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         const work = budget.workBoqItemId ? workBoqMap.get(budget.workBoqItemId) : undefined;
         const previousRequested = requestedQtyByBudget.get(budget.id) || 0;
         const previousOrdered = existingOrderedQtyByBudget.get(budget.id) || 0;
-        const allocationSnapshot = poBudgetSnapshotsByLineId.get(line.lineId || line.itemId);
+        const allocationSnapshot = poBudgetSnapshotsByLineId.get(line.lineId);
         const reservedBeforeQty = allocationSnapshot?.reservedBeforeQtySnapshot || 0;
         const overBudgetQty = allocationSnapshot?.overBudgetQtySnapshot || 0;
         const overBudgetPercent = allocationSnapshot?.overBudgetPercentSnapshot || 0;
@@ -5702,7 +5711,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     );
     const scheduledPItemByLineKey = useMemo(() => {
         const map = new Map<string, PurchaseOrderItem>();
-        scheduledPItems.forEach(item => map.set(item.lineId || item.itemId, item));
+        scheduledPItems.forEach(item => map.set(item.lineId, item));
         return map;
     }, [scheduledPItems]);
     const poTotalCalc = scheduledPItems.reduce((sum, item) => {
@@ -8526,7 +8535,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                         const inventory = inventoryItems.find(inv => inv.id === previewLine.itemId);
                                         const purchaseUnit = getPoLinePurchaseUnit(previewLine, inventory);
                                         const stockUnit = getPoLineStockUnit(previewLine, inventory);
-                                        const lineKey = normalizedLine.lineId || normalizedLine.itemId;
+                                        const lineKey = normalizedLine.lineId;
                                         const scheduledLine = scheduledPItemByLineKey.get(lineKey);
                                         const scheduleQtyPreview = Number(scheduledLine?.qty ?? previewLine.qty ?? 0);
                                         const scheduleUnitPricePreview = Number(scheduledLine?.unitPrice ?? previewLine.unitPrice ?? 0);
