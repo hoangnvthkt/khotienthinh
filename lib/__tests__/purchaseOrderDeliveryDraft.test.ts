@@ -78,6 +78,38 @@ describe('purchaseOrderDeliveryDraft', () => {
     expect(line.stockPlannedQty).toBe(70.5);
   });
 
+  it('keeps repeated SKUs linked to their distinct commercial lines in delivery drafts', () => {
+    const commercialItems: PurchaseOrderItem[] = [
+      {
+        ...poItem,
+        lineId: 'commercial-10k',
+        itemId: 'item-commercial',
+        qty: 3,
+        unitPrice: 10_000,
+      },
+      {
+        ...poItem,
+        lineId: 'commercial-12k',
+        itemId: 'item-commercial',
+        qty: 7,
+        unitPrice: 12_000,
+      },
+    ];
+
+    const drafts = commercialItems.map((item, index) => makePoDeliveryLineDraft({
+      id: `delivery-commercial-${index}`,
+      batchId: 'batch-commercial-lines',
+      purchaseOrderId: 'po-commercial-lines',
+      item,
+      plannedQty: item.qty,
+    }));
+
+    expect(drafts.map(draft => draft.purchaseOrderLineId)).toEqual([
+      'commercial-10k',
+      'commercial-12k',
+    ]);
+  });
+
   it('uses delivery schedule quantities and weighted prices as the PO line totals', () => {
     const schedule: PurchaseOrderDeliveryBatch[] = [
       {

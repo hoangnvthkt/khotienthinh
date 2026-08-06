@@ -197,6 +197,69 @@ describe('purchaseOrderAmount', () => {
     expect(lines.reduce((sum: number, line: { totalAmount: number }) => sum + line.totalAmount, 0)).toBe(542056800);
   });
 
+  it('keeps repeated SKUs as separate commercial lines in totals and print output', () => {
+    const commercialPo: PurchaseOrder = {
+      ...po,
+      id: 'po-commercial-lines',
+      poNumber: 'PO-COMMERCIAL-LINES',
+      items: [
+        {
+          lineId: 'commercial-10k',
+          itemId: 'item-commercial',
+          sku: 'COMMERCIAL-SKU',
+          name: 'Repeated commercial material',
+          unit: 'Cai',
+          qty: 3,
+          unitPrice: 10_000,
+        },
+        {
+          lineId: 'commercial-12k',
+          itemId: 'item-commercial',
+          sku: 'COMMERCIAL-SKU',
+          name: 'Repeated commercial material',
+          unit: 'Cai',
+          qty: 7,
+          unitPrice: 12_000,
+        },
+      ],
+      totalAmount: 114_000,
+    };
+    const schedule: PurchaseOrderDeliveryBatch[] = [{
+      id: 'batch-commercial-lines',
+      purchaseOrderId: commercialPo.id,
+      deliveryNo: 1,
+      plannedDeliveryDate: '2026-08-06',
+      status: 'planned',
+      lines: [
+        {
+          id: 'delivery-commercial-10k',
+          deliveryBatchId: 'batch-commercial-lines',
+          purchaseOrderId: commercialPo.id,
+          purchaseOrderLineId: 'commercial-10k',
+          itemId: 'item-commercial',
+          plannedQty: 3,
+          deliveryUnitPrice: 10_000,
+        },
+        {
+          id: 'delivery-commercial-12k',
+          deliveryBatchId: 'batch-commercial-lines',
+          purchaseOrderId: commercialPo.id,
+          purchaseOrderLineId: 'commercial-12k',
+          itemId: 'item-commercial',
+          plannedQty: 7,
+          deliveryUnitPrice: 12_000,
+        },
+      ],
+    }];
+
+    const lines = buildPurchaseOrderPrintLineAmounts(commercialPo, schedule);
+
+    expect(lines.map(line => line.lineKey)).toEqual(['commercial-10k', 'commercial-12k']);
+    expect(lines.reduce((sum, line) => sum + line.totalAmount, 0)).toBe(114_000);
+    expect(getPurchaseOrderDisplayAmount(commercialPo, schedule)).toBe(114_000);
+    expect(getPurchaseOrderPrintAmount(commercialPo, schedule)).toBe(114_000);
+  });
+
   it('displays and prints package-v2 request POs from the approved reference amount instead of delivery stock pricing', () => {
     const packagePo: PurchaseOrder = {
       ...po,

@@ -76,6 +76,45 @@ describe('purchaseOrderSupplierReturnService', () => {
     });
   });
 
+  it('preserves both commercial line IDs when returning a repeated SKU', async () => {
+    supabaseMocks.rpc.mockResolvedValueOnce({
+      data: {
+        id: 'return-commercial-lines',
+        return_no: 'SR-PO-COMMERCIAL-LINES',
+        purchase_order_id: 'po-commercial-lines',
+        source_warehouse_id: 'warehouse-1',
+        status: 'pending',
+        transaction_id: 'tx-return-commercial-lines',
+        reason: 'Hang loi',
+        note: null,
+        created_at: '2026-08-06T00:00:00.000Z',
+        updated_at: '2026-08-06T00:00:00.000Z',
+      },
+      error: null,
+    });
+
+    await purchaseOrderSupplierReturnService.create({
+      purchaseOrderId: 'po-commercial-lines',
+      sourceWarehouseId: 'warehouse-1',
+      reason: 'Hang loi',
+      lines: [
+        { purchaseOrderLineId: 'commercial-10k', quantity: 3 },
+        { purchaseOrderLineId: 'commercial-12k', quantity: 7 },
+      ],
+    });
+
+    expect(supabaseMocks.rpc).toHaveBeenCalledWith('create_purchase_order_supplier_return', {
+      p_purchase_order_id: 'po-commercial-lines',
+      p_source_warehouse_id: 'warehouse-1',
+      p_lines: [
+        { purchaseOrderLineId: 'commercial-10k', quantity: 3 },
+        { purchaseOrderLineId: 'commercial-12k', quantity: 7 },
+      ],
+      p_reason: 'Hang loi',
+      p_note: null,
+    });
+  });
+
   it('loads supplier returns with their lines and maps database keys', async () => {
     const returnQuery = {
       select: vi.fn().mockReturnThis(),
