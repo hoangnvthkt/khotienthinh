@@ -172,6 +172,7 @@ import {
     setPurchaseOrderRequestCartGroupSelection,
 } from '../../lib/purchaseOrderRequestCart';
 import { getPurchaseOrderUiPolicy, type PurchaseOrderUiAction } from '../../lib/purchaseOrderUiPolicy';
+import { findPurchaseOrderCommercialLineIssue } from '../../lib/purchaseOrderCommercialLines';
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 import { formatLocaleDecimalInput, formatViLiveInput, parseNonNegativeLocaleNumber } from '../../lib/localeNumberInput';
 
@@ -3519,15 +3520,23 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             toast.warning('Thiếu nhà cung cấp', `${missingVendor.sku || missingVendor.name} chưa chọn NCC. Mỗi dòng vật tư cần có NCC để tách PO.`);
             return;
         }
-        const duplicatedSku = validItems.find((line, index) => {
-            const key = `${line.vendorId || ''}|${line.itemId}|${line.materialBudgetItemId || ''}|${line.requestLineId || ''}`;
-            return validItems.some((other, otherIndex) =>
-                otherIndex !== index &&
-                `${other.vendorId || ''}|${other.itemId}|${other.materialBudgetItemId || ''}|${other.requestLineId || ''}` === key
-            );
+        const commercialLineIssue = findPurchaseOrderCommercialLineIssue({
+            items: validItems,
+            sourceMode: pSourceMode,
         });
-        if (duplicatedSku) {
-            toast.warning('Vật tư bị trùng', `SKU ${duplicatedSku.sku} đang xuất hiện nhiều dòng cùng NCC và cùng nguồn BOQ/đề xuất trong PO.`);
+        if (commercialLineIssue?.code === 'duplicate_commercial_price') {
+            toast.warning(
+                'Dòng thương mại bị trùng',
+                `SKU ${commercialLineIssue.sku} đã có dòng giá ${fmtMoney(commercialLineIssue.unitPrice || 0)} đ. Vui lòng gộp số lượng.`,
+            );
+            return;
+        }
+        if (commercialLineIssue?.code === 'duplicate_request_source') {
+            toast.warning('Vật tư bị trùng', `SKU ${commercialLineIssue.sku} đang xuất hiện nhiều dòng cùng NCC và cùng nguồn BOQ/đề xuất trong PO.`);
+            return;
+        }
+        if (commercialLineIssue) {
+            toast.warning('Dòng PO không hợp lệ', 'Dòng PO thiếu hoặc trùng mã dòng; vui lòng tải lại form.');
             return;
         }
         const totalAmount = validItems.reduce((s, i) => s + calculateLineTotal(i), 0);
