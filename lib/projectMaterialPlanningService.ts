@@ -170,17 +170,35 @@ const getPlanningUnitPrice = (input: {
   const itemId = input.item?.id;
   if (!itemId) return { planningUnitPrice: 0, planningUnitPriceSource: 'fallback' };
 
-  const latestConfirmedPoLine = input.purchaseOrders
+  const latestConfirmedPo = input.purchaseOrders
     .filter(po => VALID_PRICE_PO_STATUSES.has(po.status))
-    .flatMap(po => (po.items || [])
-      .filter(line => line.itemId === itemId && Number(line.unitPrice || 0) > 0)
-      .map(line => ({
-        unitPrice: getPoLineStockUnitPrice(line, input.item),
-        date: po.orderDate || po.expectedDeliveryDate || po.createdAt || '',
-      })))
-    .sort((a, b) => b.date.localeCompare(a.date))[0];
-  if (latestConfirmedPoLine) {
-    return { planningUnitPrice: latestConfirmedPoLine.unitPrice, planningUnitPriceSource: 'latest_confirmed_po' };
+    .map(po => {
+      const matchingLines = (po.items || [])
+        .filter(line => line.itemId === itemId && Number(line.unitPrice || 0) > 0)
+        .map(line => ({
+          stockQty: poLinePurchaseToStockQty(line, Number(line.qty || 0), input.item),
+          stockUnitPrice: getPoLineStockUnitPrice(line, input.item),
+        }))
+        .filter(line => line.stockQty > 0 && line.stockUnitPrice > 0);
+      const stockQty = matchingLines.reduce((sum, line) => sum + line.stockQty, 0);
+      return {
+        po,
+        stockQty,
+        weightedPrice: stockQty > 0
+          ? matchingLines.reduce((sum, line) => sum + line.stockQty * line.stockUnitPrice, 0) / stockQty
+          : 0,
+      };
+    })
+    .filter(({ stockQty }) => stockQty > 0)
+    .sort((a, b) => {
+      const aDate = a.po.orderDate || a.po.expectedDeliveryDate || a.po.createdAt || '';
+      const bDate = b.po.orderDate || b.po.expectedDeliveryDate || b.po.createdAt || '';
+      return bDate.localeCompare(aDate)
+        || String(b.po.createdAt || '').localeCompare(String(a.po.createdAt || ''))
+        || String(b.po.id || '').localeCompare(String(a.po.id || ''));
+    })[0];
+  if (latestConfirmedPo) {
+    return { planningUnitPrice: latestConfirmedPo.weightedPrice, planningUnitPriceSource: 'latest_confirmed_po' };
   }
 
   const latestReceivedLine = input.transactions

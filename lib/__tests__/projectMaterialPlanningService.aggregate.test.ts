@@ -96,4 +96,79 @@ describe('projectMaterialPlanningService.buildAggregateSummary', () => {
     expect(rows[0].demandQty['30d']).toBe(500);
     expect(rows[0].shortageQty['30d']).toBe(500);
   });
+
+  it('weights matching commercial lines from the newest confirmed PO for planning price', () => {
+    const forecast = projectMaterialPlanningService.buildForecast({
+      projectId: 'project-1',
+      constructionSiteId: 'site-1',
+      siteWarehouseId: 'wh-site',
+      today: '2026-06-25',
+      tasks: [
+        { id: 'task-1', name: 'Thi công thép', startDate: '2026-06-26', endDate: '2026-07-10', progress: 0 } as any,
+      ],
+      workBoqItems: [
+        { id: 'work-1', name: 'Khu A', sourceTaskId: 'task-1', plannedQty: 1, unitPrice: 0 } as any,
+      ],
+      materialBudgetItems: [
+        {
+          id: 'mb-1',
+          workBoqItemId: 'work-1',
+          inventoryItemId: 'item-steel-d8',
+          materialCode: 'VT-D8',
+          category: 'Thép',
+          itemName: 'Thép XD D8',
+          unit: 'Kg',
+          budgetQty: 10,
+          budgetUnitPrice: 14570,
+          actualQty: 0,
+          wasteThreshold: 1,
+        },
+      ],
+      inventoryItems: [
+        {
+          id: 'item-steel-d8',
+          sku: 'VT-D8',
+          name: 'Thép XD D8',
+          category: 'Thép',
+          unit: 'Kg',
+          priceIn: 14570,
+          priceOut: 14570,
+          minStock: 0,
+          stockByWarehouse: { 'wh-site': 0 },
+        },
+      ],
+      purchaseOrders: [
+        {
+          id: 'po-older',
+          vendorId: 'vendor-1',
+          poNumber: 'PO-OLDER',
+          items: [{ itemId: 'item-steel-d8', sku: 'VT-D8', name: 'Thép XD D8', unit: 'Kg', qty: 1, unitPrice: 20000 }],
+          totalAmount: 20000,
+          orderDate: '2026-06-01',
+          status: 'confirmed',
+          createdAt: '2026-06-01T00:00:00.000Z',
+        },
+        {
+          id: 'po-newest',
+          vendorId: 'vendor-1',
+          poNumber: 'PO-NEWEST',
+          items: [
+            { itemId: 'item-steel-d8', sku: 'VT-D8', name: 'Thép XD D8', unit: 'Kg', qty: 3, unitPrice: 10000 },
+            { itemId: 'item-steel-d8', sku: 'VT-D8', name: 'Thép XD D8', unit: 'Kg', qty: 7, unitPrice: 12000 },
+          ],
+          totalAmount: 114000,
+          orderDate: '2026-06-20',
+          status: 'confirmed',
+          createdAt: '2026-06-20T00:00:00.000Z',
+        },
+      ],
+      transactions: [],
+      rules: [{ scopeKey: 'project-1_site-1', inventoryItemId: 'item-steel-d8', leadTimeDays: 0, distributionMethod: 'pre_start' }],
+      curveTemplates: [],
+    });
+
+    expect(forecast.rows).toHaveLength(1);
+    expect(forecast.rows[0].planningUnitPrice).toBe(11400);
+    expect(forecast.rows[0].planningUnitPriceSource).toBe('latest_confirmed_po');
+  });
 });
