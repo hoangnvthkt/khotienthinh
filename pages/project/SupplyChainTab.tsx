@@ -149,6 +149,7 @@ import {
 } from '../../lib/purchaseOrderReleaseApproval';
 import { buildPurchaseOrderListSummary } from '../../lib/purchaseOrderDisplay';
 import { getPurchaseOrderDemandStats } from '../../lib/purchaseOrderDemand';
+import { calculateSequentialPoBudgetSnapshots } from '../../lib/purchaseOrderBudgetSnapshots';
 import {
     buildPurchaseOrderPrintLineAmounts,
     getPurchaseOrderDisplayAmount,
@@ -2843,6 +2844,34 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             });
         return map;
     }, [editingPo?.id, inventoryItems, pos, supplierReturnsByPo]);
+    const normalizedPItems = useMemo(
+        () => pItems.map(item => normalizePoItem(item, inventoryItems)),
+        [inventoryItems, pItems],
+    );
+    const poBudgetSnapshotsByLineId = useMemo(() => {
+        const baselines = new Map<string, {
+            budgetQty: number;
+            previousRequestedQty: number;
+            previousOrderedQty: number;
+        }>();
+        const lines = normalizedPItems.map(line => {
+            const budget = line.materialBudgetItemId ? materialBudgetMap.get(line.materialBudgetItemId) : undefined;
+            if (budget) {
+                baselines.set(budget.id, {
+                    budgetQty: Number(budget.budgetQty || 0),
+                    previousRequestedQty: requestedQtyByBudget.get(budget.id) || 0,
+                    previousOrderedQty: existingOrderedQtyByBudget.get(budget.id) || 0,
+                });
+            }
+            const inventory = inventoryItems.find(item => item.id === line.itemId);
+            return {
+                lineId: line.lineId || line.itemId,
+                materialBudgetItemId: line.materialBudgetItemId,
+                stockQty: poLinePurchaseToStockQty(line, Number(line.qty || 0), inventory),
+            };
+        });
+        return calculateSequentialPoBudgetSnapshots(lines, baselines);
+    }, [existingOrderedQtyByBudget, inventoryItems, materialBudgetMap, normalizedPItems, requestedQtyByBudget]);
     const findInventoryForBudget = (budget?: MaterialBudgetItem) => {
         if (!budget) return undefined;
         return inventoryItems.find(item =>
@@ -2851,14 +2880,6 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             item.name.toLowerCase() === budget.itemName.toLowerCase()
         );
     };
-    const getFormQtyByBudget = (budgetId: string, excludedLineId?: string) => {
-        return pItems.reduce((sum, line) => {
-            if (line.materialBudgetItemId !== budgetId || (excludedLineId && line.lineId === excludedLineId)) return sum;
-            const normalizedLine = normalizePoItem(line, inventoryItems);
-            const inventory = inventoryItems.find(item => item.id === normalizedLine.itemId);
-            return sum + poLinePurchaseToStockQty(normalizedLine, Number(normalizedLine.qty || 0), inventory);
-        }, 0);
-    };
     const buildPoBudgetSnapshot = (line: PurchaseOrderItem): PurchaseOrderItem => {
         if (!line.materialBudgetItemId) return line;
         const budget = materialBudgetMap.get(line.materialBudgetItemId);
@@ -2866,16 +2887,10 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         const work = budget.workBoqItemId ? workBoqMap.get(budget.workBoqItemId) : undefined;
         const previousRequested = requestedQtyByBudget.get(budget.id) || 0;
         const previousOrdered = existingOrderedQtyByBudget.get(budget.id) || 0;
-        const currentOtherQty = getFormQtyByBudget(budget.id, line.lineId);
-        const inventory = inventoryItems.find(item => item.id === line.itemId);
-        const lineStockQty = poLinePurchaseToStockQty(line, Number(line.qty || 0), inventory);
-        const totalCommitted = previousRequested + previousOrdered + currentOtherQty + lineStockQty;
-        const reservedBeforeQty = previousRequested + previousOrdered + currentOtherQty;
-        const budgetQty = Number(budget.budgetQty || 0);
-        const overBeforeQty = Math.max(0, reservedBeforeQty - budgetQty);
-        const overAfterQty = Math.max(0, totalCommitted - budgetQty);
-        const overBudgetQty = Math.max(0, overAfterQty - overBeforeQty);
-        const overBudgetPercent = budgetQty > 0 ? Math.round((overBudgetQty / budgetQty) * 1000) / 10 : 0;
+        const allocationSnapshot = poBudgetSnapshotsByLineId.get(line.lineId || line.itemId);
+        const reservedBeforeQty = allocationSnapshot?.reservedBeforeQtySnapshot || 0;
+        const overBudgetQty = allocationSnapshot?.overBudgetQtySnapshot || 0;
+        const overBudgetPercent = allocationSnapshot?.overBudgetPercentSnapshot || 0;
         return {
             ...line,
             workBoqItemId: line.workBoqItemId || budget.workBoqItemId || null,
@@ -5677,10 +5692,6 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         [constructionSiteId, editingPo, inventoryItems, pDeliveryBatches, pDeliveryScheduleMode, pExpDate, pItems, pPurchaseMode, pSourceMode, projectId, user?.id],
     );
     const isPurchasePackageV2Form = isPurchasePackageV2FormEnabled();
-    const normalizedPItems = useMemo(
-        () => pItems.map(item => normalizePoItem(item, inventoryItems)),
-        [inventoryItems, pItems],
-    );
     const scheduledPItems = useMemo(
         () => resolvePurchaseOrderItemsForScheduledPricing({
             items: normalizedPItems,
