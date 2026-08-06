@@ -78,7 +78,7 @@ Also test `proactive_stock`, missing line IDs on a repeated item, duplicate line
 
 - [ ] **Step 2: Run the focused test and verify RED**
 
-Run: `npx vitest run lib/__tests__/purchaseOrderCommercialLines.test.ts`  
+Run: `npx vitest run lib/__tests__/purchaseOrderCommercialLines.test.ts`
 Expected: FAIL because the module does not exist.
 
 - [ ] **Step 3: Implement the minimal pure validator**
@@ -98,7 +98,7 @@ For proactive modes, append `Number(line.unitPrice)` to the supplier/item/budget
 
 - [ ] **Step 4: Run the focused test and verify GREEN**
 
-Run: `npx vitest run lib/__tests__/purchaseOrderCommercialLines.test.ts`  
+Run: `npx vitest run lib/__tests__/purchaseOrderCommercialLines.test.ts`
 Expected: all commercial-line validation cases pass.
 
 - [ ] **Step 5: Commit the domain unit**
@@ -133,7 +133,7 @@ expect(source).not.toContain('const duplicatedSku = validItems.find');
 
 - [ ] **Step 2: Run validation and UI contract tests to verify RED**
 
-Run: `npx vitest run lib/__tests__/purchaseOrderCommercialLines.test.ts lib/__tests__/materialPoCommercialLinesUiContract.test.ts`  
+Run: `npx vitest run lib/__tests__/purchaseOrderCommercialLines.test.ts lib/__tests__/materialPoCommercialLinesUiContract.test.ts`
 Expected: UI contract fails because `SupplyChainTab` still contains the inline duplicate block.
 
 - [ ] **Step 3: Replace the inline block with issue mapping**
@@ -372,7 +372,7 @@ Create one confirmed PO with the same `itemId` on line A (`qty 3`, stock-unit pr
 
 - [ ] **Step 2: Run the focused test and verify RED**
 
-Run: `npx vitest run lib/__tests__/projectMaterialPlanningService.aggregate.test.ts`  
+Run: `npx vitest run lib/__tests__/projectMaterialPlanningService.aggregate.test.ts`
 Expected: current first-line selection returns `10,000` or `12,000` instead of `11,400`.
 
 - [ ] **Step 3: Aggregate within the newest matching PO**
@@ -473,12 +473,12 @@ Run: `git diff --check`.
 
 - [ ] **Step 3: Run the complete branch test suite**
 
-Run: `npx vitest run --exclude '.worktrees/**'`  
+Run: `npx vitest run --exclude '.worktrees/**'`
 Expected: all test files and tests pass.
 
 - [ ] **Step 4: Build production assets**
 
-Run: `npm run build`  
+Run: `npm run build`
 Expected: Vite production build succeeds; existing chunk-size warnings are non-blocking.
 
 - [ ] **Step 5: Inspect final repository state**

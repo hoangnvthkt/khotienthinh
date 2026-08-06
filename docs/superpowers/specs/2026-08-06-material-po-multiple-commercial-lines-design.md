@@ -1,6 +1,6 @@
 # Material PO Multiple Commercial Lines Design
 
-**Date:** 2026-08-06  
+**Date:** 2026-08-06
 **Status:** Approved approach, pending written-spec review
 
 ## Problem and evidence
