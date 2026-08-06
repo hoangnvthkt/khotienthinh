@@ -80,7 +80,8 @@ import { buildDocumentTracePath } from '../../lib/documentTraceService';
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
 import ExcelImportReviewModal from '../../components/ExcelImportReviewModal';
 import InventoryItemCombobox from '../../components/InventoryItemCombobox';
-import { ExcelImportMode, ExcelImportPreview, applyImportChanges, buildImportPreview, parseExcelRows } from '../../lib/excelImport';
+import { ExcelImportMode, ExcelImportPreview, applyImportChanges, buildImportPreview, getExcelCell, parseExcelRows } from '../../lib/excelImport';
+import { getPoExcelCreateCommercialKey, preparePoExcelUpdateRows } from '../../lib/purchaseOrderExcelImport';
 import ProjectSubmissionDialog from '../../components/project/ProjectSubmissionDialog';
 import ProjectRoomSubmissionDialog from '../../components/project/ProjectRoomSubmissionDialog';
 import { projectSubmissionService } from '../../lib/projectSubmissionService';
@@ -4250,19 +4251,23 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         ws['!cols'] = [{ wch: 18 }, { wch: 32 }, { wch: 12 }, { wch: 18 }, { wch: 14 }, { wch: 14 }, { wch: 28 }];
         XLSX.utils.book_append_sheet(wb, ws, 'Nhap_moi');
 
+        const updateSampleItem = pItems.find(item => item.itemId);
         const updateWs = XLSX.utils.aoa_to_sheet([
-            ['Mã SKU *', 'Khối lượng đặt', 'Đơn giá', 'Ngày cần', 'Ghi chú'],
-            inventoryItems[0]
-                ? [inventoryItems[0].sku, 20, stockUnitPriceToPurchaseUnitPrice(Number(inventoryItems[0].priceIn || 0), inventoryItems[0]), new Date().toISOString().split('T')[0], 'Cập nhật PO']
-                : ['STEEL-001', 20, 0, '', ''],
+            ['Mã dòng PO', 'Mã SKU *', 'Khối lượng đặt', 'Đơn giá', 'Ngày cần', 'Ghi chú'],
+            updateSampleItem
+                ? [updateSampleItem.lineId || '', updateSampleItem.sku, 20, parseNonNegativeLocaleNumber(updateSampleItem.unitPriceInput ?? updateSampleItem.unitPrice), new Date().toISOString().split('T')[0], 'Cập nhật PO']
+                : inventoryItems[0]
+                    ? ['', inventoryItems[0].sku, 20, stockUnitPriceToPurchaseUnitPrice(Number(inventoryItems[0].priceIn || 0), inventoryItems[0]), new Date().toISOString().split('T')[0], 'Cập nhật PO']
+                    : ['', 'STEEL-001', 20, 0, '', ''],
         ]);
-        updateWs['!cols'] = [{ wch: 18 }, { wch: 18 }, { wch: 14 }, { wch: 14 }, { wch: 28 }];
+        updateWs['!cols'] = [{ wch: 38 }, { wch: 18 }, { wch: 18 }, { wch: 14 }, { wch: 14 }, { wch: 28 }];
         XLSX.utils.book_append_sheet(wb, updateWs, 'Cap_nhat');
 
         const guideWs = XLSX.utils.aoa_to_sheet([
             ['Chức năng', 'Cách dùng'],
-            ['Nhập mới', 'Dùng sheet Nhap_moi để nạp danh sách vật tư vào PO đang tạo/sửa. SKU trùng trong PO sẽ báo lỗi.'],
+            ['Nhập mới', 'Dùng sheet Nhap_moi để nạp danh sách vật tư vào PO đang tạo/sửa. Các dòng cùng SKU được phân biệt bằng Đơn giá; cặp SKU và Đơn giá trùng sẽ báo lỗi.'],
             ['Cập nhật', 'Dùng sheet Cap_nhat hoặc file chỉ gồm Mã SKU và cột muốn sửa. SKU phải đang có trong PO form.'],
+            ['Mã dòng PO', 'Khi một SKU có nhiều dòng giá, Mã dòng PO là bắt buộc để cập nhật đúng dòng.'],
             ['Ô trống', 'Trong chế độ Cập nhật, ô trống nghĩa là không đổi dữ liệu.'],
             ['ĐVT mua', 'PO đặt theo Đơn vị mua của NCC trong danh mục vật tư. Khi nhập kho, hệ thống tự quy đổi sang ĐVT kho theo hệ số vật tư.'],
             ['Định dạng số', 'Nên nhập số nguyên dạng 1500 hoặc 1.500; số lẻ dùng dấu phẩy như 12,5. Tránh nhập 1,500 nếu ý là một nghìn năm trăm.'],
@@ -4283,15 +4288,34 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
 
     const buildPoImportPreview = (mode: ExcelImportMode, rows: Record<string, unknown>[]) => {
         const activeItems = pItems.map(item => normalizePoItem(item, inventoryItems)).filter(item => item.itemId);
+        const skuAliases = ['Mã SKU *', 'Mã SKU', 'SKU'];
+        const unitPriceAliases = ['Đơn giá theo ĐVT mua', 'Đơn giá', 'Giá'];
         const inventoryBySku = (sku: string) => inventoryItems.find(item => item.sku.toLowerCase() === sku.trim().toLowerCase());
+        const preparedRows = mode === 'create'
+            ? rows.map(row => ({
+                ...row,
+                __poImportKey: getPoExcelCreateCommercialKey(
+                    getExcelCell(row, skuAliases),
+                    getExcelCell(row, unitPriceAliases),
+                ),
+            }))
+            : preparePoExcelUpdateRows({ rows, existingItems: activeItems });
         return buildImportPreview<PurchaseOrderItem>({
             mode,
             keyLabel: 'Mã SKU',
-            keyAliases: ['Mã SKU *', 'Mã SKU', 'SKU'],
+            keyAliases: mode === 'create' ? ['__poImportKey'] : ['__poImportKey', ...skuAliases],
             existingRecords: activeItems,
-            getRecordKey: item => item.sku,
-            validateKey: sku => inventoryBySku(sku) ? undefined : `SKU "${sku}" không tồn tại trong kho vật tư.`,
-            createBaseRecord: sku => {
+            getRecordKey: item => mode === 'create'
+                ? getPoExcelCreateCommercialKey(item.sku, item.unitPrice)
+                : item.lineId || item.itemId,
+            validateKey: (_key, row) => {
+                if (row.__poImportError) return String(row.__poImportError);
+                if (mode === 'update') return undefined;
+                const sku = getExcelCell(row, skuAliases);
+                return inventoryBySku(sku) ? undefined : `SKU "${sku}" không tồn tại trong kho vật tư.`;
+            },
+            createBaseRecord: (_key, row) => {
+                const sku = getExcelCell(row, skuAliases);
                 const item = inventoryBySku(sku);
                 const supplierPatch = getDefaultSupplierPatchForInventory(item);
                 return {
@@ -4321,7 +4345,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 {
                     key: 'unitPrice',
                     label: 'Đơn giá',
-                    aliases: ['Đơn giá', 'Giá'],
+                    aliases: unitPriceAliases,
                     normalize: value => parseNonNegativeLocaleNumber(value),
                     validate: value => parseNonNegativeLocaleNumber(value) >= 0 ? undefined : 'Đơn giá không hợp lệ.',
                 },
@@ -4339,7 +4363,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     clearable: true,
                 },
             ],
-        }, rows);
+        }, preparedRows);
     };
 
     const openPoImport = (mode: ExcelImportMode) => {
@@ -4387,8 +4411,9 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             setPDeliveryScheduleMode('unknown');
             setPDeliveryBatches([]);
         } else {
+            const recordsByLineId = new Map(records.map(record => [record.lineId || record.itemId, record]));
             setPItems(prev => prev.map(item => {
-                const patch = records.find(record => record.sku.toLowerCase() === item.sku.toLowerCase());
+                const patch = recordsByLineId.get(item.lineId || item.itemId);
                 return patch ? hydratePoFormItem({ ...item, ...patch }, inventoryItems) : item;
             }));
         }
