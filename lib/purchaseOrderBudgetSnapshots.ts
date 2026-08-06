@@ -24,6 +24,11 @@ export const ensurePurchaseOrderLineIds = <T extends { lineId?: string | null }>
   lineId: line.lineId || createLineId(),
 }));
 
+export const getSequentialPoBudgetSnapshot = (
+  snapshots: Map<string, PurchaseOrderBudgetSnapshot>,
+  lineId: string,
+) => snapshots.get(lineId);
+
 export const calculateSequentialPoBudgetSnapshots = (
   lines: PurchaseOrderBudgetLineInput[],
   baselines: Map<string, PurchaseOrderBudgetBaseline>,

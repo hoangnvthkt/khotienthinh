@@ -152,6 +152,7 @@ import { getPurchaseOrderDemandStats } from '../../lib/purchaseOrderDemand';
 import {
     calculateSequentialPoBudgetSnapshots,
     ensurePurchaseOrderLineIds,
+    getSequentialPoBudgetSnapshot,
 } from '../../lib/purchaseOrderBudgetSnapshots';
 import {
     buildPurchaseOrderPrintLineAmounts,
@@ -2896,7 +2897,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         const work = budget.workBoqItemId ? workBoqMap.get(budget.workBoqItemId) : undefined;
         const previousRequested = requestedQtyByBudget.get(budget.id) || 0;
         const previousOrdered = existingOrderedQtyByBudget.get(budget.id) || 0;
-        const allocationSnapshot = poBudgetSnapshotsByLineId.get(line.lineId);
+        const allocationSnapshot = getSequentialPoBudgetSnapshot(poBudgetSnapshotsByLineId, line.lineId);
         const reservedBeforeQty = allocationSnapshot?.reservedBeforeQtySnapshot || 0;
         const overBudgetQty = allocationSnapshot?.overBudgetQtySnapshot || 0;
         const overBudgetPercent = allocationSnapshot?.overBudgetPercentSnapshot || 0;
