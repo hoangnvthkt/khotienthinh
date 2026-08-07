@@ -228,28 +228,27 @@ export const MacOSDockLauncher: React.FC<MacOSDockLauncherProps> = ({
 
   return (
     <>
-      {/* Invisible High-Priority Trigger Zone at Right Edge (z-[9999]) */}
-      <div
-        onMouseEnter={handleMouseEnterTrigger}
-        onMouseMove={handleMouseEnterTrigger}
-        className="fixed right-0 top-0 z-[9999] h-full w-8 cursor-pointer"
-        title="Rê chuột vào cạnh phải để mở macOS Dock Ứng dụng"
-      />
+      {/* Backdrop when dock is open */}
+      {isOpen && (
+        <div
+          className="fixed inset-0 z-[84]"
+          onClick={() => setIsOpen(false)}
+        />
+      )}
 
       {/* Floating Edge Trigger Handle Button on Right Edge when closed */}
       {!isOpen && (
         <div
           onMouseEnter={handleMouseEnterTrigger}
           onClick={handleMouseEnterTrigger}
-          className="fixed right-0 top-1/4 z-[9998] -translate-y-1/2 cursor-pointer flex items-center gap-1.5 rounded-l-2xl bg-gradient-to-l from-slate-900 to-blue-950 px-2.5 py-2 border border-r-0 border-blue-500/40 shadow-xl text-blue-400 hover:scale-110 transition-transform duration-200"
+          className="fixed right-0 top-1/3 z-[80] -translate-y-1/2 cursor-pointer flex items-center gap-1.5 rounded-l-2xl bg-gradient-to-l from-slate-900 to-blue-950 px-2.5 py-2.5 border border-r-0 border-blue-500/40 shadow-xl text-blue-400 hover:scale-110 transition-transform duration-200"
           title="Mở macOS Dock Ứng Dụng (Cạnh phải)"
         >
-          <span className="text-[10px] font-black uppercase tracking-wider text-white"></span>
-          <Zap size={15} className="animate-pulse text-blue-400 shrink-0" />
+          <Zap size={10} className="animate-pulse text-blue-400 shrink-0" />
         </div>
       )}
 
-      {/* Floating Glassmorphic macOS Dock Bar at Right Edge (z-[9999]) */}
+      {/* Floating Glassmorphic macOS Dock Bar at Right Edge (z-[85]) */}
       <div
         ref={containerRef}
         onMouseEnter={handleMouseEnterTrigger}
@@ -258,7 +257,7 @@ export const MacOSDockLauncher: React.FC<MacOSDockLauncherProps> = ({
         style={{
           transition: 'transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease',
         }}
-        className={`fixed right-3 top-1/2 z-[9999] -translate-y-1/2 ${isOpen
+        className={`fixed right-3 top-1/2 z-[85] -translate-y-1/2 ${isOpen
           ? 'translate-x-0 opacity-100 pointer-events-auto'
           : 'translate-x-full opacity-0 pointer-events-none'
           }`}
@@ -267,7 +266,7 @@ export const MacOSDockLauncher: React.FC<MacOSDockLauncherProps> = ({
           {/* Top macOS Style Header */}
           <div className="flex items-center justify-between pb-1 px-1 border-b border-slate-800">
             <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-blue-400">
-              <Zap size={12} className="animate-pulse text-blue-400" /> macOS Dock
+              <Zap size={12} className="animate-pulse text-blue-400" /> Ứng dụng
             </div>
             <span className="text-[9px] font-extrabold text-slate-400 bg-slate-800 px-1.5 py-0.5 rounded-md">
               {userModules.length} apps

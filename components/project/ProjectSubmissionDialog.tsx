@@ -116,7 +116,7 @@ const ProjectSubmissionDialog: React.FC<Props> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-3 py-6">
+    <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-slate-950/60 p-3 sm:p-6 backdrop-blur-sm">
       <div className="w-full max-w-3xl overflow-hidden rounded-2xl bg-white shadow-2xl">
         <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-4">
           <div>

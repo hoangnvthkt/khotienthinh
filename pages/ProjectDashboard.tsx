@@ -3085,7 +3085,7 @@ const ProjectDashboard: React.FC = () => {
                         </div>
 
                         {/* Right side: Action buttons + Status + Progress */}
-                        <div className="flex items-center gap-2 flex-wrap shrink-0">
+                        <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap min-w-0 max-w-full">
                             {canManageProjects && (
                                 <button onClick={() => openEditProject(selectedProject)}
                                     className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-zinc-700 dark:text-zinc-200 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200 transition-colors shrink-0">

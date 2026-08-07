@@ -233,23 +233,7 @@ const Layout: React.FC = () => {
         onTogglePin={toggleSidebarPin}
       />
 
-      {/* Left Edge Hover Trigger for Traditional Sidebar when NOT pinned */}
-      {!isSidebarPinned && sidebarCollapsed && (
-        <div
-          onMouseEnter={() => {
-            setSidebarCollapsed(false);
-            localStorage.setItem('sidebar_collapsed', 'false');
-          }}
-          onMouseMove={() => {
-            setSidebarCollapsed(false);
-            localStorage.setItem('sidebar_collapsed', 'false');
-          }}
-          className="hidden lg:block fixed left-0 top-0 z-[60] h-full w-6 cursor-pointer"
-          title="Rê chuột vào mép trái để hiển thị Sidebar"
-        />
-      )}
-
-      <div className="flex-1 flex flex-col h-[100dvh] min-h-[100dvh] overflow-hidden relative">
+      <div className={`flex-1 flex flex-col h-[100dvh] min-h-[100dvh] overflow-hidden relative transition-[padding] duration-300 ease-[cubic-bezier(0.2,0,0,1)] ${!isSidebarPinned ? 'lg:pl-16' : ''}`}>
         {/* Mobile Header */}
         <header className="lg:hidden h-16 flex items-center justify-between px-4 shrink-0 z-[50] glass-panel border-b-0 m-2 mt-[calc(0.5rem+env(safe-area-inset-top,0px))] rounded-2xl">
           <div className="flex items-center gap-3">
@@ -280,7 +264,7 @@ const Layout: React.FC = () => {
           </div>
         </header>
 
-        <main className={isFullBleedRoute ? "flex-1 min-h-0 overflow-auto relative" : "flex-1 overflow-auto p-2 sm:p-4 md:p-8 pb-20 lg:pb-8 transparent"}>
+        <main className={isFullBleedRoute ? "flex-1 min-h-0 overflow-hidden relative" : "flex-1 overflow-y-auto overflow-x-hidden p-2 sm:p-4 md:p-8 pb-24 lg:pb-8 transparent"}>
           {isLoading || isRefreshing ? (
             <div className="h-full w-full flex flex-col items-center justify-center relative overflow-hidden">
               {/* Background animated particles */}
@@ -405,7 +389,7 @@ const Layout: React.FC = () => {
                 <Outlet />
               </React.Suspense>
             ) : (
-              <div className="w-full max-w-full">
+              <div className="w-full max-w-full overflow-x-hidden">
                 <React.Suspense fallback={<LoadingSpinner />}>
                   <Outlet />
                 </React.Suspense>

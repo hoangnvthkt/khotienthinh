@@ -284,14 +284,14 @@ export const FloatingChatBubble: React.FC<FloatingChatBubbleProps> = ({ user }) 
       />
 
       {/* FLOATING CHAT BUBBLE BUTTON - BOTTOM LEFT CORNER */}
-      <div className="fixed left-5 bottom-5 z-[80] flex flex-col items-start gap-2 select-none">
+      <div className="fixed left-3 sm:left-5 bottom-[56px] lg:bottom-5 z-[80] flex flex-col items-start gap-2 select-none">
         <button
           onClick={() => {
             const next = !isOpen;
             setIsOpen(next);
             if (next) loadConversations();
           }}
-          className={`group relative flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-tr from-pink-600 via-rose-600 to-indigo-600 text-white shadow-[0_10px_30px_rgba(225,29,72,0.45)] transition-all duration-300 hover:scale-110 active:scale-95 ring-4 ring-rose-500/30 ${
+          className={`group relative flex h-12 w-12 sm:h-14 sm:w-14 items-center justify-center rounded-full bg-gradient-to-tr from-pink-600 via-rose-600 to-indigo-600 text-white shadow-[0_10px_30px_rgba(225,29,72,0.45)] transition-all duration-300 hover:scale-110 active:scale-95 ring-4 ring-rose-500/30 ${
             isOpen ? 'rotate-90 scale-95' : ''
           }`}
           title="Mở ứng dụng Tin nhắn nội bộ VIOO"
@@ -300,9 +300,9 @@ export const FloatingChatBubble: React.FC<FloatingChatBubbleProps> = ({ user }) 
           <span className="absolute inset-0 rounded-full bg-rose-500/20 animate-ping opacity-75" />
 
           {isOpen ? (
-            <X size={24} className="relative z-10" />
+            <X size={22} className="relative z-10 sm:w-6 sm:h-6" />
           ) : (
-            <MessageSquare size={24} className="relative z-10 group-hover:rotate-6 transition-transform" />
+            <MessageSquare size={22} className="relative z-10 group-hover:rotate-6 transition-transform sm:w-6 sm:h-6" />
           )}
 
           {/* Unread Message Counter Badge */}
@@ -317,7 +317,7 @@ export const FloatingChatBubble: React.FC<FloatingChatBubbleProps> = ({ user }) 
       {/* CHAT POPOVER DRAWER - PRESERVES DOM & SCROLL POSITION ON CLOSE/OPEN */}
       <div
         style={{ display: isOpen ? 'flex' : 'none' }}
-        className="fixed left-5 bottom-22 z-[85] h-[540px] w-[360px] sm:w-[440px] flex-col overflow-hidden rounded-3xl border border-slate-800 bg-slate-950/95 shadow-[0_25px_60px_rgba(0,0,0,0.75)] backdrop-blur-2xl animate-in fade-in zoom-in-95 duration-200"
+        className="fixed left-3 sm:left-5 bottom-[116px] lg:bottom-22 z-[85] h-[520px] max-h-[calc(100vh-140px)] w-[calc(100vw-1.5rem)] sm:w-[440px] max-w-[440px] flex-col overflow-hidden rounded-3xl border border-slate-800 bg-slate-950/95 shadow-[0_25px_60px_rgba(0,0,0,0.75)] backdrop-blur-2xl animate-in fade-in zoom-in-95 duration-200"
       >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-800/80 bg-gradient-to-r from-slate-900 via-rose-950 to-indigo-950 px-4 py-3">
