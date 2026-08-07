@@ -305,7 +305,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
   const assignedWh = warehouses.find(w => w.id === user.assignedWarehouseId);
 
   const sidebarBg = isDark ? 'border-r border-[#2D3135]/60 bg-[#101214]/95 backdrop-blur-xl' : 'glass-panel border-r border-white/20';
-  
+
   const handleModuleClick = (mod: typeof MODULE_CONFIG[number]) => {
     setView(mod.key);
     navigate(mod.route);

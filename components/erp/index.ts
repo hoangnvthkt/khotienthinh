@@ -12,4 +12,3 @@ export { default as StatusBadge } from './StatusBadge';
 export { NeuralAppHub } from './NeuralAppHub';
 export type { ModuleAppDefinition } from './NeuralAppHub';
 export * from './status';
-
