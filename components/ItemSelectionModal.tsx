@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { X, Search, QrCode, Plus, Filter, PackageOpen } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { InventoryItem } from '../types';
-import { matchesSearchQueryMultiple } from '../lib/searchUtils';
+import { getItemSelectionResults, ITEM_SELECTION_RESULT_LIMIT } from '../lib/itemSelectionSearch';
 
 interface ItemSelectionModalProps {
   isOpen: boolean;
@@ -25,26 +25,27 @@ const ItemSelectionModal: React.FC<ItemSelectionModalProps> = ({
 }) => {
   const { items, warehouses } = useApp();
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
 
-  if (!isOpen) return null;
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearchTerm(searchTerm), 250);
+    return () => window.clearTimeout(timer);
+  }, [searchTerm]);
 
   const targetWarehouse = warehouses.find(w => w.id === filterWarehouseId);
 
-  // Logic lọc vật tư
-  const filteredItems = items.filter(item => {
-    const matchesSearch = matchesSearchQueryMultiple([item.name, item.sku], searchTerm);
+  const { items: filteredItems, totalMatches } = useMemo(
+    () => getItemSelectionResults(items, {
+      query: debouncedSearchTerm,
+      filterWarehouseId,
+      allowAllItems,
+    }),
+    [allowAllItems, debouncedSearchTerm, filterWarehouseId, items],
+  );
+  const isSearching = searchTerm !== debouncedSearchTerm;
+  const isResultLimited = totalMatches > ITEM_SELECTION_RESULT_LIMIT;
 
-    // allowAllItems = true (nhập kho): hiển thị tất cả vật tư trong hệ thống
-    if (allowAllItems) return matchesSearch;
-
-    // Nếu có filterWarehouseId, lọc item có tồn kho > 0 tại kho đó
-    if (filterWarehouseId) {
-      const stockInWarehouse = item.stockByWarehouse[filterWarehouseId] || 0;
-      return matchesSearch && stockInWarehouse > 0;
-    }
-
-    return matchesSearch;
-  });
+  if (!isOpen) return null;
 
   // Helper hiển thị tồn kho
   const getDisplayStock = (item: InventoryItem) => {
@@ -103,6 +104,14 @@ const ItemSelectionModal: React.FC<ItemSelectionModalProps> = ({
             <QrCode size={18} className="mr-2" /> Quét QR
           </button>
         </div>
+
+        {(isSearching || isResultLimited) && (
+          <div className="border-b border-slate-100 bg-slate-50 px-4 py-2 text-xs font-semibold text-slate-500">
+            {isSearching
+              ? 'Đang tìm vật tư...'
+              : `Có ${totalMatches.toLocaleString('vi-VN')} kết quả — chỉ hiển thị ${ITEM_SELECTION_RESULT_LIMIT} kết quả đầu. Nhập thêm SKU hoặc tên để thu hẹp.`}
+          </div>
+        )}
 
         {/* List */}
         <div className="flex-1 overflow-y-auto p-0 scrollbar-hide">
