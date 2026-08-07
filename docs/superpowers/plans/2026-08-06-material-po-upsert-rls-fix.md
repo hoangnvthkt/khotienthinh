@@ -242,4 +242,3 @@ git status --short
 ```
 
 Expected: zero failures, build exit code 0, and only intentional committed changes.
-

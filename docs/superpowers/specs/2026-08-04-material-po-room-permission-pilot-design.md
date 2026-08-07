@@ -215,4 +215,3 @@ còn lại.
 
 Rollback không xóa dữ liệu: chuyển sáu action PO về `audit_only` và giữ/bật lại
 PBAC fallback. Dữ liệu Room, backfill và audit log được giữ nguyên để truy vết.
-

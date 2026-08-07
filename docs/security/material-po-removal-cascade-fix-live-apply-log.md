@@ -1,8 +1,8 @@
 # Material PO Removal Cascade Fix — Live Apply Log
 
-**Environment:** Linked Supabase Cloud  
-**Applied at:** 2026-08-06T09:47:14+07:00  
-**Branch:** `feature/phan-quyen-du-an-v4-03.08.2026`  
+**Environment:** Linked Supabase Cloud
+**Applied at:** 2026-08-06T09:47:14+07:00
+**Branch:** `feature/phan-quyen-du-an-v4-03.08.2026`
 **Implementation commit:** `e982177`
 
 ## Release scope

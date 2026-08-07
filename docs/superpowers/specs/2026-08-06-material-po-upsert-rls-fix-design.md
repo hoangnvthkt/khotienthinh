@@ -55,4 +55,3 @@ PostgREST schema. Rollback is the previous policy definition:
 - Existing PO, company procurement, WMS keeper, archived-row, and dependent
   record visibility semantics remain unchanged.
 - Admin and existing update flows remain functional.
-

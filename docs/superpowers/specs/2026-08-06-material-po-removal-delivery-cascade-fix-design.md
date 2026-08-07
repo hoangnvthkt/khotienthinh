@@ -1,7 +1,7 @@
 # Material PO Removal Delivery Cascade Fix
 
-**Date:** 2026-08-06  
-**Status:** Proposed for implementation  
+**Date:** 2026-08-06
+**Status:** Proposed for implementation
 **Incident:** PO-313, created and removed by Bùi Quang Chung
 
 ## Problem
