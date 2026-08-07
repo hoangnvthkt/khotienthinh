@@ -329,7 +329,7 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
     const [statusFilter, setStatusFilter] = useState<StatusFilter>(queryReportStatus);
     const [briefingCopied, setBriefingCopied] = useState(false);
     const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
-    const [briefingCollapsed, setBriefingCollapsed] = useState(false);
+    const [briefingCollapsed, setBriefingCollapsed] = useState(true);
     const projectScopeId = projectId || constructionSiteId;
 
     useEffect(() => {

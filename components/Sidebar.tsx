@@ -8,7 +8,7 @@ import {
   MessageSquarePlus,
   Landmark, Repeat, Wrench, ChevronsLeft, ChevronsRight, AppWindow, ArrowLeft, Inbox, Layers, HardDrive,
   Calendar, CalendarOff, DollarSign, FileSignature, MapPin, Bot, FolderOpen, GripVertical, BookOpen, Clock,
-  IdCard, Award, Trophy, Globe, Building2, HardHat, Handshake, Settings2, Calculator, ShoppingCart, Activity
+  IdCard, Award, Trophy, Globe, Building2, HardHat, Handshake, Settings2, Calculator, ShoppingCart, Activity, Pin
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import NotificationCenter from './NotificationCenter';
@@ -29,6 +29,8 @@ interface SidebarProps {
   toggle: () => void;
   collapsed: boolean;
   setCollapsed: (v: boolean) => void;
+  isPinned?: boolean;
+  onTogglePin?: () => void;
 }
 
 const MODULE_CONFIG = [
@@ -53,7 +55,7 @@ type AppKey = typeof MODULE_CONFIG[number]['key'];
 // Sidebar states: 'home' | 'apps' | AppKey
 type SidebarView = 'home' | 'apps' | AppKey;
 
-const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollapsed }) => {
+const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollapsed, isPinned = false, onTogglePin }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, warehouses, transactions, requests, appSettings, items, realtimeStatus, lastRealtimeEvent, connectionError } = useApp();
@@ -103,31 +105,37 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
   // Drag-and-drop reorder state
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
-
-  const getSavedOrder = (): string[] => {
-    try { return JSON.parse(localStorage.getItem('sidebar_module_order') || '[]'); } catch { return []; }
-  };
-
-  // Filter modules by user permissions, then sort by saved order
-  const userModules = useMemo(() => {
-    let mods = MODULE_CONFIG.filter(m => canViewModule(user, m.key));
-    const order = getSavedOrder();
-    if (order.length > 0) {
-      mods = [...mods].sort((a, b) => {
-        const ai = order.indexOf(a.key);
-        const bi = order.indexOf(b.key);
-        if (ai === -1 && bi === -1) return 0;
-        if (ai === -1) return 1;
-        if (bi === -1) return -1;
-        return ai - bi;
-      });
+  const [savedOrder, setSavedOrder] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('sidebar_module_order');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
     }
-    return mods;
+  });
+
+  // Filter modules by user permissions
+  const userModules = useMemo(() => {
+    return MODULE_CONFIG.filter(m => canViewModule(user, m.key));
   }, [user]);
 
-  const [orderedModules, setOrderedModules] = useState(userModules);
-  // Sync when userModules changes
-  useMemo(() => { setOrderedModules(userModules); }, [userModules]);
+  // Sort by saved order
+  const orderedModules = useMemo(() => {
+    if (!savedOrder.length) return userModules;
+    const map = new Map(userModules.map(m => [m.key, m]));
+    const result: typeof userModules[number][] = [];
+    for (const key of savedOrder) {
+      const found = map.get(key as AppKey);
+      if (found) {
+        result.push(found);
+        map.delete(key as AppKey);
+      }
+    }
+    for (const remaining of map.values()) {
+      result.push(remaining);
+    }
+    return result;
+  }, [userModules, savedOrder]);
 
   const handleDragStart = useCallback((idx: number) => {
     setDragIdx(idx);
@@ -140,11 +148,12 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
 
   const handleDrop = useCallback((idx: number) => {
     if (dragIdx === null || dragIdx === idx) { setDragIdx(null); setDragOverIdx(null); return; }
-    const items = [...orderedModules];
-    const [moved] = items.splice(dragIdx, 1);
-    items.splice(idx, 0, moved);
-    setOrderedModules(items);
-    localStorage.setItem('sidebar_module_order', JSON.stringify(items.map(m => m.key)));
+    const newModules = [...orderedModules];
+    const [moved] = newModules.splice(dragIdx, 1);
+    newModules.splice(idx, 0, moved);
+    const newOrderKeys = newModules.map(m => m.key);
+    setSavedOrder(newOrderKeys);
+    localStorage.setItem('sidebar_module_order', JSON.stringify(newOrderKeys));
     setDragIdx(null);
     setDragOverIdx(null);
   }, [dragIdx, orderedModules]);
@@ -296,7 +305,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
   const assignedWh = warehouses.find(w => w.id === user.assignedWarehouseId);
 
   const sidebarBg = isDark ? 'border-r border-[#2D3135]/60 bg-[#101214]/95 backdrop-blur-xl' : 'glass-panel border-r border-white/20';
-  const sidebarWidth = collapsed ? 'w-[72px]' : 'w-64';
 
   const handleModuleClick = (mod: typeof MODULE_CONFIG[number]) => {
     setView(mod.key);
@@ -310,22 +318,51 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
 
   return (
     <>
-      {isOpen && <div className="fixed inset-0 bg-black/60 z-[60] lg:hidden backdrop-blur-sm" onClick={toggle} />}
-      <aside className={`fixed top-0 left-0 z-[70] h-[100dvh] ${sidebarWidth} text-slate-800 dark:text-white transition-all duration-300 lg:translate-x-0 lg:static ${sidebarBg} ${isOpen ? 'translate-x-0' : '-translate-x-full'} flex flex-col`}>
-
-        {/* Logo */}
+      {/* Backdrop Overlay - Click outside to auto-collapse sidebar when NOT pinned */}
+      {!collapsed && !isPinned && (
         <div
-          onClick={goBackToHome}
-          className="flex items-center justify-center h-16 px-4 border-b border-white/20 dark:border-white/5 shrink-0 gap-2.5 cursor-pointer hover:opacity-90 transition-opacity"
+          className="fixed inset-0 bg-black/40 z-[65] backdrop-blur-xs transition-opacity duration-300 cursor-pointer"
+          onClick={() => setCollapsed(true)}
+          title="Nhấp ra ngoài để đóng Sidebar"
+        />
+      )}
+      <aside className={`fixed top-0 left-0 z-[70] h-[100dvh] w-64 text-slate-800 dark:text-white transition-transform duration-300 ${sidebarBg} ${collapsed ? '-translate-x-full' : (isPinned ? 'translate-x-0 lg:static lg:z-auto' : 'translate-x-0')} flex flex-col shadow-2xl`}>
+
+        {/* Logo & Pin Button */}
+        <div
+          className="flex items-center justify-between h-16 px-4 border-b border-white/20 dark:border-white/5 shrink-0"
         >
-          {appSettings.logo ? (
-            <img src={appSettings.logo} alt={appSettings.name} className="w-8 h-8 object-contain rounded-lg shadow-sm shrink-0" />
-          ) : (
-            <div className="w-8 h-8 bg-accent rounded-lg flex items-center justify-center font-black text-xs uppercase shadow-lg shadow-blue-500/40 shrink-0 text-white">
-              {appSettings.name.slice(0, 2)}
-            </div>
+          <div
+            onClick={goBackToHome}
+            className="flex items-center gap-2.5 cursor-pointer hover:opacity-90 transition-opacity min-w-0"
+          >
+            {appSettings.logo ? (
+              <img src={appSettings.logo} alt={appSettings.name} className="w-8 h-8 object-contain rounded-lg shadow-sm shrink-0" />
+            ) : (
+              <div className="w-8 h-8 bg-accent rounded-lg flex items-center justify-center font-black text-xs uppercase shadow-lg shadow-blue-500/40 shrink-0 text-white">
+                {appSettings.name.slice(0, 2)}
+              </div>
+            )}
+            {!collapsed && <span className="text-lg font-black tracking-tight truncate">{appSettings.name}</span>}
+          </div>
+
+          {/* Pin Button */}
+          {!collapsed && onTogglePin && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onTogglePin();
+              }}
+              className={`p-1.5 rounded-xl transition-all ${
+                isPinned
+                  ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40 shadow-sm'
+                  : 'text-slate-400 hover:text-white hover:bg-white/10'
+              }`}
+              title={isPinned ? 'Bỏ ghim (Chuyển sang chế độ Hover mép trái)' : 'Ghim Sidebar cố định'}
+            >
+              <Pin size={16} className={isPinned ? 'rotate-45 fill-amber-400' : ''} />
+            </button>
           )}
-          {!collapsed && <span className="text-lg font-black tracking-tight truncate">{appSettings.name}</span>}
         </div>
 
         {/* User Info */}

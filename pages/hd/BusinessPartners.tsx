@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Building2, Download, Edit2, FileSpreadsheet, Loader2, Plus, RefreshCcw, Save, Search, Trash2, Upload, X } from 'lucide-react';
+import { Building2, ChevronLeft, ChevronRight, Download, Edit2, FileSpreadsheet, Loader2, Plus, RefreshCcw, Save, Search, Trash2, Upload, X } from 'lucide-react';
 import { BusinessPartner, PartnerClassification } from '../../types';
 import { partnerService } from '../../lib/partnerService';
 import { useToast } from '../../context/ToastContext';
@@ -140,6 +140,19 @@ const BusinessPartners: React.FC = () => {
       return matchesSearch && matchesClass;
     });
   }, [partners, search, filter]);
+
+  const PAGE_SIZE = 10;
+  const [currentPage, setCurrentPage] = useState(1);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, filter]);
+
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE) || 1;
+  const paginatedPartners = useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE;
+    return filtered.slice(start, start + PAGE_SIZE);
+  }, [filtered, currentPage]);
 
   const resetForm = () => {
     setEditing(null);
@@ -452,7 +465,7 @@ const BusinessPartners: React.FC = () => {
                 <tr><td colSpan={7} className="py-12 text-center text-slate-400"><Loader2 className="inline animate-spin mr-2" size={16} />Đang tải...</td></tr>
               ) : filtered.length === 0 ? (
                 <tr><td colSpan={7} className="py-12 text-center text-slate-400">Chưa có đối tác</td></tr>
-              ) : filtered.map(partner => (
+              ) : paginatedPartners.map(partner => (
                 <tr key={partner.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                   <td className="px-4 py-3 font-mono font-bold text-sky-600 dark:text-sky-400">{partner.code}</td>
                   <td className="px-4 py-3">
@@ -489,6 +502,66 @@ const BusinessPartners: React.FC = () => {
             </tbody>
           </table>
         </div>
+
+        {/* Pagination Bar - 10 items / page */}
+        {!loading && filtered.length > 0 && (
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 text-xs text-slate-500 font-medium">
+            <div>
+              Hiển thị <span className="font-bold text-slate-800 dark:text-white">{(currentPage - 1) * PAGE_SIZE + 1}</span> - <span className="font-bold text-slate-800 dark:text-white">{Math.min(currentPage * PAGE_SIZE, filtered.length)}</span> trên tổng số <span className="font-bold text-slate-800 dark:text-white">{filtered.length}</span> đối tác
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setCurrentPage(p => Math.max(p - 1, 1))}
+                disabled={currentPage === 1}
+                className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 disabled:opacity-40 hover:bg-slate-100 dark:hover:bg-slate-700 transition cursor-pointer"
+                title="Trang trước"
+              >
+                <ChevronLeft size={16} />
+              </button>
+
+              <div className="flex items-center gap-1">
+                {Array.from({ length: totalPages }, (_, idx) => idx + 1)
+                  .filter(page => page === 1 || page === totalPages || Math.abs(page - currentPage) <= 1)
+                  .reduce<(number | string)[]>((acc, page, idx, arr) => {
+                    if (idx > 0 && page - (arr[idx - 1] as number) > 1) {
+                      acc.push('...');
+                    }
+                    acc.push(page);
+                    return acc;
+                  }, [])
+                  .map((page, idx) =>
+                    typeof page === 'number' ? (
+                      <button
+                        key={page}
+                        onClick={() => setCurrentPage(page)}
+                        className={`h-8 min-w-8 px-2.5 rounded-lg font-bold text-xs transition cursor-pointer ${
+                          currentPage === page
+                            ? 'bg-sky-600 text-white shadow-sm'
+                            : 'border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
+                        }`}
+                      >
+                        {page}
+                      </button>
+                    ) : (
+                      <span key={`ellipsis-${idx}`} className="px-1 text-slate-400">
+                        {page}
+                      </span>
+                    )
+                  )}
+              </div>
+
+              <button
+                onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))}
+                disabled={currentPage === totalPages}
+                className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 disabled:opacity-40 hover:bg-slate-100 dark:hover:bg-slate-700 transition cursor-pointer"
+                title="Trang sau"
+              >
+                <ChevronRight size={16} />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {showForm && (
