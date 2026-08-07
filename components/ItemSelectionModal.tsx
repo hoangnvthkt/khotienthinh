@@ -32,8 +32,6 @@ const ItemSelectionModal: React.FC<ItemSelectionModalProps> = ({
     return () => window.clearTimeout(timer);
   }, [searchTerm]);
 
-  if (!isOpen) return null;
-
   const targetWarehouse = warehouses.find(w => w.id === filterWarehouseId);
 
   const { items: filteredItems, totalMatches } = useMemo(
@@ -46,6 +44,8 @@ const ItemSelectionModal: React.FC<ItemSelectionModalProps> = ({
   );
   const isSearching = searchTerm !== debouncedSearchTerm;
   const isResultLimited = totalMatches > ITEM_SELECTION_RESULT_LIMIT;
+
+  if (!isOpen) return null;
 
   // Helper hiển thị tồn kho
   const getDisplayStock = (item: InventoryItem) => {
