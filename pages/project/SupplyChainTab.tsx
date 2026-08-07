@@ -3697,7 +3697,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 };
                 const { batches, supplementalRequests } = preparePoDeliveryScheduleForSave(poItem, groupItems);
                 const poItemForSave = { ...poItem, supplementalApprovalStatus: supplementalRequests.length > 0 ? 'pending' as const : 'none' as const };
-                await poService.upsert(poItemForSave);
+                await poService.update(poItemForSave);
                 await poService.replaceRequestLineLinks(poItemForSave.id, buildLinks(poItemForSave, groupItems));
                 await poDeliveryScheduleService.replaceForPurchaseOrder(poItemForSave, batches);
                 await poSupplementalApprovalService.syncPendingForPurchaseOrder(

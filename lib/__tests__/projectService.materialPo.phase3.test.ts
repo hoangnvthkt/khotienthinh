@@ -21,12 +21,13 @@ beforeEach(() => {
 });
 
 describe('poService Phase 3.3 workflow transitions', () => {
-  it('upserts purchase order content without direct workflow metadata updates', async () => {
-    const upsert = vi.fn().mockResolvedValue({ error: null });
-    supabaseMock.from.mockReturnValueOnce({ upsert });
+  it('updates an existing purchase order without evaluating its insert policy', async () => {
+    const eq = vi.fn().mockResolvedValue({ error: null });
+    const update = vi.fn().mockReturnValue({ eq });
+    supabaseMock.from.mockReturnValueOnce({ update });
     const { poService } = await import('../projectService');
 
-    await poService.upsert({
+    await poService.update({
       id: 'po-1',
       vendorId: 'vendor-1',
       vendorName: 'NCC',
@@ -39,11 +40,12 @@ describe('poService Phase 3.3 workflow transitions', () => {
     } as any);
 
     expect(supabaseMock.from).toHaveBeenCalledWith('purchase_orders');
-    const payload = upsert.mock.calls[0][0];
+    const payload = update.mock.calls[0][0];
     expect(payload).not.toHaveProperty('last_action_by');
     expect(payload).not.toHaveProperty('last_action_at');
     expect(payload).not.toHaveProperty('ever_submitted');
-    expect(upsert).toHaveBeenCalledWith(payload, { onConflict: 'id' });
+    expect(update).toHaveBeenCalledWith(payload);
+    expect(eq).toHaveBeenCalledWith('id', 'po-1');
   });
 
   it('routes status changes through the project material PO transition RPC', async () => {

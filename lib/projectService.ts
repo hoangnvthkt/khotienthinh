@@ -1083,6 +1083,13 @@ export const poService = {
             .upsert(poToDb(item), { onConflict: 'id' });
         if (error) throw error;
     },
+    async update(item: PurchaseOrder): Promise<void> {
+        const { error } = await supabase
+            .from('purchase_orders')
+            .update(poToDb(item))
+            .eq('id', item.id);
+        if (error) throw error;
+    },
     async updateStatus(id: string, patch: Partial<PurchaseOrder>): Promise<void | ApprovePurchasePackageResult> {
         const row = toDb(patch);
         if (patch.receivedTransactionIds) row.received_transaction_ids = patch.receivedTransactionIds;
