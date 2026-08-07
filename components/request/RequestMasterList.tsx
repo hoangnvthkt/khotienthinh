@@ -75,7 +75,7 @@ export const RequestMasterList: React.FC<{
                   {new Intl.DateTimeFormat('vi-VN', { month: '2-digit', day: '2-digit' }).format(new Date(item.updatedAt))}
                 </span>
               </div>
-              
+
               <h3 className={`mt-1 line-clamp-2 text-sm font-semibold leading-snug transition-colors ${
                 isSelected
                   ? 'text-emerald-950 dark:text-emerald-100 font-bold'
@@ -83,11 +83,11 @@ export const RequestMasterList: React.FC<{
               }`}>
                 {item.title}
               </h3>
-              
+
               <p className="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">
                 {item.templateName} <span className="text-slate-300 dark:text-slate-600">•</span> {item.creator.name}
               </p>
-              
+
               <div className="mt-2.5 flex items-center justify-between">
                 <RequestStatusBadge status={item.status} />
               </div>
@@ -103,4 +103,3 @@ export const RequestMasterList: React.FC<{
     </aside>
   );
 };
-

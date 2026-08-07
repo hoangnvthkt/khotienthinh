@@ -10,14 +10,14 @@ import { RequestPrintPreview } from './RequestPrintPreview';
 
 const displayValue = (value: unknown, fieldType?: string, options?: string[]): React.ReactNode => {
   if (value === null || value === undefined || value === '') return <span className="text-slate-400 font-normal italic">—</span>;
-  
+
   if ((fieldType === 'table' || Array.isArray(value)) && Array.isArray(value)) {
     const cols = (options && options.filter(Boolean).length > 0)
       ? options.filter(Boolean)
       : (value.length > 0 && typeof value[0] === 'object' && value[0] !== null ? Object.keys(value[0]) : []);
-    
+
     if (cols.length === 0) return <span className="text-slate-400 font-normal italic">—</span>;
-    
+
     const rows = value as Array<Record<string, string>>;
     return (
       <div className="mt-2 overflow-hidden rounded-2xl border border-emerald-200/80 bg-white shadow-sm dark:border-emerald-800/40 dark:bg-slate-900">
@@ -54,11 +54,11 @@ const displayValue = (value: unknown, fieldType?: string, options?: string[]): R
       </div>
     );
   }
-  
+
   if (typeof value === 'string' || typeof value === 'number') {
     return <span className="font-semibold text-slate-800 dark:text-slate-100">{String(value)}</span>;
   }
-  
+
   return <pre className="text-xs bg-slate-100 p-2 rounded dark:bg-slate-800 overflow-x-auto">{JSON.stringify(value, null, 2)}</pre>;
 };
 
@@ -134,7 +134,7 @@ export const RequestDetailPanel: React.FC<{
       <div className="flex min-w-0 flex-1 overflow-hidden h-full">
         {/* Column 3: Primary Content Display Area (Maximized area) */}
         <article className="min-w-0 flex-1 overflow-y-auto bg-slate-50/50 p-4 dark:bg-slate-950 md:p-6 lg:p-7 space-y-6">
-          
+
           {/* Hero Header Card */}
           <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
             <div className="flex items-start gap-3">
@@ -325,4 +325,3 @@ export const RequestDetailPanel: React.FC<{
     </>
   );
 };
-

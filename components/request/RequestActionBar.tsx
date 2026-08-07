@@ -139,4 +139,3 @@ export const RequestActionBar: React.FC<{ detail: RequestDetail; onChanged: () =
 };
 
 export default RequestActionBar;
-

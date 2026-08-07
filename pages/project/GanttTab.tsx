@@ -1695,15 +1695,15 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
             try {
                 const bstr = evt.target?.result;
                 const wb = XLSX.read(bstr, { type: 'binary', cellDates: true });
-                const updateSheetName = wb.SheetNames.find(name => 
+                const updateSheetName = wb.SheetNames.find(name =>
                     ['cap_nhat', 'capnhat', 'cập nhật', 'cập nhật tiến độ', 'cap nhat'].includes(name.trim().toLowerCase())
                 );
-                const createSheetName = wb.SheetNames.find(name => 
+                const createSheetName = wb.SheetNames.find(name =>
                     ['nhap_moi', 'nhapmoi', 'nhập mới', 'nhap moi'].includes(name.trim().toLowerCase())
                 );
                 const updateRows = updateSheetName ? getSheetRows(wb, updateSheetName) : [];
                 const createRows = createSheetName ? getSheetRows(wb, createSheetName) : [];
-                const legacySheetName = wb.SheetNames.find(name => 
+                const legacySheetName = wb.SheetNames.find(name =>
                     !['huong_dan', 'huongdan', 'hướng dẫn', 'huong dan', updateSheetName, createSheetName].filter((n): n is string => Boolean(n)).includes(name.trim().toLowerCase())
                 );
                 const legacyRows = legacySheetName ? getSheetRows(wb, legacySheetName) : [];

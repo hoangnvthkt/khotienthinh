@@ -67,7 +67,7 @@ export const RequestApprovalInspector: React.FC<{
               {idx < detail.approvalBlocks.length - 1 && (
                 <div className="absolute left-[8px] top-6 bottom-0 w-0.5 bg-slate-200 dark:bg-slate-800" />
               )}
-              
+
               <div className="flex items-start gap-2.5">
                 {blockIcon(block.status)}
                 <div className="min-w-0 flex-1">
@@ -81,7 +81,7 @@ export const RequestApprovalInspector: React.FC<{
                       </span>
                     ) : null}
                   </div>
-                  
+
                   <p className="mt-0.5 text-[11px] font-medium text-slate-500">
                     {block.status === 'NOT_ACTIVE' && 'Chưa kích hoạt'}
                     {block.status === 'ACTIVE' && <span className="text-amber-600 dark:text-amber-400 font-bold">Đang chờ duyệt</span>}
@@ -127,12 +127,12 @@ export const RequestApprovalInspector: React.FC<{
         <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">
           Lịch sử hoạt động
         </h3>
-        
+
         <ol className="relative space-y-4 border-l border-slate-200 pl-4 dark:border-slate-800 text-xs">
           {detail.timeline.map(event => (
             <li key={event.id} className="relative">
               <span className="absolute -left-[21px] top-0.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-emerald-500 shadow-sm dark:border-slate-900" />
-              
+
               <div className="flex items-center justify-between gap-1">
                 <p className="font-bold text-slate-800 dark:text-white">
                   {event.eventType}
@@ -141,11 +141,11 @@ export const RequestApprovalInspector: React.FC<{
                   {new Intl.DateTimeFormat('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' }).format(new Date(event.createdAt))}
                 </span>
               </div>
-              
+
               <p className="text-[11px] text-slate-500 mt-0.5">
                 {event.actor?.name ?? 'Hệ thống'}
               </p>
-              
+
               {event.comment && (
                 <p className="mt-1 rounded-lg bg-slate-50 p-2 text-[11px] text-slate-600 dark:bg-slate-800/80 dark:text-slate-300 border border-slate-100 dark:border-slate-800">
                   {event.comment}
@@ -158,4 +158,3 @@ export const RequestApprovalInspector: React.FC<{
     </aside>
   );
 };
-
