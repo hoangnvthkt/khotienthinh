@@ -318,18 +318,35 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
 
   return (
     <>
-      {/* Backdrop Overlay - Click outside to auto-collapse sidebar when mobile open or NOT pinned */}
-      {(isOpen || (!collapsed && !isPinned)) && (
+      {/* Backdrop Overlay - Mobile drawer only */}
+      {isOpen && (
         <div
-          className="fixed inset-0 bg-black/40 z-[65] backdrop-blur-xs transition-opacity duration-300 cursor-pointer"
-          onClick={() => {
-            if (isOpen) toggle();
-            if (!collapsed) setCollapsed(true);
-          }}
+          className="lg:hidden fixed inset-0 bg-black/40 z-[65] backdrop-blur-xs transition-opacity duration-300 cursor-pointer"
+          onClick={() => toggle()}
           title="Nhấp ra ngoài để đóng Sidebar"
         />
       )}
-      <aside className={`fixed top-0 left-0 z-[70] h-[100dvh] w-64 text-slate-800 dark:text-white transition-transform duration-300 ${sidebarBg} ${isOpen ? 'translate-x-0' : (collapsed ? '-translate-x-full' : (isPinned ? 'translate-x-0 lg:static lg:z-auto' : 'translate-x-0'))} flex flex-col shadow-2xl`}>
+      <aside
+        onMouseEnter={() => {
+          if (!isPinned && window.innerWidth >= 1024) {
+            setCollapsed(false);
+          }
+        }}
+        onMouseLeave={() => {
+          if (!isPinned && window.innerWidth >= 1024) {
+            setCollapsed(true);
+          }
+        }}
+        className={`fixed top-0 left-0 z-[70] h-[100dvh] transition-[width,transform,box-shadow] duration-300 ease-[cubic-bezier(0.2,0,0,1)] ${sidebarBg} ${
+          isOpen
+            ? 'translate-x-0 w-64 shadow-2xl'
+            : (collapsed
+                ? '-translate-x-full lg:translate-x-0 lg:w-16 shadow-lg'
+                : (isPinned
+                    ? 'translate-x-0 w-64 lg:static lg:z-auto'
+                    : 'translate-x-0 w-64 shadow-2xl'))
+        } flex flex-col`}
+      >
 
         {/* Logo & Pin Button */}
         <div
