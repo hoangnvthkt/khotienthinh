@@ -41,6 +41,11 @@ const templatePublishWrapperFixFile = readdirSync(dir).find(name =>
 const templatePublishWrapperFixSql = templatePublishWrapperFixFile
   ? readFileSync(join(dir, templatePublishWrapperFixFile), 'utf8')
   : '';
+const templateDuplicateFile = readdirSync(dir).find(name =>
+  name.endsWith('_request_template_duplicate_and_table_publish.sql'));
+const templateDuplicateSql = templateDuplicateFile
+  ? readFileSync(join(dir, templateDuplicateFile), 'utf8')
+  : '';
 const smokeSql = readFileSync(join(process.cwd(), 'supabase', 'tests', 'request_approval_phase1_smoke.sql'), 'utf8');
 const schedulerFile = readdirSync(dir).find(name =>
   name.endsWith('_schedule_request_notification_worker.sql'));
@@ -237,6 +242,70 @@ describe('request approval phase 1 schema', () => {
     expect(publishSql).toContain('v_workflow_template_id := gen_random_uuid()');
     expect(publishSql).toContain('request_print_templates');
     expect(publishSql).toContain('validation_status = \'VALID\'');
+  });
+
+  it('adds a permission-guarded atomic request template duplicate command', () => {
+    expect(templateDuplicateSql).toContain('app_private.duplicate_request_template');
+    expect(templateDuplicateSql).toContain('public.duplicate_request_template');
+    expect(templateDuplicateSql).toMatch(
+      /request_user_can_manage\(v_actor\)[\s\S]*?REQUEST_TEMPLATE_FORBIDDEN/i,
+    );
+    expect(templateDuplicateSql).toContain("v_source_template.name || ' - Bản sao'");
+    expect(templateDuplicateSql).toContain("'draftVersionId', v_target_version.id");
+    expect(templateDuplicateSql).toContain(
+      'grant execute on function public.duplicate_request_template(uuid) to authenticated',
+    );
+  });
+
+  it('copies the complete request template configuration into an independent draft', () => {
+    for (const snippet of [
+      'insert into public.request_templates',
+      'insert into public.request_template_versions',
+      'v_source_version.form_schema',
+      'v_source_version.usage_scope',
+      'v_source_version.flow_mode',
+      'v_source_version.completion_policy',
+      'v_source_version.request_sla_hours',
+      'v_source_version.print_config',
+      'v_source_version.notification_config',
+      'from public.request_approval_blocks',
+      'from public.request_template_watchers',
+      'from public.request_print_templates',
+    ]) expect(templateDuplicateSql).toContain(snippet);
+    expect(templateDuplicateSql).toMatch(
+      /insert into public\.request_templates[\s\S]*?'DRAFT'[\s\S]*?returning \* into v_target_template/i,
+    );
+  });
+
+  it('serializes source reads and copy-name allocation during duplication', () => {
+    expect(templateDuplicateSql).toMatch(
+      /select \* into v_source_template[\s\S]*?where id = p_request_template_id[\s\S]*?for update/i,
+    );
+    expect(templateDuplicateSql).toContain(
+      'pg_advisory_xact_lock(hashtextextended(lower(v_base_name), 0))',
+    );
+  });
+
+  it('lets published templates with DOCX metadata enter the same-lineage edit flow', () => {
+    expect(templateDuplicateSql).toContain(
+      'app_private.create_request_template_draft_from_published',
+    );
+    expect(templateDuplicateSql).not.toContain(
+      'REQUEST_PRINT_TEMPLATE_CLONE_DOCX_UNSUPPORTED',
+    );
+    expect(templateDuplicateSql).toMatch(
+      /create_request_template_draft_from_published[\s\S]*?insert into public\.request_print_templates[\s\S]*?from public\.request_print_templates/i,
+    );
+    expect(templateDuplicateSql).toContain("'draftVersionId', v_draft.id");
+  });
+
+  it('repairs publish validation so table fields are accepted', () => {
+    expect(templateDuplicateSql).toContain(
+      'app_private.publish_request_template_version',
+    );
+    expect(templateDuplicateSql).toMatch(
+      /coalesce\(field ->> 'fieldType', ''\) not in \([\s\S]*?'table'[\s\S]*?\)/,
+    );
   });
 
   it('submits through a private atomic command with sequence, snapshots and outbox', () => {

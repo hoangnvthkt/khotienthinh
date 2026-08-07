@@ -64,6 +64,7 @@ export const ROUTE_TO_MODULE: Record<string, string> = {
   // ── YÊU CẦU ──────────────────────────────────────────
   '/rq/dashboard':  'RQ',
   '/rq':            'RQ',
+  '/rq/:requestId': 'RQ',
   '/rq/categories': 'RQ',
 
   // ── NGÂN SÁCH ─────────────────────────────────────────

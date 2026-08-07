@@ -26,6 +26,7 @@ import { AppNotification, notificationService } from '../lib/notificationService
 import { resolveNotificationPath } from '../lib/notificationRoutes';
 import { buildRequestRoute } from '../lib/requestRoutes';
 import { canUseModule, resolveHomeCapabilities } from '../lib/homeCapabilities';
+import { isRequestModuleWorkflowTemplate } from '../lib/workflowVisibility';
 import {
   MaterialRequest,
   RequestStatus,
@@ -278,6 +279,7 @@ const Home: React.FC = () => {
       const { currentNode, assignedToCurrentUser, label } = getWorkflowAssignees(instance, workflowNodes, users, user);
       if (!assignedToCurrentUser) return null;
       const template = workflowTemplates.find(item => item.id === instance.templateId);
+      if (isRequestModuleWorkflowTemplate(template)) return null;
       return {
         id: `wf-${instance.id}`,
         category: 'workflow',

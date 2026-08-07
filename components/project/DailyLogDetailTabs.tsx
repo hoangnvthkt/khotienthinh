@@ -599,6 +599,7 @@ const DailyLogDetailTabs: React.FC<Props> = ({
         taskName: task.name,
         count: 0,
         hours: 8,
+        unit: source.catalogItem.unit,
       };
     }
 
@@ -611,6 +612,7 @@ const DailyLogDetailTabs: React.FC<Props> = ({
       taskName: task.name,
       count: 0,
       hours: 8,
+      unit: 'người',
     };
   };
 
@@ -624,6 +626,8 @@ const DailyLogDetailTabs: React.FC<Props> = ({
     taskId: task.id,
     taskName: task.name,
     shifts: 1,
+    hours: 0,
+    unit: source.item.unit,
   });
 
   const addSelectedLaborPairs = () => {
@@ -1060,6 +1064,7 @@ const DailyLogDetailTabs: React.FC<Props> = ({
                         groupName: item.groupName,
                         partnerId: item.partnerId,
                         partnerName: item.partnerName,
+                        unit: item.unit,
                       };
                       onLaborChange(u);
                     }}
@@ -1076,6 +1081,8 @@ const DailyLogDetailTabs: React.FC<Props> = ({
                   onChange={e => { const u = [...laborDetails]; u[i] = { ...l, count: parseNonNegativeDecimal(e.target.value) ?? 0 }; onLaborChange(u); }} />
                 <input type="text" inputMode="decimal" placeholder="Giờ" value={l.hours || ''} className={`${inputCls} w-16`}
                   onChange={e => { const u = [...laborDetails]; u[i] = { ...l, hours: parseNonNegativeDecimal(e.target.value) ?? 0 }; onLaborChange(u); }} />
+                <input type="text" placeholder="ĐVT" aria-label="Đơn vị nhân công" value={l.unit || ''} className={`${inputCls} w-20`}
+                  onChange={e => { const u = [...laborDetails]; u[i] = { ...l, unit: e.target.value }; onLaborChange(u); }} />
                 <input type="text" inputMode="decimal" placeholder="Đơn giá" value={l.unitCost || ''} className={`${inputCls} w-24`}
                   onChange={e => { const u = [...laborDetails]; u[i] = { ...l, unitCost: parseNonNegativeDecimal(e.target.value) ?? 0 }; onLaborChange(u); }} />
                 <button onClick={() => onLaborChange(laborDetails.filter((_, idx) => idx !== i))} className="text-slate-400 hover:text-red-500"><X size={14} /></button>
@@ -1085,14 +1092,14 @@ const DailyLogDetailTabs: React.FC<Props> = ({
           <div className="flex flex-wrap gap-2">
             <button onClick={() => {
               setLaborModes(prev => ({ ...prev, [laborDetails.length]: 'catalog' }));
-              onLaborChange([...laborDetails, { laborType: '', catalogName: '', count: 0, hours: 8 }]);
+              onLaborChange([...laborDetails, { laborType: '', catalogName: '', count: 0, hours: 8, unit: '' }]);
             }}
               className="flex items-center gap-1 text-[10px] font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg border border-blue-200">
               <Plus size={10} /> Thêm từ HĐ danh mục
             </button>
             <button onClick={() => {
               setLaborModes(prev => ({ ...prev, [laborDetails.length]: 'partner' }));
-              onLaborChange([...laborDetails, { laborType: 'Tổ đội', groupName: '', count: 0, hours: 8 }]);
+              onLaborChange([...laborDetails, { laborType: 'Tổ đội', groupName: '', count: 0, hours: 8, unit: 'người' }]);
             }}
               className="flex items-center gap-1 text-[10px] font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg border border-indigo-200">
               <Plus size={10} /> Thêm từ HĐ đối tác
@@ -1251,6 +1258,7 @@ const DailyLogDetailTabs: React.FC<Props> = ({
                     catalogCode: item.code,
                     catalogName: item.name,
                     groupName: item.groupName,
+                    unit: item.unit,
                   };
                   onMachinesChange(u);
                 }}
@@ -1262,14 +1270,33 @@ const DailyLogDetailTabs: React.FC<Props> = ({
                 onTextChange={value => { const u = [...machines]; u[i] = { ...m, taskName: value }; onMachinesChange(u); }}
                 onPick={task => { const u = [...machines]; u[i] = { ...m, taskId: task.id, taskName: task.name }; onMachinesChange(u); }}
               />
+              <SearchablePicker
+                value={m.partnerName || ''}
+                placeholder="Đối tác máy..."
+                options={partnerOptions}
+                onTextChange={value => {
+                  const u = [...machines];
+                  u[i] = { ...m, partnerId: undefined, partnerName: value };
+                  onMachinesChange(u);
+                }}
+                onPick={partner => {
+                  const u = [...machines];
+                  u[i] = { ...m, partnerId: partner.id, partnerName: partner.name };
+                  onMachinesChange(u);
+                }}
+              />
               <input type="text" inputMode="decimal" step="0.5" placeholder="Số ca" value={m.shifts || ''} className={`${inputCls} w-16`}
                 onChange={e => { const u = [...machines]; u[i] = { ...m, shifts: parseNonNegativeDecimal(e.target.value) ?? 0 }; onMachinesChange(u); }} />
+              <input type="text" inputMode="decimal" placeholder="Giờ máy" aria-label="Giờ máy thực tế" value={m.hours || ''} className={`${inputCls} w-20`}
+                onChange={e => { const u = [...machines]; u[i] = { ...m, hours: parseNonNegativeDecimal(e.target.value) ?? 0 }; onMachinesChange(u); }} />
+              <input type="text" placeholder="ĐVT" aria-label="Đơn vị máy" value={m.unit || ''} className={`${inputCls} w-20`}
+                onChange={e => { const u = [...machines]; u[i] = { ...m, unit: e.target.value }; onMachinesChange(u); }} />
               <input type="text" inputMode="decimal" placeholder="ĐG/ca" value={m.unitCost || ''} className={`${inputCls} w-24`}
                 onChange={e => { const u = [...machines]; u[i] = { ...m, unitCost: parseNonNegativeDecimal(e.target.value) ?? 0 }; onMachinesChange(u); }} />
               <button onClick={() => onMachinesChange(machines.filter((_, idx) => idx !== i))} className="text-slate-400 hover:text-red-500"><X size={14} /></button>
             </div>
           ))}
-          <button onClick={() => onMachinesChange([...machines, { machineName: '', machineType: 'other', catalogName: '', shifts: 1 }])}
+          <button onClick={() => onMachinesChange([...machines, { machineName: '', machineType: 'other', catalogName: '', shifts: 1, hours: 0, unit: '' }])}
             className="flex items-center gap-1 text-[10px] font-bold text-purple-600 bg-purple-50 hover:bg-purple-100 px-3 py-1.5 rounded-lg border border-purple-200">
             <Plus size={10} /> Thêm máy thi công
           </button>

@@ -23,7 +23,11 @@ import { supabase } from '../../lib/supabase';
 import { useCelebration } from '../../components/Celebration';
 import { loadXlsx } from '../../lib/loadXlsx';
 import { isWorkflowStepAssignedToUser } from '../../lib/workflowAssignmentResolver';
-import { canSeeMaterialRequestWorkflowOnKanban, isMaterialRequestWorkflowTemplate } from '../../lib/workflowVisibility';
+import {
+    canSeeMaterialRequestWorkflowOnKanban,
+    isMaterialRequestWorkflowTemplate,
+    isRequestModuleWorkflowTemplate,
+} from '../../lib/workflowVisibility';
 import WorkflowInstanceDetail from './WorkflowInstanceDetail';
 
 const STATUS_MAP: Record<WorkflowInstanceStatus, { label: string; color: string; icon: any }> = {
@@ -680,22 +684,34 @@ const WorkflowInstances: React.FC = () => {
     const [stepExcelData, setStepExcelData] = useState<{ sheets: Record<string, any[][]>; sheetNames: string[] } | null>(null);
 
     const activeTemplates = templates.filter(t => t.isActive);
-    const nonMaterialActiveTemplates = activeTemplates.filter(t => !isMaterialRequestWorkflowTemplate(t));
+    const nonMaterialActiveTemplates = activeTemplates.filter(t =>
+        !isMaterialRequestWorkflowTemplate(t) && !isRequestModuleWorkflowTemplate(t)
+    );
     const boardTemplates = activeTemplates.filter(t =>
-        !isMaterialRequestWorkflowTemplate(t) || canSeeMaterialRequestWorkflowOnKanban(user)
+        !isRequestModuleWorkflowTemplate(t)
+        && (!isMaterialRequestWorkflowTemplate(t) || canSeeMaterialRequestWorkflowOnKanban(user))
     );
     const templateById = useMemo(() => new Map(templates.map(t => [t.id, t])), [templates]);
     const isMaterialWorkflowInstance = useCallback(
         (instance: WorkflowInstance) => isMaterialRequestWorkflowTemplate(templateById.get(instance.templateId)),
         [templateById],
     );
+    const isRequestModuleWorkflowInstance = useCallback(
+        (instance: WorkflowInstance) => isRequestModuleWorkflowTemplate(templateById.get(instance.templateId)),
+        [templateById],
+    );
     const visibleListInstances = useMemo(
-        () => instances.filter(instance => !isMaterialWorkflowInstance(instance)),
-        [instances, isMaterialWorkflowInstance],
+        () => instances.filter(instance =>
+            !isMaterialWorkflowInstance(instance) && !isRequestModuleWorkflowInstance(instance)
+        ),
+        [instances, isMaterialWorkflowInstance, isRequestModuleWorkflowInstance],
     );
     const visibleBoardInstances = useMemo(
-        () => canSeeMaterialRequestWorkflowOnKanban(user) ? instances : visibleListInstances,
-        [instances, user, visibleListInstances],
+        () => instances.filter(instance =>
+            !isRequestModuleWorkflowInstance(instance)
+            && (canSeeMaterialRequestWorkflowOnKanban(user) || !isMaterialWorkflowInstance(instance))
+        ),
+        [instances, isMaterialWorkflowInstance, isRequestModuleWorkflowInstance, user],
     );
     useEffect(() => {
         if (boardTemplateId && !boardTemplates.some(template => template.id === boardTemplateId)) {

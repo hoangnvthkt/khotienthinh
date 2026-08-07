@@ -1,4 +1,9 @@
-import type { DailyLog, DailyLogVolume } from '../types';
+import type {
+  DailyLog,
+  DailyLogLabor,
+  DailyLogMachine,
+  DailyLogVolume,
+} from '../types';
 
 export const DAILY_SUMMARY_SOURCE_TYPE = 'member_contributions';
 
@@ -172,60 +177,286 @@ export const canReturnDailyLogSource = ({
   return isDailyLogSummaryEditable(sourceSummaryLog);
 };
 
-const normalizeVolumeKeyPart = (value?: string | null): string =>
+const normalizeSummaryKeyPart = (value?: string | null): string =>
   String(value || '').trim().toLowerCase();
 
 const getVolumeKey = (volume: DailyLogVolume): string => {
-  if (volume.workBoqItemId) return `work-boq:${volume.workBoqItemId}`;
-  if (volume.taskId) return `task:${volume.taskId}`;
-  if (volume.contractItemId) return `contract:${volume.contractItemId}`;
-  return [
-    normalizeVolumeKeyPart(volume.workBoqItemName),
-    normalizeVolumeKeyPart(volume.taskName),
-    normalizeVolumeKeyPart(volume.contractItemName),
-    normalizeVolumeKeyPart(volume.unit),
-  ].join('|');
+  const identity = volume.workBoqItemId
+    ? `work-boq:${volume.workBoqItemId}`
+    : volume.taskId
+      ? `task:${volume.taskId}`
+      : volume.contractItemId
+        ? `contract:${volume.contractItemId}`
+        : [
+          normalizeSummaryKeyPart(volume.workBoqItemName),
+          normalizeSummaryKeyPart(volume.taskName),
+          normalizeSummaryKeyPart(volume.contractItemName),
+        ].join('|');
+  return `${identity}|unit:${normalizeSummaryKeyPart(volume.unit)}`;
 };
 
-const getAttachmentKey = (attachment: NonNullable<DailyLogVolume['attachments']>[number], index: number): string =>
-  String(attachment.id || attachment.url || attachment.fileName || attachment.name || index);
+const mergeVolumeAttachments = (
+  attachments: NonNullable<DailyLogVolume['attachments']>,
+): NonNullable<DailyLogVolume['attachments']> => {
+  const seenIds = new Set<string>();
+  const seenUrls = new Set<string>();
+  return attachments.filter(attachment => {
+    const duplicate = Boolean(
+      (attachment.id && seenIds.has(attachment.id))
+      || (attachment.url && seenUrls.has(attachment.url)),
+    );
+    if (duplicate) return false;
+    if (attachment.id) seenIds.add(attachment.id);
+    if (attachment.url) seenUrls.add(attachment.url);
+    return true;
+  });
+};
 
-export const buildDailyLogSummaryVolumes = (sourceLogs: DailyLog[]): DailyLogVolume[] => {
+const toFiniteNumber = (value: unknown): number => {
+  const parsed = Number(value || 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const firstNonEmptyText = (current?: string, next?: string): string | undefined =>
+  current?.trim() ? current : next?.trim() ? next : undefined;
+
+const firstDefinedNumber = (current?: number, next?: number): number | undefined =>
+  Number.isFinite(current) ? current : Number.isFinite(next) ? next : undefined;
+
+const sumDefinedNumber = (current?: number, next?: number): number | undefined => {
+  const hasCurrent = Number.isFinite(current);
+  const hasNext = Number.isFinite(next);
+  if (!hasCurrent && !hasNext) return undefined;
+  return (hasCurrent ? Number(current) : 0) + (hasNext ? Number(next) : 0);
+};
+
+const buildSummaryVolumes = (sourceLogs: DailyLog[]): DailyLogVolume[] => {
   const byKey = new Map<string, DailyLogVolume>();
 
   sourceLogs.forEach(log => {
     (log.volumes || []).forEach(volume => {
       const key = getVolumeKey(volume);
-      if (!key.replace(/\|/g, '').trim()) return;
+      if (!key.replace(/[|:]/g, '').replace('unit', '').trim()) return;
 
       const current = byKey.get(key);
       if (!current) {
         byKey.set(key, {
           ...volume,
+          quantity: toFiniteNumber(volume.quantity),
           attachments: volume.attachments ? [...volume.attachments] : undefined,
         });
         return;
       }
 
-      const currentQuantity = Number(current.quantity || 0);
-      const nextQuantity = Number(volume.quantity || 0);
-      const mergedAttachments = [
+      const mergedAttachments = mergeVolumeAttachments([
         ...(current.attachments || []),
         ...(volume.attachments || []),
-      ].filter((attachment, index, list) => {
-        const attachmentKey = getAttachmentKey(attachment, index);
-        return list.findIndex((item, itemIndex) => getAttachmentKey(item, itemIndex) === attachmentKey) === index;
-      });
+      ]);
 
       byKey.set(key, {
         ...current,
-        quantity: Math.max(currentQuantity, nextQuantity),
-        note: current.note || volume.note,
-        photoUrl: current.photoUrl || volume.photoUrl,
+        quantity: toFiniteNumber(current.quantity) + toFiniteNumber(volume.quantity),
+        note: firstNonEmptyText(current.note, volume.note),
+        photoUrl: firstNonEmptyText(current.photoUrl, volume.photoUrl),
         attachments: mergedAttachments.length > 0 ? mergedAttachments : undefined,
       });
     });
   });
 
   return Array.from(byKey.values());
+};
+
+const getTaskKey = (taskId?: string, taskName?: string): string =>
+  taskId ? `task:${taskId}` : `task-name:${normalizeSummaryKeyPart(taskName)}`;
+
+const getPartnerKey = (partnerId?: string, partnerName?: string): string =>
+  partnerId ? `partner:${partnerId}` : `partner-name:${normalizeSummaryKeyPart(partnerName)}`;
+
+const getLaborKey = (labor: DailyLogLabor): string => {
+  const identity = labor.catalogItemId
+    ? `catalog:${labor.catalogItemId}`
+    : labor.catalogCode
+      ? `catalog-code:${normalizeSummaryKeyPart(labor.catalogCode)}`
+      : `labor:${[
+        normalizeSummaryKeyPart(labor.catalogName),
+        normalizeSummaryKeyPart(labor.laborType),
+        normalizeSummaryKeyPart(labor.groupName),
+      ].join('|')}`;
+  return [
+    getTaskKey(labor.taskId, labor.taskName),
+    identity,
+    getPartnerKey(labor.partnerId, labor.partnerName),
+    `unit:${normalizeSummaryKeyPart(labor.unit)}`,
+  ].join('|');
+};
+
+const buildSummaryLabor = (sourceLogs: DailyLog[]): DailyLogLabor[] => {
+  const byKey = new Map<string, DailyLogLabor>();
+
+  sourceLogs.forEach(log => {
+    (log.laborDetails || []).forEach(labor => {
+      const key = getLaborKey(labor);
+      const current = byKey.get(key);
+      if (!current) {
+        byKey.set(key, {
+          ...labor,
+          count: toFiniteNumber(labor.count),
+          hours: toFiniteNumber(labor.hours),
+        });
+        return;
+      }
+
+      byKey.set(key, {
+        ...current,
+        count: toFiniteNumber(current.count) + toFiniteNumber(labor.count),
+        hours: toFiniteNumber(current.hours) + toFiniteNumber(labor.hours),
+        unitCost: firstDefinedNumber(current.unitCost, labor.unitCost),
+        totalCost: sumDefinedNumber(current.totalCost, labor.totalCost),
+        note: firstNonEmptyText(current.note, labor.note),
+      });
+    });
+  });
+
+  return Array.from(byKey.values());
+};
+
+const getMachineKey = (machine: DailyLogMachine): string => {
+  const identity = machine.catalogItemId
+    ? `catalog:${machine.catalogItemId}`
+    : machine.catalogCode
+      ? `catalog-code:${normalizeSummaryKeyPart(machine.catalogCode)}`
+      : `machine:${[
+        normalizeSummaryKeyPart(machine.catalogName),
+        normalizeSummaryKeyPart(machine.machineName),
+        normalizeSummaryKeyPart(machine.machineType),
+        normalizeSummaryKeyPart(machine.groupName),
+      ].join('|')}`;
+  return [
+    getTaskKey(machine.taskId, machine.taskName),
+    identity,
+    getPartnerKey(machine.partnerId, machine.partnerName),
+    `unit:${normalizeSummaryKeyPart(machine.unit)}`,
+  ].join('|');
+};
+
+const buildSummaryMachines = (sourceLogs: DailyLog[]): DailyLogMachine[] => {
+  const byKey = new Map<string, DailyLogMachine>();
+
+  sourceLogs.forEach(log => {
+    (log.machines || []).forEach(machine => {
+      const key = getMachineKey(machine);
+      const current = byKey.get(key);
+      if (!current) {
+        byKey.set(key, {
+          ...machine,
+          shifts: toFiniteNumber(machine.shifts),
+          hours: toFiniteNumber(machine.hours),
+        });
+        return;
+      }
+
+      byKey.set(key, {
+        ...current,
+        shifts: toFiniteNumber(current.shifts) + toFiniteNumber(machine.shifts),
+        hours: toFiniteNumber(current.hours) + toFiniteNumber(machine.hours),
+        unitCost: firstDefinedNumber(current.unitCost, machine.unitCost),
+        totalCost: sumDefinedNumber(current.totalCost, machine.totalCost),
+        note: firstNonEmptyText(current.note, machine.note),
+      });
+    });
+  });
+
+  return Array.from(byKey.values());
+};
+
+export interface DailyLogSummaryDetails {
+  volumes: DailyLogVolume[];
+  laborDetails: DailyLogLabor[];
+  machines: DailyLogMachine[];
+  workerCount: number;
+}
+
+export const buildDailyLogSummaryDetails = (sourceLogs: DailyLog[]): DailyLogSummaryDetails => {
+  const laborDetails = buildSummaryLabor(sourceLogs);
+  return {
+    volumes: buildSummaryVolumes(sourceLogs),
+    laborDetails,
+    machines: buildSummaryMachines(sourceLogs),
+    workerCount: laborDetails.reduce((sum, row) => sum + toFiniteNumber(row.count), 0),
+  };
+};
+
+export const withDailyLogSummaryDetails = (
+  log: DailyLog,
+  details: DailyLogSummaryDetails,
+): DailyLog => ({
+  ...log,
+  workerCount: details.workerCount,
+  volumes: details.volumes,
+  materials: [],
+  laborDetails: details.laborDetails,
+  machines: details.machines,
+});
+
+export type DailyLogSummaryDetailSource = 'persisted' | 'legacy_fallback' | 'unresolved';
+
+export interface DailyLogSummaryDetailResolution {
+  details: DailyLogSummaryDetails;
+  source: DailyLogSummaryDetailSource;
+}
+
+const getPersistedDailyLogSummaryDetails = (log: DailyLog): DailyLogSummaryDetails => {
+  const laborDetails = log.laborDetails || [];
+  const laborWorkerCount = laborDetails.reduce((sum, row) => sum + toFiniteNumber(row.count), 0);
+  return {
+    volumes: log.volumes || [],
+    laborDetails,
+    machines: log.machines || [],
+    workerCount: laborDetails.length > 0 ? laborWorkerCount : toFiniteNumber(log.workerCount),
+  };
+};
+
+const sourceSnapshotMatches = (
+  sourceLog: DailyLog,
+  snapshot: DailyLogSummarySourceSnapshot,
+): boolean => {
+  const current = buildDailyLogSourceSnapshot(sourceLog);
+  return current.sourceLogId === snapshot.sourceLogId
+    && current.submittedAt === snapshot.submittedAt
+    && current.updatedAt === snapshot.updatedAt
+    && current.lastActionAt === snapshot.lastActionAt
+    && current.status === snapshot.status;
+};
+
+export const resolveDailyLogSummaryDetails = (
+  summaryLog: DailyLog,
+  allLogs: DailyLog[],
+): DailyLogSummaryDetailResolution => {
+  const persisted = getPersistedDailyLogSummaryDetails(summaryLog);
+  if (!isDailyLogSummaryRow(summaryLog)) return { details: persisted, source: 'persisted' };
+
+  const metadata = summaryLog.summarySourceMetadata || {};
+  if (Number(metadata.aggregationVersion || 0) >= 2) {
+    return { details: persisted, source: 'persisted' };
+  }
+
+  const sourceIds = Array.isArray(metadata.legacyDailyLogIds)
+    ? metadata.legacyDailyLogIds.filter((value): value is string => typeof value === 'string' && value.length > 0)
+    : [];
+  const snapshots = getDailyLogSummarySourceSnapshots(metadata);
+  const logById = new Map(allLogs.map(log => [log.id, log]));
+  const sourceLogs = sourceIds.map(id => logById.get(id)).filter((log): log is DailyLog => Boolean(log));
+  const canRebuild = sourceIds.length > 0
+    && sourceLogs.length === sourceIds.length
+    && sourceLogs.every(sourceLog => {
+      const snapshot = snapshots[sourceLog.id];
+      return Boolean(snapshot && sourceSnapshotMatches(sourceLog, snapshot));
+    });
+
+  if (!canRebuild) return { details: persisted, source: 'unresolved' };
+  return { details: buildDailyLogSummaryDetails(sourceLogs), source: 'legacy_fallback' };
+};
+
+export const buildDailyLogSummaryVolumes = (sourceLogs: DailyLog[]): DailyLogVolume[] => {
+  return buildSummaryVolumes(sourceLogs);
 };

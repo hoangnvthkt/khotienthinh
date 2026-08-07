@@ -51,6 +51,7 @@ describe('requestTemplateService', () => {
     await requestTemplateService.list({ status: 'DRAFT', search: 'access' });
     await requestTemplateService.saveDraft(draft);
     await requestTemplateService.createDraftFromPublished('rt-1');
+    await requestTemplateService.duplicate('rt-1');
     await requestTemplateService.deactivate({
       templateId: 'rt-1',
       expectedUpdatedAt: '2026-07-28T10:00:00.000Z',
@@ -62,6 +63,7 @@ describe('requestTemplateService', () => {
       ['list_request_templates', { p_filters: { status: 'DRAFT', search: 'access' } }],
       ['save_request_template_draft', { p_payload: draft }],
       ['create_request_template_draft_from_published', { p_request_template_id: 'rt-1' }],
+      ['duplicate_request_template', { p_request_template_id: 'rt-1' }],
       ['deactivate_request_template', {
         p_request_template_id: 'rt-1',
         p_expected_updated_at: '2026-07-28T10:00:00.000Z',

@@ -50,6 +50,12 @@ export const getApiErrorMessage = (
   if (rawMessage.includes('duplicate key') || rawMessage.includes('23505') || rawMessage.includes('already exists')) {
     return 'Dữ liệu này đã tồn tại. Vui lòng kiểm tra lại thông tin nhập.';
   }
+  if (
+    rawMessage.includes('workflow template has bindings/versions/instances')
+    || rawMessage.includes('must be deactivated instead of deleted')
+  ) {
+    return 'Mẫu quy trình đã có phiếu, phiên bản hoặc liên kết sử dụng. Hãy tắt quy trình thay vì xóa.';
+  }
   if (rawMessage.includes('foreign key') || rawMessage.includes('23503') || rawMessage.includes('referenced from table')) {
     return 'Dữ liệu liên quan không hợp lệ hoặc đang được sử dụng ở nơi khác. Vui lòng kiểm tra lại.';
   }

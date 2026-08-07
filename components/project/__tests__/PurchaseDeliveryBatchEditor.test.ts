@@ -38,14 +38,14 @@ describe('PurchaseDeliveryBatchEditor UI contract', () => {
   });
 
   it('lets request package PO lines edit the purchase quantity used for pricing', () => {
-    expect(supplyChainSource).toContain('SL mua');
-    expect(supplyChainSource).toContain('placeholder="SL mua"');
+    expect(supplyChainSource).toContain('SL MUA');
+    expect(supplyChainSource).toContain('placeholder="SL"');
     expect(supplyChainSource).toContain("onChange={e => updatePoItem(i, { qtyInput: formatViLiveInput(e.target.value) })}");
     expect(supplyChainSource).not.toContain('SL gốc');
   });
 
   it('keeps PO line price fields clear of compact action buttons on wide screens', () => {
-    expect(supplyChainSource).toContain('lg:grid-cols-[minmax(220px,1.35fr)_minmax(220px,1.35fr)_72px_minmax(150px,0.8fr)_minmax(170px,0.9fr)_max-content]');
+    expect(supplyChainSource).toContain('lg:grid-cols-[minmax(240px,1.4fr)_minmax(240px,1.4fr)_76px_minmax(145px,0.8fr)_minmax(165px,0.9fr)_max-content]');
     expect(supplyChainSource).toContain('lg:col-auto');
     expect(supplyChainSource).toContain('min-w-max');
   });

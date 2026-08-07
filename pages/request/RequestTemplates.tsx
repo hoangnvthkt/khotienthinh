@@ -52,15 +52,29 @@ const RequestTemplates: React.FC = () => {
     ? 'Không có mẫu nào khớp với bộ lọc.'
     : 'Chưa có mẫu yêu cầu nào.', [search, status]);
 
-  const duplicatePublished = async (template: RequestTemplateSummary) => {
+  const editPublished = async (template: RequestTemplateSummary) => {
     setIsMutatingId(template.id);
     try {
       const draft = await requestTemplateService.createDraftFromPublished(template.id);
-      toast.success('Đã tạo bản nháp', `Bạn đang chỉnh sửa bản sao của “${template.name}”.`);
+      toast.success('Đã tạo bản nháp', `Bạn đang sửa mẫu “${template.name}”.`);
       navigate(`/rq/templates/${draft.id}`);
     } catch (cause) {
       console.error('Create request template draft from published failed:', cause);
-      toast.error('Không thể tạo bản nháp', 'Vui lòng thử lại.');
+      toast.error('Không thể sửa mẫu', 'Vui lòng thử lại.');
+    } finally {
+      setIsMutatingId(null);
+    }
+  };
+
+  const copyTemplate = async (template: RequestTemplateSummary) => {
+    setIsMutatingId(template.id);
+    try {
+      const draft = await requestTemplateService.duplicate(template.id);
+      toast.success('Đã sao chép mẫu', `Đã tạo “${draft.payload.name}”.`);
+      navigate(`/rq/templates/${draft.id}`);
+    } catch (cause) {
+      console.error('Duplicate request template failed:', cause);
+      toast.error('Không thể sao chép mẫu', 'Vui lòng thử lại.');
     } finally {
       setIsMutatingId(null);
     }
@@ -137,8 +151,9 @@ const RequestTemplates: React.FC = () => {
           <div className="text-sm text-slate-600 dark:text-slate-300">{template.publishedVersionNumber ? `v${template.publishedVersionNumber}` : '—'}</div>
           <div className="text-sm text-slate-600 dark:text-slate-300">{template.usageScopeLabel}</div>
           <div className="flex items-center justify-between gap-3 text-sm text-slate-500"><span>{formatDateTime(template.updatedAt)}</span><div className="flex shrink-0 gap-1">
-            {template.status === 'DRAFT' && <button disabled={busy} onClick={() => navigate(`/rq/templates/${template.id}`)} title="Chỉnh sửa bản nháp" className="rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-accent disabled:opacity-50 dark:hover:bg-slate-800"><Pencil size={16} /></button>}
-            {template.status === 'PUBLISHED' && <button disabled={busy} onClick={() => void duplicatePublished(template)} title="Tạo bản nháp từ phiên bản đang áp dụng" className="rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-accent disabled:opacity-50 dark:hover:bg-slate-800"><Copy size={16} /></button>}
+            {template.status === 'DRAFT' && <button disabled={busy} onClick={() => navigate(`/rq/templates/${template.id}`)} title="Sửa bản nháp" className="rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-accent disabled:opacity-50 dark:hover:bg-slate-800"><Pencil size={16} /></button>}
+            {template.status === 'PUBLISHED' && <button disabled={busy} onClick={() => void editPublished(template)} title="Sửa mẫu" className="rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-accent disabled:opacity-50 dark:hover:bg-slate-800"><Pencil size={16} /></button>}
+            <button disabled={busy} onClick={() => void copyTemplate(template)} title="Sao chép mẫu" className="rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-accent disabled:opacity-50 dark:hover:bg-slate-800"><Copy size={16} /></button>
             {template.status !== 'DEACTIVATED' && <button disabled={busy} onClick={() => void deactivate(template)} title="Ngừng áp dụng" className="rounded-lg p-2 text-slate-500 transition hover:bg-amber-50 hover:text-amber-600 disabled:opacity-50 dark:hover:bg-amber-950/30"><Power size={16} /></button>}
           </div></div>
         </article>;

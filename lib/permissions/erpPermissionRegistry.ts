@@ -149,7 +149,7 @@ export const ERP_PERMISSION_APPLICATIONS: readonly PermissionApplicationDefiniti
     label: 'Yêu cầu',
     sortOrder: 70,
     modules: [
-      module('request.instance', 'Phiếu yêu cầu', 'RQ', ['/rq/dashboard', '/rq'], 10, actions('request.instance', 'RQ', '/rq', WORKFLOW_SCOPE, [
+      module('request.instance', 'Phiếu yêu cầu', 'RQ', ['/rq/dashboard', '/rq', '/rq/:requestId'], 10, actions('request.instance', 'RQ', '/rq', WORKFLOW_SCOPE, [
         ['view_own', 'Xem của mình', 10],
         ['create', 'Tạo', 20],
         ['act_assigned', 'Xử lý được giao', 30],

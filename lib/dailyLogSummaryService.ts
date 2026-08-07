@@ -5,6 +5,7 @@ import {
   MACHINE_TYPE_LABELS,
   WeatherType,
 } from '../types';
+import { isDailyLogSummaryRow, resolveDailyLogSummaryDetails } from './dailyLogWorkflow';
 
 export type DailyLogSummaryMode = 'day' | 'week' | 'month';
 export type DailyLogSummaryStatusScope = 'verified' | 'all' | DailyLogStatus;
@@ -47,6 +48,7 @@ export interface DailyLogPeriodSummary {
   };
   labor: DailyLogTopItem[];
   machines: DailyLogTopItem[];
+  machineHours: DailyLogTopItem[];
   weather: Record<WeatherType, number>;
   rainyDays: number;
   issues: DailyLogTextEntry[];
@@ -66,6 +68,7 @@ export interface DailyLogPeriodSummary {
     rejectedCount: number;
     withPhotos: number;
     withGps: number;
+    unresolvedLegacySummaryCount: number;
   };
 }
 
@@ -85,6 +88,8 @@ export interface DailyLogSummaryResult {
     avgWorkers: number;
     peakWorkers: number;
     totalMachineShifts: number;
+    totalMachineHours: number;
+    unresolvedLegacySummaryCount: number;
     rainyDays: number;
     delayDays: number;
     issueCount: number;
@@ -96,6 +101,7 @@ export interface DailyLogSummaryResult {
     weather: { name: string; value: number; key: WeatherType }[];
     labor: DailyLogTopItem[];
     machines: DailyLogTopItem[];
+    machineHours: DailyLogTopItem[];
     delays: DailyLogTopItem[];
   };
 }
@@ -200,6 +206,7 @@ const createEmptyPeriod = (dateKey: string, mode: DailyLogSummaryMode): DailyLog
     workers: { total: 0, averagePerActiveDay: 0, peak: 0, activeDays: 0 },
     labor: [],
     machines: [],
+    machineHours: [],
     weather: { sunny: 0, cloudy: 0, rainy: 0, storm: 0 },
     rainyDays: 0,
     issues: [],
@@ -215,6 +222,7 @@ const createEmptyPeriod = (dateKey: string, mode: DailyLogSummaryMode): DailyLog
       rejectedCount: 0,
       withPhotos: 0,
       withGps: 0,
+      unresolvedLegacySummaryCount: 0,
     },
   };
 };
@@ -268,7 +276,31 @@ export const dailyLogSummaryService = {
     const normalizedFrom = fromDate <= toDate ? fromDate : toDate;
     const normalizedTo = fromDate <= toDate ? toDate : fromDate;
 
-    const allLogsInRange = logs.filter(log => {
+    const unresolvedLegacySummaryIds = new Set<string>();
+    const effectiveLogs = logs.map(log => {
+      const resolution = resolveDailyLogSummaryDetails(log, logs);
+      if (resolution.source === 'unresolved') unresolvedLegacySummaryIds.add(log.id);
+      return {
+        ...log,
+        volumes: resolution.details.volumes,
+        laborDetails: resolution.details.laborDetails,
+        machines: resolution.details.machines,
+        workerCount: resolution.details.workerCount,
+      };
+    });
+    const summarizedSourceIds = effectiveLogs.reduce((ids, log) => {
+      if (!isDailyLogSummaryRow(log)) return ids;
+      const linkedIds = log.summarySourceMetadata?.legacyDailyLogIds;
+      if (Array.isArray(linkedIds)) {
+        linkedIds.forEach(id => {
+          if (typeof id === 'string' && id) ids.add(id);
+        });
+      }
+      return ids;
+    }, new Set<string>());
+    const reportLogs = effectiveLogs.filter(log => !summarizedSourceIds.has(log.id));
+
+    const allLogsInRange = reportLogs.filter(log => {
       if (!log.date || log.date < normalizedFrom || log.date > normalizedTo) return false;
       if (filters.creatorId && getCreatorKey(log) !== filters.creatorId) return false;
       return true;
@@ -294,7 +326,7 @@ export const dailyLogSummaryService = {
     }
 
     const creators = Array.from(
-      logs.reduce((map, log) => {
+      reportLogs.reduce((map, log) => {
         const key = getCreatorKey(log);
         if (!map.has(key)) map.set(key, { id: key, name: getCreatorName(log) });
         return map;
@@ -307,6 +339,7 @@ export const dailyLogSummaryService = {
     for (const period of periods) {
       const laborMap = new Map<string, DailyLogTopItem>();
       const machineMap = new Map<string, DailyLogTopItem>();
+      const machineHoursMap = new Map<string, DailyLogTopItem>();
       const materialMap = new Map<string, DailyLogTopItem>();
       const volumeMap = new Map<string, DailyLogTopItem>();
       const delayMap = new Map<string, DailyLogTopItem>();
@@ -322,6 +355,7 @@ export const dailyLogSummaryService = {
         if (status === 'rejected') period.dataQuality.rejectedCount += 1;
         if ((log.photos || []).length > 0) period.dataQuality.withPhotos += 1;
         if (log.gpsLat || log.gpsLng) period.dataQuality.withGps += 1;
+        if (unresolvedLegacySummaryIds.has(log.id)) period.dataQuality.unresolvedLegacySummaryCount += 1;
 
         const workerCount = getDailyLogWorkerCount(log);
         workerByDate.set(log.date, (workerByDate.get(log.date) || 0) + workerCount);
@@ -344,6 +378,7 @@ export const dailyLogSummaryService = {
         for (const row of log.machines || []) {
           const label = getMachineLabel(row);
           addToMap(machineMap, label, label, Number(row.shifts || 0), 'ca');
+          addToMap(machineHoursMap, label, label, Number(row.hours || 0), 'giờ');
         }
 
         for (const row of log.materials || []) {
@@ -379,6 +414,7 @@ export const dailyLogSummaryService = {
       period.rainyDays = rainyDateSet.size;
       period.labor = topItems(laborMap, 10);
       period.machines = topItems(machineMap, 10);
+      period.machineHours = topItems(machineHoursMap, 10);
       period.materials = topItems(materialMap, 10);
       period.volumes = topItems(volumeMap, 10);
       period.delays.byCategory = topItems(delayMap, 10);
@@ -392,6 +428,10 @@ export const dailyLogSummaryService = {
       (sum, period) => sum + period.machines.reduce((inner, item) => inner + item.value, 0),
       0,
     );
+    const totalMachineHours = periods.reduce(
+      (sum, period) => sum + period.machineHours.reduce((inner, item) => inner + item.value, 0),
+      0,
+    );
     const totalPhotos = filteredLogs.filter(log => (log.photos || []).length > 0).length;
     const totalGps = filteredLogs.filter(log => log.gpsLat || log.gpsLng).length;
 
@@ -403,6 +443,7 @@ export const dailyLogSummaryService = {
 
     const labor = mergeTopItems(periods.flatMap(period => period.labor));
     const machines = mergeTopItems(periods.flatMap(period => period.machines));
+    const machineHours = mergeTopItems(periods.flatMap(period => period.machineHours));
     const delays = mergeTopItems(periods.flatMap(period => period.delays.byCategory));
     const weatherTotals: Record<WeatherType, number> = { sunny: 0, cloudy: 0, rainy: 0, storm: 0 };
     for (const period of periods) {
@@ -427,6 +468,8 @@ export const dailyLogSummaryService = {
         avgWorkers: activeDays ? Math.round(totalWorkers / activeDays) : 0,
         peakWorkers: periods.reduce((max, period) => Math.max(max, period.workers.peak), 0),
         totalMachineShifts,
+        totalMachineHours,
+        unresolvedLegacySummaryCount: filteredLogs.filter(log => unresolvedLegacySummaryIds.has(log.id)).length,
         rainyDays: new Set(filteredLogs.filter(log => log.weather === 'rainy' || log.weather === 'storm').map(log => log.date)).size,
         delayDays: periods.reduce((sum, period) => sum + period.delays.totalDays, 0),
         issueCount: periods.reduce((sum, period) => sum + period.issues.length, 0),
@@ -438,6 +481,7 @@ export const dailyLogSummaryService = {
         weather: (Object.keys(weatherTotals) as WeatherType[]).map(key => ({ key, name: WEATHER_LABELS[key], value: weatherTotals[key] })),
         labor,
         machines,
+        machineHours,
         delays,
       },
     };

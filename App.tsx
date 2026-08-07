@@ -27,6 +27,7 @@ import {
 import { selectApplicationShell } from './context/authState';
 import { UserSessionTelemetryHost } from './hooks/useUserSessionTelemetry';
 import { DailyLoginXpHost } from './hooks/useDailyLoginXp';
+import { shouldWarmWorkflowData } from './lib/workflowWarmup';
 
 // Lazy load all page components for code splitting
 const Dashboard = React.lazy(() => import('./pages/Dashboard'));
@@ -361,8 +362,7 @@ const AppDataWarmup: React.FC = () => {
   }, [employees.length, loadModuleData, orgUnits.length, pathname, setActiveRealtimeModules, user.role, users.length]);
 
   useEffect(() => {
-    const needsWorkflowData = pathname.startsWith('/wf') || pathname === '/employee-dashboard' || pathname === '/custom-dashboard';
-    if (!needsWorkflowData) return;
+    if (!shouldWarmWorkflowData(pathname)) return;
     refreshWorkflowData().catch(err => console.warn('Workflow warmup failed:', err));
   }, [pathname, refreshWorkflowData]);
 

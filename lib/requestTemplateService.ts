@@ -115,6 +115,12 @@ export const requestTemplateService = {
     );
   },
 
+  duplicate(templateId: string) {
+    return run<RequestTemplateDraftRecord>('duplicate_request_template', {
+      p_request_template_id: templateId,
+    });
+  },
+
   deactivate(input: PublishRequestTemplateInput) {
     return run<RequestTemplateSummary>('deactivate_request_template', {
       p_request_template_id: input.templateId,

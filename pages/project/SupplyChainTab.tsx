@@ -8058,10 +8058,12 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                     <tbody className="divide-y divide-slate-50 dark:divide-slate-700/40">
                                         {requestPickerGroups.map(group => {
                                             const selectionState = getPurchaseOrderRequestCartGroupSelectionState(group.rows, selectedRequestLineKeys);
+                                            const firstRow = group.rows[0];
+                                            const groupSiteName = firstRow?.request.constructionSiteId ? constructionSiteById.get(firstRow.request.constructionSiteId)?.name : '';
                                             return (
                                                 <React.Fragment key={group.requestId}>
-                                                    <tr className="bg-indigo-50/70 dark:bg-indigo-950/25">
-                                                        <td className="px-4 py-2 text-center">
+                                                    <tr className="bg-[#0B7A75] text-white border-y border-[#08635F] shadow-xs">
+                                                        <td className="px-4 py-2.5 text-center align-middle">
                                                             <input
                                                                 type="checkbox"
                                                                 checked={selectionState === 'all'}
@@ -8069,11 +8071,27 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                                 onChange={event => setSelectedRequestLineKeys(prev =>
                                                                     setPurchaseOrderRequestCartGroupSelection(group.rows, prev, event.target.checked))}
                                                                 aria-label={`Chọn toàn bộ phiếu ${group.requestCode}`}
-                                                                className="accent-amber-500"
+                                                                className="h-4 w-4 rounded accent-teal-300 cursor-pointer"
                                                             />
                                                         </td>
-                                                        <td colSpan={12} className="px-4 py-2 font-black text-indigo-700 dark:text-indigo-300">
-                                                            {group.requestCode} <span className="font-bold text-slate-500">• {group.rows.length} vật tư</span>
+                                                        <td colSpan={12} className="px-4 py-2.5">
+                                                            <div className="flex flex-wrap items-center gap-2.5">
+                                                                <span className="inline-flex items-center gap-1.5 rounded-lg bg-white/20 border border-white/30 px-2.5 py-1 text-xs font-black tracking-wide text-white backdrop-blur-sm shadow-xs">
+                                                                    <FileText size={14} className="text-teal-100" />
+                                                                    {group.requestCode}
+                                                                </span>
+                                                                <span className="inline-flex items-center rounded-md bg-white px-2.5 py-0.5 text-xs font-black text-[#0B7A75] shadow-xs">
+                                                                    {group.rows.length} vật tư
+                                                                </span>
+                                                                {groupSiteName && (
+                                                                    <span className="text-xs font-bold text-teal-100 flex items-center gap-1">
+                                                                        • {groupSiteName}
+                                                                    </span>
+                                                                )}
+                                                                <span className="text-[11px] font-medium text-teal-100/90 ml-auto hidden md:inline">
+                                                                    Tích chọn ô để chọn/bỏ chọn toàn bộ vật tư phiếu này
+                                                                </span>
+                                                            </div>
                                                         </td>
                                                     </tr>
                                                     {group.rows.map(row => {
@@ -8375,8 +8393,8 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
 
             {/* PO Form Modal */}
             {canViewPo && showPoForm && (
-                <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/40 backdrop-blur-sm">
-                    <div className="bg-card border border-border rounded-3xl shadow-2xl w-full max-w-5xl mx-4 max-h-[90vh] overflow-hidden flex flex-col">
+                <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/40 backdrop-blur-sm p-2 sm:p-4">
+                    <div className="bg-card border border-border rounded-3xl shadow-2xl w-full max-w-[96vw] xl:max-w-[1550px] max-h-[95vh] h-[92vh] overflow-hidden flex flex-col">
                         <div className="shrink-0 px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-t-3xl flex items-center justify-between">
                             <span className="font-bold text-lg text-white flex items-center gap-2">
                                 {editingPo ? <><Edit2 size={18} /> Sửa PO</> : <><Plus size={18} /> Tạo đơn hàng</>}
@@ -8608,7 +8626,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                     </div>
                                                 )}
 
-                                                <div className="grid grid-cols-12 gap-2 items-center lg:grid-cols-[minmax(220px,1.35fr)_minmax(220px,1.35fr)_72px_minmax(150px,0.8fr)_minmax(170px,0.9fr)_max-content]">
+                                                <div className="grid grid-cols-12 gap-2 items-center lg:grid-cols-[minmax(240px,1.4fr)_minmax(240px,1.4fr)_76px_minmax(145px,0.8fr)_minmax(165px,0.9fr)_max-content]">
                                                     <div className="col-span-12 md:col-span-3 lg:col-auto">
                                                         <InventoryItemCombobox
                                                             value={item.isManualItem ? '' : item.itemId}
@@ -8629,48 +8647,40 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                             className="w-full"
                                                         />
                                                     </div>
-                                                    <div className="col-span-3 md:col-span-1 lg:col-auto px-2 py-2 rounded-lg border border-slate-200 bg-white text-xs text-slate-600 font-bold text-center truncate">
+                                                    <div className="col-span-3 md:col-span-1 lg:col-auto flex items-center justify-center h-9 px-2.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-600 font-bold text-center truncate">
                                                         {purchaseUnit || item.unit || 'ĐVT'}
                                                     </div>
                                                     <div className="col-span-5 md:col-span-2 lg:col-auto">
-                                                        {pSourceMode === 'from_request' ? (
-                                                            <label className="block rounded-lg border border-blue-100 bg-blue-50 px-2 py-1.5">
-                                                                <span className="block text-[8px] font-black uppercase text-blue-500">SL mua</span>
-                                                                <input
-                                                                    type="text"
-                                                                    inputMode="decimal"
-                                                                    value={item.qtyInput ?? formatNumberInputValue(item.qty, 6)}
-                                                                    onChange={e => updatePoItem(i, { qtyInput: formatViLiveInput(e.target.value) })}
-                                                                    placeholder="SL mua"
-                                                                    className="mt-0.5 w-full bg-transparent text-right text-sm font-black text-slate-900 outline-none"
-                                                                />
-                                                            </label>
-                                                        ) : (
+                                                        <div className="relative flex items-center h-9 rounded-lg border border-blue-200 bg-blue-50/80 px-2 text-xs font-bold focus-within:ring-2 focus-within:ring-blue-500">
+                                                            <span className="shrink-0 text-[9px] font-black uppercase text-blue-600 mr-1">SL MUA</span>
                                                             <input
                                                                 type="text"
                                                                 inputMode="decimal"
                                                                 value={item.qtyInput ?? formatNumberInputValue(item.qty, 6)}
                                                                 onChange={e => updatePoItem(i, { qtyInput: formatViLiveInput(e.target.value) })}
                                                                 placeholder="SL"
-                                                                className="w-full px-2.5 py-2 rounded-lg border border-slate-200 text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none text-right"
+                                                                className="w-full bg-transparent text-right text-xs font-black text-slate-900 outline-none"
                                                             />
-                                                        )}
+                                                        </div>
                                                     </div>
                                                     <div className="col-span-4 md:col-span-2 lg:col-auto min-w-0">
                                                         {pSourceMode === 'from_request' && !editInlineRequestUnitPrice ? (
-                                                            <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-2 py-1.5 text-right">
-                                                                <span className="block text-[8px] font-black uppercase text-emerald-500">Giá duyệt</span>
-                                                                <span className="block truncate text-xs font-black text-emerald-700">{fmtMoney(scheduleUnitPricePreview)} đ</span>
+                                                            <div className="flex items-center justify-between h-9 rounded-lg border border-emerald-200 bg-emerald-50/80 px-2 text-right">
+                                                                <span className="shrink-0 text-[9px] font-black uppercase text-emerald-600 mr-1">GIÁ DUYỆT</span>
+                                                                <span className="truncate text-xs font-black text-emerald-800">{fmtMoney(scheduleUnitPricePreview)}</span>
                                                             </div>
                                                         ) : (
-                                                            <input
-                                                                type="text"
-                                                                inputMode="decimal"
-                                                                value={item.unitPriceInput ?? formatNumberInputValue(item.unitPrice, 0)}
-                                                                onChange={e => updatePoItem(i, { unitPriceInput: formatViLiveInput(e.target.value) })}
-                                                                placeholder="Đơn giá"
-                                                                className="w-full px-2.5 py-2 rounded-lg border border-slate-200 text-xs font-black text-emerald-700 focus:ring-2 focus:ring-blue-500 outline-none text-right"
-                                                            />
+                                                            <div className="relative flex items-center h-9 rounded-lg border border-emerald-300 bg-emerald-50/80 px-2 focus-within:ring-2 focus-within:ring-emerald-500">
+                                                                <span className="shrink-0 text-[9px] font-black uppercase text-emerald-600 mr-1">ĐƠN GIÁ</span>
+                                                                <input
+                                                                    type="text"
+                                                                    inputMode="decimal"
+                                                                    value={item.unitPriceInput ?? formatNumberInputValue(item.unitPrice, 0)}
+                                                                    onChange={e => updatePoItem(i, { unitPriceInput: formatViLiveInput(e.target.value) })}
+                                                                    placeholder="Đơn giá"
+                                                                    className="w-full bg-transparent text-right text-xs font-black text-emerald-900 outline-none"
+                                                                />
+                                                            </div>
                                                         )}
                                                     </div>
                                                     <div className="col-span-12 md:col-span-1 lg:col-auto flex min-w-max items-center justify-end gap-1.5">

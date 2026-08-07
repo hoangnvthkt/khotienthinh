@@ -58,7 +58,7 @@ export default function SearchableSelect<T>({
     setMenuPosition({
       left: Math.max(8, rect.left),
       top: openBelow ? rect.bottom + gap : Math.max(8, rect.top - maxHeight - gap),
-      width: rect.width,
+      width: Math.max(rect.width, 380),
       maxHeight,
     });
   }, []);
@@ -124,10 +124,12 @@ export default function SearchableSelect<T>({
         filtered.map(option => {
           const optionValue = getOptionValue(option);
           const active = optionValue === value;
+          const labelText = getOptionLabel(option);
           return (
             <button
               key={optionValue}
               type="button"
+              title={labelText}
               onClick={() => {
                 onChange(option);
                 setOpen(false);
@@ -135,7 +137,7 @@ export default function SearchableSelect<T>({
               }}
               className={`block w-full rounded-lg px-3 py-2 text-left text-xs hover:bg-blue-50 hover:text-blue-700 ${active ? 'bg-blue-50 text-blue-700' : 'text-slate-700 dark:text-slate-100'}`}
             >
-              {renderOption?.(option) || getOptionLabel(option)}
+              {renderOption?.(option) || labelText}
             </button>
           );
         })
@@ -145,11 +147,12 @@ export default function SearchableSelect<T>({
 
   return (
     <div ref={wrapperRef} className={`relative ${className}`}>
-      <div className="relative">
+      <div className="relative" title={displayText}>
         <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
         <input
           value={open ? query : displayText}
           disabled={disabled}
+          title={displayText}
           onFocus={() => setOpen(true)}
           onChange={event => {
             setQuery(event.target.value);
