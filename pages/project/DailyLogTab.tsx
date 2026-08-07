@@ -2167,9 +2167,9 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     return (
         <div className="space-y-6">
             {/* AI Analysis */}
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
                 <h3 className="text-sm font-black text-slate-700 dark:text-white">Nhật ký công trường</h3>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                     <a
                         href={buildDailyLogReportLink()}
                         className="flex items-center gap-1.5 rounded-xl border border-teal-200 bg-teal-50 px-3 py-1.5 text-[10px] font-black text-teal-700 transition-colors hover:bg-teal-100"
@@ -2180,35 +2180,35 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                 </div>
             </div>
             {/* Summary */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
                 {/* Tổng nhật ký */}
-                <div className="bg-white dark:bg-zinc-900 rounded-2xl p-5 border border-zinc-200 dark:border-zinc-800 shadow-sm transition-shadow">
-                    <div className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-2 flex items-center gap-1.5"><FileSpreadsheet size={11} className="text-teal-700 dark:text-teal-400" /> Tổng nhật ký</div>
-                    <div className="text-3xl font-bold text-zinc-900 dark:text-zinc-100 leading-none tracking-tight">{stats.total}</div>
-                    <div className="text-[10px] text-teal-700 dark:text-teal-400 font-medium mt-2 flex items-center gap-1">
-                        <span className="w-1.5 h-1.5 rounded-full bg-teal-600 animate-pulse" /> Tháng này: {stats.monthCount}
+                <div className="bg-white dark:bg-zinc-900 rounded-2xl p-3.5 sm:p-5 border border-zinc-200 dark:border-zinc-800 shadow-sm transition-shadow min-w-0">
+                    <div className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-2 flex items-center gap-1.5 truncate"><FileSpreadsheet size={11} className="text-teal-700 dark:text-teal-400 shrink-0" /> Tổng nhật ký</div>
+                    <div className="text-2xl sm:text-3xl font-bold text-zinc-900 dark:text-zinc-100 leading-none tracking-tight">{stats.total}</div>
+                    <div className="text-[10px] text-teal-700 dark:text-teal-400 font-medium mt-2 flex items-center gap-1 truncate">
+                        <span className="w-1.5 h-1.5 rounded-full bg-teal-600 animate-pulse shrink-0" /> Tháng này: {stats.monthCount}
                     </div>
                 </div>
 
                 {/* Nhân công trung bình */}
-                <div className="bg-white dark:bg-zinc-900 rounded-2xl p-5 border border-zinc-200 dark:border-zinc-800 shadow-sm transition-shadow">
-                    <div className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-2 flex items-center gap-1.5"><Users size={11} className="text-teal-700 dark:text-teal-400" /> CN TB/ngày</div>
-                    <div className="text-3xl font-bold text-teal-700 dark:text-teal-400 leading-none tracking-tight">{stats.avgWorkers}</div>
-                    <div className="text-[10px] text-zinc-400 dark:text-zinc-500 font-medium mt-2">Nhân công bình quân công trường</div>
+                <div className="bg-white dark:bg-zinc-900 rounded-2xl p-3.5 sm:p-5 border border-zinc-200 dark:border-zinc-800 shadow-sm transition-shadow min-w-0">
+                    <div className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-2 flex items-center gap-1.5 truncate"><Users size={11} className="text-teal-700 dark:text-teal-400 shrink-0" /> CN TB/ngày</div>
+                    <div className="text-2xl sm:text-3xl font-bold text-teal-700 dark:text-teal-400 leading-none tracking-tight">{stats.avgWorkers}</div>
+                    <div className="text-[10px] text-zinc-400 dark:text-zinc-500 font-medium mt-2 truncate">Nhân công bình quân</div>
                 </div>
 
                 {/* Ngày mưa */}
-                <div className="bg-white dark:bg-zinc-900 rounded-2xl p-5 border border-zinc-200 dark:border-zinc-800 shadow-sm transition-shadow">
-                    <div className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-2 flex items-center gap-1.5"><CloudRain size={11} className="text-teal-700 dark:text-teal-400" /> Ngày mưa</div>
-                    <div className="text-3xl font-bold text-teal-700 dark:text-teal-400 leading-none tracking-tight">{stats.rainyDays}</div>
-                    <div className="text-[10px] text-zinc-400 dark:text-zinc-500 font-medium mt-2">Ảnh hưởng đến tiến độ</div>
+                <div className="bg-white dark:bg-zinc-900 rounded-2xl p-3.5 sm:p-5 border border-zinc-200 dark:border-zinc-800 shadow-sm transition-shadow min-w-0">
+                    <div className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-2 flex items-center gap-1.5 truncate"><CloudRain size={11} className="text-teal-700 dark:text-teal-400 shrink-0" /> Ngày mưa</div>
+                    <div className="text-2xl sm:text-3xl font-bold text-teal-700 dark:text-teal-400 leading-none tracking-tight">{stats.rainyDays}</div>
+                    <div className="text-[10px] text-zinc-400 dark:text-zinc-500 font-medium mt-2 truncate">Ảnh hưởng tiến độ</div>
                 </div>
 
                 {/* Vấn đề sự cố */}
-                <div className="bg-white dark:bg-zinc-900 rounded-2xl p-5 border border-zinc-200 dark:border-zinc-800 shadow-sm transition-shadow">
-                    <div className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-2 flex items-center gap-1.5"><AlertTriangle size={11} className="text-red-500" /> Vấn đề ghi nhận</div>
-                    <div className="text-3xl font-bold text-red-600 dark:text-red-400 leading-none tracking-tight">{stats.issueCount}</div>
-                    <div className="text-[10px] text-zinc-400 dark:text-zinc-500 font-medium mt-2">Sự cố, vướng mắc phát sinh</div>
+                <div className="bg-white dark:bg-zinc-900 rounded-2xl p-3.5 sm:p-5 border border-zinc-200 dark:border-zinc-800 shadow-sm transition-shadow min-w-0">
+                    <div className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-2 flex items-center gap-1.5 truncate"><AlertTriangle size={11} className="text-red-500 shrink-0" /> Vấn đề ghi nhận</div>
+                    <div className="text-2xl sm:text-3xl font-bold text-red-600 dark:text-red-400 leading-none tracking-tight">{stats.issueCount}</div>
+                    <div className="text-[10px] text-zinc-400 dark:text-zinc-500 font-medium mt-2 truncate">Sự cố, vướng mắc</div>
                 </div>
             </div>
 

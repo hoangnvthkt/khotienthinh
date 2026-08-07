@@ -318,15 +318,18 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
 
   return (
     <>
-      {/* Backdrop Overlay - Click outside to auto-collapse sidebar when NOT pinned */}
-      {!collapsed && !isPinned && (
+      {/* Backdrop Overlay - Click outside to auto-collapse sidebar when mobile open or NOT pinned */}
+      {(isOpen || (!collapsed && !isPinned)) && (
         <div
           className="fixed inset-0 bg-black/40 z-[65] backdrop-blur-xs transition-opacity duration-300 cursor-pointer"
-          onClick={() => setCollapsed(true)}
+          onClick={() => {
+            if (isOpen) toggle();
+            if (!collapsed) setCollapsed(true);
+          }}
           title="Nhấp ra ngoài để đóng Sidebar"
         />
       )}
-      <aside className={`fixed top-0 left-0 z-[70] h-[100dvh] w-64 text-slate-800 dark:text-white transition-transform duration-300 ${sidebarBg} ${collapsed ? '-translate-x-full' : (isPinned ? 'translate-x-0 lg:static lg:z-auto' : 'translate-x-0')} flex flex-col shadow-2xl`}>
+      <aside className={`fixed top-0 left-0 z-[70] h-[100dvh] w-64 text-slate-800 dark:text-white transition-transform duration-300 ${sidebarBg} ${isOpen ? 'translate-x-0' : (collapsed ? '-translate-x-full' : (isPinned ? 'translate-x-0 lg:static lg:z-auto' : 'translate-x-0'))} flex flex-col shadow-2xl`}>
 
         {/* Logo & Pin Button */}
         <div
