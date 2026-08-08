@@ -5,6 +5,7 @@ import {
   getDailyLogPermissionCodesForEffectiveRoomActions,
   getMaterialPoEffectiveCapabilities,
   getMaterialRequestEffectiveCapabilities,
+  getWeeklyProgressPermissionCodesForEffectiveRoomActions,
 } from '../permissions/projectRoomEffectiveActions';
 
 describe('effective Project Room actions', () => {
@@ -88,5 +89,16 @@ describe('effective Project Room actions', () => {
       'project.daily_log.approve',
       'project.daily_log.return',
     ]));
+  });
+
+  it('maps weekly progress Room actions to the three approved PBAC candidates only', () => {
+    expect(getWeeklyProgressPermissionCodesForEffectiveRoomActions([
+      'view', 'edit', 'confirm',
+    ])).toEqual([
+      'project.weekly_progress.view',
+      'project.weekly_progress.create',
+      'project.weekly_progress.edit_all',
+      'project.weekly_progress.lock',
+    ]);
   });
 });

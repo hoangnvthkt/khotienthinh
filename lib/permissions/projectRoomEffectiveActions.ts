@@ -38,6 +38,21 @@ export const getDailyLogPermissionCodesForEffectiveRoomActions = (
   actionCode => DAILY_LOG_ROOM_ACTION_PERMISSION_CODES[actionCode] || [],
 )));
 
+const WEEKLY_PROGRESS_ROOM_ACTION_PERMISSION_CODES: Partial<Record<
+  ProjectRoomActionCode,
+  readonly string[]
+>> = {
+  view: ['project.weekly_progress.view'],
+  edit: ['project.weekly_progress.create', 'project.weekly_progress.edit_all'],
+  confirm: ['project.weekly_progress.lock'],
+};
+
+export const getWeeklyProgressPermissionCodesForEffectiveRoomActions = (
+  actionCodes: readonly ProjectRoomActionCode[],
+): string[] => Array.from(new Set(actionCodes.flatMap(
+  actionCode => WEEKLY_PROGRESS_ROOM_ACTION_PERMISSION_CODES[actionCode] || [],
+)));
+
 export interface MaterialPoEffectiveCapabilities {
   canViewPo: boolean;
   canEditPo: boolean;
