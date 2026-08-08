@@ -11,8 +11,11 @@ interface Props {
 const avatarColor = (value: string) => ['bg-indigo-600', 'bg-sky-600', 'bg-emerald-600', 'bg-amber-600', 'bg-rose-600'][value.charCodeAt(0) % 5];
 
 const ProjectPermissionRoomCard: React.FC<Props> = ({ room, onOpen }) => {
+  const primaryActionCodes = room.roomCode === 'weekly_progress'
+    ? ['edit', 'confirm']
+    : ['approve', 'confirm', 'verify'];
   const primaryCounts = Object.entries(room.actionCounts)
-    .filter(([action]) => ['approve', 'confirm', 'verify'].includes(action))
+    .filter(([action]) => primaryActionCodes.includes(action))
     .slice(0, 3);
 
   return <button type="button" onClick={() => onOpen(room.roomCode)} className="group relative flex min-h-56 w-full flex-col rounded-2xl border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 active:translate-y-0 dark:border-slate-700 dark:bg-slate-800 dark:hover:border-indigo-700">

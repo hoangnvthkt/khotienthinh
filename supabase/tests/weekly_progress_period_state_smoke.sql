@@ -280,19 +280,19 @@ from weekly_progress_smoke_ids;
 insert into public.project_staff (
   id, project_id, construction_site_id, user_id, position_id, start_date, end_date, note
 )
-select viewer_staff_id, project_id, site_id::text, viewer_id::text, position_id, current_date, null, 'Viewer'
+select viewer_staff_id, project_id, site_id::text, viewer_id::text, position_id, current_date, null::date, 'Viewer'
 from weekly_progress_smoke_ids
 union all
-select editor_staff_id, project_id, site_id::text, editor_id::text, position_id, current_date, null, 'Editor'
+select editor_staff_id, project_id, site_id::text, editor_id::text, position_id, current_date, null::date, 'Editor'
 from weekly_progress_smoke_ids
 union all
-select confirmer_staff_id, project_id, site_id::text, confirmer_id::text, position_id, current_date, null, 'Confirmer'
+select confirmer_staff_id, project_id, site_id::text, confirmer_id::text, position_id, current_date, null::date, 'Confirmer'
 from weekly_progress_smoke_ids
 union all
-select outsider_staff_id, other_project_id, other_site_id::text, outsider_id::text, position_id, current_date, null, 'Outsider'
+select outsider_staff_id, other_project_id, other_site_id::text, outsider_id::text, position_id, current_date, null::date, 'Outsider'
 from weekly_progress_smoke_ids
 union all
-select obsolete_actor_staff_id, project_id, site_id::text, obsolete_actor_id::text, position_id, current_date, null, 'Obsolete workflow actor'
+select obsolete_actor_staff_id, project_id, site_id::text, obsolete_actor_id::text, position_id, current_date, null::date, 'Obsolete workflow actor'
 from weekly_progress_smoke_ids;
 
 insert into public.user_permission_grants (
@@ -932,6 +932,9 @@ end $$;
 select public.sync_project_opening_balance_snapshot(opening_balance_id)
 from weekly_progress_smoke_ids;
 
+-- Verify the persisted row outside the keeper's weekly_progress.view RLS scope.
+reset role;
+
 do $$
 begin
   if not exists (
@@ -947,8 +950,6 @@ begin
     raise exception 'Opening Balance snapshot refresh did not persist after reopen';
   end if;
 end $$;
-
-reset role;
 
 do $$
 begin

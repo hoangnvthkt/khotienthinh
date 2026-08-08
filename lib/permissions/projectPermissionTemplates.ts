@@ -33,7 +33,9 @@ const allProjectActionCodes = (actions: readonly string[]) =>
     .map(action => action.permissionCode);
 
 const EXCLUDED_PROJECT_TEMPLATE_CODES = new Set([
+  'project.weekly_progress.submit',
   'project.weekly_progress.verify',
+  'project.weekly_progress.approve',
 ]);
 
 const DEPRECATED_PROJECT_TEMPLATE_CODES = new Set([

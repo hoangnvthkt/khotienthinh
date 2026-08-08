@@ -34,4 +34,12 @@ describe('ProjectOpeningBalanceModal retry identity contract', () => {
     expect(effectPrefix).toContain('setOpeningLoadScopeKey(null)');
     expect(source).toContain('retryReadyForCurrentScope && snapshotRetryState');
   });
+
+  it('fails closed while current-scope opening balance data is unavailable', () => {
+    const source = readFileSync(new URL('../ProjectOpeningBalanceModal.tsx', import.meta.url), 'utf8');
+    expect(source).toContain("openingLoadState === 'error'");
+    expect(source).toContain('Không thể tải số dư đầu kỳ');
+    expect(source).toContain('setOpeningLoadRetryNonce');
+    expect(source).toContain("openingLoadState !== 'ready'");
+  });
 });

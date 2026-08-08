@@ -145,6 +145,7 @@ export const getWeeklyProgressPeriodKey = (
 
 export const getWeeklyProgressMutationReadiness = (input: {
     actionsLoaded: boolean;
+    baseDataReady?: boolean;
     canView: boolean;
     canEdit: boolean;
     canConfirm: boolean;
@@ -153,11 +154,12 @@ export const getWeeklyProgressMutationReadiness = (input: {
     draftKey: string | null;
     isLocked: boolean;
 }): { canSave: boolean; canClose: boolean; canReopen: boolean } => {
-    const currentResourcesReady = input.actionsLoaded
+    const currentResourcesReady = Boolean(input.actionsLoaded
+        && input.baseDataReady !== false
         && input.canView
         && Boolean(input.currentKey)
         && input.stateKey === input.currentKey
-        && input.draftKey === input.currentKey;
+        && input.draftKey === input.currentKey);
     return {
         canSave: currentResourcesReady && input.canEdit && !input.isLocked,
         canClose: currentResourcesReady && input.canConfirm && !input.isLocked,
@@ -399,6 +401,12 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
     const [allDailyProgress, setAllDailyProgress] = useState<ProjectDailyTaskProgress[]>([]);
     const [dailyBaselineProgress, setDailyBaselineProgress] = useState<ProjectDailyTaskProgress[]>([]);
     const [loadedWeekRange, setLoadedWeekRange] = useState<{ fromWeek: string; toWeek: string } | null>(null);
+    const [baseDataLoadState, setBaseDataLoadState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+    const [baseDataLoadKey, setBaseDataLoadKey] = useState<string | null>(null);
+    const [baseDataRetryNonce, setBaseDataRetryNonce] = useState(0);
+    const baseDataRequestGeneration = useRef(0);
+    const baseDataScopeRef = useRef(scopeKey);
+    baseDataScopeRef.current = scopeKey;
 
     // Weekly chốt states
     const [entryMode, setEntryMode] = useState<ProgressEntryMode>('daily');
@@ -498,15 +506,37 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
     // Task contract link maps
     const [taskContractLinks, setTaskContractLinks] = useState<Record<string, string[]>>({});
 
-    // Load data
+    // Load scope-owned base data as one keyed bundle. Mutations remain disabled
+    // until this exact project/site scope has loaded successfully.
     const loadData = useCallback(async () => {
-        if (actionLoadState !== 'loaded' || !weeklyProgressCapabilities.canView || !effectiveId) return;
+        const targetKey = scopeKey;
+        const generation = ++baseDataRequestGeneration.current;
+        setBaseDataLoadKey(null);
+        setBaseDataLoadState('loading');
         setLoading(true);
+        setTasks([]);
+        setDailyLogs([]);
+        setContractItems([]);
+        setTaskContractLinkRows([]);
+        setPurchaseOrders([]);
+        setMaterialBudgets([]);
+        setFulfillmentBatches([]);
+        setProjectStaff([]);
+        setCompletionRequests([]);
+        setTaskContractLinks({});
         setAllWeeklyProgress([]);
         setWeeklyBaselineProgress([]);
         setAllDailyProgress([]);
         setDailyBaselineProgress([]);
         setLoadedWeekRange(null);
+
+        if (actionLoadState !== 'loaded' || !weeklyProgressCapabilities.canView || !effectiveId || !targetKey) {
+            if (generation === baseDataRequestGeneration.current) {
+                setBaseDataLoadState('idle');
+                setLoading(false);
+            }
+            return;
+        }
         try {
             const [
                 taskData,
@@ -534,6 +564,11 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                 taskCompletionRequestService.list(effectiveId, constructionSiteId || null),
             ]);
 
+            if (
+                generation !== baseDataRequestGeneration.current
+                || baseDataScopeRef.current !== targetKey
+            ) return;
+
             setTasks(deriveProjectTaskProgress(taskData, completionData, logData));
             setDailyLogs(logData);
             setContractItems(contractItemData);
@@ -549,16 +584,31 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                 acc[link.taskId].push(link.contractItemId);
                 return acc;
             }, {}));
+            setBaseDataLoadKey(targetKey);
+            setBaseDataLoadState('ready');
         } catch (error) {
             console.error('WeeklyProgressTab load error:', error);
-            toast.error('Không thể tải dữ liệu tiến độ', 'Vui lòng kiểm tra lại kết nối mạng.');
+            if (
+                generation === baseDataRequestGeneration.current
+                && baseDataScopeRef.current === targetKey
+            ) {
+                setBaseDataLoadKey(null);
+                setBaseDataLoadState('error');
+                toast.error('Không thể tải dữ liệu tiến độ', 'Vui lòng kiểm tra lại kết nối mạng.');
+            }
         } finally {
-            setLoading(false);
+            if (
+                generation === baseDataRequestGeneration.current
+                && baseDataScopeRef.current === targetKey
+            ) setLoading(false);
         }
-    }, [actionLoadState, effectiveId, constructionSiteId, projectId, scopeKey, toast, weeklyProgressCapabilities.canView]);
+    }, [actionLoadState, baseDataRetryNonce, effectiveId, constructionSiteId, projectId, scopeKey, toast, weeklyProgressCapabilities.canView]);
 
     useEffect(() => {
-        loadData();
+        void loadData();
+        return () => {
+            baseDataRequestGeneration.current += 1;
+        };
     }, [loadData]);
 
     const progressWeekWindow = useMemo(() => {
@@ -888,6 +938,7 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                     setWeeklyDrafts(nextDrafts);
                     setWeeklyDraftKey(bundle.target.key);
                     setSelectedWeeklyMutationRows(bundle.weeklyRows);
+                    setAllWeeklyProgress(prev => mergeWeeklyProgressRows(prev, bundle.weeklyRows));
                 }
                 setPeriodResourceLoadState('ready');
             },
@@ -1108,8 +1159,11 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
     const selectedPeriodStateLoaded = Boolean(selectedPeriodState)
         && selectedPeriodStateKey === selectedCurrentPeriodKey;
     const selectedPeriodLocked = selectedPeriodState?.isLocked === true;
+    const baseDataReadyForCurrentScope = baseDataLoadState === 'ready'
+        && baseDataLoadKey === scopeKey;
     const selectedMutationReadiness = getWeeklyProgressMutationReadiness({
         actionsLoaded: actionLoadState === 'loaded',
+        baseDataReady: baseDataReadyForCurrentScope,
         canView: weeklyProgressCapabilities.canView,
         canEdit: weeklyProgressCapabilities.canEdit,
         canConfirm: weeklyProgressCapabilities.canConfirm,
@@ -1126,7 +1180,7 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
             toast.info('Đang tải quyền', 'Vui lòng thử lại sau khi quyền thao tác được tải xong.');
             return false;
         }
-        if (!selectedPeriodStateLoaded || selectedDraftKey !== selectedCurrentPeriodKey || !selectedPeriodState) {
+        if (!baseDataReadyForCurrentScope || !selectedPeriodStateLoaded || selectedDraftKey !== selectedCurrentPeriodKey || !selectedPeriodState) {
             toast.info('Đang tải dữ liệu kỳ', 'Vui lòng thử lại sau khi trạng thái và dữ liệu kỳ được tải xong.');
             return false;
         }
@@ -1145,6 +1199,7 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
         return true;
     }, [
         actionLoadState,
+        baseDataReadyForCurrentScope,
         selectedPeriodState,
         selectedPeriodStateLoaded,
         selectedCurrentPeriodKey,
@@ -1985,7 +2040,16 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
         );
     }
 
-    if (loading) {
+    if (baseDataLoadState === 'error') {
+        return (
+            <WeeklyProgressPermissionUnavailable
+                state="error"
+                onRetry={() => setBaseDataRetryNonce(prev => prev + 1)}
+            />
+        );
+    }
+
+    if (loading || !baseDataReadyForCurrentScope) {
         return (
             <div className="rounded-2xl border border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-800 p-12 text-center shadow-sm">
                 <Loader2 size={36} className="mx-auto mb-3 animate-spin text-orange-500" />

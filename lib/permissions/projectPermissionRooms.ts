@@ -112,6 +112,10 @@ const GENERIC_ROOM_ACTION_LABELS: Record<ProjectRoomActionCode, string> = {
 export const getProjectPermissionRoomActionLabel = (
   roomCode: ProjectPermissionRoomCode,
   actionCode: ProjectRoomActionCode,
-): string => roomCode === 'weekly_progress' && actionCode === 'confirm'
-  ? 'Chốt/Mở chốt'
-  : GENERIC_ROOM_ACTION_LABELS[actionCode];
+): string => {
+  if (roomCode === 'weekly_progress') {
+    if (actionCode === 'edit') return 'Sửa/Nhập liệu';
+    if (actionCode === 'confirm') return 'Chốt/Mở chốt';
+  }
+  return GENERIC_ROOM_ACTION_LABELS[actionCode];
+};

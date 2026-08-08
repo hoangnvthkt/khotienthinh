@@ -180,6 +180,23 @@ describe('WeeklyProgressTab period controls', () => {
     expect(source.slice(historyStart, historyEnd)).toContain('getLatestDailyProgressRow(allDailyProgress');
   });
 
+  it('keys base data loading by scope and blocks mutations until it is current', () => {
+    const source = readFileSync(new URL('../WeeklyProgressTab.tsx', import.meta.url), 'utf8');
+    expect(source).toContain('baseDataLoadKey');
+    expect(source).toContain('baseDataRequestGeneration');
+    expect(source).toContain('baseDataReadyForCurrentScope');
+    expect(source).toContain('baseDataReady: baseDataReadyForCurrentScope');
+  });
+
+  it('merges authoritative weekly rows back into visualization history', () => {
+    const source = readFileSync(new URL('../WeeklyProgressTab.tsx', import.meta.url), 'utf8');
+    const weeklyBranch = source.slice(
+      source.indexOf("if (bundle.target.periodType === 'daily')"),
+      source.indexOf("setPeriodResourceLoadState('ready')"),
+    );
+    expect(weeklyBranch).toContain('setAllWeeklyProgress(prev => mergeWeeklyProgressRows(prev, bundle.weeklyRows))');
+  });
+
   it('renders period data read failures as unavailable with retry and no mutations', () => {
     const Unavailable = (weeklyProgressTabModule as any).WeeklyProgressPeriodUnavailable;
     expect(Unavailable).toBeTypeOf('function');

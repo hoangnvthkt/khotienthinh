@@ -39,12 +39,15 @@ describe('projectPermissionTemplates', () => {
     }
   });
 
-  it('does not grant the retired weekly-progress verify action from any template', () => {
+  it('does not grant retired weekly-progress workflow actions from any template', () => {
+    const retiredCodes = [
+      'project.weekly_progress.submit',
+      'project.weekly_progress.verify',
+      'project.weekly_progress.approve',
+    ];
     for (const template of PROJECT_PERMISSION_TEMPLATES) {
-      expect(
-        getProjectPermissionTemplateCodes(template.key),
-        template.key,
-      ).not.toContain('project.weekly_progress.verify');
+      expect(getProjectPermissionTemplateCodes(template.key), template.key)
+        .not.toEqual(expect.arrayContaining(retiredCodes));
     }
   });
 

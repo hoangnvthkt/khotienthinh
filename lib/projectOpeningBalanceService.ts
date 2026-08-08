@@ -867,7 +867,7 @@ export const projectOpeningBalanceService = {
       .maybeSingle();
     if (error) {
       console.warn('project opening balance unavailable', error.message);
-      return null;
+      throw error;
     }
     return data ? mapBalance(data) : null;
   },
