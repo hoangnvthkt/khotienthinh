@@ -1,0 +1,699 @@
+-- Run after a local reset:
+-- npx --yes supabase@2.110.0 db query --local --file supabase/tests/weekly_progress_period_state_smoke.sql
+
+begin;
+
+do $$
+declare
+  v_room public.project_permission_rooms%rowtype;
+begin
+  select * into v_room
+  from public.project_permission_rooms
+  where code = 'weekly_progress';
+
+  if v_room.allowed_actions <> array['view', 'edit', 'confirm']::text[]
+    or cardinality(v_room.required_actions) <> 0 then
+    raise exception 'weekly_progress Room must expose only view/edit/confirm with no required recipient';
+  end if;
+
+  if (
+    select count(*)
+    from app_private.project_permission_room_action_bindings binding
+    where binding.room_code = 'weekly_progress'
+      and binding.enforcement_status = 'pilot'
+      and binding.pbac_fallback_enabled
+      and binding.action_code in ('view', 'edit', 'confirm')
+      and binding.legacy_permission_codes = case binding.action_code
+        when 'view' then array['project.weekly_progress.view']::text[]
+        when 'edit' then array['project.weekly_progress.create', 'project.weekly_progress.edit_all']::text[]
+        when 'confirm' then array['project.weekly_progress.lock']::text[]
+      end
+      and binding.prerequisite_action_codes = case binding.action_code
+        when 'view' then '{}'::text[]
+        else array['view']::text[]
+      end
+  ) <> 3 then
+    raise exception 'weekly_progress Room pilot bindings are incomplete';
+  end if;
+
+  if exists (
+    select 1
+    from app_private.project_permission_room_action_bindings
+    where room_code = 'weekly_progress'
+      and action_code in ('submit', 'verify', 'approve')
+  ) or exists (
+    select 1
+    from public.project_permission_room_members member
+    join public.project_permission_room_member_actions action
+      on action.room_member_id = member.id
+    where member.room_code = 'weekly_progress'
+      and action.action_code in ('submit', 'verify', 'approve')
+  ) then
+    raise exception 'obsolete weekly_progress Room actions were retained or converted';
+  end if;
+
+  if (
+    select count(*)
+    from public.permission_actions action
+    where action.permission_code in (
+      'project.weekly_progress.submit',
+      'project.weekly_progress.verify',
+      'project.weekly_progress.approve'
+    )
+  ) <> 3 then
+    raise exception 'legacy weekly progress PBAC definitions must remain available for audit';
+  end if;
+
+  if to_regclass('public.project_progress_period_states') is null
+    or to_regprocedure('public.get_project_progress_period_state(text,text,text,date)') is null
+    or to_regprocedure('public.save_project_progress_period(text,text,text,date,jsonb,jsonb)') is null
+    or to_regprocedure('public.close_project_progress_period(text,text,text,date,jsonb,jsonb)') is null
+    or to_regprocedure('public.reopen_project_progress_period(text,text,text,date,text)') is null
+    or to_regprocedure('public.refresh_project_progress_snapshot(text,text,date,jsonb)') is null then
+    raise exception 'weekly progress period-state RPC surface is incomplete';
+  end if;
+
+  if has_function_privilege('anon', 'public.get_project_progress_period_state(text,text,text,date)', 'EXECUTE')
+    or has_function_privilege('anon', 'public.save_project_progress_period(text,text,text,date,jsonb,jsonb)', 'EXECUTE')
+    or has_function_privilege('anon', 'public.close_project_progress_period(text,text,text,date,jsonb,jsonb)', 'EXECUTE')
+    or has_function_privilege('anon', 'public.reopen_project_progress_period(text,text,text,date,text)', 'EXECUTE')
+    or has_function_privilege('anon', 'public.refresh_project_progress_snapshot(text,text,date,jsonb)', 'EXECUTE') then
+    raise exception 'anon unexpectedly has a weekly progress RPC grant';
+  end if;
+
+  if exists (
+    select 1
+    from pg_proc routine
+    join pg_namespace namespace on namespace.oid = routine.pronamespace
+    where namespace.nspname = 'public'
+      and routine.proname in (
+        'get_project_progress_period_state',
+        'save_project_progress_period',
+        'close_project_progress_period',
+        'reopen_project_progress_period',
+        'refresh_project_progress_snapshot'
+      )
+      and routine.prosecdef
+  ) or exists (
+    select 1
+    from pg_proc routine
+    join pg_namespace namespace on namespace.oid = routine.pronamespace
+    where namespace.nspname = 'app_private'
+      and routine.proname in (
+        'get_project_progress_period_state_impl',
+        'save_project_progress_period_impl',
+        'close_project_progress_period_impl',
+        'reopen_project_progress_period_impl',
+        'refresh_project_progress_snapshot_impl'
+      )
+      and not routine.prosecdef
+  ) then
+    raise exception 'public wrappers must be invoker and private implementations must be definer';
+  end if;
+
+  if has_table_privilege('authenticated', 'public.project_daily_task_progress', 'INSERT,UPDATE,DELETE')
+    or has_table_privilege('authenticated', 'public.project_weekly_task_progress', 'INSERT,UPDATE,DELETE')
+    or has_table_privilege('authenticated', 'public.weekly_progress_snapshots', 'INSERT,UPDATE,DELETE')
+    or has_table_privilege('authenticated', 'public.project_progress_period_states', 'INSERT,UPDATE,DELETE') then
+    raise exception 'authenticated retains direct progress mutation privileges';
+  end if;
+end $$;
+
+create temp table weekly_progress_smoke_ids (
+  admin_id uuid not null,
+  viewer_id uuid not null,
+  editor_id uuid not null,
+  confirmer_id uuid not null,
+  outsider_id uuid not null,
+  project_id text not null,
+  other_project_id text not null,
+  site_id uuid not null,
+  other_site_id uuid not null,
+  position_id uuid not null,
+  viewer_staff_id uuid not null,
+  editor_staff_id uuid not null,
+  confirmer_staff_id uuid not null,
+  outsider_staff_id uuid not null,
+  task_id text not null,
+  parent_task_id text not null,
+  other_task_id text not null,
+  admin_email text not null,
+  viewer_email text not null,
+  editor_email text not null,
+  confirmer_email text not null,
+  outsider_email text not null
+) on commit drop;
+
+insert into weekly_progress_smoke_ids values (
+  gen_random_uuid(), gen_random_uuid(), gen_random_uuid(), gen_random_uuid(), gen_random_uuid(),
+  'weekly-progress-smoke-' || gen_random_uuid()::text,
+  'weekly-progress-other-' || gen_random_uuid()::text,
+  gen_random_uuid(), gen_random_uuid(), gen_random_uuid(),
+  gen_random_uuid(), gen_random_uuid(), gen_random_uuid(), gen_random_uuid(),
+  'weekly-progress-task-' || gen_random_uuid()::text,
+  'weekly-progress-parent-task-' || gen_random_uuid()::text,
+  'weekly-progress-other-task-' || gen_random_uuid()::text,
+  'weekly-progress-admin@vioo.local',
+  'weekly-progress-viewer@vioo.local',
+  'weekly-progress-editor@vioo.local',
+  'weekly-progress-confirmer@vioo.local',
+  'weekly-progress-outsider@vioo.local'
+);
+
+grant select on weekly_progress_smoke_ids to authenticated;
+
+insert into public.users (
+  id, name, email, username, role, is_active,
+  allowed_modules, admin_modules, allowed_sub_modules, admin_sub_modules
+)
+select admin_id, 'Weekly Progress Admin', admin_email, 'weekly-progress-admin', 'ADMIN'::public.user_role, true,
+  '{}'::text[], '{}'::text[], '{}'::jsonb, '{}'::jsonb from weekly_progress_smoke_ids
+union all
+select viewer_id, 'Weekly Progress Viewer', viewer_email, 'weekly-progress-viewer', 'EMPLOYEE'::public.user_role, true,
+  '{}'::text[], '{}'::text[], '{}'::jsonb, '{}'::jsonb from weekly_progress_smoke_ids
+union all
+select editor_id, 'Weekly Progress Editor', editor_email, 'weekly-progress-editor', 'EMPLOYEE'::public.user_role, true,
+  '{}'::text[], '{}'::text[], '{}'::jsonb, '{}'::jsonb from weekly_progress_smoke_ids
+union all
+select confirmer_id, 'Weekly Progress Confirmer', confirmer_email, 'weekly-progress-confirmer', 'EMPLOYEE'::public.user_role, true,
+  '{}'::text[], '{}'::text[], '{}'::jsonb, '{}'::jsonb from weekly_progress_smoke_ids
+union all
+select outsider_id, 'Weekly Progress Outsider', outsider_email, 'weekly-progress-outsider', 'EMPLOYEE'::public.user_role, true,
+  '{}'::text[], '{}'::text[], '{}'::jsonb, '{}'::jsonb from weekly_progress_smoke_ids;
+
+insert into public.hrm_construction_sites (id, name)
+select site_id, 'Weekly Progress Smoke Site' from weekly_progress_smoke_ids
+union all
+select other_site_id, 'Weekly Progress Other Site' from weekly_progress_smoke_ids;
+
+insert into public.projects (id, code, name, construction_site_id, source)
+select project_id, 'WEEKLY-PROGRESS-SMOKE', 'Weekly Progress Smoke', site_id, 'manual'
+from weekly_progress_smoke_ids
+union all
+select other_project_id, 'WEEKLY-PROGRESS-OTHER', 'Weekly Progress Other', other_site_id, 'manual'
+from weekly_progress_smoke_ids;
+
+insert into public.hrm_positions (id, name, level, code, is_active, sort_order, source, metadata)
+select position_id, 'Weekly Progress Smoke Position', 1, 'WEEKLY-PROGRESS-SMOKE', true, 0, 'smoke', '{}'::jsonb
+from weekly_progress_smoke_ids;
+
+insert into public.project_staff (
+  id, project_id, construction_site_id, user_id, position_id, start_date, end_date, note
+)
+select viewer_staff_id, project_id, site_id::text, viewer_id::text, position_id, current_date, null, 'Viewer'
+from weekly_progress_smoke_ids
+union all
+select editor_staff_id, project_id, site_id::text, editor_id::text, position_id, current_date, null, 'Editor'
+from weekly_progress_smoke_ids
+union all
+select confirmer_staff_id, project_id, site_id::text, confirmer_id::text, position_id, current_date, null, 'Confirmer'
+from weekly_progress_smoke_ids
+union all
+select outsider_staff_id, other_project_id, other_site_id::text, outsider_id::text, position_id, current_date, null, 'Outsider'
+from weekly_progress_smoke_ids;
+
+insert into public.project_permission_room_members (
+  project_id, construction_site_id, room_code, project_staff_id, is_active
+)
+select project_id, site_id::text, 'weekly_progress', viewer_staff_id, true from weekly_progress_smoke_ids
+union all
+select project_id, site_id::text, 'weekly_progress', editor_staff_id, true from weekly_progress_smoke_ids
+union all
+select project_id, site_id::text, 'weekly_progress', confirmer_staff_id, true from weekly_progress_smoke_ids;
+
+insert into public.project_permission_room_member_actions (room_member_id, action_code, is_active)
+select member.id, action.action_code, true
+from public.project_permission_room_members member
+join weekly_progress_smoke_ids ids on ids.viewer_staff_id = member.project_staff_id
+cross join unnest(array['view']::text[]) action(action_code)
+where member.room_code = 'weekly_progress'
+union all
+select member.id, action.action_code, true
+from public.project_permission_room_members member
+join weekly_progress_smoke_ids ids on ids.editor_staff_id = member.project_staff_id
+cross join unnest(array['view', 'edit']::text[]) action(action_code)
+where member.room_code = 'weekly_progress'
+union all
+select member.id, action.action_code, true
+from public.project_permission_room_members member
+join weekly_progress_smoke_ids ids on ids.confirmer_staff_id = member.project_staff_id
+cross join unnest(array['view', 'confirm']::text[]) action(action_code)
+where member.room_code = 'weekly_progress';
+
+insert into public.project_tasks (
+  id, project_id, construction_site_id, parent_id, name, start_date, end_date,
+  duration, progress, is_milestone, sort_order
+)
+select parent_task_id, project_id, site_id::text, null, 'Weekly Progress Smoke Parent',
+  date '2026-08-03', date '2026-08-31', 29, 0, false, 1
+from weekly_progress_smoke_ids
+union all
+select task_id, project_id, site_id::text, parent_task_id, 'Weekly Progress Smoke Task',
+  date '2026-08-03', date '2026-08-31', 29, 0, false, 2
+from weekly_progress_smoke_ids
+union all
+select other_task_id, other_project_id, other_site_id::text, null, 'Weekly Progress Other Task',
+  date '2026-08-03', date '2026-08-31', 29, 0, false, 1
+from weekly_progress_smoke_ids;
+
+-- A viewer sees an implicit open state but cannot save or see another scope.
+set local role authenticated;
+select set_config('request.jwt.claim.email', viewer_email, true),
+       set_config('request.jwt.claim.sub', viewer_id::text, true),
+       set_config('request.jwt.claims', jsonb_build_object('email', viewer_email, 'sub', viewer_id)::text, true)
+from weekly_progress_smoke_ids;
+
+do $$
+declare
+  ids weekly_progress_smoke_ids%rowtype;
+  v_state jsonb;
+begin
+  select * into ids from weekly_progress_smoke_ids;
+  v_state := public.get_project_progress_period_state(
+    ids.project_id, ids.site_id::text, 'daily', date '2026-08-05'
+  );
+  if coalesce((v_state ->> 'isLocked')::boolean, true) then
+    raise exception 'a period without a state row must read as open';
+  end if;
+
+  begin
+    perform public.get_project_progress_period_state(
+      ids.other_project_id, ids.other_site_id::text, 'daily', date '2026-08-05'
+    );
+    raise exception 'viewer read leaked into another project/site';
+  exception when insufficient_privilege then null;
+  end;
+
+  begin
+    perform public.save_project_progress_period(
+      ids.project_id, ids.site_id::text, 'daily', date '2026-08-05',
+      jsonb_build_array(jsonb_build_object(
+        'taskId', ids.task_id, 'progressPercent', 10, 'quantityDone', 1,
+        'dailyQuantityDone', 1, 'attachments', '[]'::jsonb
+      )),
+      jsonb_build_object(
+        'constructionProgressPercent', 10, 'valueProgressPercent', 5,
+        'progressMode', 'daily_report'
+      )
+    );
+    raise exception 'viewer unexpectedly saved progress';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+
+reset role;
+
+-- An editor can save open daily and weekly periods, but cannot close them.
+set local role authenticated;
+select set_config('request.jwt.claim.email', editor_email, true),
+       set_config('request.jwt.claim.sub', editor_id::text, true),
+       set_config('request.jwt.claims', jsonb_build_object('email', editor_email, 'sub', editor_id)::text, true)
+from weekly_progress_smoke_ids;
+
+select public.save_project_progress_period(
+  project_id, site_id::text, 'daily', date '2026-08-05',
+  jsonb_build_array(jsonb_build_object(
+    'taskId', task_id, 'progressPercent', 10, 'quantityDone', 1,
+    'dailyQuantityDone', 1, 'note', 'daily open save', 'attachments', '[]'::jsonb
+  )),
+  jsonb_build_object(
+    'constructionProgressPercent', 10, 'valueProgressPercent', 5,
+    'progressMode', 'daily_report', 'purchasedValue', 100,
+    'issuedValue', 50, 'recognizedValue', 40
+  )
+)
+from weekly_progress_smoke_ids;
+
+select public.save_project_progress_period(
+  project_id, site_id::text, 'weekly', date '2026-08-03',
+  jsonb_build_array(jsonb_build_object(
+    'taskId', task_id, 'progressPercent', 20, 'quantityDone', 2,
+    'note', 'weekly open save', 'attachments', '[]'::jsonb
+  )),
+  jsonb_build_object(
+    'constructionProgressPercent', 20, 'valueProgressPercent', 10,
+    'progressMode', 'weekly_report', 'purchasedValue', 200,
+    'issuedValue', 100, 'recognizedValue', 80
+  )
+)
+from weekly_progress_smoke_ids;
+
+do $$
+begin
+  begin
+    perform public.close_project_progress_period(
+      (select project_id from weekly_progress_smoke_ids),
+      (select site_id::text from weekly_progress_smoke_ids),
+      'daily', date '2026-08-05', null, null
+    );
+    raise exception 'editor unexpectedly closed a period';
+  exception when insufficient_privilege then null;
+  end;
+
+  begin
+    insert into public.project_daily_task_progress (
+      scope_key, project_id, construction_site_id, task_id, progress_date, week_start
+    )
+    select project_id || '_' || site_id::text, project_id, site_id::text,
+      task_id, date '2026-08-06', date '2026-08-03'
+    from weekly_progress_smoke_ids;
+    raise exception 'authenticated direct daily progress INSERT unexpectedly succeeded';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+
+reset role;
+
+-- A confirmer can transition state but cannot change progress without edit.
+set local role authenticated;
+select set_config('request.jwt.claim.email', confirmer_email, true),
+       set_config('request.jwt.claim.sub', confirmer_id::text, true),
+       set_config('request.jwt.claims', jsonb_build_object('email', confirmer_email, 'sub', confirmer_id)::text, true)
+from weekly_progress_smoke_ids;
+
+select public.close_project_progress_period(
+  project_id, site_id::text, 'daily', date '2026-08-05', null, null
+)
+from weekly_progress_smoke_ids;
+
+do $$
+begin
+  if not (
+    public.get_project_progress_period_state(
+      (select project_id from weekly_progress_smoke_ids),
+      (select site_id::text from weekly_progress_smoke_ids),
+      'daily', date '2026-08-05'
+    ) ->> 'isLocked'
+  )::boolean then
+    raise exception 'daily period did not lock';
+  end if;
+
+  if (
+    public.get_project_progress_period_state(
+      (select project_id from weekly_progress_smoke_ids),
+      (select site_id::text from weekly_progress_smoke_ids),
+      'weekly', date '2026-08-03'
+    ) ->> 'isLocked'
+  )::boolean then
+    raise exception 'daily close implicitly locked its week';
+  end if;
+
+  begin
+    perform public.save_project_progress_period(
+      (select project_id from weekly_progress_smoke_ids),
+      (select site_id::text from weekly_progress_smoke_ids),
+      'daily', date '2026-08-06',
+      jsonb_build_array(jsonb_build_object(
+        'taskId', (select task_id from weekly_progress_smoke_ids),
+        'progressPercent', 30, 'quantityDone', 3,
+        'dailyQuantityDone', 1, 'attachments', '[]'::jsonb
+      )),
+      jsonb_build_object(
+        'constructionProgressPercent', 30, 'valueProgressPercent', 15,
+        'progressMode', 'daily_report'
+      )
+    );
+    raise exception 'confirmer without edit unexpectedly changed data';
+  exception when insufficient_privilege then null;
+  end;
+
+  begin
+    perform public.reopen_project_progress_period(
+      (select project_id from weekly_progress_smoke_ids),
+      (select site_id::text from weekly_progress_smoke_ids),
+      'daily', date '2026-08-05', '   '
+    );
+    raise exception 'blank reopen reason unexpectedly succeeded';
+  exception when check_violation then null;
+  end;
+end $$;
+
+select public.reopen_project_progress_period(
+  project_id, site_id::text, 'daily', date '2026-08-05', 'Điều chỉnh số liệu nghiệm thu'
+)
+from weekly_progress_smoke_ids;
+
+select public.close_project_progress_period(
+  project_id, site_id::text, 'weekly', date '2026-08-03', null, null
+)
+from weekly_progress_smoke_ids;
+
+reset role;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from public.project_tasks task
+    join weekly_progress_smoke_ids ids on task.id = ids.parent_task_id
+    where task.progress = 20
+      and task.progress_mode = 'children_auto'
+  ) then
+    raise exception 'weekly save did not update derived parent task progress';
+  end if;
+end $$;
+
+create temp table weekly_progress_frozen_values on commit drop as
+select weekly.progress_percent, snapshot.progress_percent as snapshot_progress_percent
+from weekly_progress_smoke_ids ids
+join public.project_weekly_task_progress weekly
+  on weekly.scope_key = ids.project_id || '_' || ids.site_id::text
+  and weekly.task_id = ids.task_id
+  and weekly.week_start = date '2026-08-03'
+join public.weekly_progress_snapshots snapshot
+  on snapshot.scope_key = ids.project_id || '_' || ids.site_id::text
+  and snapshot.week_start = date '2026-08-03';
+
+grant select on weekly_progress_frozen_values to authenticated;
+
+-- Daily edits remain possible under a weekly lock, while weekly aggregate and snapshot stay frozen.
+set local role authenticated;
+select set_config('request.jwt.claim.email', editor_email, true),
+       set_config('request.jwt.claim.sub', editor_id::text, true),
+       set_config('request.jwt.claims', jsonb_build_object('email', editor_email, 'sub', editor_id)::text, true)
+from weekly_progress_smoke_ids;
+
+select public.save_project_progress_period(
+  project_id, site_id::text, 'daily', date '2026-08-06',
+  jsonb_build_array(jsonb_build_object(
+    'taskId', task_id, 'progressPercent', 40, 'quantityDone', 4,
+    'dailyQuantityDone', 3, 'attachments', '[]'::jsonb
+  )),
+  jsonb_build_object(
+    'constructionProgressPercent', 40, 'valueProgressPercent', 20,
+    'progressMode', 'daily_report', 'purchasedValue', 400
+  )
+)
+from weekly_progress_smoke_ids;
+
+do $$
+begin
+  if exists (
+    select 1
+    from weekly_progress_smoke_ids ids
+    join public.project_weekly_task_progress weekly
+      on weekly.scope_key = ids.project_id || '_' || ids.site_id::text
+      and weekly.task_id = ids.task_id
+      and weekly.week_start = date '2026-08-03'
+    cross join weekly_progress_frozen_values frozen
+    where weekly.progress_percent is distinct from frozen.progress_percent
+  ) or exists (
+    select 1
+    from weekly_progress_smoke_ids ids
+    join public.weekly_progress_snapshots snapshot
+      on snapshot.scope_key = ids.project_id || '_' || ids.site_id::text
+      and snapshot.week_start = date '2026-08-03'
+    cross join weekly_progress_frozen_values frozen
+    where snapshot.progress_percent is distinct from frozen.snapshot_progress_percent
+  ) then
+    raise exception 'daily save mutated a locked weekly aggregate or snapshot';
+  end if;
+
+  begin
+    perform public.save_project_progress_period(
+      (select project_id from weekly_progress_smoke_ids),
+      (select site_id::text from weekly_progress_smoke_ids),
+      'weekly', date '2026-08-03',
+      jsonb_build_array(jsonb_build_object(
+        'taskId', (select task_id from weekly_progress_smoke_ids),
+        'progressPercent', 50, 'quantityDone', 5, 'attachments', '[]'::jsonb
+      )),
+      jsonb_build_object(
+        'constructionProgressPercent', 50, 'valueProgressPercent', 25,
+        'progressMode', 'weekly_report'
+      )
+    );
+    raise exception 'editor changed a locked weekly period';
+  exception when check_violation then null;
+  end;
+
+  begin
+    perform public.refresh_project_progress_snapshot(
+      (select project_id from weekly_progress_smoke_ids),
+      (select site_id::text from weekly_progress_smoke_ids),
+      date '2026-08-03',
+      jsonb_build_object(
+        'constructionProgressPercent', 41, 'valueProgressPercent', 21,
+        'progressMode', 'opening_balance'
+      )
+    );
+    raise exception 'snapshot refresh changed a locked weekly period';
+  exception when check_violation then null;
+  end;
+end $$;
+
+reset role;
+
+set local role authenticated;
+select set_config('request.jwt.claim.email', confirmer_email, true),
+       set_config('request.jwt.claim.sub', confirmer_id::text, true),
+       set_config('request.jwt.claims', jsonb_build_object('email', confirmer_email, 'sub', confirmer_id)::text, true)
+from weekly_progress_smoke_ids;
+
+select public.reopen_project_progress_period(
+  project_id, site_id::text, 'weekly', date '2026-08-03', 'Refresh Opening Balance snapshot'
+)
+from weekly_progress_smoke_ids;
+
+reset role;
+
+set local role authenticated;
+select set_config('request.jwt.claim.email', editor_email, true),
+       set_config('request.jwt.claim.sub', editor_id::text, true),
+       set_config('request.jwt.claims', jsonb_build_object('email', editor_email, 'sub', editor_id)::text, true)
+from weekly_progress_smoke_ids;
+
+select public.refresh_project_progress_snapshot(
+  project_id, site_id::text, date '2026-08-03',
+  jsonb_build_object(
+    'constructionProgressPercent', 41, 'valueProgressPercent', 21,
+    'progressMode', 'opening_balance', 'recognizedValue', 410
+  )
+)
+from weekly_progress_smoke_ids;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from public.weekly_progress_snapshots snapshot
+    join weekly_progress_smoke_ids ids
+      on snapshot.scope_key = ids.project_id || '_' || ids.site_id::text
+    where snapshot.week_start = date '2026-08-03'
+      and snapshot.progress_percent = 41
+      and snapshot.progress_mode = 'opening_balance'
+  ) then
+    raise exception 'Opening Balance snapshot refresh did not persist after reopen';
+  end if;
+end $$;
+
+reset role;
+
+-- System Admin is an operational override, not a Room recipient. Scope/task mismatch still fails.
+set local role authenticated;
+select set_config('request.jwt.claim.email', admin_email, true),
+       set_config('request.jwt.claim.sub', admin_id::text, true),
+       set_config('request.jwt.claims', jsonb_build_object('email', admin_email, 'sub', admin_id)::text, true)
+from weekly_progress_smoke_ids;
+
+do $$
+declare
+  ids weekly_progress_smoke_ids%rowtype;
+begin
+  select * into ids from weekly_progress_smoke_ids;
+  if public.project_user_has_room_action(
+    ids.other_project_id, ids.other_site_id::text, 'weekly_progress', 'edit', ids.admin_id
+  ) then
+    raise exception 'System Admin was added as a weekly_progress Room recipient';
+  end if;
+
+  begin
+    perform public.save_project_progress_period(
+      ids.other_project_id, ids.other_site_id::text, 'daily', date '2026-08-07',
+      jsonb_build_array(jsonb_build_object(
+        'taskId', ids.task_id, 'progressPercent', 60, 'quantityDone', 6,
+        'dailyQuantityDone', 6, 'attachments', '[]'::jsonb
+      )),
+      jsonb_build_object(
+        'constructionProgressPercent', 60, 'valueProgressPercent', 30,
+        'progressMode', 'daily_report'
+      )
+    );
+    raise exception 'task from another project/site was accepted';
+  exception when check_violation then null;
+  end;
+
+  begin
+    perform public.get_project_progress_period_state(
+      ids.other_project_id, ids.other_site_id::text, 'weekly', date '2026-08-04'
+    );
+    raise exception 'non-Monday weekly periodStart unexpectedly succeeded';
+  exception when check_violation then null;
+  end;
+end $$;
+
+select public.close_project_progress_period(
+  other_project_id, other_site_id::text, 'weekly', date '2026-08-03',
+  jsonb_build_array(jsonb_build_object(
+    'taskId', other_task_id, 'progressPercent', 15, 'quantityDone', 1,
+    'attachments', '[]'::jsonb
+  )),
+  jsonb_build_object(
+    'constructionProgressPercent', 15, 'valueProgressPercent', 5,
+    'progressMode', 'weekly_report'
+  )
+)
+from weekly_progress_smoke_ids;
+
+select public.reopen_project_progress_period(
+  other_project_id, other_site_id::text, 'weekly', date '2026-08-03', 'System Admin correction'
+)
+from weekly_progress_smoke_ids;
+
+reset role;
+
+set local role authenticated;
+select set_config('request.jwt.claim.email', viewer_email, true),
+       set_config('request.jwt.claim.sub', viewer_id::text, true),
+       set_config('request.jwt.claims', jsonb_build_object('email', viewer_email, 'sub', viewer_id)::text, true)
+from weekly_progress_smoke_ids;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from public.project_weekly_task_progress weekly
+    where weekly.project_id = (select project_id from weekly_progress_smoke_ids)
+  ) then
+    raise exception 'viewer could not read authorized weekly progress';
+  end if;
+
+  if exists (
+    select 1
+    from public.project_weekly_task_progress weekly
+    where weekly.project_id = (select other_project_id from weekly_progress_smoke_ids)
+  ) then
+    raise exception 'weekly progress RLS leaked another project/site';
+  end if;
+end $$;
+
+reset role;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from public.permission_audit_events event
+    join weekly_progress_smoke_ids ids on event.actor_user_id = ids.confirmer_id
+    where event.event_type = 'weekly_progress_period_unlocked'
+      and event.metadata ->> 'project_id' = ids.project_id
+      and event.metadata ->> 'construction_site_id' = ids.site_id::text
+      and event.metadata ->> 'period_type' = 'daily'
+      and event.metadata ->> 'period_start' = '2026-08-05'
+      and event.metadata ->> 'reason' = 'Điều chỉnh số liệu nghiệm thu'
+  ) then
+    raise exception 'reopen audit event omitted actor, scope, period, or reason';
+  end if;
+end $$;
+
+rollback;

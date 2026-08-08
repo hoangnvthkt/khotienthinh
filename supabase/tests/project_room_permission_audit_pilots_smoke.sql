@@ -15,12 +15,13 @@ begin
   if (select count(*) from app_private.project_permission_room_action_bindings) <> v_expected_actions then
     raise exception 'Every active Room/action must appear exactly once in the binding registry';
   end if;
-  if (select count(*) from app_private.project_permission_room_action_bindings where enforcement_status = 'pilot') <> 15 then
-    raise exception 'Expected six Daily Log, three material BOQ and six Material PO pilot actions';
+  if (select count(*) from app_private.project_permission_room_action_bindings where enforcement_status = 'pilot') <> 25 then
+    raise exception 'Expected 25 current Room pilot actions including three weekly_progress actions';
   end if;
   if exists (
     select 1 from app_private.project_permission_room_action_bindings
-    where enforcement_status = 'pilot' and room_code not in ('daily_log', 'material_planning', 'material_po')
+    where enforcement_status = 'pilot'
+      and room_code not in ('daily_log', 'material_planning', 'material_po', 'material_request', 'weekly_progress')
   ) then
     raise exception 'A non-pilot Room was accidentally enabled';
   end if;
