@@ -1009,24 +1009,27 @@ export const projectOpeningBalanceService = {
         .single();
       if (lockError) throw lockError;
 
-      await projectWeeklyProgressService.upsertSnapshot({
-        scopeKey: balance.scopeKey,
+      if (!balance.projectId) {
+        throw new Error('Không xác định được dự án để cập nhật snapshot đầu kỳ.');
+      }
+      await projectWeeklyProgressService.refreshSnapshot({
         projectId: balance.projectId,
         constructionSiteId: balance.constructionSiteId,
         weekStart: getWeekStart(balance.asOfDate),
-        constructionProgressPercent: balance.constructionProgressPercent,
-        valueMetric: {
-          contractTotalValue: balance.contractValue,
-          purchasedValue: balance.purchasedValue,
-          issuedValue: balance.issuedValue,
-          actualProductionValue: balance.recognizedValue,
-          recognizedValue: balance.recognizedValue,
+        snapshot: {
+          constructionProgressPercent: balance.constructionProgressPercent,
           valueProgressPercent: balance.contractValue > 0
             ? Math.min(100, Math.round((balance.recognizedValue / balance.contractValue) * 100))
             : 0,
+          progressMode: 'opening_balance',
+          suppliedValue: balance.recognizedValue || null,
+          contractTotalValue: balance.contractValue || null,
+          purchasedValue: balance.purchasedValue,
+          issuedValue: balance.issuedValue,
+          recognizedValue: balance.recognizedValue,
+          ganttPercent: balance.constructionProgressPercent,
+          calculatedAt: new Date().toISOString(),
         },
-        progressMode: 'opening_balance',
-        calculatedAt: new Date().toISOString(),
       });
 
       const savedLines = await this.listLines(openingId);

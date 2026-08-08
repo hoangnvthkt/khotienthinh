@@ -3204,7 +3204,7 @@ const ProjectDashboard: React.FC = () => {
                     ) : overviewTab === 'gantt' ? (
                         <GanttTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} canManageTab={canManageProjectTab('gantt')} />
                     ) : overviewTab === 'weekly_progress' ? (
-                        <WeeklyProgressTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} canManageTab={canManageProjectTab('weekly_progress')} />
+                        <WeeklyProgressTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} />
                     ) : overviewTab === 'dailylog' ? (
                         <DailyLogTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} canManageTab={canManageProjectTab('dailylog')} />
                     ) : overviewTab === 'payment' ? (

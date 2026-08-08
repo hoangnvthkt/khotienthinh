@@ -7,6 +7,7 @@ import {
   getMaterialRequestEffectiveCapabilities,
   getWeeklyProgressPermissionCodesForEffectiveRoomActions,
 } from '../permissions/projectRoomEffectiveActions';
+import * as projectRoomEffectiveActions from '../permissions/projectRoomEffectiveActions';
 
 describe('effective Project Room actions', () => {
   it('blocks configuration until an action reaches pilot or enforced status', () => {
@@ -100,5 +101,29 @@ describe('effective Project Room actions', () => {
       'project.weekly_progress.edit_all',
       'project.weekly_progress.lock',
     ]);
+  });
+
+  it('keeps weekly progress mutations unavailable until effective actions load', () => {
+    const getCapabilities = (projectRoomEffectiveActions as any).getWeeklyProgressEffectiveCapabilities;
+    expect(getCapabilities).toBeTypeOf('function');
+    if (typeof getCapabilities !== 'function') return;
+
+    const actions = [
+      { roomCode: 'weekly_progress', actionCode: 'view', source: 'room', enforcementStatus: 'pilot' },
+      { roomCode: 'weekly_progress', actionCode: 'edit', source: 'room', enforcementStatus: 'pilot' },
+      { roomCode: 'weekly_progress', actionCode: 'confirm', source: 'room', enforcementStatus: 'pilot' },
+      { roomCode: 'daily_log', actionCode: 'approve', source: 'room', enforcementStatus: 'pilot' },
+    ];
+
+    expect(getCapabilities(actions, false)).toEqual({
+      canView: false,
+      canEdit: false,
+      canConfirm: false,
+    });
+    expect(getCapabilities(actions, true)).toEqual({
+      canView: true,
+      canEdit: true,
+      canConfirm: true,
+    });
   });
 });

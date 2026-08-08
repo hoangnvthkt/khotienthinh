@@ -53,6 +53,26 @@ export const getWeeklyProgressPermissionCodesForEffectiveRoomActions = (
   actionCode => WEEKLY_PROGRESS_ROOM_ACTION_PERMISSION_CODES[actionCode] || [],
 )));
 
+export interface WeeklyProgressEffectiveCapabilities {
+  canView: boolean;
+  canEdit: boolean;
+  canConfirm: boolean;
+}
+
+export const getWeeklyProgressEffectiveCapabilities = (
+  actions: readonly EffectiveProjectRoomAction[],
+  actionsLoaded: boolean,
+): WeeklyProgressEffectiveCapabilities => {
+  if (!actionsLoaded) return { canView: false, canEdit: false, canConfirm: false };
+  const granted = getEffectiveProjectRoomActionSet(actions, 'weekly_progress');
+  const canView = granted.has('view');
+  return {
+    canView,
+    canEdit: canView && granted.has('edit'),
+    canConfirm: canView && granted.has('confirm'),
+  };
+};
+
 export interface MaterialPoEffectiveCapabilities {
   canViewPo: boolean;
   canEditPo: boolean;

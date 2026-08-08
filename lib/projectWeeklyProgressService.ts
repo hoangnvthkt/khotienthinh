@@ -1,4 +1,5 @@
 import {
+  Attachment,
   ContractItem,
   MaterialBudgetItem,
   MaterialRequestFulfillmentBatch,
@@ -11,7 +12,7 @@ import {
   PurchaseOrder,
   TaskContractItem,
 } from '../types';
-import { fromDb, toDb } from './dbMapping';
+import { fromDb } from './dbMapping';
 import { buildProjectScopeFilter, dedupeRowsById } from './projectScope';
 import {
   clampProgress,
@@ -284,6 +285,111 @@ export interface ProgressSegmentInput {
   updatedAt?: string;
 }
 
+export type ProjectProgressPeriodType = 'daily' | 'weekly';
+
+export interface ProjectProgressPeriodState {
+  id: string | null;
+  scopeKey: string;
+  projectId: string;
+  constructionSiteId: string | null;
+  periodType: ProjectProgressPeriodType;
+  periodStart: string;
+  isLocked: boolean;
+  lockedBy: string | null;
+  lockedAt: string | null;
+  unlockedBy: string | null;
+  unlockedAt: string | null;
+  unlockReason: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface ProjectProgressSnapshotPayload {
+  constructionProgressPercent: number;
+  valueProgressPercent: number;
+  progressMode: string;
+  suppliedValue?: number | null;
+  contractTotalValue?: number | null;
+  purchasedValue?: number | null;
+  issuedValue?: number | null;
+  recognizedValue?: number | null;
+  ganttPercent?: number | null;
+  calculatedAt?: string | null;
+}
+
+export interface ProjectProgressDailyRowPayload {
+  taskId: string;
+  progressPercent: number;
+  quantityDone: number;
+  dailyQuantityDone: number;
+  note: string | null;
+  attachments: Attachment[];
+  sourceDailyLogId: string | null;
+}
+
+export interface ProjectProgressWeeklyRowPayload {
+  taskId: string;
+  progressPercent: number;
+  quantityDone: number;
+  note: string | null;
+  attachments: Attachment[];
+}
+
+interface ProjectProgressPeriodScopeInput {
+  projectId: string;
+  constructionSiteId?: string | null;
+  periodStart: string;
+}
+
+export type ProjectProgressPeriodStateInput = ProjectProgressPeriodScopeInput & {
+  periodType: ProjectProgressPeriodType;
+};
+
+export type SaveProjectProgressPeriodInput =
+  | (ProjectProgressPeriodScopeInput & {
+    periodType: 'daily';
+    rows: ProjectDailyTaskProgress[];
+    snapshot: ProjectProgressSnapshotPayload;
+  })
+  | (ProjectProgressPeriodScopeInput & {
+    periodType: 'weekly';
+    rows: ProjectWeeklyTaskProgress[];
+    snapshot: ProjectProgressSnapshotPayload;
+  });
+
+export type CloseProjectProgressPeriodInput =
+  | SaveProjectProgressPeriodInput
+  | (ProjectProgressPeriodStateInput & { rows: null; snapshot: null });
+
+export interface ReopenProjectProgressPeriodInput extends ProjectProgressPeriodStateInput {
+  reason: string;
+}
+
+export interface SaveProjectProgressPeriodResult {
+  state: ProjectProgressPeriodState;
+  savedRowCount: number;
+  weeklyAggregateFrozen: boolean;
+}
+
+export interface ProjectProgressSnapshotResult extends ProjectProgressSnapshotPayload {
+  id: string;
+  scopeKey: string;
+  projectId: string;
+  constructionSiteId: string | null;
+  weekLabel: string;
+  weekStart: string;
+  progressPercent: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RefreshProjectProgressSnapshotInput {
+  projectId: string;
+  constructionSiteId?: string | null;
+  weekStart: string;
+  snapshot: ProjectProgressSnapshotPayload;
+}
+
 export interface ProgressSegment {
   key: string;
   label: string;
@@ -440,27 +546,104 @@ export const calculateProjectValueProgress = (input: {
   };
 };
 
-const weeklyToDb = (row: ProjectWeeklyTaskProgress): Record<string, unknown> => {
-  const payload = toDb({
-    ...row,
-    attachments: row.attachments || [],
-  });
-  if (!payload.id) delete payload.id;
-  delete payload.created_at;
-  return payload;
-};
+const toDailyProgressRpcRows = (
+  rows: ProjectDailyTaskProgress[],
+): ProjectProgressDailyRowPayload[] => rows.map(row => ({
+  taskId: row.taskId,
+  progressPercent: row.progressPercent,
+  quantityDone: row.quantityDone,
+  dailyQuantityDone: row.dailyQuantityDone,
+  note: row.note ?? null,
+  attachments: row.attachments || [],
+  sourceDailyLogId: row.sourceDailyLogId ?? null,
+}));
 
-const dailyToDb = (row: ProjectDailyTaskProgress): Record<string, unknown> => {
-  const payload = toDb({
-    ...row,
-    attachments: row.attachments || [],
-  });
-  if (!payload.id) delete payload.id;
-  delete payload.created_at;
-  return payload;
+const toWeeklyProgressRpcRows = (
+  rows: ProjectWeeklyTaskProgress[],
+): ProjectProgressWeeklyRowPayload[] => rows.map(row => ({
+  taskId: row.taskId,
+  progressPercent: row.progressPercent,
+  quantityDone: row.quantityDone,
+  note: row.note ?? null,
+  attachments: row.attachments || [],
+}));
+
+const toProgressRpcRows = (
+  input: SaveProjectProgressPeriodInput,
+): ProjectProgressDailyRowPayload[] | ProjectProgressWeeklyRowPayload[] => input.periodType === 'daily'
+  ? toDailyProgressRpcRows(input.rows)
+  : toWeeklyProgressRpcRows(input.rows);
+
+const periodScopeRpcArgs = (input: ProjectProgressPeriodStateInput) => ({
+  p_project_id: input.projectId,
+  p_construction_site_id: input.constructionSiteId || null,
+  p_period_type: input.periodType,
+  p_period_start: input.periodStart,
+});
+
+const assertProgressRpcAvailable = () => {
+  if (!isSupabaseConfigured) {
+    throw new Error('Chưa cấu hình Supabase để cập nhật tiến độ.');
+  }
 };
 
 export const projectWeeklyProgressService = {
+  async getPeriodState(input: ProjectProgressPeriodStateInput): Promise<ProjectProgressPeriodState> {
+    assertProgressRpcAvailable();
+    const { data, error } = await supabase.rpc(
+      'get_project_progress_period_state',
+      periodScopeRpcArgs(input),
+    );
+    if (error) throw error;
+    return data as ProjectProgressPeriodState;
+  },
+
+  async savePeriod(input: SaveProjectProgressPeriodInput): Promise<SaveProjectProgressPeriodResult> {
+    assertProgressRpcAvailable();
+    const { data, error } = await supabase.rpc('save_project_progress_period', {
+      ...periodScopeRpcArgs(input),
+      p_rows: toProgressRpcRows(input),
+      p_snapshot: input.snapshot,
+    });
+    if (error) throw error;
+    return data as SaveProjectProgressPeriodResult;
+  },
+
+  async closePeriod(input: CloseProjectProgressPeriodInput): Promise<ProjectProgressPeriodState> {
+    assertProgressRpcAvailable();
+    const { data, error } = await supabase.rpc('close_project_progress_period', {
+      ...periodScopeRpcArgs(input),
+      p_rows: input.rows === null ? null : toProgressRpcRows(input),
+      p_snapshot: input.snapshot,
+    });
+    if (error) throw error;
+    return data as ProjectProgressPeriodState;
+  },
+
+  async reopenPeriod(input: ReopenProjectProgressPeriodInput): Promise<ProjectProgressPeriodState> {
+    const reason = input.reason.trim();
+    if (!reason) throw new Error('Vui lòng nhập lý do mở chốt.');
+    assertProgressRpcAvailable();
+    const { data, error } = await supabase.rpc('reopen_project_progress_period', {
+      ...periodScopeRpcArgs(input),
+      p_reason: reason,
+    });
+    if (error) throw error;
+    return data as ProjectProgressPeriodState;
+  },
+
+  async refreshSnapshot(input: RefreshProjectProgressSnapshotInput): Promise<ProjectProgressSnapshotResult> {
+    assertProgressRpcAvailable();
+    const { data, error } = await supabase.rpc('refresh_project_progress_snapshot', {
+      p_project_id: input.projectId,
+      p_construction_site_id: input.constructionSiteId || null,
+      p_week_start: input.weekStart,
+      p_snapshot: input.snapshot,
+    });
+    if (error) throw error;
+    return data as ProjectProgressSnapshotResult;
+  },
+
   async listAll(scopeKey: string): Promise<ProjectWeeklyTaskProgress[]> {
     if (!isSupabaseConfigured || !scopeKey) return [];
     const { data, error } = await fetchPagedRows((from, to) => supabase
@@ -634,59 +817,6 @@ export const projectWeeklyProgressService = {
       return [];
     }
     return latestByTask((data || []).map(row => fromDb(row) as ProjectDailyTaskProgress));
-  },
-
-  async upsertDailyMany(rows: ProjectDailyTaskProgress[]): Promise<void> {
-    if (!isSupabaseConfigured || rows.length === 0) return;
-    const { error } = await supabase
-      .from(DAILY_TABLE)
-      .upsert(rows.map(dailyToDb), { onConflict: 'scope_key,task_id,progress_date' });
-    if (error) throw error;
-  },
-
-  async upsertMany(rows: ProjectWeeklyTaskProgress[]): Promise<void> {
-    if (!isSupabaseConfigured || rows.length === 0) return;
-    const { error } = await supabase
-      .from(WEEKLY_TABLE)
-      .upsert(rows.map(weeklyToDb), { onConflict: 'scope_key,task_id,week_start' });
-    if (error) throw error;
-  },
-
-  async upsertSnapshot(input: {
-    scopeKey: string;
-    projectId?: string | null;
-    constructionSiteId?: string | null;
-    weekStart: string;
-    constructionProgressPercent: number;
-    valueMetric: ProjectValueProgressMetric;
-    progressMode?: string;
-    ganttPercent?: number;
-    calculatedAt?: string;
-  }): Promise<void> {
-    if (!isSupabaseConfigured || !input.scopeKey) return;
-    const row = {
-      scope_key: input.scopeKey,
-      project_id: input.projectId || null,
-      construction_site_id: input.constructionSiteId || null,
-      week_label: getISOWeekLabel(input.weekStart),
-      week_start: input.weekStart,
-      progress_percent: input.constructionProgressPercent,
-      progress_mode: input.progressMode || 'weekly_report',
-      construction_progress_percent: input.constructionProgressPercent,
-      value_progress_percent: input.valueMetric.valueProgressPercent,
-      supplied_value: input.valueMetric.recognizedValue || null,
-      contract_total_value: input.valueMetric.contractTotalValue || null,
-      purchased_value: input.valueMetric.purchasedValue,
-      issued_value: input.valueMetric.issuedValue,
-      recognized_value: input.valueMetric.recognizedValue,
-      gantt_percent: input.ganttPercent ?? input.constructionProgressPercent,
-      calculated_at: input.calculatedAt || new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
-    const { error } = await supabase
-      .from('weekly_progress_snapshots')
-      .upsert(row, { onConflict: 'scope_key,week_start' });
-    if (error) throw error;
   },
 
   async listFulfillmentBatchesByScope(
