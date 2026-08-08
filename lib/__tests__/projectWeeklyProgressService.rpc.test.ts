@@ -157,27 +157,8 @@ describe('projectWeeklyProgressService authoritative RPC contract', () => {
     expect(supabaseMocks.rpc).not.toHaveBeenCalled();
   });
 
-  it('refreshes Opening Balance through the dedicated snapshot RPC', async () => {
-    const openingSnapshot = { ...snapshot, progressMode: 'opening_balance' };
-    supabaseMocks.rpc.mockResolvedValueOnce({
-      data: { id: 'snapshot-1', weekStart: '2026-08-03', ...openingSnapshot },
-      error: null,
-    });
-
-    const result = await (projectWeeklyProgressService as any).refreshSnapshot({
-      projectId: 'project-1',
-      constructionSiteId: 'site-1',
-      weekStart: '2026-08-03',
-      snapshot: openingSnapshot,
-    });
-
-    expect(result).toEqual(expect.objectContaining({ id: 'snapshot-1', progressMode: 'opening_balance' }));
-    expect(supabaseMocks.rpc).toHaveBeenCalledWith('refresh_project_progress_snapshot', {
-      p_project_id: 'project-1',
-      p_construction_site_id: 'site-1',
-      p_week_start: '2026-08-03',
-      p_snapshot: openingSnapshot,
-    });
+  it('does not expose an unbound client snapshot refresh method', () => {
+    expect(projectWeeklyProgressService).not.toHaveProperty('refreshSnapshot');
   });
 
   it('preflights Opening Balance snapshot refresh through a non-mutating RPC', async () => {

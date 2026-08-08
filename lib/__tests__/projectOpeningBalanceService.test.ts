@@ -4,8 +4,6 @@ import {
   calculateOpeningRecognizedValue,
   projectOpeningBalanceService,
 } from '../projectOpeningBalanceService';
-import * as openingBalanceServiceModule from '../projectOpeningBalanceService';
-import { projectWeeklyProgressService } from '../projectWeeklyProgressService';
 
 vi.mock('../supabase', () => ({
   isSupabaseConfigured: false,
@@ -28,64 +26,6 @@ const makeAccountingWorkbookFile = () => {
 };
 
 describe('projectOpeningBalanceService accounting import', () => {
-  it('reconstructs retry input for pending locked balances but not synced balances', () => {
-    const getRetryInput = (openingBalanceServiceModule as any).getOpeningBalanceSnapshotRetryInput;
-    expect(getRetryInput).toBeTypeOf('function');
-    if (typeof getRetryInput !== 'function') return;
-
-    const lockedBalance = {
-      scopeKey: 'project-1_site-1',
-      projectId: 'project-1',
-      constructionSiteId: 'site-1',
-      asOfDate: '2026-08-08',
-      contractValue: 1000,
-      constructionProgressPercent: 40,
-      purchasedValue: 500,
-      issuedValue: 350,
-      usedValue: 300,
-      recognizedValue: 350,
-      status: 'locked',
-      progressSnapshotStatus: 'pending',
-    };
-
-    expect(getRetryInput(lockedBalance)).toMatchObject({
-      projectId: 'project-1',
-      constructionSiteId: 'site-1',
-      weekStart: '2026-08-03',
-      snapshot: {
-        constructionProgressPercent: 40,
-        valueProgressPercent: 35,
-        progressMode: 'opening_balance',
-      },
-    });
-    expect(getRetryInput({ ...lockedBalance, progressSnapshotStatus: 'synced' })).toBeNull();
-  });
-
-  it('returns a recoverable warning when the final dedicated snapshot refresh fails', async () => {
-    const refreshSafely = (openingBalanceServiceModule as any).refreshOpeningBalanceSnapshotSafely;
-    expect(refreshSafely).toBeTypeOf('function');
-    if (typeof refreshSafely !== 'function') return;
-    const refreshSpy = vi.spyOn(projectWeeklyProgressService, 'refreshSnapshot')
-      .mockRejectedValueOnce(new Error('locked period'));
-
-    const result = await refreshSafely({
-      projectId: 'project-1',
-      constructionSiteId: 'site-1',
-      weekStart: '2026-08-03',
-      snapshot: {
-        constructionProgressPercent: 40,
-        valueProgressPercent: 35,
-        progressMode: 'opening_balance',
-      },
-    });
-
-    expect(result).toEqual({
-      refreshed: false,
-      warning: 'Dữ liệu đầu kỳ đã khóa nhưng snapshot tiến độ chưa cập nhật. Hãy mở chốt tuần rồi thử lại.',
-    });
-    refreshSpy.mockRestore();
-  });
-
   it('parses two-level accounting headers and aggregates specs by root accounting code', async () => {
     const result = await projectOpeningBalanceService.parseOpeningBalanceImport(makeAccountingWorkbookFile(), {
       defaultWarehouseId: 'wh-site',

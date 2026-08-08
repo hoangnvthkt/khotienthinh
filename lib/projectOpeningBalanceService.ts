@@ -22,6 +22,28 @@ import { isSupabaseConfigured, supabase } from './supabase';
 
 const BALANCE_TABLE = 'project_opening_balances';
 const LINE_TABLE = 'project_opening_balance_lines';
+const OPENING_BALANCE_PUBLIC_COLUMNS = [
+  'id',
+  'scope_key',
+  'project_id',
+  'construction_site_id',
+  'as_of_date',
+  'contract_value',
+  'construction_progress_percent',
+  'purchased_value',
+  'issued_value',
+  'used_value',
+  'recognized_value',
+  'status',
+  'note',
+  'stock_transaction_ids',
+  'material_project_transaction_id',
+  'created_by',
+  'locked_by',
+  'locked_at',
+  'created_at',
+  'updated_at',
+].join(',');
 
 export interface ProjectOpeningBalanceImportTotals {
   purchasedValue: number;
@@ -225,6 +247,9 @@ const balanceToDb = (balance: ProjectOpeningBalance): Record<string, unknown> =>
   if (!payload.id) delete payload.id;
   delete payload.created_at;
   delete payload.updated_at;
+  delete payload.progress_snapshot_status;
+  delete payload.progress_snapshot_payload;
+  delete payload.progress_snapshot_refreshed_at;
   return payload;
 };
 
@@ -759,21 +784,50 @@ export interface ProjectOpeningBalanceLockResult {
   updatedItems: InventoryItem[];
   progressSnapshotRefreshed: boolean;
   progressSnapshotWarning?: string;
-  progressSnapshotInput?: RefreshProjectProgressSnapshotInput;
+  progressSnapshotRetryState?: ProjectOpeningBalanceSnapshotRetryState;
+}
+
+export interface ProjectOpeningBalanceSnapshotRetryState {
+  openingBalanceId: string;
+  status: 'pending' | 'synced';
+  canRetry: boolean;
+  scopeKey?: string;
+  weekStart?: string;
+  refreshedAt?: string | null;
 }
 
 const OPENING_BALANCE_SNAPSHOT_WARNING =
   'Dữ liệu đầu kỳ đã khóa nhưng snapshot tiến độ chưa cập nhật. Hãy mở chốt tuần rồi thử lại.';
 
 export const refreshOpeningBalanceSnapshotSafely = async (
-  input: RefreshProjectProgressSnapshotInput,
-): Promise<{ refreshed: boolean; warning: string | null }> => {
+  openingBalanceId: string,
+): Promise<{
+  refreshed: boolean;
+  warning: string | null;
+  retryState: ProjectOpeningBalanceSnapshotRetryState;
+}> => {
   try {
-    await projectWeeklyProgressService.refreshSnapshot(input);
-    return { refreshed: true, warning: null };
+    const { data, error } = await supabase.rpc('sync_project_opening_balance_snapshot', {
+      p_opening_balance_id: openingBalanceId,
+    });
+    if (error) throw error;
+    return {
+      refreshed: true,
+      warning: null,
+      retryState: data as ProjectOpeningBalanceSnapshotRetryState,
+    };
   } catch (error) {
     console.warn('Opening balance snapshot refresh failed after lock', error);
-    return { refreshed: false, warning: OPENING_BALANCE_SNAPSHOT_WARNING };
+    return {
+      refreshed: false,
+      warning: OPENING_BALANCE_SNAPSHOT_WARNING,
+      retryState: {
+        openingBalanceId,
+        status: 'pending',
+        canRetry: true,
+        refreshedAt: null,
+      },
+    };
   }
 };
 
@@ -799,29 +853,12 @@ export const buildOpeningBalanceSnapshotInput = (
   },
 }) : null;
 
-export const getOpeningBalanceSnapshotRetryInput = (
-  balance: ProjectOpeningBalance | null | undefined,
-): RefreshProjectProgressSnapshotInput | null => {
-  if (
-    !balance
-    || balance.status !== 'locked'
-    || balance.progressSnapshotStatus === 'synced'
-  ) return null;
-  const persisted = balance.progressSnapshotPayload as unknown as Partial<RefreshProjectProgressSnapshotInput> | null | undefined;
-  if (
-    persisted?.projectId
-    && persisted?.weekStart
-    && persisted?.snapshot?.progressMode === 'opening_balance'
-  ) return persisted as RefreshProjectProgressSnapshotInput;
-  return buildOpeningBalanceSnapshotInput(balance);
-};
-
 export const projectOpeningBalanceService = {
   async getOpeningBalanceByScope(scopeKey: string): Promise<ProjectOpeningBalance | null> {
     if (!isSupabaseConfigured || !scopeKey) return null;
     const { data, error } = await supabase
       .from(BALANCE_TABLE)
-      .select('*')
+      .select(OPENING_BALANCE_PUBLIC_COLUMNS)
       .eq('scope_key', scopeKey)
       .neq('status', 'void')
       .order('status', { ascending: false })
@@ -839,7 +876,7 @@ export const projectOpeningBalanceService = {
     if (!isSupabaseConfigured || !scopeKey) return null;
     const { data, error } = await supabase
       .from(BALANCE_TABLE)
-      .select('*')
+      .select(OPENING_BALANCE_PUBLIC_COLUMNS)
       .eq('scope_key', scopeKey)
       .eq('status', 'locked')
       .maybeSingle();
@@ -864,24 +901,38 @@ export const projectOpeningBalanceService = {
     return (data || []).map(mapLine);
   },
 
-  async retryOpeningBalanceSnapshot(
-    balance: ProjectOpeningBalance,
-  ): Promise<RefreshProjectProgressSnapshotInput> {
-    const retryInput = getOpeningBalanceSnapshotRetryInput(balance);
-    if (!retryInput) throw new Error('Snapshot đầu kỳ không cần cập nhật lại.');
-    await projectWeeklyProgressService.refreshSnapshot(retryInput);
-    if (isSupabaseConfigured && balance.id) {
-      const { error } = await supabase
-        .from(BALANCE_TABLE)
-        .update({
-          progress_snapshot_status: 'synced',
-          progress_snapshot_payload: retryInput,
-          progress_snapshot_refreshed_at: new Date().toISOString(),
-        })
-        .eq('id', balance.id);
-      if (error) throw error;
+  async getOpeningBalanceSnapshotRetry(
+    openingBalanceId: string,
+  ): Promise<ProjectOpeningBalanceSnapshotRetryState> {
+    if (!isSupabaseConfigured) {
+      return { openingBalanceId, status: 'synced', canRetry: false, refreshedAt: null };
     }
-    return retryInput;
+    const { data, error } = await supabase.rpc('get_project_opening_balance_snapshot_retry', {
+      p_opening_balance_id: openingBalanceId,
+    });
+    if (error) throw error;
+    return data as ProjectOpeningBalanceSnapshotRetryState;
+  },
+
+  async prepareOpeningBalanceSnapshotRetry(
+    openingBalanceId: string,
+  ): Promise<ProjectOpeningBalanceSnapshotRetryState> {
+    const { data, error } = await supabase.rpc('prepare_project_opening_balance_snapshot', {
+      p_opening_balance_id: openingBalanceId,
+    });
+    if (error) throw error;
+    return data as ProjectOpeningBalanceSnapshotRetryState;
+  },
+
+  async retryOpeningBalanceSnapshot(
+    openingBalanceId: string,
+  ): Promise<ProjectOpeningBalanceSnapshotRetryState> {
+    if (!openingBalanceId) throw new Error('Thiếu định danh dữ liệu đầu kỳ.');
+    const { data, error } = await supabase.rpc('sync_project_opening_balance_snapshot', {
+      p_opening_balance_id: openingBalanceId,
+    });
+    if (error) throw error;
+    return data as ProjectOpeningBalanceSnapshotRetryState;
   },
 
   async saveOpeningBalanceDraft(input: {
@@ -900,7 +951,7 @@ export const projectOpeningBalanceService = {
     const { data, error } = await supabase
       .from(BALANCE_TABLE)
       .upsert(balanceToDb(balance), { onConflict: 'id' })
-      .select()
+      .select(OPENING_BALANCE_PUBLIC_COLUMNS)
       .single();
     if (error) throw error;
 
@@ -1097,36 +1148,29 @@ export const projectOpeningBalanceService = {
           locked_at: new Date().toISOString(),
           stock_transaction_ids: stockTransactionIds,
           material_project_transaction_id: materialProjectTransaction?.id || null,
-          progress_snapshot_status: 'pending',
-          progress_snapshot_payload: progressSnapshotInput,
-          progress_snapshot_refreshed_at: null,
         })
         .eq('id', openingId)
-        .select()
+        .select(OPENING_BALANCE_PUBLIC_COLUMNS)
         .single();
       if (lockError) throw lockError;
 
-      const snapshotRefresh = await refreshOpeningBalanceSnapshotSafely(progressSnapshotInput);
-      let finalLockedRow = lockedRow;
-      const { data: snapshotStateRow, error: snapshotStateError } = await supabase
-        .from(BALANCE_TABLE)
-        .update({
-          progress_snapshot_status: snapshotRefresh.refreshed ? 'synced' : 'pending',
-          progress_snapshot_payload: progressSnapshotInput,
-          progress_snapshot_refreshed_at: snapshotRefresh.refreshed ? new Date().toISOString() : null,
-        })
-        .eq('id', openingId)
-        .select()
-        .single();
-      if (snapshotStateError) {
-        console.warn('Opening balance snapshot status persistence failed', snapshotStateError);
-      } else if (snapshotStateRow) {
-        finalLockedRow = snapshotStateRow;
+      let retryState: ProjectOpeningBalanceSnapshotRetryState = {
+        openingBalanceId: openingId,
+        status: 'pending',
+        canRetry: true,
+        refreshedAt: null,
+      };
+      try {
+        retryState = await this.prepareOpeningBalanceSnapshotRetry(openingId);
+      } catch (error) {
+        console.warn('Opening balance snapshot preparation failed after lock', error);
       }
+      const snapshotRefresh = await refreshOpeningBalanceSnapshotSafely(openingId);
+      retryState = snapshotRefresh.retryState;
 
       const savedLines = await this.listLines(openingId);
       return {
-        openingBalance: mapBalance(finalLockedRow),
+        openingBalance: mapBalance(lockedRow),
         lines: savedLines,
         projectFinance,
         materialProjectTransaction,
@@ -1135,7 +1179,7 @@ export const projectOpeningBalanceService = {
         updatedItems,
         progressSnapshotRefreshed: snapshotRefresh.refreshed,
         progressSnapshotWarning: snapshotRefresh.warning || undefined,
-        progressSnapshotInput,
+        progressSnapshotRetryState: retryState,
       };
     }
 
@@ -1159,10 +1203,11 @@ export const projectOpeningBalanceService = {
       };
     }
 
+    const localOpeningBalanceId = balance.id || crypto.randomUUID();
     return {
       openingBalance: {
         ...balance,
-        id: balance.id || crypto.randomUUID(),
+        id: localOpeningBalanceId,
         status: 'locked',
         lockedBy: input.actorUserId,
         lockedAt: new Date().toISOString(),
@@ -1174,7 +1219,14 @@ export const projectOpeningBalanceService = {
       createdItems,
       updatedItems,
       progressSnapshotRefreshed: true,
-      progressSnapshotInput: progressSnapshotInput || undefined,
+      progressSnapshotRetryState: {
+        openingBalanceId: localOpeningBalanceId,
+        status: 'synced',
+        canRetry: false,
+        scopeKey: balance.scopeKey,
+        weekStart: progressSnapshotInput?.weekStart,
+        refreshedAt: new Date().toISOString(),
+      },
     };
   },
 
@@ -1182,7 +1234,7 @@ export const projectOpeningBalanceService = {
     if (!isSupabaseConfigured || !openingBalanceId) return;
     const { error } = await supabase
       .from(BALANCE_TABLE)
-      .update({ status: 'void', updated_at: new Date().toISOString() })
+      .update({ status: 'void' })
       .eq('id', openingBalanceId);
     if (error) throw error;
   },

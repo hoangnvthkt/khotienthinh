@@ -1417,6 +1417,285 @@ as $$
   );
 $$;
 
+create or replace function app_private.prepare_project_opening_balance_snapshot_impl(
+  p_opening_balance_id uuid
+)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = ''
+as $$
+declare
+  v_balance public.project_opening_balances%rowtype;
+  v_site_id text;
+  v_scope_key text;
+  v_week_start date;
+  v_snapshot jsonb;
+begin
+  if public.current_app_user_id() is null or not (
+    public.is_admin()
+    or app_private.current_user_is_global_wms_keeper()
+  ) then
+    raise exception 'Chỉ System Admin hoặc thủ kho tổng được chuẩn bị snapshot đầu kỳ.'
+      using errcode = '42501';
+  end if;
+
+  select balance.* into v_balance
+  from public.project_opening_balances balance
+  where balance.id = p_opening_balance_id
+  for update;
+
+  if not found or v_balance.status <> 'locked' then
+    raise exception 'Không tìm thấy dữ liệu đầu kỳ đã khóa.' using errcode = '23514';
+  end if;
+
+  v_site_id := nullif(btrim(coalesce(v_balance.construction_site_id, '')), '');
+  v_week_start := date_trunc('week', v_balance.as_of_date)::date;
+  v_scope_key := app_private.assert_project_progress_scope_period(
+    v_balance.project_id, v_site_id, 'weekly', v_week_start
+  );
+  if v_balance.scope_key is distinct from v_scope_key then
+    raise exception 'Opening Balance scope does not match its canonical project/site scope'
+      using errcode = '23514';
+  end if;
+
+  v_snapshot := jsonb_build_object(
+    'constructionProgressPercent', v_balance.construction_progress_percent,
+    'valueProgressPercent', case
+      when v_balance.contract_value > 0 then least(
+        100::numeric,
+        round(v_balance.recognized_value / v_balance.contract_value * 100)
+      )
+      else 0::numeric
+    end,
+    'progressMode', 'opening_balance',
+    'suppliedValue', case when v_balance.recognized_value > 0 then v_balance.recognized_value else null end,
+    'contractTotalValue', case when v_balance.contract_value > 0 then v_balance.contract_value else null end,
+    'purchasedValue', v_balance.purchased_value,
+    'issuedValue', v_balance.issued_value,
+    'recognizedValue', v_balance.recognized_value,
+    'ganttPercent', v_balance.construction_progress_percent,
+    'calculatedAt', now()
+  );
+  perform app_private.assert_project_progress_snapshot(v_snapshot);
+
+  update public.project_opening_balances balance
+  set progress_snapshot_status = 'pending',
+      progress_snapshot_payload = v_snapshot,
+      progress_snapshot_refreshed_at = null
+  where balance.id = p_opening_balance_id;
+
+  return jsonb_build_object(
+    'openingBalanceId', v_balance.id,
+    'status', 'pending',
+    'canRetry', true,
+    'scopeKey', v_scope_key,
+    'weekStart', v_week_start,
+    'refreshedAt', null
+  );
+end;
+$$;
+
+create or replace function app_private.get_project_opening_balance_snapshot_retry_impl(
+  p_opening_balance_id uuid
+)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+declare
+  v_balance public.project_opening_balances%rowtype;
+  v_site_id text;
+  v_scope_key text;
+  v_week_start date;
+  v_snapshot jsonb;
+  v_status text;
+begin
+  if public.current_app_user_id() is null or not (
+    public.is_admin()
+    or app_private.current_user_is_global_wms_keeper()
+  ) then
+    raise exception 'Chỉ System Admin hoặc thủ kho tổng được xem trạng thái snapshot đầu kỳ.'
+      using errcode = '42501';
+  end if;
+
+  select balance.* into v_balance
+  from public.project_opening_balances balance
+  where balance.id = p_opening_balance_id;
+
+  if not found or v_balance.status <> 'locked' then
+    raise exception 'Không tìm thấy dữ liệu đầu kỳ đã khóa.' using errcode = '23514';
+  end if;
+
+  v_site_id := nullif(btrim(coalesce(v_balance.construction_site_id, '')), '');
+  v_week_start := date_trunc('week', v_balance.as_of_date)::date;
+  v_scope_key := app_private.assert_project_progress_scope_period(
+    v_balance.project_id, v_site_id, 'weekly', v_week_start
+  );
+  if v_balance.scope_key is distinct from v_scope_key then
+    raise exception 'Opening Balance scope does not match its canonical project/site scope'
+      using errcode = '23514';
+  end if;
+
+  v_snapshot := jsonb_build_object(
+    'constructionProgressPercent', v_balance.construction_progress_percent,
+    'valueProgressPercent', case
+      when v_balance.contract_value > 0 then least(
+        100::numeric,
+        round(v_balance.recognized_value / v_balance.contract_value * 100)
+      )
+      else 0::numeric
+    end,
+    'progressMode', 'opening_balance',
+    'suppliedValue', case when v_balance.recognized_value > 0 then v_balance.recognized_value else null end,
+    'contractTotalValue', case when v_balance.contract_value > 0 then v_balance.contract_value else null end,
+    'purchasedValue', v_balance.purchased_value,
+    'issuedValue', v_balance.issued_value,
+    'recognizedValue', v_balance.recognized_value,
+    'ganttPercent', v_balance.construction_progress_percent,
+    'calculatedAt', now()
+  );
+  perform app_private.assert_project_progress_snapshot(v_snapshot);
+  v_status := case
+    when v_balance.progress_snapshot_status = 'synced'
+      and (v_balance.progress_snapshot_payload - 'calculatedAt') = (v_snapshot - 'calculatedAt')
+    then 'synced'
+    else 'pending'
+  end;
+
+  return jsonb_build_object(
+    'openingBalanceId', v_balance.id,
+    'status', v_status,
+    'canRetry', v_status = 'pending',
+    'scopeKey', v_scope_key,
+    'weekStart', v_week_start,
+    'refreshedAt', case when v_status = 'synced' then v_balance.progress_snapshot_refreshed_at else null end
+  );
+end;
+$$;
+
+create or replace function app_private.sync_project_opening_balance_snapshot_impl(
+  p_opening_balance_id uuid
+)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = ''
+as $$
+declare
+  v_balance public.project_opening_balances%rowtype;
+  v_site_id text;
+  v_scope_key text;
+  v_week_start date;
+  v_snapshot jsonb;
+begin
+  if public.current_app_user_id() is null or not (
+    public.is_admin()
+    or app_private.current_user_is_global_wms_keeper()
+  ) then
+    raise exception 'Chỉ System Admin hoặc thủ kho tổng được đồng bộ snapshot đầu kỳ.'
+      using errcode = '42501';
+  end if;
+
+  select balance.* into v_balance
+  from public.project_opening_balances balance
+  where balance.id = p_opening_balance_id
+  for update;
+
+  if not found or v_balance.status <> 'locked' then
+    raise exception 'Không tìm thấy dữ liệu đầu kỳ đã khóa.' using errcode = '23514';
+  end if;
+
+  v_site_id := nullif(btrim(coalesce(v_balance.construction_site_id, '')), '');
+  v_week_start := date_trunc('week', v_balance.as_of_date)::date;
+  v_scope_key := app_private.assert_project_progress_scope_period(
+    v_balance.project_id, v_site_id, 'weekly', v_week_start
+  );
+  if v_balance.scope_key is distinct from v_scope_key then
+    raise exception 'Opening Balance scope does not match its canonical project/site scope'
+      using errcode = '23514';
+  end if;
+
+  v_snapshot := jsonb_build_object(
+    'constructionProgressPercent', v_balance.construction_progress_percent,
+    'valueProgressPercent', case
+      when v_balance.contract_value > 0 then least(
+        100::numeric,
+        round(v_balance.recognized_value / v_balance.contract_value * 100)
+      )
+      else 0::numeric
+    end,
+    'progressMode', 'opening_balance',
+    'suppliedValue', case when v_balance.recognized_value > 0 then v_balance.recognized_value else null end,
+    'contractTotalValue', case when v_balance.contract_value > 0 then v_balance.contract_value else null end,
+    'purchasedValue', v_balance.purchased_value,
+    'issuedValue', v_balance.issued_value,
+    'recognizedValue', v_balance.recognized_value,
+    'ganttPercent', v_balance.construction_progress_percent,
+    'calculatedAt', now()
+  );
+  perform app_private.assert_project_progress_snapshot(v_snapshot);
+  perform app_private.refresh_project_progress_snapshot_impl(
+    v_balance.project_id, v_site_id, v_week_start, v_snapshot
+  );
+
+  update public.project_opening_balances balance
+  set progress_snapshot_status = 'synced',
+      progress_snapshot_payload = v_snapshot,
+      progress_snapshot_refreshed_at = now()
+  where balance.id = p_opening_balance_id;
+
+  return jsonb_build_object(
+    'openingBalanceId', v_balance.id,
+    'status', 'synced',
+    'canRetry', false,
+    'scopeKey', v_scope_key,
+    'weekStart', v_week_start,
+    'refreshedAt', now()
+  );
+end;
+$$;
+
+create or replace function public.prepare_project_opening_balance_snapshot(
+  p_opening_balance_id uuid
+)
+returns jsonb
+language sql
+volatile
+security invoker
+set search_path = ''
+as $$
+  select app_private.prepare_project_opening_balance_snapshot_impl(p_opening_balance_id);
+$$;
+
+create or replace function public.get_project_opening_balance_snapshot_retry(
+  p_opening_balance_id uuid
+)
+returns jsonb
+language sql
+stable
+security invoker
+set search_path = ''
+as $$
+  select app_private.get_project_opening_balance_snapshot_retry_impl(p_opening_balance_id);
+$$;
+
+create or replace function public.sync_project_opening_balance_snapshot(
+  p_opening_balance_id uuid
+)
+returns jsonb
+language sql
+volatile
+security invoker
+set search_path = ''
+as $$
+  select app_private.sync_project_opening_balance_snapshot_impl(p_opening_balance_id);
+$$;
+
 -- Scoped reads require weekly_progress.view. No authenticated mutation policy
 -- or table grant remains; all writes cross the validated RPC boundary above.
 drop policy if exists project_daily_task_progress_all
@@ -1483,6 +1762,31 @@ grant select on table public.project_weekly_task_progress to authenticated;
 grant select on table public.weekly_progress_snapshots to authenticated;
 grant select on table public.project_progress_period_states to authenticated;
 
+-- Keep legacy Opening Balance drafting/locking compatible while preventing
+-- authenticated clients from reading or writing the server-owned retry fields.
+revoke all on table public.project_opening_balances from public;
+revoke all on table public.project_opening_balances from anon;
+revoke all on table public.project_opening_balances from authenticated;
+grant select (
+  id, scope_key, project_id, construction_site_id, as_of_date, contract_value,
+  construction_progress_percent, purchased_value, issued_value, used_value,
+  recognized_value, status, note, stock_transaction_ids,
+  material_project_transaction_id, created_by, locked_by, locked_at,
+  created_at, updated_at
+) on table public.project_opening_balances to authenticated;
+grant insert (
+  id, scope_key, project_id, construction_site_id, as_of_date, contract_value,
+  construction_progress_percent, purchased_value, issued_value, used_value,
+  recognized_value, status, note, stock_transaction_ids,
+  material_project_transaction_id, created_by, locked_by, locked_at
+) on table public.project_opening_balances to authenticated;
+grant update (
+  id, scope_key, project_id, construction_site_id, as_of_date, contract_value,
+  construction_progress_percent, purchased_value, issued_value, used_value,
+  recognized_value, status, note, stock_transaction_ids,
+  material_project_transaction_id, created_by, locked_by, locked_at
+) on table public.project_opening_balances to authenticated;
+
 revoke all on schema app_private from public, anon;
 grant usage on schema app_private to authenticated;
 
@@ -1515,6 +1819,12 @@ revoke all on function app_private.refresh_project_progress_snapshot_impl(text, 
   from public, anon, authenticated;
 revoke all on function app_private.preflight_project_progress_snapshot_impl(text, text, date, jsonb)
   from public, anon, authenticated;
+revoke all on function app_private.prepare_project_opening_balance_snapshot_impl(uuid)
+  from public, anon, authenticated;
+revoke all on function app_private.get_project_opening_balance_snapshot_retry_impl(uuid)
+  from public, anon, authenticated;
+revoke all on function app_private.sync_project_opening_balance_snapshot_impl(uuid)
+  from public, anon, authenticated;
 
 grant execute on function app_private.get_project_progress_period_state_impl(text, text, text, date)
   to authenticated;
@@ -1524,9 +1834,13 @@ grant execute on function app_private.close_project_progress_period_impl(text, t
   to authenticated;
 grant execute on function app_private.reopen_project_progress_period_impl(text, text, text, date, text)
   to authenticated;
-grant execute on function app_private.refresh_project_progress_snapshot_impl(text, text, date, jsonb)
-  to authenticated;
 grant execute on function app_private.preflight_project_progress_snapshot_impl(text, text, date, jsonb)
+  to authenticated;
+grant execute on function app_private.prepare_project_opening_balance_snapshot_impl(uuid)
+  to authenticated;
+grant execute on function app_private.get_project_opening_balance_snapshot_retry_impl(uuid)
+  to authenticated;
+grant execute on function app_private.sync_project_opening_balance_snapshot_impl(uuid)
   to authenticated;
 
 revoke all on function public.get_project_progress_period_state(text, text, text, date)
@@ -1541,6 +1855,12 @@ revoke all on function public.refresh_project_progress_snapshot(text, text, date
   from public, anon, authenticated;
 revoke all on function public.preflight_project_progress_snapshot(text, text, date, jsonb)
   from public, anon, authenticated;
+revoke all on function public.prepare_project_opening_balance_snapshot(uuid)
+  from public, anon, authenticated;
+revoke all on function public.get_project_opening_balance_snapshot_retry(uuid)
+  from public, anon, authenticated;
+revoke all on function public.sync_project_opening_balance_snapshot(uuid)
+  from public, anon, authenticated;
 
 grant execute on function public.get_project_progress_period_state(text, text, text, date)
   to authenticated;
@@ -1550,9 +1870,13 @@ grant execute on function public.close_project_progress_period(text, text, text,
   to authenticated;
 grant execute on function public.reopen_project_progress_period(text, text, text, date, text)
   to authenticated;
-grant execute on function public.refresh_project_progress_snapshot(text, text, date, jsonb)
-  to authenticated;
 grant execute on function public.preflight_project_progress_snapshot(text, text, date, jsonb)
+  to authenticated;
+grant execute on function public.prepare_project_opening_balance_snapshot(uuid)
+  to authenticated;
+grant execute on function public.get_project_opening_balance_snapshot_retry(uuid)
+  to authenticated;
+grant execute on function public.sync_project_opening_balance_snapshot(uuid)
   to authenticated;
 
 notify pgrst, 'reload schema';

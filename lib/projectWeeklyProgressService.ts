@@ -371,18 +371,6 @@ export interface SaveProjectProgressPeriodResult {
   weeklyAggregateFrozen: boolean;
 }
 
-export interface ProjectProgressSnapshotResult extends ProjectProgressSnapshotPayload {
-  id: string;
-  scopeKey: string;
-  projectId: string;
-  constructionSiteId: string | null;
-  weekLabel: string;
-  weekStart: string;
-  progressPercent: number;
-  createdAt: string;
-  updatedAt: string;
-}
-
 export interface ProjectProgressSnapshotPreflightResult {
   allowed: true;
   scopeKey: string;
@@ -655,18 +643,6 @@ export const projectWeeklyProgressService = {
     });
     if (error) throw error;
     return data as ProjectProgressPeriodState;
-  },
-
-  async refreshSnapshot(input: RefreshProjectProgressSnapshotInput): Promise<ProjectProgressSnapshotResult> {
-    assertProgressRpcAvailable();
-    const { data, error } = await supabase.rpc('refresh_project_progress_snapshot', {
-      p_project_id: input.projectId,
-      p_construction_site_id: input.constructionSiteId || null,
-      p_week_start: input.weekStart,
-      p_snapshot: input.snapshot,
-    });
-    if (error) throw error;
-    return data as ProjectProgressSnapshotResult;
   },
 
   async preflightSnapshot(input: RefreshProjectProgressSnapshotInput): Promise<ProjectProgressSnapshotPreflightResult> {

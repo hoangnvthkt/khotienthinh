@@ -81,7 +81,10 @@ begin
     or to_regprocedure('public.close_project_progress_period(text,text,text,date,jsonb,jsonb)') is null
     or to_regprocedure('public.reopen_project_progress_period(text,text,text,date,text)') is null
     or to_regprocedure('public.preflight_project_progress_snapshot(text,text,date,jsonb)') is null
-    or to_regprocedure('public.refresh_project_progress_snapshot(text,text,date,jsonb)') is null then
+    or to_regprocedure('public.refresh_project_progress_snapshot(text,text,date,jsonb)') is null
+    or to_regprocedure('public.prepare_project_opening_balance_snapshot(uuid)') is null
+    or to_regprocedure('public.get_project_opening_balance_snapshot_retry(uuid)') is null
+    or to_regprocedure('public.sync_project_opening_balance_snapshot(uuid)') is null then
     raise exception 'weekly progress period-state RPC surface is incomplete';
   end if;
 
@@ -90,7 +93,10 @@ begin
     or has_function_privilege('anon', 'public.close_project_progress_period(text,text,text,date,jsonb,jsonb)', 'EXECUTE')
     or has_function_privilege('anon', 'public.reopen_project_progress_period(text,text,text,date,text)', 'EXECUTE')
     or has_function_privilege('anon', 'public.preflight_project_progress_snapshot(text,text,date,jsonb)', 'EXECUTE')
-    or has_function_privilege('anon', 'public.refresh_project_progress_snapshot(text,text,date,jsonb)', 'EXECUTE') then
+    or has_function_privilege('anon', 'public.refresh_project_progress_snapshot(text,text,date,jsonb)', 'EXECUTE')
+    or has_function_privilege('anon', 'public.prepare_project_opening_balance_snapshot(uuid)', 'EXECUTE')
+    or has_function_privilege('anon', 'public.get_project_opening_balance_snapshot_retry(uuid)', 'EXECUTE')
+    or has_function_privilege('anon', 'public.sync_project_opening_balance_snapshot(uuid)', 'EXECUTE') then
     raise exception 'anon unexpectedly has a weekly progress RPC grant';
   end if;
 
@@ -105,7 +111,10 @@ begin
         'close_project_progress_period',
         'reopen_project_progress_period',
         'preflight_project_progress_snapshot',
-        'refresh_project_progress_snapshot'
+        'refresh_project_progress_snapshot',
+        'prepare_project_opening_balance_snapshot',
+        'get_project_opening_balance_snapshot_retry',
+        'sync_project_opening_balance_snapshot'
       )
       and routine.prosecdef
   ) or exists (
@@ -119,7 +128,10 @@ begin
         'close_project_progress_period_impl',
         'reopen_project_progress_period_impl',
         'preflight_project_progress_snapshot_impl',
-        'refresh_project_progress_snapshot_impl'
+        'refresh_project_progress_snapshot_impl',
+        'prepare_project_opening_balance_snapshot_impl',
+        'get_project_opening_balance_snapshot_retry_impl',
+        'sync_project_opening_balance_snapshot_impl'
       )
       and not routine.prosecdef
   ) then
@@ -131,6 +143,21 @@ begin
     or has_table_privilege('authenticated', 'public.weekly_progress_snapshots', 'INSERT,UPDATE,DELETE')
     or has_table_privilege('authenticated', 'public.project_progress_period_states', 'INSERT,UPDATE,DELETE') then
     raise exception 'authenticated retains direct progress mutation privileges';
+  end if;
+
+  if has_function_privilege(
+    'authenticated', 'public.refresh_project_progress_snapshot(text,text,date,jsonb)', 'EXECUTE'
+  ) or has_function_privilege(
+    'authenticated', 'app_private.refresh_project_progress_snapshot_impl(text,text,date,jsonb)', 'EXECUTE'
+  ) then
+    raise exception 'authenticated retains the unbound snapshot refresh capability';
+  end if;
+
+  if has_table_privilege('authenticated', 'public.project_opening_balances', 'DELETE')
+    or has_column_privilege('authenticated', 'public.project_opening_balances', 'progress_snapshot_status', 'SELECT,INSERT,UPDATE')
+    or has_column_privilege('authenticated', 'public.project_opening_balances', 'progress_snapshot_payload', 'SELECT,INSERT,UPDATE')
+    or has_column_privilege('authenticated', 'public.project_opening_balances', 'progress_snapshot_refreshed_at', 'SELECT,INSERT,UPDATE') then
+    raise exception 'authenticated retains direct Opening Balance retry metadata access';
   end if;
 end $$;
 
@@ -152,6 +179,7 @@ create temp table weekly_progress_smoke_ids (
   confirmer_staff_id uuid not null,
   outsider_staff_id uuid not null,
   obsolete_actor_staff_id uuid not null,
+  opening_balance_id uuid not null,
   task_id text not null,
   parent_task_id text not null,
   other_task_id text not null,
@@ -171,6 +199,7 @@ insert into weekly_progress_smoke_ids values (
   'weekly-progress-other-' || gen_random_uuid()::text,
   gen_random_uuid(), gen_random_uuid(), gen_random_uuid(),
   gen_random_uuid(), gen_random_uuid(), gen_random_uuid(), gen_random_uuid(), gen_random_uuid(),
+  gen_random_uuid(),
   'weekly-progress-task-' || gen_random_uuid()::text,
   'weekly-progress-parent-task-' || gen_random_uuid()::text,
   'weekly-progress-other-task-' || gen_random_uuid()::text,
@@ -220,6 +249,28 @@ select project_id, 'WEEKLY-PROGRESS-SMOKE', 'Weekly Progress Smoke', site_id, 'm
 from weekly_progress_smoke_ids
 union all
 select other_project_id, 'WEEKLY-PROGRESS-OTHER', 'Weekly Progress Other', other_site_id, 'manual'
+from weekly_progress_smoke_ids;
+
+-- Seed legacy retry metadata with a deliberately mismatched project/site/week.
+-- The ID-only RPCs must derive the canonical payload from this balance row.
+insert into public.project_opening_balances (
+  id, scope_key, project_id, construction_site_id, as_of_date, contract_value,
+  construction_progress_percent, purchased_value, issued_value, used_value,
+  recognized_value, status, progress_snapshot_status, progress_snapshot_payload,
+  progress_snapshot_refreshed_at
+)
+select
+  opening_balance_id, project_id || '_' || site_id::text, project_id, site_id::text,
+  date '2026-08-08', 2000, 41, 800, 500, 410, 410, 'locked', 'synced',
+  jsonb_build_object(
+    'projectId', other_project_id,
+    'constructionSiteId', other_site_id::text,
+    'weekStart', '2026-08-10',
+    'constructionProgressPercent', 99,
+    'valueProgressPercent', 99,
+    'progressMode', 'opening_balance'
+  ),
+  now()
 from weekly_progress_smoke_ids;
 
 insert into public.hrm_positions (id, name, level, code, is_active, sort_order, source, metadata)
@@ -686,7 +737,7 @@ end $$;
 
 reset role;
 
--- Opening Balance refresh keeps its own Admin/global-keeper capability and
+-- Opening Balance retry is bound to its server-owned balance identity and
 -- still honors the weekly period lock without weekly_progress Room membership.
 set local role authenticated;
 select set_config('request.jwt.claim.email', keeper_email, true),
@@ -695,6 +746,8 @@ select set_config('request.jwt.claim.email', keeper_email, true),
 from weekly_progress_smoke_ids;
 
 do $$
+declare
+  v_retry jsonb;
 begin
   if public.project_user_has_room_action(
     (select project_id from weekly_progress_smoke_ids),
@@ -719,6 +772,18 @@ begin
   exception when check_violation then null;
   end;
 
+  v_retry := public.get_project_opening_balance_snapshot_retry(
+    (select opening_balance_id from weekly_progress_smoke_ids)
+  );
+  if v_retry ->> 'status' <> 'pending'
+    or not coalesce((v_retry ->> 'canRetry')::boolean, false)
+    or v_retry ->> 'scopeKey' <> (
+      select project_id || '_' || site_id::text from weekly_progress_smoke_ids
+    )
+    or v_retry ->> 'weekStart' <> '2026-08-03' then
+    raise exception 'legacy Opening Balance retry state was not canonicalized by identity';
+  end if;
+
   begin
     perform public.refresh_project_progress_snapshot(
       (select project_id from weekly_progress_smoke_ids),
@@ -729,7 +794,23 @@ begin
         'progressMode', 'opening_balance'
       )
     );
-    raise exception 'snapshot refresh changed a locked weekly period';
+    raise exception 'unbound snapshot refresh unexpectedly remained executable';
+  exception when insufficient_privilege then null;
+  end;
+
+  begin
+    update public.project_opening_balances
+    set progress_snapshot_payload = jsonb_build_object('attacker', true)
+    where id = (select opening_balance_id from weekly_progress_smoke_ids);
+    raise exception 'direct retry metadata update unexpectedly succeeded';
+  exception when insufficient_privilege then null;
+  end;
+
+  begin
+    perform public.sync_project_opening_balance_snapshot(
+      (select opening_balance_id from weekly_progress_smoke_ids)
+    );
+    raise exception 'bound Opening Balance sync changed a locked weekly period';
   exception when check_violation then null;
   end;
 end $$;
@@ -781,7 +862,31 @@ begin
         'progressMode', 'opening_balance'
       )
     );
-    raise exception 'weekly_progress editor unexpectedly received Opening Balance authority';
+    raise exception 'weekly_progress editor unexpectedly received unbound Opening Balance authority';
+  exception when insufficient_privilege then null;
+  end;
+
+  begin
+    perform public.get_project_opening_balance_snapshot_retry(
+      (select opening_balance_id from weekly_progress_smoke_ids)
+    );
+    raise exception 'weekly_progress editor unexpectedly read Opening Balance retry state';
+  exception when insufficient_privilege then null;
+  end;
+
+  begin
+    perform public.prepare_project_opening_balance_snapshot(
+      (select opening_balance_id from weekly_progress_smoke_ids)
+    );
+    raise exception 'weekly_progress editor unexpectedly prepared Opening Balance retry state';
+  exception when insufficient_privilege then null;
+  end;
+
+  begin
+    perform public.sync_project_opening_balance_snapshot(
+      (select opening_balance_id from weekly_progress_smoke_ids)
+    );
+    raise exception 'weekly_progress editor unexpectedly synchronized Opening Balance retry state';
   exception when insufficient_privilege then null;
   end;
 end $$;
@@ -824,13 +929,7 @@ begin
   end if;
 end $$;
 
-select public.refresh_project_progress_snapshot(
-  project_id, site_id::text, date '2026-08-03',
-  jsonb_build_object(
-    'constructionProgressPercent', 41, 'valueProgressPercent', 21,
-    'progressMode', 'opening_balance', 'recognizedValue', 410
-  )
-)
+select public.sync_project_opening_balance_snapshot(opening_balance_id)
 from weekly_progress_smoke_ids;
 
 do $$
@@ -842,6 +941,7 @@ begin
       on snapshot.scope_key = ids.project_id || '_' || ids.site_id::text
     where snapshot.week_start = date '2026-08-03'
       and snapshot.progress_percent = 41
+      and snapshot.value_progress_percent = 21
       and snapshot.progress_mode = 'opening_balance'
   ) then
     raise exception 'Opening Balance snapshot refresh did not persist after reopen';
@@ -849,6 +949,22 @@ begin
 end $$;
 
 reset role;
+
+do $$
+begin
+  if exists (
+    select 1
+    from public.project_opening_balances balance
+    join weekly_progress_smoke_ids ids on ids.opening_balance_id = balance.id
+    where balance.progress_snapshot_status <> 'synced'
+      or balance.progress_snapshot_refreshed_at is null
+      or balance.progress_snapshot_payload ?| array['projectId', 'constructionSiteId', 'weekStart']
+      or balance.progress_snapshot_payload ->> 'progressMode' <> 'opening_balance'
+      or (balance.progress_snapshot_payload ->> 'constructionProgressPercent')::numeric <> 41
+  ) then
+    raise exception 'legacy mismatched retry payload escaped canonical opening balance binding';
+  end if;
+end $$;
 
 -- System Admin is an operational override, not a Room recipient. Scope/task mismatch still fails.
 set local role authenticated;

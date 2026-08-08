@@ -123,6 +123,20 @@ type ProgressEntryMode = 'daily' | 'weekly';
 type ProgressDraft = { progressPercent: string; quantityDone: string; note: string };
 type TimeFilterMode = 'recent' | 'week' | 'month' | 'all';
 
+export const getLatestDailyProgressRow = (
+    rows: ProjectDailyTaskProgress[],
+    scopeKey: string,
+    taskId: string,
+    progressDate: string,
+    includeDate = true,
+): ProjectDailyTaskProgress | undefined => rows
+    .filter(row => row.scopeKey === scopeKey && row.taskId === taskId)
+    .filter(row => includeDate ? row.progressDate <= progressDate : row.progressDate < progressDate)
+    .sort((a, b) =>
+        b.progressDate.localeCompare(a.progressDate)
+        || (b.updatedAt || '').localeCompare(a.updatedAt || '')
+    )[0];
+
 export const getWeeklyProgressPeriodKey = (
     scopeKey: string,
     periodType: ProgressEntryMode,
@@ -158,6 +172,10 @@ export interface WeeklyProgressPeriodTarget {
     periodStart: string;
 }
 
+export type WeeklyProgressMutationOutcome<T> =
+    | { ok: true; result: T; remainedOnCapturedTarget: boolean }
+    | { ok: false; error: unknown; remainedOnCapturedTarget: boolean };
+
 export const runWeeklyProgressKeyedReload = async <T,>(input: {
     targetKey: string;
     generation: number;
@@ -191,7 +209,7 @@ export const completeWeeklyProgressMutationWithReload = async <T,>(input: {
     mutate: () => Promise<T>;
     getCurrentTarget: () => WeeklyProgressPeriodTarget;
     reload: (target: WeeklyProgressPeriodTarget) => Promise<unknown>;
-}): Promise<{ result: T; remainedOnCapturedTarget: boolean }> => {
+}): Promise<WeeklyProgressMutationOutcome<T>> => {
     const reloadUntilTargetSettles = async (): Promise<WeeklyProgressPeriodTarget> => {
         while (true) {
             const reloadTarget = input.getCurrentTarget();
@@ -200,18 +218,22 @@ export const completeWeeklyProgressMutationWithReload = async <T,>(input: {
             if (latestTarget.key === reloadTarget.key) return latestTarget;
         }
     };
-    let result: T;
     try {
-        result = await input.mutate();
+        const result = await input.mutate();
+        const currentTarget = await reloadUntilTargetSettles();
+        return {
+            ok: true,
+            result,
+            remainedOnCapturedTarget: currentTarget.key === input.capturedTarget.key,
+        };
     } catch (error) {
-        await reloadUntilTargetSettles();
-        throw error;
+        const currentTarget = await reloadUntilTargetSettles();
+        return {
+            ok: false,
+            error,
+            remainedOnCapturedTarget: currentTarget.key === input.capturedTarget.key,
+        };
     }
-    const currentTarget = await reloadUntilTargetSettles();
-    return {
-        result,
-        remainedOnCapturedTarget: currentTarget.key === input.capturedTarget.key,
-    };
 };
 
 export const WeeklyProgressPermissionUnavailable: React.FC<{
@@ -726,13 +748,13 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
     }, [selectedWeekDays]);
 
     const getLatestDailyProgressForTask = useCallback((taskId: string, progressDate: string, includeDate = true) => {
-        return selectedDailyMutationRows
-            .filter(row => row.scopeKey === scopeKey && row.taskId === taskId)
-            .filter(row => includeDate ? row.progressDate <= progressDate : row.progressDate < progressDate)
-            .sort((a, b) =>
-                b.progressDate.localeCompare(a.progressDate) ||
-                (b.updatedAt || '').localeCompare(a.updatedAt || '')
-            )[0];
+        return getLatestDailyProgressRow(
+            selectedDailyMutationRows,
+            scopeKey,
+            taskId,
+            progressDate,
+            includeDate,
+        );
     }, [scopeKey, selectedDailyMutationRows]);
 
     const invalidateSelectedPeriodResources = useCallback(() => {
@@ -989,7 +1011,7 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
 
         for (const day of selectedWeekDays) {
             const rawTasks = tasks.map(t => {
-                const entry = getLatestDailyProgressForTask(t.id, day);
+                const entry = getLatestDailyProgressRow(allDailyProgress, scopeKey, t.id, day);
                 if (entry) {
                     return {
                         ...t,
@@ -1021,7 +1043,7 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
         }
 
         return history;
-    }, [allDailyProgress, completionRequests, dailyLogs, getLatestDailyProgressForTask, scopeKey, selectedWeekDays, tasks]);
+    }, [allDailyProgress, completionRequests, dailyLogs, scopeKey, selectedWeekDays, tasks]);
 
     const staffMap = useMemo(() => {
         const map = new Map<string, string>();
@@ -1423,7 +1445,7 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
         const capturedTarget = currentPeriodTargetRef.current;
         setSavingDailyProgress(true);
         try {
-            const { result } = await completeWeeklyProgressMutationWithReload<SaveProjectProgressPeriodResult>({
+            const outcome = await completeWeeklyProgressMutationWithReload<SaveProjectProgressPeriodResult>({
                 capturedTarget,
                 getCurrentTarget: () => currentPeriodTargetRef.current,
                 reload: reloadAuthoritativePeriodResources,
@@ -1436,16 +1458,26 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                     snapshot: draft.snapshot,
                 }),
             });
+            if (!outcome.remainedOnCapturedTarget) return;
+            if (outcome.ok === false) {
+                console.error(outcome.error);
+                toast.error(
+                    'Không thể lưu tiến độ ngày',
+                    getProjectProgressMutationErrorMessage(outcome.error, 'Vui lòng thử lại.'),
+                );
+                return;
+            }
             setFilterWeek(draft.weekStart);
             setFilterMonth(draft.weekStart.substring(0, 7));
 
             toast.success(
                 'Đã lưu thay đổi',
-                result.weeklyAggregateFrozen
+                outcome.result.weeklyAggregateFrozen
                     ? `${capturedTarget.periodStart} · Tuần đã chốt nên tổng hợp tuần được giữ nguyên.`
                     : `${capturedTarget.periodStart} · ${getISOWeekLabel(draft.weekStart)} · Tiến độ thi công ${draft.constructionProgress}%`,
             );
         } catch (error: any) {
+            if (currentPeriodTargetRef.current.key !== capturedTarget.key) return;
             console.error(error);
             toast.error(
                 'Không thể lưu tiến độ ngày',
@@ -1483,7 +1515,7 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
         const capturedTarget = currentPeriodTargetRef.current;
         setSavingWeeklyProgress(true);
         try {
-            await completeWeeklyProgressMutationWithReload({
+            const outcome = await completeWeeklyProgressMutationWithReload({
                 capturedTarget,
                 getCurrentTarget: () => currentPeriodTargetRef.current,
                 reload: reloadAuthoritativePeriodResources,
@@ -1496,6 +1528,15 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                     snapshot: draft.snapshot,
                 }),
             });
+            if (!outcome.remainedOnCapturedTarget) return;
+            if (outcome.ok === false) {
+                console.error(outcome.error);
+                toast.error(
+                    'Không thể lưu tiến độ tuần',
+                    getProjectProgressMutationErrorMessage(outcome.error, 'Vui lòng thử lại.'),
+                );
+                return;
+            }
             setFilterWeek(capturedTarget.periodStart);
             setFilterMonth(capturedTarget.periodStart.substring(0, 7));
 
@@ -1504,6 +1545,7 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                 `${getISOWeekLabel(capturedTarget.periodStart)} · Tiến độ thi công ${draft.constructionProgress}% · Theo giá trị ${valueProgressMetric.valueProgressPercent}%`,
             );
         } catch (error: any) {
+            if (currentPeriodTargetRef.current.key !== capturedTarget.key) return;
             console.error(error);
             toast.error(
                 'Không thể lưu tiến độ tuần',
@@ -1550,11 +1592,12 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
         const setSaving = entryMode === 'daily' ? setSavingDailyProgress : setSavingWeeklyProgress;
         setSaving(true);
         try {
+            let outcome: WeeklyProgressMutationOutcome<ProjectProgressPeriodState>;
             if (entryMode === 'daily') {
                 const draft = weeklyProgressCapabilities.canEdit && weeklyLeafTasks.length > 0
                     ? buildDailyMutationDraft()
                     : null;
-                await completeWeeklyProgressMutationWithReload({
+                outcome = await completeWeeklyProgressMutationWithReload({
                     capturedTarget,
                     getCurrentTarget: () => currentPeriodTargetRef.current,
                     reload: reloadAuthoritativePeriodResources,
@@ -1571,7 +1614,7 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                 const draft = weeklyProgressCapabilities.canEdit && weeklyLeafTasks.length > 0
                     ? buildWeeklyMutationDraft()
                     : null;
-                await completeWeeklyProgressMutationWithReload({
+                outcome = await completeWeeklyProgressMutationWithReload({
                     capturedTarget,
                     getCurrentTarget: () => currentPeriodTargetRef.current,
                     reload: reloadAuthoritativePeriodResources,
@@ -1585,8 +1628,18 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                     }),
                 });
             }
+            if (!outcome.remainedOnCapturedTarget) return;
+            if (outcome.ok === false) {
+                console.error(outcome.error);
+                toast.error(
+                    'Không thể chốt kỳ tiến độ',
+                    getProjectProgressMutationErrorMessage(outcome.error, 'Vui lòng thử lại.'),
+                );
+                return;
+            }
             toast.success('Đã chốt kỳ tiến độ', 'Dữ liệu kỳ đã chuyển sang chế độ chỉ đọc.');
         } catch (error: any) {
+            if (currentPeriodTargetRef.current.key !== capturedTarget.key) return;
             console.error(error);
             toast.error(
                 'Không thể chốt kỳ tiến độ',
@@ -1637,7 +1690,7 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
         const setSaving = entryMode === 'daily' ? setSavingDailyProgress : setSavingWeeklyProgress;
         setSaving(true);
         try {
-            await completeWeeklyProgressMutationWithReload({
+            const outcome = await completeWeeklyProgressMutationWithReload({
                 capturedTarget,
                 getCurrentTarget: () => currentPeriodTargetRef.current,
                 reload: reloadAuthoritativePeriodResources,
@@ -1649,8 +1702,18 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                     reason,
                 }),
             });
+            if (!outcome.remainedOnCapturedTarget) return;
+            if (outcome.ok === false) {
+                console.error(outcome.error);
+                toast.error(
+                    'Không thể mở chốt',
+                    getProjectProgressMutationErrorMessage(outcome.error, 'Vui lòng thử lại.'),
+                );
+                return;
+            }
             toast.success('Đã mở chốt', 'Kỳ tiến độ đã được mở lại. Quyền sửa vẫn áp dụng độc lập.');
         } catch (error: any) {
+            if (currentPeriodTargetRef.current.key !== capturedTarget.key) return;
             console.error(error);
             toast.error(
                 'Không thể mở chốt',

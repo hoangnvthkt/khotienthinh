@@ -57,8 +57,57 @@ describe('WeeklyProgressTab period controls', () => {
     };
     resolveSave();
 
-    await expect(completion).resolves.toMatchObject({ remainedOnCapturedTarget: false });
+    await expect(completion).resolves.toMatchObject({ ok: true, remainedOnCapturedTarget: false });
     expect(reloadedKeys).toEqual(['project-1_site-1__daily__2026-08-08']);
+  });
+
+  it('returns a stale failure outcome without throwing after the selected period changes', async () => {
+    const completeMutation = (weeklyProgressTabModule as any).completeWeeklyProgressMutationWithReload;
+    expect(completeMutation).toBeTypeOf('function');
+    if (typeof completeMutation !== 'function') return;
+
+    const capturedTarget = {
+      key: 'project-1_site-1__weekly__2026-08-03',
+      scopeKey: 'project-1_site-1',
+      periodType: 'weekly',
+      periodStart: '2026-08-03',
+    };
+    const currentTarget = {
+      ...capturedTarget,
+      key: 'project-1_site-1__weekly__2026-08-10',
+      periodStart: '2026-08-10',
+    };
+    const failure = new Error('captured period failed');
+
+    await expect(completeMutation({
+      capturedTarget,
+      mutate: async () => { throw failure; },
+      getCurrentTarget: () => currentTarget,
+      reload: vi.fn().mockResolvedValue(undefined),
+    })).resolves.toEqual({
+      ok: false,
+      error: failure,
+      remainedOnCapturedTarget: false,
+    });
+  });
+
+  it('gates every mutation handler outcome before filters or notifications', () => {
+    const source = readFileSync(new URL('../WeeklyProgressTab.tsx', import.meta.url), 'utf8');
+    const handlerNames = [
+      'handleSaveDailyProgress',
+      'handleSaveWeeklyProgress',
+      'handleCloseProgressPeriod',
+      'handleReopenProgressPeriod',
+    ];
+
+    handlerNames.forEach((handlerName, index) => {
+      const start = source.indexOf(`const ${handlerName}`);
+      const end = index + 1 < handlerNames.length
+        ? source.indexOf(`const ${handlerNames[index + 1]}`, start)
+        : source.indexOf('// Flatten tree construction', start);
+      expect(start).toBeGreaterThan(-1);
+      expect(source.slice(start, end)).toContain('if (!outcome.remainedOnCapturedTarget) return;');
+    });
   });
 
   it('invalidates immediately and applies only the newest keyed resource generation', async () => {
@@ -100,6 +149,35 @@ describe('WeeklyProgressTab period controls', () => {
     await oldReload;
 
     expect(events).toEqual(['invalidate-old', 'invalidate-new', 'ready-new-state']);
+  });
+
+  it('keeps chart history independent from strict selected-period mutation rows', () => {
+    const findLatest = (weeklyProgressTabModule as any).getLatestDailyProgressRow;
+    expect(findLatest).toBeTypeOf('function');
+    if (typeof findLatest !== 'function') return;
+
+    const chartRows = [{
+      id: 'daily-1',
+      scopeKey: 'project-1_site-1',
+      taskId: 'task-1',
+      progressDate: '2026-08-07',
+      weekStart: '2026-08-03',
+      progressPercent: 55,
+      quantityDone: 5.5,
+      dailyQuantityDone: 1,
+    }];
+    const strictWeeklyModeRows: unknown[] = [];
+
+    expect(findLatest(chartRows, 'project-1_site-1', 'task-1', '2026-08-07')).toMatchObject({
+      id: 'daily-1',
+      progressPercent: 55,
+    });
+    expect(findLatest(strictWeeklyModeRows, 'project-1_site-1', 'task-1', '2026-08-07')).toBeUndefined();
+
+    const source = readFileSync(new URL('../WeeklyProgressTab.tsx', import.meta.url), 'utf8');
+    const historyStart = source.indexOf('const dailyHistoryRollup');
+    const historyEnd = source.indexOf('const staffMap', historyStart);
+    expect(source.slice(historyStart, historyEnd)).toContain('getLatestDailyProgressRow(allDailyProgress');
   });
 
   it('renders period data read failures as unavailable with retry and no mutations', () => {
