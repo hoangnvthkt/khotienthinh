@@ -10,6 +10,7 @@ vi.mock('../supabase', () => ({
 }));
 
 import { projectWeeklyProgressService } from '../projectWeeklyProgressService';
+import * as weeklyProgressServiceModule from '../projectWeeklyProgressService';
 
 const openState = {
   id: 'state-1',
@@ -183,5 +184,20 @@ describe('projectWeeklyProgressService authoritative RPC contract', () => {
     expect(projectWeeklyProgressService).not.toHaveProperty('upsertDailyMany');
     expect(projectWeeklyProgressService).not.toHaveProperty('upsertMany');
     expect(projectWeeklyProgressService).not.toHaveProperty('upsertSnapshot');
+  });
+
+  it('maps known RPC failures to approved Vietnamese messages without exposing raw errors', () => {
+    const getMessage = (weeklyProgressServiceModule as any).getProjectProgressMutationErrorMessage;
+    expect(getMessage).toBeTypeOf('function');
+    if (typeof getMessage !== 'function') return;
+
+    expect(getMessage(
+      { message: 'Kỳ tiến độ đã được chốt. Hãy mở chốt trước khi sửa.' },
+      'Không thể lưu tiến độ.',
+    )).toBe('Kỳ tiến độ đã được chốt. Hãy mở chốt trước khi sửa.');
+    expect(getMessage(
+      { message: 'snapshot contains an unsupported field', code: '23514' },
+      'Không thể lưu tiến độ.',
+    )).toBe('Không thể lưu tiến độ.');
   });
 });

@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import * as weeklyProgressTabModule from '../WeeklyProgressTab';
 
 const renderControls = (patch: Record<string, unknown> = {}) => {
@@ -67,5 +68,69 @@ describe('WeeklyProgressTab period controls', () => {
 
     expect(html).toContain('Đang mở');
     expect(html).not.toContain('<button');
+  });
+
+  it('keeps every mutation disabled until state and drafts match the current period key', () => {
+    const periodKey = (weeklyProgressTabModule as any).getWeeklyProgressPeriodKey;
+    const getReadiness = (weeklyProgressTabModule as any).getWeeklyProgressMutationReadiness;
+    expect(periodKey).toBeTypeOf('function');
+    expect(getReadiness).toBeTypeOf('function');
+    if (typeof periodKey !== 'function' || typeof getReadiness !== 'function') return;
+
+    const oldKey = periodKey('project-1_site-1', 'daily', '2026-08-07');
+    const currentKey = periodKey('project-1_site-1', 'daily', '2026-08-08');
+
+    expect(getReadiness({
+      actionsLoaded: true,
+      canView: true,
+      canEdit: true,
+      canConfirm: true,
+      currentKey,
+      stateKey: currentKey,
+      draftKey: oldKey,
+      isLocked: false,
+    })).toEqual({ canSave: false, canClose: false, canReopen: false });
+
+    expect(getReadiness({
+      actionsLoaded: true,
+      canView: true,
+      canEdit: true,
+      canConfirm: true,
+      currentKey,
+      stateKey: oldKey,
+      draftKey: currentKey,
+      isLocked: true,
+    })).toEqual({ canSave: false, canClose: false, canReopen: false });
+
+    expect(getReadiness({
+      actionsLoaded: true,
+      canView: true,
+      canEdit: true,
+      canConfirm: true,
+      currentKey,
+      stateKey: currentKey,
+      draftKey: currentKey,
+      isLocked: false,
+    })).toEqual({ canSave: true, canClose: true, canReopen: false });
+  });
+
+  it('renders an explicit retry surface instead of the workspace when action loading fails', () => {
+    const Unavailable = (weeklyProgressTabModule as any).WeeklyProgressPermissionUnavailable;
+    expect(Unavailable).toBeTypeOf('function');
+    if (typeof Unavailable !== 'function') return;
+
+    const html = renderToStaticMarkup(<Unavailable state="error" onRetry={vi.fn()} />);
+    expect(html).toContain('Không thể tải quyền tiến độ');
+    expect(html).toContain('Thử lại');
+  });
+
+  it('keys async state and draft readiness and rejects stale request generations', () => {
+    const source = readFileSync(new URL('../WeeklyProgressTab.tsx', import.meta.url), 'utf8');
+
+    expect(source).toContain('periodStateRequestGeneration.current');
+    expect(source).toContain('dailyPeriodStateKey');
+    expect(source).toContain('weeklyPeriodStateKey');
+    expect(source).toContain('dailyDraftKey');
+    expect(source).toContain('weeklyDraftKey');
   });
 });

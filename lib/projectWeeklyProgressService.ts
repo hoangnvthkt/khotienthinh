@@ -587,6 +587,25 @@ const assertProgressRpcAvailable = () => {
   }
 };
 
+const APPROVED_PROGRESS_MUTATION_MESSAGES = [
+  'Kỳ tiến độ đã được chốt. Hãy mở chốt trước khi sửa.',
+  'Kỳ tiến độ đã được chốt.',
+  'Kỳ tiến độ chưa được chốt.',
+  'Bạn không có quyền Sửa/Nhập liệu tiến độ.',
+  'Bạn không có quyền Chốt/Mở chốt kỳ tiến độ.',
+  'Vui lòng nhập lý do mở chốt.',
+];
+
+export const getProjectProgressMutationErrorMessage = (
+  error: unknown,
+  fallback: string,
+): string => {
+  const message = typeof error === 'object' && error !== null && 'message' in error
+    ? String((error as { message?: unknown }).message || '')
+    : '';
+  return APPROVED_PROGRESS_MUTATION_MESSAGES.find(approved => message.includes(approved)) || fallback;
+};
+
 export const projectWeeklyProgressService = {
   async getPeriodState(input: ProjectProgressPeriodStateInput): Promise<ProjectProgressPeriodState> {
     assertProgressRpcAvailable();

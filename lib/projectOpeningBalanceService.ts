@@ -13,7 +13,11 @@ import { fromDb, toDb } from './dbMapping';
 import { getExcelCell, parseExcelRows } from './excelImport';
 import { loadXlsx } from './loadXlsx';
 import { parseVietnameseMoney, parseVietnameseNumber } from './projectMaterialTabUtils';
-import { getWeekStart, projectWeeklyProgressService } from './projectWeeklyProgressService';
+import {
+  getWeekStart,
+  projectWeeklyProgressService,
+  type RefreshProjectProgressSnapshotInput,
+} from './projectWeeklyProgressService';
 import { isSupabaseConfigured, supabase } from './supabase';
 
 const BALANCE_TABLE = 'project_opening_balances';
@@ -753,7 +757,47 @@ export interface ProjectOpeningBalanceLockResult {
   stockTransactions: Transaction[];
   createdItems: InventoryItem[];
   updatedItems: InventoryItem[];
+  progressSnapshotRefreshed: boolean;
+  progressSnapshotWarning?: string;
+  progressSnapshotInput?: RefreshProjectProgressSnapshotInput;
 }
+
+const OPENING_BALANCE_SNAPSHOT_WARNING =
+  'Dữ liệu đầu kỳ đã khóa nhưng snapshot tiến độ chưa cập nhật. Hãy mở chốt tuần rồi thử lại.';
+
+export const refreshOpeningBalanceSnapshotSafely = async (
+  input: RefreshProjectProgressSnapshotInput,
+): Promise<{ refreshed: boolean; warning: string | null }> => {
+  try {
+    await projectWeeklyProgressService.refreshSnapshot(input);
+    return { refreshed: true, warning: null };
+  } catch (error) {
+    console.warn('Opening balance snapshot refresh failed after lock', error);
+    return { refreshed: false, warning: OPENING_BALANCE_SNAPSHOT_WARNING };
+  }
+};
+
+const buildOpeningBalanceSnapshotInput = (
+  balance: ProjectOpeningBalance,
+): RefreshProjectProgressSnapshotInput | null => balance.projectId ? ({
+  projectId: balance.projectId,
+  constructionSiteId: balance.constructionSiteId,
+  weekStart: getWeekStart(balance.asOfDate),
+  snapshot: {
+    constructionProgressPercent: balance.constructionProgressPercent,
+    valueProgressPercent: balance.contractValue > 0
+      ? Math.min(100, Math.round((balance.recognizedValue / balance.contractValue) * 100))
+      : 0,
+    progressMode: 'opening_balance',
+    suppliedValue: balance.recognizedValue || null,
+    contractTotalValue: balance.contractValue || null,
+    purchasedValue: balance.purchasedValue,
+    issuedValue: balance.issuedValue,
+    recognizedValue: balance.recognizedValue,
+    ganttPercent: balance.constructionProgressPercent,
+    calculatedAt: new Date().toISOString(),
+  },
+}) : null;
 
 export const projectOpeningBalanceService = {
   async getOpeningBalanceByScope(scopeKey: string): Promise<ProjectOpeningBalance | null> {
@@ -883,8 +927,21 @@ export const projectOpeningBalanceService = {
         .filter(({ line, index }) => Boolean(itemByLineKey.get(String(index)) || line.inventoryItemId));
     const stockTransactions: Transaction[] = [];
     let materialProjectTransaction: ProjectTransaction | undefined;
+    const progressSnapshotInput = buildOpeningBalanceSnapshotInput(balance);
 
     if (isSupabaseConfigured) {
+      if (!progressSnapshotInput) {
+        throw new Error('Không xác định được dự án để cập nhật snapshot đầu kỳ.');
+      }
+      // The dedicated, idempotent snapshot RPC is the available authorization/lock
+      // preflight. Run it before inventory, finance, and ledger writes become durable.
+      try {
+        await projectWeeklyProgressService.refreshSnapshot(progressSnapshotInput);
+      } catch (error) {
+        console.warn('Opening balance snapshot preflight failed', error);
+        throw new Error('Không thể xác thực quyền cập nhật snapshot đầu kỳ. Vui lòng kiểm tra quyền hoặc mở chốt tuần rồi thử lại.');
+      }
+
       const itemsToUpsert = [...createdItems, ...updatedItems];
       if (itemsToUpsert.length > 0) {
         const { error: itemError } = await supabase
@@ -1009,28 +1066,7 @@ export const projectOpeningBalanceService = {
         .single();
       if (lockError) throw lockError;
 
-      if (!balance.projectId) {
-        throw new Error('Không xác định được dự án để cập nhật snapshot đầu kỳ.');
-      }
-      await projectWeeklyProgressService.refreshSnapshot({
-        projectId: balance.projectId,
-        constructionSiteId: balance.constructionSiteId,
-        weekStart: getWeekStart(balance.asOfDate),
-        snapshot: {
-          constructionProgressPercent: balance.constructionProgressPercent,
-          valueProgressPercent: balance.contractValue > 0
-            ? Math.min(100, Math.round((balance.recognizedValue / balance.contractValue) * 100))
-            : 0,
-          progressMode: 'opening_balance',
-          suppliedValue: balance.recognizedValue || null,
-          contractTotalValue: balance.contractValue || null,
-          purchasedValue: balance.purchasedValue,
-          issuedValue: balance.issuedValue,
-          recognizedValue: balance.recognizedValue,
-          ganttPercent: balance.constructionProgressPercent,
-          calculatedAt: new Date().toISOString(),
-        },
-      });
+      const snapshotRefresh = await refreshOpeningBalanceSnapshotSafely(progressSnapshotInput);
 
       const savedLines = await this.listLines(openingId);
       return {
@@ -1041,6 +1077,9 @@ export const projectOpeningBalanceService = {
         stockTransactions,
         createdItems,
         updatedItems,
+        progressSnapshotRefreshed: snapshotRefresh.refreshed,
+        progressSnapshotWarning: snapshotRefresh.warning || undefined,
+        progressSnapshotInput,
       };
     }
 
@@ -1078,6 +1117,8 @@ export const projectOpeningBalanceService = {
       stockTransactions,
       createdItems,
       updatedItems,
+      progressSnapshotRefreshed: true,
+      progressSnapshotInput: progressSnapshotInput || undefined,
     };
   },
 

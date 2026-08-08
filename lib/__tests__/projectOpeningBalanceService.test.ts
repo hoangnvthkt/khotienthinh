@@ -4,6 +4,8 @@ import {
   calculateOpeningRecognizedValue,
   projectOpeningBalanceService,
 } from '../projectOpeningBalanceService';
+import * as openingBalanceServiceModule from '../projectOpeningBalanceService';
+import { projectWeeklyProgressService } from '../projectWeeklyProgressService';
 
 vi.mock('../supabase', () => ({
   isSupabaseConfigured: false,
@@ -26,6 +28,31 @@ const makeAccountingWorkbookFile = () => {
 };
 
 describe('projectOpeningBalanceService accounting import', () => {
+  it('returns a recoverable warning when the final dedicated snapshot refresh fails', async () => {
+    const refreshSafely = (openingBalanceServiceModule as any).refreshOpeningBalanceSnapshotSafely;
+    expect(refreshSafely).toBeTypeOf('function');
+    if (typeof refreshSafely !== 'function') return;
+    const refreshSpy = vi.spyOn(projectWeeklyProgressService, 'refreshSnapshot')
+      .mockRejectedValueOnce(new Error('locked period'));
+
+    const result = await refreshSafely({
+      projectId: 'project-1',
+      constructionSiteId: 'site-1',
+      weekStart: '2026-08-03',
+      snapshot: {
+        constructionProgressPercent: 40,
+        valueProgressPercent: 35,
+        progressMode: 'opening_balance',
+      },
+    });
+
+    expect(result).toEqual({
+      refreshed: false,
+      warning: 'Dữ liệu đầu kỳ đã khóa nhưng snapshot tiến độ chưa cập nhật. Hãy mở chốt tuần rồi thử lại.',
+    });
+    refreshSpy.mockRestore();
+  });
+
   it('parses two-level accounting headers and aggregates specs by root accounting code', async () => {
     const result = await projectOpeningBalanceService.parseOpeningBalanceImport(makeAccountingWorkbookFile(), {
       defaultWarehouseId: 'wh-site',

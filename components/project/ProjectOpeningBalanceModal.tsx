@@ -19,7 +19,11 @@ import {
   parseVietnameseNumber,
   SITE_WAREHOUSE_STOP_WORDS,
 } from '../../lib/projectMaterialTabUtils';
-import { getProjectScopeKey } from '../../lib/projectWeeklyProgressService';
+import {
+  getProjectScopeKey,
+  projectWeeklyProgressService,
+  type RefreshProjectProgressSnapshotInput,
+} from '../../lib/projectWeeklyProgressService';
 import {
   calculateOpeningRecognizedValue,
   projectOpeningBalanceService,
@@ -114,6 +118,7 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
   const [note, setNote] = useState('');
   const [lines, setLines] = useState<ProjectOpeningBalanceModalLine[]>([emptyLine(defaultWarehouseId)]);
   const [importMessages, setImportMessages] = useState<{ errors: string[]; warnings: string[] }>({ errors: [], warnings: [] });
+  const [snapshotRetryInput, setSnapshotRetryInput] = useState<RefreshProjectProgressSnapshotInput | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -122,6 +127,7 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
     setConstructionProgress(finance?.progressPercent ? fmtInput(finance.progressPercent, 2) : '');
     setAsOfDate('2026-06-20');
     setImportMessages({ errors: [], warnings: [] });
+    setSnapshotRetryInput(null);
     setLines([emptyLine(defaultWarehouseId)]);
     let cancelled = false;
     projectOpeningBalanceService.getOpeningBalanceByScope(scopeKey)
@@ -297,11 +303,31 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
       ]);
       setExistingOpening(result.openingBalance);
       await onApplied?.(result);
-      toast.success('Đã khóa dữ liệu đầu kỳ', 'Dashboard, tồn kho và tiến độ theo giá trị đã nhận số đầu kỳ.');
-      onClose();
+      if (!result.progressSnapshotRefreshed && result.progressSnapshotInput) {
+        setSnapshotRetryInput(result.progressSnapshotInput);
+        toast.warning('Đầu kỳ đã khóa', result.progressSnapshotWarning || 'Snapshot tiến độ chưa cập nhật. Vui lòng thử lại.');
+      } else {
+        toast.success('Đã khóa dữ liệu đầu kỳ', 'Dashboard, tồn kho và tiến độ theo giá trị đã nhận số đầu kỳ.');
+        onClose();
+      }
     } catch (error: any) {
       logApiError('ProjectOpeningBalanceModal.lock', error);
       toast.error('Không khóa được đầu kỳ', getApiErrorMessage(error, 'Vui lòng kiểm tra dữ liệu và thử lại.'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRetrySnapshot = async () => {
+    if (!snapshotRetryInput) return;
+    setLoading(true);
+    try {
+      await projectWeeklyProgressService.refreshSnapshot(snapshotRetryInput);
+      setSnapshotRetryInput(null);
+      toast.success('Đã cập nhật snapshot tiến độ', 'Dữ liệu đầu kỳ và snapshot tiến độ hiện đã đồng bộ.');
+    } catch (error) {
+      logApiError('ProjectOpeningBalanceModal.retrySnapshot', error);
+      toast.error('Chưa cập nhật được snapshot', 'Hãy mở chốt tuần rồi thử lại.');
     } finally {
       setLoading(false);
     }
@@ -377,6 +403,22 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
                   ? ' Có thể tra chứng từ trong Kho/WMS -> Lịch sử kho / giao dịch kho.'
                   : ' Bản chốt này chưa có chứng từ kho, cần tạo lại dấu vết đầu kỳ.'}
               </div>
+              {snapshotRetryInput && (
+                <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-800">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle size={18} className="mt-0.5 shrink-0" />
+                    <span>Dữ liệu đầu kỳ đã khóa nhưng snapshot tiến độ chưa cập nhật. Hãy mở chốt tuần rồi thử lại.</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleRetrySnapshot}
+                    disabled={loading}
+                    className="mt-3 inline-flex items-center gap-2 rounded-xl bg-amber-600 px-4 py-2 text-xs font-black text-white disabled:opacity-50"
+                  >
+                    {loading && <Loader2 size={14} className="animate-spin" />} Thử cập nhật snapshot
+                  </button>
+                </div>
+              )}
             </div>
           ) : step === 0 ? (
             <div className="grid md:grid-cols-2 gap-4">

@@ -239,6 +239,9 @@ const WORK_BOQ_LITE_SELECT = [
 
 // ==================== TASKS (GANTT) ====================
 export const taskService = {
+    invalidateListCache(): void {
+        clearTaskListCache();
+    },
     async list(projectIdOrSiteId: string, constructionSiteId?: string | null): Promise<ProjectTask[]> {
         const cacheKey = getScopedCacheKey(projectIdOrSiteId, constructionSiteId);
         const cached = readScopedCache(taskListCache, cacheKey);
