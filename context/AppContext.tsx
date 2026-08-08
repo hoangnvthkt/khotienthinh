@@ -41,6 +41,11 @@ import {
 } from '../lib/inventoryItemDeleteGuard';
 import { createPerformanceTrace } from '../lib/performanceTrace';
 import {
+  mapConstructionSiteWarehouseBindingFromDb,
+  mapWarehouseSiteBindingFromDb,
+  toWarehouseSiteBindingDb,
+} from '../lib/warehouseSiteBinding';
+import {
   normalizeProjectTransactionRow,
   projectTransactionToDb,
 } from '../lib/projectTransactionMapping';
@@ -164,9 +169,9 @@ interface AppContextType {
   updateTransactionStatus: (id: string, status: TransactionStatus, approverId?: string, approval?: { approvedAt?: string; approvalNote?: string }) => Promise<void>;
   updateTransactionVoucher: (id: string, patch: { date: string; note?: string | null }) => Promise<Transaction>;
   clearTransactionHistory: () => void;
-  addWarehouse: (warehouse: Warehouse) => void;
-  updateWarehouse: (warehouse: Warehouse) => void;
-  removeWarehouse: (warehouseId: string) => void;
+  addWarehouse: (warehouse: Warehouse) => Promise<void>;
+  updateWarehouse: (warehouse: Warehouse) => Promise<void>;
+  removeWarehouse: (warehouseId: string) => Promise<void>;
   addWarehouseType: (warehouseType: WarehouseTypeConfig) => Promise<void>;
   updateWarehouseType: (warehouseType: WarehouseTypeConfig) => Promise<void>;
   removeWarehouseType: (code: string) => Promise<void>;
@@ -327,8 +332,7 @@ const mapTransactionFromDb = (t: any): Transaction => ({
 });
 
 const mapWarehouseFromDb = (w: any): Warehouse => ({
-  ...w,
-  isArchived: w.is_archived ?? w.isArchived,
+  ...mapWarehouseSiteBindingFromDb(w),
 });
 
 const mapWarehouseTypeFromDb = (row: any): WarehouseTypeConfig => ({
@@ -1056,7 +1060,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           afternoonEnd: s.afternoon_end,
           createdAt: s.created_at,
         })));
-        if (constructionSitesData) setHrmConstructionSites(constructionSitesData);
+        if (constructionSitesData) setHrmConstructionSites(constructionSitesData.map(mapConstructionSiteWarehouseBindingFromDb));
         {
           const requiredOrgUnits = requireModuleData(module, 'org_units', orgUnitsData);
           const units = requiredOrgUnits.map((u: any) => ({
@@ -1182,7 +1186,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           fetchTableHelper('project_finances'),
           fetchTableHelper('project_transactions', supabase.from('project_transactions').select('*').order('date', { ascending: false })),
         ]);
-        if (constructionSitesData) setHrmConstructionSites(constructionSitesData);
+        if (constructionSitesData) setHrmConstructionSites(constructionSitesData.map(mapConstructionSiteWarehouseBindingFromDb));
         if (projectFinancesData) setProjectFinances(projectFinancesData.map(normalizeProjectFinance));
         if (projectTxData) setProjectTransactions(projectTxData.map(normalizeProjectTransaction));
       } else if (module === 'ex') {
@@ -1245,7 +1249,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         };
       } else if (table === 'warehouses') {
         payload = {
-          id: data.id, name: data.name, address: data.address, type: data.type, is_archived: data.isArchived
+          id: data.id,
+          name: data.name,
+          address: data.address,
+          type: data.type,
+          is_archived: data.isArchived,
+          ...toWarehouseSiteBindingDb(data),
         };
       } else if (table === 'warehouse_types') {
         payload = warehouseTypeToDbPayload(data);
@@ -2096,17 +2105,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const addWarehouse = (w: Warehouse) => {
+  const addWarehouse = async (w: Warehouse) => {
     setWarehouses(prev => [...prev, w]);
-    syncToSupabase('warehouses', w);
+    try {
+      await syncToSupabase('warehouses', w, true);
+    } catch (error) {
+      setWarehouses(prev => prev.filter(item => item.id !== w.id));
+      throw error;
+    }
     logActivity('SYSTEM', 'Thêm kho bãi', `Đã thêm kho mới: ${w.name}`, 'SUCCESS');
     auditService.log({ tableName: 'warehouses', recordId: w.id, action: 'INSERT', newData: w as any, userId: user.id, userName: user.name || user.username });
   };
 
-  const updateWarehouse = (w: Warehouse) => {
+  const updateWarehouse = async (w: Warehouse) => {
     const oldWh = warehouses.find(item => item.id === w.id);
     setWarehouses(prev => prev.map(item => item.id === w.id ? w : item));
-    syncToSupabase('warehouses', w);
+    try {
+      await syncToSupabase('warehouses', w, true);
+    } catch (error) {
+      if (oldWh) setWarehouses(prev => prev.map(item => item.id === w.id ? oldWh : item));
+      throw error;
+    }
     logActivity('SYSTEM', 'Cập nhật kho bãi', `Đã cập nhật thông tin kho: ${w.name}`, 'INFO');
     auditService.log({ tableName: 'warehouses', recordId: w.id, action: 'UPDATE', oldData: oldWh as any, newData: w as any, userId: user.id, userName: user.name || user.username });
   };
@@ -2120,12 +2139,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (hasStock) {
       const updatedWh = { ...warehouse, isArchived: true };
       setWarehouses(prev => prev.map(w => w.id === id ? updatedWh : w));
-      syncToSupabase('warehouses', updatedWh);
+      try {
+        await syncToSupabase('warehouses', updatedWh, true);
+      } catch (error) {
+        setWarehouses(prev => prev.map(w => w.id === id ? warehouse : w));
+        throw error;
+      }
       logActivity('SYSTEM', 'Lưu trữ kho bãi', `Kho ${warehouse.name} vẫn còn tồn kho nên đã được chuyển vào trạng thái Lưu trữ.`, 'WARNING');
       auditService.log({ tableName: 'warehouses', recordId: id, action: 'UPDATE', oldData: warehouse as any, newData: updatedWh as any, userId: user.id, userName: user.name || user.username, description: `Lưu trữ kho: ${warehouse.name} (còn tồn kho)` });
     } else {
+      if (isSupabaseConfigured) {
+        const { error } = await supabase.from('warehouses').delete().eq('id', id);
+        if (error) throw error;
+      }
       setWarehouses(prev => prev.filter(w => w.id !== id));
-      if (isSupabaseConfigured) await supabase.from('warehouses').delete().eq('id', id);
       logActivity('SYSTEM', 'Xóa kho bãi', `Đã xóa hoàn toàn kho: ${warehouse.name}`, 'DANGER');
       auditService.log({ tableName: 'warehouses', recordId: id, action: 'DELETE', oldData: warehouse as any, userId: user.id, userName: user.name || user.username });
     }
@@ -2883,6 +2910,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Convert camelCase → snake_case for specific tables
   const toDbItem = (table: string, item: any): any => {
+    if (table === 'hrm_construction_sites') {
+      return {
+        id: item.id,
+        name: item.name,
+        address: item.address || null,
+        description: item.description || null,
+        latitude: item.latitude ?? null,
+        longitude: item.longitude ?? null,
+        checkInRadius: item.checkInRadius ?? null,
+        managerId: item.managerId || null,
+        warehouse_binding_enforced: item.warehouseBindingEnforced ?? false,
+        created_at: item.createdAt,
+      };
+    }
     if (table === 'hrm_attendance') {
       const photoOrNull = (value: unknown) => {
         if (typeof value !== 'string' || !value.trim()) return null;

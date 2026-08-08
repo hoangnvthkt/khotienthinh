@@ -89,6 +89,7 @@ import {
 } from '../../lib/projectTransactionImport';
 import { ProjectTransactionImportPreviewModal } from '../../components/project/ProjectTransactionImportPreviewModal';
 import { buildDocumentTracePath } from '../../lib/documentTraceService';
+import { isCashOutExpenseTransaction } from '../../lib/projectTransactionClassification';
 import { supabase } from '../../lib/supabase';
 import { useApp } from '../../context/AppContext';
 import { useConfirm } from '../../context/ConfirmContext';
@@ -1991,7 +1992,7 @@ const LedgerTable = ({
   }, [rows, search, selectedCategory, selectedCostItemId, selectedSource, fromDate, toDate, costItems]);
 
   const filteredExpenseTotal = useMemo(() =>
-    filtered.filter(r => r.type === 'expense').reduce((s, r) => s + Math.abs(r.amount), 0),
+    filtered.filter(r => r.type === 'expense').reduce((s, r) => s + Number(r.amount || 0), 0),
   [filtered]);
 
   const filteredRevenueTotal = useMemo(() =>
@@ -2219,7 +2220,9 @@ const LedgerTable = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
-                {pagedRows.map(row => (
+                {pagedRows.map(row => {
+                  const signedAmount = row.type === 'expense' ? -Number(row.amount || 0) : Number(row.amount || 0);
+                  return (
                   <tr key={row.id} className="text-xs">
                     <td className="px-3 py-3 font-bold text-slate-500 whitespace-nowrap">{fmtDate(row.date)}</td>
                     <td className="px-3 py-3">
@@ -2239,8 +2242,8 @@ const LedgerTable = ({
                       )}
                     </td>
                     <td className="px-3 py-3 font-bold text-slate-500 whitespace-nowrap">{row.source}</td>
-                    <td className={`px-3 py-3 text-right font-black whitespace-nowrap ${row.type === 'expense' ? 'text-red-600' : 'text-emerald-700'}`}>
-                      {row.type === 'expense' ? '-' : '+'}{fmtMoney(Math.abs(row.amount))}
+                    <td className={`px-3 py-3 text-right font-black whitespace-nowrap ${signedAmount < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
+                      {signedAmount < 0 ? '-' : '+'}{fmtMoney(Math.abs(signedAmount))}
                     </td>
                     <td className="px-3 py-3 text-right whitespace-nowrap">
                       {canManage && row.source === 'manual' ? (
@@ -2257,7 +2260,8 @@ const LedgerTable = ({
                       )}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -2373,7 +2377,7 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
     [data?.receivables],
   );
   const paidLedgerRows = useMemo(
-    () => (data?.ledger || []).filter(row => row.type === 'expense'),
+    () => (data?.ledger || []).filter(isCashOutExpenseTransaction),
     [data?.ledger],
   );
   const receivedLedgerRows = useMemo(

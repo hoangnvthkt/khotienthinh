@@ -1,6 +1,7 @@
-import React from 'react';
-import { Warehouse, WarehouseType, WarehouseTypeConfig } from '../../types';
-import { Building, MapPin, Plus, X, Save, Edit2, Trash2, Tags, Palette, CheckCircle2, PauseCircle } from 'lucide-react';
+import React, { useState } from 'react';
+import { HrmConstructionSite, Warehouse, WarehouseType, WarehouseTypeConfig } from '../../types';
+import { Building, MapPin, Plus, X, Save, Edit2, Trash2, Tags, Palette, CheckCircle2, PauseCircle, Link2, LockKeyhole, Filter } from 'lucide-react';
+import { getWarehouseBindingLabel, suggestConstructionSiteForWarehouse } from '../../lib/warehouseSiteBinding';
 
 type WarehouseTypeForm = {
   code: string;
@@ -13,6 +14,7 @@ type WarehouseTypeForm = {
 interface SettingsWarehousesProps {
   warehouses: Warehouse[];
   warehouseTypes: WarehouseTypeConfig[];
+  constructionSites: HrmConstructionSite[];
   defaultWarehouseType: WarehouseType;
   isWhModalOpen: boolean;
   setIsWhModalOpen: (v: boolean) => void;
@@ -24,8 +26,15 @@ interface SettingsWarehousesProps {
   setNewWhAddress: (v: string) => void;
   newWhType: WarehouseType;
   setNewWhType: (v: WarehouseType) => void;
-  handleAddWarehouse: (e: React.FormEvent) => void;
+  newWhConstructionSiteId: string;
+  setNewWhConstructionSiteId: (v: string) => void;
+  newWhIsDefaultForSite: boolean;
+  setNewWhIsDefaultForSite: (v: boolean) => void;
+  warehouseBindingBusyId: string | null;
+  handleAddWarehouse: (e: React.FormEvent) => void | Promise<void>;
   handleEditWarehouse: (wh: Warehouse) => void;
+  handleSuggestWarehouseBinding: (wh: Warehouse, constructionSiteId: string) => void;
+  handleSetWarehouseEnforcement: (constructionSiteId: string, enforced: boolean) => void;
   handleDeleteWarehouse: (wh: Warehouse) => void;
   editingWarehouseType: WarehouseTypeConfig | null;
   warehouseTypeForm: WarehouseTypeForm;
@@ -49,15 +58,21 @@ const TYPE_COLOR_STYLES: Record<string, { label: string; badge: string; swatch: 
 const getTypeColorStyle = (color?: string) => TYPE_COLOR_STYLES[color || 'slate'] || TYPE_COLOR_STYLES.slate;
 
 const SettingsWarehouses: React.FC<SettingsWarehousesProps> = ({
-  warehouses, warehouseTypes, defaultWarehouseType,
+  warehouses, warehouseTypes, constructionSites, defaultWarehouseType,
   isWhModalOpen, setIsWhModalOpen, editingWarehouse, setEditingWarehouse,
   newWhName, setNewWhName, newWhAddress, setNewWhAddress, newWhType, setNewWhType,
-  handleAddWarehouse, handleEditWarehouse, handleDeleteWarehouse,
+  newWhConstructionSiteId, setNewWhConstructionSiteId,
+  newWhIsDefaultForSite, setNewWhIsDefaultForSite, warehouseBindingBusyId,
+  handleAddWarehouse, handleEditWarehouse, handleSuggestWarehouseBinding, handleSetWarehouseEnforcement, handleDeleteWarehouse,
   editingWarehouseType, warehouseTypeForm, handleWarehouseTypeFormChange,
   handleSaveWarehouseType, handleEditWarehouseType, handleDeleteWarehouseType, resetWarehouseTypeForm
 }) => {
+  const [showUnlinkedOnly, setShowUnlinkedOnly] = useState(false);
   const sortedWarehouseTypes = [...warehouseTypes].sort((a, b) => (a.sortOrder ?? 100) - (b.sortOrder ?? 100) || a.name.localeCompare(b.name));
   const selectableWarehouseTypes = sortedWarehouseTypes.filter(type => type.isActive !== false || type.code === newWhType);
+  const visibleWarehouses = showUnlinkedOnly
+    ? warehouses.filter(warehouse => !warehouse.constructionSiteId)
+    : warehouses;
 
   const getWarehouseType = (code: WarehouseType) =>
     sortedWarehouseTypes.find(type => type.code === code) || {
@@ -206,29 +221,87 @@ const SettingsWarehouses: React.FC<SettingsWarehousesProps> = ({
           </div>
         </section>
 
+        <section className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 space-y-4">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+              <LockKeyhole size={19} />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-slate-800">Khóa kho theo công trường</h2>
+              <p className="text-xs text-slate-500 font-medium">Chỉ bật sau khi công trường có ít nhất một kho SITE hoạt động và đúng một kho mặc định.</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            {constructionSites.map(site => {
+              const linked = warehouses.filter(warehouse => warehouse.constructionSiteId === site.id);
+              const eligible = linked.filter(warehouse => warehouse.type === 'SITE' && !warehouse.isArchived);
+              const defaultWarehouse = eligible.find(warehouse => warehouse.isDefaultForSite);
+              const canEnable = eligible.length > 0 && Boolean(defaultWarehouse);
+              const busy = warehouseBindingBusyId === site.id;
+              return (
+                <div key={site.id} className="rounded-2xl border border-slate-100 bg-slate-50/60 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h3 className="truncate text-sm font-black text-slate-800">{site.name}</h3>
+                      <p className="mt-1 text-[10px] font-bold text-slate-500">
+                        {eligible.length} kho hợp lệ · Mặc định: {defaultWarehouse?.name || 'Chưa chọn'}
+                      </p>
+                    </div>
+                    <span className={`rounded-lg border px-2 py-1 text-[9px] font-black uppercase ${site.warehouseBindingEnforced ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-700'}`}>
+                      {site.warehouseBindingEnforced ? 'Đã khóa' : 'Chưa khóa'}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={busy || (!site.warehouseBindingEnforced && !canEnable)}
+                    onClick={() => handleSetWarehouseEnforcement(site.id, !site.warehouseBindingEnforced)}
+                    className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[10px] font-black text-slate-700 transition hover:border-indigo-200 hover:text-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {busy ? 'Đang cập nhật...' : site.warehouseBindingEnforced ? 'Tắt khóa kho' : 'Bật khóa kho cho công trường'}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+
         <section className="space-y-4">
-          <div className="flex justify-between items-center bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+          <div className="flex flex-col gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-100 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="text-lg font-bold text-slate-800">Danh mục Kho bãi</h2>
               <p className="text-xs text-slate-500 font-medium">Hệ thống quản lý địa điểm lưu trữ.</p>
             </div>
-            <button
-              onClick={() => {
-                setEditingWarehouse(null);
-                setNewWhName('');
-                setNewWhAddress('');
-                setNewWhType(defaultWarehouseType);
-                setIsWhModalOpen(true);
-              }}
-              className="flex items-center px-4 py-2 bg-slate-800 text-white rounded-xl hover:bg-slate-700 transition font-bold text-xs"
-            >
-              <Plus className="w-4 h-4 mr-2" /> Thêm kho
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setShowUnlinkedOnly(value => !value)}
+                className={`flex items-center rounded-xl border px-4 py-2 text-xs font-bold transition ${showUnlinkedOnly ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
+              >
+                <Filter className="w-4 h-4 mr-2" /> Kho chưa liên kết
+              </button>
+              <button
+                onClick={() => {
+                  setEditingWarehouse(null);
+                  setNewWhName('');
+                  setNewWhAddress('');
+                  setNewWhType(defaultWarehouseType);
+                  setNewWhConstructionSiteId('');
+                  setNewWhIsDefaultForSite(false);
+                  setIsWhModalOpen(true);
+                }}
+                className="flex items-center px-4 py-2 bg-slate-800 text-white rounded-xl hover:bg-slate-700 transition font-bold text-xs"
+              >
+                <Plus className="w-4 h-4 mr-2" /> Thêm kho
+              </button>
+            </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {warehouses.map((wh) => {
+            {visibleWarehouses.map((wh) => {
               const warehouseType = getWarehouseType(wh.type);
               const style = getTypeColorStyle(warehouseType.color);
+              const bindingLabel = getWarehouseBindingLabel(wh, constructionSites);
+              const linkedSite = constructionSites.find(site => site.id === wh.constructionSiteId);
+              const suggestion = suggestConstructionSiteForWarehouse(wh, constructionSites);
 
               return (
                 <div key={wh.id} className={`bg-white p-5 rounded-2xl shadow-sm border group relative transition-all ${wh.isArchived ? 'opacity-60 border-dashed border-slate-300 bg-slate-50' : 'border-slate-100 hover:border-accent/30'}`}>
@@ -245,12 +318,28 @@ const SettingsWarehouses: React.FC<SettingsWarehousesProps> = ({
                       <span className={`text-[9px] font-black px-2 py-1 rounded-lg uppercase border ${style.badge}`}>
                         {warehouseType.name}
                       </span>
+                      <span className={`text-[9px] font-black px-2 py-1 rounded-lg uppercase border ${bindingLabel === 'Đã khóa' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : bindingLabel === 'Đã liên kết' ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-amber-200 bg-amber-50 text-amber-700'}`}>
+                        {bindingLabel}
+                      </span>
                     </div>
                   </div>
                   <h3 className={`font-bold mb-1 ${wh.isArchived ? 'text-slate-500' : 'text-slate-800'}`}>{wh.name}</h3>
                   <div className="flex items-start text-slate-400 text-[11px] leading-relaxed mb-4">
                     <MapPin className="w-3 h-3 mr-1 mt-0.5 flex-shrink-0" />{wh.address}
                   </div>
+                  {linkedSite && (
+                    <div className="mb-3 flex items-center gap-2 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-[10px] font-bold text-blue-700">
+                      <Link2 size={12} /> {linkedSite.name}{wh.isDefaultForSite ? ' · Kho mặc định' : ''}
+                    </div>
+                  )}
+                  {suggestion && (
+                    <div className="mb-3 flex items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
+                      <span className="text-[10px] font-bold text-amber-800">Gợi ý: {suggestion.name}</span>
+                      <button type="button" onClick={() => handleSuggestWarehouseBinding(wh, suggestion.id)} className="shrink-0 rounded-lg bg-white px-2 py-1 text-[9px] font-black text-amber-700 shadow-sm">
+                        Xác nhận gán
+                      </button>
+                    </div>
+                  )}
                   <div className="flex gap-2 pt-3 border-t border-slate-50 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button onClick={() => handleEditWarehouse(wh)} className="flex-1 py-2 bg-slate-50 text-slate-600 rounded-lg text-[10px] font-bold hover:bg-blue-50 hover:text-accent transition-colors flex items-center justify-center">
                       <Edit2 size={12} className="mr-1" /> Chỉnh sửa
@@ -262,6 +351,11 @@ const SettingsWarehouses: React.FC<SettingsWarehousesProps> = ({
                 </div>
               );
             })}
+            {visibleWarehouses.length === 0 && (
+              <div className="col-span-full rounded-2xl border border-dashed border-slate-200 bg-white p-8 text-center text-xs font-bold text-slate-400">
+                Không có kho chưa liên kết.
+              </div>
+            )}
           </div>
         </section>
       </div>
@@ -282,7 +376,11 @@ const SettingsWarehouses: React.FC<SettingsWarehousesProps> = ({
               </div>
               <div className="space-y-2">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Loại hình kho</label>
-                <select value={newWhType} onChange={(e) => setNewWhType(e.target.value as WarehouseType)} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-accent outline-none font-bold">
+                <select value={newWhType} onChange={(e) => {
+                  const nextType = e.target.value as WarehouseType;
+                  setNewWhType(nextType);
+                  if (nextType !== 'SITE') setNewWhIsDefaultForSite(false);
+                }} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-accent outline-none font-bold">
                   {selectableWarehouseTypes.map(type => (
                     <option key={type.code} value={type.code}>{type.name}</option>
                   ))}
@@ -292,10 +390,37 @@ const SettingsWarehouses: React.FC<SettingsWarehousesProps> = ({
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Địa chỉ vật lý</label>
                 <textarea value={newWhAddress} onChange={(e) => setNewWhAddress(e.target.value)} rows={3} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-accent outline-none resize-none font-medium text-xs" />
               </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Công trường liên kết</label>
+                <select
+                  value={newWhConstructionSiteId}
+                  onChange={event => {
+                    setNewWhConstructionSiteId(event.target.value);
+                    if (!event.target.value) setNewWhIsDefaultForSite(false);
+                  }}
+                  className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-accent outline-none font-bold"
+                >
+                  <option value="">Chưa liên kết</option>
+                  {constructionSites.map(site => <option key={site.id} value={site.id}>{site.name}</option>)}
+                </select>
+              </div>
+              <label className={`flex items-center justify-between gap-3 rounded-xl border p-3 ${newWhType === 'SITE' && newWhConstructionSiteId ? 'cursor-pointer border-blue-100 bg-blue-50' : 'cursor-not-allowed border-slate-200 bg-slate-50 opacity-60'}`}>
+                <span>
+                  <span className="block text-xs font-black text-slate-700">Kho nhận mặc định</span>
+                  <span className="mt-0.5 block text-[10px] font-medium text-slate-500">Tự chọn khi tạo phiếu giao HĐ NCC.</span>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={newWhIsDefaultForSite}
+                  disabled={newWhType !== 'SITE' || !newWhConstructionSiteId}
+                  onChange={event => setNewWhIsDefaultForSite(event.target.checked)}
+                  className="h-4 w-4 accent-blue-600"
+                />
+              </label>
               <div className="pt-2 grid grid-cols-2 gap-3">
                 <button type="button" onClick={() => setIsWhModalOpen(false)} className="py-3 border border-slate-200 text-slate-500 rounded-xl font-bold text-xs hover:bg-slate-50 transition">Hủy bỏ</button>
-                <button type="submit" className="py-3 bg-accent text-white rounded-xl font-bold text-xs hover:bg-blue-700 transition shadow-lg shadow-blue-500/20 flex items-center justify-center">
-                  <Save size={16} className="mr-2" /> {editingWarehouse ? 'Cập nhật' : 'Lưu thông tin'}
+                <button type="submit" disabled={Boolean(warehouseBindingBusyId)} className="py-3 bg-accent text-white rounded-xl font-bold text-xs hover:bg-blue-700 transition shadow-lg shadow-blue-500/20 flex items-center justify-center disabled:cursor-not-allowed disabled:opacity-60">
+                  <Save size={16} className="mr-2" /> {warehouseBindingBusyId ? 'Đang lưu...' : editingWarehouse ? 'Cập nhật' : 'Lưu thông tin'}
                 </button>
               </div>
             </form>

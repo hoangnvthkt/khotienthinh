@@ -181,6 +181,7 @@ import { getPurchaseOrderUiPolicy, type PurchaseOrderUiAction } from '../../lib/
 import { findPurchaseOrderCommercialLineIssue } from '../../lib/purchaseOrderCommercialLines';
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 import { formatLocaleDecimalInput, formatViLiveInput, parseNonNegativeLocaleNumber } from '../../lib/localeNumberInput';
+import { buildSupplierDeliveryWarehousePolicy } from '../../lib/warehouseSiteBinding';
 
 interface SupplyChainTabProps {
     constructionSiteId?: string;
@@ -1210,6 +1211,39 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     const [sdVehicleNo, setSdVehicleNo] = useState('');
     const [sdNote, setSdNote] = useState('');
     const [sdLines, setSdLines] = useState<SupplierDirectDeliveryFormLine[]>([createEmptySupplierDeliveryLine()]);
+    const [sdOriginalLines, setSdOriginalLines] = useState<SupplierDirectDeliveryLine[]>([]);
+    const currentConstructionSite = useMemo(
+        () => constructionSites.find(site => site.id === constructionSiteId) || null,
+        [constructionSiteId, constructionSites],
+    );
+    const supplierDeliveryDefaultWarehousePolicy = useMemo(
+        () => buildSupplierDeliveryWarehousePolicy({
+            warehouses,
+            constructionSiteId,
+            warehouseBindingEnforced: Boolean(currentConstructionSite?.warehouseBindingEnforced),
+            currentWarehouseId: null,
+        }),
+        [constructionSiteId, currentConstructionSite?.warehouseBindingEnforced, warehouses],
+    );
+    const createSiteSupplierDeliveryLine = useCallback((
+        deliveryNoteId = '',
+        supplierContractId = '',
+        lineNo = 1,
+        contractLine?: SupplierContractLine | null,
+    ): SupplierDirectDeliveryFormLine => ({
+        ...createEmptySupplierDeliveryLine(deliveryNoteId, supplierContractId, lineNo, contractLine),
+        targetWarehouseId: supplierDeliveryDefaultWarehousePolicy.selectedWarehouseId,
+    }), [supplierDeliveryDefaultWarehousePolicy.selectedWarehouseId]);
+
+    useEffect(() => {
+        const defaultWarehouseId = supplierDeliveryDefaultWarehousePolicy.selectedWarehouseId;
+        if (!currentConstructionSite?.warehouseBindingEnforced || !defaultWarehouseId) return;
+        setSdLines(previous => previous.map(line => (
+            (line.wmsFlowMode || 'none') === 'direct_in_out' && !line.targetWarehouseId
+                ? { ...line, targetWarehouseId: defaultWarehouseId }
+                : line
+        )));
+    }, [currentConstructionSite?.warehouseBindingEnforced, supplierDeliveryDefaultWarehousePolicy.selectedWarehouseId]);
 
     const getPoNumberScope = useCallback((sourceMode: PurchaseOrderSourceMode) => ({
         projectId: sourceMode === 'proactive_stock' ? null : projectId || constructionSiteId || null,
@@ -1311,22 +1345,23 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         setSdVehicleNo('');
         setSdNote('');
         setSupplierContractLines([]);
-        setSdLines([createEmptySupplierDeliveryLine(id)]);
+        setSdOriginalLines([]);
+        setSdLines([createSiteSupplierDeliveryLine(id)]);
         setShowSupplierDeliveryForm(false);
     };
 
     const loadSupplierContractLinesForForm = async (supplierContractId: string, deliveryNoteId = sdId) => {
         if (!supplierContractId) {
             setSupplierContractLines([]);
-            setSdLines([createEmptySupplierDeliveryLine(deliveryNoteId)]);
+            setSdLines([createSiteSupplierDeliveryLine(deliveryNoteId)]);
             return;
         }
         try {
             const lines = await supplierContractLineService.listByContract(supplierContractId);
             setSupplierContractLines(lines);
             setSdLines(lines.length > 0
-                ? lines.slice(0, 1).map((line, index) => createEmptySupplierDeliveryLine(deliveryNoteId, supplierContractId, index + 1, line))
-                : [createEmptySupplierDeliveryLine(deliveryNoteId, supplierContractId)]);
+                ? lines.slice(0, 1).map((line, index) => createSiteSupplierDeliveryLine(deliveryNoteId, supplierContractId, index + 1, line))
+                : [createSiteSupplierDeliveryLine(deliveryNoteId, supplierContractId)]);
         } catch (error: any) {
             logApiError('supplyChain.supplierDelivery.contractLines', error);
             toast.error('Không tải được đơn giá HĐ', getApiErrorMessage(error, 'Không thể tải dòng đơn giá HĐ NCC.'));
@@ -1349,7 +1384,8 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         setSdVehicleNo('');
         setSdNote('');
         setSupplierContractLines([]);
-        setSdLines([createEmptySupplierDeliveryLine(id)]);
+        setSdOriginalLines([]);
+        setSdLines([createSiteSupplierDeliveryLine(id)]);
         setShowSupplierDeliveryForm(true);
     };
 
@@ -1377,9 +1413,10 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             setSdVehicleNo(detail.note.vehicleNo || '');
             setSdNote(detail.note.note || '');
             setSupplierContractLines(contractLines);
+            setSdOriginalLines(detail.lines);
             setSdLines(detail.lines.length > 0
                 ? detail.lines.map(hydrateSupplierDeliveryFormLine)
-                : [createEmptySupplierDeliveryLine(detail.note.id, detail.note.supplierContractId)]);
+                : [createSiteSupplierDeliveryLine(detail.note.id, detail.note.supplierContractId)]);
             setShowSupplierDeliveryForm(true);
         } catch (error: any) {
             logApiError('supplyChain.supplierDelivery.edit', error);
@@ -1409,7 +1446,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     };
 
     const addSupplierDeliveryLine = (contractLine?: SupplierContractLine | null) => {
-        setSdLines(prev => [...prev, createEmptySupplierDeliveryLine(sdId, sdSupplierContractId, prev.length + 1, contractLine)]);
+        setSdLines(prev => [...prev, createSiteSupplierDeliveryLine(sdId, sdSupplierContractId, prev.length + 1, contractLine)]);
     };
 
     const removeSupplierDeliveryLine = async (lineId: string) => {
@@ -1452,12 +1489,41 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             toast.warning('Kiểm tra dòng giao nhận', 'Mỗi dòng cần tên vật tư và số lượng lớn hơn 0.');
             return;
         }
+        if (
+            currentConstructionSite?.warehouseBindingEnforced
+            && supplierDeliveryDefaultWarehousePolicy.blocked
+            && normalizedLines.some(line => (line.wmsFlowMode || 'none') === 'direct_in_out')
+        ) {
+            toast.warning('Công trường chưa có kho hợp lệ', 'Vào Cài đặt → Kho bãi để gán một kho SITE đang hoạt động, chọn kho mặc định rồi thử lại.');
+            return;
+        }
         const invalidWmsLine = normalizedLines.find(line =>
             (line.wmsFlowMode || 'none') === 'direct_in_out'
             && (!line.itemId || !line.targetWarehouseId)
         );
         if (invalidWmsLine) {
             toast.warning('Thiếu dữ liệu WMS', 'Dòng nhập-xuất thẳng cần chọn mã vật tư WMS và kho nhập/xuất.');
+            return;
+        }
+        const crossSiteWarehouseLine = currentConstructionSite?.warehouseBindingEnforced
+            ? normalizedLines.find(line => {
+                if ((line.wmsFlowMode || 'none') !== 'direct_in_out') return false;
+                const isHistoricalException = buildSupplierDeliveryWarehousePolicy({
+                    warehouses,
+                    constructionSiteId,
+                    warehouseBindingEnforced: true,
+                    currentWarehouseId: line.targetWarehouseId,
+                }).historicalException;
+                if (!isHistoricalException) return false;
+                const original = sdOriginalLines.find(candidate => candidate.id === line.id);
+                return !original
+                    || original.deliveryNoteId !== line.deliveryNoteId
+                    || (original.wmsFlowMode || 'none') !== (line.wmsFlowMode || 'none')
+                    || (original.targetWarehouseId || null) !== (line.targetWarehouseId || null);
+            })
+            : null;
+        if (crossSiteWarehouseLine) {
+            toast.warning('Kho không thuộc công trường', `Dòng "${crossSiteWarehouseLine.itemNameSnapshot}" phải chọn kho SITE đang hoạt động thuộc ${currentConstructionSite?.name || 'công trường hiện tại'}.`);
             return;
         }
         const note: SupplierDirectDeliveryNote = {
@@ -6376,6 +6442,18 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                     const isBusy = supplierDeliveryActionLoading?.endsWith(`:${note.id}`);
                                                     const noteLines = supplierDeliveryLinesByNoteId[note.id] || note.lines || [];
                                                     const wmsSummary = getSupplierDeliveryWmsSummary(noteLines);
+                                                    const hasHistoricalWarehouseException = Boolean(
+                                                        currentConstructionSite?.warehouseBindingEnforced
+                                                        && noteLines.some(line => (
+                                                            (line.wmsFlowMode || 'none') === 'direct_in_out'
+                                                            && buildSupplierDeliveryWarehousePolicy({
+                                                                warehouses,
+                                                                constructionSiteId: note.constructionSiteId || constructionSiteId,
+                                                                warehouseBindingEnforced: true,
+                                                                currentWarehouseId: line.targetWarehouseId,
+                                                            }).historicalException
+                                                        )),
+                                                    );
                                                     const canCreateWmsImport = effectiveSupplierDeliveryCapabilities.canRecordSupplierDelivery
                                                         && !postedStatement
                                                         && (note.status === 'accepted' || note.status === 'statemented')
@@ -6392,6 +6470,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                                 <div className="mt-1 flex flex-wrap items-center gap-1">
                                                                     <StatusBadge status={note.status} label={statusCfg.label} tone={statusCfg.tone} showDot={false} />
                                                                     <span className={`rounded-full border px-2 py-0.5 text-[9px] font-black ${wmsSummary.badge}`}>{wmsSummary.label}</span>
+                                                                    {hasHistoricalWarehouseException && <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[9px] font-black text-amber-700">Ngoại lệ kho lịch sử</span>}
                                                                     {note.vehicleNo && <span className="rounded-full border border-slate-200 px-2 py-0.5 text-[9px] font-black text-slate-500">{note.vehicleNo}</span>}
                                                                 </div>
                                                                 <div className="mt-1 text-[10px] font-bold text-slate-400">{note.deliveryDate}</div>
@@ -7460,6 +7539,15 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                 const flowMode = line.wmsFlowMode || 'none';
                                                 const flowMeta = SUPPLIER_DELIVERY_WMS_FLOW_MODE[flowMode];
                                                 const isDirectInOut = flowMode === 'direct_in_out';
+                                                const warehousePolicy = buildSupplierDeliveryWarehousePolicy({
+                                                    warehouses,
+                                                    constructionSiteId,
+                                                    warehouseBindingEnforced: Boolean(currentConstructionSite?.warehouseBindingEnforced),
+                                                    currentWarehouseId: line.targetWarehouseId,
+                                                });
+                                                const historicalWarehouse = warehousePolicy.historicalException
+                                                    ? warehouses.find(warehouse => warehouse.id === line.targetWarehouseId)
+                                                    : null;
                                                 return (
                                                     <tr key={line.id}>
                                                         <td className="px-3 py-2">
@@ -7469,7 +7557,9 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                                     const nextMode = event.target.value as NonNullable<SupplierDirectDeliveryLine['wmsFlowMode']>;
                                                                     updateSupplierDeliveryLine(line.id, {
                                                                         wmsFlowMode: nextMode,
-                                                                        targetWarehouseId: nextMode === 'direct_in_out' ? line.targetWarehouseId || null : null,
+                                                                        targetWarehouseId: nextMode === 'direct_in_out'
+                                                                            ? line.targetWarehouseId || supplierDeliveryDefaultWarehousePolicy.selectedWarehouseId
+                                                                            : null,
                                                                         wmsStatus: nextMode === 'direct_in_out' ? line.wmsStatus || 'not_required' : 'not_required',
                                                                     });
                                                                 }}
@@ -7499,12 +7589,25 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                         </td>
                                                         <td className="px-3 py-2">
                                                             {isDirectInOut ? (
-                                                                <select value={line.targetWarehouseId || ''} onChange={event => updateSupplierDeliveryLine(line.id, { targetWarehouseId: event.target.value || null })} className={`${procurementInputClass} w-full`}>
-                                                                    <option value="">Chọn kho nhập/xuất</option>
-                                                                    {warehouses.map(warehouse => (
+                                                                <div>
+                                                                  <select
+                                                                    value={line.targetWarehouseId || warehousePolicy.selectedWarehouseId || ''}
+                                                                    disabled={warehousePolicy.readOnly || warehousePolicy.blocked}
+                                                                    onChange={event => updateSupplierDeliveryLine(line.id, { targetWarehouseId: event.target.value || null })}
+                                                                    className={`${procurementInputClass} w-full disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500`}
+                                                                  >
+                                                                    <option value="">{warehousePolicy.blocked ? 'Chưa có kho hợp lệ' : 'Chọn kho nhập/xuất'}</option>
+                                                                    {historicalWarehouse && (
+                                                                        <option value={historicalWarehouse.id}>Ngoại lệ lịch sử: {historicalWarehouse.name}</option>
+                                                                    )}
+                                                                    {warehousePolicy.options.map(warehouse => (
                                                                         <option key={warehouse.id} value={warehouse.id}>{warehouse.name}</option>
                                                                     ))}
-                                                                </select>
+                                                                  </select>
+                                                                  {warehousePolicy.readOnly && <div className="mt-1 text-[9px] font-bold text-emerald-600">Kho duy nhất của công trường · đã khóa chọn</div>}
+                                                                  {warehousePolicy.blocked && <div className="mt-1 text-[9px] font-bold text-red-600">Cần cấu hình tại Cài đặt → Kho bãi</div>}
+                                                                  {warehousePolicy.historicalException && <div className="mt-1 text-[9px] font-bold text-amber-600">Ngoại lệ lịch sử: kho không thuộc công trường hiện tại</div>}
+                                                                </div>
                                                             ) : (
                                                                 <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-black text-slate-500">Không qua kho</span>
                                                             )}

@@ -154,6 +154,8 @@ export interface Warehouse {
   address: string;
   type: WarehouseType;
   isArchived?: boolean; // Soft delete flag
+  constructionSiteId?: string | null;
+  isDefaultForSite?: boolean;
 }
 
 // ==================== NHÀ CUNG CẤP MASTER ====================
@@ -264,6 +266,7 @@ export interface HrmConstructionSite {
   longitude?: number;
   checkInRadius?: number;   // mét — bán kính check-in (default 200m)
   managerId?: string;       // User ID của người quản lý (duyệt đề xuất CC)
+  warehouseBindingEnforced?: boolean;
   createdAt?: string;
 }
 

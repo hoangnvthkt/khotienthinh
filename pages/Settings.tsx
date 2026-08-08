@@ -50,6 +50,7 @@ import {
 import { canAccessSettingsFeature, hasAnySettingsManagementFeature, type SettingsFeatureId } from '../lib/settingsPermissions';
 import { canPerform } from '../lib/permissions/permissionService';
 import { parseNonNegativeLocaleNumber } from '../lib/localeNumberInput';
+import { warehouseSiteBindingService } from '../lib/warehouseSiteBindingService';
 
 type MaterialCatalogForm = {
   sku: string;
@@ -101,7 +102,7 @@ const Settings: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const {
-    warehouses, warehouseTypes, addWarehouse, updateWarehouse, removeWarehouse, addWarehouseType, updateWarehouseType, removeWarehouseType, categories, units, suppliers,
+    warehouses, warehouseTypes, removeWarehouse, addWarehouseType, updateWarehouseType, removeWarehouseType, categories, units, suppliers,
     addCategory, updateCategory, removeCategory,
     addUnit, updateUnit, removeUnit,
     addSupplier, updateSupplier, removeSupplier,
@@ -110,7 +111,7 @@ const Settings: React.FC = () => {
     hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules, hrmConstructionSites,
     addHrmItem, updateHrmItem, removeHrmItem,
     items, addItem, updateItem, removeItem, transactions, requests, lossNorms, addLossNorm, updateLossNorm, removeLossNorm,
-    saveSignature, deleteSignature
+    saveSignature, deleteSignature, loadModuleData
   } = useApp();
   const isSettingsAdmin = currentUser.role === Role.ADMIN;
   const hasSettingsManagementAccess = hasAnySettingsManagementFeature(currentUser);
@@ -118,7 +119,7 @@ const Settings: React.FC = () => {
   const canOpenSettingsFeature = (featureId: SettingsFeatureId) => canAccessSettingsFeature(currentUser, featureId);
   useModuleData('admin', hasSettingsManagementAccess);
   useModuleData('wms', canOpenSettingsFeature('warehouses') || canOpenSettingsFeature('master-data') || canOpenSettingsFeature('loss-norms') || canOpenSettingsFeature('users'));
-  useModuleData('hrm', canOpenSettingsFeature('hrm-master-data') || canOpenSettingsFeature('org-chart') || canOpenSettingsFeature('work-groups'));
+  useModuleData('hrm', canOpenSettingsFeature('warehouses') || canOpenSettingsFeature('hrm-master-data') || canOpenSettingsFeature('org-chart') || canOpenSettingsFeature('work-groups'));
   useModuleData('ts', isSettingsAdmin);
   useModuleData('ex', isSettingsAdmin);
   useModuleData('da', canOpenSettingsFeature('project-master-data') || canOpenSettingsFeature('g8-cost-norms') || canOpenSettingsFeature('inspection-templates') || canOpenSettingsFeature('work-groups'));
@@ -174,6 +175,9 @@ const Settings: React.FC = () => {
   const [newWhName, setNewWhName] = useState('');
   const [newWhAddress, setNewWhAddress] = useState('');
   const [newWhType, setNewWhType] = useState<WarehouseType>('SITE');
+  const [newWhConstructionSiteId, setNewWhConstructionSiteId] = useState('');
+  const [newWhIsDefaultForSite, setNewWhIsDefaultForSite] = useState(false);
+  const [warehouseBindingBusyId, setWarehouseBindingBusyId] = useState<string | null>(null);
   const [editingWarehouseType, setEditingWarehouseType] = useState<WarehouseTypeConfig | null>(null);
   const [warehouseTypeForm, setWarehouseTypeForm] = useState<WarehouseTypeForm>(emptyWarehouseTypeForm);
 
@@ -268,10 +272,39 @@ const Settings: React.FC = () => {
   };
 
   // Warehouse Handlers
-  const handleAddWarehouse = (e: React.FormEvent) => {
+  const resetWarehouseForm = () => {
+    setEditingWarehouse(null);
+    setNewWhName('');
+    setNewWhAddress('');
+    setNewWhType(defaultWarehouseType);
+    setNewWhConstructionSiteId('');
+    setNewWhIsDefaultForSite(false);
+  };
+
+  const persistWarehouseBinding = async (warehouse: Warehouse) => {
+    const mapped = await warehouseSiteBindingService.setWarehouseBinding({
+      warehouseId: warehouse.id,
+      constructionSiteId: newWhConstructionSiteId || null,
+      isDefaultForSite: newWhIsDefaultForSite,
+      name: warehouse.name,
+      address: warehouse.address,
+      type: warehouse.type,
+    });
+    await Promise.all([
+      loadModuleData('wms', true),
+      loadModuleData('hrm', true),
+    ]);
+    return mapped;
+  };
+
+  const handleAddWarehouse = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newWhName.trim() || !newWhAddress.trim()) return;
     const warehouseTypeToSave = newWhType || defaultWarehouseType;
+    if (newWhIsDefaultForSite && (!newWhConstructionSiteId || warehouseTypeToSave !== 'SITE')) {
+      toast.warning('Kho mặc định chưa hợp lệ', 'Kho mặc định phải là kho loại SITE và đã chọn công trường liên kết.');
+      return;
+    }
 
     if (editingWarehouse) {
       triggerAction(
@@ -279,25 +312,62 @@ const Settings: React.FC = () => {
         `Bạn đang thay đổi thông tin kho "${editingWarehouse.name}". Mọi dữ liệu tồn kho và báo cáo sẽ được cập nhật theo tên mới.`,
         'warning',
         'Cập nhật ngay',
-        () => {
-          updateWarehouse({
+        async () => {
+          setWarehouseBindingBusyId(editingWarehouse.id);
+          const updatedWarehouse: Warehouse = {
             ...editingWarehouse,
-            name: newWhName,
-            address: newWhAddress,
-            type: warehouseTypeToSave
-          });
-          setEditingWarehouse(null);
-          setNewWhName(''); setNewWhAddress(''); setIsWhModalOpen(false);
+            name: newWhName.trim(),
+            address: newWhAddress.trim(),
+            type: warehouseTypeToSave,
+            constructionSiteId: newWhConstructionSiteId || null,
+            isDefaultForSite: newWhIsDefaultForSite,
+          };
+          try {
+            await persistWarehouseBinding(updatedWarehouse);
+            resetWarehouseForm();
+            setIsWhModalOpen(false);
+            toast.success('Đã cập nhật kho', 'Liên kết Kho–Công trường đã được lưu.');
+          } finally {
+            setWarehouseBindingBusyId(null);
+          }
         }
       );
     } else {
-      addWarehouse({
+      const warehouse: Warehouse = {
         id: `wh-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-        name: newWhName,
-        address: newWhAddress,
-        type: warehouseTypeToSave
-      });
-      setNewWhName(''); setNewWhAddress(''); setIsWhModalOpen(false);
+        name: newWhName.trim(),
+        address: newWhAddress.trim(),
+        type: warehouseTypeToSave,
+        constructionSiteId: null,
+        isDefaultForSite: false,
+      };
+      setWarehouseBindingBusyId(warehouse.id);
+      try {
+        await warehouseSiteBindingService.createWarehouse({
+          warehouseId: warehouse.id,
+          name: warehouse.name,
+          address: warehouse.address,
+          type: warehouse.type,
+          constructionSiteId: newWhConstructionSiteId || null,
+          isDefaultForSite: newWhIsDefaultForSite,
+        });
+        await Promise.all([
+          loadModuleData('wms', true),
+          loadModuleData('hrm', true),
+        ]);
+        resetWarehouseForm();
+        setIsWhModalOpen(false);
+        toast.success('Đã thêm kho', 'Kho mới và liên kết công trường đã được lưu.');
+      } catch (error: any) {
+        logApiError('settings.warehouseBinding.create', error);
+        await loadModuleData('wms', true).catch(() => undefined);
+        toast.error(
+          'Không thể tạo kho',
+          getApiErrorMessage(error, 'Kho và liên kết công trường chưa được tạo; dữ liệu đã được rollback.'),
+        );
+      } finally {
+        setWarehouseBindingBusyId(null);
+      }
     }
   };
 
@@ -306,7 +376,40 @@ const Settings: React.FC = () => {
     setNewWhName(wh.name);
     setNewWhAddress(wh.address);
     setNewWhType(wh.type);
+    setNewWhConstructionSiteId(wh.constructionSiteId || '');
+    setNewWhIsDefaultForSite(Boolean(wh.isDefaultForSite));
     setIsWhModalOpen(true);
+  };
+
+  const handleSuggestWarehouseBinding = (wh: Warehouse, constructionSiteId: string) => {
+    handleEditWarehouse(wh);
+    setNewWhConstructionSiteId(constructionSiteId);
+  };
+
+  const handleSetWarehouseEnforcement = (constructionSiteId: string, enforced: boolean) => {
+    const site = hrmConstructionSites.find(candidate => candidate.id === constructionSiteId);
+    if (!site) return;
+    triggerAction(
+      enforced ? 'Bật khóa kho cho công trường' : 'Tắt khóa kho cho công trường',
+      enforced
+        ? `Sau khi bật, phiếu giao HĐ NCC tại "${site.name}" chỉ được chọn kho SITE đang hoạt động thuộc công trường này.`
+        : `Tắt khóa sẽ tạm cho phép luồng chọn kho cũ tại "${site.name}".`,
+      'warning',
+      enforced ? 'Bật khóa kho' : 'Tắt khóa',
+      async () => {
+        setWarehouseBindingBusyId(constructionSiteId);
+        try {
+          await warehouseSiteBindingService.setEnforcement(constructionSiteId, enforced);
+          await Promise.all([
+            loadModuleData('hrm', true),
+            loadModuleData('wms', true),
+          ]);
+          toast.success(enforced ? 'Đã bật khóa kho' : 'Đã tắt khóa kho', site.name);
+        } finally {
+          setWarehouseBindingBusyId(null);
+        }
+      },
+    );
   };
 
   const handleDeleteWarehouse = (wh: Warehouse) => {
@@ -1079,14 +1182,22 @@ const Settings: React.FC = () => {
             <SettingsWarehouses
               warehouses={warehouses}
               warehouseTypes={warehouseTypes}
+              constructionSites={hrmConstructionSites}
               defaultWarehouseType={defaultWarehouseType}
               isWhModalOpen={isWhModalOpen} setIsWhModalOpen={setIsWhModalOpen}
               editingWarehouse={editingWarehouse} setEditingWarehouse={setEditingWarehouse}
               newWhName={newWhName} setNewWhName={setNewWhName}
               newWhAddress={newWhAddress} setNewWhAddress={setNewWhAddress}
               newWhType={newWhType} setNewWhType={setNewWhType}
+              newWhConstructionSiteId={newWhConstructionSiteId}
+              setNewWhConstructionSiteId={setNewWhConstructionSiteId}
+              newWhIsDefaultForSite={newWhIsDefaultForSite}
+              setNewWhIsDefaultForSite={setNewWhIsDefaultForSite}
+              warehouseBindingBusyId={warehouseBindingBusyId}
               handleAddWarehouse={handleAddWarehouse}
               handleEditWarehouse={handleEditWarehouse}
+              handleSuggestWarehouseBinding={handleSuggestWarehouseBinding}
+              handleSetWarehouseEnforcement={handleSetWarehouseEnforcement}
               handleDeleteWarehouse={handleDeleteWarehouse}
               editingWarehouseType={editingWarehouseType}
               warehouseTypeForm={warehouseTypeForm}

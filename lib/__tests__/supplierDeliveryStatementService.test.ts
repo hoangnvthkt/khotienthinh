@@ -131,6 +131,31 @@ describe('supplier delivery statement helpers', () => {
     supabaseMocks.rpc.mockReset();
   });
 
+  it('normalizes delivery_note_ids so posted notes are recognized as reconciled', async () => {
+    supabaseMocks.from.mockReturnValueOnce(query({
+      data: [{
+        id: 'statement-posted',
+        code: 'DCHD-202608-001',
+        supplier_contract_id: 'contract-1',
+        supplier_name_snapshot: 'NCC A',
+        period_month: '2026-08-01',
+        statement_date: '2026-08-07',
+        status: 'posted',
+        gross_amount: 1,
+        vat_amount: 0,
+        total_amount: 1,
+        attachments: [],
+        metadata: { delivery_note_ids: ['note-1'] },
+        created_at: '2026-08-07T00:00:00.000Z',
+      }],
+      error: null,
+    }));
+
+    const rows = await supplierDeliveryStatementService.list();
+
+    expect(rows[0].metadata?.deliveryNoteIds).toEqual(['note-1']);
+  });
+
   it('calculates decimal direct delivery line totals with VAT', () => {
     const totals = calculateSupplierDirectDeliveryLineTotals({
       quantity: 12.5,

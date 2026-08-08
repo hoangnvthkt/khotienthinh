@@ -1,6 +1,10 @@
 import { supabase } from './supabase';
 import { fromDb } from './dbMapping';
 import {
+  isCashOutExpenseTransaction,
+  isSupplierPayableRecognitionTransaction,
+} from './projectTransactionClassification';
+import {
   AdvancePayment,
   ContractItemType,
   CustomerContract,
@@ -55,6 +59,7 @@ export interface ProjectFinancePayableRow {
   status: string;
   committedAmount: number;
   recognizedAmount: number;
+  creditAmount?: number;
   paidAmount: number;
   outstandingAmount: number;
   sourceTab: ProjectFinanceSourceTab;
@@ -313,6 +318,7 @@ export const buildSupplierPayableRowFromBalance = (balance: SupplierPayableBalan
     status: payableStatus(recognizedAmount, paidAmount + money(balance.creditAmount), recognizedAmount),
     committedAmount: recognizedAmount,
     recognizedAmount,
+    creditAmount: money(balance.creditAmount),
     paidAmount,
     outstandingAmount,
     sourceTab: 'material',
@@ -793,17 +799,21 @@ export const buildProjectFinanceSummary = (input: {
   const cashIn = sumTransactions(input.transactions, tx => tx.type === 'revenue_received');
   const supplierMaterialCost = money(input.payables
     .filter(row => row.sourceType === 'supplier_payable' || row.sourceType === 'purchase_order')
-    .reduce((sum, row) => sum + row.recognizedAmount, 0));
+    .reduce((sum, row) => sum + row.recognizedAmount - Number(row.creditAmount || 0), 0));
+  const supplierRecognitionCost = sumTransactions(input.transactions, tx =>
+    tx.type === 'expense' && isSupplierPayableRecognitionTransaction(tx),
+  );
   const nonSupplierCashCost = sumTransactions(input.transactions, tx => {
     if (tx.type !== 'expense') return false;
     const sourceRef = String(tx.sourceRef || '');
     return !(tx.category === 'materials' && (
       sourceRef.startsWith('supplier_payment_batch:')
       || sourceRef.startsWith('site_cash_settlement_batch:')
+      || isSupplierPayableRecognitionTransaction(tx)
     ));
   });
-  const actualCost = money(supplierMaterialCost + nonSupplierCashCost);
-  const cashOut = sumTransactions(input.transactions, tx => tx.type === 'expense');
+  const actualCost = money((supplierMaterialCost || supplierRecognitionCost) + nonSupplierCashCost);
+  const cashOut = sumTransactions(input.transactions, isCashOutExpenseTransaction);
   const certifiedRevenue = money(input.paymentCertificates
     .filter(cert => cert.contractType === 'customer' && ['approved', 'paid'].includes(cert.status))
     .reduce((sum, cert) => sum + Number(cert.grossThisPeriod ?? cert.currentCompletedValue ?? 0), 0));
