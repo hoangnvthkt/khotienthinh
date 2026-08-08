@@ -820,6 +820,9 @@ export interface ProjectOpeningBalance {
   note?: string | null;
   stockTransactionIds?: string[];
   materialProjectTransactionId?: string | null;
+  progressSnapshotStatus?: 'pending' | 'synced' | null;
+  progressSnapshotPayload?: Record<string, unknown> | null;
+  progressSnapshotRefreshedAt?: string | null;
   createdBy?: string | null;
   lockedBy?: string | null;
   lockedAt?: string | null;

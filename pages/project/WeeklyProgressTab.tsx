@@ -151,6 +151,69 @@ export const getWeeklyProgressMutationReadiness = (input: {
     };
 };
 
+export interface WeeklyProgressPeriodTarget {
+    key: string;
+    scopeKey: string;
+    periodType: ProgressEntryMode;
+    periodStart: string;
+}
+
+export const runWeeklyProgressKeyedReload = async <T,>(input: {
+    targetKey: string;
+    generation: number;
+    read: () => Promise<T>;
+    getCurrentKey: () => string;
+    getGeneration: () => number;
+    onInvalidate: () => void;
+    onReady: (value: T) => void;
+    onError: (error: unknown) => void;
+}): Promise<{ applied: boolean }> => {
+    input.onInvalidate();
+    try {
+        const value = await input.read();
+        if (
+            input.targetKey !== input.getCurrentKey()
+            || input.generation !== input.getGeneration()
+        ) return { applied: false };
+        input.onReady(value);
+        return { applied: true };
+    } catch (error) {
+        if (
+            input.targetKey === input.getCurrentKey()
+            && input.generation === input.getGeneration()
+        ) input.onError(error);
+        return { applied: false };
+    }
+};
+
+export const completeWeeklyProgressMutationWithReload = async <T,>(input: {
+    capturedTarget: WeeklyProgressPeriodTarget;
+    mutate: () => Promise<T>;
+    getCurrentTarget: () => WeeklyProgressPeriodTarget;
+    reload: (target: WeeklyProgressPeriodTarget) => Promise<unknown>;
+}): Promise<{ result: T; remainedOnCapturedTarget: boolean }> => {
+    const reloadUntilTargetSettles = async (): Promise<WeeklyProgressPeriodTarget> => {
+        while (true) {
+            const reloadTarget = input.getCurrentTarget();
+            await input.reload(reloadTarget);
+            const latestTarget = input.getCurrentTarget();
+            if (latestTarget.key === reloadTarget.key) return latestTarget;
+        }
+    };
+    let result: T;
+    try {
+        result = await input.mutate();
+    } catch (error) {
+        await reloadUntilTargetSettles();
+        throw error;
+    }
+    const currentTarget = await reloadUntilTargetSettles();
+    return {
+        result,
+        remainedOnCapturedTarget: currentTarget.key === input.capturedTarget.key,
+    };
+};
+
 export const WeeklyProgressPermissionUnavailable: React.FC<{
     state: 'loading' | 'error' | 'denied';
     onRetry: () => void;
@@ -177,6 +240,23 @@ export const WeeklyProgressPermissionUnavailable: React.FC<{
                 Thử lại
             </button>
         )}
+    </div>
+);
+
+export const WeeklyProgressPeriodUnavailable: React.FC<{ onRetry: () => void }> = ({ onRetry }) => (
+    <div className="flex items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-800">
+        <AlertTriangle size={18} className="shrink-0" />
+        <div className="min-w-0 flex-1">
+            <p className="text-xs font-black">Không thể tải dữ liệu kỳ tiến độ</p>
+            <p className="text-[10px] font-bold">Trạng thái và dữ liệu nhập đang không khả dụng.</p>
+        </div>
+        <button
+            type="button"
+            onClick={onRetry}
+            className="rounded-xl bg-amber-600 px-4 py-2 text-xs font-black text-white"
+        >
+            Thử lại
+        </button>
     </div>
 );
 
@@ -316,8 +396,10 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
     const [weeklyPeriodStateKey, setWeeklyPeriodStateKey] = useState<string | null>(null);
     const [dailyDraftKey, setDailyDraftKey] = useState<string | null>(null);
     const [weeklyDraftKey, setWeeklyDraftKey] = useState<string | null>(null);
-    const [dailyProgressWeekKey, setDailyProgressWeekKey] = useState<string | null>(null);
-    const [draftReloadNonce, setDraftReloadNonce] = useState(0);
+    const [selectedDailyMutationRows, setSelectedDailyMutationRows] = useState<ProjectDailyTaskProgress[]>([]);
+    const [selectedWeeklyMutationRows, setSelectedWeeklyMutationRows] = useState<ProjectWeeklyTaskProgress[]>([]);
+    const [periodResourceLoadState, setPeriodResourceLoadState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+    const [periodResourceRetryNonce, setPeriodResourceRetryNonce] = useState(0);
     const periodStateRequestGeneration = useRef(0);
 
     // Filter states
@@ -382,62 +464,14 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
         () => getWeeklyProgressPeriodKey(scopeKey, 'weekly', selectedWeekStart),
         [scopeKey, selectedWeekStart],
     );
-
-    const loadSelectedPeriodStates = useCallback(async () => {
-        const requestGeneration = ++periodStateRequestGeneration.current;
-        const requestedDailyKey = dailyCurrentPeriodKey;
-        const requestedWeeklyKey = weeklyCurrentPeriodKey;
-        setDailyPeriodState(null);
-        setWeeklyPeriodState(null);
-        setDailyPeriodStateKey(null);
-        setWeeklyPeriodStateKey(null);
-        if (
-            actionLoadState !== 'loaded'
-            || !weeklyProgressCapabilities.canView
-            || !projectId
-        ) return;
-
-        try {
-            const [dailyState, weeklyState] = await Promise.all([
-                projectWeeklyProgressService.getPeriodState({
-                    projectId,
-                    constructionSiteId: constructionSiteId || null,
-                    periodType: 'daily',
-                    periodStart: selectedProgressDate,
-                }),
-                projectWeeklyProgressService.getPeriodState({
-                    projectId,
-                    constructionSiteId: constructionSiteId || null,
-                    periodType: 'weekly',
-                    periodStart: selectedWeekStart,
-                }),
-            ]);
-            if (requestGeneration !== periodStateRequestGeneration.current) return;
-            setDailyPeriodState(dailyState);
-            setWeeklyPeriodState(weeklyState);
-            setDailyPeriodStateKey(requestedDailyKey);
-            setWeeklyPeriodStateKey(requestedWeeklyKey);
-        } catch (error) {
-            if (requestGeneration !== periodStateRequestGeneration.current) return;
-            console.warn('Weekly progress period state load failed', error);
-        }
-    }, [
-        actionLoadState,
-        constructionSiteId,
-        dailyCurrentPeriodKey,
-        projectId,
-        selectedProgressDate,
-        selectedWeekStart,
-        weeklyCurrentPeriodKey,
-        weeklyProgressCapabilities.canView,
-    ]);
-
-    useEffect(() => {
-        void loadSelectedPeriodStates();
-        return () => {
-            periodStateRequestGeneration.current += 1;
-        };
-    }, [loadSelectedPeriodStates]);
+    const currentPeriodTarget = useMemo<WeeklyProgressPeriodTarget>(() => ({
+        key: entryMode === 'daily' ? dailyCurrentPeriodKey : weeklyCurrentPeriodKey,
+        scopeKey,
+        periodType: entryMode,
+        periodStart: entryMode === 'daily' ? selectedProgressDate : selectedWeekStart,
+    }), [dailyCurrentPeriodKey, entryMode, scopeKey, selectedProgressDate, selectedWeekStart, weeklyCurrentPeriodKey]);
+    const currentPeriodTargetRef = useRef(currentPeriodTarget);
+    currentPeriodTargetRef.current = currentPeriodTarget;
 
     // Task contract link maps
     const [taskContractLinks, setTaskContractLinks] = useState<Record<string, string[]>>({});
@@ -520,7 +554,6 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
     }, [filterMonth, filterWeek, selectedWeekStart, timeFilterMode]);
 
     useEffect(() => {
-        setDailyProgressWeekKey(null);
         if (actionLoadState !== 'loaded' || !weeklyProgressCapabilities.canView || !scopeKey) {
             setAllWeeklyProgress([]);
             setWeeklyBaselineProgress([]);
@@ -531,7 +564,6 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
         }
 
         let cancelled = false;
-        const requestedWeekStart = selectedWeekStart;
         const loadProgressWindow = async () => {
             try {
                 const [weeklyRows, weeklyBaselineRows, dailyRows, dailyBaselineRows] = await Promise.all([
@@ -549,7 +581,6 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                 setWeeklyBaselineProgress(weeklyBaselineRows);
                 setDailyBaselineProgress(dailyBaselineRows);
                 setAllDailyProgress(mergeDailyProgressRows(dailyBaselineRows, dailyRows));
-                setDailyProgressWeekKey(requestedWeekStart);
                 setLoadedWeekRange(progressWeekWindow);
             } catch (error) {
                 console.warn('Cannot load progress window', error);
@@ -695,108 +726,177 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
     }, [selectedWeekDays]);
 
     const getLatestDailyProgressForTask = useCallback((taskId: string, progressDate: string, includeDate = true) => {
-        return allDailyProgress
+        return selectedDailyMutationRows
             .filter(row => row.scopeKey === scopeKey && row.taskId === taskId)
             .filter(row => includeDate ? row.progressDate <= progressDate : row.progressDate < progressDate)
             .sort((a, b) =>
                 b.progressDate.localeCompare(a.progressDate) ||
                 (b.updatedAt || '').localeCompare(a.updatedAt || '')
             )[0];
-    }, [allDailyProgress, scopeKey]);
+    }, [scopeKey, selectedDailyMutationRows]);
 
-    // Load drafts when weekStart changes
-    useEffect(() => {
-        setWeeklyDrafts({});
-        setWeeklyDraftKey(null);
-        if (
-            actionLoadState !== 'loaded'
-            || !weeklyProgressCapabilities.canView
-            || !scopeKey
-            || weeklyLeafTasks.length === 0
-        ) {
-            return;
-        }
-        let cancelled = false;
-        const requestedDraftKey = weeklyCurrentPeriodKey;
-        projectWeeklyProgressService.listLatestAtOrBefore(scopeKey, selectedWeekStart)
-            .then(data => {
-                if (cancelled) return;
-                const nextDrafts: Record<string, { progressPercent: string; quantityDone: string; note: string }> = {};
-                weeklyLeafTasks.forEach(task => {
-                    const found = data.find(p => p.taskId === task.id);
-                    if (found) {
-                        const plannedQuantity = Number(task.provisionalQuantity || 0);
-                        const defaultQuantityDone = plannedQuantity > 0 ? (plannedQuantity * found.progressPercent) / 100 : 0;
-                        nextDrafts[task.id] = {
-                            progressPercent: formatNumberInput(found.progressPercent, 2),
-                            quantityDone: formatNumberInput(found.quantityDone ?? defaultQuantityDone, 2),
-                            note: found.note || '',
-                        };
-                    } else {
-                        const plannedQuantity = Number(task.provisionalQuantity || 0);
-                        const currentProgress = parseWeeklyProgressPercent(task.progress);
-                        const defaultQuantityDone = plannedQuantity > 0 ? (plannedQuantity * currentProgress) / 100 : 0;
-                        nextDrafts[task.id] = {
-                            progressPercent: formatNumberInput(currentProgress, 2),
-                            quantityDone: formatNumberInput(defaultQuantityDone, 2),
-                            note: '',
-                        };
-                    }
-                });
-                setWeeklyDrafts(nextDrafts);
-                setWeeklyDraftKey(requestedDraftKey);
-            })
-            .catch(error => {
-                console.warn('Cannot load weekly progress drafts', error);
-                if (!cancelled) {
-                    setWeeklyDrafts({});
-                    setWeeklyDraftKey(null);
-                }
-            });
-
-        return () => {
-            cancelled = true;
-        };
-    }, [actionLoadState, draftReloadNonce, scopeKey, selectedWeekStart, weeklyCurrentPeriodKey, weeklyLeafTasks, weeklyProgressCapabilities.canView]);
-
-    // Load daily drafts when selected date changes
-    useEffect(() => {
+    const invalidateSelectedPeriodResources = useCallback(() => {
+        setDailyPeriodState(null);
+        setWeeklyPeriodState(null);
+        setDailyPeriodStateKey(null);
+        setWeeklyPeriodStateKey(null);
         setDailyDrafts({});
+        setWeeklyDrafts({});
         setDailyDraftKey(null);
+        setWeeklyDraftKey(null);
+        setSelectedDailyMutationRows([]);
+        setSelectedWeeklyMutationRows([]);
+        setPeriodResourceLoadState('loading');
+    }, []);
+
+    const reloadAuthoritativePeriodResources = useCallback(async (
+        target: WeeklyProgressPeriodTarget = currentPeriodTargetRef.current,
+    ) => {
         if (
             actionLoadState !== 'loaded'
             || !weeklyProgressCapabilities.canView
-            || !scopeKey
-            || weeklyLeafTasks.length === 0
-            || dailyProgressWeekKey !== selectedWeekStart
+            || !projectId
+            || !effectiveId
+            || !target.scopeKey
         ) {
-            return;
+            periodStateRequestGeneration.current += 1;
+            invalidateSelectedPeriodResources();
+            setPeriodResourceLoadState('idle');
+            return { applied: false };
         }
 
-        const nextDrafts: Record<string, ProgressDraft> = {};
-        weeklyLeafTasks.forEach(task => {
-            const found = getLatestDailyProgressForTask(task.id, selectedProgressDate);
-            if (found) {
-                const exactDate = found.progressDate === selectedProgressDate;
-                nextDrafts[task.id] = {
-                    progressPercent: formatNumberInput(found.progressPercent, 2),
-                    quantityDone: formatNumberInput(found.quantityDone, 2),
-                    note: exactDate ? (found.note || '') : '',
-                };
-            } else {
-                const plannedQuantity = Number(task.provisionalQuantity || 0);
-                const currentProgress = parseWeeklyProgressPercent(task.progress);
-                const defaultQuantityDone = plannedQuantity > 0 ? (plannedQuantity * currentProgress) / 100 : 0;
-                nextDrafts[task.id] = {
-                    progressPercent: formatNumberInput(currentProgress, 2),
-                    quantityDone: formatNumberInput(defaultQuantityDone, 2),
-                    note: '',
-                };
-            }
+        const generation = ++periodStateRequestGeneration.current;
+        return runWeeklyProgressKeyedReload({
+            targetKey: target.key,
+            generation,
+            getCurrentKey: () => currentPeriodTargetRef.current.key,
+            getGeneration: () => periodStateRequestGeneration.current,
+            onInvalidate: invalidateSelectedPeriodResources,
+            read: async () => {
+                taskService.invalidateListCache();
+                const statePromise = projectWeeklyProgressService.getPeriodState({
+                    projectId,
+                    constructionSiteId: constructionSiteId || null,
+                    periodType: target.periodType,
+                    periodStart: target.periodStart,
+                });
+                const taskRowsPromise = taskService.list(effectiveId, constructionSiteId || null);
+                if (target.periodType === 'daily') {
+                    const weekStart = getWeekStart(target.periodStart);
+                    const [state, taskRows, dailyRows, dailyBaselineRows, weeklyRows] = await Promise.all([
+                        statePromise,
+                        taskRowsPromise,
+                        projectWeeklyProgressService.listDailyByWeekStrict(target.scopeKey, weekStart),
+                        projectWeeklyProgressService.listDailyLatestBeforeDateStrict(target.scopeKey, weekStart),
+                        projectWeeklyProgressService.listByWeekStrict(target.scopeKey, weekStart),
+                    ]);
+                    return {
+                        target,
+                        state,
+                        taskRows,
+                        dailyRows: mergeDailyProgressRows(dailyBaselineRows, dailyRows),
+                        weeklyRows,
+                    };
+                }
+                const [state, taskRows, weeklyRows] = await Promise.all([
+                    statePromise,
+                    taskRowsPromise,
+                    projectWeeklyProgressService.listLatestAtOrBeforeStrict(target.scopeKey, target.periodStart),
+                ]);
+                return { target, state, taskRows, dailyRows: [], weeklyRows };
+            },
+            onReady: bundle => {
+                const authoritativeTasks = deriveProjectTaskProgress(
+                    bundle.taskRows,
+                    completionRequests,
+                    dailyLogs,
+                    bundle.target.periodStart,
+                );
+                const parentIds = new Set(authoritativeTasks.map(task => task.parentId).filter(Boolean));
+                const leafTasks = authoritativeTasks
+                    .filter(task => !parentIds.has(task.id))
+                    .sort((a, b) => (a.order || 0) - (b.order || 0));
+
+                setTasks(authoritativeTasks);
+                if (bundle.target.periodType === 'daily') {
+                    const nextDrafts: Record<string, ProgressDraft> = {};
+                    leafTasks.forEach(task => {
+                        const found = bundle.dailyRows
+                            .filter(row => row.taskId === task.id && row.progressDate <= bundle.target.periodStart)
+                            .sort((a, b) =>
+                                b.progressDate.localeCompare(a.progressDate)
+                                || (b.updatedAt || '').localeCompare(a.updatedAt || '')
+                            )[0];
+                        const currentProgress = parseWeeklyProgressPercent(task.progress);
+                        const plannedQuantity = Number(task.provisionalQuantity || 0);
+                        const progressPercent = found?.progressPercent ?? currentProgress;
+                        const quantityDone = found?.quantityDone
+                            ?? (plannedQuantity > 0 ? (plannedQuantity * progressPercent) / 100 : 0);
+                        nextDrafts[task.id] = {
+                            progressPercent: formatNumberInput(progressPercent, 2),
+                            quantityDone: formatNumberInput(quantityDone, 2),
+                            note: found?.progressDate === bundle.target.periodStart ? (found.note || '') : '',
+                        };
+                    });
+                    setDailyPeriodState(bundle.state);
+                    setDailyPeriodStateKey(bundle.target.key);
+                    setDailyDrafts(nextDrafts);
+                    setDailyDraftKey(bundle.target.key);
+                    setSelectedDailyMutationRows(bundle.dailyRows);
+                    setSelectedWeeklyMutationRows(bundle.weeklyRows);
+                    setAllDailyProgress(prev => mergeDailyProgressRows(prev, bundle.dailyRows));
+                    setAllWeeklyProgress(prev => mergeWeeklyProgressRows(prev, bundle.weeklyRows));
+                } else {
+                    const nextDrafts: Record<string, ProgressDraft> = {};
+                    leafTasks.forEach(task => {
+                        const found = bundle.weeklyRows.find(row => row.taskId === task.id);
+                        const currentProgress = parseWeeklyProgressPercent(task.progress);
+                        const plannedQuantity = Number(task.provisionalQuantity || 0);
+                        const progressPercent = found?.progressPercent ?? currentProgress;
+                        const quantityDone = found?.quantityDone
+                            ?? (plannedQuantity > 0 ? (plannedQuantity * progressPercent) / 100 : 0);
+                        nextDrafts[task.id] = {
+                            progressPercent: formatNumberInput(progressPercent, 2),
+                            quantityDone: formatNumberInput(quantityDone, 2),
+                            note: found?.note || '',
+                        };
+                    });
+                    setWeeklyPeriodState(bundle.state);
+                    setWeeklyPeriodStateKey(bundle.target.key);
+                    setWeeklyDrafts(nextDrafts);
+                    setWeeklyDraftKey(bundle.target.key);
+                    setSelectedWeeklyMutationRows(bundle.weeklyRows);
+                }
+                setPeriodResourceLoadState('ready');
+            },
+            onError: error => {
+                console.warn('Weekly progress authoritative period load failed', error);
+                setPeriodResourceLoadState('error');
+            },
         });
-        setDailyDrafts(nextDrafts);
-        setDailyDraftKey(dailyCurrentPeriodKey);
-    }, [actionLoadState, dailyCurrentPeriodKey, dailyProgressWeekKey, draftReloadNonce, getLatestDailyProgressForTask, scopeKey, selectedProgressDate, selectedWeekStart, weeklyLeafTasks, weeklyProgressCapabilities.canView]);
+    }, [
+        actionLoadState,
+        completionRequests,
+        constructionSiteId,
+        dailyLogs,
+        effectiveId,
+        invalidateSelectedPeriodResources,
+        projectId,
+        weeklyProgressCapabilities.canView,
+    ]);
+
+    useEffect(() => {
+        void reloadAuthoritativePeriodResources(currentPeriodTarget);
+        return () => {
+            periodStateRequestGeneration.current += 1;
+        };
+    }, [currentPeriodTarget, periodResourceRetryNonce, reloadAuthoritativePeriodResources]);
+
+    const beginPeriodTargetChange = useCallback((target: WeeklyProgressPeriodTarget) => {
+        periodStateRequestGeneration.current += 1;
+        currentPeriodTargetRef.current = target;
+        invalidateSelectedPeriodResources();
+    }, [invalidateSelectedPeriodResources]);
 
     const weeklyBaselineRollup = useMemo(() => {
         if (tasks.length === 0) return {};
@@ -985,8 +1085,6 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
     const selectedDraftKey = entryMode === 'daily' ? dailyDraftKey : weeklyDraftKey;
     const selectedPeriodStateLoaded = Boolean(selectedPeriodState)
         && selectedPeriodStateKey === selectedCurrentPeriodKey;
-    const weeklyPeriodStateLoaded = Boolean(weeklyPeriodState)
-        && weeklyPeriodStateKey === weeklyCurrentPeriodKey;
     const selectedPeriodLocked = selectedPeriodState?.isLocked === true;
     const selectedMutationReadiness = getWeeklyProgressMutationReadiness({
         actionsLoaded: actionLoadState === 'loaded',
@@ -1217,20 +1315,18 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                 updatedAt: nowIso,
             };
         });
-        const nextDailyRows = mergeDailyProgressRows(allDailyProgress, dailyRows);
-        const weeklyRows = weeklyPeriodState?.isLocked
-            ? []
-            : rollupDailyRowsToWeeklyRows({
-                tasks,
-                dailyRows: nextDailyRows,
-                existingWeeklyRows: allWeeklyProgress,
-                scopeKey,
-                projectId: projectId || null,
-                constructionSiteId: constructionSiteId || null,
-                weekStart,
-                updatedBy: user?.id || null,
-                updatedAt: nowIso,
-            });
+        const nextDailyRows = mergeDailyProgressRows(selectedDailyMutationRows, dailyRows);
+        const weeklyRows = rollupDailyRowsToWeeklyRows({
+            tasks,
+            dailyRows: nextDailyRows,
+            existingWeeklyRows: selectedWeeklyMutationRows,
+            scopeKey,
+            projectId: projectId || null,
+            constructionSiteId: constructionSiteId || null,
+            weekStart,
+            updatedBy: user?.id || null,
+            updatedAt: nowIso,
+        });
         const anticipatedProgressRows = weeklyRows.length > 0 ? weeklyRows : dailyRows;
         const nextTasks = deriveTasksFromProgressRows(anticipatedProgressRows, selectedProgressDate);
         const constructionProgress = calculateWeeklyConstructionProgress(nextTasks, taskContractLinkRows, contractItems);
@@ -1244,8 +1340,6 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
             snapshot: buildSnapshot(constructionProgress, 'daily_report', nowIso),
         };
     }, [
-        allDailyProgress,
-        allWeeklyProgress,
         buildSnapshot,
         constructionSiteId,
         contractItems,
@@ -1254,12 +1348,13 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
         getLatestDailyProgressForTask,
         projectId,
         scopeKey,
+        selectedDailyMutationRows,
         selectedProgressDate,
+        selectedWeeklyMutationRows,
         taskContractLinkRows,
         tasks,
         user?.id,
         weeklyLeafTasks,
-        weeklyPeriodState?.isLocked,
     ]);
 
     const buildWeeklyMutationDraft = useCallback(() => {
@@ -1312,54 +1407,6 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
         weeklyLeafTasks,
     ]);
 
-    const reloadAuthoritativeTasks = useCallback(async () => {
-        taskService.invalidateListCache();
-        const taskRows = await taskService.list(effectiveId, constructionSiteId || null);
-        setTasks(deriveProjectTaskProgress(taskRows, completionRequests, dailyLogs));
-    }, [completionRequests, constructionSiteId, dailyLogs, effectiveId]);
-
-    const selectedResourcesIdentity = `${dailyCurrentPeriodKey}|${weeklyCurrentPeriodKey}`;
-    const selectedResourcesIdentityRef = useRef(selectedResourcesIdentity);
-    selectedResourcesIdentityRef.current = selectedResourcesIdentity;
-
-    const reconcileSelectedProgressData = useCallback(async () => {
-        if (!scopeKey || !effectiveId || actionLoadState !== 'loaded' || !weeklyProgressCapabilities.canView) return;
-        const requestedIdentity = selectedResourcesIdentity;
-        const requestedWeekStart = selectedWeekStart;
-        try {
-            await loadSelectedPeriodStates();
-            taskService.invalidateListCache();
-            const [dailyRows, weeklyRows, taskRows] = await Promise.all([
-                projectWeeklyProgressService.listDailyByWeek(scopeKey, requestedWeekStart),
-                projectWeeklyProgressService.listByWeek(scopeKey, requestedWeekStart),
-                taskService.list(effectiveId, constructionSiteId || null),
-            ]);
-            if (selectedResourcesIdentityRef.current !== requestedIdentity) return;
-            setAllDailyProgress(mergeDailyProgressRows(dailyBaselineProgress, dailyRows));
-            setAllWeeklyProgress(prev => mergeWeeklyProgressRows(
-                prev.filter(row => row.weekStart !== requestedWeekStart),
-                weeklyRows,
-            ));
-            setTasks(deriveProjectTaskProgress(taskRows, completionRequests, dailyLogs));
-            setDailyProgressWeekKey(requestedWeekStart);
-            setDraftReloadNonce(prev => prev + 1);
-        } catch (error) {
-            console.warn('Cannot reconcile authoritative progress data', error);
-        }
-    }, [
-        actionLoadState,
-        completionRequests,
-        constructionSiteId,
-        dailyBaselineProgress,
-        dailyLogs,
-        effectiveId,
-        loadSelectedPeriodStates,
-        scopeKey,
-        selectedResourcesIdentity,
-        selectedWeekStart,
-        weeklyProgressCapabilities.canView,
-    ]);
-
     const handleSaveDailyProgress = useCallback(async () => {
         if (!ensureWeeklyProgressAction('edit')) return;
         if (!selectedMutationReadiness.canSave) return;
@@ -1371,58 +1418,32 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
             toast.warning('Chưa có hạng mục', 'Cần có hạng mục WBS lá trước khi lưu tiến độ ngày.');
             return;
         }
-        if (!weeklyPeriodStateLoaded || !weeklyPeriodState) {
-            toast.info('Đang tải trạng thái', 'Chưa xác định được trạng thái tuần của ngày đã chọn.');
-            return;
-        }
 
         const draft = buildDailyMutationDraft();
-        const requestedIdentity = selectedResourcesIdentity;
+        const capturedTarget = currentPeriodTargetRef.current;
         setSavingDailyProgress(true);
         try {
-            const result: SaveProjectProgressPeriodResult = await projectWeeklyProgressService.savePeriod({
-                projectId,
-                constructionSiteId: constructionSiteId || null,
-                periodType: 'daily',
-                periodStart: selectedProgressDate,
-                rows: draft.dailyRows,
-                snapshot: draft.snapshot,
+            const { result } = await completeWeeklyProgressMutationWithReload<SaveProjectProgressPeriodResult>({
+                capturedTarget,
+                getCurrentTarget: () => currentPeriodTargetRef.current,
+                reload: reloadAuthoritativePeriodResources,
+                mutate: () => projectWeeklyProgressService.savePeriod({
+                    projectId,
+                    constructionSiteId: constructionSiteId || null,
+                    periodType: 'daily',
+                    periodStart: capturedTarget.periodStart,
+                    rows: draft.dailyRows,
+                    snapshot: draft.snapshot,
+                }),
             });
-            if (selectedResourcesIdentityRef.current !== requestedIdentity) return;
-            setDailyPeriodState(result.state);
-            setDailyPeriodStateKey(dailyCurrentPeriodKey);
-            setAllDailyProgress(draft.nextDailyRows);
-            if (!result.weeklyAggregateFrozen) {
-                setAllWeeklyProgress(prev => mergeWeeklyProgressRows(prev, draft.weeklyRows));
-            }
-            const committedProgressRows = result.weeklyAggregateFrozen ? draft.dailyRows : draft.weeklyRows;
-            setTasks(deriveTasksFromProgressRows(committedProgressRows, selectedProgressDate));
-
-            setSelectedWeekStart(draft.weekStart);
             setFilterWeek(draft.weekStart);
             setFilterMonth(draft.weekStart.substring(0, 7));
-
-            const [dailyProgressData, weeklyProgressData] = await Promise.all([
-                projectWeeklyProgressService.listDailyByWeek(scopeKey, draft.weekStart),
-                projectWeeklyProgressService.listByWeek(scopeKey, draft.weekStart),
-                reloadAuthoritativeTasks(),
-            ]);
-            setAllDailyProgress(prev => mergeDailyProgressRows(
-                mergeDailyProgressRows(prev, dailyProgressData),
-                draft.dailyRows,
-            ));
-            setAllWeeklyProgress(prev => result.weeklyAggregateFrozen
-                ? mergeWeeklyProgressRows(prev, weeklyProgressData)
-                : mergeWeeklyProgressRows(
-                    mergeWeeklyProgressRows(prev, weeklyProgressData),
-                    draft.weeklyRows,
-                ));
 
             toast.success(
                 'Đã lưu thay đổi',
                 result.weeklyAggregateFrozen
-                    ? `${selectedProgressDate} · Tuần đã chốt nên tổng hợp tuần được giữ nguyên.`
-                    : `${selectedProgressDate} · ${getISOWeekLabel(draft.weekStart)} · Tiến độ thi công ${draft.constructionProgress}%`,
+                    ? `${capturedTarget.periodStart} · Tuần đã chốt nên tổng hợp tuần được giữ nguyên.`
+                    : `${capturedTarget.periodStart} · ${getISOWeekLabel(draft.weekStart)} · Tiến độ thi công ${draft.constructionProgress}%`,
             );
         } catch (error: any) {
             console.error(error);
@@ -1430,28 +1451,20 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                 'Không thể lưu tiến độ ngày',
                 getProjectProgressMutationErrorMessage(error, 'Vui lòng thử lại.'),
             );
-            void reconcileSelectedProgressData();
         } finally {
             setSavingDailyProgress(false);
         }
     }, [
         buildDailyMutationDraft,
         constructionSiteId,
-        dailyCurrentPeriodKey,
-        deriveTasksFromProgressRows,
         ensureWeeklyProgressAction,
         projectId,
-        reconcileSelectedProgressData,
-        reloadAuthoritativeTasks,
+        reloadAuthoritativePeriodResources,
         scopeKey,
         selectedPeriodLocked,
         selectedMutationReadiness.canSave,
-        selectedProgressDate,
-        selectedResourcesIdentity,
         toast,
         weeklyLeafTasks.length,
-        weeklyPeriodState,
-        weeklyPeriodStateLoaded,
     ]);
 
     const handleSaveWeeklyProgress = useCallback(async () => {
@@ -1467,35 +1480,28 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
         }
 
         const draft = buildWeeklyMutationDraft();
-        const requestedIdentity = selectedResourcesIdentity;
+        const capturedTarget = currentPeriodTargetRef.current;
         setSavingWeeklyProgress(true);
         try {
-            const result = await projectWeeklyProgressService.savePeriod({
-                projectId,
-                constructionSiteId: constructionSiteId || null,
-                periodType: 'weekly',
-                periodStart: selectedWeekStart,
-                rows: draft.weeklyRows,
-                snapshot: draft.snapshot,
+            await completeWeeklyProgressMutationWithReload({
+                capturedTarget,
+                getCurrentTarget: () => currentPeriodTargetRef.current,
+                reload: reloadAuthoritativePeriodResources,
+                mutate: () => projectWeeklyProgressService.savePeriod({
+                    projectId,
+                    constructionSiteId: constructionSiteId || null,
+                    periodType: 'weekly',
+                    periodStart: capturedTarget.periodStart,
+                    rows: draft.weeklyRows,
+                    snapshot: draft.snapshot,
+                }),
             });
-            if (selectedResourcesIdentityRef.current !== requestedIdentity) return;
-            setWeeklyPeriodState(result.state);
-            setWeeklyPeriodStateKey(weeklyCurrentPeriodKey);
-            setAllWeeklyProgress(prev => mergeWeeklyProgressRows(prev, draft.weeklyRows));
-            setTasks(draft.nextTasks);
-            setFilterWeek(selectedWeekStart);
-            setFilterMonth(selectedWeekStart.substring(0, 7));
-
-            const weeklyProgressData = await projectWeeklyProgressService.listByWeek(scopeKey, selectedWeekStart);
-            setAllWeeklyProgress(prev => mergeWeeklyProgressRows(
-                mergeWeeklyProgressRows(prev, weeklyProgressData),
-                draft.weeklyRows,
-            ));
-            await reloadAuthoritativeTasks();
+            setFilterWeek(capturedTarget.periodStart);
+            setFilterMonth(capturedTarget.periodStart.substring(0, 7));
 
             toast.success(
                 'Đã lưu thay đổi',
-                `${getISOWeekLabel(selectedWeekStart)} · Tiến độ thi công ${draft.constructionProgress}% · Theo giá trị ${valueProgressMetric.valueProgressPercent}%`,
+                `${getISOWeekLabel(capturedTarget.periodStart)} · Tiến độ thi công ${draft.constructionProgress}% · Theo giá trị ${valueProgressMetric.valueProgressPercent}%`,
             );
         } catch (error: any) {
             console.error(error);
@@ -1503,7 +1509,6 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                 'Không thể lưu tiến độ tuần',
                 getProjectProgressMutationErrorMessage(error, 'Vui lòng thử lại.'),
             );
-            void reconcileSelectedProgressData();
         } finally {
             setSavingWeeklyProgress(false);
         }
@@ -1512,17 +1517,13 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
         constructionSiteId,
         ensureWeeklyProgressAction,
         projectId,
-        reconcileSelectedProgressData,
-        reloadAuthoritativeTasks,
+        reloadAuthoritativePeriodResources,
         scopeKey,
         selectedPeriodLocked,
         selectedMutationReadiness.canSave,
-        selectedResourcesIdentity,
-        selectedWeekStart,
         toast,
         valueProgressMetric.valueProgressPercent,
         weeklyLeafTasks.length,
-        weeklyCurrentPeriodKey,
     ]);
 
     const handleCloseProgressPeriod = useCallback(async () => {
@@ -1545,7 +1546,7 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
         });
         if (!ok) return;
 
-        const requestedIdentity = selectedResourcesIdentity;
+        const capturedTarget = currentPeriodTargetRef.current;
         const setSaving = entryMode === 'daily' ? setSavingDailyProgress : setSavingWeeklyProgress;
         setSaving(true);
         try {
@@ -1553,58 +1554,37 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                 const draft = weeklyProgressCapabilities.canEdit && weeklyLeafTasks.length > 0
                     ? buildDailyMutationDraft()
                     : null;
-                const state = await projectWeeklyProgressService.closePeriod({
-                    projectId,
-                    constructionSiteId: constructionSiteId || null,
-                    periodType: 'daily',
-                    periodStart: selectedProgressDate,
-                    rows: draft?.dailyRows || null,
-                    snapshot: draft?.snapshot || null,
+                await completeWeeklyProgressMutationWithReload({
+                    capturedTarget,
+                    getCurrentTarget: () => currentPeriodTargetRef.current,
+                    reload: reloadAuthoritativePeriodResources,
+                    mutate: () => projectWeeklyProgressService.closePeriod({
+                        projectId,
+                        constructionSiteId: constructionSiteId || null,
+                        periodType: 'daily',
+                        periodStart: capturedTarget.periodStart,
+                        rows: draft?.dailyRows || null,
+                        snapshot: draft?.snapshot || null,
+                    }),
                 });
-                if (selectedResourcesIdentityRef.current !== requestedIdentity) return;
-                setDailyPeriodState(state);
-                setDailyPeriodStateKey(dailyCurrentPeriodKey);
-                if (draft) {
-                    setAllDailyProgress(draft.nextDailyRows);
-                    setTasks(deriveTasksFromProgressRows(draft.dailyRows, selectedProgressDate));
-                    const [dailyRows, weeklyRows] = await Promise.all([
-                        projectWeeklyProgressService.listDailyByWeek(scopeKey, draft.weekStart),
-                        projectWeeklyProgressService.listByWeek(scopeKey, draft.weekStart),
-                        reloadAuthoritativeTasks(),
-                    ]);
-                    setAllDailyProgress(prev => mergeDailyProgressRows(
-                        mergeDailyProgressRows(prev, dailyRows),
-                        draft.dailyRows,
-                    ));
-                    setAllWeeklyProgress(prev => mergeWeeklyProgressRows(prev, weeklyRows));
-                }
             } else {
                 const draft = weeklyProgressCapabilities.canEdit && weeklyLeafTasks.length > 0
                     ? buildWeeklyMutationDraft()
                     : null;
-                const state = await projectWeeklyProgressService.closePeriod({
-                    projectId,
-                    constructionSiteId: constructionSiteId || null,
-                    periodType: 'weekly',
-                    periodStart: selectedWeekStart,
-                    rows: draft?.weeklyRows || null,
-                    snapshot: draft?.snapshot || null,
+                await completeWeeklyProgressMutationWithReload({
+                    capturedTarget,
+                    getCurrentTarget: () => currentPeriodTargetRef.current,
+                    reload: reloadAuthoritativePeriodResources,
+                    mutate: () => projectWeeklyProgressService.closePeriod({
+                        projectId,
+                        constructionSiteId: constructionSiteId || null,
+                        periodType: 'weekly',
+                        periodStart: capturedTarget.periodStart,
+                        rows: draft?.weeklyRows || null,
+                        snapshot: draft?.snapshot || null,
+                    }),
                 });
-                if (selectedResourcesIdentityRef.current !== requestedIdentity) return;
-                setWeeklyPeriodState(state);
-                setWeeklyPeriodStateKey(weeklyCurrentPeriodKey);
-                if (draft) {
-                    setAllWeeklyProgress(prev => mergeWeeklyProgressRows(prev, draft.weeklyRows));
-                    setTasks(draft.nextTasks);
-                    const weeklyRows = await projectWeeklyProgressService.listByWeek(scopeKey, selectedWeekStart);
-                    setAllWeeklyProgress(prev => mergeWeeklyProgressRows(
-                        mergeWeeklyProgressRows(prev, weeklyRows),
-                        draft.weeklyRows,
-                    ));
-                    await reloadAuthoritativeTasks();
-                }
             }
-            await reconcileSelectedProgressData();
             toast.success('Đã chốt kỳ tiến độ', 'Dữ liệu kỳ đã chuyển sang chế độ chỉ đọc.');
         } catch (error: any) {
             console.error(error);
@@ -1612,7 +1592,6 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                 'Không thể chốt kỳ tiến độ',
                 getProjectProgressMutationErrorMessage(error, 'Vui lòng thử lại.'),
             );
-            void reconcileSelectedProgressData();
         } finally {
             setSaving(false);
         }
@@ -1621,24 +1600,18 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
         buildWeeklyMutationDraft,
         confirm,
         constructionSiteId,
-        dailyCurrentPeriodKey,
-        deriveTasksFromProgressRows,
         ensureWeeklyProgressAction,
         entryMode,
         projectId,
-        reconcileSelectedProgressData,
-        reloadAuthoritativeTasks,
-        scopeKey,
+        reloadAuthoritativePeriodResources,
         selectedPeriodLocked,
         selectedMutationReadiness.canClose,
         selectedPeriodState,
         selectedProgressDate,
-        selectedResourcesIdentity,
         selectedWeekStart,
         toast,
         weeklyLeafTasks.length,
         weeklyProgressCapabilities.canEdit,
-        weeklyCurrentPeriodKey,
     ]);
 
     const handleReopenProgressPeriod = useCallback(async () => {
@@ -1660,26 +1633,22 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
         });
         if (!reason) return;
 
-        const requestedIdentity = selectedResourcesIdentity;
+        const capturedTarget = currentPeriodTargetRef.current;
         const setSaving = entryMode === 'daily' ? setSavingDailyProgress : setSavingWeeklyProgress;
         setSaving(true);
         try {
-            const state = await projectWeeklyProgressService.reopenPeriod({
-                projectId,
-                constructionSiteId: constructionSiteId || null,
-                periodType: entryMode,
-                periodStart: entryMode === 'daily' ? selectedProgressDate : selectedWeekStart,
-                reason,
+            await completeWeeklyProgressMutationWithReload({
+                capturedTarget,
+                getCurrentTarget: () => currentPeriodTargetRef.current,
+                reload: reloadAuthoritativePeriodResources,
+                mutate: () => projectWeeklyProgressService.reopenPeriod({
+                    projectId,
+                    constructionSiteId: constructionSiteId || null,
+                    periodType: capturedTarget.periodType,
+                    periodStart: capturedTarget.periodStart,
+                    reason,
+                }),
             });
-            if (selectedResourcesIdentityRef.current !== requestedIdentity) return;
-            if (entryMode === 'daily') {
-                setDailyPeriodState(state);
-                setDailyPeriodStateKey(dailyCurrentPeriodKey);
-            } else {
-                setWeeklyPeriodState(state);
-                setWeeklyPeriodStateKey(weeklyCurrentPeriodKey);
-            }
-            await reconcileSelectedProgressData();
             toast.success('Đã mở chốt', 'Kỳ tiến độ đã được mở lại. Quyền sửa vẫn áp dụng độc lập.');
         } catch (error: any) {
             console.error(error);
@@ -1687,26 +1656,22 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                 'Không thể mở chốt',
                 getProjectProgressMutationErrorMessage(error, 'Vui lòng thử lại.'),
             );
-            void reconcileSelectedProgressData();
         } finally {
             setSaving(false);
         }
     }, [
         constructionSiteId,
-        dailyCurrentPeriodKey,
         ensureWeeklyProgressAction,
         entryMode,
         projectId,
-        reconcileSelectedProgressData,
         reasonConfirm,
+        reloadAuthoritativePeriodResources,
         selectedPeriodLocked,
         selectedMutationReadiness.canReopen,
         selectedPeriodState,
         selectedProgressDate,
-        selectedResourcesIdentity,
         selectedWeekStart,
         toast,
-        weeklyCurrentPeriodKey,
     ]);
 
     // Flatten tree construction based on collapse and filter states
@@ -2061,7 +2026,18 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                                     <button
                                         key={option.key}
                                         type="button"
-                                        onClick={() => setEntryMode(option.key as ProgressEntryMode)}
+                                        onClick={() => {
+                                            const nextMode = option.key as ProgressEntryMode;
+                                            if (nextMode === entryMode) return;
+                                            const nextStart = nextMode === 'daily' ? selectedProgressDate : selectedWeekStart;
+                                            beginPeriodTargetChange({
+                                                key: getWeeklyProgressPeriodKey(scopeKey, nextMode, nextStart),
+                                                scopeKey,
+                                                periodType: nextMode,
+                                                periodStart: nextStart,
+                                            });
+                                            setEntryMode(nextMode);
+                                        }}
                                         className={`rounded-lg px-3 py-1.5 text-[10px] font-bold transition-colors ${entryMode === option.key
                                                 ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-900 dark:text-zinc-100'
                                                 : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
@@ -2083,6 +2059,12 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                                     onChange={e => {
                                         if (!e.target.value) return;
                                         const nextWeekStart = getWeekStart(e.target.value);
+                                        beginPeriodTargetChange({
+                                            key: getWeeklyProgressPeriodKey(scopeKey, 'daily', e.target.value),
+                                            scopeKey,
+                                            periodType: 'daily',
+                                            periodStart: e.target.value,
+                                        });
                                         setSelectedProgressDate(e.target.value);
                                         setSelectedWeekStart(nextWeekStart);
                                         setFilterWeek(nextWeekStart);
@@ -2098,6 +2080,12 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                                     onChange={e => {
                                         if (!e.target.value) return;
                                         const nextWeekStart = getWeekStart(e.target.value);
+                                        beginPeriodTargetChange({
+                                            key: getWeeklyProgressPeriodKey(scopeKey, 'weekly', nextWeekStart),
+                                            scopeKey,
+                                            periodType: 'weekly',
+                                            periodStart: nextWeekStart,
+                                        });
                                         setSelectedWeekStart(nextWeekStart);
                                         setFilterWeek(nextWeekStart);
                                         setFilterMonth(nextWeekStart.substring(0, 7));
@@ -2108,19 +2096,25 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                             )}
                         </div>
 
-                        <WeeklyProgressPeriodControls
-                            periodType={entryMode}
-                            periodStart={entryMode === 'daily' ? selectedProgressDate : selectedWeekStart}
-                            stateLoaded={selectedPeriodStateLoaded}
-                            state={selectedPeriodState}
-                            canEdit={canEditSelectedPeriod}
-                            canConfirm={canConfirmSelectedPeriod}
-                            busy={savingDailyProgress || savingWeeklyProgress}
-                            hasRows={weeklyLeafTasks.length > 0}
-                            onSave={entryMode === 'daily' ? handleSaveDailyProgress : handleSaveWeeklyProgress}
-                            onClose={handleCloseProgressPeriod}
-                            onReopen={handleReopenProgressPeriod}
-                        />
+                        {periodResourceLoadState === 'error' ? (
+                            <WeeklyProgressPeriodUnavailable
+                                onRetry={() => setPeriodResourceRetryNonce(previous => previous + 1)}
+                            />
+                        ) : (
+                            <WeeklyProgressPeriodControls
+                                periodType={entryMode}
+                                periodStart={entryMode === 'daily' ? selectedProgressDate : selectedWeekStart}
+                                stateLoaded={selectedPeriodStateLoaded}
+                                state={selectedPeriodState}
+                                canEdit={canEditSelectedPeriod}
+                                canConfirm={canConfirmSelectedPeriod}
+                                busy={savingDailyProgress || savingWeeklyProgress}
+                                hasRows={weeklyLeafTasks.length > 0}
+                                onSave={entryMode === 'daily' ? handleSaveDailyProgress : handleSaveWeeklyProgress}
+                                onClose={handleCloseProgressPeriod}
+                                onReopen={handleReopenProgressPeriod}
+                            />
+                        )}
                     </div>
                 </div>
 

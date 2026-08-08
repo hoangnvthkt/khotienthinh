@@ -80,6 +80,7 @@ begin
     or to_regprocedure('public.save_project_progress_period(text,text,text,date,jsonb,jsonb)') is null
     or to_regprocedure('public.close_project_progress_period(text,text,text,date,jsonb,jsonb)') is null
     or to_regprocedure('public.reopen_project_progress_period(text,text,text,date,text)') is null
+    or to_regprocedure('public.preflight_project_progress_snapshot(text,text,date,jsonb)') is null
     or to_regprocedure('public.refresh_project_progress_snapshot(text,text,date,jsonb)') is null then
     raise exception 'weekly progress period-state RPC surface is incomplete';
   end if;
@@ -88,6 +89,7 @@ begin
     or has_function_privilege('anon', 'public.save_project_progress_period(text,text,text,date,jsonb,jsonb)', 'EXECUTE')
     or has_function_privilege('anon', 'public.close_project_progress_period(text,text,text,date,jsonb,jsonb)', 'EXECUTE')
     or has_function_privilege('anon', 'public.reopen_project_progress_period(text,text,text,date,text)', 'EXECUTE')
+    or has_function_privilege('anon', 'public.preflight_project_progress_snapshot(text,text,date,jsonb)', 'EXECUTE')
     or has_function_privilege('anon', 'public.refresh_project_progress_snapshot(text,text,date,jsonb)', 'EXECUTE') then
     raise exception 'anon unexpectedly has a weekly progress RPC grant';
   end if;
@@ -102,6 +104,7 @@ begin
         'save_project_progress_period',
         'close_project_progress_period',
         'reopen_project_progress_period',
+        'preflight_project_progress_snapshot',
         'refresh_project_progress_snapshot'
       )
       and routine.prosecdef
@@ -115,6 +118,7 @@ begin
         'save_project_progress_period_impl',
         'close_project_progress_period_impl',
         'reopen_project_progress_period_impl',
+        'preflight_project_progress_snapshot_impl',
         'refresh_project_progress_snapshot_impl'
       )
       and not routine.prosecdef
@@ -702,6 +706,20 @@ begin
   end if;
 
   begin
+    perform public.preflight_project_progress_snapshot(
+      (select project_id from weekly_progress_smoke_ids),
+      (select site_id::text from weekly_progress_smoke_ids),
+      date '2026-08-03',
+      jsonb_build_object(
+        'constructionProgressPercent', 41, 'valueProgressPercent', 21,
+        'progressMode', 'opening_balance'
+      )
+    );
+    raise exception 'snapshot preflight allowed a locked weekly period';
+  exception when check_violation then null;
+  end;
+
+  begin
     perform public.refresh_project_progress_snapshot(
       (select project_id from weekly_progress_smoke_ids),
       (select site_id::text from weekly_progress_smoke_ids),
@@ -740,6 +758,20 @@ from weekly_progress_smoke_ids;
 do $$
 begin
   begin
+    perform public.preflight_project_progress_snapshot(
+      (select project_id from weekly_progress_smoke_ids),
+      (select site_id::text from weekly_progress_smoke_ids),
+      date '2026-08-03',
+      jsonb_build_object(
+        'constructionProgressPercent', 41, 'valueProgressPercent', 21,
+        'progressMode', 'opening_balance'
+      )
+    );
+    raise exception 'weekly_progress editor unexpectedly received Opening Balance preflight authority';
+  exception when insufficient_privilege then null;
+  end;
+
+  begin
     perform public.refresh_project_progress_snapshot(
       (select project_id from weekly_progress_smoke_ids),
       (select site_id::text from weekly_progress_smoke_ids),
@@ -761,6 +793,36 @@ select set_config('request.jwt.claim.email', keeper_email, true),
        set_config('request.jwt.claim.sub', keeper_id::text, true),
        set_config('request.jwt.claims', jsonb_build_object('email', keeper_email, 'sub', keeper_id)::text, true)
 from weekly_progress_smoke_ids;
+
+do $$
+declare
+  ids weekly_progress_smoke_ids%rowtype;
+  v_result jsonb;
+begin
+  select * into ids from weekly_progress_smoke_ids;
+  v_result := public.preflight_project_progress_snapshot(
+    ids.project_id, ids.site_id::text, date '2026-08-10',
+    jsonb_build_object(
+      'constructionProgressPercent', 42, 'valueProgressPercent', 22,
+      'progressMode', 'opening_balance', 'recognizedValue', 420
+    )
+  );
+  if not coalesce((v_result ->> 'allowed')::boolean, false) then
+    raise exception 'Opening Balance preflight did not authorize the global keeper';
+  end if;
+  if exists (
+    select 1 from public.project_progress_period_states state
+    where state.scope_key = ids.project_id || '_' || ids.site_id::text
+      and state.period_type = 'weekly'
+      and state.period_start = date '2026-08-10'
+  ) or exists (
+    select 1 from public.weekly_progress_snapshots snapshot
+    where snapshot.scope_key = ids.project_id || '_' || ids.site_id::text
+      and snapshot.week_start = date '2026-08-10'
+  ) then
+    raise exception 'Opening Balance preflight mutated period or snapshot data';
+  end if;
+end $$;
 
 select public.refresh_project_progress_snapshot(
   project_id, site_id::text, date '2026-08-03',

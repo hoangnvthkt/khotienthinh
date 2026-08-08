@@ -180,6 +180,29 @@ describe('projectWeeklyProgressService authoritative RPC contract', () => {
     });
   });
 
+  it('preflights Opening Balance snapshot refresh through a non-mutating RPC', async () => {
+    const openingSnapshot = { ...snapshot, progressMode: 'opening_balance' };
+    supabaseMocks.rpc.mockResolvedValueOnce({
+      data: { allowed: true, scopeKey: 'project-1_site-1', weekStart: '2026-08-03' },
+      error: null,
+    });
+
+    const result = await (projectWeeklyProgressService as any).preflightSnapshot({
+      projectId: 'project-1',
+      constructionSiteId: 'site-1',
+      weekStart: '2026-08-03',
+      snapshot: openingSnapshot,
+    });
+
+    expect(result).toEqual({ allowed: true, scopeKey: 'project-1_site-1', weekStart: '2026-08-03' });
+    expect(supabaseMocks.rpc).toHaveBeenCalledWith('preflight_project_progress_snapshot', {
+      p_project_id: 'project-1',
+      p_construction_site_id: 'site-1',
+      p_week_start: '2026-08-03',
+      p_snapshot: openingSnapshot,
+    });
+  });
+
   it('does not expose protected-table mutation helpers', () => {
     expect(projectWeeklyProgressService).not.toHaveProperty('upsertDailyMany');
     expect(projectWeeklyProgressService).not.toHaveProperty('upsertMany');

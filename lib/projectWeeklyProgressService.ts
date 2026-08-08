@@ -383,6 +383,12 @@ export interface ProjectProgressSnapshotResult extends ProjectProgressSnapshotPa
   updatedAt: string;
 }
 
+export interface ProjectProgressSnapshotPreflightResult {
+  allowed: true;
+  scopeKey: string;
+  weekStart: string;
+}
+
 export interface RefreshProjectProgressSnapshotInput {
   projectId: string;
   constructionSiteId?: string | null;
@@ -663,6 +669,18 @@ export const projectWeeklyProgressService = {
     return data as ProjectProgressSnapshotResult;
   },
 
+  async preflightSnapshot(input: RefreshProjectProgressSnapshotInput): Promise<ProjectProgressSnapshotPreflightResult> {
+    assertProgressRpcAvailable();
+    const { data, error } = await supabase.rpc('preflight_project_progress_snapshot', {
+      p_project_id: input.projectId,
+      p_construction_site_id: input.constructionSiteId || null,
+      p_week_start: input.weekStart,
+      p_snapshot: input.snapshot,
+    });
+    if (error) throw error;
+    return data as ProjectProgressSnapshotPreflightResult;
+  },
+
   async listAll(scopeKey: string): Promise<ProjectWeeklyTaskProgress[]> {
     if (!isSupabaseConfigured || !scopeKey) return [];
     const { data, error } = await fetchPagedRows((from, to) => supabase
@@ -694,6 +712,20 @@ export const projectWeeklyProgressService = {
       return [];
     }
     return dedupeRowsById(data || []).map(row => fromDb(row) as ProjectWeeklyTaskProgress);
+  },
+
+  async listByWeekStrict(scopeKey: string, weekStart: string): Promise<ProjectWeeklyTaskProgress[]> {
+    assertProgressRpcAvailable();
+    const { data, error } = await fetchPagedRows((from, to) => supabase
+      .from(WEEKLY_TABLE)
+      .select('*')
+      .eq('scope_key', scopeKey)
+      .eq('week_start', weekStart)
+      .order('updated_at', { ascending: false })
+      .order('task_id', { ascending: true })
+      .range(from, to));
+    if (error) throw error;
+    return (data || []).map(row => fromDb(row) as ProjectWeeklyTaskProgress);
   },
 
   async listWeeklyRange(scopeKey: string, fromWeekStart: string, toWeekStart: string): Promise<ProjectWeeklyTaskProgress[]> {
@@ -729,6 +761,21 @@ export const projectWeeklyProgressService = {
       console.warn('project weekly progress unavailable', error.message);
       return [];
     }
+    return latestByTask((data || []).map(row => fromDb(row) as ProjectWeeklyTaskProgress));
+  },
+
+  async listLatestAtOrBeforeStrict(scopeKey: string, weekStart: string): Promise<ProjectWeeklyTaskProgress[]> {
+    assertProgressRpcAvailable();
+    const { data, error } = await fetchPagedRows((from, to) => supabase
+      .from(WEEKLY_TABLE)
+      .select('*')
+      .eq('scope_key', scopeKey)
+      .lte('week_start', weekStart)
+      .order('week_start', { ascending: false })
+      .order('updated_at', { ascending: false })
+      .order('task_id', { ascending: true })
+      .range(from, to));
+    if (error) throw error;
     return latestByTask((data || []).map(row => fromDb(row) as ProjectWeeklyTaskProgress));
   },
 
@@ -802,6 +849,21 @@ export const projectWeeklyProgressService = {
     return (data || []).map(row => fromDb(row) as ProjectDailyTaskProgress);
   },
 
+  async listDailyByWeekStrict(scopeKey: string, weekStart: string): Promise<ProjectDailyTaskProgress[]> {
+    assertProgressRpcAvailable();
+    const { data, error } = await fetchPagedRows((from, to) => supabase
+      .from(DAILY_TABLE)
+      .select('*')
+      .eq('scope_key', scopeKey)
+      .eq('week_start', weekStart)
+      .order('progress_date', { ascending: true })
+      .order('updated_at', { ascending: true })
+      .order('task_id', { ascending: true })
+      .range(from, to));
+    if (error) throw error;
+    return (data || []).map(row => fromDb(row) as ProjectDailyTaskProgress);
+  },
+
   async listDailyLatestAtOrBeforeDate(scopeKey: string, progressDate: string): Promise<ProjectDailyTaskProgress[]> {
     if (!isSupabaseConfigured || !scopeKey) return [];
     const { data, error } = await fetchPagedRows((from, to) => supabase
@@ -835,6 +897,21 @@ export const projectWeeklyProgressService = {
       console.warn('project daily progress baseline unavailable', error.message);
       return [];
     }
+    return latestByTask((data || []).map(row => fromDb(row) as ProjectDailyTaskProgress));
+  },
+
+  async listDailyLatestBeforeDateStrict(scopeKey: string, progressDate: string): Promise<ProjectDailyTaskProgress[]> {
+    assertProgressRpcAvailable();
+    const { data, error } = await fetchPagedRows((from, to) => supabase
+      .from(DAILY_TABLE)
+      .select('*')
+      .eq('scope_key', scopeKey)
+      .lt('progress_date', progressDate)
+      .order('progress_date', { ascending: false })
+      .order('updated_at', { ascending: false })
+      .order('task_id', { ascending: true })
+      .range(from, to));
+    if (error) throw error;
     return latestByTask((data || []).map(row => fromDb(row) as ProjectDailyTaskProgress));
   },
 

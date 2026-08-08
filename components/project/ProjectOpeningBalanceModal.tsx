@@ -21,11 +21,11 @@ import {
 } from '../../lib/projectMaterialTabUtils';
 import {
   getProjectScopeKey,
-  projectWeeklyProgressService,
   type RefreshProjectProgressSnapshotInput,
 } from '../../lib/projectWeeklyProgressService';
 import {
   calculateOpeningRecognizedValue,
+  getOpeningBalanceSnapshotRetryInput,
   projectOpeningBalanceService,
   ProjectOpeningBalanceLockResult,
 } from '../../lib/projectOpeningBalanceService';
@@ -127,13 +127,13 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
     setConstructionProgress(finance?.progressPercent ? fmtInput(finance.progressPercent, 2) : '');
     setAsOfDate('2026-06-20');
     setImportMessages({ errors: [], warnings: [] });
-    setSnapshotRetryInput(null);
     setLines([emptyLine(defaultWarehouseId)]);
     let cancelled = false;
     projectOpeningBalanceService.getOpeningBalanceByScope(scopeKey)
       .then(async balance => {
         if (cancelled) return;
         setExistingOpening(balance);
+        setSnapshotRetryInput(getOpeningBalanceSnapshotRetryInput(balance));
         if (!balance) return;
         setAsOfDate(balance.asOfDate);
         setContractValue(balance.contractValue ? fmtMoneyInput(balance.contractValue) : '');
@@ -319,11 +319,17 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
   };
 
   const handleRetrySnapshot = async () => {
-    if (!snapshotRetryInput) return;
+    if (!snapshotRetryInput || !existingOpening) return;
     setLoading(true);
     try {
-      await projectWeeklyProgressService.refreshSnapshot(snapshotRetryInput);
+      await projectOpeningBalanceService.retryOpeningBalanceSnapshot(existingOpening);
       setSnapshotRetryInput(null);
+      setExistingOpening(prev => prev ? {
+        ...prev,
+        progressSnapshotStatus: 'synced',
+        progressSnapshotPayload: snapshotRetryInput as unknown as Record<string, unknown>,
+        progressSnapshotRefreshedAt: new Date().toISOString(),
+      } : prev);
       toast.success('Đã cập nhật snapshot tiến độ', 'Dữ liệu đầu kỳ và snapshot tiến độ hiện đã đồng bộ.');
     } catch (error) {
       logApiError('ProjectOpeningBalanceModal.retrySnapshot', error);

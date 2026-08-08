@@ -125,6 +125,17 @@ create index project_progress_period_states_project_period_idx
 
 alter table public.project_progress_period_states enable row level security;
 
+alter table public.project_opening_balances
+  add column if not exists progress_snapshot_status text not null default 'pending',
+  add column if not exists progress_snapshot_payload jsonb,
+  add column if not exists progress_snapshot_refreshed_at timestamptz;
+
+alter table public.project_opening_balances
+  drop constraint if exists project_opening_balances_progress_snapshot_status_check;
+alter table public.project_opening_balances
+  add constraint project_opening_balances_progress_snapshot_status_check
+  check (progress_snapshot_status in ('pending', 'synced'));
+
 create or replace function app_private.project_progress_scope_key(
   p_project_id text,
   p_construction_site_id text
@@ -1193,7 +1204,7 @@ begin
 end;
 $$;
 
-create or replace function app_private.refresh_project_progress_snapshot_impl(
+create or replace function app_private.preflight_project_progress_snapshot_impl(
   p_project_id text,
   p_construction_site_id text,
   p_week_start date,
@@ -1201,7 +1212,7 @@ create or replace function app_private.refresh_project_progress_snapshot_impl(
 )
 returns jsonb
 language plpgsql
-volatile
+stable
 security definer
 set search_path = ''
 as $$
@@ -1209,7 +1220,6 @@ declare
   v_actor_id uuid := public.current_app_user_id();
   v_site_id text := nullif(btrim(coalesce(p_construction_site_id, '')), '');
   v_scope_key text;
-  v_state public.project_progress_period_states%rowtype;
 begin
   v_scope_key := app_private.assert_project_progress_scope_period(
     p_project_id, v_site_id, 'weekly', p_week_start
@@ -1228,13 +1238,74 @@ begin
       using errcode = '23514';
   end if;
 
+  if exists (
+    select 1
+    from public.project_progress_period_states state
+    where state.scope_key = v_scope_key
+      and state.period_type = 'weekly'
+      and state.period_start = p_week_start
+      and state.is_locked
+  ) then
+    raise exception 'Kỳ tiến độ đã được chốt. Hãy mở chốt trước khi sửa.'
+      using errcode = '23514';
+  end if;
+
+  return jsonb_build_object(
+    'allowed', true,
+    'scopeKey', v_scope_key,
+    'weekStart', p_week_start
+  );
+end;
+$$;
+
+create or replace function public.preflight_project_progress_snapshot(
+  p_project_id text,
+  p_construction_site_id text,
+  p_week_start date,
+  p_snapshot jsonb
+)
+returns jsonb
+language sql
+stable
+security invoker
+set search_path = ''
+as $$
+  select app_private.preflight_project_progress_snapshot_impl(
+    p_project_id, p_construction_site_id, p_week_start, p_snapshot
+  );
+$$;
+
+create or replace function app_private.refresh_project_progress_snapshot_impl(
+  p_project_id text,
+  p_construction_site_id text,
+  p_week_start date,
+  p_snapshot jsonb
+)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = ''
+as $$
+declare
+  v_site_id text := nullif(btrim(coalesce(p_construction_site_id, '')), '');
+  v_preflight jsonb;
+  v_scope_key text;
+  v_state public.project_progress_period_states%rowtype;
+begin
+  v_preflight := app_private.preflight_project_progress_snapshot_impl(
+    p_project_id, v_site_id, p_week_start, p_snapshot
+  );
+  v_scope_key := v_preflight ->> 'scopeKey';
+
   insert into public.project_progress_period_states (
     scope_key, project_id, construction_site_id, period_type, period_start
   ) values (
     v_scope_key, p_project_id, v_site_id, 'weekly', p_week_start
   ) on conflict (scope_key, period_type, period_start) do nothing;
 
-  select state.* into v_state
+  select state.*
+  into v_state
   from public.project_progress_period_states state
   where state.scope_key = v_scope_key
     and state.period_type = 'weekly'
@@ -1442,6 +1513,8 @@ revoke all on function app_private.reopen_project_progress_period_impl(text, tex
   from public, anon, authenticated;
 revoke all on function app_private.refresh_project_progress_snapshot_impl(text, text, date, jsonb)
   from public, anon, authenticated;
+revoke all on function app_private.preflight_project_progress_snapshot_impl(text, text, date, jsonb)
+  from public, anon, authenticated;
 
 grant execute on function app_private.get_project_progress_period_state_impl(text, text, text, date)
   to authenticated;
@@ -1452,6 +1525,8 @@ grant execute on function app_private.close_project_progress_period_impl(text, t
 grant execute on function app_private.reopen_project_progress_period_impl(text, text, text, date, text)
   to authenticated;
 grant execute on function app_private.refresh_project_progress_snapshot_impl(text, text, date, jsonb)
+  to authenticated;
+grant execute on function app_private.preflight_project_progress_snapshot_impl(text, text, date, jsonb)
   to authenticated;
 
 revoke all on function public.get_project_progress_period_state(text, text, text, date)
@@ -1464,6 +1539,8 @@ revoke all on function public.reopen_project_progress_period(text, text, text, d
   from public, anon, authenticated;
 revoke all on function public.refresh_project_progress_snapshot(text, text, date, jsonb)
   from public, anon, authenticated;
+revoke all on function public.preflight_project_progress_snapshot(text, text, date, jsonb)
+  from public, anon, authenticated;
 
 grant execute on function public.get_project_progress_period_state(text, text, text, date)
   to authenticated;
@@ -1474,6 +1551,8 @@ grant execute on function public.close_project_progress_period(text, text, text,
 grant execute on function public.reopen_project_progress_period(text, text, text, date, text)
   to authenticated;
 grant execute on function public.refresh_project_progress_snapshot(text, text, date, jsonb)
+  to authenticated;
+grant execute on function public.preflight_project_progress_snapshot(text, text, date, jsonb)
   to authenticated;
 
 notify pgrst, 'reload schema';

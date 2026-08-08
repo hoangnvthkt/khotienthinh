@@ -27,6 +27,94 @@ const renderControls = (patch: Record<string, unknown> = {}) => {
 };
 
 describe('WeeklyProgressTab period controls', () => {
+  it('reloads the newly selected date in the same week when an older save resolves', async () => {
+    const completeMutation = (weeklyProgressTabModule as any).completeWeeklyProgressMutationWithReload;
+    expect(completeMutation).toBeTypeOf('function');
+    if (typeof completeMutation !== 'function') return;
+
+    let resolveSave!: () => void;
+    const save = new Promise<void>(resolve => { resolveSave = resolve; });
+    let currentTarget = {
+      key: 'project-1_site-1__daily__2026-08-07',
+      scopeKey: 'project-1_site-1',
+      periodType: 'daily',
+      periodStart: '2026-08-07',
+    };
+    const reloadedKeys: string[] = [];
+
+    const completion = completeMutation({
+      capturedTarget: currentTarget,
+      mutate: () => save,
+      getCurrentTarget: () => currentTarget,
+      reload: async (target: { key: string }) => { reloadedKeys.push(target.key); },
+    });
+
+    currentTarget = {
+      key: 'project-1_site-1__daily__2026-08-08',
+      scopeKey: 'project-1_site-1',
+      periodType: 'daily',
+      periodStart: '2026-08-08',
+    };
+    resolveSave();
+
+    await expect(completion).resolves.toMatchObject({ remainedOnCapturedTarget: false });
+    expect(reloadedKeys).toEqual(['project-1_site-1__daily__2026-08-08']);
+  });
+
+  it('invalidates immediately and applies only the newest keyed resource generation', async () => {
+    const runReload = (weeklyProgressTabModule as any).runWeeklyProgressKeyedReload;
+    expect(runReload).toBeTypeOf('function');
+    if (typeof runReload !== 'function') return;
+
+    let currentKey = 'project-1_site-1__daily__2026-08-07';
+    let generation = 1;
+    let resolveOld!: (value: { state: string; drafts: string }) => void;
+    const oldRead = new Promise<{ state: string; drafts: string }>(resolve => { resolveOld = resolve; });
+    const events: string[] = [];
+
+    const oldReload = runReload({
+      targetKey: currentKey,
+      generation,
+      read: () => oldRead,
+      getCurrentKey: () => currentKey,
+      getGeneration: () => generation,
+      onInvalidate: () => events.push('invalidate-old'),
+      onReady: () => events.push('ready-old'),
+      onError: () => events.push('error-old'),
+    });
+    expect(events).toEqual(['invalidate-old']);
+
+    currentKey = 'project-1_site-1__daily__2026-08-08';
+    generation = 2;
+    await runReload({
+      targetKey: currentKey,
+      generation,
+      read: async () => ({ state: 'new-state', drafts: 'new-drafts' }),
+      getCurrentKey: () => currentKey,
+      getGeneration: () => generation,
+      onInvalidate: () => events.push('invalidate-new'),
+      onReady: value => events.push(`ready-${value.state}`),
+      onError: () => events.push('error-new'),
+    });
+    resolveOld({ state: 'old-state', drafts: 'old-drafts' });
+    await oldReload;
+
+    expect(events).toEqual(['invalidate-old', 'invalidate-new', 'ready-new-state']);
+  });
+
+  it('renders period data read failures as unavailable with retry and no mutations', () => {
+    const Unavailable = (weeklyProgressTabModule as any).WeeklyProgressPeriodUnavailable;
+    expect(Unavailable).toBeTypeOf('function');
+    if (typeof Unavailable !== 'function') return;
+
+    const html = renderToStaticMarkup(<Unavailable onRetry={vi.fn()} />);
+    expect(html).toContain('Không thể tải dữ liệu kỳ tiến độ');
+    expect(html).toContain('Thử lại');
+    expect(html).not.toContain('Lưu thay đổi');
+    expect(html).not.toContain('>Chốt<');
+    expect(html).not.toContain('Mở chốt');
+  });
+
   it('does not expose mutations before the selected period state loads', () => {
     const html = renderControls({
       stateLoaded: false,
