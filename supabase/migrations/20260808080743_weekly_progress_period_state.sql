@@ -397,6 +397,15 @@ begin
       raise exception 'Task % does not belong to the requested project/site scope', v_task_id
         using errcode = '23514';
     end if;
+
+    if exists (
+      select 1
+      from public.project_tasks child
+      where child.parent_id = v_task_id
+    ) then
+      raise exception 'Only leaf tasks may be submitted; task % is derived from children', v_task_id
+        using errcode = '23514';
+    end if;
   end loop;
 end;
 $$;
@@ -724,36 +733,64 @@ begin
     );
   end if;
 
+  with submitted_tasks as (
+    select item.value ->> 'taskId' as task_id
+    from jsonb_array_elements(p_rows) item(value)
+  ), daily_ranked as (
+    select
+      daily.task_id,
+      daily.progress_percent,
+      daily.progress_date as effective_date,
+      row_number() over (
+        partition by daily.task_id
+        order by daily.progress_date desc, daily.updated_at desc
+      ) as recency_rank
+    from public.project_daily_task_progress daily
+    join submitted_tasks submitted on submitted.task_id = daily.task_id
+    where p_period_type = 'daily'
+      and daily.scope_key = p_scope_key
+  ), authoritative_progress as (
+    select ranked.task_id, ranked.progress_percent, ranked.effective_date
+    from daily_ranked ranked
+    where ranked.recency_rank = 1
+    union all
+    select weekly.task_id, weekly.progress_percent, weekly.week_start
+    from public.project_weekly_task_progress weekly
+    join submitted_tasks submitted on submitted.task_id = weekly.task_id
+    where p_period_type = 'weekly'
+      and weekly.scope_key = p_scope_key
+      and weekly.week_start = p_period_start
+  )
   update public.project_tasks task
-  set progress = (item.value ->> 'progressPercent')::numeric,
+  set progress = authoritative.progress_percent,
       progress_mode = 'weekly_report',
       actual_start_date = case
-        when (item.value ->> 'progressPercent')::numeric > 0
-          then coalesce(task.actual_start_date, p_period_start)
+        when authoritative.progress_percent > 0
+          then coalesce(task.actual_start_date, authoritative.effective_date)
         else task.actual_start_date
       end,
       actual_end_date = case
-        when (item.value ->> 'progressPercent')::numeric >= 100
-          then coalesce(task.actual_end_date, p_period_start)
+        when authoritative.progress_percent >= 100
+          then coalesce(task.actual_end_date, authoritative.effective_date)
         else task.actual_end_date
       end,
       gate_status = case
-        when (item.value ->> 'progressPercent')::numeric >= 100 then 'approved'
+        when authoritative.progress_percent >= 100 then 'approved'
         when task.gate_status in ('pending', 'approved') then 'none'
         else task.gate_status
       end,
       gate_approved_by = case
-        when (item.value ->> 'progressPercent')::numeric < 100
+        when authoritative.progress_percent < 100
           and task.gate_status in ('pending', 'approved') then null
         else task.gate_approved_by
       end,
       gate_approved_at = case
-        when (item.value ->> 'progressPercent')::numeric < 100
+        when authoritative.progress_percent < 100
           and task.gate_status in ('pending', 'approved') then null
         else task.gate_approved_at
       end
-  from jsonb_array_elements(p_rows) item(value)
-  where task.id = item.value ->> 'taskId'
+  from authoritative_progress authoritative
+  where task.id = authoritative.task_id
     and task.project_id is not distinct from p_project_id
     and nullif(task.construction_site_id::text, '') is not distinct from v_site_id;
 
@@ -1177,10 +1214,19 @@ begin
   v_scope_key := app_private.assert_project_progress_scope_period(
     p_project_id, v_site_id, 'weekly', p_week_start
   );
-  perform app_private.assert_project_progress_action(
-    v_actor_id, p_project_id, v_site_id, 'edit'
-  );
+  if v_actor_id is null or not (
+    public.is_admin()
+    or app_private.current_user_is_global_wms_keeper()
+  ) then
+    raise exception 'Chỉ System Admin hoặc thủ kho tổng được cập nhật snapshot đầu kỳ.'
+      using errcode = '42501';
+  end if;
   perform app_private.assert_project_progress_snapshot(p_snapshot);
+
+  if p_snapshot ->> 'progressMode' <> 'opening_balance' then
+    raise exception 'Opening Balance snapshot refresh requires progressMode opening_balance'
+      using errcode = '23514';
+  end if;
 
   insert into public.project_progress_period_states (
     scope_key, project_id, construction_site_id, period_type, period_start
