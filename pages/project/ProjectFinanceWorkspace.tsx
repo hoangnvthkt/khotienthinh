@@ -171,8 +171,6 @@ const validTab = (value?: string | null): value is ProjectFinanceWorkspaceTab =>
 
 const fmtMoney = (value: number) => {
   const amount = Number(value || 0);
-  if (Math.abs(amount) >= 1_000_000_000) return `${(amount / 1_000_000_000).toLocaleString('vi-VN', { maximumFractionDigits: 2 })} tỷ`;
-  if (Math.abs(amount) >= 1_000_000) return `${(amount / 1_000_000).toLocaleString('vi-VN', { maximumFractionDigits: 1 })} tr`;
   return `${amount.toLocaleString('vi-VN')} đ`;
 };
 
@@ -1890,6 +1888,7 @@ const LedgerTable = ({
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<ProjectCostCategory | 'all'>('all');
   const [selectedCostItemId, setSelectedCostItemId] = useState<string>(initialCostItemId);
+  const [selectedPartnerId, setSelectedPartnerId] = useState<string>('');
   const [selectedSource, setSelectedSource] = useState<'all' | 'manual' | 'import' | 'workflow'>('all');
   const [fromDate, setFromDate] = useState<string>('');
   const [toDate, setToDate] = useState<string>('');
@@ -1904,21 +1903,36 @@ const LedgerTable = ({
 
   const costItemOptions = useMemo(() => buildContractCostItemOptions(costItems), [costItems]);
 
+  const partnerOptions = useMemo(() => {
+    const partnerMap = new Map<string, string>();
+    (partners || []).forEach(p => {
+      partnerMap.set(p.id, p.name);
+    });
+    rows.forEach(r => {
+      if (r.counterpartyPartnerId && !partnerMap.has(r.counterpartyPartnerId)) {
+        partnerMap.set(r.counterpartyPartnerId, r.counterpartyName || 'Đối tác chưa đặt tên');
+      }
+    });
+    return Array.from(partnerMap.entries()).map(([id, name]) => ({ id, name }));
+  }, [partners, rows]);
+
   const activeFilterCount = useMemo(() => {
     let count = 0;
     if (search.trim()) count++;
     if (selectedCategory !== 'all') count++;
     if (selectedCostItemId) count++;
+    if (selectedPartnerId) count++;
     if (selectedSource !== 'all') count++;
     if (fromDate) count++;
     if (toDate) count++;
     return count;
-  }, [search, selectedCategory, selectedCostItemId, selectedSource, fromDate, toDate]);
+  }, [search, selectedCategory, selectedCostItemId, selectedPartnerId, selectedSource, fromDate, toDate]);
 
   const resetFilters = () => {
     setSearch('');
     setSelectedCategory('all');
     setSelectedCostItemId('');
+    setSelectedPartnerId('');
     setSelectedSource('all');
     setFromDate('');
     setToDate('');
@@ -1978,18 +1992,26 @@ const LedgerTable = ({
         if (!matchesCostItem) return false;
       }
 
-      // 4. Source filter
+      // 4. Partner / Supplier filter
+      if (selectedPartnerId) {
+        const targetPartner = partnerOptions.find(p => p.id === selectedPartnerId);
+        const matchesPartner = row.counterpartyPartnerId === selectedPartnerId
+          || (targetPartner && row.counterpartyName?.toLowerCase() === targetPartner.name.toLowerCase());
+        if (!matchesPartner) return false;
+      }
+
+      // 5. Source filter
       if (selectedSource !== 'all' && row.source !== selectedSource) {
         return false;
       }
 
-      // 5. Date range filter
+      // 6. Date range filter
       if (fromDate && row.date < fromDate) return false;
       if (toDate && row.date > toDate) return false;
 
       return true;
     });
-  }, [rows, search, selectedCategory, selectedCostItemId, selectedSource, fromDate, toDate, costItems]);
+  }, [rows, search, selectedCategory, selectedCostItemId, selectedPartnerId, selectedSource, fromDate, toDate, costItems, partnerOptions]);
 
   const filteredExpenseTotal = useMemo(() =>
     filtered.filter(r => r.type === 'expense').reduce((s, r) => s + Number(r.amount || 0), 0),
@@ -2004,7 +2026,7 @@ const LedgerTable = ({
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [search, selectedCategory, selectedCostItemId, selectedSource, fromDate, toDate]);
+  }, [search, selectedCategory, selectedCostItemId, selectedPartnerId, selectedSource, fromDate, toDate]);
 
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE) || 1;
   const pagedRows = useMemo(() => {
@@ -2110,7 +2132,7 @@ const LedgerTable = ({
       {/* Advanced Filter Panel */}
       {showAdvancedFilter && (
         <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/60 p-3.5 space-y-3 animate-in fade-in duration-150">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-xs">
             {/* Nhóm chi phí */}
             <div>
               <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
@@ -2143,6 +2165,23 @@ const LedgerTable = ({
                   <option key={opt.item.id} value={opt.item.id}>
                     {`${'-- '.repeat(opt.depth)}${opt.displayIndex} - ${opt.item.symbol} - ${opt.item.name}`}
                   </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Nhà cung cấp / Đối tác */}
+            <div>
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                Nhà cung cấp / Đối tác
+              </label>
+              <select
+                value={selectedPartnerId}
+                onChange={e => setSelectedPartnerId(e.target.value)}
+                className="w-full rounded-lg border border-slate-200 bg-white p-2 font-bold text-slate-700 outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
+              >
+                <option value="">Tất cả nhà cung cấp</option>
+                {partnerOptions.map(p => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
                 ))}
               </select>
             </div>

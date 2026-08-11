@@ -6428,6 +6428,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                 <th className="px-4 py-3">HĐ / NCC</th>
                                                 <th className="px-4 py-3">Phiếu NCC</th>
                                                 <th className="px-4 py-3 text-right">Số dòng</th>
+                                                <th className="px-4 py-3 text-right">Tổng tiền</th>
                                                 <th className="px-4 py-3">Đối soát/AP</th>
                                                 <th className="px-4 py-3 text-right">Thao tác</th>
                                             </tr>
@@ -6442,6 +6443,11 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                     const isBusy = supplierDeliveryActionLoading?.endsWith(`:${note.id}`);
                                                     const noteLines = supplierDeliveryLinesByNoteId[note.id] || note.lines || [];
                                                     const wmsSummary = getSupplierDeliveryWmsSummary(noteLines);
+                                                    const noteTotalAmount = Number(
+                                                        note.totalAmount ||
+                                                        postedStatement?.totalAmount ||
+                                                        noteLines.reduce((sum, line) => sum + Number(line.totalAmount || line.acceptedAmount || line.lineAmount || (Number(line.acceptedQuantity || line.quantity || 0) * Number(line.unitPrice || 0))), 0)
+                                                    );
                                                     const hasHistoricalWarehouseException = Boolean(
                                                         currentConstructionSite?.warehouseBindingEnforced
                                                         && noteLines.some(line => (
@@ -6484,6 +6490,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                                 <div className="mt-1 text-[10px] font-bold text-slate-400">{note.note || 'Không bắt buộc lý do cấp'}</div>
                                                             </td>
                                                             <td className="px-4 py-3 text-right font-black text-blue-700 whitespace-nowrap">{noteLines.length || note.lines?.length || 0} dòng</td>
+                                                            <td className="px-4 py-3 text-right font-black text-slate-800 dark:text-slate-100 whitespace-nowrap">{noteTotalAmount > 0 ? `${fmtMoney(noteTotalAmount)} đ` : '—'}</td>
                                                             <td className="px-4 py-3">
                                                                 {postedStatement ? (
                                                                     <div>

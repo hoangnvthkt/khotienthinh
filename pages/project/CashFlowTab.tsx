@@ -23,10 +23,7 @@ interface CashFlowTabProps {
 }
 
 const fmt = (n: number) => {
-    if (n >= 1e9) return (n / 1e9).toFixed(1) + ' tỷ';
-    if (n >= 1e6) return (n / 1e6).toFixed(0) + ' tr';
-    if (n >= 1e3) return (n / 1e3).toFixed(0) + 'k';
-    return n.toLocaleString('vi-VN');
+    return Number(n || 0).toLocaleString('vi-VN') + ' đ';
 };
 const fmtFull = (n: number) => n.toLocaleString('vi-VN') + ' đ';
 
