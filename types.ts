@@ -1,4 +1,6 @@
 
+export * from './types/vehicleBooking';
+
 export enum Role {
   ADMIN = 'ADMIN',
   WAREHOUSE_KEEPER = 'WAREHOUSE_KEEPER',
