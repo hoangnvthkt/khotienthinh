@@ -110,4 +110,16 @@ export const ROUTE_TO_MODULE: Record<string, string> = {
   '/analytics': 'ANALYTICS',
   '/custom-dashboard': 'CUSTOM_DASHBOARD',
   '/org-map': 'HRM',
+
+  // ── ĐẶT XE CÔNG TY ──────────────────────────────────
+  '/booking/vehicle':           'VEHICLE_BOOKING',
+  '/booking/vehicle/my':        'VEHICLE_BOOKING',
+  '/booking/vehicle/approvals': 'VEHICLE_BOOKING',
+  '/booking/vehicle/dispatch':  'VEHICLE_BOOKING',
+  '/booking/vehicle/trips':     'VEHICLE_BOOKING',
+  '/booking/vehicle/handover':  'VEHICLE_BOOKING',
+  '/booking/vehicle/fleet':     'VEHICLE_BOOKING',
+  '/booking/vehicle/drivers':   'VEHICLE_BOOKING',
+  '/booking/vehicle/reports':   'VEHICLE_BOOKING',
+  '/booking/vehicle/settings':  'VEHICLE_BOOKING',
 };

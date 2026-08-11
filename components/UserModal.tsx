@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, User as UserIcon, Mail, Phone, Shield, ShieldCheck, Building, Save, Package, Briefcase, GitBranch, BarChart3, Landmark, Loader2, Crown, Inbox, LayoutDashboard, MapPin, Users, Calendar, Clock, CalendarOff, DollarSign, FileSignature, FolderOpen, History, ArrowLeftRight, ClipboardCheck, FileSpreadsheet, FileText, Workflow, Layers, Repeat, Wrench, IdCard, CreditCard, Calculator, Bot, BrainCircuit, Copy, ClipboardPaste, Settings as SettingsIcon, ShoppingCart, MessageCircle, BellRing } from 'lucide-react';
+import { X, User as UserIcon, Mail, Phone, Shield, ShieldCheck, Building, Save, Package, Briefcase, GitBranch, BarChart3, Landmark, Loader2, Crown, Inbox, LayoutDashboard, MapPin, Users, Calendar, Clock, CalendarOff, DollarSign, FileSignature, FolderOpen, History, ArrowLeftRight, ClipboardCheck, FileSpreadsheet, FileText, Workflow, Layers, Repeat, Wrench, IdCard, CreditCard, Calculator, Bot, BrainCircuit, Copy, ClipboardPaste, Settings as SettingsIcon, ShoppingCart, MessageCircle, BellRing, Car } from 'lucide-react';
 import { Role, User, UserPermissionGrant, Warehouse } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { useToast } from '../context/ToastContext';
@@ -160,6 +160,15 @@ const SUB_MODULE_CONFIG: Record<string, { to: string; label: string; icon: any }
     { to: '/tender-ai/boq', icon: FileSpreadsheet, label: 'AI BOQ CĐT' },
     { to: '/tender-ai/cost-library', icon: Calculator, label: 'Dự toán nội bộ' },
   ],
+  VEHICLE_BOOKING: [
+    { to: '/booking/vehicle', icon: Car, label: 'Tạo đơn đặt xe' },
+    { to: '/booking/vehicle/my', icon: Inbox, label: 'Yêu cầu của tôi' },
+    { to: '/booking/vehicle/approvals', icon: ClipboardCheck, label: 'Chờ phê duyệt' },
+    { to: '/booking/vehicle/dispatch', icon: LayoutDashboard, label: 'Bảng điều phối' },
+    { to: '/booking/vehicle/trips', icon: Calendar, label: 'Chuyến hôm nay' },
+    { to: '/booking/vehicle/handover', icon: Repeat, label: 'Bàn giao & Trả chìa' },
+    { to: '/booking/vehicle/fleet', icon: Wrench, label: 'Quản lý Xe & Tài xế' },
+  ],
   [SETTINGS_MODULE_KEY]: SETTINGS_SUB_MODULES,
 };
 
@@ -224,6 +233,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
     { key: 'EP', label: 'EP - Hồ sơ NV', icon: IdCard, color: 'text-sky-600 bg-sky-50 border-sky-200 dark:bg-sky-900/30 dark:border-sky-700' },
     { key: 'HD', label: 'HĐ - Hợp đồng', icon: FileSignature, color: 'text-blue-600 bg-blue-50 border-blue-200 dark:bg-blue-900/30 dark:border-blue-700' },
     { key: 'TENDER_AI', label: 'Tender AI', icon: Bot, color: 'text-fuchsia-600 bg-fuchsia-50 border-fuchsia-200 dark:bg-fuchsia-900/30 dark:border-fuchsia-700' },
+    { key: 'VEHICLE_BOOKING', label: 'CAR - Đặt xe công ty', icon: Car, color: 'text-amber-600 bg-amber-50 border-amber-200 dark:bg-amber-900/30 dark:border-amber-700' },
     ...(isChatEnabled ? [{ key: 'CHAT', label: 'Tin nhắn', icon: MessageCircle, color: 'text-pink-600 bg-pink-50 border-pink-200 dark:bg-pink-900/30 dark:border-pink-700' }] : []),
     { key: SETTINGS_MODULE_KEY, label: 'CĐ - Cài đặt', icon: SettingsIcon, color: 'text-slate-700 bg-slate-50 border-slate-200 dark:bg-slate-800/50 dark:border-slate-700' },
     { key: 'CHIBIBOT', label: 'Trợ lý ChibiBot', icon: Bot, color: 'text-pink-600 bg-pink-50 border-pink-200 dark:bg-pink-900/30 dark:border-pink-700' },

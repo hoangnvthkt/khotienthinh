@@ -8,7 +8,7 @@ import {
   MessageSquarePlus,
   Landmark, Repeat, Wrench, ChevronsLeft, ChevronsRight, AppWindow, ArrowLeft, Inbox, Layers, HardDrive,
   Calendar, CalendarOff, DollarSign, FileSignature, MapPin, Bot, FolderOpen, GripVertical, BookOpen, Clock,
-  IdCard, Award, Trophy, Globe, Building2, HardHat, Handshake, Settings2, Calculator, ShoppingCart, Activity, Pin
+  IdCard, Award, Trophy, Globe, Building2, HardHat, Handshake, Settings2, Calculator, ShoppingCart, Activity, Pin, Car
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import NotificationCenter from './NotificationCenter';
@@ -23,6 +23,7 @@ import { isChatEnabled, isChatV2Enabled } from '../lib/featureFlags';
 import { canAccessRoute } from '../lib/routeAccess';
 import { canViewModule } from '../lib/permissions/permissionService';
 import { useAuth } from '../context/AuthContext';
+import { canAccessVehicleApprovalQueue, hasActiveVehicleBookingGrant } from '../lib/vehicleBookingPermissions';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -48,6 +49,7 @@ const MODULE_CONFIG = [
   { key: 'EP' as const, icon: IdCard, label: 'Hồ sơ NV', shortLabel: 'EP', route: '/ep' },
   { key: 'HD' as const, icon: FileSignature, label: 'Hợp đồng', shortLabel: 'HĐ', route: '/hd/partners' },
   { key: 'TENDER_AI' as const, icon: Bot, label: 'Tender AI', shortLabel: 'TAI', route: '/tender-ai/boq' },
+  { key: 'VEHICLE_BOOKING' as const, icon: Car, label: 'Đặt xe', shortLabel: 'CAR', route: '/booking/vehicle' },
 ] as const;
 
 type AppKey = typeof MODULE_CONFIG[number]['key'];
@@ -58,7 +60,7 @@ type SidebarView = 'home' | 'apps' | AppKey;
 const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollapsed, isPinned = false, onTogglePin }) => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, warehouses, transactions, requests, appSettings, items, realtimeStatus, lastRealtimeEvent, connectionError } = useApp();
+  const { user, users, warehouses, transactions, requests, appSettings, items, realtimeStatus, lastRealtimeEvent, connectionError } = useApp();
   const { logout } = useAuth();
   const { isDark, toggleTheme } = useTheme();
   const { totalUnread } = useChat();
@@ -78,6 +80,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
   // Detect if we're inside a module from URL
   const detectAppFromUrl = (): AppKey | null => {
     const p = location.pathname;
+    if (p.startsWith('/booking/vehicle')) return 'VEHICLE_BOOKING';
     if (p.startsWith('/hrm')) return 'HRM';
     if (p.startsWith('/wf')) return 'WF';
     if (p.startsWith('/da')) return 'DA';
@@ -287,6 +290,15 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
       { to: '/tender-ai/boq', icon: FileSpreadsheet, label: 'AI BOQ CĐT' },
       { to: '/tender-ai/cost-library', icon: Calculator, label: 'Dự toán nội bộ' },
     ],
+    VEHICLE_BOOKING: [
+      { to: '/booking/vehicle', icon: Car, label: 'Tạo đơn đặt xe' },
+      { to: '/booking/vehicle/my', icon: Inbox, label: 'Yêu cầu của tôi' },
+      { to: '/booking/vehicle/approvals', icon: ClipboardCheck, label: 'Chờ phê duyệt' },
+      { to: '/booking/vehicle/dispatch', icon: LayoutDashboard, label: 'Bảng điều phối' },
+      { to: '/booking/vehicle/trips', icon: Calendar, label: 'Chuyến hôm nay' },
+      { to: '/booking/vehicle/handover', icon: Repeat, label: 'Bàn giao & Trả chìa' },
+      { to: '/booking/vehicle/fleet', icon: Wrench, label: 'Quản lý Xe & Tài xế' },
+    ],
   };
 
   const currentNavItems = (isModuleView && isModuleAllowed && activeModule) ? moduleNavMap[activeModule.key] || [] : [];
@@ -300,6 +312,12 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
 
     // Role filter (e.g., Admin-only items)
     if (item.roles && !item.roles.includes(user.role) && !hasExplicitRouteGrant) return false;
+    if (activeModule?.key === 'VEHICLE_BOOKING') {
+      if (item.to === '/booking/vehicle/approvals' && !canAccessVehicleApprovalQueue(user, users)) return false;
+      if (item.to === '/booking/vehicle/dispatch' && !hasActiveVehicleBookingGrant(user, ['booking.vehicle.dispatch'])) return false;
+      if (item.to === '/booking/vehicle/handover' && !hasActiveVehicleBookingGrant(user, ['booking.vehicle.handover', 'booking.vehicle.dispatch'])) return false;
+      if (item.to === '/booking/vehicle/fleet' && !hasActiveVehicleBookingGrant(user, ['booking.vehicle.manage_fleet', 'booking.vehicle.manage_authorizations'])) return false;
+    }
     return canAccessRoute(user, item.to);
   });
   const assignedWh = warehouses.find(w => w.id === user.assignedWarehouseId);

@@ -99,6 +99,7 @@ const PredictiveAnalytics = React.lazy(() => import('./pages/PredictiveAnalytics
 const CustomDashboard = React.lazy(() => import('./pages/CustomDashboard'));
 const Leaderboard = React.lazy(() => import('./pages/Leaderboard'));
 const FeedbackHub = React.lazy(() => import('./pages/FeedbackHub'));
+const VehicleBookingLayout = React.lazy(() => import('./pages/booking/VehicleBookingLayout'));
 
 // Request pages
 const RequestList = React.lazy(() => import('./pages/request/RequestList'));
@@ -257,6 +258,7 @@ const AppRoutes: React.FC = () => {
             <Route path="boq" element={<TenderBoqAnalyzer />} />
             <Route path="cost-library" element={<CostLibrary />} />
           </Route>
+          <Route path="booking/vehicle/*" element={<VehicleBookingLayout />} />
           <Route path="*" element={<NotFound />} />
         </Route>
       </Routes>

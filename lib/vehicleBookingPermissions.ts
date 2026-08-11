@@ -1,0 +1,23 @@
+import type { User } from '../types';
+
+export function hasActiveVehicleBookingGrant(
+  user: Pick<User, 'permissionGrants'> | null | undefined,
+  permissionCodes: string[],
+  reference = new Date(),
+): boolean {
+  const acceptedCodes = new Set([...permissionCodes, 'booking.vehicle.admin']);
+  return Boolean(user?.permissionGrants?.some(grant =>
+    acceptedCodes.has(grant.permissionCode)
+      && grant.isActive !== false
+      && (!grant.expiresAt || new Date(grant.expiresAt).getTime() > reference.getTime())
+  ));
+}
+
+export function canAccessVehicleApprovalQueue(
+  user: Pick<User, 'id' | 'permissionGrants'> | null | undefined,
+  users: Array<Pick<User, 'id' | 'managerId'>>,
+): boolean {
+  if (!user) return false;
+  return hasActiveVehicleBookingGrant(user, ['booking.vehicle.approve_direct_reports'])
+    || users.some(candidate => candidate.id !== user.id && candidate.managerId === user.id);
+}
