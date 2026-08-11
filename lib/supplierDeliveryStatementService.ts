@@ -111,14 +111,21 @@ const normalizeDeliveryLine = (row: any): SupplierDirectDeliveryLine => ({
   wmsStatus: row.wms_status || row.wmsStatus || 'not_required',
 });
 
-const normalizeStatement = (row: any): SupplierDeliveryStatement => ({
-  ...(fromDb(row) as SupplierDeliveryStatement),
-  grossAmount: money(row.gross_amount),
-  vatAmount: money(row.vat_amount),
-  totalAmount: money(row.total_amount),
-  attachments: row.attachments || [],
-  metadata: row.metadata || {},
-});
+const normalizeStatement = (row: any): SupplierDeliveryStatement => {
+  const metadata = row.metadata || {};
+  const deliveryNoteIds = metadata.deliveryNoteIds ?? metadata.delivery_note_ids;
+  return {
+    ...(fromDb(row) as SupplierDeliveryStatement),
+    grossAmount: money(row.gross_amount),
+    vatAmount: money(row.vat_amount),
+    totalAmount: money(row.total_amount),
+    attachments: row.attachments || [],
+    metadata: {
+      ...metadata,
+      deliveryNoteIds: Array.isArray(deliveryNoteIds) ? deliveryNoteIds : [],
+    },
+  };
+};
 
 const normalizeStatementLine = (row: any): SupplierDeliveryStatementLine => ({
   ...(fromDb(row) as SupplierDeliveryStatementLine),

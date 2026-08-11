@@ -89,8 +89,6 @@ const parseMoneyInput = (value: string): number => {
 };
 const fmtMoney = (value: number) => {
   const amount = Number(value || 0);
-  if (Math.abs(amount) >= 1_000_000_000) return `${(amount / 1_000_000_000).toLocaleString('vi-VN', { maximumFractionDigits: 2 })} tỷ`;
-  if (Math.abs(amount) >= 1_000_000) return `${(amount / 1_000_000).toLocaleString('vi-VN', { maximumFractionDigits: 1 })} tr`;
   return `${amount.toLocaleString('vi-VN')} đ`;
 };
 const fmtDate = (value?: string) => value ? new Date(`${value}T00:00:00`).toLocaleDateString('vi-VN') : '-';

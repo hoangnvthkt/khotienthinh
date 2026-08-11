@@ -5,6 +5,10 @@ import { paymentCertificateService } from './paymentCertificateService';
 import { advancePaymentService } from './advancePaymentService';
 import { projectCostItemService } from './projectCostItemService';
 import { customerContractService, subcontractorContractService } from './hdService';
+import {
+  isActualCostExpenseTransaction,
+  isCashOutExpenseTransaction,
+} from './projectTransactionClassification';
 
 // ══════════════════════════════════════════════════════════════
 //  PROJECT FINANCIAL SERVICE
@@ -76,12 +80,16 @@ export const projectFinancialService = {
       subcontractorContractService.listBySite(projectScopeId, constructionSiteId),
       // Transactions: dùng prop nếu đã có, fallback fetch từ DB
       transactions.length > 0
-        ? Promise.resolve(transactions.map(t => ({ type: t.type, amount: t.amount })))
+        ? Promise.resolve(transactions.map(t => ({ type: t.type, amount: t.amount, sourceRef: t.sourceRef })))
         : supabase
             .from('project_transactions')
-            .select('type, amount')
+            .select('type, amount, source_ref, sourceRef')
             .eq(projectId ? 'project_id' : 'construction_site_id', projectId || constructionSiteId)
-            .then(r => (r.data || []) as { type: string; amount: number }[]),
+            .then(r => (r.data || []).map((row: any) => ({
+              type: row.type,
+              amount: row.amount,
+              sourceRef: row.source_ref ?? row.sourceRef,
+            }))),
       projectCostItemService.getSummary(constructionSiteId, projectId),
       supabase
         .from('project_purchase_orders')
@@ -139,7 +147,7 @@ export const projectFinancialService = {
       .filter(t => t.type === 'revenue_received')
       .reduce((s, t) => s + Number(t.amount || 0), 0);
     const cashOut = txData
-      .filter(t => t.type === 'expense')
+      .filter(isCashOutExpenseTransaction)
       .reduce((s, t) => s + Number(t.amount || 0), 0);
     const cashPosition = cashIn - cashOut;
     const cashPositionPercent = revisedContractValue > 0
@@ -147,7 +155,10 @@ export const projectFinancialService = {
       : 0;
 
     // ── KPI 1: Budget Variance ──
-    const actualCost = cashOut || costSummary.totalActual;
+    const transactionActualCost = txData
+      .filter(isActualCostExpenseTransaction)
+      .reduce((sum, transaction) => sum + Number(transaction.amount || 0), 0);
+    const actualCost = transactionActualCost || costSummary.totalActual;
     // budgetTotal: từ project_cost_items nếu có, fallback về revised value
     const budgetTotal = costSummary.totalBudget > 0
       ? costSummary.totalBudget
@@ -212,10 +223,10 @@ export const buildFinancialSummary = async (
   const originalContractValue = contractItems.reduce((sum, item) => sum + (item.totalPrice || 0), 0);
   const revisedContractValue = contractItems.reduce((sum, item) => sum + (item.revisedTotalPrice ?? item.totalPrice ?? 0), 0);
   const approvedVariationValue = revisedContractValue - originalContractValue;
-  const actualCostFromTransactions = transactions.filter(t => t.type === 'expense').reduce((sum, tx) => sum + tx.amount, 0);
+  const actualCostFromTransactions = transactions.filter(isActualCostExpenseTransaction).reduce((sum, tx) => sum + tx.amount, 0);
   const actualCost = actualCostFromTransactions || costSummary.totalActual;
   const cashIn = transactions.filter(t => t.type === 'revenue_received').reduce((sum, tx) => sum + tx.amount, 0);
-  const cashOut = transactions.filter(t => t.type === 'expense').reduce((sum, tx) => sum + tx.amount, 0);
+  const cashOut = transactions.filter(isCashOutExpenseTransaction).reduce((sum, tx) => sum + tx.amount, 0);
   const paidRevenue = certs.filter(c => c.status === 'paid').reduce((sum, c) => sum + (c.payableThisPeriod ?? c.currentPayableAmount ?? 0), 0);
   const certifiedRevenue = certs
     .filter(c => c.status === 'approved' || c.status === 'paid')

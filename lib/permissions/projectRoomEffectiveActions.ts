@@ -38,6 +38,41 @@ export const getDailyLogPermissionCodesForEffectiveRoomActions = (
   actionCode => DAILY_LOG_ROOM_ACTION_PERMISSION_CODES[actionCode] || [],
 )));
 
+const WEEKLY_PROGRESS_ROOM_ACTION_PERMISSION_CODES: Partial<Record<
+  ProjectRoomActionCode,
+  readonly string[]
+>> = {
+  view: ['project.weekly_progress.view'],
+  edit: ['project.weekly_progress.create', 'project.weekly_progress.edit_all'],
+  confirm: ['project.weekly_progress.lock'],
+};
+
+export const getWeeklyProgressPermissionCodesForEffectiveRoomActions = (
+  actionCodes: readonly ProjectRoomActionCode[],
+): string[] => Array.from(new Set(actionCodes.flatMap(
+  actionCode => WEEKLY_PROGRESS_ROOM_ACTION_PERMISSION_CODES[actionCode] || [],
+)));
+
+export interface WeeklyProgressEffectiveCapabilities {
+  canView: boolean;
+  canEdit: boolean;
+  canConfirm: boolean;
+}
+
+export const getWeeklyProgressEffectiveCapabilities = (
+  actions: readonly EffectiveProjectRoomAction[],
+  actionsLoaded: boolean,
+): WeeklyProgressEffectiveCapabilities => {
+  if (!actionsLoaded) return { canView: false, canEdit: false, canConfirm: false };
+  const granted = getEffectiveProjectRoomActionSet(actions, 'weekly_progress');
+  const canView = granted.has('view');
+  return {
+    canView,
+    canEdit: canView && granted.has('edit'),
+    canConfirm: canView && granted.has('confirm'),
+  };
+};
+
 export interface MaterialPoEffectiveCapabilities {
   canViewPo: boolean;
   canEditPo: boolean;

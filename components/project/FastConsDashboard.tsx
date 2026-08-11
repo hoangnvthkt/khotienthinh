@@ -623,22 +623,6 @@ interface WeeklySnapshot {
   calculatedAt: string;
 }
 
-const getISOWeekLabel = (date: Date): string => {
-  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  const weekNo = Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
-  return `W${String(weekNo).padStart(2, '0')}/${d.getUTCFullYear()}`;
-};
-
-const getWeekStart = (date: Date): string => {
-  const d = new Date(date);
-  const day = d.getDay();
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-  d.setDate(diff);
-  return d.toISOString().slice(0, 10);
-};
-
 const WeeklyProgressTrendPanel: React.FC<{
   constructionSiteId: string;
   projectId?: string;
@@ -682,51 +666,6 @@ const WeeklyProgressTrendPanel: React.FC<{
 
   const constructionProgressPercent = currentMetrics.progress.constructionProgressPercent ?? currentMetrics.progress.percent ?? 0;
   const valueProgressPercent = currentMetrics.progress.valueProgressPercent ?? (currentMetrics.progress.mode === 'contract_value' ? currentMetrics.progress.percent : 0);
-
-  // Save current week snapshot whenever metrics change (from sync)
-  useEffect(() => {
-    if (!isSupabaseConfigured || !currentMetrics) return;
-    const now = new Date();
-    const weekLabel = getISOWeekLabel(now);
-    const weekStart = getWeekStart(now);
-    const snapshot: Record<string, unknown> = {
-      scope_key: scopeKey,
-      project_id: projectId || null,
-      construction_site_id: constructionSiteId || null,
-      week_label: weekLabel,
-      week_start: weekStart,
-      progress_percent: constructionProgressPercent,
-      progress_mode: currentMetrics.progress.mode,
-      construction_progress_percent: constructionProgressPercent,
-      value_progress_percent: valueProgressPercent,
-      supplied_value: currentMetrics.progress.suppliedValue || null,
-      contract_total_value: currentMetrics.progress.contractTotalValue || null,
-      purchased_value: currentMetrics.progress.purchasedValue || 0,
-      issued_value: currentMetrics.progress.issuedValue || 0,
-      recognized_value: currentMetrics.progress.recognizedValue || currentMetrics.progress.suppliedValue || 0,
-      gantt_percent: currentMetrics.progress.ganttPercent || null,
-      calculated_at: currentMetrics.calculatedAt,
-      updated_at: new Date().toISOString(),
-    };
-    supabase
-      .from('weekly_progress_snapshots')
-      .upsert(snapshot, { onConflict: 'scope_key,week_start' })
-      .then(({ error }) => {
-        if (error) console.warn('Failed to save weekly snapshot:', error);
-        else {
-          // Refresh snapshots after upsert
-          supabase
-            .from('weekly_progress_snapshots')
-            .select('*')
-            .eq('scope_key', scopeKey)
-            .order('week_start', { ascending: true })
-            .limit(24)
-            .then(({ data }) => {
-              if (data) setSnapshots(data.map(row => fromDb(row) as WeeklySnapshot));
-            });
-        }
-      });
-  }, [constructionProgressPercent, currentMetrics, currentMetrics.calculatedAt, scopeKey, constructionSiteId, projectId, valueProgressPercent]);
 
   const displaySnapshots = snapshots.slice(-12);
   const maxPercent = Math.max(100, ...displaySnapshots.map(s => s.progressPercent));

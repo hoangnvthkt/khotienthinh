@@ -33,6 +33,20 @@ describe('projectPermissionRooms', () => {
     expect(isRoomActionAllowed('material_request', 'view_available_stock')).toBe(true);
   });
 
+  it('gives weekly progress only view, edit, and confirm, with view prerequisites', () => {
+    const room = getProjectPermissionRoom('weekly_progress');
+
+    expect(room?.actions).toEqual(['view', 'edit', 'confirm']);
+    expect(room?.requiredActions).toEqual([]);
+    expect(room?.actionPrerequisites).toEqual({
+      edit: ['view'],
+      confirm: ['view'],
+    });
+    expect(isRoomActionAllowed('weekly_progress', 'submit')).toBe(false);
+    expect(isRoomActionAllowed('weekly_progress', 'verify')).toBe(false);
+    expect(isRoomActionAllowed('weekly_progress', 'approve')).toBe(false);
+  });
+
   it('exposes immutable Room definitions', () => {
     expect(getProjectPermissionRoom('material_po')?.name).toBe('Đơn hàng PO');
     expect(() => (PROJECT_PERMISSION_ROOMS as unknown as unknown[]).push({ code: 'custom' })).toThrow();

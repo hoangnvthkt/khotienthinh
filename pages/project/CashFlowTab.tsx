@@ -13,6 +13,7 @@ import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import CostAnalysisPanel from '../../components/project/CostAnalysisPanel';
 import { parseNonNegativeLocaleNumber } from '../../lib/localeNumberInput';
+import { isCashOutExpenseTransaction } from '../../lib/projectTransactionClassification';
 
 interface CashFlowTabProps {
     constructionSiteId: string;
@@ -22,10 +23,7 @@ interface CashFlowTabProps {
 }
 
 const fmt = (n: number) => {
-    if (n >= 1e9) return (n / 1e9).toFixed(1) + ' tỷ';
-    if (n >= 1e6) return (n / 1e6).toFixed(0) + ' tr';
-    if (n >= 1e3) return (n / 1e3).toFixed(0) + 'k';
-    return n.toLocaleString('vi-VN');
+    return Number(n || 0).toLocaleString('vi-VN') + ' đ';
 };
 const fmtFull = (n: number) => n.toLocaleString('vi-VN') + ' đ';
 
@@ -159,7 +157,7 @@ const CashFlowTab: React.FC<CashFlowTabProps> = ({ constructionSiteId, projectId
             const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
             const m = months.find(mo => mo.key === key);
             if (m) {
-                if (tx.type === 'expense') m.expense += tx.amount;
+                if (isCashOutExpenseTransaction(tx)) m.expense += tx.amount;
                 if (tx.type === 'revenue_received') m.revenue += tx.amount;
             }
         });
@@ -179,7 +177,7 @@ const CashFlowTab: React.FC<CashFlowTabProps> = ({ constructionSiteId, projectId
 
     // ========== SUMMARY ==========
     const summary = useMemo(() => {
-        const totalExpense = transactions.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+        const totalExpense = transactions.filter(isCashOutExpenseTransaction).reduce((s, t) => s + t.amount, 0);
         const totalRevenue = transactions.filter(t => t.type === 'revenue_received').reduce((s, t) => s + t.amount, 0);
         const totalPending = transactions.filter(t => t.type === 'revenue_pending').reduce((s, t) => s + t.amount, 0);
         const cashPosition = totalRevenue - totalExpense;

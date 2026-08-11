@@ -39,6 +39,18 @@ describe('projectPermissionTemplates', () => {
     }
   });
 
+  it('does not grant retired weekly-progress workflow actions from any template', () => {
+    const retiredCodes = [
+      'project.weekly_progress.submit',
+      'project.weekly_progress.verify',
+      'project.weekly_progress.approve',
+    ];
+    for (const template of PROJECT_PERMISSION_TEMPLATES) {
+      expect(getProjectPermissionTemplateCodes(template.key), template.key)
+        .not.toEqual(expect.arrayContaining(retiredCodes));
+    }
+  });
+
   it('keeps project manager separate from access administration privileges', () => {
     const projectManagerCodes = getProjectPermissionTemplateCodes('project_manager');
     const accessAdminCodes = getProjectPermissionTemplateCodes('access_admin');

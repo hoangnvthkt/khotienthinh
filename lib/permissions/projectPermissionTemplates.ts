@@ -28,8 +28,15 @@ const allProjectActionCodes = (actions: readonly string[]) =>
   getAllPermissionActions()
     .filter(action => action.permissionCode.startsWith('project.')
       && actions.includes(action.action)
-      && !ROOM_MANAGED_MATERIAL_PO_PERMISSION_CODES.has(action.permissionCode))
+      && !ROOM_MANAGED_MATERIAL_PO_PERMISSION_CODES.has(action.permissionCode)
+      && !EXCLUDED_PROJECT_TEMPLATE_CODES.has(action.permissionCode))
     .map(action => action.permissionCode);
+
+const EXCLUDED_PROJECT_TEMPLATE_CODES = new Set([
+  'project.weekly_progress.submit',
+  'project.weekly_progress.verify',
+  'project.weekly_progress.approve',
+]);
 
 const DEPRECATED_PROJECT_TEMPLATE_CODES = new Set([
   'project.quality.create',
@@ -43,6 +50,7 @@ const DEPRECATED_PROJECT_TEMPLATE_CODES = new Set([
 const withoutAccessAdminPrivileges = (codes: readonly string[]) =>
   codes.filter(code =>
     !DEPRECATED_PROJECT_TEMPLATE_CODES.has(code) &&
+    !EXCLUDED_PROJECT_TEMPLATE_CODES.has(code) &&
     code !== 'project.org.grant_permissions' &&
     code !== 'project.master.hide' &&
     code !== 'project.master.restore' &&
@@ -74,7 +82,6 @@ export const getProjectPermissionTemplateCodes = (templateKey: ProjectPermission
         'project.daily_log.verify',
         'project.material_request.create',
         'project.material_request.approve',
-        'project.weekly_progress.verify',
         'project.safety.document_verify',
         'project.safety.issue_close',
       ];

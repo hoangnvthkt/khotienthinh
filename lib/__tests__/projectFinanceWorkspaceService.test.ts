@@ -230,6 +230,75 @@ describe('projectFinanceWorkspaceService', () => {
     expect(summary.cashOut).toBe(16_500_000);
   });
 
+  it('separates supplier AP recognition from partial PAY cash out', () => {
+    const payable = buildSupplierPayableRowFromBalance({
+      id: 'balance-statement',
+      projectId: 'project-1',
+      constructionSiteId: 'site-1',
+      supplierId: 'supplier-a',
+      supplierNameSnapshot: 'NCC A',
+      currency: 'VND',
+      recognizedAmount: 100_000_000,
+      paidAmount: 40_000_000,
+      creditAmount: 0,
+      outstandingAmount: 60_000_000,
+      documentCount: 1,
+      latestDocumentDate: '2026-08-08',
+    });
+
+    const summary = buildProjectFinanceSummary({
+      customerContracts: [],
+      costItems: [],
+      paymentCertificates: [],
+      schedules: [],
+      advances: [],
+      transactions: [
+        paymentTx('tx-recognition', 100_000_000, 'supplier_payable_document:document-1:recognition'),
+        paymentTx('tx-payment', 40_000_000, 'supplier_payment_batch:batch-1'),
+      ],
+      payables: [payable],
+      receivables: [],
+    });
+
+    expect(summary.actualCost).toBe(100_000_000);
+    expect(summary.cashOut).toBe(40_000_000);
+  });
+
+  it('does not double count purchase receipt recognition with its AP balance or PAY cashflow', () => {
+    const payable = buildSupplierPayableRowFromBalance({
+      id: 'balance-receipt',
+      projectId: 'project-1',
+      constructionSiteId: 'site-1',
+      supplierId: 'supplier-a',
+      supplierNameSnapshot: 'NCC A',
+      currency: 'VND',
+      recognizedAmount: 100_000_000,
+      paidAmount: 40_000_000,
+      creditAmount: 20_000_000,
+      outstandingAmount: 40_000_000,
+      documentCount: 1,
+      latestDocumentDate: '2026-08-08',
+    });
+
+    const summary = buildProjectFinanceSummary({
+      customerContracts: [],
+      costItems: [],
+      paymentCertificates: [],
+      schedules: [],
+      advances: [],
+      transactions: [
+        paymentTx('tx-receipt', 100_000_000, 'purchase_receipt:delivery-batch-1'),
+        paymentTx('tx-return', -20_000_000, 'purchase_receipt_return:return-1'),
+        paymentTx('tx-payment', 40_000_000, 'supplier_payment_batch:batch-1'),
+      ],
+      payables: [payable],
+      receivables: [],
+    });
+
+    expect(summary.actualCost).toBe(80_000_000);
+    expect(summary.cashOut).toBe(40_000_000);
+  });
+
   it('builds supplier control summary from AP, payment batches, balances and direct delivery WMS state', () => {
     const balances: SupplierPayableBalance[] = [
       {

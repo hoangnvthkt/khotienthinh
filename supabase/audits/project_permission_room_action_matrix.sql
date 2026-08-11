@@ -14,7 +14,7 @@ with action_matrix as (
     binding.verified_at,
     binding.verified_source,
     case
-      when binding.room_code in ('daily_log', 'material_planning', 'material_po') then true
+      when binding.room_code in ('daily_log', 'material_planning', 'material_po', 'weekly_progress') then true
       else false
     end as frontend_capability_verified,
     case
@@ -33,6 +33,13 @@ with action_matrix as (
           like '%project_actor_has_effective_room_action%'
         and pg_get_functiondef('app_private.guard_project_purchase_order_room_write()'::regprocedure)
           like '%material_po%'
+      when binding.room_code = 'weekly_progress' then
+        pg_get_functiondef('app_private.save_project_progress_period_impl(text,text,text,date,jsonb,jsonb)'::regprocedure)
+          like '%assert_project_progress_action%'
+        and pg_get_functiondef('app_private.close_project_progress_period_impl(text,text,text,date,jsonb,jsonb)'::regprocedure)
+          like '%assert_project_progress_action%'
+        and pg_get_functiondef('app_private.reopen_project_progress_period_impl(text,text,text,date,text)'::regprocedure)
+          like '%assert_project_progress_action%'
       else false
     end as backend_enforcement_verified,
     case
@@ -66,6 +73,37 @@ with action_matrix as (
         group by policy.tablename
         having count(*) = 3
       )
+      when binding.room_code = 'weekly_progress' then
+        (
+          select count(*) = 4
+          from pg_policies policy
+          where policy.schemaname = 'public'
+            and policy.tablename in (
+              'project_daily_task_progress',
+              'project_weekly_task_progress',
+              'weekly_progress_snapshots',
+              'project_progress_period_states'
+            )
+            and policy.cmd = 'SELECT'
+            and policy.policyname in (
+              'project_daily_task_progress_select',
+              'project_weekly_task_progress_select',
+              'weekly_progress_snapshots_select',
+              'project_progress_period_states_select'
+            )
+        )
+        and not has_table_privilege('authenticated', 'public.project_daily_task_progress', 'INSERT')
+        and not has_table_privilege('authenticated', 'public.project_daily_task_progress', 'UPDATE')
+        and not has_table_privilege('authenticated', 'public.project_daily_task_progress', 'DELETE')
+        and not has_table_privilege('authenticated', 'public.project_weekly_task_progress', 'INSERT')
+        and not has_table_privilege('authenticated', 'public.project_weekly_task_progress', 'UPDATE')
+        and not has_table_privilege('authenticated', 'public.project_weekly_task_progress', 'DELETE')
+        and not has_table_privilege('authenticated', 'public.weekly_progress_snapshots', 'INSERT')
+        and not has_table_privilege('authenticated', 'public.weekly_progress_snapshots', 'UPDATE')
+        and not has_table_privilege('authenticated', 'public.weekly_progress_snapshots', 'DELETE')
+        and not has_table_privilege('authenticated', 'public.project_progress_period_states', 'INSERT')
+        and not has_table_privilege('authenticated', 'public.project_progress_period_states', 'UPDATE')
+        and not has_table_privilege('authenticated', 'public.project_progress_period_states', 'DELETE')
       else false
     end as database_policy_verified
   from public.project_permission_rooms room

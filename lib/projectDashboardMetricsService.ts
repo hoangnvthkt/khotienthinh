@@ -46,6 +46,11 @@ import {
   getLeafProjectTasks,
   getTaskProgressWeight,
 } from './projectScheduleRules';
+import {
+  isActualCostExpenseTransaction,
+  isCashOutExpenseTransaction,
+  isSupplierPaymentLedgerTransaction,
+} from './projectTransactionClassification';
 import { buildProjectScopeFilter, dedupeRowsById } from './projectScope';
 import { quantityAcceptanceService } from './quantityAcceptanceService';
 import { buildTaskContractQuantityFactors, taskContractItemService } from './taskContractItemService';
@@ -526,8 +531,11 @@ const buildSupplierMetric = (
   const requestedPOs = purchaseOrders.filter(po => ['sent', 'partial', 'delivered'].includes(po.status));
   const contractValue = sum(activePOs, po => po.totalAmount);
   const paymentRequested = requestedPOs.length > 0 ? sum(requestedPOs, po => po.totalAmount) : contractValue;
+  const supplierPaymentTransactions = transactions.filter(tx =>
+    tx.type === 'expense' && isSupplierPaymentLedgerTransaction(tx),
+  );
   const paidFromPaymentRequests = sum(
-    transactions.filter(tx => tx.type === 'expense' && tx.category === 'materials'),
+    supplierPaymentTransactions,
     tx => tx.amount,
   );
 
@@ -551,7 +559,7 @@ const buildCashFlowMetric = (
 ): CashFlowDashboardMetric => {
   const today = new Date().toISOString().slice(0, 10);
   const cashIn = sum(transactions.filter(tx => tx.type === 'revenue_received'), tx => tx.amount);
-  const cashOut = sum(transactions.filter(tx => tx.type === 'expense'), tx => tx.amount);
+  const cashOut = sum(transactions.filter(isCashOutExpenseTransaction), tx => tx.amount);
   const overdueCount = paymentSchedules.filter(schedule =>
     schedule.status === 'overdue' ||
     (schedule.status === 'pending' && schedule.dueDate < today),
@@ -628,16 +636,20 @@ const buildConstructionCostMetric = (
   transactions: ProjectTransaction[],
 ): ConstructionCostDashboardMetric => {
   const subcontractTxPaid = sum(
-    transactions.filter(tx => tx.type === 'expense' && tx.category === 'subcontract'),
+    transactions.filter(tx => isActualCostExpenseTransaction(tx) && tx.category === 'subcontract'),
     tx => tx.amount,
   );
   const subcontractPaid = subcontractor.actualPaid > 0 ? subcontractor.actualPaid : subcontractTxPaid;
   const supplierPaid = supplier.actualPaid;
-  const otherCost = sum(
-    transactions.filter(tx => tx.type === 'expense' && !['materials', 'subcontract'].includes(tx.category)),
+  const supplierRecognizedCost = sum(
+    transactions.filter(tx => isActualCostExpenseTransaction(tx) && tx.category === 'materials'),
     tx => tx.amount,
   );
-  const totalActualCost = subcontractPaid + supplierPaid + otherCost;
+  const otherCost = sum(
+    transactions.filter(tx => isActualCostExpenseTransaction(tx) && !['materials', 'subcontract'].includes(tx.category)),
+    tx => tx.amount,
+  );
+  const totalActualCost = subcontractPaid + supplierRecognizedCost + otherCost;
 
   return {
     performedBudgetCost: owner.performedValue,

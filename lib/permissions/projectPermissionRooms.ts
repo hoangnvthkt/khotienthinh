@@ -46,6 +46,7 @@ export interface ProjectPermissionRoomDefinition {
   readonly description: string;
   readonly actions: readonly ProjectRoomActionCode[];
   readonly requiredActions: readonly ProjectRoomActionCode[];
+  readonly actionPrerequisites: Readonly<Partial<Record<ProjectRoomActionCode, readonly ProjectRoomActionCode[]>>>;
   readonly sortOrder: number;
 }
 
@@ -57,6 +58,7 @@ const defineRoom = (
   actions: readonly ProjectRoomActionCode[],
   requiredActions: readonly ProjectRoomActionCode[],
   sortOrder: number,
+  actionPrerequisites: Partial<Record<ProjectRoomActionCode, readonly ProjectRoomActionCode[]>> = {},
 ): ProjectPermissionRoomDefinition => Object.freeze({
   code,
   groupCode,
@@ -64,6 +66,10 @@ const defineRoom = (
   description,
   actions: Object.freeze([...actions]),
   requiredActions: Object.freeze([...requiredActions]),
+  actionPrerequisites: Object.freeze(Object.fromEntries(Object.entries(actionPrerequisites).map(([action, prerequisites]) => [
+    action,
+    Object.freeze([...prerequisites]),
+  ]))) as ProjectPermissionRoomDefinition['actionPrerequisites'],
   sortOrder,
 });
 
@@ -75,7 +81,7 @@ export const PROJECT_PERMISSION_ROOMS = Object.freeze([
   defineRoom('material_waste', 'material', 'Hao hụt vật tư', 'Ghi nhận và duyệt hao hụt.', ['view', 'edit', 'approve'], ['approve'], 50),
   defineRoom('custom_material', 'material', 'Vật tư phi tiêu chuẩn', 'Tạo, sửa và duyệt vật tư phi tiêu chuẩn.', ['view', 'edit', 'approve'], ['approve'], 60),
   defineRoom('gantt', 'progress', 'Tiến độ Gantt', 'Quản lý công việc và xác nhận hoàn thành.', ['view', 'edit', 'delete', 'submit', 'verify', 'approve'], ['verify', 'approve'], 70),
-  defineRoom('weekly_progress', 'progress', 'Chốt tiến độ ngày/tuần', 'Cập nhật, duyệt và khóa kỳ tiến độ.', ['view', 'edit', 'submit', 'verify', 'approve', 'confirm'], ['approve'], 80),
+  defineRoom('weekly_progress', 'progress', 'Chốt tiến độ ngày/tuần', 'Cập nhật và chốt/mở chốt kỳ tiến độ.', ['view', 'edit', 'confirm'], [], 80, { edit: ['view'], confirm: ['view'] }),
   defineRoom('quantity_acceptance', 'finance', 'Nghiệm thu khối lượng', 'Lập và duyệt nghiệm thu khối lượng.', ['view', 'edit', 'delete', 'submit', 'verify', 'approve'], ['approve'], 90),
   defineRoom('payment', 'finance', 'Thanh toán', 'Lập, duyệt và xác nhận thanh toán.', ['view', 'edit', 'delete', 'submit', 'verify', 'approve', 'confirm'], ['approve', 'confirm'], 100),
   defineRoom('boq_reconciliation', 'finance', 'Đối soát BOQ', 'Kiểm tra, duyệt và khóa đối soát.', ['view', 'edit', 'submit', 'verify', 'approve'], ['verify'], 110),
@@ -91,3 +97,25 @@ export const isRoomActionAllowed = (
   roomCode: ProjectPermissionRoomCode,
   actionCode: ProjectRoomActionCode,
 ) => Boolean(getProjectPermissionRoom(roomCode)?.actions.includes(actionCode));
+
+const GENERIC_ROOM_ACTION_LABELS: Record<ProjectRoomActionCode, string> = {
+  view: 'Xem',
+  edit: 'Sửa',
+  delete: 'Xóa',
+  submit: 'Gửi',
+  verify: 'Kiểm tra',
+  confirm: 'Xác nhận',
+  approve: 'Duyệt',
+  view_available_stock: 'Xem tồn khả dụng',
+};
+
+export const getProjectPermissionRoomActionLabel = (
+  roomCode: ProjectPermissionRoomCode,
+  actionCode: ProjectRoomActionCode,
+): string => {
+  if (roomCode === 'weekly_progress') {
+    if (actionCode === 'edit') return 'Sửa/Nhập liệu';
+    if (actionCode === 'confirm') return 'Chốt/Mở chốt';
+  }
+  return GENERIC_ROOM_ACTION_LABELS[actionCode];
+};

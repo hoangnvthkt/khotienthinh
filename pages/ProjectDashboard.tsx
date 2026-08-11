@@ -74,6 +74,7 @@ import {
 import { getProjectPermissionTemplateCodes, ROOM_MANAGED_MATERIAL_PO_PERMISSION_CODES, type ProjectPermissionTemplateKey } from '../lib/permissions/projectPermissionTemplates';
 import type { ProjectFinanceWorkspaceTab } from '../lib/projectFinanceWorkspaceService';
 import { parseNonNegativeLocaleNumber } from '../lib/localeNumberInput';
+import { isActualCostExpenseTransaction } from '../lib/projectTransactionClassification';
 import {
     BarChart3, TrendingUp, TrendingDown, DollarSign, Target, Percent,
     Plus, Edit2, Trash2, X, Check, Save, ChevronDown, ChevronLeft, ChevronRight, FileText,
@@ -795,7 +796,7 @@ const ProjectDashboard: React.FC = () => {
     // === AUTO-AGGREGATE from transactions ===
     const getAggregated = (projectId?: string | null, siteId?: string | null) => {
         const txs = projectTransactions.filter(t => matchesProjectScope(t, projectId, siteId));
-        const sumExpense = (cat: ProjectCostCategory) => txs.filter(t => t.type === 'expense' && t.category === cat).reduce((s, t) => s + t.amount, 0);
+        const sumExpense = (cat: ProjectCostCategory) => txs.filter(t => isActualCostExpenseTransaction(t) && t.category === cat).reduce((s, t) => s + t.amount, 0);
         return {
             actualMaterials: sumExpense('materials'),
             actualLabor: sumExpense('labor'),
@@ -805,7 +806,7 @@ const ProjectDashboard: React.FC = () => {
             actualOther: sumExpense('other'),
             revenueReceived: txs.filter(t => t.type === 'revenue_received').reduce((s, t) => s + t.amount, 0),
             revenuePending: txs.filter(t => t.type === 'revenue_pending').reduce((s, t) => s + t.amount, 0),
-            totalExpense: txs.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0),
+            totalExpense: txs.filter(isActualCostExpenseTransaction).reduce((s, t) => s + t.amount, 0),
             txCount: txs.length,
         };
     };
@@ -828,7 +829,7 @@ const ProjectDashboard: React.FC = () => {
         const site = getProjectSite(project);
         const txs = projectTransactions.filter(tx => matchesProjectScope(tx, project.id, site?.id));
         return {
-            totalExpense: txs.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0),
+            totalExpense: txs.filter(isActualCostExpenseTransaction).reduce((s, t) => s + t.amount, 0),
             totalRevenue: txs.filter(t => t.type === 'revenue_received').reduce((s, t) => s + t.amount, 0),
             txCount: txs.length,
         };
@@ -3215,7 +3216,7 @@ const ProjectDashboard: React.FC = () => {
                     ) : overviewTab === 'gantt' ? (
                         <GanttTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} canManageTab={canManageProjectTab('gantt')} />
                     ) : overviewTab === 'weekly_progress' ? (
-                        <WeeklyProgressTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} canManageTab={canManageProjectTab('weekly_progress')} />
+                        <WeeklyProgressTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} />
                     ) : overviewTab === 'dailylog' ? (
                         <DailyLogTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} canManageTab={canManageProjectTab('dailylog')} />
                     ) : overviewTab === 'payment' ? (

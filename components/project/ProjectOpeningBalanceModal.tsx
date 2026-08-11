@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, Check, ChevronLeft, ChevronRight, FileSpreadsheet, Loader2, Lock, Plus, Trash2, Upload, X } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { useModuleData } from '../../hooks/useModuleData';
@@ -19,11 +19,14 @@ import {
   parseVietnameseNumber,
   SITE_WAREHOUSE_STOP_WORDS,
 } from '../../lib/projectMaterialTabUtils';
-import { getProjectScopeKey } from '../../lib/projectWeeklyProgressService';
+import {
+  getProjectScopeKey,
+} from '../../lib/projectWeeklyProgressService';
 import {
   calculateOpeningRecognizedValue,
   projectOpeningBalanceService,
-  ProjectOpeningBalanceLockResult,
+  type ProjectOpeningBalanceLockResult,
+  type ProjectOpeningBalanceSnapshotRetryState,
 } from '../../lib/projectOpeningBalanceService';
 
 const fmtFull = (n: number) => `${Math.round(Number(n || 0)).toLocaleString('vi-VN')} đ`;
@@ -57,6 +60,22 @@ interface ProjectOpeningBalanceModalProps {
   onClose: () => void;
   onApplied?: (result: ProjectOpeningBalanceLockResult) => void | Promise<void>;
 }
+
+export const isOpeningBalanceRetryReadyForScope = (input: {
+  open: boolean;
+  currentScopeKey: string;
+  loadedScopeKey: string | null;
+  openingBalanceId?: string | null;
+  retryOpeningBalanceId?: string | null;
+  canRetry: boolean;
+}): boolean => Boolean(
+  input.open
+  && input.currentScopeKey
+  && input.loadedScopeKey === input.currentScopeKey
+  && input.openingBalanceId
+  && input.retryOpeningBalanceId === input.openingBalanceId
+  && input.canRetry
+);
 
 const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
   open,
@@ -114,6 +133,17 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
   const [note, setNote] = useState('');
   const [lines, setLines] = useState<ProjectOpeningBalanceModalLine[]>([emptyLine(defaultWarehouseId)]);
   const [importMessages, setImportMessages] = useState<{ errors: string[]; warnings: string[] }>({ errors: [], warnings: [] });
+  const [snapshotRetryState, setSnapshotRetryState] = useState<ProjectOpeningBalanceSnapshotRetryState | null>(null);
+  const [openingLoadScopeKey, setOpeningLoadScopeKey] = useState<string | null>(null);
+  const [openingLoadState, setOpeningLoadState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [openingLoadRetryNonce, setOpeningLoadRetryNonce] = useState(0);
+
+  useLayoutEffect(() => {
+    setExistingOpening(null);
+    setSnapshotRetryState(null);
+    setOpeningLoadScopeKey(null);
+    setOpeningLoadState('loading');
+  }, [open, scopeKey]);
 
   useEffect(() => {
     if (!open) return;
@@ -123,12 +153,23 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
     setAsOfDate('2026-06-20');
     setImportMessages({ errors: [], warnings: [] });
     setLines([emptyLine(defaultWarehouseId)]);
+    setOpeningLoadState('loading');
     let cancelled = false;
     projectOpeningBalanceService.getOpeningBalanceByScope(scopeKey)
       .then(async balance => {
         if (cancelled) return;
+        let retryState: ProjectOpeningBalanceSnapshotRetryState | null = null;
+        if (balance?.status === 'locked' && balance.id) {
+          retryState = await projectOpeningBalanceService.getOpeningBalanceSnapshotRetry(balance.id);
+        }
+        if (cancelled) return;
         setExistingOpening(balance);
-        if (!balance) return;
+        setSnapshotRetryState(retryState);
+        setOpeningLoadScopeKey(scopeKey);
+        if (!balance) {
+          setOpeningLoadState('ready');
+          return;
+        }
         setAsOfDate(balance.asOfDate);
         setContractValue(balance.contractValue ? fmtMoneyInput(balance.contractValue) : '');
         setConstructionProgress(balance.constructionProgressPercent ? fmtInput(balance.constructionProgressPercent, 2) : '');
@@ -140,12 +181,31 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
           const savedLines = await projectOpeningBalanceService.listLines(balance.id);
           if (!cancelled && savedLines.length > 0) setLines(savedLines);
         }
+        if (!cancelled) setOpeningLoadState('ready');
       })
-      .catch(() => setExistingOpening(null));
+      .catch(error => {
+        if (cancelled) return;
+        console.warn('Opening Balance data unavailable', error);
+        setExistingOpening(null);
+        setSnapshotRetryState(null);
+        setOpeningLoadScopeKey(null);
+        setOpeningLoadState('error');
+      });
     return () => { cancelled = true; };
-  }, [defaultWarehouseId, finance?.contractValue, finance?.progressPercent, open, scopeKey]);
+  }, [defaultWarehouseId, finance?.contractValue, finance?.progressPercent, open, openingLoadRetryNonce, scopeKey]);
 
-  const locked = existingOpening?.status === 'locked';
+  const currentScopeOpeningLoaded = open
+    && openingLoadState === 'ready'
+    && openingLoadScopeKey === scopeKey;
+  const locked = currentScopeOpeningLoaded && existingOpening?.status === 'locked';
+  const retryReadyForCurrentScope = isOpeningBalanceRetryReadyForScope({
+    open,
+    currentScopeKey: scopeKey,
+    loadedScopeKey: openingLoadScopeKey,
+    openingBalanceId: existingOpening?.id,
+    retryOpeningBalanceId: snapshotRetryState?.openingBalanceId,
+    canRetry: snapshotRetryState?.canRetry === true,
+  });
   const recognizedValue = calculateOpeningRecognizedValue(toMoney(purchasedValue), toMoney(issuedValue), toMoney(usedValue));
   const valueProgress = toMoney(contractValue) > 0 ? Math.min(100, Math.round((recognizedValue / toMoney(contractValue)) * 100)) : 0;
   const lineTotals = useMemo(() => lines.reduce((acc, line) => {
@@ -250,6 +310,7 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
   };
 
   const handleLock = async () => {
+    if (openingLoadState !== 'ready') return;
     const error = validate();
     if (error) {
       toast.warning('Chưa đủ dữ liệu đầu kỳ', error);
@@ -296,12 +357,33 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
         loadModuleData('da', true),
       ]);
       setExistingOpening(result.openingBalance);
+      setOpeningLoadScopeKey(scopeKey);
+      setSnapshotRetryState(result.progressSnapshotRetryState || null);
       await onApplied?.(result);
-      toast.success('Đã khóa dữ liệu đầu kỳ', 'Dashboard, tồn kho và tiến độ theo giá trị đã nhận số đầu kỳ.');
-      onClose();
+      if (!result.progressSnapshotRefreshed && result.progressSnapshotRetryState?.canRetry) {
+        toast.warning('Đầu kỳ đã khóa', result.progressSnapshotWarning || 'Snapshot tiến độ chưa cập nhật. Vui lòng thử lại.');
+      } else {
+        toast.success('Đã khóa dữ liệu đầu kỳ', 'Dashboard, tồn kho và tiến độ theo giá trị đã nhận số đầu kỳ.');
+        onClose();
+      }
     } catch (error: any) {
       logApiError('ProjectOpeningBalanceModal.lock', error);
       toast.error('Không khóa được đầu kỳ', getApiErrorMessage(error, 'Vui lòng kiểm tra dữ liệu và thử lại.'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRetrySnapshot = async () => {
+    if (!retryReadyForCurrentScope || !snapshotRetryState || !existingOpening?.id) return;
+    setLoading(true);
+    try {
+      const retryState = await projectOpeningBalanceService.retryOpeningBalanceSnapshot(existingOpening.id);
+      setSnapshotRetryState(retryState);
+      toast.success('Đã cập nhật snapshot tiến độ', 'Dữ liệu đầu kỳ và snapshot tiến độ hiện đã đồng bộ.');
+    } catch (error) {
+      logApiError('ProjectOpeningBalanceModal.retrySnapshot', error);
+      toast.error('Chưa cập nhật được snapshot', 'Hãy mở chốt tuần rồi thử lại.');
     } finally {
       setLoading(false);
     }
@@ -340,7 +422,7 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
               <button
                 key={label}
                 onClick={() => setStep(index)}
-                disabled={loading}
+                disabled={loading || openingLoadState !== 'ready'}
                 className={`h-10 rounded-xl text-[11px] font-black border transition-all ${
                   step === index
                     ? 'bg-orange-500 text-white border-orange-500'
@@ -356,7 +438,24 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
         </div>
 
         <div className="p-6 overflow-y-auto flex-1">
-          {locked ? (
+          {openingLoadState === 'loading' ? (
+            <div className="flex min-h-48 items-center justify-center gap-2 text-sm font-bold text-slate-500">
+              <Loader2 size={18} className="animate-spin" /> Đang tải số dư đầu kỳ...
+            </div>
+          ) : openingLoadState === 'error' ? (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-center text-amber-800">
+              <AlertCircle size={28} className="mx-auto mb-2" />
+              <div className="font-black">Không thể tải số dư đầu kỳ</div>
+              <div className="mt-1 text-xs font-bold">Dữ liệu hiện được khóa để tránh tạo hoặc sửa nhầm.</div>
+              <button
+                type="button"
+                onClick={() => setOpeningLoadRetryNonce(value => value + 1)}
+                className="mt-4 rounded-xl bg-amber-600 px-4 py-2 text-xs font-black text-white"
+              >
+                Thử lại
+              </button>
+            </div>
+          ) : locked ? (
             <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-emerald-800">
               <div className="flex items-center gap-2 font-black"><Lock size={18} /> Đầu kỳ đã khóa</div>
               <div className="mt-2 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
@@ -377,6 +476,22 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
                   ? ' Có thể tra chứng từ trong Kho/WMS -> Lịch sử kho / giao dịch kho.'
                   : ' Bản chốt này chưa có chứng từ kho, cần tạo lại dấu vết đầu kỳ.'}
               </div>
+              {retryReadyForCurrentScope && snapshotRetryState && (
+                <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-800">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle size={18} className="mt-0.5 shrink-0" />
+                    <span>Dữ liệu đầu kỳ đã khóa nhưng snapshot tiến độ chưa cập nhật. Hãy mở chốt tuần rồi thử lại.</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleRetrySnapshot}
+                    disabled={loading}
+                    className="mt-3 inline-flex items-center gap-2 rounded-xl bg-amber-600 px-4 py-2 text-xs font-black text-white disabled:opacity-50"
+                  >
+                    {loading && <Loader2 size={14} className="animate-spin" />} Thử cập nhật snapshot
+                  </button>
+                </div>
+              )}
             </div>
           ) : step === 0 ? (
             <div className="grid md:grid-cols-2 gap-4">
@@ -539,7 +654,7 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
           )}
         </div>
 
-        {!locked && (
+        {openingLoadState === 'ready' && !locked && (
           <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-between">
             <button onClick={() => setStep(prev => Math.max(0, prev - 1))} disabled={step === 0 || loading} className="px-4 py-2.5 rounded-xl text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 disabled:opacity-40 flex items-center gap-2">
               <ChevronLeft size={16} /> Trước

@@ -42,4 +42,19 @@ describe('project permission Rooms UI', () => {
     expect(drawerSource).toContain('disabled');
     expect(cardSource).toContain('fallbackOnlyUserCount');
   });
+
+  it('uses the progress-specific lock label without changing other confirmation labels', async () => {
+    const { getProjectPermissionRoomActionLabel } = await import('../permissions/projectPermissionRooms');
+
+    expect(getProjectPermissionRoomActionLabel('weekly_progress', 'edit')).toBe('Sửa/Nhập liệu');
+    expect(getProjectPermissionRoomActionLabel('weekly_progress', 'confirm')).toBe('Chốt/Mở chốt');
+    expect(getProjectPermissionRoomActionLabel('material_po', 'edit')).toBe('Sửa');
+    expect(getProjectPermissionRoomActionLabel('material_po', 'confirm')).toBe('Xác nhận');
+  });
+
+  it('shows edit counts as a business permission for weekly progress cards', () => {
+    const cardSource = read('components/project/permissions/ProjectPermissionRoomCard.tsx');
+    expect(cardSource).toContain("room.roomCode === 'weekly_progress'");
+    expect(cardSource).toContain("['edit', 'confirm']");
+  });
 });
