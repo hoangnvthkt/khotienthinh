@@ -3,11 +3,17 @@ import type {
   FleetLocation,
   FleetSystemSetting,
   FleetVehicleProfile,
+  FleetVehicleProfileView,
+  FleetVehicleCandidate,
   VehicleDriverAuthorization,
+  VehicleDriverAuthorizationAdminView,
+  VehicleDriverCandidate,
   VehicleDriverAuthorizationEligible,
   VehicleUnavailabilityPeriod,
   OperatorUnavailabilityPeriod,
   VehicleBooking,
+  VehicleBookingApprovalCard,
+  VehicleBookingDispatcherCandidate,
   VehicleBookingParticipant,
   VehicleBookingAssignment,
   VehicleTripLog,
@@ -385,6 +391,28 @@ export async function fetchPendingApprovals(): Promise<VehicleBooking[]> {
   return (data || []) as VehicleBooking[];
 }
 
+export async function fetchPendingApprovalCards(): Promise<VehicleBookingApprovalCard[]> {
+  const { data, error } = await supabase.rpc('get_pending_vehicle_booking_approval_cards');
+
+  if (error) throw error;
+  return (data || []) as VehicleBookingApprovalCard[];
+}
+
+export async function fetchVehicleBookingDispatcherCandidates(): Promise<VehicleBookingDispatcherCandidate[]> {
+  const { data, error } = await supabase.rpc('get_vehicle_booking_dispatcher_candidates');
+
+  if (error) throw error;
+  return (data || []) as VehicleBookingDispatcherCandidate[];
+}
+
+export async function setVehicleBookingDispatchers(userIds: string[]): Promise<void> {
+  const { error } = await supabase.rpc('set_vehicle_booking_dispatchers', {
+    p_user_ids: [...new Set(userIds)],
+  });
+
+  if (error) throw error;
+}
+
 export async function fetchWaitingDispatchBookings(): Promise<VehicleBooking[]> {
   const { data, error } = await supabase
     .from('vehicle_bookings')
@@ -425,14 +453,17 @@ export async function fetchVehicleBookingDetails(bookingId: string): Promise<{
   };
 }
 
-export async function fetchFleetVehicleProfiles(): Promise<FleetVehicleProfile[]> {
-  const { data, error } = await supabase
-    .from('fleet_vehicle_profiles')
-    .select('*')
-    .order('asset_id', { ascending: true });
+export async function fetchFleetVehicleProfiles(): Promise<FleetVehicleProfileView[]> {
+  const { data, error } = await supabase.rpc('get_fleet_vehicle_profiles_admin');
 
   if (error) throw error;
-  return (data || []) as FleetVehicleProfile[];
+  return (data || []) as FleetVehicleProfileView[];
+}
+
+export async function fetchFleetVehicleCandidates(): Promise<FleetVehicleCandidate[]> {
+  const { data, error } = await supabase.rpc('get_fleet_vehicle_candidates');
+  if (error) throw error;
+  return (data || []) as FleetVehicleCandidate[];
 }
 
 export async function fetchDriverAuthorizations(): Promise<VehicleDriverAuthorization[]> {
@@ -445,13 +476,32 @@ export async function fetchDriverAuthorizations(): Promise<VehicleDriverAuthoriz
   return (data || []) as VehicleDriverAuthorization[];
 }
 
+export async function fetchVehicleDriverAuthorizationCandidates(): Promise<VehicleDriverCandidate[]> {
+  const { data, error } = await supabase.rpc('get_vehicle_driver_candidates');
+  if (error) throw error;
+  return (data || []) as VehicleDriverCandidate[];
+}
+
+export async function fetchVehicleDriverAuthorizationsAdmin(): Promise<VehicleDriverAuthorizationAdminView[]> {
+  const { data, error } = await supabase.rpc('get_vehicle_driver_authorizations_admin');
+  if (error) throw error;
+  return (data || []) as VehicleDriverAuthorizationAdminView[];
+}
+
 export async function fetchDriverAuthorizationsEligible(): Promise<VehicleDriverAuthorizationEligible[]> {
-  const { data, error } = await supabase
-    .from('vehicle_driver_authorizations_eligible_v')
-    .select('*');
+  const { data, error } = await supabase.rpc('get_vehicle_driver_authorizations_eligible');
 
   if (error) throw error;
   return (data || []) as VehicleDriverAuthorizationEligible[];
+}
+
+export async function setFleetVehicleAssetImage(assetId: string, imageUrl: string) {
+  const { data, error } = await supabase.rpc('set_fleet_vehicle_asset_image', {
+    p_asset_id: assetId,
+    p_image_url: imageUrl,
+  });
+  if (error) throw error;
+  return data;
 }
 
 export async function fetchFleetLocations(): Promise<FleetLocation[]> {
@@ -463,6 +513,24 @@ export async function fetchFleetLocations(): Promise<FleetLocation[]> {
 
   if (error) throw error;
   return (data || []) as FleetLocation[];
+}
+
+export async function fetchVehicleUnavailabilityPeriods(): Promise<VehicleUnavailabilityPeriod[]> {
+  const { data, error } = await supabase
+    .from('vehicle_unavailability_periods')
+    .select('*')
+    .order('start_at', { ascending: false });
+  if (error) throw error;
+  return (data || []) as VehicleUnavailabilityPeriod[];
+}
+
+export async function fetchOperatorUnavailabilityPeriods(): Promise<OperatorUnavailabilityPeriod[]> {
+  const { data, error } = await supabase
+    .from('operator_unavailability_periods')
+    .select('*')
+    .order('start_at', { ascending: false });
+  if (error) throw error;
+  return (data || []) as OperatorUnavailabilityPeriod[];
 }
 
 export async function fetchFleetSystemSettings(): Promise<FleetSystemSetting> {
@@ -979,7 +1047,7 @@ export async function upsertFleetLocation(params: {
   longitude?: number;
   source_type: 'OFFICE' | 'CONSTRUCTION_SITE' | 'CUSTOM';
   source_id?: string;
-}) {
+}): Promise<{ success: boolean; id: string }> {
   const { data, error } = await supabase.rpc('upsert_fleet_location', {
     p_location_id: params.location_id || null,
     p_name: params.name,
@@ -990,7 +1058,7 @@ export async function upsertFleetLocation(params: {
     p_source_id: params.source_id || null,
   });
   if (error) throw error;
-  return data;
+  return data as { success: boolean; id: string };
 }
 
 export async function createVehicleUnavailability(params: {

@@ -462,9 +462,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [assetCategories, setAssetCategories] = useState<AssetCategory[]>(() => isSupabaseConfigured ? [] : [
     { id: 'ac1', name: 'Máy xúc', type: 'machinery', depreciationYears: 8 },
     { id: 'ac2', name: 'Máy khoan', type: 'equipment', depreciationYears: 5 },
-    { id: 'ac3', name: 'Xe tải', type: 'vehicle', depreciationYears: 10 },
+    { id: 'ac3', name: 'Xe ô tô', type: 'vehicle', depreciationYears: 10 },
     { id: 'ac4', name: 'Máy tính', type: 'it', depreciationYears: 3 },
     { id: 'ac5', name: 'Bàn ghế VP', type: 'furniture', depreciationYears: 5 },
+
   ]);
   const [assetAssignments, setAssetAssignments] = useState<AssetAssignment[]>([]);
   const [assetMaintenances, setAssetMaintenances] = useState<AssetMaintenance[]>([]);
@@ -911,296 +912,296 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setModuleStatus(module, 'loading');
       loadedModulesRef.current.delete(module);
       try {
-      const loadWmsCoreData = async () => {
-        const [itemsData, whData, whTypeData, reqData] = await Promise.all([
-          fetchAllInventoryItemRows(),
-          fetchTableHelper('warehouses'),
-          fetchTableHelper('warehouse_types', supabase.from('warehouse_types').select('*').order('sort_order', { ascending: true }).order('name', { ascending: true })),
-          fetchTableHelper('requests', supabase.from('requests').select('*').order('created_date', { ascending: false })),
-        ]);
-        setItems(requireModuleData(module, 'items', itemsData).map(mapInventoryItemFromDb));
-        setWarehouses(requireModuleData(module, 'warehouses', whData).map(mapWarehouseFromDb));
-        setWarehouseTypes(requireModuleData(module, 'warehouse_types', whTypeData).map(mapWarehouseTypeFromDb));
-        setRequests(requireModuleData(module, 'requests', reqData).map(mapMaterialRequestFromDb));
-      };
+        const loadWmsCoreData = async () => {
+          const [itemsData, whData, whTypeData, reqData] = await Promise.all([
+            fetchAllInventoryItemRows(),
+            fetchTableHelper('warehouses'),
+            fetchTableHelper('warehouse_types', supabase.from('warehouse_types').select('*').order('sort_order', { ascending: true }).order('name', { ascending: true })),
+            fetchTableHelper('requests', supabase.from('requests').select('*').order('created_date', { ascending: false })),
+          ]);
+          setItems(requireModuleData(module, 'items', itemsData).map(mapInventoryItemFromDb));
+          setWarehouses(requireModuleData(module, 'warehouses', whData).map(mapWarehouseFromDb));
+          setWarehouseTypes(requireModuleData(module, 'warehouse_types', whTypeData).map(mapWarehouseTypeFromDb));
+          setRequests(requireModuleData(module, 'requests', reqData).map(mapMaterialRequestFromDb));
+        };
 
-      if (module === 'admin') {
-        const [settingsData, usersData, sigData] = await Promise.all([
-          fetchTableHelper('app_settings', supabase.from('app_settings').select('*').maybeSingle()),
-          fetchTableHelper('users'),
-          fetchTableHelper('user_signatures'),
-        ]);
-        if (settingsData) setAppSettings(settingsData);
-        const requiredUsers = requireModuleData(module, 'users', usersData);
-        if (requiredUsers.length === 0) {
-          throw new Error('Danh sách người dùng đang trống bất thường.');
-        }
-        {
-          const mappedUsers = requiredUsers.map(mapUserFromDb);
-          if (sigData && sigData.length > 0) {
-            const sigMap = new Map<string, string>();
-            for (const sig of sigData) {
-              const { data: urlData } = supabase.storage.from('workflow-templates').getPublicUrl(sig.image_path);
-              if (urlData?.publicUrl) sigMap.set(sig.user_id, urlData.publicUrl);
-            }
-            mappedUsers.forEach((u: any) => { if (sigMap.has(u.id)) u.signatureUrl = sigMap.get(u.id); });
+        if (module === 'admin') {
+          const [settingsData, usersData, sigData] = await Promise.all([
+            fetchTableHelper('app_settings', supabase.from('app_settings').select('*').maybeSingle()),
+            fetchTableHelper('users'),
+            fetchTableHelper('user_signatures'),
+          ]);
+          if (settingsData) setAppSettings(settingsData);
+          const requiredUsers = requireModuleData(module, 'users', usersData);
+          if (requiredUsers.length === 0) {
+            throw new Error('Danh sách người dùng đang trống bất thường.');
           }
-          setUsers(mappedUsers.map(candidate => candidate.id === user.id
-            ? { ...candidate, permissionGrants: user.permissionGrants || [] }
-            : candidate));
-        }
-      } else if (module === 'wms-core') {
-        await loadWmsCoreData();
-      } else if (module === 'wms') {
-        const [itemsData, whData, whTypeData, supData, txData, reqData, actPage, catData, unitData, lossNormsData, auditSessionsData] = await Promise.all([
-          fetchAllInventoryItemRows(),
-          fetchTableHelper('warehouses'),
-          fetchTableHelper('warehouse_types', supabase.from('warehouse_types').select('*').order('sort_order', { ascending: true }).order('name', { ascending: true })),
-          fetchTableHelper('suppliers'),
-          fetchTableHelper('transactions', supabase.from('transactions').select('*').order('date', { ascending: false })),
-          fetchTableHelper('requests', supabase.from('requests').select('*').order('created_date', { ascending: false })),
-          activityService.listPage({ limit: 50, warehouseId: user.assignedWarehouseId || undefined }).catch((err) => {
-            logApiError('activities', err);
-            return { items: [] };
-          }),
-          fetchTableHelper('categories'),
-          fetchTableHelper('units'),
-          fetchTableHelper('loss_norms'),
-          fetchTableHelper('audit_sessions', supabase.from('audit_sessions').select('*').order('date', { ascending: false })),
-        ]);
-        setItems(requireModuleData(module, 'items', itemsData).map(mapInventoryItemFromDb));
-        setWarehouses(requireModuleData(module, 'warehouses', whData).map(mapWarehouseFromDb));
-        setWarehouseTypes(requireModuleData(module, 'warehouse_types', whTypeData).map(mapWarehouseTypeFromDb));
-        if (supData) setSuppliers(supData.map((s: any) => ({ ...s, contactPerson: s.contact_person })));
-        setTransactions(requireModuleData(module, 'transactions', txData).map(mapTransactionFromDb));
-        setRequests(requireModuleData(module, 'requests', reqData).map(mapMaterialRequestFromDb));
-        setActivities(actPage.items);
-        if (catData) setCategories(catData);
-        if (unitData) setUnits(unitData);
-        if (lossNormsData) setLossNorms(lossNormsData.map((n: any) => ({
-          id: n.id,
-          itemId: n.item_id,
-          categoryId: n.category_id,
-          lossType: n.loss_type,
-          allowedPercentage: n.allowed_percentage,
-          period: n.period,
-          createdBy: n.created_by,
-          createdAt: n.created_at,
-        })));
-        if (auditSessionsData) setAuditSessions(auditSessionsData);
-        markModuleLoaded('wms-core');
-      } else if (module === 'hrm') {
-        const [
-          empData, areasData, officesData, empTypesData, positionsData, salaryData, schedulesData, constructionSitesData, orgUnitsData,
-          leaveBalData, leaveReqData, attendData, payrollData, contractData, payrollTplData, holidayData, salaryHistData, shiftTypesData, empShiftsData
-        ] = await Promise.all([
-          fetchTableHelper('employees'),
-          fetchTableHelper('hrm_areas'),
-          fetchTableHelper('hrm_offices'),
-          fetchTableHelper('hrm_employee_types'),
-          fetchTableHelper('hrm_positions'),
-          fetchTableHelper('hrm_salary_policies'),
-          fetchTableHelper('hrm_work_schedules'),
-          fetchTableHelper('hrm_construction_sites'),
-          fetchTableHelper('org_units'),
-          fetchTableHelper('hrm_leave_balances'),
-          fetchTableHelper('hrm_leave_requests'),
-          fetchTableHelper('hrm_attendance'),
-          fetchTableHelper('hrm_payrolls'),
-          fetchTableHelper('hrm_labor_contracts'),
-          fetchTableHelper('hrm_payroll_templates'),
-          fetchTableHelper('hrm_holidays'),
-          fetchTableHelper('hrm_salary_history'),
-          fetchTableHelper('hrm_shift_types'),
-          fetchTableHelper('hrm_employee_shifts'),
-        ]);
-        {
-          const requiredEmployees = requireModuleData(module, 'employees', empData);
-          setEmployees(requiredEmployees.map((e: any) => ({
-            id: e.id,
-            employeeCode: e.employee_code,
-            fullName: e.full_name,
-            title: e.title,
-            gender: e.gender,
-            phone: e.phone,
-            email: e.email,
-            dateOfBirth: e.date_of_birth,
-            startDate: e.start_date,
-            officialDate: e.official_date,
-            status: e.status,
-            userId: e.user_id,
-            areaId: e.area_id,
-            officeId: e.office_id,
-            employeeTypeId: e.employee_type_id,
-            positionId: e.position_id,
-            salaryPolicyId: e.salary_policy_id,
-            workScheduleId: e.work_schedule_id,
-            constructionSiteId: e.construction_site_id,
-            departmentId: e.department_id,
-            factoryId: e.factory_id,
-            maritalStatus: e.marital_status,
-            avatarUrl: e.avatar_url,
-            orgUnitId: e.org_unit_id || undefined,
-            createdAt: e.created_at,
-            updatedAt: e.updated_at,
+          {
+            const mappedUsers = requiredUsers.map(mapUserFromDb);
+            if (sigData && sigData.length > 0) {
+              const sigMap = new Map<string, string>();
+              for (const sig of sigData) {
+                const { data: urlData } = supabase.storage.from('workflow-templates').getPublicUrl(sig.image_path);
+                if (urlData?.publicUrl) sigMap.set(sig.user_id, urlData.publicUrl);
+              }
+              mappedUsers.forEach((u: any) => { if (sigMap.has(u.id)) u.signatureUrl = sigMap.get(u.id); });
+            }
+            setUsers(mappedUsers.map(candidate => candidate.id === user.id
+              ? { ...candidate, permissionGrants: user.permissionGrants || [] }
+              : candidate));
+          }
+        } else if (module === 'wms-core') {
+          await loadWmsCoreData();
+        } else if (module === 'wms') {
+          const [itemsData, whData, whTypeData, supData, txData, reqData, actPage, catData, unitData, lossNormsData, auditSessionsData] = await Promise.all([
+            fetchAllInventoryItemRows(),
+            fetchTableHelper('warehouses'),
+            fetchTableHelper('warehouse_types', supabase.from('warehouse_types').select('*').order('sort_order', { ascending: true }).order('name', { ascending: true })),
+            fetchTableHelper('suppliers'),
+            fetchTableHelper('transactions', supabase.from('transactions').select('*').order('date', { ascending: false })),
+            fetchTableHelper('requests', supabase.from('requests').select('*').order('created_date', { ascending: false })),
+            activityService.listPage({ limit: 50, warehouseId: user.assignedWarehouseId || undefined }).catch((err) => {
+              logApiError('activities', err);
+              return { items: [] };
+            }),
+            fetchTableHelper('categories'),
+            fetchTableHelper('units'),
+            fetchTableHelper('loss_norms'),
+            fetchTableHelper('audit_sessions', supabase.from('audit_sessions').select('*').order('date', { ascending: false })),
+          ]);
+          setItems(requireModuleData(module, 'items', itemsData).map(mapInventoryItemFromDb));
+          setWarehouses(requireModuleData(module, 'warehouses', whData).map(mapWarehouseFromDb));
+          setWarehouseTypes(requireModuleData(module, 'warehouse_types', whTypeData).map(mapWarehouseTypeFromDb));
+          if (supData) setSuppliers(supData.map((s: any) => ({ ...s, contactPerson: s.contact_person })));
+          setTransactions(requireModuleData(module, 'transactions', txData).map(mapTransactionFromDb));
+          setRequests(requireModuleData(module, 'requests', reqData).map(mapMaterialRequestFromDb));
+          setActivities(actPage.items);
+          if (catData) setCategories(catData);
+          if (unitData) setUnits(unitData);
+          if (lossNormsData) setLossNorms(lossNormsData.map((n: any) => ({
+            id: n.id,
+            itemId: n.item_id,
+            categoryId: n.category_id,
+            lossType: n.loss_type,
+            allowedPercentage: n.allowed_percentage,
+            period: n.period,
+            createdBy: n.created_by,
+            createdAt: n.created_at,
           })));
-        }
-        if (areasData) setHrmAreas(areasData);
-        if (officesData) setHrmOffices(officesData);
-        if (empTypesData) setHrmEmployeeTypes(empTypesData);
-        if (positionsData) setHrmPositions(positionsData);
-        if (salaryData) setHrmSalaryPolicies(salaryData);
-        if (schedulesData) setHrmWorkSchedules(schedulesData.map((s: any) => ({
-          id: s.id,
-          name: s.name,
-          description: s.description,
-          morningStart: s.morning_start,
-          morningEnd: s.morning_end,
-          afternoonStart: s.afternoon_start,
-          afternoonEnd: s.afternoon_end,
-          createdAt: s.created_at,
-        })));
-        if (constructionSitesData) setHrmConstructionSites(constructionSitesData.map(mapConstructionSiteWarehouseBindingFromDb));
-        {
-          const requiredOrgUnits = requireModuleData(module, 'org_units', orgUnitsData);
-          const units = requiredOrgUnits.map((u: any) => ({
-            id: u.id,
-            name: u.name,
-            type: u.type,
-            customTypeLabel: u.customTypeLabel || undefined,
-            parentId: u.parent_id,
-            description: u.description,
-            orderIndex: u.order_index,
-            createdAt: u.created_at,
-          }));
-
-          if (!units.some((u: OrgUnit) => u.type === 'factory')) {
-            const root = units.find((u: OrgUnit) => !u.parentId && u.type === 'company');
-            if (root) {
-              const factId = 'mock-factory-1';
-              units.push({ id: factId, name: 'Nhà máy Sản xuất', type: 'factory', orderIndex: 99, parentId: root.id });
-              units.push({ id: 'mock-fact-room-1', name: 'Xưởng Lắp Ráp', type: 'department', orderIndex: 1, parentId: factId });
-              units.push({ id: 'mock-fact-room-2', name: 'Kho Bán thành phẩm', type: 'department', orderIndex: 2, parentId: factId });
-            }
+          if (auditSessionsData) setAuditSessions(auditSessionsData);
+          markModuleLoaded('wms-core');
+        } else if (module === 'hrm') {
+          const [
+            empData, areasData, officesData, empTypesData, positionsData, salaryData, schedulesData, constructionSitesData, orgUnitsData,
+            leaveBalData, leaveReqData, attendData, payrollData, contractData, payrollTplData, holidayData, salaryHistData, shiftTypesData, empShiftsData
+          ] = await Promise.all([
+            fetchTableHelper('employees'),
+            fetchTableHelper('hrm_areas'),
+            fetchTableHelper('hrm_offices'),
+            fetchTableHelper('hrm_employee_types'),
+            fetchTableHelper('hrm_positions'),
+            fetchTableHelper('hrm_salary_policies'),
+            fetchTableHelper('hrm_work_schedules'),
+            fetchTableHelper('hrm_construction_sites'),
+            fetchTableHelper('org_units'),
+            fetchTableHelper('hrm_leave_balances'),
+            fetchTableHelper('hrm_leave_requests'),
+            fetchTableHelper('hrm_attendance'),
+            fetchTableHelper('hrm_payrolls'),
+            fetchTableHelper('hrm_labor_contracts'),
+            fetchTableHelper('hrm_payroll_templates'),
+            fetchTableHelper('hrm_holidays'),
+            fetchTableHelper('hrm_salary_history'),
+            fetchTableHelper('hrm_shift_types'),
+            fetchTableHelper('hrm_employee_shifts'),
+          ]);
+          {
+            const requiredEmployees = requireModuleData(module, 'employees', empData);
+            setEmployees(requiredEmployees.map((e: any) => ({
+              id: e.id,
+              employeeCode: e.employee_code,
+              fullName: e.full_name,
+              title: e.title,
+              gender: e.gender,
+              phone: e.phone,
+              email: e.email,
+              dateOfBirth: e.date_of_birth,
+              startDate: e.start_date,
+              officialDate: e.official_date,
+              status: e.status,
+              userId: e.user_id,
+              areaId: e.area_id,
+              officeId: e.office_id,
+              employeeTypeId: e.employee_type_id,
+              positionId: e.position_id,
+              salaryPolicyId: e.salary_policy_id,
+              workScheduleId: e.work_schedule_id,
+              constructionSiteId: e.construction_site_id,
+              departmentId: e.department_id,
+              factoryId: e.factory_id,
+              maritalStatus: e.marital_status,
+              avatarUrl: e.avatar_url,
+              orgUnitId: e.org_unit_id || undefined,
+              createdAt: e.created_at,
+              updatedAt: e.updated_at,
+            })));
           }
-          setOrgUnits(units);
+          if (areasData) setHrmAreas(areasData);
+          if (officesData) setHrmOffices(officesData);
+          if (empTypesData) setHrmEmployeeTypes(empTypesData);
+          if (positionsData) setHrmPositions(positionsData);
+          if (salaryData) setHrmSalaryPolicies(salaryData);
+          if (schedulesData) setHrmWorkSchedules(schedulesData.map((s: any) => ({
+            id: s.id,
+            name: s.name,
+            description: s.description,
+            morningStart: s.morning_start,
+            morningEnd: s.morning_end,
+            afternoonStart: s.afternoon_start,
+            afternoonEnd: s.afternoon_end,
+            createdAt: s.created_at,
+          })));
+          if (constructionSitesData) setHrmConstructionSites(constructionSitesData.map(mapConstructionSiteWarehouseBindingFromDb));
+          {
+            const requiredOrgUnits = requireModuleData(module, 'org_units', orgUnitsData);
+            const units = requiredOrgUnits.map((u: any) => ({
+              id: u.id,
+              name: u.name,
+              type: u.type,
+              customTypeLabel: u.customTypeLabel || undefined,
+              parentId: u.parent_id,
+              description: u.description,
+              orderIndex: u.order_index,
+              createdAt: u.created_at,
+            }));
+
+            if (!units.some((u: OrgUnit) => u.type === 'factory')) {
+              const root = units.find((u: OrgUnit) => !u.parentId && u.type === 'company');
+              if (root) {
+                const factId = 'mock-factory-1';
+                units.push({ id: factId, name: 'Nhà máy Sản xuất', type: 'factory', orderIndex: 99, parentId: root.id });
+                units.push({ id: 'mock-fact-room-1', name: 'Xưởng Lắp Ráp', type: 'department', orderIndex: 1, parentId: factId });
+                units.push({ id: 'mock-fact-room-2', name: 'Kho Bán thành phẩm', type: 'department', orderIndex: 2, parentId: factId });
+              }
+            }
+            setOrgUnits(units);
+          }
+          if (leaveBalData) setLeaveBalances(leaveBalData);
+          if (leaveReqData) setLeaveRequests(leaveReqData);
+          const leaveLogData = await fetchTableHelper('hrm_leave_logs');
+          if (leaveLogData) setLeaveLogs(leaveLogData);
+          if (attendData) setAttendanceRecords(attendData);
+          if (payrollData) setPayrollRecords(payrollData);
+          if (contractData) setLaborContracts(contractData);
+          if (payrollTplData) setPayrollTemplates(payrollTplData);
+          if (holidayData) setHolidays(holidayData);
+          if (salaryHistData) setSalaryHistory(salaryHistData);
+          if (shiftTypesData) setShiftTypes(shiftTypesData.map((s: any) => ({
+            id: s.id, name: s.name,
+            startTime: s.start_time, endTime: s.end_time,
+            breakMinutes: s.break_minutes, graceLateMins: s.grace_late_minutes,
+            graceEarlyMins: s.grace_early_minutes, standardWorkingHours: s.standard_working_hours,
+            otMultiplierNormal: s.ot_multiplier_normal, otMultiplierWeekend: s.ot_multiplier_weekend,
+            otMultiplierHoliday: s.ot_multiplier_holiday, nightShiftPremium: s.night_shift_premium,
+            isNightShift: s.is_night_shift, color: s.color, isActive: s.is_active,
+            createdAt: s.created_at,
+          })));
+          if (empShiftsData) setEmployeeShifts(empShiftsData.map((s: any) => ({
+            id: s.id, employeeId: s.employee_id, shiftTypeId: s.shift_type_id,
+            shiftDate: s.shift_date, isDayOff: s.is_day_off, note: s.note,
+            createdAt: s.created_at,
+          })));
+          const proposalData = await fetchTableHelper('hrm_attendance_proposals');
+          if (proposalData) setAttendanceProposals(proposalData);
+
+          // ── T6: Tích lũy phép năm ──────────────────────────────────────────────
+          // Logic tích lũy phép đã được chuyển lên Supabase Postgres Trigger:
+          //   Function: accrue_leave_balances()
+          //   Trigger: trg_accrue_leave_on_load (AFTER INSERT/UPDATE ON hrm_leave_balances)
+          // Xem hướng dẫn tạo trigger tại: /docs/supabase-triggers.md
+          // Không chạy accrual ở client để tránh race condition nhiều tab cùng cộng phép.
+
+        } else if (module === 'ts') {
+          const [assetsData, assetCatData, assetAssignData, assetMaintData, assetLocationData, assetTxData] = await Promise.all([
+            fetchTableHelper('assets'),
+            fetchTableHelper('asset_categories'),
+            fetchTableHelper('asset_assignments', supabase.from('asset_assignments').select('*').order('date', { ascending: false })),
+            fetchTableHelper('asset_maintenances', supabase.from('asset_maintenances').select('*').order('start_date', { ascending: false })),
+            fetchTableHelper('asset_location_stocks'),
+            fetchTableHelper('asset_transfers', supabase.from('asset_transfers').select('*').order('date', { ascending: false })),
+          ]);
+          if (assetsData) setAssets(assetsData.map((a: any) => ({
+            ...a, categoryId: a.category_id, serialNumber: a.serial_number,
+            originalValue: a.original_value, purchaseDate: a.purchase_date,
+            depreciationYears: a.depreciation_years, warrantyMonths: a.warranty_months,
+            residualValue: a.residual_value,
+            warehouseId: a.warehouse_id, locationNote: a.location_note,
+            assignedToUserId: a.assigned_to_user_id, assignedToName: a.assigned_to_name,
+            assignedDate: a.assigned_date, disposalDate: a.disposal_date,
+            disposalValue: a.disposal_value, disposalNote: a.disposal_note,
+            imageUrl: a.image_url, createdAt: a.created_at, updatedAt: a.updated_at,
+            // New fields (Phase 4)
+            assetType: a.asset_type || 'single',
+            quantity: a.quantity || 1,
+            unit: a.unit || 'Cái',
+            parentId: a.parent_id || undefined,
+            childIndex: a.child_index || undefined,
+            isBundle: a.is_bundle || false,
+            assetOrigin: a.asset_origin || 'purchase',
+            contractNumber: a.contract_number || undefined,
+            invoiceNumber: a.invoice_number || undefined,
+          })));
+          if (assetCatData && assetCatData.length > 0) setAssetCategories(assetCatData.map((c: any) => ({
+            ...c, depreciationYears: c.depreciation_years
+          })));
+          if (assetAssignData) setAssetAssignments(assetAssignData.map((a: any) => ({
+            ...a, assetId: a.asset_id, userId: a.user_id, userName: a.user_name,
+            fromUserId: a.from_user_id, fromUserName: a.from_user_name,
+            performedBy: a.performed_by, performedByName: a.performed_by_name
+          })));
+          if (assetMaintData) setAssetMaintenances(assetMaintData.map((m: any) => ({
+            ...m, assetId: m.asset_id, startDate: m.start_date, endDate: m.end_date,
+            performedBy: m.performed_by, performedByName: m.performed_by_name,
+            invoiceNumber: m.invoice_number, estimatedCost: m.estimated_cost,
+            actualCost: m.actual_cost,
+            attachments: typeof m.attachments === 'string' ? JSON.parse(m.attachments) : (m.attachments || [])
+          })));
+          if (assetLocationData) setAssetLocationStocks(assetLocationData.map((l: any) => ({
+            ...l, assetId: l.asset_id, warehouseId: l.warehouse_id,
+            constructionSiteId: l.construction_site_id, deptId: l.dept_id,
+            assignedToUserId: l.assigned_to_user_id, assignedToName: l.assigned_to_name,
+            updatedAt: l.updated_at
+          })));
+          if (assetTxData) setAssetTransfers(assetTxData.map((t: any) => ({
+            ...t, assetId: t.asset_id, assetCode: t.asset_code, assetName: t.asset_name,
+            fromWarehouseId: t.from_warehouse_id, fromSiteId: t.from_site_id, fromDeptId: t.from_dept_id,
+            fromLocationLabel: t.from_location_label, toWarehouseId: t.to_warehouse_id,
+            toSiteId: t.to_site_id, toDeptId: t.to_dept_id, toLocationLabel: t.to_location_label,
+            receivedByUserId: t.received_by_user_id, receivedByName: t.received_by_name,
+            performedBy: t.performed_by, performedByName: t.performed_by_name,
+            createdAt: t.created_at
+          })));
+        } else if (module === 'da') {
+          const [constructionSitesData, projectFinancesData, projectTxData] = await Promise.all([
+            fetchTableHelper('hrm_construction_sites'),
+            fetchTableHelper('project_finances'),
+            fetchTableHelper('project_transactions', supabase.from('project_transactions').select('*').order('date', { ascending: false })),
+          ]);
+          if (constructionSitesData) setHrmConstructionSites(constructionSitesData.map(mapConstructionSiteWarehouseBindingFromDb));
+          if (projectFinancesData) setProjectFinances(projectFinancesData.map(normalizeProjectFinance));
+          if (projectTxData) setProjectTransactions(projectTxData.map(normalizeProjectTransaction));
+        } else if (module === 'ex') {
+          const [budgetCatData, budgetEntData, expRecData] = await Promise.all([
+            fetchTableHelper('budget_categories'),
+            fetchTableHelper('budget_entries'),
+            fetchTableHelper('expense_records'),
+          ]);
+          if (budgetCatData) setBudgetCategories(budgetCatData);
+          if (budgetEntData) setBudgetEntries(budgetEntData);
+          if (expRecData) setExpenseRecords(expRecData);
         }
-        if (leaveBalData) setLeaveBalances(leaveBalData);
-        if (leaveReqData) setLeaveRequests(leaveReqData);
-        const leaveLogData = await fetchTableHelper('hrm_leave_logs');
-        if (leaveLogData) setLeaveLogs(leaveLogData);
-        if (attendData) setAttendanceRecords(attendData);
-        if (payrollData) setPayrollRecords(payrollData);
-        if (contractData) setLaborContracts(contractData);
-        if (payrollTplData) setPayrollTemplates(payrollTplData);
-        if (holidayData) setHolidays(holidayData);
-        if (salaryHistData) setSalaryHistory(salaryHistData);
-        if (shiftTypesData) setShiftTypes(shiftTypesData.map((s: any) => ({
-          id: s.id, name: s.name,
-          startTime: s.start_time, endTime: s.end_time,
-          breakMinutes: s.break_minutes, graceLateMins: s.grace_late_minutes,
-          graceEarlyMins: s.grace_early_minutes, standardWorkingHours: s.standard_working_hours,
-          otMultiplierNormal: s.ot_multiplier_normal, otMultiplierWeekend: s.ot_multiplier_weekend,
-          otMultiplierHoliday: s.ot_multiplier_holiday, nightShiftPremium: s.night_shift_premium,
-          isNightShift: s.is_night_shift, color: s.color, isActive: s.is_active,
-          createdAt: s.created_at,
-        })));
-        if (empShiftsData) setEmployeeShifts(empShiftsData.map((s: any) => ({
-          id: s.id, employeeId: s.employee_id, shiftTypeId: s.shift_type_id,
-          shiftDate: s.shift_date, isDayOff: s.is_day_off, note: s.note,
-          createdAt: s.created_at,
-        })));
-        const proposalData = await fetchTableHelper('hrm_attendance_proposals');
-        if (proposalData) setAttendanceProposals(proposalData);
 
-        // ── T6: Tích lũy phép năm ──────────────────────────────────────────────
-        // Logic tích lũy phép đã được chuyển lên Supabase Postgres Trigger:
-        //   Function: accrue_leave_balances()
-        //   Trigger: trg_accrue_leave_on_load (AFTER INSERT/UPDATE ON hrm_leave_balances)
-        // Xem hướng dẫn tạo trigger tại: /docs/supabase-triggers.md
-        // Không chạy accrual ở client để tránh race condition nhiều tab cùng cộng phép.
-
-      } else if (module === 'ts') {
-        const [assetsData, assetCatData, assetAssignData, assetMaintData, assetLocationData, assetTxData] = await Promise.all([
-          fetchTableHelper('assets'),
-          fetchTableHelper('asset_categories'),
-          fetchTableHelper('asset_assignments', supabase.from('asset_assignments').select('*').order('date', { ascending: false })),
-          fetchTableHelper('asset_maintenances', supabase.from('asset_maintenances').select('*').order('start_date', { ascending: false })),
-          fetchTableHelper('asset_location_stocks'),
-          fetchTableHelper('asset_transfers', supabase.from('asset_transfers').select('*').order('date', { ascending: false })),
-        ]);
-        if (assetsData) setAssets(assetsData.map((a: any) => ({
-          ...a, categoryId: a.category_id, serialNumber: a.serial_number,
-          originalValue: a.original_value, purchaseDate: a.purchase_date,
-          depreciationYears: a.depreciation_years, warrantyMonths: a.warranty_months,
-          residualValue: a.residual_value,
-          warehouseId: a.warehouse_id, locationNote: a.location_note,
-          assignedToUserId: a.assigned_to_user_id, assignedToName: a.assigned_to_name,
-          assignedDate: a.assigned_date, disposalDate: a.disposal_date,
-          disposalValue: a.disposal_value, disposalNote: a.disposal_note,
-          imageUrl: a.image_url, createdAt: a.created_at, updatedAt: a.updated_at,
-          // New fields (Phase 4)
-          assetType: a.asset_type || 'single',
-          quantity: a.quantity || 1,
-          unit: a.unit || 'Cái',
-          parentId: a.parent_id || undefined,
-          childIndex: a.child_index || undefined,
-          isBundle: a.is_bundle || false,
-          assetOrigin: a.asset_origin || 'purchase',
-          contractNumber: a.contract_number || undefined,
-          invoiceNumber: a.invoice_number || undefined,
-        })));
-        if (assetCatData && assetCatData.length > 0) setAssetCategories(assetCatData.map((c: any) => ({
-          ...c, depreciationYears: c.depreciation_years
-        })));
-        if (assetAssignData) setAssetAssignments(assetAssignData.map((a: any) => ({
-          ...a, assetId: a.asset_id, userId: a.user_id, userName: a.user_name,
-          fromUserId: a.from_user_id, fromUserName: a.from_user_name,
-          performedBy: a.performed_by, performedByName: a.performed_by_name
-        })));
-        if (assetMaintData) setAssetMaintenances(assetMaintData.map((m: any) => ({
-          ...m, assetId: m.asset_id, startDate: m.start_date, endDate: m.end_date,
-          performedBy: m.performed_by, performedByName: m.performed_by_name,
-          invoiceNumber: m.invoice_number, estimatedCost: m.estimated_cost,
-          actualCost: m.actual_cost,
-          attachments: typeof m.attachments === 'string' ? JSON.parse(m.attachments) : (m.attachments || [])
-        })));
-        if (assetLocationData) setAssetLocationStocks(assetLocationData.map((l: any) => ({
-          ...l, assetId: l.asset_id, warehouseId: l.warehouse_id,
-          constructionSiteId: l.construction_site_id, deptId: l.dept_id,
-          assignedToUserId: l.assigned_to_user_id, assignedToName: l.assigned_to_name,
-          updatedAt: l.updated_at
-        })));
-        if (assetTxData) setAssetTransfers(assetTxData.map((t: any) => ({
-          ...t, assetId: t.asset_id, assetCode: t.asset_code, assetName: t.asset_name,
-          fromWarehouseId: t.from_warehouse_id, fromSiteId: t.from_site_id, fromDeptId: t.from_dept_id,
-          fromLocationLabel: t.from_location_label, toWarehouseId: t.to_warehouse_id,
-          toSiteId: t.to_site_id, toDeptId: t.to_dept_id, toLocationLabel: t.to_location_label,
-          receivedByUserId: t.received_by_user_id, receivedByName: t.received_by_name,
-          performedBy: t.performed_by, performedByName: t.performed_by_name,
-          createdAt: t.created_at
-        })));
-      } else if (module === 'da') {
-        const [constructionSitesData, projectFinancesData, projectTxData] = await Promise.all([
-          fetchTableHelper('hrm_construction_sites'),
-          fetchTableHelper('project_finances'),
-          fetchTableHelper('project_transactions', supabase.from('project_transactions').select('*').order('date', { ascending: false })),
-        ]);
-        if (constructionSitesData) setHrmConstructionSites(constructionSitesData.map(mapConstructionSiteWarehouseBindingFromDb));
-        if (projectFinancesData) setProjectFinances(projectFinancesData.map(normalizeProjectFinance));
-        if (projectTxData) setProjectTransactions(projectTxData.map(normalizeProjectTransaction));
-      } else if (module === 'ex') {
-        const [budgetCatData, budgetEntData, expRecData] = await Promise.all([
-          fetchTableHelper('budget_categories'),
-          fetchTableHelper('budget_entries'),
-          fetchTableHelper('expense_records'),
-        ]);
-        if (budgetCatData) setBudgetCategories(budgetCatData);
-        if (budgetEntData) setBudgetEntries(budgetEntData);
-        if (expRecData) setExpenseRecords(expRecData);
-      }
-
-      markModuleLoaded(module);
+        markModuleLoaded(module);
       } catch (error: any) {
         const message = error?.message || `Không tải được dữ liệu module ${module}.`;
         console.error(`Error lazy-loading module "${module}":`, error);
@@ -1685,9 +1686,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const changedItems: InventoryItem[] = [];
     const baseItems = tx.pendingItems?.length
       ? [
-          ...items,
-          ...tx.pendingItems.filter(pending => !items.some(item => item.id === pending.id)),
-        ]
+        ...items,
+        ...tx.pendingItems.filter(pending => !items.some(item => item.id === pending.id)),
+      ]
       : items;
 
     const nextItems = baseItems.map(item => {
@@ -2599,7 +2600,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             submittedToPermission: null,
             submissionNote: null,
           }
-      : {};
+          : {};
 
     const stockFulfillmentLines = updatedItems.filter(line => {
       const approvedQty = Number(line.approvedQty || 0);

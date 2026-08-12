@@ -50,6 +50,7 @@ begin
     where u.auth_id is not null
       and coalesce(u.is_active, true)
       and coalesce(u.account_status, 'ACTIVE') = 'ACTIVE'
+      and u.role::text <> 'ADMIN'
       and not exists (
         select 1 from public.user_permission_grants grant_row
         where grant_row.user_id = u.id
@@ -75,7 +76,7 @@ begin
   end loop;
 
   if v_outsider.id is null then
-    raise exception 'PHASE3_SMOKE_FIXTURE_MISSING: three active authenticated users are required';
+    raise exception 'PHASE3_SMOKE_FIXTURE_MISSING: three active non-admin authenticated users are required';
   end if;
 
   select org.id into v_department_id

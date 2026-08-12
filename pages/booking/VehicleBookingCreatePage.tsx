@@ -13,7 +13,7 @@ import {
 import type {
   VehicleTripType,
   VehicleRequestedMode,
-  FleetVehicleProfile,
+  FleetVehicleProfileView,
   VehicleDriverAuthorizationEligible
 } from '../../types/vehicleBooking';
 import { useToast } from '../../context/ToastContext';
@@ -23,7 +23,7 @@ const VehicleBookingCreatePage: React.FC = () => {
   const toast = useToast();
 
   const [loading, setLoading] = useState(false);
-  const [vehicles, setVehicles] = useState<FleetVehicleProfile[]>([]);
+  const [vehicles, setVehicles] = useState<FleetVehicleProfileView[]>([]);
   const [drivers, setDrivers] = useState<VehicleDriverAuthorizationEligible[]>([]);
 
   // Form State
@@ -294,7 +294,7 @@ const VehicleBookingCreatePage: React.FC = () => {
               <option value="">-- Để điều phối viên chọn xe --</option>
               {vehicles.map((v) => (
                 <option key={v.asset_id} value={v.asset_id}>
-                  {v.asset_id} ({v.vehicle_type} - {v.seat_count} chỗ)
+                   {v.asset_code} · {v.asset_name} ({v.vehicle_type} - {v.seat_count} chỗ)
                 </option>
               ))}
             </select>
@@ -312,11 +312,30 @@ const VehicleBookingCreatePage: React.FC = () => {
               <option value="">-- Để điều phối viên xếp tài xế --</option>
               {drivers.map((d) => (
                 <option key={d.user_id} value={d.user_id}>
-                  Tài xế {d.license_class} (ID: {d.user_id.substring(0, 8)})
+                   {d.employee_name || `Tài xế ${d.license_class}`} · {d.employee_title || d.license_class}
                 </option>
               ))}
             </select>
-          </div>
+           </div>
+
+          {(preferredAssetId || preferredDriverId) && (
+            <div className="md:col-span-3 grid gap-3 sm:grid-cols-2">
+              {preferredAssetId && (() => {
+                const vehicle = vehicles.find(item => item.asset_id === preferredAssetId);
+                return vehicle ? <div className="flex items-center gap-3 rounded-xl bg-slate-50 p-3 dark:bg-slate-900">
+                  {vehicle.asset_image_url ? <img src={vehicle.asset_image_url} alt={vehicle.asset_name} className="h-14 w-20 rounded-lg object-cover" /> : <div className="flex h-14 w-20 items-center justify-center rounded-lg bg-slate-200"><Car className="h-5 w-5 text-slate-400" /></div>}
+                  <div><div className="text-xs font-bold">{vehicle.asset_code} · {vehicle.asset_name}</div><div className="text-[11px] text-slate-500">{vehicle.vehicle_type} · {vehicle.seat_count} chỗ</div></div>
+                </div> : null;
+              })()}
+              {preferredDriverId && (() => {
+                const driver = drivers.find(item => item.user_id === preferredDriverId);
+                return driver ? <div className="flex items-center gap-3 rounded-xl bg-slate-50 p-3 dark:bg-slate-900">
+                  {driver.employee_avatar_url ? <img src={driver.employee_avatar_url} alt={driver.employee_name || 'Tài xế'} className="h-12 w-12 rounded-full object-cover" /> : <div className="flex h-12 w-12 items-center justify-center rounded-full bg-amber-100 text-xs font-bold text-amber-700">{(driver.employee_name || 'TX').split(' ').slice(-2).map(word => word[0]).join('')}</div>}
+                  <div><div className="text-xs font-bold">{driver.employee_name || 'Tài xế'}</div><div className="text-[11px] text-slate-500">{driver.employee_title || `Bằng ${driver.license_class}`}</div></div>
+                </div> : null;
+              })()}
+            </div>
+          )}
 
           <div className="md:col-span-3">
             <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">

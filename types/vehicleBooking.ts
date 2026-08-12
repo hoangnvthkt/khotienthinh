@@ -67,6 +67,25 @@ export interface FleetVehicleProfile {
   updated_at: string;
 }
 
+export interface FleetVehicleProfileView extends FleetVehicleProfile {
+  asset_code: string;
+  asset_name: string;
+  asset_image_url?: string | null;
+  asset_brand?: string | null;
+  asset_model?: string | null;
+  home_base_name?: string | null;
+}
+
+export interface FleetVehicleCandidate {
+  asset_id: string;
+  asset_code: string;
+  asset_name: string;
+  asset_image_url?: string | null;
+  asset_brand?: string | null;
+  asset_model?: string | null;
+  category_name: string;
+}
+
 export interface VehicleDriverAuthorization {
   id: string;
   user_id: string;
@@ -87,6 +106,25 @@ export interface VehicleDriverAuthorization {
   updated_at: string;
 }
 
+export interface VehicleDriverAuthorizationAdminView extends VehicleDriverAuthorization {
+  employee_code?: string | null;
+  employee_name?: string | null;
+  employee_title?: string | null;
+  employee_avatar_url?: string | null;
+  department_id?: string | null;
+}
+
+export interface VehicleDriverCandidate {
+  employee_id: string;
+  user_id: string;
+  employee_code: string;
+  employee_name: string;
+  employee_title?: string | null;
+  employee_avatar_url?: string | null;
+  department_id?: string | null;
+  authorization_count: number;
+}
+
 export interface VehicleDriverAuthorizationEligible {
   id: string;
   user_id: string;
@@ -97,6 +135,9 @@ export interface VehicleDriverAuthorizationEligible {
   allowed_vehicle_types?: string[] | null;
   status: DriverAuthorizationStatus;
   is_eligible: boolean;
+  employee_name?: string | null;
+  employee_title?: string | null;
+  employee_avatar_url?: string | null;
 }
 
 export interface VehicleUnavailabilityPeriod {
@@ -164,6 +205,31 @@ export interface VehicleBooking {
   close_note?: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface VehicleBookingDispatcherCandidate {
+  user_id: string;
+  employee_id: string;
+  employee_code?: string | null;
+  employee_name: string;
+  employee_title?: string | null;
+  employee_avatar_url?: string | null;
+  department_id?: string | null;
+  department_name?: string | null;
+  is_dispatcher: boolean;
+}
+
+export interface VehicleBookingApprovalCard extends VehicleBooking {
+  requester_employee_code?: string | null;
+  requester_employee_name?: string | null;
+  requester_employee_title?: string | null;
+  requester_avatar_url?: string | null;
+  requester_department_name?: string | null;
+  preferred_vehicle_asset_code?: string | null;
+  preferred_vehicle_asset_name?: string | null;
+  preferred_vehicle_image_url?: string | null;
+  preferred_vehicle_type?: string | null;
+  preferred_vehicle_seat_count?: number | null;
 }
 
 export interface VehicleBookingAssignment {

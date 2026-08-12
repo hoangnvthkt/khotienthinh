@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { ClipboardCheck, Check, X, Clock, MapPin, User, Car, AlertCircle, RefreshCw } from 'lucide-react';
-import { fetchPendingApprovals, approveVehicleBooking, rejectVehicleBooking, formatVietnamDateTime } from '../../lib/vehicleBookingService';
-import type { VehicleBooking } from '../../types/vehicleBooking';
+import { fetchPendingApprovalCards, approveVehicleBooking, rejectVehicleBooking, formatVietnamDateTime } from '../../lib/vehicleBookingService';
+import type { VehicleBookingApprovalCard } from '../../types/vehicleBooking';
 import { useToast } from '../../context/ToastContext';
 
 const ManagerApprovalPage: React.FC = () => {
   const toast = useToast();
   const [loading, setLoading] = useState(true);
-  const [pendingBookings, setPendingBookings] = useState<VehicleBooking[]>([]);
+  const [pendingBookings, setPendingBookings] = useState<VehicleBookingApprovalCard[]>([]);
 
   // Reject Modal State
   const [rejectingBookingId, setRejectingBookingId] = useState<string | null>(null);
@@ -17,7 +17,7 @@ const ManagerApprovalPage: React.FC = () => {
   const loadData = async () => {
     try {
       setLoading(true);
-      const data = await fetchPendingApprovals();
+      const data = await fetchPendingApprovalCards();
       setPendingBookings(data);
     } catch (err: any) {
       toast.error('Không thể tải danh sách đơn chờ duyệt!');
@@ -102,12 +102,30 @@ const ManagerApprovalPage: React.FC = () => {
               key={b.id}
               className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-200 dark:border-slate-700 space-y-4 shadow-sm"
             >
-              <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 pb-3">
-                <div>
-                  <span className="text-xs font-bold text-amber-600 dark:text-amber-400">
-                    {b.booking_code}
-                  </span>
-                  <p className="text-xs text-slate-500">ID Người đặt: {b.requester_user_id.substring(0, 8)}</p>
+              <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-3 dark:border-slate-700">
+                <div className="flex min-w-0 items-center gap-3">
+                  {b.requester_avatar_url ? (
+                    <img
+                      src={b.requester_avatar_url}
+                      alt={b.requester_employee_name || 'Người đặt xe'}
+                      className="h-10 w-10 shrink-0 rounded-full object-cover ring-2 ring-slate-100 dark:ring-slate-700"
+                    />
+                  ) : (
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+                      <User className="h-5 w-5" />
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <span className="text-xs font-bold text-amber-600 dark:text-amber-400">
+                      {b.booking_code}
+                    </span>
+                    <p className="truncate text-sm font-bold text-slate-900 dark:text-white">
+                      {b.requester_employee_name || 'Chưa cập nhật thông tin người đặt'}
+                    </p>
+                    <p className="truncate text-xs text-slate-500">
+                      {[b.requester_employee_code, b.requester_employee_title, b.requester_department_name].filter(Boolean).join(' · ') || 'Chưa có thông tin HRM'}
+                    </p>
+                  </div>
                 </div>
                 <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
                   Chờ duyệt
@@ -133,7 +151,27 @@ const ManagerApprovalPage: React.FC = () => {
                     ● Số người: {b.passenger_count} người | Hình thức: {b.requested_mode === 'WITH_DRIVER' ? 'Có tài xế' : b.requested_mode === 'SELF_DRIVE' ? 'Tự lái' : 'Linh hoạt'}
                   </p>
                   {b.preferred_vehicle_asset_id && (
-                    <p className="text-amber-600 dark:text-amber-400">● Nguyện vọng xe: {b.preferred_vehicle_asset_id}</p>
+                    <div className="mt-2 flex items-center gap-3 border-t border-slate-200 pt-2 dark:border-slate-700">
+                      {b.preferred_vehicle_image_url ? (
+                        <img
+                          src={b.preferred_vehicle_image_url}
+                          alt={b.preferred_vehicle_asset_name || 'Xe nguyện vọng'}
+                          className="h-11 w-16 shrink-0 rounded-lg object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-11 w-16 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-600 dark:bg-amber-900/30">
+                          <Car className="h-5 w-5" />
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold text-amber-700 dark:text-amber-300">
+                          Nguyện vọng xe: {b.preferred_vehicle_asset_name || 'Chưa cập nhật thông tin xe'}
+                        </p>
+                        <p className="truncate text-slate-500">
+                          {[b.preferred_vehicle_asset_code, b.preferred_vehicle_type, b.preferred_vehicle_seat_count ? `${b.preferred_vehicle_seat_count} chỗ` : null].filter(Boolean).join(' · ') || 'Chưa có hồ sơ xe'}
+                        </p>
+                      </div>
+                    </div>
                   )}
                 </div>
               </div>

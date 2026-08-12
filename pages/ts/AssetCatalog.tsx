@@ -21,6 +21,7 @@ import { getApiErrorMessage, logApiError } from '../../lib/apiError';
 import SearchableSelect from '../../components/common/SearchableSelect';
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 import { parseNonNegativeLocaleNumber } from '../../lib/localeNumberInput';
+import { deleteAssetImage, uploadAssetImage, validateAssetImageFile } from '../../lib/assetImageService';
 
 const ScannerModal = React.lazy(() => import('../../components/ScannerModal'));
 
@@ -74,6 +75,9 @@ const AssetCatalog: React.FC = () => {
     const [importPreview, setImportPreview] = useState<ExcelImportPreview<Asset> | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const importModeRef = useRef<ExcelImportMode>('create');
+    const assetImageInputRef = useRef<HTMLInputElement>(null);
+    const [assetImageFile, setAssetImageFile] = useState<File | null>(null);
+    const [assetImagePreview, setAssetImagePreview] = useState('');
 
     // Form state
     const [form, setForm] = useState({
@@ -81,7 +85,7 @@ const AssetCatalog: React.FC = () => {
         originalValue: 0, purchaseDate: new Date().toISOString().split('T')[0],
         depreciationYears: 5, warrantyMonths: 12, residualValue: 0, warehouseId: '', locationNote: '', note: '',
         assetType: 'single' as 'single' | 'batch' | 'bundle', quantity: 1, unit: 'Cái', parentId: '',
-        supplierId: ''
+        supplierId: '', imageUrl: ''
     });
 
     const resetForm = () => {
@@ -90,8 +94,10 @@ const AssetCatalog: React.FC = () => {
             originalValue: 0, purchaseDate: new Date().toISOString().split('T')[0],
             depreciationYears: 5, warrantyMonths: 12, residualValue: 0, warehouseId: '', locationNote: '', note: '',
             assetType: 'single' as 'single' | 'batch' | 'bundle', quantity: 1, unit: 'Cái', parentId: '',
-            supplierId: ''
+            supplierId: '', imageUrl: ''
         });
+        setAssetImageFile(null);
+        setAssetImagePreview('');
     };
 
     const openAdd = async () => {
@@ -114,8 +120,10 @@ const AssetCatalog: React.FC = () => {
             depreciationYears: asset.depreciationYears, warrantyMonths: asset.warrantyMonths || 0, residualValue: asset.residualValue,
             warehouseId: asset.warehouseId || '', locationNote: asset.locationNote || '', note: asset.note || '',
             assetType: asset.assetType || 'single', quantity: asset.quantity || 1, unit: asset.unit || 'Cái', parentId: asset.parentId || '',
-            supplierId: asset.supplierId || ''
+            supplierId: asset.supplierId || '', imageUrl: asset.imageUrl || ''
         });
+        setAssetImageFile(null);
+        setAssetImagePreview(asset.imageUrl || '');
         setEditingAsset(asset);
         setShowAddModal(true);
     };
@@ -126,11 +134,18 @@ const AssetCatalog: React.FC = () => {
             return;
         }
         const now = new Date().toISOString();
+        const assetId = editingAsset?.id || `ast-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
         const resolvedSupplierName = suppliers.find(s => s.id === form.supplierId)?.name || undefined;
+        let uploadedImageUrl: string | null = null;
         try {
+          if (assetImageFile) {
+            uploadedImageUrl = (await uploadAssetImage(assetImageFile, assetId)).url;
+          }
+          const nextImageUrl = uploadedImageUrl || form.imageUrl || undefined;
           if (editingAsset) {
             await updateAsset({
                 ...editingAsset, ...form,
+                imageUrl: nextImageUrl,
                 originalValue: readLocaleNumber(form.originalValue),
                 depreciationYears: readLocaleNumber(form.depreciationYears),
                 warrantyMonths: readLocaleNumber(form.warrantyMonths),
@@ -143,8 +158,9 @@ const AssetCatalog: React.FC = () => {
             toast.success('Cập nhật thành công', `Tài sản ${form.name} đã được cập nhật`);
           } else {
             await addAssetWithInitialStock({
-                id: `ast-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+                id: assetId,
                 ...form,
+                imageUrl: nextImageUrl,
                 originalValue: readLocaleNumber(form.originalValue),
                 depreciationYears: readLocaleNumber(form.depreciationYears),
                 warrantyMonths: readLocaleNumber(form.warrantyMonths),
@@ -157,11 +173,30 @@ const AssetCatalog: React.FC = () => {
                 updatedAt: now,
             });
             toast.success('Thêm thành công', `Tài sản ${form.name} đã được thêm vào danh mục`);
-          }
-          setShowAddModal(false);
+           }
+           if (editingAsset?.imageUrl && editingAsset.imageUrl !== nextImageUrl) {
+             await deleteAssetImage(editingAsset.imageUrl).catch(() => undefined);
+           }
+           setShowAddModal(false);
         } catch (err: any) {
-          toast.error('Lỗi lưu tài sản', err?.message || 'Không thể lưu tài sản');
+          if (uploadedImageUrl) await deleteAssetImage(uploadedImageUrl).catch(() => undefined);
+          toast.error('Lỗi lưu tài sản', err?.message === 'ASSET_IMAGE_TOO_LARGE'
+            ? 'Ảnh tài sản vẫn vượt quá 5 MB sau khi nén.'
+            : err?.message || 'Không thể lưu tài sản');
         }
+    };
+
+    const handleAssetImageSelection = (file?: File) => {
+        if (!file) return;
+        const validationError = validateAssetImageFile(file);
+        if (validationError) {
+            toast.error('Ảnh không hợp lệ', validationError === 'INVALID_ASSET_IMAGE_TYPE'
+                ? 'Chỉ chấp nhận JPG, PNG hoặc WebP.'
+                : 'Ảnh tài sản không được vượt quá 5 MB.');
+            return;
+        }
+        setAssetImageFile(file);
+        setAssetImagePreview(URL.createObjectURL(file));
     };
 
     // Quick-add Supplier states & handler
@@ -942,6 +977,37 @@ const AssetCatalog: React.FC = () => {
                                 <input value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
                                     className="w-full px-3 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 font-bold outline-none focus:ring-2 focus:ring-rose-500"
                                     placeholder="VD: Máy xúc CAT 320D2" />
+                            </div>
+
+                            <div>
+                                <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Ảnh tài sản</label>
+                                <input
+                                    ref={assetImageInputRef}
+                                    type="file"
+                                    accept="image/jpeg,image/png,image/webp"
+                                    className="hidden"
+                                    onChange={event => handleAssetImageSelection(event.target.files?.[0])}
+                                />
+                                <div className="flex items-center gap-4 rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800">
+                                    {assetImagePreview ? (
+                                        <img src={assetImagePreview} alt="Ảnh tài sản" className="h-24 w-32 rounded-lg object-cover" />
+                                    ) : (
+                                        <div className="flex h-24 w-32 items-center justify-center rounded-lg bg-slate-200 text-slate-400 dark:bg-slate-700">
+                                            <Landmark size={28} />
+                                        </div>
+                                    )}
+                                    <div className="space-y-2">
+                                        <button type="button" onClick={() => assetImageInputRef.current?.click()} className="flex items-center gap-2 rounded-lg bg-rose-500 px-3 py-2 text-xs font-bold text-white">
+                                            <Upload size={14} /> {assetImagePreview ? 'Thay ảnh' : 'Chọn ảnh'}
+                                        </button>
+                                        {assetImagePreview && (
+                                            <button type="button" onClick={() => { setAssetImageFile(null); setAssetImagePreview(''); setForm(previous => ({ ...previous, imageUrl: '' })); }} className="block text-xs font-bold text-rose-600">
+                                                Xóa ảnh
+                                            </button>
+                                        )}
+                                        <p className="text-[10px] text-slate-400">JPG, PNG hoặc WebP; tối đa 5 MB.</p>
+                                    </div>
+                                </div>
                             </div>
                             
                             {form.assetType === 'batch' && (

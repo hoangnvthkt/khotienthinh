@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { User } from '../../types';
+import { Role, type User } from '../../types';
 import {
   canResolveSensitiveVehicleIssues,
   canViewSensitiveVehicleIssues,
@@ -19,6 +19,15 @@ const userWith = (permissionCode?: string, expiresAt?: string) => ({
 }) as Pick<User, 'permissionGrants'>;
 
 describe('vehicle booking phase 3 permission helpers', () => {
+  it('lets a system ADMIN use every booking capability without explicit grants', () => {
+    const admin = { role: Role.ADMIN, permissionGrants: [] } as Pick<User, 'role' | 'permissionGrants'>;
+
+    expect(canViewVehicleReports(admin)).toBe(true);
+    expect(canViewSensitiveVehicleIssues(admin)).toBe(true);
+    expect(canResolveSensitiveVehicleIssues(admin)).toBe(true);
+    expect(canViewVehicleAudit(admin)).toBe(true);
+  });
+
   it('requires an active report grant', () => {
     expect(canViewVehicleReports(userWith())).toBe(false);
     expect(canViewVehicleReports(userWith('booking.vehicle.view_reports'))).toBe(true);

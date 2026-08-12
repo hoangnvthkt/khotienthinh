@@ -19,6 +19,9 @@ export default defineConfig(({ mode }) => {
           '@': path.resolve(__dirname, '.'),
         }
       },
+      test: {
+        exclude: ['**/node_modules/**', '**/.git/**', '**/.worktrees/**'],
+      },
       build: {
         rollupOptions: {
           output: {

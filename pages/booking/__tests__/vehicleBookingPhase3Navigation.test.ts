@@ -45,12 +45,20 @@ describe('vehicle booking Phase 3 navigation', () => {
     expect(layout).toContain('VehicleBookingAnalyticsPage');
     expect(layout).toContain('VehicleBookingIssuesPage');
     expect(layout).toContain('VehicleBookingAuditTrailPage');
-    expect(layout).toContain('Báo cáo & KPI');
+    expect(layout).toContain('Dashboard & Báo cáo KPI');
+    expect(layout).toContain('Quản lý xe');
+    expect(layout).toContain('Quản lý tài xế');
+    expect(layout).toContain('Cấu hình');
     expect(layout).toContain('Phản ánh');
     expect(layout).toContain('Lịch sử vận hành');
     expect(layout).toContain('path="reports"');
     expect(layout).toContain('path="issues"');
     expect(layout).toContain('path="audit"');
+    expect(layout).toContain('path="drivers"');
+    expect(layout).toContain('path="settings"');
+    expect(layout.indexOf("label: 'Tạo đơn đặt xe'")).toBeLessThan(layout.indexOf("label: 'Quản lý xe'"));
+    expect(layout.indexOf("label: 'Quản lý xe'")).toBeLessThan(layout.indexOf("label: 'Quản lý tài xế'"));
+    expect(layout.indexOf("label: 'Quản lý tài xế'")).toBeLessThan(layout.indexOf("label: 'Dashboard & Báo cáo KPI'"));
   });
 
   it('keeps Sidebar and user permission configuration in sync', () => {
@@ -58,6 +66,9 @@ describe('vehicle booking Phase 3 navigation', () => {
       expect(source).toContain('/booking/vehicle/reports');
       expect(source).toContain('/booking/vehicle/issues');
       expect(source).toContain('/booking/vehicle/audit');
+      expect(source).toContain('/booking/vehicle/drivers');
+      expect(source).toContain('/booking/vehicle/settings');
+      expect(source).toContain('Dashboard & Báo cáo KPI');
     }
     expect(sidebar).toContain('canViewVehicleReports');
     expect(sidebar).toContain('canViewSensitiveVehicleIssues');

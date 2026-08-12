@@ -3,6 +3,7 @@ import { LayoutDashboard, Car, User, Clock, AlertTriangle, ShieldCheck, RefreshC
 import {
   fetchWaitingDispatchBookings,
   fetchFleetVehicleProfiles,
+  fetchFleetLocations,
   fetchDriverAuthorizationsEligible,
   fetchFleetSystemSettings,
   dispatchVehicleBooking,
@@ -13,7 +14,8 @@ import {
 } from '../../lib/vehicleBookingService';
 import type {
   VehicleBooking,
-  FleetVehicleProfile,
+  FleetLocation,
+  FleetVehicleProfileView,
   VehicleDriverAuthorizationEligible,
   FulfillmentType
 } from '../../types/vehicleBooking';
@@ -21,14 +23,13 @@ import { useToast } from '../../context/ToastContext';
 import { useApp } from '../../context/AppContext';
 import { supabase } from '../../lib/supabase';
 
-const PARKING_BAYS = ['BAY-A01', 'BAY-A02', 'BAY-A03', 'BAY-A04', 'BAY-A05'];
-
 const DispatcherWorkbenchPage: React.FC = () => {
   const toast = useToast();
   const { user } = useApp();
   const [loading, setLoading] = useState(true);
   const [waitingBookings, setWaitingBookings] = useState<VehicleBooking[]>([]);
-  const [vehicles, setVehicles] = useState<FleetVehicleProfile[]>([]);
+  const [vehicles, setVehicles] = useState<FleetVehicleProfileView[]>([]);
+  const [locations, setLocations] = useState<FleetLocation[]>([]);
   const [drivers, setDrivers] = useState<VehicleDriverAuthorizationEligible[]>([]);
   const [busyVehicleIds, setBusyVehicleIds] = useState<Set<string>>(new Set());
   const [busyOperatorIds, setBusyOperatorIds] = useState<Set<string>>(new Set());
@@ -65,10 +66,11 @@ const DispatcherWorkbenchPage: React.FC = () => {
     try {
       setLoading(true);
       const nowIso = new Date().toISOString();
-      const [bList, vList, dList, fleetSettings, activeAssignments, vehicleBlocks, operatorBlocks] = await Promise.all([
+      const [bList, vList, dList, locationList, fleetSettings, activeAssignments, vehicleBlocks, operatorBlocks] = await Promise.all([
         fetchWaitingDispatchBookings(),
         fetchFleetVehicleProfiles(),
         fetchDriverAuthorizationsEligible(),
+        fetchFleetLocations(),
         fetchFleetSystemSettings(),
         supabase
           .from('vehicle_booking_assignments')
@@ -93,6 +95,7 @@ const DispatcherWorkbenchPage: React.FC = () => {
       setWaitingBookings(bList);
       setVehicles(vList);
       setDrivers(dList);
+      setLocations(locationList);
       setAllowDispatchOverride(fleetSettings.allow_dispatch_approval_override);
       setBusyVehicleIds(new Set((activeAssignments.data || []).flatMap(row => row.vehicle_asset_id ? [row.vehicle_asset_id] : [])));
       setBusyOperatorIds(new Set((activeAssignments.data || []).flatMap(row => row.operator_user_id ? [row.operator_user_id] : [])));
@@ -333,7 +336,10 @@ const DispatcherWorkbenchPage: React.FC = () => {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {PARKING_BAYS.map((bayCode) => {
+              {Array.from(new Set([
+                ...locations.map(location => location.name),
+                ...vehicles.map(vehicle => vehicle.parking_spot_code).filter((code): code is string => Boolean(code)),
+              ])).map((bayCode) => {
                 const vehicle = vehicles.find((v) => v.parking_spot_code === bayCode);
                 const operationalStatus = vehicle
                   ? getVehicleOperationalStatus(vehicle, {
@@ -384,10 +390,13 @@ const DispatcherWorkbenchPage: React.FC = () => {
                     </div>
 
                     {vehicle ? (
-                      <div className="text-xs space-y-1">
-                        <p className="font-bold text-slate-900 dark:text-white">{vehicle.asset_id}</p>
-                        <p className="text-slate-500">{vehicle.vehicle_type} • {vehicle.seat_count} chỗ</p>
-                        <p className="text-[11px] text-slate-400">Odometer: {vehicle.current_odometer} km</p>
+                      <div className="flex items-center gap-3 text-xs">
+                        {vehicle.asset_image_url ? <img src={vehicle.asset_image_url} alt={vehicle.asset_name} className="h-14 w-20 rounded-xl object-cover" /> : <div className="flex h-14 w-20 items-center justify-center rounded-xl bg-slate-200 text-slate-400"><Car className="h-6 w-6" /></div>}
+                        <div className="min-w-0 space-y-1">
+                          <p className="truncate font-bold text-slate-900 dark:text-white">{vehicle.asset_code} · {vehicle.asset_name}</p>
+                          <p className="text-slate-500">{vehicle.vehicle_type} • {vehicle.seat_count} chỗ</p>
+                          <p className="text-[11px] text-slate-400">Odometer: {vehicle.current_odometer} km</p>
+                        </div>
                       </div>
                     ) : (
                       <p className="text-xs text-slate-400 italic py-2">Ô đỗ trống</p>
@@ -421,13 +430,18 @@ const DispatcherWorkbenchPage: React.FC = () => {
                   onDragStart={() => status === 'AVAILABLE' && handleDragStart('DRIVER', d.user_id)}
                   className={`bg-slate-50 dark:bg-slate-900/50 rounded-2xl p-3.5 border border-slate-200 dark:border-slate-700 transition-all space-y-1 text-xs ${status === 'AVAILABLE' ? 'cursor-grab active:cursor-grabbing hover:border-indigo-500' : 'cursor-not-allowed opacity-70'}`}
                 >
-                  <div className="flex items-center justify-between font-bold text-slate-900 dark:text-white">
-                    <span>Tài xế {d.license_class}</span>
+                  <div className="flex items-center gap-3">
+                    {d.employee_avatar_url ? <img src={d.employee_avatar_url} alt={d.employee_name || 'Tài xế'} className="h-10 w-10 rounded-full object-cover" /> : <div className="flex h-10 w-10 items-center justify-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-700">{(d.employee_name || 'TX').split(' ').slice(-2).map(word => word[0]).join('')}</div>}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between font-bold text-slate-900 dark:text-white">
+                        <span className="truncate">{d.employee_name || `Tài xế ${d.license_class}`}</span>
                     <span className={`text-[10px] font-semibold ${status === 'AVAILABLE' ? 'text-emerald-600' : 'text-amber-600'}`}>
                       ● {status === 'AVAILABLE' ? 'Rảnh' : status === 'BUSY' ? 'Đang chạy' : status === 'UNAVAILABLE' ? 'Nghỉ/Không sẵn sàng' : 'Không đủ điều kiện'}
                     </span>
+                      </div>
+                      <p className="truncate text-slate-500">{d.employee_title || `Bằng ${d.license_class}`}</p>
+                    </div>
                   </div>
-                  <p className="text-slate-500">ID: {d.user_id.substring(0, 8)}</p>
                   <p className="text-[11px] text-slate-400">Loại: {d.authorization_type}</p>
                 </div>
                 );
@@ -489,7 +503,7 @@ const DispatcherWorkbenchPage: React.FC = () => {
                         }) === 'AVAILABLE')
                         .map((v) => (
                           <option key={v.asset_id} value={v.asset_id}>
-                            {v.asset_id} ({v.vehicle_type} - {v.seat_count} chỗ)
+                            {v.asset_code} · {v.asset_name} ({v.vehicle_type} - {v.seat_count} chỗ)
                           </option>
                         ))}
                     </select>
@@ -511,7 +525,7 @@ const DispatcherWorkbenchPage: React.FC = () => {
                           }) === 'AVAILABLE')
                           .map((d) => (
                             <option key={d.user_id} value={d.user_id}>
-                              Tài xế {d.license_class} (ID: {d.user_id.substring(0, 8)})
+                              {d.employee_name || `Tài xế ${d.license_class}`}{d.employee_title ? ` · ${d.employee_title}` : ''}
                             </option>
                           ))}
                       </select>

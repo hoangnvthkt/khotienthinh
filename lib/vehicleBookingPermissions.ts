@@ -1,10 +1,13 @@
-import type { User } from '../types';
+import { Role, type User } from '../types';
+
+type VehicleBookingGrantUser = Pick<User, 'permissionGrants'> & Partial<Pick<User, 'role'>>;
 
 export function hasActiveVehicleBookingGrant(
-  user: Pick<User, 'permissionGrants'> | null | undefined,
+  user: VehicleBookingGrantUser | null | undefined,
   permissionCodes: string[],
   reference = new Date(),
 ): boolean {
+  if (user?.role === Role.ADMIN) return true;
   const acceptedCodes = new Set([...permissionCodes, 'booking.vehicle.admin']);
   return Boolean(user?.permissionGrants?.some(grant =>
     acceptedCodes.has(grant.permissionCode)
@@ -14,7 +17,7 @@ export function hasActiveVehicleBookingGrant(
 }
 
 export function canAccessVehicleApprovalQueue(
-  user: Pick<User, 'id' | 'permissionGrants'> | null | undefined,
+  user: Pick<User, 'id' | 'permissionGrants'> & Partial<Pick<User, 'role'>> | null | undefined,
   users: Array<Pick<User, 'id' | 'managerId'>>,
 ): boolean {
   if (!user) return false;
@@ -23,17 +26,17 @@ export function canAccessVehicleApprovalQueue(
 }
 
 export const canViewVehicleReports = (
-  user: Pick<User, 'permissionGrants'> | null | undefined,
+  user: VehicleBookingGrantUser | null | undefined,
 ): boolean => hasActiveVehicleBookingGrant(user, ['booking.vehicle.view_reports']);
 
 export const canViewSensitiveVehicleIssues = (
-  user: Pick<User, 'permissionGrants'> | null | undefined,
+  user: VehicleBookingGrantUser | null | undefined,
 ): boolean => hasActiveVehicleBookingGrant(user, ['booking.vehicle.view_sensitive_feedback']);
 
 export const canResolveSensitiveVehicleIssues = (
-  user: Pick<User, 'permissionGrants'> | null | undefined,
+  user: VehicleBookingGrantUser | null | undefined,
 ): boolean => hasActiveVehicleBookingGrant(user, ['booking.vehicle.resolve_sensitive_feedback']);
 
 export const canViewVehicleAudit = (
-  user: Pick<User, 'permissionGrants'> | null | undefined,
+  user: VehicleBookingGrantUser | null | undefined,
 ): boolean => hasActiveVehicleBookingGrant(user, ['booking.vehicle.view_audit']);

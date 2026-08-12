@@ -47,6 +47,7 @@ import type {
   VehicleBookingReportPreset,
   VehicleBookingReportingPeriod,
 } from '../../types';
+import { Role } from '../../types';
 
 type PeriodMode = VehicleBookingReportPreset | 'CUSTOM';
 
@@ -89,7 +90,7 @@ const VehicleBookingAnalyticsPage: React.FC = () => {
     && isLiveGrant(grant.expiresAt)
     && ['booking.vehicle.view_reports', 'booking.vehicle.admin'].includes(grant.permissionCode)
   ), [user.permissionGrants]);
-  const canViewGlobal = reportGrants.some(grant =>
+  const canViewGlobal = user.role === Role.ADMIN || reportGrants.some(grant =>
     grant.permissionCode === 'booking.vehicle.admin' || grant.scopeType === 'global');
   const allowedDepartmentIds = useMemo(() => new Set(reportGrants
     .filter(grant => grant.scopeType === 'department')
@@ -166,7 +167,7 @@ const VehicleBookingAnalyticsPage: React.FC = () => {
         <div>
           <h2 className="flex items-center gap-2 text-base font-bold text-slate-900 dark:text-white">
             <BarChart3 className="h-5 w-5 text-amber-500" />
-            Báo cáo vận hành đội xe
+            Dashboard & Báo cáo KPI
           </h2>
           <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
             Dữ liệu được tổng hợp tại máy chủ theo múi giờ Việt Nam.
@@ -247,6 +248,7 @@ const VehicleBookingAnalyticsPage: React.FC = () => {
               <Car className="mx-auto h-8 w-8 text-slate-400" />
               <h3 className="mt-3 text-sm font-bold">Chưa có chuyến hoàn thành trong kỳ</h3>
               <p className="mt-1 text-xs text-slate-500">Chọn kỳ khác hoặc kiểm tra phạm vi phòng ban.</p>
+              {user.role === Role.ADMIN && <p className="mt-3 text-xs text-slate-600 dark:text-slate-300">Để bắt đầu, hãy cấu hình <a href="/booking/vehicle/fleet" className="font-bold text-amber-600 underline">đội xe</a> và <a href="/booking/vehicle/drivers" className="font-bold text-amber-600 underline">tài xế</a> từ dữ liệu Tài sản/HRM.</p>}
             </div>
           ) : (
             <div className="grid gap-4 xl:grid-cols-[1.5fr_1fr]">
