@@ -29,6 +29,8 @@ describe('vehicle booking permission registry', () => {
       '/booking/vehicle/fleet',
       '/booking/vehicle/drivers',
       '/booking/vehicle/reports',
+      '/booking/vehicle/issues',
+      '/booking/vehicle/audit',
       '/booking/vehicle/settings',
     ]);
   });

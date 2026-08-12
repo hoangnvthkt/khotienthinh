@@ -21,3 +21,19 @@ export function canAccessVehicleApprovalQueue(
   return hasActiveVehicleBookingGrant(user, ['booking.vehicle.approve_direct_reports'])
     || users.some(candidate => candidate.id !== user.id && candidate.managerId === user.id);
 }
+
+export const canViewVehicleReports = (
+  user: Pick<User, 'permissionGrants'> | null | undefined,
+): boolean => hasActiveVehicleBookingGrant(user, ['booking.vehicle.view_reports']);
+
+export const canViewSensitiveVehicleIssues = (
+  user: Pick<User, 'permissionGrants'> | null | undefined,
+): boolean => hasActiveVehicleBookingGrant(user, ['booking.vehicle.view_sensitive_feedback']);
+
+export const canResolveSensitiveVehicleIssues = (
+  user: Pick<User, 'permissionGrants'> | null | undefined,
+): boolean => hasActiveVehicleBookingGrant(user, ['booking.vehicle.resolve_sensitive_feedback']);
+
+export const canViewVehicleAudit = (
+  user: Pick<User, 'permissionGrants'> | null | undefined,
+): boolean => hasActiveVehicleBookingGrant(user, ['booking.vehicle.view_audit']);

@@ -121,5 +121,7 @@ export const ROUTE_TO_MODULE: Record<string, string> = {
   '/booking/vehicle/fleet':     'VEHICLE_BOOKING',
   '/booking/vehicle/drivers':   'VEHICLE_BOOKING',
   '/booking/vehicle/reports':   'VEHICLE_BOOKING',
+  '/booking/vehicle/issues':    'VEHICLE_BOOKING',
+  '/booking/vehicle/audit':     'VEHICLE_BOOKING',
   '/booking/vehicle/settings':  'VEHICLE_BOOKING',
 };
