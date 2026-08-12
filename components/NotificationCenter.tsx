@@ -9,6 +9,7 @@ import { resolveNotificationPath, toHashRoute } from '../lib/notificationRoutes'
 import { webPushService } from '../lib/webPushService';
 import { appBadgeService } from '../lib/appBadgeService';
 import { notificationSoundService } from '../lib/notificationSoundService';
+import VehicleBookingNotificationContent from './VehicleBookingNotificationContent';
 
 interface NotificationCenterProps {
     userId?: string;
@@ -417,9 +418,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId, enabled
                                                         </span>
                                                         {!n.isRead && <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" />}
                                                     </div>
-                                                    <p className={`text-[10px] leading-relaxed ${!n.isRead ? 'text-slate-600 dark:text-slate-300' : 'text-slate-400 dark:text-slate-500'}`}>
-                                                        {n.message}
-                                                    </p>
+                                                    <VehicleBookingNotificationContent notification={n} />
                                                     <div className="flex items-center gap-2 mt-1">
                                                         {catCfg && (
                                                             <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${catCfg.color}`}>

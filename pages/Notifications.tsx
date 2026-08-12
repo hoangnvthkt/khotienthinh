@@ -6,6 +6,7 @@ import { AppNotification, NOTIFICATION_CATEGORIES, NotificationCursor, notificat
 import { resolveNotificationPath } from '../lib/notificationRoutes';
 import { getNotificationWorkGroup, getNotificationWorkGroupLabel, NotificationWorkGroup } from '../lib/erpWorkflow';
 import { EmptyState, FilterBar, MobileCardList, PageHeader, StatusBadge } from '../components/erp';
+import VehicleBookingNotificationContent from '../components/VehicleBookingNotificationContent';
 
 type NotificationFilter = 'all' | 'unread' | NotificationWorkGroup;
 
@@ -177,7 +178,9 @@ const Notifications: React.FC = () => {
               <StatusBadge status={notification.severity} label={getSeverityLabel(notification.severity)} tone={getSeverityTone(notification.severity)} />
               <StatusBadge status={group} label={getNotificationWorkGroupLabel(group)} tone={group === 'alert' ? 'attention' : group === 'action' ? 'info' : 'neutral'} />
             </div>
-            <p className="mt-1 line-clamp-2 text-xs font-medium leading-5 text-slate-500 dark:text-slate-400">{notification.message}</p>
+            <div className="mt-1">
+              <VehicleBookingNotificationContent notification={notification} />
+            </div>
             <div className="mt-3 flex flex-wrap items-center gap-3 text-[11px] font-bold text-slate-400">
               {category && <span>{category.label}</span>}
               <span className="inline-flex items-center gap-1"><Clock size={12} />{timeAgo(notification.createdAt)}</span>
