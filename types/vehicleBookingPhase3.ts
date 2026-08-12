@@ -61,3 +61,27 @@ export interface VehicleBookingAnalyticsExportRow {
   closeReason: string | null;
   isOnTime: boolean | null;
 }
+
+export type VehicleBookingIssueStatus = 'PENDING' | 'IN_REVIEW' | 'RESOLVED' | 'DISMISSED';
+
+export interface VehicleBookingSensitiveIssue {
+  id: string;
+  bookingId: string;
+  bookingCode: string;
+  reporterUserId: string;
+  reporterName: string;
+  departmentName: string | null;
+  issueCategory: string;
+  comment: string;
+  rating: number | null;
+  resolutionStatus: VehicleBookingIssueStatus;
+  resolutionNote: string | null;
+  resolvedByName: string | null;
+  resolvedAt: string | null;
+  createdAt: string;
+}
+
+export interface VehicleBookingIssuePage {
+  items: VehicleBookingSensitiveIssue[];
+  nextCursor: { createdAt: string; id: string } | null;
+}
