@@ -33,6 +33,7 @@ import {
   dispatchVehicleBooking,
   finishVehicleTrip,
   fetchMyBookings,
+  fetchVehicleBookingDetails,
   markVehicleBookingNoShow,
   reassignVehicleBooking,
   recordVehicleTripCheckpoint,
@@ -74,6 +75,62 @@ describe('vehicle booking RPC contract', () => {
     expect(result).toEqual([{ id: 'booking-1', requester_user_id: 'app-user-id' }]);
     expect(supabaseMocks.eq).toHaveBeenCalledWith('requester_user_id', 'app-user-id');
     expect(supabaseMocks.getUser).not.toHaveBeenCalled();
+  });
+
+  it('loads readable assignment identity through the scoped display RPC', async () => {
+    const rowsByTable: Record<string, { data: any; error: null }> = {
+      vehicle_bookings: { data: { id: 'booking-1', booking_code: 'CAR-1' }, error: null },
+      vehicle_booking_participants: { data: [], error: null },
+      vehicle_booking_assignments: { data: [{ id: 'assignment-1', is_active: true }], error: null },
+      vehicle_trip_logs: { data: null, error: null },
+      vehicle_handover_logs: { data: [], error: null },
+      vehicle_booking_feedback: { data: null, error: null },
+    };
+
+    supabaseMocks.from.mockImplementation((table: string) => ({
+      select: () => ({
+        eq: () => {
+          const result = rowsByTable[table];
+          if (table === 'vehicle_bookings') {
+            return { single: vi.fn().mockResolvedValue(result) };
+          }
+          if (table === 'vehicle_trip_logs' || table === 'vehicle_booking_feedback') {
+            return { maybeSingle: vi.fn().mockResolvedValue(result) };
+          }
+          if (table === 'vehicle_booking_assignments' || table === 'vehicle_handover_logs') {
+            return { order: vi.fn().mockResolvedValue(result) };
+          }
+          return Promise.resolve(result);
+        },
+      }),
+    }));
+    supabaseMocks.rpc.mockImplementation(async (name: string) => {
+      if (name === 'get_vehicle_booking_assignment_display') {
+        return {
+          data: [{
+            assignment_id: 'assignment-1',
+            fulfillment_type: 'INTERNAL_WITH_DRIVER',
+            vehicle_code: 'TS-002',
+            vehicle_name: 'Xe tải thùng',
+            operator_name: 'Nguyễn Văn Hoàng',
+          }],
+          error: null,
+        };
+      }
+      return { data: { success: true }, error: null };
+    });
+
+    const result = await fetchVehicleBookingDetails('booking-1');
+
+    expect(supabaseMocks.rpc).toHaveBeenCalledWith(
+      'get_vehicle_booking_assignment_display',
+      { p_booking_id: 'booking-1' },
+    );
+    expect(result.assignmentDisplay).toMatchObject({
+      vehicle_code: 'TS-002',
+      vehicle_name: 'Xe tải thùng',
+      operator_name: 'Nguyễn Văn Hoàng',
+    });
   });
 
   it('calls all 25 authenticated booking RPCs', async () => {

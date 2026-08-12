@@ -13,6 +13,11 @@ import {
   resolveVehicleBookingDeepLink,
   setVehicleBookingDeepLink,
 } from '../../lib/vehicleBookingDeepLink';
+import {
+  getAssignedDriverLabel,
+  getAssignedVehicleLabel,
+  getVehicleFulfillmentLabel,
+} from '../../lib/vehicleBookingPresentation';
 
 const MyVehicleBookingsPage: React.FC = () => {
   const toast = useToast();
@@ -264,13 +269,19 @@ const MyVehicleBookingsPage: React.FC = () => {
             {activeAssignment && (
               <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 space-y-2 text-xs">
                 <p className="font-bold text-amber-800 dark:text-amber-300">Thông tin xe & tài xế đã xếp:</p>
-                <div className="space-y-1 text-slate-700 dark:text-slate-200">
-                  <p>● <strong>Hình thức:</strong> {activeAssignment.fulfillment_type}</p>
-                  <p>● <strong>Xe phân công:</strong> {activeAssignment.vehicle_asset_id || 'Xe ngoài / Taxi'}</p>
-                  <p>● <strong>Tài xế / Người lái:</strong> {activeAssignment.operator_user_id || activeAssignment.external_driver_name || 'Theo nhà cung cấp'}</p>
-                  {activeAssignment.external_vehicle_plate && (
-                    <p>● <strong>Biển số xe ngoài:</strong> {activeAssignment.external_vehicle_plate}</p>
+                <div className="flex items-start gap-3">
+                  {details.assignmentDisplay?.vehicle_image_url && (
+                    <img
+                      src={details.assignmentDisplay.vehicle_image_url}
+                      alt={getAssignedVehicleLabel(details.assignmentDisplay)}
+                      className="h-16 w-20 shrink-0 rounded-lg border border-amber-500/20 object-cover"
+                    />
                   )}
+                  <div className="min-w-0 space-y-1 text-slate-700 dark:text-slate-200">
+                    <p>● <strong>Hình thức:</strong> {getVehicleFulfillmentLabel(activeAssignment.fulfillment_type)}</p>
+                    <p>● <strong>Xe phân công:</strong> {getAssignedVehicleLabel(details.assignmentDisplay)}</p>
+                    <p>● <strong>Tài xế / Người lái:</strong> {getAssignedDriverLabel(details.assignmentDisplay)}</p>
+                  </div>
                 </div>
               </div>
             )}

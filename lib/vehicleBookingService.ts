@@ -17,6 +17,7 @@ import type {
   VehicleBookingDispatcherCandidate,
   VehicleBookingParticipant,
   VehicleBookingAssignment,
+  VehicleBookingAssignmentDisplay,
   VehicleTripLog,
   VehicleHandoverLog,
   VehicleBookingIssue,
@@ -467,17 +468,20 @@ export async function fetchVehicleBookingDetails(bookingId: string): Promise<{
   tripLog?: VehicleTripLog | null;
   handovers: VehicleHandoverLog[];
   feedback?: VehicleBookingFeedback | null;
+  assignmentDisplay: VehicleBookingAssignmentDisplay | null;
 }> {
-  const [bRes, pRes, aRes, tRes, hRes, fRes] = await Promise.all([
+  const [bRes, pRes, aRes, tRes, hRes, fRes, dRes] = await Promise.all([
     supabase.from('vehicle_bookings').select('*').eq('id', bookingId).single(),
     supabase.from('vehicle_booking_participants').select('*').eq('booking_id', bookingId),
     supabase.from('vehicle_booking_assignments').select('*').eq('booking_id', bookingId).order('version', { ascending: false }),
     supabase.from('vehicle_trip_logs').select('*').eq('booking_id', bookingId).maybeSingle(),
     supabase.from('vehicle_handover_logs').select('*').eq('booking_id', bookingId).order('confirmed_at', { ascending: false }),
     supabase.from('vehicle_booking_feedback').select('*').eq('booking_id', bookingId).maybeSingle(),
+    supabase.rpc('get_vehicle_booking_assignment_display', { p_booking_id: bookingId }),
   ]);
 
   if (bRes.error) throw bRes.error;
+  if (dRes.error) throw dRes.error;
 
   return {
     booking: bRes.data as VehicleBooking,
@@ -486,6 +490,7 @@ export async function fetchVehicleBookingDetails(bookingId: string): Promise<{
     tripLog: (tRes.data as VehicleTripLog) || null,
     handovers: (hRes.data || []) as VehicleHandoverLog[],
     feedback: (fRes.data as VehicleBookingFeedback) || null,
+    assignmentDisplay: ((dRes.data || [])[0] as VehicleBookingAssignmentDisplay) || null,
   };
 }
 
