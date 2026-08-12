@@ -276,6 +276,20 @@ export interface VehicleBookingAssignment {
   updated_at: string;
 }
 
+export interface VehicleBookingAssignmentDisplay {
+  assignment_id: string;
+  fulfillment_type: FulfillmentType;
+  vehicle_code?: string | null;
+  vehicle_name?: string | null;
+  vehicle_image_url?: string | null;
+  operator_name?: string | null;
+  operator_title?: string | null;
+  operator_avatar_url?: string | null;
+  external_provider_name?: string | null;
+  external_driver_name?: string | null;
+  external_vehicle_plate?: string | null;
+}
+
 export interface VehicleTripLog {
   id: string;
   booking_id: string;
