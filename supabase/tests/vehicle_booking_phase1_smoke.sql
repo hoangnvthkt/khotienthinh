@@ -472,7 +472,9 @@ declare v_booking_id uuid;
 begin
   select internal_booking_id into v_booking_id from vehicle_booking_test_context;
   begin
-    perform public.submit_vehicle_feedback(v_booking_id, false, 5, array['GOOD'], null, null);
+    perform public.submit_vehicle_feedback(
+      v_booking_id, false, 5, array['CLEAN_VEHICLE'], null, null
+    );
   exception when others then
     if sqlstate = '42501' and position('PERMISSION_DENIED' in sqlerrm) > 0 then return; end if;
     raise;
@@ -487,7 +489,8 @@ select set_config('request.jwt.claims', jsonb_build_object(
   'sub', requester_auth_id, 'email', requester_email, 'role', 'authenticated'
 )::text, true) from vehicle_booking_test_context;
 select public.submit_vehicle_feedback(
-  internal_booking_id, true, null, null, 'SERVICE', 'SMOKE_SECRET_ISSUE_COMMENT'
+  internal_booking_id, true, 2, array[]::text[],
+  'SERVICE_DELAY', 'SMOKE_SECRET_ISSUE_COMMENT'
 ) from vehicle_booking_test_context;
 
 do $requester_evidence_access$

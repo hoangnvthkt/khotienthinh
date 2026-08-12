@@ -19,3 +19,12 @@ export const removeVehicleBookingDeepLink = (params: URLSearchParams): URLSearch
   next.delete('booking');
   return next;
 };
+
+export const resolveVehicleBookingDeepLink = async <T>(
+  params: URLSearchParams,
+  loadDetails: (bookingId: string) => Promise<T | null>,
+): Promise<T | null> => {
+  const bookingId = getVehicleBookingDeepLinkId(params);
+  if (!bookingId) return null;
+  return loadDetails(bookingId);
+};

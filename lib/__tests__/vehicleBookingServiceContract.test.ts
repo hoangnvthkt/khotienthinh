@@ -2,11 +2,20 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const supabaseMocks = vi.hoisted(() => ({
   rpc: vi.fn(),
+  from: vi.fn(),
+  select: vi.fn(),
+  eq: vi.fn(),
+  order: vi.fn(),
+  getUser: vi.fn(),
 }));
 
 vi.mock('../supabase', () => ({
   supabase: {
     rpc: supabaseMocks.rpc,
+    from: supabaseMocks.from,
+    auth: {
+      getUser: supabaseMocks.getUser,
+    },
   },
 }));
 
@@ -23,6 +32,7 @@ import {
   createVehicleUnavailability,
   dispatchVehicleBooking,
   finishVehicleTrip,
+  fetchMyBookings,
   markVehicleBookingNoShow,
   reassignVehicleBooking,
   recordVehicleTripCheckpoint,
@@ -45,6 +55,25 @@ describe('vehicle booking RPC contract', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     supabaseMocks.rpc.mockResolvedValue({ data: { success: true }, error: null });
+    supabaseMocks.getUser.mockResolvedValue({
+      data: { user: { id: 'auth-user-id' } },
+      error: null,
+    });
+    supabaseMocks.order.mockResolvedValue({
+      data: [{ id: 'booking-1', requester_user_id: 'app-user-id' }],
+      error: null,
+    });
+    supabaseMocks.eq.mockReturnValue({ order: supabaseMocks.order });
+    supabaseMocks.select.mockReturnValue({ eq: supabaseMocks.eq });
+    supabaseMocks.from.mockReturnValue({ select: supabaseMocks.select });
+  });
+
+  it('filters personal bookings with the public app user id, not the auth id', async () => {
+    const result = await fetchMyBookings('app-user-id');
+
+    expect(result).toEqual([{ id: 'booking-1', requester_user_id: 'app-user-id' }]);
+    expect(supabaseMocks.eq).toHaveBeenCalledWith('requester_user_id', 'app-user-id');
+    expect(supabaseMocks.getUser).not.toHaveBeenCalled();
   });
 
   it('calls all 25 authenticated booking RPCs', async () => {

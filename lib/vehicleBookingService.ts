@@ -363,14 +363,11 @@ export async function getPrivateImageUrl(path: string): Promise<string> {
 // DATA QUERY FETCHERS
 // ============================================================================
 
-export async function fetchMyBookings(): Promise<VehicleBooking[]> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return [];
-
+export async function fetchMyBookings(requesterAppUserId: string): Promise<VehicleBooking[]> {
   const { data, error } = await supabase
     .from('vehicle_bookings')
     .select('*')
-    .eq('requester_user_id', user.id)
+    .eq('requester_user_id', requesterAppUserId)
     .order('created_at', { ascending: false });
 
   if (error) throw error;

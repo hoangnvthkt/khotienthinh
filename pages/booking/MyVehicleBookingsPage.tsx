@@ -4,16 +4,19 @@ import { Inbox, MapPin, Car, Clock, AlertTriangle, RefreshCw, Receipt, MessageSq
 import { fetchMyBookings, fetchVehicleBookingDetails, cancelVehicleBooking, formatVietnamDateTime } from '../../lib/vehicleBookingService';
 import type { VehicleBooking, BookingCloseReason } from '../../types/vehicleBooking';
 import { useToast } from '../../context/ToastContext';
+import { useApp } from '../../context/AppContext';
 import ExternalTransportCompleteModal from './ExternalTransportCompleteModal';
 import VehicleFeedbackModal from './VehicleFeedbackModal';
 import {
   getVehicleBookingDeepLinkId,
   removeVehicleBookingDeepLink,
+  resolveVehicleBookingDeepLink,
   setVehicleBookingDeepLink,
 } from '../../lib/vehicleBookingDeepLink';
 
 const MyVehicleBookingsPage: React.FC = () => {
   const toast = useToast();
+  const { user } = useApp();
   const [searchParams, setSearchParams] = useSearchParams();
   const initialBookingQuery = useRef(searchParams.get('booking'));
   const [loading, setLoading] = useState(true);
@@ -58,19 +61,31 @@ const MyVehicleBookingsPage: React.FC = () => {
   const loadData = async () => {
     try {
       setLoading(true);
-      const data = await fetchMyBookings();
+      const data = await fetchMyBookings(user.id);
       setBookings(data);
       const rawBookingId = initialBookingQuery.current;
       initialBookingQuery.current = null;
       if (rawBookingId !== null) {
-        const bookingId = getVehicleBookingDeepLinkId(
-          new URLSearchParams({ booking: rawBookingId }),
-        );
-        if (!bookingId || !data.some((booking) => booking.id === bookingId)) {
+        const params = new URLSearchParams({ booking: rawBookingId });
+        const bookingId = getVehicleBookingDeepLinkId(params);
+        if (!bookingId) {
           clearBookingDeepLink();
           toast.error('Không tìm thấy chuyến xe hoặc bạn không có quyền truy cập.');
         } else {
-          await handleSelectBooking(bookingId, false);
+          try {
+            const deepLinkDetails = await resolveVehicleBookingDeepLink(
+              params,
+              fetchVehicleBookingDetails,
+            );
+            if (!deepLinkDetails) throw new Error('BOOKING_DEEP_LINK_NOT_FOUND');
+            setSelectedBookingId(bookingId);
+            setDetails(deepLinkDetails);
+          } catch {
+            setSelectedBookingId(null);
+            setDetails(null);
+            clearBookingDeepLink();
+            toast.error('Không tìm thấy chuyến xe hoặc bạn không có quyền truy cập.');
+          }
         }
       }
     } catch (err: any) {

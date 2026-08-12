@@ -12,6 +12,21 @@ const EXPENSE_SCOPE: readonly PermissionScopeType[] = ['global', 'own', 'departm
 const WORKFLOW_SCOPE: readonly PermissionScopeType[] = ['global', 'own', 'assigned'];
 const ASSET_SCOPE: readonly PermissionScopeType[] = ['global', 'warehouse', 'department', 'assigned'];
 
+const VEHICLE_BOOKING_ROUTES = [
+  '/booking/vehicle',
+  '/booking/vehicle/my',
+  '/booking/vehicle/approvals',
+  '/booking/vehicle/dispatch',
+  '/booking/vehicle/trips',
+  '/booking/vehicle/handover',
+  '/booking/vehicle/fleet',
+  '/booking/vehicle/drivers',
+  '/booking/vehicle/reports',
+  '/booking/vehicle/issues',
+  '/booking/vehicle/audit',
+  '/booking/vehicle/settings',
+] as const;
+
 type ActionTuple = readonly [string, string, number] | readonly [string, string, number, readonly PermissionScopeType[]];
 
 const actions = (
@@ -46,6 +61,24 @@ const module = (
   legacyModuleKey,
   sortOrder,
   actions: moduleActions,
+});
+
+const vehicleBookingAction = (
+  action: string,
+  label: string,
+  scopeTypes: readonly PermissionScopeType[],
+  legacyRoute: string,
+  legacyAdminOnly: boolean,
+  sortOrder: number,
+): PermissionActionDefinition => ({
+  action,
+  label,
+  permissionCode: `booking.vehicle.${action}`,
+  legacyModuleKey: 'VEHICLE_BOOKING',
+  legacyRoute,
+  legacyAdminOnly,
+  scopeTypes,
+  sortOrder,
 });
 
 export const ERP_PERMISSION_APPLICATIONS: readonly PermissionApplicationDefinition[] = [
@@ -266,6 +299,35 @@ export const ERP_PERMISSION_APPLICATIONS: readonly PermissionApplicationDefiniti
         ['view', 'Xem', 10],
         ['export', 'Xuất dữ liệu', 20],
       ])),
+    ],
+  },
+  {
+    code: 'resource_booking',
+    label: 'Booking tài nguyên',
+    sortOrder: 140,
+    modules: [
+      module(
+        'resource_booking.vehicle',
+        'Đặt xe công ty',
+        'VEHICLE_BOOKING',
+        VEHICLE_BOOKING_ROUTES,
+        10,
+        [
+          vehicleBookingAction('create', 'Tạo yêu cầu đặt xe', ['global', 'own'], '/booking/vehicle', false, 10),
+          vehicleBookingAction('view_own', 'Xem yêu cầu cá nhân', ['global', 'own'], '/booking/vehicle', false, 20),
+          vehicleBookingAction('approve_direct_reports', 'Duyệt yêu cầu cấp dưới', ['global', 'department'], '/booking/vehicle', false, 30),
+          vehicleBookingAction('dispatch', 'Điều phối & duyệt thay', ['global', 'department', 'assigned'], '/booking/vehicle/dispatch', false, 40),
+          vehicleBookingAction('trip.execute', 'Thực hiện chuyến đi', ['global', 'assigned'], '/booking/vehicle', false, 50),
+          vehicleBookingAction('handover', 'Bàn giao xe & chìa khóa', ['global', 'assigned'], '/booking/vehicle', false, 60),
+          vehicleBookingAction('manage_authorizations', 'Quản lý ủy quyền tài xế', ['global'], '/booking/vehicle/drivers', true, 70),
+          vehicleBookingAction('manage_fleet', 'Quản lý hồ sơ xe', ['global'], '/booking/vehicle/fleet', true, 80),
+          vehicleBookingAction('view_reports', 'Xem báo cáo & KPI', ['global', 'department'], '/booking/vehicle/reports', false, 90),
+          vehicleBookingAction('view_sensitive_feedback', 'Xem phản ánh nhạy cảm', ['global'], '/booking/vehicle/issues', true, 100),
+          vehicleBookingAction('resolve_sensitive_feedback', 'Xử lý phản ánh nhạy cảm', ['global'], '/booking/vehicle/issues', true, 105),
+          vehicleBookingAction('view_audit', 'Xem lịch sử vận hành đặt xe', ['global', 'department'], '/booking/vehicle/audit', false, 108),
+          vehicleBookingAction('admin', 'Quản trị tối cao đặt xe', ['global'], '/booking/vehicle', true, 110),
+        ],
+      ),
     ],
   },
 ];

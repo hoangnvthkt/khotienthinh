@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { Role, User } from '../../types';
 import { canAccessRoute } from '../routeAccess';
-import { getPermissionModulesByLegacyKey } from '../permissions/permissionRegistry';
+import {
+  getPermissionApplications,
+  getPermissionModulesByLegacyKey,
+} from '../permissions/permissionRegistry';
+import { canViewModule } from '../permissions/permissionService';
 
 const bookingUser = (allowedModules: string[]): User => ({
   id: 'booking-user-1',
@@ -35,11 +39,41 @@ describe('vehicle booking permission registry', () => {
     ]);
   });
 
-  it('allows a legacy user assigned VEHICLE_BOOKING to open booking routes', () => {
-    expect(canAccessRoute(bookingUser(['VEHICLE_BOOKING']), '/booking/vehicle/my')).toBe(true);
+  it('registers all granular vehicle booking permissions for the admin matrix', () => {
+    const application = getPermissionApplications().find(item => item.code === 'resource_booking');
+    const module = application?.modules.find(item => item.code === 'resource_booking.vehicle');
+
+    expect(module?.actions.map(action => action.permissionCode)).toEqual([
+      'booking.vehicle.create',
+      'booking.vehicle.view_own',
+      'booking.vehicle.approve_direct_reports',
+      'booking.vehicle.dispatch',
+      'booking.vehicle.trip.execute',
+      'booking.vehicle.handover',
+      'booking.vehicle.manage_authorizations',
+      'booking.vehicle.manage_fleet',
+      'booking.vehicle.view_reports',
+      'booking.vehicle.view_sensitive_feedback',
+      'booking.vehicle.resolve_sensitive_feedback',
+      'booking.vehicle.view_audit',
+      'booking.vehicle.admin',
+    ]);
+    expect(module?.actions.find(action => action.permissionCode === 'booking.vehicle.view_audit')?.scopeTypes)
+      .toEqual(['global', 'department']);
+    expect(module?.actions.find(action => action.permissionCode === 'booking.vehicle.resolve_sensitive_feedback')?.scopeTypes)
+      .toEqual(['global']);
   });
 
-  it('blocks a user without VEHICLE_BOOKING', () => {
-    expect(canAccessRoute(bookingUser(['HRM']), '/booking/vehicle/my')).toBe(false);
+  it('allows every authenticated app user to open the basic booking module', () => {
+    const user = bookingUser(['HRM']);
+
+    expect(canViewModule(user, 'VEHICLE_BOOKING')).toBe(true);
+    expect(canAccessRoute(user, '/booking/vehicle')).toBe(true);
+    expect(canAccessRoute(user, '/booking/vehicle/my')).toBe(true);
+    expect(canAccessRoute(user, '/booking/vehicle/trips')).toBe(true);
+  });
+
+  it('keeps legacy VEHICLE_BOOKING access compatible', () => {
+    expect(canAccessRoute(bookingUser(['VEHICLE_BOOKING']), '/booking/vehicle/my')).toBe(true);
   });
 });

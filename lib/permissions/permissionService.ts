@@ -140,6 +140,12 @@ const hasAnyActiveProjectGrant = (user: Pick<User, 'permissionGrants'> | null | 
     isGrantActive(grant)
   ));
 
+const isVehicleBookingModule = (moduleCodeOrLegacyKey: string): boolean =>
+  moduleCodeOrLegacyKey === 'VEHICLE_BOOKING' || moduleCodeOrLegacyKey === 'resource_booking.vehicle';
+
+const isVehicleBookingRoute = (route: string): boolean =>
+  route === '/booking/vehicle' || route.startsWith('/booking/vehicle/');
+
 export const userHasPermissionGrant = (
   user: Pick<User, 'permissionGrants'> | null | undefined,
   permissionCode: string,
@@ -181,6 +187,7 @@ export const canViewModule = (
   moduleCodeOrLegacyKey: string,
   scope?: PermissionScope,
 ): boolean => {
+  if (isVehicleBookingModule(moduleCodeOrLegacyKey)) return Boolean(user);
   if (moduleCodeOrLegacyKey === 'DA' && hasAnyActiveProjectGrant(user)) return true;
   const viewAction = getPrimaryViewPermissionForModule(moduleCodeOrLegacyKey);
   if (viewAction) return canPerform(user, viewAction.permissionCode, scope);
@@ -202,6 +209,7 @@ export const canViewRoute = (
 ): boolean => {
   if (!user) return false;
   if (user.role === Role.ADMIN) return true;
+  if (isVehicleBookingRoute(route)) return true;
   if (route === '/da' && hasAnyActiveProjectGrant(user)) return true;
 
   const routeModules = getPermissionModules().filter(module =>
