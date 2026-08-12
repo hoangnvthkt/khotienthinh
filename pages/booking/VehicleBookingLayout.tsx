@@ -1,6 +1,17 @@
 import React from 'react';
 import { Routes, Route, NavLink, Navigate } from 'react-router-dom';
-import { Car, Inbox, ClipboardCheck, LayoutDashboard, Calendar, Repeat, Wrench } from 'lucide-react';
+import {
+  BarChart3,
+  Calendar,
+  Car,
+  ClipboardCheck,
+  History,
+  Inbox,
+  LayoutDashboard,
+  MessageSquareWarning,
+  Repeat,
+  Wrench,
+} from 'lucide-react';
 import VehicleBookingCreatePage from './VehicleBookingCreatePage';
 import MyVehicleBookingsPage from './MyVehicleBookingsPage';
 import ManagerApprovalPage from './ManagerApprovalPage';
@@ -8,8 +19,17 @@ import DispatcherWorkbenchPage from './DispatcherWorkbenchPage';
 import DriverTodayTripsPage from './DriverTodayTripsPage';
 import VehicleHandoverPage from './VehicleHandoverPage';
 import FleetManagementPage from './FleetManagementPage';
+import VehicleBookingAnalyticsPage from './VehicleBookingAnalyticsPage';
+import VehicleBookingIssuesPage from './VehicleBookingIssuesPage';
+import VehicleBookingAuditTrailPage from './VehicleBookingAuditTrailPage';
 import { useApp } from '../../context/AppContext';
-import { canAccessVehicleApprovalQueue, hasActiveVehicleBookingGrant } from '../../lib/vehicleBookingPermissions';
+import {
+  canAccessVehicleApprovalQueue,
+  canViewSensitiveVehicleIssues,
+  canViewVehicleAudit,
+  canViewVehicleReports,
+  hasActiveVehicleBookingGrant,
+} from '../../lib/vehicleBookingPermissions';
 
 const VehicleBookingLayout: React.FC = () => {
   const { user, users } = useApp();
@@ -20,6 +40,9 @@ const VehicleBookingLayout: React.FC = () => {
     'booking.vehicle.manage_fleet',
     'booking.vehicle.manage_authorizations',
   ]);
+  const canViewReports = canViewVehicleReports(user);
+  const canViewIssues = canViewSensitiveVehicleIssues(user);
+  const canViewAudit = canViewVehicleAudit(user);
 
   const navTabs = [
     { path: '/booking/vehicle', label: 'Tạo đơn đặt xe', icon: Car, exact: true },
@@ -29,6 +52,9 @@ const VehicleBookingLayout: React.FC = () => {
     { path: '/booking/vehicle/trips', label: 'Chuyến hôm nay', icon: Calendar },
     ...(canHandover ? [{ path: '/booking/vehicle/handover', label: 'Bàn giao xe & chìa', icon: Repeat }] : []),
     ...(canManageFleet ? [{ path: '/booking/vehicle/fleet', label: 'Quản lý Xe & Tài xế', icon: Wrench }] : []),
+    ...(canViewReports ? [{ path: '/booking/vehicle/reports', label: 'Báo cáo & KPI', icon: BarChart3 }] : []),
+    ...(canViewIssues ? [{ path: '/booking/vehicle/issues', label: 'Phản ánh', icon: MessageSquareWarning }] : []),
+    ...(canViewAudit ? [{ path: '/booking/vehicle/audit', label: 'Lịch sử vận hành', icon: History }] : []),
   ];
 
   return (
@@ -94,6 +120,9 @@ const VehicleBookingLayout: React.FC = () => {
           <Route path="trips" element={<DriverTodayTripsPage />} />
           <Route path="handover" element={canHandover ? <VehicleHandoverPage /> : <Navigate to="/booking/vehicle/my" replace />} />
           <Route path="fleet" element={canManageFleet ? <FleetManagementPage /> : <Navigate to="/booking/vehicle/my" replace />} />
+          <Route path="reports" element={canViewReports ? <VehicleBookingAnalyticsPage /> : <Navigate to="/booking/vehicle/my" replace />} />
+          <Route path="issues" element={canViewIssues ? <VehicleBookingIssuesPage /> : <Navigate to="/booking/vehicle/my" replace />} />
+          <Route path="audit" element={canViewAudit ? <VehicleBookingAuditTrailPage /> : <Navigate to="/booking/vehicle/my" replace />} />
           <Route path="drivers" element={canManageFleet ? <Navigate to="/booking/vehicle/fleet?tab=drivers" replace /> : <Navigate to="/booking/vehicle/my" replace />} />
           <Route path="settings" element={canManageFleet ? <Navigate to="/booking/vehicle/fleet?tab=settings" replace /> : <Navigate to="/booking/vehicle/my" replace />} />
           <Route path="*" element={<Navigate to="/booking/vehicle" replace />} />

@@ -23,7 +23,13 @@ import { isChatEnabled, isChatV2Enabled } from '../lib/featureFlags';
 import { canAccessRoute } from '../lib/routeAccess';
 import { canViewModule } from '../lib/permissions/permissionService';
 import { useAuth } from '../context/AuthContext';
-import { canAccessVehicleApprovalQueue, hasActiveVehicleBookingGrant } from '../lib/vehicleBookingPermissions';
+import {
+  canAccessVehicleApprovalQueue,
+  canViewSensitiveVehicleIssues,
+  canViewVehicleAudit,
+  canViewVehicleReports,
+  hasActiveVehicleBookingGrant,
+} from '../lib/vehicleBookingPermissions';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -298,6 +304,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
       { to: '/booking/vehicle/trips', icon: Calendar, label: 'Chuyến hôm nay' },
       { to: '/booking/vehicle/handover', icon: Repeat, label: 'Bàn giao & Trả chìa' },
       { to: '/booking/vehicle/fleet', icon: Wrench, label: 'Quản lý Xe & Tài xế' },
+      { to: '/booking/vehicle/reports', icon: BarChart3, label: 'Báo cáo & KPI' },
+      { to: '/booking/vehicle/issues', icon: MessageSquarePlus, label: 'Phản ánh' },
+      { to: '/booking/vehicle/audit', icon: History, label: 'Lịch sử vận hành' },
     ],
   };
 
@@ -317,6 +326,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
       if (item.to === '/booking/vehicle/dispatch' && !hasActiveVehicleBookingGrant(user, ['booking.vehicle.dispatch'])) return false;
       if (item.to === '/booking/vehicle/handover' && !hasActiveVehicleBookingGrant(user, ['booking.vehicle.handover', 'booking.vehicle.dispatch'])) return false;
       if (item.to === '/booking/vehicle/fleet' && !hasActiveVehicleBookingGrant(user, ['booking.vehicle.manage_fleet', 'booking.vehicle.manage_authorizations'])) return false;
+      if (item.to === '/booking/vehicle/reports' && !canViewVehicleReports(user)) return false;
+      if (item.to === '/booking/vehicle/issues' && !canViewSensitiveVehicleIssues(user)) return false;
+      if (item.to === '/booking/vehicle/audit' && !canViewVehicleAudit(user)) return false;
     }
     return canAccessRoute(user, item.to);
   });

@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, User as UserIcon, Mail, Phone, Shield, ShieldCheck, Building, Save, Package, Briefcase, GitBranch, BarChart3, Landmark, Loader2, Crown, Inbox, LayoutDashboard, MapPin, Users, Calendar, Clock, CalendarOff, DollarSign, FileSignature, FolderOpen, History, ArrowLeftRight, ClipboardCheck, FileSpreadsheet, FileText, Workflow, Layers, Repeat, Wrench, IdCard, CreditCard, Calculator, Bot, BrainCircuit, Copy, ClipboardPaste, Settings as SettingsIcon, ShoppingCart, MessageCircle, BellRing, Car } from 'lucide-react';
+import { X, User as UserIcon, Mail, Phone, Shield, ShieldCheck, Building, Save, Package, Briefcase, GitBranch, BarChart3, Landmark, Loader2, Crown, Inbox, LayoutDashboard, MapPin, Users, Calendar, Clock, CalendarOff, DollarSign, FileSignature, FolderOpen, History, ArrowLeftRight, ClipboardCheck, FileSpreadsheet, FileText, Workflow, Layers, Repeat, Wrench, IdCard, CreditCard, Calculator, Bot, BrainCircuit, Copy, ClipboardPaste, Settings as SettingsIcon, ShoppingCart, MessageCircle, MessageSquarePlus, BellRing, Car } from 'lucide-react';
 import { Role, User, UserPermissionGrant, Warehouse } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { useToast } from '../context/ToastContext';
@@ -168,6 +168,9 @@ const SUB_MODULE_CONFIG: Record<string, { to: string; label: string; icon: any }
     { to: '/booking/vehicle/trips', icon: Calendar, label: 'Chuyến hôm nay' },
     { to: '/booking/vehicle/handover', icon: Repeat, label: 'Bàn giao & Trả chìa' },
     { to: '/booking/vehicle/fleet', icon: Wrench, label: 'Quản lý Xe & Tài xế' },
+    { to: '/booking/vehicle/reports', icon: BarChart3, label: 'Báo cáo & KPI' },
+    { to: '/booking/vehicle/issues', icon: MessageSquarePlus, label: 'Phản ánh' },
+    { to: '/booking/vehicle/audit', icon: History, label: 'Lịch sử vận hành' },
   ],
   [SETTINGS_MODULE_KEY]: SETTINGS_SUB_MODULES,
 };
