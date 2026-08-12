@@ -86,6 +86,11 @@ export interface FleetVehicleCandidate {
   category_name: string;
 }
 
+export interface FleetVehicleTypeOption {
+  vehicle_type: string;
+  vehicle_count: number;
+}
+
 export interface VehicleDriverAuthorization {
   id: string;
   user_id: string;

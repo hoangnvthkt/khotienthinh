@@ -9,6 +9,9 @@ import {
   dispatchVehicleBooking,
   formatVietnamDateTime,
   getDispatchValidationError,
+  getDispatchErrorMessage,
+  isDriverCompatibleWithVehicle,
+  selectCompatibleProfessionalDrivers,
   getOperatorOperationalStatus,
   getVehicleOperationalStatus,
 } from '../../lib/vehicleBookingService';
@@ -176,6 +179,18 @@ const DispatcherWorkbenchPage: React.FC = () => {
     const effectiveHandoverOfficerId = fulfillmentType === 'INTERNAL_SELF_DRIVE'
       ? handoverOfficerUserId || user.id
       : undefined;
+    const selectedVehicle = vehicles.find(vehicle => vehicle.asset_id === selectedAssetId);
+    const selectedDriver = drivers.find(driver => driver.user_id === operatorUserId);
+    if (fulfillmentType === 'INTERNAL_WITH_DRIVER'
+        && selectedVehicle
+        && selectedDriver
+        && !isDriverCompatibleWithVehicle(selectedDriver, selectedVehicle.vehicle_type)) {
+      toast.error(getDispatchErrorMessage(
+        new Error('DRIVER_VEHICLE_TYPE_MISMATCH'),
+        { driverName: selectedDriver.employee_name, vehicleType: selectedVehicle.vehicle_type },
+      ));
+      return;
+    }
     const validationError = getDispatchValidationError({
       bookingStatus: selectedBooking.status,
       fulfillmentType,
@@ -225,7 +240,12 @@ const DispatcherWorkbenchPage: React.FC = () => {
       setSelectedDriverUserId('');
       loadData();
     } catch (err: any) {
-      toast.error(err.message || 'Xếp xe thất bại! Vui lòng kiểm tra xung đột lịch.');
+      const selectedVehicle = vehicles.find(vehicle => vehicle.asset_id === selectedAssetId);
+      const selectedDriver = drivers.find(driver => driver.user_id === operatorUserId);
+      toast.error(getDispatchErrorMessage(err, {
+        driverName: selectedDriver?.employee_name,
+        vehicleType: selectedVehicle?.vehicle_type,
+      }));
     } finally {
       setDispatching(false);
     }
@@ -492,7 +512,15 @@ const DispatcherWorkbenchPage: React.FC = () => {
                     <label className="block font-semibold mb-1">Chọn xe nội bộ *</label>
                     <select
                       value={selectedAssetId}
-                      onChange={(e) => setSelectedAssetId(e.target.value)}
+                      onChange={(e) => {
+                        const nextAssetId = e.target.value;
+                        const nextVehicle = vehicles.find(vehicle => vehicle.asset_id === nextAssetId);
+                        const currentDriver = drivers.find(driver => driver.user_id === selectedDriverUserId);
+                        setSelectedAssetId(nextAssetId);
+                        if (currentDriver && !isDriverCompatibleWithVehicle(currentDriver, nextVehicle?.vehicle_type)) {
+                          setSelectedDriverUserId('');
+                        }
+                      }}
                       className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl p-3 font-medium"
                     >
                       <option value="">-- Chọn xe sẵn sàng --</option>
@@ -515,10 +543,14 @@ const DispatcherWorkbenchPage: React.FC = () => {
                       <select
                         value={selectedDriverUserId}
                         onChange={(e) => setSelectedDriverUserId(e.target.value)}
+                        disabled={!selectedAssetId}
                         className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl p-3 font-medium"
                       >
-                        <option value="">-- Chọn tài xế --</option>
-                        {drivers
+                        <option value="">{selectedAssetId ? '-- Chọn tài xế phù hợp --' : '-- Chọn xe trước --'}</option>
+                        {selectCompatibleProfessionalDrivers(
+                          drivers,
+                          vehicles.find(vehicle => vehicle.asset_id === selectedAssetId)?.vehicle_type,
+                        )
                           .filter((d) => getOperatorOperationalStatus(d.is_eligible, {
                             busy: busyOperatorIds.has(d.user_id),
                             unavailable: unavailableOperatorIds.has(d.user_id),
@@ -529,6 +561,14 @@ const DispatcherWorkbenchPage: React.FC = () => {
                             </option>
                           ))}
                       </select>
+                      {selectedAssetId && selectCompatibleProfessionalDrivers(
+                        drivers,
+                        vehicles.find(vehicle => vehicle.asset_id === selectedAssetId)?.vehicle_type,
+                      ).length === 0 && (
+                        <p className="mt-1 text-[11px] text-amber-700">
+                          Chưa có tài xế chuyên trách được ủy quyền cho loại xe này.
+                        </p>
+                      )}
                     </div>
                   )}
                 </>

@@ -5,6 +5,7 @@ import type {
   FleetVehicleProfile,
   FleetVehicleProfileView,
   FleetVehicleCandidate,
+  FleetVehicleTypeOption,
   VehicleDriverAuthorization,
   VehicleDriverAuthorizationAdminView,
   VehicleDriverCandidate,
@@ -208,6 +209,41 @@ export function getOperatorOperationalStatus(
   if (flags.unavailable) return 'UNAVAILABLE';
   if (flags.busy) return 'BUSY';
   return 'AVAILABLE';
+}
+
+export function isDriverCompatibleWithVehicle(
+  driver: Pick<VehicleDriverAuthorizationEligible, 'authorization_type' | 'allowed_vehicle_types'>,
+  vehicleType?: string | null,
+): boolean {
+  return driver.authorization_type === 'PROFESSIONAL_DRIVER'
+    && Boolean(vehicleType)
+    && Boolean(driver.allowed_vehicle_types?.includes(vehicleType as string));
+}
+
+export function selectCompatibleProfessionalDrivers<
+  T extends Pick<VehicleDriverAuthorizationEligible, 'authorization_type' | 'allowed_vehicle_types'>,
+>(drivers: T[], vehicleType?: string | null): T[] {
+  return drivers.filter(driver => isDriverCompatibleWithVehicle(driver, vehicleType));
+}
+
+export function getDispatchErrorMessage(
+  error: unknown,
+  context: { driverName?: string | null; vehicleType?: string | null } = {},
+): string {
+  const rawMessage = error instanceof Error
+    ? error.message
+    : typeof error === 'object' && error && 'message' in error
+      ? String((error as { message?: unknown }).message || '')
+      : String(error || '');
+
+  if (rawMessage.includes('DRIVER_LICENSE_CLASS_MISMATCH')
+      || rawMessage.includes('DRIVER_VEHICLE_TYPE_MISMATCH')) {
+    const driverName = context.driverName || 'Tài xế đã chọn';
+    const vehicleType = context.vehicleType || 'đã chọn';
+    return `${driverName} chưa được ủy quyền lái loại xe ${vehicleType}. Vui lòng cập nhật hồ sơ tài xế hoặc chọn tài xế khác.`;
+  }
+
+  return rawMessage || 'Xếp xe thất bại! Vui lòng kiểm tra xung đột lịch.';
 }
 
 export function getTripEvidenceValidationError(input: {
@@ -464,6 +500,12 @@ export async function fetchFleetVehicleCandidates(): Promise<FleetVehicleCandida
   const { data, error } = await supabase.rpc('get_fleet_vehicle_candidates');
   if (error) throw error;
   return (data || []) as FleetVehicleCandidate[];
+}
+
+export async function fetchFleetVehicleTypeOptions(): Promise<FleetVehicleTypeOption[]> {
+  const { data, error } = await supabase.rpc('get_fleet_vehicle_type_options');
+  if (error) throw error;
+  return (data || []) as FleetVehicleTypeOption[];
 }
 
 export async function fetchDriverAuthorizations(): Promise<VehicleDriverAuthorization[]> {

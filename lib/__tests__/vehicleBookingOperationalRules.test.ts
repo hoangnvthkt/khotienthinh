@@ -25,6 +25,18 @@ const service = bookingService as typeof bookingService & {
     eligible: boolean,
     flags?: { busy?: boolean; unavailable?: boolean },
   ) => 'AVAILABLE' | 'BUSY' | 'UNAVAILABLE' | 'INELIGIBLE';
+  isDriverCompatibleWithVehicle: (
+    driver: { authorization_type: string; allowed_vehicle_types?: string[] | null },
+    vehicleType?: string | null,
+  ) => boolean;
+  getDispatchErrorMessage: (
+    error: unknown,
+    context?: { driverName?: string | null; vehicleType?: string | null },
+  ) => string;
+  selectCompatibleProfessionalDrivers: <T extends {
+    authorization_type: string;
+    allowed_vehicle_types?: string[] | null;
+  }>(drivers: T[], vehicleType?: string | null) => T[];
 };
 
 describe('vehicle booking operational rules', () => {
@@ -103,5 +115,45 @@ describe('vehicle booking operational rules', () => {
     expect(service.getOperatorOperationalStatus(true, { busy: true })).toBe('BUSY');
     expect(service.getOperatorOperationalStatus(true, { unavailable: true })).toBe('UNAVAILABLE');
     expect(service.getOperatorOperationalStatus(false)).toBe('INELIGIBLE');
+  });
+
+  it('only accepts a professional driver explicitly authorized for the selected fleet vehicle type', () => {
+    expect(service.isDriverCompatibleWithVehicle).toBeTypeOf('function');
+
+    expect(service.isDriverCompatibleWithVehicle({
+      authorization_type: 'PROFESSIONAL_DRIVER',
+      allowed_vehicle_types: ['Xe con', 'Xe tải thùng'],
+    }, 'Xe tải thùng')).toBe(true);
+    expect(service.isDriverCompatibleWithVehicle({
+      authorization_type: 'PROFESSIONAL_DRIVER',
+      allowed_vehicle_types: ['Xe con', 'xe tải 500kg'],
+    }, 'Xe tải thùng')).toBe(false);
+    expect(service.isDriverCompatibleWithVehicle({
+      authorization_type: 'SELF_DRIVE',
+      allowed_vehicle_types: ['Xe tải thùng'],
+    }, 'Xe tải thùng')).toBe(false);
+  });
+
+  it('translates a vehicle-type mismatch into an actionable Vietnamese dispatch error', () => {
+    expect(service.getDispatchErrorMessage).toBeTypeOf('function');
+    expect(service.getDispatchErrorMessage(
+      new Error('DRIVER_LICENSE_CLASS_MISMATCH'),
+      { driverName: 'Nguyễn Văn Hoàng', vehicleType: 'Xe tải thùng' },
+    )).toBe('Nguyễn Văn Hoàng chưa được ủy quyền lái loại xe Xe tải thùng. Vui lòng cập nhật hồ sơ tài xế hoặc chọn tài xế khác.');
+    expect(service.getDispatchErrorMessage(new Error('VEHICLE_UNAVAILABLE')))
+      .toBe('VEHICLE_UNAVAILABLE');
+  });
+
+  it('offers only compatible professional drivers after a fleet vehicle is selected', () => {
+    expect(service.selectCompatibleProfessionalDrivers).toBeTypeOf('function');
+    const drivers = [
+      { user_id: 'driver-box', authorization_type: 'PROFESSIONAL_DRIVER', allowed_vehicle_types: ['Xe tải thùng'] },
+      { user_id: 'driver-light', authorization_type: 'PROFESSIONAL_DRIVER', allowed_vehicle_types: ['xe tải 500kg'] },
+      { user_id: 'self-driver', authorization_type: 'SELF_DRIVE', allowed_vehicle_types: ['Xe tải thùng'] },
+    ];
+
+    expect(service.selectCompatibleProfessionalDrivers(drivers, 'Xe tải thùng'))
+      .toEqual([drivers[0]]);
+    expect(service.selectCompatibleProfessionalDrivers(drivers, null)).toEqual([]);
   });
 });

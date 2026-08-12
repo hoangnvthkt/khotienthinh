@@ -3,6 +3,7 @@ import { CalendarOff, Plus, RefreshCw, ShieldCheck, UserRoundCog, X } from 'luci
 import type {
   OperatorUnavailabilityPeriod,
   OperatorUnavailabilityReason,
+  FleetVehicleTypeOption,
   VehicleDriverAuthorizationAdminView,
   VehicleDriverCandidate,
 } from '../../types/vehicleBooking';
@@ -10,6 +11,7 @@ import {
   cancelOperatorUnavailability,
   createOperatorUnavailability,
   fetchOperatorUnavailabilityPeriods,
+  fetchFleetVehicleTypeOptions,
   fetchVehicleDriverAuthorizationsAdmin,
   uploadEvidenceImage,
   upsertDriverAuthorization,
@@ -26,14 +28,14 @@ type DriverDraft = {
   licenseClass: string;
   licenseExpiry: string;
   healthCheckExpiryDate: string;
-  allowedVehicleTypes: string;
+  allowedVehicleTypes: string[];
   status: 'ACTIVE' | 'SUSPENDED' | 'EXPIRED';
   note: string;
 };
 
 const emptyDraft = (): DriverDraft => ({
   userId: '', employeeId: '', authorizationType: 'PROFESSIONAL_DRIVER', licenseNumber: '',
-  licenseClass: 'B2', licenseExpiry: '', healthCheckExpiryDate: '', allowedVehicleTypes: '',
+  licenseClass: 'B2', licenseExpiry: '', healthCheckExpiryDate: '', allowedVehicleTypes: [],
   status: 'ACTIVE', note: '',
 });
 
@@ -53,6 +55,7 @@ const FleetDriversManagement: React.FC<Props> = ({ fetchCandidates }) => {
   const [drivers, setDrivers] = useState<VehicleDriverAuthorizationAdminView[]>([]);
   const [candidates, setCandidates] = useState<VehicleDriverCandidate[]>([]);
   const [periods, setPeriods] = useState<OperatorUnavailabilityPeriod[]>([]);
+  const [vehicleTypeOptions, setVehicleTypeOptions] = useState<FleetVehicleTypeOption[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<VehicleDriverAuthorizationAdminView | null>(null);
   const [draft, setDraft] = useState<DriverDraft>(emptyDraft);
@@ -68,14 +71,16 @@ const FleetDriversManagement: React.FC<Props> = ({ fetchCandidates }) => {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [driverRows, candidateRows, periodRows] = await Promise.all([
+      const [driverRows, candidateRows, periodRows, typeOptions] = await Promise.all([
         fetchVehicleDriverAuthorizationsAdmin(),
         fetchCandidates(),
         fetchOperatorUnavailabilityPeriods(),
+        fetchFleetVehicleTypeOptions(),
       ]);
       setDrivers(driverRows);
       setCandidates(candidateRows);
       setPeriods(periodRows);
+      setVehicleTypeOptions(typeOptions);
     } catch (error: any) {
       toast.error(error.message || 'Không thể tải danh sách tài xế.');
     } finally {
@@ -108,7 +113,7 @@ const FleetDriversManagement: React.FC<Props> = ({ fetchCandidates }) => {
       licenseClass: driver.license_class,
       licenseExpiry: driver.license_expiry,
       healthCheckExpiryDate: driver.health_check_expiry_date || '',
-      allowedVehicleTypes: (driver.allowed_vehicle_types || []).join(', '),
+      allowedVehicleTypes: driver.allowed_vehicle_types || [],
       status: driver.status,
       note: driver.note || '',
     });
@@ -119,6 +124,14 @@ const FleetDriversManagement: React.FC<Props> = ({ fetchCandidates }) => {
     event.preventDefault();
     if (!draft.userId || !draft.employeeId || !draft.licenseNumber || !draft.licenseExpiry) {
       toast.error('Vui lòng chọn nhân sự HRM và nhập đầy đủ thông tin bằng lái.');
+      return;
+    }
+    if (draft.allowedVehicleTypes.length === 0) {
+      toast.error('Vui lòng chọn ít nhất một loại xe được phép lái.');
+      return;
+    }
+    if (draft.allowedVehicleTypes.some(value => !vehicleTypeOptions.some(option => option.vehicle_type === value))) {
+      toast.error('Hồ sơ còn loại xe cũ không thuộc danh mục Fleet. Vui lòng xóa giá trị cũ trước khi lưu.');
       return;
     }
     try {
@@ -135,7 +148,7 @@ const FleetDriversManagement: React.FC<Props> = ({ fetchCandidates }) => {
         license_front_photo_path: frontPath,
         license_back_photo_path: backPath,
         health_check_expiry_date: draft.healthCheckExpiryDate || undefined,
-        allowed_vehicle_types: draft.allowedVehicleTypes.split(',').map(value => value.trim()).filter(Boolean),
+        allowed_vehicle_types: draft.allowedVehicleTypes,
         status: draft.status,
         note: draft.note || undefined,
       });
@@ -177,7 +190,7 @@ const FleetDriversManagement: React.FC<Props> = ({ fetchCandidates }) => {
     {showForm && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4"><form onSubmit={saveDriver} className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-6 dark:bg-slate-800"><div className="mb-5 flex items-center justify-between"><h3 className="font-bold">{editing ? 'Cập nhật ủy quyền tài xế' : 'Thêm tài xế từ HRM'}</h3><button type="button" onClick={() => setShowForm(false)}><X /></button></div>
       {!editing && <><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Tìm theo tên, mã nhân viên hoặc chức danh" className="mb-2 w-full rounded-xl border p-2.5 text-xs" /><div className="max-h-52 space-y-1 overflow-y-auto rounded-xl border p-2">{filteredCandidates.map(candidate => <button type="button" key={candidate.user_id} onClick={() => setDraft(previous => ({ ...previous, userId: candidate.user_id, employeeId: candidate.employee_id }))} className={`flex w-full items-center gap-3 rounded-xl p-2 text-left ${draft.userId === candidate.user_id ? 'bg-amber-50 ring-1 ring-amber-300' : 'hover:bg-slate-50'}`}><Avatar url={candidate.employee_avatar_url} name={candidate.employee_name} size="h-9 w-9" /><span className="min-w-0"><span className="block truncate text-xs font-bold">{candidate.employee_name}</span><span className="block truncate text-[10px] text-slate-500">{candidate.employee_code} · {candidate.employee_title}</span></span></button>)}</div></>}
       {(editing || selectedCandidate) && <div className="mt-3 flex items-center gap-3 rounded-xl bg-slate-50 p-3 dark:bg-slate-900"><Avatar url={editing?.employee_avatar_url || selectedCandidate?.employee_avatar_url} name={editing?.employee_name || selectedCandidate?.employee_name} /><div><div className="font-bold">{editing?.employee_name || selectedCandidate?.employee_name}</div><div className="text-xs text-slate-500">{editing?.employee_code || selectedCandidate?.employee_code} · {editing?.employee_title || selectedCandidate?.employee_title}</div></div></div>}
-      <div className="mt-4 grid gap-4 md:grid-cols-2"><label className="text-xs font-bold">Loại ủy quyền<select value={draft.authorizationType} onChange={event => setDraft(previous => ({ ...previous, authorizationType: event.target.value as DriverDraft['authorizationType'] }))} className="mt-1 w-full rounded-xl border p-2.5 font-normal"><option value="PROFESSIONAL_DRIVER">Tài xế chuyên trách</option><option value="SELF_DRIVE">Nhân viên tự lái</option></select></label><label className="text-xs font-bold">Trạng thái<select value={draft.status} onChange={event => setDraft(previous => ({ ...previous, status: event.target.value as DriverDraft['status'] }))} className="mt-1 w-full rounded-xl border p-2.5 font-normal"><option value="ACTIVE">Đang hoạt động</option><option value="SUSPENDED">Đình chỉ</option><option value="EXPIRED">Hết hạn</option></select></label><label className="text-xs font-bold">Số bằng lái<input required value={draft.licenseNumber} onChange={event => setDraft(previous => ({ ...previous, licenseNumber: event.target.value }))} className="mt-1 w-full rounded-xl border p-2.5 font-normal" /></label><label className="text-xs font-bold">Hạng bằng<input required value={draft.licenseClass} onChange={event => setDraft(previous => ({ ...previous, licenseClass: event.target.value }))} className="mt-1 w-full rounded-xl border p-2.5 font-normal" /></label><label className="text-xs font-bold">Hạn bằng<input required type="date" value={draft.licenseExpiry} onChange={event => setDraft(previous => ({ ...previous, licenseExpiry: event.target.value }))} className="mt-1 w-full rounded-xl border p-2.5 font-normal" /></label><label className="text-xs font-bold">Hạn khám sức khỏe<input type="date" value={draft.healthCheckExpiryDate} onChange={event => setDraft(previous => ({ ...previous, healthCheckExpiryDate: event.target.value }))} className="mt-1 w-full rounded-xl border p-2.5 font-normal" /></label><label className="text-xs font-bold md:col-span-2">Loại xe được lái<input value={draft.allowedVehicleTypes} onChange={event => setDraft(previous => ({ ...previous, allowedVehicleTypes: event.target.value }))} placeholder="Xe con, Xe tải, SUV" className="mt-1 w-full rounded-xl border p-2.5 font-normal" /></label><label className="text-xs font-bold">Ảnh mặt trước bằng lái<input type="file" accept="image/jpeg,image/png,image/webp" onChange={event => setFrontFile(event.target.files?.[0] || null)} className="mt-1 w-full rounded-xl border p-2 text-xs font-normal" /></label><label className="text-xs font-bold">Ảnh mặt sau bằng lái<input type="file" accept="image/jpeg,image/png,image/webp" onChange={event => setBackFile(event.target.files?.[0] || null)} className="mt-1 w-full rounded-xl border p-2 text-xs font-normal" /></label><label className="text-xs font-bold md:col-span-2">Ghi chú<textarea value={draft.note} onChange={event => setDraft(previous => ({ ...previous, note: event.target.value }))} className="mt-1 w-full rounded-xl border p-2.5 font-normal" /></label></div>
+      <div className="mt-4 grid gap-4 md:grid-cols-2"><label className="text-xs font-bold">Loại ủy quyền<select value={draft.authorizationType} onChange={event => setDraft(previous => ({ ...previous, authorizationType: event.target.value as DriverDraft['authorizationType'] }))} className="mt-1 w-full rounded-xl border p-2.5 font-normal"><option value="PROFESSIONAL_DRIVER">Tài xế chuyên trách</option><option value="SELF_DRIVE">Nhân viên tự lái</option></select></label><label className="text-xs font-bold">Trạng thái<select value={draft.status} onChange={event => setDraft(previous => ({ ...previous, status: event.target.value as DriverDraft['status'] }))} className="mt-1 w-full rounded-xl border p-2.5 font-normal"><option value="ACTIVE">Đang hoạt động</option><option value="SUSPENDED">Đình chỉ</option><option value="EXPIRED">Hết hạn</option></select></label><label className="text-xs font-bold">Số bằng lái<input required value={draft.licenseNumber} onChange={event => setDraft(previous => ({ ...previous, licenseNumber: event.target.value }))} className="mt-1 w-full rounded-xl border p-2.5 font-normal" /></label><label className="text-xs font-bold">Hạng bằng<input required value={draft.licenseClass} onChange={event => setDraft(previous => ({ ...previous, licenseClass: event.target.value }))} className="mt-1 w-full rounded-xl border p-2.5 font-normal" /></label><label className="text-xs font-bold">Hạn bằng<input required type="date" value={draft.licenseExpiry} onChange={event => setDraft(previous => ({ ...previous, licenseExpiry: event.target.value }))} className="mt-1 w-full rounded-xl border p-2.5 font-normal" /></label><label className="text-xs font-bold">Hạn khám sức khỏe<input type="date" value={draft.healthCheckExpiryDate} onChange={event => setDraft(previous => ({ ...previous, healthCheckExpiryDate: event.target.value }))} className="mt-1 w-full rounded-xl border p-2.5 font-normal" /></label><fieldset className="text-xs font-bold md:col-span-2"><legend>Loại xe được lái *</legend><div className="mt-2 grid gap-2 sm:grid-cols-2">{vehicleTypeOptions.map(option => { const checked = draft.allowedVehicleTypes.includes(option.vehicle_type); return <label key={option.vehicle_type} className={`flex cursor-pointer items-center gap-2 rounded-xl border p-3 font-normal ${checked ? 'border-amber-400 bg-amber-50 dark:bg-amber-950/20' : 'border-slate-200 dark:border-slate-700'}`}><input type="checkbox" checked={checked} onChange={() => setDraft(previous => ({ ...previous, allowedVehicleTypes: checked ? previous.allowedVehicleTypes.filter(value => value !== option.vehicle_type) : [...previous.allowedVehicleTypes, option.vehicle_type] }))} /><span>{option.vehicle_type} <span className="text-slate-400">({option.vehicle_count} xe)</span></span></label>; })}</div>{vehicleTypeOptions.length === 0 && <p className="mt-2 rounded-xl bg-amber-50 p-3 font-normal text-amber-700">Chưa có loại xe trong Fleet. Vui lòng cấu hình hồ sơ xe trước.</p>}{draft.allowedVehicleTypes.filter(value => !vehicleTypeOptions.some(option => option.vehicle_type === value)).length > 0 && <div className="mt-2 rounded-xl bg-rose-50 p-3 font-normal text-rose-700"><p>Giá trị cũ không còn thuộc danh mục Fleet: {draft.allowedVehicleTypes.filter(value => !vehicleTypeOptions.some(option => option.vehicle_type === value)).join(', ')}.</p><button type="button" onClick={() => setDraft(previous => ({ ...previous, allowedVehicleTypes: previous.allowedVehicleTypes.filter(value => vehicleTypeOptions.some(option => option.vehicle_type === value)) }))} className="mt-2 rounded-lg border border-rose-300 px-3 py-1 font-bold">Xóa giá trị cũ</button></div>}</fieldset><label className="text-xs font-bold">Ảnh mặt trước bằng lái<input type="file" accept="image/jpeg,image/png,image/webp" onChange={event => setFrontFile(event.target.files?.[0] || null)} className="mt-1 w-full rounded-xl border p-2 text-xs font-normal" /></label><label className="text-xs font-bold">Ảnh mặt sau bằng lái<input type="file" accept="image/jpeg,image/png,image/webp" onChange={event => setBackFile(event.target.files?.[0] || null)} className="mt-1 w-full rounded-xl border p-2 text-xs font-normal" /></label><label className="text-xs font-bold md:col-span-2">Ghi chú<textarea value={draft.note} onChange={event => setDraft(previous => ({ ...previous, note: event.target.value }))} className="mt-1 w-full rounded-xl border p-2.5 font-normal" /></label></div>
       <div className="mt-6 flex justify-end gap-3"><button type="button" onClick={() => setShowForm(false)} className="rounded-xl border px-4 py-2 text-xs font-bold">Hủy</button><button disabled={saving} className="rounded-xl bg-amber-500 px-5 py-2 text-xs font-bold text-white">{saving ? 'Đang lưu...' : 'Lưu ủy quyền'}</button></div>
     </form></div>}
   </div>;

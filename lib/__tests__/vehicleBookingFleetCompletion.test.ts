@@ -14,6 +14,7 @@ vi.mock('../supabase', () => ({
 import {
   fetchFleetVehicleCandidates,
   fetchFleetVehicleProfiles,
+  fetchFleetVehicleTypeOptions,
   fetchVehicleDriverAuthorizationCandidates,
   fetchVehicleDriverAuthorizationsAdmin,
   setFleetVehicleAssetImage,
@@ -30,12 +31,14 @@ describe('vehicle booking fleet completion service', () => {
   it('uses permission-scoped read RPCs for fleet and HRM candidates', async () => {
     await fetchFleetVehicleCandidates();
     await fetchFleetVehicleProfiles();
+    await fetchFleetVehicleTypeOptions();
     await fetchVehicleDriverAuthorizationCandidates();
     await fetchVehicleDriverAuthorizationsAdmin();
 
     expect(rpc.mock.calls.map(([name]) => name)).toEqual([
       'get_fleet_vehicle_candidates',
       'get_fleet_vehicle_profiles_admin',
+      'get_fleet_vehicle_type_options',
       'get_vehicle_driver_candidates',
       'get_vehicle_driver_authorizations_admin',
     ]);
@@ -108,5 +111,14 @@ describe('vehicle booking fleet completion migrations', () => {
     expect(sql).toContain("employee.status = 'Đang làm việc'");
     expect(sql).toContain('asset.code');
     expect(sql).toContain('asset.name');
+  });
+
+  it('publishes a permission-scoped canonical fleet vehicle-type catalog', () => {
+    const sql = migrationBySuffix('vehicle_booking_driver_vehicle_compatibility');
+    expect(sql).toContain('get_fleet_vehicle_type_options');
+    expect(sql).toContain('booking.vehicle.manage_authorizations');
+    expect(sql).toContain('booking.vehicle.dispatch');
+    expect(sql).toMatch(/security invoker/i);
+    expect(sql).toContain('DRIVER_VEHICLE_TYPE_MISMATCH');
   });
 });
