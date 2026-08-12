@@ -34,7 +34,7 @@ const VehicleFeedbackModal: React.FC<VehicleFeedbackModalProps> = ({ bookingId, 
       issueCategory: issueCategory || null,
       comment,
     });
-    if (!payload.ok) {
+    if (payload.ok === false) {
       toast.error(payload.message);
       return;
     }

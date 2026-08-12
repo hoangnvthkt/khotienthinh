@@ -1,13 +1,21 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Inbox, MapPin, Car, Clock, AlertTriangle, RefreshCw, Receipt, MessageSquare } from 'lucide-react';
 import { fetchMyBookings, fetchVehicleBookingDetails, cancelVehicleBooking, formatVietnamDateTime } from '../../lib/vehicleBookingService';
 import type { VehicleBooking, BookingCloseReason } from '../../types/vehicleBooking';
 import { useToast } from '../../context/ToastContext';
 import ExternalTransportCompleteModal from './ExternalTransportCompleteModal';
 import VehicleFeedbackModal from './VehicleFeedbackModal';
+import {
+  getVehicleBookingDeepLinkId,
+  removeVehicleBookingDeepLink,
+  setVehicleBookingDeepLink,
+} from '../../lib/vehicleBookingDeepLink';
 
 const MyVehicleBookingsPage: React.FC = () => {
   const toast = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialBookingQuery = useRef(searchParams.get('booking'));
   const [loading, setLoading] = useState(true);
   const [bookings, setBookings] = useState<VehicleBooking[]>([]);
   const [selectedBookingId, setSelectedBookingId] = useState<string | null>(null);
@@ -21,11 +29,50 @@ const MyVehicleBookingsPage: React.FC = () => {
   const [externalCompletionBooking, setExternalCompletionBooking] = useState<{ id: string; code: string } | null>(null);
   const [feedbackBooking, setFeedbackBooking] = useState<{ id: string; code: string } | null>(null);
 
+  const clearBookingDeepLink = () => {
+    setSearchParams(removeVehicleBookingDeepLink(searchParams), { replace: true });
+  };
+
+  const handleSelectBooking = async (id: string, syncUrl = true) => {
+    setSelectedBookingId(id);
+    setDetails(null);
+    if (syncUrl) {
+      setSearchParams(setVehicleBookingDeepLink(searchParams, id), { replace: true });
+    }
+    try {
+      const d = await fetchVehicleBookingDetails(id);
+      setDetails(d);
+    } catch (err: any) {
+      setSelectedBookingId(null);
+      clearBookingDeepLink();
+      toast.error('Không thể tải chi tiết chuyến xe!');
+    }
+  };
+
+  const closeBookingDetails = () => {
+    setSelectedBookingId(null);
+    setDetails(null);
+    clearBookingDeepLink();
+  };
+
   const loadData = async () => {
     try {
       setLoading(true);
       const data = await fetchMyBookings();
       setBookings(data);
+      const rawBookingId = initialBookingQuery.current;
+      initialBookingQuery.current = null;
+      if (rawBookingId !== null) {
+        const bookingId = getVehicleBookingDeepLinkId(
+          new URLSearchParams({ booking: rawBookingId }),
+        );
+        if (!bookingId || !data.some((booking) => booking.id === bookingId)) {
+          clearBookingDeepLink();
+          toast.error('Không tìm thấy chuyến xe hoặc bạn không có quyền truy cập.');
+        } else {
+          await handleSelectBooking(bookingId, false);
+        }
+      }
     } catch (err: any) {
       toast.error('Không thể tải danh sách đơn đặt xe!');
     } finally {
@@ -36,16 +83,6 @@ const MyVehicleBookingsPage: React.FC = () => {
   useEffect(() => {
     loadData();
   }, []);
-
-  const handleSelectBooking = async (id: string) => {
-    setSelectedBookingId(id);
-    try {
-      const d = await fetchVehicleBookingDetails(id);
-      setDetails(d);
-    } catch (err: any) {
-      toast.error('Không thể tải chi tiết chuyến xe!');
-    }
-  };
 
   const refreshSelectedBooking = async () => {
     await loadData();
@@ -63,7 +100,7 @@ const MyVehicleBookingsPage: React.FC = () => {
       await cancelVehicleBooking(cancellingBookingId, reason);
       toast.success('Đã hủy đơn đặt xe thành công!');
       setCancellingBookingId(null);
-      setSelectedBookingId(null);
+      closeBookingDetails();
       loadData();
     } catch (err: any) {
       toast.error(err.message || 'Hủy đơn thất bại!');
@@ -201,7 +238,7 @@ const MyVehicleBookingsPage: React.FC = () => {
                 <p className="text-xs text-slate-500">{getStatusBadge(details.booking.status)}</p>
               </div>
               <button
-                onClick={() => setSelectedBookingId(null)}
+                onClick={closeBookingDetails}
                 className="p-2 rounded-xl text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"
               >
                 ✕

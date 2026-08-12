@@ -76,7 +76,7 @@ export function buildVehicleBookingAnalyticsWorkbook(
     [],
     ['Ghi chú', 'Năng lực dùng trạng thái active hiện tại của đội xe công ty.'],
   ];
-  const detail = [DETAIL_HEADERS, ...rows.map(toDetailValues)];
+  const detail = [[...DETAIL_HEADERS], ...rows.map(toDetailValues)];
   const workbook = XLSX.utils.book_new();
   const summarySheet = XLSX.utils.aoa_to_sheet(summary);
   const detailSheet = XLSX.utils.aoa_to_sheet(detail);

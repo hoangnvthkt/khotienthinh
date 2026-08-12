@@ -126,6 +126,21 @@ export const resolveNotificationPath = (notification: AppNotification): string |
     return notification.link || '/da';
   }
 
+  // ── Vehicle Booking ──────────────────────────────────
+  if (
+    sourceType === 'vehicle_booking' ||
+    notification.category === 'vehicle_booking' ||
+    notification.entityType === 'vehicle_booking'
+  ) {
+    const bookingId =
+      getMetaValue(metadata, ['bookingId', 'booking_id']) ||
+      notification.sourceId ||
+      notification.entityId;
+    return bookingId
+      ? withQuery('/booking/vehicle/my', { booking: bookingId })
+      : notification.link || '/booking/vehicle/my';
+  }
+
   // ── Feedback Hub ─────────────────────────────────────
   if (sourceType === 'feedback') {
     const feedbackId = getMetaValue(metadata, ['feedbackId', 'feedback_id']) || notification.sourceId;
