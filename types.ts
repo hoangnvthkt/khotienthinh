@@ -1,5 +1,6 @@
 
 export * from './types/vehicleBooking';
+export * from './types/vehicleBookingPhase3';
 
 export enum Role {
   ADMIN = 'ADMIN',
