@@ -85,3 +85,23 @@ export interface VehicleBookingIssuePage {
   items: VehicleBookingSensitiveIssue[];
   nextCursor: { createdAt: string; id: string } | null;
 }
+
+export type VehicleBookingAuditSourceType = 'BOOKING_EVENT' | 'ASSIGNMENT_VERSION' | 'HANDOVER';
+
+export interface VehicleBookingAuditEvent {
+  id: string;
+  bookingId: string;
+  bookingCode: string;
+  occurredAt: string;
+  sourceType: VehicleBookingAuditSourceType;
+  eventType: string;
+  title: string;
+  actorName: string | null;
+  summary: string;
+  details: Record<string, string | number | boolean | null>;
+}
+
+export interface VehicleBookingAuditPage {
+  items: VehicleBookingAuditEvent[];
+  nextCursor: { occurredAt: string; id: string } | null;
+}
