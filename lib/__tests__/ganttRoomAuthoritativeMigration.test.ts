@@ -19,6 +19,18 @@ describe('gantt Room authoritative migration', () => {
     expect(normalized).toContain("action_code in ('submit', 'verify', 'approve')");
   });
 
+  it('installs the canonical effective Room authorization helper it depends on', () => {
+    expect(normalized).toContain(
+      'create or replace function app_private.project_actor_has_effective_room_action(',
+    );
+    expect(normalized).toContain('item.pbac_fallback_enabled');
+    expect(normalized).toContain('item.prerequisite_action_codes');
+    expect(normalized).toContain("scoped_actor.role = 'admin'");
+    expect(normalized).toContain(
+      'from unnest(binding.prerequisite_action_codes) required(action_code)',
+    );
+  });
+
   it('preserves manual grants while marking generated grants as PBAC backfill', () => {
     expect(normalized).toContain("else 'pbac_backfill'");
     expect(normalized).toContain("grant_source = case");

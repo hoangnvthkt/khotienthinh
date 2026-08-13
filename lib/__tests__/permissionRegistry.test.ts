@@ -266,7 +266,6 @@ describe('permissionRegistry', () => {
       'lib/notificationAlertRules.ts',
       'lib/permissions/projectPermissionService.ts',
       'lib/projectStaffService.ts',
-      'pages/project/GanttTab.tsx',
       'pages/project/PaymentWorkbenchTab.tsx',
       'pages/project/QualityTab.tsx',
       'pages/settings/SettingsAlerts.tsx',

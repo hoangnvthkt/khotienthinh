@@ -76,6 +76,96 @@ set legacy_permission_codes = excluded.legacy_permission_codes,
     pbac_fallback_enabled = false,
     prerequisite_action_codes = excluded.prerequisite_action_codes;
 
+-- Keep this migration self-contained for linked environments whose migration
+-- history predates the registry-driven prerequisite implementation.
+create or replace function app_private.project_actor_has_effective_room_action(
+  p_user_id uuid,
+  p_project_id text,
+  p_construction_site_id text,
+  p_room_code text,
+  p_action_code text
+)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  with binding as (
+    select item.enforcement_status, item.legacy_permission_codes,
+      item.pbac_fallback_enabled, item.prerequisite_action_codes
+    from app_private.project_permission_room_action_bindings item
+    where item.room_code = p_room_code
+      and item.action_code = p_action_code
+  ), actor as (
+    select user_row.id, user_row.role
+    from public.users user_row
+    where user_row.id = p_user_id
+      and coalesce(user_row.is_active, true)
+  ), scoped_actor as (
+    select actor.id, actor.role
+    from actor
+    where actor.role = 'ADMIN'
+      or exists (
+        select 1
+        from public.project_staff staff
+        where staff.user_id = actor.id::text
+          and staff.project_id = p_project_id
+          and staff.end_date is null
+          and (
+            nullif(p_construction_site_id, '') is null
+            or staff.construction_site_id is null
+            or staff.construction_site_id = p_construction_site_id
+          )
+      )
+  )
+  select exists (
+    select 1
+    from binding
+    cross join scoped_actor
+    where scoped_actor.role = 'ADMIN'
+      or (
+        binding.enforcement_status in ('pilot', 'enforced')
+        and app_private.project_user_has_room_action(
+          scoped_actor.id,
+          p_project_id,
+          nullif(p_construction_site_id, ''),
+          p_room_code,
+          p_action_code
+        )
+        and not exists (
+          select 1
+          from unnest(binding.prerequisite_action_codes) required(action_code)
+          where not app_private.project_user_has_room_action(
+            scoped_actor.id,
+            p_project_id,
+            nullif(p_construction_site_id, ''),
+            p_room_code,
+            required.action_code
+          )
+        )
+      )
+      or (
+        binding.pbac_fallback_enabled
+        and app_private.permission_hardening_flag('project_room_pbac_fallback_enabled')
+        and exists (
+          select 1
+          from unnest(binding.legacy_permission_codes) legacy(permission_code)
+          where app_private.project_has_permission_v2(
+            p_project_id,
+            nullif(p_construction_site_id, ''),
+            legacy.permission_code,
+            scoped_actor.id
+          )
+        )
+      )
+  );
+$$;
+
+revoke all on function app_private.project_actor_has_effective_room_action(
+  uuid, text, text, text, text
+) from public, anon, authenticated;
+
 -- Resolve each PBAC grant to exactly one active staff scope. Ambiguous grants
 -- are reported instead of being broadened or silently discarded.
 create temporary table gantt_room_pbac_candidates on commit drop as
