@@ -25,6 +25,13 @@ interface ToastContextType {
 
 const ToastContext = createContext<ToastContextType | undefined>(undefined);
 
+export const appendToastUnlessDuplicate = (current: Toast[], next: Toast): Toast[] =>
+    current.some(item =>
+        item.type === next.type &&
+        item.title === next.title &&
+        item.message === next.message
+    ) ? current : [...current, next];
+
 const ICONS = {
     success: CheckCircle2,
     error: XCircle,
@@ -104,7 +111,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     const addToast = useCallback((type: ToastType, title: string, message?: string, duration?: number) => {
         const id = `toast-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`;
-        setToasts(prev => [...prev, { id, type, title, message, duration }]);
+        setToasts(prev => appendToastUnlessDuplicate(prev, { id, type, title, message, duration }));
     }, []);
 
     const removeToast = useCallback((id: string) => {

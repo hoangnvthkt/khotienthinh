@@ -13,6 +13,7 @@ import {
 import { customerContractService, subcontractorContractService } from './hdService';
 import { paymentService } from './projectService';
 import { loadPaymentGanttCatalog } from './projectGanttCatalogAdapters';
+import { ProjectGanttCommandError } from './projectGanttCommandService';
 
 export type PaymentScheduleContractTypeFilter = ContractItemType | 'all';
 export type PaymentScheduleWorkbenchStatusFilter =
@@ -65,6 +66,21 @@ const daysBetweenDates = (from: string, to?: string) => {
 
 const lower = (value?: string | null) => (value || '').toLowerCase();
 const money = (value?: number | null) => Math.round(Number(value || 0));
+
+const loadPaymentCatalogTasks = async (
+  projectId: string,
+  constructionSiteId?: string | null,
+): Promise<ProjectTask[]> => {
+  try {
+    const catalog = await loadPaymentGanttCatalog({ projectId, constructionSiteId });
+    return catalog.tasks;
+  } catch (error) {
+    if (error instanceof ProjectGanttCommandError && error.code === 'GANTT_PERMISSION_DENIED') {
+      return [];
+    }
+    throw error;
+  }
+};
 
 const scheduleContractKey = (schedule: PaymentSchedule) =>
   schedule.contractId && schedule.contractType ? `${schedule.contractType}:${schedule.contractId}` : '';
@@ -170,10 +186,9 @@ export const paymentScheduleWorkbenchService = {
       paymentService.listScoped(params.projectId, params.constructionSiteId),
       includeCustomers && projectScopeId ? customerContractService.listBySite(projectScopeId, params.constructionSiteId || null) : Promise.resolve([]),
       includeSubcontractors && projectScopeId ? subcontractorContractService.listBySite(projectScopeId, params.constructionSiteId || null) : Promise.resolve([]),
-      projectScopeId ? loadPaymentGanttCatalog({
-        projectId: params.projectId || projectScopeId,
-        constructionSiteId: params.constructionSiteId || null,
-      }).then(catalog => catalog.tasks) : Promise.resolve([]),
+      projectScopeId
+        ? loadPaymentCatalogTasks(params.projectId || projectScopeId, params.constructionSiteId || null)
+        : Promise.resolve([]),
     ]);
 
     const contractMap = buildContractMap(customers, subcontractors);
