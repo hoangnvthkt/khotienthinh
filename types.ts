@@ -652,6 +652,8 @@ export type GateStatus = 'none' | 'pending' | 'approved' | 'rejected';
 
 export interface ProjectTask {
   id: string;
+  updatedAt?: string;
+  rowVersion?: number;
   projectId?: string | null;
   constructionSiteId?: string | null;
   parentId?: string;
