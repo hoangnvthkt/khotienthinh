@@ -76,6 +76,20 @@ const formatToday = () => new Date().toLocaleDateString('vi-VN', {
 const getUserName = (users: User[], userId?: string | null) =>
   users.find(item => item.id === userId)?.name || userId || '';
 
+const buildMaterialRequestHref = (request: MaterialRequest) => {
+  const isProjectRequest = request.requestOrigin === 'project' || !!request.projectId || !!request.constructionSiteId;
+  if (!isProjectRequest) return '/requests';
+
+  const params = new URLSearchParams({
+    tab: 'material',
+    materialTab: 'request',
+    requestId: request.id,
+  });
+  if (request.projectId) params.set('projectId', request.projectId);
+  if (request.constructionSiteId) params.set('siteId', request.constructionSiteId);
+  return `/da?${params.toString()}`;
+};
+
 const requestStatusLabel = (status: RequestStatus | string) => {
   if (status === RequestStatus.PENDING) return 'Chờ duyệt';
   if (status === RequestStatus.APPROVED) return 'Chờ xuất';
@@ -150,9 +164,7 @@ const buildTransactionAction = (tx: Transaction, user: User, users: User[], ware
 const buildMaterialRequestAction = (request: MaterialRequest, user: User, users: User[], warehouses: ReturnType<typeof useApp>['warehouses']): HomeActionItem | null => {
   const sourceName = warehouses.find(item => item.id === request.sourceWarehouseId)?.name;
   const siteName = warehouses.find(item => item.id === request.siteWarehouseId)?.name;
-  const requestHref = request.requestOrigin === 'project'
-    ? `/da?projectId=${request.projectId || ''}&siteId=${request.constructionSiteId || ''}&tab=material&materialTab=request&requestId=${request.id}`
-    : '/requests';
+  const requestHref = buildMaterialRequestHref(request);
 
   if (request.status === RequestStatus.PENDING && canApproveMaterialRequest(user, request)) {
     return {
@@ -398,7 +410,7 @@ const Home: React.FC = () => {
         statusLabel: requestStatusLabel(item.status),
         nextAction: item.status === RequestStatus.REJECTED ? 'Phiếu bị từ chối, cần kiểm tra lý do và tạo lại nếu cần.' : 'Theo dõi trạng thái cấp vật tư.',
         dueAt: item.expectedDate || item.createdDate,
-        href: '/requests',
+        href: buildMaterialRequestHref(item),
         actionLabel: 'Xem yêu cầu',
       })) : [];
 

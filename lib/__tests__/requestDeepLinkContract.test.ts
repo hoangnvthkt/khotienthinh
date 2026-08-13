@@ -25,6 +25,15 @@ describe('request deep links', () => {
     expect(commandPalette).not.toContain("../context/RequestContext");
   });
 
+  it('keeps project material request cards on the project material deep link', () => {
+    const home = readFileSync('pages/Home.tsx', 'utf8');
+
+    expect(home).toContain('const buildMaterialRequestHref = (request: MaterialRequest)');
+    expect(home).toContain("materialTab: 'request'");
+    expect(home).toContain("href: buildMaterialRequestHref(item)");
+    expect(home).not.toContain("href: '/requests'");
+  });
+
   it('keeps the request dashboard on the runtime read model', () => {
     const dashboard = readFileSync('pages/request/RequestDashboard.tsx', 'utf8');
 

@@ -386,6 +386,7 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
     onReject,
     onReturnSourceLog,
 }) => {
+    const [showSourceLogs, setShowSourceLogs] = useState(false);
     const materialRows = log.materials || [];
     const detailResolution = resolveDailyLogSummaryDetails(log, [log, ...summarySourceLogs]);
     const displayVolumes = detailResolution.details.volumes;
@@ -434,20 +435,26 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
                     )}
                     <div className="grid grid-cols-1 lg:grid-cols-[1.15fr_0.85fr] gap-4">
                         <div className="rounded-2xl border border-border p-4 space-y-4">
-                            <div>
-                                <div className="text-[10px] font-black text-muted-foreground uppercase mb-1">Nội dung công việc thi công</div>
-                                <p className="text-sm text-foreground/90 leading-relaxed whitespace-pre-wrap">{log.description || 'Không có nội dung.'}</p>
+                            <div className="rounded-xl border border-emerald-200/70 bg-emerald-50/40 dark:bg-emerald-950/20 dark:border-emerald-900/30 p-3.5 shadow-sm">
+                                <div className="text-[10px] font-black text-blue-700 dark:text-blue-400 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                                    <FileText size={12} className="text-blue-600 dark:text-blue-400" /> Nội dung công việc thi công
+                                </div>
+                                <p className="text-sm font-medium text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-wrap">{log.description || 'Không có nội dung.'}</p>
                             </div>
                             {log.acceptanceDescription && (
-                                <div className="border-t border-border pt-3">
-                                    <div className="text-[10px] font-black text-muted-foreground uppercase mb-1">Nội dung công việc nghiệm thu</div>
-                                    <p className="text-sm text-foreground/90 leading-relaxed whitespace-pre-wrap">{log.acceptanceDescription}</p>
+                                <div className="rounded-xl border border-amber-200/70 bg-amber-50/40 dark:bg-amber-950/20 dark:border-amber-900/30 p-3.5 shadow-sm">
+                                    <div className="text-[10px] font-black text-amber-700 dark:text-amber-400 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                                        <CheckCircle2 size={12} className="text-amber-600 dark:text-amber-400" /> Nội dung công việc nghiệm thu
+                                    </div>
+                                    <p className="text-sm font-medium text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-wrap">{log.acceptanceDescription}</p>
                                 </div>
                             )}
                             {log.nextDayPlan && (
-                                <div className="border-t border-border pt-3">
-                                    <div className="text-[10px] font-black text-muted-foreground uppercase mb-1">Kế hoạch thi công ngày hôm sau</div>
-                                    <p className="text-sm text-foreground/90 leading-relaxed whitespace-pre-wrap">{log.nextDayPlan}</p>
+                                <div className="rounded-xl border border-blue-200/70 bg-blue-50/40 dark:bg-blue-950/20 dark:border-blue-900/30 p-3.5 shadow-sm">
+                                    <div className="text-[10px] font-black text-blue-700 dark:text-blue-400 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                                        <Calendar size={12} className="text-blue-600 dark:text-blue-400" /> Kế hoạch thi công ngày hôm sau
+                                    </div>
+                                    <p className="text-sm font-medium text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-wrap">{log.nextDayPlan}</p>
                                 </div>
                             )}
                             <div className="border-t border-border pt-3">
@@ -568,55 +575,74 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
                     </div>
 
                     {summarySourceLogs.length > 0 && (
-                        <section className="rounded-2xl border border-teal-500/20 bg-teal-500/5 p-4">
-                            <div className="mb-3 flex items-center justify-between gap-2">
-                                <h4 className="text-xs font-black text-muted-foreground uppercase flex items-center gap-1">
-                                    <FileText size={13} className="text-teal-600" /> Phiếu nguồn trong ngày
-                                </h4>
-                                <span className="rounded-full bg-teal-50 px-2 py-0.5 text-[10px] font-black text-teal-700">
-                                    {summarySourceLogs.length} phiếu
+                        <section className="rounded-2xl border border-teal-500/20 bg-teal-500/5 p-4 transition-all">
+                            <button
+                                type="button"
+                                onClick={() => setShowSourceLogs(prev => !prev)}
+                                className="w-full flex items-center justify-between gap-2 text-left focus:outline-none group select-none"
+                            >
+                                <div className="flex items-center gap-2">
+                                    <h4 className="text-xs font-black text-teal-800 dark:text-teal-300 uppercase flex items-center gap-1.5">
+                                        <FileText size={14} className="text-teal-600 dark:text-teal-400" /> Phiếu nguồn trong ngày
+                                    </h4>
+                                    <span className="rounded-full bg-teal-100 dark:bg-teal-900/50 px-2 py-0.5 text-[10px] font-black text-teal-700 dark:text-teal-300">
+                                        {summarySourceLogs.length} phiếu
+                                    </span>
+                                </div>
+                                <span className="flex items-center gap-1 text-xs font-bold text-teal-600 dark:text-teal-400 group-hover:text-teal-700 transition-colors">
+                                    {showSourceLogs ? 'Thu gọn' : 'Xem chi tiết'}
+                                    <ChevronDown size={16} className={`transition-transform duration-200 ${showSourceLogs ? 'rotate-180' : ''}`} />
                                 </span>
-                            </div>
-                            <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-                                {summarySourceLogs.map(source => {
-                                    const sourceStatus = getLogStatus(source);
-                                    const canReturnSource = canReturnSourceLog?.(source) || false;
-                                    return (
-                                        <div key={source.id} className="rounded-xl border border-border bg-card p-3">
-                                            <div className="mb-2 flex items-start justify-between gap-2">
-                                                <div className="min-w-0">
-                                                    <div className="truncate text-sm font-black text-foreground">{getLegacyDailyLogSourceName(source)}</div>
-                                                    <div className="text-[10px] font-bold text-muted-foreground">
-                                                        {source.submittedAt ? new Date(source.submittedAt).toLocaleString('vi-VN') : new Date(`${source.date}T00:00:00`).toLocaleDateString('vi-VN')}
+                            </button>
+
+                            {showSourceLogs && (
+                                <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2 animate-in fade-in-50 duration-200">
+                                    {summarySourceLogs.map(source => {
+                                        const sourceStatus = getLogStatus(source);
+                                        const canReturnSource = canReturnSourceLog?.(source) || false;
+                                        return (
+                                            <div key={source.id} className="rounded-xl border border-border bg-card p-3">
+                                                <div className="mb-2 flex items-start justify-between gap-2">
+                                                    <div className="min-w-0">
+                                                        <div className="truncate text-sm font-black text-foreground">{getLegacyDailyLogSourceName(source)}</div>
+                                                        <div className="text-[10px] font-bold text-muted-foreground">
+                                                            {source.submittedAt ? new Date(source.submittedAt).toLocaleString('vi-VN') : new Date(`${source.date}T00:00:00`).toLocaleDateString('vi-VN')}
+                                                        </div>
                                                     </div>
+                                                    <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[9px] font-black ${STATUS_CFG[sourceStatus].cls}`}>
+                                                        {STATUS_CFG[sourceStatus].label}
+                                                    </span>
                                                 </div>
-                                                <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[9px] font-black ${STATUS_CFG[sourceStatus].cls}`}>
-                                                    {STATUS_CFG[sourceStatus].label}
-                                                </span>
-                                            </div>
-                                            <p className="line-clamp-3 whitespace-pre-wrap text-xs leading-relaxed text-slate-600">{source.description || 'Không có nội dung.'}</p>
-                                            {source.issues && (
-                                                <p className="mt-2 line-clamp-2 whitespace-pre-wrap rounded-lg bg-red-50 px-2 py-1.5 text-xs font-medium text-red-600">{source.issues}</p>
-                                            )}
-                                            <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-                                                <div className="text-[10px] font-bold text-muted-foreground">
-                                                    {(source.photos || []).length} ảnh
-                                                </div>
-                                                {canReturnSource && onReturnSourceLog && (
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => onReturnSourceLog(source)}
-                                                        disabled={busy}
-                                                        className="rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-[10px] font-black text-red-700 hover:bg-red-100 disabled:opacity-50"
-                                                    >
-                                                        {busy ? 'Đang trả...' : 'Trả lại nguồn'}
-                                                    </button>
+                                                <p className="line-clamp-3 whitespace-pre-wrap text-xs leading-relaxed text-slate-600">{source.description || 'Không có nội dung.'}</p>
+                                                {source.issues && (
+                                                    <p className="mt-2 line-clamp-2 whitespace-pre-wrap rounded-lg bg-red-50 px-2 py-1.5 text-xs font-medium text-red-600">{source.issues}</p>
                                                 )}
+                                                {source.nextDayPlan && (
+                                                    <div className="mt-2 rounded-lg bg-blue-50/70 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900/30 px-2.5 py-1.5 text-xs">
+                                                        <span className="font-bold text-blue-700 dark:text-blue-400 block text-[10px] uppercase">Kế hoạch ngày hôm sau:</span>
+                                                        <p className="text-slate-700 dark:text-slate-300 line-clamp-2 whitespace-pre-wrap">{source.nextDayPlan}</p>
+                                                    </div>
+                                                )}
+                                                <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                                                    <div className="text-[10px] font-bold text-muted-foreground">
+                                                        {(source.photos || []).length} ảnh
+                                                    </div>
+                                                    {canReturnSource && onReturnSourceLog && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => onReturnSourceLog(source)}
+                                                            disabled={busy}
+                                                            className="rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-[10px] font-black text-red-700 hover:bg-red-100 disabled:opacity-50"
+                                                        >
+                                                            {busy ? 'Đang trả...' : 'Trả lại nguồn'}
+                                                        </button>
+                                                    )}
+                                                </div>
                                             </div>
-                                        </div>
-                                    );
-                                })}
-                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
                         </section>
                     )}
 
@@ -1306,10 +1332,15 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                     ? approvers[0].userId
                     : '',
         );
+        const defaultNextPlan = dayLogs
+            .filter(log => !isSummaryDailyLog(log) && log.nextDayPlan?.trim())
+            .map(log => `- ${getLegacyDailyLogSourceName(log)}: ${log.nextDayPlan!.trim()}`)
+            .join('\n');
+
         setSummaryWeather(existingSummary?.weather || 'sunny');
         setSummaryDescription(existingSummary?.description || '');
         setSummaryIssues(existingSummary?.issues || '');
-        setSummaryNextPlan(existingSummary?.nextDayPlan || '');
+        setSummaryNextPlan(existingSummary?.nextDayPlan || defaultNextPlan);
         setSummaryPhotos(existingSummary?.photos || []);
         setSelectedSummaryLegacyLogIds(existingSummary ? metadataLegacyLogIds : []);
         setSummarySourceSnapshots(existingSummary ? metadataSourceSnapshots : {});
@@ -1334,6 +1365,9 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         setSummaryDescription(prev => `${prev ? `${prev.trim()}\n` : ''}- ${prefix}: ${log.description}`.trim());
         if (log.issues?.trim()) {
             setSummaryIssues(prev => `${prev ? `${prev.trim()}\n` : ''}- ${prefix}: ${log.issues}`.trim());
+        }
+        if (log.nextDayPlan?.trim()) {
+            setSummaryNextPlan(prev => `${prev ? `${prev.trim()}\n` : ''}- ${prefix}: ${log.nextDayPlan}`.trim());
         }
         const sourcePhotos = getLegacyDailyLogSourcePhotos(log);
         setSummaryPhotos(prev => {
@@ -1621,10 +1655,11 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                 createdBy: user?.name || user?.id || 'admin', createdById: user?.id, createdAt: new Date().toISOString(),
             };
             await dailyLogService.upsert(item);
-            const nextLogs = await dailyLogService.list(effectiveId, constructionSiteId || null);
-            setLogs(nextLogs);
             toast.success(editing ? 'Cập nhật nhật ký' : 'Ghi nhật ký thành công');
             resetForm();
+            setShowForm(false);
+            const nextLogs = await dailyLogService.list(effectiveId, constructionSiteId || null);
+            setLogs(nextLogs);
         } catch (e: any) {
             toast.error('Lỗi lưu nhật ký', e?.message);
         } finally {
