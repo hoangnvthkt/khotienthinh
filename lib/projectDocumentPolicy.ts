@@ -3,7 +3,6 @@ import { Role, User } from '../types';
 export type ProjectDocumentType =
   | 'daily_log'
   | 'schedule_task'
-  | 'completion_request'
   | 'quantity_acceptance'
   | 'payment_certificate'
   | 'material_request'

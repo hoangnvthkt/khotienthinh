@@ -150,14 +150,10 @@ const deriveActualDatesFromLogs = (
     linkedDates.sort();
     if (linkedDates.length > 0) {
       if (!actualStart) actualStart = linkedDates[0];
-      if (!actualEnd && (clampProgress(task.progress) >= 100 || task.gateStatus === 'approved')) {
+      if (!actualEnd && clampProgress(task.progress) >= 100) {
         actualEnd = linkedDates[linkedDates.length - 1];
       }
     }
-  }
-
-  if (!actualEnd && task.gateStatus === 'approved') {
-    actualEnd = normalizeIsoDate(task.gateApprovedAt);
   }
 
   return { actualStart, actualEnd };
@@ -338,4 +334,3 @@ export const buildProjectScheduleProjection = ({
     taskProjections,
   };
 };
-

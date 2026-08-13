@@ -643,8 +643,7 @@ export interface ProjectContract {
 
 // ==================== TIẾN ĐỘ (Gantt) ====================
 export type TaskDependencyType = 'FS' | 'SS' | 'FF' | 'SF';
-export type ProjectTaskProgressMode = 'manual' | 'derived_from_acceptance' | 'completion_request' | 'daily_log' | 'children_auto' | 'weekly_report';
-export type ProjectTaskCompletionStatus = 'submitted' | 'verified' | 'approved' | 'returned' | 'cancelled';
+export type ProjectTaskProgressMode = 'manual' | 'derived_from_acceptance' | 'daily_log' | 'children_auto' | 'weekly_report';
 
 export type DelayCategory = 'material' | 'weather' | 'drawing' | 'labor' | 'other';
 export type ResourceType = 'worker' | 'machine' | 'specialist';
@@ -665,7 +664,7 @@ export interface ProjectTask {
   progressMode?: ProjectTaskProgressMode;
   assignee?: string;
   assigneeUserId?: string;   // User ID người phụ trách chuẩn từ project_staff
-  dependencies?: { taskId: string; type: TaskDependencyType; requiresGateApproval?: boolean }[];
+  dependencies?: { taskId: string; type: TaskDependencyType }[];
   isMilestone: boolean;
   color?: string;
   notes?: string;
@@ -715,31 +714,6 @@ export interface ProjectTask {
   completedQuantity?: number; // KL hoàn thành thực tế (cộng dồn từ nhật ký)
   contractItemId?: string;    // FK → ContractItem.id (liên kết hạng mục HĐ)
 
-}
-
-export interface ProjectTaskCompletionRequest extends ProjectSubmissionFields {
-  id: string;
-  projectId?: string | null;
-  constructionSiteId?: string | null;
-  taskId: string;
-  status: ProjectTaskCompletionStatus;
-  proposedQuantity: number;
-  acceptedQuantity: number;
-  note?: string | null;
-  returnReason?: string | null;
-  attachments: Attachment[];
-  submittedBy?: string | null;
-  submittedAt: string;
-  verifiedBy?: string | null;
-  verifiedAt?: string | null;
-  approvedBy?: string | null;
-  approvedAt?: string | null;
-  returnedBy?: string | null;
-  returnedAt?: string | null;
-  cancelledBy?: string | null;
-  cancelledAt?: string | null;
-  createdAt: string;
-  updatedAt: string;
 }
 
 export type ProjectWorkBoqSyncStatus = 'synced' | 'manual' | 'orphaned';

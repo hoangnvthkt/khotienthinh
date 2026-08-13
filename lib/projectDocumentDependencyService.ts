@@ -143,23 +143,19 @@ export const projectDocumentDependencyService = {
     const deps = emptyDependencies();
     const childCount = tasks.filter(task => task.parentId === taskId).length;
     const dependentCount = tasks.filter(task => (task.dependencies || []).some(dep => dep.taskId === taskId)).length;
-    const [completionCount, volumeCount, delayCount, contractLinkCount, internalAcceptanceCount] = await Promise.all([
-      countRows('project_task_completion_requests', 'task_id', taskId),
+    const [volumeCount, delayCount, contractLinkCount, internalAcceptanceCount] = await Promise.all([
       countRows('daily_log_volumes', 'task_id', taskId),
       countRows('project_delay_events', 'task_id', taskId),
       countRows('task_contract_items', 'task_id', taskId),
       countRows('quantity_acceptance_items', 'task_id', taskId),
     ]);
 
-    deps.metadata = { childCount, dependentCount, completionCount, volumeCount, delayCount, contractLinkCount, internalAcceptanceCount };
+    deps.metadata = { childCount, dependentCount, volumeCount, delayCount, contractLinkCount, internalAcceptanceCount };
     if (childCount > 0) {
       pushBlocker(deps, `Không thể xoá hạng mục vì còn ${childCount} công việc con.`, 'Xoá hoặc chuyển công việc con sang hạng mục khác trước.');
     }
     if (dependentCount > 0) {
       pushBlocker(deps, `Không thể xoá hạng mục vì còn ${dependentCount} công việc đang phụ thuộc vào nó.`, 'Gỡ dependency ở các công việc kế tiếp trước.');
-    }
-    if (completionCount > 0) {
-      pushBlocker(deps, 'Không thể xoá hạng mục vì đã có phiếu hoàn thành liên kết.', 'Huỷ hoặc xử lý phiếu hoàn thành trước khi xoá task.');
     }
     if (volumeCount > 0) {
       pushBlocker(deps, 'Không thể xoá hạng mục vì đã có dòng khối lượng nhật ký liên kết.', 'Điều chỉnh nhật ký thi công hoặc chuyển khối lượng sang hạng mục khác trước.');

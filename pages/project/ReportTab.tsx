@@ -24,9 +24,8 @@ import {
     XCircle,
 } from 'lucide-react';
 import { loadXlsx } from '../../lib/loadXlsx';
-import { DailyLog, ProjectTask, ProjectTaskCompletionRequest } from '../../types';
+import { DailyLog, ProjectTask } from '../../types';
 import { dailyLogService, taskService } from '../../lib/projectService';
-import { taskCompletionRequestService } from '../../lib/projectTaskCompletionService';
 import {
     clampProgress,
     deriveProjectTaskProgress,
@@ -181,12 +180,8 @@ const deriveActualDates = (task: ProjectTask, dailyLogs: DailyLog[]) => {
         if (linkedLogs.length > 0) {
             const dates = linkedLogs.map(log => log.date).sort();
             if (!start) start = dates[0];
-            if (!end && (task.progress >= 100 || task.gateStatus === 'approved')) end = dates[dates.length - 1];
+            if (!end && task.progress >= 100) end = dates[dates.length - 1];
         }
-    }
-
-    if (!end && task.gateStatus === 'approved' && task.gateApprovedAt) {
-        end = task.gateApprovedAt.split('T')[0];
     }
 
     return { actualStart: start, actualEnd: end };
@@ -323,7 +318,6 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
     );
     const [tasks, setTasks] = useState<ProjectTask[]>([]);
     const [dailyLogs, setDailyLogs] = useState<DailyLog[]>([]);
-    const [completionRequests, setCompletionRequests] = useState<ProjectTaskCompletionRequest[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState<StatusFilter>(queryReportStatus);
@@ -383,13 +377,11 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
         Promise.all([
             taskService.list(projectScopeId, constructionSiteId),
             dailyLogService.list(projectScopeId, constructionSiteId),
-            taskCompletionRequestService.list(projectScopeId, constructionSiteId),
         ])
-            .then(([taskRows, logRows, completionRows]) => {
+            .then(([taskRows, logRows]) => {
                 if (cancelled) return;
                 setTasks(taskRows);
                 setDailyLogs(logRows);
-                setCompletionRequests(completionRows);
             })
             .catch(console.error)
             .finally(() => {
@@ -404,8 +396,8 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
     const todayIso = useMemo(() => toIsoDate(new Date()), []);
 
     const derivedTasks = useMemo(
-        () => deriveProjectTaskProgress(tasks, completionRequests, dailyLogs, todayIso),
-        [completionRequests, dailyLogs, tasks, todayIso],
+        () => deriveProjectTaskProgress(tasks, dailyLogs, todayIso),
+        [dailyLogs, tasks, todayIso],
     );
 
     const rawTaskById = useMemo(() => new Map(tasks.map(task => [task.id, task])), [tasks]);
@@ -428,8 +420,6 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
                 {
                     ...sourceTask,
                     progress: task.progress,
-                    gateStatus: task.gateStatus,
-                    gateApprovedAt: task.gateApprovedAt || sourceTask.gateApprovedAt,
                 },
                 dailyLogs,
             ));

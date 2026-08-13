@@ -13,7 +13,6 @@ import {
   ProjectFinance,
   ProjectProgressCalculationMode,
   ProjectTask,
-  ProjectTaskCompletionRequest,
   ProjectWorkBoqItem,
   ProjectTransaction,
   PurchaseOrder,
@@ -54,7 +53,6 @@ import {
 import { buildProjectScopeFilter, dedupeRowsById } from './projectScope';
 import { quantityAcceptanceService } from './quantityAcceptanceService';
 import { buildTaskContractQuantityFactors, taskContractItemService } from './taskContractItemService';
-import { taskCompletionRequestService } from './projectTaskCompletionService';
 import {
   calculateProjectValueProgress,
   calculateWeeklyConstructionProgress,
@@ -188,8 +186,6 @@ export interface ExecutivePaymentPeriodRisk {
 
 export interface ExecutiveApprovalQueueMetric {
   dailyLogSubmitted: number;
-  taskCompletionSubmitted: number;
-  taskGatePending: number;
   quantityAcceptanceSubmitted: number;
   paymentCertificateSubmitted: number;
   variationSubmitted: number;
@@ -428,7 +424,7 @@ const buildProgressMetric = (
     percent = weightedAverage(taskDuration);
   } else if (mode === 'task_count') {
     percent = leafTasks.length > 0
-      ? Math.round((leafTasks.filter(task => task.progress >= 100 && task.gateStatus === 'approved').length / leafTasks.length) * 100)
+      ? Math.round((leafTasks.filter(task => task.progress >= 100).length / leafTasks.length) * 100)
       : 0;
   } else if (mode === 'manual') {
     percent = clampProgress(project?.manualProgressPercent || 0);
@@ -879,9 +875,7 @@ const buildPaymentPeriodRisks = (
 };
 
 const buildApprovalQueueMetric = (
-  tasks: ProjectTask[],
   logs: DailyLog[],
-  completionRequests: ProjectTaskCompletionRequest[],
   acceptances: QuantityAcceptance[],
   certs: PaymentCertificate[],
   variations: ContractVariation[],
@@ -889,8 +883,6 @@ const buildApprovalQueueMetric = (
 ): ExecutiveApprovalQueueMetric => {
   const queue = {
     dailyLogSubmitted: logs.filter(log => log.status === 'submitted').length,
-    taskCompletionSubmitted: completionRequests.filter(req => ['submitted', 'verified'].includes(req.status)).length,
-    taskGatePending: tasks.filter(task => task.gateStatus === 'pending' || (task.progress >= 100 && (!task.gateStatus || task.gateStatus === 'none'))).length,
     quantityAcceptanceSubmitted: acceptances.filter(item => item.status === 'submitted').length,
     paymentCertificateSubmitted: certs.filter(cert => cert.status === 'submitted').length,
     variationSubmitted: variations.filter(item => item.status === 'submitted').length,
@@ -899,8 +891,6 @@ const buildApprovalQueueMetric = (
   };
   queue.total =
     queue.dailyLogSubmitted +
-    queue.taskCompletionSubmitted +
-    queue.taskGatePending +
     queue.quantityAcceptanceSubmitted +
     queue.paymentCertificateSubmitted +
     queue.variationSubmitted +
@@ -1051,7 +1041,6 @@ const buildExecutiveMetric = (
   logs: DailyLog[],
   timeline: ExecutiveScheduleSummary,
   financialExecutive: ExecutiveFinancialMetric,
-  completionRequests: ProjectTaskCompletionRequest[],
   acceptances: QuantityAcceptance[],
   certs: PaymentCertificate[],
   variations: ContractVariation[],
@@ -1066,7 +1055,7 @@ const buildExecutiveMetric = (
 ): ExecutiveDashboardMetric => {
   const scheduleHealth = buildScheduleHealthMetric(tasks, progress, delayEvents);
   const paymentPeriodRisks = buildPaymentPeriodRisks(paymentSchedules);
-  const approvalQueue = buildApprovalQueueMetric(tasks, logs, completionRequests, acceptances, certs, variations, reconciliationGroups);
+  const approvalQueue = buildApprovalQueueMetric(logs, acceptances, certs, variations, reconciliationGroups);
   const priorityAlerts = buildPriorityAlerts(scheduleHealth, paymentPeriodRisks, approvalQueue, sourceWarnings);
   const taskHighlights: ExecutiveTaskHighlightMetric = {
     active: timeline.activeRows.slice(0, 8),
@@ -1190,7 +1179,6 @@ export const projectDashboardMetricsService = {
       customerItems,
       subcontractorItems,
       taskLinks,
-      completionRequests,
       acceptances,
       certs,
       advances,
@@ -1210,7 +1198,6 @@ export const projectDashboardMetricsService = {
       safeLoad('contract_items customer', warnings, () => contractItemService.listBySite(projectScopeId, 'customer', constructionSite), [] as ContractItem[]),
       safeLoad('contract_items subcontractor', warnings, () => contractItemService.listBySite(projectScopeId, 'subcontractor', constructionSite), [] as ContractItem[]),
       safeLoad('task_contract_items', warnings, () => taskContractItemService.listBySite(projectScopeId, constructionSite), [] as TaskContractItem[]),
-      safeLoad('project_task_completion_requests', warnings, () => taskCompletionRequestService.list(projectScopeId, constructionSite), [] as ProjectTaskCompletionRequest[]),
       safeLoad('quantity_acceptances', warnings, () => quantityAcceptanceService.listBySite(constructionSite, undefined, project?.id || params.projectId), [] as QuantityAcceptance[]),
       safeLoad('payment_certificates', warnings, () => paymentCertificateService.listBySite(constructionSite, project?.id || params.projectId), [] as PaymentCertificate[]),
       safeLoad('advance_payments', warnings, () => advancePaymentService.listBySite(constructionSite, project?.id || params.projectId), [] as AdvancePayment[]),
@@ -1246,7 +1233,6 @@ export const projectDashboardMetricsService = {
     const timeline = buildExecutiveScheduleSummary({
       tasks,
       dailyLogs: logs,
-      completionRequests,
     });
     const financialExecutive = buildFinancialExecutiveMetric(paymentSchedules, cashFlow, progress, financialKPIs);
     const executive = buildExecutiveMetric(
@@ -1254,7 +1240,6 @@ export const projectDashboardMetricsService = {
       logs,
       timeline,
       financialExecutive,
-      completionRequests,
       acceptances,
       certs,
       variations,

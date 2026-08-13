@@ -322,7 +322,6 @@ const ApprovalQueuePanel = ({ metrics }: { metrics: ProjectDashboardMetrics }) =
   const queue = metrics.executive.approvalQueue;
   const items = [
     { label: 'Nhật ký submitted', value: queue.dailyLogSubmitted },
-    { label: 'Task/gate pending', value: queue.taskCompletionSubmitted + queue.taskGatePending },
     { label: 'Nghiệm thu KL', value: queue.quantityAcceptanceSubmitted },
     { label: 'Chứng từ TT', value: queue.paymentCertificateSubmitted },
     { label: 'Phát sinh HĐ', value: queue.variationSubmitted },

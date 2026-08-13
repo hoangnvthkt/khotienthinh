@@ -1,4 +1,4 @@
-import type { DailyLog, ProjectTask, ProjectTaskCompletionRequest } from '../types';
+import type { DailyLog, ProjectTask } from '../types';
 import { buildProjectScheduleProjection, type TaskProjectionDates } from './projectScheduleProjection';
 import {
   clampProgress,
@@ -65,7 +65,6 @@ export interface ExecutiveScheduleSummary {
 export interface BuildExecutiveScheduleSummaryInput {
   tasks: ProjectTask[];
   dailyLogs?: DailyLog[];
-  completionRequests?: ProjectTaskCompletionRequest[];
   todayIso?: string;
 }
 
@@ -188,14 +187,10 @@ const deriveActualDates = (task: ProjectTask, dailyLogs: DailyLog[]): TaskProjec
     dates.sort();
     if (dates.length > 0) {
       if (!actualStart) actualStart = dates[0];
-      if (!actualEnd && (clampProgress(task.progress) >= 100 || task.gateStatus === 'approved')) {
+      if (!actualEnd && clampProgress(task.progress) >= 100) {
         actualEnd = dates[dates.length - 1];
       }
     }
-  }
-
-  if (!actualEnd && task.gateStatus === 'approved') {
-    actualEnd = normalizeIsoDate(task.gateApprovedAt);
   }
 
   return { actualStart, actualEnd };
@@ -235,11 +230,10 @@ const sortRows = (rows: ExecutiveScheduleTaskRow[]): ExecutiveScheduleTaskRow[] 
 export const buildExecutiveScheduleSummary = ({
   tasks,
   dailyLogs = [],
-  completionRequests = [],
   todayIso,
 }: BuildExecutiveScheduleSummaryInput): ExecutiveScheduleSummary => {
   const normalizedToday = normalizeIsoDate(todayIso) || toIsoDate(new Date());
-  const derivedTasks = deriveProjectTaskProgress(tasks, completionRequests, dailyLogs, normalizedToday);
+  const derivedTasks = deriveProjectTaskProgress(tasks, dailyLogs, normalizedToday);
   const childCount = new Map<string, number>();
   derivedTasks.forEach(task => {
     if (!task.parentId) return;

@@ -1,13 +1,12 @@
-import type { DailyLog, GateStatus, ProjectTask, ProjectTaskCompletionRequest, TaskDependencyType } from '../types';
+import type { DailyLog, ProjectTask, TaskDependencyType } from '../types';
 
-export type ProjectTaskStatus = 'not_started' | 'in_progress' | 'pending_gate' | 'completed' | 'overdue';
+export type ProjectTaskStatus = 'not_started' | 'in_progress' | 'completed' | 'overdue';
 
 export interface ProjectProgressSummary {
   progressPercent: number;
   totalTasks: number;
   leafTaskCount: number;
   completedLeafCount: number;
-  pendingGateCount: number;
   totalWeight: number;
 }
 
@@ -17,7 +16,7 @@ export interface ProjectTaskDraft {
   startDate: string;
   endDate: string;
   parentId?: string;
-  dependencies?: { taskId: string; type: TaskDependencyType; requiresGateApproval?: boolean }[];
+  dependencies?: { taskId: string; type: TaskDependencyType }[];
   isMilestone?: boolean;
 }
 
@@ -66,7 +65,6 @@ export const calculateProjectProgress = (tasks: ProjectTask[]): ProjectProgressS
       totalTasks: tasks.length,
       leafTaskCount: 0,
       completedLeafCount: 0,
-      pendingGateCount: 0,
       totalWeight: 0,
     };
   }
@@ -80,41 +78,20 @@ export const calculateProjectProgress = (tasks: ProjectTask[]): ProjectProgressS
     progressPercent: totalWeight > 0 ? Math.round(weightedProgress / totalWeight) : 0,
     totalTasks: tasks.length,
     leafTaskCount: leafTasks.length,
-    completedLeafCount: leafTasks.filter(task => task.progress >= 100 && task.gateStatus === 'approved').length,
-    pendingGateCount: leafTasks.filter(task => task.progress >= 100 && task.gateStatus !== 'approved').length,
+    completedLeafCount: leafTasks.filter(task => task.progress >= 100).length,
     totalWeight,
   };
 };
 
 export const getProjectTaskStatus = (task: ProjectTask, todayIso = new Date().toISOString().split('T')[0]): ProjectTaskStatus => {
-  if (task.progress >= 100) {
-    return task.gateStatus === 'approved' ? 'completed' : 'pending_gate';
-  }
+  if (task.progress >= 100) return 'completed';
   if (task.endDate < todayIso) return 'overdue';
   if (task.progress > 0) return 'in_progress';
   return 'not_started';
 };
 
-export const getGateBlockedTaskIds = (tasks: ProjectTask[]): Set<string> => {
-  const taskMap = new Map(tasks.map(task => [task.id, task]));
-  const blocked = new Set<string>();
-
-  for (const task of tasks) {
-    for (const dep of task.dependencies || []) {
-      if (!dep.requiresGateApproval) continue;
-      const predecessor = taskMap.get(dep.taskId);
-      if (predecessor && predecessor.progress >= 100 && predecessor.gateStatus !== 'approved') {
-        blocked.add(task.id);
-      }
-    }
-  }
-
-  return blocked;
-};
-
 export const deriveProjectTaskProgress = (
   tasks: ProjectTask[],
-  completionRequests: ProjectTaskCompletionRequest[],
   dailyLogs: DailyLog[] = [],
   todayIso = new Date().toISOString().split('T')[0]
 ): ProjectTask[] => {
@@ -124,13 +101,6 @@ export const deriveProjectTaskProgress = (
     const children = childrenByParent.get(task.parentId) || [];
     children.push(task);
     childrenByParent.set(task.parentId, children);
-  }
-
-  const approvedQtyByTask = new Map<string, number>();
-  for (const request of completionRequests) {
-    if (request.status !== 'approved') continue;
-    const acceptedQuantity = Number(request.acceptedQuantity || request.proposedQuantity || 0);
-    approvedQtyByTask.set(request.taskId, (approvedQtyByTask.get(request.taskId) || 0) + Math.max(0, acceptedQuantity));
   }
 
   const verifiedDailyQtyByTask = new Map<string, number>();
@@ -153,7 +123,10 @@ export const deriveProjectTaskProgress = (
     if (!source) throw new Error(`Missing task ${taskId}`);
 
     const children = (childrenByParent.get(taskId) || []).map(child => getDerived(child.id));
-    let next: ProjectTask = { ...source };
+    let next = Object.fromEntries(
+      Object.entries(source).filter(([key]) => !key.startsWith('gate')),
+    ) as ProjectTask;
+    next.dependencies = (source.dependencies || []).map(dep => ({ taskId: dep.taskId, type: dep.type }));
 
     if (children.length > 0) {
       const allChildrenWeighted = children.every(child => Number(child.provisionalQuantity || 0) > 0);
@@ -179,32 +152,11 @@ export const deriveProjectTaskProgress = (
         progress: plannedQuantity > 0 ? clampProgress(nextProgress) : clampProgress(next.progress),
         progressMode: 'daily_log',
       };
-    } else if (next.progressMode === 'completion_request' || (!next.progressMode && approvedQtyByTask.has(taskId))) {
-      const plannedQuantity = Number(next.provisionalQuantity || 0);
-      const approvedQuantity = approvedQtyByTask.get(taskId) || 0;
-      const nextProgress = plannedQuantity > 0
-        ? Math.round((approvedQuantity / plannedQuantity) * 100)
-        : approvedQuantity > 0 ? 100 : 0;
-
-      next = {
-        ...next,
-        progress: clampProgress(nextProgress),
-        progressMode: 'completion_request',
-      };
     }
-
     if (next.progress >= 100) {
       next = {
         ...next,
-        gateStatus: 'approved',
         actualEndDate: next.actualEndDate || todayIso,
-      };
-    } else if (next.progressMode === 'children_auto' || next.progressMode === 'completion_request' || next.progressMode === 'daily_log' || next.progressMode === 'weekly_report') {
-      next = {
-        ...next,
-        gateStatus: next.gateStatus === 'pending' || next.gateStatus === 'approved' ? 'none' : next.gateStatus,
-        gateApprovedBy: next.gateStatus === 'pending' || next.gateStatus === 'approved' ? undefined : next.gateApprovedBy,
-        gateApprovedAt: next.gateStatus === 'pending' || next.gateStatus === 'approved' ? undefined : next.gateApprovedAt,
       };
     }
 
@@ -213,31 +165,6 @@ export const deriveProjectTaskProgress = (
   };
 
   return tasks.map(task => getDerived(task.id));
-};
-
-export const applyProgressGateTransition = (task: ProjectTask, progress: number): ProjectTask => {
-  const nextProgress = clampProgress(progress);
-  let gateStatus: GateStatus | undefined = task.gateStatus;
-  let gateApprovedBy = task.gateApprovedBy;
-  let gateApprovedAt = task.gateApprovedAt;
-
-  if (nextProgress >= 100 && task.gateStatus !== 'approved') {
-    gateStatus = 'pending';
-    gateApprovedBy = undefined;
-    gateApprovedAt = undefined;
-  } else if (nextProgress < 100 && task.gateStatus !== 'rejected') {
-    gateStatus = 'none';
-    gateApprovedBy = undefined;
-    gateApprovedAt = undefined;
-  }
-
-  return {
-    ...task,
-    progress: nextProgress,
-    gateStatus,
-    gateApprovedBy,
-    gateApprovedAt,
-  };
 };
 
 export const collectDescendantTaskIds = (tasks: ProjectTask[], rootId: string): Set<string> => {

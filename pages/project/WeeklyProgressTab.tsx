@@ -6,14 +6,13 @@ import {
 } from 'lucide-react';
 import {
     ProjectTask, DailyLog, ProjectDailyTaskProgress, ProjectWeeklyTaskProgress, ContractItem,
-    ProjectStaff, ProjectTaskCompletionRequest, PurchaseOrder, MaterialBudgetItem,
+    ProjectStaff, PurchaseOrder, MaterialBudgetItem,
     MaterialRequestFulfillmentBatch, ProjectTaskProgressMode, Attachment, TaskContractItem
 } from '../../types';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm, useReasonConfirm } from '../../context/ConfirmContext';
 import { taskService, dailyLogService, poService, boqService } from '../../lib/projectService';
-import { taskCompletionRequestService } from '../../lib/projectTaskCompletionService';
 import { projectStaffService } from '../../lib/projectStaffService';
 import { contractItemService } from '../../lib/contractItemService';
 import { taskContractItemService } from '../../lib/taskContractItemService';
@@ -395,7 +394,6 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
     const [materialBudgets, setMaterialBudgets] = useState<MaterialBudgetItem[]>([]);
     const [fulfillmentBatches, setFulfillmentBatches] = useState<MaterialRequestFulfillmentBatch[]>([]);
     const [projectStaff, setProjectStaff] = useState<ProjectStaff[]>([]);
-    const [completionRequests, setCompletionRequests] = useState<ProjectTaskCompletionRequest[]>([]);
     const [allWeeklyProgress, setAllWeeklyProgress] = useState<ProjectWeeklyTaskProgress[]>([]);
     const [weeklyBaselineProgress, setWeeklyBaselineProgress] = useState<ProjectWeeklyTaskProgress[]>([]);
     const [allDailyProgress, setAllDailyProgress] = useState<ProjectDailyTaskProgress[]>([]);
@@ -522,7 +520,6 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
         setMaterialBudgets([]);
         setFulfillmentBatches([]);
         setProjectStaff([]);
-        setCompletionRequests([]);
         setTaskContractLinks({});
         setAllWeeklyProgress([]);
         setWeeklyBaselineProgress([]);
@@ -547,7 +544,6 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                 boqData,
                 fulfillmentBatchData,
                 staffData,
-                completionData,
             ] = await Promise.all([
                 taskService.list(effectiveId, constructionSiteId || null),
                 dailyLogService.list(effectiveId, constructionSiteId || null),
@@ -561,7 +557,6 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                     : constructionSiteId
                         ? projectStaffService.listBySite(constructionSiteId)
                         : Promise.resolve([]),
-                taskCompletionRequestService.list(effectiveId, constructionSiteId || null),
             ]);
 
             if (
@@ -569,7 +564,7 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                 || baseDataScopeRef.current !== targetKey
             ) return;
 
-            setTasks(deriveProjectTaskProgress(taskData, completionData, logData));
+            setTasks(deriveProjectTaskProgress(taskData, logData));
             setDailyLogs(logData);
             setContractItems(contractItemData);
             setTaskContractLinkRows(linkData);
@@ -577,7 +572,6 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
             setMaterialBudgets(boqData);
             setFulfillmentBatches(fulfillmentBatchData);
             setProjectStaff(staffData);
-            setCompletionRequests(completionData);
 
             setTaskContractLinks(linkData.reduce<Record<string, string[]>>((acc, link) => {
                 if (!acc[link.taskId]) acc[link.taskId] = [];
@@ -880,7 +874,6 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
             onReady: bundle => {
                 const authoritativeTasks = deriveProjectTaskProgress(
                     bundle.taskRows,
-                    completionRequests,
                     dailyLogs,
                     bundle.target.periodStart,
                 );
@@ -949,7 +942,6 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
         });
     }, [
         actionLoadState,
-        completionRequests,
         constructionSiteId,
         dailyLogs,
         effectiveId,
@@ -982,12 +974,12 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                 progressMode: 'weekly_report' as const,
             };
         });
-        const derived = deriveProjectTaskProgress(rawTasks, completionRequests, dailyLogs);
+        const derived = deriveProjectTaskProgress(rawTasks, dailyLogs);
         return derived.reduce<Record<string, { progress: number }>>((acc, task) => {
             acc[task.id] = { progress: task.progress };
             return acc;
         }, {});
-    }, [completionRequests, dailyLogs, tasks, weeklyBaselineProgress]);
+    }, [dailyLogs, tasks, weeklyBaselineProgress]);
 
     const dailyBaselineRollup = useMemo(() => {
         if (tasks.length === 0) return {};
@@ -1000,12 +992,12 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                 progressMode: 'weekly_report' as const,
             };
         });
-        const derived = deriveProjectTaskProgress(rawTasks, completionRequests, dailyLogs);
+        const derived = deriveProjectTaskProgress(rawTasks, dailyLogs);
         return derived.reduce<Record<string, { progress: number }>>((acc, task) => {
             acc[task.id] = { progress: task.progress };
             return acc;
         }, {});
-    }, [completionRequests, dailyBaselineProgress, dailyLogs, tasks]);
+    }, [dailyBaselineProgress, dailyLogs, tasks]);
 
     // Compute weekly history rollup for all tasks and all weeks
     const weeklyHistoryRollup = useMemo(() => {
@@ -1038,7 +1030,7 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                 };
             });
 
-            const derived = deriveProjectTaskProgress(rawTasks, completionRequests, dailyLogs);
+            const derived = deriveProjectTaskProgress(rawTasks, dailyLogs);
 
             const taskProgressMap: Record<string, { progress: number; note?: string; updatedBy?: string; updatedAt?: string }> = {};
             derived.forEach(t => {
@@ -1053,7 +1045,7 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
             history[week] = taskProgressMap;
         }
         return history;
-    }, [tasks, uniqueWeeks, allWeeklyProgress, completionRequests, dailyLogs, weeklyBaselineProgress]);
+    }, [tasks, uniqueWeeks, allWeeklyProgress, dailyLogs, weeklyBaselineProgress]);
 
     const dailyHistoryRollup = useMemo(() => {
         if (tasks.length === 0) return {};
@@ -1077,7 +1069,7 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                 };
             });
 
-            const derived = deriveProjectTaskProgress(rawTasks, completionRequests, dailyLogs);
+            const derived = deriveProjectTaskProgress(rawTasks, dailyLogs);
             const exactEntries = allDailyProgress.filter(row => row.scopeKey === scopeKey && row.progressDate === day);
             const taskProgressMap: Record<string, { progress: number; note?: string; updatedBy?: string; updatedAt?: string }> = {};
 
@@ -1094,7 +1086,7 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
         }
 
         return history;
-    }, [allDailyProgress, completionRequests, dailyLogs, scopeKey, selectedWeekDays, tasks]);
+    }, [allDailyProgress, dailyLogs, scopeKey, selectedWeekDays, tasks]);
 
     const staffMap = useMemo(() => {
         const map = new Map<string, string>();
@@ -1125,11 +1117,11 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
             };
         });
         return calculateWeeklyConstructionProgress(
-            deriveProjectTaskProgress(draftTasks, completionRequests, dailyLogs),
+            deriveProjectTaskProgress(draftTasks, dailyLogs),
             taskContractLinkRows,
             contractItems,
         );
-    }, [childCountByTaskId, completionRequests, contractItems, dailyLogs, taskContractLinkRows, tasks, weeklyConstructionProgress, weeklyDrafts, weeklyLeafTasks.length]);
+    }, [childCountByTaskId, contractItems, dailyLogs, taskContractLinkRows, tasks, weeklyConstructionProgress, weeklyDrafts, weeklyLeafTasks.length]);
 
     const draftDailyConstructionProgress = useMemo(() => {
         if (weeklyLeafTasks.length === 0) return weeklyConstructionProgress;
@@ -1144,11 +1136,11 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
             };
         });
         return calculateWeeklyConstructionProgress(
-            deriveProjectTaskProgress(draftTasks, completionRequests, dailyLogs),
+            deriveProjectTaskProgress(draftTasks, dailyLogs),
             taskContractLinkRows,
             contractItems,
         );
-    }, [childCountByTaskId, completionRequests, contractItems, dailyDrafts, dailyLogs, taskContractLinkRows, tasks, weeklyConstructionProgress, weeklyLeafTasks.length]);
+    }, [childCountByTaskId, contractItems, dailyDrafts, dailyLogs, taskContractLinkRows, tasks, weeklyConstructionProgress, weeklyLeafTasks.length]);
 
     const draftConstructionProgress = entryMode === 'daily' ? draftDailyConstructionProgress : draftWeeklyConstructionProgress;
 
@@ -1329,8 +1321,8 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                 actualEndDate: progress >= 100 ? (task.actualEndDate || effectiveDate) : task.actualEndDate,
             };
         });
-        return deriveProjectTaskProgress(rawNextTasks, completionRequests, dailyLogs, effectiveDate);
-    }, [completionRequests, dailyLogs, tasks]);
+        return deriveProjectTaskProgress(rawNextTasks, dailyLogs, effectiveDate);
+    }, [dailyLogs, tasks]);
 
     const buildSnapshot = useCallback((
         constructionProgress: number,

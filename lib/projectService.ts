@@ -194,8 +194,22 @@ const taskToDb = (task: ProjectTask): any => {
 export type ProjectTaskLite = Pick<ProjectTask,
     'id' | 'projectId' | 'constructionSiteId' | 'parentId' | 'name' | 'startDate' | 'endDate' |
     'duration' | 'progress' | 'isMilestone' | 'order' | 'wbsCode' | 'fallbackUnit' |
-    'provisionalQuantity' | 'gateStatus'
+    'provisionalQuantity'
 >;
+
+const TASK_SELECT = [
+    'id', 'project_id', 'construction_site_id', 'parent_id', 'name',
+    'start_date', 'end_date', 'duration', 'progress', 'progress_mode',
+    'assignee', 'assignee_user_id', 'dependencies', 'is_milestone', 'color',
+    'notes', 'sort_order', 'lag_time', 'float_days', 'is_critical',
+    'baseline_start', 'baseline_end', 'baseline_locked', 'resource_count',
+    'resource_type', 'estimated_cost_per_day', 'delay_reason', 'delay_category',
+    'baseline_version', 'baseline_change_reason', 'actual_start_date',
+    'actual_end_date', 'wbs_code', 'fallback_unit', 'provisional_quantity',
+    'watchers', 'code', 'quantity', 'unit', 'unit_price', 'total_price',
+    'completed_quantity', 'contract_item_id', 'created_at', 'updated_at',
+    'row_version',
+].join(',');
 
 export type ProjectWorkBoqItemLite = Pick<ProjectWorkBoqItem,
     'id' | 'projectId' | 'constructionSiteId' | 'sourceTaskId' | 'parentId' | 'wbsCode' |
@@ -217,7 +231,6 @@ const TASK_LITE_SELECT = [
     'wbs_code',
     'fallback_unit',
     'provisional_quantity',
-    'gate_status',
 ].join(',');
 
 const WORK_BOQ_LITE_SELECT = [
@@ -249,12 +262,12 @@ export const taskService = {
 
         const { data, error } = await supabase
             .from('project_tasks')
-            .select('*')
+            .select(TASK_SELECT)
             .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId))
             .order('sort_order', { ascending: true })
             .order('id', { ascending: true });
         if (error) throw error;
-        const rows = dedupeRowsById(data || []).map(taskFromDb);
+        const rows = dedupeRowsById((data || []) as any[]).map(taskFromDb);
         writeScopedCache(taskListCache, cacheKey, rows);
         return cloneCachedRows(rows);
     },
@@ -272,13 +285,13 @@ export const taskService = {
         if (siteIds.length === 0) return [];
         const { data, error } = await supabase
             .from('project_tasks')
-            .select('*')
+            .select(TASK_SELECT)
             .in('construction_site_id', siteIds)
             .order('construction_site_id', { ascending: true })
             .order('sort_order', { ascending: true })
             .order('id', { ascending: true });
         if (error) throw error;
-        return (data || []).map(taskFromDb);
+        return ((data || []) as any[]).map(taskFromDb);
     },
     async upsertMany(items: ProjectTask[]): Promise<void> {
         const { error } = await supabase

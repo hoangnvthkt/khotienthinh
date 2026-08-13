@@ -22,7 +22,7 @@ export const AI_TOOL_DEFINITIONS = [
   },
   {
     name: 'ai_tool_project_progress',
-    description: 'Xem chi tiết tiến độ thi công: danh sách tasks, % progress từng task, gate_status. Cần có project_id.',
+    description: 'Xem chi tiết tiến độ thi công: danh sách hạng mục và % hoàn thành. Cần có project_id.',
     parameters: {
       p_project_id: { type: 'string', required: true, description: 'ID của dự án cần xem tiến độ' },
     },
