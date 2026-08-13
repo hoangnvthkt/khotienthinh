@@ -166,15 +166,24 @@ with pbac as (
   from explicit_candidates
   where action_code in ('edit', 'delete')
 )
-select distinct * from with_prerequisite;
+select
+  max(user_id::text)::uuid as user_id,
+  max(granted_by::text)::uuid as granted_by,
+  project_staff_id,
+  project_id,
+  construction_site_id,
+  action_code
+from with_prerequisite
+group by project_staff_id, project_id, construction_site_id, action_code;
 
 insert into public.project_permission_room_members (
   project_id, construction_site_id, room_code, project_staff_id,
   is_active, created_by, updated_at
 )
-select distinct project_id, construction_site_id, 'gantt', project_staff_id,
-  true, granted_by, now()
+select project_id, construction_site_id, 'gantt', project_staff_id,
+  true, max(granted_by::text)::uuid, now()
 from gantt_room_backfill_candidates
+group by project_id, construction_site_id, project_staff_id
 on conflict (project_id, (coalesce(construction_site_id, '')), room_code, project_staff_id)
 do update set is_active = true, updated_at = now();
 
@@ -255,7 +264,7 @@ create trigger trg_project_tasks_gantt_version
 create table if not exists app_private.project_gantt_command_requests (
   id bigint generated always as identity primary key,
   actor_user_id uuid not null,
-  request_id text not null,
+  request_id uuid not null,
   command_name text not null,
   payload_hash text not null,
   result jsonb,
@@ -324,5 +333,661 @@ $$;
 
 revoke all on table public.project_task_completion_requests
   from public, anon, authenticated;
+
+create or replace function app_private.assert_project_gantt_action(
+  p_project_id text,
+  p_construction_site_id text,
+  p_action_code text
+)
+returns uuid
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+declare
+  v_actor_user_id uuid := public.current_app_user_id();
+  v_site_id text := nullif(btrim(coalesce(p_construction_site_id, '')), '');
+begin
+  if v_actor_user_id is null then
+    raise exception 'GANTT_PERMISSION_DENIED' using errcode = '42501';
+  end if;
+
+  if nullif(btrim(coalesce(p_project_id, '')), '') is null
+    or not exists (
+      select 1 from public.projects project
+      where project.id = p_project_id
+        and (
+          v_site_id is null
+          or project.construction_site_id::text = v_site_id
+        )
+    ) then
+    raise exception 'GANTT_SCOPE_MISMATCH' using errcode = '23514';
+  end if;
+
+  if p_action_code not in ('view', 'edit', 'delete')
+    or not app_private.project_actor_has_effective_room_action(
+      v_actor_user_id, p_project_id, v_site_id, 'gantt', p_action_code
+    ) then
+    raise exception 'GANTT_PERMISSION_DENIED' using errcode = '42501';
+  end if;
+
+  return v_actor_user_id;
+end;
+$$;
+
+revoke all on function app_private.assert_project_gantt_action(text, text, text)
+  from public, anon;
+grant execute on function app_private.assert_project_gantt_action(text, text, text)
+  to authenticated;
+
+create or replace function app_private.begin_project_gantt_command(
+  p_actor_user_id uuid,
+  p_request_id uuid,
+  p_command_name text,
+  p_payload_hash text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_request app_private.project_gantt_command_requests%rowtype;
+begin
+  if p_request_id is null then
+    raise exception 'GANTT_REQUEST_ID_REQUIRED' using errcode = '23514';
+  end if;
+
+  insert into app_private.project_gantt_command_requests (
+    actor_user_id, request_id, command_name, payload_hash
+  ) values (
+    p_actor_user_id, p_request_id, p_command_name, p_payload_hash
+  )
+  on conflict (actor_user_id, request_id) do nothing;
+
+  if found then
+    return null;
+  end if;
+
+  select request.* into v_request
+  from app_private.project_gantt_command_requests request
+  where request.actor_user_id = p_actor_user_id
+    and request.request_id = p_request_id
+  for update;
+
+  if v_request.command_name is distinct from p_command_name
+    or v_request.payload_hash is distinct from p_payload_hash then
+    raise exception 'GANTT_REQUEST_ID_REUSED' using errcode = '23514';
+  end if;
+
+  if v_request.result is null then
+    raise exception 'GANTT_REQUEST_IN_PROGRESS' using errcode = '55000';
+  end if;
+
+  return v_request.result || jsonb_build_object('replayed', true);
+end;
+$$;
+
+revoke all on function app_private.begin_project_gantt_command(uuid, uuid, text, text)
+  from public, anon;
+grant execute on function app_private.begin_project_gantt_command(uuid, uuid, text, text)
+  to authenticated;
+
+create or replace function app_private.finish_project_gantt_command(
+  p_actor_user_id uuid,
+  p_request_id uuid,
+  p_result jsonb
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  update app_private.project_gantt_command_requests request
+  set result = p_result, completed_at = now()
+  where request.actor_user_id = p_actor_user_id
+    and request.request_id = p_request_id;
+  return p_result;
+end;
+$$;
+
+revoke all on function app_private.finish_project_gantt_command(uuid, uuid, jsonb)
+  from public, anon;
+grant execute on function app_private.finish_project_gantt_command(uuid, uuid, jsonb)
+  to authenticated;
+
+create or replace function app_private.save_project_gantt_tasks_impl(
+  p_request_id uuid,
+  p_project_id text,
+  p_construction_site_id text,
+  p_changes jsonb
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_actor_user_id uuid;
+  v_site_id text := nullif(btrim(coalesce(p_construction_site_id, '')), '');
+  v_payload_hash text;
+  v_replay jsonb;
+  v_result jsonb;
+  v_ids text[];
+begin
+  v_actor_user_id := app_private.assert_project_gantt_action(p_project_id, v_site_id, 'edit');
+
+  if jsonb_typeof(coalesce(p_changes, 'null'::jsonb)) <> 'array'
+    or jsonb_array_length(p_changes) = 0 then
+    raise exception 'GANTT_INVALID_PAYLOAD' using errcode = '22023';
+  end if;
+
+  v_payload_hash := md5(jsonb_build_object(
+    'projectId', p_project_id,
+    'constructionSiteId', v_site_id,
+    'changes', p_changes
+  )::text);
+  v_replay := app_private.begin_project_gantt_command(
+    v_actor_user_id, p_request_id, 'save_project_gantt_tasks', v_payload_hash
+  );
+  if v_replay is not null then return v_replay; end if;
+
+  select array_agg(change ->> 'id' order by change ->> 'id')
+  into v_ids
+  from jsonb_array_elements(p_changes) change;
+
+  if exists (
+    select 1 from unnest(v_ids) id
+    where nullif(btrim(coalesce(id, '')), '') is null
+  ) or cardinality(v_ids) <> (select count(distinct id) from unnest(v_ids) id) then
+    raise exception 'GANTT_INVALID_PAYLOAD' using errcode = '22023';
+  end if;
+
+  if exists (
+    select 1 from jsonb_array_elements(p_changes) change
+    where change ?| array[
+      'gate_status', 'gate_approved_by', 'gate_approved_at',
+      'code', 'quantity', 'unit', 'unit_price', 'total_price',
+      'completed_quantity', 'contract_item_id', 'created_at',
+      'updated_at', 'row_version', 'project_id', 'construction_site_id'
+    ]
+      or exists (
+        select 1 from jsonb_array_elements(coalesce(change -> 'dependencies', '[]'::jsonb)) dependency
+        where dependency ? 'requires_gate_approval'
+      )
+  ) then
+    raise exception 'GANTT_GATE_METADATA_IMMUTABLE' using errcode = '23514';
+  end if;
+
+  perform task.id
+  from public.project_tasks task
+  where task.id = any(v_ids)
+  order by task.id
+  for update;
+
+  if exists (
+    select 1 from public.project_tasks task
+    where task.id = any(v_ids)
+      and (
+        task.project_id is distinct from p_project_id
+        or task.construction_site_id is distinct from v_site_id
+      )
+  ) then
+    raise exception 'GANTT_SCOPE_MISMATCH' using errcode = '23514';
+  end if;
+
+  if exists (
+    select 1
+    from jsonb_array_elements(p_changes) change
+    join public.project_tasks task on task.id = change ->> 'id'
+    where nullif(change ->> 'expected_row_version', '') is null
+      or (change ->> 'expected_row_version')::bigint <> task.row_version
+  ) then
+    raise exception 'GANTT_STALE_VERSION' using errcode = '40001';
+  end if;
+
+  if exists (
+    select 1 from jsonb_array_elements(p_changes) change
+    left join public.project_tasks task on task.id = change ->> 'id'
+    where task.id is null
+      and coalesce((change ->> 'expected_row_version')::bigint, 0) <> 0
+  ) then
+    raise exception 'GANTT_STALE_VERSION' using errcode = '40001';
+  end if;
+
+  if exists (
+    select 1 from jsonb_array_elements(p_changes) change
+    where nullif(btrim(coalesce(change ->> 'name', '')), '') is null
+      or coalesce(change ->> 'start_date', '') !~ '^\d{4}-\d{2}-\d{2}$'
+      or coalesce(change ->> 'end_date', '') !~ '^\d{4}-\d{2}-\d{2}$'
+      or case
+        when coalesce(change ->> 'start_date', '') ~ '^\d{4}-\d{2}-\d{2}$'
+          and coalesce(change ->> 'end_date', '') ~ '^\d{4}-\d{2}-\d{2}$'
+        then (change ->> 'start_date')::date > (change ->> 'end_date')::date
+        else false
+      end
+      or coalesce((change ->> 'duration')::integer, 0) < 0
+      or coalesce((change ->> 'progress')::numeric, 0) < 0
+      or coalesce(change ->> 'progress_mode', 'manual') not in (
+        'manual', 'derived_from_acceptance', 'daily_log', 'children_auto', 'weekly_report'
+      )
+  ) then
+    raise exception 'GANTT_INVALID_DATES' using errcode = '22007';
+  end if;
+
+  if exists (
+    select 1 from jsonb_array_elements(p_changes) change
+    where nullif(change ->> 'parent_id', '') = change ->> 'id'
+      or (
+        nullif(change ->> 'parent_id', '') is not null
+        and not (nullif(change ->> 'parent_id', '') = any(v_ids))
+        and not exists (
+          select 1 from public.project_tasks parent
+          where parent.id = nullif(change ->> 'parent_id', '')
+            and parent.project_id = p_project_id
+            and parent.construction_site_id is not distinct from v_site_id
+        )
+      )
+  ) then
+    raise exception 'GANTT_HIERARCHY_INVALID' using errcode = '23514';
+  end if;
+
+  if exists (
+    select 1
+    from jsonb_array_elements(p_changes) change
+    cross join lateral jsonb_array_elements(coalesce(change -> 'dependencies', '[]'::jsonb)) dependency
+    where nullif(dependency ->> 'task_id', '') is null
+      or dependency ->> 'task_id' = change ->> 'id'
+      or coalesce(dependency ->> 'type', '') not in ('FS', 'SS', 'FF', 'SF')
+      or (
+        not (dependency ->> 'task_id' = any(v_ids))
+        and not exists (
+          select 1 from public.project_tasks predecessor
+          where predecessor.id = dependency ->> 'task_id'
+            and predecessor.project_id = p_project_id
+            and predecessor.construction_site_id is not distinct from v_site_id
+        )
+      )
+  ) then
+    raise exception 'GANTT_DEPENDENCY_INVALID' using errcode = '23514';
+  end if;
+
+  if exists (
+    select 1 from jsonb_array_elements(p_changes) change
+    cross join lateral unnest(
+      array_remove(
+        coalesce(array(select jsonb_array_elements_text(change -> 'watchers')), '{}'::text[])
+          || array[nullif(change ->> 'assignee_user_id', '')],
+        null
+      )
+    ) actor_user_id
+    where not exists (
+      select 1
+      from public.users user_row
+      join public.project_staff staff on staff.user_id = user_row.id::text
+      where user_row.id::text = actor_user_id
+        and coalesce(user_row.is_active, true)
+        and staff.project_id = p_project_id
+        and staff.end_date is null
+        and (
+          v_site_id is null
+          or staff.construction_site_id is null
+          or staff.construction_site_id = v_site_id
+        )
+    )
+  ) then
+    raise exception 'GANTT_INVALID_ASSIGNEE' using errcode = '23514';
+  end if;
+
+  insert into public.project_tasks (
+    id, project_id, construction_site_id, parent_id, name, start_date, end_date,
+    duration, progress, progress_mode, assignee, assignee_user_id, dependencies,
+    is_milestone, color, notes, sort_order, lag_time, float_days, is_critical,
+    baseline_start, baseline_end, baseline_locked, resource_count, resource_type,
+    estimated_cost_per_day, delay_reason, delay_category, baseline_version,
+    baseline_change_reason, actual_start_date, actual_end_date, wbs_code,
+    fallback_unit, provisional_quantity, watchers
+  )
+  select
+    change ->> 'id', p_project_id, v_site_id, nullif(change ->> 'parent_id', ''),
+    btrim(change ->> 'name'), change ->> 'start_date', change ->> 'end_date',
+    coalesce((change ->> 'duration')::integer, 1),
+    coalesce((change ->> 'progress')::integer, 0),
+    coalesce(change ->> 'progress_mode', 'manual'),
+    nullif(change ->> 'assignee', ''), nullif(change ->> 'assignee_user_id', ''),
+    coalesce(change -> 'dependencies', '[]'::jsonb),
+    coalesce((change ->> 'is_milestone')::boolean, false),
+    nullif(change ->> 'color', ''), nullif(change ->> 'notes', ''),
+    coalesce((change ->> 'sort_order')::integer, 0),
+    coalesce((change ->> 'lag_time')::integer, 0),
+    coalesce((change ->> 'float_days')::integer, 0),
+    coalesce((change ->> 'is_critical')::boolean, false),
+    nullif(change ->> 'baseline_start', ''), nullif(change ->> 'baseline_end', ''),
+    coalesce((change ->> 'baseline_locked')::boolean, false),
+    greatest(coalesce((change ->> 'resource_count')::integer, 1), 0),
+    coalesce(nullif(change ->> 'resource_type', ''), 'worker'),
+    greatest(coalesce((change ->> 'estimated_cost_per_day')::numeric, 0), 0),
+    nullif(change ->> 'delay_reason', ''), nullif(change ->> 'delay_category', ''),
+    nullif(change ->> 'baseline_version', ''),
+    nullif(change ->> 'baseline_change_reason', ''),
+    nullif(change ->> 'actual_start_date', '')::date,
+    nullif(change ->> 'actual_end_date', '')::date,
+    nullif(btrim(coalesce(change ->> 'wbs_code', '')), ''),
+    nullif(btrim(coalesce(change ->> 'fallback_unit', '')), ''),
+    greatest(coalesce((change ->> 'provisional_quantity')::numeric, 0), 0),
+    coalesce(array(select jsonb_array_elements_text(change -> 'watchers')), '{}'::text[])
+  from jsonb_array_elements(p_changes) change
+  on conflict (id) do update
+  set parent_id = excluded.parent_id,
+      name = excluded.name,
+      start_date = excluded.start_date,
+      end_date = excluded.end_date,
+      duration = excluded.duration,
+      progress = excluded.progress,
+      progress_mode = excluded.progress_mode,
+      assignee = excluded.assignee,
+      assignee_user_id = excluded.assignee_user_id,
+      dependencies = excluded.dependencies,
+      is_milestone = excluded.is_milestone,
+      color = excluded.color,
+      notes = excluded.notes,
+      sort_order = excluded.sort_order,
+      lag_time = excluded.lag_time,
+      float_days = excluded.float_days,
+      is_critical = excluded.is_critical,
+      baseline_start = excluded.baseline_start,
+      baseline_end = excluded.baseline_end,
+      baseline_locked = excluded.baseline_locked,
+      resource_count = excluded.resource_count,
+      resource_type = excluded.resource_type,
+      estimated_cost_per_day = excluded.estimated_cost_per_day,
+      delay_reason = excluded.delay_reason,
+      delay_category = excluded.delay_category,
+      baseline_version = excluded.baseline_version,
+      baseline_change_reason = excluded.baseline_change_reason,
+      actual_start_date = excluded.actual_start_date,
+      actual_end_date = excluded.actual_end_date,
+      wbs_code = excluded.wbs_code,
+      fallback_unit = excluded.fallback_unit,
+      provisional_quantity = excluded.provisional_quantity,
+      watchers = excluded.watchers;
+
+  if exists (
+    with recursive ancestry as (
+      select task.id as origin_id, task.parent_id, array[task.id]::text[] as path
+      from public.project_tasks task
+      where task.project_id = p_project_id
+        and task.construction_site_id is not distinct from v_site_id
+      union all
+      select ancestry.origin_id, parent.parent_id, ancestry.path || parent.id
+      from ancestry
+      join public.project_tasks parent on parent.id = ancestry.parent_id
+      where not parent.id = any(ancestry.path)
+    )
+    select 1 from ancestry
+    where parent_id = any(path)
+  ) then
+    raise exception 'GANTT_HIERARCHY_CYCLE' using errcode = '23514';
+  end if;
+
+  if exists (
+    with recursive dependency_graph as (
+      select task.id as origin_id,
+        dependency ->> 'task_id' as current_id,
+        array[task.id]::text[] as path
+      from public.project_tasks task
+      cross join lateral jsonb_array_elements(coalesce(task.dependencies, '[]'::jsonb)) dependency
+      where task.project_id = p_project_id
+        and task.construction_site_id is not distinct from v_site_id
+      union all
+      select graph.origin_id,
+        dependency ->> 'task_id',
+        graph.path || graph.current_id
+      from dependency_graph graph
+      join public.project_tasks task on task.id = graph.current_id
+      cross join lateral jsonb_array_elements(coalesce(task.dependencies, '[]'::jsonb)) dependency
+      where not graph.current_id = any(graph.path)
+    )
+    select 1 from dependency_graph where current_id = origin_id
+  ) then
+    raise exception 'GANTT_DEPENDENCY_CYCLE' using errcode = '23514';
+  end if;
+
+  if exists (
+    select 1
+    from public.project_tasks task
+    where task.project_id = p_project_id
+      and task.construction_site_id is not distinct from v_site_id
+      and task.wbs_code is not null
+    group by lower(btrim(task.wbs_code))
+    having count(*) > 1
+  ) then
+    raise exception 'GANTT_DUPLICATE_WBS' using errcode = '23505';
+  end if;
+
+  if exists (
+    select 1 from jsonb_array_elements(p_changes) change
+    cross join lateral jsonb_array_elements_text(coalesce(change -> 'contract_item_ids', '[]'::jsonb)) link(contract_item_id)
+    where change ? 'contract_item_ids'
+      and not exists (
+        select 1 from public.contract_items contract_item
+        where contract_item.id = link.contract_item_id::uuid
+          and contract_item.project_id = p_project_id
+          and contract_item.construction_site_id::text is not distinct from v_site_id
+      )
+  ) then
+    raise exception 'GANTT_SCOPE_MISMATCH' using errcode = '23514';
+  end if;
+
+  delete from public.task_contract_items link
+  using jsonb_array_elements(p_changes) change
+  where change ? 'contract_item_ids'
+    and link.task_id = change ->> 'id';
+
+  insert into public.task_contract_items (
+    task_id, contract_item_id, project_id, construction_site_id
+  )
+  select distinct change ->> 'id', link.contract_item_id::uuid, p_project_id, v_site_id
+  from jsonb_array_elements(p_changes) change
+  cross join lateral jsonb_array_elements_text(coalesce(change -> 'contract_item_ids', '[]'::jsonb)) link(contract_item_id)
+  where change ? 'contract_item_ids'
+  on conflict (task_id, contract_item_id) do nothing;
+
+  select jsonb_build_object(
+    'ok', true,
+    'requestId', p_request_id,
+    'replayed', false,
+    'tasks', coalesce(jsonb_agg(to_jsonb(task) order by task.sort_order, task.id), '[]'::jsonb)
+  ) into v_result
+  from public.project_tasks task
+  where task.id = any(v_ids);
+
+  return app_private.finish_project_gantt_command(v_actor_user_id, p_request_id, v_result);
+end;
+$$;
+
+revoke all on function app_private.save_project_gantt_tasks_impl(uuid, text, text, jsonb)
+  from public, anon;
+grant execute on function app_private.save_project_gantt_tasks_impl(uuid, text, text, jsonb)
+  to authenticated;
+
+create or replace function public.save_project_gantt_tasks(
+  p_request_id uuid,
+  p_project_id text,
+  p_construction_site_id text,
+  p_changes jsonb
+)
+returns jsonb
+language sql
+security invoker
+set search_path = ''
+as $$
+  select app_private.save_project_gantt_tasks_impl(
+    p_request_id, p_project_id, nullif(p_construction_site_id, ''), p_changes
+  );
+$$;
+
+revoke all on function public.save_project_gantt_tasks(uuid, text, text, jsonb)
+  from public, anon;
+grant execute on function public.save_project_gantt_tasks(uuid, text, text, jsonb)
+  to authenticated;
+
+create or replace function app_private.delete_project_gantt_task_tree_impl(
+  p_request_id uuid,
+  p_project_id text,
+  p_construction_site_id text,
+  p_task_id text,
+  p_expected_row_version bigint
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_actor_user_id uuid;
+  v_site_id text := nullif(btrim(coalesce(p_construction_site_id, '')), '');
+  v_payload_hash text;
+  v_replay jsonb;
+  v_result jsonb;
+  v_task_ids text[];
+  v_blockers jsonb;
+begin
+  v_actor_user_id := app_private.assert_project_gantt_action(p_project_id, v_site_id, 'delete');
+  v_payload_hash := md5(jsonb_build_object(
+    'projectId', p_project_id,
+    'constructionSiteId', v_site_id,
+    'taskId', p_task_id,
+    'expectedRowVersion', p_expected_row_version
+  )::text);
+  v_replay := app_private.begin_project_gantt_command(
+    v_actor_user_id, p_request_id, 'delete_project_gantt_task_tree', v_payload_hash
+  );
+  if v_replay is not null then return v_replay; end if;
+
+  if not exists (
+    select 1 from public.project_tasks task
+    where task.id = p_task_id
+      and task.project_id = p_project_id
+      and task.construction_site_id is not distinct from v_site_id
+  ) then
+    if exists (select 1 from public.project_tasks task where task.id = p_task_id) then
+      raise exception 'GANTT_SCOPE_MISMATCH' using errcode = '23514';
+    end if;
+    raise exception 'GANTT_TASK_NOT_FOUND' using errcode = 'P0002';
+  end if;
+
+  with recursive tree as (
+    select task.id from public.project_tasks task where task.id = p_task_id
+    union all
+    select child.id from public.project_tasks child
+    join tree parent on child.parent_id = parent.id
+    where child.project_id = p_project_id
+      and child.construction_site_id is not distinct from v_site_id
+  )
+  select array_agg(tree.id order by tree.id) into v_task_ids from tree;
+
+  perform task.id
+  from public.project_tasks task
+  where task.id = any(v_task_ids)
+  order by task.id
+  for update;
+
+  if not exists (
+    select 1 from public.project_tasks task
+    where task.id = p_task_id and task.row_version = p_expected_row_version
+  ) then
+    raise exception 'GANTT_STALE_VERSION' using errcode = '40001';
+  end if;
+
+  select jsonb_strip_nulls(jsonb_build_object(
+    'completionRequests', nullif((select count(*) from public.project_task_completion_requests item where item.task_id = any(v_task_ids)), 0),
+    'dailyProgress', nullif((select count(*) from public.project_daily_task_progress item where item.task_id = any(v_task_ids)), 0),
+    'weeklyProgress', nullif((select count(*) from public.project_weekly_task_progress item where item.task_id = any(v_task_ids)), 0),
+    'dailyLogVolumes', nullif((select count(*) from public.daily_log_volumes item where item.task_id = any(v_task_ids)), 0),
+    'delayEvents', nullif((select count(*) from public.project_delay_events item where item.task_id = any(v_task_ids)), 0),
+    'quantityAcceptances', nullif((select count(*) from public.quantity_acceptance_items item where item.task_id = any(v_task_ids)), 0)
+  )) into v_blockers;
+
+  if v_blockers <> '{}'::jsonb then
+    insert into public.permission_audit_events (
+      actor_user_id, event_type, before_grants, after_grants, metadata
+    ) values (
+      v_actor_user_id, 'gantt_delete_blocked', '[]'::jsonb, '[]'::jsonb,
+      jsonb_build_object(
+        'room_code', 'gantt', 'project_id', p_project_id,
+        'construction_site_id', v_site_id, 'task_id', p_task_id,
+        'task_ids', to_jsonb(v_task_ids), 'blockers', v_blockers
+      )
+    );
+
+    v_result := jsonb_build_object(
+      'ok', false,
+      'requestId', p_request_id,
+      'replayed', false,
+      'errorCode', 'GANTT_DELETE_BLOCKED',
+      'blockers', v_blockers
+    );
+    return app_private.finish_project_gantt_command(v_actor_user_id, p_request_id, v_result);
+  end if;
+
+  update public.project_tasks task
+  set dependencies = coalesce((
+    select jsonb_agg(dependency)
+    from jsonb_array_elements(coalesce(task.dependencies, '[]'::jsonb)) dependency
+    where not (dependency ->> 'taskId' = any(v_task_ids))
+      and not (dependency ->> 'task_id' = any(v_task_ids))
+  ), '[]'::jsonb)
+  where task.project_id = p_project_id
+    and task.construction_site_id is not distinct from v_site_id
+    and not task.id = any(v_task_ids)
+    and exists (
+      select 1 from jsonb_array_elements(coalesce(task.dependencies, '[]'::jsonb)) dependency
+      where dependency ->> 'taskId' = any(v_task_ids)
+        or dependency ->> 'task_id' = any(v_task_ids)
+    );
+
+  delete from public.task_contract_items link where link.task_id = any(v_task_ids);
+  delete from public.project_tasks task where task.id = any(v_task_ids);
+
+  v_result := jsonb_build_object(
+    'ok', true,
+    'requestId', p_request_id,
+    'replayed', false,
+    'deletedTaskIds', to_jsonb(v_task_ids)
+  );
+  return app_private.finish_project_gantt_command(v_actor_user_id, p_request_id, v_result);
+end;
+$$;
+
+revoke all on function app_private.delete_project_gantt_task_tree_impl(uuid, text, text, text, bigint)
+  from public, anon;
+grant execute on function app_private.delete_project_gantt_task_tree_impl(uuid, text, text, text, bigint)
+  to authenticated;
+
+create or replace function public.delete_project_gantt_task_tree(
+  p_request_id uuid,
+  p_project_id text,
+  p_construction_site_id text,
+  p_task_id text,
+  p_expected_row_version bigint
+)
+returns jsonb
+language sql
+security invoker
+set search_path = ''
+as $$
+  select app_private.delete_project_gantt_task_tree_impl(
+    p_request_id, p_project_id, nullif(p_construction_site_id, ''),
+    p_task_id, p_expected_row_version
+  );
+$$;
+
+revoke all on function public.delete_project_gantt_task_tree(uuid, text, text, text, bigint)
+  from public, anon;
+grant execute on function public.delete_project_gantt_task_tree(uuid, text, text, text, bigint)
+  to authenticated;
 
 notify pgrst, 'reload schema';

@@ -24,6 +24,12 @@ describe('gantt Room authoritative migration', () => {
     expect(normalized).toContain("grant_source = case");
     expect(normalized).toContain("then public.project_permission_room_member_actions.grant_source");
     expect(normalized).toContain("'view' as action_code");
+    expect(normalized).toContain(
+      'group by project_staff_id, project_id, construction_site_id, action_code',
+    );
+    expect(normalized).toContain(
+      'group by project_id, construction_site_id, project_staff_id',
+    );
   });
 
   it('adds optimistic concurrency and a private idempotency ledger', () => {
