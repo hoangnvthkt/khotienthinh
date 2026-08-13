@@ -211,6 +211,17 @@ const TASK_SELECT = [
     'row_version',
 ].join(',');
 
+const LEGACY_TASK_SELECT = TASK_SELECT
+    .split(',')
+    .filter(column => !['updated_at', 'row_version'].includes(column))
+    .join(',');
+
+const isMissingTaskVersionColumn = (error: any): boolean => {
+    const message = String(error?.message || '').toLowerCase();
+    return ['42703', 'PGRST204'].includes(String(error?.code || ''))
+        && (message.includes('row_version') || message.includes('updated_at'));
+};
+
 export type ProjectWorkBoqItemLite = Pick<ProjectWorkBoqItem,
     'id' | 'projectId' | 'constructionSiteId' | 'sourceTaskId' | 'parentId' | 'wbsCode' |
     'name' | 'unit' | 'plannedQty' | 'sortOrder' | 'syncStatus'
@@ -260,12 +271,20 @@ export const taskService = {
         const cached = readScopedCache(taskListCache, cacheKey);
         if (cached) return cached;
 
-        const { data, error } = await supabase
+        let { data, error } = await supabase
             .from('project_tasks')
             .select(TASK_SELECT)
             .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId))
             .order('sort_order', { ascending: true })
             .order('id', { ascending: true });
+        if (error && isMissingTaskVersionColumn(error)) {
+            ({ data, error } = await supabase
+                .from('project_tasks')
+                .select(LEGACY_TASK_SELECT)
+                .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId))
+                .order('sort_order', { ascending: true })
+                .order('id', { ascending: true }));
+        }
         if (error) throw error;
         const rows = dedupeRowsById((data || []) as any[]).map(taskFromDb);
         writeScopedCache(taskListCache, cacheKey, rows);
