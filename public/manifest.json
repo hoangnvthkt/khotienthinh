@@ -90,7 +90,7 @@
     {
       "name": "Nhân sự",
       "short_name": "HRM",
-      "url": "/#/hrm/employees",
+      "url": "/#/my-profile",
       "icons": [{ "src": "/icons/icon-96.png", "sizes": "96x96" }]
     },
     {

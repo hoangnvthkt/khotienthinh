@@ -3,10 +3,12 @@ import type {
   PurchaseOrder,
   PurchaseOrderDeliveryBatch,
 } from '../types';
+import { canClonePurchaseOrder } from './purchaseOrderClone';
 
 export type PurchaseOrderUiActionId =
   | 'submit_package'
   | 'approve_package'
+  | 'clone_po'
   | 'add_delivery'
   | 'clone_delivery'
   | 'cancel_delivery'
@@ -68,6 +70,7 @@ export interface PurchaseOrderUiPolicyInput {
   canSubmitPoDocument?: boolean;
   canApprovePoDocument?: boolean;
   canDeletePoDocument?: boolean;
+  canClonePoDocument?: boolean;
   canConfirmPo?: boolean;
   canRunRestrictedPoActions?: boolean;
   editBlockReason?: string | null;
@@ -130,6 +133,7 @@ export const getPurchaseOrderUiPolicy = ({
   canSubmitPoDocument = false,
   canApprovePoDocument = false,
   canDeletePoDocument = false,
+  canClonePoDocument = false,
   canConfirmPo = false,
   canRunRestrictedPoActions = false,
   editBlockReason = null,
@@ -150,6 +154,7 @@ export const getPurchaseOrderUiPolicy = ({
   const mayReceivePo = canConfirmPo;
   const mayEditPo = canEditPoDocument;
   const mayDeletePo = canDeletePoDocument;
+  const mayClonePo = canClonePoDocument && canClonePurchaseOrder(po);
   const mayReturnSupplier = canRunRestrictedPoActions;
   const plannedBatch = firstPlannedBatch(deliveryBatches);
   const hasPendingSupplemental = Boolean(pendingSupplementalApprovalId)
@@ -349,6 +354,10 @@ export const getPurchaseOrderUiPolicy = ({
     { id: 'print_approval_request', label: 'In đề nghị duyệt', intent: 'neutral' },
     { id: 'view_history', label: 'Xem lịch sử', intent: 'neutral' },
   );
+
+  if (mayClonePo) {
+    menuActions.push({ id: 'clone_po', label: 'Nhân bản PO', intent: 'neutral' });
+  }
 
   if (po.procurementGroupId && groupSize > 1) {
     menuActions.push(

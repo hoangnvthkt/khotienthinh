@@ -8,7 +8,7 @@ import {
   MessageSquarePlus,
   Landmark, Repeat, Wrench, ChevronsLeft, ChevronsRight, AppWindow, ArrowLeft, Inbox, Layers, HardDrive,
   Calendar, CalendarOff, DollarSign, FileSignature, MapPin, Bot, FolderOpen, GripVertical, BookOpen, Clock,
-  IdCard, Award, Trophy, Globe, Building2, HardHat, Handshake, Settings2, Calculator, ShoppingCart, Activity, Pin, Car
+  IdCard, Award, Trophy, Globe, Building2, HardHat, Handshake, Settings2, Calculator, ShoppingCart, Activity, Pin, Car, User
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import NotificationCenter from './NotificationCenter';
@@ -42,7 +42,7 @@ interface SidebarProps {
 
 const MODULE_CONFIG = [
   { key: 'WMS' as const, icon: Package, label: 'Vật tư', shortLabel: 'KHO', route: '/inventory' },
-  { key: 'HRM' as const, icon: Briefcase, label: 'Nhân sự', shortLabel: 'NS', route: '/hrm/employees' },
+  { key: 'HRM' as const, icon: Briefcase, label: 'Nhân sự', shortLabel: 'NS', route: '/my-profile' },
   { key: 'WF' as const, icon: GitBranch, label: 'Quy trình', shortLabel: 'QT', route: '/wf' },
   { key: 'DA' as const, icon: BarChart3, label: 'Dự án', shortLabel: 'DA', route: '/da' },
   { key: 'PROCUREMENT' as const, icon: ShoppingCart, label: 'Mua hàng', shortLabel: 'MH', route: '/procurement' },
@@ -87,7 +87,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
   const detectAppFromUrl = (): AppKey | null => {
     const p = location.pathname;
     if (p.startsWith('/booking/vehicle')) return 'VEHICLE_BOOKING';
-    if (p.startsWith('/hrm')) return 'HRM';
+    if (p.startsWith('/hrm') || p === '/my-profile') return 'HRM';
     if (p.startsWith('/wf')) return 'WF';
     if (p.startsWith('/da')) return 'DA';
     if (p.startsWith('/procurement')) return 'PROCUREMENT';
@@ -230,6 +230,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
       { to: '/misa-export', icon: FileSpreadsheet, label: 'Đồng bộ MISA', roles: [Role.ADMIN] },
     ],
     HRM: [
+      { to: '/my-profile', icon: User, label: 'Hồ sơ cá nhân' },
       { to: '/hrm/dashboard', icon: LayoutDashboard, label: 'Dashboard NS' },
       { to: '/hrm/checkin', icon: MapPin, label: 'Check-in' },
       { to: '/hrm/employees', icon: Users, label: 'Hồ sơ nhân sự' },

@@ -80,7 +80,7 @@ const ALL_MODULE_DEFS: ModuleAppDefinition[] = [
     label: 'Nhân sự',
     shortLabel: 'NS',
     description: 'Chấm công, nghỉ phép & hồ sơ',
-    route: '/hrm/employees',
+    route: '/my-profile',
     icon: Briefcase,
     gradient: 'from-rose-500 to-pink-600',
     glowColor: 'rgba(244, 63, 94, 0.4)',

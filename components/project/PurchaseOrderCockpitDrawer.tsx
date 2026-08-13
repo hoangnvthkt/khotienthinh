@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   ChevronDown,
   Clock,
+  Copy,
   Edit2,
   FileText,
   History,
@@ -146,6 +147,7 @@ const actionIcon = (action: PurchaseOrderUiAction) => {
   if (action.id === 'create_supplier_payable') return <WalletCards size={14} />;
   if (action.id === 'supplier_return') return <PackageX size={14} />;
   if (action.id.includes('print')) return <Printer size={14} />;
+  if (action.id === 'clone_po') return <Copy size={14} />;
   if (action.id === 'edit_po') return <Edit2 size={14} />;
   if (action.id === 'remove_po') return <Trash2 size={14} />;
   return <FileText size={14} />;

@@ -196,6 +196,7 @@ const AppRoutes: React.FC = () => {
           <Route path="settings" element={<Settings />} />
           <Route path="settings/permission-health" element={<Settings />} />
           <Route path="misa-export" element={<MisaExport />} />
+          <Route path="hrm" element={<Navigate to="/my-profile" replace />} />
           <Route path="hrm/employees" element={<Employees />} />
           <Route path="hrm/dashboard" element={<HrmDashboard />} />
           <Route path="expense" element={<BudgetDashboard />} />
@@ -296,7 +297,7 @@ const AppDataWarmup: React.FC = () => {
       return;
     }
 
-    if (pathname.startsWith('/hrm') || pathname.startsWith('/employee-dashboard') || pathname.startsWith('/org-map')) {
+    if (pathname.startsWith('/hrm') || pathname === '/my-profile' || pathname.startsWith('/employee-dashboard') || pathname.startsWith('/org-map')) {
       setActiveRealtimeModules(['hrm']);
       loadModuleData('hrm').catch(err => console.warn('HRM lazy load failed:', err));
       return;

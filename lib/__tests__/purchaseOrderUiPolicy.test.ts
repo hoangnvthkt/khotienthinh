@@ -255,6 +255,31 @@ describe('purchaseOrderUiPolicy', () => {
     expect(policy.menuActions.map(action => action.id)).toContain('view_history');
   });
 
+  it('shows clone action for proactive project purchase orders in any status when creation is allowed', () => {
+    const policy = getPurchaseOrderUiPolicy(baseInput({
+      po: makePo({ sourceMode: 'proactive_project', status: 'closed' }),
+      canClonePoDocument: true,
+      canEditPoDocument: false,
+      canDeletePoDocument: false,
+    }));
+
+    expect(policy.menuActions.map(action => action.id)).toContain('clone_po');
+  });
+
+  it('does not show clone action for request or proactive stock purchase orders', () => {
+    const requestPolicy = getPurchaseOrderUiPolicy(baseInput({
+      po: makePo({ sourceMode: 'from_request' }),
+      canClonePoDocument: true,
+    }));
+    const stockPolicy = getPurchaseOrderUiPolicy(baseInput({
+      po: makePo({ sourceMode: 'proactive_stock' }),
+      canClonePoDocument: true,
+    }));
+
+    expect(requestPolicy.menuActions.map(action => action.id)).not.toContain('clone_po');
+    expect(stockPolicy.menuActions.map(action => action.id)).not.toContain('clone_po');
+  });
+
   it('uses V2 package actions for approved package flows', () => {
     expect(packageActions({
       po: packagePo({ purchaseMode: 'single' }),
