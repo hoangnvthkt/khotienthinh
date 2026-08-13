@@ -31,6 +31,7 @@ describe('projectGanttCommandService', () => {
           id: 'task-1',
           project_id: 'project-1',
           construction_site_id: 'site-1',
+          sort_order: 7,
           row_version: 4,
           updated_at: '2026-08-13T07:00:00Z',
         }],
@@ -42,6 +43,7 @@ describe('projectGanttCommandService', () => {
       id: 'task-1',
       expectedRowVersion: 3,
       startDate: '2026-08-13',
+      order: 7,
       contractItemIds: ['contract-1'],
     }]);
 
@@ -53,6 +55,7 @@ describe('projectGanttCommandService', () => {
         id: 'task-1',
         expected_row_version: 3,
         start_date: '2026-08-13',
+        sort_order: 7,
         contract_item_ids: ['contract-1'],
       }],
     });
@@ -61,7 +64,7 @@ describe('projectGanttCommandService', () => {
       requestId: 'generated-request-id',
       replayed: false,
       mutated: true,
-      tasks: [{ rowVersion: 4, updatedAt: '2026-08-13T07:00:00Z' }],
+      tasks: [{ order: 7, rowVersion: 4, updatedAt: '2026-08-13T07:00:00Z' }],
     });
     expect(invalidateTasks).toHaveBeenCalledTimes(1);
   });

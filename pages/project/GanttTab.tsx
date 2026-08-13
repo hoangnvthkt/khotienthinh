@@ -12,17 +12,21 @@ import {
     Upload, Download, FileSpreadsheet, Loader2, XCircle, Eye, CircleDollarSign,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { ProjectTask, ProjectBaseline, TaskDependencyType, ResourceType, DailyLog, ProjectTaskProgressMode, ContractItem, ProjectStaff, ProjectDelayEvent, ProjectDelayEventStatus, ProjectScheduleRevision, ProjectScheduleRevisionTask, PurchaseOrder, MaterialBudgetItem, MaterialRequestFulfillmentBatch, ProjectWeeklyTaskProgress, TaskContractItem, ProjectFinance } from '../../types';
+import { ProjectTask, ProjectBaseline, TaskDependencyType, ResourceType, DailyLog, ProjectTaskProgressMode, ContractItem, ProjectStaff, ProjectDelayEvent, ProjectDelayEventStatus, ProjectScheduleRevision, ProjectScheduleRevisionTask, PurchaseOrder, MaterialBudgetItem, MaterialRequestFulfillmentBatch, ProjectWeeklyTaskProgress, TaskContractItem } from '../../types';
 import { taskService, baselineService, dailyLogService, poService, boqService } from '../../lib/projectService';
 import { buildScheduleForecast } from '../../lib/projectScheduleForecast';
 import { delayEventService, scheduleRevisionService } from '../../lib/projectScheduleForecastService';
 import { contractItemService } from '../../lib/contractItemService';
 import { taskContractItemService } from '../../lib/taskContractItemService';
-import { ProjectPermissionCode, projectStaffService } from '../../lib/projectStaffService';
-import { projectDocumentActionLogService } from '../../lib/projectDocumentActionLogService';
-import { projectDocumentDependencyService } from '../../lib/projectDocumentDependencyService';
-import { formatPolicyMessage, getProjectDocumentPolicy, ProjectDocumentStatus } from '../../lib/projectDocumentPolicy';
-import { notificationService } from '../../lib/notificationService';
+import { projectStaffService } from '../../lib/projectStaffService';
+import { projectPermissionRoomService } from '../../lib/projectPermissionRoomService';
+import { getGanttEffectiveCapabilities, type EffectiveProjectRoomAction } from '../../lib/permissions/projectRoomEffectiveActions';
+import {
+    parseProjectGanttCommandError,
+    projectGanttCommandService,
+    type ProjectGanttScope,
+    type ProjectGanttTaskChange,
+} from '../../lib/projectGanttCommandService';
 import { computeCriticalPath, getDelayDays, rippleEffect, type CriticalPathResult } from '../../lib/criticalPathEngine';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
@@ -116,6 +120,55 @@ const addDays = (d: string, n: number) => {
 const fmtDate = (d: string) => new Date(d).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
 const fmtShort = (d: string) => new Date(d).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
 const today = () => new Date().toISOString().split('T')[0];
+
+const toGanttTaskChange = (
+    task: ProjectTask,
+    expectedRowVersion = task.rowVersion ?? 0,
+    contractItemIds?: string[],
+): ProjectGanttTaskChange => ({
+    id: task.id,
+    expectedRowVersion,
+    parentId: task.parentId,
+    name: task.name,
+    startDate: task.startDate,
+    endDate: task.endDate,
+    duration: task.duration,
+    progress: task.progress,
+    progressMode: task.progressMode,
+    assignee: task.assignee,
+    assigneeUserId: task.assigneeUserId,
+    dependencies: task.dependencies,
+    isMilestone: task.isMilestone,
+    color: task.color,
+    notes: task.notes,
+    order: task.order,
+    lagTime: task.lagTime,
+    floatDays: task.floatDays,
+    isCritical: task.isCritical,
+    baselineStart: task.baselineStart,
+    baselineEnd: task.baselineEnd,
+    baselineLocked: task.baselineLocked,
+    resourceCount: task.resourceCount,
+    resourceType: task.resourceType,
+    estimatedCostPerDay: task.estimatedCostPerDay,
+    delayReason: task.delayReason,
+    delayCategory: task.delayCategory,
+    baselineVersion: task.baselineVersion,
+    baselineChangeReason: task.baselineChangeReason,
+    actualStartDate: task.actualStartDate,
+    actualEndDate: task.actualEndDate,
+    wbsCode: task.wbsCode,
+    fallbackUnit: task.fallbackUnit,
+    provisionalQuantity: task.provisionalQuantity,
+    watchers: task.watchers,
+    ...(contractItemIds ? { contractItemIds } : {}),
+});
+
+const mergeAuthoritativeTasks = (current: ProjectTask[], authoritative: ProjectTask[] = []): ProjectTask[] => {
+    const byId = new Map(current.map(task => [task.id, task]));
+    authoritative.forEach(task => byId.set(task.id, task));
+    return Array.from(byId.values());
+};
 
 const getStatus = (t: ProjectTask): TaskStatus => {
     return getProjectTaskStatus(t, today());
@@ -214,18 +267,6 @@ const formatMoneyShort = (value?: number | null): string => {
     return `${Math.round(n).toLocaleString('vi-VN')} đ`;
 };
 
-const formatMoneyInput = (value?: number | null): string => {
-    const n = Number(value || 0);
-    if (!Number.isFinite(n) || n <= 0) return '';
-    return Math.round(n).toLocaleString('vi-VN');
-};
-
-const parseMoneyInput = (value: string): number => {
-    const normalized = value.replace(/[^\d]/g, '');
-    const parsed = Number(normalized);
-    return Number.isFinite(parsed) ? Math.max(0, Math.round(parsed)) : 0;
-};
-
 const getTaskUnit = (task: ProjectTask, linkedIds: string[], contractItems: ContractItem[]): string => {
     if (linkedIds.length === 1) {
         const ci = contractItems.find(c => c.id === linkedIds[0]);
@@ -322,19 +363,6 @@ const DELAY_STATUS_LABELS: Record<ProjectDelayEventStatus, string> = {
     void: 'Bỏ qua',
 };
 
-const ALL_PROJECT_PERMISSION_CODES: ProjectPermissionCode[] = ['view', 'edit', 'delete', 'submit', 'verify', 'confirm', 'approve'];
-
-const PROJECT_PERMISSION_HINTS: Record<ProjectPermissionCode, string> = {
-    view: 'xem dữ liệu tiến độ',
-    edit: 'tạo, sửa hoặc xoá hạng mục tiến độ',
-    delete: 'xoá hạng mục tiến độ',
-    submit: 'gửi hạng mục vào luồng nghiệm thu',
-    verify: 'xác nhận kỹ thuật',
-    confirm: 'xác nhận nghiệp vụ',
-    approve: 'duyệt hoặc từ chối nghiệm thu',
-    view_available_stock: 'xem vật tư khả dụng',
-};
-
 // ============= COMPONENTS =============
 
 /** Status Badge (Minimalized) */
@@ -370,15 +398,18 @@ const ProgressCell: React.FC<{ value: number; onChange: (v: number) => void; dis
 };
 
 // ============= MAIN COMPONENT =============
-const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canManageTab = true }) => {
-    const { projectFinances, addProjectFinance, updateProjectFinance, user } = useApp();
+const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) => {
+    const { projectFinances } = useApp();
     const toast = useToast();
     const confirm = useConfirm();
     const location = useLocation();
     const effectiveId = projectId || constructionSiteId || '';
     const focusTaskId = useMemo(() => new URLSearchParams(location.search).get('taskId'), [location.search]);
     const focusTaskHandledRef = useRef<string | null>(null);
-    const isAdminUser = user?.role === 'ADMIN';
+    const ganttScope = useMemo<ProjectGanttScope>(() => ({
+        projectId: projectId || effectiveId,
+        constructionSiteId: constructionSiteId || null,
+    }), [constructionSiteId, effectiveId, projectId]);
     // Data
     const [tasks, setTasks] = useState<ProjectTask[]>([]);
     const [baselines, setBaselines] = useState<ProjectBaseline[]>([]);
@@ -392,12 +423,18 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
     const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
     const [materialBudgets, setMaterialBudgets] = useState<MaterialBudgetItem[]>([]);
     const [fulfillmentBatches, setFulfillmentBatches] = useState<MaterialRequestFulfillmentBatch[]>([]);
-    const [actualProductionDraft, setActualProductionDraft] = useState('');
-    const [actualProductionNote, setActualProductionNote] = useState('');
-    const [savingActualProduction, setSavingActualProduction] = useState(false);
     const [projectStaff, setProjectStaff] = useState<ProjectStaff[]>([]);
-    const [projectPerms, setProjectPerms] = useState<Set<ProjectPermissionCode>>(new Set());
-    const [pbacLoaded, setPbacLoaded] = useState(false);
+    const [roomActions, setRoomActions] = useState<EffectiveProjectRoomAction[]>([]);
+    const [roomActionsLoaded, setRoomActionsLoaded] = useState(false);
+    const [roomActionsScopeKey, setRoomActionsScopeKey] = useState<string | null>(null);
+    const [roomActionsError, setRoomActionsError] = useState<string | null>(null);
+    const [roomActionsReloadKey, setRoomActionsReloadKey] = useState(0);
+    const currentRoomScopeKey = `${ganttScope.projectId}:${ganttScope.constructionSiteId || ''}`;
+    const roomActionsReady = roomActionsLoaded && roomActionsScopeKey === currentRoomScopeKey;
+    const ganttCapabilities = useMemo(
+        () => getGanttEffectiveCapabilities(roomActions, roomActionsReady),
+        [roomActions, roomActionsReady],
+    );
     const [loading, setLoading] = useState(true);
     const [showBaselinePanel, setShowBaselinePanel] = useState(false);
     const [showForecastPanel, setShowForecastPanel] = useState(false);
@@ -412,6 +449,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
     const [showAiInsights, setShowAiInsights] = useState(false);
     const [showToolsMenu, setShowToolsMenu] = useState(false);
     const loadScheduleData = useCallback(async () => {
+        if (!ganttCapabilities.canView) return;
         if (!effectiveId) {
             setTasks([]);
             setBaselines([]);
@@ -481,67 +519,63 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
             console.error(e);
             setLoading(false);
         }
-    }, [effectiveId, constructionSiteId, projectId]);
+    }, [effectiveId, constructionSiteId, projectId, ganttCapabilities.canView]);
 
     useEffect(() => {
-        loadScheduleData();
-    }, [loadScheduleData]);
+        setRoomActionsLoaded(false);
+        setRoomActionsScopeKey(null);
+        setRoomActions([]);
+        setRoomActionsError(null);
+        if (!ganttScope.projectId) {
+            setRoomActionsLoaded(true);
+            setRoomActionsScopeKey(currentRoomScopeKey);
+            return;
+        }
 
-    useEffect(() => {
-        setPbacLoaded(false);
-        setProjectPerms(new Set());
-        if (!effectiveId) return;
-
-        const loadProjectPerms = async () => {
+        let cancelled = false;
+        const loadRoomActions = async () => {
             try {
-                const hasPbac = await projectStaffService.hasProjectPbac(projectId, constructionSiteId || undefined);
-                if (!hasPbac) {
-                    setProjectPerms(new Set(ALL_PROJECT_PERMISSION_CODES));
-                    return;
-                }
-                if (!user?.id) {
-                    setProjectPerms(new Set());
-                    return;
-                }
-
-                const results = await Promise.all(
-                    ALL_PROJECT_PERMISSION_CODES.map(async code => {
-                        const check = projectId
-                            ? await projectStaffService.checkProjectPermission(user.id, projectId, code, constructionSiteId || undefined)
-                            : constructionSiteId
-                                ? await projectStaffService.checkPermission(user.id, constructionSiteId, code)
-                                : { allowed: false };
-                        return { code, allowed: check.allowed };
-                    })
+                const actions = await projectPermissionRoomService.listMyActions(
+                    ganttScope.projectId,
+                    ganttScope.constructionSiteId,
                 );
-                setProjectPerms(new Set(results.filter(result => result.allowed).map(result => result.code)));
+                if (!cancelled) setRoomActions(actions);
             } catch (err) {
-                console.warn('Gantt PBAC load failed', err);
-                setProjectPerms(new Set());
+                console.warn('Gantt Room action load failed', err);
+                if (!cancelled) setRoomActionsError('Không thể tải quyền Room Tiến độ.');
             } finally {
-                setPbacLoaded(true);
+                if (!cancelled) {
+                    setRoomActionsScopeKey(currentRoomScopeKey);
+                    setRoomActionsLoaded(true);
+                }
             }
         };
+        loadRoomActions();
+        return () => { cancelled = true; };
+    }, [currentRoomScopeKey, ganttScope, roomActionsReloadKey]);
 
-        loadProjectPerms();
-    }, [effectiveId, projectId, constructionSiteId, user?.id]);
+    useEffect(() => {
+        if (roomActionsReady && ganttCapabilities.canView) loadScheduleData();
+        if (roomActionsReady && !ganttCapabilities.canView) setLoading(false);
+    }, [ganttCapabilities.canView, loadScheduleData, roomActionsReady]);
 
-    const ensureProjectPermission = useCallback((code: ProjectPermissionCode, actionLabel?: string) => {
-        if (isAdminUser) return true;
-        if (!canManageTab && code !== 'view') {
-            toast.error('Không có quyền quản trị tab', 'Bạn cần quyền quản trị "Tiến độ" để thay đổi dữ liệu tiến độ.');
-            return false;
-        }
-        if (!pbacLoaded) {
+    const ensureGanttCapability = useCallback((capability: 'edit' | 'delete', actionLabel: string) => {
+        if (!roomActionsReady) {
             toast.info('Đang tải quyền', 'Vui lòng thử lại sau vài giây.');
             return false;
         }
-        if (!projectPerms.has(code)) {
-            toast.error('Không có quyền', `Bạn cần quyền "${code}" để ${actionLabel || PROJECT_PERMISSION_HINTS[code]}.`);
+        if (!ganttCapabilities.canView || (capability === 'edit' ? !ganttCapabilities.canEdit : !ganttCapabilities.canDelete)) {
+            toast.error('Không có quyền', `Bạn không có quyền ${capability === 'edit' ? 'chỉnh sửa' : 'xóa'} để ${actionLabel}.`);
             return false;
         }
         return true;
-    }, [canManageTab, isAdminUser, pbacLoaded, projectPerms, toast]);
+    }, [ganttCapabilities, roomActionsReady, toast]);
+
+    const handleGanttCommandError = useCallback(async (error: unknown, title: string) => {
+        const commandError = parseProjectGanttCommandError(error);
+        toast.error(title, commandError.message);
+        if (commandError.shouldReload) await loadScheduleData();
+    }, [loadScheduleData, toast]);
 
     // View
     const [viewMode, setViewMode] = useState<ViewMode>('split');
@@ -663,22 +697,10 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
         materialBudgets,
     }), [contractItems, currentProjectFinance, fulfillmentBatches, materialBudgets, purchaseOrders]);
 
-    useEffect(() => {
-        setActualProductionDraft(formatMoneyInput(currentProjectFinance?.actualProductionValue));
-        setActualProductionNote(currentProjectFinance?.actualProductionNote || '');
-    }, [currentProjectFinance?.actualProductionNote, currentProjectFinance?.actualProductionValue, currentProjectFinance?.id]);
-
     const weeklyConstructionProgress = useMemo(
         () => calculateWeeklyConstructionProgress(tasks, taskContractLinkRows, contractItems),
         [contractItems, taskContractLinkRows, tasks],
     );
-
-    const actualProductionPreviewValue = useMemo(() => parseMoneyInput(actualProductionDraft), [actualProductionDraft]);
-    const actualProductionPreviewPercent = useMemo(() => (
-        valueProgressMetric.contractTotalValue > 0
-            ? clampProgress(Math.round((actualProductionPreviewValue / valueProgressMetric.contractTotalValue) * 100))
-            : 0
-    ), [actualProductionPreviewValue, valueProgressMetric.contractTotalValue]);
 
     const getProgressHint = useCallback((task: ProjectTask, hasChildren: boolean) => {
         if (hasChildren) return 'Tự tính từ các hạng mục con';
@@ -687,129 +709,6 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
         if (task.progressMode === 'derived_from_acceptance') return 'Tự tính từ nghiệm thu khối lượng';
         return 'Click để chỉnh tiến độ thủ công';
     }, []);
-
-    const notifyTaskAssignment = useCallback(async (task: ProjectTask, previousTask?: ProjectTask | null) => {
-        const previousAssignee = previousTask?.assigneeUserId;
-        const previousWatchers = new Set(previousTask?.watchers || []);
-        const recipientIds = [
-            task.assigneeUserId && task.assigneeUserId !== previousAssignee ? task.assigneeUserId : undefined,
-            ...(task.watchers || []).filter(uid => !previousWatchers.has(uid)),
-        ].filter(Boolean) as string[];
-
-        if (recipientIds.length === 0) return;
-
-        await notificationService.notifyProjectUsers({
-            recipientIds,
-            actorId: user?.id,
-            type: 'info',
-            category: 'progress',
-            title: '📌 Bạn được giao hạng mục',
-            message: `"${task.name}" đã được giao hoặc tag theo dõi`,
-            severity: 'info',
-            icon: '📌',
-            link: '/da',
-            sourceType: 'task_assignment',
-            sourceId: `task_assignment_${task.id}_${Date.now()}`,
-            constructionSiteId: constructionSiteId || undefined,
-            metadata: { taskId: task.id, taskName: task.name, projectId },
-        });
-    }, [constructionSiteId, projectId, user?.id]);
-
-    const syncProjectFinanceProgress = useCallback((nextTasks: ProjectTask[]) => {
-        const summary = calculateProjectProgress(nextTasks);
-        const constructionProgress = calculateWeeklyConstructionProgress(nextTasks, taskContractLinkRows, contractItems);
-        if (summary.leafTaskCount === 0) return;
-        if (!constructionSiteId) return;
-
-        const finance = projectFinances.find(pf => pf.constructionSiteId === constructionSiteId);
-        if (!finance || finance.progressPercent === constructionProgress) return;
-
-        void updateProjectFinance({
-            ...finance,
-            progressPercent: constructionProgress,
-            updatedAt: new Date().toISOString(),
-        }).catch(error => console.warn('Failed to sync project finance progress', error));
-    }, [constructionSiteId, contractItems, projectFinances, taskContractLinkRows, updateProjectFinance]);
-
-    const saveActualProductionValue = useCallback(async () => {
-        if (!ensureProjectPermission('edit', 'cập nhật sản lượng thực tế')) return;
-        if (!projectId && !constructionSiteId) {
-            toast.error('Thiếu phạm vi dự án', 'Không xác định được dự án hoặc công trường để lưu sản lượng thực tế.');
-            return;
-        }
-
-        const value = parseMoneyInput(actualProductionDraft);
-        const now = new Date().toISOString();
-        const baseFinance: ProjectFinance = currentProjectFinance || {
-            id: crypto.randomUUID(),
-            projectId: projectId || null,
-            constructionSiteId: constructionSiteId || '',
-            contractValue: valueProgressMetric.contractTotalValue || 0,
-            budgetMaterials: 0,
-            budgetLabor: 0,
-            budgetSubcontract: 0,
-            budgetMachinery: 0,
-            budgetOverhead: 0,
-            actualMaterials: 0,
-            actualLabor: 0,
-            actualSubcontract: 0,
-            actualMachinery: 0,
-            actualOverhead: 0,
-            revenueReceived: 0,
-            revenuePending: 0,
-            progressPercent: weeklyConstructionProgress,
-            status: 'active',
-            updatedAt: now,
-        };
-
-        const nextFinance: ProjectFinance = {
-            ...baseFinance,
-            projectId: projectId || baseFinance.projectId || null,
-            constructionSiteId: constructionSiteId || baseFinance.constructionSiteId || '',
-            contractValue: Number(baseFinance.contractValue || valueProgressMetric.contractTotalValue || 0),
-            progressPercent: Number(baseFinance.progressPercent || weeklyConstructionProgress || 0),
-            actualProductionValue: value,
-            actualProductionUpdatedAt: now,
-            actualProductionUpdatedBy: user?.id,
-            actualProductionNote: actualProductionNote.trim() || undefined,
-            updatedAt: now,
-        };
-
-        setSavingActualProduction(true);
-        try {
-            if (currentProjectFinance) {
-                await updateProjectFinance(nextFinance);
-            } else {
-                await addProjectFinance(nextFinance);
-            }
-            setActualProductionDraft(formatMoneyInput(value));
-            toast.success('Đã cập nhật sản lượng thực tế', `Tiến độ theo giá trị hiện là ${actualProductionPreviewPercent}%.`);
-        } catch (error: any) {
-            toast.error('Không lưu được sản lượng thực tế', error?.message || 'Vui lòng thử lại.');
-        } finally {
-            setSavingActualProduction(false);
-        }
-    }, [
-        actualProductionDraft,
-        actualProductionNote,
-        actualProductionPreviewPercent,
-        addProjectFinance,
-        constructionSiteId,
-        currentProjectFinance,
-        ensureProjectPermission,
-        projectId,
-        toast,
-        updateProjectFinance,
-        user?.id,
-        valueProgressMetric.contractTotalValue,
-        weeklyConstructionProgress,
-    ]);
-
-
-
-    useEffect(() => {
-        if (!loading && tasks.length > 0) syncProjectFinanceProgress(tasks);
-    }, [loading, tasks, syncProjectFinanceProgress]);
 
     // ====== CRUD operations ======
     const resetForm = () => {
@@ -823,7 +722,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
     };
 
     const openAdd = (parentId?: string) => {
-        if (!ensureProjectPermission('edit', 'tạo hạng mục tiến độ')) return;
+        if (!ensureGanttCapability('edit', 'tạo hạng mục tiến độ')) return;
         resetForm();
         if (parentId) setFParentId(parentId);
         setFWbsCode(getNextWbsCode(tasks, parentId));
@@ -834,7 +733,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
     };
 
     const openEdit = (t: ProjectTask) => {
-        if (!ensureProjectPermission('edit', 'sửa hạng mục tiến độ')) return;
+        if (!ensureGanttCapability('edit', 'sửa hạng mục tiến độ')) return;
         setEditing(t);
         setFName(t.name); setFStart(t.startDate); setFEnd(t.endDate);
         const sourceMode = t.progressMode || 'weekly_report';
@@ -853,7 +752,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
     };
 
     const duplicateTask = (t: ProjectTask) => {
-        if (!ensureProjectPermission('edit', 'nhân bản hạng mục tiến độ')) return;
+        if (!ensureGanttCapability('edit', 'nhân bản hạng mục tiến độ')) return;
         setEditing(null);
         setFName(t.name + ' (Bản sao)'); setFStart(t.startDate); setFEnd(t.endDate);
         setFProgress('0'); setFProgressMode('weekly_report'); setFAssignee(t.assignee || ''); setFAssigneeUserId(t.assigneeUserId || '');
@@ -897,7 +796,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
             toast.error('Không thể lưu tiến độ', `Mã WBS "${normalizedWbs}" đã tồn tại.`);
             return;
         }
-        if (!ensureProjectPermission('edit', editing ? 'sửa hạng mục tiến độ' : 'tạo hạng mục tiến độ')) return;
+        if (!ensureGanttCapability('edit', editing ? 'sửa hạng mục tiến độ' : 'tạo hạng mục tiến độ')) return;
 
         try {
             const duration = daysBetween(fStart, fEnd);
@@ -939,107 +838,70 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                 watchers: fWatchers,
             };
             const item = baseItem;
-            await taskService.upsert(item);
-            await taskContractItemService.replaceForTask(item.id, effectiveId, constructionSiteId || null, fContractItemIds);
-            const rawNextTasks = await taskService.list(effectiveId, constructionSiteId || null);
+            const rawNextTasks = editing
+                ? tasks.map(task => task.id === item.id ? item : task)
+                : [...tasks, item];
             const nextTasks = deriveProjectTaskProgress(rawNextTasks, dailyLogs);
-            const derivedChanges = nextTasks.filter(next => {
-                const prev = rawNextTasks.find(task => task.id === next.id);
-                return !!prev && (
-                    prev.progress !== next.progress ||
-                    prev.progressMode !== next.progressMode ||
-                    prev.actualEndDate !== next.actualEndDate
+            const changes = nextTasks.filter(next => {
+                const previous = tasks.find(task => task.id === next.id);
+                return next.id === item.id || !previous || (
+                    previous.progress !== next.progress ||
+                    previous.progressMode !== next.progressMode ||
+                    previous.actualEndDate !== next.actualEndDate
                 );
-            });
-            if (derivedChanges.length > 0) await taskService.upsertMany(derivedChanges);
-            const nextLinks = await taskContractItemService.listBySite(effectiveId, constructionSiteId || null);
-            setTasks(nextTasks);
-            setTaskContractLinkRows(nextLinks);
-            setTaskContractLinks(nextLinks.reduce<Record<string, string[]>>((acc, link) => {
-                if (!acc[link.taskId]) acc[link.taskId] = [];
-                acc[link.taskId].push(link.contractItemId);
-                return acc;
-            }, {}));
-            syncProjectFinanceProgress(nextTasks);
-            await notifyTaskAssignment(item, editing);
+            }).map(next => toGanttTaskChange(
+                next,
+                tasks.find(task => task.id === next.id)?.rowVersion ?? 0,
+                next.id === item.id ? fContractItemIds : undefined,
+            ));
+            const result = await projectGanttCommandService.saveTasks(ganttScope, changes);
+            const authoritativeTasks = deriveProjectTaskProgress(
+                mergeAuthoritativeTasks(tasks, result.tasks),
+                dailyLogs,
+            );
+            setTasks(authoritativeTasks);
+            setTaskContractLinks(previous => ({ ...previous, [item.id]: [...fContractItemIds] }));
+            setTaskContractLinkRows(previous => [
+                ...previous.filter(link => link.taskId !== item.id),
+                ...fContractItemIds.map(contractItemId => ({
+                    id: `${item.id}:${contractItemId}`,
+                    taskId: item.id,
+                    contractItemId,
+                    projectId: ganttScope.projectId,
+                    constructionSiteId: ganttScope.constructionSiteId || null,
+                } as TaskContractItem)),
+            ]);
             resetForm();
             toast.success(editing ? 'Đã cập nhật hạng mục' : 'Đã thêm hạng mục');
-        } catch (e: any) {
-            toast.error('Lỗi lưu tiến độ', e?.message);
+        } catch (error) {
+            await handleGanttCommandError(error, 'Lỗi lưu tiến độ');
         }
     };
 
     const handleDelete = async () => {
         if (!deleteTarget) return;
-        if (!ensureProjectPermission('delete', 'xoá hạng mục tiến độ')) return;
+        if (!ensureGanttCapability('delete', 'xoá hạng mục tiến độ')) return;
         try {
-            const deps = await projectDocumentDependencyService.getProjectTaskDependencies(deleteTarget.id, tasks);
-            const status: ProjectDocumentStatus = deleteTarget.progress > 0 || deleteTarget.actualStartDate
-                ? 'locked'
-                : 'draft';
-            const policy = getProjectDocumentPolicy({
-                action: 'delete',
-                documentType: 'schedule_task',
-                status,
-                user,
-                permissions: projectPerms,
-                dependencies: deps,
-                relatedUserIds: [deleteTarget.assigneeUserId, ...(deleteTarget.watchers || [])],
-                documentLabel: deleteTarget.name,
-            });
-            if (!policy.allowed) {
-                await projectDocumentActionLogService.logBlocked({
-                    projectId: projectId || effectiveId,
-                    constructionSiteId: constructionSiteId || null,
-                    documentType: 'schedule_task',
-                    documentId: deleteTarget.id,
-                    documentLabel: deleteTarget.name,
-                    action: 'delete',
-                    fromStatus: status,
-                    blockedReason: policy.reason,
-                    requiredRollbackSteps: policy.requiredRollbackSteps,
-                    metadata: deps.metadata,
-                    createdBy: user?.id,
-                });
-                toast.error('Không thể xoá hạng mục', formatPolicyMessage(policy));
-                return;
-            }
             const idsToRemove = collectDescendantTaskIds(tasks, deleteTarget.id);
             idsToRemove.add(deleteTarget.id);
-            const nextLocalTasks = removeTasksAndReferences(tasks, idsToRemove);
-            const changedRefs = nextLocalTasks.filter(next => {
-                const prev = tasks.find(t => t.id === next.id);
-                return JSON.stringify(prev?.dependencies || []) !== JSON.stringify(next.dependencies || []);
-            });
-
-            for (const id of idsToRemove) await taskService.remove(id);
-            for (const task of changedRefs) await taskService.upsert(task);
-            const nextTasks = await taskService.list(effectiveId, constructionSiteId || null);
+            await projectGanttCommandService.deleteTaskTree(
+                ganttScope,
+                deleteTarget.id,
+                deleteTarget.rowVersion ?? 0,
+            );
+            const nextTasks = removeTasksAndReferences(tasks, idsToRemove);
             setTasks(nextTasks);
-            syncProjectFinanceProgress(nextTasks);
             setDeleteTarget(null);
-            await projectDocumentActionLogService.log({
-                projectId: projectId || effectiveId,
-                constructionSiteId: constructionSiteId || null,
-                documentType: 'schedule_task',
-                documentId: deleteTarget.id,
-                documentLabel: deleteTarget.name,
-                action: 'delete',
-                fromStatus: status,
-                warningAcknowledged: true,
-                metadata: deps.metadata,
-                createdBy: user?.id,
-            });
             toast.success('Đã xoá hạng mục');
-        } catch (e: any) {
-            toast.error('Lỗi xoá hạng mục', e?.message);
+        } catch (error) {
+            await handleGanttCommandError(error, 'Lỗi xoá hạng mục');
         }
     };
 
     const updateProgress = async (id: string, progress: number) => {
         const task = tasks.find(t => t.id === id);
         if (!task) return;
-        if (!ensureProjectPermission('edit', 'cập nhật tiến độ hạng mục')) return;
+        if (!ensureGanttCapability('edit', 'cập nhật tiến độ hạng mục')) return;
         if (childCountByTaskId.get(id)) {
             toast.warning('Tiến độ tự động', 'Hạng mục cha được tính từ các công việc con, không chỉnh tay.');
             return;
@@ -1059,12 +921,13 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                 progress: nextProgress,
                 actualEndDate: nextProgress >= 100 ? (task.actualEndDate || today()) : task.actualEndDate,
             };
-            await taskService.upsert(updated);
-            const nextTasks = tasks.map(t => t.id === id ? updated : t);
+            const result = await projectGanttCommandService.saveTasks(ganttScope, [
+                toGanttTaskChange(updated, task.rowVersion ?? 0),
+            ]);
+            const nextTasks = mergeAuthoritativeTasks(tasks, result.tasks);
             setTasks(nextTasks);
-            syncProjectFinanceProgress(nextTasks);
-        } catch (e: any) {
-            toast.error('Lỗi cập nhật tiến độ', e?.message);
+        } catch (error) {
+            await handleGanttCommandError(error, 'Lỗi cập nhật tiến độ');
         }
     };
 
@@ -1234,6 +1097,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
     };
 
     const processBulkImport = async () => {
+        if (!ensureGanttCapability('edit', 'nhập tiến độ từ Excel')) return;
         setImporting(true);
         try {
             const validRows = importRows.filter((_, i) => !importErrors[i]);
@@ -1268,11 +1132,22 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                     };
                     updatedTasks.push(next);
                 }
-                if (updatedTasks.length > 0) await taskService.upsertMany(updatedTasks);
-                const rawNextTasks = await taskService.list(effectiveId, constructionSiteId || null);
+                const importedById = new Map(updatedTasks.map(task => [task.id, task]));
+                const rawNextTasks = tasks.map(task => importedById.get(task.id) || task);
                 const nextTasks = deriveProjectTaskProgress(rawNextTasks, dailyLogs);
-                setTasks(nextTasks);
-                syncProjectFinanceProgress(nextTasks);
+                const changedTasks = nextTasks.filter(next => {
+                    const previous = tasks.find(task => task.id === next.id);
+                    return !!previous && JSON.stringify(toGanttTaskChange(next, previous.rowVersion ?? 0))
+                        !== JSON.stringify(toGanttTaskChange(previous, previous.rowVersion ?? 0));
+                });
+                const result = changedTasks.length > 0
+                    ? await projectGanttCommandService.saveTasks(
+                        ganttScope,
+                        changedTasks.map(task => toGanttTaskChange(task, tasks.find(item => item.id === task.id)?.rowVersion ?? 0)),
+                    )
+                    : { tasks: [] as ProjectTask[] };
+                const authoritativeTasks = deriveProjectTaskProgress(mergeAuthoritativeTasks(tasks, result.tasks), dailyLogs);
+                setTasks(authoritativeTasks);
                 toast.success('Thành công', `Đã cập nhật ${updatedTasks.length} hạng mục theo Mã WBS`);
                 setShowImportModal(false);
                 setImportRows([]);
@@ -1331,22 +1206,25 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                 }
             }
 
-            for (const t of newTasks) await taskService.upsert(t);
-
             const nextTasks = deriveProjectTaskProgress([...tasks, ...newTasks], dailyLogs);
             const changedImportedTasks = nextTasks.filter(next => {
-                const saved = newTasks.find(task => task.id === next.id);
-                return !!saved && (saved.progress !== next.progress || saved.progressMode !== next.progressMode);
+                const previous = tasks.find(task => task.id === next.id);
+                return !previous || previous.progress !== next.progress || previous.progressMode !== next.progressMode;
             });
-            if (changedImportedTasks.length > 0) await taskService.upsertMany(changedImportedTasks);
-            setTasks(nextTasks);
-            syncProjectFinanceProgress(nextTasks);
+            const result = await projectGanttCommandService.saveTasks(
+                ganttScope,
+                changedImportedTasks.map(task => toGanttTaskChange(
+                    task,
+                    tasks.find(item => item.id === task.id)?.rowVersion ?? 0,
+                )),
+            );
+            const authoritativeTasks = deriveProjectTaskProgress(mergeAuthoritativeTasks(tasks, result.tasks), dailyLogs);
+            setTasks(authoritativeTasks);
             toast.success('Thành công', `Đã nhập ${validRows.length} hạng mục thi công`);
             setShowImportModal(false);
             setImportRows([]);
-        } catch (err) {
-            toast.error('Lỗi', 'Có lỗi khi nhập dữ liệu');
-            console.error(err);
+        } catch (error) {
+            await handleGanttCommandError(error, 'Không thể nhập dữ liệu tiến độ');
         } finally {
             setImporting(false);
         }
@@ -1565,31 +1443,23 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
 
     // Lock baseline handler
     const lockBaseline = useCallback(async () => {
+        if (!ensureGanttCapability('edit', 'chốt baseline tiến độ')) return;
         const name = `Baseline v${baselines.length + 1} — ${new Date().toLocaleDateString('vi-VN')}`;
-        const bl: ProjectBaseline = {
-            id: crypto.randomUUID(),
-            projectId: projectId || constructionSiteId || null,
-            constructionSiteId: constructionSiteId || null,
-            name,
-            lockedAt: new Date().toISOString(),
-            tasksSnapshot: tasks.map(t => ({ ...t, baselineStart: t.startDate, baselineEnd: t.endDate, baselineLocked: true })),
-        };
-        await baselineService.create(bl);
-        // Update tasks with baseline dates
-        const updatedTasks = tasks.map(t => ({
-            ...t,
-            baselineStart: t.startDate,
-            baselineEnd: t.endDate,
-            baselineLocked: true,
-        }));
-        await taskService.upsertMany(updatedTasks);
-        setTasks(updatedTasks);
-        setBaselines(prev => [bl, ...prev]);
-        setActiveBaseline(bl);
-    }, [tasks, baselines, projectId, constructionSiteId]);
+        try {
+            const result = await projectGanttCommandService.createBaseline(ganttScope, name);
+            if (result.baseline) {
+                setBaselines(previous => [result.baseline!, ...previous]);
+                setActiveBaseline(result.baseline);
+                toast.success('Đã chốt baseline tiến độ');
+            }
+        } catch (error) {
+            await handleGanttCommandError(error, 'Không thể chốt baseline');
+        }
+    }, [baselines.length, ensureGanttCapability, ganttScope, handleGanttCommandError, toast]);
 
     // ====== GĐ2: Drag-Resize with Ripple (GĐ5: sandbox-aware) ======
     const handleBarDragEnd = useCallback(async (taskId: string, newEndDate: string) => {
+        if (!ensureGanttCapability('edit', 'điều chỉnh kế hoạch bằng thao tác kéo')) return;
         const source = isSandboxMode ? sandboxTasks : tasks;
         const rippled = rippleEffect(source, taskId, newEndDate);
         if (isSandboxMode) {
@@ -1599,15 +1469,22 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                 const orig = tasks.find(o => o.id === t.id);
                 return orig && (orig.startDate !== t.startDate || orig.endDate !== t.endDate || orig.duration !== t.duration);
             });
-            for (const t of changedTasks) {
-                await taskService.upsert(t);
+            try {
+                const result = changedTasks.length > 0
+                    ? await projectGanttCommandService.saveTasks(
+                        ganttScope,
+                        changedTasks.map(task => toGanttTaskChange(task, tasks.find(item => item.id === task.id)?.rowVersion ?? 0)),
+                    )
+                    : { tasks: [] as ProjectTask[] };
+                const authoritativeTasks = mergeAuthoritativeTasks(tasks, result.tasks);
+                setTasks(authoritativeTasks);
+            } catch (error) {
+                await handleGanttCommandError(error, 'Không thể điều chỉnh kế hoạch');
             }
-            setTasks(rippled);
-            syncProjectFinanceProgress(rippled);
         }
         setDraggingTaskId(null);
         setDragGhost(null);
-    }, [tasks, isSandboxMode, sandboxTasks, syncProjectFinanceProgress]);
+    }, [ensureGanttCapability, ganttScope, handleGanttCommandError, tasks, isSandboxMode, sandboxTasks]);
 
     // GĐ2: Live ripple preview during drag
     const handleBarDragMove = useCallback((taskId: string, newEndDate: string) => {
@@ -1671,6 +1548,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
     }, [isSandboxMode, sandboxTasks, tasks]);
 
     const toggleSandbox = useCallback(() => {
+        if (!ensureGanttCapability('edit', 'sử dụng chế độ giả lập')) return;
         if (!isSandboxMode) {
             setSandboxTasks(tasks.map(t => ({ ...t })));
             setIsSandboxMode(true);
@@ -1678,53 +1556,55 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
             setIsSandboxMode(false);
             setSandboxTasks([]);
         }
-    }, [isSandboxMode, tasks]);
+    }, [ensureGanttCapability, isSandboxMode, tasks]);
 
     const applySandbox = useCallback(async () => {
-        for (const t of sandboxTasks) {
-            const orig = tasks.find(o => o.id === t.id);
-            if (orig && (orig.startDate !== t.startDate || orig.endDate !== t.endDate || orig.duration !== t.duration)) {
-                await taskService.upsert(t);
-            }
+        if (!ensureGanttCapability('edit', 'áp dụng kế hoạch giả lập')) return;
+        const changedTasks = sandboxTasks.filter(task => {
+            const original = tasks.find(item => item.id === task.id);
+            return original && (
+                original.startDate !== task.startDate
+                || original.endDate !== task.endDate
+                || original.duration !== task.duration
+            );
+        });
+        try {
+            const result = changedTasks.length > 0
+                ? await projectGanttCommandService.saveTasks(
+                    ganttScope,
+                    changedTasks.map(task => toGanttTaskChange(task, tasks.find(item => item.id === task.id)?.rowVersion ?? 0)),
+                )
+                : { tasks: [] as ProjectTask[] };
+            const authoritativeTasks = mergeAuthoritativeTasks(tasks, result.tasks);
+            setTasks(authoritativeTasks);
+            setIsSandboxMode(false);
+            setSandboxTasks([]);
+        } catch (error) {
+            await handleGanttCommandError(error, 'Không thể áp dụng kế hoạch giả lập');
         }
-        setTasks(sandboxTasks.map(t => ({ ...t })));
-        syncProjectFinanceProgress(sandboxTasks);
-        setIsSandboxMode(false);
-        setSandboxTasks([]);
-    }, [sandboxTasks, syncProjectFinanceProgress, tasks]);
-
-    const ensureScheduleChangePermission = useCallback((actionLabel: string) => {
-        if (!pbacLoaded) {
-            toast.info('Đang tải quyền', 'Vui lòng thử lại sau vài giây.');
-            return false;
-        }
-        if (!projectPerms.has('edit') && !projectPerms.has('approve')) {
-            toast.error('Không có quyền', `Bạn cần quyền edit hoặc approve để ${actionLabel}.`);
-            return false;
-        }
-        return true;
-    }, [pbacLoaded, projectPerms, toast]);
+    }, [ensureGanttCapability, ganttScope, handleGanttCommandError, sandboxTasks, tasks]);
 
     const handleDelayEventStatus = useCallback(async (event: ProjectDelayEvent, status: ProjectDelayEventStatus) => {
-        if (!ensureScheduleChangePermission('cập nhật sự kiện chậm tiến độ')) return;
+        if (!ensureGanttCapability('edit', 'cập nhật sự kiện chậm tiến độ')) return;
         try {
-            await delayEventService.markStatus(event.id, status, user?.id || null);
-            const now = new Date().toISOString();
-            setDelayEvents(prev => prev.map(item => item.id === event.id ? {
-                ...item,
-                status,
-                acceptedBy: status === 'accepted' ? user?.id || null : item.acceptedBy,
-                acceptedAt: status === 'accepted' ? now : item.acceptedAt,
-                resolvedAt: status === 'resolved' || status === 'void' ? now : status === 'accepted' ? null : item.resolvedAt,
-            } : item));
+            if (!['accepted', 'resolved', 'void'].includes(status)) return;
+            const result = await projectGanttCommandService.transitionDelayEvent(
+                ganttScope,
+                event.id,
+                status as 'accepted' | 'resolved' | 'void',
+                event.updatedAt || '',
+            );
+            if (result.delayEvent) {
+                setDelayEvents(previous => previous.map(item => item.id === event.id ? result.delayEvent! : item));
+            }
             toast.success('Đã cập nhật sự kiện chậm tiến độ');
-        } catch (err: any) {
-            toast.error('Không thể cập nhật sự kiện', err?.message || 'Vui lòng thử lại.');
+        } catch (error) {
+            await handleGanttCommandError(error, 'Không thể cập nhật sự kiện');
         }
-    }, [ensureScheduleChangePermission, toast, user?.id]);
+    }, [ensureGanttCapability, ganttScope, handleGanttCommandError, toast]);
 
     const applyScheduleForecast = useCallback(async () => {
-        if (!ensureScheduleChangePermission('áp dụng dự báo tiến độ')) return;
+        if (!ensureGanttCapability('edit', 'áp dụng dự báo tiến độ')) return;
         if (scheduleForecast.changedTasks.length === 0) {
             toast.info('Không có thay đổi forecast', 'Chưa có hạng mục nào cần điều chỉnh theo sự kiện chậm tiến độ.');
             return;
@@ -1739,7 +1619,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
             constructionSiteId: constructionSiteId || null,
             reason: `Áp dụng forecast từ ${sourceDelayEventIds.length} sự kiện chậm tiến độ`,
             sourceDelayEventIds,
-            appliedBy: user?.id || null,
+            appliedBy: null,
             appliedAt: now,
             createdAt: now,
         };
@@ -1766,38 +1646,36 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
 
         setApplyingForecast(true);
         try {
-            await scheduleRevisionService.createAndApply({
+            const result = await projectGanttCommandService.applyForecast(ganttScope, {
                 revision,
                 revisionTasks,
-                updatedTasks: scheduleForecast.changedTasks,
-                sourceDelayEventIds,
+                taskChanges: scheduleForecast.changedTasks.map(task => toGanttTaskChange(
+                    task,
+                    tasks.find(item => item.id === task.id)?.rowVersion ?? 0,
+                )),
             });
-            const forecastById = scheduleForecast.forecastTaskMap;
-            const nextTasks = tasks.map(task => forecastById.get(task.id) || task);
+            const nextTasks = mergeAuthoritativeTasks(tasks, result.tasks);
             setTasks(nextTasks);
-            setScheduleRevisions(prev => [revision, ...prev]);
-            const appliedIds = new Set(sourceDelayEventIds);
-            setDelayEvents(prev => prev.map(event => appliedIds.has(event.id) ? {
-                ...event,
-                status: 'applied',
-                resolvedAt: now,
-            } : event));
-            syncProjectFinanceProgress(nextTasks);
+            if (result.revision) setScheduleRevisions(previous => [result.revision!, ...previous]);
+            if (result.delayEvents) {
+                const authoritativeEvents = new Map(result.delayEvents.map(event => [event.id, event]));
+                setDelayEvents(previous => previous.map(event => authoritativeEvents.get(event.id) || event));
+            }
             toast.success('Đã áp dụng forecast tiến độ', `${revisionTasks.length} hạng mục đã được cập nhật vào kế hoạch điều hành.`);
-        } catch (err: any) {
-            toast.error('Không thể áp dụng forecast', err?.message || 'Vui lòng thử lại.');
+        } catch (error) {
+            await handleGanttCommandError(error, 'Không thể áp dụng forecast');
         } finally {
             setApplyingForecast(false);
         }
     }, [
         constructionSiteId,
-        ensureScheduleChangePermission,
+        ensureGanttCapability,
+        ganttScope,
+        handleGanttCommandError,
         projectId,
         scheduleForecast,
-        syncProjectFinanceProgress,
         tasks,
         toast,
-        user?.id,
     ]);
 
     // ====== GĐ5: AI Risk Analysis (Rule-based) ======
@@ -1972,6 +1850,35 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
     };
 
     // ====== RENDER ======
+    if (!roomActionsReady) {
+        return (
+            <div className="min-h-[320px] flex items-center justify-center rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
+                <div className="flex items-center gap-2 text-sm font-semibold text-zinc-500">
+                    <Loader2 size={18} className="animate-spin" /> Đang tải quyền Room Tiến độ...
+                </div>
+            </div>
+        );
+    }
+
+    if (!ganttCapabilities.canView) {
+        return (
+            <div className="min-h-[320px] flex items-center justify-center rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6 text-center">
+                <div>
+                    <Lock size={28} className="mx-auto text-zinc-400" />
+                    <h3 className="mt-3 text-base font-bold text-zinc-900 dark:text-zinc-100">Bạn không có quyền xem Room Tiến độ</h3>
+                    <p className="mt-1 text-sm text-zinc-500">{roomActionsError || 'Vui lòng liên hệ quản trị dự án để được cấp quyền view.'}</p>
+                    <button
+                        type="button"
+                        onClick={() => setRoomActionsReloadKey(key => key + 1)}
+                        className="mt-4 rounded-xl border border-zinc-200 dark:border-zinc-700 px-4 py-2 text-xs font-semibold text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-800"
+                    >
+                        Thử tải lại quyền
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div className="space-y-4">
             {/* Header */}
@@ -2009,14 +1916,14 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                     Công cụ & Phân tích Nâng cao
                                 </div>
 
-                                <button
+                                {ganttCapabilities.canEdit && <button
                                     type="button"
                                     onClick={() => { lockBaseline(); setShowToolsMenu(false); }}
                                     className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
                                 >
                                     <span className="flex items-center gap-2"><Lock size={14} /> Chốt Baseline</span>
                                     {baselines.length > 0 && <span className="text-[10px] text-zinc-400">v{baselines.length}</span>}
-                                </button>
+                                </button>}
 
                                 {baselines.length > 0 && (
                                     <button
@@ -2030,7 +1937,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                     </button>
                                 )}
 
-                                <button
+                                {ganttCapabilities.canEdit && <button
                                     type="button"
                                     onClick={() => { setShowForecastPanel(v => !v); setShowToolsMenu(false); }}
                                     className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition-colors ${
@@ -2043,9 +1950,9 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                             {activeDelayEventCount}
                                         </span>
                                     )}
-                                </button>
+                                </button>}
 
-                                <button
+                                {ganttCapabilities.canEdit && <button
                                     type="button"
                                     onClick={() => { toggleSandbox(); setShowToolsMenu(false); }}
                                     className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition-colors ${
@@ -2053,7 +1960,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                     }`}
                                 >
                                     <span className="flex items-center gap-2"><FlaskConical size={14} /> {isSandboxMode ? 'Tắt Giả lập' : 'Chế độ Giả lập'}</span>
-                                </button>
+                                </button>}
 
                                 <button
                                     type="button"
@@ -2080,23 +1987,27 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                     >
                                         <Download size={13} /> Xuất Excel
                                     </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => { fileInputRef.current?.click(); setShowToolsMenu(false); }}
-                                        className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-                                    >
-                                        <Upload size={13} /> Nhập Excel
-                                    </button>
+                                    {ganttCapabilities.canEdit && (
+                                        <button
+                                            type="button"
+                                            onClick={() => { fileInputRef.current?.click(); setShowToolsMenu(false); }}
+                                            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                                        >
+                                            <Upload size={13} /> Nhập Excel
+                                        </button>
+                                    )}
                                 </div>
                             </div>
                         )}
                     </div>
                     <input type="file" ref={fileInputRef} className="hidden" accept=".xlsx,.xls" onChange={handleFileUpload} />
 
-                    <button onClick={() => openAdd()}
-                        className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 shadow-sm transition-colors whitespace-nowrap shrink-0">
-                        <Plus size={14} /> Thêm hạng mục
-                    </button>
+                    {ganttCapabilities.canEdit && (
+                        <button onClick={() => openAdd()}
+                            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 shadow-sm transition-colors whitespace-nowrap shrink-0">
+                            <Plus size={14} /> Thêm hạng mục
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -2122,50 +2033,16 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-3 items-end">
-                        <label className="min-w-0">
-                            <span className="block text-[10px] font-bold uppercase tracking-wide text-zinc-400 dark:text-zinc-500 mb-1.5">Giá trị sản lượng thực tế</span>
-                            <input
-                                value={actualProductionDraft}
-                                onChange={event => setActualProductionDraft(event.target.value)}
-                                onBlur={() => setActualProductionDraft(formatMoneyInput(parseMoneyInput(actualProductionDraft)))}
-                                inputMode="numeric"
-                                placeholder="Nhập số tiền..."
-                                className="w-full rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2.5 text-sm font-semibold text-zinc-900 dark:text-zinc-100 outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
-                                disabled={!canManageTab || savingActualProduction}
-                            />
-                        </label>
-                        <label className="min-w-0">
-                            <span className="block text-[10px] font-bold uppercase tracking-wide text-zinc-400 dark:text-zinc-500 mb-1.5">Ghi chú</span>
-                            <input
-                                value={actualProductionNote}
-                                onChange={event => setActualProductionNote(event.target.value)}
-                                placeholder="VD: cập nhật theo nghiệm thu nội bộ"
-                                className="w-full rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2.5 text-sm font-semibold text-zinc-900 dark:text-zinc-100 outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
-                                disabled={!canManageTab || savingActualProduction}
-                            />
-                        </label>
-                        <div className="flex items-center gap-3">
-                            <div className="hidden sm:block text-right">
-                                <div className="text-[10px] font-bold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">Sau khi lưu</div>
-                                <div className="text-base font-bold text-teal-700 dark:text-teal-400">{actualProductionPreviewPercent}%</div>
-                            </div>
-                            <button
-                                type="button"
-                                onClick={saveActualProductionValue}
-                                disabled={!canManageTab || savingActualProduction}
-                                className="h-[42px] px-4 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-xs font-semibold shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 whitespace-nowrap"
-                            >
-                                {savingActualProduction ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-                                Lưu
-                            </button>
-                        </div>
+                    <div className="flex items-center rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/40 px-4 py-3">
+                        <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                            Chỉ hiển thị tại Room Tiến độ. Giá trị sản lượng và ghi chú được cập nhật trong khu vực Tài chính dự án.
+                        </p>
                     </div>
                 </div>
             </div>
 
             {/* GĐ5: Sandbox active banner */}
-            {isSandboxMode && (
+            {ganttCapabilities.canEdit && isSandboxMode && (
                 <div className="bg-gradient-to-r from-violet-600 to-purple-600 rounded-2xl p-4 shadow-lg flex items-center justify-between">
                     <div className="flex items-center gap-3">
                         <FlaskConical size={20} className="text-white" />
@@ -2193,7 +2070,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
             )}
 
             {/* Schedule Forecast Panel */}
-            {showForecastPanel && (
+            {ganttCapabilities.canEdit && showForecastPanel && (
                 <div className="bg-card rounded-2xl border border-destructive/20 shadow-sm overflow-hidden">
                     <div className="px-5 py-3 border-b border-red-100 dark:border-red-900/60 flex items-center justify-between bg-red-50/50 dark:bg-red-900/10">
                         <div className="flex items-center gap-2">
@@ -2214,11 +2091,13 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                             {scheduleRevisions.length > 0 && (
                                 <span className="text-[10px] font-bold text-muted-foreground">Revision: {scheduleRevisions.length}</span>
                             )}
-                            <button onClick={applyScheduleForecast}
-                                disabled={applyingForecast || scheduleForecast.changedTasks.length === 0}
-                                className="px-3 py-1.5 rounded-lg text-[10px] font-black text-white bg-red-500 hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1">
-                                {applyingForecast ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />} Áp dụng forecast
-                            </button>
+                            {ganttCapabilities.canEdit && (
+                                <button onClick={applyScheduleForecast}
+                                    disabled={applyingForecast || scheduleForecast.changedTasks.length === 0}
+                                    className="px-3 py-1.5 rounded-lg text-[10px] font-black text-white bg-red-500 hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1">
+                                    {applyingForecast ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />} Áp dụng forecast
+                                </button>
+                            )}
                             <button onClick={() => setShowForecastPanel(false)}
                                 className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground hover:text-slate-600 hover:bg-slate-100">
                                 <X size={14} />
@@ -2250,7 +2129,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                                         <span className="rounded-full bg-white/80 text-muted-foreground px-2 py-0.5 border border-red-100">{DELAY_STATUS_LABELS[event.status]}</span>
                                                     </div>
                                                 </div>
-                                                <div className="flex items-center gap-1 shrink-0">
+                                                {ganttCapabilities.canEdit && <div className="flex items-center gap-1 shrink-0">
                                                     {event.status === 'reported' && (
                                                         <button onClick={() => handleDelayEventStatus(event, 'accepted')}
                                                             className="px-2 py-1 rounded-lg text-[9px] font-black text-blue-600 bg-blue-50 border border-blue-100 hover:bg-blue-100">
@@ -2265,7 +2144,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                                         className="px-2 py-1 rounded-lg text-[9px] font-black text-muted-foreground bg-white border border-border hover:bg-slate-50">
                                                         Bỏ qua
                                                     </button>
-                                                </div>
+                                                </div>}
                                             </div>
                                             {event.reason && <p className="mt-2 text-[10px] text-muted-foreground leading-relaxed">{event.reason}</p>}
                                         </div>
@@ -2575,10 +2454,12 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                         </div>
                         <p className="text-sm font-bold text-muted-foreground mb-1">Chưa có hạng mục nào</p>
                         <p className="text-xs text-muted-foreground mb-4">Thêm hạng mục thi công để bắt đầu theo dõi tiến độ</p>
-                        <button onClick={() => openAdd()}
-                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-orange-500 to-amber-500 shadow-lg hover:shadow-xl transition-all">
-                            <Plus size={14} /> Thêm hạng mục đầu tiên
-                        </button>
+                        {ganttCapabilities.canEdit && (
+                            <button onClick={() => openAdd()}
+                                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-orange-500 to-amber-500 shadow-lg hover:shadow-xl transition-all">
+                                <Plus size={14} /> Thêm hạng mục đầu tiên
+                            </button>
+                        )}
                     </div>
                 ) : (
                     <div className="flex flex-col w-full overflow-hidden">
@@ -2754,7 +2635,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                                 const unitLabel = getTaskUnit(task, linkedIds, contractItems);
                                                 const unitTitle = getTaskUnitTitle(task, linkedIds, contractItems);
                                                 const rowHasChildren = hasChildren || !!childCountByTaskId.get(task.id);
-                                                const progressReadOnly = rowHasChildren || task.progressMode === 'weekly_report' || task.progressMode === 'daily_log' || task.progressMode === 'children_auto' || task.progressMode === 'derived_from_acceptance';
+                                                const progressReadOnly = !ganttCapabilities.canEdit || rowHasChildren || task.progressMode === 'weekly_report' || task.progressMode === 'daily_log' || task.progressMode === 'children_auto' || task.progressMode === 'derived_from_acceptance';
                                                 const isFocusedTask = task.id === focusTaskId;
                                                 const isSplitOrTable = viewMode === 'split' || viewMode === 'table';
                                                 return (
@@ -2790,7 +2671,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                                                 {task.isMilestone && <Flag size={11} className="text-red-500 shrink-0" />}
                                                                 <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: task.color || COLORS[idx % COLORS.length] }} />
                                                                 <span className="font-bold text-foreground dark:text-slate-200 truncate cursor-pointer hover:text-orange-600 transition-colors"
-                                                                    onClick={() => openEdit(task)} title={task.name}>
+                                                                    onClick={() => ganttCapabilities.canEdit && openEdit(task)} title={task.name}>
                                                                     {task.name}
                                                                 </span>
                                                                 {(task.watchers || []).length > 0 && (
@@ -2903,22 +2784,26 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                                         <td className={`px-2 ${isSplitOrTable ? 'py-0' : 'py-2.5'} overflow-hidden whitespace-nowrap`}
                                                             style={{ height: isSplitOrTable ? `${ROW_HEIGHT}px` : undefined }}>
                                                             <div className="flex items-center justify-center gap-0.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity h-full">
-                                                                <button onClick={() => openEdit(task)} title="Sửa"
-                                                                    className="w-6 h-6 rounded-lg flex items-center justify-center text-muted-foreground hover:text-blue-600 hover:bg-blue-50 transition-colors">
-                                                                    <Edit2 size={12} />
-                                                                </button>
-                                                                <button onClick={() => duplicateTask(task)} title="Nhân bản"
-                                                                    className="w-6 h-6 rounded-lg flex items-center justify-center text-muted-foreground hover:text-violet-600 hover:bg-violet-50 transition-colors">
-                                                                    <Copy size={12} />
-                                                                </button>
-                                                                <button onClick={() => openAdd(task.id)} title="Thêm hạng mục con"
-                                                                    className="w-6 h-6 rounded-lg flex items-center justify-center text-muted-foreground hover:text-emerald-600 hover:bg-emerald-50 transition-colors">
-                                                                    <Plus size={12} />
-                                                                </button>
-                                                                <button onClick={() => setDeleteTarget(task)} title="Xoá"
-                                                                    className="w-6 h-6 rounded-lg flex items-center justify-center text-muted-foreground hover:text-red-600 hover:bg-red-50 transition-colors">
-                                                                    <Trash2 size={12} />
-                                                                </button>
+                                                                {ganttCapabilities.canEdit && <>
+                                                                    <button onClick={() => openEdit(task)} title="Sửa"
+                                                                        className="w-6 h-6 rounded-lg flex items-center justify-center text-muted-foreground hover:text-blue-600 hover:bg-blue-50 transition-colors">
+                                                                        <Edit2 size={12} />
+                                                                    </button>
+                                                                    <button onClick={() => duplicateTask(task)} title="Nhân bản"
+                                                                        className="w-6 h-6 rounded-lg flex items-center justify-center text-muted-foreground hover:text-violet-600 hover:bg-violet-50 transition-colors">
+                                                                        <Copy size={12} />
+                                                                    </button>
+                                                                    <button onClick={() => openAdd(task.id)} title="Thêm hạng mục con"
+                                                                        className="w-6 h-6 rounded-lg flex items-center justify-center text-muted-foreground hover:text-emerald-600 hover:bg-emerald-50 transition-colors">
+                                                                        <Plus size={12} />
+                                                                    </button>
+                                                                </>}
+                                                                {ganttCapabilities.canDelete && (
+                                                                    <button onClick={() => setDeleteTarget(task)} title="Xoá"
+                                                                        className="w-6 h-6 rounded-lg flex items-center justify-center text-muted-foreground hover:text-red-600 hover:bg-red-50 transition-colors">
+                                                                        <Trash2 size={12} />
+                                                                    </button>
+                                                                )}
                                                             </div>
                                                         </td>
                                                     </tr>
@@ -3107,7 +2992,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                                                 border: `2px solid ${isCrit ? '#ef4444' : color}`,
                                                             }}
                                                             title={`${task.name}: ${task.progress}% (${fmtShort(task.startDate)} → ${fmtShort(task.endDate)})${isCrit ? ' ⚡ Đường găng' : ''}${floatVal > 0 ? ` | Float: ${floatVal}d` : ''}${delayDays > 0 ? ` | Trễ: ${delayDays}d` : ''}`}
-                                                            onClick={() => openEdit(task)}
+                                                            onClick={() => ganttCapabilities.canEdit && openEdit(task)}
                                                             onMouseEnter={(e) => {
                                                                 if (latestPhoto) {
                                                                     setPhotoTooltip({ x: e.clientX, y: e.clientY, photoUrl: latestPhoto.url, date: latestPhotoLog!.date, taskName: task.name });
@@ -3158,7 +3043,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                                                 </span>
                                                             )}
                                                             {/* Drag handle — resize bar end date with ripple + ghost + weather */}
-                                                            <div className="absolute right-0 top-0 h-full w-3 cursor-col-resize opacity-0 group-hover/bar:opacity-100 flex items-center justify-center"
+                                                            {ganttCapabilities.canEdit && <div className="absolute right-0 top-0 h-full w-3 cursor-col-resize opacity-0 group-hover/bar:opacity-100 flex items-center justify-center"
                                                                 onMouseDown={e => {
                                                                     e.stopPropagation();
                                                                     e.preventDefault();
@@ -3205,7 +3090,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                                                     window.addEventListener('mouseup', onUp);
                                                                 }}>
                                                                 <div className="w-1 h-3 rounded bg-white/80" />
-                                                            </div>
+                                                            </div>}
                                                         </div>
                                                     )}
                                                 </div>
@@ -3656,7 +3541,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                         {/* Footer */}
                         <div className="px-6 py-4 border-t border-border dark:border-slate-700 flex justify-between items-center">
                             <div>
-                                {editing && (
+                                {editing && ganttCapabilities.canDelete && (
                                     <button onClick={() => { setDeleteTarget(editing); resetForm(); }}
                                         className="px-3 py-2 rounded-xl text-xs font-bold text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-1 transition-colors">
                                         <Trash2 size={14} /> Xoá

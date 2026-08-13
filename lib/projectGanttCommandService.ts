@@ -2,6 +2,7 @@ import type {
   ProjectBaseline,
   ProjectDelayEvent,
   ProjectScheduleRevision,
+  ProjectScheduleRevisionTask,
   ProjectTask,
 } from '../types';
 import { fromDb, toDb } from './dbMapping';
@@ -120,6 +121,32 @@ const rpcScope = (scope: ProjectGanttScope) => ({
   p_construction_site_id: scope.constructionSiteId || '',
 });
 
+const toDbTaskChange = (change: ProjectGanttTaskChange): Record<string, unknown> => {
+  const row = toDb(change) as Record<string, unknown>;
+  if (Object.prototype.hasOwnProperty.call(row, 'order')) {
+    row.sort_order = row.order;
+    delete row.order;
+  }
+  return row;
+};
+
+const normalizeTask = <T extends Record<string, any>>(task: T): T & ProjectTask => {
+  const { sortOrder, ...rest } = task;
+  return {
+    ...rest,
+    order: sortOrder ?? task.order ?? 0,
+  } as T & ProjectTask;
+};
+
+const mapCommandResult = (data: any): ProjectGanttCommandResult => {
+  const mapped = fromDb(data) as ProjectGanttCommandResult;
+  if (mapped.tasks) mapped.tasks = mapped.tasks.map(task => normalizeTask(task as any));
+  if (mapped.baseline?.tasksSnapshot) {
+    mapped.baseline.tasksSnapshot = mapped.baseline.tasksSnapshot.map(task => normalizeTask(task as any));
+  }
+  return mapped;
+};
+
 export const createProjectGanttCommandService = (dependencies: ProjectGanttCommandDependencies) => {
   const executeCommand = async (
     rpcName: string,
@@ -137,7 +164,7 @@ export const createProjectGanttCommandService = (dependencies: ProjectGanttComma
     if (error) throw parseProjectGanttCommandError(error);
     if (!data?.ok) throw parseProjectGanttCommandError(data);
 
-    const mapped = fromDb(data) as ProjectGanttCommandResult;
+    const mapped = mapCommandResult(data);
     const result = { ...mapped, mutated: !mapped.replayed };
     if (invalidatesTasks && result.mutated) dependencies.invalidateTasks();
     return result;
@@ -150,7 +177,7 @@ export const createProjectGanttCommandService = (dependencies: ProjectGanttComma
       requestId?: string,
     ): Promise<ProjectGanttCommandResult> {
       return executeCommand('save_project_gantt_tasks', scope, requestId, {
-        p_changes: toDb(changes),
+        p_changes: changes.map(toDbTaskChange),
       }, true);
     },
 
@@ -207,8 +234,8 @@ export const createProjectGanttCommandService = (dependencies: ProjectGanttComma
     applyForecast(
       scope: ProjectGanttScope,
       input: {
-        revision: Record<string, unknown>;
-        revisionTasks: Record<string, unknown>[];
+        revision: Partial<ProjectScheduleRevision>;
+        revisionTasks: Array<Partial<ProjectScheduleRevisionTask>>;
         taskChanges: ProjectGanttTaskChange[];
       },
       requestId?: string,
@@ -216,7 +243,7 @@ export const createProjectGanttCommandService = (dependencies: ProjectGanttComma
       return executeCommand('apply_project_gantt_forecast', scope, requestId, {
         p_revision: toDb(input.revision),
         p_revision_tasks: toDb(input.revisionTasks),
-        p_task_changes: toDb(input.taskChanges),
+        p_task_changes: input.taskChanges.map(toDbTaskChange),
       }, true);
     },
 
@@ -229,7 +256,8 @@ export const createProjectGanttCommandService = (dependencies: ProjectGanttComma
         p_consumer_room: consumerRoom,
       });
       if (error) throw parseProjectGanttCommandError(error);
-      return fromDb(data || []) as ProjectGanttCatalogTask[];
+      return (fromDb(data || []) as Array<Record<string, any>>)
+        .map(task => normalizeTask(task) as ProjectGanttCatalogTask);
     },
   };
 };
