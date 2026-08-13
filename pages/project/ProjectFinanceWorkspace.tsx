@@ -7,6 +7,7 @@ import {
   Banknote,
   BarChart3,
   CalendarClock,
+  CircleDollarSign,
   CreditCard,
   Download,
   Edit2,
@@ -51,6 +52,7 @@ import {
   SiteCashSettlementBatch,
   SiteCashSettlementLine,
 } from '../../types';
+import { buildProjectActualProductionUpdate } from '../../lib/projectActualProduction';
 import {
   ProjectFinanceLedgerRow,
   ProjectFinancePayableRow,
@@ -2359,7 +2361,11 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
     addProjectTransactions,
     updateProjectTransaction,
     removeProjectTransaction,
+    projectFinances,
+    addProjectFinance,
+    updateProjectFinance,
     user,
+    users,
   } = useApp();
   const ledgerImportInputRef = useRef<HTMLInputElement>(null);
   const queryParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
@@ -2397,6 +2403,8 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
   const [postingSiteCashSettlement, setPostingSiteCashSettlement] = useState(false);
   const [cashFunds, setCashFunds] = useState<CashFund[]>([]);
   const [loadingCashFunds, setLoadingCashFunds] = useState(false);
+  const [actualProductionForm, setActualProductionForm] = useState<{ value: string; note: string } | null>(null);
+  const [savingActualProduction, setSavingActualProduction] = useState(false);
   const canManageSchedules = canManageFinance || canManagePayment;
   const canManageLedger = canManageFinance;
   const canRecordPoPayment = canManageFinance;
@@ -2424,6 +2432,16 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
     [data?.ledger],
   );
   const visibleLedgerRows = ledgerView === 'paid' ? paidLedgerRows : receivedLedgerRows;
+  const currentProjectFinance = useMemo(
+    () => projectFinances.find(finance => projectId && finance.projectId === projectId)
+      || projectFinances.find(finance => finance.constructionSiteId === constructionSiteId)
+      || null,
+    [constructionSiteId, projectFinances, projectId],
+  );
+  const actualProductionUpdater = useMemo(
+    () => users.find(item => item.id === currentProjectFinance?.actualProductionUpdatedBy),
+    [currentProjectFinance?.actualProductionUpdatedBy, users],
+  );
 
   useEffect(() => {
     const paramTab = queryParams.get('financeTab');
@@ -3429,6 +3447,40 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
     }
   };
 
+  const openActualProductionForm = () => {
+    setActualProductionForm({
+      value: currentProjectFinance?.actualProductionValue
+        ? String(currentProjectFinance.actualProductionValue)
+        : '',
+      note: currentProjectFinance?.actualProductionNote || '',
+    });
+  };
+
+  const saveActualProduction = async () => {
+    if (!actualProductionForm || savingActualProduction) return;
+    setSavingActualProduction(true);
+    try {
+      const next = buildProjectActualProductionUpdate({
+        current: currentProjectFinance,
+        projectId,
+        constructionSiteId,
+        value: parseMoneyInput(actualProductionForm.value),
+        note: actualProductionForm.note,
+        actorId: user.id,
+        updatedAt: new Date().toISOString(),
+        newId: crypto.randomUUID(),
+      });
+      if (currentProjectFinance) await updateProjectFinance(next);
+      else await addProjectFinance(next);
+      setActualProductionForm(null);
+      toast.success('Đã chốt sản lượng thực tế', `${fmtMoney(next.actualProductionValue || 0)} đã được cập nhật cho tiến độ theo giá trị.`);
+    } catch (err: any) {
+      toast.error('Không chốt được sản lượng thực tế', err?.message || 'Vui lòng thử lại.');
+    } finally {
+      setSavingActualProduction(false);
+    }
+  };
+
   const summary = data?.summary;
 
   return (
@@ -3523,6 +3575,95 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
                   }}
                 />
               </div>
+
+              <section className="rounded-2xl border border-teal-200 bg-gradient-to-br from-teal-50 to-white p-4 shadow-sm dark:border-teal-900/70 dark:from-teal-950/40 dark:to-zinc-900">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="flex min-w-0 items-start gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-teal-200 bg-white text-teal-700 dark:border-teal-900 dark:bg-zinc-900 dark:text-teal-400">
+                      <CircleDollarSign size={19} />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-[11px] font-black uppercase tracking-wider text-teal-700 dark:text-teal-400">Sản lượng thực tế đã chốt</div>
+                      <div className="mt-1 text-2xl font-black text-zinc-900 dark:text-white">
+                        {fmtMoney(currentProjectFinance?.actualProductionValue || 0)}
+                      </div>
+                      <div className="mt-1 text-xs font-semibold text-zinc-500 dark:text-zinc-400">
+                        Giá trị hợp đồng: {fmtMoney(summary.contractValue || contractValue)}
+                        {(summary.contractValue || contractValue) > 0
+                          ? ` · ${Math.min(100, Math.round(((currentProjectFinance?.actualProductionValue || 0) / (summary.contractValue || contractValue)) * 100))}% theo giá trị`
+                          : ''}
+                      </div>
+                      {currentProjectFinance?.actualProductionNote && (
+                        <p className="mt-2 text-xs font-medium text-zinc-600 dark:text-zinc-300">{currentProjectFinance.actualProductionNote}</p>
+                      )}
+                      {currentProjectFinance?.actualProductionUpdatedAt && (
+                        <p className="mt-1 text-[11px] font-medium text-zinc-400 dark:text-zinc-500">
+                          Chốt lúc {new Date(currentProjectFinance.actualProductionUpdatedAt).toLocaleString('vi-VN')}
+                          {currentProjectFinance.actualProductionUpdatedBy
+                            ? ` bởi ${actualProductionUpdater?.name || currentProjectFinance.actualProductionUpdatedBy}`
+                            : ''}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {canManageFinance && !actualProductionForm && (
+                    <button
+                      type="button"
+                      onClick={openActualProductionForm}
+                      className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-xl bg-teal-700 px-4 py-2.5 text-xs font-bold text-white shadow-sm transition-colors hover:bg-teal-800"
+                    >
+                      <Edit2 size={14} /> {currentProjectFinance?.actualProductionUpdatedAt ? 'Cập nhật sản lượng' : 'Chốt sản lượng'}
+                    </button>
+                  )}
+                </div>
+
+                {canManageFinance && actualProductionForm && (
+                  <div className="mt-4 grid gap-3 border-t border-teal-200 pt-4 dark:border-teal-900/70 lg:grid-cols-[minmax(220px,0.7fr)_minmax(280px,1.3fr)_auto] lg:items-end">
+                    <label className="block">
+                      <span className="mb-1.5 block text-[11px] font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Giá trị sản lượng (VNĐ)</span>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        autoFocus
+                        value={actualProductionForm.value}
+                        onChange={event => setActualProductionForm(current => current ? { ...current, value: event.target.value } : current)}
+                        placeholder="Nhập giá trị đã thực hiện"
+                        className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm font-bold text-zinc-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 dark:border-zinc-700 dark:bg-zinc-900 dark:text-white"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="mb-1.5 block text-[11px] font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Ghi chú chốt</span>
+                      <input
+                        type="text"
+                        value={actualProductionForm.note}
+                        onChange={event => setActualProductionForm(current => current ? { ...current, note: event.target.value } : current)}
+                        placeholder="Ví dụ: Khối lượng xác nhận đến tuần 32"
+                        className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm font-medium text-zinc-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 dark:border-zinc-700 dark:bg-zinc-900 dark:text-white"
+                      />
+                    </label>
+                    <div className="flex items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setActualProductionForm(null)}
+                        disabled={savingActualProduction}
+                        className="rounded-xl border border-zinc-200 px-3 py-2.5 text-xs font-bold text-zinc-600 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                      >
+                        Huỷ
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void saveActualProduction()}
+                        disabled={savingActualProduction}
+                        className="inline-flex items-center gap-1.5 rounded-xl bg-teal-700 px-4 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-teal-800 disabled:opacity-50"
+                      >
+                        {savingActualProduction ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                        Lưu chốt
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </section>
 
               {summary.alerts.length > 0 && (
                 <div className="grid gap-3 lg:grid-cols-3">
