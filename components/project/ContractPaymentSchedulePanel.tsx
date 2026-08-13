@@ -18,7 +18,8 @@ import {
   ProjectTask,
 } from '../../types';
 import { contractAppendixService } from '../../lib/hdService';
-import { paymentService, taskService } from '../../lib/projectService';
+import { paymentService } from '../../lib/projectService';
+import { loadPaymentGanttCatalog } from '../../lib/projectGanttCatalogAdapters';
 import { ProjectPermissionCode, projectStaffService } from '../../lib/projectStaffService';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
@@ -195,7 +196,10 @@ const ContractPaymentSchedulePanel: React.FC<Props> = ({
       const [scheduleRows, appendixRows, taskRows] = await Promise.all([
         paymentService.listByContract(contractId, contractType),
         contractAppendixService.listByContract(contractId, contractType),
-        taskScope ? taskService.list(taskScope, constructionSiteId || null).catch(() => []) : Promise.resolve([]),
+        taskScope ? loadPaymentGanttCatalog({
+          projectId: projectId || taskScope,
+          constructionSiteId: constructionSiteId || null,
+        }).then(catalog => catalog.tasks).catch(() => []) : Promise.resolve([]),
       ]);
       setItems(scheduleRows);
       setAppendices(appendixRows);

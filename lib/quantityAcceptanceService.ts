@@ -10,7 +10,8 @@ import {
 } from '../types';
 import { contractItemService } from './contractItemService';
 import { dailyLogDetailService } from './dailyLogDetailService';
-import { buildTaskContractQuantityFactors, taskContractItemService } from './taskContractItemService';
+import { buildTaskContractQuantityFactors } from './taskContractItemService';
+import { loadQuantityAcceptanceGanttCatalog } from './projectGanttCatalogAdapters';
 import { fromDb, toDb } from './dbMapping';
 import { auditService } from './auditService';
 import { approvalService } from './approvalService';
@@ -282,8 +283,11 @@ async function collectVerifiedVolumeMapping(params: {
   const workBoqQuery = supabase
     .from('project_work_boq_items')
     .select('id, name, source_task_id');
-  const [taskContractLinks, workBoqRows] = await Promise.all([
-    taskContractItemService.listBySite(scopeId, params.constructionSiteId),
+  const [ganttCatalog, workBoqRows] = await Promise.all([
+    loadQuantityAcceptanceGanttCatalog({
+      projectId: params.projectId || scopeId,
+      constructionSiteId: params.constructionSiteId,
+    }),
     params.projectId ? workBoqQuery.eq('project_id', params.projectId) : workBoqQuery.eq('construction_site_id', params.constructionSiteId),
   ]);
   if (workBoqRows.error) throw workBoqRows.error;
@@ -299,7 +303,7 @@ async function collectVerifiedVolumeMapping(params: {
     }
   }
 
-  const factorsByTaskId = buildTaskContractQuantityFactors(taskContractLinks, contractItemIds)
+  const factorsByTaskId = buildTaskContractQuantityFactors(ganttCatalog.taskContractItems, contractItemIds)
     .reduce<Map<string, ReturnType<typeof buildTaskContractQuantityFactors>>>((acc, item) => {
       if (!acc.has(item.taskId)) acc.set(item.taskId, []);
       acc.get(item.taskId)!.push(item);
@@ -398,17 +402,16 @@ async function collectInternalVerifiedVolumeMapping(params: {
   const workBoqQuery = supabase
     .from('project_work_boq_items')
     .select('id, name, source_task_id, wbs_code, unit, planned_qty, unit_price, total_amount');
-  const taskQuery = supabase
-    .from('project_tasks')
-    .select('id, name, wbs_code, fallback_unit, provisional_quantity, quantity, unit, unit_price');
-  const [workBoqRows, taskRows] = await Promise.all([
+  const [workBoqRows, ganttCatalog] = await Promise.all([
     params.projectId ? workBoqQuery.eq('project_id', params.projectId) : workBoqQuery.eq('construction_site_id', params.constructionSiteId),
-    params.projectId ? taskQuery.eq('project_id', params.projectId) : taskQuery.eq('construction_site_id', params.constructionSiteId),
+    loadQuantityAcceptanceGanttCatalog({
+      projectId: params.projectId || params.constructionSiteId,
+      constructionSiteId: params.constructionSiteId,
+    }),
   ]);
   if (workBoqRows.error) throw workBoqRows.error;
-  if (taskRows.error) throw taskRows.error;
 
-  const taskMap = new Map((taskRows.data || []).map(row => [row.id, fromDb(row)]));
+  const taskMap = new Map(ganttCatalog.tasks.map(task => [task.id, task]));
   const workBoqMap = new Map((workBoqRows.data || []).map(row => [row.id, fromDb(row)]));
   const taskToWorkBoqItemId = new Map<string, string>();
   for (const raw of workBoqRows.data || []) {
@@ -484,7 +487,7 @@ async function collectInternalVerifiedVolumeMapping(params: {
             name: workBoqItem.name || task?.name || volume.workBoqItemName || volume.taskName || 'Hạng mục nội bộ',
             unit: workBoqItem.unit || volume.unit || task?.fallbackUnit || task?.unit || null,
             plannedQuantity: Number(workBoqItem.plannedQty || task?.provisionalQuantity || task?.quantity || 0),
-            unitPrice: Number(workBoqItem.unitPrice || task?.unitPrice || 0),
+            unitPrice: Number(workBoqItem.unitPrice || 0),
           }
         : {
             taskId: task.id,
@@ -495,7 +498,7 @@ async function collectInternalVerifiedVolumeMapping(params: {
             name: task.name || volume.taskName || 'Hạng mục nội bộ',
             unit: task.fallbackUnit || task.unit || volume.unit || null,
             plannedQuantity: Number(task.provisionalQuantity || task.quantity || 0),
-            unitPrice: Number(task.unitPrice || 0),
+            unitPrice: 0,
           };
 
       const row = grouped.get(key) || { quantity: 0, volumeIds: [], source };

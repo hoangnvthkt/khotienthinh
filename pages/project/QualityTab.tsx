@@ -30,7 +30,7 @@ import {
 import { qualityChecklistService } from '../../lib/qualityChecklistService';
 import { canReviewQualityChecklist } from '../../lib/qualityChecklistWorkflow';
 import { projectStaffService } from '../../lib/projectStaffService';
-import { taskService } from '../../lib/projectService';
+import { loadQualityGanttCatalog } from '../../lib/projectGanttCatalogAdapters';
 import { supabase } from '../../lib/supabase';
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 import {
@@ -402,7 +402,10 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
     setLoading(true);
     try {
       const [taskRows, checklistRows, staffRows] = await Promise.all([
-        taskService.list(projectId, siteId || undefined),
+        loadQualityGanttCatalog({
+          projectId,
+          constructionSiteId: siteId || null,
+        }).then(catalog => catalog.tasks),
         qualityChecklistService.list(projectId, siteId || undefined),
         projectStaffService.listByProject(projectId, siteId || undefined),
       ]);
@@ -512,8 +515,6 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
     return matchesSearchQueryMultiple([
       task.wbsCode,
       task.name,
-      task.assignee,
-      task.notes,
       getParentPath(task),
     ], query);
   }, [getParentPath]);
@@ -643,10 +644,10 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
     setReadonlyForm(false);
     setForm({
       title: taskLabel(task),
-      workDescription: task.notes || task.name,
+      workDescription: task.name,
       workLocation: '',
       workDate: todayIso(),
-      workSupervisor: task.assignee || '',
+      workSupervisor: '',
       sitePhotos: [],
       attachments: [],
       note: '',
@@ -1263,7 +1264,6 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
               <h3 className="mt-2 text-lg font-bold text-zinc-900 dark:text-zinc-100">{currentTask.name}</h3>
               <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
                 <span className="inline-flex items-center gap-1"><Calendar size={12} />{formatDate(currentTask.startDate)} - {formatDate(currentTask.endDate)}</span>
-                {currentTask.assignee && <span className="inline-flex items-center gap-1"><User size={12} />{currentTask.assignee}</span>}
               </div>
               <div className="mt-3 max-w-md">
                 <div className="mb-1 flex items-center justify-between text-[10px] font-semibold text-zinc-500 dark:text-zinc-400">

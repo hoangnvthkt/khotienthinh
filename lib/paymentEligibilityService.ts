@@ -24,8 +24,9 @@ import { customerContractService, subcontractorContractService } from './hdServi
 import { paymentCertificateService as certificateService } from './paymentCertificateService';
 import { quantityAcceptanceService } from './quantityAcceptanceService';
 import { supabase } from './supabase';
-import { buildTaskContractQuantityFactors, taskContractItemService } from './taskContractItemService';
-import { taskService, workBoqService } from './projectService';
+import { buildTaskContractQuantityFactors } from './taskContractItemService';
+import { workBoqService } from './projectService';
+import { loadPaymentGanttCatalog } from './projectGanttCatalogAdapters';
 import { getProjectTaskStatus } from './projectScheduleRules';
 
 export type PaymentEligibilityContractTypeFilter = ContractItemType | 'all';
@@ -220,9 +221,8 @@ export const paymentEligibilityService = {
       customers,
       subcontractors,
       contractItems,
-      tasks,
+      ganttCatalog,
       workBoqItems,
-      taskContractLinks,
       verifiedLogs,
       internalAcceptances,
       contractAcceptances,
@@ -232,9 +232,11 @@ export const paymentEligibilityService = {
       includeCustomer ? customerContractService.listBySite(projectScopeId, params.constructionSiteId).then(rows => filterContracts(rows, params.contractId)) : Promise.resolve([]),
       includeSubcontractor ? subcontractorContractService.listBySite(projectScopeId, params.constructionSiteId).then(rows => filterContracts(rows, params.contractId)) : Promise.resolve([]),
       contractItemService.listBySite(projectScopeId, typeFilter === 'all' ? undefined : typeFilter, params.constructionSiteId),
-      taskService.list(projectScopeId, params.constructionSiteId),
+      loadPaymentGanttCatalog({
+        projectId: params.projectId || projectScopeId,
+        constructionSiteId: params.constructionSiteId,
+      }),
       workBoqService.list(projectScopeId, params.constructionSiteId),
-      taskContractItemService.listBySite(projectScopeId, params.constructionSiteId),
       loadVerifiedLogs(params),
       quantityAcceptanceService.listBySite(params.constructionSiteId, 'internal', params.projectId || undefined),
       quantityAcceptanceService.listBySite(params.constructionSiteId, 'contract', params.projectId || undefined),
@@ -242,6 +244,8 @@ export const paymentEligibilityService = {
       loadPaymentTransactionRefs(params.projectId, params.constructionSiteId),
     ]);
 
+    const tasks = ganttCatalog.tasks;
+    const taskContractLinks = ganttCatalog.taskContractItems;
     const contractMeta = buildContractMeta(customers, subcontractors);
     const allowedContractIds = new Set([...customers.map(item => item.id), ...subcontractors.map(item => item.id)]);
     const scopedContractItems = contractItems.filter(item =>
@@ -338,7 +342,7 @@ export const paymentEligibilityService = {
           taskEndDate: sourceTask?.endDate || null,
           taskActualStartDate: sourceTask?.actualStartDate || null,
           taskActualEndDate: sourceTask?.actualEndDate || null,
-          taskIsCritical: !!sourceTask?.isCritical,
+          taskIsCritical: false,
           taskIsOverdue: getRowTaskStatus(sourceTask) === 'overdue',
           unit: volume.unit,
           unitPrice: 0,
@@ -537,7 +541,7 @@ export const paymentEligibilityService = {
         taskEndDate: task?.endDate || null,
         taskActualStartDate: task?.actualStartDate || null,
         taskActualEndDate: task?.actualEndDate || null,
-        taskIsCritical: !!task?.isCritical,
+        taskIsCritical: false,
         taskIsOverdue: getRowTaskStatus(task) === 'overdue',
         unit: item.unit,
         unitPrice: getUnitPrice(item),

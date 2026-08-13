@@ -7,13 +7,13 @@ import {
     FileSpreadsheet, GitBranch, ListTree, Loader2, BookOpen
 } from 'lucide-react';
 import { MaterialBudgetItem, InventoryItem, MaterialRequest, RequestStatus, ProjectTask, ProjectWorkBoqItem, ContractItem, TaskContractItem, MaterialRequestFulfillmentSummary, MaterialRequestFulfillmentBatch, MaterialRequestEvent, MaterialRequestKanbanLaneId, MaterialRequestKanbanStage, MaterialRequestWorkflowStep, ProjectSubmissionTarget, Role, PurchaseOrder, MaterialPlanningRule, MaterialPlanningDraftPo, PlanningCurveTemplate, ProjectWorkflowActionContext, ProjectWorkflowBoardFilter, ProjectWorkflowConfiguration, ProjectWorkflowRuntimeContext, ProjectWorkflowSubject, MaterialRequestWorkflowBoardCard, WorkflowNode, WorkflowNodeType, WorkflowStepAssignment, Project, ProjectFinance } from '../../types';
-import { boqService, taskService, workBoqService, poService } from '../../lib/projectService';
+import { boqService, workBoqService, poService } from '../../lib/projectService';
+import { loadMaterialPlanningGanttCatalog } from '../../lib/projectGanttCatalogAdapters';
 import { materialRequestFulfillmentService, getRequestLineId } from '../../lib/materialRequestFulfillmentService';
 import { useApp } from '../../context/AppContext';
 import type { MaterialRequestInitialDraft } from '../../components/RequestModal';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
-import { taskContractItemService } from '../../lib/taskContractItemService';
 import { contractItemService } from '../../lib/contractItemService';
 import { loadXlsx } from '../../lib/loadXlsx';
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
@@ -749,25 +749,27 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
 
     const loadBoqData = React.useCallback(async () => {
         if (!effectiveId) return;
-        const [boq, workItems, taskRows, contractRows, linkRows, poRows] = await Promise.all([
+        const [boq, workItems, ganttCatalog, contractRows, poRows] = await Promise.all([
             boqService.list(effectiveId, constructionSiteId || null),
             workBoqService.list(effectiveId, constructionSiteId || null),
-            taskService.list(effectiveId, constructionSiteId || null),
+            loadMaterialPlanningGanttCatalog({
+                projectId: projectId || effectiveId,
+                constructionSiteId: constructionSiteId || null,
+            }),
             contractItemService.listBySite(effectiveId, 'customer', constructionSiteId || null),
-            taskContractItemService.listBySite(effectiveId, constructionSiteId || null),
             poService.list(effectiveId, constructionSiteId || null).catch(() => [] as PurchaseOrder[]),
         ]);
         setBoqItems(boq);
         setWorkBoqItems(workItems);
-        setTasks(taskRows);
+        setTasks(ganttCatalog.tasks);
         setPurchaseOrders(poRows);
         setContractItems(contractRows);
-        setTaskContractLinks(linkRows.reduce<Record<string, string[]>>((acc, link: TaskContractItem) => {
+        setTaskContractLinks(ganttCatalog.taskContractItems.reduce<Record<string, string[]>>((acc, link: TaskContractItem) => {
             if (!acc[link.taskId]) acc[link.taskId] = [];
             acc[link.taskId].push(link.contractItemId);
             return acc;
         }, {}));
-    }, [constructionSiteId, effectiveId]);
+    }, [constructionSiteId, effectiveId, projectId]);
 
     const loadPlanningData = useCallback(async () => {
         if (!effectiveId) {

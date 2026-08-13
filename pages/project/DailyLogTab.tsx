@@ -4,7 +4,8 @@ import AiInsightPanel from '../../components/AiInsightPanel';
 import { Plus, Edit2, Trash2, X, Save, Cloud, Sun, CloudRain, CloudLightning, Users, Calendar, AlertTriangle, Mic, MicOff, MapPin, Camera, Clock, Send, CheckCircle2, RotateCcw, LayoutList, ChevronLeft, ChevronRight, Loader2, UserCheck, Eye, Layers, Package, Wrench, Paperclip, Search, SlidersHorizontal, ChevronDown, ChevronUp, BarChart3, FileSpreadsheet, FileText } from 'lucide-react';
 import { DailyLog, DailyLogPhoto, WeatherType, ProjectTask, DelayTaskEntry, DelayCategory, DailyLogVolume, DailyLogMaterial, DailyLogLabor, DailyLogMachine, DailyLogStatus, ContractLaborCatalogItem, ContractMachineCatalogItem, ProjectStaff, BusinessPartner, ProjectWorkBoqItem } from '../../types';
 import { supabase } from '../../lib/supabase';
-import { dailyLogService, taskService, workBoqService } from '../../lib/projectService';
+import { dailyLogService, workBoqService } from '../../lib/projectService';
+import { loadDailyLogGanttCatalog } from '../../lib/projectGanttCatalogAdapters';
 import { contractLaborCatalogService, contractMachineCatalogService } from '../../lib/contractMetadataService';
 import { partnerService } from '../../lib/partnerService';
 import { projectStaffService } from '../../lib/projectStaffService';
@@ -1018,7 +1019,10 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
             staffRows,
         ] = await Promise.all([
             dailyLogService.list(effectiveId, constructionSiteId || null),
-            taskService.list(effectiveId, constructionSiteId || null),
+            loadDailyLogGanttCatalog({
+                projectId: projectId || effectiveId,
+                constructionSiteId: constructionSiteId || null,
+            }).then(catalog => catalog.tasks),
             workBoqService.list(effectiveId, constructionSiteId || null),
             contractLaborCatalogService.list(),
             contractMachineCatalogService.list(),

@@ -12,10 +12,10 @@ import {
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm, useReasonConfirm } from '../../context/ConfirmContext';
-import { taskService, dailyLogService, poService, boqService } from '../../lib/projectService';
+import { dailyLogService, poService, boqService } from '../../lib/projectService';
+import { loadWeeklyProgressGanttCatalog } from '../../lib/projectGanttCatalogAdapters';
 import { projectStaffService } from '../../lib/projectStaffService';
 import { contractItemService } from '../../lib/contractItemService';
-import { taskContractItemService } from '../../lib/taskContractItemService';
 import {
     projectWeeklyProgressService, getWeekStart, getISOWeekLabel,
     getProjectScopeKey, calculateWeeklyConstructionProgress, calculateProjectValueProgress,
@@ -536,19 +536,20 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
         }
         try {
             const [
-                taskData,
+                ganttCatalog,
                 logData,
                 contractItemData,
-                linkData,
                 poData,
                 boqData,
                 fulfillmentBatchData,
                 staffData,
             ] = await Promise.all([
-                taskService.list(effectiveId, constructionSiteId || null),
+                loadWeeklyProgressGanttCatalog({
+                    projectId: projectId || effectiveId,
+                    constructionSiteId: constructionSiteId || null,
+                }),
                 dailyLogService.list(effectiveId, constructionSiteId || null),
                 contractItemService.listBySite(effectiveId, undefined, constructionSiteId || null),
-                taskContractItemService.listBySite(effectiveId, constructionSiteId || null),
                 poService.list(effectiveId, constructionSiteId || null),
                 boqService.list(effectiveId, constructionSiteId || null),
                 projectWeeklyProgressService.listFulfillmentBatchesByScope(effectiveId, constructionSiteId || null),
@@ -564,16 +565,16 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                 || baseDataScopeRef.current !== targetKey
             ) return;
 
-            setTasks(deriveProjectTaskProgress(taskData, logData));
+            setTasks(deriveProjectTaskProgress(ganttCatalog.tasks, logData));
             setDailyLogs(logData);
             setContractItems(contractItemData);
-            setTaskContractLinkRows(linkData);
+            setTaskContractLinkRows(ganttCatalog.taskContractItems);
             setPurchaseOrders(poData);
             setMaterialBudgets(boqData);
             setFulfillmentBatches(fulfillmentBatchData);
             setProjectStaff(staffData);
 
-            setTaskContractLinks(linkData.reduce<Record<string, string[]>>((acc, link) => {
+            setTaskContractLinks(ganttCatalog.taskContractItems.reduce<Record<string, string[]>>((acc, link) => {
                 if (!acc[link.taskId]) acc[link.taskId] = [];
                 acc[link.taskId].push(link.contractItemId);
                 return acc;
@@ -839,14 +840,16 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
             getGeneration: () => periodStateRequestGeneration.current,
             onInvalidate: invalidateSelectedPeriodResources,
             read: async () => {
-                taskService.invalidateListCache();
                 const statePromise = projectWeeklyProgressService.getPeriodState({
                     projectId,
                     constructionSiteId: constructionSiteId || null,
                     periodType: target.periodType,
                     periodStart: target.periodStart,
                 });
-                const taskRowsPromise = taskService.list(effectiveId, constructionSiteId || null);
+                const taskRowsPromise = loadWeeklyProgressGanttCatalog({
+                    projectId: projectId || effectiveId,
+                    constructionSiteId: constructionSiteId || null,
+                }).then(catalog => catalog.tasks);
                 if (target.periodType === 'daily') {
                     const weekStart = getWeekStart(target.periodStart);
                     const [state, taskRows, dailyRows, dailyBaselineRows, weeklyRows] = await Promise.all([

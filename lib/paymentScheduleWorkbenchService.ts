@@ -11,7 +11,8 @@ import {
   SubcontractorContract,
 } from '../types';
 import { customerContractService, subcontractorContractService } from './hdService';
-import { paymentService, taskService } from './projectService';
+import { paymentService } from './projectService';
+import { loadPaymentGanttCatalog } from './projectGanttCatalogAdapters';
 
 export type PaymentScheduleContractTypeFilter = ContractItemType | 'all';
 export type PaymentScheduleWorkbenchStatusFilter =
@@ -169,7 +170,10 @@ export const paymentScheduleWorkbenchService = {
       paymentService.listScoped(params.projectId, params.constructionSiteId),
       includeCustomers && projectScopeId ? customerContractService.listBySite(projectScopeId, params.constructionSiteId || null) : Promise.resolve([]),
       includeSubcontractors && projectScopeId ? subcontractorContractService.listBySite(projectScopeId, params.constructionSiteId || null) : Promise.resolve([]),
-      projectScopeId ? taskService.list(projectScopeId, params.constructionSiteId || null) : Promise.resolve([]),
+      projectScopeId ? loadPaymentGanttCatalog({
+        projectId: params.projectId || projectScopeId,
+        constructionSiteId: params.constructionSiteId || null,
+      }).then(catalog => catalog.tasks) : Promise.resolve([]),
     ]);
 
     const contractMap = buildContractMap(customers, subcontractors);
