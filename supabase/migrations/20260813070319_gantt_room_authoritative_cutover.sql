@@ -990,4 +990,590 @@ revoke all on function public.delete_project_gantt_task_tree(uuid, text, text, t
 grant execute on function public.delete_project_gantt_task_tree(uuid, text, text, text, bigint)
   to authenticated;
 
+create or replace function app_private.replace_project_gantt_task_contract_items_impl(
+  p_request_id uuid,
+  p_project_id text,
+  p_construction_site_id text,
+  p_task_id text,
+  p_expected_row_version bigint,
+  p_contract_item_ids uuid[]
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_actor_user_id uuid;
+  v_site_id text := nullif(btrim(coalesce(p_construction_site_id, '')), '');
+  v_ids uuid[] := array(select distinct unnest(coalesce(p_contract_item_ids, '{}'::uuid[])) order by 1);
+  v_replay jsonb;
+  v_result jsonb;
+begin
+  v_actor_user_id := app_private.assert_project_gantt_action(p_project_id, v_site_id, 'edit');
+  v_replay := app_private.begin_project_gantt_command(
+    v_actor_user_id, p_request_id, 'replace_project_gantt_task_contract_items',
+    md5(jsonb_build_object('projectId', p_project_id, 'constructionSiteId', v_site_id,
+      'taskId', p_task_id, 'expectedRowVersion', p_expected_row_version,
+      'contractItemIds', to_jsonb(v_ids))::text)
+  );
+  if v_replay is not null then return v_replay; end if;
+
+  perform task.id from public.project_tasks task where task.id = p_task_id for update;
+  if not found or exists (
+    select 1 from public.project_tasks task
+    where task.id = p_task_id and (
+      task.project_id is distinct from p_project_id
+      or task.construction_site_id is distinct from v_site_id
+    )
+  ) then
+    raise exception 'GANTT_SCOPE_MISMATCH' using errcode = '23514';
+  end if;
+  if not exists (
+    select 1 from public.project_tasks task
+    where task.id = p_task_id and task.row_version = p_expected_row_version
+  ) then
+    raise exception 'GANTT_STALE_VERSION' using errcode = '40001';
+  end if;
+  if exists (
+    select 1 from unnest(v_ids) contract_item_id
+    where not exists (
+      select 1 from public.contract_items item
+      where item.id = contract_item_id
+        and item.project_id = p_project_id
+        and item.construction_site_id::text is not distinct from v_site_id
+    )
+  ) then
+    raise exception 'GANTT_SCOPE_MISMATCH' using errcode = '23514';
+  end if;
+
+  delete from public.task_contract_items link where link.task_id = p_task_id;
+  insert into public.task_contract_items (
+    task_id, contract_item_id, project_id, construction_site_id
+  )
+  select p_task_id, contract_item_id, p_project_id, v_site_id from unnest(v_ids) contract_item_id;
+
+  v_result := jsonb_build_object(
+    'ok', true, 'requestId', p_request_id, 'replayed', false,
+    'taskId', p_task_id, 'rowVersion', p_expected_row_version,
+    'contractItemIds', to_jsonb(v_ids)
+  );
+  return app_private.finish_project_gantt_command(v_actor_user_id, p_request_id, v_result);
+end;
+$$;
+
+revoke all on function app_private.replace_project_gantt_task_contract_items_impl(uuid, text, text, text, bigint, uuid[])
+  from public, anon;
+grant execute on function app_private.replace_project_gantt_task_contract_items_impl(uuid, text, text, text, bigint, uuid[])
+  to authenticated;
+
+create or replace function public.replace_project_gantt_task_contract_items(
+  p_request_id uuid,
+  p_project_id text,
+  p_construction_site_id text,
+  p_task_id text,
+  p_expected_row_version bigint,
+  p_contract_item_ids uuid[]
+)
+returns jsonb
+language sql
+security invoker
+set search_path = ''
+as $$
+  select app_private.replace_project_gantt_task_contract_items_impl(
+    p_request_id, p_project_id, nullif(p_construction_site_id, ''),
+    p_task_id, p_expected_row_version, p_contract_item_ids
+  );
+$$;
+
+revoke all on function public.replace_project_gantt_task_contract_items(uuid, text, text, text, bigint, uuid[])
+  from public, anon;
+grant execute on function public.replace_project_gantt_task_contract_items(uuid, text, text, text, bigint, uuid[])
+  to authenticated;
+
+create or replace function app_private.create_project_gantt_baseline_impl(
+  p_request_id uuid,
+  p_project_id text,
+  p_construction_site_id text,
+  p_name text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_actor_user_id uuid;
+  v_site_id text := nullif(btrim(coalesce(p_construction_site_id, '')), '');
+  v_replay jsonb;
+  v_baseline public.project_baselines%rowtype;
+  v_result jsonb;
+begin
+  v_actor_user_id := app_private.assert_project_gantt_action(p_project_id, v_site_id, 'edit');
+  if nullif(btrim(coalesce(p_name, '')), '') is null then
+    raise exception 'GANTT_INVALID_PAYLOAD' using errcode = '22023';
+  end if;
+  v_replay := app_private.begin_project_gantt_command(
+    v_actor_user_id, p_request_id, 'create_project_gantt_baseline',
+    md5(jsonb_build_object('projectId', p_project_id,
+      'constructionSiteId', v_site_id, 'name', btrim(p_name))::text)
+  );
+  if v_replay is not null then return v_replay; end if;
+
+  insert into public.project_baselines (
+    id, project_id, construction_site_id, name, locked_at, locked_by, tasks_snapshot
+  )
+  select gen_random_uuid()::text, p_project_id, v_site_id, btrim(p_name), now(),
+    v_actor_user_id::text,
+    coalesce(jsonb_agg(to_jsonb(task) order by task.sort_order, task.id), '[]'::jsonb)
+  from public.project_tasks task
+  where task.project_id = p_project_id
+    and task.construction_site_id is not distinct from v_site_id
+  returning * into v_baseline;
+
+  v_result := jsonb_build_object(
+    'ok', true, 'requestId', p_request_id, 'replayed', false,
+    'baseline', to_jsonb(v_baseline)
+  );
+  return app_private.finish_project_gantt_command(v_actor_user_id, p_request_id, v_result);
+end;
+$$;
+
+revoke all on function app_private.create_project_gantt_baseline_impl(uuid, text, text, text)
+  from public, anon;
+grant execute on function app_private.create_project_gantt_baseline_impl(uuid, text, text, text)
+  to authenticated;
+
+create or replace function public.create_project_gantt_baseline(
+  p_request_id uuid,
+  p_project_id text,
+  p_construction_site_id text,
+  p_name text
+)
+returns jsonb
+language sql
+security invoker
+set search_path = ''
+as $$
+  select app_private.create_project_gantt_baseline_impl(
+    p_request_id, p_project_id, nullif(p_construction_site_id, ''), p_name
+  );
+$$;
+
+revoke all on function public.create_project_gantt_baseline(uuid, text, text, text)
+  from public, anon;
+grant execute on function public.create_project_gantt_baseline(uuid, text, text, text)
+  to authenticated;
+
+create or replace function app_private.transition_project_gantt_delay_event_impl(
+  p_request_id uuid,
+  p_project_id text,
+  p_construction_site_id text,
+  p_event_id text,
+  p_status text,
+  p_expected_updated_at timestamptz
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_actor_user_id uuid;
+  v_site_id text := nullif(btrim(coalesce(p_construction_site_id, '')), '');
+  v_replay jsonb;
+  v_event public.project_delay_events%rowtype;
+  v_result jsonb;
+begin
+  v_actor_user_id := app_private.assert_project_gantt_action(p_project_id, v_site_id, 'edit');
+  v_replay := app_private.begin_project_gantt_command(
+    v_actor_user_id, p_request_id, 'transition_project_gantt_delay_event',
+    md5(jsonb_build_object('projectId', p_project_id, 'constructionSiteId', v_site_id,
+      'eventId', p_event_id, 'status', p_status,
+      'expectedUpdatedAt', p_expected_updated_at)::text)
+  );
+  if v_replay is not null then return v_replay; end if;
+
+  select event.* into v_event
+  from public.project_delay_events event
+  where event.id = p_event_id
+  for update;
+  if not found or v_event.project_id is distinct from p_project_id
+    or v_event.construction_site_id is distinct from v_site_id then
+    raise exception 'GANTT_SCOPE_MISMATCH' using errcode = '23514';
+  end if;
+  if p_expected_updated_at is null or v_event.updated_at is distinct from p_expected_updated_at then
+    raise exception 'GANTT_STALE_VERSION' using errcode = '40001';
+  end if;
+  if p_status not in ('accepted', 'resolved', 'void')
+    or (p_status = 'accepted' and v_event.status <> 'reported')
+    or (p_status in ('resolved', 'void') and v_event.status not in ('reported', 'accepted')) then
+    raise exception 'GANTT_INVALID_TRANSITION' using errcode = '23514';
+  end if;
+
+  update public.project_delay_events event
+  set status = p_status,
+      accepted_by = case when p_status = 'accepted' then v_actor_user_id::text else event.accepted_by end,
+      accepted_at = case when p_status = 'accepted' then now() else event.accepted_at end,
+      resolved_at = case when p_status in ('resolved', 'void') then now() else null end
+  where event.id = p_event_id
+  returning * into v_event;
+
+  v_result := jsonb_build_object(
+    'ok', true, 'requestId', p_request_id, 'replayed', false,
+    'delayEvent', to_jsonb(v_event)
+  );
+  return app_private.finish_project_gantt_command(v_actor_user_id, p_request_id, v_result);
+end;
+$$;
+
+revoke all on function app_private.transition_project_gantt_delay_event_impl(uuid, text, text, text, text, timestamptz)
+  from public, anon;
+grant execute on function app_private.transition_project_gantt_delay_event_impl(uuid, text, text, text, text, timestamptz)
+  to authenticated;
+
+create or replace function public.transition_project_gantt_delay_event(
+  p_request_id uuid,
+  p_project_id text,
+  p_construction_site_id text,
+  p_event_id text,
+  p_status text,
+  p_expected_updated_at timestamptz
+)
+returns jsonb
+language sql
+security invoker
+set search_path = ''
+as $$
+  select app_private.transition_project_gantt_delay_event_impl(
+    p_request_id, p_project_id, nullif(p_construction_site_id, ''),
+    p_event_id, p_status, p_expected_updated_at
+  );
+$$;
+
+revoke all on function public.transition_project_gantt_delay_event(uuid, text, text, text, text, timestamptz)
+  from public, anon;
+grant execute on function public.transition_project_gantt_delay_event(uuid, text, text, text, text, timestamptz)
+  to authenticated;
+
+create or replace function app_private.apply_project_gantt_forecast_impl(
+  p_request_id uuid,
+  p_project_id text,
+  p_construction_site_id text,
+  p_revision jsonb,
+  p_revision_tasks jsonb,
+  p_task_changes jsonb
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_actor_user_id uuid;
+  v_site_id text := nullif(btrim(coalesce(p_construction_site_id, '')), '');
+  v_replay jsonb;
+  v_revision public.project_schedule_revisions%rowtype;
+  v_task_ids text[];
+  v_event_ids text[];
+  v_result jsonb;
+begin
+  v_actor_user_id := app_private.assert_project_gantt_action(p_project_id, v_site_id, 'edit');
+  if jsonb_typeof(coalesce(p_revision_tasks, 'null'::jsonb)) <> 'array'
+    or jsonb_typeof(coalesce(p_task_changes, 'null'::jsonb)) <> 'array'
+    or jsonb_array_length(p_task_changes) = 0 then
+    raise exception 'GANTT_INVALID_PAYLOAD' using errcode = '22023';
+  end if;
+  v_replay := app_private.begin_project_gantt_command(
+    v_actor_user_id, p_request_id, 'apply_project_gantt_forecast',
+    md5(jsonb_build_object('projectId', p_project_id, 'constructionSiteId', v_site_id,
+      'revision', p_revision, 'revisionTasks', p_revision_tasks,
+      'taskChanges', p_task_changes)::text)
+  );
+  if v_replay is not null then return v_replay; end if;
+
+  select array_agg(change ->> 'id' order by change ->> 'id') into v_task_ids
+  from jsonb_array_elements(p_task_changes) change;
+  select coalesce(array_agg(event_id order by event_id), '{}'::text[]) into v_event_ids
+  from jsonb_array_elements_text(coalesce(p_revision -> 'source_delay_event_ids', '[]'::jsonb)) event_id;
+
+  perform task.id from public.project_tasks task
+  where task.id = any(v_task_ids) order by task.id for update;
+  perform event.id from public.project_delay_events event
+  where event.id = any(v_event_ids) order by event.id for update;
+
+  if cardinality(v_task_ids) <> (select count(*) from public.project_tasks task
+      where task.id = any(v_task_ids) and task.project_id = p_project_id
+        and task.construction_site_id is not distinct from v_site_id)
+    or exists (
+      select 1 from jsonb_array_elements(p_task_changes) change
+      join public.project_tasks task on task.id = change ->> 'id'
+      where nullif(change ->> 'expected_row_version', '') is null
+        or task.row_version <> (change ->> 'expected_row_version')::bigint
+    ) then
+    raise exception 'GANTT_STALE_VERSION' using errcode = '40001';
+  end if;
+  if cardinality(v_event_ids) <> (select count(*) from public.project_delay_events event
+      where event.id = any(v_event_ids) and event.project_id = p_project_id
+        and event.construction_site_id is not distinct from v_site_id
+        and event.status in ('reported', 'accepted')) then
+    raise exception 'GANTT_SCOPE_MISMATCH' using errcode = '23514';
+  end if;
+
+  insert into public.project_schedule_revisions (
+    id, project_id, construction_site_id, reason, source_delay_event_ids,
+    applied_by, applied_at
+  ) values (
+    coalesce(nullif(p_revision ->> 'id', ''), gen_random_uuid()::text),
+    p_project_id, v_site_id, nullif(p_revision ->> 'reason', ''), v_event_ids,
+    v_actor_user_id::text, now()
+  ) returning * into v_revision;
+
+  insert into public.project_schedule_revision_tasks (
+    id, revision_id, task_id, task_name_snapshot, before_start, before_end,
+    before_duration, after_start, after_end, after_duration, delta_days,
+    was_critical, float_before
+  )
+  select coalesce(nullif(item ->> 'id', ''), gen_random_uuid()::text),
+    v_revision.id, nullif(item ->> 'task_id', ''),
+    coalesce(item ->> 'task_name_snapshot', ''), item ->> 'before_start',
+    item ->> 'before_end', coalesce((item ->> 'before_duration')::integer, 0),
+    item ->> 'after_start', item ->> 'after_end',
+    coalesce((item ->> 'after_duration')::integer, 0),
+    coalesce((item ->> 'delta_days')::integer, 0),
+    coalesce((item ->> 'was_critical')::boolean, false),
+    coalesce((item ->> 'float_before')::integer, 0)
+  from jsonb_array_elements(p_revision_tasks) item;
+
+  update public.project_tasks task
+  set start_date = change ->> 'start_date',
+      end_date = change ->> 'end_date',
+      duration = (change ->> 'duration')::integer
+  from jsonb_array_elements(p_task_changes) change
+  where task.id = change ->> 'id';
+
+  update public.project_delay_events event
+  set status = 'applied', resolved_at = now()
+  where event.id = any(v_event_ids);
+
+  v_result := jsonb_build_object(
+    'ok', true, 'requestId', p_request_id, 'replayed', false,
+    'revision', to_jsonb(v_revision),
+    'tasks', (select coalesce(jsonb_agg(to_jsonb(task) order by task.id), '[]'::jsonb)
+      from public.project_tasks task where task.id = any(v_task_ids)),
+    'delayEvents', (select coalesce(jsonb_agg(to_jsonb(event) order by event.id), '[]'::jsonb)
+      from public.project_delay_events event where event.id = any(v_event_ids))
+  );
+  return app_private.finish_project_gantt_command(v_actor_user_id, p_request_id, v_result);
+end;
+$$;
+
+revoke all on function app_private.apply_project_gantt_forecast_impl(uuid, text, text, jsonb, jsonb, jsonb)
+  from public, anon;
+grant execute on function app_private.apply_project_gantt_forecast_impl(uuid, text, text, jsonb, jsonb, jsonb)
+  to authenticated;
+
+create or replace function public.apply_project_gantt_forecast(
+  p_request_id uuid,
+  p_project_id text,
+  p_construction_site_id text,
+  p_revision jsonb,
+  p_revision_tasks jsonb,
+  p_task_changes jsonb
+)
+returns jsonb
+language sql
+security invoker
+set search_path = ''
+as $$
+  select app_private.apply_project_gantt_forecast_impl(
+    p_request_id, p_project_id, nullif(p_construction_site_id, ''),
+    p_revision, p_revision_tasks, p_task_changes
+  );
+$$;
+
+revoke all on function public.apply_project_gantt_forecast(uuid, text, text, jsonb, jsonb, jsonb)
+  from public, anon;
+grant execute on function public.apply_project_gantt_forecast(uuid, text, text, jsonb, jsonb, jsonb)
+  to authenticated;
+
+create or replace function app_private.project_gantt_can_view(
+  p_project_id text,
+  p_construction_site_id text
+)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select app_private.project_actor_has_effective_room_action(
+    public.current_app_user_id(), p_project_id,
+    nullif(p_construction_site_id, ''), 'gantt', 'view'
+  );
+$$;
+
+revoke all on function app_private.project_gantt_can_view(text, text) from public, anon;
+grant execute on function app_private.project_gantt_can_view(text, text) to authenticated;
+
+do $$
+declare
+  item record;
+begin
+  for item in
+    select policy.schemaname, policy.tablename, policy.policyname
+    from pg_policies policy
+    where policy.schemaname = 'public'
+      and policy.tablename in (
+        'project_tasks', 'project_baselines', 'project_delay_events',
+        'project_schedule_revisions', 'project_schedule_revision_tasks',
+        'task_contract_items'
+      )
+  loop
+    execute format('drop policy if exists %I on %I.%I',
+      item.policyname, item.schemaname, item.tablename);
+  end loop;
+end;
+$$;
+
+create policy project_tasks_gantt_view on public.project_tasks
+  for select to authenticated
+  using (app_private.project_gantt_can_view(project_id, construction_site_id));
+
+create policy project_baselines_gantt_view on public.project_baselines
+  for select to authenticated
+  using (app_private.project_gantt_can_view(project_id, construction_site_id));
+
+create policy project_delay_events_gantt_view on public.project_delay_events
+  for select to authenticated
+  using (app_private.project_gantt_can_view(project_id, construction_site_id));
+
+create policy project_schedule_revisions_gantt_view on public.project_schedule_revisions
+  for select to authenticated
+  using (app_private.project_gantt_can_view(project_id, construction_site_id));
+
+create policy project_schedule_revision_tasks_gantt_view
+  on public.project_schedule_revision_tasks
+  for select to authenticated
+  using (exists (
+    select 1 from public.project_schedule_revisions revision
+    where revision.id = revision_id
+      and app_private.project_gantt_can_view(
+        revision.project_id, revision.construction_site_id
+      )
+  ));
+
+create policy task_contract_items_gantt_view on public.task_contract_items
+  for select to authenticated
+  using (app_private.project_gantt_can_view(project_id, construction_site_id));
+
+revoke insert, update, delete on table public.project_tasks from authenticated;
+revoke insert, update, delete on table public.project_baselines from authenticated;
+revoke insert, update, delete on table public.project_delay_events from authenticated;
+revoke insert, update, delete on table public.project_schedule_revisions from authenticated;
+revoke insert, update, delete on table public.project_schedule_revision_tasks from authenticated;
+revoke insert, update, delete on table public.task_contract_items from authenticated;
+
+revoke all on table public.project_tasks from anon;
+revoke all on table public.project_baselines from anon;
+revoke all on table public.project_delay_events from anon;
+revoke all on table public.project_schedule_revisions from anon;
+revoke all on table public.project_schedule_revision_tasks from anon;
+revoke all on table public.task_contract_items from anon;
+
+grant select on table public.project_tasks to authenticated;
+grant select on table public.project_baselines to authenticated;
+grant select on table public.project_delay_events to authenticated;
+grant select on table public.project_schedule_revisions to authenticated;
+grant select on table public.project_schedule_revision_tasks to authenticated;
+grant select on table public.task_contract_items to authenticated;
+
+create or replace function app_private.get_project_gantt_catalog_impl(
+  p_project_id text,
+  p_construction_site_id text,
+  p_consumer_room text
+)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+declare
+  v_actor_user_id uuid := public.current_app_user_id();
+  v_site_id text := nullif(btrim(coalesce(p_construction_site_id, '')), '');
+  v_result jsonb;
+begin
+  if p_consumer_room not in (
+    'daily_log', 'weekly_progress', 'material_planning',
+    'quantity_acceptance', 'quality', 'payment'
+  ) or not app_private.project_actor_has_effective_room_action(
+    v_actor_user_id, p_project_id, v_site_id, p_consumer_room, 'view'
+  ) then
+    raise exception 'GANTT_PERMISSION_DENIED' using errcode = '42501';
+  end if;
+
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'id', task.id,
+    'projectId', task.project_id,
+    'constructionSiteId', task.construction_site_id,
+    'parentId', task.parent_id,
+    'name', task.name,
+    'wbsCode', task.wbs_code,
+    'startDate', task.start_date,
+    'endDate', task.end_date,
+    'actualStartDate', task.actual_start_date,
+    'actualEndDate', task.actual_end_date,
+    'duration', task.duration,
+    'progress', task.progress,
+    'progressMode', task.progress_mode,
+    'isMilestone', task.is_milestone,
+    'order', task.sort_order,
+    'quantity', task.quantity,
+    'unit', task.unit,
+    'fallbackUnit', task.fallback_unit,
+    'provisionalQuantity', task.provisional_quantity,
+    'completedQuantity', task.completed_quantity,
+    'rowVersion', task.row_version,
+    'updatedAt', task.updated_at,
+    'contractItemIds', coalesce((
+      select jsonb_agg(link.contract_item_id order by link.contract_item_id)
+      from public.task_contract_items link where link.task_id = task.id
+    ), '[]'::jsonb)
+  ) order by task.sort_order, task.id), '[]'::jsonb)
+  into v_result
+  from public.project_tasks task
+  where task.project_id = p_project_id
+    and task.construction_site_id is not distinct from v_site_id;
+
+  return v_result;
+end;
+$$;
+
+revoke all on function app_private.get_project_gantt_catalog_impl(text, text, text)
+  from public, anon;
+grant execute on function app_private.get_project_gantt_catalog_impl(text, text, text)
+  to authenticated;
+
+create or replace function public.get_project_gantt_catalog(
+  p_project_id text,
+  p_construction_site_id text,
+  p_consumer_room text
+)
+returns jsonb
+language sql
+stable
+security invoker
+set search_path = ''
+as $$
+  select app_private.get_project_gantt_catalog_impl(
+    p_project_id, nullif(p_construction_site_id, ''), p_consumer_room
+  );
+$$;
+
+revoke all on function public.get_project_gantt_catalog(text, text, text)
+  from public, anon;
+grant execute on function public.get_project_gantt_catalog(text, text, text)
+  to authenticated;
+
 notify pgrst, 'reload schema';
