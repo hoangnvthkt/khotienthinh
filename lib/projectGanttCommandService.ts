@@ -8,6 +8,7 @@ import type {
 import { fromDb, toDb } from './dbMapping';
 import { taskService } from './projectService';
 import { supabase } from './supabase';
+import { taskContractItemService } from './taskContractItemService';
 
 export interface ProjectGanttScope {
   projectId: string;
@@ -111,6 +112,7 @@ interface ProjectGanttCommandDependencies {
   rpc: Rpc;
   invalidateTasks: () => void;
   newRequestId: () => string;
+  loadLegacyCatalog?: (scope: ProjectGanttScope) => Promise<ProjectGanttCatalogTask[]>;
 }
 
 const defaultRequestId = (): string =>
@@ -136,6 +138,52 @@ const normalizeTask = <T extends Record<string, any>>(task: T): T & ProjectTask 
     ...rest,
     order: sortOrder ?? task.order ?? 0,
   } as T & ProjectTask;
+};
+
+const isMissingGanttCatalogRpc = (error: any): boolean => {
+  const text = readErrorText(error).toLowerCase();
+  return ['PGRST202', '42883'].includes(String(error?.code || ''))
+    && text.includes('get_project_gantt_catalog');
+};
+
+const loadLegacyGanttCatalog = async (
+  scope: ProjectGanttScope,
+): Promise<ProjectGanttCatalogTask[]> => {
+  const [tasks, links] = await Promise.all([
+    taskService.list(scope.projectId, scope.constructionSiteId || null),
+    taskContractItemService.listBySite(scope.projectId, scope.constructionSiteId || null),
+  ]);
+  const contractItemIdsByTask = links.reduce<Record<string, string[]>>((result, link) => {
+    if (!result[link.taskId]) result[link.taskId] = [];
+    result[link.taskId].push(link.contractItemId);
+    return result;
+  }, {});
+
+  return tasks.map(task => ({
+    id: task.id,
+    projectId: task.projectId,
+    constructionSiteId: task.constructionSiteId,
+    parentId: task.parentId,
+    name: task.name,
+    wbsCode: task.wbsCode,
+    startDate: task.startDate,
+    endDate: task.endDate,
+    actualStartDate: task.actualStartDate,
+    actualEndDate: task.actualEndDate,
+    duration: task.duration,
+    progress: task.progress,
+    progressMode: task.progressMode,
+    isMilestone: task.isMilestone,
+    order: task.order,
+    quantity: task.quantity,
+    unit: task.unit,
+    fallbackUnit: task.fallbackUnit,
+    provisionalQuantity: task.provisionalQuantity,
+    completedQuantity: task.completedQuantity,
+    updatedAt: task.updatedAt,
+    rowVersion: task.rowVersion,
+    contractItemIds: contractItemIdsByTask[task.id] || [],
+  }));
 };
 
 const mapCommandResult = (data: any): ProjectGanttCommandResult => {
@@ -255,7 +303,12 @@ export const createProjectGanttCommandService = (dependencies: ProjectGanttComma
         ...rpcScope(scope),
         p_consumer_room: consumerRoom,
       });
-      if (error) throw parseProjectGanttCommandError(error);
+      if (error) {
+        if (isMissingGanttCatalogRpc(error) && dependencies.loadLegacyCatalog) {
+          return dependencies.loadLegacyCatalog(scope);
+        }
+        throw parseProjectGanttCommandError(error);
+      }
       return (fromDb(data || []) as Array<Record<string, any>>)
         .map(task => normalizeTask(task) as ProjectGanttCatalogTask);
     },
@@ -266,4 +319,5 @@ export const projectGanttCommandService = createProjectGanttCommandService({
   rpc: (name, payload) => supabase.rpc(name as never, payload as never) as unknown as PromiseLike<RpcResult>,
   invalidateTasks: () => taskService.invalidateListCache(),
   newRequestId: defaultRequestId,
+  loadLegacyCatalog: loadLegacyGanttCatalog,
 });

@@ -10,15 +10,18 @@ const scope = { projectId: 'project-1', constructionSiteId: 'site-1' };
 describe('projectGanttCommandService', () => {
   const rpc = vi.fn();
   const invalidateTasks = vi.fn();
+  const loadLegacyCatalog = vi.fn();
   const service = createProjectGanttCommandService({
     rpc,
     invalidateTasks,
     newRequestId: () => 'generated-request-id',
+    loadLegacyCatalog,
   });
 
   beforeEach(() => {
     rpc.mockReset();
     invalidateTasks.mockReset();
+    loadLegacyCatalog.mockReset();
   });
 
   it('sends one snake_case batch RPC and maps the authoritative task response', async () => {
@@ -141,6 +144,48 @@ describe('projectGanttCommandService', () => {
     });
     expect(rows[0]).toMatchObject({ rowVersion: 5, contractItemIds: ['contract-1'] });
     expect(invalidateTasks).not.toHaveBeenCalled();
+  });
+
+  it('loads a legacy minimal catalog only when the Cloud catalog RPC is not deployed', async () => {
+    rpc.mockResolvedValue({
+      data: null,
+      error: {
+        code: 'PGRST202',
+        message: 'Could not find the function public.get_project_gantt_catalog in the schema cache',
+      },
+    });
+    loadLegacyCatalog.mockResolvedValue([{
+      id: 'task-legacy',
+      projectId: 'project-1',
+      constructionSiteId: 'site-1',
+      name: 'Legacy task',
+      order: 2,
+      progress: 25,
+      contractItemIds: [],
+    }]);
+
+    const rows = await service.loadCatalog(scope, 'payment');
+
+    expect(rows).toEqual([expect.objectContaining({
+      id: 'task-legacy',
+      name: 'Legacy task',
+      order: 2,
+      progress: 25,
+      contractItemIds: [],
+    })]);
+  });
+
+  it('does not bypass a catalog permission denial through the legacy fallback', async () => {
+    rpc.mockResolvedValue({
+      data: null,
+      error: { code: '42501', message: 'GANTT_PERMISSION_DENIED' },
+    });
+    loadLegacyCatalog.mockResolvedValue([{ id: 'must-not-return' }]);
+
+    const error = await service.loadCatalog(scope, 'payment').catch(value => value);
+
+    expect(error).toBeInstanceOf(ProjectGanttCommandError);
+    expect(error).toMatchObject({ code: 'GANTT_PERMISSION_DENIED' });
   });
 
   it.each([
