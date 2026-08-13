@@ -80,7 +80,7 @@ export const PROJECT_PERMISSION_ROOMS = Object.freeze([
   defineRoom('material_po', 'material', 'Đơn hàng PO', 'Tạo, gửi duyệt, duyệt và xác nhận nhận hàng.', ['view', 'edit', 'delete', 'submit', 'approve', 'confirm'], [], 40),
   defineRoom('material_waste', 'material', 'Hao hụt vật tư', 'Ghi nhận và duyệt hao hụt.', ['view', 'edit', 'approve'], ['approve'], 50),
   defineRoom('custom_material', 'material', 'Vật tư phi tiêu chuẩn', 'Tạo, sửa và duyệt vật tư phi tiêu chuẩn.', ['view', 'edit', 'approve'], ['approve'], 60),
-  defineRoom('gantt', 'progress', 'Tiến độ Gantt', 'Quản lý công việc và xác nhận hoàn thành.', ['view', 'edit', 'delete', 'submit', 'verify', 'approve'], ['verify', 'approve'], 70),
+  defineRoom('gantt', 'progress', 'Tiến độ Gantt', 'Quản lý hạng mục và tiến độ thi công.', ['view', 'edit', 'delete'], [], 70, { edit: ['view'], delete: ['view'] }),
   defineRoom('weekly_progress', 'progress', 'Chốt tiến độ ngày/tuần', 'Cập nhật và chốt/mở chốt kỳ tiến độ.', ['view', 'edit', 'confirm'], [], 80, { edit: ['view'], confirm: ['view'] }),
   defineRoom('quantity_acceptance', 'finance', 'Nghiệm thu khối lượng', 'Lập và duyệt nghiệm thu khối lượng.', ['view', 'edit', 'delete', 'submit', 'verify', 'approve'], ['approve'], 90),
   defineRoom('payment', 'finance', 'Thanh toán', 'Lập, duyệt và xác nhận thanh toán.', ['view', 'edit', 'delete', 'submit', 'verify', 'approve', 'confirm'], ['approve', 'confirm'], 100),

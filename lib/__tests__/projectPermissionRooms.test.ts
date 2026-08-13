@@ -47,6 +47,20 @@ describe('projectPermissionRooms', () => {
     expect(isRoomActionAllowed('weekly_progress', 'approve')).toBe(false);
   });
 
+  it('gives gantt only view, edit, and delete, with view prerequisites', () => {
+    const room = getProjectPermissionRoom('gantt');
+
+    expect(room?.actions).toEqual(['view', 'edit', 'delete']);
+    expect(room?.requiredActions).toEqual([]);
+    expect(room?.actionPrerequisites).toEqual({
+      edit: ['view'],
+      delete: ['view'],
+    });
+    expect(isRoomActionAllowed('gantt', 'submit')).toBe(false);
+    expect(isRoomActionAllowed('gantt', 'verify')).toBe(false);
+    expect(isRoomActionAllowed('gantt', 'approve')).toBe(false);
+  });
+
   it('exposes immutable Room definitions', () => {
     expect(getProjectPermissionRoom('material_po')?.name).toBe('Đơn hàng PO');
     expect(() => (PROJECT_PERMISSION_ROOMS as unknown as unknown[]).push({ code: 'custom' })).toThrow();

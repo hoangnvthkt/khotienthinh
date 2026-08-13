@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   canConfigureProjectRoomAction,
   getDailyLogPermissionCodesForEffectiveRoomActions,
+  getGanttEffectiveCapabilities,
   getMaterialPoEffectiveCapabilities,
   getMaterialRequestEffectiveCapabilities,
   getWeeklyProgressPermissionCodesForEffectiveRoomActions,
@@ -125,5 +126,32 @@ describe('effective Project Room actions', () => {
       canEdit: true,
       canConfirm: true,
     });
+  });
+
+  it('keeps gantt edit and delete independent while requiring view', () => {
+    const editOnly = getGanttEffectiveCapabilities([
+      { roomCode: 'gantt', actionCode: 'edit', source: 'room', enforcementStatus: 'pilot' },
+    ], true);
+    expect(editOnly).toEqual({ canView: false, canEdit: false, canDelete: false });
+
+    const viewAndEdit = getGanttEffectiveCapabilities([
+      { roomCode: 'gantt', actionCode: 'view', source: 'room', enforcementStatus: 'pilot' },
+      { roomCode: 'gantt', actionCode: 'edit', source: 'room', enforcementStatus: 'pilot' },
+    ], true);
+    expect(viewAndEdit).toEqual({ canView: true, canEdit: true, canDelete: false });
+
+    const viewAndDelete = getGanttEffectiveCapabilities([
+      { roomCode: 'gantt', actionCode: 'view', source: 'room', enforcementStatus: 'pilot' },
+      { roomCode: 'gantt', actionCode: 'delete', source: 'room', enforcementStatus: 'pilot' },
+    ], true);
+    expect(viewAndDelete).toEqual({ canView: true, canEdit: false, canDelete: true });
+  });
+
+  it('fails gantt capabilities closed until effective actions load', () => {
+    expect(getGanttEffectiveCapabilities([
+      { roomCode: 'gantt', actionCode: 'view', source: 'room', enforcementStatus: 'pilot' },
+      { roomCode: 'gantt', actionCode: 'edit', source: 'room', enforcementStatus: 'pilot' },
+      { roomCode: 'gantt', actionCode: 'delete', source: 'room', enforcementStatus: 'pilot' },
+    ], false)).toEqual({ canView: false, canEdit: false, canDelete: false });
   });
 });

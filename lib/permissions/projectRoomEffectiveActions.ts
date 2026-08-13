@@ -59,6 +59,26 @@ export interface WeeklyProgressEffectiveCapabilities {
   canConfirm: boolean;
 }
 
+export interface GanttEffectiveCapabilities {
+  canView: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
+}
+
+export const getGanttEffectiveCapabilities = (
+  actions: readonly EffectiveProjectRoomAction[],
+  actionsLoaded: boolean,
+): GanttEffectiveCapabilities => {
+  if (!actionsLoaded) return { canView: false, canEdit: false, canDelete: false };
+  const granted = getEffectiveProjectRoomActionSet(actions, 'gantt');
+  const canView = granted.has('view');
+  return {
+    canView,
+    canEdit: canView && granted.has('edit'),
+    canDelete: canView && granted.has('delete'),
+  };
+};
+
 export const getWeeklyProgressEffectiveCapabilities = (
   actions: readonly EffectiveProjectRoomAction[],
   actionsLoaded: boolean,
