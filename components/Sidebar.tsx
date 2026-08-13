@@ -302,7 +302,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
       { to: '/booking/vehicle/approvals', icon: ClipboardCheck, label: 'Chờ phê duyệt' },
       { to: '/booking/vehicle/dispatch', icon: LayoutDashboard, label: 'Bảng điều phối' },
       { to: '/booking/vehicle/trips', icon: Calendar, label: 'Chuyến hôm nay' },
-      { to: '/booking/vehicle/handover', icon: Repeat, label: 'Bàn giao & Trả chìa' },
+      { to: '/booking/vehicle/handover', icon: Repeat, label: 'Bàn giao xe tự lái' },
       { to: '/booking/vehicle/fleet', icon: Wrench, label: 'Quản lý xe' },
       { to: '/booking/vehicle/drivers', icon: Users, label: 'Quản lý tài xế' },
       { to: '/booking/vehicle/reports', icon: BarChart3, label: 'Dashboard & Báo cáo KPI' },

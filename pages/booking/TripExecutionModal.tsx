@@ -47,9 +47,6 @@ const TripExecutionModal: React.FC<TripExecutionModalProps> = ({
   const [condition, setCondition] = useState<'NORMAL' | 'ISSUE'>('NORMAL');
   const [issueNote, setIssueNote] = useState('');
 
-  // Checkpoint Selection
-  const [checkpointName, setCheckpointName] = useState<'DEPARTED_HOME_BASE' | 'PICKED_UP_PASSENGER'>('DEPARTED_HOME_BASE');
-
   useEffect(() => {
     if (!isOpen) return;
     let active = true;
@@ -150,8 +147,8 @@ const TripExecutionModal: React.FC<TripExecutionModalProps> = ({
 
         toast.success('Đã bắt đầu chuyến xe thành công!');
       } else if (mode === 'CHECKPOINT') {
-        await recordVehicleTripCheckpoint(bookingId, checkpointName);
-        toast.success(`Đã ghi nhận mốc checkpoint: ${checkpointName}`);
+        await recordVehicleTripCheckpoint(bookingId, 'PICKED_UP_PASSENGER');
+        toast.success('Đã ghi nhận thời điểm đón hành khách!');
       } else if (mode === 'FINISH') {
         const photoPath = await uploadEvidenceImage(imageFile!, `${bookingId}/trips`, maxEvidenceImageMb);
 
@@ -190,7 +187,7 @@ const TripExecutionModal: React.FC<TripExecutionModalProps> = ({
               {mode === 'CHECKPOINT' && <MapPin className="w-5 h-5 text-amber-500" />}
               {mode === 'FINISH' && <CheckSquare className="w-5 h-5 text-indigo-500" />}
               <span>
-                {mode === 'START' ? 'Bắt Đầu Chuyến Đi' : mode === 'CHECKPOINT' ? 'Ghi Checkpoint Chuyến' : 'Kết Thúc Chuyến Đi'}
+                {mode === 'START' ? 'Bắt Đầu Chuyến Đi' : mode === 'CHECKPOINT' ? 'Xác Nhận Đã Đón Khách' : 'Kết Thúc Chuyến Đi'}
               </span>
             </h3>
             <p className="text-xs text-slate-500">Mã đơn: {bookingCode}</p>
@@ -206,16 +203,11 @@ const TripExecutionModal: React.FC<TripExecutionModalProps> = ({
 
         <form onSubmit={handleSubmit} className="space-y-4 text-xs">
           {mode === 'CHECKPOINT' ? (
-            <div>
-              <label className="block font-medium mb-1 text-slate-700 dark:text-slate-300">Chọn mốc Checkpoint:</label>
-              <select
-                value={checkpointName}
-                onChange={(e) => setCheckpointName(e.target.value as 'DEPARTED_HOME_BASE' | 'PICKED_UP_PASSENGER')}
-                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl p-3 text-xs"
-              >
-                <option value="DEPARTED_HOME_BASE">Đã xuất phát khỏi bãi xe (DEPARTED_HOME_BASE)</option>
-                <option value="PICKED_UP_PASSENGER">Đã đón khách công tác (PICKED_UP_PASSENGER)</option>
-              </select>
+            <div className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-4 text-slate-700 dark:border-amber-900 dark:bg-amber-900/20 dark:text-slate-200">
+              <p className="font-semibold">Ghi nhận thời điểm xe thực tế đón được hành khách.</p>
+              <p className="text-slate-500 dark:text-slate-400">
+                Đây là mốc tùy chọn để đo độ đúng giờ. Thời điểm rời bãi đã được hệ thống tự ghi khi bắt đầu chuyến, nên không cần thao tác lại.
+              </p>
             </div>
           ) : (
             <>

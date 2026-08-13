@@ -33,6 +33,7 @@ import {
   dispatchVehicleBooking,
   finishVehicleTrip,
   fetchMyBookings,
+  fetchDriverTodayAssignments,
   fetchVehicleBookingDetails,
   markVehicleBookingNoShow,
   reassignVehicleBooking,
@@ -75,6 +76,96 @@ describe('vehicle booking RPC contract', () => {
     expect(result).toEqual([{ id: 'booking-1', requester_user_id: 'app-user-id' }]);
     expect(supabaseMocks.eq).toHaveBeenCalledWith('requester_user_id', 'app-user-id');
     expect(supabaseMocks.getUser).not.toHaveBeenCalled();
+  });
+
+  it('filters today trips with the public app user id, not the auth id', async () => {
+    const query = {
+      select: vi.fn(),
+      eq: vi.fn(),
+      gte: vi.fn(),
+      lt: vi.fn(),
+      order: vi.fn(),
+    };
+    query.select.mockReturnValue(query);
+    query.eq.mockReturnValue(query);
+    query.gte.mockReturnValue(query);
+    query.lt.mockReturnValue(query);
+    query.order.mockResolvedValue({ data: [], error: null });
+    supabaseMocks.from.mockReturnValue(query);
+
+    const result = await fetchDriverTodayAssignments('app-user-id');
+
+    expect(result).toEqual([]);
+    expect(query.eq).toHaveBeenCalledWith('operator_user_id', 'app-user-id');
+    expect(supabaseMocks.getUser).not.toHaveBeenCalled();
+  });
+
+  it('enriches today trips with readable vehicle and requester identities', async () => {
+    const assignment = {
+      id: 'assignment-1',
+      booking_id: 'booking-1',
+      operator_user_id: 'app-user-id',
+      is_active: true,
+    };
+    const booking = {
+      id: 'booking-1',
+      booking_code: 'CAR-1',
+      requester_user_id: 'requester-1',
+      status: 'IN_PROGRESS',
+    };
+    const tripLog = {
+      id: 'trip-1',
+      booking_id: 'booking-1',
+      trip_status: 'IN_PROGRESS',
+    };
+
+    supabaseMocks.from.mockImplementation((table: string) => {
+      if (table === 'vehicle_booking_assignments') {
+        const query: any = {};
+        query.select = vi.fn().mockReturnValue(query);
+        query.eq = vi.fn().mockReturnValue(query);
+        query.gte = vi.fn().mockReturnValue(query);
+        query.lt = vi.fn().mockReturnValue(query);
+        query.order = vi.fn().mockResolvedValue({ data: [assignment], error: null });
+        return query;
+      }
+
+      return {
+        select: vi.fn().mockReturnValue({
+          in: vi.fn().mockResolvedValue({
+            data: table === 'vehicle_bookings'
+              ? [booking]
+              : table === 'vehicle_trip_logs'
+                ? [tripLog]
+                : table === 'employees'
+                  ? [{ user_id: 'requester-1', full_name: 'Nguyễn Văn An', avatar_url: 'employee.jpg' }]
+                  : [{ id: 'requester-1', name: 'Admin An', avatar: 'requester.jpg' }],
+            error: null,
+          }),
+        }),
+      };
+    });
+    supabaseMocks.rpc.mockResolvedValue({
+      data: [{
+        assignment_id: 'assignment-1',
+        fulfillment_type: 'INTERNAL_WITH_DRIVER',
+        vehicle_code: 'TS-002',
+        vehicle_name: 'Xe tải thùng',
+      }],
+      error: null,
+    });
+
+    const [result] = await fetchDriverTodayAssignments('app-user-id');
+
+    expect(result.assignmentDisplay).toMatchObject({
+      vehicle_code: 'TS-002',
+      vehicle_name: 'Xe tải thùng',
+    });
+    expect(result.requester).toEqual({
+      id: 'requester-1',
+      name: 'Nguyễn Văn An',
+      avatar: 'employee.jpg',
+    });
   });
 
   it('loads readable assignment identity through the scoped display RPC', async () => {

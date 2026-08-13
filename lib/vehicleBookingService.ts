@@ -591,19 +591,19 @@ export async function fetchFleetSystemSettings(): Promise<FleetSystemSetting> {
   return data as FleetSystemSetting;
 }
 
-export async function fetchDriverTodayAssignments(): Promise<{
+export async function fetchDriverTodayAssignments(operatorAppUserId: string): Promise<{
   assignment: VehicleBookingAssignment;
   booking: VehicleBooking;
   tripLog?: VehicleTripLog | null;
+  assignmentDisplay?: VehicleBookingAssignmentDisplay | null;
+  requester?: { id: string; name: string; avatar?: string | null } | null;
 }[]> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return [];
   const { startIso, endIso } = getVietnamDayRange(new Date());
 
   const { data: assignments, error } = await supabase
     .from('vehicle_booking_assignments')
     .select('*')
-    .eq('operator_user_id', user.id)
+    .eq('operator_user_id', operatorAppUserId)
     .eq('is_active', true)
     .gte('reserved_start_at', startIso)
     .lt('reserved_start_at', endIso)
@@ -618,13 +618,55 @@ export async function fetchDriverTodayAssignments(): Promise<{
     supabase.from('vehicle_trip_logs').select('*').in('booking_id', bookingIds),
   ]);
 
-  const bookingMap = new Map((bRes.data || []).map((b: any) => [b.id, b]));
+  if (bRes.error) throw bRes.error;
+  if (tRes.error) throw tRes.error;
+
+  const visibleBookings = ((bRes.data || []) as VehicleBooking[])
+    .filter(booking => ['ASSIGNED', 'IN_PROGRESS', 'COMPLETED'].includes(booking.status));
+  const requesterIds = [...new Set(visibleBookings.map(booking => booking.requester_user_id))];
+  const [requestersRes, requesterEmployeesRes, displayResults] = await Promise.all([
+    requesterIds.length > 0
+      ? supabase.from('users').select('id, name, avatar').in('id', requesterIds)
+      : Promise.resolve({ data: [], error: null }),
+    requesterIds.length > 0
+      ? supabase.from('employees').select('user_id, full_name, avatar_url').in('user_id', requesterIds)
+      : Promise.resolve({ data: [], error: null }),
+    Promise.all(visibleBookings.map(async booking => {
+      const response = await supabase.rpc('get_vehicle_booking_assignment_display', {
+        p_booking_id: booking.id,
+      });
+      return { bookingId: booking.id, ...response };
+    })),
+  ]);
+
+  if (requestersRes.error) throw requestersRes.error;
+  const displayError = displayResults.find(result => result.error)?.error;
+  if (displayError) throw displayError;
+
+  const bookingMap = new Map(visibleBookings.map(booking => [booking.id, booking]));
   const tripLogMap = new Map((tRes.data || []).map((t: any) => [t.booking_id, t]));
+  const requesterUserMap = new Map((requestersRes.data || []).map((requester: any) => [requester.id, requester]));
+  const requesterEmployeeMap = new Map((requesterEmployeesRes.data || []).map((employee: any) => [employee.user_id, employee]));
+  const requesterMap = new Map(requesterIds.map(requesterId => {
+    const appUser = requesterUserMap.get(requesterId) as { name?: string | null; avatar?: string | null } | undefined;
+    const employee = requesterEmployeeMap.get(requesterId) as { full_name?: string | null; avatar_url?: string | null } | undefined;
+    return [requesterId, {
+      id: requesterId,
+      name: employee?.full_name?.trim() || appUser?.name?.trim() || 'Chưa có thông tin',
+      avatar: employee?.avatar_url || appUser?.avatar || null,
+    }];
+  }));
+  const displayMap = new Map(displayResults.map(result => [
+    result.bookingId,
+    ((result.data || [])[0] as VehicleBookingAssignmentDisplay) || null,
+  ]));
 
   const result: Array<{
     assignment: VehicleBookingAssignment;
     booking: VehicleBooking;
     tripLog?: VehicleTripLog | null;
+    assignmentDisplay?: VehicleBookingAssignmentDisplay | null;
+    requester?: { id: string; name: string; avatar?: string | null } | null;
   }> = [];
   assignments.forEach(assignmentRow => {
     const booking = bookingMap.get(assignmentRow.booking_id) as VehicleBooking | undefined;
@@ -633,6 +675,8 @@ export async function fetchDriverTodayAssignments(): Promise<{
       assignment: assignmentRow as VehicleBookingAssignment,
       booking,
       tripLog: tripLogMap.get(assignmentRow.booking_id) as VehicleTripLog | undefined,
+      assignmentDisplay: displayMap.get(assignmentRow.booking_id),
+      requester: requesterMap.get(booking.requester_user_id) || null,
     });
   });
   return result;

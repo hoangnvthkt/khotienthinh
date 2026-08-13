@@ -3,9 +3,12 @@ import { Calendar, Play, CheckSquare, MapPin, Clock, User, Phone, Check, X, Refr
 import { fetchDriverTodayAssignments, respondToVehicleAssignment, formatVietnamDateTime } from '../../lib/vehicleBookingService';
 import TripExecutionModal from './TripExecutionModal';
 import { useToast } from '../../context/ToastContext';
+import { useApp } from '../../context/AppContext';
+import { getAssignedVehicleLabel } from '../../lib/vehicleBookingPresentation';
 
 const DriverTodayTripsPage: React.FC = () => {
   const toast = useToast();
+  const { user } = useApp();
   const [loading, setLoading] = useState(true);
   const [trips, setTrips] = useState<any[]>([]);
 
@@ -23,7 +26,7 @@ const DriverTodayTripsPage: React.FC = () => {
   const loadData = async () => {
     try {
       setLoading(true);
-      const data = await fetchDriverTodayAssignments();
+      const data = await fetchDriverTodayAssignments(user.id);
       setTrips(data);
     } catch (err: any) {
       toast.error('Không thể tải chuyến xe được phân công hôm nay!');
@@ -92,7 +95,7 @@ const DriverTodayTripsPage: React.FC = () => {
         </div>
       ) : (
         <div className="space-y-4">
-          {trips.map(({ assignment, booking, tripLog }) => (
+          {trips.map(({ assignment, booking, tripLog, assignmentDisplay, requester }) => (
             <div
               key={assignment.id}
               className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-200 dark:border-slate-700 shadow-sm space-y-4"
@@ -132,10 +135,19 @@ const DriverTodayTripsPage: React.FC = () => {
                   <span className="font-semibold">{booking.pickup_location_text} → {booking.destination_text}</span>
                 </div>
 
-                <div className="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-xl space-y-1">
-                  <p className="font-bold text-slate-900 dark:text-white">● Xe phân công: {assignment.vehicle_asset_id}</p>
-                  <p>● Người đặt: {booking.requester_user_id.substring(0, 8)} | Số khách: {booking.passenger_count} người</p>
-                  <p>● Mục đích: {booking.purpose}</p>
+                <div className="flex gap-3 rounded-xl bg-slate-50 p-3 dark:bg-slate-900/50">
+                  {assignmentDisplay?.vehicle_image_url && (
+                    <img
+                      src={assignmentDisplay.vehicle_image_url}
+                      alt={getAssignedVehicleLabel(assignmentDisplay)}
+                      className="h-16 w-20 shrink-0 rounded-lg border border-slate-200 object-cover dark:border-slate-700"
+                    />
+                  )}
+                  <div className="min-w-0 space-y-1">
+                    <p className="font-bold text-slate-900 dark:text-white">● Xe phân công: {getAssignedVehicleLabel(assignmentDisplay)}</p>
+                    <p>● Người đặt: {requester?.name || 'Chưa có thông tin'} | Số khách: {booking.passenger_count} người</p>
+                    <p>● Mục đích: {booking.purpose}</p>
+                  </div>
                 </div>
               </div>
 
@@ -181,17 +193,23 @@ const DriverTodayTripsPage: React.FC = () => {
 
                   {booking.status === 'IN_PROGRESS' && (
                     <>
-                      <button
-                        onClick={() => setActiveModal({
-                          bookingId: booking.id,
-                          bookingCode: booking.booking_code,
-                          mode: 'CHECKPOINT',
-                        })}
-                        className="min-h-[48px] flex-1 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs flex items-center justify-center space-x-2 shadow-md shadow-amber-500/20"
-                      >
-                        <MapPin className="w-4 h-4" />
-                        <span>Ghi Checkpoint</span>
-                      </button>
+                      {!tripLog?.actual_pickup_at ? (
+                        <button
+                          onClick={() => setActiveModal({
+                            bookingId: booking.id,
+                            bookingCode: booking.booking_code,
+                            mode: 'CHECKPOINT',
+                          })}
+                          className="min-h-[48px] flex-1 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs flex items-center justify-center space-x-2 shadow-md shadow-amber-500/20"
+                        >
+                          <MapPin className="w-4 h-4" />
+                          <span>Xác nhận đã đón khách</span>
+                        </button>
+                      ) : (
+                        <div className="min-h-[48px] flex-1 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-300 flex items-center justify-center">
+                          Đã đón khách lúc {formatVietnamDateTime(tripLog.actual_pickup_at)}
+                        </div>
+                      )}
 
                       <button
                         onClick={() => setActiveModal({

@@ -51,7 +51,7 @@ const VehicleBookingLayout: React.FC = () => {
     ...(canApprove ? [{ path: '/booking/vehicle/approvals', label: 'Chờ phê duyệt', icon: ClipboardCheck }] : []),
     ...(canDispatch ? [{ path: '/booking/vehicle/dispatch', label: 'Bảng điều phối', icon: LayoutDashboard }] : []),
     { path: '/booking/vehicle/trips', label: 'Chuyến hôm nay', icon: Calendar },
-    ...(canHandover ? [{ path: '/booking/vehicle/handover', label: 'Bàn giao xe & chìa', icon: Repeat }] : []),
+    ...(canHandover ? [{ path: '/booking/vehicle/handover', label: 'Bàn giao xe tự lái', icon: Repeat }] : []),
     ...(canManageFleet ? [{ path: '/booking/vehicle/fleet', label: 'Quản lý xe', icon: Wrench }] : []),
     ...(canManageDrivers ? [{ path: '/booking/vehicle/drivers', label: 'Quản lý tài xế', icon: UserRoundCog }] : []),
     ...(canViewReports ? [{ path: '/booking/vehicle/reports', label: 'Dashboard & Báo cáo KPI', icon: BarChart3 }] : []),

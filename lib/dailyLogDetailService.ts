@@ -32,19 +32,22 @@ const emptyToNullKeys = new Set([
   'partner_id',
 ]);
 
-const sanitizeDetailRow = (row: Record<string, any>) => {
+const sanitizeDetailRow = (table: DetailTable, row: Record<string, any>) => {
   const next = { ...row };
   for (const key of emptyToNullKeys) {
     if (next[key] === '') next[key] = null;
   }
+  if ((table === 'daily_log_volumes' || 'attachments' in next) && next.attachments == null) {
+    next.attachments = [];
+  }
   return next;
 };
 
-const attachMeta = (items: any[], dailyLogId: string, projectId: string | null, constructionSiteId: string | null) =>
+const attachMeta = (table: DetailTable, items: any[], dailyLogId: string, projectId: string | null, constructionSiteId: string | null) =>
   items.map((item, sourceIndex) => {
     const row = toDb({ ...item, dailyLogId, projectId, constructionSiteId, sourceIndex });
     delete row.id;
-    return sanitizeDetailRow(row);
+    return sanitizeDetailRow(table, row);
   });
 
 async function replaceTable(table: DetailTable, dailyLogId: string, rows: any[]): Promise<void> {
@@ -91,10 +94,10 @@ export const dailyLogDetailService = {
   ): Promise<void> {
     try {
       await Promise.all([
-        replaceTable('daily_log_volumes', dailyLogId, attachMeta(details.volumes, dailyLogId, projectId, constructionSiteId)),
-        replaceTable('daily_log_materials', dailyLogId, attachMeta(details.materials, dailyLogId, projectId, constructionSiteId)),
-        replaceTable('daily_log_labor', dailyLogId, attachMeta(details.laborDetails, dailyLogId, projectId, constructionSiteId)),
-        replaceTable('daily_log_machines', dailyLogId, attachMeta(details.machines, dailyLogId, projectId, constructionSiteId)),
+        replaceTable('daily_log_volumes', dailyLogId, attachMeta('daily_log_volumes', details.volumes, dailyLogId, projectId, constructionSiteId)),
+        replaceTable('daily_log_materials', dailyLogId, attachMeta('daily_log_materials', details.materials, dailyLogId, projectId, constructionSiteId)),
+        replaceTable('daily_log_labor', dailyLogId, attachMeta('daily_log_labor', details.laborDetails, dailyLogId, projectId, constructionSiteId)),
+        replaceTable('daily_log_machines', dailyLogId, attachMeta('daily_log_machines', details.machines, dailyLogId, projectId, constructionSiteId)),
       ]);
     } catch (error: any) {
       console.warn('Cannot write normalized daily log details yet; JSONB copy remains available', error?.message || error);
