@@ -4,9 +4,17 @@
 
 - Migration: `20260813070319_gantt_room_authoritative_cutover.sql`.
 - Cloud rollback smoke: đạt ngày 2026-08-13 với migration và smoke chạy trong cùng một transaction, kết thúc bằng `ROLLBACK`.
-- Real push: **chưa thực hiện**. `db push --linked --dry-run` trả `LegacyDbPushMissingRemoteError` vì nhiều migration local nằm trước migration remote cuối cùng nhưng không có trong lịch sử linked.
-- Không dùng `--include-all`, không repair migration history và không apply migration riêng lẻ khi chưa có quyết định của owner database.
+- Cloud apply: **đã hoàn thành ngày 2026-08-13** bằng một transaction trực tiếp sau khi database owner duyệt phương án xử lý riêng migration Gantt.
+- Chỉ version `20260813070319` được ghi nhận `applied` trong linked migration history. Các mismatch lịch sử cũ không thuộc cutover này được giữ nguyên, không repair và không dùng `--include-all`.
+- Post-apply smoke đạt; local/remote đều có version `20260813070319`; Security và Performance Advisors không có finding mức error.
+- Room `gantt` đang ở `pilot`, chỉ còn `view/edit/delete`, PBAC fallback tắt. Active grants sau backfill: `view=33`, `edit=22`, `delete=3`.
+- Dữ liệu sau rollout: 577 tasks, 3 completion history rows, không còn task dùng `completion_request`; không có fixture smoke tồn dư.
 - Promotion `pilot` → `enforced`: chỉ tạo migration riêng sau business acceptance.
+
+Hash artifact đã apply:
+
+- Migration SHA-256: `958631db8a4b4ecf565ef6fa11143b2dd854e949cdeb02695736d608841f6e14` (61,421 bytes).
+- Smoke SHA-256: `75cedc181c06b12a99164bbb10935434697641ab1dbdf8bcc8f62bd71a4d5408` (30,304 bytes).
 
 ## Snapshot Cloud trước cutover
 
@@ -117,15 +125,16 @@ PGPASSWORD="$SUPABASE_DB_PASSWORD" psql "$(cat supabase/.temp/pooler-url)" \
 
 ## Apply và kiểm tra sau apply
 
-Chỉ sau khi database owner xử lý lịch sử migration và dry-run chỉ liệt kê migration Gantt dự kiến:
+Quy trình đã thực hiện ngày 2026-08-13 sau khi database owner duyệt apply riêng migration Gantt do lịch sử linked cũ không đồng bộ:
 
 1. Chụp snapshot đầy đủ.
-2. Chạy `npx --yes supabase@2.110.0 db push --linked`.
-3. Chạy smoke lại trong `BEGIN/ROLLBACK`.
-4. Chạy `migration list --linked` và xác nhận `20260813070319` có cả local/remote.
-5. Chạy Security và Performance Advisors; so sánh snapshot trước/sau.
-6. Kiểm tra completion count không đổi, ba binding vẫn ở `pilot`, PBAC fallback tắt.
-7. Kiểm thử nghiệp vụ viewer/editor/deleter trên một project/site được chỉ định.
+2. Apply file migration bằng `psql --single-transaction --set=ON_ERROR_STOP=1` trên Cloud connection đã cấu hình.
+3. Ghi nhận riêng version `20260813070319` bằng `migration repair --linked --status applied`; không sửa version nào khác.
+4. Chạy smoke lại trong `BEGIN/ROLLBACK`.
+5. Chạy `migration list --linked` và xác nhận `20260813070319` có cả local/remote.
+6. Chạy Security và Performance Advisors; so sánh snapshot trước/sau.
+7. Kiểm tra completion count không đổi, ba binding vẫn ở `pilot`, PBAC fallback tắt.
+8. Kiểm thử nghiệp vụ viewer/editor/deleter trên một project/site được chỉ định.
 
 ## Rollback
 
