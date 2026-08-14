@@ -104,15 +104,33 @@ export const deriveProjectTaskProgress = (
   }
 
   const verifiedDailyQtyByTask = new Map<string, number>();
+  const verifiedDailyQtyByTaskAndDate = new Map<string, Map<string, number>>();
   for (const log of dailyLogs) {
     const verified = log.status === 'verified' || log.verified;
     if (!verified) continue;
     for (const volume of log.volumes || []) {
       if (!volume.taskId) continue;
       const quantity = Number(volume.quantity || 0);
-      verifiedDailyQtyByTask.set(volume.taskId, (verifiedDailyQtyByTask.get(volume.taskId) || 0) + Math.max(0, quantity));
+      const acceptedQuantity = Math.max(0, quantity);
+      verifiedDailyQtyByTask.set(volume.taskId, (verifiedDailyQtyByTask.get(volume.taskId) || 0) + acceptedQuantity);
+      const quantityByDate = verifiedDailyQtyByTaskAndDate.get(volume.taskId) || new Map<string, number>();
+      quantityByDate.set(log.date, (quantityByDate.get(log.date) || 0) + acceptedQuantity);
+      verifiedDailyQtyByTaskAndDate.set(volume.taskId, quantityByDate);
     }
   }
+
+  const getFirstDailyCompletionDate = (taskId: string, plannedQuantity: number): string | undefined => {
+    if (!(plannedQuantity > 0)) return undefined;
+    const quantitiesByDate = verifiedDailyQtyByTaskAndDate.get(taskId);
+    if (!quantitiesByDate) return undefined;
+
+    let cumulativeQuantity = 0;
+    for (const [date, quantity] of [...quantitiesByDate.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+      cumulativeQuantity += quantity;
+      if (cumulativeQuantity >= plannedQuantity) return date;
+    }
+    return undefined;
+  };
 
   const taskById = new Map(tasks.map(task => [task.id, task]));
   const calculated = new Map<string, ProjectTask>();
@@ -140,6 +158,17 @@ export const deriveProjectTaskProgress = (
         progress: clampProgress(nextProgress),
         progressMode: 'children_auto',
       };
+      const completedChildDates = children
+        .filter(child => clampProgress(child.progress) >= 100)
+        .map(child => child.actualEndDate)
+        .filter(Boolean) as string[];
+      if (
+        next.progress >= 100 &&
+        !next.actualEndDate &&
+        completedChildDates.length === children.length
+      ) {
+        next.actualEndDate = completedChildDates.sort().at(-1);
+      }
     } else if (next.progressMode === 'daily_log' || (!next.progressMode && verifiedDailyQtyByTask.has(taskId))) {
       const plannedQuantity = Number(next.provisionalQuantity || 0);
       const verifiedQuantity = verifiedDailyQtyByTask.get(taskId) || 0;
@@ -152,12 +181,9 @@ export const deriveProjectTaskProgress = (
         progress: plannedQuantity > 0 ? clampProgress(nextProgress) : clampProgress(next.progress),
         progressMode: 'daily_log',
       };
-    }
-    if (next.progress >= 100) {
-      next = {
-        ...next,
-        actualEndDate: next.actualEndDate || todayIso,
-      };
+      if (next.progress >= 100 && !next.actualEndDate) {
+        next.actualEndDate = getFirstDailyCompletionDate(taskId, plannedQuantity);
+      }
     }
 
     calculated.set(taskId, next);

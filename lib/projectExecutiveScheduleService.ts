@@ -1,5 +1,9 @@
 import type { DailyLog, ProjectTask } from '../types';
-import { buildProjectScheduleProjection, type TaskProjectionDates } from './projectScheduleProjection';
+import {
+  buildProjectScheduleProjection,
+  type TaskProjectionDates,
+  type TaskScheduleVarianceKind,
+} from './projectScheduleProjection';
 import {
   clampProgress,
   deriveProjectTaskProgress,
@@ -34,7 +38,10 @@ export interface ExecutiveScheduleTaskRow {
   plannedPercent: number;
   actualProgress: number;
   progressDelta: number;
-  dayDelta: number;
+  dayDelta: number | null;
+  plannedEquivalentDate?: string;
+  varianceKind: TaskScheduleVarianceKind;
+  varianceLabel: string;
   startDelta: number;
   delayDays: number;
   status: ExecutiveScheduleTaskStatus;
@@ -178,7 +185,7 @@ const deriveActualDates = (task: ProjectTask, dailyLogs: DailyLog[]): TaskProjec
   let actualStart = normalizeIsoDate(task.actualStartDate);
   let actualEnd = normalizeIsoDate(task.actualEndDate);
 
-  if (!actualStart || !actualEnd) {
+  if (!actualStart) {
     const dates = dailyLogs
       .filter(log => (log.status === 'verified' || log.verified) && logTouchesTask(log, task.id))
       .map(log => normalizeIsoDate(log.date))
@@ -186,10 +193,7 @@ const deriveActualDates = (task: ProjectTask, dailyLogs: DailyLog[]): TaskProjec
 
     dates.sort();
     if (dates.length > 0) {
-      if (!actualStart) actualStart = dates[0];
-      if (!actualEnd && clampProgress(task.progress) >= 100) {
-        actualEnd = dates[dates.length - 1];
-      }
+      actualStart = dates[0];
     }
   }
 
@@ -198,14 +202,15 @@ const deriveActualDates = (task: ProjectTask, dailyLogs: DailyLog[]): TaskProjec
 
 const getTaskStatus = (row: {
   startDate?: string;
+  actualStart?: string;
   plannedPercent: number;
   actualProgress: number;
-  dayDelta: number;
+  dayDelta: number | null;
   todayIso: string;
 }): ExecutiveScheduleTaskStatus => {
   if (row.actualProgress >= 100) return 'completed';
-  if (row.dayDelta > 0 || row.actualProgress + 5 < row.plannedPercent) return 'late';
-  if (row.actualProgress > 0) return 'active';
+  if ((row.dayDelta !== null && row.dayDelta > 0) || row.actualProgress + 5 < row.plannedPercent) return 'late';
+  if (row.actualProgress > 0 || row.actualStart) return 'active';
   if (row.startDate && row.todayIso < row.startDate && row.startDate <= addDays(row.todayIso, 14)) return 'upcoming';
   if (row.actualProgress <= 0) return 'not_started';
   return 'on_track';
@@ -263,11 +268,14 @@ export const buildExecutiveScheduleSummary = ({
     const plannedPercent = taskProjection?.plannedPercent || 0;
     const actualProgress = taskProjection?.actualProgress ?? clampProgress(task.progress);
     const forecastEnd = taskProjection?.forecastEnd || task.endDate || normalizedToday;
-    const dayDelta = taskProjection?.dayDelta ?? (task.endDate ? diffDays(task.endDate, actualProgress >= 100 ? (actualDates.actualEnd || forecastEnd) : forecastEnd) : 0);
+    const dayDelta = taskProjection?.dayDelta ?? null;
+    const varianceKind = taskProjection?.varianceKind || 'insufficient_data';
+    const varianceLabel = taskProjection?.varianceLabel || 'Chưa đủ dữ liệu';
     const startDelta = actualDates.actualStart && task.startDate ? diffDays(task.startDate, actualDates.actualStart) : 0;
     const delayInfo = delayMap.get(task.id);
     const status = getTaskStatus({
       startDate: task.startDate,
+      actualStart: actualDates.actualStart,
       plannedPercent,
       actualProgress,
       dayDelta,
@@ -293,6 +301,9 @@ export const buildExecutiveScheduleSummary = ({
       actualProgress,
       progressDelta: Math.round(actualProgress - plannedPercent),
       dayDelta,
+      plannedEquivalentDate: taskProjection?.plannedEquivalentDate,
+      varianceKind,
+      varianceLabel,
       startDelta,
       delayDays: delayInfo?.days || 0,
       status,
@@ -300,14 +311,14 @@ export const buildExecutiveScheduleSummary = ({
         task.delayReason,
         delayInfo?.reasons.slice(0, 2).join('; '),
         task.notes,
-        dayDelta > 0 && !task.delayReason && !delayInfo?.reasons.length ? 'Cần cập nhật nguyên nhân chậm' : '',
+        dayDelta !== null && dayDelta > 0 && !task.delayReason && !delayInfo?.reasons.length ? 'Cần cập nhật nguyên nhân chậm' : '',
       ].filter(Boolean)[0] || '-',
     };
   }));
 
-  const activeRows = rows.filter(row => row.isLeaf && row.actualProgress > 0 && row.actualProgress < 100);
+  const activeRows = rows.filter(row => row.isLeaf && row.actualProgress < 100 && (row.actualProgress > 0 || Boolean(row.actualStart)));
   const completedRows = rows.filter(row => row.isLeaf && row.actualProgress >= 100);
-  const lateRows = rows.filter(row => row.isLeaf && (row.status === 'late' || row.dayDelta > 0));
+  const lateRows = rows.filter(row => row.isLeaf && (row.status === 'late' || (row.dayDelta !== null && row.dayDelta > 0)));
   const upcomingRows = rows.filter(row =>
     row.isLeaf &&
     row.actualProgress < 100 &&
@@ -316,7 +327,7 @@ export const buildExecutiveScheduleSummary = ({
     row.plannedEndDate! >= normalizedToday &&
     row.plannedEndDate! <= addDays(normalizedToday, 14)
   );
-  const notStartedRows = rows.filter(row => row.isLeaf && row.actualProgress <= 0 && row.status !== 'upcoming');
+  const notStartedRows = rows.filter(row => row.isLeaf && row.actualProgress <= 0 && !row.actualStart && row.status !== 'upcoming');
 
   return {
     todayIso: normalizedToday,

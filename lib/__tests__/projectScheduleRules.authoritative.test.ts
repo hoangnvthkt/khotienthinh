@@ -50,6 +50,35 @@ describe('authoritative project schedule rules', () => {
     });
   });
 
+  it('uses the first verified Daily Log date where cumulative quantity reaches 100 percent', () => {
+    const logs = [
+      {
+        id: 'log-1',
+        date: '2026-08-10',
+        status: 'verified',
+        volumes: [{ taskId: 'task-1', quantity: 4 }],
+      },
+      {
+        id: 'log-2',
+        date: '2026-08-13',
+        status: 'verified',
+        volumes: [{ taskId: 'task-1', quantity: 6 }],
+      },
+      {
+        id: 'log-3',
+        date: '2026-08-14',
+        status: 'verified',
+        volumes: [{ taskId: 'task-1', quantity: 1 }],
+      },
+    ] as DailyLog[];
+
+    const [derived] = deriveProjectTaskProgress([
+      task({ progressMode: 'daily_log', provisionalQuantity: 10 }),
+    ], logs, '2026-08-20');
+
+    expect(derived.actualEndDate).toBe('2026-08-13');
+  });
+
   it('keeps child rollup authoritative without writing gate metadata', () => {
     const parent = task({ id: 'parent', name: 'Parent' });
     const childA = task({ id: 'child-a', parentId: 'parent', progress: 100 });

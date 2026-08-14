@@ -216,8 +216,8 @@ const TaskHighlightPanel = ({
                   {fmtDate(row.startDate)} - {fmtDate(row.plannedEndDate)} · {row.actualProgress}%
                 </div>
               </div>
-              <div className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-bold ${row.dayDelta > 0 ? 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-400' : row.dayDelta < 0 ? 'bg-teal-50 text-teal-700 dark:bg-teal-950/40 dark:text-teal-400' : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400'}`}>
-                {fmtScheduleDelta(row.dayDelta)}
+              <div className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-bold ${row.dayDelta !== null && row.dayDelta > 0 ? 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-400' : row.dayDelta !== null && row.dayDelta < 0 ? 'bg-teal-50 text-teal-700 dark:bg-teal-950/40 dark:text-teal-400' : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400'}`}>
+                {row.varianceLabel}
               </div>
             </div>
           </button>

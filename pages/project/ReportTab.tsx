@@ -34,6 +34,7 @@ import {
 import {
     buildProjectScheduleProjection,
     type TaskProjectionDates,
+    type TaskScheduleVarianceKind,
 } from '../../lib/projectScheduleProjection';
 import DailyLogSummaryReport from '../../components/project/DailyLogSummaryReport';
 
@@ -72,7 +73,10 @@ interface ScheduleReportRow {
     actualEnd?: string;
     forecastEnd: string;
     endBasisLabel: string;
-    dayDelta: number;
+    dayDelta: number | null;
+    plannedEquivalentDate?: string;
+    varianceKind: TaskScheduleVarianceKind;
+    varianceLabel: string;
     startDelta: number;
     status: ScheduleStatus;
     note: string;
@@ -166,7 +170,7 @@ const deriveActualDates = (task: ProjectTask, dailyLogs: DailyLog[]) => {
     let start = task.actualStartDate;
     let end = task.actualEndDate;
 
-    if (!start || !end) {
+    if (!start) {
         const linkedLogs = dailyLogs.filter(log => {
             const verified = log.status === 'verified' || log.verified;
             if (!verified) return false;
@@ -179,8 +183,7 @@ const deriveActualDates = (task: ProjectTask, dailyLogs: DailyLog[]) => {
 
         if (linkedLogs.length > 0) {
             const dates = linkedLogs.map(log => log.date).sort();
-            if (!start) start = dates[0];
-            if (!end && task.progress >= 100) end = dates[dates.length - 1];
+            start = dates[0];
         }
     }
 
@@ -189,16 +192,17 @@ const deriveActualDates = (task: ProjectTask, dailyLogs: DailyLog[]) => {
 
 const getScheduleStatus = (row: {
     task: ProjectTask;
+    actualStart?: string;
     plannedPercent: number;
     actualProgress: number;
-    dayDelta: number;
+    dayDelta: number | null;
     todayIso: string;
 }): ScheduleStatus => {
     if (row.actualProgress >= 100) return 'completed';
     if (row.task.startDate && row.todayIso < row.task.startDate) return 'not_due';
-    if (row.actualProgress <= 0) return 'not_started';
-    if (row.dayDelta > 0 || row.actualProgress + 5 < row.plannedPercent) return 'late';
-    if (row.dayDelta < 0 || row.actualProgress > row.plannedPercent + 5) return 'ahead';
+    if (row.actualProgress <= 0 && !row.actualStart) return 'not_started';
+    if ((row.dayDelta !== null && row.dayDelta > 0) || row.actualProgress + 5 < row.plannedPercent) return 'late';
+    if ((row.dayDelta !== null && row.dayDelta < 0) || row.actualProgress > row.plannedPercent + 5) return 'ahead';
     return 'on_track';
 };
 
@@ -441,10 +445,13 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
                 const plannedPercent = taskProjection?.plannedPercent || 0;
                 const actualProgress = taskProjection?.actualProgress ?? clampProgress(task.progress);
                 const forecastEnd = taskProjection?.forecastEnd || task.endDate || todayIso;
-                const dayDelta = taskProjection?.dayDelta ?? (task.endDate ? diffDays(task.endDate, actualProgress >= 100 ? (actualEnd || forecastEnd) : forecastEnd) : 0);
+                const dayDelta = taskProjection?.dayDelta ?? null;
+                const varianceKind = taskProjection?.varianceKind || 'insufficient_data';
+                const varianceLabel = taskProjection?.varianceLabel || 'Chưa đủ dữ liệu';
                 const startDelta = actualStart && task.startDate ? diffDays(task.startDate, actualStart) : 0;
                 const status = getScheduleStatus({
                     task,
+                    actualStart,
                     plannedPercent,
                     actualProgress,
                     dayDelta,
@@ -455,7 +462,7 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
                     task.delayReason,
                     delayInfo?.reasons.slice(0, 2).join('; '),
                     task.notes,
-                    dayDelta > 0 && !task.delayReason && !delayInfo?.reasons.length ? 'Cần cập nhật nguyên nhân chậm' : '',
+                    dayDelta !== null && dayDelta > 0 && !task.delayReason && !delayInfo?.reasons.length ? 'Cần cập nhật nguyên nhân chậm' : '',
                 ].filter(Boolean)[0] || '-';
 
                 return {
@@ -472,6 +479,9 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
                     forecastEnd,
                     endBasisLabel: taskProjection?.endBasisLabel || (actualProgress >= 100 ? 'Kết thúc TT' : 'Dự kiến TT'),
                     dayDelta,
+                    plannedEquivalentDate: taskProjection?.plannedEquivalentDate,
+                    varianceKind,
+                    varianceLabel,
                     startDelta,
                     status,
                     note,
@@ -483,10 +493,10 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
         const rowsForProject = leafRows.length > 0 ? leafRows : rows;
         const topLevelRows = rows.filter(row => !row.task.parentId);
         const completedRows = rowsForProject.filter(row => row.actualProgress >= 100);
-        const activeRows = rowsForProject.filter(row => row.actualProgress > 0 && row.actualProgress < 100);
+        const activeRows = rowsForProject.filter(row => row.actualProgress < 100 && (row.actualProgress > 0 || Boolean(row.actualStart)));
         const touchedRows = rowsForProject.filter(row => row.actualProgress > 0 || row.actualStart || row.actualEnd);
-        const lateRows = rowsForProject.filter(row => row.status === 'late' || row.dayDelta > 0);
-        const notStartedRows = rowsForProject.filter(row => row.actualProgress <= 0 && row.status !== 'not_due');
+        const lateRows = rowsForProject.filter(row => row.status === 'late' || (row.dayDelta !== null && row.dayDelta > 0));
+        const notStartedRows = rowsForProject.filter(row => row.actualProgress <= 0 && !row.actualStart && row.status !== 'not_due');
 
         return {
             rows,
@@ -546,7 +556,7 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
         const touchedNames = scheduleReport.touchedRows.length > 0
             ? scheduleReport.touchedRows.slice(0, 6).map(row => `${row.task.name} đạt ${fmtPercent(row.actualProgress)}`)
             : ['chưa có hạng mục nào ghi nhận thực hiện'];
-        const lateNames = scheduleReport.lateRows.slice(0, 4).map(row => `${row.task.name} ${formatDayDelta(row.dayDelta).toLowerCase()}`);
+        const lateNames = scheduleReport.lateRows.slice(0, 4).map(row => `${row.task.name} ${row.varianceLabel.toLowerCase()}`);
         const progressDelta = scheduleReport.actualProgress - scheduleReport.plannedProgress;
         const durationForecastLine = scheduleReport.projection.spiDurationDays !== null
             ? `Nếu giữ nhịp hiện tại, dự án dự kiến cần ${scheduleReport.projection.spiDurationDays} ngày, ${formatNullableDayDelta(scheduleReport.projection.spiDeltaDays).toLowerCase()} so với kế hoạch gốc.`
@@ -567,10 +577,10 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
         const query = normalizeText(searchTerm.trim());
 
         return scheduleReport.rows.filter(row => {
-            if (statusFilter === 'active' && !(row.actualProgress > 0 && row.actualProgress < 100)) return false;
-            if (statusFilter === 'late' && !(row.status === 'late' || row.dayDelta > 0)) return false;
+            if (statusFilter === 'active' && !(row.actualProgress < 100 && (row.actualProgress > 0 || Boolean(row.actualStart)))) return false;
+            if (statusFilter === 'late' && !(row.status === 'late' || (row.dayDelta !== null && row.dayDelta > 0))) return false;
             if (statusFilter === 'completed' && row.actualProgress < 100) return false;
-            if (statusFilter === 'not_started' && !(row.actualProgress <= 0 && row.status !== 'not_due')) return false;
+            if (statusFilter === 'not_started' && !(row.actualProgress <= 0 && !row.actualStart && row.status !== 'not_due')) return false;
             if (!query) return true;
             return normalizeText(`${row.task.wbsCode || ''} ${row.task.name} ${row.task.assignee || ''} ${row.note}`).includes(query);
         });
@@ -652,7 +662,7 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
                 fmtDate(row.actualProgress >= 100 ? (row.actualEnd || row.forecastEnd) : row.forecastEnd),
                 fmtPercent(row.actualProgress),
                 formatProgressDelta(row.progressDelta),
-                formatDayDelta(row.dayDelta),
+                row.varianceLabel,
                 getStatusLabel(row.status),
                 row.note === '-' ? '' : row.note,
             ]),
@@ -877,7 +887,7 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
                                             </span>
                                         </div>
                                         <span className="font-extrabold text-xs shrink-0 text-red-650 dark:text-red-400 bg-red-50 dark:bg-red-950/30 border border-red-100 dark:border-red-900/30 px-2 py-0.5 rounded shadow-sm">
-                                            {formatDayDelta(row.dayDelta).toLowerCase()}
+                                            {row.varianceLabel.toLowerCase()}
                                         </span>
                                     </div>
                                 ))
@@ -1104,8 +1114,8 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
                                         </tr>
                                     ) : displayedRows.map(row => {
                                         const StatusIcon = getStatusIcon(row.status);
-                                        const isLate = row.dayDelta > 0 || row.status === 'late';
-                                        const isAhead = row.dayDelta < 0 || row.status === 'ahead';
+                                        const isLate = (row.dayDelta !== null && row.dayDelta > 0) || row.status === 'late';
+                                        const isAhead = (row.dayDelta !== null && row.dayDelta < 0) || row.status === 'ahead';
                                         const isParent = row.hasChildren;
 
                                         return (
@@ -1158,7 +1168,7 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
                                                     {row.actualStart ? fmtDate(row.actualStart) : row.actualProgress > 0 ? 'Chưa nhập' : '-'}
                                                 </td>
                                                 <td className="px-3 py-3 text-center align-top">
-                                                    <div className="font-bold text-slate-700">{fmtDate(row.actualProgress >= 100 ? (row.actualEnd || row.forecastEnd) : row.forecastEnd)}</div>
+                                                    <div className="font-bold text-slate-700">{fmtDate(row.actualProgress >= 100 ? row.actualEnd : row.forecastEnd)}</div>
                                                     <div className="mt-0.5 text-[10px] font-bold text-slate-400">{row.endBasisLabel}</div>
                                                 </td>
                                                 <td className="px-3 py-3 text-right align-top">
@@ -1169,7 +1179,7 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
                                                 </td>
                                                 <td className="px-3 py-3 text-right align-top">
                                                     <span className={`font-black ${isLate ? 'text-red-600' : isAhead ? 'text-cyan-700' : 'text-slate-700'}`}>
-                                                        {formatDayDelta(row.dayDelta)}
+                                                        {row.varianceLabel}
                                                     </span>
                                                     {row.startDelta > 0 && (
                                                         <div className="mt-0.5 text-[10px] font-bold text-amber-600">BĐ chậm {row.startDelta} ngày</div>

@@ -6,6 +6,15 @@ const DAY_MS = 86400000;
 
 export type ProjectScheduleProjectionStatus = 'ahead' | 'on_track' | 'late' | 'insufficient_data';
 export type ProjectScheduleProjectionMethod = 'critical_path' | 'max_end_date' | 'none';
+export type TaskScheduleVarianceKind =
+  | 'not_due'
+  | 'start_due'
+  | 'late_start'
+  | 'overdue_not_started'
+  | 'in_progress'
+  | 'completed'
+  | 'missing_actual_end'
+  | 'insufficient_data';
 
 export interface TaskProjectionDates {
   actualStart?: string;
@@ -30,7 +39,10 @@ export interface TaskScheduleProjection {
   forecastEnd: string;
   forecastDurationDays: number;
   remainingDays: number;
-  dayDelta: number;
+  dayDelta: number | null;
+  plannedEquivalentDate?: string;
+  varianceKind: TaskScheduleVarianceKind;
+  varianceLabel: string;
   endBasisLabel: 'Kết thúc TT' | 'Dự kiến TT';
 }
 
@@ -132,7 +144,7 @@ const deriveActualDatesFromLogs = (
   let actualStart = normalizeIsoDate(task.actualStartDate);
   let actualEnd = normalizeIsoDate(task.actualEndDate);
 
-  if (!actualStart || !actualEnd) {
+  if (!actualStart) {
     const linkedDates = dailyLogs
       .filter(log => {
         const verified = log.status === 'verified' || log.verified;
@@ -149,10 +161,7 @@ const deriveActualDatesFromLogs = (
 
     linkedDates.sort();
     if (linkedDates.length > 0) {
-      if (!actualStart) actualStart = linkedDates[0];
-      if (!actualEnd && clampProgress(task.progress) >= 100) {
-        actualEnd = linkedDates[linkedDates.length - 1];
-      }
+      actualStart = linkedDates[0];
     }
   }
 
@@ -175,6 +184,66 @@ const getTaskActualDates = (
   return deriveActualDatesFromLogs(task, dailyLogs);
 };
 
+const getTaskScheduleVariance = (
+  task: ProjectTask,
+  cutoffIso: string,
+  progress: number,
+  actualStart?: string,
+  actualEnd?: string,
+): Pick<TaskScheduleProjection, 'dayDelta' | 'plannedEquivalentDate' | 'varianceKind'> => {
+  const plannedStart = normalizeIsoDate(task.startDate);
+  const plannedEnd = normalizeIsoDate(task.endDate);
+
+  if (progress >= 100) {
+    if (!plannedEnd) return { dayDelta: null, varianceKind: 'insufficient_data' };
+    if (!actualEnd) return { dayDelta: null, varianceKind: 'missing_actual_end' };
+    return {
+      dayDelta: diffDays(plannedEnd, actualEnd),
+      plannedEquivalentDate: plannedEnd,
+      varianceKind: 'completed',
+    };
+  }
+
+  if (!plannedStart || !plannedEnd || plannedEnd < plannedStart) {
+    return { dayDelta: null, varianceKind: 'insufficient_data' };
+  }
+
+  if (progress <= 0 && !actualStart) {
+    if (cutoffIso < plannedStart) return { dayDelta: 0, varianceKind: 'not_due' };
+    if (cutoffIso === plannedStart) return { dayDelta: 0, varianceKind: 'start_due' };
+    if (cutoffIso > plannedEnd) {
+      return { dayDelta: diffDays(plannedEnd, cutoffIso), varianceKind: 'overdue_not_started' };
+    }
+    return { dayDelta: diffDays(plannedStart, cutoffIso), varianceKind: 'late_start' };
+  }
+
+  const plannedSpanDays = Math.max(0, diffDays(plannedStart, plannedEnd));
+  const plannedEquivalentDate = addDays(
+    plannedStart,
+    Math.round(plannedSpanDays * progress / 100),
+  );
+  return {
+    dayDelta: diffDays(plannedEquivalentDate, cutoffIso),
+    plannedEquivalentDate,
+    varianceKind: 'in_progress',
+  };
+};
+
+const getTaskScheduleVarianceLabel = (
+  kind: TaskScheduleVarianceKind,
+  days: number | null,
+): string => {
+  if (kind === 'not_due') return 'Chưa đến hạn';
+  if (kind === 'start_due') return 'Đến hạn bắt đầu';
+  if (kind === 'missing_actual_end') return 'Thiếu ngày KT thực tế';
+  if (kind === 'insufficient_data' || days === null) return 'Chưa đủ dữ liệu';
+  if (kind === 'late_start') return `Chậm bắt đầu ${days} ngày`;
+  if (kind === 'overdue_not_started') return `Quá hạn ${days} ngày – chưa bắt đầu`;
+  if (days > 0) return `Chậm ${days} ngày`;
+  if (days < 0) return `Nhanh ${Math.abs(days)} ngày`;
+  return 'Đúng tiến độ';
+};
+
 const buildTaskProjection = (
   task: ProjectTask,
   todayIso: string,
@@ -192,7 +261,7 @@ const buildTaskProjection = (
   let endBasisLabel: TaskScheduleProjection['endBasisLabel'] = 'Dự kiến TT';
 
   if (progress >= 100) {
-    forecastEnd = actualEnd || todayIso;
+    forecastEnd = actualEnd || normalizeIsoDate(task.endDate) || todayIso;
     forecastStart = actualStart || normalizeIsoDate(task.startDate) || forecastEnd;
     endBasisLabel = 'Kết thúc TT';
   } else if (progress > 0) {
@@ -215,6 +284,8 @@ const buildTaskProjection = (
     forecastEnd = todayIso;
   }
 
+  const variance = getTaskScheduleVariance(task, todayIso, progress, actualStart, actualEnd);
+
   return {
     taskId: task.id,
     plannedPercent,
@@ -226,7 +297,8 @@ const buildTaskProjection = (
     forecastEnd,
     forecastDurationDays: inclusiveDays(forecastStart, forecastEnd),
     remainingDays,
-    dayDelta: task.endDate ? diffDays(task.endDate, forecastEnd) : 0,
+    ...variance,
+    varianceLabel: getTaskScheduleVarianceLabel(variance.varianceKind, variance.dayDelta),
     endBasisLabel,
   };
 };
