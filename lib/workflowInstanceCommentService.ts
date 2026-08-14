@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
-import { WorkflowInstanceComment, WorkflowInstanceCommentAttachment } from '../types';
+import { WorkflowCommentMention, WorkflowInstanceComment, WorkflowInstanceCommentAttachment } from '../types';
+import { normalizeWorkflowCommentMentions, reconcileWorkflowCommentMentions } from './workflowCommentMentions';
 
 const TABLE = 'workflow_instance_comments';
 const BUCKET = 'workflow-instance-comment-attachments';
@@ -12,6 +13,7 @@ const mapComment = (row: any): WorkflowInstanceComment => ({
   authorUserId: row.author_user_id ?? row.authorUserId,
   body: row.body || '',
   attachments: Array.isArray(row.attachments) ? row.attachments : [],
+  mentions: normalizeWorkflowCommentMentions(row.mentions),
   createdAt: row.created_at ?? row.createdAt,
   updatedAt: row.updated_at ?? row.updatedAt,
 });
@@ -74,9 +76,11 @@ export const workflowInstanceCommentService = {
     authorUserId: string;
     body?: string;
     attachments?: WorkflowInstanceCommentAttachment[];
+    mentions?: WorkflowCommentMention[];
   }): Promise<WorkflowInstanceComment> {
     const body = (input.body || '').trim();
     const attachments = input.attachments || [];
+    const mentions = reconcileWorkflowCommentMentions(body, input.mentions || []);
     if (!body && attachments.length === 0) throw new Error('Nội dung trao đổi hoặc file đính kèm không được để trống.');
     if (body.length > 4000) throw new Error('Nội dung trao đổi tối đa 4000 ký tự.');
     if (attachments.length > MAX_ATTACHMENTS_PER_COMMENT) throw new Error('Mỗi tin nhắn tối đa 5 file đính kèm.');
@@ -88,6 +92,7 @@ export const workflowInstanceCommentService = {
         author_user_id: input.authorUserId,
         body,
         attachments,
+        mentions,
       })
       .select('*')
       .single();
@@ -110,4 +115,3 @@ export const workflowInstanceCommentService = {
     await supabase.storage.from(BUCKET).remove(paths);
   },
 };
-

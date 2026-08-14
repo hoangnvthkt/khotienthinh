@@ -4283,12 +4283,18 @@ export interface WorkflowInstanceCommentAttachment {
   uploadedAt?: string;
 }
 
+export interface WorkflowCommentMention {
+  userId: string;
+  displayName: string;
+}
+
 export interface WorkflowInstanceComment {
   id: string;
   instanceId: string;
   authorUserId: string;
   body: string;
   attachments: WorkflowInstanceCommentAttachment[];
+  mentions: WorkflowCommentMention[];
   createdAt: string;
   updatedAt?: string;
 }

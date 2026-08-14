@@ -4,12 +4,13 @@ import {
     ArrowLeft, CheckCircle, Clock, FileText, GitBranch, Image as ImageIcon,
     MessageSquare, Paperclip, RefreshCcw, RotateCcw, Send, User, X, XCircle,
     AlertCircle, Calendar, Download, Eye, Table2, FileSpreadsheet, ChevronRight, ChevronDown, Check,
-    Search, Edit2, Bookmark
+    Search, Edit2, Bookmark, AtSign
 } from 'lucide-react';
 import { useWorkflow } from '../../context/WorkflowContext';
 import { useApp } from '../../context/AppContext';
 import {
     Role,
+    WorkflowCommentMention,
     WorkflowInstance,
     WorkflowInstanceAction,
     WorkflowInstanceComment,
@@ -27,6 +28,12 @@ import {
     resolveWorkflowStepAssigneeCandidates,
 } from '../../lib/workflowAssignmentResolver';
 import { workflowInstanceCommentService } from '../../lib/workflowInstanceCommentService';
+import {
+    findWorkflowMentionTrigger,
+    insertWorkflowCommentMention,
+    reconcileWorkflowCommentMentions,
+    WorkflowMentionTrigger,
+} from '../../lib/workflowCommentMentions';
 import { canSeeMaterialRequestWorkflowOnKanban, isMaterialRequestWorkflowTemplate } from '../../lib/workflowVisibility';
 import { supabase } from '../../lib/supabase';
 import { saveAs } from 'file-saver';
@@ -57,6 +64,35 @@ const formatBytes = (bytes: number) => {
     const units = ['B', 'KB', 'MB', 'GB'];
     const exponent = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
     return `${(bytes / Math.pow(1024, exponent)).toFixed(exponent === 0 ? 0 : 1)} ${units[exponent]}`;
+};
+
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const WorkflowCommentBody: React.FC<{
+    body: string;
+    mentions: WorkflowCommentMention[];
+}> = ({ body, mentions }) => {
+    const names = mentions
+        .map(mention => mention.displayName.trim())
+        .filter(Boolean)
+        .sort((a, b) => b.length - a.length);
+    if (names.length === 0) return <>{body}</>;
+
+    const mentionPattern = new RegExp(`@(${names.map(escapeRegExp).join('|')})`, 'g');
+    const parts: React.ReactNode[] = [];
+    let lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = mentionPattern.exec(body)) !== null) {
+        if (match.index > lastIndex) parts.push(body.slice(lastIndex, match.index));
+        parts.push(
+            <span key={`${match[0]}-${match.index}`} className="rounded bg-sky-100 px-1 font-black text-sky-700 dark:bg-sky-500/20 dark:text-sky-300">
+                {match[0]}
+            </span>,
+        );
+        lastIndex = mentionPattern.lastIndex;
+    }
+    if (lastIndex < body.length) parts.push(body.slice(lastIndex));
+    return <>{parts}</>;
 };
 
 // ========== Excel Table Preview ==========
@@ -324,6 +360,9 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
     const { user, users, employees, orgUnits } = useApp();
 
     const [commentBody, setCommentBody] = useState('');
+    const [commentMentions, setCommentMentions] = useState<WorkflowCommentMention[]>([]);
+    const [mentionTrigger, setMentionTrigger] = useState<WorkflowMentionTrigger | null>(null);
+    const [mentionSelectionIndex, setMentionSelectionIndex] = useState(0);
     const [comments, setComments] = useState<WorkflowInstanceComment[]>([]);
     const [draftAttachments, setDraftAttachments] = useState<WorkflowInstanceCommentAttachment[]>([]);
     const [isUploading, setIsUploading] = useState(false);
@@ -335,6 +374,7 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
     const [activeAction, setActiveAction] = useState<WorkflowInstanceAction | null>(null);
     const [previewFile, setPreviewFile] = useState<any>(null);
     const [fieldsExpanded, setFieldsExpanded] = useState(true);
+    const commentTextareaRef = useRef<HTMLTextAreaElement>(null);
 
     // Watchers selection modal state
     const [showWatchersModal, setShowWatchersModal] = useState(false);
@@ -363,6 +403,23 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
     );
     const instanceLogs = useMemo(() => id ? getInstanceLogs(id) : [], [getInstanceLogs, id, logs]);
     const isMaterialTemplate = isMaterialRequestWorkflowTemplate(template);
+
+    const mentionCandidates = useMemo(() => {
+        if (!mentionTrigger) return [];
+        const query = mentionTrigger.query.toLocaleLowerCase('vi').trim();
+        return users
+            .filter(candidate => candidate.id !== user.id && candidate.isActive !== false)
+            .filter(candidate => {
+                if (!query) return true;
+                const employee = employees.find(item => item.userId === candidate.id);
+                const departmentName = orgUnits.find(unit => unit.id === employee?.departmentId)?.name;
+                return [candidate.name, candidate.email, candidate.position, employee?.title, departmentName]
+                    .filter(Boolean)
+                    .some(value => String(value).toLocaleLowerCase('vi').includes(query));
+            })
+            .sort((a, b) => a.name.localeCompare(b.name, 'vi'))
+            .slice(0, 10);
+    }, [employees, mentionTrigger, orgUnits, user.id, users]);
 
     const orderedNodes = useMemo(() => {
         if (!template) return [];
@@ -587,6 +644,59 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
         workflowInstanceCommentService.removeAttachments([attachment.storagePath]).catch(console.error);
     };
 
+    const handleCommentBodyChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
+        const nextBody = event.target.value;
+        const cursor = event.target.selectionStart;
+        setCommentBody(nextBody);
+        setCommentMentions(prev => reconcileWorkflowCommentMentions(nextBody, prev));
+        setMentionTrigger(findWorkflowMentionTrigger(nextBody, cursor));
+        setMentionSelectionIndex(0);
+    };
+
+    const selectCommentMention = (candidate: (typeof users)[number]) => {
+        if (!mentionTrigger) return;
+        const mention = { userId: candidate.id, displayName: candidate.name };
+        const inserted = insertWorkflowCommentMention({
+            body: commentBody,
+            trigger: mentionTrigger,
+            mention,
+        });
+        setCommentBody(inserted.body);
+        setCommentMentions(prev => [
+            ...prev.filter(item => item.userId !== mention.userId),
+            mention,
+        ]);
+        setMentionTrigger(null);
+        setMentionSelectionIndex(0);
+        requestAnimationFrame(() => {
+            commentTextareaRef.current?.focus();
+            commentTextareaRef.current?.setSelectionRange(inserted.caret, inserted.caret);
+        });
+    };
+
+    const handleCommentKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+        if (!mentionTrigger || mentionCandidates.length === 0) return;
+        if (event.key === 'ArrowDown') {
+            event.preventDefault();
+            setMentionSelectionIndex(index => (index + 1) % mentionCandidates.length);
+            return;
+        }
+        if (event.key === 'ArrowUp') {
+            event.preventDefault();
+            setMentionSelectionIndex(index => (index - 1 + mentionCandidates.length) % mentionCandidates.length);
+            return;
+        }
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            selectCommentMention(mentionCandidates[mentionSelectionIndex] || mentionCandidates[0]);
+            return;
+        }
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            setMentionTrigger(null);
+        }
+    };
+
     const sendComment = async () => {
         if (!id) return;
         setIsSendingComment(true);
@@ -597,8 +707,11 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
                 authorUserId: user.id,
                 body: commentBody,
                 attachments: draftAttachments,
+                mentions: commentMentions,
             });
             setCommentBody('');
+            setCommentMentions([]);
+            setMentionTrigger(null);
             setDraftAttachments([]);
             await loadComments();
         } catch (error) {
@@ -1278,13 +1391,56 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
 
                         {/* Comments input box */}
                         <div className="space-y-3">
-                            <textarea
-                                value={commentBody}
-                                onChange={event => setCommentBody(event.target.value)}
-                                placeholder="Viết thảo luận của bạn..."
-                                rows={3}
-                                className="w-full resize-none rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-3.5 text-xs font-medium outline-none focus:ring-2 focus:ring-emerald-400 text-slate-800 dark:text-slate-200"
-                            />
+                            <div className="relative">
+                                <textarea
+                                    ref={commentTextareaRef}
+                                    value={commentBody}
+                                    onChange={handleCommentBodyChange}
+                                    onKeyDown={handleCommentKeyDown}
+                                    onBlur={() => window.setTimeout(() => setMentionTrigger(null), 120)}
+                                    placeholder="Viết thảo luận của bạn... Dùng @ để nhắc nhân viên"
+                                    rows={3}
+                                    className="w-full resize-none rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-3.5 text-xs font-medium outline-none focus:ring-2 focus:ring-emerald-400 text-slate-800 dark:text-slate-200"
+                                />
+                                {mentionTrigger && mentionCandidates.length > 0 && (
+                                    <div className="absolute left-0 right-0 top-full z-30 mt-1 max-h-64 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1.5 shadow-2xl dark:border-slate-700 dark:bg-slate-800">
+                                        <div className="mb-1 flex items-center gap-1 border-b border-slate-100 px-2 py-1 text-[10px] font-black uppercase tracking-wider text-slate-400 dark:border-slate-700">
+                                            <AtSign size={11} className="text-sky-500" /> Nhắc đến nhân viên
+                                        </div>
+                                        {mentionCandidates.map((candidate, index) => {
+                                            const employee = employees.find(item => item.userId === candidate.id);
+                                            const departmentName = orgUnits.find(unit => unit.id === employee?.departmentId)?.name;
+                                            const subtitle = employee?.title || departmentName || candidate.position || candidate.email;
+                                            return (
+                                                <button
+                                                    key={candidate.id}
+                                                    type="button"
+                                                    onMouseDown={event => {
+                                                        event.preventDefault();
+                                                        selectCommentMention(candidate);
+                                                    }}
+                                                    className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition ${index === mentionSelectionIndex
+                                                        ? 'bg-sky-500 text-white'
+                                                        : 'text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-700'
+                                                        }`}
+                                                >
+                                                    {candidate.avatar ? (
+                                                        <img src={candidate.avatar} alt={candidate.name} className="h-7 w-7 shrink-0 rounded-full object-cover" />
+                                                    ) : (
+                                                        <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-black ${index === mentionSelectionIndex ? 'bg-white/20' : 'bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-300'}`}>
+                                                            {candidate.name.slice(0, 2).toUpperCase()}
+                                                        </span>
+                                                    )}
+                                                    <span className="min-w-0 flex-1">
+                                                        <span className="block truncate text-xs font-bold">{candidate.name}</span>
+                                                        <span className={`block truncate text-[10px] ${index === mentionSelectionIndex ? 'text-sky-100' : 'text-slate-400'}`}>{subtitle}</span>
+                                                    </span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
                             {commentError && <div className="text-xs font-bold text-red-500">{commentError}</div>}
                             <div className="flex justify-end">
                                 <button
@@ -1307,7 +1463,9 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
                                             <span>{author?.name || 'N/A'}</span>
                                             <span>{new Date(comment.createdAt).toLocaleString('vi-VN')}</span>
                                         </div>
-                                        <p className="font-semibold text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">{comment.body}</p>
+                                        <p className="font-semibold text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">
+                                            <WorkflowCommentBody body={comment.body} mentions={comment.mentions} />
+                                        </p>
                                     </div>
                                 );
                             })}
