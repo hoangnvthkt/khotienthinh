@@ -578,15 +578,31 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
     }, [loadScheduleData, toast]);
 
     // View
-    const [viewMode, setViewMode] = useState<ViewMode>('split');
+    const [viewMode, setViewMode] = useState<ViewMode>('table');
     const ganttOffset = viewMode === 'gantt' ? 140 : 0;
     const [splitTableWidth, setSplitTableWidth] = useState(580); // px
     const [zoom, setZoom] = useState(28);
     const [collapsedParents, setCollapsedParents] = useState<Set<string>>(new Set());
+    const initialCollapsedRef = useRef(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [filterStatus, setFilterStatus] = useState<TaskStatus | 'all'>('all');
     const [sortField, setSortField] = useState<SortField>('wbsCode');
     const [sortDir, setSortDir] = useState<SortDir>('asc');
+
+    useEffect(() => {
+        initialCollapsedRef.current = false;
+    }, [projectId, constructionSiteId]);
+
+    useEffect(() => {
+        if (tasks.length > 0 && !initialCollapsedRef.current) {
+            initialCollapsedRef.current = true;
+            const parentIds = new Set<string>();
+            tasks.forEach(t => {
+                if (t.parentId) parentIds.add(t.parentId);
+            });
+            setCollapsedParents(parentIds);
+        }
+    }, [tasks]);
 
     useEffect(() => {
         if (!focusTaskId || tasks.length === 0 || focusTaskHandledRef.current === focusTaskId) return;
@@ -2669,7 +2685,6 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                                                     <span className="w-5 shrink-0" />
                                                                 ) : null}
                                                                 {task.isMilestone && <Flag size={11} className="text-red-500 shrink-0" />}
-                                                                <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: task.color || COLORS[idx % COLORS.length] }} />
                                                                 <span className="font-bold text-foreground dark:text-slate-200 truncate cursor-pointer hover:text-orange-600 transition-colors"
                                                                     onClick={() => ganttCapabilities.canEdit && openEdit(task)} title={task.name}>
                                                                     {task.name}
