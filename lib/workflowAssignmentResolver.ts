@@ -7,6 +7,7 @@ import {
   WorkflowInstance,
   WorkflowInstanceAction,
   WorkflowInstanceLog,
+  WorkflowInstanceStatus,
   WorkflowNode,
   WorkflowNodeType,
 } from '../types';
@@ -42,6 +43,27 @@ export const getEffectiveStepAssigneeIds = (
   if (override.length > 0) return override;
   return normalizeStepAssigneeIds(node.config?.assigneeUserId);
 };
+
+export const resolveCurrentWorkflowAssignees = (
+  instance: WorkflowInstance,
+  node: Pick<WorkflowNode, 'id' | 'config'> | null | undefined,
+  users: User[],
+): User[] => {
+  if (instance.status !== WorkflowInstanceStatus.RUNNING || !node) return [];
+
+  const userById = new Map(users.map(user => [user.id, user]));
+  return getEffectiveStepAssigneeIds(instance, node)
+    .map(userId => userById.get(userId))
+    .filter((user): user is User => Boolean(user));
+};
+
+export const getWorkflowAssigneeDisplay = (assignees: User[]) => ({
+  visibleAssignees: assignees.slice(0, 2),
+  label: assignees.length === 0
+    ? 'Chưa phân công'
+    : `${getUserLabel(assignees[0])}${assignees.length > 1 ? ` +${assignees.length - 1}` : ''}`,
+  overflowCount: Math.max(assignees.length - 2, 0),
+});
 
 export const isWorkflowStepAssignedToUser = (
   instance: WorkflowInstance,
@@ -159,4 +181,3 @@ export const getWorkflowStepSelectionMode = (node?: WorkflowNode | null): 'singl
   ).length;
   return targetCount > 1 ? 'multiple' : 'single';
 };
-

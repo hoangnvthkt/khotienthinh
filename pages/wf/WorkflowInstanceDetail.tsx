@@ -20,8 +20,10 @@ import {
     WorkflowPrintTemplate,
 } from '../../types';
 import {
+    getWorkflowAssigneeDisplay,
     getWorkflowStepSelectionMode,
     isWorkflowStepAssignedToUser,
+    resolveCurrentWorkflowAssignees,
     resolveWorkflowStepAssigneeCandidates,
 } from '../../lib/workflowAssignmentResolver';
 import { workflowInstanceCommentService } from '../../lib/workflowInstanceCommentService';
@@ -351,6 +353,14 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
     const template = useMemo(() => templates.find(item => item.id === instance?.templateId), [templates, instance?.templateId]);
     const currentNode = useMemo(() => nodes.find(node => node.id === instance?.currentNodeId), [nodes, instance?.currentNodeId]);
     const creator = useMemo(() => users.find(item => item.id === instance?.createdBy), [users, instance?.createdBy]);
+    const currentAssignees = useMemo(
+        () => instance ? resolveCurrentWorkflowAssignees(instance, currentNode, users) : [],
+        [instance, currentNode, users],
+    );
+    const currentAssigneeDisplay = useMemo(
+        () => getWorkflowAssigneeDisplay(currentAssignees),
+        [currentAssignees],
+    );
     const instanceLogs = useMemo(() => id ? getInstanceLogs(id) : [], [getInstanceLogs, id, logs]);
     const isMaterialTemplate = isMaterialRequestWorkflowTemplate(template);
 
@@ -874,16 +884,30 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
                 {/* Main Title & Action Bar Row */}
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                     <div className="space-y-1.5 flex-1 min-w-0">
-                        <div className="flex items-center gap-3">
+                        <div className="flex flex-wrap items-center gap-3">
                             <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white leading-tight break-words">
                                 {instance.title}
                             </h1>
-                            {creator && (
-                                <div className="hidden sm:flex items-center gap-2 shrink-0 bg-slate-50 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700 rounded-full px-2.5 py-1 text-xs font-bold text-slate-700 dark:text-slate-300">
-                                    <div className="h-5 w-5 rounded-full bg-indigo-500 text-white flex items-center justify-center text-[10px] font-black uppercase overflow-hidden">
-                                        {creator.avatar ? <img src={creator.avatar} alt={creator.name} className="h-full w-full object-cover" /> : creator.name.slice(0, 2)}
+                            {instance.status === WorkflowInstanceStatus.RUNNING && (
+                                <div
+                                    className="flex items-center gap-2 shrink-0 bg-sky-50 dark:bg-sky-950/30 border border-sky-200/80 dark:border-sky-800 rounded-full px-2.5 py-1 text-xs font-bold text-slate-700 dark:text-slate-200"
+                                    title="Người đang xử lý bước hiện tại"
+                                >
+                                    <div className="flex -space-x-1.5">
+                                        {currentAssigneeDisplay.visibleAssignees.length > 0 ? currentAssigneeDisplay.visibleAssignees.map(assignee => (
+                                            <div key={assignee.id} className="h-5 w-5 rounded-full border-2 border-white dark:border-slate-800 bg-sky-600 text-white flex items-center justify-center text-[8px] font-black uppercase overflow-hidden">
+                                                {assignee.avatar
+                                                    ? <img src={assignee.avatar} alt={assignee.name} className="h-full w-full object-cover" />
+                                                    : assignee.name.slice(0, 2)}
+                                            </div>
+                                        )) : (
+                                            <div className="h-5 w-5 rounded-full bg-slate-300 dark:bg-slate-700 text-white flex items-center justify-center">
+                                                <User size={11} />
+                                            </div>
+                                        )}
                                     </div>
-                                    <span>{creator.name}</span>
+                                    <span className="text-sky-600 dark:text-sky-400">Đang xử lý:</span>
+                                    <span>{currentAssigneeDisplay.label}</span>
                                 </div>
                             )}
                         </div>

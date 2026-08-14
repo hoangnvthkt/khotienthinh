@@ -11,8 +11,10 @@ import {
     FileText, Hash, Calendar, ArrowRight, Eye
 } from 'lucide-react';
 import {
+    getWorkflowAssigneeDisplay,
     getWorkflowStepSelectionMode,
     isWorkflowStepAssignedToUser,
+    resolveCurrentWorkflowAssignees,
     resolveWorkflowStepAssigneeCandidates,
 } from '../lib/workflowAssignmentResolver';
 
@@ -370,6 +372,12 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ templateId, instances, employ
                                         return v && typeof v === 'object' && v.fileName;
                                     });
                                     const sla = !isVirtual ? getSlaInfo(instance, col as WorkflowNode) : null;
+                                    const currentAssignees = resolveCurrentWorkflowAssignees(
+                                        instance,
+                                        isVirtual ? null : col as WorkflowNode,
+                                        users,
+                                    );
+                                    const currentAssigneeDisplay = getWorkflowAssigneeDisplay(currentAssignees);
 
                                     return (
                                         <div
@@ -411,6 +419,25 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ templateId, instances, employ
                                                         <Paperclip size={9} className="text-rose-400" />
                                                     )}
                                                 </div>
+
+                                                {!isVirtual && instance.status === WorkflowInstanceStatus.RUNNING && (
+                                                    <div className="mt-2 flex items-center gap-1.5 text-[10px] font-bold text-sky-600 dark:text-sky-400" title="Người đang xử lý bước hiện tại">
+                                                        <div className="flex -space-x-1.5 shrink-0">
+                                                            {currentAssigneeDisplay.visibleAssignees.length > 0 ? currentAssigneeDisplay.visibleAssignees.map(assignee => (
+                                                                <div key={assignee.id} className="h-5 w-5 rounded-full border-2 border-white dark:border-slate-800 bg-sky-600 text-white flex items-center justify-center text-[8px] font-black uppercase overflow-hidden">
+                                                                    {assignee.avatar
+                                                                        ? <img src={assignee.avatar} alt={assignee.name} className="h-full w-full object-cover" />
+                                                                        : assignee.name.slice(0, 2)}
+                                                                </div>
+                                                            )) : (
+                                                                <div className="h-5 w-5 rounded-full bg-slate-300 dark:bg-slate-700 text-white flex items-center justify-center">
+                                                                    <User size={10} />
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                        <span className="truncate">Xử lý: {currentAssigneeDisplay.label}</span>
+                                                    </div>
+                                                )}
 
                                                 {/* SLA Warning */}
                                                 {sla && (sla.isOverdue || sla.isUrgent) && (

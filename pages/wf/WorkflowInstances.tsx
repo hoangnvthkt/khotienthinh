@@ -22,7 +22,11 @@ import { saveAs } from 'file-saver';
 import { supabase } from '../../lib/supabase';
 import { useCelebration } from '../../components/Celebration';
 import { loadXlsx } from '../../lib/loadXlsx';
-import { isWorkflowStepAssignedToUser } from '../../lib/workflowAssignmentResolver';
+import {
+    getWorkflowAssigneeDisplay,
+    isWorkflowStepAssignedToUser,
+    resolveCurrentWorkflowAssignees,
+} from '../../lib/workflowAssignmentResolver';
 import {
     canSeeMaterialRequestWorkflowOnKanban,
     isMaterialRequestWorkflowTemplate,
@@ -1498,6 +1502,8 @@ const WorkflowInstances: React.FC = () => {
                                     const StatusIcon = statusInfo.icon;
                                     const canAct = canActOnInstance(instance);
                                     const currentNode = nodes.find(n => n.id === instance.currentNodeId);
+                                    const currentAssignees = resolveCurrentWorkflowAssignees(instance, currentNode, users);
+                                    const currentAssigneeDisplay = getWorkflowAssigneeDisplay(currentAssignees);
 
                                     return (
                                         <div
@@ -1529,9 +1535,27 @@ const WorkflowInstances: React.FC = () => {
                                                     <Clock size={11} className="text-slate-450" /> {new Date(instance.createdAt).toLocaleString('vi-VN')}
                                                 </div>
                                                 {currentNode && instance.status === WorkflowInstanceStatus.RUNNING && (
-                                                    <div className="text-[11px] font-black text-indigo-500 dark:text-indigo-400">
-                                                        Bước hiện tại: {currentNode.label}
-                                                    </div>
+                                                    <>
+                                                        <div className="flex items-center gap-1.5 text-[11px] font-bold text-sky-600 dark:text-sky-400" title="Người đang xử lý bước hiện tại">
+                                                            <div className="flex -space-x-1.5 shrink-0">
+                                                                {currentAssigneeDisplay.visibleAssignees.length > 0 ? currentAssigneeDisplay.visibleAssignees.map(assignee => (
+                                                                    <div key={assignee.id} className="h-5 w-5 rounded-full border-2 border-white dark:border-slate-800 bg-sky-600 text-white flex items-center justify-center text-[8px] font-black uppercase overflow-hidden">
+                                                                        {assignee.avatar
+                                                                            ? <img src={assignee.avatar} alt={assignee.name} className="h-full w-full object-cover" />
+                                                                            : assignee.name.slice(0, 2)}
+                                                                    </div>
+                                                                )) : (
+                                                                    <div className="h-5 w-5 rounded-full bg-slate-300 dark:bg-slate-700 text-white flex items-center justify-center">
+                                                                        <User size={10} />
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                            <span className="max-w-[190px] truncate">Xử lý: {currentAssigneeDisplay.label}</span>
+                                                        </div>
+                                                        <div className="text-[11px] font-black text-indigo-500 dark:text-indigo-400">
+                                                            Bước hiện tại: {currentNode.label}
+                                                        </div>
+                                                    </>
                                                 )}
                                             </div>
                                         </div>
