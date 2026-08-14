@@ -35,6 +35,7 @@ export interface ExecutiveScheduleTaskRow {
   forecastEnd: string;
   endBasisLabel: string;
   plannedDays: number;
+  weight?: number;
   plannedPercent: number;
   actualProgress: number;
   progressDelta: number;
@@ -297,6 +298,7 @@ export const buildExecutiveScheduleSummary = ({
       forecastEnd,
       endBasisLabel: taskProjection?.endBasisLabel || 'Dự kiến TT',
       plannedDays,
+      weight: taskProjection?.weight ?? plannedDays,
       plannedPercent,
       actualProgress,
       progressDelta: Math.round(actualProgress - plannedPercent),

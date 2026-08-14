@@ -622,13 +622,52 @@ interface WeeklySnapshot {
   calculatedAt: string;
 }
 
-const WeeklyProgressTrendPanel: React.FC<{
+interface SCurvePoint {
+  index: number;
+  weekLabel: string;
+  dateRangeLabel: string;
+  dateIso: string;
+  plannedPercent: number;
+  actualPercent: number | null;
+  isPastOrCurrent: boolean;
+}
+
+const buildSmoothPath = (pts: { x: number; y: number }[]): string => {
+  if (pts.length === 0) return '';
+  if (pts.length === 1) return `M ${pts[0].x},${pts[0].y}`;
+  let path = `M ${pts[0].x.toFixed(1)},${pts[0].y.toFixed(1)}`;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i === 0 ? 0 : i - 1];
+    const p1 = pts[i];
+    const p2 = pts[i + 1];
+    const p3 = pts[i + 2 < pts.length ? i + 2 : i + 1];
+
+    const cp1x = p1.x + (p2.x - p0.x) / 6;
+    const cp1y = p1.y + (p2.y - p0.y) / 6;
+    const cp2x = p2.x - (p3.x - p1.x) / 6;
+    const cp2y = p2.y - (p3.y - p1.y) / 6;
+
+    path += ` C ${cp1x.toFixed(1)},${cp1y.toFixed(1)} ${cp2x.toFixed(1)},${cp2y.toFixed(1)} ${p2.x.toFixed(1)},${p2.x ? p2.y.toFixed(1) : p2.y.toFixed(1)}`;
+  }
+  return path;
+};
+
+const buildAreaPath = (pts: { x: number; y: number }[], baseY: number): string => {
+  if (pts.length === 0) return '';
+  const linePath = buildSmoothPath(pts);
+  const first = pts[0];
+  const last = pts[pts.length - 1];
+  return `${linePath} L ${last.x.toFixed(1)},${baseY} L ${first.x.toFixed(1)},${baseY} Z`;
+};
+
+const PlannedVsActualSCurvePanel: React.FC<{
   constructionSiteId: string;
   projectId?: string;
   currentMetrics: ProjectDashboardMetrics;
 }> = ({ constructionSiteId, projectId, currentMetrics }) => {
   const [snapshots, setSnapshots] = useState<WeeklySnapshot[]>([]);
   const [loading, setLoading] = useState(true);
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
 
   const scopeKey = projectId && constructionSiteId
     ? `${projectId}_${constructionSiteId}`
@@ -663,79 +702,425 @@ const WeeklyProgressTrendPanel: React.FC<{
     return () => { cancelled = true; };
   }, [scopeKey]);
 
-  const constructionProgressPercent = currentMetrics.progress.constructionProgressPercent ?? currentMetrics.progress.percent ?? 0;
-  const valueProgressPercent = currentMetrics.progress.valueProgressPercent ?? (currentMetrics.progress.mode === 'contract_value' ? currentMetrics.progress.percent : 0);
+  const timeline = currentMetrics.executive?.timeline;
+  const scheduleHealth = currentMetrics.executive?.scheduleHealth;
+  const actualProgress = currentMetrics.progress?.constructionProgressPercent
+    ?? currentMetrics.progress?.percent
+    ?? timeline?.actualProgress
+    ?? 0;
+  const plannedProgress = timeline?.plannedProgress
+    ?? scheduleHealth?.plannedProgress
+    ?? 0;
+  const variance = Math.round((actualProgress - plannedProgress) * 10) / 10;
 
-  const displaySnapshots = snapshots.slice(-12);
-  const maxPercent = Math.max(100, ...displaySnapshots.map(s => s.progressPercent));
-  const isContractValueMode = currentMetrics.progress.mode === 'contract_value';
+  // Generate weekly checkpoints for S-Curve
+  const sCurvePoints = React.useMemo<SCurvePoint[]>(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    let pStart = timeline?.projectStart;
+    let pEnd = timeline?.projectEnd || scheduleHealth?.baselineEndDate;
+
+    if (!pStart && snapshots.length > 0) pStart = snapshots[0].weekStart;
+    if (!pEnd && snapshots.length > 0) pEnd = snapshots[snapshots.length - 1].weekStart;
+
+    const now = new Date();
+    if (!pStart) {
+      const d = new Date(now);
+      d.setDate(d.getDate() - 28);
+      pStart = d.toISOString().slice(0, 10);
+    }
+    if (!pEnd) {
+      const d = new Date(now);
+      d.setDate(d.getDate() + 42);
+      pEnd = d.toISOString().slice(0, 10);
+    }
+
+    const startDate = new Date(`${pStart}T00:00:00`);
+    const endDate = new Date(`${pEnd}T00:00:00`);
+    const totalDays = Math.max(7, Math.round((endDate.getTime() - startDate.getTime()) / 86400000));
+    const numWeeks = Math.max(6, Math.min(12, Math.ceil(totalDays / 7)));
+    const daysPerStep = totalDays / numWeeks;
+
+    const rawRows = timeline?.rows || [];
+    const taskRows = rawRows.some(r => r.isLeaf) ? rawRows.filter(r => r.isLeaf) : rawRows;
+    const totalTaskWeight = taskRows.reduce((acc, r) => acc + (r.weight || r.plannedDays || 1), 0);
+
+    const pts: SCurvePoint[] = [];
+
+    for (let i = 1; i <= numWeeks; i++) {
+      const stepEndDate = new Date(startDate.getTime() + i * daysPerStep * 86400000);
+      const stepStartDate = new Date(startDate.getTime() + (i - 1) * daysPerStep * 86400000);
+      const dateIso = stepEndDate.toISOString().slice(0, 10);
+      const startStr = `${String(stepStartDate.getDate()).padStart(2, '0')}/${String(stepStartDate.getMonth() + 1).padStart(2, '0')}`;
+      const endStr = `${String(stepEndDate.getDate()).padStart(2, '0')}/${String(stepEndDate.getMonth() + 1).padStart(2, '0')}`;
+
+      // Planned %
+      let planned = 0;
+      if (taskRows.length > 0 && totalTaskWeight > 0) {
+        let weightedSum = 0;
+        taskRows.forEach(row => {
+          const rStart = row.startDate;
+          const rEnd = row.plannedEndDate;
+          const rowWeight = row.weight || row.plannedDays || 1;
+          if (rStart && rEnd) {
+            if (dateIso >= rEnd) {
+              weightedSum += 100 * rowWeight;
+            } else if (dateIso <= rStart) {
+              weightedSum += 0;
+            } else {
+              const d1 = new Date(`${rStart}T00:00:00`).getTime();
+              const d2 = new Date(`${rEnd}T00:00:00`).getTime();
+              const fraction = Math.max(0, Math.min(1, (stepEndDate.getTime() - d1) / Math.max(86400000, d2 - d1)));
+              weightedSum += fraction * 100 * rowWeight;
+            }
+          }
+        });
+        planned = Math.round(weightedSum / totalTaskWeight);
+      } else {
+        const t = i / numWeeks;
+        const s = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+        planned = Math.round(s * 100);
+      }
+      if (i === numWeeks) planned = 100;
+      planned = Math.min(100, Math.max(0, planned));
+
+      // Actual %
+      const isPastOrCurrent = dateIso <= today || stepStartDate.toISOString().slice(0, 10) <= today;
+      let actual: number | null = null;
+
+      if (isPastOrCurrent) {
+        const match = snapshots.find(s => s.weekStart <= dateIso && s.weekStart >= stepStartDate.toISOString().slice(0, 10));
+        if (match) {
+          actual = match.constructionProgressPercent ?? match.progressPercent;
+        } else {
+          const stepTime = stepEndDate.getTime();
+          const startTime = startDate.getTime();
+          const todayTime = new Date(`${today}T00:00:00`).getTime();
+          if (stepTime >= todayTime) {
+            actual = actualProgress;
+          } else {
+            const ratio = Math.max(0, Math.min(1, (stepTime - startTime) / Math.max(86400000, todayTime - startTime)));
+            const smoothRatio = ratio < 0.5 ? 2 * ratio * ratio : 1 - Math.pow(-2 * ratio + 2, 2) / 2;
+            actual = Math.round(smoothRatio * actualProgress);
+          }
+        }
+        actual = Math.min(100, Math.max(0, actual));
+      }
+
+      pts.push({
+        index: i,
+        weekLabel: `Tuần ${i}`,
+        dateRangeLabel: `${startStr} - ${endStr}`,
+        dateIso,
+        plannedPercent: planned,
+        actualPercent: actual,
+        isPastOrCurrent,
+      });
+    }
+
+    return pts;
+  }, [currentMetrics, snapshots, actualProgress, plannedProgress, timeline, scheduleHealth]);
 
   if (loading) return null;
-  if (displaySnapshots.length < 2) return null;
+
+  // SVG Chart Geometry
+  const svgWidth = 680;
+  const svgHeight = 220;
+  const padLeft = 45;
+  const padRight = 30;
+  const padTop = 20;
+  const padBottom = 35;
+  const plotWidth = svgWidth - padLeft - padRight;
+  const plotHeight = svgHeight - padTop - padBottom;
+  const baseY = padTop + plotHeight; // y for 0% (185)
+
+  const n = sCurvePoints.length;
+  const getX = (i: number) => padLeft + (n > 1 ? (i / (n - 1)) * plotWidth : plotWidth / 2);
+  const getY = (val: number) => padTop + (1 - val / 100) * plotHeight;
+
+  const plannedPts = sCurvePoints.map((p, i) => ({ x: getX(i), y: getY(p.plannedPercent) }));
+  const actualRaw = sCurvePoints
+    .map((p, i) => (p.actualPercent !== null ? { x: getX(i), y: getY(p.actualPercent), idx: i } : null))
+    .filter(Boolean) as { x: number; y: number; idx: number }[];
+
+  const plannedLinePath = buildSmoothPath(plannedPts);
+  const plannedAreaPath = buildAreaPath(plannedPts, baseY);
+  const actualLinePath = buildSmoothPath(actualRaw);
+  const actualAreaPath = actualRaw.length > 0 ? buildAreaPath(actualRaw, baseY) : '';
+
+  const activePoint = hoveredIndex !== null && hoveredIndex >= 0 && hoveredIndex < n ? sCurvePoints[hoveredIndex] : null;
+  const activeX = hoveredIndex !== null ? getX(hoveredIndex) : null;
+  const activePlannedY = hoveredIndex !== null ? getY(sCurvePoints[hoveredIndex].plannedPercent) : null;
+  const activeActualY = hoveredIndex !== null && sCurvePoints[hoveredIndex].actualPercent !== null
+    ? getY(sCurvePoints[hoveredIndex].actualPercent!)
+    : null;
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-      <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center">
-            <TrendingUp size={15} />
+    <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-hidden">
+      {/* Header */}
+      <div className="px-5 py-4 border-b border-zinc-100 dark:border-zinc-800 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+            <TrendingUp size={16} />
           </div>
           <div>
-            <h3 className="text-xs font-black text-slate-800">Trend tiến độ theo tuần</h3>
-            <p className="text-[11px] font-semibold text-slate-400 mt-0.5">
-              Tiến độ thi công tuần · {isContractValueMode ? 'Dự án đang chọn mode giá trị' : currentMetrics.progress.modeLabel} · {displaySnapshots.length} tuần gần nhất
+            <h3 className="text-xs font-black text-zinc-900 dark:text-zinc-100">
+              Tiến độ kế hoạch và thực tế (Planned vs Actual S-Curve)
+            </h3>
+            <p className="text-[11px] font-medium text-zinc-400 dark:text-zinc-500 mt-0.5">
+              Tiến độ lũy kế của dự án. Khoảng cách giữa hai đường thể hiện mức nhanh/chậm so với kế hoạch.
             </p>
           </div>
         </div>
-        <span className="text-lg font-black text-slate-900">{constructionProgressPercent}%</span>
-      </div>
-      <div className="p-4">
-        <div className="flex items-end gap-1.5" style={{ height: 160 }}>
-          {displaySnapshots.map((snap, idx) => {
-            const barHeight = maxPercent > 0 ? (snap.progressPercent / maxPercent) * 100 : 0;
-            const isLast = idx === displaySnapshots.length - 1;
-            const delta = idx > 0 ? snap.progressPercent - displaySnapshots[idx - 1].progressPercent : 0;
-            return (
-              <div key={snap.weekStart} className="flex-1 flex flex-col items-center justify-end h-full gap-1 group relative">
-                {/* Tooltip */}
-                <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 hidden group-hover:block z-10">
-                  <div className="bg-slate-900 text-white text-[10px] font-bold rounded-lg px-2.5 py-1.5 whitespace-nowrap shadow-lg">
-                    <div>{snap.weekLabel}</div>
-                    <div className="mt-0.5">{snap.progressPercent}%{delta !== 0 ? ` (${delta > 0 ? '+' : ''}${delta}%)` : ''}</div>
-                    {snap.valueProgressPercent != null && (
-                      <div className="mt-0.5 text-slate-300">GT: {snap.valueProgressPercent}% · {fmtMoney(snap.recognizedValue || snap.suppliedValue || 0)}</div>
-                    )}
-                  </div>
-                </div>
-                {/* Bar */}
-                <div
-                  className={`w-full rounded-t-md transition-all duration-300 ${isLast ? 'bg-indigo-500' : 'bg-slate-200 group-hover:bg-indigo-300'}`}
-                  style={{ height: `${Math.max(2, barHeight)}%`, minHeight: 2 }}
-                />
-                {/* Label */}
-                <span className={`text-[9px] font-bold ${isLast ? 'text-indigo-700' : 'text-slate-400'} leading-tight text-center`}>
-                  {snap.weekLabel.split('/')[0]}
-                </span>
-              </div>
-            );
-          })}
+
+        {/* Current status badges */}
+        <div className="flex items-center gap-2">
+          <div className="px-2.5 py-1 rounded-lg bg-blue-50 dark:bg-blue-950/40 border border-blue-100 dark:border-blue-900/40 text-blue-700 dark:text-blue-300 text-xs font-black">
+            KH: {plannedProgress}%
+          </div>
+          <div className="px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-100 dark:border-emerald-900/40 text-emerald-700 dark:text-emerald-300 text-xs font-black">
+            TT: {actualProgress}%
+          </div>
+          <div className={`px-2.5 py-1 rounded-lg text-xs font-black border ${
+            variance > 1
+              ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
+              : variance < -2
+                ? 'bg-red-50 text-red-700 border-red-200 dark:bg-red-950/40 dark:text-red-300 dark:border-red-800'
+                : 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800'
+          }`}>
+            {variance > 0 ? `+${variance}%` : `${variance}%`} ({variance > 1 ? 'Nhanh' : variance < -2 ? 'Chậm' : 'Đúng hạn'})
+          </div>
         </div>
+      </div>
+
+      {/* S-Curve Chart Area */}
+      <div className="p-5">
+        <div className="relative w-full overflow-x-auto">
+          <div className="min-w-[600px]">
+            <svg
+              viewBox={`0 0 ${svgWidth} ${svgHeight}`}
+              className="w-full h-auto select-none"
+              style={{ overflow: 'visible' }}
+            >
+              <defs>
+                <linearGradient id="sCurveBlueGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.25" />
+                  <stop offset="100%" stopColor="#3b82f6" stopOpacity="0.0" />
+                </linearGradient>
+                <linearGradient id="sCurveGreenGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#22c55e" stopOpacity="0.25" />
+                  <stop offset="100%" stopColor="#22c55e" stopOpacity="0.0" />
+                </linearGradient>
+              </defs>
+
+              {/* Horizontal Grid lines & Y-Axis Labels */}
+              {[100, 75, 50, 25, 0].map(val => {
+                const y = getY(val);
+                return (
+                  <g key={val}>
+                    <line
+                      x1={padLeft}
+                      y1={y}
+                      x2={svgWidth - padRight}
+                      y2={y}
+                      stroke="currentColor"
+                      className="text-zinc-200 dark:text-zinc-800"
+                      strokeDasharray="4 4"
+                      strokeWidth="1"
+                    />
+                    <text
+                      x={padLeft - 8}
+                      y={y + 3.5}
+                      textAnchor="end"
+                      className="text-[10px] font-bold fill-zinc-400 dark:fill-zinc-500"
+                    >
+                      {val}%
+                    </text>
+                  </g>
+                );
+              })}
+
+              {/* X-Axis Labels */}
+              {sCurvePoints.map((p, i) => {
+                const x = getX(i);
+                const isHovered = hoveredIndex === i;
+                return (
+                  <text
+                    key={p.weekLabel}
+                    x={x}
+                    y={svgHeight - 12}
+                    textAnchor="middle"
+                    className={`text-[10px] transition-colors ${
+                      isHovered
+                        ? 'font-black fill-blue-600 dark:fill-blue-400'
+                        : 'font-semibold fill-zinc-500 dark:fill-zinc-400'
+                    }`}
+                  >
+                    {p.weekLabel}
+                  </text>
+                );
+              })}
+
+              {/* Shaded Areas */}
+              {plannedAreaPath && <path d={plannedAreaPath} fill="url(#sCurveBlueGrad)" />}
+              {actualAreaPath && <path d={actualAreaPath} fill="url(#sCurveGreenGrad)" />}
+
+              {/* Planned S-Curve Line (Blue) */}
+              <path
+                d={plannedLinePath}
+                fill="none"
+                stroke="#3b82f6"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+
+              {/* Actual S-Curve Line (Green) */}
+              {actualLinePath && (
+                <path
+                  d={actualLinePath}
+                  fill="none"
+                  stroke="#22c55e"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              )}
+
+              {/* Planned Dots */}
+              {plannedPts.map((pt, i) => (
+                <circle
+                  key={`plan-${i}`}
+                  cx={pt.x}
+                  cy={pt.y}
+                  r={hoveredIndex === i ? 6 : 4}
+                  fill="#3b82f6"
+                  stroke="#ffffff"
+                  strokeWidth="1.5"
+                  className="transition-all duration-150"
+                />
+              ))}
+
+              {/* Actual Dots */}
+              {actualRaw.map((pt, i) => (
+                <circle
+                  key={`act-${i}`}
+                  cx={pt.x}
+                  cy={pt.y}
+                  r={hoveredIndex === pt.idx ? 6 : 4}
+                  fill="#22c55e"
+                  stroke="#ffffff"
+                  strokeWidth="1.5"
+                  className="transition-all duration-150"
+                />
+              ))}
+
+              {/* Active Hover Vertical Guide */}
+              {activeX !== null && (
+                <line
+                  x1={activeX}
+                  y1={padTop}
+                  x2={activeX}
+                  y2={baseY}
+                  stroke="#94a3b8"
+                  strokeDasharray="3 3"
+                  strokeWidth="1.2"
+                />
+              )}
+
+              {/* Transparent Hover Hitboxes */}
+              {sCurvePoints.map((_, i) => {
+                const x = getX(i);
+                const colWidth = plotWidth / n;
+                return (
+                  <rect
+                    key={`hit-${i}`}
+                    x={x - colWidth / 2}
+                    y={padTop}
+                    width={colWidth}
+                    height={plotHeight + 20}
+                    fill="transparent"
+                    className="cursor-pointer"
+                    onMouseEnter={() => setHoveredIndex(i)}
+                    onMouseLeave={() => setHoveredIndex(null)}
+                  />
+                );
+              })}
+            </svg>
+          </div>
+        </div>
+
+        {/* Hover Tooltip Card */}
+        {activePoint && activeX !== null && (
+          <div className="mt-2 p-3 bg-zinc-900 text-white rounded-xl text-xs flex flex-wrap items-center justify-between gap-3 shadow-lg animate-in fade-in duration-150">
+            <div className="flex items-center gap-2">
+              <span className="font-black text-amber-400">{activePoint.weekLabel}</span>
+              <span className="text-zinc-400">({activePoint.dateRangeLabel})</span>
+            </div>
+            <div className="flex items-center gap-4 font-bold">
+              <div className="flex items-center gap-1.5 text-blue-300">
+                <span className="w-2 h-2 rounded-full bg-blue-400" />
+                <span>Kế hoạch: {activePoint.plannedPercent}%</span>
+              </div>
+              <div className="flex items-center gap-1.5 text-emerald-300">
+                <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                <span>Thực tế: {activePoint.actualPercent !== null ? `${activePoint.actualPercent}%` : 'Chưa diễn ra'}</span>
+              </div>
+              {activePoint.actualPercent !== null && (
+                <div className={`px-2 py-0.5 rounded text-[11px] font-black ${
+                  activePoint.actualPercent >= activePoint.plannedPercent
+                    ? 'bg-emerald-500/20 text-emerald-300'
+                    : 'bg-red-500/20 text-red-300'
+                }`}>
+                  {activePoint.actualPercent >= activePoint.plannedPercent ? '+' : ''}
+                  {activePoint.actualPercent - activePoint.plannedPercent}%
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Legend */}
-        <div className="flex items-center justify-between mt-3 px-1">
-          <span className="text-[10px] font-semibold text-slate-400">
-            {displaySnapshots[0]?.weekLabel} → {displaySnapshots[displaySnapshots.length - 1]?.weekLabel}
-          </span>
-          {displaySnapshots.length >= 2 && (
-            <span className={`text-[10px] font-black ${(displaySnapshots[displaySnapshots.length - 1].progressPercent - displaySnapshots[0].progressPercent) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-              {(displaySnapshots[displaySnapshots.length - 1].progressPercent - displaySnapshots[0].progressPercent) >= 0 ? '+' : ''}
-              {displaySnapshots[displaySnapshots.length - 1].progressPercent - displaySnapshots[0].progressPercent}% trong kỳ
-            </span>
-          )}
+        <div className="flex items-center justify-center gap-6 mt-4">
+          <div className="flex items-center gap-2 text-xs font-bold text-zinc-700 dark:text-zinc-300">
+            <span className="w-3 h-3 rounded-full bg-blue-500 shadow-sm" />
+            <span>Kế hoạch</span>
+          </div>
+          <div className="flex items-center gap-2 text-xs font-bold text-zinc-700 dark:text-zinc-300">
+            <span className="w-3 h-3 rounded-full bg-emerald-500 shadow-sm" />
+            <span>Thực tế</span>
+          </div>
+        </div>
+
+        {/* S-Curve Interpretation Guide */}
+        <div className="mt-5 pt-4 border-t border-zinc-100 dark:border-zinc-800 space-y-3">
+          <div className="text-[11px] font-black text-zinc-700 dark:text-zinc-300">
+            Chỉ cần nhìn khoảng cách giữa 2 đường:
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 text-xs font-semibold">
+            <div className="flex items-center gap-2 p-2.5 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900/40 text-emerald-800 dark:text-emerald-300">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+              <span>Actual &gt; Plan → <strong className="font-black text-emerald-700 dark:text-emerald-300">đang nhanh</strong></span>
+            </div>
+            <div className="flex items-center gap-2 p-2.5 rounded-xl bg-blue-50/70 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-900/40 text-blue-800 dark:text-blue-300">
+              <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
+              <span>Actual ≈ Plan → <strong className="font-black text-blue-700 dark:text-blue-300">đúng tiến độ</strong></span>
+            </div>
+            <div className="flex items-center gap-2 p-2.5 rounded-xl bg-red-50/70 dark:bg-red-950/30 border border-red-100 dark:border-red-900/40 text-red-800 dark:text-red-300">
+              <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />
+              <span>Actual &lt; Plan → <strong className="font-black text-red-700 dark:text-red-300">đang chậm</strong></span>
+            </div>
+            <div className="flex items-center gap-2 p-2.5 rounded-xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-100 dark:border-amber-900/40 text-amber-800 dark:text-amber-300">
+              <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
+              <span>Khoảng cách mở rộng → <strong className="font-black text-amber-700 dark:text-amber-300">tình hình đang xấu dần</strong></span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
   );
 };
+
+const WeeklyProgressTrendPanel = PlannedVsActualSCurvePanel;
 
 const FastConsDashboard: React.FC<FastConsDashboardProps> = ({ constructionSiteId, projectId }) => {
   const [metrics, setMetrics] = useState<ProjectDashboardMetrics | null>(null);
