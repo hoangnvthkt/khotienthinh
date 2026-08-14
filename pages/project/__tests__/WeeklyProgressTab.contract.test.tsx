@@ -27,6 +27,61 @@ const renderControls = (patch: Record<string, unknown> = {}) => {
 };
 
 describe('WeeklyProgressTab period controls', () => {
+  it('derives chart history and mutation rows from one authoritative period bundle', () => {
+    const buildBundleView = (weeklyProgressTabModule as any).buildWeeklyProgressBundleView;
+    expect(buildBundleView).toBeTypeOf('function');
+    if (typeof buildBundleView !== 'function') return;
+
+    const dailyBaseline = {
+      id: 'daily-baseline',
+      scopeKey: 'project-1_site-1',
+      taskId: 'task-1',
+      progressDate: '2026-08-02',
+      weekStart: '2026-07-27',
+      progressPercent: 20,
+      quantityDone: 2,
+      dailyQuantityDone: 2,
+    };
+    const dailyCurrent = {
+      ...dailyBaseline,
+      id: 'daily-current',
+      progressDate: '2026-08-07',
+      weekStart: '2026-08-03',
+      progressPercent: 40,
+      quantityDone: 4,
+      dailyQuantityDone: 2,
+    };
+    const weeklyCurrent = {
+      id: 'weekly-current',
+      scopeKey: 'project-1_site-1',
+      taskId: 'task-1',
+      weekStart: '2026-08-03',
+      progressPercent: 40,
+      quantityDone: 4,
+    };
+
+    const view = buildBundleView({
+      dailyRows: [dailyCurrent],
+      dailyBaselineRows: [dailyBaseline],
+      weeklyRows: [weeklyCurrent],
+      weeklyBaselineRows: [],
+      selectedWeeklyRows: [weeklyCurrent],
+      windowFromWeek: '2026-06-15',
+      windowToWeek: '2026-08-03',
+    });
+
+    expect(view.allDailyProgress.map((row: { id: string }) => row.id))
+      .toEqual(['daily-baseline', 'daily-current']);
+    expect(view.selectedDailyMutationRows.map((row: { id: string }) => row.id))
+      .toEqual(['daily-baseline', 'daily-current']);
+    expect(view.allWeeklyProgress).toEqual([weeklyCurrent]);
+    expect(view.selectedWeeklyMutationRows).toEqual([weeklyCurrent]);
+    expect(view.loadedWeekRange).toEqual({
+      fromWeek: '2026-06-15',
+      toWeek: '2026-08-03',
+    });
+  });
+
   it('reloads the newly selected date in the same week when an older save resolves', async () => {
     const completeMutation = (weeklyProgressTabModule as any).completeWeeklyProgressMutationWithReload;
     expect(completeMutation).toBeTypeOf('function');
@@ -186,15 +241,6 @@ describe('WeeklyProgressTab period controls', () => {
     expect(source).toContain('baseDataRequestGeneration');
     expect(source).toContain('baseDataReadyForCurrentScope');
     expect(source).toContain('baseDataReady: baseDataReadyForCurrentScope');
-  });
-
-  it('merges authoritative weekly rows back into visualization history', () => {
-    const source = readFileSync(new URL('../WeeklyProgressTab.tsx', import.meta.url), 'utf8');
-    const weeklyBranch = source.slice(
-      source.indexOf("if (bundle.target.periodType === 'daily')"),
-      source.indexOf("setPeriodResourceLoadState('ready')"),
-    );
-    expect(weeklyBranch).toContain('setAllWeeklyProgress(prev => mergeWeeklyProgressRows(prev, bundle.weeklyRows))');
   });
 
   it('renders period data read failures as unavailable with retry and no mutations', () => {

@@ -345,6 +345,24 @@ export type ProjectProgressPeriodStateInput = ProjectProgressPeriodScopeInput & 
   periodType: ProjectProgressPeriodType;
 };
 
+export type ProjectProgressPeriodBundleInput = ProjectProgressPeriodStateInput & {
+  windowFromWeek?: string | null;
+  windowToWeek?: string | null;
+};
+
+export interface ProjectProgressPeriodBundle {
+  state: ProjectProgressPeriodState;
+  tasks: ProjectTask[];
+  taskContractItems: TaskContractItem[];
+  dailyRows: ProjectDailyTaskProgress[];
+  dailyBaselineRows: ProjectDailyTaskProgress[];
+  weeklyRows: ProjectWeeklyTaskProgress[];
+  weeklyBaselineRows: ProjectWeeklyTaskProgress[];
+  selectedWeeklyRows: ProjectWeeklyTaskProgress[];
+  windowFromWeek: string | null;
+  windowToWeek: string | null;
+}
+
 export type SaveProjectProgressPeriodInput =
   | (ProjectProgressPeriodScopeInput & {
     periodType: 'daily';
@@ -601,6 +619,47 @@ export const getProjectProgressMutationErrorMessage = (
 };
 
 export const projectWeeklyProgressService = {
+  async getPeriodBundle(input: ProjectProgressPeriodBundleInput): Promise<ProjectProgressPeriodBundle> {
+    assertProgressRpcAvailable();
+    const { data, error } = await supabase.rpc('get_project_progress_period_bundle', {
+      ...periodScopeRpcArgs(input),
+      p_window_from_week: input.windowFromWeek || null,
+      p_window_to_week: input.windowToWeek || null,
+    });
+    if (error) throw error;
+
+    const mapped = fromDb(data || {}) as Record<string, any>;
+    const tasks = (mapped.tasks || []).map((task: Record<string, any>) => {
+      const { sortOrder, contractItemIds: _contractItemIds, ...rest } = task;
+      return {
+        ...rest,
+        order: sortOrder ?? task.order ?? 0,
+      } as ProjectTask;
+    });
+    const taskContractItems = (mapped.tasks || []).flatMap((task: Record<string, any>) =>
+      (task.contractItemIds || []).map((contractItemId: string): TaskContractItem => ({
+        id: `${task.id}:${contractItemId}`,
+        taskId: task.id,
+        contractItemId,
+        projectId: task.projectId,
+        constructionSiteId: task.constructionSiteId,
+      })),
+    );
+
+    return {
+      state: mapped.state as ProjectProgressPeriodState,
+      tasks,
+      taskContractItems,
+      dailyRows: (mapped.dailyRows || []) as ProjectDailyTaskProgress[],
+      dailyBaselineRows: (mapped.dailyBaselineRows || []) as ProjectDailyTaskProgress[],
+      weeklyRows: (mapped.weeklyRows || []) as ProjectWeeklyTaskProgress[],
+      weeklyBaselineRows: (mapped.weeklyBaselineRows || []) as ProjectWeeklyTaskProgress[],
+      selectedWeeklyRows: (mapped.selectedWeeklyRows || []) as ProjectWeeklyTaskProgress[],
+      windowFromWeek: mapped.windowFromWeek || null,
+      windowToWeek: mapped.windowToWeek || null,
+    };
+  },
+
   async getPeriodState(input: ProjectProgressPeriodStateInput): Promise<ProjectProgressPeriodState> {
     assertProgressRpcAvailable();
     const { data, error } = await supabase.rpc(

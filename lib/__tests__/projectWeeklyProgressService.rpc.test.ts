@@ -66,6 +66,85 @@ describe('projectWeeklyProgressService authoritative RPC contract', () => {
     });
   });
 
+  it('loads the selected period, latest baselines, history window, and task catalog in one RPC', async () => {
+    supabaseMocks.rpc.mockResolvedValueOnce({
+      data: {
+        state: openState,
+        tasks: [{
+          id: 'task-1',
+          project_id: 'project-1',
+          construction_site_id: 'site-1',
+          parent_id: null,
+          name: 'Thi công móng',
+          wbs_code: '1.1',
+          start_date: '2026-08-01',
+          end_date: '2026-08-31',
+          progress: 42,
+          progress_mode: 'weekly_report',
+          sort_order: 3,
+          contract_item_ids: ['contract-item-1'],
+        }],
+        daily_rows: [{
+          id: 'daily-1',
+          scope_key: 'project-1_site-1',
+          project_id: 'project-1',
+          construction_site_id: 'site-1',
+          task_id: 'task-1',
+          progress_date: '2026-08-08',
+          week_start: '2026-08-03',
+          progress_percent: 42,
+          quantity_done: 21,
+          daily_quantity_done: 4,
+        }],
+        daily_baseline_rows: [],
+        weekly_rows: [],
+        weekly_baseline_rows: [],
+        selected_weekly_rows: [],
+        window_from_week: '2026-06-22',
+        window_to_week: '2026-08-10',
+      },
+      error: null,
+    });
+
+    const bundle = await (projectWeeklyProgressService as any).getPeriodBundle({
+      projectId: 'project-1',
+      constructionSiteId: 'site-1',
+      periodType: 'daily',
+      periodStart: '2026-08-08',
+      windowFromWeek: '2026-06-22',
+      windowToWeek: '2026-08-10',
+    });
+
+    expect(supabaseMocks.rpc).toHaveBeenCalledTimes(1);
+    expect(supabaseMocks.rpc).toHaveBeenCalledWith('get_project_progress_period_bundle', {
+      p_project_id: 'project-1',
+      p_construction_site_id: 'site-1',
+      p_period_type: 'daily',
+      p_period_start: '2026-08-08',
+      p_window_from_week: '2026-06-22',
+      p_window_to_week: '2026-08-10',
+    });
+    expect(bundle.state).toEqual(openState);
+    expect(bundle.tasks).toEqual([expect.objectContaining({
+      id: 'task-1',
+      projectId: 'project-1',
+      constructionSiteId: 'site-1',
+      order: 3,
+    })]);
+    expect(bundle.taskContractItems).toEqual([{
+      id: 'task-1:contract-item-1',
+      taskId: 'task-1',
+      contractItemId: 'contract-item-1',
+      projectId: 'project-1',
+      constructionSiteId: 'site-1',
+    }]);
+    expect(bundle.dailyRows).toEqual([expect.objectContaining({
+      id: 'daily-1',
+      taskId: 'task-1',
+      progressDate: '2026-08-08',
+    })]);
+  });
+
   it('saves only the daily row fields accepted by the atomic period RPC', async () => {
     supabaseMocks.rpc.mockResolvedValueOnce({
       data: { state: openState, savedRowCount: 1, weeklyAggregateFrozen: true },

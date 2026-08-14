@@ -13,16 +13,15 @@ import { useApp } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm, useReasonConfirm } from '../../context/ConfirmContext';
 import { dailyLogService, poService, boqService } from '../../lib/projectService';
-import { loadWeeklyProgressGanttCatalog } from '../../lib/projectGanttCatalogAdapters';
 import { projectStaffService } from '../../lib/projectStaffService';
 import { contractItemService } from '../../lib/contractItemService';
 import {
     projectWeeklyProgressService, getWeekStart, getISOWeekLabel,
     getProjectScopeKey, calculateWeeklyConstructionProgress, calculateProjectValueProgress,
     addDaysToIsoDate, buildProgressSegments,
-    mergeDailyProgressRows, mergeWeeklyProgressRows, rollupDailyRowsToWeeklyRows,
+    mergeDailyProgressRows, rollupDailyRowsToWeeklyRows,
     getProjectProgressMutationErrorMessage,
-    type ProjectProgressPeriodState, type ProjectProgressSnapshotPayload,
+    type ProjectProgressPeriodBundle, type ProjectProgressPeriodState, type ProjectProgressSnapshotPayload,
     type SaveProjectProgressPeriodResult,
 } from '../../lib/projectWeeklyProgressService';
 import { deriveProjectTaskProgress, clampProgress } from '../../lib/projectScheduleRules';
@@ -135,6 +134,25 @@ export const getLatestDailyProgressRow = (
         b.progressDate.localeCompare(a.progressDate)
         || (b.updatedAt || '').localeCompare(a.updatedAt || '')
     )[0];
+
+export const buildWeeklyProgressBundleView = (
+    bundle: Pick<ProjectProgressPeriodBundle,
+        'dailyRows' | 'dailyBaselineRows' | 'weeklyRows' | 'weeklyBaselineRows' |
+        'selectedWeeklyRows' | 'windowFromWeek' | 'windowToWeek'>,
+) => {
+    const allDailyProgress = mergeDailyProgressRows(bundle.dailyBaselineRows, bundle.dailyRows);
+    return {
+        allDailyProgress,
+        dailyBaselineProgress: bundle.dailyBaselineRows,
+        selectedDailyMutationRows: allDailyProgress,
+        allWeeklyProgress: bundle.weeklyRows,
+        weeklyBaselineProgress: bundle.weeklyBaselineRows,
+        selectedWeeklyMutationRows: bundle.selectedWeeklyRows,
+        loadedWeekRange: bundle.windowFromWeek && bundle.windowToWeek
+            ? { fromWeek: bundle.windowFromWeek, toWeek: bundle.windowToWeek }
+            : null,
+    };
+};
 
 export const getWeeklyProgressPeriodKey = (
     scopeKey: string,
@@ -429,6 +447,9 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
     const [periodResourceLoadState, setPeriodResourceLoadState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
     const [periodResourceRetryNonce, setPeriodResourceRetryNonce] = useState(0);
     const periodStateRequestGeneration = useRef(0);
+    const dailyLogsRef = useRef<DailyLog[]>([]);
+    const authoritativeTaskRowsRef = useRef<{ tasks: ProjectTask[]; periodStart: string } | null>(null);
+    dailyLogsRef.current = dailyLogs;
 
     // Filter states
     const [selectedFilterTaskId, setSelectedFilterTaskId] = useState<string>('');
@@ -501,6 +522,12 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
     const currentPeriodTargetRef = useRef(currentPeriodTarget);
     currentPeriodTargetRef.current = currentPeriodTarget;
 
+    useEffect(() => {
+        const source = authoritativeTaskRowsRef.current;
+        if (!source) return;
+        setTasks(deriveProjectTaskProgress(source.tasks, dailyLogs, source.periodStart));
+    }, [dailyLogs]);
+
     // Task contract link maps
     const [taskContractLinks, setTaskContractLinks] = useState<Record<string, string[]>>({});
 
@@ -512,20 +539,12 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
         setBaseDataLoadKey(null);
         setBaseDataLoadState('loading');
         setLoading(true);
-        setTasks([]);
         setDailyLogs([]);
         setContractItems([]);
-        setTaskContractLinkRows([]);
         setPurchaseOrders([]);
         setMaterialBudgets([]);
         setFulfillmentBatches([]);
         setProjectStaff([]);
-        setTaskContractLinks({});
-        setAllWeeklyProgress([]);
-        setWeeklyBaselineProgress([]);
-        setAllDailyProgress([]);
-        setDailyBaselineProgress([]);
-        setLoadedWeekRange(null);
 
         if (actionLoadState !== 'loaded' || !weeklyProgressCapabilities.canView || !effectiveId || !targetKey) {
             if (generation === baseDataRequestGeneration.current) {
@@ -536,7 +555,6 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
         }
         try {
             const [
-                ganttCatalog,
                 logData,
                 contractItemData,
                 poData,
@@ -544,10 +562,6 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                 fulfillmentBatchData,
                 staffData,
             ] = await Promise.all([
-                loadWeeklyProgressGanttCatalog({
-                    projectId: projectId || effectiveId,
-                    constructionSiteId: constructionSiteId || null,
-                }),
                 dailyLogService.list(effectiveId, constructionSiteId || null),
                 contractItemService.listBySite(effectiveId, undefined, constructionSiteId || null),
                 poService.list(effectiveId, constructionSiteId || null),
@@ -565,20 +579,12 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                 || baseDataScopeRef.current !== targetKey
             ) return;
 
-            setTasks(deriveProjectTaskProgress(ganttCatalog.tasks, logData));
             setDailyLogs(logData);
             setContractItems(contractItemData);
-            setTaskContractLinkRows(ganttCatalog.taskContractItems);
             setPurchaseOrders(poData);
             setMaterialBudgets(boqData);
             setFulfillmentBatches(fulfillmentBatchData);
             setProjectStaff(staffData);
-
-            setTaskContractLinks(ganttCatalog.taskContractItems.reduce<Record<string, string[]>>((acc, link) => {
-                if (!acc[link.taskId]) acc[link.taskId] = [];
-                acc[link.taskId].push(link.contractItemId);
-                return acc;
-            }, {}));
             setBaseDataLoadKey(targetKey);
             setBaseDataLoadState('ready');
         } catch (error) {
@@ -619,49 +625,6 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
             toWeek: targetWeek,
         };
     }, [filterMonth, filterWeek, selectedWeekStart, timeFilterMode]);
-
-    useEffect(() => {
-        if (actionLoadState !== 'loaded' || !weeklyProgressCapabilities.canView || !scopeKey) {
-            setAllWeeklyProgress([]);
-            setWeeklyBaselineProgress([]);
-            setAllDailyProgress([]);
-            setDailyBaselineProgress([]);
-            setLoadedWeekRange(null);
-            return;
-        }
-
-        let cancelled = false;
-        const loadProgressWindow = async () => {
-            try {
-                const [weeklyRows, weeklyBaselineRows, dailyRows, dailyBaselineRows] = await Promise.all([
-                    progressWeekWindow
-                        ? projectWeeklyProgressService.listWeeklyRange(scopeKey, progressWeekWindow.fromWeek, progressWeekWindow.toWeek)
-                        : projectWeeklyProgressService.listAll(scopeKey),
-                    progressWeekWindow
-                        ? projectWeeklyProgressService.listLatestBefore(scopeKey, progressWeekWindow.fromWeek)
-                        : Promise.resolve([]),
-                    projectWeeklyProgressService.listDailyByWeek(scopeKey, selectedWeekStart),
-                    projectWeeklyProgressService.listDailyLatestBeforeDate(scopeKey, selectedWeekStart),
-                ]);
-                if (cancelled) return;
-                setAllWeeklyProgress(weeklyRows);
-                setWeeklyBaselineProgress(weeklyBaselineRows);
-                setDailyBaselineProgress(dailyBaselineRows);
-                setAllDailyProgress(mergeDailyProgressRows(dailyBaselineRows, dailyRows));
-                setLoadedWeekRange(progressWeekWindow);
-            } catch (error) {
-                console.warn('Cannot load progress window', error);
-                if (!cancelled) {
-                    toast.error('Không thể tải snapshot tiến độ', 'Vui lòng thử lại hoặc đổi bộ lọc.');
-                }
-            }
-        };
-
-        loadProgressWindow();
-        return () => {
-            cancelled = true;
-        };
-    }, [actionLoadState, progressWeekWindow, scopeKey, selectedWeekStart, toast, weeklyProgressCapabilities.canView]);
 
     // Handle click outside searchable select
     useEffect(() => {
@@ -840,45 +803,26 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
             getGeneration: () => periodStateRequestGeneration.current,
             onInvalidate: invalidateSelectedPeriodResources,
             read: async () => {
-                const statePromise = projectWeeklyProgressService.getPeriodState({
+                const bundle = await projectWeeklyProgressService.getPeriodBundle({
                     projectId,
                     constructionSiteId: constructionSiteId || null,
                     periodType: target.periodType,
                     periodStart: target.periodStart,
+                    windowFromWeek: progressWeekWindow?.fromWeek || null,
+                    windowToWeek: progressWeekWindow?.toWeek || null,
                 });
-                const taskRowsPromise = loadWeeklyProgressGanttCatalog({
-                    projectId: projectId || effectiveId,
-                    constructionSiteId: constructionSiteId || null,
-                }).then(catalog => catalog.tasks);
-                if (target.periodType === 'daily') {
-                    const weekStart = getWeekStart(target.periodStart);
-                    const [state, taskRows, dailyRows, dailyBaselineRows, weeklyRows] = await Promise.all([
-                        statePromise,
-                        taskRowsPromise,
-                        projectWeeklyProgressService.listDailyByWeekStrict(target.scopeKey, weekStart),
-                        projectWeeklyProgressService.listDailyLatestBeforeDateStrict(target.scopeKey, weekStart),
-                        projectWeeklyProgressService.listByWeekStrict(target.scopeKey, weekStart),
-                    ]);
-                    return {
-                        target,
-                        state,
-                        taskRows,
-                        dailyRows: mergeDailyProgressRows(dailyBaselineRows, dailyRows),
-                        weeklyRows,
-                    };
-                }
-                const [state, taskRows, weeklyRows] = await Promise.all([
-                    statePromise,
-                    taskRowsPromise,
-                    projectWeeklyProgressService.listLatestAtOrBeforeStrict(target.scopeKey, target.periodStart),
-                ]);
-                return { target, state, taskRows, dailyRows: [], weeklyRows };
+                return { target, bundle };
             },
-            onReady: bundle => {
+            onReady: resource => {
+                const { bundle } = resource;
+                authoritativeTaskRowsRef.current = {
+                    tasks: bundle.tasks,
+                    periodStart: resource.target.periodStart,
+                };
                 const authoritativeTasks = deriveProjectTaskProgress(
-                    bundle.taskRows,
-                    dailyLogs,
-                    bundle.target.periodStart,
+                    bundle.tasks,
+                    dailyLogsRef.current,
+                    resource.target.periodStart,
                 );
                 const parentIds = new Set(authoritativeTasks.map(task => task.parentId).filter(Boolean));
                 const leafTasks = authoritativeTasks
@@ -886,11 +830,25 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                     .sort((a, b) => (a.order || 0) - (b.order || 0));
 
                 setTasks(authoritativeTasks);
-                if (bundle.target.periodType === 'daily') {
+                setTaskContractLinkRows(bundle.taskContractItems);
+                setTaskContractLinks(bundle.taskContractItems.reduce<Record<string, string[]>>((acc, link) => {
+                    if (!acc[link.taskId]) acc[link.taskId] = [];
+                    acc[link.taskId].push(link.contractItemId);
+                    return acc;
+                }, {}));
+
+                const bundleView = buildWeeklyProgressBundleView(bundle);
+                setAllWeeklyProgress(bundleView.allWeeklyProgress);
+                setWeeklyBaselineProgress(bundleView.weeklyBaselineProgress);
+                setAllDailyProgress(bundleView.allDailyProgress);
+                setDailyBaselineProgress(bundleView.dailyBaselineProgress);
+                setLoadedWeekRange(bundleView.loadedWeekRange);
+
+                if (resource.target.periodType === 'daily') {
                     const nextDrafts: Record<string, ProgressDraft> = {};
                     leafTasks.forEach(task => {
-                        const found = bundle.dailyRows
-                            .filter(row => row.taskId === task.id && row.progressDate <= bundle.target.periodStart)
+                        const found = bundleView.selectedDailyMutationRows
+                            .filter(row => row.taskId === task.id && row.progressDate <= resource.target.periodStart)
                             .sort((a, b) =>
                                 b.progressDate.localeCompare(a.progressDate)
                                 || (b.updatedAt || '').localeCompare(a.updatedAt || '')
@@ -903,21 +861,19 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                         nextDrafts[task.id] = {
                             progressPercent: formatNumberInput(progressPercent, 2),
                             quantityDone: formatNumberInput(quantityDone, 2),
-                            note: found?.progressDate === bundle.target.periodStart ? (found.note || '') : '',
+                            note: found?.progressDate === resource.target.periodStart ? (found.note || '') : '',
                         };
                     });
                     setDailyPeriodState(bundle.state);
-                    setDailyPeriodStateKey(bundle.target.key);
+                    setDailyPeriodStateKey(resource.target.key);
                     setDailyDrafts(nextDrafts);
-                    setDailyDraftKey(bundle.target.key);
-                    setSelectedDailyMutationRows(bundle.dailyRows);
-                    setSelectedWeeklyMutationRows(bundle.weeklyRows);
-                    setAllDailyProgress(prev => mergeDailyProgressRows(prev, bundle.dailyRows));
-                    setAllWeeklyProgress(prev => mergeWeeklyProgressRows(prev, bundle.weeklyRows));
+                    setDailyDraftKey(resource.target.key);
+                    setSelectedDailyMutationRows(bundleView.selectedDailyMutationRows);
+                    setSelectedWeeklyMutationRows(bundleView.selectedWeeklyMutationRows);
                 } else {
                     const nextDrafts: Record<string, ProgressDraft> = {};
                     leafTasks.forEach(task => {
-                        const found = bundle.weeklyRows.find(row => row.taskId === task.id);
+                        const found = bundleView.selectedWeeklyMutationRows.find(row => row.taskId === task.id);
                         const currentProgress = parseWeeklyProgressPercent(task.progress);
                         const plannedQuantity = Number(task.provisionalQuantity || 0);
                         const progressPercent = found?.progressPercent ?? currentProgress;
@@ -930,11 +886,10 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                         };
                     });
                     setWeeklyPeriodState(bundle.state);
-                    setWeeklyPeriodStateKey(bundle.target.key);
+                    setWeeklyPeriodStateKey(resource.target.key);
                     setWeeklyDrafts(nextDrafts);
-                    setWeeklyDraftKey(bundle.target.key);
-                    setSelectedWeeklyMutationRows(bundle.weeklyRows);
-                    setAllWeeklyProgress(prev => mergeWeeklyProgressRows(prev, bundle.weeklyRows));
+                    setWeeklyDraftKey(resource.target.key);
+                    setSelectedWeeklyMutationRows(bundleView.selectedWeeklyMutationRows);
                 }
                 setPeriodResourceLoadState('ready');
             },
@@ -946,9 +901,9 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
     }, [
         actionLoadState,
         constructionSiteId,
-        dailyLogs,
         effectiveId,
         invalidateSelectedPeriodResources,
+        progressWeekWindow,
         projectId,
         weeklyProgressCapabilities.canView,
     ]);

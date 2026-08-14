@@ -20,10 +20,9 @@ describe('dependent Room Gantt catalog adapters', () => {
     }
   });
 
-  it('replaces direct task reads in Daily, Weekly, Material and Quality Rooms', () => {
+  it('replaces direct task reads in Daily, Material and Quality Rooms', () => {
     for (const [file, adapter] of [
       ['DailyLogTab.tsx', 'loadDailyLogGanttCatalog'],
-      ['WeeklyProgressTab.tsx', 'loadWeeklyProgressGanttCatalog'],
       ['MaterialTab.tsx', 'loadMaterialPlanningGanttCatalog'],
       ['QualityTab.tsx', 'loadQualityGanttCatalog'],
     ]) {
@@ -31,6 +30,13 @@ describe('dependent Room Gantt catalog adapters', () => {
       expect(source).toContain(adapter);
       expect(source).not.toContain('taskService.list(');
     }
+  });
+
+  it('loads Weekly Progress task catalog and period history from one authoritative bundle', () => {
+    const source = read('pages', 'project', 'WeeklyProgressTab.tsx');
+    expect(source).toContain('projectWeeklyProgressService.getPeriodBundle');
+    expect(source).not.toContain('loadWeeklyProgressGanttCatalog');
+    expect(source).not.toContain('taskService.list(');
   });
 
   it('replaces direct task/link reads in Quantity Acceptance and Payment consumers', () => {
