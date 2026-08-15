@@ -126,6 +126,18 @@ describe('requestRuntimeService.act', () => {
     });
   });
 
+  it('maps self approval to a clear Vietnamese message', () => {
+    const error = mapRequestRpcError({
+      code: '22023',
+      message: 'REQUEST_APPROVER_SELF_NOT_ALLOWED',
+    });
+
+    expect(error).toMatchObject({
+      code: 'REQUEST_APPROVER_SELF_NOT_ALLOWED',
+      message: 'Bạn không thể chọn chính mình làm người duyệt.',
+    });
+  });
+
   it('rejects malformed action command results instead of casting them', async () => {
     mocks.rpc.mockResolvedValue({
       data: { requestId: 'rq-1', status: 'APPROVED' },

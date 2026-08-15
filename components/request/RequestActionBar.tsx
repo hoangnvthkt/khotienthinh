@@ -97,7 +97,7 @@ export const RequestActionBar: React.FC<{ detail: RequestDetail; onChanged: () =
                 <label className="mb-1.5 block text-xs font-bold uppercase text-slate-700 dark:text-slate-200">
                   Người duyệt mới <span className="text-rose-500">*</span>
                 </label>
-                <UserSearchSelect users={users} excludeUserIds={[user.id]} value={assigneeUserId} onChange={userId => setAssigneeUserId(userId || '')} placeholder="Gõ tên hoặc vị trí người duyệt mới..." />
+                <UserSearchSelect users={users} excludeUserIds={[user.id, detail.creator.id]} value={assigneeUserId} onChange={userId => setAssigneeUserId(userId || '')} placeholder="Gõ tên hoặc vị trí người duyệt mới..." />
               </div>
             )}
 

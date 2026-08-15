@@ -160,6 +160,7 @@ export type RequestRpcErrorCode =
   | 'REQUEST_ASSIGNMENT_NOT_ACTIVE'
   | 'REQUEST_ALREADY_PROCESSED'
   | 'REQUEST_APPROVER_INACTIVE'
+  | 'REQUEST_APPROVER_SELF_NOT_ALLOWED'
   | 'REQUEST_DIRECT_MANAGER_MISSING'
   | 'REQUEST_DYNAMIC_APPROVER_REQUIRED'
   | 'REQUEST_TEMPLATE_NOT_PUBLISHED'
@@ -332,6 +333,7 @@ const REQUEST_RPC_ERROR_CODES = new Set<RequestRpcErrorCode>([
   'REQUEST_ASSIGNMENT_NOT_ACTIVE',
   'REQUEST_ALREADY_PROCESSED',
   'REQUEST_APPROVER_INACTIVE',
+  'REQUEST_APPROVER_SELF_NOT_ALLOWED',
   'REQUEST_DIRECT_MANAGER_MISSING',
   'REQUEST_DYNAMIC_APPROVER_REQUIRED',
   'REQUEST_TEMPLATE_NOT_PUBLISHED',
@@ -351,7 +353,16 @@ export const mapRequestRpcError = (error: unknown): RequestRpcError => {
   const code = candidate && REQUEST_RPC_ERROR_CODES.has(candidate as RequestRpcErrorCode)
     ? candidate
     : 'REQUEST_NOT_FOUND_OR_FORBIDDEN';
-  return new RequestRpcError(code, diagnostic, error);
+  const localizedMessages: Partial<Record<RequestRpcErrorCode, string>> = {
+    REQUEST_APPROVER_SELF_NOT_ALLOWED: 'Bạn không thể chọn chính mình làm người duyệt.',
+    REQUEST_APPROVER_INACTIVE: 'Người duyệt đã bị khóa hoặc không còn hoạt động. Vui lòng chọn người khác.',
+    REQUEST_DIRECT_MANAGER_MISSING: 'Tài khoản của bạn chưa được thiết lập người quản lý trực tiếp. Vui lòng liên hệ quản trị viên.',
+  };
+  return new RequestRpcError(
+    code,
+    localizedMessages[code as RequestRpcErrorCode] ?? diagnostic,
+    error,
+  );
 };
 
 const run = async <T>(name: string, payload: Record<string, unknown>): Promise<T> => {

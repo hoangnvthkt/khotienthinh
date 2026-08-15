@@ -29,12 +29,14 @@ export const validateRequestSubmission = ({
   fields,
   dynamicApproversByBlock,
   approvalBlocks,
+  creatorUserId,
 }: {
   title: string;
   formData: Record<string, unknown>;
   fields: RequestCreateField[];
   dynamicApproversByBlock: Record<string, string[]>;
   approvalBlocks: RequestCreateApprovalBlock[];
+  creatorUserId?: string;
 }): string[] => {
   const errors: string[] = [];
   if (!title.trim()) errors.push('Tiêu đề đề xuất là bắt buộc.');
@@ -49,6 +51,12 @@ export const validateRequestSubmission = ({
   }
 
   const normalized = normalizeDynamicApprovers(dynamicApproversByBlock, approvalBlocks);
+  if (
+    creatorUserId
+    && Object.values(normalized).some(userIds => userIds.includes(creatorUserId))
+  ) {
+    errors.push('Bạn không thể chọn chính mình làm người duyệt.');
+  }
   for (const block of approvalBlocks) {
     if (block.source !== 'DYNAMIC_CREATOR_SELECT') continue;
     const minimum = block.minimumDynamicApprovers ?? 1;

@@ -100,6 +100,32 @@ export const createApproverBlock = (
   sortOrder,
 });
 
+export const changeApproverBlockSource = (
+  block: RequestApproverBlockDraft,
+  source: RequestApproverSource,
+): RequestApproverBlockDraft => {
+  if (source === 'DIRECT_MANAGER') {
+    return { ...block, source, fixedUserIds: [], minimumDynamicApprovers: null };
+  }
+  if (source === 'DYNAMIC_CREATOR_SELECT') {
+    return {
+      ...block,
+      source,
+      fixedUserIds: [],
+      minimumDynamicApprovers: Number.isInteger(block.minimumDynamicApprovers)
+        && (block.minimumDynamicApprovers ?? 0) > 0
+        ? block.minimumDynamicApprovers
+        : 1,
+    };
+  }
+  return {
+    ...block,
+    source,
+    fixedUserIds: source === 'FIXED_SINGLE' ? block.fixedUserIds.slice(0, 1) : block.fixedUserIds,
+    minimumDynamicApprovers: null,
+  };
+};
+
 export const reorderByKeys = <T extends { key: string; sortOrder: number }>(items: T[], orderedKeys: string[]): T[] => {
   const byKey = new Map(items.map(item => [item.key, item]));
   if (orderedKeys.length !== items.length || orderedKeys.some(key => !byKey.has(key))) return items;

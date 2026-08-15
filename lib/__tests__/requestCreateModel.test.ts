@@ -27,4 +27,15 @@ describe('request create model', () => {
       'Khối “Quản lý” cần chọn tối thiểu 2 người duyệt.',
     ]);
   });
+
+  it('rejects a dynamic approver list containing the request creator', () => {
+    expect(validateRequestSubmission({
+      title: 'Đề xuất mua thiết bị',
+      formData: { reason: 'Cần máy mới' },
+      fields: [{ key: 'reason', label: 'Lý do', required: true }],
+      dynamicApproversByBlock: { 'manager-review': ['creator-id', 'user-2'] },
+      approvalBlocks: dynamicBlocks,
+      creatorUserId: 'creator-id',
+    })).toContain('Bạn không thể chọn chính mình làm người duyệt.');
+  });
 });

@@ -20,11 +20,34 @@ type PersistenceModelApi = {
     isStructurallySaveable: boolean;
     hasValidationIssues: boolean;
   }) => boolean;
+  changeApproverBlockSource?: (
+    block: ReturnType<typeof requestTemplateEditorModel.createApproverBlock>,
+    source: 'FIXED_SINGLE' | 'FIXED_MULTI' | 'DIRECT_MANAGER' | 'DYNAMIC_CREATOR_SELECT',
+  ) => ReturnType<typeof requestTemplateEditorModel.createApproverBlock>;
 };
 
 const persistenceModel = requestTemplateEditorModel as typeof requestTemplateEditorModel & PersistenceModelApi;
 
 describe('request template editor model', () => {
+  it('normalizes stale fields when changing the approver source', () => {
+    expect(persistenceModel.changeApproverBlockSource).toBeTypeOf('function');
+    const block = {
+      ...requestTemplateEditorModel.createApproverBlock('FIXED_MULTI', 1),
+      fixedUserIds: ['user-1', 'user-2'],
+    };
+
+    expect(persistenceModel.changeApproverBlockSource!(block, 'DIRECT_MANAGER')).toMatchObject({
+      source: 'DIRECT_MANAGER',
+      fixedUserIds: [],
+      minimumDynamicApprovers: null,
+    });
+    expect(persistenceModel.changeApproverBlockSource!(block, 'DYNAMIC_CREATOR_SELECT')).toMatchObject({
+      source: 'DYNAMIC_CREATOR_SELECT',
+      fixedUserIds: [],
+      minimumDynamicApprovers: 1,
+    });
+  });
+
   it('reorders approver blocks with consecutive sort orders', () => {
     const draft = {
       ...createEmptyRequestTemplateDraft(),

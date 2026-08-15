@@ -1,7 +1,10 @@
 import React from 'react';
 import { ChevronDown, ChevronUp, GripVertical, Trash2, Users } from 'lucide-react';
 import type { User } from '../../../types';
-import type { RequestApproverBlockDraft } from '../../../lib/requestTemplateEditorModel';
+import {
+  changeApproverBlockSource,
+  type RequestApproverBlockDraft,
+} from '../../../lib/requestTemplateEditorModel';
 import UserSearchSelect from '../../common/UserSearchSelect';
 
 interface Props {
@@ -17,6 +20,11 @@ interface Props {
 const sourceLabels = { FIXED_SINGLE: 'Người duyệt cố định', FIXED_MULTI: 'Nhiều người duyệt cố định', DIRECT_MANAGER: 'Quản lý trực tiếp', DYNAMIC_CREATOR_SELECT: 'Người tạo chọn khi gửi' } as const;
 
 const RequestApproverBlockEditor: React.FC<Props> = ({ block, index, count, users, onChange, onMove, onRemove }) => {
+  const directManagerOnly = block.source === 'DIRECT_MANAGER';
+  const setSource = (source: RequestApproverBlockDraft['source']) => {
+    onChange(changeApproverBlockSource(block, source));
+  };
+
   return (
     <article className="rounded-xl border border-slate-200 p-4 dark:border-slate-700">
       <div className="flex items-start gap-3">
@@ -43,6 +51,38 @@ const RequestApproverBlockEditor: React.FC<Props> = ({ block, index, count, user
                 className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent dark:border-slate-700 dark:bg-slate-800"
               />
             </label>
+          </div>
+          <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/60">
+            <label className="flex items-start gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+              <input
+                type="checkbox"
+                checked={directManagerOnly}
+                onChange={event => setSource(event.target.checked ? 'DIRECT_MANAGER' : 'FIXED_SINGLE')}
+                className="mt-0.5 h-4 w-4 rounded border-slate-300 text-violet-600 focus:ring-violet-500"
+              />
+              <span>
+                Chỉ cho phép lấy quản lý trực tiếp đã thiết lập trong tài khoản?
+                <span className="mt-1 block text-xs font-normal text-slate-500">
+                  {directManagerOnly
+                    ? 'Có — hệ thống tự xác định quản lý của người gửi khi tạo yêu cầu.'
+                    : 'Không — người duyệt được chọn linh động trong toàn hệ thống.'}
+                </span>
+              </span>
+            </label>
+            {!directManagerOnly && (
+              <label className="mt-3 block">
+                <span className="mb-1 block text-xs font-bold text-slate-500">Cách chọn người duyệt</span>
+                <select
+                  value={block.source}
+                  onChange={event => setSource(event.target.value as RequestApproverBlockDraft['source'])}
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent dark:border-slate-700 dark:bg-slate-900"
+                >
+                  <option value="FIXED_SINGLE">Chọn sẵn một người trong mẫu</option>
+                  <option value="FIXED_MULTI">Chọn sẵn nhiều người trong mẫu</option>
+                  <option value="DYNAMIC_CREATOR_SELECT">Người tạo chọn khi gửi</option>
+                </select>
+              </label>
+            )}
           </div>
           <p className="mt-2 text-xs font-medium text-emerald-600 dark:text-emerald-400">{sourceLabels[block.source]}</p>
           {block.source === 'FIXED_SINGLE' && (

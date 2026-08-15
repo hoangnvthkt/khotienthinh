@@ -188,6 +188,7 @@ export const RequestCreateDialog: React.FC<{
       fields: selectedTemplate.formSchema,
       dynamicApproversByBlock: normalizedApprovers,
       approvalBlocks: selectedTemplate.approvalBlocks,
+      creatorUserId: user.id,
     });
     if (validationErrors.length) {
       setErrors(validationErrors);
