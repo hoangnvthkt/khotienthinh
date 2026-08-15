@@ -81,14 +81,14 @@ describe('vehicle booking sensitive navigation permissions', () => {
     )).toBe(false);
   });
 
-  it('requires explicit grants from ADMIN and normal users alike', () => {
+  it('restores full Booking access for system ADMIN while normal users require grants', () => {
     const user = (permissionGrants: any[] = [], role = 'EMPLOYEE') => ({
       role,
       permissionGrants,
     }) as Pick<User, 'role' | 'permissionGrants'>;
 
     expect(bookingPermissions.hasActiveVehicleBookingGrant).toBeTypeOf('function');
-    expect(bookingPermissions.hasActiveVehicleBookingGrant(user([], 'ADMIN'), ['booking.vehicle.dispatch'])).toBe(false);
+    expect(bookingPermissions.hasActiveVehicleBookingGrant(user([], 'ADMIN'), ['booking.vehicle.dispatch'])).toBe(true);
     expect(bookingPermissions.hasActiveVehicleBookingGrant(user(), ['booking.vehicle.dispatch'])).toBe(false);
     expect(bookingPermissions.hasActiveVehicleBookingGrant(
       user([activeGrant('booking.vehicle.dispatch')]),

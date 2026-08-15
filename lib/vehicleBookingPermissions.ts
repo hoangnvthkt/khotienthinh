@@ -1,4 +1,4 @@
-import type { User } from '../types';
+import { Role, type User } from '../types';
 
 type VehicleBookingGrantUser = Pick<User, 'permissionGrants'> & Partial<Pick<User, 'role'>>;
 
@@ -7,6 +7,7 @@ export function hasActiveVehicleBookingGrant(
   permissionCodes: string[],
   reference = new Date(),
 ): boolean {
+  if (user?.role === Role.ADMIN) return true;
   const acceptedCodes = new Set([...permissionCodes, 'booking.vehicle.admin']);
   return Boolean(user?.permissionGrants?.some(grant =>
     acceptedCodes.has(grant.permissionCode)
