@@ -1,11 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { ClipboardCheck, Check, X, Clock, MapPin, User, Car, AlertCircle, RefreshCw } from 'lucide-react';
-import { fetchPendingApprovalCards, approveVehicleBooking, rejectVehicleBooking, formatVietnamDateTime } from '../../lib/vehicleBookingService';
+import { ClipboardCheck, Check, X, Clock, MapPin, User, Car, AlertCircle, RefreshCw, UserRoundCog } from 'lucide-react';
+import { fetchPendingApprovalCards, approveVehicleBooking, rejectVehicleBooking, formatVietnamDateTime, reassignVehicleBookingManager } from '../../lib/vehicleBookingService';
 import type { VehicleBookingApprovalCard } from '../../types/vehicleBooking';
 import { useToast } from '../../context/ToastContext';
+import { useApp } from '../../context/AppContext';
+import { hasActiveVehicleBookingGrant } from '../../lib/vehicleBookingPermissions';
+import { mapVehicleBookingSubmissionError } from '../../lib/vehicleBookingPresentation';
+import UserSearchSelect from '../../components/common/UserSearchSelect';
 
 const ManagerApprovalPage: React.FC = () => {
   const toast = useToast();
+  const { user, users } = useApp();
+  const canReassignManager = hasActiveVehicleBookingGrant(user, ['booking.vehicle.admin']);
   const [loading, setLoading] = useState(true);
   const [pendingBookings, setPendingBookings] = useState<VehicleBookingApprovalCard[]>([]);
 
@@ -13,6 +19,9 @@ const ManagerApprovalPage: React.FC = () => {
   const [rejectingBookingId, setRejectingBookingId] = useState<string | null>(null);
   const [rejectNote, setRejectNote] = useState('');
   const [actioning, setActioning] = useState(false);
+  const [reassigningBooking, setReassigningBooking] = useState<VehicleBookingApprovalCard | null>(null);
+  const [reassignManagerId, setReassignManagerId] = useState('');
+  const [reassignReason, setReassignReason] = useState('');
 
   const loadData = async () => {
     try {
@@ -58,6 +67,31 @@ const ManagerApprovalPage: React.FC = () => {
       loadData();
     } catch (err: any) {
       toast.error(err.message || 'Từ chối đơn thất bại!');
+    } finally {
+      setActioning(false);
+    }
+  };
+
+  const handleReassignManager = async () => {
+    if (!reassigningBooking || !reassignManagerId || !reassignReason.trim()) {
+      toast.error('Vui lòng chọn người duyệt mới và nhập lý do.');
+      return;
+    }
+    try {
+      setActioning(true);
+      await reassignVehicleBookingManager({
+        bookingId: reassigningBooking.id,
+        managerUserId: reassignManagerId,
+        reason: reassignReason.trim(),
+        expectedUpdatedAt: reassigningBooking.updated_at,
+      });
+      toast.success('Đã chuyển người duyệt và lưu lịch sử thao tác.');
+      setReassigningBooking(null);
+      setReassignManagerId('');
+      setReassignReason('');
+      await loadData();
+    } catch (error) {
+      toast.error(mapVehicleBookingSubmissionError(error).message);
     } finally {
       setActioning(false);
     }
@@ -178,6 +212,16 @@ const ManagerApprovalPage: React.FC = () => {
 
               {/* ACTION BUTTONS */}
               <div className="flex items-center justify-end space-x-3 pt-2">
+                {canReassignManager && (
+                  <button
+                    disabled={actioning}
+                    onClick={() => setReassigningBooking(b)}
+                    className="inline-flex items-center space-x-1.5 rounded-xl border border-indigo-200 px-4 py-2 text-xs font-semibold text-indigo-600 transition hover:bg-indigo-50 dark:border-indigo-900/50 dark:text-indigo-400 dark:hover:bg-indigo-900/20"
+                  >
+                    <UserRoundCog className="h-4 w-4" />
+                    <span>Chuyển người duyệt</span>
+                  </button>
+                )}
                 <button
                   disabled={actioning}
                   onClick={() => setRejectingBookingId(b.id)}
@@ -240,6 +284,62 @@ const ManagerApprovalPage: React.FC = () => {
                 className="px-5 py-2 rounded-xl bg-rose-600 text-white text-xs font-semibold hover:bg-rose-700"
               >
                 {actioning ? 'Đang gửi...' : 'Xác Nhận Từ Chối'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {reassigningBooking && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-md space-y-4 rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-800">
+            <h3 className="flex items-center gap-2 text-base font-bold text-indigo-600 dark:text-indigo-400">
+              <UserRoundCog className="h-5 w-5" />
+              Chuyển người duyệt
+            </h3>
+            <p className="text-xs text-slate-500">{reassigningBooking.booking_code} · {reassigningBooking.requester_employee_name || 'Người đặt xe'}</p>
+            <label className="block text-xs font-bold text-slate-700 dark:text-slate-200">
+              Người duyệt mới <span className="text-rose-500">*</span>
+              <UserSearchSelect
+                users={users}
+                excludeUserIds={[
+                  reassigningBooking.requester_user_id,
+                  reassigningBooking.manager_user_id_snapshot || '',
+                ].filter(Boolean)}
+                value={reassignManagerId}
+                onChange={userId => setReassignManagerId(userId || '')}
+                placeholder="Gõ tên hoặc vị trí người duyệt mới..."
+                className="mt-1.5"
+              />
+            </label>
+            <label className="block text-xs font-bold text-slate-700 dark:text-slate-200">
+              Lý do <span className="text-rose-500">*</span>
+              <textarea
+                rows={3}
+                value={reassignReason}
+                onChange={event => setReassignReason(event.target.value)}
+                placeholder="Nhập lý do chuyển người duyệt..."
+                className="mt-1.5 w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-xs dark:border-slate-700 dark:bg-slate-900"
+              />
+            </label>
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                disabled={actioning}
+                onClick={() => {
+                  setReassigningBooking(null);
+                  setReassignManagerId('');
+                  setReassignReason('');
+                }}
+                className="rounded-xl border px-4 py-2 text-xs font-semibold"
+              >
+                Hủy bỏ
+              </button>
+              <button
+                disabled={actioning || !reassignManagerId || !reassignReason.trim()}
+                onClick={() => void handleReassignManager()}
+                className="rounded-xl bg-indigo-600 px-5 py-2 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+              >
+                {actioning ? 'Đang chuyển...' : 'Xác nhận chuyển'}
               </button>
             </div>
           </div>

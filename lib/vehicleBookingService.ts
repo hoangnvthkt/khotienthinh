@@ -29,6 +29,10 @@ import type {
   VehicleUnavailabilityReason,
   OperatorUnavailabilityReason
 } from '../types/vehicleBooking';
+import type {
+  VehicleBookingSubmissionPreviewRoute,
+  VehicleBookingSubmissionRoute,
+} from '../types/vehicleBooking';
 
 export type FleetSystemSettingsUpdate = Pick<
   FleetSystemSetting,
@@ -41,7 +45,22 @@ export type FleetSystemSettingsUpdate = Pick<
   | 'max_evidence_image_mb'
   | 'require_handover_for_self_drive'
   | 'allow_dispatch_approval_override'
+  | 'require_direct_manager_approval'
 >;
+
+export interface VehicleBookingSubmissionPreview {
+  route: VehicleBookingSubmissionPreviewRoute;
+  managerUserId: string | null;
+  dispatcherCount: number;
+}
+
+export interface VehicleBookingSubmissionResult {
+  success: boolean;
+  status: 'PENDING_APPROVAL' | 'WAITING_DISPATCH';
+  managerApprovalRoute: Exclude<VehicleBookingSubmissionRoute, 'LEGACY'>;
+  managerUserId: string | null;
+  dispatcherCount: number;
+}
 
 export type FleetVehicleProfileUpdateInput = {
   asset_id: string;
@@ -71,6 +90,7 @@ export function mergeFleetSystemSettings(
     max_evidence_image_mb: patch.max_evidence_image_mb ?? current.max_evidence_image_mb,
     require_handover_for_self_drive: patch.require_handover_for_self_drive ?? current.require_handover_for_self_drive,
     allow_dispatch_approval_override: patch.allow_dispatch_approval_override ?? current.allow_dispatch_approval_override,
+    require_direct_manager_approval: patch.require_direct_manager_approval ?? current.require_direct_manager_approval,
   };
 }
 
@@ -786,9 +806,81 @@ export async function createVehicleBooking(params: {
   return data;
 }
 
-export async function submitVehicleBooking(bookingId: string) {
+export async function previewVehicleBookingSubmissionRoute(): Promise<VehicleBookingSubmissionPreview> {
+  const { data, error } = await supabase.rpc('preview_vehicle_booking_submission_route', {});
+  if (error) throw error;
+  if (!data || typeof data !== 'object') {
+    throw new Error('preview_vehicle_booking_submission_route không trả về dữ liệu hợp lệ.');
+  }
+  const value = data as Record<string, unknown>;
+  const validRoutes = new Set<VehicleBookingSubmissionPreviewRoute>([
+    'MANAGER',
+    'CONFIG_DISABLED',
+    'MISSING_MANAGER_CONFIRMATION_REQUIRED',
+  ]);
+  if (
+    typeof value.route !== 'string'
+    || !validRoutes.has(value.route as VehicleBookingSubmissionPreviewRoute)
+    || (value.manager_user_id !== null && typeof value.manager_user_id !== 'string')
+    || typeof value.dispatcher_count !== 'number'
+  ) {
+    throw new Error('preview_vehicle_booking_submission_route không trả về dữ liệu hợp lệ.');
+  }
+  return {
+    route: value.route as VehicleBookingSubmissionPreviewRoute,
+    managerUserId: value.manager_user_id as string | null,
+    dispatcherCount: value.dispatcher_count,
+  };
+}
+
+export async function submitVehicleBooking(
+  bookingId: string,
+  options: { confirmMissingManagerBypass?: boolean } = {},
+): Promise<VehicleBookingSubmissionResult> {
   const { data, error } = await supabase.rpc('submit_vehicle_booking', {
     p_booking_id: bookingId,
+    p_confirm_missing_manager_bypass: options.confirmMissingManagerBypass ?? false,
+  });
+  if (error) throw error;
+  if (!data || typeof data !== 'object') {
+    throw new Error('submit_vehicle_booking không trả về dữ liệu hợp lệ.');
+  }
+  const value = data as Record<string, unknown>;
+  const validRoutes = new Set<Exclude<VehicleBookingSubmissionRoute, 'LEGACY'>>([
+    'MANAGER',
+    'CONFIG_DISABLED',
+    'MISSING_MANAGER_BYPASS',
+  ]);
+  if (
+    value.success !== true
+    || (value.status !== 'PENDING_APPROVAL' && value.status !== 'WAITING_DISPATCH')
+    || typeof value.manager_approval_route !== 'string'
+    || !validRoutes.has(value.manager_approval_route as Exclude<VehicleBookingSubmissionRoute, 'LEGACY'>)
+    || (value.manager_user_id !== null && typeof value.manager_user_id !== 'string')
+    || typeof value.dispatcher_count !== 'number'
+  ) {
+    throw new Error('submit_vehicle_booking không trả về dữ liệu hợp lệ.');
+  }
+  return {
+    success: true,
+    status: value.status,
+    managerApprovalRoute: value.manager_approval_route as Exclude<VehicleBookingSubmissionRoute, 'LEGACY'>,
+    managerUserId: value.manager_user_id as string | null,
+    dispatcherCount: value.dispatcher_count,
+  };
+}
+
+export async function reassignVehicleBookingManager(params: {
+  bookingId: string;
+  managerUserId: string;
+  reason: string;
+  expectedUpdatedAt: string;
+}) {
+  const { data, error } = await supabase.rpc('reassign_vehicle_booking_manager', {
+    p_booking_id: params.bookingId,
+    p_manager_user_id: params.managerUserId,
+    p_reason: params.reason,
+    p_expected_updated_at: params.expectedUpdatedAt,
   });
   if (error) throw error;
   return data;
@@ -1217,6 +1309,7 @@ export async function updateFleetSystemSettings(params: FleetSystemSettingsUpdat
     p_trip_reminder_minutes: params.trip_reminder_minutes,
     p_require_handover_for_self_drive: params.require_handover_for_self_drive,
     p_allow_dispatch_approval_override: params.allow_dispatch_approval_override,
+    p_require_direct_manager_approval: params.require_direct_manager_approval,
   });
   if (error) throw error;
   return data;

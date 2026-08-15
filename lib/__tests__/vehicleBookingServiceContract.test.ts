@@ -49,6 +49,21 @@ import {
   upsertFleetLocation,
   upsertFleetVehicleProfile,
 } from '../vehicleBookingService';
+import * as bookingServiceModule from '../vehicleBookingService';
+
+const routingService = bookingServiceModule as typeof bookingServiceModule & {
+  previewVehicleBookingSubmissionRoute?: () => Promise<{
+    route: 'MANAGER' | 'CONFIG_DISABLED' | 'MISSING_MANAGER_CONFIRMATION_REQUIRED';
+    managerUserId: string | null;
+    dispatcherCount: number;
+  }>;
+  reassignVehicleBookingManager?: (input: {
+    bookingId: string;
+    managerUserId: string;
+    reason: string;
+    expectedUpdatedAt: string;
+  }) => Promise<unknown>;
+};
 
 const callArgs = (name: string) =>
   supabaseMocks.rpc.mock.calls.find(([rpcName]) => rpcName === name)?.[1];
@@ -76,6 +91,60 @@ describe('vehicle booking RPC contract', () => {
     expect(result).toEqual([{ id: 'booking-1', requester_user_id: 'app-user-id' }]);
     expect(supabaseMocks.eq).toHaveBeenCalledWith('requester_user_id', 'app-user-id');
     expect(supabaseMocks.getUser).not.toHaveBeenCalled();
+  });
+
+  it('previews manager routing, confirms bypass, and reassigns with a stale-state token', async () => {
+    expect(routingService.previewVehicleBookingSubmissionRoute).toBeTypeOf('function');
+    expect(routingService.reassignVehicleBookingManager).toBeTypeOf('function');
+    supabaseMocks.rpc.mockResolvedValueOnce({
+      data: {
+        route: 'MANAGER',
+        manager_user_id: 'manager-1',
+        dispatcher_count: 1,
+      },
+      error: null,
+    }).mockResolvedValueOnce({
+      data: {
+        success: true,
+        status: 'PENDING_APPROVAL',
+        manager_approval_route: 'MANAGER',
+        manager_user_id: 'manager-1',
+        dispatcher_count: 0,
+      },
+      error: null,
+    });
+
+    await expect(routingService.previewVehicleBookingSubmissionRoute!()).resolves.toEqual({
+      route: 'MANAGER',
+      managerUserId: 'manager-1',
+      dispatcherCount: 1,
+    });
+    await expect(submitVehicleBooking('booking-1', {
+      confirmMissingManagerBypass: true,
+    })).resolves.toEqual({
+      success: true,
+      status: 'PENDING_APPROVAL',
+      managerApprovalRoute: 'MANAGER',
+      managerUserId: 'manager-1',
+      dispatcherCount: 0,
+    });
+    await routingService.reassignVehicleBookingManager!({
+      bookingId: 'booking-1',
+      managerUserId: 'manager-2',
+      reason: 'Thay đổi quản lý phụ trách',
+      expectedUpdatedAt: '2026-08-15T01:00:00.000Z',
+    });
+
+    expect(callArgs('submit_vehicle_booking')).toEqual({
+      p_booking_id: 'booking-1',
+      p_confirm_missing_manager_bypass: true,
+    });
+    expect(callArgs('reassign_vehicle_booking_manager')).toEqual({
+      p_booking_id: 'booking-1',
+      p_manager_user_id: 'manager-2',
+      p_reason: 'Thay đổi quản lý phụ trách',
+      p_expected_updated_at: '2026-08-15T01:00:00.000Z',
+    });
   });
 
   it('filters today trips with the public app user id, not the auth id', async () => {
@@ -225,6 +294,19 @@ describe('vehicle booking RPC contract', () => {
   });
 
   it('calls all 25 authenticated booking RPCs', async () => {
+    supabaseMocks.rpc.mockImplementation(async (name: string) => ({
+      data: name === 'submit_vehicle_booking'
+        ? {
+            success: true,
+            status: 'PENDING_APPROVAL',
+            manager_approval_route: 'MANAGER',
+            manager_user_id: 'manager-1',
+            dispatcher_count: 0,
+          }
+        : { success: true },
+      error: null,
+    }));
+
     await createVehicleBooking({
       requested_pickup_at: '2026-08-12T01:00:00.000Z',
       expected_return_at: '2026-08-12T03:00:00.000Z',
@@ -303,6 +385,7 @@ describe('vehicle booking RPC contract', () => {
       trip_reminder_minutes: 60,
       require_handover_for_self_drive: true,
       allow_dispatch_approval_override: true,
+      require_direct_manager_approval: true,
     });
 
     expect(supabaseMocks.rpc.mock.calls.map(([name]) => name).sort()).toEqual([

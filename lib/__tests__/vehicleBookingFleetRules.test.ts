@@ -17,7 +17,7 @@ const activeGrant = (permissionCode: string) => ({
 });
 
 describe('fleet settings and master-data safety', () => {
-  it('preserves all nine Cloud settings when only visible fields are edited', () => {
+  it('preserves all ten Cloud settings when only visible fields are edited', () => {
     const current = {
       booking_buffer_minutes: 30,
       late_cancellation_cutoff_minutes: 120,
@@ -28,6 +28,7 @@ describe('fleet settings and master-data safety', () => {
       max_evidence_image_mb: 7.5,
       require_handover_for_self_drive: false,
       allow_dispatch_approval_override: false,
+      require_direct_manager_approval: true,
     };
 
     expect(service.mergeFleetSystemSettings).toBeTypeOf('function');
@@ -80,14 +81,14 @@ describe('vehicle booking sensitive navigation permissions', () => {
     )).toBe(false);
   });
 
-  it('gives ADMIN full access while normal users still require active grants', () => {
+  it('requires explicit grants from ADMIN and normal users alike', () => {
     const user = (permissionGrants: any[] = [], role = 'EMPLOYEE') => ({
       role,
       permissionGrants,
     }) as Pick<User, 'role' | 'permissionGrants'>;
 
     expect(bookingPermissions.hasActiveVehicleBookingGrant).toBeTypeOf('function');
-    expect(bookingPermissions.hasActiveVehicleBookingGrant(user([], 'ADMIN'), ['booking.vehicle.dispatch'])).toBe(true);
+    expect(bookingPermissions.hasActiveVehicleBookingGrant(user([], 'ADMIN'), ['booking.vehicle.dispatch'])).toBe(false);
     expect(bookingPermissions.hasActiveVehicleBookingGrant(user(), ['booking.vehicle.dispatch'])).toBe(false);
     expect(bookingPermissions.hasActiveVehicleBookingGrant(
       user([activeGrant('booking.vehicle.dispatch')]),

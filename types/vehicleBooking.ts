@@ -10,6 +10,8 @@ export type VehicleRequestedMode = 'WITH_DRIVER' | 'SELF_DRIVE' | 'FLEXIBLE';
 export type VehicleBookingStatus = 'DRAFT' | 'PENDING_APPROVAL' | 'WAITING_DISPATCH' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
 export type ManagerResolutionStatus = 'NORMAL' | 'MISSING' | 'OVERRIDDEN';
 export type ApprovalSource = 'MANAGER' | 'DISPATCH_OVERRIDE';
+export type VehicleBookingSubmissionRoute = 'MANAGER' | 'CONFIG_DISABLED' | 'MISSING_MANAGER_BYPASS' | 'LEGACY';
+export type VehicleBookingSubmissionPreviewRoute = 'MANAGER' | 'CONFIG_DISABLED' | 'MISSING_MANAGER_CONFIRMATION_REQUIRED';
 export type BookingCloseReason = 'REJECTED_BY_MANAGER' | 'CANCELLED_BY_REQUESTER' | 'LATE_CANCELLED' | 'CANCELLED_BY_DISPATCHER' | 'NO_SHOW' | 'OTHER';
 export type FulfillmentType = 'INTERNAL_WITH_DRIVER' | 'INTERNAL_SELF_DRIVE' | 'EXTERNAL_TRANSPORT';
 export type OperatorType = 'PROFESSIONAL_DRIVER' | 'SELF_DRIVER';
@@ -43,6 +45,7 @@ export interface FleetSystemSetting {
   max_evidence_image_mb: number;
   require_handover_for_self_drive: boolean;
   allow_dispatch_approval_override: boolean;
+  require_direct_manager_approval: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -186,6 +189,9 @@ export interface VehicleBooking {
   department_id_snapshot?: string | null;
   manager_user_id_snapshot?: string | null;
   manager_resolution_status: ManagerResolutionStatus;
+  manager_approval_route?: VehicleBookingSubmissionRoute | null;
+  manager_bypass_confirmed_by_user_id?: string | null;
+  manager_bypass_confirmed_at?: string | null;
   requested_pickup_at: string;
   expected_return_at: string;
   trip_type: VehicleTripType;

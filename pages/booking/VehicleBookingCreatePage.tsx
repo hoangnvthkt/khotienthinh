@@ -6,6 +6,8 @@ import {
   buildVehicleBookingParticipantPayload,
   replaceVehicleBookingParticipants,
   submitVehicleBooking,
+  previewVehicleBookingSubmissionRoute,
+  fetchFleetSystemSettings,
   fetchFleetVehicleProfiles,
   fetchDriverAuthorizationsEligible,
   toVietnamISOString
@@ -17,14 +19,21 @@ import type {
   VehicleDriverAuthorizationEligible
 } from '../../types/vehicleBooking';
 import { useToast } from '../../context/ToastContext';
+import { useConfirm } from '../../context/ConfirmContext';
+import {
+  getVehicleBookingSubmitSuccessMessage,
+  mapVehicleBookingSubmissionError,
+} from '../../lib/vehicleBookingPresentation';
 
 const VehicleBookingCreatePage: React.FC = () => {
   const navigate = useNavigate();
   const toast = useToast();
+  const confirm = useConfirm();
 
   const [loading, setLoading] = useState(false);
   const [vehicles, setVehicles] = useState<FleetVehicleProfileView[]>([]);
   const [drivers, setDrivers] = useState<VehicleDriverAuthorizationEligible[]>([]);
+  const [requiresManagerApproval, setRequiresManagerApproval] = useState(true);
 
   // Form State
   const [pickupAt, setPickupAt] = useState('');
@@ -59,12 +68,14 @@ const VehicleBookingCreatePage: React.FC = () => {
   useEffect(() => {
     async function loadMasterData() {
       try {
-        const [vList, dList] = await Promise.all([
+        const [vList, dList, settings] = await Promise.all([
           fetchFleetVehicleProfiles(),
-          fetchDriverAuthorizationsEligible()
+          fetchDriverAuthorizationsEligible(),
+          fetchFleetSystemSettings(),
         ]);
         setVehicles(vList);
         setDrivers(dList);
+        setRequiresManagerApproval(settings.require_direct_manager_approval);
       } catch (err: any) {
         console.error('Failed to load master data for booking form:', err);
       }
@@ -92,8 +103,31 @@ const VehicleBookingCreatePage: React.FC = () => {
       return;
     }
 
+    let bookingId: string | null = null;
+    let bookingCode = '';
     try {
       setLoading(true);
+
+      let confirmMissingManagerBypass = false;
+      if (autoSubmit) {
+        const preview = await previewVehicleBookingSubmissionRoute();
+        setRequiresManagerApproval(preview.route !== 'CONFIG_DISABLED');
+        if (preview.route === 'MISSING_MANAGER_CONFIRMATION_REQUIRED') {
+          const proceed = await confirm({
+            title: 'Chưa có quản lý trực tiếp',
+            targetName: 'Đơn sẽ chuyển thẳng đến Điều phối',
+            subtitle: 'Bạn chưa được thiết lập người quản lý trực tiếp.',
+            warningText: 'Nếu tiếp tục, đơn sẽ bỏ qua bước duyệt và chuyển thẳng đến bộ phận Điều phối.',
+            confirmText: 'Bạn có muốn gửi không?',
+            actionLabel: 'Vẫn gửi',
+            cancelLabel: 'Quay lại',
+            intent: 'warning',
+            countdownSeconds: 0,
+          });
+          if (!proceed) return;
+          confirmMissingManagerBypass = true;
+        }
+      }
 
       const pickupIso = toVietnamISOString(pickupAt);
       const returnIso = toVietnamISOString(returnAt);
@@ -112,7 +146,8 @@ const VehicleBookingCreatePage: React.FC = () => {
         note: note || undefined,
       });
 
-      const bookingId = res.id;
+      bookingId = res.id;
+      bookingCode = res.booking_code;
       const participants = buildVehicleBookingParticipantPayload(participantNames);
 
       if (bookingId && participants.length > 0) {
@@ -120,15 +155,52 @@ const VehicleBookingCreatePage: React.FC = () => {
       }
 
       if (autoSubmit && bookingId) {
-        await submitVehicleBooking(bookingId);
-        toast.success(`Tạo và nộp đơn đặt xe thành công! Mã đơn: ${res.booking_code}`);
+        const submitResult = await submitVehicleBooking(bookingId, { confirmMissingManagerBypass });
+        toast.success(getVehicleBookingSubmitSuccessMessage(
+          submitResult.managerApprovalRoute,
+          res.booking_code,
+        ));
       } else {
         toast.success(`Đã lưu nháp đơn đặt xe! Mã đơn: ${res.booking_code}`);
       }
 
       navigate('/booking/vehicle/my');
     } catch (err: any) {
-      toast.error(err.message || 'Tạo đơn đặt xe thất bại!');
+      const mapped = mapVehicleBookingSubmissionError(err);
+      if (
+        mapped.code === 'VEHICLE_DIRECT_MANAGER_CONFIRMATION_REQUIRED'
+        && bookingId
+      ) {
+        const proceed = await confirm({
+          title: 'Thiết lập quản lý vừa thay đổi',
+          targetName: 'Đơn sẽ chuyển thẳng đến Điều phối',
+          subtitle: 'Hiện tại tài khoản của bạn không có quản lý trực tiếp hợp lệ.',
+          warningText: 'Nếu tiếp tục, đơn sẽ bỏ qua bước duyệt và chuyển thẳng đến bộ phận Điều phối.',
+          confirmText: 'Bạn có muốn gửi không?',
+          actionLabel: 'Vẫn gửi',
+          cancelLabel: 'Quay lại',
+          intent: 'warning',
+          countdownSeconds: 0,
+        });
+        if (proceed) {
+          try {
+            const submitResult = await submitVehicleBooking(bookingId, {
+              confirmMissingManagerBypass: true,
+            });
+            toast.success(getVehicleBookingSubmitSuccessMessage(
+              submitResult.managerApprovalRoute,
+              bookingCode,
+            ));
+            navigate('/booking/vehicle/my');
+            return;
+          } catch (retryError) {
+            toast.error(mapVehicleBookingSubmissionError(retryError).message);
+            return;
+          }
+        }
+        return;
+      }
+      toast.error(mapped.message);
     } finally {
       setLoading(false);
     }
@@ -141,7 +213,9 @@ const VehicleBookingCreatePage: React.FC = () => {
         <Info className="w-5 h-5 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
         <div className="text-xs leading-relaxed">
           <span className="font-semibold text-amber-800 dark:text-amber-300">Lưu ý nghiệp vụ đặt xe:</span>
-          {' '}Đơn đặt xe sau khi nộp sẽ được gửi trực tiếp đến Quản lý của bạn phê duyệt nhu cầu. Sau khi Quản lý duyệt, Điều phối viên tập trung sẽ kiểm tra xung đột lịch và bố trí xe/tài xế phù hợp.
+          {' '}{requiresManagerApproval
+            ? 'Đơn đặt xe sau khi nộp sẽ được gửi đến quản lý trực tiếp phê duyệt. Nếu tài khoản chưa có quản lý, bạn có thể xác nhận chuyển thẳng đến Điều phối.'
+            : 'Đơn đặt xe sau khi nộp sẽ được chuyển thẳng đến Điều phối theo cấu hình hiện tại.'}
           <span className="italic block mt-1 text-amber-700 dark:text-amber-400">
             * Các lựa chọn xe/tài xế mong muốn chỉ mang tính chất nguyện vọng cá nhân.
           </span>

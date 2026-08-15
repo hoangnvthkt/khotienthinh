@@ -254,6 +254,16 @@ const FleetSettingsManagement: React.FC = () => {
               />
               Cho phép điều phối duyệt thay
             </label>
+            <label className="flex items-center gap-2 text-xs font-bold">
+              <input
+                type="checkbox"
+                checked={settings.require_direct_manager_approval}
+                onChange={event => setSettings(previous => previous
+                  ? ({ ...previous, require_direct_manager_approval: event.target.checked })
+                  : previous)}
+              />
+              Yêu cầu quản lý trực tiếp duyệt trước khi điều phối
+            </label>
           </div>
         </div>
         <button

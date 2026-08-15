@@ -19,13 +19,13 @@ const userWith = (permissionCode?: string, expiresAt?: string) => ({
 }) as Pick<User, 'permissionGrants'>;
 
 describe('vehicle booking phase 3 permission helpers', () => {
-  it('lets a system ADMIN use every booking capability without explicit grants', () => {
+  it('does not give a system ADMIN sensitive Booking capabilities without explicit grants', () => {
     const admin = { role: Role.ADMIN, permissionGrants: [] } as Pick<User, 'role' | 'permissionGrants'>;
 
-    expect(canViewVehicleReports(admin)).toBe(true);
-    expect(canViewSensitiveVehicleIssues(admin)).toBe(true);
-    expect(canResolveSensitiveVehicleIssues(admin)).toBe(true);
-    expect(canViewVehicleAudit(admin)).toBe(true);
+    expect(canViewVehicleReports(admin)).toBe(false);
+    expect(canViewSensitiveVehicleIssues(admin)).toBe(false);
+    expect(canResolveSensitiveVehicleIssues(admin)).toBe(false);
+    expect(canViewVehicleAudit(admin)).toBe(false);
   });
 
   it('requires an active report grant', () => {
