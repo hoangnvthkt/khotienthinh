@@ -73,6 +73,14 @@ begin
       'DIRECT_MANAGER_SMOKE_FIXTURE_MISSING: four active authenticated users including one ADMIN are required';
   end if;
 
+  -- Exercise the same protected user-update path as an authenticated system
+  -- administrator so the privilege guard remains enabled during this smoke.
+  perform set_config('request.jwt.claims', jsonb_build_object(
+    'sub', v_admin.auth_id,
+    'email', v_admin.email,
+    'role', 'authenticated'
+  )::text, true);
+
   insert into public.user_permission_grants (
     user_id, permission_code, scope_type, scope_id, is_active,
     granted_by, granted_at, expires_at, revoked_at, grant_reason, updated_at
@@ -280,17 +288,19 @@ begin
   select * into v_context from direct_manager_routing_context;
 
   if not exists (
-    select 1 from public.vehicle_booking_audit_logs audit
-    where audit.booking_id = v_context.manager_booking_id
-      and audit.action_type = 'MANAGER_REASSIGNED'
+    select 1 from public.audit_trail audit
+    where audit.table_name = 'vehicle_bookings'
+      and audit.record_id = v_context.manager_booking_id::text
+      and audit.changes->>'event' = 'MANAGER_REASSIGNED'
   ) then
     raise exception using message = 'VEHICLE_MANAGER_REASSIGNMENT_AUDIT_MISSING';
   end if;
 
   if not exists (
-    select 1 from public.vehicle_booking_audit_logs audit
-    where audit.booking_id = v_context.bypass_booking_id
-      and audit.action_type = 'BOOKING_SUBMITTED_MANAGER_BYPASS'
+    select 1 from public.audit_trail audit
+    where audit.table_name = 'vehicle_bookings'
+      and audit.record_id = v_context.bypass_booking_id::text
+      and audit.changes->>'event' = 'BOOKING_SUBMITTED_MANAGER_BYPASS'
   ) then
     raise exception using message = 'VEHICLE_MANAGER_BYPASS_AUDIT_MISSING';
   end if;
