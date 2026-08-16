@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { CalendarPlus, Camera, Car, MapPin, Plus, RefreshCw, Wrench, X } from 'lucide-react';
+import { CalendarPlus, Camera, Car, Eye, MapPin, Plus, RefreshCw, Wrench, X } from 'lucide-react';
 import type {
   FleetLocation,
   FleetVehicleCandidate,
@@ -14,6 +14,8 @@ import {
   fetchFleetLocations,
   fetchFleetVehicleProfiles,
   fetchVehicleUnavailabilityPeriods,
+  getFleetInspectionEvidenceValidationError,
+  resolvePrivateEvidencePreviewItems,
   setFleetVehicleAssetImage,
   uploadEvidenceImage,
   upsertFleetLocation,
@@ -21,6 +23,7 @@ import {
 } from '../../lib/vehicleBookingService';
 import { deleteAssetImage, uploadAssetImage, validateAssetImageFile } from '../../lib/assetImageService';
 import { useToast } from '../../context/ToastContext';
+import PrivateEvidencePreviewModal, { type PrivateEvidencePreviewItem } from '../../components/booking/PrivateEvidencePreviewModal';
 
 type Props = { fetchCandidates: () => Promise<FleetVehicleCandidate[]> };
 
@@ -77,6 +80,11 @@ const FleetVehiclesManagement: React.FC<Props> = ({ fetchCandidates }) => {
   const [blockEnd, setBlockEnd] = useState(toInputDateTime(new Date(Date.now() + 2 * 3600000)));
   const [blockReason, setBlockReason] = useState<VehicleUnavailabilityReason>('MAINTENANCE');
   const [blockNote, setBlockNote] = useState('');
+  const [evidencePreview, setEvidencePreview] = useState<{
+    title: string;
+    items: PrivateEvidencePreviewItem[];
+    error?: string;
+  } | null>(null);
 
   const loadData = async () => {
     try {
@@ -134,6 +142,23 @@ const FleetVehiclesManagement: React.FC<Props> = ({ fetchCandidates }) => {
     setShowForm(true);
   };
 
+  const openInspectionPreview = async (vehicle: FleetVehicleProfileView) => {
+    const title = `Ảnh đăng kiểm ${vehicle.asset_code} · ${vehicle.asset_name}`;
+    setEvidencePreview({ title, items: [] });
+    try {
+      const items = await resolvePrivateEvidencePreviewItems([
+        { label: 'Ảnh đăng kiểm', path: vehicle.inspection_photo_path },
+      ]);
+      setEvidencePreview({
+        title,
+        items,
+        error: items.length === 0 ? 'Không thể tải ảnh đăng kiểm. Vui lòng kiểm tra quyền truy cập hoặc thử lại.' : undefined,
+      });
+    } catch {
+      setEvidencePreview({ title, items: [], error: 'Không thể tải ảnh đăng kiểm. Vui lòng thử lại.' });
+    }
+  };
+
   const chooseImage = (file?: File) => {
     if (!file) return;
     const validationError = validateAssetImageFile(file);
@@ -151,6 +176,15 @@ const FleetVehiclesManagement: React.FC<Props> = ({ fetchCandidates }) => {
     event.preventDefault();
     if (!draft.assetId || !draft.homeBaseId || !draft.vehicleType.trim() || draft.seatCount < 1) {
       toast.error('Vui lòng chọn tài sản xe, bãi xe, loại xe và số chỗ hợp lệ.');
+      return;
+    }
+    const inspectionEvidenceError = getFleetInspectionEvidenceValidationError({
+      inspectionCertificateNumber: draft.inspectionCertificateNumber,
+      inspectionExpiryDate: draft.inspectionExpiryDate,
+      inspectionPhotoPath: inspectionFile ? 'pending-upload' : editing?.inspection_photo_path,
+    });
+    if (inspectionEvidenceError) {
+      toast.error('Vui lòng đính kèm ảnh đăng kiểm trước khi lưu hồ sơ xe.');
       return;
     }
     let newImageUrl: string | null = null;
@@ -241,8 +275,8 @@ const FleetVehiclesManagement: React.FC<Props> = ({ fetchCandidates }) => {
           {vehicles.map(vehicle => <article key={vehicle.asset_id} className="overflow-hidden rounded-2xl border bg-white shadow-sm dark:bg-slate-800">
             {vehicle.asset_image_url ? <img src={vehicle.asset_image_url} alt={vehicle.asset_name} className="h-40 w-full object-cover" /> : <div className="flex h-40 items-center justify-center bg-slate-100 dark:bg-slate-700"><Car className="h-12 w-12 text-slate-300" /></div>}
             <div className="space-y-3 p-4"><div className="flex items-start justify-between"><div><div className="font-bold">{vehicle.asset_code} · {vehicle.asset_name}</div><div className="text-xs text-slate-500">{vehicle.asset_brand} {vehicle.asset_model}</div></div><span className="rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-bold text-emerald-700">{vehicle.availability_status}</span></div>
-              <div className="grid grid-cols-2 gap-2 text-xs text-slate-600 dark:text-slate-300"><span>{vehicle.vehicle_type} · {vehicle.seat_count} chỗ</span><span>{vehicle.parking_spot_code || 'Chưa có ô đỗ'}</span><span>{vehicle.home_base_name || 'Chưa có bãi xe'}</span><span>{vehicle.current_odometer} km</span></div>
-              <button onClick={() => openEdit(vehicle)} className="w-full rounded-xl border py-2 text-xs font-bold"><Wrench className="mr-1 inline h-4 w-4" />Cập nhật hồ sơ</button>
+              <div className="grid grid-cols-2 gap-2 text-xs text-slate-600 dark:text-slate-300"><span>{vehicle.vehicle_type} · {vehicle.seat_count} chỗ</span><span>{vehicle.parking_spot_code || 'Chưa có ô đỗ'}</span><span>{vehicle.home_base_name || 'Chưa có bãi xe'}</span><span>{vehicle.current_odometer} km</span><span className={vehicle.inspection_photo_path ? 'text-emerald-600' : 'text-rose-600'}>{vehicle.inspection_photo_path ? 'Đã lưu ảnh đăng kiểm' : 'Chưa có ảnh đăng kiểm'}</span></div>
+              <div className="grid grid-cols-2 gap-2">{vehicle.inspection_photo_path && <button type="button" onClick={() => void openInspectionPreview(vehicle)} className="rounded-xl border py-2 text-xs font-bold text-amber-700"><Eye className="mr-1 inline h-4 w-4" />Xem đăng kiểm</button>}<button onClick={() => openEdit(vehicle)} className={`${vehicle.inspection_photo_path ? '' : 'col-span-2'} rounded-xl border py-2 text-xs font-bold`}><Wrench className="mr-1 inline h-4 w-4" />Cập nhật hồ sơ</button></div>
             </div>
           </article>)}
         </div>
@@ -259,9 +293,10 @@ const FleetVehiclesManagement: React.FC<Props> = ({ fetchCandidates }) => {
         <div className="mt-4 grid gap-4 md:grid-cols-2"><label className="text-xs font-bold">Loại xe<input required value={draft.vehicleType} onChange={event => setDraft(previous => ({ ...previous, vehicleType: event.target.value }))} className="mt-1 w-full rounded-xl border p-2.5 font-normal" /></label><label className="text-xs font-bold">Số chỗ<input required type="number" min={1} value={draft.seatCount} onChange={event => setDraft(previous => ({ ...previous, seatCount: Number(event.target.value) }))} className="mt-1 w-full rounded-xl border p-2.5 font-normal" /></label><label className="text-xs font-bold">Trạng thái<select value={draft.status} onChange={event => setDraft(previous => ({ ...previous, status: event.target.value as VehicleAvailabilityStatus }))} className="mt-1 w-full rounded-xl border p-2.5 font-normal"><option value="AVAILABLE">Sẵn sàng</option><option value="MAINTENANCE">Bảo dưỡng</option><option value="LOCKED">Khóa</option></select></label><label className="flex items-center gap-2 pt-6 text-xs font-bold"><input type="checkbox" checked={draft.allowSelfDrive} onChange={event => setDraft(previous => ({ ...previous, allowSelfDrive: event.target.checked }))} />Cho phép tự lái</label>
           <label className="text-xs font-bold">Bãi xe<select required value={draft.homeBaseId} onChange={event => setDraft(previous => ({ ...previous, homeBaseId: event.target.value }))} className="mt-1 w-full rounded-xl border p-2.5 font-normal"><option value="">Chọn bãi xe</option>{locations.map(location => <option key={location.id} value={location.id}>{location.name}</option>)}</select></label><label className="text-xs font-bold">Ô đỗ<input list="parking-spots" value={draft.parkingSpotCode} onChange={event => setDraft(previous => ({ ...previous, parkingSpotCode: event.target.value }))} className="mt-1 w-full rounded-xl border p-2.5 font-normal" /><datalist id="parking-spots">{parkingSpots.map(spot => <option key={spot} value={spot} />)}</datalist></label>
           <div className="flex gap-2 md:col-span-2"><input value={newLocationName} onChange={event => setNewLocationName(event.target.value)} placeholder="Tên bãi xe mới" className="flex-1 rounded-xl border p-2.5 text-xs" /><button type="button" onClick={() => void createLocation()} className="rounded-xl border px-3 text-xs font-bold"><MapPin className="mr-1 inline h-4 w-4" />Thêm bãi</button></div>
-          <label className="text-xs font-bold">Số đăng kiểm<input value={draft.inspectionCertificateNumber} onChange={event => setDraft(previous => ({ ...previous, inspectionCertificateNumber: event.target.value }))} className="mt-1 w-full rounded-xl border p-2.5 font-normal" /></label><label className="text-xs font-bold">Hạn đăng kiểm<input type="date" value={draft.inspectionExpiryDate} onChange={event => setDraft(previous => ({ ...previous, inspectionExpiryDate: event.target.value }))} className="mt-1 w-full rounded-xl border p-2.5 font-normal" /></label><label className="text-xs font-bold">Hạn bảo hiểm<input type="date" value={draft.insuranceExpiryDate} onChange={event => setDraft(previous => ({ ...previous, insuranceExpiryDate: event.target.value }))} className="mt-1 w-full rounded-xl border p-2.5 font-normal" /></label><label className="text-xs font-bold">Ảnh đăng kiểm<input ref={inspectionInputRef} type="file" accept="image/jpeg,image/png,image/webp" onChange={event => setInspectionFile(event.target.files?.[0] || null)} className="mt-1 w-full rounded-xl border p-2 text-xs font-normal" /></label></div>
+          <label className="text-xs font-bold">Số đăng kiểm<input value={draft.inspectionCertificateNumber} onChange={event => setDraft(previous => ({ ...previous, inspectionCertificateNumber: event.target.value }))} className="mt-1 w-full rounded-xl border p-2.5 font-normal" /></label><label className="text-xs font-bold">Hạn đăng kiểm<input type="date" value={draft.inspectionExpiryDate} onChange={event => setDraft(previous => ({ ...previous, inspectionExpiryDate: event.target.value }))} className="mt-1 w-full rounded-xl border p-2.5 font-normal" /></label><label className="text-xs font-bold">Hạn bảo hiểm<input type="date" value={draft.insuranceExpiryDate} onChange={event => setDraft(previous => ({ ...previous, insuranceExpiryDate: event.target.value }))} className="mt-1 w-full rounded-xl border p-2.5 font-normal" /></label><label className="text-xs font-bold">Ảnh đăng kiểm<input ref={inspectionInputRef} type="file" accept="image/jpeg,image/png,image/webp" onChange={event => setInspectionFile(event.target.files?.[0] || null)} className="mt-1 w-full rounded-xl border p-2 text-xs font-normal" /><span className={inspectionFile || editing?.inspection_photo_path ? 'mt-1 block text-emerald-600' : 'mt-1 block text-rose-600'}>{inspectionFile ? `Đã chọn: ${inspectionFile.name}` : editing?.inspection_photo_path ? 'Đã lưu trên hệ thống' : 'Chưa có ảnh'}</span>{editing?.inspection_photo_path && <button type="button" onClick={() => void openInspectionPreview(editing)} className="mt-2 block text-amber-700 hover:underline">Xem ảnh đang lưu</button>}</label></div>
         <div className="mt-6 flex justify-end gap-3"><button type="button" onClick={() => setShowForm(false)} className="rounded-xl border px-4 py-2 text-xs font-bold">Hủy</button><button disabled={saving} className="rounded-xl bg-amber-500 px-5 py-2 text-xs font-bold text-white">{saving ? 'Đang lưu...' : 'Lưu hồ sơ xe'}</button></div>
       </form></div>}
+      {evidencePreview && <PrivateEvidencePreviewModal title={evidencePreview.title} items={evidencePreview.items} error={evidencePreview.error} onClose={() => setEvidencePreview(null)} />}
     </div>
   );
 };

@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Play, CheckSquare, MapPin, Clock, User, Phone, Check, X, RefreshCw } from 'lucide-react';
-import { fetchDriverTodayAssignments, respondToVehicleAssignment, formatVietnamDateTime } from '../../lib/vehicleBookingService';
+import { Calendar, Play, CheckSquare, MapPin, Clock, RefreshCw } from 'lucide-react';
+import { fetchDriverTodayAssignments, respondToVehicleAssignment, formatVietnamDateTime, isDriverTripOverdue } from '../../lib/vehicleBookingService';
 import TripExecutionModal from './TripExecutionModal';
 import { useToast } from '../../context/ToastContext';
 import { useApp } from '../../context/AppContext';
-import { getAssignedVehicleLabel } from '../../lib/vehicleBookingPresentation';
+import { getAssignedVehicleLabel, getStartOdometerLabel } from '../../lib/vehicleBookingPresentation';
 
 const DriverTodayTripsPage: React.FC = () => {
   const toast = useToast();
@@ -29,7 +29,7 @@ const DriverTodayTripsPage: React.FC = () => {
       const data = await fetchDriverTodayAssignments(user.id);
       setTrips(data);
     } catch (err: any) {
-      toast.error('Không thể tải chuyến xe được phân công hôm nay!');
+      toast.error('Không thể tải các chuyến xe được phân công!');
     } finally {
       setLoading(false);
     }
@@ -67,7 +67,7 @@ const DriverTodayTripsPage: React.FC = () => {
         <div>
           <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center space-x-2">
             <Calendar className="w-5 h-5 text-amber-500" />
-            <span>Chuyến Đi Được Phân Công Hôm Nay</span>
+            <span>Chuyến Của Tôi</span>
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
             Dành cho Tài xế chuyên trách & Nhân viên tự lái xe công ty
@@ -85,17 +85,20 @@ const DriverTodayTripsPage: React.FC = () => {
 
       {loading ? (
         <div className="text-center py-12 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700">
-          <p className="text-xs text-slate-500">Đang tải danh sách chuyến đi hôm nay...</p>
+          <p className="text-xs text-slate-500">Đang tải danh sách chuyến cần thực hiện...</p>
         </div>
       ) : trips.length === 0 ? (
         <div className="text-center py-16 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-3">
           <Calendar className="w-10 h-10 text-slate-400 mx-auto" />
-          <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">Hôm nay bạn không có chuyến xe nào</p>
-          <p className="text-xs text-slate-500">Khi được điều phối viên gán lịch, danh sách sẽ tự động xuất hiện tại đây</p>
+          <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">Bạn không có chuyến nào cần thực hiện</p>
+          <p className="text-xs text-slate-500">Chuyến hôm nay và mọi chuyến đang chạy chưa kết thúc sẽ xuất hiện tại đây.</p>
         </div>
       ) : (
         <div className="space-y-4">
-          {trips.map(({ assignment, booking, tripLog, assignmentDisplay, requester }) => (
+          {trips.map(({ assignment, booking, tripLog, assignmentDisplay, requester }) => {
+            const overdue = isDriverTripOverdue(booking);
+            const startOdometerLabel = getStartOdometerLabel(tripLog?.start_odometer);
+            return (
             <div
               key={assignment.id}
               className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-200 dark:border-slate-700 shadow-sm space-y-4"
@@ -106,19 +109,22 @@ const DriverTodayTripsPage: React.FC = () => {
                   {booking.booking_code}
                 </span>
 
-                <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
-                  assignment.operator_confirmation_status === 'CONFIRMED'
-                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300'
-                    : assignment.operator_confirmation_status === 'DECLINED'
-                    ? 'bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-300'
-                    : 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300'
-                }`}>
-                  {assignment.operator_confirmation_status === 'CONFIRMED'
-                    ? 'Đã xác nhận nhận chuyến'
-                    : assignment.operator_confirmation_status === 'DECLINED'
-                    ? 'Đã từ chối chuyến'
-                    : 'Chờ tài xế xác nhận'}
-                </span>
+                <div className="flex flex-wrap justify-end gap-2">
+                  {overdue && <span className="rounded-full bg-rose-100 px-2.5 py-1 text-xs font-semibold text-rose-700 dark:bg-rose-900/30 dark:text-rose-300">Quá thời gian dự kiến</span>}
+                  <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
+                    assignment.operator_confirmation_status === 'CONFIRMED'
+                      ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300'
+                      : assignment.operator_confirmation_status === 'DECLINED'
+                      ? 'bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-300'
+                      : 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300'
+                  }`}>
+                    {assignment.operator_confirmation_status === 'CONFIRMED'
+                      ? 'Đã xác nhận nhận chuyến'
+                      : assignment.operator_confirmation_status === 'DECLINED'
+                      ? 'Đã từ chối chuyến'
+                      : 'Chờ tài xế xác nhận'}
+                  </span>
+                </div>
               </div>
 
               {/* TRIP INFO */}
@@ -147,6 +153,7 @@ const DriverTodayTripsPage: React.FC = () => {
                     <p className="font-bold text-slate-900 dark:text-white">● Xe phân công: {getAssignedVehicleLabel(assignmentDisplay)}</p>
                     <p>● Người đặt: {requester?.name || 'Chưa có thông tin'} | Số khách: {booking.passenger_count} người</p>
                     <p>● Mục đích: {booking.purpose}</p>
+                    {startOdometerLabel && <p className="font-semibold text-indigo-700 dark:text-indigo-300">● {startOdometerLabel}</p>}
                   </div>
                 </div>
               </div>
@@ -227,7 +234,8 @@ const DriverTodayTripsPage: React.FC = () => {
                 </div>
               )}
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

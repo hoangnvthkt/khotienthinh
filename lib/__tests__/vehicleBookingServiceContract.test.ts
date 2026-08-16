@@ -166,6 +166,7 @@ describe('vehicle booking RPC contract', () => {
 
     expect(result).toEqual([]);
     expect(query.eq).toHaveBeenCalledWith('operator_user_id', 'app-user-id');
+    expect(query.gte).not.toHaveBeenCalled();
     expect(supabaseMocks.getUser).not.toHaveBeenCalled();
   });
 

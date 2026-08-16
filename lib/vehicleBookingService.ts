@@ -113,6 +113,56 @@ export function buildFleetVehicleProfileUpdate(
   };
 }
 
+export function getDriverAuthorizationEvidenceValidationError(input: {
+  licenseFrontPhotoPath?: string | null;
+  licenseBackPhotoPath?: string | null;
+}): 'LICENSE_FRONT_PHOTO_REQUIRED' | 'LICENSE_BACK_PHOTO_REQUIRED' | null {
+  if (!input.licenseFrontPhotoPath) return 'LICENSE_FRONT_PHOTO_REQUIRED';
+  if (!input.licenseBackPhotoPath) return 'LICENSE_BACK_PHOTO_REQUIRED';
+  return null;
+}
+
+export function getFleetInspectionEvidenceValidationError(input: {
+  inspectionCertificateNumber?: string | null;
+  inspectionExpiryDate?: string | null;
+  inspectionPhotoPath?: string | null;
+}): 'INSPECTION_PHOTO_REQUIRED' | null {
+  const hasInspectionData = Boolean(input.inspectionCertificateNumber?.trim() || input.inspectionExpiryDate);
+  return hasInspectionData && !input.inspectionPhotoPath ? 'INSPECTION_PHOTO_REQUIRED' : null;
+}
+
+export function selectActionableDriverAssignmentRows<T extends {
+  booking_id: string;
+  is_active: boolean;
+  reserved_start_at: string;
+}>(input: {
+  assignments: T[];
+  bookings: Array<{ id: string; status: string }>;
+  referenceDate: Date | string;
+}): T[] {
+  const bookingStatusMap = new Map(input.bookings.map(booking => [booking.id, booking.status]));
+  const { startIso, endIso } = getVietnamDayRange(input.referenceDate);
+  const startTime = new Date(startIso).getTime();
+  const endTime = new Date(endIso).getTime();
+
+  return input.assignments.filter(assignment => {
+    if (!assignment.is_active) return false;
+    const bookingStatus = bookingStatusMap.get(assignment.booking_id);
+    if (bookingStatus === 'IN_PROGRESS') return true;
+    if (bookingStatus !== 'ASSIGNED' && bookingStatus !== 'COMPLETED') return false;
+    const reservedStartTime = new Date(assignment.reserved_start_at).getTime();
+    return reservedStartTime >= startTime && reservedStartTime < endTime;
+  });
+}
+
+export function isDriverTripOverdue(
+  booking: { status: string; expected_return_at: string },
+  referenceDate: Date | string = new Date(),
+): boolean {
+  return booking.status === 'IN_PROGRESS'
+    && new Date(booking.expected_return_at).getTime() < new Date(referenceDate).getTime();
+}
+
 // ============================================================================
 // TIMEZONE & DATE HELPERS (Asia/Ho_Chi_Minh - UTC+7)
 // ============================================================================
@@ -241,10 +291,25 @@ export function isDriverCompatibleWithVehicle(
     && Boolean(driver.allowed_vehicle_types?.includes(vehicleType as string));
 }
 
+export function isSelfDriverCompatibleWithVehicle(
+  driver: Pick<VehicleDriverAuthorizationEligible, 'authorization_type' | 'allowed_vehicle_types'>,
+  vehicleType?: string | null,
+): boolean {
+  return driver.authorization_type === 'SELF_DRIVE'
+    && Boolean(vehicleType)
+    && Boolean(driver.allowed_vehicle_types?.includes(vehicleType as string));
+}
+
 export function selectCompatibleProfessionalDrivers<
   T extends Pick<VehicleDriverAuthorizationEligible, 'authorization_type' | 'allowed_vehicle_types'>,
 >(drivers: T[], vehicleType?: string | null): T[] {
   return drivers.filter(driver => isDriverCompatibleWithVehicle(driver, vehicleType));
+}
+
+export function selectCompatibleSelfDrivers<
+  T extends Pick<VehicleDriverAuthorizationEligible, 'authorization_type' | 'allowed_vehicle_types'>,
+>(drivers: T[], vehicleType?: string | null): T[] {
+  return drivers.filter(driver => isSelfDriverCompatibleWithVehicle(driver, vehicleType));
 }
 
 export function getDispatchErrorMessage(
@@ -264,7 +329,85 @@ export function getDispatchErrorMessage(
     return `${driverName} chưa được ủy quyền lái loại xe ${vehicleType}. Vui lòng cập nhật hồ sơ tài xế hoặc chọn tài xế khác.`;
   }
 
+  if (rawMessage.includes('no_vehicle_assignment_overlap')
+      || rawMessage.includes('VEHICLE_TIME_CONFLICT')) {
+    return 'Xe vừa được xếp cho một chuyến khác trong cùng khung giờ. Danh sách đã được làm mới, vui lòng chọn xe khác.';
+  }
+  if (rawMessage.includes('no_operator_assignment_overlap')
+      || rawMessage.includes('OPERATOR_TIME_CONFLICT')) {
+    return 'Tài xế vừa được xếp cho một chuyến khác trong cùng khung giờ. Danh sách đã được làm mới, vui lòng chọn tài xế khác.';
+  }
+  if (rawMessage.includes('OPERATOR_ALREADY_IN_PROGRESS')) {
+    return 'Tài xế đang thực hiện một chuyến khác. Hãy kết thúc chuyến đang chạy trước khi bắt đầu chuyến này.';
+  }
+  if (rawMessage.includes('vehicle_trip_logs_one_active_trip_per_operator')) {
+    return 'Tài xế đang thực hiện một chuyến khác. Hãy kết thúc chuyến đang chạy trước khi bắt đầu chuyến này.';
+  }
+
   return rawMessage || 'Xếp xe thất bại! Vui lòng kiểm tra xung đột lịch.';
+}
+
+type ResourceReservation = Pick<
+  VehicleBookingAssignment,
+  'vehicle_asset_id' | 'operator_user_id' | 'reserved_start_at' | 'reserved_end_at'
+> & Partial<Pick<VehicleBookingAssignment, 'is_active' | 'released_at'>>;
+
+function intervalsOverlap(
+  leftStart: string,
+  leftEnd: string,
+  rightStart: string,
+  rightEnd: string,
+): boolean {
+  return new Date(leftStart).getTime() < new Date(rightEnd).getTime()
+    && new Date(leftEnd).getTime() > new Date(rightStart).getTime();
+}
+
+export function getBookingResourceConflictSets(input: {
+  booking: Pick<VehicleBooking, 'requested_pickup_at' | 'expected_return_at'>;
+  bufferMinutes: number;
+  assignments: ResourceReservation[];
+  vehicleUnavailability: Array<Pick<VehicleUnavailabilityPeriod, 'vehicle_asset_id' | 'start_at' | 'end_at'>>;
+  operatorUnavailability: Array<Pick<OperatorUnavailabilityPeriod, 'operator_user_id' | 'start_at' | 'end_at'>>;
+}): {
+  busyVehicleIds: Set<string>;
+  busyOperatorIds: Set<string>;
+  unavailableVehicleIds: Set<string>;
+  unavailableOperatorIds: Set<string>;
+} {
+  const requestedEnd = new Date(input.booking.expected_return_at);
+  requestedEnd.setMinutes(requestedEnd.getMinutes() + Math.max(0, input.bufferMinutes));
+  const rangeEnd = requestedEnd.toISOString();
+  const overlapsBooking = (startAt: string, endAt: string) => intervalsOverlap(
+    input.booking.requested_pickup_at,
+    rangeEnd,
+    startAt,
+    endAt,
+  );
+  const activeAssignments = input.assignments.filter(assignment =>
+    assignment.is_active !== false
+    && !assignment.released_at
+    && overlapsBooking(assignment.reserved_start_at, assignment.reserved_end_at));
+
+  return {
+    busyVehicleIds: new Set(activeAssignments.flatMap(assignment =>
+      assignment.vehicle_asset_id ? [assignment.vehicle_asset_id] : [])),
+    busyOperatorIds: new Set(activeAssignments.flatMap(assignment =>
+      assignment.operator_user_id ? [assignment.operator_user_id] : [])),
+    unavailableVehicleIds: new Set(input.vehicleUnavailability
+      .filter(period => overlapsBooking(period.start_at, period.end_at))
+      .map(period => period.vehicle_asset_id)),
+    unavailableOperatorIds: new Set(input.operatorUnavailability
+      .filter(period => overlapsBooking(period.start_at, period.end_at))
+      .map(period => period.operator_user_id)),
+  };
+}
+
+export function selectBookingsAwaitingReassignment(
+  assignments: Array<{ booking_id: string; is_active: boolean; operator_confirmation_status: string }>,
+): Set<string> {
+  return new Set(assignments
+    .filter(assignment => !assignment.is_active && assignment.operator_confirmation_status === 'DECLINED')
+    .map(assignment => assignment.booking_id));
 }
 
 export function getTripEvidenceValidationError(input: {
@@ -420,6 +563,17 @@ export async function getPrivateImageUrl(path: string): Promise<string> {
     return '';
   }
   return data.signedUrl;
+}
+
+export async function resolvePrivateEvidencePreviewItems(
+  items: Array<{ label: string; path?: string | null }>,
+  signer: (path: string) => Promise<string> = getPrivateImageUrl,
+): Promise<Array<{ label: string; url: string }>> {
+  const resolvedItems = await Promise.all(items
+    .filter((item): item is { label: string; path: string } => Boolean(item.path))
+    .map(async item => ({ label: item.label, url: await signer(item.path) })));
+
+  return resolvedItems.filter(item => Boolean(item.url));
 }
 
 // ============================================================================
@@ -618,14 +772,13 @@ export async function fetchDriverTodayAssignments(operatorAppUserId: string): Pr
   assignmentDisplay?: VehicleBookingAssignmentDisplay | null;
   requester?: { id: string; name: string; avatar?: string | null } | null;
 }[]> {
-  const { startIso, endIso } = getVietnamDayRange(new Date());
+  const { endIso } = getVietnamDayRange(new Date());
 
   const { data: assignments, error } = await supabase
     .from('vehicle_booking_assignments')
     .select('*')
     .eq('operator_user_id', operatorAppUserId)
     .eq('is_active', true)
-    .gte('reserved_start_at', startIso)
     .lt('reserved_start_at', endIso)
     .order('reserved_start_at', { ascending: true });
 
@@ -641,8 +794,15 @@ export async function fetchDriverTodayAssignments(operatorAppUserId: string): Pr
   if (bRes.error) throw bRes.error;
   if (tRes.error) throw tRes.error;
 
-  const visibleBookings = ((bRes.data || []) as VehicleBooking[])
-    .filter(booking => ['ASSIGNED', 'IN_PROGRESS', 'COMPLETED'].includes(booking.status));
+  const bookingRows = (bRes.data || []) as VehicleBooking[];
+  const actionableAssignments = selectActionableDriverAssignmentRows({
+    assignments: assignments as VehicleBookingAssignment[],
+    bookings: bookingRows,
+    referenceDate: new Date(),
+  });
+  const actionableBookingIds = new Set(actionableAssignments.map(assignment => assignment.booking_id));
+  const visibleBookings = bookingRows.filter(booking => actionableBookingIds.has(booking.id));
+  if (visibleBookings.length === 0) return [];
   const requesterIds = [...new Set(visibleBookings.map(booking => booking.requester_user_id))];
   const [requestersRes, requesterEmployeesRes, displayResults] = await Promise.all([
     requesterIds.length > 0
@@ -688,7 +848,7 @@ export async function fetchDriverTodayAssignments(operatorAppUserId: string): Pr
     assignmentDisplay?: VehicleBookingAssignmentDisplay | null;
     requester?: { id: string; name: string; avatar?: string | null } | null;
   }> = [];
-  assignments.forEach(assignmentRow => {
+  actionableAssignments.forEach(assignmentRow => {
     const booking = bookingMap.get(assignmentRow.booking_id) as VehicleBooking | undefined;
     if (!booking || !['ASSIGNED', 'IN_PROGRESS', 'COMPLETED'].includes(booking.status)) return;
     result.push({

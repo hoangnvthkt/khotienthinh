@@ -6,6 +6,19 @@ import * as bookingPermissions from '../vehicleBookingPermissions';
 const service = bookingService as typeof bookingService & {
   mergeFleetSystemSettings: (current: any, patch: Record<string, unknown>) => Record<string, unknown>;
   buildFleetVehicleProfileUpdate: (current: any, patch: Record<string, unknown>) => Record<string, unknown>;
+  getDriverAuthorizationEvidenceValidationError: (input: {
+    licenseFrontPhotoPath?: string | null;
+    licenseBackPhotoPath?: string | null;
+  }) => 'LICENSE_FRONT_PHOTO_REQUIRED' | 'LICENSE_BACK_PHOTO_REQUIRED' | null;
+  getFleetInspectionEvidenceValidationError: (input: {
+    inspectionCertificateNumber?: string | null;
+    inspectionExpiryDate?: string | null;
+    inspectionPhotoPath?: string | null;
+  }) => 'INSPECTION_PHOTO_REQUIRED' | null;
+  resolvePrivateEvidencePreviewItems: (
+    items: Array<{ label: string; path?: string | null }>,
+    signer: (path: string) => Promise<string>,
+  ) => Promise<Array<{ label: string; url: string }>>;
 };
 
 const activeGrant = (permissionCode: string) => ({
@@ -17,6 +30,49 @@ const activeGrant = (permissionCode: string) => ({
 });
 
 describe('fleet settings and master-data safety', () => {
+  it('requires both driver-license images before an authorization can be saved', () => {
+    expect(service.getDriverAuthorizationEvidenceValidationError).toBeTypeOf('function');
+    expect(service.getDriverAuthorizationEvidenceValidationError({
+      licenseFrontPhotoPath: null,
+      licenseBackPhotoPath: null,
+    })).toBe('LICENSE_FRONT_PHOTO_REQUIRED');
+    expect(service.getDriverAuthorizationEvidenceValidationError({
+      licenseFrontPhotoPath: 'licenses/driver/front.jpg',
+      licenseBackPhotoPath: null,
+    })).toBe('LICENSE_BACK_PHOTO_REQUIRED');
+    expect(service.getDriverAuthorizationEvidenceValidationError({
+      licenseFrontPhotoPath: 'licenses/driver/front.jpg',
+      licenseBackPhotoPath: 'licenses/driver/back.jpg',
+    })).toBeNull();
+  });
+
+  it('requires an inspection image when a fleet profile contains inspection data', () => {
+    expect(service.getFleetInspectionEvidenceValidationError).toBeTypeOf('function');
+    expect(service.getFleetInspectionEvidenceValidationError({
+      inspectionExpiryDate: '2027-04-16',
+      inspectionPhotoPath: null,
+    })).toBe('INSPECTION_PHOTO_REQUIRED');
+    expect(service.getFleetInspectionEvidenceValidationError({
+      inspectionCertificateNumber: 'CERT-003',
+      inspectionPhotoPath: 'fleet/TS-003/inspection.jpg',
+    })).toBeNull();
+    expect(service.getFleetInspectionEvidenceValidationError({
+      inspectionPhotoPath: null,
+    })).toBeNull();
+  });
+
+  it('resolves only saved private evidence into temporary view URLs', async () => {
+    expect(service.resolvePrivateEvidencePreviewItems).toBeTypeOf('function');
+
+    await expect(service.resolvePrivateEvidencePreviewItems([
+      { label: 'Mặt trước', path: 'licenses/user/front.jpg' },
+      { label: 'Mặt sau', path: null },
+      { label: 'Ảnh lỗi', path: 'licenses/user/broken.jpg' },
+    ], async path => path.endsWith('broken.jpg') ? '' : `https://signed.example/${path}`)).resolves.toEqual([
+      { label: 'Mặt trước', url: 'https://signed.example/licenses/user/front.jpg' },
+    ]);
+  });
+
   it('preserves all ten Cloud settings when only visible fields are edited', () => {
     const current = {
       booking_buffer_minutes: 30,

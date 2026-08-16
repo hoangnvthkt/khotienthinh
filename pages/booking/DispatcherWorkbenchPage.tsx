@@ -11,7 +11,11 @@ import {
   getDispatchValidationError,
   getDispatchErrorMessage,
   isDriverCompatibleWithVehicle,
+  isSelfDriverCompatibleWithVehicle,
   selectCompatibleProfessionalDrivers,
+  selectCompatibleSelfDrivers,
+  getBookingResourceConflictSets,
+  selectBookingsAwaitingReassignment,
   getOperatorOperationalStatus,
   getVehicleOperationalStatus,
 } from '../../lib/vehicleBookingService';
@@ -26,6 +30,19 @@ import { useToast } from '../../context/ToastContext';
 import { useApp } from '../../context/AppContext';
 import { supabase } from '../../lib/supabase';
 
+type AssignmentReservation = {
+  booking_id: string;
+  vehicle_asset_id: string | null;
+  operator_user_id: string | null;
+  reserved_start_at: string;
+  reserved_end_at: string;
+  is_active: boolean;
+  released_at: string | null;
+};
+
+type VehicleBlock = { vehicle_asset_id: string; start_at: string; end_at: string };
+type OperatorBlock = { operator_user_id: string; start_at: string; end_at: string };
+
 const DispatcherWorkbenchPage: React.FC = () => {
   const toast = useToast();
   const { user } = useApp();
@@ -38,6 +55,11 @@ const DispatcherWorkbenchPage: React.FC = () => {
   const [busyOperatorIds, setBusyOperatorIds] = useState<Set<string>>(new Set());
   const [unavailableVehicleIds, setUnavailableVehicleIds] = useState<Set<string>>(new Set());
   const [unavailableOperatorIds, setUnavailableOperatorIds] = useState<Set<string>>(new Set());
+  const [assignmentReservations, setAssignmentReservations] = useState<AssignmentReservation[]>([]);
+  const [vehicleUnavailability, setVehicleUnavailability] = useState<VehicleBlock[]>([]);
+  const [operatorUnavailability, setOperatorUnavailability] = useState<OperatorBlock[]>([]);
+  const [bookingBufferMinutes, setBookingBufferMinutes] = useState(0);
+  const [reassignmentBookingIds, setReassignmentBookingIds] = useState<Set<string>>(new Set());
 
   // Drag & Drop State
   const [draggedItem, setDraggedItem] = useState<{ type: 'VEHICLE' | 'DRIVER'; id: string } | null>(null);
@@ -68,42 +90,82 @@ const DispatcherWorkbenchPage: React.FC = () => {
   const loadData = async () => {
     try {
       setLoading(true);
-      const nowIso = new Date().toISOString();
-      const [bList, vList, dList, locationList, fleetSettings, activeAssignments, vehicleBlocks, operatorBlocks] = await Promise.all([
+      const now = new Date();
+      const nowIso = now.toISOString();
+      const [bList, vList, dList, locationList, fleetSettings] = await Promise.all([
         fetchWaitingDispatchBookings(),
         fetchFleetVehicleProfiles(),
         fetchDriverAuthorizationsEligible(),
         fetchFleetLocations(),
         fetchFleetSystemSettings(),
+      ]);
+      const bookingStarts = bList.map(booking => new Date(booking.requested_pickup_at).getTime());
+      const bookingEnds = bList.map(booking => new Date(booking.expected_return_at).getTime());
+      const rangeStart = new Date(Math.min(now.getTime(), ...bookingStarts)).toISOString();
+      const rangeEnd = new Date(Math.max(
+        now.getTime() + 1,
+        ...bookingEnds.map(timestamp => timestamp + fleetSettings.booking_buffer_minutes * 60_000),
+      )).toISOString();
+      const [activeAssignments, vehicleBlocks, operatorBlocks, declinedAssignments] = await Promise.all([
         supabase
           .from('vehicle_booking_assignments')
-          .select('vehicle_asset_id, operator_user_id')
+          .select('booking_id, vehicle_asset_id, operator_user_id, reserved_start_at, reserved_end_at, is_active, released_at')
           .eq('is_active', true)
-          .lte('reserved_start_at', nowIso)
-          .gt('reserved_end_at', nowIso),
+          .is('released_at', null)
+          .lt('reserved_start_at', rangeEnd)
+          .gt('reserved_end_at', rangeStart),
         supabase
           .from('vehicle_unavailability_periods')
-          .select('vehicle_asset_id')
-          .lte('start_at', nowIso)
-          .gt('end_at', nowIso),
+          .select('vehicle_asset_id, start_at, end_at')
+          .lt('start_at', rangeEnd)
+          .gt('end_at', rangeStart),
         supabase
           .from('operator_unavailability_periods')
-          .select('operator_user_id')
-          .lte('start_at', nowIso)
-          .gt('end_at', nowIso),
+          .select('operator_user_id, start_at, end_at')
+          .lt('start_at', rangeEnd)
+          .gt('end_at', rangeStart),
+        bList.length > 0
+          ? supabase
+              .from('vehicle_booking_assignments')
+              .select('booking_id, is_active, operator_confirmation_status')
+              .in('booking_id', bList.map(booking => booking.id))
+              .eq('operator_confirmation_status', 'DECLINED')
+          : Promise.resolve({ data: [], error: null }),
       ]);
       if (activeAssignments.error) throw activeAssignments.error;
       if (vehicleBlocks.error) throw vehicleBlocks.error;
       if (operatorBlocks.error) throw operatorBlocks.error;
+      if (declinedAssignments.error) throw declinedAssignments.error;
+      const reservations = (activeAssignments.data || []) as AssignmentReservation[];
+      const vehiclePeriods = (vehicleBlocks.data || []) as VehicleBlock[];
+      const operatorPeriods = (operatorBlocks.data || []) as OperatorBlock[];
+      const currentConflicts = getBookingResourceConflictSets({
+        booking: { requested_pickup_at: nowIso, expected_return_at: new Date(now.getTime() + 1).toISOString() },
+        bufferMinutes: 0,
+        assignments: reservations,
+        vehicleUnavailability: vehiclePeriods,
+        operatorUnavailability: operatorPeriods,
+      });
       setWaitingBookings(bList);
       setVehicles(vList);
       setDrivers(dList);
       setLocations(locationList);
       setAllowDispatchOverride(fleetSettings.allow_dispatch_approval_override);
-      setBusyVehicleIds(new Set((activeAssignments.data || []).flatMap(row => row.vehicle_asset_id ? [row.vehicle_asset_id] : [])));
-      setBusyOperatorIds(new Set((activeAssignments.data || []).flatMap(row => row.operator_user_id ? [row.operator_user_id] : [])));
-      setUnavailableVehicleIds(new Set((vehicleBlocks.data || []).map(row => row.vehicle_asset_id)));
-      setUnavailableOperatorIds(new Set((operatorBlocks.data || []).map(row => row.operator_user_id)));
+      setBookingBufferMinutes(fleetSettings.booking_buffer_minutes);
+      setAssignmentReservations(reservations);
+      setVehicleUnavailability(vehiclePeriods);
+      setOperatorUnavailability(operatorPeriods);
+      setBusyVehicleIds(currentConflicts.busyVehicleIds);
+      setBusyOperatorIds(currentConflicts.busyOperatorIds);
+      setUnavailableVehicleIds(currentConflicts.unavailableVehicleIds);
+      setUnavailableOperatorIds(currentConflicts.unavailableOperatorIds);
+      setReassignmentBookingIds(selectBookingsAwaitingReassignment(
+        (declinedAssignments.data || []) as Array<{
+          booking_id: string;
+          is_active: boolean;
+          operator_confirmation_status: string;
+        }>,
+      ));
     } catch (err: any) {
       toast.error('Không thể tải dữ liệu Bảng điều phối!');
     } finally {
@@ -127,6 +189,21 @@ const DispatcherWorkbenchPage: React.FC = () => {
       void supabase.removeChannel(channel);
     };
   }, []);
+
+  const selectedBookingConflicts = selectedBooking
+    ? getBookingResourceConflictSets({
+        booking: selectedBooking,
+        bufferMinutes: bookingBufferMinutes,
+        assignments: assignmentReservations,
+        vehicleUnavailability,
+        operatorUnavailability,
+      })
+    : {
+        busyVehicleIds: new Set<string>(),
+        busyOperatorIds: new Set<string>(),
+        unavailableVehicleIds: new Set<string>(),
+        unavailableOperatorIds: new Set<string>(),
+      };
 
   const openDispatchDrawer = (booking: VehicleBooking, prefilledAssetId?: string, prefilledDriverUserId?: string) => {
     setSelectedBooking(booking);
@@ -173,18 +250,31 @@ const DispatcherWorkbenchPage: React.FC = () => {
       return;
     }
 
-    const operatorUserId = fulfillmentType === 'INTERNAL_SELF_DRIVE'
-      ? selectedBooking.trip_owner_user_id || selectedBooking.requester_user_id
+    const operatorUserId = fulfillmentType === 'EXTERNAL_TRANSPORT'
+      ? undefined
       : selectedDriverUserId || undefined;
     const effectiveHandoverOfficerId = fulfillmentType === 'INTERNAL_SELF_DRIVE'
       ? handoverOfficerUserId || user.id
       : undefined;
     const selectedVehicle = vehicles.find(vehicle => vehicle.asset_id === selectedAssetId);
     const selectedDriver = drivers.find(driver => driver.user_id === operatorUserId);
-    if (fulfillmentType === 'INTERNAL_WITH_DRIVER'
+    if (selectedAssetId && (selectedBookingConflicts.busyVehicleIds.has(selectedAssetId)
+        || selectedBookingConflicts.unavailableVehicleIds.has(selectedAssetId))) {
+      toast.error('Xe không sẵn sàng trong toàn bộ khung giờ chuyến (đã gồm thời gian đệm). Vui lòng chọn xe khác.');
+      return;
+    }
+    if (operatorUserId && (selectedBookingConflicts.busyOperatorIds.has(operatorUserId)
+        || selectedBookingConflicts.unavailableOperatorIds.has(operatorUserId))) {
+      toast.error('Tài xế không sẵn sàng trong toàn bộ khung giờ chuyến (đã gồm thời gian đệm). Vui lòng chọn người khác.');
+      return;
+    }
+    const isSelectedOperatorCompatible = fulfillmentType === 'INTERNAL_SELF_DRIVE'
+      ? isSelfDriverCompatibleWithVehicle(selectedDriver || { authorization_type: 'SELF_DRIVE' }, selectedVehicle?.vehicle_type)
+      : isDriverCompatibleWithVehicle(selectedDriver || { authorization_type: 'PROFESSIONAL_DRIVER' }, selectedVehicle?.vehicle_type);
+    if (fulfillmentType !== 'EXTERNAL_TRANSPORT'
         && selectedVehicle
         && selectedDriver
-        && !isDriverCompatibleWithVehicle(selectedDriver, selectedVehicle.vehicle_type)) {
+        && !isSelectedOperatorCompatible) {
       toast.error(getDispatchErrorMessage(
         new Error('DRIVER_VEHICLE_TYPE_MISMATCH'),
         { driverName: selectedDriver.employee_name, vehicleType: selectedVehicle.vehicle_type },
@@ -242,6 +332,7 @@ const DispatcherWorkbenchPage: React.FC = () => {
     } catch (err: any) {
       const selectedVehicle = vehicles.find(vehicle => vehicle.asset_id === selectedAssetId);
       const selectedDriver = drivers.find(driver => driver.user_id === operatorUserId);
+      await loadData();
       toast.error(getDispatchErrorMessage(err, {
         driverName: selectedDriver?.employee_name,
         vehicleType: selectedVehicle?.vehicle_type,
@@ -303,7 +394,11 @@ const DispatcherWorkbenchPage: React.FC = () => {
                       {b.booking_code}
                     </span>
 
-                    {b.status === 'PENDING_APPROVAL' ? (
+                    {reassignmentBookingIds.has(b.id) ? (
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300">
+                        Cần xếp lại
+                      </span>
+                    ) : b.status === 'PENDING_APPROVAL' ? (
                       <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
                         Chờ duyệt (Cần Override)
                       </span>
@@ -333,7 +428,11 @@ const DispatcherWorkbenchPage: React.FC = () => {
                       onClick={() => openDispatchDrawer(b)}
                       className="inline-flex items-center space-x-1 px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-semibold text-xs shadow-xs disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      <span>{b.status === 'PENDING_APPROVAL' ? 'Duyệt Thay & Điều Phối' : 'Xếp Xe'}</span>
+                      <span>{b.status === 'PENDING_APPROVAL'
+                        ? 'Duyệt Thay & Điều Phối'
+                        : reassignmentBookingIds.has(b.id)
+                        ? 'Xếp Lại Xe'
+                        : 'Xếp Xe'}</span>
                       <ChevronRight className="w-3.5 h-3.5" />
                     </button>
                   </div>
@@ -497,7 +596,10 @@ const DispatcherWorkbenchPage: React.FC = () => {
                 <label className="block font-semibold mb-1">Phương thức xếp chuyến *</label>
                 <select
                   value={fulfillmentType}
-                  onChange={(e) => setFulfillmentType(e.target.value as FulfillmentType)}
+                  onChange={(e) => {
+                    setFulfillmentType(e.target.value as FulfillmentType);
+                    setSelectedDriverUserId('');
+                  }}
                   className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl p-3 font-medium"
                 >
                   <option value="INTERNAL_WITH_DRIVER">Xe nội bộ + Tài xế chuyên trách</option>
@@ -517,7 +619,10 @@ const DispatcherWorkbenchPage: React.FC = () => {
                         const nextVehicle = vehicles.find(vehicle => vehicle.asset_id === nextAssetId);
                         const currentDriver = drivers.find(driver => driver.user_id === selectedDriverUserId);
                         setSelectedAssetId(nextAssetId);
-                        if (currentDriver && !isDriverCompatibleWithVehicle(currentDriver, nextVehicle?.vehicle_type)) {
+                        const isCompatible = fulfillmentType === 'INTERNAL_SELF_DRIVE'
+                          ? isSelfDriverCompatibleWithVehicle(currentDriver || { authorization_type: 'SELF_DRIVE' }, nextVehicle?.vehicle_type)
+                          : isDriverCompatibleWithVehicle(currentDriver || { authorization_type: 'PROFESSIONAL_DRIVER' }, nextVehicle?.vehicle_type);
+                        if (currentDriver && !isCompatible) {
                           setSelectedDriverUserId('');
                         }
                       }}
@@ -526,8 +631,8 @@ const DispatcherWorkbenchPage: React.FC = () => {
                       <option value="">-- Chọn xe sẵn sàng --</option>
                       {vehicles
                         .filter((v) => getVehicleOperationalStatus(v, {
-                          busy: busyVehicleIds.has(v.asset_id),
-                          unavailable: unavailableVehicleIds.has(v.asset_id),
+                          busy: selectedBookingConflicts.busyVehicleIds.has(v.asset_id),
+                          unavailable: selectedBookingConflicts.unavailableVehicleIds.has(v.asset_id),
                         }) === 'AVAILABLE')
                         .map((v) => (
                           <option key={v.asset_id} value={v.asset_id}>
@@ -552,8 +657,8 @@ const DispatcherWorkbenchPage: React.FC = () => {
                           vehicles.find(vehicle => vehicle.asset_id === selectedAssetId)?.vehicle_type,
                         )
                           .filter((d) => getOperatorOperationalStatus(d.is_eligible, {
-                            busy: busyOperatorIds.has(d.user_id),
-                            unavailable: unavailableOperatorIds.has(d.user_id),
+                            busy: selectedBookingConflicts.busyOperatorIds.has(d.user_id),
+                            unavailable: selectedBookingConflicts.unavailableOperatorIds.has(d.user_id),
                           }) === 'AVAILABLE')
                           .map((d) => (
                             <option key={d.user_id} value={d.user_id}>
@@ -567,6 +672,41 @@ const DispatcherWorkbenchPage: React.FC = () => {
                       ).length === 0 && (
                         <p className="mt-1 text-[11px] text-amber-700">
                           Chưa có tài xế chuyên trách được ủy quyền cho loại xe này.
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {fulfillmentType === 'INTERNAL_SELF_DRIVE' && (
+                    <div>
+                      <label className="block font-semibold mb-1">Chọn nhân viên tự lái *</label>
+                      <select
+                        value={selectedDriverUserId}
+                        onChange={(e) => setSelectedDriverUserId(e.target.value)}
+                        disabled={!selectedAssetId}
+                        className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl p-3 font-medium"
+                      >
+                        <option value="">{selectedAssetId ? '-- Chọn nhân viên tự lái phù hợp --' : '-- Chọn xe trước --'}</option>
+                        {selectCompatibleSelfDrivers(
+                          drivers,
+                          vehicles.find(vehicle => vehicle.asset_id === selectedAssetId)?.vehicle_type,
+                        )
+                          .filter((driver) => getOperatorOperationalStatus(driver.is_eligible, {
+                            busy: selectedBookingConflicts.busyOperatorIds.has(driver.user_id),
+                            unavailable: selectedBookingConflicts.unavailableOperatorIds.has(driver.user_id),
+                          }) === 'AVAILABLE')
+                          .map((driver) => (
+                            <option key={driver.user_id} value={driver.user_id}>
+                              {driver.employee_name || `Nhân viên ${driver.license_class}`}{driver.employee_title ? ` · ${driver.employee_title}` : ''}
+                            </option>
+                          ))}
+                      </select>
+                      {selectedAssetId && selectCompatibleSelfDrivers(
+                        drivers,
+                        vehicles.find(vehicle => vehicle.asset_id === selectedAssetId)?.vehicle_type,
+                      ).length === 0 && (
+                        <p className="mt-1 text-[11px] text-amber-700">
+                          Chưa có nhân viên tự lái được ủy quyền cho loại xe này.
                         </p>
                       )}
                     </div>

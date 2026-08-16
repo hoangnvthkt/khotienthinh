@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   getAssignedDriverLabel,
   getAssignedVehicleLabel,
+  getStartOdometerLabel,
   getVehicleFulfillmentLabel,
 } from '../vehicleBookingPresentation';
 
@@ -43,5 +44,12 @@ describe('vehicle booking presentation', () => {
     })).toBe('Theo nhà cung cấp');
     expect(getAssignedVehicleLabel(null)).toBe('Chưa có thông tin');
     expect(getAssignedDriverLabel(null)).toBe('Chưa có thông tin');
+  });
+
+  it('formats the recorded start odometer for the driver trip card', () => {
+    expect(getStartOdometerLabel(1234)).toBe('KM đầu: 1.234 km');
+    expect(getStartOdometerLabel(1234.5)).toBe('KM đầu: 1.234,5 km');
+    expect(getStartOdometerLabel(null)).toBeNull();
+    expect(getStartOdometerLabel(undefined)).toBeNull();
   });
 });

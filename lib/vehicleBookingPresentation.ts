@@ -35,6 +35,11 @@ export function getAssignedDriverLabel(
   return display.operator_name || 'Chưa có thông tin';
 }
 
+export function getStartOdometerLabel(value?: number | null): string | null {
+  if (value === null || value === undefined) return null;
+  return `KM đầu: ${new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 1 }).format(value)} km`;
+}
+
 export type VehicleBookingSubmissionErrorCode =
   | 'VEHICLE_DISPATCHER_MISSING'
   | 'VEHICLE_DIRECT_MANAGER_CONFIRMATION_REQUIRED'

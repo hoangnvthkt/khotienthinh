@@ -37,6 +37,50 @@ const service = bookingService as typeof bookingService & {
     authorization_type: string;
     allowed_vehicle_types?: string[] | null;
   }>(drivers: T[], vehicleType?: string | null) => T[];
+  selectCompatibleSelfDrivers: <T extends {
+    authorization_type: string;
+    allowed_vehicle_types?: string[] | null;
+  }>(drivers: T[], vehicleType?: string | null) => T[];
+  selectActionableDriverAssignmentRows: <T extends {
+    id: string;
+    booking_id: string;
+    is_active: boolean;
+    reserved_start_at: string;
+  }>(input: {
+    assignments: T[];
+    bookings: Array<{ id: string; status: string }>;
+    referenceDate: Date | string;
+  }) => T[];
+  isDriverTripOverdue: (
+    booking: { status: string; expected_return_at: string },
+    referenceDate: Date | string,
+  ) => boolean;
+  getBookingResourceConflictSets: (input: {
+    booking: { requested_pickup_at: string; expected_return_at: string };
+    bufferMinutes: number;
+    assignments: Array<{
+      vehicle_asset_id?: string | null;
+      operator_user_id?: string | null;
+      reserved_start_at: string;
+      reserved_end_at: string;
+      is_active?: boolean;
+      released_at?: string | null;
+    }>;
+    vehicleUnavailability: Array<{ vehicle_asset_id: string; start_at: string; end_at: string }>;
+    operatorUnavailability: Array<{ operator_user_id: string; start_at: string; end_at: string }>;
+  }) => {
+    busyVehicleIds: Set<string>;
+    busyOperatorIds: Set<string>;
+    unavailableVehicleIds: Set<string>;
+    unavailableOperatorIds: Set<string>;
+  };
+  selectBookingsAwaitingReassignment: (
+    assignments: Array<{
+      booking_id: string;
+      is_active: boolean;
+      operator_confirmation_status: string;
+    }>,
+  ) => Set<string>;
 };
 
 describe('vehicle booking operational rules', () => {
@@ -144,6 +188,76 @@ describe('vehicle booking operational rules', () => {
       .toBe('VEHICLE_UNAVAILABLE');
   });
 
+  it('translates concurrent assignment conflicts into actionable Vietnamese errors', () => {
+    expect(service.getDispatchErrorMessage(
+      new Error('conflicting key value violates exclusion constraint "no_vehicle_assignment_overlap"'),
+    )).toBe('Xe vừa được xếp cho một chuyến khác trong cùng khung giờ. Danh sách đã được làm mới, vui lòng chọn xe khác.');
+    expect(service.getDispatchErrorMessage({
+      code: '23P01',
+      message: 'conflicting key value violates exclusion constraint "no_operator_assignment_overlap"',
+    })).toBe('Tài xế vừa được xếp cho một chuyến khác trong cùng khung giờ. Danh sách đã được làm mới, vui lòng chọn tài xế khác.');
+    expect(service.getDispatchErrorMessage(new Error('OPERATOR_ALREADY_IN_PROGRESS')))
+      .toBe('Tài xế đang thực hiện một chuyến khác. Hãy kết thúc chuyến đang chạy trước khi bắt đầu chuyến này.');
+    expect(service.getDispatchErrorMessage(new Error(
+      'duplicate key value violates unique constraint "vehicle_trip_logs_one_active_trip_per_operator"',
+    ))).toBe('Tài xế đang thực hiện một chuyến khác. Hãy kết thúc chuyến đang chạy trước khi bắt đầu chuyến này.');
+  });
+
+  it('calculates vehicle and operator conflicts for the selected booking interval including buffer', () => {
+    expect(service.getBookingResourceConflictSets).toBeTypeOf('function');
+    const conflicts = service.getBookingResourceConflictSets({
+      booking: {
+        requested_pickup_at: '2026-08-15T02:00:00.000Z',
+        expected_return_at: '2026-08-15T04:00:00.000Z',
+      },
+      bufferMinutes: 30,
+      assignments: [
+        {
+          vehicle_asset_id: 'vehicle-overlap',
+          operator_user_id: 'driver-overlap',
+          reserved_start_at: '2026-08-15T04:15:00.000Z',
+          reserved_end_at: '2026-08-15T05:00:00.000Z',
+          is_active: true,
+        },
+        {
+          vehicle_asset_id: 'vehicle-boundary',
+          operator_user_id: 'driver-boundary',
+          reserved_start_at: '2026-08-15T04:30:00.000Z',
+          reserved_end_at: '2026-08-15T05:00:00.000Z',
+          is_active: true,
+        },
+        {
+          vehicle_asset_id: 'vehicle-released',
+          operator_user_id: 'driver-released',
+          reserved_start_at: '2026-08-15T03:00:00.000Z',
+          reserved_end_at: '2026-08-15T04:00:00.000Z',
+          is_active: false,
+          released_at: '2026-08-15T01:00:00.000Z',
+        },
+      ],
+      vehicleUnavailability: [
+        { vehicle_asset_id: 'vehicle-maintenance', start_at: '2026-08-15T03:00:00.000Z', end_at: '2026-08-15T03:30:00.000Z' },
+      ],
+      operatorUnavailability: [
+        { operator_user_id: 'driver-leave', start_at: '2026-08-15T01:00:00.000Z', end_at: '2026-08-15T02:15:00.000Z' },
+      ],
+    });
+
+    expect([...conflicts.busyVehicleIds]).toEqual(['vehicle-overlap']);
+    expect([...conflicts.busyOperatorIds]).toEqual(['driver-overlap']);
+    expect([...conflicts.unavailableVehicleIds]).toEqual(['vehicle-maintenance']);
+    expect([...conflicts.unavailableOperatorIds]).toEqual(['driver-leave']);
+  });
+
+  it('marks a waiting booking with a declined historical assignment as needing reassignment', () => {
+    expect(service.selectBookingsAwaitingReassignment).toBeTypeOf('function');
+    expect([...service.selectBookingsAwaitingReassignment([
+      { booking_id: 'declined', is_active: false, operator_confirmation_status: 'DECLINED' },
+      { booking_id: 'pending', is_active: true, operator_confirmation_status: 'PENDING' },
+      { booking_id: 'confirmed', is_active: false, operator_confirmation_status: 'CONFIRMED' },
+    ])]).toEqual(['declined']);
+  });
+
   it('offers only compatible professional drivers after a fleet vehicle is selected', () => {
     expect(service.selectCompatibleProfessionalDrivers).toBeTypeOf('function');
     const drivers = [
@@ -155,5 +269,56 @@ describe('vehicle booking operational rules', () => {
     expect(service.selectCompatibleProfessionalDrivers(drivers, 'Xe tải thùng'))
       .toEqual([drivers[0]]);
     expect(service.selectCompatibleProfessionalDrivers(drivers, null)).toEqual([]);
+  });
+
+  it('offers only compatible self-driving employees after a fleet vehicle is selected', () => {
+    expect(service.selectCompatibleSelfDrivers).toBeTypeOf('function');
+    const drivers = [
+      { user_id: 'professional', authorization_type: 'PROFESSIONAL_DRIVER', allowed_vehicle_types: ['Xe Carnival Trắng'] },
+      { user_id: 'do', authorization_type: 'SELF_DRIVE', allowed_vehicle_types: ['Xe Carnival Trắng'] },
+      { user_id: 'other-self-driver', authorization_type: 'SELF_DRIVE', allowed_vehicle_types: ['Xe tải thùng'] },
+    ];
+
+    expect(service.selectCompatibleSelfDrivers(drivers, 'Xe Carnival Trắng'))
+      .toEqual([drivers[1]]);
+    expect(service.selectCompatibleSelfDrivers(drivers, null)).toEqual([]);
+  });
+
+  it('keeps an overdue in-progress trip actionable after its scheduled day has passed', () => {
+    expect(service.selectActionableDriverAssignmentRows).toBeTypeOf('function');
+    const assignments = [
+      { id: 'overdue-running', booking_id: 'booking-running', is_active: true, reserved_start_at: '2026-08-12T06:53:00.000Z' },
+      { id: 'overdue-assigned', booking_id: 'booking-old-assigned', is_active: true, reserved_start_at: '2026-08-12T06:53:00.000Z' },
+      { id: 'today-assigned', booking_id: 'booking-today', is_active: true, reserved_start_at: '2026-08-15T03:00:00.000Z' },
+      { id: 'inactive-running', booking_id: 'booking-inactive', is_active: false, reserved_start_at: '2026-08-12T06:53:00.000Z' },
+    ];
+    const bookings = [
+      { id: 'booking-running', status: 'IN_PROGRESS' },
+      { id: 'booking-old-assigned', status: 'ASSIGNED' },
+      { id: 'booking-today', status: 'ASSIGNED' },
+      { id: 'booking-inactive', status: 'IN_PROGRESS' },
+    ];
+
+    expect(service.selectActionableDriverAssignmentRows({
+      assignments,
+      bookings,
+      referenceDate: '2026-08-15T07:00:00.000Z',
+    })).toEqual([assignments[0], assignments[2]]);
+  });
+
+  it('marks only an in-progress trip past its expected return as overdue', () => {
+    expect(service.isDriverTripOverdue).toBeTypeOf('function');
+    expect(service.isDriverTripOverdue({
+      status: 'IN_PROGRESS',
+      expected_return_at: '2026-08-12T10:53:00.000Z',
+    }, '2026-08-15T07:00:00.000Z')).toBe(true);
+    expect(service.isDriverTripOverdue({
+      status: 'COMPLETED',
+      expected_return_at: '2026-08-12T10:53:00.000Z',
+    }, '2026-08-15T07:00:00.000Z')).toBe(false);
+    expect(service.isDriverTripOverdue({
+      status: 'IN_PROGRESS',
+      expected_return_at: '2026-08-15T08:00:00.000Z',
+    }, '2026-08-15T07:00:00.000Z')).toBe(false);
   });
 });
