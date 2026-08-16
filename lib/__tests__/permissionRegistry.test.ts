@@ -267,7 +267,6 @@ describe('permissionRegistry', () => {
       'lib/permissions/projectPermissionService.ts',
       'lib/projectStaffService.ts',
       'pages/project/PaymentWorkbenchTab.tsx',
-      'pages/project/QualityTab.tsx',
       'pages/settings/SettingsAlerts.tsx',
     ]);
     const legacyPattern = /ProjectPermissionCode|requireProjectPermission\(|checkPermission\(/;

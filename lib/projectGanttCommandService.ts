@@ -81,8 +81,8 @@ export class ProjectGanttCommandError extends Error {
   readonly shouldReload: boolean;
   readonly causeValue: unknown;
 
-  constructor(code: ProjectGanttErrorCode, causeValue?: unknown) {
-    super(ERROR_MESSAGES[code]);
+  constructor(code: ProjectGanttErrorCode, causeValue?: unknown, message = ERROR_MESSAGES[code]) {
+    super(message);
     this.name = 'ProjectGanttCommandError';
     this.code = code;
     this.shouldReload = code === 'GANTT_STALE_VERSION';
@@ -307,7 +307,15 @@ export const createProjectGanttCommandService = (dependencies: ProjectGanttComma
         if (isMissingGanttCatalogRpc(error) && dependencies.loadLegacyCatalog) {
           return dependencies.loadLegacyCatalog(scope);
         }
-        throw parseProjectGanttCommandError(error);
+        const parsed = parseProjectGanttCommandError(error);
+        if (parsed.code === 'GANTT_PERMISSION_DENIED' && consumerRoom === 'quality') {
+          throw new ProjectGanttCommandError(
+            parsed.code,
+            error,
+            'Bạn không có quyền thực hiện thao tác này trong Room Chất lượng.',
+          );
+        }
+        throw parsed;
       }
       return (fromDb(data || []) as Array<Record<string, any>>)
         .map(task => normalizeTask(task) as ProjectGanttCatalogTask);

@@ -28,8 +28,12 @@ import {
   Download,
 } from 'lucide-react';
 import { qualityChecklistService } from '../../lib/qualityChecklistService';
-import { canReviewQualityChecklist } from '../../lib/qualityChecklistWorkflow';
 import { projectStaffService } from '../../lib/projectStaffService';
+import { projectPermissionRoomService } from '../../lib/projectPermissionRoomService';
+import {
+  getQualityChecklistCapabilities,
+  getQualityRoomCapabilities,
+} from '../../lib/qualityRoomCapabilities';
 import { loadQualityGanttCatalog } from '../../lib/projectGanttCatalogAdapters';
 import { supabase } from '../../lib/supabase';
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
@@ -41,7 +45,6 @@ import {
   QualityChecklist,
   QualityChecklistStatus,
   QualitySitePhoto,
-  Role,
 } from '../../types';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
@@ -53,7 +56,6 @@ import { EmptyState, MobileCardList, StatusBadge as ErpStatusBadge } from '../..
 interface QualityTabProps {
   constructionSiteId?: string;
   projectId: string;
-  canManageTab?: boolean;
 }
 
 type StatusCounts = Record<QualityChecklistStatus, number>;
@@ -285,7 +287,7 @@ const FileIcon: React.FC<{ type?: string }> = ({ type }) => {
   return <FileText size={14} />;
 };
 
-const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, canManageTab = true }) => {
+const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId }) => {
   const { user } = useApp();
   const toast = useToast();
   const confirm = useConfirm();
@@ -297,6 +299,8 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
   const [projectStaff, setProjectStaff] = useState<ProjectStaff[]>([]);
   const [projectName, setProjectName] = useState('');
   const [loading, setLoading] = useState(true);
+  const [permissionLoading, setPermissionLoading] = useState(true);
+  const [qualityRoomActions, setQualityRoomActions] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<QualityChecklistStatus | ''>('');
   const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
@@ -398,6 +402,11 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
     return () => { alive = false; };
   }, [projectId]);
 
+  const qualityCapabilities = useMemo(
+    () => getQualityRoomCapabilities(qualityRoomActions),
+    [qualityRoomActions],
+  );
+
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
@@ -420,9 +429,35 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
     }
   }, [projectId, siteId, toast]);
 
+  const loadQualityRoomAccess = useCallback(async () => {
+    setPermissionLoading(true);
+    try {
+      const actions = await projectPermissionRoomService.listMyActions(projectId, siteId || null);
+      const qualityActions = new Set(actions
+        .filter(action => action.roomCode === 'quality')
+        .map(action => action.actionCode));
+      setQualityRoomActions(qualityActions);
+      if (qualityActions.has('view')) {
+        await loadData();
+      } else {
+        setTasks([]);
+        setChecklists([]);
+        setProjectStaff([]);
+        setLoading(false);
+      }
+    } catch (error: any) {
+      console.error('Failed to load Quality Room permissions:', error);
+      setQualityRoomActions(new Set());
+      setLoading(false);
+      toast.error('Không tải được quyền Room Chất lượng', error?.message);
+    } finally {
+      setPermissionLoading(false);
+    }
+  }, [loadData, projectId, siteId, toast]);
+
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    loadQualityRoomAccess();
+  }, [loadQualityRoomAccess]);
 
   const taskMap = useMemo(() => new Map(tasks.map(task => [task.id, task])), [tasks]);
 
@@ -583,17 +618,20 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
   const currentCounts = useMemo(() => countByStatus(directTaskChecklists), [directTaskChecklists]);
 
   const canEditChecklist = useCallback((checklist: QualityChecklist) => {
-    if (!canManageTab) return false;
-    if (checklist.status !== 'draft' && checklist.status !== 'returned') return false;
-    if (user?.role === Role.ADMIN) return true;
-    if (!checklist.createdBy) return true;
-    return checklist.createdBy === user?.id || checklist.createdBy === user?.name;
-  }, [canManageTab, user?.id, user?.name, user?.role]);
+    return getQualityChecklistCapabilities(qualityCapabilities, checklist.status).canEdit;
+  }, [qualityCapabilities]);
+
+  const canSubmitChecklist = useCallback((checklist: QualityChecklist) => {
+    return getQualityChecklistCapabilities(qualityCapabilities, checklist.status).canSubmit;
+  }, [qualityCapabilities]);
+
+  const canDeleteChecklist = useCallback((checklist: QualityChecklist) => {
+    return getQualityChecklistCapabilities(qualityCapabilities, checklist.status).canDelete;
+  }, [qualityCapabilities]);
 
   const canApproveChecklist = useCallback((checklist: QualityChecklist) => {
-    if (!canManageTab) return false;
-    return canReviewQualityChecklist(checklist, user, projectStaff);
-  }, [canManageTab, projectStaff, user]);
+    return getQualityChecklistCapabilities(qualityCapabilities, checklist.status).canApprove;
+  }, [qualityCapabilities]);
 
   const openTask = (taskId: string) => {
     setCurrentTaskId(taskId);
@@ -633,7 +671,7 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
   };
 
   const openCreate = (task: ProjectTask) => {
-    if (!canManageTab) return;
+    if (!qualityCapabilities.canEdit) return;
     const targetSiteId = siteId || task.constructionSiteId || '';
     if (!targetSiteId) {
       toast.error('Thiếu công trường', 'Cần chọn công trường trước khi tạo hồ sơ nghiệm thu.');
@@ -684,7 +722,7 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
     const uploaded: Array<QualitySitePhoto | Attachment> = [];
 
     for (const file of files) {
-      const path = `quality/${folderSiteId}/${recordId}/${Date.now()}-${crypto.randomUUID()}-${safeStorageFileName(file.name)}`;
+      const path = `quality/${projectId}/${folderSiteId}/${recordId}/${Date.now()}-${crypto.randomUUID()}-${safeStorageFileName(file.name)}`;
       const { error } = await supabase.storage
         .from('project-attachments')
         .upload(path, file, { cacheControl: '3600', upsert: false });
@@ -799,12 +837,41 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
   };
 
   const handlePrepareFormSubmit = () => {
+    if (!qualityCapabilities.canSubmit) return;
     const draft = buildFormSubmissionDraft();
     if (draft) setSubmittingFormDraft(draft);
   };
 
+  const handleSaveDraft = async () => {
+    const draft = buildFormSubmissionDraft();
+    if (!draft || !qualityCapabilities.canEdit) return;
+    setSaving(true);
+    try {
+      if (draft.editingChecklist) {
+        await qualityChecklistService.update(draft.editingChecklist.id, draft.values);
+      } else {
+        if (!draft.formTask) throw new Error('Chưa chọn hạng mục tiến độ.');
+        await qualityChecklistService.createForTask({
+          projectId,
+          constructionSiteId: draft.constructionSiteId,
+          taskId: draft.formTask.id,
+          ...draft.values,
+          createdBy: user?.id || user?.name,
+          submissionTarget: null,
+        });
+      }
+      toast.success('Đã lưu nháp hồ sơ nghiệm thu');
+      closeForm();
+      await loadData();
+    } catch (error: any) {
+      toast.error('Không lưu được hồ sơ', error?.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleConfirmFormSubmit = async (target: ProjectSubmissionTarget) => {
-    if (!submittingFormDraft) return;
+    if (!submittingFormDraft || !qualityCapabilities.canSubmit) return;
     setSaving(true);
     try {
       if (submittingFormDraft.editingChecklist) {
@@ -839,7 +906,7 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
   };
 
   const handleConfirmSubmit = async (target: ProjectSubmissionTarget) => {
-    if (!submittingChecklist) return;
+    if (!submittingChecklist || !canSubmitChecklist(submittingChecklist)) return;
     try {
       await qualityChecklistService.setStatus(
         submittingChecklist.id,
@@ -885,15 +952,6 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
     }
 
     try {
-      if ((status === 'approved' || status === 'returned') && user?.role !== Role.ADMIN) {
-        await projectStaffService.requireProjectPermission({
-          userId: user?.id,
-          projectId,
-          constructionSiteId: siteId || checklist.constructionSiteId,
-          code: 'approve',
-          actionLabel: status === 'approved' ? 'phê duyệt hồ sơ chất lượng' : 'trả lại hồ sơ chất lượng',
-        });
-      }
       await qualityChecklistService.setStatus(checklist.id, status, user?.id, reason);
       toast.success(status === 'approved' ? 'Đã phê duyệt hồ sơ' : 'Đã cập nhật trạng thái hồ sơ');
       await loadData();
@@ -903,6 +961,7 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
   };
 
   const handleDelete = async (checklist: QualityChecklist) => {
+    if (!canDeleteChecklist(checklist)) return;
     const ok = await confirm({
       title: 'Xoá hồ sơ nghiệm thu',
       targetName: checklist.title,
@@ -943,6 +1002,8 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
             const photoCount = (item.sitePhotos || []).length;
             const attachmentCount = (item.attachments || []).length;
             const canEdit = canEditChecklist(item);
+            const canSubmit = canSubmitChecklist(item);
+            const canDelete = canDeleteChecklist(item);
             const canApprove = canApproveChecklist(item);
             return (
               <div className="space-y-3">
@@ -977,7 +1038,8 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
                 <div className="flex flex-wrap justify-end gap-1">
                   <button onClick={() => openChecklist(item, true)} className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-[10px] font-black text-slate-600">Xem</button>
                   {canEdit && <button onClick={() => openChecklist(item)} className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-[10px] font-black text-slate-600">Sửa</button>}
-                  {canEdit && <button onClick={() => setSubmittingChecklist(item)} className="rounded-lg bg-amber-500 px-2.5 py-1.5 text-[10px] font-black text-white">Gửi duyệt</button>}
+                  {canSubmit && <button onClick={() => setSubmittingChecklist(item)} className="rounded-lg bg-amber-500 px-2.5 py-1.5 text-[10px] font-black text-white">Gửi duyệt</button>}
+                  {canDelete && <button onClick={() => handleDelete(item)} className="rounded-lg border border-red-200 px-2.5 py-1.5 text-[10px] font-black text-red-600">Xóa</button>}
                   {canApprove && <button onClick={() => handleStatusChange(item, 'returned')} className="rounded-lg border border-red-200 px-2.5 py-1.5 text-[10px] font-black text-red-600">Trả lại</button>}
                   {canApprove && <button onClick={() => handleStatusChange(item, 'approved')} className="rounded-lg bg-emerald-600 px-2.5 py-1.5 text-[10px] font-black text-white">Duyệt</button>}
                 </div>
@@ -1006,6 +1068,8 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
                 const photoCount = (item.sitePhotos || []).length;
                 const attachmentCount = (item.attachments || []).length;
                 const canEdit = canEditChecklist(item);
+                const canSubmit = canSubmitChecklist(item);
+                const canDelete = canDeleteChecklist(item);
                 const canApprove = canApproveChecklist(item);
                 return (
                   <tr key={item.id} className="hover:bg-amber-50/20">
@@ -1063,7 +1127,6 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
                           <Eye size={14} />
                         </button>
                         {canEdit && (
-                          <>
                             <button
                               onClick={() => openChecklist(item)}
                               title="Sửa hồ sơ"
@@ -1071,6 +1134,8 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
                             >
                               <Edit2 size={14} />
                             </button>
+                        )}
+                        {canSubmit && (
                             <button
                               onClick={() => setSubmittingChecklist(item)}
                               title="Gửi duyệt"
@@ -1078,6 +1143,8 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
                             >
                               <Send size={14} />
                             </button>
+                        )}
+                        {canDelete && (
                             <button
                               onClick={() => handleDelete(item)}
                               title="Xoá hồ sơ"
@@ -1085,7 +1152,6 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
                             >
                               <Trash2 size={14} />
                             </button>
-                          </>
                         )}
                         {canApprove && (
                           <>
@@ -1116,6 +1182,32 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
       </div>
     );
   };
+
+  if (permissionLoading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 size={22} className="animate-spin text-teal-600" />
+        <span className="ml-3 text-sm font-bold text-slate-500">Đang tải quyền Room Chất lượng...</span>
+      </div>
+    );
+  }
+
+  if (!qualityCapabilities.canView) {
+    return (
+      <div className="mx-auto max-w-xl rounded-lg border border-red-200 bg-red-50 px-6 py-10 text-center dark:border-red-900/50 dark:bg-red-950/30">
+        <AlertCircle size={28} className="mx-auto text-red-600" />
+        <h2 className="mt-3 text-base font-bold text-red-800 dark:text-red-200">Bạn không có quyền xem Room Chất lượng</h2>
+        <p className="mt-1 text-sm text-red-700 dark:text-red-300">Quyền truy cập được quản lý theo dự án và công trường hiện tại.</p>
+        <button
+          type="button"
+          onClick={loadQualityRoomAccess}
+          className="mt-5 inline-flex items-center gap-2 rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-100 dark:border-red-800 dark:bg-red-950"
+        >
+          <RotateCcw size={15} /> Tải lại quyền
+        </button>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -1277,7 +1369,7 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
               <MiniStat label="Tại hạng mục" value={directTaskChecklists.length} icon={<ClipboardCheck size={15} />} tone="sky" />
               <MiniStat label="Chờ duyệt" value={currentCounts.submitted} icon={<Clock size={15} />} tone="amber" />
               <MiniStat label="Đã duyệt" value={currentCounts.approved} icon={<CheckCircle2 size={15} />} tone="emerald" />
-              {canManageTab && (
+              {qualityCapabilities.canEdit && (
                 <button
                   onClick={() => openCreate(currentTask)}
                   className="inline-flex min-h-[72px] items-center gap-2 rounded-2xl bg-teal-700 hover:bg-teal-800 px-4 py-3 text-xs font-semibold text-white shadow-sm transition-colors"
@@ -1598,14 +1690,26 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
                   Đóng
                 </button>
                 {!readonlyForm && (
-                  <button
-                    onClick={handlePrepareFormSubmit}
-                    disabled={saving || uploadingPhotos || uploadingFiles}
-                    className="inline-flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-xs font-black text-white hover:bg-amber-600 disabled:opacity-50"
-                  >
-                    {saving ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
-                    Gửi duyệt
-                  </button>
+                  <>
+                    <button
+                      onClick={handleSaveDraft}
+                      disabled={saving || uploadingPhotos || uploadingFiles}
+                      className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-black text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+                    >
+                      {saving ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />}
+                      Lưu nháp
+                    </button>
+                    {qualityCapabilities.canSubmit && (
+                      <button
+                        onClick={handlePrepareFormSubmit}
+                        disabled={saving || uploadingPhotos || uploadingFiles}
+                        className="inline-flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-xs font-black text-white hover:bg-amber-600 disabled:opacity-50"
+                      >
+                        {saving ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                        Gửi duyệt
+                      </button>
+                    )}
+                  </>
                 )}
               </div>
             </div>

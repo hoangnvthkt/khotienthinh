@@ -4768,6 +4768,7 @@ export interface QualityChecklist extends ProjectSubmissionFields {
   note?: string;
   createdBy?: string;
   createdAt: string;
+  updatedAt: string;
 
   // PDF layout enhancements
   drawingUrl?: string;

@@ -14,10 +14,9 @@ import {
   ProjectSubmissionTarget,
 } from '../types';
 import { fromDb, toDb } from './dbMapping';
-import { auditService } from './auditService';
-import { projectSubmissionService } from './projectSubmissionService';
 import { buildQualityChecklistForTask } from './qualityChecklistWorkflow';
 import { parseNonNegativeLocaleNumber } from './localeNumberInput';
+import { qualityChecklistCommandService } from './qualityChecklistCommandService';
 
 const TABLE = 'quality_checklists';
 const TPL_TABLE = 'inspection_templates';
@@ -387,22 +386,12 @@ export const qualityChecklistService = {
       createdBy: params.createdBy,
     };
 
-    const dbItem = toDb(checklist);
-    delete dbItem.id;
-    const { data, error } = await supabase.from(TABLE).insert(dbItem).select().single();
-    if (error) throw error;
-
-    await auditService.log({
-      tableName: TABLE,
-      recordId: data.id,
-      action: 'INSERT',
-      newData: { code, templateCode: tpl.code, templateName: tpl.name },
-      userId: params.createdBy || 'system',
-      userName: params.createdBy || 'system',
-      description: `Tạo hồ sơ CL ${code} từ mẫu ${tpl.name} (v${tpl.version})`,
-    });
-
-    return normalize(data);
+    const result = await qualityChecklistCommandService.create({
+      projectId: params.projectId,
+      constructionSiteId: params.constructionSiteId,
+    }, checklist);
+    if (!result.checklist) throw new Error('Không nhận được hồ sơ chất lượng sau khi tạo.');
+    return normalize(result.checklist);
   },
 
   /** Tạo hồ sơ CL nháp trực tiếp từ hạng mục tiến độ, không phụ thuộc template. */
@@ -429,69 +418,34 @@ export const qualityChecklistService = {
       submissionTarget: params.submissionTarget,
     });
 
-    const dbItem = toDb(checklist);
-    delete dbItem.id;
-    let { data, error } = await supabase.from(TABLE).insert(dbItem).select().single();
-    if (
-      error &&
-      params.submissionTarget &&
-      (error.code === '42703' || [error.message, error.details, error.hint].filter(Boolean).join(' ').includes('ever_submitted'))
-    ) {
-      const fallbackItem = { ...dbItem };
-      delete fallbackItem.ever_submitted;
-      const retry = await supabase.from(TABLE).insert(fallbackItem).select().single();
-      data = retry.data;
-      error = retry.error;
-    }
-    if (error) throw error;
-    const created = normalize(data);
-
-    if (params.submissionTarget) {
-      await projectSubmissionService.notifyTarget({
-        target: params.submissionTarget,
-        actorId: params.createdBy,
-        category: 'quality',
-        title: `Hồ sơ chất lượng ${code} chờ duyệt`,
-        message: `Bạn được chọn phê duyệt hồ sơ chất lượng ${created.title}.`,
-        sourceType: 'quality_checklist',
-        sourceId: created.id,
-        constructionSiteId: params.constructionSiteId,
-        link: `/da`,
-        metadata: {
-          projectId: params.projectId,
-          constructionSiteId: params.constructionSiteId,
-        },
-      }).catch(error => console.warn('Cannot notify quality checklist recipient', error));
-    }
-
-    await auditService.log({
-      tableName: TABLE,
-      recordId: data.id,
-      action: 'INSERT',
-      newData: { code, taskId: params.taskId, title: params.title, status: created.status },
-      userId: params.createdBy || 'system',
-      userName: params.createdBy || 'system',
-      description: params.submissionTarget
-        ? `Tạo và gửi duyệt hồ sơ CL ${code} từ hạng mục tiến độ`
-        : `Tạo hồ sơ CL ${code} từ hạng mục tiến độ`,
-    });
-
-    return created;
+    const result = await qualityChecklistCommandService.create({
+      projectId: params.projectId,
+      constructionSiteId: params.constructionSiteId,
+    }, checklist, params.submissionTarget ? {
+      userId: params.submissionTarget.userId,
+      name: params.submissionTarget.name,
+      note: params.submissionTarget.note,
+    } : null);
+    if (!result.checklist) throw new Error('Không nhận được hồ sơ chất lượng sau khi tạo.');
+    return normalize(result.checklist);
   },
 
   async update(id: string, updates: Partial<QualityChecklist>): Promise<void> {
+    const current = await this.get(id);
+    if (!current?.projectId || !current.updatedAt) {
+      throw new Error('Không tìm thấy phạm vi hoặc phiên bản hồ sơ chất lượng.');
+    }
     const calc = shouldCalculateInspectionResult(updates)
       ? calculateInspectionResult(updates)
       : {};
     const withCalc = {
       ...updates,
       ...calc,
-      updatedAt: new Date().toISOString(),
     };
-    const dbItem = toDb(withCalc);
-    delete dbItem.id;
-    const { error } = await supabase.from(TABLE).update(dbItem).eq('id', id);
-    if (error) throw error;
+    await qualityChecklistCommandService.update({
+      projectId: current.projectId,
+      constructionSiteId: current.constructionSiteId,
+    }, id, current.updatedAt, withCalc);
   },
 
   async setStatus(
@@ -501,9 +455,10 @@ export const qualityChecklistService = {
     reason?: string,
     submissionTarget?: ProjectSubmissionTarget,
   ): Promise<void> {
-    const { data: current, error: readError } = await supabase.from(TABLE).select('*').eq('id', id).single();
-    if (readError) throw readError;
-    const checklist = normalize(current);
+    const checklist = await this.get(id);
+    if (!checklist?.projectId || !checklist.updatedAt) {
+      throw new Error('Không tìm thấy phạm vi hoặc phiên bản hồ sơ chất lượng.');
+    }
 
     if (checklist.status === 'cancelled') throw new Error('Hồ sơ CL đã huỷ, không thể đổi trạng thái.');
     if (checklist.status === 'approved' && status !== 'cancelled' && status !== 'draft') throw new Error('Hồ sơ CL đã duyệt. Chỉ có thể Huỷ hoặc quay về Nháp.');
@@ -511,91 +466,27 @@ export const qualityChecklistService = {
       throw new Error('Vui lòng nhập lý do trả lại/huỷ.');
     }
 
-    const now = new Date().toISOString();
-    const updates: any = {
-      status,
-      ...projectSubmissionService.actionMeta(userId, status === 'submitted'),
-    };
-
-    if (status === 'submitted') {
-      updates.submittedBy = userId;
-      updates.submittedAt = now;
-      Object.assign(updates, projectSubmissionService.targetToUpdate(submissionTarget));
-    }
-    if (status === 'returned') {
-      updates.returnedBy = userId;
-      updates.returnedAt = now;
-      updates.returnReason = reason;
-      const ownerId = checklist.submittedBy || checklist.createdBy || userId;
-      Object.assign(updates, projectSubmissionService.returnToOwnerUpdate(ownerId, reason));
-    }
-    if (status === 'approved') {
-      updates.approvedBy = userId;
-      updates.approvedAt = now;
-      Object.assign(updates, projectSubmissionService.targetToUpdate(null));
-    }
-    if (status === 'cancelled' || status === 'draft') {
-      Object.assign(updates, projectSubmissionService.targetToUpdate(null));
-      if (status === 'draft') {
-        updates.approvedBy = null;
-        updates.approvedAt = null;
-        updates.returnedBy = null;
-        updates.returnedAt = null;
-        updates.returnReason = null;
-        updates.submittedBy = null;
-        updates.submittedAt = null;
-      }
-    }
-
-    const dbUpdates = toDb(updates);
-    let { error } = await supabase.from(TABLE).update(dbUpdates).eq('id', id);
-    if (
-      error &&
-      status === 'submitted' &&
-      (error.code === '42703' || [error.message, error.details, error.hint].filter(Boolean).join(' ').includes('ever_submitted'))
-    ) {
-      const fallbackUpdates = { ...dbUpdates };
-      delete fallbackUpdates.ever_submitted;
-      const retry = await supabase.from(TABLE).update(fallbackUpdates).eq('id', id);
-      error = retry.error;
-    }
-    if (error) throw error;
-
-    if (status === 'submitted' && submissionTarget) {
-      await projectSubmissionService.notifyTarget({
-        target: submissionTarget,
-        actorId: userId,
-        category: 'quality',
-        title: `Hồ sơ chất lượng ${checklist.code} chờ duyệt`,
-        message: `Bạn được chọn phê duyệt hồ sơ chất lượng ${checklist.title}.`,
-        sourceType: 'quality_checklist',
-        sourceId: id,
-        constructionSiteId: checklist.constructionSiteId,
-        link: `/da`,
-        metadata: {
-          projectId: checklist.projectId,
-          constructionSiteId: checklist.constructionSiteId,
-        },
-      }).catch(error => console.warn('Cannot notify quality checklist recipient', error));
-    }
-
-    await auditService.log({
-      tableName: TABLE,
-      recordId: id,
-      action: 'UPDATE',
-      newData: { status, reason },
-      userId: userId || 'system',
-      userName: userId || 'system',
-      description: `Hồ sơ CL → ${status}${reason ? `: ${reason}` : ''}`,
+    await qualityChecklistCommandService.transition({
+      projectId: checklist.projectId,
+      constructionSiteId: checklist.constructionSiteId,
+    }, id, checklist.updatedAt, status, {
+      targetUserId: submissionTarget?.userId,
+      targetName: submissionTarget?.name,
+      targetNote: submissionTarget?.note,
+      reason,
     });
   },
 
   async remove(id: string): Promise<void> {
-    const { data, error: readError } = await supabase.from(TABLE).select('status').eq('id', id).single();
-    if (readError) throw readError;
-    if (data.status !== 'draft') throw new Error('Chỉ xóa được hồ sơ CL ở trạng thái Nháp.');
-    const { error } = await supabase.from(TABLE).delete().eq('id', id);
-    if (error) throw error;
+    const checklist = await this.get(id);
+    if (!checklist?.projectId || !checklist.updatedAt) {
+      throw new Error('Không tìm thấy phạm vi hoặc phiên bản hồ sơ chất lượng.');
+    }
+    if (checklist.status !== 'draft') throw new Error('Chỉ xóa được hồ sơ CL ở trạng thái Nháp.');
+    await qualityChecklistCommandService.remove({
+      projectId: checklist.projectId,
+      constructionSiteId: checklist.constructionSiteId,
+    }, id, checklist.updatedAt);
   },
 
   // ===================== ATTEMPTS =====================
@@ -620,18 +511,16 @@ export const qualityChecklistService = {
     signatureUrl?: string;
     createdBy?: string;
   }): Promise<QualityInspectionAttempt> {
-    const dbItem = toDb(params);
-    const { data, error } = await supabase.from(ATTEMPT_TABLE).insert(dbItem).select().single();
-    if (error) throw error;
-
-    // Increment current_attempt on quality_checklists
-    const { error: checklistError } = await supabase
-      .from(TABLE)
-      .update({ current_attempt: params.attemptNumber + 1 })
-      .eq('id', params.checklistId);
-    if (checklistError) throw checklistError;
-
-    return fromDb(data);
+    const checklist = await this.get(params.checklistId);
+    if (!checklist?.projectId || !checklist.updatedAt) {
+      throw new Error('Không tìm thấy phạm vi hoặc phiên bản hồ sơ chất lượng.');
+    }
+    const result = await qualityChecklistCommandService.createAttempt({
+      projectId: checklist.projectId,
+      constructionSiteId: checklist.constructionSiteId,
+    }, params.checklistId, checklist.updatedAt, params);
+    if (!result.attempt) throw new Error('Không nhận được lần kiểm tra sau khi tạo.');
+    return result.attempt;
   },
 
   // ===================== STATS =====================

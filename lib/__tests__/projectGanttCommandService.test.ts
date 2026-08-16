@@ -188,6 +188,19 @@ describe('projectGanttCommandService', () => {
     expect(error).toMatchObject({ code: 'GANTT_PERMISSION_DENIED' });
   });
 
+  it('names Room Chất lượng when the Quality catalog is denied', async () => {
+    rpc.mockResolvedValue({
+      data: null,
+      error: { code: '42501', message: 'GANTT_PERMISSION_DENIED' },
+    });
+
+    const error = await service.loadCatalog(scope, 'quality').catch(value => value);
+
+    expect(error).toBeInstanceOf(ProjectGanttCommandError);
+    expect(error.message).toContain('Room Chất lượng');
+    expect(error.message).not.toContain('Room Tiến độ');
+  });
+
   it.each([
     ['GANTT_PERMISSION_DENIED', 'không có quyền'],
     ['GANTT_SCOPE_MISMATCH', 'không thuộc đúng dự án'],
