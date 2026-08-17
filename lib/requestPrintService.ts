@@ -4,10 +4,31 @@ import { supabase } from './supabase';
 import type { RequestDetail } from './requestRuntimeService';
 
 export interface RequestPrintDocument { fileName: string; mimeType: string; bytes: Uint8Array; }
+export interface RequestPrintModelField {
+  key: string;
+  label: string;
+  fieldType: string;
+  value: string;
+  isTable: boolean;
+  tableColumns: string[];
+  tableRows: Array<Record<string, string>>;
+}
 export interface RequestPrintModel {
   code: string; title: string; description: string; creatorName: string; createdAt: string;
-  fields: Array<{ label: string; value: string }>;
-  approvals: Array<{ blockName: string; status: string; approvers: string }>;
+  fields: RequestPrintModelField[];
+  approvals: Array<{
+    blockName: string;
+    status: string;
+    statusLabel: string;
+    approvers: string;
+    assignments?: Array<{
+      approverName: string;
+      status: string;
+      statusLabel: string;
+      comment: string | null;
+      actedAt: string | null;
+    }>;
+  }>;
   notes: Array<{ eventType: string; actorName: string; comment: string; createdAt: string }>;
 }
 
@@ -37,9 +58,100 @@ export const buildRequestPrintFileName = (code: string, title: string): string =
 };
 
 export const buildBrowserPrintModel = (detail: RequestDetail): RequestPrintModel => ({
-  code: detail.code, title: detail.title, description: detail.description, creatorName: detail.creator.name, createdAt: detail.createdAt,
-  fields: [...detail.formSchema].sort((a, b) => a.sortOrder - b.sortOrder).map(field => ({ label: field.label, value: tokenValue(detail.formData[field.key]) || '—' })),
-  approvals: detail.approvalBlocks.map(block => ({ blockName: block.name, status: block.status, approvers: block.assignments.map(assignment => `${assignment.approver.name} · ${assignment.status}`).join(', ') || 'Chưa có người duyệt' })),
+  code: detail.code,
+  title: detail.title,
+  description: detail.description,
+  creatorName: detail.creator.name,
+  createdAt: detail.createdAt,
+  fields: [...detail.formSchema].sort((a, b) => a.sortOrder - b.sortOrder).map(field => {
+    const rawValue = detail.formData[field.key];
+    const isTable = field.fieldType === 'table' || Array.isArray(rawValue);
+    let tableColumns: string[] = [];
+    let tableRows: Array<Record<string, string>> = [];
+
+    if (isTable) {
+      let rowsArray: unknown[] = [];
+      if (Array.isArray(rawValue)) {
+        rowsArray = rawValue;
+      } else if (typeof rawValue === 'string' && rawValue.trim().startsWith('[')) {
+        try {
+          const parsed = JSON.parse(rawValue);
+          if (Array.isArray(parsed)) rowsArray = parsed;
+        } catch {
+          // ignore JSON parse error
+        }
+      }
+
+      const configuredColumns = (field.options && Array.isArray(field.options))
+        ? field.options.map(opt => typeof opt === 'string' ? opt.trim() : String(opt)).filter(Boolean)
+        : [];
+
+      if (configuredColumns.length > 0) {
+        tableColumns = configuredColumns;
+      } else {
+        const keySet = new Set<string>();
+        for (const r of rowsArray) {
+          if (typeof r === 'object' && r !== null) {
+            Object.keys(r).forEach(k => keySet.add(k));
+          }
+        }
+        tableColumns = Array.from(keySet);
+      }
+
+      if (tableColumns.length === 0 && rowsArray.length > 0) {
+        tableColumns = ['Nội dung'];
+      }
+
+      tableRows = rowsArray.map(r => {
+        if (typeof r === 'object' && r !== null) {
+          return r as Record<string, string>;
+        }
+        return { [tableColumns[0] || 'Nội dung']: String(r ?? '') };
+      });
+    }
+
+    return {
+      key: field.key,
+      label: field.label,
+      fieldType: field.fieldType,
+      value: tokenValue(rawValue) || '—',
+      isTable,
+      tableColumns,
+      tableRows,
+    };
+  }),
+  approvals: detail.approvalBlocks.map(block => {
+    const statusLabel = block.status === 'COMPLETED' ? 'Đã duyệt'
+      : block.status === 'ACTIVE' ? 'Đang chờ duyệt'
+      : block.status === 'RETURNED' ? 'Trả lại'
+      : block.status === 'CANCELLED' ? 'Đã hủy'
+      : 'Chưa kích hoạt';
+
+    const assignments = block.assignments.map(assignment => {
+      const aStatusLabel = assignment.status === 'APPROVED' ? 'Đã duyệt'
+        : assignment.status === 'REJECTED' ? 'Từ chối'
+        : 'Chờ duyệt';
+      return {
+        approverName: assignment.approver.name,
+        status: assignment.status,
+        statusLabel: aStatusLabel,
+        comment: assignment.comment,
+        actedAt: assignment.actedAt,
+      };
+    });
+
+    const approvers = assignments.length > 0
+      ? assignments.map(a => `${a.approverName} · ${a.status}`).join(', ')
+      : 'Chưa có người duyệt';
+
+    return {
+      blockName: block.name,
+      status: block.status,
+      statusLabel,
+      approvers,
+      assignments,
+    };
+  }),
   notes: detail.timeline.flatMap(event => {
     const comment = event.comment?.trim();
     if (!comment) return [];

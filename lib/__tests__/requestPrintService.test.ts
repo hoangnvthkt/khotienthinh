@@ -35,4 +35,36 @@ describe('request print service', () => {
       },
     ]);
   });
+
+  it('correctly maps table fields with columns and rows in browser print model', () => {
+    const tableDetail = {
+      ...detail,
+      formSchema: [
+        { key: 'reason', label: 'Lý do', fieldType: 'text', required: true, options: [], sortOrder: 1 },
+        { key: 'items', label: 'Bảng đề xuất cấp phát bảo hộ lao động', fieldType: 'table', required: true, options: ['Tên đồ bảo hộ', 'ĐVT', 'Số lượng'], sortOrder: 2 },
+      ],
+      formData: {
+        reason: 'Cấp bất thường',
+        items: [
+          { 'Tên đồ bảo hộ': 'Mũ công nhân', 'ĐVT': 'cái', 'Số lượng': '200' },
+          { 'Tên đồ bảo hộ': 'Áo bảo hộ', 'ĐVT': 'cái', 'Số lượng': '200' },
+        ],
+      },
+    };
+
+    const model = buildBrowserPrintModel(tableDetail);
+    expect(model.fields).toHaveLength(2);
+
+    const scalarField = model.fields[0];
+    expect(scalarField.isTable).toBe(false);
+    expect(scalarField.value).toBe('Cấp bất thường');
+
+    const tableField = model.fields[1];
+    expect(tableField.isTable).toBe(true);
+    expect(tableField.tableColumns).toEqual(['Tên đồ bảo hộ', 'ĐVT', 'Số lượng']);
+    expect(tableField.tableRows).toEqual([
+      { 'Tên đồ bảo hộ': 'Mũ công nhân', 'ĐVT': 'cái', 'Số lượng': '200' },
+      { 'Tên đồ bảo hộ': 'Áo bảo hộ', 'ĐVT': 'cái', 'Số lượng': '200' },
+    ]);
+  });
 });
