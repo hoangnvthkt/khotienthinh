@@ -371,3 +371,30 @@ export interface VehicleBookingFeedback {
   created_at: string;
   updated_at: string;
 }
+
+export interface VehicleTimelineEvent {
+  id: string;
+  type: 'BOOKING' | 'MAINTENANCE';
+  vehicleAssetId: string;
+  startAt: string;
+  endAt: string;
+  title: string;
+  subtitle?: string;
+  status?: string;
+  bookingCode?: string;
+  booking?: VehicleBooking;
+  assignment?: VehicleBookingAssignment;
+  requesterName?: string;
+  requesterAvatar?: string | null;
+  requesterPhone?: string | null;
+  driverName?: string;
+  driverAvatar?: string | null;
+  driverPhone?: string | null;
+  pickupLocation?: string;
+  destination?: string;
+  passengerCount?: number;
+  reasonCode?: VehicleUnavailabilityReason;
+  note?: string | null;
+  unavailabilityId?: string;
+}
+

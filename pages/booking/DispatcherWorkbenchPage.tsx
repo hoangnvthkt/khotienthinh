@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Car, User, Clock, AlertTriangle, ShieldCheck, RefreshCw, Send, Check, Layers, ChevronRight } from 'lucide-react';
+import { LayoutDashboard, Calendar, Car, User, Clock, AlertTriangle, ShieldCheck, RefreshCw, Send, Check, Layers, ChevronRight } from 'lucide-react';
+import VehicleScheduleTimelineBoard from '../../components/booking/VehicleScheduleTimelineBoard';
 import {
   fetchWaitingDispatchBookings,
   fetchFleetVehicleProfiles,
@@ -60,6 +61,7 @@ const DispatcherWorkbenchPage: React.FC = () => {
   const [operatorUnavailability, setOperatorUnavailability] = useState<OperatorBlock[]>([]);
   const [bookingBufferMinutes, setBookingBufferMinutes] = useState(0);
   const [reassignmentBookingIds, setReassignmentBookingIds] = useState<Set<string>>(new Set());
+  const [viewMode, setViewMode] = useState<'TIMELINE' | 'KANBAN'>('TIMELINE');
 
   // Drag & Drop State
   const [draggedItem, setDraggedItem] = useState<{ type: 'VEHICLE' | 'DRIVER'; id: string } | null>(null);
@@ -345,27 +347,64 @@ const DispatcherWorkbenchPage: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* WORKBENCH TOP BAR */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center space-x-2">
             <LayoutDashboard className="w-5 h-5 text-amber-500" />
-            <span>Bảng Điều Phối Tập Trung & Bãi Xe Kéo-Thả</span>
+            <span>Bảng Điều Phối & Lịch Trình Đội Xe</span>
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            Kéo card Xe / Tài xế thả vào Yêu cầu để xếp xe nhanh | Đồng bộ Realtime Supabase Cloud
+            Quản lý kế hoạch xe theo lịch Gantt & điều phối nhanh kéo-thả | Đồng bộ Realtime Supabase Cloud
           </p>
         </div>
 
-        <button
-          onClick={loadData}
-          className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
-          title="Làm mới bảng điều phối"
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-        </button>
+        <div className="flex items-center space-x-3">
+          {/* View Mode Switcher */}
+          <div className="inline-flex p-1 bg-slate-100 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700">
+            <button
+              onClick={() => setViewMode('TIMELINE')}
+              className={`flex items-center space-x-1.5 px-3.5 py-2 rounded-lg text-xs font-bold transition-all ${
+                viewMode === 'TIMELINE'
+                  ? 'bg-white dark:bg-slate-800 text-amber-600 dark:text-amber-400 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+              }`}
+            >
+              <Calendar className="w-4 h-4" />
+              <span>Lịch Gantt Đội Xe</span>
+            </button>
+            <button
+              onClick={() => setViewMode('KANBAN')}
+              className={`flex items-center space-x-1.5 px-3.5 py-2 rounded-lg text-xs font-bold transition-all ${
+                viewMode === 'KANBAN'
+                  ? 'bg-white dark:bg-slate-800 text-amber-600 dark:text-amber-400 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+              }`}
+            >
+              <LayoutDashboard className="w-4 h-4" />
+              <span>Bàn Điều Phối Kéo-Thả</span>
+            </button>
+          </div>
+
+          <button
+            onClick={loadData}
+            className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+            title="Làm mới bảng điều phối"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      {viewMode === 'TIMELINE' ? (
+        <VehicleScheduleTimelineBoard
+          vehicles={vehicles}
+          locations={locations}
+          waitingBookings={waitingBookings}
+          onSelectBookingToDispatch={openDispatchDrawer}
+          onRefresh={loadData}
+        />
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* ZONE A: BOOKING WAITING LIST (LEFT COLUMN - 5 COLS) */}
         <div className="lg:col-span-5 space-y-4">
           <div className="flex items-center justify-between">
@@ -569,6 +608,7 @@ const DispatcherWorkbenchPage: React.FC = () => {
           </div>
         </div>
       </div>
+      )}
 
       {/* DISPATCH DRAWER MODAL */}
       {selectedBooking && (

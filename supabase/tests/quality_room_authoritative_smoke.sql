@@ -239,10 +239,13 @@ begin
   end if;
   if app_private.quality_storage_can_mutate(
     'quality/' || ids.other_project_id || '/' || ids.other_site_id || '/record/file.jpg'
-  ) or app_private.quality_storage_can_mutate(
+  ) then
+    raise exception 'Quality Storage scope leaked to another project/site';
+  end if;
+  if not app_private.quality_storage_can_mutate(
     'quality/' || ids.site_id || '/legacy-record/file.jpg'
   ) then
-    raise exception 'Quality Storage scope leaked or legacy path became mutable';
+    raise exception 'Scoped legacy Quality Storage path was blocked during frontend rollout';
   end if;
 end;
 $$;
@@ -375,6 +378,8 @@ begin
   end;
   if app_private.quality_storage_can_mutate(
     'quality/' || ids.project_id || '/' || ids.site_id || '/record/file.jpg'
+  ) or app_private.quality_storage_can_mutate(
+    'quality/' || ids.site_id || '/legacy-record/file.jpg'
   ) then
     raise exception 'Quality viewer unexpectedly received Storage mutation access';
   end if;

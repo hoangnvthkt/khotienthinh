@@ -27,7 +27,8 @@ import type {
   FulfillmentType,
   OperatorType,
   VehicleUnavailabilityReason,
-  OperatorUnavailabilityReason
+  OperatorUnavailabilityReason,
+  VehicleTimelineEvent
 } from '../types/vehicleBooking';
 import type {
   VehicleBookingSubmissionPreviewRoute,
@@ -1474,3 +1475,124 @@ export async function updateFleetSystemSettings(params: FleetSystemSettingsUpdat
   if (error) throw error;
   return data;
 }
+
+export async function fetchVehicleTimelineEvents(startIso: string, endIso: string): Promise<VehicleTimelineEvent[]> {
+  const [assignmentsRes, unavailRes] = await Promise.all([
+    supabase
+      .from('vehicle_booking_assignments')
+      .select('*')
+      .eq('is_active', true)
+      .is('released_at', null)
+      .not('vehicle_asset_id', 'is', null)
+      .lt('reserved_start_at', endIso)
+      .gt('reserved_end_at', startIso)
+      .order('reserved_start_at', { ascending: true }),
+    supabase
+      .from('vehicle_unavailability_periods')
+      .select('*')
+      .lt('start_at', endIso)
+      .gt('end_at', startIso)
+      .order('start_at', { ascending: true }),
+  ]);
+
+  if (assignmentsRes.error) throw assignmentsRes.error;
+  if (unavailRes.error) throw unavailRes.error;
+
+  const assignments = (assignmentsRes.data || []) as VehicleBookingAssignment[];
+  const unavailabilities = (unavailRes.data || []) as VehicleUnavailabilityPeriod[];
+
+  const bookingIds = [...new Set(assignments.map(a => a.booking_id))];
+  const operatorUserIds = [...new Set(assignments.map(a => a.operator_user_id).filter(Boolean) as string[])];
+
+  let bookingsMap = new Map<string, VehicleBooking>();
+  let requestersMap = new Map<string, { id: string; name: string; avatar?: string | null; phone?: string | null }>();
+  let operatorsMap = new Map<string, { id: string; name: string; avatar?: string | null; phone?: string | null }>();
+
+  if (bookingIds.length > 0) {
+    const { data: bookingsData, error: bError } = await supabase
+      .from('vehicle_bookings')
+      .select('*')
+      .in('id', bookingIds);
+    if (bError) throw bError;
+    (bookingsData || []).forEach((b: VehicleBooking) => bookingsMap.set(b.id, b));
+
+    const requesterIds = [...new Set((bookingsData || []).map((b: VehicleBooking) => b.requester_user_id))];
+    const userIdsToFetch = [...new Set([...requesterIds, ...operatorUserIds])];
+
+    if (userIdsToFetch.length > 0) {
+      const [usersRes, employeesRes] = await Promise.all([
+        supabase.from('users').select('id, name, avatar, phone').in('id', userIdsToFetch),
+        supabase.from('employees').select('id, user_id, full_name, phone').in('user_id', userIdsToFetch),
+      ]);
+      const empPhoneMap = new Map<string, string>();
+      (employeesRes.data || []).forEach((e: any) => {
+        if (e.user_id && e.phone) empPhoneMap.set(e.user_id, e.phone);
+      });
+      (usersRes.data || []).forEach((u: any) => {
+        const phone = empPhoneMap.get(u.id) || u.phone || null;
+        const entry = { id: u.id, name: u.name, avatar: u.avatar || null, phone };
+        if (requesterIds.includes(u.id)) requestersMap.set(u.id, entry);
+        if (operatorUserIds.includes(u.id)) operatorsMap.set(u.id, entry);
+      });
+    }
+  }
+
+  const events: VehicleTimelineEvent[] = [];
+
+  // Map assignments to events
+  for (const a of assignments) {
+    if (!a.vehicle_asset_id) continue;
+    const b = bookingsMap.get(a.booking_id);
+    const requester = b ? requestersMap.get(b.requester_user_id) : undefined;
+    const driver = a.operator_user_id ? operatorsMap.get(a.operator_user_id) : undefined;
+
+    events.push({
+      id: `assignment-${a.id}`,
+      type: 'BOOKING',
+      vehicleAssetId: a.vehicle_asset_id,
+      startAt: a.reserved_start_at,
+      endAt: a.reserved_end_at,
+      title: b?.booking_code || 'Chuyến xe',
+      subtitle: b?.destination_text || (b?.purpose ? b.purpose : undefined),
+      status: b?.status || 'CONFIRMED',
+      bookingCode: b?.booking_code,
+      booking: b,
+      assignment: a,
+      requesterName: requester?.name || b?.requester_employee_id_snapshot || 'Khách đặt',
+      requesterAvatar: requester?.avatar,
+      requesterPhone: requester?.phone,
+      driverName: driver?.name || (a.fulfillment_type === 'INTERNAL_SELF_DRIVE' ? 'Tự lái' : 'Chưa chỉ định'),
+      driverAvatar: driver?.avatar,
+      driverPhone: driver?.phone,
+      pickupLocation: b?.pickup_location_text,
+      destination: b?.destination_text,
+      passengerCount: b?.passenger_count,
+    });
+  }
+
+  // Map unavailabilities to events
+  const reasonLabels: Record<VehicleUnavailabilityReason, string> = {
+    MAINTENANCE: 'Bảo dưỡng định kỳ',
+    REPAIR: 'Sửa chữa / Xưởng',
+    LOCKED: 'Tạm khóa / Niêm phong',
+    OTHER: 'Khóa xe / Tạm ngưng',
+  };
+
+  for (const u of unavailabilities) {
+    events.push({
+      id: `unavail-${u.id}`,
+      type: 'MAINTENANCE',
+      vehicleAssetId: u.vehicle_asset_id,
+      startAt: u.start_at,
+      endAt: u.end_at,
+      title: reasonLabels[u.reason_code] || 'Bảo dưỡng / Khóa xe',
+      subtitle: u.note || undefined,
+      reasonCode: u.reason_code,
+      note: u.note,
+      unavailabilityId: u.id,
+    });
+  }
+
+  return events;
+}
+

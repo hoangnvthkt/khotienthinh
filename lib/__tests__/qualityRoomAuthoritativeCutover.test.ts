@@ -82,6 +82,17 @@ describe('Quality Room authoritative cutover', () => {
     expect(sql).toContain("split_part(name, '/', 3)");
   });
 
+  it('keeps the deployed legacy upload path scoped during the frontend rollout', () => {
+    const sql = migrationBySuffix('_quality_storage_legacy_path_rollout_compat.sql');
+
+    expect(sql).toContain("split_part(name, '/', 5)");
+    expect(sql).toContain('from public.projects project_row');
+    expect(sql).toContain('project_row.construction_site_id::text = path.site_id');
+    expect(sql).toContain('app_private.project_actor_has_effective_room_action');
+    expect(sql).toContain("'quality', 'edit'");
+    expect(sql).toContain("'quality_storage_legacy_path_rollout_compat'");
+  });
+
   it('keeps enforcement behind a zero-fallback promotion gate', () => {
     const sql = migrationBySuffix('quality_room_enforcement_after_uat.sql');
 
