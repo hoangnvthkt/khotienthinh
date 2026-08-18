@@ -1,5 +1,7 @@
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import HrmOrgChartOverview from '../HrmOrgChartOverview';
 import HrmStaffingPanel from '../HrmStaffingPanel';
@@ -105,5 +107,18 @@ describe('HRM organization workforce planning UI', () => {
 
     expect(html).toContain('Chưa có định biên chính thức');
     expect(html).toContain('Thiết lập định biên đầu tiên');
+  });
+
+  it('composes Settings from the business overview instead of technical slot controls', () => {
+    const source = readFileSync(
+      join(process.cwd(), 'pages/settings/SettingsHrmSharedCatalog.tsx'),
+      'utf8',
+    );
+
+    expect(source).toContain('Sơ đồ tổng quan');
+    expect(source).toContain('Định biên & nhân sự');
+    expect(source).toContain('HrmStaffingPanel');
+    expect(source).not.toContain('+ Slot');
+    expect(source).not.toContain('Slot quản lý trực tiếp');
   });
 });
