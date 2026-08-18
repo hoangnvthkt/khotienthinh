@@ -184,6 +184,7 @@ import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 import { formatLocaleDecimalInput, formatViLiveInput, parseNonNegativeLocaleNumber } from '../../lib/localeNumberInput';
 import { buildSupplierDeliveryWarehousePolicy } from '../../lib/warehouseSiteBinding';
 import { buildPurchaseOrderLineDescription, resolveMaterialLineName } from '../../lib/materialLineDescription';
+import MaterialCommercialDescriptionFields from '../../components/material/MaterialCommercialDescriptionFields';
 
 interface SupplyChainTabProps {
     constructionSiteId?: string;
@@ -777,6 +778,7 @@ const normalizePoItem = (item: Partial<PurchaseOrderFormItem>, inventoryItems: I
             ? matched?.purchaseConversionFactor
             : 1
     ) ?? 1) || 1;
+    const lineName = resolveMaterialLineName(item, matched?.name);
 
     return {
         itemId: item.itemId || matched?.id || '',
@@ -784,7 +786,7 @@ const normalizePoItem = (item: Partial<PurchaseOrderFormItem>, inventoryItems: I
         vendorId: item.vendorId || null,
         vendorName: item.vendorName || null,
         sku: item.sku || matched?.sku || '',
-        name: item.name || matched?.name || '',
+        name: lineName,
         unit: purchaseUnitSnapshot || item.unit || matched?.unit || '',
         qty: parseNonNegativeLocaleNumber(item.qtyInput ?? item.qty),
         unitPrice: parseNonNegativeLocaleNumber(item.unitPriceInput ?? item.unitPrice),
@@ -810,7 +812,7 @@ const normalizePoItem = (item: Partial<PurchaseOrderFormItem>, inventoryItems: I
         overBudgetPercentSnapshot: Number(item.overBudgetPercentSnapshot || 0),
         overBudgetReason: item.overBudgetReason || '',
         isManualItem: item.isManualItem || (!matched && !!item.itemId?.startsWith('manual-')),
-        itemNameSnapshot: item.itemNameSnapshot || item.name || matched?.name || '',
+        itemNameSnapshot: lineName,
         unitSnapshot: stockUnitSnapshot,
         stockUnitSnapshot,
         purchaseUnitSnapshot,
@@ -4673,7 +4675,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     <td class="approval-center">${index + 1}</td>
                     <td>${escapeHtml(item.sku || item.itemId)}</td>
                     <td>
-                        <strong>${escapeHtml(item.name)}</strong>
+                        <strong>${escapeHtml(resolveMaterialLineName(item))}</strong>
                         ${item.workBoqItemName ? `<div class="approval-muted">${escapeHtml(item.workBoqItemName)}</div>` : ''}
                         ${lineDetailsHtml}
                     </td>
@@ -4902,7 +4904,8 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     <td class="center font-mono">${index + 1}</td>
                     <td class="font-mono text-slate-500">${escapeHtml(item.sku)}</td>
                     <td>
-                        <div style="font-weight: bold; font-size: 13px; color: #0f172a;">${escapeHtml(item.name)}</div>
+                        <div style="font-weight: bold; font-size: 13px; color: #0f172a;">${escapeHtml(resolveMaterialLineName(item))}</div>
+                        ${item.specification ? `<div class="line-specification">Quy cách: ${escapeHtml(item.specification)}</div>` : ''}
                         ${formulaHtml}
                         ${noteBoxHtml}
                     </td>
@@ -5029,6 +5032,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     padding: 2px 4px;
                     border-radius: 4px;
                 }
+                .line-specification { margin-top: 3px; color: #475569; font-size: 10px; }
                 
                 .note { margin-top: 16px; font-size: 11px; color: #334155; background: #fdfbf7; border: 1px solid #fef3c7; padding: 10px; border-radius: 6px; }
                 .approval-sheet { position: relative; font-family: "Times New Roman", Times, serif; color: #000; font-size: 13.5px; line-height: 1.2; }
@@ -5320,7 +5324,9 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 lineId: `${sourceItem?.lineId || line.poLineId || line.itemId}-delivery-${line.id || index}`,
                 itemId: sourceItem?.itemId || line.itemId,
                 sku: sourceItem?.sku || inventory?.sku || line.itemId,
-                name: sourceItem?.name || inventory?.name || line.itemId,
+                name: resolveMaterialLineName(sourceItem || {}, inventory?.name || line.itemId),
+                itemNameSnapshot: sourceItem?.itemNameSnapshot || sourceItem?.name || inventory?.name || line.itemId,
+                specification: sourceItem?.specification || '',
                 unit: purchaseUnit || lineUnit,
                 unitSnapshot: stockUnit || lineUnit,
                 stockUnitSnapshot: stockUnit || lineUnit,
@@ -8883,6 +8889,17 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                         </button>
                                                     </div>
                                                 </div>
+                                                <MaterialCommercialDescriptionFields
+                                                    className="mt-3"
+                                                    sku={item.sku || inventory?.sku}
+                                                    catalogName={inventory?.name}
+                                                    name={item.itemNameSnapshot || item.name || inventory?.name || ''}
+                                                    specification={item.specification}
+                                                    disabled={savingPo}
+                                                    nameLabel="Tên trên PO"
+                                                    onNameChange={value => updatePoItem(i, { name: value, itemNameSnapshot: value })}
+                                                    onSpecificationChange={value => updatePoItem(i, { specification: value })}
+                                                />
                                                 <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
                                                     <label className="inline-flex shrink-0 items-center gap-1.5 text-[11px] font-black text-slate-600">
                                                         <input

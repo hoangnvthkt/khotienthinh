@@ -86,4 +86,16 @@ describe('purchaseOrderDisplay', () => {
     expect(summary.requestTitle).toBe('Mua vat tu phu tro cong truong');
     expect(summary.materialSummary).toBe('Bien bao chu A, Ni long trang +1 vật tư');
   });
+
+  it('prefers document snapshot names over current catalog-style names', () => {
+    const po = makePo({
+      items: [{
+        ...makePo().items[0],
+        name: 'Tên hiện tại trong danh mục',
+        itemNameSnapshot: 'Van chặn PPR D32',
+      }],
+    });
+
+    expect(buildPurchaseOrderListSummary(po, []).materialSummary).toBe('Van chặn PPR D32');
+  });
 });

@@ -17,7 +17,7 @@ export const buildPurchaseOrderMaterialSummary = (
   maxVisibleItems = 2,
 ): string => {
   const names = uniqueTexts(items.map(item =>
-    cleanText(item.name || item.itemNameSnapshot || item.materialBudgetItemName || item.sku),
+    cleanText(item.itemNameSnapshot || item.name || item.materialBudgetItemName || item.sku),
   ));
   if (names.length === 0) return 'Chưa có vật tư';
   const visible = names.slice(0, maxVisibleItems).join(', ');
