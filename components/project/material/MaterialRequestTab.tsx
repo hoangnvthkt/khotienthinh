@@ -41,6 +41,7 @@ import { matchesSearchQueryMultiple } from '../../../lib/searchUtils';
 import { useApp } from '../../../context/AppContext';
 import { useToast } from '../../../context/ToastContext';
 import {
+    buildImportedMaterialRequestItem,
     generateMaterialRequestTemplate,
     parseMaterialRequestExcel,
     type MaterialRequestColumnMapping,
@@ -244,18 +245,8 @@ export const MaterialRequestTab: React.FC<MaterialRequestTabProps> = ({
                     // Fallback local format if RPC fails
                 }
 
-                const requestItems: RequestItem[] = group.rows.map(row => ({
-                    lineId: `line-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
-                    itemId: row.matchedInventoryItem?.id || row.materialCode || `custom-${Date.now()}`,
-                    requestQty: row.requestQty,
-                    approvedQty: row.requestQty,
-                    workBoqItemId: row.matchedWorkBoqItem?.id || null,
-                    workBoqItemName: row.matchedWorkBoqItem?.name || null,
-                    neededDate: row.neededDate,
-                    note: row.note,
-                    isOverBoq: row.isOverBoq,
-                    overQty: row.overQty,
-                }));
+                const requestItems: RequestItem[] = group.rows.map(row =>
+                    buildImportedMaterialRequestItem(row, crypto.randomUUID()));
 
                 const validDates = group.rows.map(r => r.neededDate).filter(Boolean) as string[];
                 const expectedDate = validDates.length > 0

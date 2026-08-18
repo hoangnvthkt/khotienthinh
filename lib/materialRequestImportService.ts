@@ -1,4 +1,4 @@
-import type { InventoryItem, ProjectWorkBoqItem, Warehouse } from '../types';
+import type { InventoryItem, ProjectWorkBoqItem, RequestItem, Warehouse } from '../types';
 import { loadXlsx } from './loadXlsx';
 import {
     importNumber,
@@ -12,6 +12,7 @@ export interface MaterialRequestImportRow {
     requestCode: string;
     materialCode: string;
     materialName: string;
+    specification: string;
     unit: string;
     requestQty: number;
     neededDate?: string;
@@ -48,6 +49,7 @@ export interface MaterialRequestImportFields {
     requestCode?: string;
     materialCode?: string;
     materialName?: string;
+    specification?: string;
     unit?: string;
     requestQty?: string;
     neededDate?: string;
@@ -94,7 +96,14 @@ export const SYSTEM_IMPORT_FIELDS: SystemFieldDefinition[] = [
         label: 'Tên vật tư',
         required: true,
         description: 'Tên vật liệu, sản phẩm hoặc mô tả vật tư đề xuất',
-        synonyms: ['tên vật tư', 'tên vật liệu', 'tên hàng', 'tên hàng hóa', 'tên sp', 'diễn giải', 'quy cách', 'mô tả', 'nội dung', 'vật tư', 'material', 'item name', 'description', 'vật liệu thi công', 'hạng mục hàng hóa', 'vật tư thiết bị', 'tên vật tư thiết bị'],
+        synonyms: ['tên trên đề xuất', 'tên theo chứng từ', 'tên vật tư', 'tên vật liệu', 'tên hàng', 'tên hàng hóa', 'tên sp', 'diễn giải', 'nội dung', 'vật tư', 'material', 'item name', 'description', 'vật liệu thi công', 'hạng mục hàng hóa', 'vật tư thiết bị', 'tên vật tư thiết bị'],
+    },
+    {
+        key: 'specification',
+        label: 'Quy cách/mô tả',
+        required: false,
+        description: 'Quy cách hoặc mô tả kỹ thuật riêng của dòng đề xuất',
+        synonyms: ['quy cách/mô tả', 'quy cách', 'thông số', 'mô tả kỹ thuật', 'specification', 'spec'],
     },
     {
         key: 'requestQty',
@@ -228,7 +237,8 @@ export const generateMaterialRequestTemplate = async () => {
     const headers = [
         'Mã/Tên Phiếu đề xuất',
         'Mã vật tư/SKU',
-        'Tên vật tư',
+        'Tên trên đề xuất',
+        'Quy cách/mô tả',
         'Đơn vị tính',
         'Số lượng đề xuất',
         'Ngày cần hàng',
@@ -242,6 +252,7 @@ export const generateMaterialRequestTemplate = async () => {
             'DX-VT-001',
             'VT-XI-MANG-01',
             'Xi măng Hà Tiên PCB40',
+            'PCB40, bao 50kg',
             'Bao',
             100,
             '15/08/2026',
@@ -253,6 +264,7 @@ export const generateMaterialRequestTemplate = async () => {
             'DX-VT-001',
             'VT-THEP-CB300-10',
             'Thép phi 10 CB300-V',
+            'D10, CB300-V',
             'Kg',
             500,
             '15/08/2026',
@@ -264,6 +276,7 @@ export const generateMaterialRequestTemplate = async () => {
             'DX-VT-002',
             'VT-GIAO-GIAO-01',
             'Giàn giáo khung H 1.7m',
+            'Khung H 1.7m',
             'Bộ',
             50,
             '20/08/2026',
@@ -278,6 +291,7 @@ export const generateMaterialRequestTemplate = async () => {
         { wch: 22 },
         { wch: 18 },
         { wch: 30 },
+        { wch: 28 },
         { wch: 12 },
         { wch: 18 },
         { wch: 15 },
@@ -299,6 +313,7 @@ export const autoDetectColumnMapping = (availableHeaders: string[]): { mapping: 
         requestCode: '',
         materialCode: '',
         materialName: '',
+        specification: '',
         unit: '',
         requestQty: '',
         neededDate: '',
@@ -451,6 +466,7 @@ export const parseMaterialRequestExcel = async (
         const requestCode = importText({ val: getCellVal('requestCode') }, ['val']);
         const materialCode = importText({ val: getCellVal('materialCode') }, ['val']);
         let materialName = importText({ val: getCellVal('materialName') }, ['val']);
+        const specification = importText({ val: getCellVal('specification') }, ['val']);
         let unit = importText({ val: getCellVal('unit') }, ['val']);
         const rawQty = getCellVal('requestQty');
         const requestQty = importNumber(rawQty);
@@ -468,11 +484,18 @@ export const parseMaterialRequestExcel = async (
             matchedInventoryItem = inventoryByCodeMap.get(normalizeLookupText(materialCode));
         }
 
-        if (!matchedInventoryItem && materialName) {
+        if (!matchedInventoryItem && !materialCode && materialName) {
             matchedInventoryItem = inventoryByNameMap.get(normalizeLookupText(materialName));
         }
 
         if (matchedInventoryItem) {
+            if (
+                unit
+                && matchedInventoryItem.unit
+                && normalizeLookupText(unit) !== normalizeLookupText(matchedInventoryItem.unit)
+            ) {
+                warnings.push(`ĐVT Excel '${unit}' khác ĐVT tồn kho '${matchedInventoryItem.unit}'; MR sẽ dùng ĐVT tồn kho.`);
+            }
             if (!materialName && matchedInventoryItem.name) {
                 materialName = matchedInventoryItem.name;
             }
@@ -480,7 +503,7 @@ export const parseMaterialRequestExcel = async (
                 unit = matchedInventoryItem.unit;
             }
         } else {
-            if (materialCode && !materialName) {
+            if (materialCode) {
                 errors.push(`Mã vật tư '${materialCode}' không tồn tại trong danh mục kho hệ thống`);
             } else if (!materialName) {
                 errors.push('Tên vật tư hoặc Mã vật tư không được để trống');
@@ -548,6 +571,7 @@ export const parseMaterialRequestExcel = async (
             requestCode: requestCode || 'Phiếu đề xuất mới',
             materialCode,
             materialName,
+            specification,
             unit,
             requestQty,
             neededDate,
@@ -604,3 +628,24 @@ export const parseMaterialRequestExcel = async (
         activeMapping,
     };
 };
+
+export const buildImportedMaterialRequestItem = (
+    row: MaterialRequestImportRow,
+    lineId: string,
+): RequestItem => ({
+    lineId,
+    itemId: row.matchedInventoryItem?.id || row.materialCode || `custom-${lineId}`,
+    requestQty: row.requestQty,
+    approvedQty: row.requestQty,
+    workBoqItemId: row.matchedWorkBoqItem?.id || null,
+    workBoqItemName: row.matchedWorkBoqItem?.name || null,
+    neededDate: row.neededDate,
+    note: row.note,
+    isOverBoq: row.isOverBoq,
+    overQty: row.overQty,
+    isManualItem: !row.matchedInventoryItem,
+    skuSnapshot: row.matchedInventoryItem?.sku || row.materialCode || undefined,
+    itemNameSnapshot: row.materialName || row.matchedInventoryItem?.name || undefined,
+    unitSnapshot: row.matchedInventoryItem?.unit || row.unit || undefined,
+    specification: row.specification || undefined,
+});

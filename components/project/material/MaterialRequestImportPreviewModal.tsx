@@ -271,6 +271,7 @@ export const MaterialRequestImportPreviewModal: React.FC<MaterialRequestImportPr
                                     <th className="px-3 py-2.5">Phiếu đề xuất</th>
                                     <th className="px-3 py-2.5">SKU / Mã VT</th>
                                     <th className="px-3 py-2.5">Tên vật tư</th>
+                                    <th className="px-3 py-2.5">Quy cách/mô tả</th>
                                     <th className="px-3 py-2.5">ĐVT</th>
                                     <th className="px-3 py-2.5 text-right">SL đề xuất</th>
                                     <th className="px-3 py-2.5">Ngày cần</th>
@@ -306,7 +307,13 @@ export const MaterialRequestImportPreviewModal: React.FC<MaterialRequestImportPr
                                             </td>
                                             <td className="px-3 py-3 font-bold">
                                                 {row.materialName || <span className="italic text-red-500">(Thiếu tên)</span>}
+                                                {row.matchedInventoryItem && (
+                                                    <div className="mt-0.5 text-[10px] font-medium text-slate-400">
+                                                        Danh mục: {row.matchedInventoryItem.sku} — {row.matchedInventoryItem.name}
+                                                    </div>
+                                                )}
                                             </td>
+                                            <td className="px-3 py-3 text-slate-500">{row.specification || '-'}</td>
                                             <td className="px-3 py-3 text-slate-500">{row.unit || '-'}</td>
                                             <td className="px-3 py-3 text-right font-mono font-bold text-indigo-600 dark:text-indigo-400 text-sm">
                                                 {row.requestQty > 0 ? row.requestQty.toLocaleString('vi-VN') : <span className="text-red-500 font-bold">{row.requestQty}</span>}
