@@ -16,6 +16,7 @@ import {
   poLineStockToPurchaseQty,
   stockUnitPriceToPurchaseUnitPrice,
 } from './materialUnitConversion';
+import { buildPurchaseOrderLineDescription } from './materialLineDescription';
 
 export type PurchaseOrderRequestCartRow = {
   key: string;
@@ -125,11 +126,12 @@ export const buildPurchaseOrderItemFromRequestCartRow = ({
   const unitSnapshot = inventory?.unit || row.line.unitSnapshot || budget?.unit || '';
   const unitPatch = buildPoUnitSnapshot(inventory);
   const purchaseUnitSnapshot = unitPatch.purchaseUnitSnapshot || inventory?.purchaseUnit || inventory?.unit || row.line.unitSnapshot || budget?.unit || '';
+  const description = buildPurchaseOrderLineDescription(row.line, inventory);
   const conversionLine = {
     itemId: row.line.itemId,
     lineId,
     sku: inventory?.sku || row.line.skuSnapshot || '',
-    name: inventory?.name || row.line.itemNameSnapshot || row.line.materialBudgetItemName || '',
+    name: description.name,
     unit: purchaseUnitSnapshot,
     qty: 0,
     unitPrice: 0,
@@ -166,12 +168,12 @@ export const buildPurchaseOrderItemFromRequestCartRow = ({
     overBudgetPercentSnapshot: row.line.overBudgetPercentSnapshot,
     overBudgetReason: row.line.overBudgetReason,
     isManualItem: false,
-    itemNameSnapshot: inventory?.name || row.line.itemNameSnapshot,
+    itemNameSnapshot: description.itemNameSnapshot,
     unitSnapshot,
     stockUnitSnapshot: unitSnapshot,
     purchaseUnitSnapshot,
     purchaseConversionFactor: toNumber(unitPatch.purchaseConversionFactor || inventory?.purchaseConversionFactor || 1) || 1,
-    specification: row.line.specification,
+    specification: description.specification,
     manualReason: '',
     note: '',
   };

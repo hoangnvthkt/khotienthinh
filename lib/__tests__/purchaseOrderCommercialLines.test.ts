@@ -34,11 +34,41 @@ describe('purchaseOrderCommercialLines', () => {
     })).toMatchObject({ code: 'duplicate_commercial_price', sku: 'SKU-1', unitPrice: 10_000 });
   });
 
+  it('allows proactive same SKU and price when the commercial descriptions differ', () => {
+    expect(findPurchaseOrderCommercialLineIssue({
+      sourceMode: 'proactive_project',
+      items: [
+        line('line-a', 10_000, { itemNameSnapshot: 'Van PPR D32', specification: 'PN20' }),
+        line('line-b', 10_000, { itemNameSnapshot: 'Van chặn PPR D32', specification: 'PN25' }),
+      ],
+    })).toBeNull();
+  });
+
+  it('still rejects identical proactive commercial lines after trimming and case normalization', () => {
+    expect(findPurchaseOrderCommercialLineIssue({
+      sourceMode: 'proactive_project',
+      items: [
+        line('line-a', 10_000, { itemNameSnapshot: 'Van PPR D32', specification: 'PN20' }),
+        line('line-b', 10_000, { itemNameSnapshot: '  van ppr d32 ', specification: ' pn20 ' }),
+      ],
+    })).toMatchObject({ code: 'duplicate_commercial_price' });
+  });
+
   it('keeps request-source duplicates blocked even when prices differ', () => {
     expect(findPurchaseOrderCommercialLineIssue({
       sourceMode: 'from_request',
       items: [line('line-a', 10_000), line('line-b', 11_000)],
     })).toMatchObject({ code: 'duplicate_request_source' });
+  });
+
+  it('allows the same item from distinct MR line identities', () => {
+    expect(findPurchaseOrderCommercialLineIssue({
+      sourceMode: 'from_request',
+      items: [
+        line('line-a', 10_000, { requestLineId: 'mr-line-a' }),
+        line('line-b', 10_000, { requestLineId: 'mr-line-b' }),
+      ],
+    })).toBeNull();
   });
 
   it('rejects proactive-stock same SKU rows at the same normalized price', () => {

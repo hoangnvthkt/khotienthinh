@@ -14,11 +14,15 @@ const requestKey = (line: PurchaseOrderItem) => [
   line.requestLineId || '',
 ].join('|');
 
+const normalizeDescription = (value?: string | null) => (value || '').trim().toLocaleLowerCase('vi-VN');
+
 const commercialKey = (line: PurchaseOrderItem) => [
   line.vendorId || '',
   line.itemId,
   line.materialBudgetItemId || '',
   Number(line.unitPrice),
+  normalizeDescription(line.itemNameSnapshot || line.name),
+  normalizeDescription(line.specification),
 ].join('|');
 
 const isProactiveMode = (sourceMode: PurchaseOrderSourceMode) =>

@@ -171,6 +171,27 @@ describe('purchaseOrderRequestCart', () => {
     expect(item.note).not.toContain('Can bo sung');
   });
 
+  it('preserves the MR line name and specification instead of replacing them with catalog text', () => {
+    const row = cartRow('mr-b', 'line-b');
+    row.line.itemNameSnapshot = 'Biển báo chữ B theo hồ sơ';
+    row.line.specification = 'Kích thước 300x500 mm';
+
+    const item = buildPurchaseOrderItemFromRequestCartRow({
+      row,
+      inventory,
+      budget,
+      supplierPatch: { vendorId: 'vendor-po', vendorName: 'NCC PO' },
+      lineId: 'po-line-b',
+    });
+
+    expect(item).toMatchObject({
+      itemId: inventory.id,
+      name: 'Biển báo chữ B theo hồ sơ',
+      itemNameSnapshot: 'Biển báo chữ B theo hồ sơ',
+      specification: 'Kích thước 300x500 mm',
+    });
+  });
+
   it('appends new request rows without mutating existing PO items', () => {
     const before = [existingPoItem];
 

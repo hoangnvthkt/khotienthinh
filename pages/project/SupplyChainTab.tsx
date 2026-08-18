@@ -183,6 +183,7 @@ import { findPurchaseOrderCommercialLineIssue } from '../../lib/purchaseOrderCom
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 import { formatLocaleDecimalInput, formatViLiveInput, parseNonNegativeLocaleNumber } from '../../lib/localeNumberInput';
 import { buildSupplierDeliveryWarehousePolicy } from '../../lib/warehouseSiteBinding';
+import { buildPurchaseOrderLineDescription, resolveMaterialLineName } from '../../lib/materialLineDescription';
 
 interface SupplyChainTabProps {
     constructionSiteId?: string;
@@ -3177,6 +3178,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         }
         const rows = selectedRows.map(row => {
             const inventory = inventoryItems.find(item => item.id === row.line.itemId);
+            const description = buildPurchaseOrderLineDescription(row.line, inventory);
             const remainingQty = row.remainingQty;
             const budget = row.line.materialBudgetItemId ? budgetLookup.get(row.line.materialBudgetItemId) : undefined;
             const work = row.line.workBoqItemId ? workLookup.get(row.line.workBoqItemId) : undefined;
@@ -3187,7 +3189,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 ...supplierPatch,
                 ...buildPoUnitSnapshot(inventory),
                 sku: inventory?.sku || row.line.skuSnapshot || '',
-                name: inventory?.name || row.line.itemNameSnapshot || row.line.materialBudgetItemName || '',
+                name: description.name,
                 qty: poLineStockToPurchaseQty({
                     ...createEmptyPoItem(),
                     itemId: row.line.itemId,
@@ -3217,12 +3219,12 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 overBudgetPercentSnapshot: row.line.overBudgetPercentSnapshot,
                 overBudgetReason: row.line.overBudgetReason,
                 isManualItem: false,
-                itemNameSnapshot: inventory?.name || row.line.itemNameSnapshot,
+                itemNameSnapshot: description.itemNameSnapshot,
                 unitSnapshot: inventory?.unit || row.line.unitSnapshot,
                 stockUnitSnapshot: inventory?.unit || row.line.unitSnapshot,
                 purchaseUnitSnapshot: inventory?.purchaseUnit || inventory?.unit || row.line.unitSnapshot || budget?.unit || '',
                 purchaseConversionFactor: Number(inventory?.purchaseConversionFactor || 1),
-                specification: row.line.specification,
+                specification: description.specification,
                 manualReason: '',
                 note: '',
                 noteEnabled: false,
@@ -8268,14 +8270,14 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                 itemId: row.line.itemId,
                                                 ...buildPoUnitSnapshot(inv),
                                                 sku: inv?.sku || row.line.skuSnapshot || '',
-                                                name: inv?.name || row.line.itemNameSnapshot || row.line.materialBudgetItemName || '',
+                                                name: resolveMaterialLineName(row.line, inv?.name),
                                             }, inventoryItems);
                                             const purchaseUnit = getPoLinePurchaseUnit(conversionLine, inv);
                                             const stockUnit = getPoLineStockUnit(conversionLine, inv) || row.line.unitSnapshot || '';
                                             const purchaseQty = poLineStockToPurchaseQty(conversionLine, remaining, inv);
                                             const purchaseUnitPrice = stockUnitPriceToPurchaseUnitPrice(Number(inv?.priceIn || 0), inv);
                                             const estimatedAmount = purchaseQty * purchaseUnitPrice;
-                                            const lineName = inv?.name || row.line.itemNameSnapshot || row.line.materialBudgetItemName || row.line.itemId;
+                                            const lineName = resolveMaterialLineName(row.line, inv?.name);
                                             const siteName = row.request.constructionSiteId ? constructionSiteById.get(row.request.constructionSiteId)?.name : '';
                                             const companyPoRefs = companyPoRefsByRequestLine.get(row.key) || [];
                                             return (
