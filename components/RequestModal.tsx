@@ -48,6 +48,8 @@ import { formatReservationSourceList } from '../lib/inventoryStockGuard';
 import { getMaterialIssueDraftQty } from '../lib/materialRequestIssueDraft';
 import { formatLocaleDecimalInput, parseNonNegativeLocaleNumber } from '../lib/localeNumberInput';
 import { BoqSummaryStrip } from './erp';
+import MaterialCommercialDescriptionFields from './material/MaterialCommercialDescriptionFields';
+import { getMaterialDocumentLineKey, resolveMaterialLineName } from '../lib/materialLineDescription';
 
 const ScannerModal = React.lazy(() => import('./ScannerModal'));
 
@@ -590,7 +592,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
 
     const getLineName = (line: Partial<RequestLineDraft | RequestItem>) => {
         const inventory = getLineInventory(line.itemId);
-        return inventory?.name || line.itemNameSnapshot || line.materialBudgetItemName || line.itemId || 'Dòng chưa có mã kho';
+        return resolveMaterialLineName(line, inventory?.name) || 'Dòng chưa có mã kho';
     };
 
     const getLineUnit = (line: Partial<RequestLineDraft | RequestItem>) => {
@@ -920,10 +922,6 @@ const RequestModal: React.FC<RequestModalProps> = ({
     };
 
     const handleSelectFromModal = (item: InventoryItem) => {
-        if (!isProjectRequest && reqItems.some(i => i.itemId === item.id)) {
-            toast.warning('Vật tư đã tồn tại', 'Vật tư này đã có trong danh sách đề xuất.');
-            return;
-        }
         setReqItems([...reqItems, {
             lineId: crypto.randomUUID(),
             itemId: item.id,
@@ -2135,14 +2133,17 @@ const RequestModal: React.FC<RequestModalProps> = ({
             || employees.find(item => item.userId === request.requesterId)?.fullName
             || request.requesterId
             || '-';
-        const rows = (request.items || []).map((line, index) => `
-            <tr>
-                <td class="center">${index + 1}</td>
-                <td>${escapeHtml(getLineName(line))}</td>
-                <td class="center">${escapeHtml(getLineUnit(line))}</td>
-                <td class="right">${Number(line.requestQty || 0).toLocaleString('vi-VN')}</td>
-            </tr>
-        `).join('');
+        const rows = (request.items || []).map((line, index) => {
+            const specificationHtml = line.specification ? `<div class="line-spec">Quy cách: ${escapeHtml(line.specification)}</div>` : '';
+            return `
+                <tr>
+                    <td class="center">${index + 1}</td>
+                    <td><strong>${escapeHtml(getLineName(line))}</strong>${specificationHtml}</td>
+                    <td class="center">${escapeHtml(getLineUnit(line))}</td>
+                    <td class="right">${Number(line.requestQty || 0).toLocaleString('vi-VN')}</td>
+                </tr>
+            `;
+        }).join('');
         const html = `
             <!doctype html>
             <html>
@@ -2160,6 +2161,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                     th { background: #f3f4f6; text-align: center; font-size: 11px; text-transform: uppercase; }
                     .center { text-align: center; }
                     .right { text-align: right; font-weight: 700; }
+                    .line-spec { margin-top: 4px; color: #4b5563; font-size: 11px; font-weight: 400; }
                     .signatures { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; margin-top: 42px; text-align: center; font-size: 12px; font-weight: 700; }
                     .signature-space { height: 72px; }
                     @media print { body { padding: 18px; } }
@@ -2209,6 +2211,12 @@ const RequestModal: React.FC<RequestModalProps> = ({
 
     const handlePrintFulfillmentBatch = async (batch: MaterialRequestFulfillmentBatch, mode: 'print' | 'pdf' = 'print') => {
         if (!request) return;
+        const escapeHtml = (value: unknown) => String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
         try {
             const printableBatch = await materialRequestFulfillmentService.ensureQrToken(batch);
             setSelectedFulfillmentBatch(printableBatch);
@@ -2219,7 +2227,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                 const requestLine = request.items.find((item, index) => getRequestLineId(request, item, index) === line.requestLineId);
                 return `
                     <tr>
-                        <td>${requestLine ? getLineName(requestLine) : line.itemId}</td>
+                        <td><strong>${requestLine ? getLineName(requestLine) : line.itemId}</strong>${requestLine?.specification ? `<div class="line-spec">Quy cách: ${escapeHtml(requestLine.specification)}</div>` : ''}</td>
                         <td class="right">${Number(line.issuedQty || 0).toLocaleString('vi-VN')}</td>
                         <td>${line.unit || requestLine?.unitSnapshot || ''}</td>
                     </tr>
@@ -2241,6 +2249,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                         th, td { border: 1px solid #cbd5e1; padding: 9px; text-align: left; }
                         th { background: #f1f5f9; text-transform: uppercase; font-size: 11px; color: #475569; }
                         .right { text-align: right; font-weight: 700; }
+                        .line-spec { margin-top: 4px; color: #475569; font-size: 11px; font-weight: 400; }
                         .signatures { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; margin-top: 42px; text-align: center; font-size: 12px; font-weight: 700; }
                         .signature-space { height: 64px; }
                         @media print { body { padding: 18px; } }
@@ -2485,11 +2494,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
         const sku = getLineSku(row);
         const unit = getLineUnit(row);
         const name = getLineName(row);
-        const key = sku
-            ? `sku:${sku.toLowerCase()}`
-            : itemId
-                ? `item:${itemId}`
-                : `name:${(row.materialBudgetItemName || name || '').toLowerCase()}::${unit || ''}`;
+        const key = getMaterialDocumentLineKey(row, index);
         const requestQty = isEditable ? parseNonNegativeLocaleNumber((row as RequestLineDraft).qty) : Number((row as RequestItem).requestQty || 0);
         const lineId = row.lineId;
         const requestLineId = request && !isEditable ? getRequestLineId(request, row as RequestItem, index) : lineId;
@@ -3147,6 +3152,18 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                             )}
                                                         </div>
                                                         {group.specification && <div className="text-[10px] text-muted-foreground mt-0.5">{group.specification}</div>}
+                                                        {isEditable && !hasMultipleSources && (
+                                                            <MaterialCommercialDescriptionFields
+                                                                className="mt-3"
+                                                                sku={group.sku}
+                                                                catalogName={itemInfo?.name}
+                                                                name={(primaryRow as RequestLineDraft).itemNameSnapshot || group.name}
+                                                                specification={(primaryRow as RequestLineDraft).specification}
+                                                                nameLabel="Tên trên đề xuất"
+                                                                onNameChange={value => handleUpdateItem(primary.index, 'itemNameSnapshot', value)}
+                                                                onSpecificationChange={value => handleUpdateItem(primary.index, 'specification', value)}
+                                                            />
+                                                        )}
                                                         {!hasMultipleSources && isProjectRequest && (
                                                             <div className="mt-1 space-y-1">
                                                                 {(() => {
@@ -3389,6 +3406,18 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                 {hasMultipleSources && <span className="shrink-0 rounded bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold text-amber-700 border border-amber-200/60">{group.sources.length} hạng mục</span>}
                                             </div>
                                             {group.specification && <div className="text-[10px] text-muted-foreground mt-0.5 line-clamp-2">{group.specification}</div>}
+                                            {isEditable && !hasMultipleSources && (
+                                                <MaterialCommercialDescriptionFields
+                                                    className="mt-3"
+                                                    sku={group.sku}
+                                                    catalogName={itemInfo?.name}
+                                                    name={(primaryRow as RequestLineDraft).itemNameSnapshot || group.name}
+                                                    specification={(primaryRow as RequestLineDraft).specification}
+                                                    nameLabel="Tên trên đề xuất"
+                                                    onNameChange={value => handleUpdateItem(primary.index, 'itemNameSnapshot', value)}
+                                                    onSpecificationChange={value => handleUpdateItem(primary.index, 'specification', value)}
+                                                />
+                                            )}
                                             {!hasMultipleSources && isProjectRequest && (primaryRow.workBoqItemName || primaryRow.materialBudgetItemName || !primaryRow.materialBudgetItemId || budgetSnapshot.overBudgetQty > 0) && (
                                                 <div className="mt-1 flex flex-wrap gap-1">
                                                     {(primaryRow.workBoqItemName || primaryRow.materialBudgetItemName) && <span className="px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200/40 dark:border-amber-800/40 text-[9px] font-bold">{primaryRow.workBoqItemName || 'BOQ'}{primaryRow.materialBudgetItemName ? ` • ${primaryRow.materialBudgetItemName}` : ''}</span>}
