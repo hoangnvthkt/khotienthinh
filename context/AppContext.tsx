@@ -51,6 +51,8 @@ import {
 } from '../lib/projectTransactionMapping';
 import { canPerform } from '../lib/permissions/permissionService';
 import { executeUserAccountLifecycle } from '../lib/userAccountLifecycleService';
+import { toEmployeeProfileUpdatePayload } from '../lib/hrmEmployeeProfileModel';
+import { hrmEmployeeProfileService } from '../lib/hrmEmployeeProfileService';
 import { useAuth } from './AuthContext';
 import { mapUserProfileRow as mapUserFromDb, serializeMockUser } from './authState';
 
@@ -2804,29 +2806,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const addEmployee = async (e: Employee) => {
+    const newEmployee: Employee = {
+      ...e,
+      title: '',
+      positionId: undefined,
+      orgUnitId: undefined,
+      departmentId: undefined,
+      constructionSiteId: undefined,
+      factoryId: undefined,
+    };
     if (isSupabaseConfigured) {
       try {
         const payload = {
-          id: e.id,
-          employee_code: e.employeeCode || null,
-          full_name: e.fullName, title: e.title || null,
-          gender: e.gender || null, phone: e.phone || null, email: e.email || null,
-          date_of_birth: e.dateOfBirth || null,
-          start_date: e.startDate || null,
-          official_date: e.officialDate || null,
-          status: e.status || 'Đang làm việc',
-          user_id: e.userId || null,
-          area_id: e.areaId || null, office_id: e.officeId || null,
-          employee_type_id: e.employeeTypeId || null,
-          position_id: e.positionId || null,
-          salary_policy_id: e.salaryPolicyId || null,
-          work_schedule_id: e.workScheduleId || null,
-          construction_site_id: e.constructionSiteId || null,
-          department_id: e.departmentId || null,
-          factory_id: e.factoryId || null,
-          marital_status: e.maritalStatus || null,
-          avatar_url: e.avatarUrl || null,
-          org_unit_id: e.orgUnitId || null,
+          id: newEmployee.id,
+          employee_code: newEmployee.employeeCode || null,
+          ...toEmployeeProfileUpdatePayload(newEmployee),
         };
         const { error } = await supabase
           .from('employees')
@@ -2837,20 +2831,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         throw err;
       }
     }
-    setEmployees(prev => [...prev, e]);
-    logActivity('SYSTEM', 'Thêm nhân sự', `Đã thêm hồ sơ nhân sự mới: ${e.fullName}`, 'SUCCESS');
-    auditService.log({ tableName: 'employees', recordId: e.id, action: 'INSERT', newData: e as any, userId: user.id, userName: user.name || user.username });
+    setEmployees(prev => [...prev, newEmployee]);
+    logActivity('SYSTEM', 'Thêm nhân sự', `Đã thêm hồ sơ nhân sự mới: ${newEmployee.fullName}`, 'SUCCESS');
+    auditService.log({ tableName: 'employees', recordId: newEmployee.id, action: 'INSERT', newData: newEmployee as any, userId: user.id, userName: user.name || user.username });
   };
 
   const updateEmployee = async (e: Employee) => {
     const oldEmp = employees.find(emp => emp.id === e.id);
-    const syncOk = await syncToSupabase('employees', e);
-    if (!syncOk) {
-      throw new Error('Không thể cập nhật hồ sơ nhân sự trên Supabase.');
+    const nextEmployee: Employee = oldEmp ? {
+      ...e,
+      title: oldEmp.title,
+      positionId: oldEmp.positionId,
+      orgUnitId: oldEmp.orgUnitId,
+      departmentId: oldEmp.departmentId,
+      constructionSiteId: oldEmp.constructionSiteId,
+      factoryId: oldEmp.factoryId,
+    } : e;
+    if (isSupabaseConfigured) {
+      await hrmEmployeeProfileService.update(nextEmployee);
     }
-    setEmployees(prev => prev.map(item => item.id === e.id ? e : item));
-    logActivity('SYSTEM', 'Cập nhật nhân sự', `Đã cập nhật thông tin nhân sự: ${e.fullName}`, 'INFO');
-    auditService.log({ tableName: 'employees', recordId: e.id, action: 'UPDATE', oldData: oldEmp as any, newData: e as any, userId: user.id, userName: user.name || user.username });
+    setEmployees(prev => prev.map(item => item.id === e.id ? nextEmployee : item));
+    logActivity('SYSTEM', 'Cập nhật nhân sự', `Đã cập nhật thông tin nhân sự: ${nextEmployee.fullName}`, 'INFO');
+    auditService.log({ tableName: 'employees', recordId: e.id, action: 'UPDATE', oldData: oldEmp as any, newData: nextEmployee as any, userId: user.id, userName: user.name || user.username });
   };
 
   const replaceEmployeeLocal = useCallback((e: Employee) => {
