@@ -13,7 +13,6 @@ import {
 import MasterDataConfirmModal from '../components/MasterDataConfirmModal';
 import { RealtimeBadge } from '../components/OfflineIndicator';
 import { Role, User } from '../types';
-import OrgChart from '../components/OrgChart';
 import SettingsGeneral from './settings/SettingsGeneral';
 import SettingsWarehouses from './settings/SettingsWarehouses';
 import SettingsUsers from './settings/SettingsUsers';
@@ -29,6 +28,7 @@ import SettingsAiLearning from './settings/SettingsAiLearning';
 import SettingsReleaseNotes from './settings/SettingsReleaseNotes';
 import SettingsAlerts from './settings/SettingsAlerts';
 import SettingsPermissionHealth from './settings/SettingsPermissionHealth';
+import SettingsHrmSharedCatalog from './settings/SettingsHrmSharedCatalog';
 import { useModuleData } from '../hooks/useModuleData';
 import { useToast } from '../context/ToastContext';
 import { useAsyncAction } from '../hooks/useAsyncAction';
@@ -116,6 +116,7 @@ const Settings: React.FC = () => {
   const isSettingsAdmin = currentUser.role === Role.ADMIN;
   const hasSettingsManagementAccess = hasAnySettingsManagementFeature(currentUser);
   const canViewPermissionHealth = canPerform(currentUser, 'system.settings.manage');
+  const canManageHrmSharedCatalog = canPerform(currentUser, 'system.hrm.manage');
   const canOpenSettingsFeature = (featureId: SettingsFeatureId) => canAccessSettingsFeature(currentUser, featureId);
   useModuleData('admin', hasSettingsManagementAccess);
   useModuleData('wms', canOpenSettingsFeature('warehouses') || canOpenSettingsFeature('master-data') || canOpenSettingsFeature('loss-norms') || canOpenSettingsFeature('users'));
@@ -1067,9 +1068,8 @@ const Settings: React.FC = () => {
     { id: 'project-master-data', label: 'Danh mục DA', icon: FolderKanban },
     { id: 'inspection-templates', label: 'Mẫu nghiệm thu', icon: ClipboardCheck },
     { id: 'work-groups', label: 'Nhóm làm việc', icon: Users },
-    { id: 'org-chart', label: 'Sơ đồ tổ chức', icon: GitBranch },
     { id: 'loss-norms', label: 'Định mức hao hụt', icon: TrendingDown },
-    { id: 'hrm-master-data', label: 'Dữ liệu gốc HRM', icon: Briefcase },
+    { id: 'hrm-master-data', label: 'Danh mục dùng chung HRM', icon: GitBranch },
     { id: 'users', label: 'Người dùng', icon: Users },
     { id: 'alerts', label: 'Cảnh báo', icon: BellRing, adminOnly: true },
     { id: 'permission-health', label: 'Permission health', icon: ShieldCheck, healthOnly: true },
@@ -1077,7 +1077,12 @@ const Settings: React.FC = () => {
     { id: 'ai-learning', label: 'AI Learning', icon: BrainCircuit },
     { id: 'account', label: 'Tài khoản', icon: UserIcon },
     { id: 'maintenance', label: 'Bảo trì', icon: AlertCircle },
-  ].filter(tab => tab.healthOnly ? canViewPermissionHealth : tab.adminOnly ? isSettingsAdmin : canOpenSettingsFeature(tab.id as SettingsFeatureId));
+  ].filter(tab => tab.healthOnly
+    ? canViewPermissionHealth
+    : tab.adminOnly
+      ? isSettingsAdmin
+      : canOpenSettingsFeature(tab.id as SettingsFeatureId) ||
+        (tab.id === 'hrm-master-data' && canOpenSettingsFeature('org-chart')));
   const activeSettingsTab = tabs.some(tab => tab.id === activeTab) ? activeTab : 'account';
   const handleSelectTab = (tabId: string) => {
     setActiveTab(tabId);
@@ -1741,13 +1746,14 @@ const Settings: React.FC = () => {
             <SettingsWorkGroups />
           )}
 
-          {activeSettingsTab === 'org-chart' && (
-            <div className="animate-in slide-in-from-right-4 duration-300">
-              <OrgChart />
-            </div>
+          {activeSettingsTab === 'hrm-master-data' && (
+            <SettingsHrmSharedCatalog
+              actorId={currentUser.id}
+              canManage={canManageHrmSharedCatalog}
+            />
           )}
 
-          {activeSettingsTab === 'hrm-master-data' && (
+          {activeSettingsTab === '__legacy-hrm-master-data' && (
             <div className="animate-in slide-in-from-right-4 duration-300">
               {!activeHrmSection ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Download, Loader2, Printer, X } from 'lucide-react';
 import { saveAs } from 'file-saver';
 import type { RequestDetail } from '../../lib/requestRuntimeService';
-import { buildBrowserPrintModel, getRequestDocxTemplateBytes, recordRequestExportAudit, renderRequestDocx } from '../../lib/requestPrintService';
+import { buildBrowserPrintModel, getRequestDocxTemplateBytes, recordRequestExportAudit, renderRequestDocx, printRequestDocument } from '../../lib/requestPrintService';
 import { getApiErrorMessage } from '../../lib/apiError';
 
 const id = () => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
@@ -20,7 +20,7 @@ export const RequestPrintPreview: React.FC<{ detail: RequestDetail; onClose: () 
     setError(null);
     try {
       await recordRequestExportAudit({ requestId: detail.id, format, result: 'SUCCEEDED', clientActionId: id() });
-      window.setTimeout(() => window.print(), 0);
+      printRequestDocument(detail);
     } catch (cause) {
       setError(getApiErrorMessage(cause, 'Không thể ghi nhận thao tác in.'));
     } finally {
@@ -57,23 +57,44 @@ export const RequestPrintPreview: React.FC<{ detail: RequestDetail; onClose: () 
             size: A4 portrait;
             margin: 12mm 15mm 15mm 15mm;
           }
+          html, body, #root, #root > div, main {
+            height: auto !important;
+            min-height: 0 !important;
+            max-height: none !important;
+            overflow: visible !important;
+            position: static !important;
+            background: #fff !important;
+            padding: 0 !important;
+            margin: 0 !important;
+          }
           body * {
             visibility: hidden;
           }
-          [data-request-print-root], [data-request-print-root] * {
+          nav, aside, header, footer, button, .no-print, [data-no-print] {
+            display: none !important;
+          }
+          [data-request-print-root],
+          [data-request-print-root] * {
             visibility: visible;
           }
           [data-request-print-root] {
-            position: absolute;
-            inset: 0;
-            width: 100%;
-            color: #111827;
-            background: #fff;
-            padding: 0;
-            margin: 0;
+            position: static !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            height: auto !important;
+            overflow: visible !important;
+            color: #111827 !important;
+            background: #fff !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            box-shadow: none !important;
+            border: none !important;
           }
-          [data-no-print] {
-            display: none !important;
+          .fixed.inset-0 {
+            position: static !important;
+            overflow: visible !important;
+            background: transparent !important;
+            padding: 0 !important;
           }
           table {
             border-collapse: collapse !important;
@@ -84,10 +105,15 @@ export const RequestPrintPreview: React.FC<{ detail: RequestDetail; onClose: () 
             color: #111827 !important;
           }
           thead {
-            display: table-header-group;
+            display: table-header-group !important;
           }
           tr {
-            page-break-inside: avoid;
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+          }
+          section, .signatures-section {
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
           }
         }
       `}</style>
@@ -233,15 +259,14 @@ export const RequestPrintPreview: React.FC<{ detail: RequestDetail; onClose: () 
                 <span className="font-semibold text-slate-800 dark:text-slate-200">{item.blockName}</span>
                 <div className="flex items-center gap-2 text-xs">
                   <span
-                    className={`inline-flex items-center rounded-md px-2 py-0.5 font-semibold text-[11px] ${
-                      item.status === 'COMPLETED'
-                        ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
-                        : item.status === 'ACTIVE'
+                    className={`inline-flex items-center rounded-md px-2 py-0.5 font-semibold text-[11px] ${item.status === 'COMPLETED'
+                      ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                      : item.status === 'ACTIVE'
                         ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
                         : item.status === 'RETURNED'
-                        ? 'bg-orange-50 text-orange-700 dark:bg-orange-950/50 dark:text-orange-300 border border-orange-200 dark:border-orange-800'
-                        : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700'
-                    }`}
+                          ? 'bg-orange-50 text-orange-700 dark:bg-orange-950/50 dark:text-orange-300 border border-orange-200 dark:border-orange-800'
+                          : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700'
+                      }`}
                   >
                     {item.statusLabel || item.status}
                   </span>
@@ -276,7 +301,29 @@ export const RequestPrintPreview: React.FC<{ detail: RequestDetail; onClose: () 
           </section>
         )}
 
-        <footer className="mt-8 pt-4 border-t border-slate-100 dark:border-slate-800 text-xs text-slate-400 flex items-center justify-between">
+        {/* Khối chữ ký */}
+        {/* <section className="signatures-section border-t border-slate-200 py-6 dark:border-slate-800">
+          <div className="grid grid-cols-3 gap-4 text-center">
+            <div className="flex flex-col items-center">
+              <p className="text-xs font-bold uppercase text-slate-800 dark:text-slate-200">Người lập đề xuất</p>
+              <p className="text-[10px] text-slate-400 italic mt-0.5">(Ký, ghi rõ họ tên)</p>
+              <div className="h-16" />
+              <p className="text-xs font-bold text-slate-700 dark:text-slate-300">{model.creatorName}</p>
+            </div>
+            <div className="flex flex-col items-center">
+              <p className="text-xs font-bold uppercase text-slate-800 dark:text-slate-200">Người kiểm tra</p>
+              <p className="text-[10px] text-slate-400 italic mt-0.5">(Ký, ghi rõ họ tên)</p>
+              <div className="h-16" />
+            </div>
+            <div className="flex flex-col items-center">
+              <p className="text-xs font-bold uppercase text-slate-800 dark:text-slate-200">Người phê duyệt</p>
+              <p className="text-[10px] text-slate-400 italic mt-0.5">(Ký, ghi rõ họ tên)</p>
+              <div className="h-16" />
+            </div>
+          </div>
+        </section> */}
+
+        <footer className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800 text-xs text-slate-400 flex items-center justify-between">
           <span>In từ Vioo · {model.code}</span>
           <span className="print:hidden text-[11px] text-slate-400">Tự động điều chỉnh kích thước cho trang in A4</span>
         </footer>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildBrowserPrintModel, buildRequestPrintFileName, buildRequestPrintTokens } from '../requestPrintService';
+import { buildBrowserPrintModel, buildRequestPrintFileName, buildRequestPrintTokens, buildRequestPrintHtml } from '../requestPrintService';
 
 const detail = {
   id: 'rq-1', code: 'RQ-2026-000001', title: 'Đề xuất mua máy tính', description: 'Nội dung',
@@ -66,5 +66,31 @@ describe('request print service', () => {
       { 'Tên đồ bảo hộ': 'Mũ công nhân', 'ĐVT': 'cái', 'Số lượng': '200' },
       { 'Tên đồ bảo hộ': 'Áo bảo hộ', 'ĐVT': 'cái', 'Số lượng': '200' },
     ]);
+  });
+
+  it('generates multi-page printable HTML with A4 styles and table pagination', () => {
+    const tableDetail = {
+      ...detail,
+      formSchema: [
+        { key: 'reason', label: 'Lý do', fieldType: 'text', required: true, options: [], sortOrder: 1 },
+        { key: 'items', label: 'Bảng vật tư', fieldType: 'table', required: true, options: ['Tên vật tư', 'Số lượng'], sortOrder: 2 },
+      ],
+      formData: {
+        reason: 'Mua sắm định kỳ',
+        items: [{ 'Tên vật tư': 'Xi măng', 'Số lượng': '10 bao' }],
+      },
+    };
+
+    const html = buildRequestPrintHtml(tableDetail);
+
+    expect(html).toContain('<!doctype html>');
+    expect(html).toContain('size: A4 portrait');
+    expect(html).toContain('table-header-group');
+    expect(html).toContain('page-break-inside: avoid');
+    expect(html).toContain('RQ-2026-000001');
+    expect(html).toContain('Mua sắm định kỳ');
+    expect(html).toContain('Xi măng');
+    expect(html).toContain('Người lập đề xuất');
+    expect(html).toContain('Người phê duyệt');
   });
 });

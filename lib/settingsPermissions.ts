@@ -12,7 +12,7 @@ export const SETTINGS_FEATURES = [
   { id: 'work-groups', label: 'Nhóm làm việc' },
   { id: 'org-chart', label: 'Sơ đồ tổ chức' },
   { id: 'loss-norms', label: 'Định mức hao hụt' },
-  { id: 'hrm-master-data', label: 'Dữ liệu gốc HRM' },
+  { id: 'hrm-master-data', label: 'Danh mục dùng chung HRM' },
   { id: 'users', label: 'Người dùng' },
   { id: 'alerts', label: 'Cảnh báo' },
   { id: 'permission-health', label: 'Permission health' },
