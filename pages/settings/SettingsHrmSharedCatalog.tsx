@@ -130,7 +130,7 @@ const SettingsHrmSharedCatalog: React.FC<SettingsHrmSharedCatalogProps> = ({ can
       slots: bundle.slots.filter(slot => slot.positionId === position.id && slot.status !== 'ARCHIVED'),
     }))
     .sort((a, b) => (b.employees.length + b.slots.length) - (a.employees.length + a.slots.length)),
-  [bundle.positions, bundle.employees, bundle.slots]);
+    [bundle.positions, bundle.employees, bundle.slots]);
 
   const selectedUnit = bundle.orgUnits.find(unit => unit.id === selectedUnitId)
     || orgForest[0]
@@ -353,56 +353,56 @@ const SettingsHrmSharedCatalog: React.FC<SettingsHrmSharedCatalogProps> = ({ can
 
           {view === 'positions' && (
             <div className="space-y-4">
-            {legacyPositions.length > 0 && (
-              <details className="overflow-hidden rounded-3xl border border-amber-200 bg-amber-50/40 shadow-sm">
-                <summary className="cursor-pointer bg-amber-50 px-5 py-4 text-sm font-black text-amber-900">
-                  Lịch sử dữ liệu cũ ({legacyPositions.length} vị trí cần xử lý)
-                </summary>
-                <div className="border-b border-amber-200 bg-amber-50 p-5">
-                  <h3 className="font-black text-amber-900">Chuyển đổi vị trí LEGACY</h3>
-                  <p className="mt-1 text-xs font-medium text-amber-700">Chọn vị trí mới cho từng vị trí cũ. Hệ thống sẽ chuyển đồng thời nhân viên và slot, sau đó ngưng vị trí LEGACY.</p>
-                </div>
-                <div className="divide-y divide-amber-100">
-                  {legacyPositions.map(({ position, employees, slots }) => {
-                    const employeeTitles = [...new Set(employees.map(employee => employee.title).filter(Boolean))];
-                    return (
-                      <div key={position.id} className="grid gap-3 p-4 lg:grid-cols-[minmax(220px,1fr)_140px_minmax(280px,1.4fr)_110px] lg:items-center">
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2"><span className="rounded-lg bg-amber-200 px-2 py-1 text-[10px] font-black text-amber-900">LEGACY</span><span className="truncate text-sm font-black text-slate-800">{position.code || position.name || 'Không có mã'}</span></div>
-                          <p className="mt-1 truncate text-xs font-semibold text-slate-500">{employeeTitles.length ? employeeTitles.slice(0, 3).join(' · ') : 'Không còn nhân viên trực tiếp'}</p>
+              {legacyPositions.length > 0 && (
+                <details className="overflow-hidden rounded-3xl border border-amber-200 bg-amber-50/40 shadow-sm">
+                  <summary className="cursor-pointer bg-amber-50 px-5 py-4 text-sm font-black text-amber-900">
+                    Lịch sử dữ liệu cũ ({legacyPositions.length} vị trí cần xử lý)
+                  </summary>
+                  <div className="border-b border-amber-200 bg-amber-50 p-5">
+                    <h3 className="font-black text-amber-900">Chuyển đổi vị trí LEGACY</h3>
+                    <p className="mt-1 text-xs font-medium text-amber-700">Chọn vị trí mới cho từng vị trí cũ. Hệ thống sẽ chuyển đồng thời nhân viên và slot, sau đó ngưng vị trí LEGACY.</p>
+                  </div>
+                  <div className="divide-y divide-amber-100">
+                    {legacyPositions.map(({ position, employees, slots }) => {
+                      const employeeTitles = [...new Set(employees.map(employee => employee.title).filter(Boolean))];
+                      return (
+                        <div key={position.id} className="grid gap-3 p-4 lg:grid-cols-[minmax(220px,1fr)_140px_minmax(280px,1.4fr)_110px] lg:items-center">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2"><span className="rounded-lg bg-amber-200 px-2 py-1 text-[10px] font-black text-amber-900">LEGACY</span><span className="truncate text-sm font-black text-slate-800">{position.code || position.name || 'Không có mã'}</span></div>
+                            <p className="mt-1 truncate text-xs font-semibold text-slate-500">{employeeTitles.length ? employeeTitles.slice(0, 3).join(' · ') : 'Không còn nhân viên trực tiếp'}</p>
+                          </div>
+                          <div className="flex gap-2 text-[11px] font-black"><span className="rounded-lg bg-white px-2 py-1.5 text-slate-600">{employees.length} nhân viên</span><span className="rounded-lg bg-white px-2 py-1.5 text-slate-600">{slots.length} slot</span></div>
+                          {canManage ? <select className={inputClass} value={legacyTargetById[position.id] || ''} onChange={event => setLegacyTargetById(current => ({ ...current, [position.id]: event.target.value }))}><option value="">Chọn vị trí mới...</option>{approvedPositions.map(target => <option key={target.id} value={target.id}>{target.code || 'Chưa có mã'} - {target.name} ({target.groupCode || 'chưa nhóm'}, {target.levelCode || 'chưa cấp bậc'})</option>)}</select> : <span className="text-xs font-semibold text-slate-400">Cần quyền quản trị HRM</span>}
+                          {canManage && <button onClick={() => void migrateLegacyPosition(position)} disabled={!legacyTargetById[position.id] || migrationBusyId === position.id} className="flex items-center justify-center gap-2 rounded-xl bg-amber-600 px-3 py-2.5 text-xs font-black text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-40">{migrationBusyId === position.id && <Loader2 size={14} className="animate-spin" />} Chuyển</button>}
                         </div>
-                        <div className="flex gap-2 text-[11px] font-black"><span className="rounded-lg bg-white px-2 py-1.5 text-slate-600">{employees.length} nhân viên</span><span className="rounded-lg bg-white px-2 py-1.5 text-slate-600">{slots.length} slot</span></div>
-                        {canManage ? <select className={inputClass} value={legacyTargetById[position.id] || ''} onChange={event => setLegacyTargetById(current => ({ ...current, [position.id]: event.target.value }))}><option value="">Chọn vị trí mới...</option>{approvedPositions.map(target => <option key={target.id} value={target.id}>{target.code || 'Chưa có mã'} - {target.name} ({target.groupCode || 'chưa nhóm'}, {target.levelCode || 'chưa cấp bậc'})</option>)}</select> : <span className="text-xs font-semibold text-slate-400">Cần quyền quản trị HRM</span>}
-                        {canManage && <button onClick={() => void migrateLegacyPosition(position)} disabled={!legacyTargetById[position.id] || migrationBusyId === position.id} className="flex items-center justify-center gap-2 rounded-xl bg-amber-600 px-3 py-2.5 text-xs font-black text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-40">{migrationBusyId === position.id && <Loader2 size={14} className="animate-spin" />} Chuyển</button>}
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
+                </details>
+              )}
+              <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+                <div className="flex items-center justify-between border-b border-slate-100 p-5">
+                  <div><h3 className="font-black text-slate-800">Vị trí công việc</h3><p className="mt-1 text-xs font-medium text-slate-400">Mỗi vị trí gắn nhóm VTCV và cấp bậc E1-E11.</p></div>
+                  {canManage && <button onClick={() => openPosition()} className="flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-xs font-black text-white"><Plus size={15} /> Thêm vị trí</button>}
                 </div>
-              </details>
-            )}
-            <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
-              <div className="flex items-center justify-between border-b border-slate-100 p-5">
-                <div><h3 className="font-black text-slate-800">Vị trí công việc</h3><p className="mt-1 text-xs font-medium text-slate-400">Mỗi vị trí gắn nhóm VTCV và cấp bậc E1-E11.</p></div>
-                {canManage && <button onClick={() => openPosition()} className="flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-xs font-black text-white"><Plus size={15} /> Thêm vị trí</button>}
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-wider text-slate-400"><tr><th className="px-5 py-3">Mã</th><th className="px-5 py-3">Tên vị trí</th><th className="px-5 py-3">Nhóm VTCV</th><th className="px-5 py-3">Cấp bậc</th><th className="px-5 py-3">Đơn vị gợi ý</th>{canManage && <th className="px-5 py-3 text-right">Thao tác</th>}</tr></thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {approvedPositions.map(position => (
-                      <tr key={position.id} className="hover:bg-slate-50">
-                        <td className="px-5 py-3 font-black text-indigo-600">{position.code || 'Chưa có'}</td>
-                        <td className="px-5 py-3 font-bold text-slate-700">{position.name}</td>
-                        <td className="px-5 py-3 text-slate-500">{position.groupCode || 'Chưa có'}</td>
-                        <td className="px-5 py-3"><span className="rounded-lg bg-indigo-50 px-2 py-1 text-xs font-black text-indigo-700">{position.levelCode || 'Chưa có'}</span></td>
-                        <td className="px-5 py-3 text-slate-500">{position.suggestedOrgUnitCode || 'Để trống'}</td>
-                        {canManage && <td className="px-5 py-3"><div className="flex justify-end gap-1"><button onClick={() => openPosition(position)} className="rounded-lg p-2 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600" title="Sửa vị trí"><Pencil size={15} /></button><button onClick={() => void archivePosition(position)} disabled={saving} className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-40" title="Ngưng sử dụng"><Trash2 size={15} /></button></div></td>}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </section>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-wider text-slate-400"><tr><th className="px-5 py-3">Mã</th><th className="px-5 py-3">Tên vị trí</th><th className="px-5 py-3">Nhóm VTCV</th><th className="px-5 py-3">Cấp bậc</th><th className="px-5 py-3">Đơn vị gợi ý</th>{canManage && <th className="px-5 py-3 text-right">Thao tác</th>}</tr></thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {approvedPositions.map(position => (
+                        <tr key={position.id} className="hover:bg-slate-50">
+                          <td className="px-5 py-3 font-black text-indigo-600">{position.code || 'Chưa có'}</td>
+                          <td className="px-5 py-3 font-bold text-slate-700">{position.name}</td>
+                          <td className="px-5 py-3 text-slate-500">{position.groupCode || 'Chưa có'}</td>
+                          <td className="px-5 py-3"><span className="rounded-lg bg-indigo-50 px-2 py-1 text-xs font-black text-indigo-700">{position.levelCode || 'Chưa có'}</span></td>
+                          <td className="px-5 py-3 text-slate-500">{position.suggestedOrgUnitCode || 'Để trống'}</td>
+                          {canManage && <td className="px-5 py-3"><div className="flex justify-end gap-1"><button onClick={() => openPosition(position)} className="rounded-lg p-2 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600" title="Sửa vị trí"><Pencil size={15} /></button><button onClick={() => void archivePosition(position)} disabled={saving} className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-40" title="Ngưng sử dụng"><Trash2 size={15} /></button></div></td>}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
             </div>
           )}
 

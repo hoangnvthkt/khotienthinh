@@ -53,6 +53,8 @@ import { canPerform } from '../lib/permissions/permissionService';
 import { executeUserAccountLifecycle } from '../lib/userAccountLifecycleService';
 import { toEmployeeProfileUpdatePayload } from '../lib/hrmEmployeeProfileModel';
 import { hrmEmployeeProfileService } from '../lib/hrmEmployeeProfileService';
+import { mapEmployeeFromDb } from '../lib/employeeSelfService';
+import { upsertRowsById } from '../lib/collectionState';
 import { useAuth } from './AuthContext';
 import { mapUserProfileRow as mapUserFromDb, serializeMockUser } from './authState';
 
@@ -500,12 +502,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const slowMessageTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
-    setUsers(previous => {
-      const exists = previous.some(candidate => candidate.id === user.id);
-      return exists
-        ? previous.map(candidate => candidate.id === user.id ? user : candidate)
-        : [user, ...previous];
-    });
+    setUsers(previous => upsertRowsById(previous, [user], 'prepend'));
   }, [user]);
 
   const setModuleStatus = useCallback((module: AppModule, status: ModuleLoadStatus, error?: string) => {
@@ -733,11 +730,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const unsubUsers = realtimeService.on('users', (event) => {
       if (event.eventType === 'INSERT' || event.eventType === 'UPDATE') {
         const mapped = mapUserFromDb(event.newRecord);
-        setUsers(prev => {
-          const exists = prev.find(user => user.id === mapped.id);
-          if (exists) return prev.map(user => user.id === mapped.id ? mapped : user);
-          return [...prev, mapped];
-        });
+        setUsers(prev => upsertRowsById(prev, [mapped]));
       } else if (event.eventType === 'DELETE') {
         setUsers(prev => prev.filter(user => user.id !== event.oldRecord.id));
       }
@@ -746,23 +739,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // ── Employees ──
     const unsubEmp = realtimeService.on('employees', (event) => {
       if (event.eventType === 'INSERT' || event.eventType === 'UPDATE') {
-        const e = event.newRecord;
-        const mappedEmp: Employee = {
-          id: e.id, employeeCode: e.employee_code, fullName: e.full_name, title: e.title,
-          gender: e.gender, phone: e.phone, email: e.email, dateOfBirth: e.date_of_birth,
-          startDate: e.start_date, officialDate: e.official_date, status: e.status,
-          userId: e.user_id, areaId: e.area_id, officeId: e.office_id,
-          employeeTypeId: e.employee_type_id, positionId: e.position_id,
-          salaryPolicyId: e.salary_policy_id, workScheduleId: e.work_schedule_id,
-          constructionSiteId: e.construction_site_id, departmentId: e.department_id,
-          factoryId: e.factory_id, maritalStatus: e.marital_status,
-          avatarUrl: e.avatar_url, createdAt: e.created_at, updatedAt: e.updated_at
-        };
-        setEmployees(prev => {
-          const exists = prev.find(emp => emp.id === mappedEmp.id);
-          if (exists) return prev.map(emp => emp.id === mappedEmp.id ? mappedEmp : emp);
-          return [...prev, mappedEmp];
-        });
+        const mappedEmp = mapEmployeeFromDb(event.newRecord);
+        setEmployees(prev => upsertRowsById(prev, [mappedEmp]));
       } else if (event.eventType === 'DELETE') {
         setEmployees(prev => prev.filter(emp => emp.id !== event.oldRecord.id));
       }
@@ -1019,34 +997,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           ]);
           {
             const requiredEmployees = requireModuleData(module, 'employees', empData);
-            setEmployees(requiredEmployees.map((e: any) => ({
-              id: e.id,
-              employeeCode: e.employee_code,
-              fullName: e.full_name,
-              title: e.title,
-              gender: e.gender,
-              phone: e.phone,
-              email: e.email,
-              dateOfBirth: e.date_of_birth,
-              startDate: e.start_date,
-              officialDate: e.official_date,
-              status: e.status,
-              userId: e.user_id,
-              areaId: e.area_id,
-              officeId: e.office_id,
-              employeeTypeId: e.employee_type_id,
-              positionId: e.position_id,
-              salaryPolicyId: e.salary_policy_id,
-              workScheduleId: e.work_schedule_id,
-              constructionSiteId: e.construction_site_id,
-              departmentId: e.department_id,
-              factoryId: e.factory_id,
-              maritalStatus: e.marital_status,
-              avatarUrl: e.avatar_url,
-              orgUnitId: e.org_unit_id || undefined,
-              createdAt: e.created_at,
-              updatedAt: e.updated_at,
-            })));
+            setEmployees(requiredEmployees.map(mapEmployeeFromDb));
           }
           if (areasData) setHrmAreas(areasData);
           if (officesData) setHrmOffices(officesData);
@@ -1412,6 +1363,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const addUser = async (u: User) => {
     const nextUser = { ...u, isActive: u.isActive ?? true };
+    const pendingAdminLoad = inflightModuleLoadsRef.current.admin;
 
     const syncOk = await syncToSupabase('users', nextUser);
     if (!syncOk) {
@@ -1419,7 +1371,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       throw new Error('Không thể lưu người dùng vào Supabase. Vui lòng kiểm tra RLS/policy hoặc quyền admin.');
     }
 
-    setUsers(prev => [...prev, nextUser]);
+    const persistedUser = isSupabaseConfigured
+      ? await refreshManagedUser(nextUser.id)
+      : nextUser;
+    setUsers(prev => upsertRowsById(prev, [persistedUser]));
+
+    if (pendingAdminLoad) {
+      await pendingAdminLoad.catch(() => undefined);
+      try {
+        await loadModuleData('admin', true);
+      } catch {
+        setUsers(prev => upsertRowsById(prev, [persistedUser]));
+      }
+    }
     console.log('✅ addUser: Đã lưu user vào Supabase:', u.email);
 
     logActivity('SYSTEM', 'Thêm người dùng', `Đã thêm người dùng mới: ${u.name}`, 'SUCCESS');
@@ -1626,22 +1590,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ...(tx?.pendingItems || []).map(item => item.id),
     ]));
 
-  const upsertById = <T extends { id: string }>(current: T[], rows: T[], insertPosition: 'prepend' | 'append' = 'append'): T[] => {
-    if (rows.length === 0) return current;
-    const incoming = new Map(rows.map(row => [row.id, row]));
-    let changed = false;
-    const next = current.map(row => {
-      const updated = incoming.get(row.id);
-      if (!updated) return row;
-      incoming.delete(row.id);
-      changed = true;
-      return updated;
-    });
-    const newRows = Array.from(incoming.values());
-    if (!changed && newRows.length === 0) return current;
-    return insertPosition === 'prepend' ? [...newRows, ...next] : [...next, ...newRows];
-  };
-
   const refreshWmsRecords = useCallback(async (options: WmsRecordRefreshOptions) => {
     if (!isSupabaseConfigured) return;
     const itemIds = normalizeRefreshIds(options.itemIds);
@@ -1666,13 +1614,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (requestsResult.error) throw requestsResult.error;
 
     if (itemsResult.data) {
-      setItems(prev => upsertById(prev, itemsResult.data.map(mapInventoryItemFromDb), 'append'));
+      setItems(prev => upsertRowsById(prev, itemsResult.data.map(mapInventoryItemFromDb), 'append'));
     }
     if (transactionsResult.data) {
-      setTransactions(prev => upsertById(prev, transactionsResult.data.map(mapTransactionFromDb), 'prepend'));
+      setTransactions(prev => upsertRowsById(prev, transactionsResult.data.map(mapTransactionFromDb), 'prepend'));
     }
     if (requestsResult.data) {
-      setRequests(prev => upsertById(prev, requestsResult.data.map(mapMaterialRequestFromDb), 'prepend'));
+      setRequests(prev => upsertRowsById(prev, requestsResult.data.map(mapMaterialRequestFromDb), 'prepend'));
     }
   }, []);
 
@@ -2815,6 +2763,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       constructionSiteId: undefined,
       factoryId: undefined,
     };
+    const pendingHrmLoad = inflightModuleLoadsRef.current.hrm;
+    let persistedEmployee = newEmployee;
     if (isSupabaseConfigured) {
       try {
         const payload = {
@@ -2822,18 +2772,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           employee_code: newEmployee.employeeCode || null,
           ...toEmployeeProfileUpdatePayload(newEmployee),
         };
-        const { error } = await supabase
+        const { data, error } = await supabase
           .from('employees')
-          .upsert(payload, { onConflict: 'email', ignoreDuplicates: false });
+          .upsert(payload, { onConflict: 'email', ignoreDuplicates: false })
+          .select('*')
+          .single();
         if (error) throw error;
+        persistedEmployee = mapEmployeeFromDb(data);
       } catch (err) {
         logApiError('addEmployee', err);
         throw err;
       }
     }
-    setEmployees(prev => [...prev, newEmployee]);
-    logActivity('SYSTEM', 'Thêm nhân sự', `Đã thêm hồ sơ nhân sự mới: ${newEmployee.fullName}`, 'SUCCESS');
-    auditService.log({ tableName: 'employees', recordId: newEmployee.id, action: 'INSERT', newData: newEmployee as any, userId: user.id, userName: user.name || user.username });
+    setEmployees(prev => upsertRowsById(prev, [persistedEmployee]));
+
+    if (pendingHrmLoad) {
+      await pendingHrmLoad.catch(() => undefined);
+      try {
+        await loadModuleData('hrm', true);
+      } catch {
+        setEmployees(prev => upsertRowsById(prev, [persistedEmployee]));
+      }
+    }
+    logActivity('SYSTEM', 'Thêm nhân sự', `Đã thêm hồ sơ nhân sự mới: ${persistedEmployee.fullName}`, 'SUCCESS');
+    auditService.log({ tableName: 'employees', recordId: persistedEmployee.id, action: 'INSERT', newData: persistedEmployee as any, userId: user.id, userName: user.name || user.username });
   };
 
   const updateEmployee = async (e: Employee) => {
