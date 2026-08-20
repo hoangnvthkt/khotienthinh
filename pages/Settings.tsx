@@ -2,7 +2,7 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
-import { Warehouse, WarehouseType, WarehouseTypeConfig, Supplier, ItemCategory, ItemUnit, LossReason, LOSS_REASON_LABELS, MaterialLossNorm, InventoryItem } from '../types';
+import { Warehouse, WarehouseType, WarehouseTypeConfig, Supplier, ItemCategory, ItemUnit, LossReason, LOSS_REASON_LABELS, MaterialLossNorm, InventoryItem, Project } from '../types';
 import {
   Building, MapPin, Plus, X, Save, Settings as SettingsIcon, Users,
   HardHat, Briefcase, Tag, Ruler, Trash2, Edit2,
@@ -176,6 +176,8 @@ const Settings: React.FC = () => {
   const [newWhName, setNewWhName] = useState('');
   const [newWhAddress, setNewWhAddress] = useState('');
   const [newWhType, setNewWhType] = useState<WarehouseType>('SITE');
+  const [warehouseProjects, setWarehouseProjects] = useState<Project[]>([]);
+  const [newWhProjectId, setNewWhProjectId] = useState('');
   const [newWhConstructionSiteId, setNewWhConstructionSiteId] = useState('');
   const [newWhIsDefaultForSite, setNewWhIsDefaultForSite] = useState(false);
   const [warehouseBindingBusyId, setWarehouseBindingBusyId] = useState<string | null>(null);
@@ -236,6 +238,18 @@ const Settings: React.FC = () => {
     if (!selectedTypeIsAvailable) setNewWhType(defaultWarehouseType);
   }, [defaultWarehouseType, editingWarehouse, newWhType, warehouseTypes]);
 
+  useEffect(() => {
+    if (!canOpenSettingsFeature('warehouses')) return;
+    let active = true;
+    warehouseSiteBindingService.listProjects()
+      .then(rows => { if (active) setWarehouseProjects(rows); })
+      .catch(error => {
+        logApiError('settings.warehouseBinding.projects', error);
+        if (active) toast.error('Không thể tải dự án', getApiErrorMessage(error, 'Danh sách dự án chưa sẵn sàng.'));
+      });
+    return () => { active = false; };
+  }, [activeTab]);
+
   // General Handlers
   const handleSaveGeneral = (e: React.FormEvent) => {
     e.preventDefault();
@@ -278,6 +292,7 @@ const Settings: React.FC = () => {
     setNewWhName('');
     setNewWhAddress('');
     setNewWhType(defaultWarehouseType);
+    setNewWhProjectId('');
     setNewWhConstructionSiteId('');
     setNewWhIsDefaultForSite(false);
   };
@@ -285,6 +300,7 @@ const Settings: React.FC = () => {
   const persistWarehouseBinding = async (warehouse: Warehouse) => {
     const mapped = await warehouseSiteBindingService.setWarehouseBinding({
       warehouseId: warehouse.id,
+      projectId: newWhProjectId || null,
       constructionSiteId: newWhConstructionSiteId || null,
       isDefaultForSite: newWhIsDefaultForSite,
       name: warehouse.name,
@@ -302,6 +318,10 @@ const Settings: React.FC = () => {
     e.preventDefault();
     if (!newWhName.trim() || !newWhAddress.trim()) return;
     const warehouseTypeToSave = newWhType || defaultWarehouseType;
+    if (warehouseTypeToSave === 'SITE' && (!newWhConstructionSiteId || !newWhProjectId)) {
+      toast.warning('Kho công trường chưa đủ scope', 'Kho SITE bắt buộc chọn công trường và dự án tương ứng.');
+      return;
+    }
     if (newWhIsDefaultForSite && (!newWhConstructionSiteId || warehouseTypeToSave !== 'SITE')) {
       toast.warning('Kho mặc định chưa hợp lệ', 'Kho mặc định phải là kho loại SITE và đã chọn công trường liên kết.');
       return;
@@ -320,6 +340,7 @@ const Settings: React.FC = () => {
             name: newWhName.trim(),
             address: newWhAddress.trim(),
             type: warehouseTypeToSave,
+            projectId: newWhProjectId || null,
             constructionSiteId: newWhConstructionSiteId || null,
             isDefaultForSite: newWhIsDefaultForSite,
           };
@@ -339,6 +360,7 @@ const Settings: React.FC = () => {
         name: newWhName.trim(),
         address: newWhAddress.trim(),
         type: warehouseTypeToSave,
+        projectId: null,
         constructionSiteId: null,
         isDefaultForSite: false,
       };
@@ -349,6 +371,7 @@ const Settings: React.FC = () => {
           name: warehouse.name,
           address: warehouse.address,
           type: warehouse.type,
+          projectId: newWhProjectId || null,
           constructionSiteId: newWhConstructionSiteId || null,
           isDefaultForSite: newWhIsDefaultForSite,
         });
@@ -377,6 +400,7 @@ const Settings: React.FC = () => {
     setNewWhName(wh.name);
     setNewWhAddress(wh.address);
     setNewWhType(wh.type);
+    setNewWhProjectId(wh.projectId || '');
     setNewWhConstructionSiteId(wh.constructionSiteId || '');
     setNewWhIsDefaultForSite(Boolean(wh.isDefaultForSite));
     setIsWhModalOpen(true);
@@ -1188,17 +1212,20 @@ const Settings: React.FC = () => {
               warehouses={warehouses}
               warehouseTypes={warehouseTypes}
               constructionSites={hrmConstructionSites}
+              projects={warehouseProjects}
               defaultWarehouseType={defaultWarehouseType}
               isWhModalOpen={isWhModalOpen} setIsWhModalOpen={setIsWhModalOpen}
               editingWarehouse={editingWarehouse} setEditingWarehouse={setEditingWarehouse}
               newWhName={newWhName} setNewWhName={setNewWhName}
               newWhAddress={newWhAddress} setNewWhAddress={setNewWhAddress}
               newWhType={newWhType} setNewWhType={setNewWhType}
+              newWhProjectId={newWhProjectId} setNewWhProjectId={setNewWhProjectId}
               newWhConstructionSiteId={newWhConstructionSiteId}
               setNewWhConstructionSiteId={setNewWhConstructionSiteId}
               newWhIsDefaultForSite={newWhIsDefaultForSite}
               setNewWhIsDefaultForSite={setNewWhIsDefaultForSite}
               warehouseBindingBusyId={warehouseBindingBusyId}
+              usedWarehouseIds={new Set(transactions.flatMap(transaction => [transaction.sourceWarehouseId, transaction.targetWarehouseId]).filter(Boolean) as string[])}
               handleAddWarehouse={handleAddWarehouse}
               handleEditWarehouse={handleEditWarehouse}
               handleSuggestWarehouseBinding={handleSuggestWarehouseBinding}

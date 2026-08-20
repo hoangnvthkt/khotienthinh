@@ -328,6 +328,8 @@ const mapTransactionFromDb = (t: any): Transaction => ({
   businessPartnerNameSnapshot: t.business_partner_name_snapshot ?? t.businessPartnerNameSnapshot ?? null,
   approvedAt: t.approved_at ?? t.approvedAt ?? null,
   approvalNote: t.approval_note ?? t.approvalNote ?? null,
+  businessEventType: t.business_event_type ?? t.businessEventType ?? null,
+  businessEventReason: t.business_event_reason ?? t.businessEventReason ?? null,
   approverId: t.approver_id,
   sourceType: t.source_type ?? t.sourceType ?? null,
   sourceId: t.source_id ?? t.sourceId ?? null,
@@ -1198,6 +1200,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           business_partner_name_snapshot: data.businessPartnerNameSnapshot || null,
           approved_at: data.approvedAt || null,
           approval_note: data.approvalNote || null,
+          business_event_type: data.businessEventType || null,
+          business_event_reason: data.businessEventReason || null,
           source_type: data.sourceType || null, source_id: data.sourceId || null,
           status: data.status, note: data.note, related_request_id: data.relatedRequestId, pending_items: data.pendingItems
         };
@@ -2693,7 +2697,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         approverId: user.id,
         status: TransactionStatus.COMPLETED,
         note: `Điều chuyển từ phiếu yêu cầu: ${req.code}` + (note ? ` - ${note}` : ''),
-        relatedRequestId: req.id
+        relatedRequestId: req.id,
+        businessEventType: isDirectConsumption ? 'construction_issue' : 'warehouse_transfer',
+        businessEventReason: isDirectConsumption ? `Xuất thẳng sử dụng theo phiếu yêu cầu ${req.code}` : undefined,
       };
       // addTransaction handles applying stock changes, logging the transaction, and syncing to DB
       await addTransaction(tx);

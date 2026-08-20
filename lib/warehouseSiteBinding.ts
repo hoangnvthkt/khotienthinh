@@ -1,4 +1,4 @@
-import type { HrmConstructionSite, Warehouse } from '../types';
+import type { HrmConstructionSite, Project, Warehouse } from '../types';
 
 type SupplierDeliveryWarehousePolicyInput = {
   warehouses: Warehouse[];
@@ -27,15 +27,24 @@ const normalizeName = (value: string) => value
 
 export const mapWarehouseSiteBindingFromDb = (warehouse: any): Warehouse => ({
   ...warehouse,
+  projectId: warehouse.project_id ?? warehouse.projectId ?? null,
   constructionSiteId: warehouse.construction_site_id ?? warehouse.constructionSiteId ?? null,
   isDefaultForSite: warehouse.is_default_for_site ?? warehouse.isDefaultForSite ?? false,
   isArchived: warehouse.is_archived ?? warehouse.isArchived ?? false,
 });
 
 export const toWarehouseSiteBindingDb = (warehouse: Warehouse) => ({
+  project_id: warehouse.projectId || null,
   construction_site_id: warehouse.constructionSiteId || null,
   is_default_for_site: warehouse.isDefaultForSite ?? false,
 });
+
+export const filterProjectsForConstructionSite = (
+  projects: Project[],
+  constructionSiteId?: string | null,
+): Project[] => constructionSiteId
+  ? projects.filter(project => project.constructionSiteId === constructionSiteId)
+  : [];
 
 export const mapConstructionSiteWarehouseBindingFromDb = (site: any): HrmConstructionSite => ({
   id: site.id,

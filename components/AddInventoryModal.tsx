@@ -188,7 +188,9 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
         supplierId: formData.supplierId || undefined,
         requesterId: user.id,
         status: status,
-        note: `Nhập kho khởi tạo cho vật tư mới: ${newItem.name}`
+        note: `Nhập kho khởi tạo cho vật tư mới: ${newItem.name}`,
+        businessEventType: 'direct_manual_receipt',
+        businessEventReason: `Khởi tạo tồn cho vật tư mới: ${newItem.name}`,
       };
 
         await addTransaction(pendingTx);

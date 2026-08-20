@@ -37,6 +37,7 @@ describe('warehouseSiteBindingService', () => {
         name: 'Kho Xin Hai Vina',
         address: '',
         type: 'SITE',
+        project_id: 'DA29',
         construction_site_id: 'site-xin',
         is_default_for_site: true,
       },
@@ -45,6 +46,7 @@ describe('warehouseSiteBindingService', () => {
 
     const warehouse = await warehouseSiteBindingService.setWarehouseBinding({
       warehouseId: 'warehouse-xin',
+      projectId: 'DA29',
       constructionSiteId: 'site-xin',
       isDefaultForSite: true,
       name: 'Kho Xin Hai Vina',
@@ -54,6 +56,7 @@ describe('warehouseSiteBindingService', () => {
 
     expect(rpc).toHaveBeenCalledWith('set_warehouse_construction_site_binding', {
       p_warehouse_id: 'warehouse-xin',
+      p_project_id: 'DA29',
       p_construction_site_id: 'site-xin',
       p_is_default_for_site: true,
       p_name: 'Kho Xin Hai Vina',
@@ -62,6 +65,7 @@ describe('warehouseSiteBindingService', () => {
     });
     expect(warehouse).toEqual(expect.objectContaining({
       constructionSiteId: 'site-xin',
+      projectId: 'DA29',
       isDefaultForSite: true,
     }));
   });
@@ -73,6 +77,7 @@ describe('warehouseSiteBindingService', () => {
         name: 'Kho mới',
         address: 'Công trường mới',
         type: 'SITE',
+        project_id: 'project-new',
         construction_site_id: 'site-new',
         is_default_for_site: true,
       },
@@ -84,6 +89,7 @@ describe('warehouseSiteBindingService', () => {
       name: 'Kho mới',
       address: 'Công trường mới',
       type: 'SITE',
+      projectId: 'project-new',
       constructionSiteId: 'site-new',
       isDefaultForSite: true,
     });
@@ -93,11 +99,13 @@ describe('warehouseSiteBindingService', () => {
       p_name: 'Kho mới',
       p_address: 'Công trường mới',
       p_type: 'SITE',
+      p_project_id: 'project-new',
       p_construction_site_id: 'site-new',
       p_is_default_for_site: true,
     });
     expect(warehouse).toEqual(expect.objectContaining({
       id: 'warehouse-new',
+      projectId: 'project-new',
       constructionSiteId: 'site-new',
       isDefaultForSite: true,
     }));

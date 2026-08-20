@@ -1,4 +1,4 @@
-import type { HrmConstructionSite } from '../types';
+import type { HrmConstructionSite, Project } from '../types';
 import { supabase } from './supabase';
 import {
   mapConstructionSiteWarehouseBindingFromDb,
@@ -6,11 +6,27 @@ import {
 } from './warehouseSiteBinding';
 
 export const warehouseSiteBindingService = {
+  async listProjects(): Promise<Project[]> {
+    const { data, error } = await supabase
+      .from('projects')
+      .select('id,code,name,status,construction_site_id')
+      .order('code', { ascending: true });
+    if (error) throw error;
+    return (data || []).map((row: any) => ({
+      id: row.id,
+      code: row.code,
+      name: row.name,
+      status: row.status,
+      projectType: 'construction',
+      constructionSiteId: row.construction_site_id ?? null,
+    } as Project));
+  },
   async createWarehouse(input: {
     warehouseId: string;
     name: string;
     address: string;
     type: string;
+    projectId?: string | null;
     constructionSiteId?: string | null;
     isDefaultForSite: boolean;
   }) {
@@ -19,6 +35,7 @@ export const warehouseSiteBindingService = {
       p_name: input.name,
       p_address: input.address,
       p_type: input.type,
+      p_project_id: input.projectId || null,
       p_construction_site_id: input.constructionSiteId || null,
       p_is_default_for_site: input.isDefaultForSite,
     });
@@ -27,6 +44,7 @@ export const warehouseSiteBindingService = {
   },
   async setWarehouseBinding(input: {
     warehouseId: string;
+    projectId?: string | null;
     constructionSiteId?: string | null;
     isDefaultForSite: boolean;
     name?: string | null;
@@ -35,6 +53,7 @@ export const warehouseSiteBindingService = {
   }) {
     const { data, error } = await supabase.rpc('set_warehouse_construction_site_binding', {
       p_warehouse_id: input.warehouseId,
+      p_project_id: input.projectId || null,
       p_construction_site_id: input.constructionSiteId || null,
       p_is_default_for_site: input.isDefaultForSite,
       p_name: input.name || null,

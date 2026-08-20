@@ -40,6 +40,7 @@ const mapLedgerEntry = (row: any): InventoryLedgerEntry => ({
   warehouseId: row.warehouse_id,
   projectId: row.project_id,
   constructionSiteId: row.construction_site_id,
+  businessEventType: row.business_event_type ?? null,
   lotNo: row.lot_no,
   batchNo: row.batch_no,
   serialNo: row.serial_no,

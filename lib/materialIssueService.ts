@@ -8,6 +8,8 @@ import {
   MaterialIssueRecipientSourceType,
   MaterialIssueReturn,
   MaterialIssueReturnLine,
+  MaterialIssueSettlement,
+  MaterialIssueSettlementLine,
   MaterialIssueStatus,
   MaterialPartyBalance,
 } from '../types';
@@ -20,6 +22,8 @@ const RECEIPT_TABLE = 'material_issue_receipts';
 const RECEIPT_LINE_TABLE = 'material_issue_receipt_lines';
 const RETURN_TABLE = 'material_issue_returns';
 const RETURN_LINE_TABLE = 'material_issue_return_lines';
+const SETTLEMENT_TABLE = 'material_issue_settlements';
+const SETTLEMENT_LINE_TABLE = 'material_issue_settlement_lines';
 
 export type MaterialIssueCreateLineInput = {
   itemId: string;
@@ -92,17 +96,34 @@ const mapReturn = (row: any, lines: MaterialIssueReturnLine[] = []): MaterialIss
   lines,
 });
 
+const mapSettlementLine = (row: any): MaterialIssueSettlementLine => ({
+  ...(fromDb(row) as MaterialIssueSettlementLine),
+  quantity: Number(row.quantity || 0),
+});
+
+export const mapMaterialIssueSettlementFromDb = (
+  row: any,
+  lines?: MaterialIssueSettlementLine[],
+): MaterialIssueSettlement => ({
+  ...(fromDb(row) as MaterialIssueSettlement),
+  attachments: row.attachments || [],
+  metadata: row.metadata || {},
+  lines: lines || (row.lines || []).map(mapSettlementLine),
+});
+
 const mapOrder = (
   row: any,
   lines: MaterialIssueLine[] = [],
   receipts: MaterialIssueReceipt[] = [],
   returns: MaterialIssueReturn[] = [],
+  settlements: MaterialIssueSettlement[] = [],
 ): MaterialIssueOrder => ({
   ...(fromDb(row) as MaterialIssueOrder),
   attachments: row.attachments || [],
   lines,
   receipts,
   returns,
+  settlements,
 });
 
 const normalizeDate = (value?: string | null) => value || null;
@@ -111,21 +132,33 @@ async function hydrateOrders(orderRows: any[]): Promise<MaterialIssueOrder[]> {
   if (!isSupabaseConfigured || orderRows.length === 0) return [];
 
   const orderIds = orderRows.map(row => row.id);
-  const [{ data: lineRows, error: lineError }, { data: receiptRows, error: receiptError }, { data: returnRows, error: returnError }] =
+  const [
+    { data: lineRows, error: lineError },
+    { data: receiptRows, error: receiptError },
+    { data: returnRows, error: returnError },
+    { data: settlementRows, error: settlementError },
+  ] =
     await Promise.all([
       supabase.from(LINE_TABLE).select('*').in('issue_order_id', orderIds).order('created_at', { ascending: true }),
       supabase.from(RECEIPT_TABLE).select('*').in('issue_order_id', orderIds).order('received_at', { ascending: true }),
       supabase.from(RETURN_TABLE).select('*').in('issue_order_id', orderIds).order('created_at', { ascending: true }),
+      supabase.from(SETTLEMENT_TABLE).select('*').in('issue_order_id', orderIds).order('created_at', { ascending: true }),
     ]);
 
   if (lineError) throw lineError;
   if (receiptError) throw receiptError;
   if (returnError) throw returnError;
+  if (settlementError) throw settlementError;
 
   const receiptIds = (receiptRows || []).map(row => row.id);
   const returnIds = (returnRows || []).map(row => row.id);
+  const settlementIds = (settlementRows || []).map(row => row.id);
 
-  const [{ data: receiptLineRows, error: receiptLineError }, { data: returnLineRows, error: returnLineError }] =
+  const [
+    { data: receiptLineRows, error: receiptLineError },
+    { data: returnLineRows, error: returnLineError },
+    { data: settlementLineRows, error: settlementLineError },
+  ] =
     await Promise.all([
       receiptIds.length
         ? supabase.from(RECEIPT_LINE_TABLE).select('*').in('receipt_id', receiptIds).order('created_at', { ascending: true })
@@ -133,10 +166,14 @@ async function hydrateOrders(orderRows: any[]): Promise<MaterialIssueOrder[]> {
       returnIds.length
         ? supabase.from(RETURN_LINE_TABLE).select('*').in('issue_return_id', returnIds).order('created_at', { ascending: true })
         : Promise.resolve({ data: [], error: null } as any),
+      settlementIds.length
+        ? supabase.from(SETTLEMENT_LINE_TABLE).select('*').in('settlement_id', settlementIds).order('created_at', { ascending: true })
+        : Promise.resolve({ data: [], error: null } as any),
     ]);
 
   if (receiptLineError) throw receiptLineError;
   if (returnLineError) throw returnLineError;
+  if (settlementLineError) throw settlementLineError;
 
   const linesByOrder = new Map<string, MaterialIssueLine[]>();
   (lineRows || []).map(mapLine).forEach(line => {
@@ -175,11 +212,26 @@ async function hydrateOrders(orderRows: any[]): Promise<MaterialIssueOrder[]> {
     returnsByOrder.set(materialReturn.issueOrderId, returns);
   });
 
+  const settlementLinesBySettlement = new Map<string, MaterialIssueSettlementLine[]>();
+  (settlementLineRows || []).map(mapSettlementLine).forEach(line => {
+    const lines = settlementLinesBySettlement.get(line.settlementId) || [];
+    lines.push(line);
+    settlementLinesBySettlement.set(line.settlementId, lines);
+  });
+  const settlementsByOrder = new Map<string, MaterialIssueSettlement[]>();
+  (settlementRows || []).forEach(row => {
+    const settlement = mapMaterialIssueSettlementFromDb(row, settlementLinesBySettlement.get(row.id) || []);
+    const settlements = settlementsByOrder.get(settlement.issueOrderId) || [];
+    settlements.push(settlement);
+    settlementsByOrder.set(settlement.issueOrderId, settlements);
+  });
+
   return orderRows.map(row => mapOrder(
     row,
     linesByOrder.get(row.id) || [],
     receiptsByOrder.get(row.id) || [],
     returnsByOrder.get(row.id) || [],
+    settlementsByOrder.get(row.id) || [],
   ));
 }
 
@@ -318,16 +370,52 @@ export const materialIssueService = {
     reason: string;
     attachments?: any[];
   }): Promise<MaterialIssueOrder> {
+    await this.postSettlement({
+      ...args,
+      settlementDate: new Date().toISOString().slice(0, 10),
+      idempotencyKey: `settlement:${args.orderId}:${Date.now()}:${crypto.randomUUID()}`,
+    });
+    const order = await this.getById(args.orderId);
+    if (!order) throw new Error('Không tìm thấy phiếu xuất cấp sau khi quyết toán.');
+    return order;
+  },
+
+  async postSettlement(args: {
+    orderId: string;
+    settlementType: Extract<MaterialIssueLedgerType, 'consume' | 'loss'>;
+    settlementDate: string;
+    lines: MaterialIssueSettlementLineInput[];
+    reason: string;
+    idempotencyKey: string;
+    attachments?: any[];
+  }): Promise<MaterialIssueSettlement> {
     if (!isSupabaseConfigured) throw new Error('Supabase chưa được cấu hình.');
-    const { data, error } = await supabase.rpc('record_material_issue_settlement', {
+    const { data, error } = await supabase.rpc('post_material_issue_settlement_v1', {
       p_order_id: args.orderId,
       p_settlement_type: args.settlementType,
+      p_settlement_date: args.settlementDate,
       p_lines: args.lines,
       p_reason: args.reason,
+      p_idempotency_key: args.idempotencyKey,
       p_attachments: args.attachments || [],
     });
     if (error) throw error;
-    return orderOrThrow(data);
+    return mapMaterialIssueSettlementFromDb(Array.isArray(data) ? data[0] : data);
+  },
+
+  async reverseSettlement(args: {
+    settlementId: string;
+    reason: string;
+    idempotencyKey: string;
+  }): Promise<MaterialIssueSettlement> {
+    if (!isSupabaseConfigured) throw new Error('Supabase chưa được cấu hình.');
+    const { data, error } = await supabase.rpc('reverse_material_issue_settlement_v1', {
+      p_settlement_id: args.settlementId,
+      p_reason: args.reason,
+      p_idempotency_key: args.idempotencyKey,
+    });
+    if (error) throw error;
+    return mapMaterialIssueSettlementFromDb(Array.isArray(data) ? data[0] : data);
   },
 
   async getPartyBalance(filters: {

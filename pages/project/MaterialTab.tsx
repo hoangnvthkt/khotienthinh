@@ -6,7 +6,7 @@ import {
     RefreshCcw, Download, Upload,
     FileSpreadsheet, GitBranch, ListTree, Loader2, BookOpen
 } from 'lucide-react';
-import { MaterialBudgetItem, InventoryItem, MaterialRequest, RequestStatus, ProjectTask, ProjectWorkBoqItem, ContractItem, TaskContractItem, MaterialRequestFulfillmentSummary, MaterialRequestFulfillmentBatch, MaterialRequestEvent, MaterialRequestKanbanLaneId, MaterialRequestKanbanStage, MaterialRequestWorkflowStep, ProjectSubmissionTarget, Role, PurchaseOrder, MaterialPlanningRule, MaterialPlanningDraftPo, PlanningCurveTemplate, ProjectWorkflowActionContext, ProjectWorkflowBoardFilter, ProjectWorkflowConfiguration, ProjectWorkflowRuntimeContext, ProjectWorkflowSubject, MaterialRequestWorkflowBoardCard, WorkflowNode, WorkflowNodeType, WorkflowStepAssignment, Project, ProjectFinance } from '../../types';
+import { MaterialBudgetItem, InventoryItem, MaterialRequest, RequestStatus, ProjectTask, ProjectWorkBoqItem, ContractItem, TaskContractItem, MaterialRequestFulfillmentSummary, MaterialRequestFulfillmentBatch, MaterialRequestEvent, MaterialRequestKanbanLaneId, MaterialRequestKanbanStage, MaterialRequestWorkflowStep, ProjectSubmissionTarget, Role, PurchaseOrder, MaterialPlanningRule, MaterialPlanningDraftPo, PlanningCurveTemplate, ProjectWorkflowActionContext, ProjectWorkflowBoardFilter, ProjectWorkflowConfiguration, ProjectWorkflowRuntimeContext, ProjectWorkflowSubject, MaterialRequestWorkflowBoardCard, WorkflowNode, WorkflowNodeType, WorkflowStepAssignment, Project, ProjectFinance, ProjectMaterialReconciliationRow, ProjectMaterialReconciliationSummary } from '../../types';
 import { boqService, workBoqService, poService } from '../../lib/projectService';
 import { loadMaterialPlanningGanttCatalog } from '../../lib/projectGanttCatalogAdapters';
 import { materialRequestFulfillmentService, getRequestLineId } from '../../lib/materialRequestFulfillmentService';
@@ -65,6 +65,9 @@ import {
     type WorkBoqImportPreview,
 } from '../../lib/projectMaterialTabUtils';
 import { useProjectMaterialAccess } from '../../hooks/project/material/useProjectMaterialAccess';
+import { buildProjectScheduleProjection } from '../../lib/projectScheduleProjection';
+import { projectMaterialReconciliationService } from '../../lib/projectMaterialReconciliationService';
+import { summarizeProjectMaterialReconciliation } from '../../lib/projectMaterialReconciliation';
 
 const SupplyChainTab = React.lazy(() => import('./SupplyChainTab'));
 const MaterialPlanningPanel = React.lazy(() => import('../../components/project/MaterialPlanningPanel'));
@@ -185,6 +188,11 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     const [boqItems, setBoqItems] = useState<MaterialBudgetItem[]>([]);
     const [workBoqItems, setWorkBoqItems] = useState<ProjectWorkBoqItem[]>([]);
     const [tasks, setTasks] = useState<ProjectTask[]>([]);
+    const [reconciliationReportDate, setReconciliationReportDate] = useState(() => new Date().toISOString().slice(0, 10));
+    const [reconciliationRows, setReconciliationRows] = useState<ProjectMaterialReconciliationRow[]>([]);
+    const [reconciliationSummary, setReconciliationSummary] = useState<ProjectMaterialReconciliationSummary>(() => summarizeProjectMaterialReconciliation([]));
+    const [reconciliationLoading, setReconciliationLoading] = useState(false);
+    const [reconciliationError, setReconciliationError] = useState<string | null>(null);
     const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
     const [planningRules, setPlanningRules] = useState<MaterialPlanningRule[]>([]);
     const [planningCurveTemplates, setPlanningCurveTemplates] = useState<PlanningCurveTemplate[]>([]);
@@ -813,6 +821,41 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         if (activeSubTab === 'summary' && !materialAccess.summary.canView) return;
         void loadPlanningData();
     }, [activeSubTab, loadPlanningData, materialAccess.planning.canView, materialAccess.summary.canView]);
+
+    const reconciliationPlannedProgress = useMemo(() => buildProjectScheduleProjection({
+        tasks,
+        todayIso: reconciliationReportDate,
+    }).plannedProgressPercent, [reconciliationReportDate, tasks]);
+
+    const loadReconciliation = useCallback(async () => {
+        if (!projectId || !materialAccess.summary.canView) {
+            setReconciliationRows([]);
+            setReconciliationSummary(summarizeProjectMaterialReconciliation([]));
+            return;
+        }
+        setReconciliationLoading(true);
+        setReconciliationError(null);
+        try {
+            const report = await projectMaterialReconciliationService.getReport({
+                projectId,
+                constructionSiteId: constructionSiteId || null,
+                reportDate: reconciliationReportDate,
+                plannedProgressPercent: reconciliationPlannedProgress,
+            });
+            setReconciliationRows(report.rows);
+            setReconciliationSummary(report.summary);
+        } catch (error) {
+            logApiError('MaterialTab.loadReconciliation', error);
+            setReconciliationError(getApiErrorMessage(error, 'Không thể tải đối chiếu BOQ vật tư.'));
+        } finally {
+            setReconciliationLoading(false);
+        }
+    }, [constructionSiteId, materialAccess.summary.canView, projectId, reconciliationPlannedProgress, reconciliationReportDate]);
+
+    useEffect(() => {
+        if (activeSubTab !== 'summary' || !materialAccess.summary.canView) return;
+        void loadReconciliation();
+    }, [activeSubTab, loadReconciliation, materialAccess.summary.canView]);
 
     useEffect(() => {
         if (!needsRequestFulfillmentDetails) return;
@@ -2547,6 +2590,14 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             {materialAccess.summary.canView && activeSubTab === 'summary' && (
                 <MaterialSummaryTab
                     materialRows={materialAggregateSummaryRows}
+                    reconciliationRows={reconciliationRows}
+                    reconciliationSummary={reconciliationSummary}
+                    reconciliationReportDate={reconciliationReportDate}
+                    reconciliationPlannedProgress={reconciliationPlannedProgress}
+                    reconciliationLoading={reconciliationLoading}
+                    reconciliationError={reconciliationError}
+                    onReconciliationReportDateChange={setReconciliationReportDate}
+                    onReloadReconciliation={() => { void loadReconciliation(); }}
                     selectedMaterialGroupKeys={selectedMaterialGroupKeys}
                     canCreateMaterialRequest={canCreateMaterialRequest}
                     onToggleMaterialGroup={toggleMaterialGroupSelection}

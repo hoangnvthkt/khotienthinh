@@ -157,6 +157,7 @@ export interface Warehouse {
   address: string;
   type: WarehouseType;
   isArchived?: boolean; // Soft delete flag
+  projectId?: string | null;
   constructionSiteId?: string | null;
   isDefaultForSite?: boolean;
 }
@@ -3248,6 +3249,40 @@ export interface MaterialIssueReturn {
   lines?: MaterialIssueReturnLine[];
 }
 
+export type MaterialIssueSettlementType = 'consume' | 'loss';
+export type MaterialIssueSettlementStatus = 'posted' | 'reversed';
+
+export interface MaterialIssueSettlementLine {
+  id: string;
+  settlementId: string;
+  issueLineId: string;
+  itemId: string;
+  quantity: number;
+  workBoqItemId?: string | null;
+  note?: string | null;
+  createdAt?: string;
+}
+
+export interface MaterialIssueSettlement {
+  id: string;
+  settlementNo: string;
+  issueOrderId: string;
+  settlementType: MaterialIssueSettlementType;
+  settlementDate: string;
+  status: MaterialIssueSettlementStatus;
+  reason: string;
+  attachments?: any[];
+  metadata?: Record<string, any>;
+  idempotencyKey: string;
+  reversalOfSettlementId?: string | null;
+  createdBy?: string | null;
+  approvedBy?: string | null;
+  createdAt?: string;
+  reversedAt?: string | null;
+  reversalReason?: string | null;
+  lines: MaterialIssueSettlementLine[];
+}
+
 export interface MaterialIssueOrder {
   id: string;
   issueNo: string;
@@ -3286,6 +3321,7 @@ export interface MaterialIssueOrder {
   lines: MaterialIssueLine[];
   receipts?: MaterialIssueReceipt[];
   returns?: MaterialIssueReturn[];
+  settlements?: MaterialIssueSettlement[];
 }
 
 export interface MaterialPartyLedgerEntry {
@@ -3341,12 +3377,31 @@ export interface Transaction {
   approverId?: string; // User approving
   status: TransactionStatus;
   note?: string;
+  businessEventType?: WmsBusinessEventType | null;
+  businessEventReason?: string | null;
   sourceType?: string | null;
   sourceId?: string | null;
   relatedRequestId?: string; // Link to MaterialRequest
   pendingItems?: InventoryItem[]; // Full metadata for new items created during bulk import
   attachments?: WmsTransactionAttachment[];
 }
+
+export type WmsBusinessEventType =
+  | 'request_po_receipt'
+  | 'proactive_po_receipt'
+  | 'site_hot_purchase_receipt'
+  | 'direct_supplier_receipt'
+  | 'direct_manual_receipt'
+  | 'project_return_receipt'
+  | 'warehouse_transfer'
+  | 'construction_issue'
+  | 'supplier_return'
+  | 'warehouse_loss'
+  | 'inventory_adjustment'
+  | 'opening_balance'
+  | 'reversal'
+  | 'legacy_direct_receipt'
+  | 'legacy_direct_issue';
 
 export type InventoryLedgerTransactionType =
   | 'purchase_receipt'
@@ -3373,6 +3428,7 @@ export interface InventoryTransactionLedgerHeader {
   relatedRequestId?: string | null;
   projectId?: string | null;
   constructionSiteId?: string | null;
+  businessEventType?: WmsBusinessEventType | null;
   description?: string | null;
   metadata?: Record<string, any>;
   createdBy?: string | null;
@@ -3395,6 +3451,7 @@ export interface InventoryLedgerEntry {
   warehouseId: string;
   projectId?: string | null;
   constructionSiteId?: string | null;
+  businessEventType?: WmsBusinessEventType | null;
   lotNo?: string | null;
   batchNo?: string | null;
   serialNo?: string | null;
@@ -3416,6 +3473,58 @@ export interface InventoryLedgerEntry {
   createdBy?: string | null;
   approvedBy?: string | null;
   createdAt?: string;
+}
+
+export type ProjectMaterialDataQualityFlag =
+  | 'unmapped_material'
+  | 'unit_mismatch'
+  | 'legacy_transaction'
+  | 'legacy_direct_receipt'
+  | 'legacy_direct_issue'
+  | 'not_in_boq'
+  | 'pending_settlement';
+
+export interface ProjectMaterialReconciliationRow {
+  inventoryItemId?: string | null;
+  sku?: string | null;
+  itemName: string;
+  unit?: string | null;
+  totalBoqQty: number;
+  plannedProgressPercent: number;
+  plannedQtyToDate: number;
+  requestPoReceiptQty: number;
+  proactivePoReceiptQty: number;
+  siteHotPurchaseReceiptQty: number;
+  directSupplierReceiptQty: number;
+  directManualReceiptQty: number;
+  transferReceiptQty: number;
+  grossReceivedQty: number;
+  currentStockQty: number;
+  constructionIssuedQty: number;
+  projectReturnedQty: number;
+  netIssuedQty: number;
+  confirmedUsedQty: number;
+  lossAfterIssueQty: number;
+  openWithRecipientQty: number;
+  usedVarianceToPlan: number;
+  usedVarianceToBoq: number;
+  usedPercentOfBoq: number;
+  dataQualityFlags: ProjectMaterialDataQualityFlag[];
+}
+
+export interface ProjectMaterialReconciliationSummary {
+  rowCount: number;
+  exceptionRowCount: number;
+  unmappedRowCount: number;
+  unitMismatchRowCount: number;
+  legacyRowCount: number;
+  pendingSettlementRowCount: number;
+  totalBoqQty: number;
+  plannedQtyToDate: number;
+  grossReceivedQty: number;
+  currentStockQty: number;
+  confirmedUsedQty: number;
+  openWithRecipientQty: number;
 }
 
 export interface InventoryBalance {
