@@ -25,6 +25,7 @@ import { getApiErrorMessage, logApiError } from '../../lib/apiError';
 import { supplierContractService } from '../../lib/hdService';
 import {
   MaterialIssueOrder,
+  MaterialIssueSettlement,
   MaterialIssueRecipientType,
   MaterialIssueStatus,
   Role,
@@ -84,6 +85,11 @@ type ActionType = 'receipt' | 'return' | 'consume' | 'loss' | 'cancel';
 type ActionState = {
   type: ActionType;
   order: MaterialIssueOrder;
+} | null;
+
+type ReversalState = {
+  order: MaterialIssueOrder;
+  settlement: MaterialIssueSettlement;
 } | null;
 
 const RECIPIENT_LABELS: Record<MaterialIssueRecipientType, string> = {
@@ -184,7 +190,11 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
   const [actionQtyByLine, setActionQtyByLine] = useState<Record<string, string>>({});
   const [actionReason, setActionReason] = useState('');
   const [actionNote, setActionNote] = useState('');
+  const [actionSettlementDate, setActionSettlementDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [actionIdempotencyKey, setActionIdempotencyKey] = useState('');
   const [returnWarehouseId, setReturnWarehouseId] = useState('');
+  const [reversal, setReversal] = useState<ReversalState>(null);
+  const [reversalReason, setReversalReason] = useState('');
 
   const canUseAllWarehouses = user.role === Role.ADMIN || isGlobalWarehouseKeeper(user);
   const selectableWarehouses = useMemo(() => {
@@ -602,6 +612,8 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
     setActionQtyByLine(defaults);
     setActionReason('');
     setActionNote('');
+    setActionSettlementDate(new Date().toISOString().slice(0, 10));
+    setActionIdempotencyKey(`settlement:${order.id}:${type}:${crypto.randomUUID()}`);
     setReturnWarehouseId(order.sourceWarehouseId);
   };
 
@@ -625,6 +637,10 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
     }
     if (type === 'return' && !returnWarehouseId) {
       toast.warning('Chưa chọn kho nhận trả');
+      return;
+    }
+    if ((type === 'consume' || type === 'loss') && !actionSettlementDate) {
+      toast.warning('Thiếu ngày quyết toán');
       return;
     }
 
@@ -657,10 +673,12 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
         touchedTransactionIds.push(materialReturn.transactionId);
         toast.success('Đã tạo phiếu hoàn trả', 'Phiếu nhập trả đang chờ WMS duyệt để cộng tồn.');
       } else if (type === 'consume' || type === 'loss') {
-        await materialIssueService.recordSettlement({
+        await materialIssueService.postSettlement({
           orderId: order.id,
           settlementType: type,
+          settlementDate: actionSettlementDate,
           reason: actionReason.trim(),
+          idempotencyKey: actionIdempotencyKey,
           lines: selectedLines.map(row => ({
             issueLineId: row.line.id,
             quantity: row.quantity,
@@ -684,6 +702,32 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
     } catch (error) {
       logApiError('MaterialIssuePanel.handleActionSubmit', error);
       toast.error('Không thể cập nhật phiếu', getApiErrorMessage(error, 'Vui lòng thử lại.'));
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleReverseSettlement = async () => {
+    if (!reversal || actionLoading) return;
+    if (!reversalReason.trim()) {
+      toast.warning('Thiếu lý do', 'Nhập lý do hoàn tác chứng từ quyết toán.');
+      return;
+    }
+    setActionLoading(true);
+    try {
+      await materialIssueService.reverseSettlement({
+        settlementId: reversal.settlement.id,
+        reason: reversalReason.trim(),
+        idempotencyKey: `reverse:${reversal.settlement.id}:${crypto.randomUUID()}`,
+      });
+      toast.success('Đã hoàn tác quyết toán', 'Chứng từ gốc được giữ lại và hệ thống đã ghi sự kiện bù.');
+      setReversal(null);
+      setReversalReason('');
+      await loadOrders();
+      onChanged?.();
+    } catch (error) {
+      logApiError('MaterialIssuePanel.reverseSettlement', error);
+      toast.error('Không thể hoàn tác quyết toán', getApiErrorMessage(error, 'Vui lòng thử lại.'));
     } finally {
       setActionLoading(false);
     }
@@ -1181,6 +1225,45 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
                             </tbody>
                           </table>
                         </div>
+                        <div className="mt-2 rounded-lg bg-slate-50 px-3 py-2 text-[10px] font-bold text-slate-500">
+                          Quy tắc từng dòng: Đã xuất = Đã trả + Đã dùng + Hao hụt + Còn giữ.
+                        </div>
+
+                        {Boolean(order.settlements?.length) && (
+                          <div className="mt-4 rounded-xl border border-violet-100 bg-violet-50/40 p-3">
+                            <div className="mb-2 text-[10px] font-black uppercase tracking-widest text-violet-700">Lịch sử quyết toán</div>
+                            <div className="space-y-2">
+                              {order.settlements!.map(settlement => (
+                                <div key={settlement.id} className="flex flex-col gap-2 rounded-lg border border-violet-100 bg-white px-3 py-2 md:flex-row md:items-center md:justify-between">
+                                  <div className="min-w-0 text-[10px] font-bold text-slate-500">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <span className="font-black text-slate-800">{settlement.settlementNo}</span>
+                                      <span className={`rounded px-1.5 py-0.5 uppercase ${settlement.settlementType === 'consume' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
+                                        {settlement.reversalOfSettlementId ? 'Hoàn tác' : settlement.settlementType === 'consume' ? 'Đã dùng' : 'Hao hụt'}
+                                      </span>
+                                      <span className={settlement.status === 'reversed' ? 'text-slate-400 line-through' : 'text-violet-700'}>
+                                        {settlement.status === 'reversed' ? 'Đã bị hoàn tác' : 'Đã post'}
+                                      </span>
+                                      <span>{new Date(settlement.settlementDate).toLocaleDateString('vi-VN')}</span>
+                                      <span>{settlement.lines.length} dòng</span>
+                                    </div>
+                                    <div className="mt-1 truncate">{settlement.reason}</div>
+                                    {settlement.reversalReason && <div className="mt-1 text-rose-600">Lý do hoàn tác: {settlement.reversalReason}</div>}
+                                  </div>
+                                  {settlement.status === 'posted' && !settlement.reversalOfSettlementId && (
+                                    <button
+                                      type="button"
+                                      onClick={() => { setReversal({ order, settlement }); setReversalReason(''); }}
+                                      className="shrink-0 rounded-lg border border-rose-100 bg-rose-50 px-3 py-1.5 text-[9px] font-black uppercase text-rose-700 hover:bg-rose-100"
+                                    >
+                                      Hoàn tác
+                                    </button>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
 
                         <div className="mt-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                           <div className="text-[10px] font-bold text-slate-400">
@@ -1269,6 +1352,18 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
                 </label>
               )}
 
+              {(action.type === 'consume' || action.type === 'loss') && (
+                <label className="space-y-1 block">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Ngày quyết toán</span>
+                  <input
+                    type="date"
+                    value={actionSettlementDate}
+                    onChange={event => setActionSettlementDate(event.target.value)}
+                    className="w-full h-10 rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 outline-none focus:border-indigo-400"
+                  />
+                </label>
+              )}
+
               {(action.type === 'return' || action.type === 'consume' || action.type === 'loss' || action.type === 'cancel') && (
                 <label className="space-y-1 block">
                   <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Lý do</span>
@@ -1296,6 +1391,42 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
               <button onClick={handleActionSubmit} disabled={actionLoading}
                 className="px-5 py-2 rounded-lg bg-slate-900 text-white text-xs font-black uppercase tracking-widest hover:bg-slate-800 disabled:opacity-60 inline-flex items-center gap-2">
                 {actionLoading ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />} Xác nhận
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {reversal && (
+        <div className="fixed inset-0 z-[95] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-100 p-5">
+              <div>
+                <h3 className="text-sm font-black text-slate-800">Hoàn tác chứng từ quyết toán</h3>
+                <p className="mt-1 text-xs text-slate-400">{reversal.settlement.settlementNo} • {reversal.order.issueNo}</p>
+              </div>
+              <button type="button" onClick={() => setReversal(null)} className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="space-y-3 p-5">
+              <div className="rounded-xl border border-amber-100 bg-amber-50 p-3 text-xs font-bold text-amber-800">
+                Hệ thống giữ chứng từ gốc và tạo sự kiện bù; không xóa lịch sử đã post.
+              </div>
+              <label className="block space-y-1">
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Lý do hoàn tác</span>
+                <textarea
+                  value={reversalReason}
+                  onChange={event => setReversalReason(event.target.value)}
+                  className="min-h-[96px] w-full rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700 outline-none focus:border-rose-400"
+                  placeholder="Nêu rõ sai lệch cần điều chỉnh..."
+                />
+              </label>
+            </div>
+            <div className="flex justify-end gap-2 border-t border-slate-100 p-5">
+              <button type="button" onClick={() => setReversal(null)} className="rounded-lg border border-slate-200 px-4 py-2 text-xs font-black text-slate-500">Đóng</button>
+              <button type="button" onClick={handleReverseSettlement} disabled={actionLoading} className="inline-flex items-center gap-2 rounded-lg bg-rose-600 px-4 py-2 text-xs font-black text-white disabled:opacity-60">
+                {actionLoading ? <Loader2 size={14} className="animate-spin" /> : <Undo2 size={14} />} Xác nhận hoàn tác
               </button>
             </div>
           </div>

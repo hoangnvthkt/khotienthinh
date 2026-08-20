@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { HrmConstructionSite, Warehouse, WarehouseType, WarehouseTypeConfig } from '../../types';
+import { HrmConstructionSite, Project, Warehouse, WarehouseType, WarehouseTypeConfig } from '../../types';
 import { Building, MapPin, Plus, X, Save, Edit2, Trash2, Tags, Palette, CheckCircle2, PauseCircle, Link2, LockKeyhole, Filter } from 'lucide-react';
-import { getWarehouseBindingLabel, suggestConstructionSiteForWarehouse } from '../../lib/warehouseSiteBinding';
+import { filterProjectsForConstructionSite, getWarehouseBindingLabel, suggestConstructionSiteForWarehouse } from '../../lib/warehouseSiteBinding';
 
 type WarehouseTypeForm = {
   code: string;
@@ -15,6 +15,7 @@ interface SettingsWarehousesProps {
   warehouses: Warehouse[];
   warehouseTypes: WarehouseTypeConfig[];
   constructionSites: HrmConstructionSite[];
+  projects: Project[];
   defaultWarehouseType: WarehouseType;
   isWhModalOpen: boolean;
   setIsWhModalOpen: (v: boolean) => void;
@@ -26,11 +27,14 @@ interface SettingsWarehousesProps {
   setNewWhAddress: (v: string) => void;
   newWhType: WarehouseType;
   setNewWhType: (v: WarehouseType) => void;
+  newWhProjectId: string;
+  setNewWhProjectId: (v: string) => void;
   newWhConstructionSiteId: string;
   setNewWhConstructionSiteId: (v: string) => void;
   newWhIsDefaultForSite: boolean;
   setNewWhIsDefaultForSite: (v: boolean) => void;
   warehouseBindingBusyId: string | null;
+  usedWarehouseIds: Set<string>;
   handleAddWarehouse: (e: React.FormEvent) => void | Promise<void>;
   handleEditWarehouse: (wh: Warehouse) => void;
   handleSuggestWarehouseBinding: (wh: Warehouse, constructionSiteId: string) => void;
@@ -58,11 +62,12 @@ const TYPE_COLOR_STYLES: Record<string, { label: string; badge: string; swatch: 
 const getTypeColorStyle = (color?: string) => TYPE_COLOR_STYLES[color || 'slate'] || TYPE_COLOR_STYLES.slate;
 
 const SettingsWarehouses: React.FC<SettingsWarehousesProps> = ({
-  warehouses, warehouseTypes, constructionSites, defaultWarehouseType,
+  warehouses, warehouseTypes, constructionSites, projects, defaultWarehouseType,
   isWhModalOpen, setIsWhModalOpen, editingWarehouse, setEditingWarehouse,
   newWhName, setNewWhName, newWhAddress, setNewWhAddress, newWhType, setNewWhType,
+  newWhProjectId, setNewWhProjectId,
   newWhConstructionSiteId, setNewWhConstructionSiteId,
-  newWhIsDefaultForSite, setNewWhIsDefaultForSite, warehouseBindingBusyId,
+  newWhIsDefaultForSite, setNewWhIsDefaultForSite, warehouseBindingBusyId, usedWarehouseIds,
   handleAddWarehouse, handleEditWarehouse, handleSuggestWarehouseBinding, handleSetWarehouseEnforcement, handleDeleteWarehouse,
   editingWarehouseType, warehouseTypeForm, handleWarehouseTypeFormChange,
   handleSaveWarehouseType, handleEditWarehouseType, handleDeleteWarehouseType, resetWarehouseTypeForm
@@ -73,6 +78,8 @@ const SettingsWarehouses: React.FC<SettingsWarehousesProps> = ({
   const visibleWarehouses = showUnlinkedOnly
     ? warehouses.filter(warehouse => !warehouse.constructionSiteId)
     : warehouses;
+  const selectableProjects = filterProjectsForConstructionSite(projects, newWhConstructionSiteId);
+  const editingScopeLocked = Boolean(editingWarehouse && usedWarehouseIds.has(editingWarehouse.id));
 
   const getWarehouseType = (code: WarehouseType) =>
     sortedWarehouseTypes.find(type => type.code === code) || {
@@ -285,6 +292,7 @@ const SettingsWarehouses: React.FC<SettingsWarehousesProps> = ({
                   setNewWhName('');
                   setNewWhAddress('');
                   setNewWhType(defaultWarehouseType);
+                  setNewWhProjectId('');
                   setNewWhConstructionSiteId('');
                   setNewWhIsDefaultForSite(false);
                   setIsWhModalOpen(true);
@@ -301,6 +309,8 @@ const SettingsWarehouses: React.FC<SettingsWarehousesProps> = ({
               const style = getTypeColorStyle(warehouseType.color);
               const bindingLabel = getWarehouseBindingLabel(wh, constructionSites);
               const linkedSite = constructionSites.find(site => site.id === wh.constructionSiteId);
+              const linkedProject = projects.find(project => project.id === wh.projectId);
+              const scopeLocked = usedWarehouseIds.has(wh.id);
               const suggestion = suggestConstructionSiteForWarehouse(wh, constructionSites);
 
               return (
@@ -321,6 +331,11 @@ const SettingsWarehouses: React.FC<SettingsWarehousesProps> = ({
                       <span className={`text-[9px] font-black px-2 py-1 rounded-lg uppercase border ${bindingLabel === 'Đã khóa' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : bindingLabel === 'Đã liên kết' ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-amber-200 bg-amber-50 text-amber-700'}`}>
                         {bindingLabel}
                       </span>
+                      {scopeLocked && (
+                        <span className="text-[9px] font-black px-2 py-1 rounded-lg uppercase border border-violet-200 bg-violet-50 text-violet-700">
+                          Đã khóa scope
+                        </span>
+                      )}
                     </div>
                   </div>
                   <h3 className={`font-bold mb-1 ${wh.isArchived ? 'text-slate-500' : 'text-slate-800'}`}>{wh.name}</h3>
@@ -330,6 +345,11 @@ const SettingsWarehouses: React.FC<SettingsWarehousesProps> = ({
                   {linkedSite && (
                     <div className="mb-3 flex items-center gap-2 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-[10px] font-bold text-blue-700">
                       <Link2 size={12} /> {linkedSite.name}{wh.isDefaultForSite ? ' · Kho mặc định' : ''}
+                    </div>
+                  )}
+                  {linkedProject && (
+                    <div className="mb-3 flex items-center gap-2 rounded-xl border border-violet-100 bg-violet-50 px-3 py-2 text-[10px] font-bold text-violet-700">
+                      <LockKeyhole size={12} /> {linkedProject.code} · {linkedProject.name}
                     </div>
                   )}
                   {suggestion && (
@@ -376,10 +396,14 @@ const SettingsWarehouses: React.FC<SettingsWarehousesProps> = ({
               </div>
               <div className="space-y-2">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Loại hình kho</label>
-                <select value={newWhType} onChange={(e) => {
+                <select value={newWhType} disabled={editingScopeLocked} onChange={(e) => {
                   const nextType = e.target.value as WarehouseType;
                   setNewWhType(nextType);
-                  if (nextType !== 'SITE') setNewWhIsDefaultForSite(false);
+                  if (nextType !== 'SITE') {
+                    setNewWhProjectId('');
+                    setNewWhConstructionSiteId('');
+                    setNewWhIsDefaultForSite(false);
+                  }
                 }} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-accent outline-none font-bold">
                   {selectableWarehouseTypes.map(type => (
                     <option key={type.code} value={type.code}>{type.name}</option>
@@ -394,15 +418,34 @@ const SettingsWarehouses: React.FC<SettingsWarehousesProps> = ({
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Công trường liên kết</label>
                 <select
                   value={newWhConstructionSiteId}
+                  disabled={editingScopeLocked || newWhType !== 'SITE'}
                   onChange={event => {
                     setNewWhConstructionSiteId(event.target.value);
+                    setNewWhProjectId('');
                     if (!event.target.value) setNewWhIsDefaultForSite(false);
                   }}
                   className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-accent outline-none font-bold"
                 >
-                  <option value="">Chưa liên kết</option>
+                  <option value="">Chọn công trường</option>
                   {constructionSites.map(site => <option key={site.id} value={site.id}>{site.name}</option>)}
                 </select>
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Dự án sở hữu kho</label>
+                <select
+                  value={newWhProjectId}
+                  disabled={editingScopeLocked || newWhType !== 'SITE' || !newWhConstructionSiteId}
+                  onChange={event => setNewWhProjectId(event.target.value)}
+                  className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-accent outline-none font-bold disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <option value="">Chọn dự án thuộc công trường</option>
+                  {selectableProjects.map(project => (
+                    <option key={project.id} value={project.id}>{project.code} · {project.name}</option>
+                  ))}
+                </select>
+                {editingScopeLocked && (
+                  <p className="text-[10px] font-bold text-violet-600">Kho đã phát sinh nghiệp vụ; scope dự án/công trường không thể thay đổi.</p>
+                )}
               </div>
               <label className={`flex items-center justify-between gap-3 rounded-xl border p-3 ${newWhType === 'SITE' && newWhConstructionSiteId ? 'cursor-pointer border-blue-100 bg-blue-50' : 'cursor-not-allowed border-slate-200 bg-slate-50 opacity-60'}`}>
                 <span>

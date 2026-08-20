@@ -2,7 +2,7 @@ import React, { useRef, useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useModuleData } from '../../hooks/useModuleData';
 import { Employee, LeaveBalance } from '../../types';
-import { Plus, Search, Edit2, Trash2, Phone, Mail, MapPin, Building, Briefcase, Users, LayoutGrid, List, User as UserIcon, Upload, Download, Loader2, RefreshCcw } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Phone, Mail, MapPin, Building, Briefcase, Users, LayoutGrid, List, User as UserIcon, Upload, Download, Loader2, RefreshCcw, FileSpreadsheet } from 'lucide-react';
 import EmployeeModal from '../../components/hrm/EmployeeModal';
 import EmployeeDetailModal from '../../components/hrm/EmployeeDetailModal';
 import ConfirmDeleteModal from '../../components/ConfirmDeleteModal';
@@ -16,9 +16,13 @@ import ExcelImportReviewModal from '../../components/ExcelImportReviewModal';
 import { ExcelImportMode, ExcelImportPreview, applyImportChanges, buildImportPreview, parseExcelRows } from '../../lib/excelImport';
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 import { employeeSelfService } from '../../lib/employeeSelfService';
+import HrmEmployeeAssignmentDialog from '../../components/hrm/organization/HrmEmployeeAssignmentDialog';
+import { buildHrmStaffingRows, getHrmEmployeeOrganizationSummary } from '../../lib/hrmSharedCatalogModel';
+import { hrmSharedCatalogService } from '../../lib/hrmSharedCatalogService';
+import type { HrmSharedCatalogBundle, HrmStaffingRow } from '../../types/hrmSharedCatalog';
 
 const Employees: React.FC = () => {
-    const { employees, users, addEmployee, updateEmployee, updateUser, replaceEmployeeLocal, removeEmployee, addHrmItem, hrmAreas, hrmOffices, hrmPositions, hrmConstructionSites, orgUnits, user } = useApp();
+    const { employees, users, addEmployee, updateEmployee, updateUser, replaceEmployeeLocal, removeEmployee, addHrmItem, hrmAreas, hrmOffices, hrmPositions, hrmConstructionSites, hrmEmployeeTypes, hrmSalaryPolicies, hrmWorkSchedules, orgUnits, user, loadModuleData } = useApp();
     const { canManage } = usePermission();
     const canCRUD = canManage('/hrm/employees');
     useModuleData('hrm');
@@ -29,9 +33,16 @@ const Employees: React.FC = () => {
     const [viewingEmployee, setViewingEmployee] = useState<Employee | null>(null);
     const [deletingEmployee, setDeletingEmployee] = useState<Employee | null>(null);
     const [importing, setImporting] = useState(false);
+    const [exporting, setExporting] = useState(false);
     const [importMode, setImportMode] = useState<ExcelImportMode>('create');
     const [importPreview, setImportPreview] = useState<ExcelImportPreview<Employee> | null>(null);
     const [deleting, setDeleting] = useState(false);
+    const [organizationBundle, setOrganizationBundle] = useState<Pick<
+        HrmSharedCatalogBundle,
+        'orgUnits' | 'slots' | 'assignments' | 'employees' | 'positions'
+    > | null>(null);
+    const [organizationLoading, setOrganizationLoading] = useState(false);
+    const [assignmentDialogOpen, setAssignmentDialogOpen] = useState(false);
     const importInputRef = useRef<HTMLInputElement>(null);
     const importModeRef = useRef<ExcelImportMode>('create');
     const [viewMode, setViewMode] = useState<'grid' | 'table'>(() => {
@@ -54,12 +65,24 @@ const Employees: React.FC = () => {
     const canEditEmployee = (emp: Employee) => canCRUD || isSelfEmployee(emp);
     const showActions = canCRUD || paginatedEmployees.some(isSelfEmployee);
 
+    const loadOrganizationBundle = async () => {
+        setOrganizationLoading(true);
+        try {
+            setOrganizationBundle(await hrmSharedCatalogService.loadOrganizationBundle());
+        } catch (error) {
+            toast.error('Không tải được cơ cấu tổ chức', getApiErrorMessage(error, 'Vui lòng thử lại.'));
+        } finally {
+            setOrganizationLoading(false);
+        }
+    };
+
     const handleEdit = (emp: Employee) => {
         if (!canEditEmployee(emp)) return;
         setEditingEmployee(emp);
         setIsModalOpen(true);
+        if (canCRUD) void loadOrganizationBundle();
     };
-    const handleAdd = () => { setEditingEmployee(null); setIsModalOpen(true); };
+    const handleAdd = () => { setEditingEmployee(null); setOrganizationBundle(null); setIsModalOpen(true); };
     const handleView = (emp: Employee) => { setViewingEmployee(emp); };
     const handleDelete = (emp: Employee) => {
         setDeletingEmployee(emp);
@@ -116,6 +139,64 @@ const Employees: React.FC = () => {
     };
 
     const activeCount = employees.filter(e => e.status === 'Đang làm việc').length;
+    const staffingRows = organizationBundle
+        ? buildHrmStaffingRows(
+            organizationBundle.slots,
+            organizationBundle.assignments,
+            organizationBundle.orgUnits,
+        )
+        : [];
+    const organizationSummary = editingEmployee && organizationBundle
+        ? getHrmEmployeeOrganizationSummary(
+            editingEmployee.id,
+            organizationBundle.slots,
+            organizationBundle.assignments,
+            organizationBundle.orgUnits,
+        )
+        : null;
+    const organizationUnit = organizationSummary?.orgUnitId
+        ? organizationBundle?.orgUnits.find(unit => unit.id === organizationSummary.orgUnitId)
+        : null;
+    const organizationPosition = organizationSummary?.positionId
+        ? organizationBundle?.positions.find(position => position.id === organizationSummary.positionId)
+        : null;
+    const organizationManager = organizationSummary?.managerEmployeeId
+        ? organizationBundle?.employees.find(employee => employee.id === organizationSummary.managerEmployeeId)
+        : null;
+
+    const refreshOrganizationAndEmployees = async () => {
+        await Promise.all([
+            loadModuleData('hrm', true),
+            loadOrganizationBundle(),
+        ]);
+    };
+
+    const handleAssignEmployee = async (input: {
+        employeeId: string;
+        row: HrmStaffingRow;
+        effectiveFrom: string;
+        note: string;
+    }) => {
+        await hrmSharedCatalogService.assignEmployeeToStaffing({
+            employeeId: input.employeeId,
+            orgUnitId: input.row.orgUnitId,
+            positionId: input.row.positionId,
+            levelCode: input.row.levelCode,
+            reportsToSlotId: input.row.reportsToSlotId,
+            effectiveFrom: input.effectiveFrom,
+            note: input.note,
+        });
+        await refreshOrganizationAndEmployees();
+        setAssignmentDialogOpen(false);
+        toast.success('Đã cập nhật vị trí trong cơ cấu tổ chức');
+    };
+
+    const handleUnassignEmployee = async (input: { employeeId: string; effectiveTo: string; note: string }) => {
+        await hrmSharedCatalogService.unassignEmployeeFromOrganization(input);
+        await refreshOrganizationAndEmployees();
+        setAssignmentDialogOpen(false);
+        toast.success('Nhân sự đã chuyển về trạng thái chờ phân bổ');
+    };
 
     const pick = (row: Record<string, any>, keys: string[]) => {
         for (const key of keys) {
@@ -165,14 +246,14 @@ const Employees: React.FC = () => {
         try {
             const XLSX = await loadXlsx();
             const createHeaders = [
-                'Mã nhân sự *', 'Họ tên *', 'Chức danh', 'Giới tính', 'SĐT', 'Email',
+                'Mã nhân sự *', 'Họ tên *', 'Giới tính', 'SĐT', 'Email',
                 'Ngày sinh', 'Ngày vào làm', 'Ngày chính thức', 'Trạng thái', 'Tài khoản hệ thống',
             ];
             const createRows = [
-                ['NS-001', 'Nguyễn Văn A', 'Kỹ sư hiện trường', 'Nam', '0900000000', 'a@example.com', '1990-01-01', '2026-05-01', '2026-07-01', 'Đang làm việc', ''],
+                ['NS-001', 'Nguyễn Văn A', 'Nam', '0900000000', 'a@example.com', '1990-01-01', '2026-05-01', '2026-07-01', 'Đang làm việc', ''],
             ];
-            const updateHeaders = ['Mã nhân sự *', 'Chức danh', 'SĐT', 'Email', 'Trạng thái', 'Tài khoản hệ thống'];
-            const updateRows = [['NS-001', 'Chỉ huy trưởng', '', '', '', '']];
+            const updateHeaders = ['Mã nhân sự *', 'SĐT', 'Email', 'Trạng thái', 'Tài khoản hệ thống'];
+            const updateRows = [['NS-001', '', '', '', '']];
             const guideRows = [
                 ['Nội dung', 'Hướng dẫn'],
                 ['Nhập mới', 'Dùng sheet Nhap_moi. Mã nhân sự đã tồn tại sẽ bị báo lỗi.'],
@@ -227,7 +308,6 @@ const Employees: React.FC = () => {
         }),
         fields: [
             { key: 'fullName', label: 'Họ tên', aliases: ['Họ tên *', 'Họ tên', 'Ho ten', 'Họ và tên', 'Tên nhân sự', 'fullName'], requiredOnCreate: true },
-            { key: 'title', label: 'Chức danh', aliases: ['Chức danh', 'Chuc danh', 'Vị trí', 'title'], clearable: true },
             { key: 'gender', label: 'Giới tính', aliases: ['Giới tính', 'Gioi tinh', 'gender'], normalize: value => normalizeGender(String(value)) },
             { key: 'phone', label: 'SĐT', aliases: ['SĐT', 'SDT', 'Số điện thoại', 'phone'], clearable: true },
             {
@@ -330,8 +410,11 @@ const Employees: React.FC = () => {
 
     // Helper to get position name
     const getPositionName = (positionId?: string) => positionId ? hrmPositions.find(p => p.id === positionId)?.name : null;
-
     const getOfficeName = (officeId?: string) => officeId ? hrmOffices.find(o => o.id === officeId)?.name : null;
+    const getAreaName = (areaId?: string) => areaId ? hrmAreas.find(a => a.id === areaId)?.name : null;
+    const getEmployeeTypeName = (typeId?: string) => typeId ? hrmEmployeeTypes.find(t => t.id === typeId)?.name : null;
+    const getSalaryPolicyName = (spId?: string) => spId ? hrmSalaryPolicies.find(s => s.id === spId)?.name : null;
+    const getWorkScheduleName = (wsId?: string) => wsId ? hrmWorkSchedules.find(w => w.id === wsId)?.name : null;
 
     const getConstructionSiteName = (csId?: string) => {
         if (!csId) return null;
@@ -343,6 +426,134 @@ const Employees: React.FC = () => {
     const getDepartmentName = (deptId?: string) => {
         if (!deptId) return null;
         return orgUnits.find(u => u.id === deptId)?.name || null;
+    };
+
+    const handleExportEmployees = async () => {
+        if (employees.length === 0) {
+            toast.warning('Không có dữ liệu', 'Không có hồ sơ nhân sự nào để xuất.');
+            return;
+        }
+        setExporting(true);
+        try {
+            const XLSX = await loadXlsx();
+
+            const sortedEmployees = [...employees].sort((a, b) => {
+                const codeCompare = (a.employeeCode || '').localeCompare(b.employeeCode || '', 'vi', { numeric: true });
+                if (codeCompare !== 0) return codeCompare;
+                return (a.fullName || '').localeCompare(b.fullName || '', 'vi');
+            });
+
+            const headers = [
+                'STT',
+                'Mã nhân sự',
+                'Họ và tên',
+                'Chức danh',
+                'Vị trí / Chức vụ',
+                'Phòng ban',
+                'Văn phòng / Chi nhánh',
+                'Khu vực',
+                'Công trường',
+                'Nhà máy',
+                'Loại nhân sự',
+                'Chính sách lương',
+                'Lịch làm việc',
+                'Giới tính',
+                'Ngày sinh',
+                'Tình trạng hôn nhân',
+                'Số điện thoại',
+                'Email',
+                'Ngày vào làm',
+                'Ngày chính thức',
+                'Trạng thái',
+                'Tài khoản hệ thống',
+            ];
+
+            const rows = sortedEmployees.map((emp, idx) => {
+                const position = getPositionName(emp.positionId);
+                const office = getOfficeName(emp.officeId);
+                const area = getAreaName(emp.areaId);
+                const constructionSite = getConstructionSiteName(emp.constructionSiteId);
+                const department = getDepartmentName(emp.departmentId);
+                const factory = orgUnits.find(u => u.id === emp.factoryId)?.name || '';
+                const empType = getEmployeeTypeName(emp.employeeTypeId);
+                const salaryPolicy = getSalaryPolicyName(emp.salaryPolicyId);
+                const workSchedule = getWorkScheduleName(emp.workScheduleId);
+                const linkedUser = emp.userId ? users.find(u => u.id === emp.userId) : undefined;
+                const userAccount = linkedUser ? `${linkedUser.name} (${linkedUser.email || linkedUser.username || ''})` : '';
+
+                return [
+                    idx + 1,
+                    emp.employeeCode || '',
+                    emp.fullName || '',
+                    emp.title || '',
+                    position || '',
+                    department || '',
+                    office || '',
+                    area || '',
+                    constructionSite || '',
+                    factory || '',
+                    empType || '',
+                    salaryPolicy || '',
+                    workSchedule || '',
+                    emp.gender || '',
+                    emp.dateOfBirth || '',
+                    emp.maritalStatus || '',
+                    emp.phone || '',
+                    emp.email || '',
+                    emp.startDate || '',
+                    emp.officialDate || '',
+                    emp.status || '',
+                    userAccount,
+                ];
+            });
+
+            const wb = XLSX.utils.book_new();
+            const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+
+            ws['!cols'] = [
+                { wch: 6 },  // STT
+                { wch: 14 }, // Mã nhân sự
+                { wch: 25 }, // Họ và tên
+                { wch: 20 }, // Chức danh
+                { wch: 20 }, // Vị trí / Chức vụ
+                { wch: 20 }, // Phòng ban
+                { wch: 20 }, // Văn phòng
+                { wch: 16 }, // Khu vực
+                { wch: 22 }, // Công trường
+                { wch: 20 }, // Nhà máy
+                { wch: 18 }, // Loại nhân sự
+                { wch: 20 }, // Chính sách lương
+                { wch: 20 }, // Lịch làm việc
+                { wch: 10 }, // Giới tính
+                { wch: 14 }, // Ngày sinh
+                { wch: 18 }, // Tình trạng HN
+                { wch: 15 }, // SĐT
+                { wch: 26 }, // Email
+                { wch: 14 }, // Ngày vào làm
+                { wch: 14 }, // Ngày chính thức
+                { wch: 16 }, // Trạng thái
+                { wch: 30 }, // Tài khoản hệ thống
+            ];
+
+            XLSX.utils.book_append_sheet(wb, ws, 'Danh_sach_nhan_su');
+            const wbOut = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+            const blob = new Blob([wbOut], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `Danh_sach_nhan_su_${new Date().toISOString().slice(0, 10)}.xlsx`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+
+            toast.success('Xuất danh sách nhân sự thành công', `Đã xuất ${sortedEmployees.length} hồ sơ nhân sự ra file Excel.`);
+        } catch (err: any) {
+            logApiError('employees.export', err);
+            toast.error('Không thể xuất file Excel', getApiErrorMessage(err, 'Đã xảy ra lỗi khi tạo file Excel danh sách nhân sự.'));
+        } finally {
+            setExporting(false);
+        }
     };
 
     return (
@@ -360,7 +571,7 @@ const Employees: React.FC = () => {
                         </p>
                     </div>
                 </div>
-                <div className="flex items-center gap-2 w-full sm:w-auto">
+                <div className="flex items-center gap-2 w-full sm:w-auto flex-wrap sm:flex-nowrap">
                     <div className="flex bg-slate-100 dark:bg-slate-800 rounded-xl p-1 border border-slate-200 dark:border-slate-700">
                         <button onClick={() => toggleView('grid')} className={`p-2 rounded-lg transition-all ${viewMode === 'grid' ? 'bg-white dark:bg-slate-700 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-slate-400 hover:text-slate-600'}`} title="Dạng thẻ">
                             <LayoutGrid size={16} />
@@ -369,6 +580,15 @@ const Employees: React.FC = () => {
                             <List size={16} />
                         </button>
                     </div>
+                    <button
+                        onClick={handleExportEmployees}
+                        disabled={exporting || employees.length === 0}
+                        className="flex items-center gap-2 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-emerald-700 dark:text-emerald-300 px-3.5 py-2.5 rounded-xl transition-all hover:bg-emerald-100 dark:hover:bg-emerald-900/40 text-sm font-bold justify-center disabled:opacity-60 shadow-sm"
+                        title="Xuất toàn bộ danh sách nhân sự ra file Excel"
+                    >
+                        {exporting ? <Loader2 size={16} className="animate-spin" /> : <FileSpreadsheet size={16} />}
+                        <span>Xuất Excel</span>
+                    </button>
                     {canCRUD && (
                         <>
                             <input ref={importInputRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleImportEmployees} className="hidden" />
@@ -608,9 +828,31 @@ const Employees: React.FC = () => {
                     employee={editingEmployee}
                     mode={editingEmployee && !canCRUD && isSelfEmployee(editingEmployee) ? 'self' : 'admin'}
                     onSelfUpdate={handleSelfEmployeeUpdate}
-                    onClose={() => setIsModalOpen(false)}
+                    organizationSummary={organizationSummary}
+                    organizationUnitName={organizationUnit?.name}
+                    organizationPositionName={organizationPosition?.name}
+                    organizationPositionGroup={organizationPosition?.groupCode}
+                    organizationManagerName={organizationManager?.fullName}
+                    canManageOrganization={canCRUD && !organizationLoading && Boolean(organizationBundle)}
+                    onManageOrganization={() => setAssignmentDialogOpen(true)}
+                    onClose={() => {
+                        setAssignmentDialogOpen(false);
+                        setIsModalOpen(false);
+                    }}
                 />
             )}
+            <HrmEmployeeAssignmentDialog
+                isOpen={assignmentDialogOpen && Boolean(editingEmployee) && Boolean(organizationBundle)}
+                employees={organizationBundle?.employees || []}
+                orgUnits={organizationBundle?.orgUnits || []}
+                positions={organizationBundle?.positions.filter(position => position.isActive && position.source !== 'legacy') || []}
+                rows={staffingRows}
+                selectedEmployeeId={editingEmployee?.id}
+                allowUnassign={organizationSummary?.status === 'ASSIGNED'}
+                onClose={() => setAssignmentDialogOpen(false)}
+                onSubmit={handleAssignEmployee}
+                onUnassign={handleUnassignEmployee}
+            />
             {viewingEmployee && <EmployeeDetailModal employee={viewingEmployee} onClose={() => setViewingEmployee(null)} onEdit={(emp) => { setViewingEmployee(null); handleEdit(emp); }} />}
 
             <ConfirmDeleteModal

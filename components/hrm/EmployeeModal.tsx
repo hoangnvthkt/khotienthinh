@@ -1,20 +1,41 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Employee, LeaveBalance } from '../../types';
-import { X, Save, User as UserIcon, MapPinned, Building, Layers, HardHat, DollarSign, Calendar, Factory, FolderTree, CalendarDays, Camera, Loader2, GitBranch } from 'lucide-react';
+import { X, Save, User as UserIcon, MapPinned, Building, Layers, DollarSign, Calendar, CalendarDays, Camera, Loader2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useToast } from '../../context/ToastContext';
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
+import HrmEmployeeOrganizationCard from './organization/HrmEmployeeOrganizationCard';
+import type { HrmEmployeeOrganizationSummary } from '../../types/hrmSharedCatalog';
 
 interface EmployeeModalProps {
     employee: Employee | null;
     onClose: () => void;
     mode?: 'admin' | 'self';
     onSelfUpdate?: (employee: Employee) => Promise<void>;
+    organizationSummary?: HrmEmployeeOrganizationSummary | null;
+    organizationUnitName?: string | null;
+    organizationPositionName?: string | null;
+    organizationPositionGroup?: string | null;
+    organizationManagerName?: string | null;
+    canManageOrganization?: boolean;
+    onManageOrganization?: () => void;
 }
 
-const EmployeeModal: React.FC<EmployeeModalProps> = ({ employee, onClose, mode = 'admin', onSelfUpdate }) => {
-    const { addEmployee, updateEmployee, users, employees, warehouses, hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules, hrmConstructionSites, orgUnits, leaveBalances, addHrmItem, updateHrmItem } = useApp();
+const EmployeeModal: React.FC<EmployeeModalProps> = ({
+    employee,
+    onClose,
+    mode = 'admin',
+    onSelfUpdate,
+    organizationSummary = null,
+    organizationUnitName,
+    organizationPositionName,
+    organizationPositionGroup,
+    organizationManagerName,
+    canManageOrganization = false,
+    onManageOrganization,
+}) => {
+    const { addEmployee, updateEmployee, users, employees, warehouses, hrmAreas, hrmOffices, hrmEmployeeTypes, hrmSalaryPolicies, hrmWorkSchedules, leaveBalances, addHrmItem, updateHrmItem } = useApp();
     const toast = useToast();
     const isSelfMode = mode === 'self';
     const [formData, setFormData] = useState<Partial<Employee>>({
@@ -266,19 +287,6 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ employee, onClose, mode =
                                 />
                             </div>
 
-                            {!isSelfMode && (
-                                <div className="space-y-2">
-                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Chức Danh</label>
-                                    <input
-                                        type="text"
-                                        name="title"
-                                        value={formData.title || ''}
-                                        onChange={handleChange}
-                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-white text-sm focus:ring-2 focus:ring-accent"
-                                        placeholder="Ví dụ: Kế toán, Thủ kho..."
-                                    />
-                                </div>
-                            )}
                             <div className="space-y-2">
                                 <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Giới Tính</label>
                                 <select
@@ -382,6 +390,20 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ employee, onClose, mode =
                             )}
                         </div>
 
+                        {!isSelfMode && (
+                            <div className="mt-6 border-t border-slate-100 pt-6 dark:border-slate-800">
+                                <HrmEmployeeOrganizationCard
+                                    summary={organizationSummary}
+                                    unitName={organizationUnitName}
+                                    positionName={organizationPositionName}
+                                    positionGroup={organizationPositionGroup}
+                                    managerName={organizationManagerName}
+                                    canManage={canManageOrganization && Boolean(employee) && Boolean(onManageOrganization)}
+                                    onManage={() => onManageOrganization?.()}
+                                />
+                            </div>
+                        )}
+
                         {/* ===== HRM MASTER DATA SECTION ===== */}
                         {!isSelfMode && <div className="border-t border-slate-100 dark:border-slate-800 pt-6 mt-6">
                             <h3 className="text-sm font-black text-violet-600 dark:text-violet-400 uppercase tracking-wider mb-4 flex items-center gap-2">
@@ -419,20 +441,6 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ employee, onClose, mode =
                                 </div>
                                 <div className="space-y-2">
                                     <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
-                                        <HardHat size={12} /> Vị trí công việc *
-                                    </label>
-                                    <select
-                                        name="positionId"
-                                        value={formData.positionId || ''}
-                                        onChange={handleChange}
-                                        className="w-full px-4 py-3 rounded-xl border border-violet-200 dark:border-violet-800/30 bg-violet-50 dark:bg-violet-900/10 text-slate-800 dark:text-white text-sm focus:ring-2 focus:ring-violet-500"
-                                    >
-                                        <option value="">-- Vui lòng chọn --</option>
-                                        {hrmPositions.map(p => (<option key={p.id} value={p.id}>{p.name}</option>))}
-                                    </select>
-                                </div>
-                                <div className="space-y-2">
-                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
                                         <DollarSign size={12} /> Chính sách lương
                                     </label>
                                     <select
@@ -457,63 +465,6 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ employee, onClose, mode =
                                     >
                                         <option value="">-- Vui lòng chọn --</option>
                                         {hrmWorkSchedules.map(w => (<option key={w.id} value={w.id}>{w.name}</option>))}
-                                    </select>
-                                </div>
-                                <div className="space-y-2">
-                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
-                                        <GitBranch size={12} /> Đơn vị trực thuộc (Sơ đồ tổ chức) *
-                                    </label>
-                                    <select
-                                        name="orgUnitId"
-                                        required
-                                        value={formData.orgUnitId || ''}
-                                        onChange={handleChange}
-                                        className="w-full px-4 py-3 rounded-xl border border-indigo-200 dark:border-indigo-800/30 bg-indigo-50 dark:bg-indigo-900/10 text-slate-800 dark:text-white text-sm focus:ring-2 focus:ring-indigo-500 font-bold"
-                                    >
-                                        <option value="">-- Chọn đơn vị --</option>
-                                        {orgUnits.map(u => (<option key={u.id} value={u.id}>{u.name}</option>))}
-                                    </select>
-                                </div>
-                                <div className="space-y-2">
-                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
-                                        <FolderTree size={12} /> Phòng / Ban
-                                    </label>
-                                    <select
-                                        name="departmentId"
-                                        value={formData.departmentId || ''}
-                                        onChange={handleChange}
-                                        className="w-full px-4 py-3 rounded-xl border border-sky-200 dark:border-sky-800/30 bg-sky-50 dark:bg-sky-900/10 text-slate-800 dark:text-white text-sm focus:ring-2 focus:ring-sky-500"
-                                    >
-                                        <option value="">-- Vui lòng chọn --</option>
-                                        {orgUnits.filter(u => u.type === 'department').map(d => (<option key={d.id} value={d.id}>{d.name}</option>))}
-                                    </select>
-                                </div>
-                                <div className="space-y-2">
-                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
-                                        <HardHat size={12} /> Công trường
-                                    </label>
-                                    <select
-                                        name="constructionSiteId"
-                                        value={formData.constructionSiteId || ''}
-                                        onChange={handleChange}
-                                        className="w-full px-4 py-3 rounded-xl border border-orange-200 dark:border-orange-800/30 bg-orange-50 dark:bg-orange-900/10 text-slate-800 dark:text-white text-sm focus:ring-2 focus:ring-orange-500"
-                                    >
-                                        <option value="">-- Vui lòng chọn --</option>
-                                        {[...hrmConstructionSites.map(cs => ({ id: cs.id, name: cs.name })), ...orgUnits.filter(u => u.type === 'construction_site').filter(u => !hrmConstructionSites.find(cs => cs.name === u.name)).map(u => ({ id: u.id, name: u.name }))].map(cs => (<option key={cs.id} value={cs.id}>{cs.name}</option>))}
-                                    </select>
-                                </div>
-                                <div className="space-y-2">
-                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
-                                        <Factory size={12} /> Nhà máy
-                                    </label>
-                                    <select
-                                        name="factoryId"
-                                        value={formData.factoryId || ''}
-                                        onChange={handleChange}
-                                        className="w-full px-4 py-3 rounded-xl border border-purple-200 dark:border-purple-800/30 bg-purple-50 dark:bg-purple-900/10 text-slate-800 dark:text-white text-sm focus:ring-2 focus:ring-purple-500"
-                                    >
-                                        <option value="">-- Vui lòng chọn --</option>
-                                        {orgUnits.filter(u => u.type === 'factory').map(f => (<option key={f.id} value={f.id}>{f.name}</option>))}
                                     </select>
                                 </div>
                                 <div className="space-y-2">

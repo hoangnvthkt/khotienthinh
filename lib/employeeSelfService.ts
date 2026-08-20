@@ -11,7 +11,7 @@ export interface SelfEmployeeProfilePatch {
   avatarUrl?: string;
 }
 
-const mapEmployeeFromDb = (row: any): Employee => ({
+export const mapEmployeeFromDb = (row: any): Employee => ({
   id: row.id,
   employeeCode: row.employee_code,
   fullName: row.full_name,

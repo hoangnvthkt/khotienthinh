@@ -51,6 +51,10 @@ import {
 } from '../lib/projectTransactionMapping';
 import { canPerform } from '../lib/permissions/permissionService';
 import { executeUserAccountLifecycle } from '../lib/userAccountLifecycleService';
+import { toEmployeeProfileUpdatePayload } from '../lib/hrmEmployeeProfileModel';
+import { hrmEmployeeProfileService } from '../lib/hrmEmployeeProfileService';
+import { mapEmployeeFromDb } from '../lib/employeeSelfService';
+import { upsertRowsById } from '../lib/collectionState';
 import { useAuth } from './AuthContext';
 import { mapUserProfileRow as mapUserFromDb, serializeMockUser } from './authState';
 
@@ -324,6 +328,8 @@ const mapTransactionFromDb = (t: any): Transaction => ({
   businessPartnerNameSnapshot: t.business_partner_name_snapshot ?? t.businessPartnerNameSnapshot ?? null,
   approvedAt: t.approved_at ?? t.approvedAt ?? null,
   approvalNote: t.approval_note ?? t.approvalNote ?? null,
+  businessEventType: t.business_event_type ?? t.businessEventType ?? null,
+  businessEventReason: t.business_event_reason ?? t.businessEventReason ?? null,
   approverId: t.approver_id,
   sourceType: t.source_type ?? t.sourceType ?? null,
   sourceId: t.source_id ?? t.sourceId ?? null,
@@ -498,12 +504,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const slowMessageTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
-    setUsers(previous => {
-      const exists = previous.some(candidate => candidate.id === user.id);
-      return exists
-        ? previous.map(candidate => candidate.id === user.id ? user : candidate)
-        : [user, ...previous];
-    });
+    setUsers(previous => upsertRowsById(previous, [user], 'prepend'));
   }, [user]);
 
   const setModuleStatus = useCallback((module: AppModule, status: ModuleLoadStatus, error?: string) => {
@@ -731,11 +732,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const unsubUsers = realtimeService.on('users', (event) => {
       if (event.eventType === 'INSERT' || event.eventType === 'UPDATE') {
         const mapped = mapUserFromDb(event.newRecord);
-        setUsers(prev => {
-          const exists = prev.find(user => user.id === mapped.id);
-          if (exists) return prev.map(user => user.id === mapped.id ? mapped : user);
-          return [...prev, mapped];
-        });
+        setUsers(prev => upsertRowsById(prev, [mapped]));
       } else if (event.eventType === 'DELETE') {
         setUsers(prev => prev.filter(user => user.id !== event.oldRecord.id));
       }
@@ -744,23 +741,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // ── Employees ──
     const unsubEmp = realtimeService.on('employees', (event) => {
       if (event.eventType === 'INSERT' || event.eventType === 'UPDATE') {
-        const e = event.newRecord;
-        const mappedEmp: Employee = {
-          id: e.id, employeeCode: e.employee_code, fullName: e.full_name, title: e.title,
-          gender: e.gender, phone: e.phone, email: e.email, dateOfBirth: e.date_of_birth,
-          startDate: e.start_date, officialDate: e.official_date, status: e.status,
-          userId: e.user_id, areaId: e.area_id, officeId: e.office_id,
-          employeeTypeId: e.employee_type_id, positionId: e.position_id,
-          salaryPolicyId: e.salary_policy_id, workScheduleId: e.work_schedule_id,
-          constructionSiteId: e.construction_site_id, departmentId: e.department_id,
-          factoryId: e.factory_id, maritalStatus: e.marital_status,
-          avatarUrl: e.avatar_url, createdAt: e.created_at, updatedAt: e.updated_at
-        };
-        setEmployees(prev => {
-          const exists = prev.find(emp => emp.id === mappedEmp.id);
-          if (exists) return prev.map(emp => emp.id === mappedEmp.id ? mappedEmp : emp);
-          return [...prev, mappedEmp];
-        });
+        const mappedEmp = mapEmployeeFromDb(event.newRecord);
+        setEmployees(prev => upsertRowsById(prev, [mappedEmp]));
       } else if (event.eventType === 'DELETE') {
         setEmployees(prev => prev.filter(emp => emp.id !== event.oldRecord.id));
       }
@@ -1017,34 +999,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           ]);
           {
             const requiredEmployees = requireModuleData(module, 'employees', empData);
-            setEmployees(requiredEmployees.map((e: any) => ({
-              id: e.id,
-              employeeCode: e.employee_code,
-              fullName: e.full_name,
-              title: e.title,
-              gender: e.gender,
-              phone: e.phone,
-              email: e.email,
-              dateOfBirth: e.date_of_birth,
-              startDate: e.start_date,
-              officialDate: e.official_date,
-              status: e.status,
-              userId: e.user_id,
-              areaId: e.area_id,
-              officeId: e.office_id,
-              employeeTypeId: e.employee_type_id,
-              positionId: e.position_id,
-              salaryPolicyId: e.salary_policy_id,
-              workScheduleId: e.work_schedule_id,
-              constructionSiteId: e.construction_site_id,
-              departmentId: e.department_id,
-              factoryId: e.factory_id,
-              maritalStatus: e.marital_status,
-              avatarUrl: e.avatar_url,
-              orgUnitId: e.org_unit_id || undefined,
-              createdAt: e.created_at,
-              updatedAt: e.updated_at,
-            })));
+            setEmployees(requiredEmployees.map(mapEmployeeFromDb));
           }
           if (areasData) setHrmAreas(areasData);
           if (officesData) setHrmOffices(officesData);
@@ -1245,6 +1200,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           business_partner_name_snapshot: data.businessPartnerNameSnapshot || null,
           approved_at: data.approvedAt || null,
           approval_note: data.approvalNote || null,
+          business_event_type: data.businessEventType || null,
+          business_event_reason: data.businessEventReason || null,
           source_type: data.sourceType || null, source_id: data.sourceId || null,
           status: data.status, note: data.note, related_request_id: data.relatedRequestId, pending_items: data.pendingItems
         };
@@ -1410,6 +1367,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const addUser = async (u: User) => {
     const nextUser = { ...u, isActive: u.isActive ?? true };
+    const pendingAdminLoad = inflightModuleLoadsRef.current.admin;
 
     const syncOk = await syncToSupabase('users', nextUser);
     if (!syncOk) {
@@ -1417,7 +1375,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       throw new Error('Không thể lưu người dùng vào Supabase. Vui lòng kiểm tra RLS/policy hoặc quyền admin.');
     }
 
-    setUsers(prev => [...prev, nextUser]);
+    const persistedUser = isSupabaseConfigured
+      ? await refreshManagedUser(nextUser.id)
+      : nextUser;
+    setUsers(prev => upsertRowsById(prev, [persistedUser]));
+
+    if (pendingAdminLoad) {
+      await pendingAdminLoad.catch(() => undefined);
+      try {
+        await loadModuleData('admin', true);
+      } catch {
+        setUsers(prev => upsertRowsById(prev, [persistedUser]));
+      }
+    }
     console.log('✅ addUser: Đã lưu user vào Supabase:', u.email);
 
     logActivity('SYSTEM', 'Thêm người dùng', `Đã thêm người dùng mới: ${u.name}`, 'SUCCESS');
@@ -1624,22 +1594,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ...(tx?.pendingItems || []).map(item => item.id),
     ]));
 
-  const upsertById = <T extends { id: string }>(current: T[], rows: T[], insertPosition: 'prepend' | 'append' = 'append'): T[] => {
-    if (rows.length === 0) return current;
-    const incoming = new Map(rows.map(row => [row.id, row]));
-    let changed = false;
-    const next = current.map(row => {
-      const updated = incoming.get(row.id);
-      if (!updated) return row;
-      incoming.delete(row.id);
-      changed = true;
-      return updated;
-    });
-    const newRows = Array.from(incoming.values());
-    if (!changed && newRows.length === 0) return current;
-    return insertPosition === 'prepend' ? [...newRows, ...next] : [...next, ...newRows];
-  };
-
   const refreshWmsRecords = useCallback(async (options: WmsRecordRefreshOptions) => {
     if (!isSupabaseConfigured) return;
     const itemIds = normalizeRefreshIds(options.itemIds);
@@ -1664,13 +1618,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (requestsResult.error) throw requestsResult.error;
 
     if (itemsResult.data) {
-      setItems(prev => upsertById(prev, itemsResult.data.map(mapInventoryItemFromDb), 'append'));
+      setItems(prev => upsertRowsById(prev, itemsResult.data.map(mapInventoryItemFromDb), 'append'));
     }
     if (transactionsResult.data) {
-      setTransactions(prev => upsertById(prev, transactionsResult.data.map(mapTransactionFromDb), 'prepend'));
+      setTransactions(prev => upsertRowsById(prev, transactionsResult.data.map(mapTransactionFromDb), 'prepend'));
     }
     if (requestsResult.data) {
-      setRequests(prev => upsertById(prev, requestsResult.data.map(mapMaterialRequestFromDb), 'prepend'));
+      setRequests(prev => upsertRowsById(prev, requestsResult.data.map(mapMaterialRequestFromDb), 'prepend'));
     }
   }, []);
 
@@ -2743,7 +2697,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         approverId: user.id,
         status: TransactionStatus.COMPLETED,
         note: `Điều chuyển từ phiếu yêu cầu: ${req.code}` + (note ? ` - ${note}` : ''),
-        relatedRequestId: req.id
+        relatedRequestId: req.id,
+        businessEventType: isDirectConsumption ? 'construction_issue' : 'warehouse_transfer',
+        businessEventReason: isDirectConsumption ? `Xuất thẳng sử dụng theo phiếu yêu cầu ${req.code}` : undefined,
       };
       // addTransaction handles applying stock changes, logging the transaction, and syncing to DB
       await addTransaction(tx);
@@ -2804,53 +2760,67 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const addEmployee = async (e: Employee) => {
+    const newEmployee: Employee = {
+      ...e,
+      title: '',
+      positionId: undefined,
+      orgUnitId: undefined,
+      departmentId: undefined,
+      constructionSiteId: undefined,
+      factoryId: undefined,
+    };
+    const pendingHrmLoad = inflightModuleLoadsRef.current.hrm;
+    let persistedEmployee = newEmployee;
     if (isSupabaseConfigured) {
       try {
         const payload = {
-          id: e.id,
-          employee_code: e.employeeCode || null,
-          full_name: e.fullName, title: e.title || null,
-          gender: e.gender || null, phone: e.phone || null, email: e.email || null,
-          date_of_birth: e.dateOfBirth || null,
-          start_date: e.startDate || null,
-          official_date: e.officialDate || null,
-          status: e.status || 'Đang làm việc',
-          user_id: e.userId || null,
-          area_id: e.areaId || null, office_id: e.officeId || null,
-          employee_type_id: e.employeeTypeId || null,
-          position_id: e.positionId || null,
-          salary_policy_id: e.salaryPolicyId || null,
-          work_schedule_id: e.workScheduleId || null,
-          construction_site_id: e.constructionSiteId || null,
-          department_id: e.departmentId || null,
-          factory_id: e.factoryId || null,
-          marital_status: e.maritalStatus || null,
-          avatar_url: e.avatarUrl || null,
-          org_unit_id: e.orgUnitId || null,
+          id: newEmployee.id,
+          employee_code: newEmployee.employeeCode || null,
+          ...toEmployeeProfileUpdatePayload(newEmployee),
         };
-        const { error } = await supabase
+        const { data, error } = await supabase
           .from('employees')
-          .upsert(payload, { onConflict: 'email', ignoreDuplicates: false });
+          .upsert(payload, { onConflict: 'email', ignoreDuplicates: false })
+          .select('*')
+          .single();
         if (error) throw error;
+        persistedEmployee = mapEmployeeFromDb(data);
       } catch (err) {
         logApiError('addEmployee', err);
         throw err;
       }
     }
-    setEmployees(prev => [...prev, e]);
-    logActivity('SYSTEM', 'Thêm nhân sự', `Đã thêm hồ sơ nhân sự mới: ${e.fullName}`, 'SUCCESS');
-    auditService.log({ tableName: 'employees', recordId: e.id, action: 'INSERT', newData: e as any, userId: user.id, userName: user.name || user.username });
+    setEmployees(prev => upsertRowsById(prev, [persistedEmployee]));
+
+    if (pendingHrmLoad) {
+      await pendingHrmLoad.catch(() => undefined);
+      try {
+        await loadModuleData('hrm', true);
+      } catch {
+        setEmployees(prev => upsertRowsById(prev, [persistedEmployee]));
+      }
+    }
+    logActivity('SYSTEM', 'Thêm nhân sự', `Đã thêm hồ sơ nhân sự mới: ${persistedEmployee.fullName}`, 'SUCCESS');
+    auditService.log({ tableName: 'employees', recordId: persistedEmployee.id, action: 'INSERT', newData: persistedEmployee as any, userId: user.id, userName: user.name || user.username });
   };
 
   const updateEmployee = async (e: Employee) => {
     const oldEmp = employees.find(emp => emp.id === e.id);
-    const syncOk = await syncToSupabase('employees', e);
-    if (!syncOk) {
-      throw new Error('Không thể cập nhật hồ sơ nhân sự trên Supabase.');
+    const nextEmployee: Employee = oldEmp ? {
+      ...e,
+      title: oldEmp.title,
+      positionId: oldEmp.positionId,
+      orgUnitId: oldEmp.orgUnitId,
+      departmentId: oldEmp.departmentId,
+      constructionSiteId: oldEmp.constructionSiteId,
+      factoryId: oldEmp.factoryId,
+    } : e;
+    if (isSupabaseConfigured) {
+      await hrmEmployeeProfileService.update(nextEmployee);
     }
-    setEmployees(prev => prev.map(item => item.id === e.id ? e : item));
-    logActivity('SYSTEM', 'Cập nhật nhân sự', `Đã cập nhật thông tin nhân sự: ${e.fullName}`, 'INFO');
-    auditService.log({ tableName: 'employees', recordId: e.id, action: 'UPDATE', oldData: oldEmp as any, newData: e as any, userId: user.id, userName: user.name || user.username });
+    setEmployees(prev => prev.map(item => item.id === e.id ? nextEmployee : item));
+    logActivity('SYSTEM', 'Cập nhật nhân sự', `Đã cập nhật thông tin nhân sự: ${nextEmployee.fullName}`, 'INFO');
+    auditService.log({ tableName: 'employees', recordId: e.id, action: 'UPDATE', oldData: oldEmp as any, newData: nextEmployee as any, userId: user.id, userName: user.name || user.username });
   };
 
   const replaceEmployeeLocal = useCallback((e: Employee) => {

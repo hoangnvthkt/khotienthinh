@@ -294,6 +294,8 @@ const transactionToDb = (tx: Transaction): Record<string, unknown> => ({
   approver_id: tx.approverId || null,
   status: tx.status,
   note: tx.note || null,
+  business_event_type: tx.businessEventType || null,
+  business_event_reason: tx.businessEventReason || null,
   related_request_id: tx.relatedRequestId || null,
   pending_items: tx.pendingItems || [],
 });
@@ -1097,6 +1099,8 @@ export const projectOpeningBalanceService = {
           note: isEvidenceOnlyOpeningDocument
             ? `Chứng từ chốt đầu kỳ vật tư dự án ${balance.scopeKey} (${balance.asOfDate}) - không phát sinh tồn kho`
             : `Nhập tồn đầu kỳ dự án ${balance.scopeKey} (${balance.asOfDate})`,
+          businessEventType: 'opening_balance',
+          businessEventReason: `Chốt số dư vật tư đầu kỳ dự án ${balance.scopeKey}`,
           items: warehouseEntries.map(({ line, index }) => {
             const item = itemByLineKey.get(String(index));
             return {

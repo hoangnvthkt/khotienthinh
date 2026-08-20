@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import type { HrmConstructionSite, Warehouse } from '../../types';
+import type { HrmConstructionSite, Project, Warehouse } from '../../types';
 import {
   buildSupplierDeliveryWarehousePolicy,
+  filterProjectsForConstructionSite,
   getWarehouseBindingLabel,
   mapConstructionSiteWarehouseBindingFromDb,
   mapWarehouseSiteBindingFromDb,
@@ -10,8 +11,8 @@ import {
 } from '../warehouseSiteBinding';
 
 const warehouses: Warehouse[] = [
-  { id: 'rico', name: 'Kho RICO', address: '', type: 'SITE', constructionSiteId: 'site-rico', isDefaultForSite: true },
-  { id: 'xin', name: 'Kho Xin Hai Vina', address: '', type: 'SITE', constructionSiteId: 'site-xin', isDefaultForSite: true },
+  { id: 'rico', name: 'Kho RICO', address: '', type: 'SITE', projectId: 'project-rico', constructionSiteId: 'site-rico', isDefaultForSite: true },
+  { id: 'xin', name: 'Kho Xin Hai Vina', address: '', type: 'SITE', projectId: 'DA29', constructionSiteId: 'site-xin', isDefaultForSite: true },
   { id: 'xin-2', name: 'Kho phụ Xin Hai', address: '', type: 'SITE', constructionSiteId: 'site-xin' },
   { id: 'office', name: 'Kho Văn phòng', address: '', type: 'OFFICE' },
   { id: 'archived', name: 'Kho cũ Xin Hai', address: '', type: 'SITE', constructionSiteId: 'site-xin', isArchived: true },
@@ -98,15 +99,18 @@ describe('warehouse/construction-site binding policy', () => {
       name: 'Kho Xin Hai Vina',
       address: '',
       type: 'SITE',
+      project_id: 'DA29',
       construction_site_id: 'site-xin',
       is_default_for_site: true,
       is_archived: false,
     })).toEqual(expect.objectContaining({
+      projectId: 'DA29',
       constructionSiteId: 'site-xin',
       isDefaultForSite: true,
       isArchived: false,
     }));
     expect(toWarehouseSiteBindingDb(warehouses[1])).toEqual({
+      project_id: 'DA29',
       construction_site_id: 'site-xin',
       is_default_for_site: true,
     });
@@ -115,5 +119,16 @@ describe('warehouse/construction-site binding policy', () => {
       name: 'Công trường Xin Hai Vina',
       warehouse_binding_enforced: true,
     }).warehouseBindingEnforced).toBe(true);
+  });
+
+  it('offers only projects that belong to the selected construction site', () => {
+    const projects = [
+      { id: 'project-rico', code: 'RICO', name: 'Dự án RICO', constructionSiteId: 'site-rico' },
+      { id: 'DA29', code: 'DA29', name: 'Dự án Xin Hai', constructionSiteId: 'site-xin' },
+      { id: 'removed', code: 'PRJ-240AC280', name: 'Dự án đã bỏ', constructionSiteId: null },
+    ] as Project[];
+
+    expect(filterProjectsForConstructionSite(projects, 'site-xin').map(project => project.id)).toEqual(['DA29']);
+    expect(filterProjectsForConstructionSite(projects, null)).toEqual([]);
   });
 });

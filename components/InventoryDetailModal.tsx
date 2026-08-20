@@ -89,7 +89,9 @@ const InventoryDetailModal: React.FC<InventoryDetailModalProps> = ({ isOpen, onC
       supplierId: item.supplierId,
       requesterId: user.id,
       status: TransactionStatus.PENDING,
-      note: `Đề xuất nhập kho trực tiếp: ${reqNote || 'Không có ghi chú'}`
+      note: `Đề xuất nhập kho trực tiếp: ${reqNote || 'Không có ghi chú'}`,
+      businessEventType: 'direct_manual_receipt',
+      businessEventReason: reqNote.trim() || `Nhập trực tiếp vật tư ${item.name}`,
     };
 
     setRequestSaving(true);

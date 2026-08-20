@@ -431,6 +431,14 @@ const Operations: React.FC = () => {
       requesterId: user.id,
       status: TransactionStatus.PENDING,
       note,
+      businessEventType: activeTab === TransactionType.IMPORT
+        ? 'direct_supplier_receipt'
+        : activeTab === TransactionType.TRANSFER
+          ? 'warehouse_transfer'
+          : activeTab === TransactionType.LIQUIDATION
+            ? 'warehouse_loss'
+            : undefined,
+      businessEventReason: activeTab === TransactionType.LIQUIDATION ? note : undefined,
       // Nhập kho → kho nhận = selectedWarehouseId; nguồn cung cấp bắt buộc từ module Hợp đồng
       targetWarehouseId: activeTab === TransactionType.IMPORT ? selectedWarehouseId : (activeTab === TransactionType.TRANSFER ? targetWarehouseId : undefined),
       sourceWarehouseId: (activeTab === TransactionType.EXPORT || activeTab === TransactionType.TRANSFER || activeTab === TransactionType.LIQUIDATION) ? selectedWarehouseId : undefined,

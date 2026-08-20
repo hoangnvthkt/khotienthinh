@@ -647,6 +647,8 @@ const Inventory: React.FC = () => {
           requesterId: user.id,
           status: TransactionStatus.PENDING,
           note: `Nhập tồn ban đầu từ Excel (${transactionItems.length} vật tư)`,
+          businessEventType: 'direct_manual_receipt',
+          businessEventReason: 'Nhập tồn ban đầu từ danh mục Excel',
         };
         await addTransaction(transaction);
       }

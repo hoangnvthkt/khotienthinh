@@ -181,7 +181,9 @@ const Audit: React.FC = () => {
         requesterId: user.id,
         approverId: user.id,
         status: TransactionStatus.COMPLETED,
-        note: `Kiểm kê tại ${whName}${reasonDetails ? `. Chi tiết: ${reasonDetails}` : ''}`
+        note: `Kiểm kê tại ${whName}${reasonDetails ? `. Chi tiết: ${reasonDetails}` : ''}`,
+        businessEventType: 'inventory_adjustment',
+        businessEventReason: reasonDetails || `Chênh lệch kiểm kê tại ${whName}`,
       });
 
       setIsSaving(false);

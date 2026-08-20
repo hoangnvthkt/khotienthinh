@@ -2006,6 +2006,8 @@ const RequestModal: React.FC<RequestModalProps> = ({
                     ? `Admin hoàn trả đợt xuất thẳng sử dụng ${batch.batchNo} của phiếu ${request.code}. Nhập hoàn lại kho nguồn: ${sourceLabel}`
                     : `Admin hoàn trả đợt cấp ${batch.batchNo} của phiếu ${request.code}. Nguồn gốc: ${sourceLabel}`,
                 relatedRequestId: request.id,
+                businessEventType: isDirectConsumptionReturn ? 'project_return_receipt' : 'warehouse_transfer',
+                businessEventReason: reason?.trim() || overrideReason.trim() || 'Admin hoàn trả đợt cấp đã nhận',
             };
             await addTransaction(returnTransaction);
             await materialRequestFulfillmentService.returnReceivedBatch({
