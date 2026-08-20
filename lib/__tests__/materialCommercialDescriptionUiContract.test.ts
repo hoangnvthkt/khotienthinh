@@ -4,13 +4,25 @@ import { describe, expect, it } from 'vitest';
 
 const requestModal = readFileSync(join(process.cwd(), 'components/RequestModal.tsx'), 'utf8');
 const supplyChainTab = readFileSync(join(process.cwd(), 'pages/project/SupplyChainTab.tsx'), 'utf8');
+const descriptionFields = readFileSync(join(process.cwd(), 'components/material/MaterialCommercialDescriptionFields.tsx'), 'utf8');
+
+describe('material commercial description fields', () => {
+  it('shows only a fixed material code and an editable material name', () => {
+    expect(descriptionFields).toContain('Mã vật tư');
+    expect(descriptionFields).toContain('readOnly');
+    expect(descriptionFields).toContain('Tên vật tư');
+    expect(descriptionFields).not.toContain('Danh mục:');
+    expect(descriptionFields).not.toContain('Quy cách / mô tả');
+    expect(descriptionFields).not.toContain('onSpecificationChange');
+  });
+});
 
 describe('material commercial description UI wiring', () => {
   it('uses line identity and editable snapshots in the MR form', () => {
     expect(requestModal).toContain('getMaterialDocumentLineKey(row, index)');
     expect(requestModal).toContain('<MaterialCommercialDescriptionFields');
     expect(requestModal).toContain("handleUpdateItem(primary.index, 'itemNameSnapshot'");
-    expect(requestModal).toContain("handleUpdateItem(primary.index, 'specification'");
+    expect(requestModal).not.toContain("onSpecificationChange={value => handleUpdateItem(primary.index, 'specification'");
     expect(requestModal).not.toContain("? `sku:${sku.toLowerCase()}`");
   });
 
@@ -25,10 +37,10 @@ describe('material commercial description UI wiring', () => {
 });
 
 describe('purchase order commercial description UI wiring', () => {
-  it('edits the PO snapshot and specification independently from the catalog', () => {
+  it('edits the PO snapshot independently from the catalog', () => {
     expect(supplyChainTab).toContain('<MaterialCommercialDescriptionFields');
     expect(supplyChainTab).toContain("updatePoItem(i, { name: value, itemNameSnapshot: value })");
-    expect(supplyChainTab).toContain("updatePoItem(i, { specification: value })");
+    expect(supplyChainTab).not.toContain("onSpecificationChange={value => updatePoItem(i, { specification: value })}");
   });
 
   it('prints snapshot names and free-form specifications', () => {

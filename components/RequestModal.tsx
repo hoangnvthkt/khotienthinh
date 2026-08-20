@@ -3123,7 +3123,6 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                     const isExpanded = expandedMaterialGroupKeys.has(group.key);
                                     const stockSummary = canSeeAvailability ? getAggregateStockSummary(group.itemId, stockContextWarehouseId, request?.id) : null;
                                     const sourceStock = stockSummary?.available || 0;
-                                    const itemInfo = getLineInventory(group.itemId);
                                     const canEditGroupQty = isEditable && !hasMultipleSources;
                                     const canEditGroupApproval = !isEditable && canEditApprovalQuantities && !hasMultipleSources;
                                     const groupColSpan = isEditable ? 4 : canSeeAvailability ? 8 : 7;
@@ -3133,7 +3132,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                             <tr className={`transition-colors ${group.isExcess ? 'bg-orange-50/50' : 'hover:bg-slate-50/50'}`}>
                                                 <td className="p-4">
                                                     <div>
-                                                        <div className="flex items-center gap-2">
+                                                        {!isEditable && <div className="flex items-center gap-2">
                                                             {hasMultipleSources && (
                                                                 <button
                                                                     onClick={() => toggleMaterialGroup(group.key)}
@@ -3152,18 +3151,13 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                                     {group.sources.length} hạng mục
                                                                 </span>
                                                             )}
-                                                        </div>
-                                                        {group.specification && <div className="text-[10px] text-muted-foreground mt-0.5">{group.specification}</div>}
+                                                        </div>}
+                                                        {!isEditable && group.specification && <div className="text-[10px] text-muted-foreground mt-0.5">{group.specification}</div>}
                                                         {isEditable && !hasMultipleSources && (
                                                             <MaterialCommercialDescriptionFields
-                                                                className="mt-3"
                                                                 sku={group.sku}
-                                                                catalogName={itemInfo?.name}
                                                                 name={(primaryRow as RequestLineDraft).itemNameSnapshot || group.name}
-                                                                specification={(primaryRow as RequestLineDraft).specification}
-                                                                nameLabel="Tên trên đề xuất"
                                                                 onNameChange={value => handleUpdateItem(primary.index, 'itemNameSnapshot', value)}
-                                                                onSpecificationChange={value => handleUpdateItem(primary.index, 'specification', value)}
                                                             />
                                                         )}
                                                         {!hasMultipleSources && isProjectRequest && (
@@ -3381,7 +3375,6 @@ const RequestModal: React.FC<RequestModalProps> = ({
                             const isExpanded = expandedMaterialGroupKeys.has(group.key);
                             const stockSummary = canSeeAvailability ? getAggregateStockSummary(group.itemId, stockContextWarehouseId, request?.id) : null;
                             const sourceStock = stockSummary?.available || 0;
-                            const itemInfo = getLineInventory(group.itemId);
                             const canEditGroupQty = isEditable && !hasMultipleSources;
                             const canEditGroupApproval = !isEditable && canEditApprovalQuantities && !hasMultipleSources;
                             const budgetSnapshot = editableBudgetSnapshots?.get((primaryRow as RequestLineDraft).lineId) || buildLineBudgetSnapshot(primaryRow as RequestLineDraft, request?.id);
@@ -3391,7 +3384,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                 <div key={group.key} className={`bg-card rounded-xl p-3 border ${group.isExcess ? 'border-orange-200 bg-orange-50/10 dark:bg-orange-955/20' : 'border-border'} shadow-sm`}>
                                     <div className="flex items-start justify-between mb-2">
                                         <div className="min-w-0 flex-1">
-                                            <div className="flex items-center gap-2">
+                                            {!isEditable && <div className="flex items-center gap-2">
                                                 {hasMultipleSources && (
                                                     <button
                                                         onClick={() => toggleMaterialGroup(group.key)}
@@ -3406,18 +3399,13 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                     <div className="text-[10px] font-mono text-muted-foreground">{group.sku || '—'} • {group.unit || '-'}</div>
                                                 </div>
                                                 {hasMultipleSources && <span className="shrink-0 rounded bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold text-amber-700 border border-amber-200/60">{group.sources.length} hạng mục</span>}
-                                            </div>
-                                            {group.specification && <div className="text-[10px] text-muted-foreground mt-0.5 line-clamp-2">{group.specification}</div>}
+                                            </div>}
+                                            {!isEditable && group.specification && <div className="text-[10px] text-muted-foreground mt-0.5 line-clamp-2">{group.specification}</div>}
                                             {isEditable && !hasMultipleSources && (
                                                 <MaterialCommercialDescriptionFields
-                                                    className="mt-3"
                                                     sku={group.sku}
-                                                    catalogName={itemInfo?.name}
                                                     name={(primaryRow as RequestLineDraft).itemNameSnapshot || group.name}
-                                                    specification={(primaryRow as RequestLineDraft).specification}
-                                                    nameLabel="Tên trên đề xuất"
                                                     onNameChange={value => handleUpdateItem(primary.index, 'itemNameSnapshot', value)}
-                                                    onSpecificationChange={value => handleUpdateItem(primary.index, 'specification', value)}
                                                 />
                                             )}
                                             {!hasMultipleSources && isProjectRequest && (primaryRow.workBoqItemName || primaryRow.materialBudgetItemName || !primaryRow.materialBudgetItemId || budgetSnapshot.overBudgetQty > 0) && (

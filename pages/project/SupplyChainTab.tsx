@@ -8892,13 +8892,9 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                 <MaterialCommercialDescriptionFields
                                                     className="mt-3"
                                                     sku={item.sku || inventory?.sku}
-                                                    catalogName={inventory?.name}
                                                     name={item.itemNameSnapshot || item.name || inventory?.name || ''}
-                                                    specification={item.specification}
                                                     disabled={savingPo}
-                                                    nameLabel="Tên trên PO"
                                                     onNameChange={value => updatePoItem(i, { name: value, itemNameSnapshot: value })}
-                                                    onSpecificationChange={value => updatePoItem(i, { specification: value })}
                                                 />
                                                 <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
                                                     <label className="inline-flex shrink-0 items-center gap-1.5 text-[11px] font-black text-slate-600">
