@@ -6,6 +6,7 @@ import type {
   HrmSharedPosition,
   HrmStaffingRow,
 } from '../../../types/hrmSharedCatalog';
+import SearchableSelect from '../../common/SearchableSelect';
 import { getHrmWorkforceErrorMessage } from './HrmStaffingDialog';
 
 export interface HrmEmployeeAssignmentDialogSubmitInput {
@@ -125,12 +126,35 @@ const HrmEmployeeAssignmentDialog: React.FC<HrmEmployeeAssignmentDialogProps> = 
         <div className="grid gap-4 px-5 py-5 sm:grid-cols-2">
           <div className="sm:col-span-2">
             <label className={labelClass} htmlFor="hrm-assignment-employee">Nhân sự</label>
-            <select id="hrm-assignment-employee" value={employeeId} onChange={event => setEmployeeId(event.target.value)} disabled={Boolean(selectedEmployeeId)} className={fieldClass}>
-              <option value="">Chọn nhân sự</option>
-              {employees.map(employee => (
-                <option key={employee.id} value={employee.id}>{employee.fullName} ({employee.employeeCode})</option>
-              ))}
-            </select>
+            <SearchableSelect
+              value={employeeId}
+              options={employees}
+              onChange={emp => setEmployeeId(emp ? emp.id : '')}
+              getOptionValue={emp => emp.id}
+              getOptionLabel={emp => `${emp.fullName} (${emp.employeeCode})`}
+              getOptionSearchText={emp => `${emp.fullName} ${emp.employeeCode} ${emp.title || ''}`}
+              renderOption={emp => (
+                <div className="flex items-center justify-between gap-2 py-0.5">
+                  <div>
+                    <span className="font-bold text-slate-800 dark:text-slate-100">{emp.fullName}</span>
+                    <span className="ml-2 text-[10px] font-semibold text-slate-400 dark:text-slate-500">
+                      ({emp.employeeCode})
+                    </span>
+                  </div>
+                  {emp.title && (
+                    <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                      {emp.title}
+                    </span>
+                  )}
+                </div>
+              )}
+              placeholder="Gõ để tìm nhân sự (tên, mã nhân viên)..."
+              emptyLabel="Không tìm thấy nhân sự phù hợp"
+              disabled={Boolean(selectedEmployeeId)}
+              clearable={!Boolean(selectedEmployeeId)}
+              className="w-full"
+              inputClassName={fieldClass}
+            />
           </div>
 
           {!unassignMode && (

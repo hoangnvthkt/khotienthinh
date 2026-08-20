@@ -52,6 +52,7 @@ export interface HrmSharedEmployee {
   employeeCode: string;
   fullName: string;
   title?: string | null;
+  avatarUrl?: string | null;
   status: string;
   userId?: string | null;
   orgUnitId?: string | null;

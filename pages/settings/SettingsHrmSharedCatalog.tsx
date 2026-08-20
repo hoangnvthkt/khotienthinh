@@ -337,6 +337,8 @@ const SettingsHrmSharedCatalog: React.FC<SettingsHrmSharedCatalogProps> = ({ can
                     unit={selectedUnit}
                     rows={selectedUnitRows}
                     positions={approvedPositions}
+                    assignments={bundle.assignments}
+                    employees={bundle.employees}
                     canManage={canManage}
                     onAdjust={row => setStaffingDialogRow(row || null)}
                     onAssign={row => setAssignmentDialogRow(row)}

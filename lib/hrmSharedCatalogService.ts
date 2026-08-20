@@ -75,6 +75,7 @@ const mapEmployee = (row: any): HrmSharedEmployee => ({
   employeeCode: row.employee_code,
   fullName: row.full_name,
   title: row.title ?? null,
+  avatarUrl: row.avatar_url ?? row.avatar ?? null,
   status: row.status,
   userId: row.user_id ?? null,
   orgUnitId: row.org_unit_id ?? null,

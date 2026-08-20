@@ -50,15 +50,19 @@ export default function SearchableSelect<T>({
     const rect = wrapper.getBoundingClientRect();
     const gap = 4;
     const viewportHeight = window.innerHeight || 720;
+    const viewportWidth = window.innerWidth || 1024;
     const spaceBelow = viewportHeight - rect.bottom - gap - 8;
     const spaceAbove = rect.top - gap - 8;
     const openBelow = spaceBelow >= 180 || spaceBelow >= spaceAbove;
     const available = Math.max(120, openBelow ? spaceBelow : spaceAbove);
     const maxHeight = Math.min(256, available);
+    const targetWidth = Math.max(rect.width, Math.min(360, viewportWidth - 16));
+    const width = Math.min(targetWidth, viewportWidth - 16);
+    const left = Math.min(Math.max(8, rect.left), Math.max(8, viewportWidth - width - 8));
     setMenuPosition({
-      left: Math.max(8, rect.left),
+      left,
       top: openBelow ? rect.bottom + gap : Math.max(8, rect.top - maxHeight - gap),
-      width: Math.max(rect.width, 380),
+      width,
       maxHeight,
     });
   }, []);
@@ -96,13 +100,13 @@ export default function SearchableSelect<T>({
   }, [open, updateMenuPosition]);
 
   const filtered = useMemo(() => {
-    if (!query.trim()) return options.slice(0, 40);
+    if (!query.trim()) return options.slice(0, 100);
     return options
       .filter(option => {
         const haystack = getOptionSearchText?.(option) || getOptionLabel(option);
         return matchesSearchQueryMultiple([haystack], query);
       })
-      .slice(0, 40);
+      .slice(0, 100);
   }, [getOptionLabel, getOptionSearchText, options, query]);
 
   const displayText = selected ? (renderValue?.(selected) || getOptionLabel(selected)) : '';
@@ -135,7 +139,7 @@ export default function SearchableSelect<T>({
                 setOpen(false);
                 setQuery('');
               }}
-              className={`block w-full rounded-lg px-3 py-2 text-left text-xs hover:bg-blue-50 hover:text-blue-700 ${active ? 'bg-blue-50 text-blue-700' : 'text-slate-700 dark:text-slate-100'}`}
+              className={`block w-full rounded-lg px-3 py-2 text-left text-xs transition-colors hover:bg-indigo-50 hover:text-indigo-700 dark:hover:bg-indigo-950/40 dark:hover:text-indigo-300 ${active ? 'bg-indigo-50 font-bold text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300' : 'text-slate-700 dark:text-slate-100'}`}
             >
               {renderOption?.(option) || labelText}
             </button>

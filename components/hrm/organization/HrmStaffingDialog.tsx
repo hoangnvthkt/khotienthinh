@@ -6,6 +6,7 @@ import type {
   HrmSharedPosition,
   HrmStaffingRow,
 } from '../../../types/hrmSharedCatalog';
+import SearchableSelect from '../../common/SearchableSelect';
 
 export const getHrmWorkforceErrorMessage = (error: unknown, fallback: string): string => {
   const message = error instanceof Error ? error.message : String(error || '');
@@ -75,6 +76,14 @@ const HrmStaffingDialog: React.FC<HrmStaffingDialogProps> = ({
     [reportingRows],
   );
   const positionById = useMemo(() => new Map(positions.map(position => [position.id, position])), [positions]);
+  const positionOptions = useMemo(() => {
+    const active = positions.filter(position => position.isActive && position.source !== 'legacy');
+    if (positionId && !active.some(p => p.id === positionId)) {
+      const current = positions.find(p => p.id === positionId);
+      if (current) return [current, ...active];
+    }
+    return active;
+  }, [positionId, positions]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -134,16 +143,41 @@ const HrmStaffingDialog: React.FC<HrmStaffingDialogProps> = ({
         <div className="grid gap-4 px-5 py-5 sm:grid-cols-2">
           <div className="sm:col-span-2">
             <label className={labelClass} htmlFor="hrm-staffing-position">Vị trí công việc</label>
-            <select id="hrm-staffing-position" value={positionId} onChange={event => {
-              const nextId = event.target.value;
-              setPositionId(nextId);
-              setLevelCode(positionById.get(nextId)?.levelCode || '');
-            }} disabled={Boolean(row)} className={fieldClass}>
-              <option value="">Chọn vị trí</option>
-              {positions.filter(position => position.isActive && position.source !== 'legacy').map(position => (
-                <option key={position.id} value={position.id}>{position.name}</option>
-              ))}
-            </select>
+            <SearchableSelect
+              value={positionId}
+              options={positionOptions}
+              onChange={selected => {
+                const nextId = selected ? selected.id : '';
+                setPositionId(nextId);
+                setLevelCode(selected?.levelCode || '');
+              }}
+              getOptionValue={pos => pos.id}
+              getOptionLabel={pos => pos.name}
+              getOptionSearchText={pos => `${pos.code || ''} ${pos.name} ${pos.levelCode || ''}`}
+              renderOption={pos => (
+                <div className="flex items-center justify-between gap-2 py-0.5">
+                  <div>
+                    <span className="font-bold text-slate-800 dark:text-slate-100">{pos.name}</span>
+                    {pos.code && (
+                      <span className="ml-2 text-[10px] font-semibold text-slate-400 dark:text-slate-500">
+                        {pos.code}
+                      </span>
+                    )}
+                  </div>
+                  {pos.levelCode && (
+                    <span className="shrink-0 rounded-md bg-indigo-50 px-2 py-0.5 text-[10px] font-bold text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300">
+                      {pos.levelCode}
+                    </span>
+                  )}
+                </div>
+              )}
+              placeholder="Gõ để tìm vị trí công việc..."
+              emptyLabel="Không tìm thấy vị trí phù hợp"
+              disabled={Boolean(row)}
+              clearable={!Boolean(row)}
+              className="w-full"
+              inputClassName={fieldClass}
+            />
           </div>
           <div>
             <label className={labelClass} htmlFor="hrm-staffing-level">Cấp bậc</label>

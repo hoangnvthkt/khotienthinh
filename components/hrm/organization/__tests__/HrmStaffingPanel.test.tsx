@@ -60,6 +60,7 @@ describe('HRM organization workforce planning UI', () => {
     expect(html).toContain('Còn trống');
     expect(html).toContain('Phân bổ nhân sự');
     expect(html).toContain('Chuyển vị trí');
+    expect(html).toContain('Nhấp để xem danh sách nhân sự đã bố trí');
     expect(html).not.toContain('QLDA-LEGACY');
   });
 
