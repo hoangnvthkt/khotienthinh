@@ -1,7 +1,7 @@
 
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { X, Send, CheckCircle, Trash2, Info, Truck, PackageCheck, AlertCircle, XCircle, Plus, User, Loader2, Save, FileDown, Clock, ChevronDown, ChevronUp, ChevronRight, Printer } from 'lucide-react';
+import { X, Send, CheckCircle, Trash2, Info, Truck, PackageCheck, AlertCircle, XCircle, Plus, User, Loader2, Save, FileDown, Clock, ChevronDown, ChevronUp, ChevronRight, Printer, FileText, Shield } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useApp } from '../context/AppContext';
 import {
@@ -2608,18 +2608,23 @@ const RequestModal: React.FC<RequestModalProps> = ({
                 )}
 
                 {/* Header */}
-                <div className="flex items-center justify-between p-4 border-b border-border bg-muted/50">
-                    <div className="min-w-0">
-                        <h3 className="font-bold text-lg text-foreground">
-                            {requestTitle.trim() || request?.title || (isEditable && !request ? 'Tạo đề xuất vật tư' : 'Đề xuất vật tư')}
-                        </h3>
-                        <p className="truncate text-xs text-muted-foreground">
-                            {request?.code ? `${request.code} - Đề xuất vật tư` : 'Phiếu mới - Đề xuất vật tư'}
-                            {request ? ` • Trạng thái: ${getRequestStatusLabel(request.status)}${request.submittedToName ? ` • Gửi: ${request.submittedToName}` : ''}` : ''}
-                        </p>
+                <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
+                    <div className="min-w-0 flex items-center gap-3">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-900/40">
+                            <FileText size={20} />
+                        </div>
+                        <div className="min-w-0">
+                            <h3 className="font-black text-base sm:text-lg text-foreground truncate">
+                                {requestTitle.trim() || request?.title || (isEditable && !request ? 'Tạo đề xuất vật tư' : 'Đề xuất vật tư')}
+                            </h3>
+                            <p className="truncate text-xs font-semibold text-muted-foreground">
+                                {request?.code ? `${request.code} • Đề xuất vật tư` : 'Phiếu mới • Đề xuất vật tư'}
+                                {request ? ` • ${getRequestStatusLabel(request.status)}${request.submittedToName ? ` • Người nhận: ${request.submittedToName}` : ''}` : ''}
+                            </p>
+                        </div>
                     </div>
-                    <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors">
-                        <X size={24} />
+                    <button onClick={onClose} className="rounded-xl p-2 text-muted-foreground hover:bg-muted hover:text-foreground transition">
+                        <X size={20} />
                     </button>
                 </div>
 
@@ -2648,23 +2653,178 @@ const RequestModal: React.FC<RequestModalProps> = ({
                 )}
 
                 {/* Content */}
-                <div className="p-6 overflow-y-auto flex-1 min-h-0 bg-slate-50/10 dark:bg-background/20 -webkit-overflow-scrolling-touch">
-                    {isEditable && (
-                        <div className="mb-8 rounded-2xl border border-blue-250 bg-card p-5 shadow-sm dark:border-blue-900/50">
-                            <label className="mb-3 block text-xs font-black uppercase text-blue-650 dark:text-blue-400">
-                                Tên đề xuất
-                            </label>
-                            <input
-                                type="text"
-                                value={requestTitle}
-                                onChange={(event) => setRequestTitle(event.target.value)}
-                                maxLength={200}
-                                autoFocus={!request}
-                                className="w-full bg-transparent text-lg font-black text-foreground outline-none placeholder:font-bold placeholder:text-muted-foreground"
-                                placeholder="Ví dụ: Vật tư thi công sàn tầng 4"
-                            />
+                <div className="p-5 sm:p-6 overflow-y-auto flex-1 min-h-0 bg-slate-50/20 dark:bg-background/20 -webkit-overflow-scrolling-touch space-y-5">
+                    {/* KHỐI THÔNG TIN PHIẾU ĐỀ XUẤT (CONSOLIDATED FORM PANEL) */}
+                    <div className="rounded-2xl border border-slate-200/90 bg-slate-50/70 dark:border-slate-800 dark:bg-slate-900/50 p-4 space-y-3.5 shadow-xs">
+                        {/* Tên đề xuất */}
+                        {isEditable && (
+                            <div className="space-y-1">
+                                <label className="text-[11px] font-black uppercase text-indigo-700 dark:text-indigo-400 tracking-wider flex items-center gap-1.5">
+                                    <FileText size={13} className="text-indigo-500" />
+                                    Tên đề xuất vật tư <span className="text-red-500">*</span>
+                                </label>
+                                <input
+                                    type="text"
+                                    value={requestTitle}
+                                    onChange={(event) => setRequestTitle(event.target.value)}
+                                    maxLength={200}
+                                    autoFocus={!request}
+                                    className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm font-bold text-slate-800 outline-none placeholder:font-semibold placeholder:text-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 shadow-xs dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                                    placeholder="Ví dụ: Vật tư thi công sàn tầng 4, Thép dầm D16..."
+                                />
+                            </div>
+                        )}
+
+                        {/* Grid 3 Cột Thông Tin */}
+                        <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 ${isEditable ? 'pt-3 border-t border-slate-200/70 dark:border-slate-800' : ''}`}>
+                            {/* Kho nhận hàng */}
+                            <div className="space-y-1 rounded-xl border border-slate-200/90 bg-white p-3 shadow-xs dark:border-slate-700 dark:bg-slate-950">
+                                <label className="text-[10px] uppercase tracking-wide font-black text-slate-400 flex items-center gap-1">
+                                    <Truck size={12} className="text-indigo-500" /> Kho nhận hàng
+                                </label>
+                                {isEditable ? (
+                                    <select
+                                        value={siteWarehouseId}
+                                        onChange={(e) => setSiteWarehouseId(e.target.value)}
+                                        className="w-full bg-transparent outline-none text-xs font-black text-slate-800 dark:text-white"
+                                    >
+                                        <option value="">-- Chọn kho nhận --</option>
+                                        {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                                    </select>
+                                ) : (
+                                    <div className="text-xs font-black text-slate-800 dark:text-white truncate">{targetWh?.name || 'N/A'}</div>
+                                )}
+                            </div>
+
+                            {/* Hạn giao mong muốn */}
+                            <div className="space-y-1 rounded-xl border border-amber-200/80 bg-white p-3 shadow-xs dark:border-amber-900/40 dark:bg-slate-950">
+                                <label className="text-[10px] uppercase tracking-wide font-black text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                                    <Clock size={12} className="text-amber-500" /> Hạn giao mong muốn (Ngày cần)
+                                </label>
+                                {isEditable ? (
+                                    <input
+                                        type="datetime-local"
+                                        value={toDatetimeLocalString(expectedDate)}
+                                        onChange={(e) => setExpectedDate(toISOStringFromLocal(e.target.value))}
+                                        className="w-full bg-transparent outline-none text-xs font-bold text-slate-800 font-mono dark:text-white"
+                                    />
+                                ) : (
+                                    <div className="text-xs font-bold font-mono text-amber-700 dark:text-amber-400">
+                                        {formatFullDateTime(request?.expectedDate)}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Cách cấp vật tư */}
+                            <div className="space-y-1 rounded-xl border border-slate-200/90 bg-white p-3 shadow-xs dark:border-slate-700 dark:bg-slate-950">
+                                <label className="text-[10px] uppercase tracking-wide font-black text-slate-400 flex items-center gap-1">
+                                    <PackageCheck size={12} className="text-emerald-500" /> Cách cấp vật tư
+                                </label>
+                                {isEditable ? (
+                                    <select
+                                        value={fulfillmentMode}
+                                        onChange={(e) => setFulfillmentMode(e.target.value as MaterialRequestFulfillmentMode)}
+                                        className="w-full bg-transparent outline-none text-xs font-black text-slate-800 dark:text-white"
+                                    >
+                                        <option value={MaterialRequestFulfillmentMode.RECEIVE_TO_STOCK}>Nhập kho công trường</option>
+                                        <option value={MaterialRequestFulfillmentMode.DIRECT_CONSUMPTION}>Cấp thẳng sử dụng</option>
+                                    </select>
+                                ) : (
+                                    <div className="text-xs font-black text-slate-800 dark:text-white">
+                                        {fulfillmentMode === MaterialRequestFulfillmentMode.DIRECT_CONSUMPTION ? 'Cấp thẳng sử dụng' : 'Nhập kho công trường'}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Xem tồn kho khi đề xuất */}
+                            {isEditable && isProjectRequest && canSeeAvailability && (
+                                <div className="space-y-1 rounded-xl border border-cyan-200/80 bg-white p-3 shadow-xs dark:border-cyan-900/40 dark:bg-slate-950">
+                                    <label className="text-[10px] uppercase tracking-wide font-black text-cyan-600 dark:text-cyan-400 flex items-center gap-1">
+                                        <PackageCheck size={12} className="text-cyan-500" /> Xem tồn kho khi đề xuất
+                                    </label>
+                                    <select
+                                        value={stockPreviewWarehouseId}
+                                        onChange={(e) => setStockPreviewWarehouseId(e.target.value)}
+                                        className="w-full bg-transparent outline-none text-xs font-black text-slate-800 dark:text-white"
+                                    >
+                                        <option value="">Tổng tồn tất cả kho</option>
+                                        {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                                    </select>
+                                </div>
+                            )}
+
+                            {/* Kho cung cấp */}
+                            {showSourceWarehouseField && (
+                                <div className="space-y-1 rounded-xl border border-blue-200/80 bg-white p-3 shadow-xs dark:border-blue-900/40 dark:bg-slate-950">
+                                    <label className="text-[10px] uppercase tracking-wide font-black text-blue-600 dark:text-blue-400 flex items-center gap-1">
+                                        <PackageCheck size={12} className="text-blue-500" /> Kho cung cấp
+                                    </label>
+                                    {isEditable || canEditApprovalQuantities ? (
+                                        <select
+                                            value={sourceWarehouseId}
+                                            onChange={(e) => setSourceWarehouseId(e.target.value)}
+                                            className="w-full bg-transparent outline-none text-xs font-black text-slate-800 dark:text-white"
+                                        >
+                                            <option value="">{isProjectRequest ? '-- Phòng vật tư phân nguồn sau --' : '-- Chọn kho nguồn --'}</option>
+                                            {warehouses.filter(w => w.id !== siteWarehouseId).map(w => (
+                                                <option key={w.id} value={w.id}>{w.name}</option>
+                                            ))}
+                                        </select>
+                                    ) : (
+                                        <div className="text-xs font-black text-slate-800 dark:text-white">{sourceWh?.name || 'Chưa phân nguồn'}</div>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Ghi chú phiếu */}
+                            <div className="space-y-1 rounded-xl border border-slate-200/90 bg-white p-3 shadow-xs dark:border-slate-700 dark:bg-slate-950">
+                                <label className="text-[10px] uppercase tracking-wide font-black text-slate-400 flex items-center gap-1">
+                                    <FileText size={12} className="text-slate-400" /> Ghi chú phiếu
+                                </label>
+                                <input
+                                    type="text"
+                                    disabled={!isEditable && !canEditApprovalQuantities}
+                                    value={note}
+                                    onChange={(e) => setNote(e.target.value)}
+                                    className="w-full bg-transparent outline-none text-xs font-semibold text-slate-700 dark:text-slate-200 disabled:text-slate-500"
+                                    placeholder="Lý do hoặc chỉ dẫn..."
+                                />
+                            </div>
+
+                            {/* Metadata chip: Người yêu cầu + Ngày lập */}
+                            <div className="sm:col-span-2 lg:col-span-3 flex flex-wrap items-center justify-between gap-2 pt-1 text-[11px] font-semibold text-slate-500">
+                                <div className="flex items-center gap-2">
+                                    <span className="flex items-center gap-1 text-slate-600 dark:text-slate-300 font-bold">
+                                        <User size={13} className="text-slate-400" /> Người lập: <strong className="text-slate-800 dark:text-white">{requester?.name || 'N/A'}</strong>
+                                    </span>
+                                    {!isEditable && request?.submittedToName && (
+                                        <span className="flex items-center gap-1 text-amber-700 dark:text-amber-300 font-bold bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded-md border border-amber-200/60 dark:border-amber-900/40">
+                                            Người nhận xử lý: {request.submittedToName}
+                                        </span>
+                                    )}
+                                </div>
+                                <div className="flex items-center gap-1 font-mono text-slate-400">
+                                    <Clock size={12} />
+                                    <span>Ngày lập: {isEditable && !request ? formatFullDateTime(new Date().toISOString()) : formatFullDateTime(request?.createdDate || request?.date)}</span>
+                                </div>
+                            </div>
+
+                            {/* Override Reason if admin */}
+                            {canEditApprovalQuantities && isAdmin(user) && (
+                                <div className="sm:col-span-2 lg:col-span-3 space-y-1 rounded-xl border border-amber-300 bg-amber-50/60 p-3 dark:border-amber-800 dark:bg-amber-950/30">
+                                    <label className="text-[10px] uppercase tracking-wide font-black text-amber-700 dark:text-amber-300">Lý do override (Bắt buộc nếu duyệt vượt tồn)</label>
+                                    <input
+                                        type="text"
+                                        value={overrideReason}
+                                        onChange={(e) => setOverrideReason(e.target.value)}
+                                        className="w-full bg-white dark:bg-slate-900 rounded-lg border border-amber-200 dark:border-amber-800 px-3 py-1.5 outline-none text-xs font-bold text-slate-800 dark:text-white"
+                                        placeholder="Nhập lý do override số lượng..."
+                                    />
+                                </div>
+                            )}
                         </div>
-                    )}
+                    </div>
+
                     {!isEditable && request && (
                         <section className="mb-5 overflow-hidden rounded-lg border border-emerald-100 bg-card shadow-sm dark:border-emerald-900/40">
                             <div className="flex flex-col gap-4 border-b border-emerald-100/80 px-5 py-4 lg:flex-row lg:items-start lg:justify-between dark:border-emerald-900/40">
@@ -2777,161 +2937,6 @@ const RequestModal: React.FC<RequestModalProps> = ({
                             disabled={isSaving}
                         />
                     )}
-
-                    <div className="mb-8 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
-                        <div className="space-y-2 rounded-lg border border-border bg-card p-4 shadow-sm">
-                            <label className="text-[11px] uppercase tracking-wide font-black text-slate-400">Người yêu cầu</label>
-                            <div className="flex items-center gap-2 text-slate-800 font-bold">
-                                <User size={20} className="text-slate-400" />
-                                <span className="text-[15px]">{requester?.name || 'N/A'}</span>
-                            </div>
-                        </div>
-
-                        {!isEditable && request?.submittedToName && (
-                            <div className="space-y-2 rounded-lg border border-amber-200/40 bg-card p-4 shadow-sm dark:border-amber-900/40">
-                                <label className="text-[11px] uppercase tracking-wide font-black text-amber-500">Người nhận xử lý</label>
-                                <div className="flex items-center gap-2 text-amber-700 font-bold">
-                                    <User size={20} className="text-amber-400" />
-                                    <span className="text-[15px]">{request.submittedToName}</span>
-                                </div>
-                                {request.submissionNote && <div className="text-[10px] text-slate-400 truncate">{request.submissionNote}</div>}
-                            </div>
-                        )}
-
-                        <div className="space-y-2 rounded-lg border border-border bg-card p-4 shadow-sm">
-                            <label className="text-[11px] uppercase tracking-wide font-black text-slate-400">Kho nhận hàng</label>
-                            <div className="flex items-center gap-2 text-slate-800 font-bold">
-                                <Truck size={20} className="text-slate-400" />
-                                {isEditable ? (
-                                    <select
-                                        value={siteWarehouseId}
-                                        onChange={(e) => setSiteWarehouseId(e.target.value)}
-                                        className="w-full bg-transparent outline-none text-base font-medium"
-                                    >
-                                        <option value="">-- Chọn kho nhận --</option>
-                                        {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
-                                    </select>
-                                ) : (
-                                    <span className="text-[15px]">{targetWh?.name}</span>
-                                )}
-                            </div>
-                        </div>
-
-                        {showSourceWarehouseField && (
-                            <div className="space-y-2 rounded-lg border border-blue-200/40 bg-card p-4 shadow-sm dark:border-blue-900/40">
-                                <label className="text-[11px] uppercase tracking-wide font-black text-blue-400">Kho cung cấp</label>
-                                <div className="flex items-center gap-2 text-blue-700 font-bold">
-                                    <PackageCheck size={20} className="text-blue-400" />
-                                    {isEditable || canEditApprovalQuantities ? (
-                                        <select
-                                            value={sourceWarehouseId}
-                                            onChange={(e) => setSourceWarehouseId(e.target.value)}
-                                            className="w-full bg-transparent outline-none text-base font-medium"
-                                        >
-                                            <option value="">{isProjectRequest ? '-- Phòng vật tư phân nguồn sau --' : '-- Chọn kho nguồn --'}</option>
-                                            {warehouses.filter(w => w.id !== siteWarehouseId).map(w => (
-                                                <option key={w.id} value={w.id}>{w.name}</option>
-                                            ))}
-                                        </select>
-                                    ) : (
-                                        <span className="text-[15px]">{sourceWh?.name || 'Chưa phân nguồn'}</span>
-                                    )}
-                                </div>
-                            </div>
-                        )}
-
-                        {isEditable && isProjectRequest && canSeeAvailability && (
-                            <div className="space-y-2 rounded-lg border border-cyan-200/40 bg-card p-4 shadow-sm dark:border-cyan-900/40">
-                                <label className="text-[11px] uppercase tracking-wide font-black text-cyan-500">Xem tồn kho khi đề xuất</label>
-                                <div className="flex items-center gap-2 text-cyan-700 font-bold">
-                                    <PackageCheck size={20} className="text-cyan-400" />
-                                    <select
-                                        value={stockPreviewWarehouseId}
-                                        onChange={(e) => setStockPreviewWarehouseId(e.target.value)}
-                                        className="w-full bg-transparent outline-none text-base font-medium"
-                                    >
-                                        <option value="">Tổng tồn tất cả kho</option>
-                                        {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
-                                    </select>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Ngày giờ yêu cầu */}
-                        <div className="space-y-2 rounded-lg border border-border bg-card p-4 shadow-sm">
-                            <label className="text-[11px] uppercase tracking-wide font-black text-slate-400">Ngày giờ yêu cầu</label>
-                            <div className="flex items-center gap-2 text-slate-800 font-bold">
-                                <Clock size={20} className="text-slate-400" />
-                                <span className="text-sm font-bold font-mono">
-                                    {isEditable && !request
-                                        ? formatFullDateTime(new Date().toISOString())
-                                        : formatFullDateTime(request?.createdDate || request?.date)}
-                                </span>
-                            </div>
-                        </div>
-
-                        {/* Hạn giao mong muốn */}
-                        <div className="space-y-2 rounded-lg border border-rose-200/40 bg-card p-4 shadow-sm dark:border-rose-900/40">
-                            <label className="text-[11px] uppercase tracking-wide font-black text-rose-500">Hạn giao mong muốn (Ngày cần)</label>
-                            <div className="flex items-center gap-2 text-slate-800 font-bold">
-                                <Clock size={20} className="text-rose-400" />
-                                {isEditable ? (
-                                    <input
-                                        type="datetime-local"
-                                        value={toDatetimeLocalString(expectedDate)}
-                                        onChange={(e) => setExpectedDate(toISOStringFromLocal(e.target.value))}
-                                        className="w-full bg-transparent outline-none text-base font-bold text-slate-700 font-mono"
-                                    />
-                                ) : (
-                                    <span className="text-[15px] font-bold font-mono text-rose-700">
-                                        {formatFullDateTime(request?.expectedDate)}
-                                    </span>
-                                )}
-                            </div>
-                        </div>
-
-                        <div className="space-y-2 rounded-lg border border-border bg-card p-4 shadow-sm">
-                            <label className="text-[11px] uppercase tracking-wide font-black text-slate-400">Ghi chú phiếu</label>
-                            <input
-                                type="text"
-                                disabled={!isEditable && !canEditApprovalQuantities}
-                                value={note}
-                                onChange={(e) => setNote(e.target.value)}
-                                className="w-full bg-transparent outline-none text-base text-slate-700"
-                                placeholder="Lý do hoặc chỉ dẫn..."
-                            />
-                        </div>
-                        <div className="space-y-2 rounded-lg border border-emerald-250/40 bg-card p-4 shadow-sm dark:border-emerald-900/40">
-                            <label className="text-[11px] uppercase tracking-wide font-black text-emerald-500">Cách cấp vật tư</label>
-                            {isEditable ? (
-                                <select
-                                    value={fulfillmentMode}
-                                    onChange={(e) => setFulfillmentMode(e.target.value as MaterialRequestFulfillmentMode)}
-                                    className="w-full bg-transparent outline-none text-base font-bold text-slate-700"
-                                >
-                                    <option value={MaterialRequestFulfillmentMode.RECEIVE_TO_STOCK}>Nhập kho công trường</option>
-                                    <option value={MaterialRequestFulfillmentMode.DIRECT_CONSUMPTION}>Cấp thẳng sử dụng</option>
-                                </select>
-                            ) : (
-                                <span className="text-sm font-bold text-slate-700">
-                                    {fulfillmentMode === MaterialRequestFulfillmentMode.DIRECT_CONSUMPTION ? 'Cấp thẳng sử dụng' : 'Nhập kho công trường'}
-                                </span>
-                            )}
-                        </div>
-
-                        {canEditApprovalQuantities && isAdmin(user) && (
-                            <div className="space-y-2 rounded-lg border border-amber-250/45 bg-card p-4 shadow-sm dark:border-amber-900/45">
-                                <label className="text-[11px] uppercase tracking-wide font-black text-amber-600">Lý do override</label>
-                                <input
-                                    type="text"
-                                    value={overrideReason}
-                                    onChange={(e) => setOverrideReason(e.target.value)}
-                                    className="w-full bg-transparent outline-none text-base text-slate-700"
-                                    placeholder="Bắt buộc nếu duyệt vượt tồn khả dụng"
-                                />
-                            </div>
-                        )}
-                    </div>
 
                     {isEditable && isProjectRequest && (
                         <div className="mb-8 rounded-2xl border border-amber-250 dark:border-amber-800 bg-amber-50/10 dark:bg-amber-950/10 p-6">
@@ -3096,26 +3101,26 @@ const RequestModal: React.FC<RequestModalProps> = ({
                     )}
 
                     {/* Desktop table view */}
-                    <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden hidden md:block">
-                        <table className="w-full text-left text-sm">
-                            <thead className="bg-muted text-muted-foreground font-bold border-b border-border">
+                    <div className="bg-card border border-slate-200/90 dark:border-slate-800 rounded-2xl shadow-xs overflow-hidden hidden md:block">
+                        <table className="w-full text-left text-xs">
+                            <thead className="bg-slate-100/90 dark:bg-slate-800/90 text-slate-600 dark:text-slate-300 font-black border-b border-slate-200 dark:border-slate-700">
                                 <tr>
-                                    <th className="p-4">Vật tư đề xuất</th>
-                                    <th className="p-4 w-24 text-center">ĐVT</th>
-                                    <th className="p-4 w-32 text-right">Số lượng Y/C</th>
+                                    <th className="py-3 px-4">Vật tư đề xuất</th>
+                                    <th className="py-3 px-3 w-20 text-center">ĐVT</th>
+                                    <th className="py-3 px-4 w-32 text-right">Số lượng Y/C</th>
                                     {!isEditable && (
                                         <>
-                                            {canSeeAvailability && <th className="p-4 w-32 text-right text-blue-600 bg-blue-50/30">{stockContextWarehouseId ? 'Tồn kho' : 'Tổng tồn'}</th>}
-                                            <th className="p-4 w-32 text-right text-emerald-600 bg-emerald-50/30">Cam kết</th>
-                                            <th className="p-4 w-28 text-right text-indigo-600 bg-indigo-50/30">Đã xuất</th>
-                                            <th className="p-4 w-28 text-right text-cyan-600 bg-cyan-50/30">Đã nhận</th>
-                                            <th className="p-4 w-28 text-right text-slate-500">Còn lại</th>
+                                            {canSeeAvailability && <th className="py-3 px-3 w-28 text-right text-blue-600 bg-blue-50/40 dark:bg-blue-950/20">{stockContextWarehouseId ? 'Tồn kho' : 'Tổng tồn'}</th>}
+                                            <th className="py-3 px-3 w-28 text-right text-emerald-600 bg-emerald-50/40 dark:bg-emerald-950/20">Cam kết</th>
+                                            <th className="py-3 px-3 w-24 text-right text-indigo-600 bg-indigo-50/40 dark:bg-indigo-950/20">Đã xuất</th>
+                                            <th className="py-3 px-3 w-24 text-right text-cyan-600 bg-cyan-50/40 dark:bg-cyan-950/20">Đã nhận</th>
+                                            <th className="py-3 px-3 w-24 text-right text-slate-500">Còn lại</th>
                                         </>
                                     )}
-                                    {isEditable && <th className="p-4 w-12"></th>}
+                                    {isEditable && <th className="py-3 px-3 w-10 text-center"></th>}
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-border">
+                            <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
                                 {materialDisplayGroups.map(group => {
                                     const primary = group.sources[0];
                                     const primaryRow = primary.row;
@@ -3129,8 +3134,8 @@ const RequestModal: React.FC<RequestModalProps> = ({
 
                                     return (
                                         <React.Fragment key={group.key}>
-                                            <tr className={`transition-colors ${group.isExcess ? 'bg-orange-50/50' : 'hover:bg-slate-50/50'}`}>
-                                                <td className="p-4">
+                                            <tr className={`transition-colors ${group.isExcess ? 'bg-orange-50/40 dark:bg-orange-950/20' : 'hover:bg-slate-50/60 dark:hover:bg-slate-900/40'}`}>
+                                                <td className="py-2.5 px-4">
                                                     <div>
                                                         {!isEditable && <div className="flex items-center gap-2">
                                                             {hasMultipleSources && (
@@ -3217,57 +3222,57 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                         )}
                                                     </div>
                                                 </td>
-                                                <td className="p-4 text-center text-muted-foreground font-medium">{group.unit || '-'}</td>
-                                                <td className="p-4 text-right">
+                                                <td className="py-2.5 px-3 text-center text-muted-foreground font-bold text-xs">{group.unit || '-'}</td>
+                                                <td className="py-2.5 px-4 text-right">
                                                     {canEditGroupQty ? (
-	                                                        <input
-	                                                            type="text"
-	                                                            inputMode="decimal"
-	                                                            value={(primaryRow as RequestLineDraft).qty ?? ''}
+                                                        <input
+                                                            type="text"
+                                                            inputMode="decimal"
+                                                            value={(primaryRow as RequestLineDraft).qty ?? ''}
                                                             onChange={(e) => handleUpdateItem(primary.index, 'qty', e.target.value)}
-                                                            className="w-28 text-right px-3 py-2 border border-border bg-card text-foreground rounded-xl font-bold text-sm"
+                                                            className="w-28 text-right px-3 py-1.5 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-800 dark:text-white rounded-xl font-black text-xs outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 shadow-xs"
                                                         />
                                                     ) : (
-                                                        <span className="font-bold text-foreground">{group.requestQty.toLocaleString('vi-VN')}</span>
+                                                        <span className="font-bold text-foreground text-xs">{group.requestQty.toLocaleString('vi-VN')}</span>
                                                     )}
                                                 </td>
                                                 {!isEditable && (
                                                     <>
                                                         {canSeeAvailability && (
-                                                            <td className="p-4 text-right font-bold text-blue-600">
+                                                            <td className="py-2.5 px-3 text-right font-bold text-blue-600 text-xs">
                                                                 {sourceStock.toLocaleString('vi-VN')}
                                                                 {(stockSummary?.reserved || 0) > 0 && (
                                                                     <div className="text-[9px] text-amber-600 dark:text-amber-400 font-bold">Giữ chỗ: {stockSummary?.reserved}</div>
                                                                 )}
                                                             </td>
                                                         )}
-                                                        <td className="p-4 text-right">
+                                                        <td className="py-2.5 px-3 text-right">
                                                             {canEditGroupApproval ? (
                                                                 <div className="flex flex-col items-end">
-	                                                                    <input
-	                                                                        type="text"
-	                                                                        inputMode="decimal"
-	                                                                        value={getApprovedQtyInput(primaryRow as RequestItem, primary.approvedQty)}
-	                                                                        onChange={(e) => handleUpdateApprovedItem(primaryRow as RequestItem, e.target.value)}
-                                                                        className={`w-20 text-right p-1 border rounded font-bold bg-card text-foreground focus:ring-2 outline-none transition-colors ${group.isExcess ? 'border-orange-400 text-orange-700 dark:text-orange-400 focus:ring-orange-500' : 'border-emerald-250 text-emerald-705 focus:ring-emerald-500'}`}
+                                                                    <input
+                                                                        type="text"
+                                                                        inputMode="decimal"
+                                                                        value={getApprovedQtyInput(primaryRow as RequestItem, primary.approvedQty)}
+                                                                        onChange={(e) => handleUpdateApprovedItem(primaryRow as RequestItem, e.target.value)}
+                                                                        className={`w-20 text-right p-1 border rounded-lg font-bold bg-card text-foreground focus:ring-2 outline-none transition-colors text-xs ${group.isExcess ? 'border-orange-400 text-orange-700 dark:text-orange-400 focus:ring-orange-500' : 'border-emerald-250 text-emerald-705 focus:ring-emerald-500'}`}
                                                                     />
                                                                     {group.isExcess && <span className="text-[9px] text-orange-600 dark:text-orange-400 font-bold mt-1 uppercase">Duyệt vượt mức</span>}
                                                                 </div>
                                                             ) : (
-                                                                <span className={`font-bold ${group.isExcess ? 'text-orange-600 dark:text-orange-400 underline' : 'text-emerald-750 dark:text-emerald-400'}`}>
+                                                                <span className={`font-bold text-xs ${group.isExcess ? 'text-orange-600 dark:text-orange-400 underline' : 'text-emerald-750 dark:text-emerald-400'}`}>
                                                                     {group.approvedQty.toLocaleString('vi-VN')}
                                                                 </span>
                                                             )}
                                                         </td>
-                                                        <td className="p-4 text-right font-bold text-indigo-600">{group.issuedQty.toLocaleString('vi-VN')}</td>
-                                                        <td className="p-4 text-right font-bold text-cyan-600">{group.receivedQty.toLocaleString('vi-VN')}</td>
-                                                        <td className="p-4 text-right font-bold text-muted-foreground">{group.remainingToReceive.toLocaleString('vi-VN')}</td>
+                                                        <td className="py-2.5 px-3 text-right font-bold text-indigo-600 text-xs">{group.issuedQty.toLocaleString('vi-VN')}</td>
+                                                        <td className="py-2.5 px-3 text-right font-bold text-cyan-600 text-xs">{group.receivedQty.toLocaleString('vi-VN')}</td>
+                                                        <td className="py-2.5 px-3 text-right font-bold text-muted-foreground text-xs">{group.remainingToReceive.toLocaleString('vi-VN')}</td>
                                                     </>
                                                 )}
                                                 {isEditable && (
-                                                    <td className="p-4 text-center">
-                                                        <button onClick={() => setReqItems(reqItems.filter((_, i) => hasMultipleSources ? !group.sources.some(source => source.index === i) : i !== primary.index))} className="text-red-400 hover:text-red-600">
-                                                            <Trash2 size={16} />
+                                                    <td className="py-2.5 px-3 text-center">
+                                                        <button onClick={() => setReqItems(reqItems.filter((_, i) => hasMultipleSources ? !group.sources.some(source => source.index === i) : i !== primary.index))} className="p-1 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition">
+                                                            <Trash2 size={15} />
                                                         </button>
                                                     </td>
                                                 )}
@@ -3303,10 +3308,10 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                                         <div className="col-span-6 md:col-span-2 text-right">
                                                                             <div className="text-[9px] uppercase font-bold text-muted-foreground">Số lượng</div>
                                                                             {isEditable ? (
-	                                                                                <input
-	                                                                                    type="text"
-	                                                                                    inputMode="decimal"
-	                                                                                    value={(sourceRow as RequestLineDraft).qty ?? ''}
+                                                                                <input
+                                                                                    type="text"
+                                                                                    inputMode="decimal"
+                                                                                    value={(sourceRow as RequestLineDraft).qty ?? ''}
                                                                                     onChange={(e) => handleUpdateItem(source.index, 'qty', e.target.value)}
                                                                                     className="mt-1 w-20 text-right p-1 border border-border bg-card text-foreground rounded font-bold"
                                                                                 />
@@ -3360,8 +3365,12 @@ const RequestModal: React.FC<RequestModalProps> = ({
                             </tbody>
                         </table>
                         {isEditable && (
-                            <button onClick={handleAddItem} className="w-full py-4 text-accent font-bold hover:bg-muted transition-colors border-t border-dashed border-border flex items-center justify-center">
-                                <Plus size={16} className="mr-2" /> {isProjectRequest ? 'Thêm vật tư ngoài BOQ' : 'Thêm vật tư vào đề xuất'}
+                            <button
+                                type="button"
+                                onClick={handleAddItem}
+                                className="w-full py-3 bg-slate-50/80 hover:bg-indigo-50/60 dark:bg-slate-900/50 dark:hover:bg-indigo-950/30 text-indigo-700 dark:text-indigo-400 font-bold text-xs transition-colors border-t border-dashed border-slate-200 dark:border-slate-800 flex items-center justify-center gap-2 active:scale-[0.99]"
+                            >
+                                <Plus size={15} /> {isProjectRequest ? 'Thêm vật tư ngoài BOQ' : 'Thêm vật tư vào đề xuất'}
                             </button>
                         )}
                     </div>
@@ -3656,53 +3665,56 @@ const RequestModal: React.FC<RequestModalProps> = ({
                 </div>
 
                 {/* Footer Actions */}
-                <div className="p-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] sm:pb-4 border-t border-border bg-muted/50 flex justify-between items-center relative">
-                    <div className="hidden sm:block text-muted-foreground text-[10px] uppercase font-black tracking-widest">
-                        Security: {request?.id.slice(-6) || 'NEW-REQ'}
-                    </div>
-
-                    <div className="flex gap-2 sm:gap-3 items-center w-full sm:w-auto justify-end overflow-x-auto whitespace-nowrap scrollbar-none py-1">
+                <div className="p-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] sm:pb-4 border-t border-slate-200/90 dark:border-slate-800 bg-card flex justify-between items-center relative">
+                    <div className="flex items-center gap-2">
+                        <div className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[10px] font-mono font-bold">
+                            <Shield size={12} className="text-slate-400" />
+                            <span>{request?.id ? request.id.slice(-6).toUpperCase() : 'NEW-REQ'}</span>
+                        </div>
                         {request && (
-                            <button onClick={handlePrintMaterialRequest} className="px-3 py-1.5 sm:px-5 sm:py-2 rounded-lg border border-blue-200/60 text-blue-700 bg-blue-50 text-xs sm:text-sm font-bold hover:bg-blue-100 transition-colors whitespace-nowrap flex items-center">
-                                <Printer size={14} className="mr-1.5 sm:mr-2" /> In đề xuất
+                            <button onClick={handlePrintMaterialRequest} className="px-3 py-2 rounded-xl border border-blue-200/80 text-blue-700 bg-blue-50 text-xs font-bold hover:bg-blue-100 transition whitespace-nowrap flex items-center gap-1.5 shadow-xs dark:border-blue-900/40 dark:bg-blue-950/30 dark:text-blue-400">
+                                <Printer size={14} /> In đề xuất
                             </button>
                         )}
-                        <button onClick={onClose} className="px-3 py-1.5 sm:px-5 sm:py-2 rounded-lg border border-border text-foreground text-xs sm:text-sm font-bold hover:bg-muted transition-colors whitespace-nowrap">
+                    </div>
+
+                    <div className="flex gap-2 sm:gap-2.5 items-center w-full sm:w-auto justify-end overflow-x-auto whitespace-nowrap scrollbar-none py-1">
+                        <button onClick={onClose} className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-800 shadow-xs transition whitespace-nowrap">
                             Đóng
                         </button>
 
                         {canDeleteRequest && (
-                            <button disabled={isSaving} onClick={handleDeleteRequest} className="px-3 py-1.5 sm:px-5 sm:py-2 rounded-lg border border-red-200/40 dark:border-red-905/40 text-red-750 dark:text-red-400 bg-red-50/10 dark:bg-red-955/20 text-xs sm:text-sm font-bold hover:bg-red-100/20 disabled:opacity-60 disabled:cursor-not-allowed flex items-center whitespace-nowrap">
-                                {isSaving ? <Loader2 size={14} className="mr-1.5 sm:mr-2 animate-spin" /> : <Trash2 size={14} className="mr-1.5 sm:mr-2" />} Xoá phiếu
+                            <button disabled={isSaving} onClick={handleDeleteRequest} className="px-3.5 py-2 rounded-xl border border-red-200/60 dark:border-red-900/40 text-red-700 dark:text-red-400 bg-red-50/50 dark:bg-red-950/20 text-xs font-bold hover:bg-red-100/40 disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5 whitespace-nowrap shadow-xs">
+                                {isSaving ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />} Xoá phiếu
                             </button>
                         )}
 
                         {canReturn && !isEditable && (
-                            <button disabled={isSaving} onClick={handleReturnRequest} className="px-3 py-1.5 sm:px-5 sm:py-2 rounded-lg border border-amber-200/40 dark:border-amber-905/40 text-amber-700 dark:text-amber-400 bg-amber-50/10 dark:bg-amber-955/20 text-xs sm:text-sm font-bold hover:bg-amber-100/20 disabled:opacity-60 disabled:cursor-not-allowed flex items-center whitespace-nowrap">
-                                {isSaving ? <Loader2 size={14} className="mr-1.5 sm:mr-2 animate-spin" /> : <AlertCircle size={14} className="mr-1.5 sm:mr-2" />} Trả lại
+                            <button disabled={isSaving} onClick={handleReturnRequest} className="px-3.5 py-2 rounded-xl border border-amber-200/60 dark:border-amber-900/40 text-amber-700 dark:text-amber-400 bg-amber-50/50 dark:bg-amber-950/20 text-xs font-bold hover:bg-amber-100/40 disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5 whitespace-nowrap shadow-xs">
+                                {isSaving ? <Loader2 size={14} className="animate-spin" /> : <AlertCircle size={14} />} Trả lại
                             </button>
                         )}
 
                         {isEditable && isProjectRequest && !request && canEditProjectRequest && (
                             <>
-                                <button disabled={isSaving} onClick={handleSaveDraft} className="px-3 py-1.5 sm:px-5 sm:py-2 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs sm:text-sm font-bold hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed flex items-center whitespace-nowrap">
-                                    {isSaving ? <Loader2 size={14} className="mr-1.5 sm:mr-2 animate-spin" /> : <Save size={14} className="mr-1.5 sm:mr-2" />} Lưu nháp
+                                <button disabled={isSaving} onClick={handleSaveDraft} className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5 whitespace-nowrap shadow-xs transition dark:bg-slate-700 dark:hover:bg-slate-600">
+                                    {isSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Lưu nháp
                                 </button>
-                                <button disabled={isSaving || !canSubmitProjectRequest} onClick={handleCreateAndSend} className="px-3 py-1.5 sm:px-6 sm:py-2 rounded-lg bg-emerald-600 text-white text-xs sm:text-sm font-bold hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed flex items-center shadow-lg shadow-emerald-500/20 whitespace-nowrap">
-                                    {isSaving ? <Loader2 size={14} className="mr-1.5 sm:mr-2 animate-spin" /> : <Send size={14} className="mr-1.5 sm:mr-2" />} {isSaving ? 'Đang gửi...' : 'Tạo và gửi duyệt'}
+                                <button disabled={isSaving || !canSubmitProjectRequest} onClick={handleCreateAndSend} className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5 shadow-md shadow-emerald-500/20 whitespace-nowrap transition">
+                                    {isSaving ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} {isSaving ? 'Đang gửi...' : 'Tạo và gửi duyệt'}
                                 </button>
                             </>
                         )}
 
                         {isEditable && (!isProjectRequest || (!!request && canEditProjectRequest)) && (
-                            <button disabled={isSaving} onClick={handleSaveDraft} className="px-3 py-1.5 sm:px-6 sm:py-2 rounded-lg bg-slate-700 text-white text-xs sm:text-sm font-bold hover:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed flex items-center shadow-lg shadow-slate-500/20 whitespace-nowrap">
-                                {isSaving ? <Loader2 size={14} className="mr-1.5 sm:mr-2 animate-spin" /> : <Save size={14} className="mr-1.5 sm:mr-2" />} {isSaving ? 'Đang lưu...' : request ? 'Lưu nháp' : 'Tạo đề xuất'}
+                            <button disabled={isSaving} onClick={handleSaveDraft} className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5 shadow-xs whitespace-nowrap transition dark:bg-slate-700 dark:hover:bg-slate-600">
+                                {isSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} {isSaving ? 'Đang lưu...' : request ? 'Lưu nháp' : 'Tạo đề xuất'}
                             </button>
                         )}
 
                         {canSubmitDraft && (
-                            <button disabled={isSaving} onClick={handleOpenSubmitDraft} className="px-3 py-1.5 sm:px-6 sm:py-2 rounded-lg bg-accent text-white text-xs sm:text-sm font-bold hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed flex items-center shadow-lg shadow-blue-500/20 whitespace-nowrap">
-                                {isSaving ? <Loader2 size={14} className="mr-1.5 sm:mr-2 animate-spin" /> : <Send size={14} className="mr-1.5 sm:mr-2" />} Gửi duyệt
+                            <button disabled={isSaving} onClick={handleOpenSubmitDraft} className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5 shadow-md shadow-indigo-500/20 whitespace-nowrap transition">
+                                {isSaving ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} Gửi duyệt
                             </button>
                         )}
 
@@ -3710,40 +3722,40 @@ const RequestModal: React.FC<RequestModalProps> = ({
                             <button
                                 disabled={isSaving}
                                 onClick={() => setShowApprovalPanel(true)}
-                                className="px-3 py-1.5 sm:px-6 sm:py-2 rounded-lg bg-accent text-white text-xs sm:text-sm font-bold hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed flex items-center shadow-lg shadow-blue-500/20 transition-all whitespace-nowrap"
+                                className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5 shadow-md shadow-indigo-500/20 transition whitespace-nowrap"
                             >
-                                {isSaving ? <Loader2 size={14} className="mr-1.5 sm:mr-2 animate-spin" /> : <AlertCircle size={14} className="mr-1.5 sm:mr-2" />}
+                                {isSaving ? <Loader2 size={14} className="animate-spin" /> : <AlertCircle size={14} />}
                                 {isSaving ? 'ĐANG XỬ LÝ...' : 'XỬ LÝ ĐỀ XUẤT'}
                             </button>
                         )}
 
                         {canPrepareIssue && (
-                            <button disabled={isSaving || !sourceWarehouseId} onClick={() => handleAction(RequestStatus.APPROVED)} className="px-3 py-1.5 sm:px-6 sm:py-2 rounded-lg bg-blue-600 text-white text-xs sm:text-sm font-bold hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed flex items-center shadow-lg shadow-blue-500/20 whitespace-nowrap">
-                                {isSaving ? <Loader2 size={14} className="mr-1.5 sm:mr-2 animate-spin" /> : <Save size={14} className="mr-1.5 sm:mr-2" />} {isSaving ? 'Đang lưu...' : 'Lưu phân nguồn'}
+                            <button disabled={isSaving || !sourceWarehouseId} onClick={() => handleAction(RequestStatus.APPROVED)} className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5 shadow-md shadow-blue-500/20 whitespace-nowrap transition">
+                                {isSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} {isSaving ? 'Đang lưu...' : 'Lưu phân nguồn'}
                             </button>
                         )}
 
                         {canCreateFulfillmentBatch && (
-                            <button disabled={isSaving || !(sourceWarehouseId || request?.sourceWarehouseId)} onClick={openIssuePanel} className="px-3 py-1.5 sm:px-6 sm:py-2 rounded-lg bg-indigo-600 text-white text-xs sm:text-sm font-bold hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed flex items-center shadow-lg shadow-indigo-500/20 whitespace-nowrap">
-                                <Truck size={14} className="mr-1.5 sm:mr-2" /> Tạo đợt cấp
+                            <button disabled={isSaving || !(sourceWarehouseId || request?.sourceWarehouseId)} onClick={openIssuePanel} className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5 shadow-md shadow-indigo-500/20 whitespace-nowrap transition">
+                                <Truck size={14} /> Tạo đợt cấp
                             </button>
                         )}
 
                         {canCreateFulfillmentBatch && (
-                            <button disabled={isSaving || !(sourceWarehouseId || request?.sourceWarehouseId)} onClick={() => setIsExternalIssuePanelOpen(true)} className="px-3 py-1.5 sm:px-6 sm:py-2 rounded-lg bg-slate-900 text-white text-xs sm:text-sm font-bold hover:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed flex items-center shadow-lg shadow-slate-500/20 whitespace-nowrap">
-                                <PackageCheck size={14} className="mr-1.5 sm:mr-2" /> Xuất cấp thi công
+                            <button disabled={isSaving || !(sourceWarehouseId || request?.sourceWarehouseId)} onClick={() => setIsExternalIssuePanelOpen(true)} className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5 shadow-md shadow-slate-500/20 whitespace-nowrap transition">
+                                <PackageCheck size={14} /> Xuất cấp thi công
                             </button>
                         )}
 
                         {canExport && (
-                            <button disabled={isSaving} onClick={() => handleAction(RequestStatus.IN_TRANSIT)} className="px-3 py-1.5 sm:px-6 sm:py-2 rounded-lg bg-indigo-600 text-white text-xs sm:text-sm font-bold hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed flex items-center shadow-lg shadow-indigo-500/20 whitespace-nowrap">
-                                {isSaving ? <Loader2 size={14} className="mr-1.5 sm:mr-2 animate-spin" /> : <Truck size={14} className="mr-1.5 sm:mr-2" />} {isSaving ? 'Đang xử lý...' : 'Xác nhận xuất kho'}
+                            <button disabled={isSaving} onClick={() => handleAction(RequestStatus.IN_TRANSIT)} className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5 shadow-md shadow-indigo-500/20 whitespace-nowrap transition">
+                                {isSaving ? <Loader2 size={14} className="animate-spin" /> : <Truck size={14} />} {isSaving ? 'Đang xử lý...' : 'Xác nhận xuất kho'}
                             </button>
                         )}
 
                         {canReceive && (
-                            <button disabled={isSaving} onClick={() => handleAction(RequestStatus.COMPLETED)} className="px-3 py-1.5 sm:px-6 sm:py-2 rounded-lg bg-emerald-600 text-white text-xs sm:text-sm font-bold hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed flex items-center shadow-lg shadow-emerald-500/20 whitespace-nowrap">
-                                {isSaving ? <Loader2 size={14} className="mr-1.5 sm:mr-2 animate-spin" /> : <CheckCircle size={14} className="mr-1.5 sm:mr-2" />} {isSaving ? 'Đang xử lý...' : fulfillmentMode === MaterialRequestFulfillmentMode.DIRECT_CONSUMPTION ? 'Xác nhận sử dụng' : 'Xác nhận nhận hàng'}
+                            <button disabled={isSaving} onClick={() => handleAction(RequestStatus.COMPLETED)} className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5 shadow-md shadow-emerald-500/20 whitespace-nowrap transition">
+                                {isSaving ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />} {isSaving ? 'Đang xử lý...' : fulfillmentMode === MaterialRequestFulfillmentMode.DIRECT_CONSUMPTION ? 'Xác nhận sử dụng' : 'Xác nhận nhận hàng'}
                             </button>
                         )}
                     </div>

@@ -9,7 +9,7 @@ import {
   CheckCircle, XCircle, FileText, User, History,
   AlertTriangle, Flame, ShieldAlert, PackageSearch,
   ArrowDownLeft, ArrowUpRight, ArrowLeftRight, Inbox, Minus, Scale, Banknote, Lock, Loader2,
-  Search, Printer, FileDown
+  Search, Printer, FileDown, Eye, LayoutList, LayoutGrid, Filter, RotateCcw, Layers, Check
 } from 'lucide-react';
 import ItemSelectionModal from '../components/ItemSelectionModal';
 import WarningModal from '../components/WarningModal';
@@ -93,9 +93,11 @@ const Operations: React.FC = () => {
   const toast = useToast();
   const { getStockSummary, getConflictingTxs } = useReservedStock();
   const [activeTab, setActiveTab] = useState<string>('IMPORT');
+  const [opsSubTab, setOpsSubTab] = useState<'approvals' | 'history'>('approvals');
+  const [approvalQueueFilter, setApprovalQueueFilter] = useState<'all' | 'stage1' | 'stage2'>('all');
+  const [approvalSearch, setApprovalSearch] = useState('');
+  const [historyViewMode, setHistoryViewMode] = useState<'table' | 'cards'>('table');
   const openedStateTransactionRef = useRef<string | null>(null);
-
-
 
   useEffect(() => {
     if (location.state?.tab) {
@@ -110,6 +112,11 @@ const Operations: React.FC = () => {
     if (!tx) return;
     openedStateTransactionRef.current = transactionId;
     setActiveTab(location.state?.tab || 'PENDING');
+    if (tx.status === TransactionStatus.COMPLETED || tx.status === TransactionStatus.CANCELLED) {
+      setOpsSubTab('history');
+    } else {
+      setOpsSubTab('approvals');
+    }
     setViewingHistoryTx(tx);
   }, [location.state, transactions]);
   const [isScannerOpen, setScannerOpen] = useState(false);
@@ -259,6 +266,56 @@ const Operations: React.FC = () => {
     return [];
   }, [transactions, isAdmin, isKeeper, user]);
 
+  const filteredPendingAdminTxs = useMemo(() => {
+    if (!approvalSearch.trim()) return pendingAdminTxs;
+    const q = approvalSearch.trim().toLowerCase();
+    return pendingAdminTxs.filter(tx => {
+      const requester = users.find(u => u.id === tx.requesterId);
+      const sourceWh = warehouses.find(w => w.id === tx.sourceWarehouseId);
+      const targetWh = warehouses.find(w => w.id === tx.targetWarehouseId);
+      const itemNames = tx.items.map(ti => {
+        const item = items.find(i => i.id === ti.itemId);
+        return [item?.name, item?.sku].filter(Boolean).join(' ');
+      }).join(' ');
+      const str = [
+        formatVoucherCode(tx),
+        getVoucherTitle(tx),
+        tx.id,
+        requester?.name,
+        sourceWh?.name,
+        targetWh?.name,
+        tx.note,
+        itemNames,
+      ].filter(Boolean).join(' ').toLowerCase();
+      return str.includes(q);
+    });
+  }, [pendingAdminTxs, approvalSearch, users, warehouses, items]);
+
+  const filteredPendingReceiptTxs = useMemo(() => {
+    if (!approvalSearch.trim()) return pendingReceiptTxs;
+    const q = approvalSearch.trim().toLowerCase();
+    return pendingReceiptTxs.filter(tx => {
+      const requester = users.find(u => u.id === tx.requesterId);
+      const sourceWh = warehouses.find(w => w.id === tx.sourceWarehouseId);
+      const targetWh = warehouses.find(w => w.id === tx.targetWarehouseId);
+      const itemNames = tx.items.map(ti => {
+        const item = items.find(i => i.id === ti.itemId);
+        return [item?.name, item?.sku].filter(Boolean).join(' ');
+      }).join(' ');
+      const str = [
+        formatVoucherCode(tx),
+        getVoucherTitle(tx),
+        tx.id,
+        requester?.name,
+        sourceWh?.name,
+        targetWh?.name,
+        tx.note,
+        itemNames,
+      ].filter(Boolean).join(' ').toLowerCase();
+      return str.includes(q);
+    });
+  }, [pendingReceiptTxs, approvalSearch, users, warehouses, items]);
+
   // Lọc danh sách lịch sử đã xử lý
   const historyTransactions = useMemo(() => {
     const baseHistory = transactions.filter(t =>
@@ -267,6 +324,17 @@ const Operations: React.FC = () => {
     if (isAdmin) return baseHistory;
     return baseHistory.filter(t => canViewWmsTransaction(user, t));
   }, [transactions, isAdmin, user]);
+
+  const historyCounts = useMemo(() => {
+    return {
+      total: historyTransactions.length,
+      import: historyTransactions.filter(t => t.type === TransactionType.IMPORT && t.status === TransactionStatus.COMPLETED).length,
+      export: historyTransactions.filter(t => t.type === TransactionType.EXPORT && t.status === TransactionStatus.COMPLETED).length,
+      transfer: historyTransactions.filter(t => t.type === TransactionType.TRANSFER && t.status === TransactionStatus.COMPLETED).length,
+      liquidation: historyTransactions.filter(t => t.type === TransactionType.LIQUIDATION && t.status === TransactionStatus.COMPLETED).length,
+      rejected: historyTransactions.filter(t => t.status === TransactionStatus.CANCELLED).length,
+    };
+  }, [historyTransactions]);
 
   const filteredHistoryTransactions = useMemo(() => {
     const keyword = historySearch.trim().toLowerCase();
@@ -876,388 +944,901 @@ const Operations: React.FC = () => {
           {activeTab === 'MATERIAL_ISSUE' ? (
             <MaterialIssuePanel />
           ) : activeTab === 'PENDING' ? (
-            <div className="space-y-12">
-              {/* PHIẾU CHỜ DUYỆT */}
-              <section className="space-y-4">
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="font-bold text-slate-800 flex items-center text-sm">
-                    <ShieldAlert size={18} className="mr-2 text-red-500" />
-                    {isAdmin ? 'Phiếu chờ duyệt (Giai đoạn 1)' : 'Phiếu chờ bạn duyệt số lượng/chất lượng'}
-                  </h3>
-                  <span className="text-[10px] font-black bg-slate-100 px-2 py-0.5 rounded text-slate-500 uppercase">{pendingAdminTxs.length} PHIẾU</span>
+            <div className="space-y-6">
+              {/* SUB-NAVIGATION CHO QUẢN LÝ PHIẾU */}
+              <div className="flex flex-col gap-4 border-b border-slate-100 pb-5 sm:flex-row sm:items-center sm:justify-between">
+                <div className="inline-flex rounded-2xl bg-slate-100/90 p-1.5 border border-slate-200/60 shadow-inner">
+                  <button
+                    type="button"
+                    onClick={() => setOpsSubTab('approvals')}
+                    className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-black transition-all ${
+                      opsSubTab === 'approvals'
+                        ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200/50'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    <ShieldAlert size={15} className={opsSubTab === 'approvals' ? 'text-amber-500' : 'text-slate-400'} />
+                    <span>Hàng đợi duyệt phiếu</span>
+                    {(pendingAdminTxs.length + pendingReceiptTxs.length) > 0 && (
+                      <span className="rounded-full bg-amber-500 px-2 py-0.5 text-[10px] font-black text-white shadow-sm">
+                        {pendingAdminTxs.length + pendingReceiptTxs.length}
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setOpsSubTab('history')}
+                    className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-black transition-all ${
+                      opsSubTab === 'history'
+                        ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200/50'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    <History size={15} className={opsSubTab === 'history' ? 'text-indigo-600' : 'text-slate-400'} />
+                    <span>Lịch sử nhập xuất</span>
+                    <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-black text-slate-700">
+                      {historyTransactions.length}
+                    </span>
+                  </button>
                 </div>
-                {pendingAdminTxs.length === 0 ? (
-                  <EmptyState
-                    icon={<ShieldAlert size={18} />}
-                    title="Không có phiếu đang chờ duyệt"
-                    message="Các phiếu cần bạn duyệt số lượng/chất lượng sẽ xuất hiện tại đây."
-                  />
-                ) : (
-                  <div className="grid grid-cols-1 gap-4">
-                    {pendingAdminTxs.map(tx => {
-                      const requester = users.find(u => u.id === tx.requesterId);
-                      const sourceWh = warehouses.find(w => w.id === tx.sourceWarehouseId);
-                      const targetWh = warehouses.find(w => w.id === tx.targetWarehouseId);
-                      const displayWh = tx.type === TransactionType.IMPORT ? targetWh : (tx.type === TransactionType.TRANSFER ? sourceWh : sourceWh);
 
-                      // ── Reserved Stock: kiểm tra conflict cho phiếu xuất/chuyển/hủy ──
-                      const isExportType = tx.type === TransactionType.EXPORT ||
-                        tx.type === TransactionType.TRANSFER ||
-                        tx.type === TransactionType.LIQUIDATION;
-                      const stockConflicts = isExportType && tx.sourceWarehouseId
-                        ? tx.items.map(ti => ({
-                            ...ti,
-                            summary: getStockSummary(ti.itemId, tx.sourceWarehouseId!, { excludeTransactionId: tx.id }),
-                            product: items.find(i => i.id === ti.itemId),
-                          })).filter(ti => ti.summary.reserved > 0 || ti.quantity > ti.summary.available)
-                        : [];
-                      const hasStockConflict = stockConflicts.length > 0;
-                      const isFulfillmentTx = isFulfillmentBatchTransaction(tx);
-                      const isMaterialIssueTx = tx.items.some(item => !!item.materialIssueOrderId);
-                      const pendingLabel = isFulfillmentTx ? 'CHỜ DUYỆT SL/CL' : (isMaterialIssueTx ? 'CHỜ KHO XUẤT CẤP' : 'CHỜ DUYỆT');
-                      const action = getTransactionNextAction(tx, user);
-                      const typeLabel = getTransactionTypeLabel(tx.type);
-
-                      return (
-                        <div key={tx.id} onClick={() => setViewingHistoryTx(tx)}
-                          className={`bg-white border rounded-2xl p-4 hover:border-orange-200 transition-all cursor-pointer group ${
-                            hasStockConflict ? 'border-amber-200 bg-amber-50/30' : 'border-slate-100'
-                          }`}>
-                          <div className="flex flex-col md:flex-row justify-between gap-4">
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2 mb-2 flex-wrap">
-                                <StatusBadge status={tx.status} label={pendingLabel} tone={action.tone} />
-                                <span className="text-[9px] font-black px-2 py-0.5 rounded uppercase tracking-wider bg-blue-50 text-blue-600 border border-blue-100">
-                                  {isMaterialIssueTx ? 'Xuất cấp thi công' : typeLabel}
-                                </span>
-                                <span className="text-[10px] text-slate-400 font-mono font-bold">{new Date(tx.date).toLocaleString()}</span>
-                                {/* ── Badge cảnh báo tồn khả dụng ── */}
-                                {hasStockConflict && (
-                                  <span className="inline-flex items-center gap-1 text-[9px] font-black px-2 py-0.5 rounded-full bg-amber-500 text-white">
-                                    <Lock size={8} /> TỒN BỊ CHIẾM CHỖ
-                                  </span>
-                                )}
-                              </div>
-                              <div className="flex items-center gap-2 mb-3">
-                                <span className="text-sm font-black text-slate-700">{requester?.name}</span>
-                                {tx.type === TransactionType.TRANSFER ? (
-                                  <>
-                                    <ArrowRight size={14} className="mx-1 text-slate-300" />
-                                    <span className="text-xs font-bold text-slate-500">{sourceWh?.name}</span>
-                                    <ArrowRight size={14} className="mx-0.5 text-accent" />
-                                    <span className="text-sm font-black text-accent">{targetWh?.name}</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <ArrowRight size={14} className="mx-1 text-slate-300" />
-                                    <span className="text-sm font-black text-accent">{displayWh?.name}</span>
-                                  </>
-                                )}
-                              </div>
-                              <div className="text-xs text-slate-500 bg-slate-50 p-2 rounded-lg group-hover:bg-orange-50/50 transition-colors">
-                                {tx.items.length} vật tư • {tx.note || 'Không có ghi chú'}
-                              </div>
-                              <p className="mt-2 text-[11px] font-bold text-slate-500">{action.nextAction}</p>
-                              {/* ── Chi tiết tồn khả dụng cho Admin ── */}
-                              {hasStockConflict && (
-                                <div className="mt-2 space-y-1">
-                                  {stockConflicts.map((ti, idx) => (
-                                    <div key={idx} className="flex items-center justify-between text-[10px] bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">
-                                      <span className="font-black text-slate-700 truncate max-w-[140px]">{ti.product?.name}</span>
-                                      <div className="flex items-center gap-2 shrink-0">
-                                        <span className="text-slate-400">Yêu cầu: <span className="font-black text-slate-600">{ti.quantity}</span></span>
-                                        <span className="text-amber-600 font-black flex items-center gap-0.5">
-                                          <Lock size={8} /> Giữ chỗ: {ti.summary.reserved}
-                                        </span>
-                                        <span className={`font-black ${
-                                          ti.summary.available >= ti.quantity ? 'text-emerald-600' : 'text-red-600'
-                                        }`}>
-                                          Khả dụng: {ti.summary.available}
-                                        </span>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                            {canApproveWmsTransaction(user, tx) && (
-                              <div className="flex md:flex-col gap-2 min-w-[140px] pt-4 md:pt-0 border-t md:border-t-0 md:border-l border-slate-100 md:pl-4" onClick={(e) => e.stopPropagation()}>
-                                <button onClick={() => (tx.type === TransactionType.IMPORT || tx.type === TransactionType.TRANSFER) ? setViewingHistoryTx(tx) : triggerApproval(tx.id, 'APPROVE')} className="flex-1 py-2 bg-slate-800 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-700">
-                                  {isFulfillmentTx ? 'Duyệt SL/CL' : 'Duyệt Phiếu'}
-                                </button>
-                                <button onClick={() => triggerApproval(tx.id, 'CANCEL')} className="flex-1 py-2 bg-white border border-red-200 text-red-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-50">Từ Chối</button>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-              </section>
-
-              {/* PHIẾU CHỜ KHO ĐÍCH XÁC NHẬN */}
-              <section className="space-y-4 pt-8 border-t border-slate-100">
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="font-bold text-slate-800 flex items-center text-sm">
-                    <Inbox size={18} className="mr-2 text-blue-500" />
-                    {isAdmin ? 'Đã duyệt - Chờ kho đích nhận hàng (Giai đoạn 2)' : 'Hàng đang tới - Chờ bạn xác nhận nhập kho'}
-                  </h3>
-                  <span className="text-[10px] font-black bg-blue-50 px-2 py-0.5 rounded text-blue-500 uppercase">{pendingReceiptTxs.length} PHIẾU</span>
+                <div className="text-xs font-semibold text-slate-400">
+                  {opsSubTab === 'approvals'
+                    ? 'Xử lý các phiếu chờ duyệt SL/CL và xác nhận nhận hàng'
+                    : 'Tra cứu, in ấn và xuất PDF toàn bộ lịch sử giao dịch kho'}
                 </div>
-                {pendingReceiptTxs.length === 0 ? (
-                  <EmptyState
-                    icon={<Inbox size={18} />}
-                    title="Không có hàng đang chờ nhận"
-                    message="Các phiếu đã duyệt và cần kho đích xác nhận sẽ nằm ở hàng đợi này."
-                  />
-                ) : (
-                  <div className="grid grid-cols-1 gap-4">
-                    {pendingReceiptTxs.map(tx => {
-                      const targetWh = warehouses.find(w => w.id === tx.targetWarehouseId);
-                      const isMyWarehouse = targetWh?.id === user.assignedWarehouseId;
-                      const action = getTransactionNextAction(tx, user);
-                      return (
-                        <div key={tx.id} onClick={() => setViewingHistoryTx(tx)} className={`bg-white border rounded-2xl p-4 transition-all cursor-pointer group ${isMyWarehouse ? 'border-blue-200 bg-blue-50/5 shadow-md shadow-blue-500/5 hover:border-blue-400' : 'border-slate-100 hover:border-accent'}`}>
-                          <div className="flex flex-col md:flex-row justify-between gap-4">
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2 mb-2">
-                                <StatusBadge status={tx.status} label="Đã duyệt - chờ nhận" tone={action.tone} />
-                                <span className="text-[10px] text-slate-400 font-mono font-bold">Admin đã duyệt lúc {new Date(tx.date).toLocaleTimeString()}</span>
-                              </div>
-                              <div className="flex items-center gap-2 mb-3">
-                                <span className="text-xs font-bold text-slate-400 uppercase">Kho nhận:</span>
-                                <span className="text-sm font-black text-blue-600">{targetWh?.name}</span>
-                              </div>
-                              <div className="bg-white p-2 rounded-lg border border-slate-100 group-hover:bg-blue-50/30 transition-colors">
-                                {tx.items.slice(0, 2).map((ti, i) => {
-                                  const it = items.find(item => item.id === ti.itemId);
-                                  return <div key={i} className="text-xs font-bold text-slate-700 flex justify-between"><span>• {it?.name}</span> <span>{ti.quantity} {it?.unit}</span></div>
-                                })}
-                                {tx.items.length > 2 && <div className="text-[10px] text-slate-400 mt-1 italic text-center">... và {tx.items.length - 2} hạng mục khác</div>}
-                              </div>
-                              <p className="mt-2 text-[11px] font-bold text-slate-500">{action.nextAction}</p>
-                            </div>
-                            {canReceiveWmsTransaction(user, tx) && (
-                              <div className="flex md:flex-col gap-2 min-w-[160px] pt-4 md:pt-0 border-t md:border-t-0 md:border-l border-slate-100 md:pl-4" onClick={(e) => e.stopPropagation()}>
-                                <button onClick={() => (tx.type === TransactionType.IMPORT || tx.type === TransactionType.TRANSFER) ? setViewingHistoryTx(tx) : triggerApproval(tx.id, 'RECEIVE')} className="flex-1 py-3 bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-700 shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2">
-                                  <CheckCircle size={14} /> XÁC NHẬN NHẬN
-                                </button>
-                                {isAdmin && <div className="text-[9px] text-slate-400 text-center italic mt-1 font-bold">Chờ kho đích bấm nhận</div>}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </section>
+              </div>
 
-              {/* LỊCH SỬ HOẠT ĐỘNG */}
-              <section className="space-y-4 pt-8 border-t border-slate-100">
-                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                  <div>
-                    <h3 className="font-bold text-slate-800 flex items-center text-sm"><History size={18} className="mr-2 text-slate-500" /> Lịch sử nhập xuất</h3>
-                    <p className="text-[11px] font-semibold text-slate-400 mt-1">{histTotal} phiếu phù hợp bộ lọc</p>
-                  </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] font-black">
-                    {historyColumns.map(column => (
-                      <div key={column.key} className={`rounded-xl border px-3 py-2 ${column.headerClassName}`}>
-                        <div className="flex items-center gap-1.5">
-                          {column.icon}
-                          <span>{column.title}</span>
-                        </div>
-                        <div className="text-lg leading-5 mt-1">{column.count}</div>
+              {/* VIEW 1: HÀNG ĐỢI DUYỆT PHIẾU */}
+              {opsSubTab === 'approvals' && (
+                <div className="space-y-6">
+                  {/* KPI SUMMARY HÀNG ĐỢI */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div
+                      onClick={() => setApprovalQueueFilter('stage1')}
+                      className={`cursor-pointer rounded-2xl border p-4 transition-all ${
+                        approvalQueueFilter === 'stage1'
+                          ? 'border-amber-400 bg-amber-50/50 shadow-sm ring-2 ring-amber-400/20'
+                          : 'border-slate-200/70 bg-slate-50/60 hover:bg-slate-100/60'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-500">Chờ duyệt SL/CL (GĐ 1)</span>
+                        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-100 text-amber-700">
+                          <ShieldAlert size={15} />
+                        </span>
                       </div>
-                    ))}
-                  </div>
-                </div>
+                      <p className="mt-2 text-2xl font-black text-slate-900">{pendingAdminTxs.length}</p>
+                      <p className="mt-0.5 text-[11px] font-semibold text-slate-400">Phiếu chờ phê duyệt</p>
+                    </div>
 
-                <div className="rounded-2xl border border-slate-100 bg-slate-50/70 p-3">
-                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-3">
-                    <div className="relative md:col-span-2">
-                      <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                      <input
-                        value={historySearch}
-                        onChange={event => setHistorySearch(event.target.value)}
-                        placeholder="Tìm mã phiếu, người lập, kho, vật tư..."
-                        className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm font-semibold text-slate-700 outline-none focus:border-accent focus:ring-2 focus:ring-accent/10"
-                      />
+                    <div
+                      onClick={() => setApprovalQueueFilter('stage2')}
+                      className={`cursor-pointer rounded-2xl border p-4 transition-all ${
+                        approvalQueueFilter === 'stage2'
+                          ? 'border-blue-400 bg-blue-50/50 shadow-sm ring-2 ring-blue-400/20'
+                          : 'border-slate-200/70 bg-slate-50/60 hover:bg-slate-100/60'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-500">Chờ kho đích nhận (GĐ 2)</span>
+                        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-100 text-blue-700">
+                          <Inbox size={15} />
+                        </span>
+                      </div>
+                      <p className="mt-2 text-2xl font-black text-slate-900">{pendingReceiptTxs.length}</p>
+                      <p className="mt-0.5 text-[11px] font-semibold text-slate-400">Phiếu đang trung chuyển</p>
                     </div>
-                    <select
-                      value={historyTypeFilter}
-                      onChange={event => setHistoryTypeFilter(event.target.value as 'all' | TransactionType)}
-                      className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-black text-slate-600 outline-none focus:border-accent focus:ring-2 focus:ring-accent/10"
+
+                    <div
+                      onClick={() => setApprovalQueueFilter('all')}
+                      className={`cursor-pointer rounded-2xl border p-4 transition-all ${
+                        approvalQueueFilter === 'all'
+                          ? 'border-indigo-400 bg-indigo-50/50 shadow-sm ring-2 ring-indigo-400/20'
+                          : 'border-slate-200/70 bg-slate-50/60 hover:bg-slate-100/60'
+                      }`}
                     >
-                      <option value="all">Tất cả loại phiếu</option>
-                      <option value={TransactionType.IMPORT}>Phiếu nhập kho</option>
-                      <option value={TransactionType.EXPORT}>Phiếu xuất kho</option>
-                      <option value={TransactionType.TRANSFER}>Phiếu chuyển kho</option>
-                      <option value={TransactionType.LIQUIDATION}>Phiếu xuất hủy</option>
-                    </select>
-                    <select
-                      value={historyStatusFilter}
-                      onChange={event => setHistoryStatusFilter(event.target.value as 'all' | TransactionStatus.COMPLETED | TransactionStatus.CANCELLED)}
-                      className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-black text-slate-600 outline-none focus:border-accent focus:ring-2 focus:ring-accent/10"
-                    >
-                      <option value="all">Tất cả trạng thái</option>
-                      <option value={TransactionStatus.COMPLETED}>Hoàn thành</option>
-                      <option value={TransactionStatus.CANCELLED}>Từ chối</option>
-                    </select>
-                    <select
-                      value={historyWarehouseFilter}
-                      onChange={event => setHistoryWarehouseFilter(event.target.value)}
-                      className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-black text-slate-600 outline-none focus:border-accent focus:ring-2 focus:ring-accent/10"
-                    >
-                      <option value="all">Tất cả kho</option>
-                      {warehouses.map(warehouse => (
-                        <option key={warehouse.id} value={warehouse.id}>{warehouse.name}</option>
-                      ))}
-                    </select>
-                    <div className="grid grid-cols-2 gap-2 xl:col-span-1">
-                      <input
-                        type="date"
-                        value={historyDateFrom}
-                        onChange={event => setHistoryDateFrom(event.target.value)}
-                        className="min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-black text-slate-600 outline-none focus:border-accent focus:ring-2 focus:ring-accent/10"
-                      />
-                      <input
-                        type="date"
-                        value={historyDateTo}
-                        onChange={event => setHistoryDateTo(event.target.value)}
-                        className="min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-black text-slate-600 outline-none focus:border-accent focus:ring-2 focus:ring-accent/10"
-                      />
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-500">Tổng phiếu cần xử lý</span>
+                        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-100 text-indigo-700">
+                          <CheckCircle size={15} />
+                        </span>
+                      </div>
+                      <p className="mt-2 text-2xl font-black text-slate-900">{pendingAdminTxs.length + pendingReceiptTxs.length}</p>
+                      <p className="mt-0.5 text-[11px] font-semibold text-slate-400">Tất cả hàng đợi</p>
                     </div>
                   </div>
-                  {(historySearch || historyTypeFilter !== 'all' || historyStatusFilter !== 'all' || historyWarehouseFilter !== 'all' || historyDateFrom || historyDateTo) && (
-                    <div className="flex justify-end mt-3">
+
+                  {/* THANH LỌC VÀ TÌM KIẾM HÀNG ĐỢI DUYỆT */}
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between rounded-2xl border border-slate-100 bg-slate-50/70 p-3">
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       <button
                         type="button"
-                        onClick={() => {
-                          setHistorySearch('');
-                          setHistoryTypeFilter('all');
-                          setHistoryStatusFilter('all');
-                          setHistoryWarehouseFilter('all');
-                          setHistoryDateFrom('');
-                          setHistoryDateTo('');
-                        }}
-                        className="px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-slate-800"
+                        onClick={() => setApprovalQueueFilter('all')}
+                        className={`rounded-xl px-3 py-1.5 text-xs font-black transition ${
+                          approvalQueueFilter === 'all'
+                            ? 'bg-slate-900 text-white shadow-sm'
+                            : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                        }`}
                       >
-                        Xóa lọc
+                        Tất cả ({pendingAdminTxs.length + pendingReceiptTxs.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setApprovalQueueFilter('stage1')}
+                        className={`rounded-xl px-3 py-1.5 text-xs font-black transition ${
+                          approvalQueueFilter === 'stage1'
+                            ? 'bg-amber-600 text-white shadow-sm'
+                            : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                        }`}
+                      >
+                        Chờ duyệt SL/CL ({pendingAdminTxs.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setApprovalQueueFilter('stage2')}
+                        className={`rounded-xl px-3 py-1.5 text-xs font-black transition ${
+                          approvalQueueFilter === 'stage2'
+                            ? 'bg-blue-600 text-white shadow-sm'
+                            : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                        }`}
+                      >
+                        Chờ kho đích nhận ({pendingReceiptTxs.length})
                       </button>
                     </div>
+
+                    <div className="relative w-full sm:w-72">
+                      <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        value={approvalSearch}
+                        onChange={event => setApprovalSearch(event.target.value)}
+                        placeholder="Tìm trong hàng đợi..."
+                        className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-9 pr-7 text-xs font-semibold text-slate-700 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10"
+                      />
+                      {approvalSearch && (
+                        <button
+                          type="button"
+                          onClick={() => setApprovalSearch('')}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 font-bold"
+                        >
+                          ×
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* PHẦN 1: PHIẾU CHỜ DUYỆT SL/CL (GIAI ĐOẠN 1) */}
+                  {(approvalQueueFilter === 'all' || approvalQueueFilter === 'stage1') && (
+                    <section className="space-y-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <h3 className="font-bold text-slate-800 flex items-center text-sm">
+                          <ShieldAlert size={18} className="mr-2 text-red-500" />
+                          {isAdmin ? 'Phiếu chờ duyệt (Giai đoạn 1)' : 'Phiếu chờ bạn duyệt số lượng/chất lượng'}
+                        </h3>
+                        <span className="text-[10px] font-black bg-slate-100 px-2 py-0.5 rounded text-slate-500 uppercase">
+                          {filteredPendingAdminTxs.length} PHIẾU
+                        </span>
+                      </div>
+
+                      {filteredPendingAdminTxs.length === 0 ? (
+                        <EmptyState
+                          icon={<ShieldAlert size={18} />}
+                          title="Không có phiếu đang chờ duyệt"
+                          message={approvalSearch ? 'Không tìm thấy phiếu phù hợp với từ khóa.' : 'Các phiếu cần bạn duyệt số lượng/chất lượng sẽ xuất hiện tại đây.'}
+                        />
+                      ) : (
+                        <div className="grid grid-cols-1 gap-4">
+                          {filteredPendingAdminTxs.map(tx => {
+                            const requester = users.find(u => u.id === tx.requesterId);
+                            const sourceWh = warehouses.find(w => w.id === tx.sourceWarehouseId);
+                            const targetWh = warehouses.find(w => w.id === tx.targetWarehouseId);
+                            const displayWh = tx.type === TransactionType.IMPORT ? targetWh : (tx.type === TransactionType.TRANSFER ? sourceWh : sourceWh);
+
+                            // ── Reserved Stock: kiểm tra conflict cho phiếu xuất/chuyển/hủy ──
+                            const isExportType = tx.type === TransactionType.EXPORT ||
+                              tx.type === TransactionType.TRANSFER ||
+                              tx.type === TransactionType.LIQUIDATION;
+                            const stockConflicts = isExportType && tx.sourceWarehouseId
+                              ? tx.items.map(ti => ({
+                                  ...ti,
+                                  summary: getStockSummary(ti.itemId, tx.sourceWarehouseId!, { excludeTransactionId: tx.id }),
+                                  product: items.find(i => i.id === ti.itemId),
+                                })).filter(ti => ti.summary.reserved > 0 || ti.quantity > ti.summary.available)
+                              : [];
+                            const hasStockConflict = stockConflicts.length > 0;
+                            const isFulfillmentTx = isFulfillmentBatchTransaction(tx);
+                            const isMaterialIssueTx = tx.items.some(item => !!item.materialIssueOrderId);
+                            const pendingLabel = isFulfillmentTx ? 'CHỜ DUYỆT SL/CL' : (isMaterialIssueTx ? 'CHỜ KHO XUẤT CẤP' : 'CHỜ DUYỆT');
+                            const action = getTransactionNextAction(tx, user);
+                            const typeLabel = getTransactionTypeLabel(tx.type);
+
+                            return (
+                              <div
+                                key={tx.id}
+                                onClick={() => setViewingHistoryTx(tx)}
+                                className={`bg-white border rounded-2xl p-4 hover:border-orange-200 transition-all cursor-pointer group shadow-sm ${
+                                  hasStockConflict ? 'border-amber-200 bg-amber-50/30' : 'border-slate-200/80'
+                                }`}
+                              >
+                                <div className="flex flex-col md:flex-row justify-between gap-4">
+                                  <div className="flex-1">
+                                    <div className="flex items-center gap-2 mb-2 flex-wrap">
+                                      <StatusBadge status={tx.status} label={pendingLabel} tone={action.tone} />
+                                      <span className="text-[9px] font-black px-2 py-0.5 rounded uppercase tracking-wider bg-blue-50 text-blue-600 border border-blue-100">
+                                        {isMaterialIssueTx ? 'Xuất cấp thi công' : typeLabel}
+                                      </span>
+                                      <span className="text-[10px] text-slate-400 font-mono font-bold">{new Date(tx.date).toLocaleString()}</span>
+                                      {hasStockConflict && (
+                                        <span className="inline-flex items-center gap-1 text-[9px] font-black px-2 py-0.5 rounded-full bg-amber-500 text-white">
+                                          <Lock size={8} /> TỒN BỊ CHIẾM CHỖ
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center gap-2 mb-3">
+                                      <span className="text-sm font-black text-slate-700">{requester?.name}</span>
+                                      {tx.type === TransactionType.TRANSFER ? (
+                                        <>
+                                          <ArrowRight size={14} className="mx-1 text-slate-300" />
+                                          <span className="text-xs font-bold text-slate-500">{sourceWh?.name}</span>
+                                          <ArrowRight size={14} className="mx-0.5 text-accent" />
+                                          <span className="text-sm font-black text-accent">{targetWh?.name}</span>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <ArrowRight size={14} className="mx-1 text-slate-300" />
+                                          <span className="text-sm font-black text-accent">{displayWh?.name}</span>
+                                        </>
+                                      )}
+                                    </div>
+                                    <div className="text-xs text-slate-500 bg-slate-50 p-2.5 rounded-xl group-hover:bg-orange-50/50 transition-colors">
+                                      {tx.items.length} vật tư • {tx.note || 'Không có ghi chú'}
+                                    </div>
+                                    <p className="mt-2 text-[11px] font-bold text-slate-500">{action.nextAction}</p>
+                                    {hasStockConflict && (
+                                      <div className="mt-2 space-y-1">
+                                        {stockConflicts.map((ti, idx) => (
+                                          <div key={idx} className="flex items-center justify-between text-[10px] bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">
+                                            <span className="font-black text-slate-700 truncate max-w-[140px]">{ti.product?.name}</span>
+                                            <div className="flex items-center gap-2 shrink-0">
+                                              <span className="text-slate-400">Yêu cầu: <span className="font-black text-slate-600">{ti.quantity}</span></span>
+                                              <span className="text-amber-600 font-black flex items-center gap-0.5">
+                                                <Lock size={8} /> Giữ chỗ: {ti.summary.reserved}
+                                              </span>
+                                              <span className={`font-black ${
+                                                ti.summary.available >= ti.quantity ? 'text-emerald-600' : 'text-red-600'
+                                              }`}>
+                                                Khả dụng: {ti.summary.available}
+                                              </span>
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                  {canApproveWmsTransaction(user, tx) && (
+                                    <div className="flex md:flex-col gap-2 min-w-[140px] pt-4 md:pt-0 border-t md:border-t-0 md:border-l border-slate-100 md:pl-4" onClick={(e) => e.stopPropagation()}>
+                                      <button onClick={() => (tx.type === TransactionType.IMPORT || tx.type === TransactionType.TRANSFER) ? setViewingHistoryTx(tx) : triggerApproval(tx.id, 'APPROVE')} className="flex-1 py-2 bg-slate-800 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-700 transition">
+                                        {isFulfillmentTx ? 'Duyệt SL/CL' : 'Duyệt Phiếu'}
+                                      </button>
+                                      <button onClick={() => triggerApproval(tx.id, 'CANCEL')} className="flex-1 py-2 bg-white border border-red-200 text-red-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-50 transition">
+                                        Từ Chối
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </section>
+                  )}
+
+                  {/* PHẦN 2: PHIẾU CHỜ KHO ĐÍCH XÁC NHẬN (GIAI ĐOẠN 2) */}
+                  {(approvalQueueFilter === 'all' || approvalQueueFilter === 'stage2') && (
+                    <section className="space-y-4 pt-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <h3 className="font-bold text-slate-800 flex items-center text-sm">
+                          <Inbox size={18} className="mr-2 text-blue-500" />
+                          {isAdmin ? 'Đã duyệt - Chờ kho đích nhận hàng (Giai đoạn 2)' : 'Hàng đang tới - Chờ bạn xác nhận nhập kho'}
+                        </h3>
+                        <span className="text-[10px] font-black bg-blue-50 px-2 py-0.5 rounded text-blue-500 uppercase">
+                          {filteredPendingReceiptTxs.length} PHIẾU
+                        </span>
+                      </div>
+
+                      {filteredPendingReceiptTxs.length === 0 ? (
+                        <EmptyState
+                          icon={<Inbox size={18} />}
+                          title="Không có hàng đang chờ nhận"
+                          message={approvalSearch ? 'Không tìm thấy phiếu phù hợp với từ khóa.' : 'Các phiếu đã duyệt và cần kho đích xác nhận sẽ nằm ở hàng đợi này.'}
+                        />
+                      ) : (
+                        <div className="grid grid-cols-1 gap-4">
+                          {filteredPendingReceiptTxs.map(tx => {
+                            const targetWh = warehouses.find(w => w.id === tx.targetWarehouseId);
+                            const isMyWarehouse = targetWh?.id === user.assignedWarehouseId;
+                            const action = getTransactionNextAction(tx, user);
+                            return (
+                              <div
+                                key={tx.id}
+                                onClick={() => setViewingHistoryTx(tx)}
+                                className={`bg-white border rounded-2xl p-4 transition-all cursor-pointer group shadow-sm ${
+                                  isMyWarehouse ? 'border-blue-200 bg-blue-50/5 shadow-md shadow-blue-500/5 hover:border-blue-400' : 'border-slate-200/80 hover:border-accent'
+                                }`}
+                              >
+                                <div className="flex flex-col md:flex-row justify-between gap-4">
+                                  <div className="flex-1">
+                                    <div className="flex items-center gap-2 mb-2">
+                                      <StatusBadge status={tx.status} label="Đã duyệt - chờ nhận" tone={action.tone} />
+                                      <span className="text-[10px] text-slate-400 font-mono font-bold">Admin đã duyệt lúc {new Date(tx.date).toLocaleTimeString()}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2 mb-3">
+                                      <span className="text-xs font-bold text-slate-400 uppercase">Kho nhận:</span>
+                                      <span className="text-sm font-black text-blue-600">{targetWh?.name}</span>
+                                    </div>
+                                    <div className="bg-white p-2.5 rounded-xl border border-slate-100 group-hover:bg-blue-50/30 transition-colors">
+                                      {tx.items.slice(0, 2).map((ti, i) => {
+                                        const it = items.find(item => item.id === ti.itemId);
+                                        return <div key={i} className="text-xs font-bold text-slate-700 flex justify-between"><span>• {it?.name}</span> <span>{ti.quantity} {it?.unit}</span></div>
+                                      })}
+                                      {tx.items.length > 2 && <div className="text-[10px] text-slate-400 mt-1 italic text-center">... và {tx.items.length - 2} hạng mục khác</div>}
+                                    </div>
+                                    <p className="mt-2 text-[11px] font-bold text-slate-500">{action.nextAction}</p>
+                                  </div>
+                                  {canReceiveWmsTransaction(user, tx) && (
+                                    <div className="flex md:flex-col gap-2 min-w-[160px] pt-4 md:pt-0 border-t md:border-t-0 md:border-l border-slate-100 md:pl-4" onClick={(e) => e.stopPropagation()}>
+                                      <button onClick={() => (tx.type === TransactionType.IMPORT || tx.type === TransactionType.TRANSFER) ? setViewingHistoryTx(tx) : triggerApproval(tx.id, 'RECEIVE')} className="flex-1 py-3 bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-700 shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 transition">
+                                        <CheckCircle size={14} /> XÁC NHẬN NHẬN
+                                      </button>
+                                      {isAdmin && <div className="text-[9px] text-slate-400 text-center italic mt-1 font-bold">Chờ kho đích bấm nhận</div>}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </section>
                   )}
                 </div>
+              )}
 
-                {paginatedHistory.length === 0 ? (
-                  <EmptyState
-                    icon={<History size={18} />}
-                    title="Không có phiếu phù hợp"
-                    message="Thử đổi từ khóa, khoảng ngày, kho hoặc loại phiếu để xem thêm lịch sử."
-                  />
-                ) : (
-                  <div className="grid grid-cols-1 xl:grid-cols-4 gap-4">
-                    {historyColumns.map(column => {
-                      const columnTransactions = paginatedHistory.filter(tx => getHistoryColumnKey(tx) === column.key);
-                      return (
-                        <div key={column.key} className={`rounded-2xl border p-3 min-h-[220px] ${column.className}`}>
-                          <div className={`mb-3 flex items-center justify-between rounded-xl border px-3 py-2 ${column.headerClassName}`}>
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wide">
-                                {column.icon}
-                                <span className="truncate">{column.title}</span>
-                              </div>
-                              <p className="mt-0.5 text-[10px] font-bold opacity-75">{column.description}</p>
-                            </div>
-                            <span className="rounded-full bg-white/80 px-2 py-0.5 text-[11px] font-black">{column.count}</span>
-                          </div>
+              {/* VIEW 2: LỊCH SỬ NHẬP XUẤT */}
+              {opsSubTab === 'history' && (
+                <div className="space-y-5">
+                  {/* KPI SUMMARY CARDS */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+                    <div
+                      onClick={() => { setHistoryTypeFilter('all'); setHistoryStatusFilter('all'); }}
+                      className={`cursor-pointer rounded-2xl border p-3.5 transition-all ${
+                        historyTypeFilter === 'all' && historyStatusFilter === 'all'
+                          ? 'border-indigo-400 bg-indigo-50/50 shadow-sm ring-2 ring-indigo-400/20'
+                          : 'border-slate-200/70 bg-slate-50/60 hover:bg-slate-100/60'
+                      }`}
+                    >
+                      <p className="text-[11px] font-bold text-slate-500">Tất cả phiếu</p>
+                      <p className="mt-1 text-2xl font-black text-slate-800">{historyCounts.total}</p>
+                    </div>
+                    <div
+                      onClick={() => { setHistoryTypeFilter(TransactionType.IMPORT); setHistoryStatusFilter(TransactionStatus.COMPLETED); }}
+                      className={`cursor-pointer rounded-2xl border p-3.5 transition-all ${
+                        historyTypeFilter === TransactionType.IMPORT && historyStatusFilter === TransactionStatus.COMPLETED
+                          ? 'border-emerald-400 bg-emerald-50/50 shadow-sm ring-2 ring-emerald-400/20'
+                          : 'border-slate-200/70 bg-slate-50/60 hover:bg-slate-100/60'
+                      }`}
+                    >
+                      <p className="text-[11px] font-bold text-emerald-600 flex items-center gap-1"><ArrowDownLeft size={13} /> Nhập kho</p>
+                      <p className="mt-1 text-2xl font-black text-emerald-700">{historyCounts.import}</p>
+                    </div>
+                    <div
+                      onClick={() => { setHistoryTypeFilter(TransactionType.EXPORT); setHistoryStatusFilter(TransactionStatus.COMPLETED); }}
+                      className={`cursor-pointer rounded-2xl border p-3.5 transition-all ${
+                        historyTypeFilter === TransactionType.EXPORT && historyStatusFilter === TransactionStatus.COMPLETED
+                          ? 'border-blue-400 bg-blue-50/50 shadow-sm ring-2 ring-blue-400/20'
+                          : 'border-slate-200/70 bg-slate-50/60 hover:bg-slate-100/60'
+                      }`}
+                    >
+                      <p className="text-[11px] font-bold text-blue-600 flex items-center gap-1"><ArrowUpRight size={13} /> Xuất kho</p>
+                      <p className="mt-1 text-2xl font-black text-blue-700">{historyCounts.export}</p>
+                    </div>
+                    <div
+                      onClick={() => { setHistoryTypeFilter(TransactionType.TRANSFER); setHistoryStatusFilter(TransactionStatus.COMPLETED); }}
+                      className={`cursor-pointer rounded-2xl border p-3.5 transition-all ${
+                        historyTypeFilter === TransactionType.TRANSFER && historyStatusFilter === TransactionStatus.COMPLETED
+                          ? 'border-violet-400 bg-violet-50/50 shadow-sm ring-2 ring-violet-400/20'
+                          : 'border-slate-200/70 bg-slate-50/60 hover:bg-slate-100/60'
+                      }`}
+                    >
+                      <p className="text-[11px] font-bold text-violet-600 flex items-center gap-1"><ArrowLeftRight size={13} /> Chuyển kho</p>
+                      <p className="mt-1 text-2xl font-black text-violet-700">{historyCounts.transfer}</p>
+                    </div>
+                    <div
+                      onClick={() => { setHistoryTypeFilter(TransactionType.LIQUIDATION); setHistoryStatusFilter(TransactionStatus.COMPLETED); }}
+                      className={`cursor-pointer rounded-2xl border p-3.5 transition-all ${
+                        historyTypeFilter === TransactionType.LIQUIDATION && historyStatusFilter === TransactionStatus.COMPLETED
+                          ? 'border-red-400 bg-red-50/50 shadow-sm ring-2 ring-red-400/20'
+                          : 'border-slate-200/70 bg-slate-50/60 hover:bg-slate-100/60'
+                      }`}
+                    >
+                      <p className="text-[11px] font-bold text-red-600 flex items-center gap-1"><Trash2 size={13} /> Xuất hủy</p>
+                      <p className="mt-1 text-2xl font-black text-red-700">{historyCounts.liquidation}</p>
+                    </div>
+                    <div
+                      onClick={() => { setHistoryTypeFilter('all'); setHistoryStatusFilter(TransactionStatus.CANCELLED); }}
+                      className={`cursor-pointer rounded-2xl border p-3.5 transition-all ${
+                        historyStatusFilter === TransactionStatus.CANCELLED
+                          ? 'border-rose-400 bg-rose-50/50 shadow-sm ring-2 ring-rose-400/20'
+                          : 'border-slate-200/70 bg-slate-50/60 hover:bg-slate-100/60'
+                      }`}
+                    >
+                      <p className="text-[11px] font-bold text-rose-600 flex items-center gap-1"><XCircle size={13} /> Bị từ chối</p>
+                      <p className="mt-1 text-2xl font-black text-rose-700">{historyCounts.rejected}</p>
+                    </div>
+                  </div>
 
-                          <div className="space-y-2">
-                            {columnTransactions.length === 0 ? (
-                              <div className="rounded-xl border border-dashed border-slate-200 bg-white/70 p-4 text-center text-[11px] font-bold text-slate-400">
-                                Không có phiếu ở trang này
-                              </div>
-                            ) : columnTransactions.map(tx => {
+                  {/* SMART FILTER TOOLBAR */}
+                  <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4 space-y-3.5 shadow-sm">
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-12 gap-3 items-center">
+                      {/* Search input */}
+                      <div className="relative xl:col-span-5">
+                        <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <input
+                          value={historySearch}
+                          onChange={event => setHistorySearch(event.target.value)}
+                          placeholder="Tìm mã phiếu, người lập, kho, vật tư, SKU, NCC..."
+                          className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-10 pr-8 text-sm font-semibold text-slate-700 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 shadow-xs"
+                        />
+                        {historySearch && (
+                          <button
+                            type="button"
+                            onClick={() => setHistorySearch('')}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 font-bold text-sm"
+                          >
+                            ×
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Warehouse dropdown filter */}
+                      <div className="xl:col-span-3">
+                        <select
+                          value={historyWarehouseFilter}
+                          onChange={event => setHistoryWarehouseFilter(event.target.value)}
+                          className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-black text-slate-700 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 shadow-xs"
+                        >
+                          <option value="all">🏢 Tất cả kho</option>
+                          {warehouses.map(warehouse => (
+                            <option key={warehouse.id} value={warehouse.id}>{warehouse.name}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Date range inputs */}
+                      <div className="grid grid-cols-2 gap-2 xl:col-span-3">
+                        <input
+                          type="date"
+                          value={historyDateFrom}
+                          onChange={event => setHistoryDateFrom(event.target.value)}
+                          title="Từ ngày"
+                          className="min-w-0 rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-xs font-black text-slate-700 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 shadow-xs"
+                        />
+                        <input
+                          type="date"
+                          value={historyDateTo}
+                          onChange={event => setHistoryDateTo(event.target.value)}
+                          title="Đến ngày"
+                          className="min-w-0 rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-xs font-black text-slate-700 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 shadow-xs"
+                        />
+                      </div>
+
+                      {/* View mode toggle */}
+                      <div className="flex items-center justify-end gap-1.5 xl:col-span-1">
+                        <button
+                          type="button"
+                          onClick={() => setHistoryViewMode('table')}
+                          title="Xem dạng bảng tinh gọn"
+                          className={`rounded-xl p-2.5 transition ${
+                            historyViewMode === 'table'
+                              ? 'bg-slate-900 text-white shadow-sm'
+                              : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                          }`}
+                        >
+                          <LayoutList size={16} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setHistoryViewMode('cards')}
+                          title="Xem dạng thẻ phân loại"
+                          className={`rounded-xl p-2.5 transition ${
+                            historyViewMode === 'cards'
+                              ? 'bg-slate-900 text-white shadow-sm'
+                              : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                          }`}
+                        >
+                          <LayoutGrid size={16} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Quick filter pills row */}
+                    <div className="flex items-center justify-between flex-wrap gap-2 pt-2 border-t border-slate-200/60">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[11px] font-bold text-slate-400 mr-1 flex items-center gap-1">
+                          <Filter size={12} /> Lọc nhanh:
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => { setHistoryTypeFilter('all'); setHistoryStatusFilter('all'); }}
+                          className={`rounded-lg px-2.5 py-1 text-[11px] font-black transition ${
+                            historyTypeFilter === 'all' && historyStatusFilter === 'all'
+                              ? 'bg-slate-900 text-white shadow-xs'
+                              : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                          }`}
+                        >
+                          Tất cả ({historyTransactions.length})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setHistoryTypeFilter(TransactionType.IMPORT); setHistoryStatusFilter(TransactionStatus.COMPLETED); }}
+                          className={`rounded-lg px-2.5 py-1 text-[11px] font-black transition flex items-center gap-1 ${
+                            historyTypeFilter === TransactionType.IMPORT && historyStatusFilter === TransactionStatus.COMPLETED
+                              ? 'bg-emerald-600 text-white shadow-xs'
+                              : 'bg-white border border-emerald-200 text-emerald-700 hover:bg-emerald-50'
+                          }`}
+                        >
+                          <ArrowDownLeft size={11} /> Nhập kho ({historyCounts.import})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setHistoryTypeFilter(TransactionType.EXPORT); setHistoryStatusFilter(TransactionStatus.COMPLETED); }}
+                          className={`rounded-lg px-2.5 py-1 text-[11px] font-black transition flex items-center gap-1 ${
+                            historyTypeFilter === TransactionType.EXPORT && historyStatusFilter === TransactionStatus.COMPLETED
+                              ? 'bg-blue-600 text-white shadow-xs'
+                              : 'bg-white border border-blue-200 text-blue-700 hover:bg-blue-50'
+                          }`}
+                        >
+                          <ArrowUpRight size={11} /> Xuất kho ({historyCounts.export})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setHistoryTypeFilter(TransactionType.TRANSFER); setHistoryStatusFilter(TransactionStatus.COMPLETED); }}
+                          className={`rounded-lg px-2.5 py-1 text-[11px] font-black transition flex items-center gap-1 ${
+                            historyTypeFilter === TransactionType.TRANSFER && historyStatusFilter === TransactionStatus.COMPLETED
+                              ? 'bg-violet-600 text-white shadow-xs'
+                              : 'bg-white border border-violet-200 text-violet-700 hover:bg-violet-50'
+                          }`}
+                        >
+                          <ArrowLeftRight size={11} /> Chuyển kho ({historyCounts.transfer})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setHistoryTypeFilter(TransactionType.LIQUIDATION); setHistoryStatusFilter(TransactionStatus.COMPLETED); }}
+                          className={`rounded-lg px-2.5 py-1 text-[11px] font-black transition flex items-center gap-1 ${
+                            historyTypeFilter === TransactionType.LIQUIDATION && historyStatusFilter === TransactionStatus.COMPLETED
+                              ? 'bg-red-600 text-white shadow-xs'
+                              : 'bg-white border border-red-200 text-red-700 hover:bg-red-50'
+                          }`}
+                        >
+                          <Trash2 size={11} /> Xuất hủy ({historyCounts.liquidation})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setHistoryTypeFilter('all'); setHistoryStatusFilter(TransactionStatus.CANCELLED); }}
+                          className={`rounded-lg px-2.5 py-1 text-[11px] font-black transition flex items-center gap-1 ${
+                            historyStatusFilter === TransactionStatus.CANCELLED
+                              ? 'bg-rose-600 text-white shadow-xs'
+                              : 'bg-white border border-rose-200 text-rose-700 hover:bg-rose-50'
+                          }`}
+                        >
+                          <XCircle size={11} /> Bị từ chối ({historyCounts.rejected})
+                        </button>
+                      </div>
+
+                      {(historySearch || historyTypeFilter !== 'all' || historyStatusFilter !== 'all' || historyWarehouseFilter !== 'all' || historyDateFrom || historyDateTo) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setHistorySearch('');
+                            setHistoryTypeFilter('all');
+                            setHistoryStatusFilter('all');
+                            setHistoryWarehouseFilter('all');
+                            setHistoryDateFrom('');
+                            setHistoryDateTo('');
+                          }}
+                          className="inline-flex items-center gap-1 rounded-lg bg-slate-200/80 px-2.5 py-1 text-[11px] font-black text-slate-600 hover:bg-slate-300 hover:text-slate-900 transition"
+                        >
+                          <RotateCcw size={11} /> Xóa lọc
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* NỘI DUNG LỊCH SỬ: DẠNG BẢNG TINH GỌN (MẶC ĐỊNH) */}
+                  {paginatedHistory.length === 0 ? (
+                    <EmptyState
+                      icon={<History size={18} />}
+                      title="Không có phiếu phù hợp"
+                      message="Thử đổi từ khóa, khoảng ngày, kho hoặc loại phiếu để xem thêm lịch sử."
+                    />
+                  ) : historyViewMode === 'table' ? (
+                    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left border-collapse min-w-[900px]">
+                          <thead>
+                            <tr className="border-b border-slate-200/80 bg-slate-50/90 text-[11px] font-black uppercase tracking-wider text-slate-500">
+                              <th className="py-3.5 pl-5 pr-3">Mã & Ngày lập</th>
+                              <th className="py-3.5 px-3">Loại phiếu</th>
+                              <th className="py-3.5 px-3">Luồng kho / Đối tác</th>
+                              <th className="py-3.5 px-3">Vật tư</th>
+                              <th className="py-3.5 px-3">Trạng thái</th>
+                              <th className="py-3.5 pr-5 pl-3 text-right">Thao tác</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 text-xs font-semibold text-slate-700">
+                            {paginatedHistory.map(tx => {
                               const requester = users.find(u => u.id === tx.requesterId);
                               const sourceWh = warehouses.find(w => w.id === tx.sourceWarehouseId);
                               const targetWh = warehouses.find(w => w.id === tx.targetWarehouseId);
                               const supplyName = getTransactionSupplyName(tx);
                               const isApproved = tx.status === TransactionStatus.COMPLETED;
-                              const flowLabel = tx.type === TransactionType.IMPORT
-                                ? (targetWh?.name || 'Kho nhận')
-                                : tx.type === TransactionType.TRANSFER
-                                  ? `${sourceWh?.name || '-'} -> ${targetWh?.name || '-'}`
-                                  : (sourceWh?.name || 'Kho xuất');
+                              const isMaterialIssueTx = tx.items.some(item => !!item.materialIssueOrderId);
+                              const voucherTitle = getVoucherTitle(tx);
+
                               return (
-                                <div
+                                <tr
                                   key={tx.id}
                                   onClick={() => setViewingHistoryTx(tx)}
-                                  className="group rounded-2xl border border-white bg-white p-3 shadow-sm transition-all hover:border-accent hover:shadow-md cursor-pointer"
+                                  className="hover:bg-indigo-50/30 transition-colors cursor-pointer group"
                                 >
-                                  <div className="flex items-start justify-between gap-2">
-                                    <div className="min-w-0">
-                                      <div className="flex items-center gap-2 flex-wrap">
-                                        <StatusBadge status={tx.status} label={isApproved ? 'Hoàn thành' : 'Từ chối'} tone={isApproved ? 'success' : 'danger'} />
-                                        <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">{formatVoucherCode(tx)}</span>
-                                      </div>
-                                      <h4 className="mt-2 text-sm font-black text-slate-800 leading-snug">{getVoucherTitle(tx)}</h4>
-                                      <p className="mt-1 text-[10px] font-bold uppercase tracking-tight text-slate-400">
-                                        {requester?.name || 'Hệ thống'} • {formatVoucherDate(tx.date)}
-                                      </p>
+                                  {/* Mã & Ngày lập */}
+                                  <td className="py-3.5 pl-5 pr-3">
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-mono text-xs font-black text-indigo-700 bg-indigo-50/80 px-2 py-0.5 rounded-lg border border-indigo-100/70 group-hover:bg-indigo-100 group-hover:border-indigo-200 transition">
+                                        {formatVoucherCode(tx)}
+                                      </span>
                                     </div>
-                                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isApproved ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
-                                      {isApproved ? <CheckCircle size={17} /> : <XCircle size={17} />}
+                                    <div className="mt-1 flex items-center gap-1.5 text-[11px] font-medium text-slate-400">
+                                      <span>{new Date(tx.date).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</span>
+                                      <span>•</span>
+                                      <span className="text-slate-600 font-bold">{requester?.name || 'Hệ thống'}</span>
                                     </div>
-                                  </div>
+                                  </td>
 
-                                  <div className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-[11px] font-bold text-slate-600">
-                                    <div className="flex items-center justify-between gap-2">
-                                      <span className="text-slate-400">Kho</span>
-                                      <span className="truncate text-right">{flowLabel}</span>
+                                  {/* Loại phiếu */}
+                                  <td className="py-3.5 px-3">
+                                    <div className="flex flex-col gap-0.5">
+                                      <span className={`inline-flex items-center gap-1 w-fit rounded-lg px-2 py-0.5 text-[10px] font-black uppercase tracking-wide ${
+                                        tx.type === TransactionType.IMPORT
+                                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/60'
+                                          : tx.type === TransactionType.TRANSFER
+                                            ? 'bg-violet-50 text-violet-700 border border-violet-200/60'
+                                            : tx.type === TransactionType.LIQUIDATION
+                                              ? 'bg-red-50 text-red-700 border border-red-200/60'
+                                              : isMaterialIssueTx
+                                                ? 'bg-indigo-50 text-indigo-700 border border-indigo-200/60'
+                                                : 'bg-blue-50 text-blue-700 border border-blue-200/60'
+                                      }`}>
+                                        {tx.type === TransactionType.IMPORT && <ArrowDownLeft size={10} />}
+                                        {tx.type === TransactionType.TRANSFER && <ArrowLeftRight size={10} />}
+                                        {tx.type === TransactionType.LIQUIDATION && <Trash2 size={10} />}
+                                        {tx.type === TransactionType.EXPORT && <ArrowUpRight size={10} />}
+                                        {isMaterialIssueTx ? 'Xuất cấp thi công' : voucherTitle}
+                                      </span>
                                     </div>
-                                    {tx.type === TransactionType.IMPORT && supplyName !== '-' && (
-                                      <div className="flex items-center justify-between gap-2 mt-1">
-                                        <span className="text-slate-400">Nguồn</span>
-                                        <span className="truncate text-right">{supplyName}</span>
+                                  </td>
+
+                                  {/* Luồng kho / Đối tác */}
+                                  <td className="py-3.5 px-3 max-w-[220px]">
+                                    {tx.type === TransactionType.IMPORT ? (
+                                      <div>
+                                        <div className="font-bold text-slate-800 truncate">{targetWh?.name || 'Kho nhận'}</div>
+                                        {supplyName !== '-' && (
+                                          <div className="text-[11px] font-medium text-slate-400 truncate mt-0.5">
+                                            Nguồn: {supplyName}
+                                          </div>
+                                        )}
+                                      </div>
+                                    ) : tx.type === TransactionType.TRANSFER ? (
+                                      <div className="flex items-center gap-1 font-bold text-slate-800 text-xs">
+                                        <span className="truncate">{sourceWh?.name || '-'}</span>
+                                        <ArrowRight size={12} className="text-violet-500 shrink-0" />
+                                        <span className="text-violet-700 truncate">{targetWh?.name || '-'}</span>
+                                      </div>
+                                    ) : (
+                                      <div>
+                                        <div className="font-bold text-slate-800 truncate">{sourceWh?.name || 'Kho xuất'}</div>
+                                        {tx.note && (
+                                          <div className="text-[11px] font-medium text-slate-400 truncate mt-0.5">
+                                            {tx.note}
+                                          </div>
+                                        )}
                                       </div>
                                     )}
-                                    <div className="flex items-center justify-between gap-2 mt-1">
-                                      <span className="text-slate-400">Vật tư</span>
-                                      <span>{tx.items.length} dòng</span>
+                                  </td>
+
+                                  {/* Vật tư */}
+                                  <td className="py-3.5 px-3 max-w-[240px]">
+                                    <div className="font-black text-xs text-slate-800">
+                                      {tx.items.length} mặt hàng
                                     </div>
-                                  </div>
+                                    <div className="mt-0.5 text-[11px] text-slate-500 truncate space-y-0.5">
+                                      {tx.items.slice(0, 2).map((item, idx) => {
+                                        const product = items.find(i => i.id === item.itemId) || tx.pendingItems?.find(i => i.id === item.itemId);
+                                        return (
+                                          <div key={idx} className="truncate">
+                                            • {product?.name || 'Vật tư'} ({item.quantity} {product?.unit})
+                                          </div>
+                                        );
+                                      })}
+                                      {tx.items.length > 2 && (
+                                        <span className="text-[10px] font-bold text-slate-400 italic">
+                                          +{tx.items.length - 2} mặt hàng khác
+                                        </span>
+                                      )}
+                                    </div>
+                                  </td>
 
-                                  {tx.note && <p className="mt-2 line-clamp-2 text-[11px] font-semibold text-slate-500">{tx.note}</p>}
+                                  {/* Trạng thái */}
+                                  <td className="py-3.5 px-3">
+                                    <StatusBadge
+                                      status={tx.status}
+                                      label={isApproved ? 'Hoàn thành' : 'Từ chối'}
+                                      tone={isApproved ? 'success' : 'danger'}
+                                      size="sm"
+                                    />
+                                  </td>
 
-                                  <div className="mt-3 flex gap-2" onClick={event => event.stopPropagation()}>
-                                    <button
-                                      type="button"
-                                      onClick={() => handlePrintTransaction(tx, 'print')}
-                                      className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-600 hover:border-slate-300 hover:bg-slate-50"
-                                    >
-                                      <Printer size={13} /> In
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => handlePrintTransaction(tx, 'pdf')}
-                                      className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-slate-900 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-white hover:bg-slate-700"
-                                    >
-                                      <FileDown size={13} /> PDF
-                                    </button>
-                                  </div>
-                                </div>
+                                  {/* Thao tác */}
+                                  <td className="py-3.5 pr-5 pl-3 text-right" onClick={e => e.stopPropagation()}>
+                                    <div className="inline-flex items-center gap-1.5 justify-end">
+                                      <button
+                                        type="button"
+                                        onClick={() => setViewingHistoryTx(tx)}
+                                        title="Xem chi tiết"
+                                        className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600 transition shadow-xs"
+                                      >
+                                        <Eye size={14} />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handlePrintTransaction(tx, 'print')}
+                                        title="In phiếu"
+                                        className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-100 hover:text-slate-900 transition shadow-xs"
+                                      >
+                                        <Printer size={14} />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handlePrintTransaction(tx, 'pdf')}
+                                        title="Xuất PDF"
+                                        className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-900 text-white hover:bg-slate-800 transition shadow-xs"
+                                      >
+                                        <FileDown size={14} />
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
                               );
                             })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ) : (
+                    /* DẠNG THẺ (CARDS VIEW) */
+                    <div className="grid grid-cols-1 xl:grid-cols-4 gap-4">
+                      {historyColumns.map(column => {
+                        const columnTransactions = paginatedHistory.filter(tx => getHistoryColumnKey(tx) === column.key);
+                        return (
+                          <div key={column.key} className={`rounded-2xl border p-3 min-h-[220px] ${column.className}`}>
+                            <div className={`mb-3 flex items-center justify-between rounded-xl border px-3 py-2 ${column.headerClassName}`}>
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wide">
+                                  {column.icon}
+                                  <span className="truncate">{column.title}</span>
+                                </div>
+                                <p className="mt-0.5 text-[10px] font-bold opacity-75">{column.description}</p>
+                              </div>
+                              <span className="rounded-full bg-white/80 px-2 py-0.5 text-[11px] font-black">{column.count}</span>
+                            </div>
+
+                            <div className="space-y-2">
+                              {columnTransactions.length === 0 ? (
+                                <div className="rounded-xl border border-dashed border-slate-200 bg-white/70 p-4 text-center text-[11px] font-bold text-slate-400">
+                                  Không có phiếu ở trang này
+                                </div>
+                              ) : columnTransactions.map(tx => {
+                                const requester = users.find(u => u.id === tx.requesterId);
+                                const sourceWh = warehouses.find(w => w.id === tx.sourceWarehouseId);
+                                const targetWh = warehouses.find(w => w.id === tx.targetWarehouseId);
+                                const supplyName = getTransactionSupplyName(tx);
+                                const isApproved = tx.status === TransactionStatus.COMPLETED;
+                                const flowLabel = tx.type === TransactionType.IMPORT
+                                  ? (targetWh?.name || 'Kho nhận')
+                                  : tx.type === TransactionType.TRANSFER
+                                    ? `${sourceWh?.name || '-'} -> ${targetWh?.name || '-'}`
+                                    : (sourceWh?.name || 'Kho xuất');
+                                return (
+                                  <div
+                                    key={tx.id}
+                                    onClick={() => setViewingHistoryTx(tx)}
+                                    className="group rounded-2xl border border-white bg-white p-3 shadow-sm transition-all hover:border-accent hover:shadow-md cursor-pointer"
+                                  >
+                                    <div className="flex items-start justify-between gap-2">
+                                      <div className="min-w-0">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                          <StatusBadge status={tx.status} label={isApproved ? 'Hoàn thành' : 'Từ chối'} tone={isApproved ? 'success' : 'danger'} />
+                                          <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">{formatVoucherCode(tx)}</span>
+                                        </div>
+                                        <h4 className="mt-2 text-sm font-black text-slate-800 leading-snug">{getVoucherTitle(tx)}</h4>
+                                        <p className="mt-1 text-[10px] font-bold uppercase tracking-tight text-slate-400">
+                                          {requester?.name || 'Hệ thống'} • {formatVoucherDate(tx.date)}
+                                        </p>
+                                      </div>
+                                      <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isApproved ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
+                                        {isApproved ? <CheckCircle size={17} /> : <XCircle size={17} />}
+                                      </div>
+                                    </div>
+
+                                    <div className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-[11px] font-bold text-slate-600">
+                                      <div className="flex items-center justify-between gap-2">
+                                        <span className="text-slate-400">Kho</span>
+                                        <span className="truncate text-right">{flowLabel}</span>
+                                      </div>
+                                      {tx.type === TransactionType.IMPORT && supplyName !== '-' && (
+                                        <div className="flex items-center justify-between gap-2 mt-1">
+                                          <span className="text-slate-400">Nguồn</span>
+                                          <span className="truncate text-right">{supplyName}</span>
+                                        </div>
+                                      )}
+                                      <div className="flex items-center justify-between gap-2 mt-1">
+                                        <span className="text-slate-400">Vật tư</span>
+                                        <span>{tx.items.length} dòng</span>
+                                      </div>
+                                    </div>
+
+                                    {tx.note && <p className="mt-2 line-clamp-2 text-[11px] font-semibold text-slate-500">{tx.note}</p>}
+
+                                    <div className="mt-3 flex gap-2" onClick={event => event.stopPropagation()}>
+                                      <button
+                                        type="button"
+                                        onClick={() => handlePrintTransaction(tx, 'print')}
+                                        className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-600 hover:border-slate-300 hover:bg-slate-50"
+                                      >
+                                        <Printer size={13} /> In
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handlePrintTransaction(tx, 'pdf')}
+                                        className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-slate-900 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-white hover:bg-slate-700"
+                                      >
+                                        <FileDown size={13} /> PDF
+                                      </button>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-                <Pagination currentPage={histPage} totalPages={histTotalPages} totalItems={histTotal} startIndex={histStart} endIndex={histEnd} onPageChange={histSetPage} pageSize={histPageSize} onPageSizeChange={histSetPageSize} />
-              </section>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  <Pagination
+                    currentPage={histPage}
+                    totalPages={histTotalPages}
+                    totalItems={histTotal}
+                    startIndex={histStart}
+                    endIndex={histEnd}
+                    onPageChange={histSetPage}
+                    pageSize={histPageSize}
+                    onPageSizeChange={histSetPageSize}
+                  />
+                </div>
+              )}
             </div>
           ) : (
             <>

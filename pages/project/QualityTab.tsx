@@ -26,6 +26,7 @@ import {
   User,
   X,
   Download,
+  Filter,
 } from 'lucide-react';
 import { qualityChecklistService } from '../../lib/qualityChecklistService';
 import { projectStaffService } from '../../lib/projectStaffService';
@@ -51,7 +52,7 @@ import { useToast } from '../../context/ToastContext';
 import { useConfirm, useReasonConfirm } from '../../context/ConfirmContext';
 import ProjectRoomSubmissionDialog from '../../components/project/ProjectRoomSubmissionDialog';
 import MediaViewer, { MediaItem } from '../../components/project/MediaViewer';
-import { EmptyState, MobileCardList, StatusBadge as ErpStatusBadge } from '../../components/erp';
+import { EmptyState, StatusBadge as ErpStatusBadge } from '../../components/erp';
 
 interface QualityTabProps {
   constructionSiteId?: string;
@@ -59,6 +60,8 @@ interface QualityTabProps {
 }
 
 type StatusCounts = Record<QualityChecklistStatus, number>;
+
+type QualitySubTab = 'actions' | 'all' | 'wbs_tree';
 
 const ROOT_KEY = '__root__';
 
@@ -159,126 +162,15 @@ const getQualityStatusTone = (status?: QualityChecklistStatus) => {
   return 'neutral';
 };
 
-const MiniStat: React.FC<{
-  label: string;
-  value: number | string;
-  icon: React.ReactNode;
-  tone?: 'slate' | 'amber' | 'emerald' | 'red' | 'sky';
-  active?: boolean;
-  onClick?: () => void;
-}> = ({ label, value, icon, tone = 'slate', active = false, onClick }) => {
-  const tones = {
-    slate: 'border-zinc-200 bg-white text-zinc-900 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100',
-    amber: 'border-teal-200 bg-teal-50 text-teal-700 dark:border-teal-900/50 dark:bg-teal-950/40 dark:text-teal-300',
-    emerald: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-300',
-    red: 'border-red-200 bg-red-50 text-red-700 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300',
-    sky: 'border-teal-200 bg-teal-50 text-teal-700 dark:border-teal-900/50 dark:bg-teal-950/40 dark:text-teal-300',
-  };
-  const className = `w-full rounded-2xl border p-3.5 ${tones[tone]} ${active ? 'ring-2 ring-teal-500 ring-offset-1' : ''} ${onClick ? 'cursor-pointer text-left transition hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-teal-500' : ''}`;
-  const content = (
-    <>
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-[10px] font-semibold uppercase text-zinc-400 dark:text-zinc-500">{label}</span>
-        <span className="text-teal-700 dark:text-teal-400">{icon}</span>
-      </div>
-      <div className="mt-1 text-xl font-bold">{value}</div>
-    </>
-  );
-  if (onClick) {
-    return (
-      <button type="button" onClick={onClick} className={className} aria-pressed={active}>
-        {content}
-      </button>
-    );
-  }
-  return (
-    <div className={className}>
-      {content}
-    </div>
-  );
-};
-
 const ProgressBar: React.FC<{ value?: number }> = ({ value }) => {
   const width = clampPercent(value);
   return (
-    <div className="h-2 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
+    <div className="h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-zinc-800">
       <div
-        className={`h-full rounded-full transition-all duration-300 ${width >= 100 ? 'bg-emerald-600' : width > 0 ? 'bg-teal-700' : 'bg-zinc-300 dark:bg-zinc-700'}`}
+        className={`h-full rounded-full transition-all duration-300 ${width >= 100 ? 'bg-emerald-600' : width > 0 ? 'bg-teal-600' : 'bg-slate-300 dark:bg-zinc-700'}`}
         style={{ width: `${width}%` }}
       />
     </div>
-  );
-};
-
-const FolderCard: React.FC<{
-  task: ProjectTask;
-  childCount: number;
-  checklists: QualityChecklist[];
-  parentPath?: string;
-  onOpen: () => void;
-}> = ({ task, childCount, checklists, parentPath, onOpen }) => {
-  const counts = countByStatus(checklists);
-  return (
-    <button
-      onClick={onOpen}
-      className="group rounded-2xl border border-zinc-200 bg-white p-4 text-left shadow-sm transition hover:border-teal-500 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900"
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 items-start gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-teal-200 bg-teal-50 text-teal-700 dark:border-teal-900/50 dark:bg-teal-950/40 dark:text-teal-400">
-            {childCount > 0 ? <FolderOpen size={20} /> : <Folder size={20} />}
-          </div>
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              {task.wbsCode && (
-                <span className="rounded-lg border border-zinc-200 bg-zinc-100 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
-                  {task.wbsCode}
-                </span>
-              )}
-              <span className="text-[10px] font-medium uppercase text-zinc-400">
-                {childCount} thư mục con
-              </span>
-            </div>
-            <h4 className="mt-1 truncate text-sm font-semibold text-zinc-900 group-hover:text-teal-700 dark:text-zinc-100 dark:group-hover:text-teal-400" title={task.name}>
-              {task.name}
-            </h4>
-            {parentPath && (
-              <p className="mt-1 truncate text-[10px] font-medium text-zinc-400" title={parentPath}>
-                {parentPath}
-              </p>
-            )}
-          </div>
-        </div>
-        <ChevronRight size={16} className="mt-1 shrink-0 text-zinc-300 transition group-hover:translate-x-0.5 group-hover:text-teal-700 dark:text-zinc-600 dark:group-hover:text-teal-400" />
-      </div>
-
-      <div className="mt-4 space-y-2">
-        <div className="flex items-center justify-between text-[10px] font-semibold text-zinc-500 dark:text-zinc-400">
-          <span>Tiến độ</span>
-          <span>{Math.round(Number(task.progress || 0))}%</span>
-        </div>
-        <ProgressBar value={task.progress} />
-      </div>
-
-      <div className="mt-4 grid grid-cols-4 gap-2 text-center">
-        <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-2 py-1.5 dark:border-zinc-800 dark:bg-zinc-800/50">
-          <div className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">{checklists.length}</div>
-          <div className="text-[8px] font-semibold uppercase text-zinc-400">Hồ sơ</div>
-        </div>
-        <div className="rounded-xl border border-teal-200 bg-teal-50 px-2 py-1.5 dark:border-teal-900/50 dark:bg-teal-950/40">
-          <div className="text-sm font-semibold text-teal-700 dark:text-teal-300">{counts.submitted}</div>
-          <div className="text-[8px] font-semibold uppercase text-teal-600 dark:text-teal-400">Chờ</div>
-        </div>
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-2 py-1.5 dark:border-emerald-900/50 dark:bg-emerald-950/40">
-          <div className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">{counts.approved}</div>
-          <div className="text-[8px] font-semibold uppercase text-emerald-600 dark:text-emerald-400">Duyệt</div>
-        </div>
-        <div className="rounded-xl border border-red-200 bg-red-50 px-2 py-1.5 dark:border-red-900/50 dark:bg-red-950/40">
-          <div className="text-sm font-semibold text-red-700 dark:text-red-300">{counts.returned}</div>
-          <div className="text-[8px] font-semibold uppercase text-red-600 dark:text-red-400">Trả</div>
-        </div>
-      </div>
-    </button>
   );
 };
 
@@ -301,11 +193,23 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId }
   const [loading, setLoading] = useState(true);
   const [permissionLoading, setPermissionLoading] = useState(true);
   const [qualityRoomActions, setQualityRoomActions] = useState<Set<string>>(new Set());
+
+  // SubTab Navigation State
+  const [subTab, setSubTab] = useState<QualitySubTab>('all');
+  const [actionQueueFilter, setActionQueueFilter] = useState<'all_queue' | 'submitted' | 'returned' | 'draft'>('all_queue');
+
+  // Filter & Search State
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<QualityChecklistStatus | ''>('');
+  const [selectedWbsFilter, setSelectedWbsFilter] = useState<string>('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 15;
+
+  // WBS Tree navigation State
   const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
   const [showOrphans, setShowOrphans] = useState(false);
 
+  // Form State
   const [showForm, setShowForm] = useState(false);
   const [formTask, setFormTask] = useState<ProjectTask | null>(null);
   const [editingChecklist, setEditingChecklist] = useState<QualityChecklist | null>(null);
@@ -556,6 +460,10 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId }
 
   const checklistMatchesFilters = useCallback((item: QualityChecklist) => {
     if (statusFilter && item.status !== statusFilter) return false;
+    if (selectedWbsFilter) {
+      if (selectedWbsFilter === '__orphan__' && item.taskId && taskMap.has(item.taskId)) return false;
+      if (selectedWbsFilter !== '__orphan__' && item.taskId !== selectedWbsFilter) return false;
+    }
     const query = search.trim();
     if (!query) return true;
     const task = item.taskId ? taskMap.get(item.taskId) : null;
@@ -568,54 +476,41 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId }
       task?.wbsCode,
       task?.name,
     ], query);
-  }, [search, statusFilter, taskMap]);
+  }, [search, selectedWbsFilter, statusFilter, taskMap]);
 
   const filterChecklistRows = useCallback((items: QualityChecklist[]) => (
     items.filter(checklistMatchesFilters)
   ), [checklistMatchesFilters]);
 
-  const getVisibleTaskChecklists = useCallback((task: ProjectTask) => {
-    const aggregateRows = getAggregateChecklists(task.id);
-    if (!statusFilter) return aggregateRows;
-
-    const query = search.trim();
-    const taskMatchedBySearch = taskMatchesSearch(task, query);
-    return aggregateRows.filter(item => {
-      if (item.status !== statusFilter) return false;
-      if (!query || taskMatchedBySearch) return true;
-      return checklistMatchesFilters(item);
-    });
-  }, [checklistMatchesFilters, getAggregateChecklists, search, statusFilter, taskMatchesSearch]);
-
-  const visibleTasks = useMemo(() => {
-    const query = search.trim();
-    const source = query ? tasks : currentChildren;
-    return source
-      .filter(task => {
-        if (statusFilter) return getVisibleTaskChecklists(task).length > 0;
-        return taskMatchesSearch(task, query);
-      })
-      .sort((a, b) => (a.wbsCode || '').localeCompare(b.wbsCode || '') || (a.order || 0) - (b.order || 0));
-  }, [currentChildren, getVisibleTaskChecklists, search, statusFilter, taskMatchesSearch, tasks]);
-
-  const directTaskChecklists = useMemo(
-    () => currentTaskId ? (checklistsByTaskId.get(currentTaskId) || []) : [],
-    [checklistsByTaskId, currentTaskId],
-  );
-
-  const tableRows = useMemo(() => {
-    if (showOrphans) return filterChecklistRows(orphanChecklists);
-    if (currentTaskId) return filterChecklistRows(directTaskChecklists);
-    return [];
-  }, [currentTaskId, directTaskChecklists, filterChecklistRows, orphanChecklists, showOrphans]);
-
-  const filteredOrphanChecklists = useMemo(
-    () => filterChecklistRows(orphanChecklists),
-    [filterChecklistRows, orphanChecklists],
-  );
-
   const globalCounts = useMemo(() => countByStatus(checklists), [checklists]);
-  const currentCounts = useMemo(() => countByStatus(directTaskChecklists), [directTaskChecklists]);
+
+  // Action Queue Items: Checklists requiring action
+  const queueItems = useMemo(() => {
+    return checklists.filter(item => {
+      const caps = getQualityChecklistCapabilities(qualityCapabilities, item.status);
+      const isPendingApprove = item.status === 'submitted' && caps.canApprove;
+      const isReturnedMyDraft = item.status === 'returned' && (caps.canSubmit || item.createdBy === user?.id || item.createdBy === user?.name);
+      const isMyDraft = item.status === 'draft' && (item.createdBy === user?.id || item.createdBy === user?.name || caps.canSubmit);
+      return isPendingApprove || isReturnedMyDraft || isMyDraft;
+    });
+  }, [checklists, qualityCapabilities, user]);
+
+  const filteredQueueItems = useMemo(() => {
+    if (actionQueueFilter === 'all_queue') return queueItems;
+    return queueItems.filter(item => item.status === actionQueueFilter);
+  }, [actionQueueFilter, queueItems]);
+
+  const queueCounts = useMemo(() => countByStatus(queueItems), [queueItems]);
+
+  const allFilteredChecklists = useMemo(() => {
+    return filterChecklistRows(checklists);
+  }, [checklists, filterChecklistRows]);
+
+  const totalPages = Math.max(1, Math.ceil(allFilteredChecklists.length / ITEMS_PER_PAGE));
+  const paginatedChecklists = useMemo(() => {
+    const start = (currentPage - 1) * ITEMS_PER_PAGE;
+    return allFilteredChecklists.slice(start, start + ITEMS_PER_PAGE);
+  }, [allFilteredChecklists, currentPage]);
 
   const canEditChecklist = useCallback((checklist: QualityChecklist) => {
     return getQualityChecklistCapabilities(qualityCapabilities, checklist.status).canEdit;
@@ -651,41 +546,22 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId }
     setSearch('');
   };
 
-  const openAllQualityItems = () => {
-    setStatusFilter('');
-    setCurrentTaskId(null);
-    setShowOrphans(false);
-    setSearch('');
-  };
-
-  const openStatusSummary = (status: QualityChecklistStatus) => {
-    setStatusFilter(status);
-    setCurrentTaskId(null);
-    setShowOrphans(false);
-    setSearch('');
-  };
-
-  const openUnassignedSummary = () => {
-    setStatusFilter('');
-    openOrphans();
-  };
-
-  const openCreate = (task: ProjectTask) => {
+  const openCreate = (task?: ProjectTask | null) => {
     if (!qualityCapabilities.canEdit) return;
-    const targetSiteId = siteId || task.constructionSiteId || '';
-    if (!targetSiteId) {
+    const targetSiteId = siteId || task?.constructionSiteId || '';
+    if (!targetSiteId && !siteId) {
       toast.error('Thiếu công trường', 'Cần chọn công trường trước khi tạo hồ sơ nghiệm thu.');
       return;
     }
-    setFormTask(task);
+    setFormTask(task || null);
     setEditingChecklist(null);
     setReadonlyForm(false);
     setForm({
-      title: taskLabel(task),
-      workDescription: task.name,
+      title: task ? taskLabel(task) : '',
+      workDescription: task?.name || '',
       workLocation: '',
       workDate: todayIso(),
-      workSupervisor: '',
+      workSupervisor: user?.name || '',
       sitePhotos: [],
       attachments: [],
       note: '',
@@ -980,209 +856,6 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId }
     }
   };
 
-  const renderChecklistTable = (rows: QualityChecklist[], options?: { showTaskColumn?: boolean }) => {
-    if (rows.length === 0) {
-      return (
-        <EmptyState
-          icon={<ClipboardCheck size={18} />}
-          title="Chưa có hồ sơ nghiệm thu"
-          message="Tạo hồ sơ nghiệm thu cho hạng mục đang chọn để lưu ảnh, file và gửi duyệt."
-        />
-      );
-    }
-
-    return (
-      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-        <MobileCardList
-          items={rows}
-          getKey={item => item.id}
-          renderItem={item => {
-            const linkedTask = item.taskId ? taskMap.get(item.taskId) : null;
-            const firstPhoto = (item.sitePhotos || [])[0];
-            const photoCount = (item.sitePhotos || []).length;
-            const attachmentCount = (item.attachments || []).length;
-            const canEdit = canEditChecklist(item);
-            const canSubmit = canSubmitChecklist(item);
-            const canDelete = canDeleteChecklist(item);
-            const canApprove = canApproveChecklist(item);
-            return (
-              <div className="space-y-3">
-                <div className="flex items-start gap-3">
-                  {firstPhoto ? (
-                    <img src={firstPhoto.url} alt={firstPhoto.caption || item.title} className="h-16 w-20 shrink-0 rounded-lg object-cover ring-1 ring-slate-200" />
-                  ) : (
-                    <div className="flex h-16 w-20 shrink-0 items-center justify-center rounded-lg border border-dashed border-slate-200 bg-slate-50 text-slate-300">
-                      <ImageIcon size={20} />
-                    </div>
-                  )}
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-mono text-[10px] font-black text-slate-400">{item.code}</span>
-                      <ErpStatusBadge status={item.status || 'draft'} label={STATUS_CONFIG[item.status || 'draft']?.label} tone={getQualityStatusTone(item.status || 'draft')} />
-                    </div>
-                    <button onClick={() => openChecklist(item, true)} className="mt-1 line-clamp-2 text-left text-sm font-black text-slate-800">
-                      {item.title}
-                    </button>
-                    {options?.showTaskColumn && (
-                      <p className="mt-1 line-clamp-1 text-[10px] font-bold text-slate-400">{taskLabel(linkedTask)}</p>
-                    )}
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-3 gap-2 text-[10px] font-bold text-slate-500">
-                  <div className="rounded bg-slate-50 p-2"><span className="block text-slate-400">Ảnh</span>{photoCount}</div>
-                  <div className="rounded bg-slate-50 p-2"><span className="block text-slate-400">File</span>{attachmentCount}</div>
-                  <div className="rounded bg-slate-50 p-2"><span className="block text-slate-400">Ngày</span>{formatDate(item.workDate || item.createdAt)}</div>
-                </div>
-
-                <div className="flex flex-wrap justify-end gap-1">
-                  <button onClick={() => openChecklist(item, true)} className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-[10px] font-black text-slate-600">Xem</button>
-                  {canEdit && <button onClick={() => openChecklist(item)} className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-[10px] font-black text-slate-600">Sửa</button>}
-                  {canSubmit && <button onClick={() => setSubmittingChecklist(item)} className="rounded-lg bg-amber-500 px-2.5 py-1.5 text-[10px] font-black text-white">Gửi duyệt</button>}
-                  {canDelete && <button onClick={() => handleDelete(item)} className="rounded-lg border border-red-200 px-2.5 py-1.5 text-[10px] font-black text-red-600">Xóa</button>}
-                  {canApprove && <button onClick={() => handleStatusChange(item, 'returned')} className="rounded-lg border border-red-200 px-2.5 py-1.5 text-[10px] font-black text-red-600">Trả lại</button>}
-                  {canApprove && <button onClick={() => handleStatusChange(item, 'approved')} className="rounded-lg bg-emerald-600 px-2.5 py-1.5 text-[10px] font-black text-white">Duyệt</button>}
-                </div>
-              </div>
-            );
-          }}
-        />
-        <div className="hidden overflow-x-auto md:block">
-          <table className="w-full min-w-[860px] text-left text-xs">
-            <thead className="bg-slate-50 text-[10px] font-black uppercase text-slate-400">
-              <tr>
-                <th className="px-3 py-2.5">Mã</th>
-                <th className="px-3 py-2.5">Hồ sơ nghiệm thu</th>
-                {options?.showTaskColumn && <th className="px-3 py-2.5">Hạng mục</th>}
-                <th className="px-3 py-2.5">Ảnh</th>
-                <th className="px-3 py-2.5">File</th>
-                <th className="px-3 py-2.5">Ngày</th>
-                <th className="px-3 py-2.5">Trạng thái</th>
-                <th className="px-3 py-2.5 text-right">Thao tác</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {rows.map(item => {
-                const linkedTask = item.taskId ? taskMap.get(item.taskId) : null;
-                const firstPhoto = (item.sitePhotos || [])[0];
-                const photoCount = (item.sitePhotos || []).length;
-                const attachmentCount = (item.attachments || []).length;
-                const canEdit = canEditChecklist(item);
-                const canSubmit = canSubmitChecklist(item);
-                const canDelete = canDeleteChecklist(item);
-                const canApprove = canApproveChecklist(item);
-                return (
-                  <tr key={item.id} className="hover:bg-amber-50/20">
-                    <td className="px-3 py-3 align-top">
-                      <span className="font-mono text-[11px] font-black text-slate-500">{item.code}</span>
-                    </td>
-                    <td className="px-3 py-3 align-top">
-                      <button
-                        onClick={() => openChecklist(item, true)}
-                        className="block max-w-[280px] truncate text-left font-black text-slate-800 hover:text-amber-700"
-                        title={item.title}
-                      >
-                        {item.title}
-                      </button>
-                      <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] font-bold text-slate-400">
-                        {item.workLocation && <span className="inline-flex items-center gap-1"><MapPin size={10} />{item.workLocation}</span>}
-                        {item.workSupervisor && <span className="inline-flex items-center gap-1"><User size={10} />{item.workSupervisor}</span>}
-                      </div>
-                    </td>
-                    {options?.showTaskColumn && (
-                      <td className="px-3 py-3 align-top">
-                        <span className="block max-w-[220px] truncate font-bold text-slate-600" title={taskLabel(linkedTask)}>
-                          {taskLabel(linkedTask)}
-                        </span>
-                      </td>
-                    )}
-                    <td className="px-3 py-3 align-top">
-                      {firstPhoto ? (
-                        <div className="flex items-center gap-2">
-                          <img src={firstPhoto.url} alt={firstPhoto.caption || item.title} className="h-10 w-14 rounded object-cover ring-1 ring-slate-200" />
-                          <span className="text-[10px] font-black text-slate-500">{photoCount}</span>
-                        </div>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 rounded border border-slate-100 bg-slate-50 px-2 py-1 text-[10px] font-bold text-slate-400">
-                          <ImageIcon size={12} /> 0
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-3 py-3 align-top">
-                      <span className="inline-flex items-center gap-1 rounded border border-slate-100 bg-slate-50 px-2 py-1 text-[10px] font-bold text-slate-500">
-                        <Paperclip size={12} /> {attachmentCount}
-                      </span>
-                    </td>
-                    <td className="px-3 py-3 align-top font-bold text-slate-500">{formatDate(item.workDate || item.createdAt)}</td>
-                    <td className="px-3 py-3 align-top">
-                      <ErpStatusBadge status={item.status || 'draft'} label={STATUS_CONFIG[item.status || 'draft']?.label} tone={getQualityStatusTone(item.status || 'draft')} />
-                    </td>
-                    <td className="px-3 py-3 align-top">
-                      <div className="flex justify-end gap-1">
-                        <button
-                          onClick={() => openChecklist(item, true)}
-                          title="Xem hồ sơ"
-                          className="rounded p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                        >
-                          <Eye size={14} />
-                        </button>
-                        {canEdit && (
-                            <button
-                              onClick={() => openChecklist(item)}
-                              title="Sửa hồ sơ"
-                              className="rounded p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                            >
-                              <Edit2 size={14} />
-                            </button>
-                        )}
-                        {canSubmit && (
-                            <button
-                              onClick={() => setSubmittingChecklist(item)}
-                              title="Gửi duyệt"
-                              className="rounded p-2 text-amber-600 hover:bg-amber-50"
-                            >
-                              <Send size={14} />
-                            </button>
-                        )}
-                        {canDelete && (
-                            <button
-                              onClick={() => handleDelete(item)}
-                              title="Xoá hồ sơ"
-                              className="rounded p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                        )}
-                        {canApprove && (
-                          <>
-                            <button
-                              onClick={() => handleStatusChange(item, 'returned')}
-                              title="Trả lại"
-                              className="rounded p-2 text-red-600 hover:bg-red-50"
-                            >
-                              <RotateCcw size={14} />
-                            </button>
-                            <button
-                              onClick={() => handleStatusChange(item, 'approved')}
-                              title="Phê duyệt"
-                              className="rounded p-2 text-emerald-600 hover:bg-emerald-50"
-                            >
-                              <CheckCircle2 size={14} />
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    );
-  };
-
   if (permissionLoading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -1194,14 +867,14 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId }
 
   if (!qualityCapabilities.canView) {
     return (
-      <div className="mx-auto max-w-xl rounded-lg border border-red-200 bg-red-50 px-6 py-10 text-center dark:border-red-900/50 dark:bg-red-950/30">
+      <div className="mx-auto max-w-xl rounded-2xl border border-red-200 bg-red-50 px-6 py-10 text-center dark:border-red-900/50 dark:bg-red-950/30">
         <AlertCircle size={28} className="mx-auto text-red-600" />
         <h2 className="mt-3 text-base font-bold text-red-800 dark:text-red-200">Bạn không có quyền xem Room Chất lượng</h2>
         <p className="mt-1 text-sm text-red-700 dark:text-red-300">Quyền truy cập được quản lý theo dự án và công trường hiện tại.</p>
         <button
           type="button"
           onClick={loadQualityRoomAccess}
-          className="mt-5 inline-flex items-center gap-2 rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-100 dark:border-red-800 dark:bg-red-950"
+          className="mt-5 inline-flex items-center gap-2 rounded-xl border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-100 dark:border-red-800 dark:bg-red-950"
         >
           <RotateCcw size={15} /> Tải lại quyền
         </button>
@@ -1212,314 +885,924 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId }
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <Loader2 size={22} className="animate-spin text-amber-500" />
+        <Loader2 size={22} className="animate-spin text-teal-600" />
         <span className="ml-3 text-sm font-bold text-slate-500">Đang tải module chất lượng...</span>
       </div>
     );
   }
 
-  const orphanCounts = countByStatus(filteredOrphanChecklists);
-  const pageTitle = showOrphans
-    ? 'Chưa gắn hạng mục'
-    : currentTask
-      ? currentTask.name
-      : 'Thư mục hạng mục tiến độ';
-  const searchMode = !!search.trim();
-
   return (
-    <div className="space-y-5">
-      <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-teal-700 dark:text-teal-400">
-              <ShieldCheck size={14} />
-              Module Chất lượng
+    <div className="space-y-4">
+      {/* HEADER TỔNG THỂ */}
+      <div className="rounded-2xl border border-slate-200/90 bg-white p-4 sm:p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-600 dark:bg-teal-950/50 dark:text-teal-400 border border-teal-100 dark:border-teal-900/40">
+              <ShieldCheck size={24} />
             </div>
-            <h2 className="mt-1 truncate text-xl font-bold text-zinc-900 dark:text-zinc-100">{pageTitle}</h2>
-            <div className="mt-1 flex flex-wrap items-center gap-1 text-xs font-medium text-zinc-500 dark:text-zinc-400">
-              <button onClick={openRoot} className="rounded-lg px-2 py-1 hover:bg-zinc-100 hover:text-teal-700 dark:hover:bg-zinc-800 dark:hover:text-teal-400 transition-colors">
-                {projectName || 'Dự án'}
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-lg sm:text-xl font-black text-slate-800 dark:text-white truncate">
+                  Quản lý Chất lượng & Nghiệm thu
+                </h2>
+                <span className="rounded-md bg-teal-50 dark:bg-teal-950/40 px-2 py-0.5 text-[10px] font-black uppercase text-teal-700 dark:text-teal-300 border border-teal-200/60 dark:border-teal-900/40">
+                  {checklists.length} hồ sơ
+                </span>
+              </div>
+              <p className="text-xs font-semibold text-slate-400 truncate">
+                {projectName || 'Dự án'} • Giám sát, lập biên bản, lưu ảnh hiện trường và phê duyệt nghiệm thu
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {qualityCapabilities.canEdit && (
+              <button
+                onClick={() => openCreate(currentTask || tasks[0] || null)}
+                className="inline-flex items-center gap-2 rounded-xl bg-teal-600 hover:bg-teal-700 px-4 py-2.5 text-xs font-black text-white shadow-md shadow-teal-600/20 transition active:scale-95 whitespace-nowrap"
+              >
+                <Plus size={15} /> Tạo hồ sơ nghiệm thu
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Dải chỉ số KPI */}
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4 pt-3 border-t border-slate-100 dark:border-slate-800/80">
+          <button
+            onClick={() => { setSubTab('all'); setStatusFilter(''); setSelectedWbsFilter(''); }}
+            className={`p-2.5 rounded-xl border text-left transition ${!statusFilter && subTab === 'all' ? 'border-teal-500 bg-teal-50/40 dark:bg-teal-950/30 ring-1 ring-teal-500' : 'border-slate-100 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/60 bg-slate-50/50 dark:bg-slate-900/50'}`}
+          >
+            <div className="text-[10px] font-bold text-slate-400 uppercase">Tổng hồ sơ</div>
+            <div className="text-base font-black text-slate-800 dark:text-white">{checklists.length}</div>
+          </button>
+          <button
+            onClick={() => { setSubTab('actions'); setActionQueueFilter('submitted'); }}
+            className={`p-2.5 rounded-xl border text-left transition ${actionQueueFilter === 'submitted' && subTab === 'actions' ? 'border-teal-500 bg-teal-50/40 dark:bg-teal-950/30 ring-1 ring-teal-500' : 'border-teal-100/70 hover:bg-teal-50/30 dark:border-teal-900/40 bg-teal-50/20 dark:bg-teal-950/20'}`}
+          >
+            <div className="text-[10px] font-bold text-teal-600 dark:text-teal-400 uppercase">Chờ duyệt</div>
+            <div className="text-base font-black text-teal-700 dark:text-teal-300">{globalCounts.submitted}</div>
+          </button>
+          <button
+            onClick={() => { setSubTab('all'); setStatusFilter('approved'); }}
+            className={`p-2.5 rounded-xl border text-left transition ${statusFilter === 'approved' && subTab === 'all' ? 'border-emerald-500 bg-emerald-50/40 dark:bg-emerald-950/30 ring-1 ring-emerald-500' : 'border-emerald-100/70 hover:bg-emerald-50/30 dark:border-emerald-900/40 bg-emerald-50/20 dark:bg-emerald-950/20'}`}
+          >
+            <div className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase">Đã duyệt</div>
+            <div className="text-base font-black text-emerald-700 dark:text-emerald-300">{globalCounts.approved}</div>
+          </button>
+          <button
+            onClick={() => { setSubTab('actions'); setActionQueueFilter('returned'); }}
+            className={`p-2.5 rounded-xl border text-left transition ${actionQueueFilter === 'returned' && subTab === 'actions' ? 'border-rose-500 bg-rose-50/40 dark:bg-rose-950/30 ring-1 ring-rose-500' : 'border-rose-100/70 hover:bg-rose-50/30 dark:border-rose-900/40 bg-rose-50/20 dark:bg-rose-950/20'}`}
+          >
+            <div className="text-[10px] font-bold text-rose-600 dark:text-rose-400 uppercase">Trả lại / Cần sửa</div>
+            <div className="text-base font-black text-rose-700 dark:text-rose-300">{globalCounts.returned}</div>
+          </button>
+        </div>
+      </div>
+
+      {/* SEGMENTED SUB-TABS */}
+      <div className="flex border-b border-slate-200 dark:border-slate-800 gap-6 px-2 text-xs font-black">
+        <button
+          onClick={() => setSubTab('actions')}
+          className={`pb-3 relative flex items-center gap-2 transition-colors ${subTab === 'actions' ? 'text-teal-700 dark:text-teal-400 font-black' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400'}`}
+        >
+          <ShieldCheck size={16} />
+          <span>Cần tôi xử lý</span>
+          {queueItems.length > 0 && (
+            <span className="rounded-full bg-amber-500 text-white text-[10px] px-1.5 py-0.2 font-mono">
+              {queueItems.length}
+            </span>
+          )}
+          {subTab === 'actions' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-teal-600 rounded-full" />}
+        </button>
+
+        <button
+          onClick={() => setSubTab('all')}
+          className={`pb-3 relative flex items-center gap-2 transition-colors ${subTab === 'all' ? 'text-teal-700 dark:text-teal-400 font-black' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400'}`}
+        >
+          <FileText size={16} />
+          <span>Tất cả hồ sơ nghiệm thu</span>
+          <span className="rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-[10px] px-1.5 py-0.2 font-mono">
+            {checklists.length}
+          </span>
+          {subTab === 'all' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-teal-600 rounded-full" />}
+        </button>
+
+        <button
+          onClick={() => setSubTab('wbs_tree')}
+          className={`pb-3 relative flex items-center gap-2 transition-colors ${subTab === 'wbs_tree' ? 'text-teal-700 dark:text-teal-400 font-black' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400'}`}
+        >
+          <Folder size={16} />
+          <span>Theo Cây Hạng mục WBS</span>
+          {subTab === 'wbs_tree' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-teal-600 rounded-full" />}
+        </button>
+      </div>
+
+      {/* 1. SUB-TAB: CẦN TÔI XỬ LÝ (ACTION QUEUE) */}
+      {subTab === 'actions' && (
+        <div className="space-y-4">
+          {/* Action Queue Filter Pills */}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap gap-1.5">
+              <button
+                onClick={() => setActionQueueFilter('all_queue')}
+                className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${actionQueueFilter === 'all_queue' ? 'bg-teal-600 text-white shadow-xs' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200'}`}
+              >
+                Tất cả cần làm ({queueItems.length})
+              </button>
+              <button
+                onClick={() => setActionQueueFilter('submitted')}
+                className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${actionQueueFilter === 'submitted' ? 'bg-teal-600 text-white shadow-xs' : 'bg-teal-50 dark:bg-teal-950/40 text-teal-700 dark:text-teal-300 hover:bg-teal-100/50'}`}
+              >
+                Chờ thẩm định ({queueCounts.submitted})
+              </button>
+              <button
+                onClick={() => setActionQueueFilter('returned')}
+                className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${actionQueueFilter === 'returned' ? 'bg-rose-600 text-white shadow-xs' : 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 hover:bg-rose-100/50'}`}
+              >
+                Bị trả lại cần sửa ({queueCounts.returned})
+              </button>
+              <button
+                onClick={() => setActionQueueFilter('draft')}
+                className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${actionQueueFilter === 'draft' ? 'bg-slate-700 text-white shadow-xs' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200'}`}
+              >
+                Bản nháp ({queueCounts.draft})
+              </button>
+            </div>
+          </div>
+
+          {filteredQueueItems.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-emerald-200 bg-emerald-50/20 dark:border-emerald-900/40 dark:bg-emerald-950/10 p-10 text-center">
+              <CheckCircle2 size={36} className="mx-auto text-emerald-500" />
+              <h4 className="mt-3 text-sm font-black text-emerald-800 dark:text-emerald-300">
+                Tuyệt vời! Không có hồ sơ nào đang chờ bạn xử lý
+              </h4>
+              <p className="mt-1 text-xs text-emerald-600 dark:text-emerald-400">
+                Toàn bộ hồ sơ nghiệm thu đã được xem xét hoặc chuyển bước thành công.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {filteredQueueItems.map(item => {
+                const linkedTask = item.taskId ? taskMap.get(item.taskId) : null;
+                const photoCount = (item.sitePhotos || []).length;
+                const fileCount = (item.attachments || []).length;
+                const firstPhoto = (item.sitePhotos || [])[0];
+                const canEdit = canEditChecklist(item);
+                const canSubmit = canSubmitChecklist(item);
+                const canDelete = canDeleteChecklist(item);
+                const canApprove = canApproveChecklist(item);
+
+                return (
+                  <div
+                    key={item.id}
+                    className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-xs hover:border-teal-400 dark:border-slate-800 dark:bg-slate-900 transition flex flex-col justify-between space-y-3"
+                  >
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="font-mono text-[10px] font-black text-slate-500 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md">
+                            {item.code}
+                          </span>
+                          {linkedTask && (
+                            <span className="truncate text-[10px] font-bold text-teal-700 dark:text-teal-400 bg-teal-50 dark:bg-teal-950/40 px-2 py-0.5 rounded-md border border-teal-200/60 dark:border-teal-900/40">
+                              {taskLabel(linkedTask)}
+                            </span>
+                          )}
+                        </div>
+                        <ErpStatusBadge status={item.status || 'draft'} label={STATUS_CONFIG[item.status || 'draft']?.label} tone={getQualityStatusTone(item.status || 'draft')} />
+                      </div>
+
+                      <div className="flex gap-3 items-start">
+                        {firstPhoto ? (
+                          <img
+                            src={firstPhoto.url}
+                            alt={firstPhoto.caption || item.title}
+                            onClick={() => openChecklist(item, true)}
+                            className="h-16 w-20 shrink-0 rounded-xl object-cover ring-1 ring-slate-200 cursor-pointer hover:opacity-90 transition"
+                          />
+                        ) : (
+                          <div
+                            onClick={() => openChecklist(item, true)}
+                            className="flex h-16 w-20 shrink-0 items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 text-slate-300 cursor-pointer"
+                          >
+                            <ImageIcon size={20} />
+                          </div>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <h4
+                            onClick={() => openChecklist(item, true)}
+                            className="font-black text-sm text-slate-800 dark:text-white line-clamp-2 cursor-pointer hover:text-teal-600 transition"
+                          >
+                            {item.title}
+                          </h4>
+                          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] font-semibold text-slate-400">
+                            {item.workLocation && (
+                              <span className="inline-flex items-center gap-1">
+                                <MapPin size={11} className="text-slate-400" /> {item.workLocation}
+                              </span>
+                            )}
+                            <span className="inline-flex items-center gap-1">
+                              <Calendar size={11} className="text-slate-400" /> {formatDate(item.workDate || item.createdAt)}
+                            </span>
+                            {item.workSupervisor && (
+                              <span className="inline-flex items-center gap-1">
+                                <User size={11} className="text-slate-400" /> {item.workSupervisor}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {item.note && (
+                        <div className="rounded-xl bg-amber-50/60 dark:bg-amber-950/20 p-2 text-[11px] font-semibold text-amber-800 dark:text-amber-300 border border-amber-200/50">
+                          <strong>Ghi chú / Chỉ dẫn:</strong> {item.note}
+                        </div>
+                      )}
+
+                      <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400">
+                        <span className="inline-flex items-center gap-1 bg-slate-50 dark:bg-slate-800 px-2 py-0.5 rounded-md">
+                          <ImageIcon size={11} /> {photoCount} ảnh
+                        </span>
+                        <span className="inline-flex items-center gap-1 bg-slate-50 dark:bg-slate-800 px-2 py-0.5 rounded-md">
+                          <Paperclip size={11} /> {fileCount} file
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Action buttons */}
+                    <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end gap-1.5 flex-wrap">
+                      <button
+                        onClick={() => openChecklist(item, true)}
+                        className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 transition"
+                      >
+                        Chi tiết
+                      </button>
+                      {canEdit && (
+                        <button
+                          onClick={() => openChecklist(item)}
+                          className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 transition"
+                        >
+                          Sửa
+                        </button>
+                      )}
+                      {canSubmit && (
+                        <button
+                          onClick={() => setSubmittingChecklist(item)}
+                          className="rounded-xl bg-teal-600 hover:bg-teal-700 px-3.5 py-1.5 text-xs font-black text-white shadow-xs transition"
+                        >
+                          Gửi duyệt
+                        </button>
+                      )}
+                      {canApprove && (
+                        <>
+                          <button
+                            onClick={() => handleStatusChange(item, 'returned')}
+                            className="rounded-xl border border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-300 px-3 py-1.5 text-xs font-black hover:bg-rose-100 transition"
+                          >
+                            Trả lại
+                          </button>
+                          <button
+                            onClick={() => handleStatusChange(item, 'approved')}
+                            className="rounded-xl bg-emerald-600 hover:bg-emerald-700 px-3.5 py-1.5 text-xs font-black text-white shadow-xs transition"
+                          >
+                            Phê duyệt
+                          </button>
+                        </>
+                      )}
+                      {canDelete && (
+                        <button
+                          onClick={() => handleDelete(item)}
+                          className="rounded-xl p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 transition"
+                          title="Xóa hồ sơ"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 2. SUB-TAB: TẤT CẢ HỒ SƠ NGHIỆM THU (COMPACT FLAT TABLE) */}
+      {subTab === 'all' && (
+        <div className="space-y-3">
+          {/* Tool bar */}
+          <div className="rounded-2xl border border-slate-200/90 bg-white p-3.5 shadow-xs dark:border-slate-800 dark:bg-slate-900 space-y-3">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+              <div className="relative flex-1">
+                <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  value={search}
+                  onChange={e => { setSearch(e.target.value); setCurrentPage(1); }}
+                  placeholder="Tìm theo mã hồ sơ, tên công việc, vị trí, người giám sát, WBS..."
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50/50 py-2 pl-9 pr-3 text-xs font-bold text-slate-800 outline-none placeholder:font-semibold placeholder:text-slate-400 focus:border-teal-500 focus:bg-white focus:ring-2 focus:ring-teal-500/10 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                />
+              </div>
+
+              {/* Dropdown WBS Filter */}
+              <select
+                value={selectedWbsFilter}
+                onChange={e => { setSelectedWbsFilter(e.target.value); setCurrentPage(1); }}
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+              >
+                <option value="">-- Tất cả hạng mục WBS --</option>
+                {tasks.map(t => (
+                  <option key={t.id} value={t.id}>{taskLabel(t)}</option>
+                ))}
+                {orphanChecklists.length > 0 && <option value="__orphan__">Chưa gắn hạng mục ({orphanChecklists.length})</option>}
+              </select>
+            </div>
+
+            {/* Quick Filter Pills */}
+            <div className="flex flex-wrap items-center gap-1.5 pt-1">
+              <span className="text-[10px] font-black uppercase text-slate-400 mr-1 flex items-center gap-1">
+                <Filter size={11} /> Trạng thái:
+              </span>
+              <button
+                onClick={() => { setStatusFilter(''); setCurrentPage(1); }}
+                className={`rounded-xl px-2.5 py-1 text-xs font-bold transition ${!statusFilter ? 'bg-slate-800 text-white dark:bg-slate-200 dark:text-slate-900' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 hover:bg-slate-200'}`}
+              >
+                Tất cả ({checklists.length})
+              </button>
+              <button
+                onClick={() => { setStatusFilter('submitted'); setCurrentPage(1); }}
+                className={`rounded-xl px-2.5 py-1 text-xs font-bold transition ${statusFilter === 'submitted' ? 'bg-teal-600 text-white' : 'bg-teal-50 text-teal-700 dark:bg-teal-950/40 dark:text-teal-300 hover:bg-teal-100/50'}`}
+              >
+                Chờ duyệt ({globalCounts.submitted})
+              </button>
+              <button
+                onClick={() => { setStatusFilter('approved'); setCurrentPage(1); }}
+                className={`rounded-xl px-2.5 py-1 text-xs font-bold transition ${statusFilter === 'approved' ? 'bg-emerald-600 text-white' : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 hover:bg-emerald-100/50'}`}
+              >
+                Đã duyệt ({globalCounts.approved})
+              </button>
+              <button
+                onClick={() => { setStatusFilter('returned'); setCurrentPage(1); }}
+                className={`rounded-xl px-2.5 py-1 text-xs font-bold transition ${statusFilter === 'returned' ? 'bg-rose-600 text-white' : 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 hover:bg-rose-100/50'}`}
+              >
+                Trả lại ({globalCounts.returned})
+              </button>
+              <button
+                onClick={() => { setStatusFilter('draft'); setCurrentPage(1); }}
+                className={`rounded-xl px-2.5 py-1 text-xs font-bold transition ${statusFilter === 'draft' ? 'bg-slate-700 text-white' : 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 hover:bg-zinc-200'}`}
+              >
+                Nháp ({globalCounts.draft})
+              </button>
+            </div>
+          </div>
+
+          {/* Table */}
+          {allFilteredChecklists.length === 0 ? (
+            <EmptyState
+              icon={<ClipboardCheck size={20} />}
+              title="Không tìm thấy hồ sơ nghiệm thu phù hợp"
+              message="Thử thay đổi từ khóa tìm kiếm hoặc bỏ chọn các bộ lọc trạng thái."
+            />
+          ) : (
+            <div className="bg-card border border-slate-200/90 dark:border-slate-800 rounded-2xl shadow-xs overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs min-w-[760px]">
+                  <thead className="bg-slate-100/90 dark:bg-slate-800/90 text-slate-600 dark:text-slate-300 font-black border-b border-slate-200 dark:border-slate-700">
+                    <tr>
+                      <th className="py-3 px-4 w-28">Mã hồ sơ</th>
+                      <th className="py-3 px-3">Hồ sơ nghiệm thu & Vị trí</th>
+                      <th className="py-3 px-3 w-56">Hạng mục WBS</th>
+                      <th className="py-3 px-3 w-28 text-center">Đính kèm</th>
+                      <th className="py-3 px-3 w-28">Ngày</th>
+                      <th className="py-3 px-3 w-28 text-center">Trạng thái</th>
+                      <th className="py-3 px-4 w-28 text-right">Thao tác</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
+                    {paginatedChecklists.map(item => {
+                      const linkedTask = item.taskId ? taskMap.get(item.taskId) : null;
+                      const photoCount = (item.sitePhotos || []).length;
+                      const fileCount = (item.attachments || []).length;
+                      const canEdit = canEditChecklist(item);
+                      const canSubmit = canSubmitChecklist(item);
+                      const canDelete = canDeleteChecklist(item);
+                      const canApprove = canApproveChecklist(item);
+
+                      return (
+                        <tr key={item.id} className="hover:bg-teal-50/20 dark:hover:bg-slate-800/40 transition">
+                          <td className="py-3 px-4 align-top">
+                            <span className="font-mono text-[11px] font-black text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md">
+                              {item.code}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3 align-top">
+                            <button
+                              onClick={() => openChecklist(item, true)}
+                              className="font-black text-xs text-slate-800 dark:text-white hover:text-teal-600 transition text-left line-clamp-1"
+                              title={item.title}
+                            >
+                              {item.title}
+                            </button>
+                            <div className="mt-1 flex flex-wrap items-center gap-x-2 text-[10px] font-semibold text-slate-400">
+                              {item.workLocation && (
+                                <span className="inline-flex items-center gap-1">
+                                  <MapPin size={10} /> {item.workLocation}
+                                </span>
+                              )}
+                              {item.workSupervisor && (
+                                <span className="inline-flex items-center gap-1">
+                                  <User size={10} /> {item.workSupervisor}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-3 px-3 align-top">
+                            {linkedTask ? (
+                              <span className="block truncate font-bold text-slate-700 dark:text-slate-300" title={taskLabel(linkedTask)}>
+                                {taskLabel(linkedTask)}
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-bold text-red-500 bg-red-50 dark:bg-red-950/40 px-1.5 py-0.5 rounded">
+                                Chưa gắn WBS
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3 px-3 align-top text-center">
+                            <div className="flex items-center justify-center gap-1.5 text-[10px] font-bold text-slate-500">
+                              {photoCount > 0 && (
+                                <span className="inline-flex items-center gap-1 rounded bg-teal-50 dark:bg-teal-950/40 text-teal-700 dark:text-teal-300 px-1.5 py-0.5 border border-teal-200/50">
+                                  <ImageIcon size={10} /> {photoCount}
+                                </span>
+                              )}
+                              {fileCount > 0 && (
+                                <span className="inline-flex items-center gap-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 px-1.5 py-0.5">
+                                  <Paperclip size={10} /> {fileCount}
+                                </span>
+                              )}
+                              {photoCount === 0 && fileCount === 0 && <span className="text-slate-300">—</span>}
+                            </div>
+                          </td>
+                          <td className="py-3 px-3 align-top font-bold text-slate-600 dark:text-slate-400 text-xs">
+                            {formatDate(item.workDate || item.createdAt)}
+                          </td>
+                          <td className="py-3 px-3 align-top text-center">
+                            <ErpStatusBadge status={item.status || 'draft'} label={STATUS_CONFIG[item.status || 'draft']?.label} tone={getQualityStatusTone(item.status || 'draft')} />
+                          </td>
+                          <td className="py-3 px-4 align-top text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              <button
+                                onClick={() => openChecklist(item, true)}
+                                className="p-1 rounded-lg text-slate-400 hover:text-teal-600 hover:bg-teal-50 dark:hover:bg-teal-950/30 transition"
+                                title="Xem chi tiết"
+                              >
+                                <Eye size={14} />
+                              </button>
+                              {canEdit && (
+                                <button
+                                  onClick={() => openChecklist(item)}
+                                  className="p-1 rounded-lg text-slate-400 hover:text-teal-600 hover:bg-teal-50 dark:hover:bg-teal-950/30 transition"
+                                  title="Chỉnh sửa"
+                                >
+                                  <Edit2 size={14} />
+                                </button>
+                              )}
+                              {canSubmit && (
+                                <button
+                                  onClick={() => setSubmittingChecklist(item)}
+                                  className="p-1 rounded-lg text-teal-600 hover:bg-teal-50 dark:hover:bg-teal-950/30 transition"
+                                  title="Gửi duyệt"
+                                >
+                                  <Send size={14} />
+                                </button>
+                              )}
+                              {canApprove && (
+                                <>
+                                  <button
+                                    onClick={() => handleStatusChange(item, 'returned')}
+                                    className="p-1 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 transition"
+                                    title="Trả lại"
+                                  >
+                                    <RotateCcw size={14} />
+                                  </button>
+                                  <button
+                                    onClick={() => handleStatusChange(item, 'approved')}
+                                    className="p-1 rounded-lg text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 transition"
+                                    title="Phê duyệt"
+                                  >
+                                    <CheckCircle2 size={14} />
+                                  </button>
+                                </>
+                              )}
+                              {canDelete && (
+                                <button
+                                  onClick={() => handleDelete(item)}
+                                  className="p-1 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition"
+                                  title="Xóa hồ sơ"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Pagination footer */}
+              <div className="p-3 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 flex items-center justify-between text-xs text-slate-500">
+                <span>Hiển thị {paginatedChecklists.length} / {allFilteredChecklists.length} hồ sơ</span>
+                {totalPages > 1 && (
+                  <div className="flex items-center gap-1">
+                    <button
+                      disabled={currentPage <= 1}
+                      onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                      className="px-2.5 py-1 rounded-lg border border-slate-200 bg-white disabled:opacity-40 font-bold hover:bg-slate-50"
+                    >
+                      Trước
+                    </button>
+                    <span className="px-2 font-mono font-bold">{currentPage} / {totalPages}</span>
+                    <button
+                      disabled={currentPage >= totalPages}
+                      onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                      className="px-2.5 py-1 rounded-lg border border-slate-200 bg-white disabled:opacity-40 font-bold hover:bg-slate-50"
+                    >
+                      Sau
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 3. SUB-TAB: THEO CÂY HẠNG MỤC WBS (STRUCTURAL FOLDER BROWSER) */}
+      {subTab === 'wbs_tree' && (
+        <div className="space-y-4">
+          {/* Breadcrumbs & Navigation Toolbar */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 rounded-2xl border border-slate-200/90 bg-white p-3.5 shadow-xs dark:border-slate-800 dark:bg-slate-900">
+            <div className="flex items-center gap-1 text-xs font-semibold text-slate-500 dark:text-slate-400 overflow-x-auto whitespace-nowrap">
+              {(currentTask || showOrphans) && (
+                <button
+                  onClick={currentTask?.parentId ? () => openTask(currentTask.parentId!) : openRoot}
+                  className="mr-2 inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-100 transition"
+                >
+                  <ArrowLeft size={13} /> Lên cấp trên
+                </button>
+              )}
+              <button onClick={openRoot} className="rounded-lg px-2 py-1 hover:bg-slate-100 hover:text-teal-700 transition">
+                {projectName || 'Dự án (Gốc)'}
               </button>
               {breadcrumbTasks.map(task => (
                 <React.Fragment key={task.id}>
-                  <ChevronRight size={13} className="text-zinc-400" />
+                  <ChevronRight size={13} className="text-slate-400 shrink-0" />
                   <button
                     onClick={() => openTask(task.id)}
-                    className={`max-w-[220px] truncate rounded-lg px-2 py-1 hover:bg-zinc-100 hover:text-teal-700 dark:hover:bg-zinc-800 dark:hover:text-teal-400 transition-colors ${task.id === currentTaskId ? 'font-semibold text-zinc-900 dark:text-zinc-100' : ''}`}
+                    className={`max-w-[180px] truncate rounded-lg px-2 py-1 hover:bg-slate-100 hover:text-teal-700 transition ${task.id === currentTaskId ? 'font-black text-teal-700 bg-teal-50 dark:bg-teal-950/40' : ''}`}
                     title={taskLabel(task)}
                   >
-                    {task.wbsCode || task.name}
+                    {task.wbsCode ? `${task.wbsCode} ${task.name}` : task.name}
                   </button>
                 </React.Fragment>
               ))}
               {showOrphans && (
                 <>
-                  <ChevronRight size={13} className="text-zinc-400" />
-                  <span className="rounded-lg px-2 py-1 font-semibold text-zinc-900 dark:text-zinc-100">Chưa gắn hạng mục</span>
+                  <ChevronRight size={13} className="text-slate-400" />
+                  <span className="font-bold text-red-600 bg-red-50 px-2 py-1 rounded-md">Chưa gắn WBS</span>
                 </>
               )}
             </div>
+
+            {orphanChecklists.length > 0 && !showOrphans && (
+              <button
+                onClick={openOrphans}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700 hover:bg-red-100 transition shrink-0"
+              >
+                <AlertCircle size={14} /> Chưa gắn ({orphanChecklists.length})
+              </button>
+            )}
           </div>
 
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:w-[520px]">
-            <MiniStat
-              label="Tổng hồ sơ"
-              value={checklists.length}
-              icon={<ClipboardCheck size={15} />}
-              active={!statusFilter && !showOrphans && !currentTaskId}
-              onClick={openAllQualityItems}
-            />
-            <MiniStat
-              label="Chờ duyệt"
-              value={globalCounts.submitted}
-              icon={<Clock size={15} />}
-              tone="amber"
-              active={statusFilter === 'submitted' && !showOrphans}
-              onClick={() => openStatusSummary('submitted')}
-            />
-            <MiniStat
-              label="Đã duyệt"
-              value={globalCounts.approved}
-              icon={<CheckCircle2 size={15} />}
-              tone="emerald"
-              active={statusFilter === 'approved' && !showOrphans}
-              onClick={() => openStatusSummary('approved')}
-            />
-            <MiniStat
-              label="Chưa gắn"
-              value={orphanChecklists.length}
-              icon={<AlertCircle size={15} />}
-              tone={orphanChecklists.length ? 'red' : 'slate'}
-              active={showOrphans}
-              onClick={openUnassignedSummary}
-            />
-          </div>
-        </div>
-      </div>
-
-      <div className="flex flex-col gap-3 rounded-2xl border border-zinc-200 bg-white p-3.5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex min-w-0 flex-1 items-center gap-2">
-          {(currentTask || showOrphans) && (
-            <button
-              onClick={currentTask?.parentId ? () => openTask(currentTask.parentId!) : openRoot}
-              className="inline-flex shrink-0 items-center gap-1 rounded-xl border border-zinc-200 bg-white px-3.5 py-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 transition-colors"
-            >
-              <ArrowLeft size={14} /> Quay lại
-            </button>
-          )}
-          <div className="relative min-w-0 flex-1">
-            <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400" />
-            <input
-              value={search}
-              onChange={event => setSearch(event.target.value)}
-              placeholder="Tìm WBS, hạng mục, hồ sơ..."
-              className="w-full rounded-xl border border-zinc-200 bg-white py-2 pl-9 pr-3 text-xs font-medium text-zinc-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:ring-teal-950"
-            />
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <select
-            value={statusFilter}
-            onChange={event => setStatusFilter(event.target.value as QualityChecklistStatus | '')}
-            className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-700 outline-none focus:border-teal-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300"
-          >
-            <option value="">Tất cả trạng thái</option>
-            {Object.entries(STATUS_CONFIG).map(([status, config]) => (
-              <option key={status} value={status}>{config.label}</option>
-            ))}
-          </select>
-          {orphanChecklists.length > 0 && !showOrphans && (
-            <button
-              onClick={openOrphans}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-100 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300"
-            >
-              <AlertCircle size={14} /> Chưa gắn
-            </button>
-          )}
-        </div>
-      </div>
-
-      {currentTask && !showOrphans && (
-        <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                {currentTask.wbsCode && (
-                  <span className="rounded-lg border border-zinc-200 bg-zinc-100 px-2.5 py-1 font-mono text-[11px] font-semibold text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
-                    WBS {currentTask.wbsCode}
-                  </span>
-                )}
-                <span className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1 text-[10px] font-semibold uppercase text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
-                  {currentChildren.length} thư mục con
-                </span>
-              </div>
-              <h3 className="mt-2 text-lg font-bold text-zinc-900 dark:text-zinc-100">{currentTask.name}</h3>
-              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
-                <span className="inline-flex items-center gap-1"><Calendar size={12} />{formatDate(currentTask.startDate)} - {formatDate(currentTask.endDate)}</span>
-              </div>
-              <div className="mt-3 max-w-md">
-                <div className="mb-1 flex items-center justify-between text-[10px] font-semibold text-zinc-500 dark:text-zinc-400">
-                  <span>Tiến độ hạng mục</span>
-                  <span>{Math.round(Number(currentTask.progress || 0))}%</span>
+          {/* Selected Task Details Header Card */}
+          {currentTask && !showOrphans && (
+            <div className="rounded-2xl border border-teal-200/80 bg-teal-50/20 p-4 shadow-xs dark:border-teal-900/40 dark:bg-teal-950/10 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    {currentTask.wbsCode && (
+                      <span className="rounded-md bg-teal-100 dark:bg-teal-900/40 px-2 py-0.5 font-mono text-[10px] font-black text-teal-800 dark:text-teal-300">
+                        WBS {currentTask.wbsCode}
+                      </span>
+                    )}
+                    <span className="text-[10px] font-bold uppercase text-slate-400">
+                      {currentChildren.length} thư mục con
+                    </span>
+                  </div>
+                  <h3 className="mt-1 text-base font-black text-slate-800 dark:text-white">{currentTask.name}</h3>
+                  <div className="mt-1 flex items-center gap-3 text-[11px] font-semibold text-slate-500">
+                    <span className="inline-flex items-center gap-1">
+                      <Calendar size={12} /> {formatDate(currentTask.startDate)} - {formatDate(currentTask.endDate)}
+                    </span>
+                    <span>•</span>
+                    <span>Tiến độ: <strong>{Math.round(Number(currentTask.progress || 0))}%</strong></span>
+                  </div>
                 </div>
-                <ProgressBar value={currentTask.progress} />
+
+                <div className="flex items-center gap-2">
+                  {qualityCapabilities.canEdit && (
+                    <button
+                      onClick={() => openCreate(currentTask)}
+                      className="inline-flex items-center gap-1.5 rounded-xl bg-teal-600 hover:bg-teal-700 px-3.5 py-2 text-xs font-black text-white shadow-xs transition"
+                    >
+                      <Plus size={14} /> Tạo hồ sơ tại đây
+                    </button>
+                  )}
+                </div>
               </div>
+              <ProgressBar value={currentTask.progress} />
             </div>
-            <div className="flex flex-wrap gap-2">
-              <MiniStat label="Tại hạng mục" value={directTaskChecklists.length} icon={<ClipboardCheck size={15} />} tone="sky" />
-              <MiniStat label="Chờ duyệt" value={currentCounts.submitted} icon={<Clock size={15} />} tone="amber" />
-              <MiniStat label="Đã duyệt" value={currentCounts.approved} icon={<CheckCircle2 size={15} />} tone="emerald" />
-              {qualityCapabilities.canEdit && (
-                <button
-                  onClick={() => openCreate(currentTask)}
-                  className="inline-flex min-h-[72px] items-center gap-2 rounded-2xl bg-teal-700 hover:bg-teal-800 px-4 py-3 text-xs font-semibold text-white shadow-sm transition-colors"
-                >
-                  <Plus size={16} /> Tạo hồ sơ nghiệm thu
-                </button>
+          )}
+
+          {/* Child Folders Grid */}
+          {!showOrphans && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs font-black text-slate-700 dark:text-slate-300 px-1">
+                <span>{currentTask ? 'Hạng mục con trực thuộc' : 'Danh mục công tác WBS'}</span>
+                <span className="text-slate-400 text-[10px] font-bold uppercase">{currentChildren.length} hạng mục</span>
+              </div>
+
+              {currentChildren.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-8 text-center">
+                  <FolderOpen size={28} className="mx-auto text-slate-300" />
+                  <p className="mt-2 text-xs font-bold text-slate-400">Không có hạng mục con nào</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                  {currentChildren.map(task => {
+                    const taskAggChecklists = getAggregateChecklists(task.id);
+                    const taskCounts = countByStatus(taskAggChecklists);
+                    const childCount = (childrenByParent.get(task.id) || []).length;
+
+                    return (
+                      <button
+                        key={task.id}
+                        onClick={() => openTask(task.id)}
+                        className="rounded-2xl border border-slate-200/90 bg-white p-4 text-left shadow-xs hover:border-teal-500 hover:shadow-sm dark:border-slate-800 dark:bg-slate-900 transition flex flex-col justify-between space-y-3"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-start gap-2.5 min-w-0">
+                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-600 dark:bg-teal-950/40 dark:text-teal-400 border border-teal-100">
+                              {childCount > 0 ? <FolderOpen size={18} /> : <Folder size={18} />}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                {task.wbsCode && (
+                                  <span className="font-mono text-[10px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.2 rounded">
+                                    {task.wbsCode}
+                                  </span>
+                                )}
+                                {childCount > 0 && (
+                                  <span className="text-[10px] font-semibold text-slate-400">
+                                    {childCount} con
+                                  </span>
+                                )}
+                              </div>
+                              <h4 className="font-black text-xs text-slate-800 dark:text-white truncate mt-1" title={task.name}>
+                                {task.name}
+                              </h4>
+                            </div>
+                          </div>
+                          <ChevronRight size={15} className="text-slate-300 shrink-0 mt-1" />
+                        </div>
+
+                        <div className="space-y-1.5 pt-2 border-t border-slate-100 dark:border-slate-800">
+                          <div className="flex items-center justify-between text-[10px] font-bold text-slate-400">
+                            <span>Tiến độ: {Math.round(Number(task.progress || 0))}%</span>
+                            <div className="flex items-center gap-1">
+                              <span className="text-slate-600 dark:text-slate-300">{taskAggChecklists.length} hồ sơ</span>
+                              {taskCounts.submitted > 0 && (
+                                <span className="text-teal-600 bg-teal-50 px-1 rounded font-black">
+                                  {taskCounts.submitted} chờ
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <ProgressBar value={task.progress} />
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
               )}
             </div>
-          </div>
-        </section>
-      )}
+          )}
 
-      {!showOrphans && (
-        <section className="space-y-3">
-          <div className="flex items-center justify-between gap-3">
-            <h3 className="text-sm font-black text-slate-800">
-              {searchMode ? 'Kết quả hạng mục' : currentTask ? 'Thư mục con' : 'Thư mục hạng mục'}
-            </h3>
-            <span className="text-[10px] font-black uppercase text-slate-400">{visibleTasks.length} hạng mục</span>
-          </div>
+          {/* Direct Checklists of Current Task */}
+          {(currentTask || showOrphans) && (
+            <div className="space-y-2 pt-2">
+              <div className="flex items-center justify-between text-xs font-black text-slate-700 dark:text-slate-300 px-1">
+                <span>{showOrphans ? 'Hồ sơ chưa gắn hạng mục WBS' : `Hồ sơ nghiệm thu tại "${currentTask?.name}"`}</span>
+                <span className="text-slate-400 text-[10px] font-bold uppercase">
+                  {(showOrphans ? orphanChecklists : (checklistsByTaskId.get(currentTask!.id) || [])).length} hồ sơ
+                </span>
+              </div>
 
-          {visibleTasks.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-slate-200 bg-white px-4 py-10 text-center">
-              <Folder size={30} className="mx-auto text-slate-300" />
-              <p className="mt-2 text-sm font-black text-slate-500">Không có hạng mục phù hợp</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {visibleTasks.map(task => (
-                <FolderCard
-                  key={task.id}
-                  task={task}
-                  childCount={(childrenByParent.get(task.id) || []).length}
-                  checklists={statusFilter ? getVisibleTaskChecklists(task) : getAggregateChecklists(task.id)}
-                  parentPath={searchMode ? getParentPath(task) : undefined}
-                  onOpen={() => openTask(task.id)}
-                />
-              ))}
+              {(showOrphans ? orphanChecklists : (checklistsByTaskId.get(currentTask!.id) || [])).length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-6 text-center text-xs font-bold text-slate-400">
+                  Chưa có hồ sơ nghiệm thu nào tại hạng mục này.
+                </div>
+              ) : (
+                <div className="bg-card border border-slate-200/90 dark:border-slate-800 rounded-2xl shadow-xs overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs min-w-[700px]">
+                      <thead className="bg-slate-100/90 dark:bg-slate-800/90 text-slate-600 dark:text-slate-300 font-black border-b border-slate-200 dark:border-slate-700">
+                        <tr>
+                          <th className="py-2.5 px-4 w-28">Mã</th>
+                          <th className="py-2.5 px-3">Tên hồ sơ nghiệm thu</th>
+                          <th className="py-2.5 px-3 w-28 text-center">Đính kèm</th>
+                          <th className="py-2.5 px-3 w-28">Ngày</th>
+                          <th className="py-2.5 px-3 w-28 text-center">Trạng thái</th>
+                          <th className="py-2.5 px-4 w-28 text-right">Thao tác</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
+                        {(showOrphans ? orphanChecklists : (checklistsByTaskId.get(currentTask!.id) || [])).map(item => {
+                          const photoCount = (item.sitePhotos || []).length;
+                          const fileCount = (item.attachments || []).length;
+                          const canEdit = canEditChecklist(item);
+                          const canSubmit = canSubmitChecklist(item);
+                          const canDelete = canDeleteChecklist(item);
+                          const canApprove = canApproveChecklist(item);
+
+                          return (
+                            <tr key={item.id} className="hover:bg-teal-50/20 transition">
+                              <td className="py-2.5 px-4 font-mono text-[11px] font-black text-slate-600">
+                                {item.code}
+                              </td>
+                              <td className="py-2.5 px-3">
+                                <button
+                                  onClick={() => openChecklist(item, true)}
+                                  className="font-black text-xs text-slate-800 hover:text-teal-600 transition text-left"
+                                >
+                                  {item.title}
+                                </button>
+                                {item.workLocation && (
+                                  <div className="text-[10px] text-slate-400 font-semibold">{item.workLocation}</div>
+                                )}
+                              </td>
+                              <td className="py-2.5 px-3 text-center text-[10px] font-bold text-slate-500">
+                                {photoCount} ảnh • {fileCount} file
+                              </td>
+                              <td className="py-2.5 px-3 font-bold text-slate-600 text-xs">
+                                {formatDate(item.workDate || item.createdAt)}
+                              </td>
+                              <td className="py-2.5 px-3 text-center">
+                                <ErpStatusBadge status={item.status || 'draft'} label={STATUS_CONFIG[item.status || 'draft']?.label} tone={getQualityStatusTone(item.status || 'draft')} />
+                              </td>
+                              <td className="py-2.5 px-4 text-right">
+                                <div className="flex items-center justify-end gap-1">
+                                  <button onClick={() => openChecklist(item, true)} className="p-1 text-slate-400 hover:text-teal-600" title="Xem">
+                                    <Eye size={14} />
+                                  </button>
+                                  {canEdit && (
+                                    <button onClick={() => openChecklist(item)} className="p-1 text-slate-400 hover:text-teal-600" title="Sửa">
+                                      <Edit2 size={14} />
+                                    </button>
+                                  )}
+                                  {canSubmit && (
+                                    <button onClick={() => setSubmittingChecklist(item)} className="p-1 text-teal-600 hover:bg-teal-50" title="Gửi duyệt">
+                                      <Send size={14} />
+                                    </button>
+                                  )}
+                                  {canApprove && (
+                                    <button onClick={() => handleStatusChange(item, 'approved')} className="p-1 text-emerald-600 hover:bg-emerald-50" title="Duyệt">
+                                      <CheckCircle2 size={14} />
+                                    </button>
+                                  )}
+                                  {canDelete && (
+                                    <button onClick={() => handleDelete(item)} className="p-1 text-slate-400 hover:text-red-600" title="Xóa">
+                                      <Trash2 size={14} />
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </div>
           )}
-        </section>
+        </div>
       )}
 
-      {(currentTask || showOrphans) && (
-        <section className="space-y-3">
-          <div className="flex items-center justify-between gap-3">
-            <h3 className="text-sm font-black text-slate-800">
-              {showOrphans ? 'Hồ sơ chưa gắn hạng mục' : 'Hồ sơ nghiệm thu của hạng mục'}
-            </h3>
-            <span className="text-[10px] font-black uppercase text-slate-400">{tableRows.length} hồ sơ</span>
-          </div>
-          {renderChecklistTable(tableRows, { showTaskColumn: showOrphans })}
-        </section>
-      )}
-
-      {!currentTask && !showOrphans && filteredOrphanChecklists.length > 0 && (
-        <section className="space-y-3">
-          <div className="flex items-center justify-between gap-3">
-            <h3 className="text-sm font-black text-slate-800">Chưa gắn hạng mục</h3>
-            <button onClick={openOrphans} className="text-xs font-black text-red-600 hover:text-red-700">
-              Xem {filteredOrphanChecklists.length} hồ sơ
-            </button>
-          </div>
-          <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
-            <MiniStat label="Tổng" value={filteredOrphanChecklists.length} icon={<AlertCircle size={15} />} tone="red" />
-            <MiniStat label="Nháp" value={orphanCounts.draft} icon={<Clock size={15} />} />
-            <MiniStat label="Chờ duyệt" value={orphanCounts.submitted} icon={<Send size={15} />} tone="amber" />
-            <MiniStat label="Đã duyệt" value={orphanCounts.approved} icon={<CheckCircle2 size={15} />} tone="emerald" />
-            <MiniStat label="Trả lại" value={orphanCounts.returned} icon={<RotateCcw size={15} />} tone="red" />
-          </div>
-        </section>
-      )}
-
+      {/* MODAL TẠO & SỬA HỒ SƠ NGHIỆM THU (FORM DIALOG) */}
       {showForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-3 py-6">
-          <div className="flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-lg bg-white shadow-2xl">
-            <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 backdrop-blur-xs px-3 py-6 animate-in fade-in duration-150">
+          <div className="flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl">
+            {/* Header Form */}
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 px-5 py-4 bg-slate-50/50 dark:bg-slate-900">
               <div className="min-w-0">
-                <div className="text-[10px] font-black uppercase text-amber-600">
-                  {readonlyForm ? 'Xem hồ sơ nghiệm thu' : editingChecklist ? 'Cập nhật hồ sơ nghiệm thu' : 'Tạo hồ sơ nghiệm thu'}
+                <div className="text-[10px] font-black uppercase tracking-wider text-teal-600 dark:text-teal-400">
+                  {readonlyForm ? 'Chi tiết hồ sơ nghiệm thu' : editingChecklist ? 'Cập nhật hồ sơ nghiệm thu' : 'Tạo hồ sơ nghiệm thu mới'}
                 </div>
-                <h3 className="mt-1 truncate text-base font-black text-slate-900">
-                  {form.title || taskLabel(formTask)}
+                <h3 className="mt-0.5 truncate text-base sm:text-lg font-black text-slate-800 dark:text-white">
+                  {form.title || (formTask ? taskLabel(formTask) : 'Hồ sơ nghiệm thu chất lượng')}
                 </h3>
-                {formTask && (
-                  <p className="mt-0.5 truncate text-xs font-bold text-slate-500">{taskLabel(formTask)}</p>
-                )}
               </div>
-              <button onClick={closeForm} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+              <button onClick={closeForm} className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition">
                 <X size={18} />
               </button>
             </div>
 
-            <div className="overflow-y-auto p-5">
+            {/* Body Form */}
+            <div className="overflow-y-auto p-5 space-y-4">
               <div className="grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
-                <div className="space-y-4">
-                  <div>
-                    <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Tên hồ sơ *</label>
+                {/* Cột Trái: Thông tin nghiệm thu */}
+                <div className="space-y-3.5">
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-black uppercase text-slate-500 tracking-wide">
+                      Tên hồ sơ nghiệm thu <span className="text-red-500">*</span>
+                    </label>
                     <input
                       value={form.title || ''}
                       onChange={event => setForm(prev => ({ ...prev, title: event.target.value }))}
                       readOnly={readonlyForm}
-                      className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-bold text-slate-800 outline-none focus:border-amber-300 focus:ring-2 focus:ring-amber-100 read-only:bg-slate-50"
+                      placeholder="Ví dụ: Nghiệm thu cốt thép dầm sàn tầng 3..."
+                      className="w-full rounded-xl border border-slate-200 dark:border-slate-700 px-3.5 py-2.5 text-xs sm:text-sm font-bold text-slate-800 dark:text-white outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10 read-only:bg-slate-50 dark:read-only:bg-slate-800"
                     />
                   </div>
 
-                  <div>
-                    <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Mô tả công việc</label>
-                    <textarea
-                      rows={3}
-                      value={form.workDescription || ''}
-                      onChange={event => setForm(prev => ({ ...prev, workDescription: event.target.value }))}
-                      readOnly={readonlyForm}
-                      className="w-full resize-none rounded-lg border border-slate-200 px-3 py-2.5 text-xs font-semibold text-slate-700 outline-none focus:border-amber-300 focus:ring-2 focus:ring-amber-100 read-only:bg-slate-50"
-                    />
-                  </div>
+                  {!editingChecklist && (
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-black uppercase text-slate-500 tracking-wide">
+                        Hạng mục WBS liên kết <span className="text-red-500">*</span>
+                      </label>
+                      {readonlyForm ? (
+                        <input
+                          value={taskLabel(formTask)}
+                          readOnly
+                          className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold"
+                        />
+                      ) : (
+                        <select
+                          value={formTask?.id || ''}
+                          onChange={e => {
+                            const task = taskMap.get(e.target.value) || null;
+                            setFormTask(task);
+                            if (task && !form.title) setForm(prev => ({ ...prev, title: taskLabel(task), workDescription: task.name }));
+                          }}
+                          className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-xs font-bold text-slate-800 dark:text-white outline-none focus:border-teal-500"
+                        >
+                          <option value="">-- Chọn hạng mục WBS --</option>
+                          {tasks.map(t => (
+                            <option key={t.id} value={t.id}>{taskLabel(t)}</option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+                  )}
 
-                  <div className="grid gap-3 md:grid-cols-3">
-                    <div>
-                      <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Vị trí</label>
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black uppercase text-slate-400">Vị trí thi công</label>
                       <input
                         value={form.workLocation || ''}
                         onChange={event => setForm(prev => ({ ...prev, workLocation: event.target.value }))}
                         readOnly={readonlyForm}
-                        className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold outline-none focus:border-amber-300 read-only:bg-slate-50"
+                        placeholder="Trục 1-3, tầng 2..."
+                        className="w-full rounded-xl border border-slate-200 dark:border-slate-700 px-3 py-2 text-xs font-bold outline-none focus:border-teal-500 read-only:bg-slate-50"
                       />
                     </div>
-                    <div>
-                      <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Ngày nghiệm thu</label>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black uppercase text-slate-400">Ngày nghiệm thu</label>
                       <input
                         type="date"
                         value={form.workDate || ''}
                         onChange={event => setForm(prev => ({ ...prev, workDate: event.target.value }))}
                         readOnly={readonlyForm}
-                        className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold outline-none focus:border-amber-300 read-only:bg-slate-50"
+                        className="w-full rounded-xl border border-slate-200 dark:border-slate-700 px-3 py-2 text-xs font-bold outline-none focus:border-teal-500 read-only:bg-slate-50"
                       />
                     </div>
-                    <div>
-                      <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Giám sát</label>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black uppercase text-slate-400">Người giám sát</label>
                       {readonlyForm ? (
                         <input
                           value={form.workSupervisor || ''}
                           readOnly
-                          className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold outline-none"
+                          className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold outline-none"
                         />
                       ) : projectStaff.length > 0 ? (
                         <select
                           value={form.workSupervisor || ''}
                           onChange={event => setForm(prev => ({ ...prev, workSupervisor: event.target.value }))}
-                          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold outline-none focus:border-amber-300"
+                          className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold outline-none focus:border-teal-500"
                         >
                           <option value="">- Chọn giám sát -</option>
                           {projectStaff.map(staff => (
@@ -1532,64 +1815,83 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId }
                         <input
                           value={form.workSupervisor || ''}
                           onChange={event => setForm(prev => ({ ...prev, workSupervisor: event.target.value }))}
-                          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold outline-none focus:border-amber-300"
+                          placeholder="Tên giám sát..."
+                          className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold outline-none focus:border-teal-500"
                         />
                       )}
                     </div>
                   </div>
 
-                  <div>
-                    <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Ghi chú</label>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black uppercase text-slate-400">Mô tả công việc & Yêu cầu kỹ thuật</label>
                     <textarea
                       rows={3}
+                      value={form.workDescription || ''}
+                      onChange={event => setForm(prev => ({ ...prev, workDescription: event.target.value }))}
+                      readOnly={readonlyForm}
+                      placeholder="Mô tả các công việc đã thực hiện, tiêu chuẩn áp dụng..."
+                      className="w-full resize-none rounded-xl border border-slate-200 dark:border-slate-700 px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 outline-none focus:border-teal-500 read-only:bg-slate-50"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black uppercase text-slate-400">Ghi chú bổ sung</label>
+                    <textarea
+                      rows={2}
                       value={form.note || ''}
                       onChange={event => setForm(prev => ({ ...prev, note: event.target.value }))}
                       readOnly={readonlyForm}
-                      className="w-full resize-none rounded-lg border border-slate-200 px-3 py-2.5 text-xs font-semibold text-slate-700 outline-none focus:border-amber-300 focus:ring-2 focus:ring-amber-100 read-only:bg-slate-50"
+                      placeholder="Ghi chú thêm nếu có..."
+                      className="w-full resize-none rounded-xl border border-slate-200 dark:border-slate-700 px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 outline-none focus:border-teal-500 read-only:bg-slate-50"
                     />
                   </div>
                 </div>
 
+                {/* Cột Phải: Ảnh nghiệm thu & File đính kèm */}
                 <div className="space-y-4">
-                  <div className="rounded-lg border border-slate-200 p-3">
-                    <div className="mb-3 flex items-center justify-between gap-3">
+                  {/* Ảnh nghiệm thu */}
+                  <div className="rounded-2xl border border-slate-200/90 dark:border-slate-800 p-4 space-y-3 bg-slate-50/40 dark:bg-slate-900">
+                    <div className="flex items-center justify-between gap-3">
                       <div>
-                        <h4 className="text-xs font-black text-slate-800">Ảnh nghiệm thu</h4>
-                        <p className="text-[10px] font-bold text-slate-400">{(form.sitePhotos || []).length} ảnh</p>
+                        <h4 className="text-xs font-black text-slate-800 dark:text-white flex items-center gap-1.5">
+                          <ImageIcon size={14} className="text-teal-600" /> Ảnh hiện trường nghiệm thu
+                        </h4>
+                        <p className="text-[10px] font-semibold text-slate-400">{(form.sitePhotos || []).length} ảnh đã chụp</p>
                       </div>
                       {!readonlyForm && (
                         <>
                           <input id="quality-photo-upload" type="file" accept="image/*" multiple onChange={handlePhotoUpload} className="hidden" />
                           <label
                             htmlFor="quality-photo-upload"
-                            className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-black text-slate-600 hover:bg-slate-50"
+                            className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 shadow-xs transition"
                           >
-                            {uploadingPhotos ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-                            Ảnh
+                            {uploadingPhotos ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
+                            Thêm ảnh
                           </label>
                         </>
                       )}
                     </div>
+
                     {(form.sitePhotos || []).length === 0 ? (
-                      <div className="rounded-lg border border-dashed border-slate-200 py-8 text-center">
-                        <ImageIcon size={24} className="mx-auto text-slate-300" />
-                        <p className="mt-2 text-xs font-bold text-slate-400">Chưa có ảnh</p>
+                      <div className="rounded-xl border border-dashed border-slate-200 py-6 text-center">
+                        <ImageIcon size={22} className="mx-auto text-slate-300" />
+                        <p className="mt-1 text-xs font-bold text-slate-400">Chưa có ảnh nghiệm thu</p>
                       </div>
                     ) : (
-                      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                         {(form.sitePhotos || []).map((photo, index) => (
                           <div
                             key={`${photo.url}-${index}`}
                             onClick={() => openImageLightbox(photo.url)}
-                            className="group relative cursor-pointer overflow-hidden rounded-lg border border-slate-200 bg-slate-50 transition hover:border-amber-400"
+                            className="group relative cursor-pointer overflow-hidden rounded-xl border border-slate-200 bg-slate-100 transition hover:border-teal-500 shadow-xs"
                           >
                             <img
                               src={photo.url}
                               alt={photo.caption || `Ảnh ${index + 1}`}
-                              className="h-28 w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                              className="h-24 w-full object-cover transition duration-200 group-hover:scale-105"
                             />
-                            <div className="absolute inset-x-0 bottom-0 bg-slate-950/55 px-2 py-1 text-[10px] font-bold text-white">
-                              <span className="block truncate">{photo.caption || `Ảnh ${index + 1}`}</span>
+                            <div className="absolute inset-x-0 bottom-0 bg-slate-950/60 px-1.5 py-0.5 text-[9px] font-bold text-white truncate">
+                              {photo.caption || `Ảnh ${index + 1}`}
                             </div>
                             {!readonlyForm && (
                               <button
@@ -1597,10 +1899,10 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId }
                                   e.stopPropagation();
                                   removePhoto(index);
                                 }}
-                                className="absolute right-1 top-1 rounded bg-white/90 p-1 text-red-500 opacity-0 shadow-sm transition group-hover:opacity-100 z-10"
+                                className="absolute right-1 top-1 rounded-md bg-white/90 p-1 text-red-500 opacity-0 shadow-xs transition group-hover:opacity-100 z-10"
                                 title="Xoá ảnh"
                               >
-                                <X size={12} />
+                                <X size={11} />
                               </button>
                             )}
                           </div>
@@ -1609,39 +1911,43 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId }
                     )}
                   </div>
 
-                  <div className="rounded-lg border border-slate-200 p-3">
-                    <div className="mb-3 flex items-center justify-between gap-3">
+                  {/* File đính kèm */}
+                  <div className="rounded-2xl border border-slate-200/90 dark:border-slate-800 p-4 space-y-3 bg-slate-50/40 dark:bg-slate-900">
+                    <div className="flex items-center justify-between gap-3">
                       <div>
-                        <h4 className="text-xs font-black text-slate-800">File đính kèm</h4>
-                        <p className="text-[10px] font-bold text-slate-400">{(form.attachments || []).length} file</p>
+                        <h4 className="text-xs font-black text-slate-800 dark:text-white flex items-center gap-1.5">
+                          <Paperclip size={14} className="text-teal-600" /> Tài liệu & Biên bản đính kèm
+                        </h4>
+                        <p className="text-[10px] font-semibold text-slate-400">{(form.attachments || []).length} file</p>
                       </div>
                       {!readonlyForm && (
                         <>
                           <input id="quality-file-upload" type="file" multiple onChange={handleAttachmentUpload} className="hidden" />
                           <label
                             htmlFor="quality-file-upload"
-                            className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-black text-slate-600 hover:bg-slate-50"
+                            className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 shadow-xs transition"
                           >
-                            {uploadingFiles ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-                            File
+                            {uploadingFiles ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
+                            Thêm file
                           </label>
                         </>
                       )}
                     </div>
+
                     {(form.attachments || []).length === 0 ? (
-                      <div className="rounded-lg border border-dashed border-slate-200 py-8 text-center">
-                        <Paperclip size={24} className="mx-auto text-slate-300" />
-                        <p className="mt-2 text-xs font-bold text-slate-400">Chưa có file</p>
+                      <div className="rounded-xl border border-dashed border-slate-200 py-6 text-center">
+                        <Paperclip size={22} className="mx-auto text-slate-300" />
+                        <p className="mt-1 text-xs font-bold text-slate-400">Chưa có tài liệu đính kèm</p>
                       </div>
                     ) : (
-                      <div className="space-y-2">
+                      <div className="space-y-1.5">
                         {(form.attachments || []).map((attachment, index) => (
-                          <div key={attachment.id || `${attachment.url}-${index}`} className="flex items-center gap-3 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
+                          <div key={attachment.id || `${attachment.url}-${index}`} className="flex items-center gap-2.5 rounded-xl border border-slate-200/80 bg-white dark:bg-slate-800 px-3 py-2 shadow-xs">
                             <span className="text-slate-400"><FileIcon type={attachment.fileType} /></span>
                             <button
                               type="button"
                               onClick={() => handleAttachmentClick(attachment)}
-                              className="min-w-0 flex-1 text-left truncate text-xs font-black text-slate-700 hover:text-amber-700"
+                              className="min-w-0 flex-1 text-left truncate text-xs font-bold text-slate-700 dark:text-slate-200 hover:text-teal-600"
                             >
                               {attachment.name || attachment.fileName || `File ${index + 1}`}
                             </button>
@@ -1654,7 +1960,7 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId }
                                 e.stopPropagation();
                                 handleDownloadDirect(attachment.url, attachment.name || attachment.fileName || 'File');
                               }}
-                              className="rounded p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700 transition"
+                              className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition"
                               title="Tải xuống"
                             >
                               <Download size={13} />
@@ -1666,7 +1972,7 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId }
                                   e.stopPropagation();
                                   removeAttachment(index);
                                 }}
-                                className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                                className="rounded-lg p-1 text-slate-400 hover:bg-red-50 hover:text-red-600 transition"
                                 title="Xoá file"
                               >
                                 <X size={13} />
@@ -1681,12 +1987,13 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId }
               </div>
             </div>
 
-            <div className="flex items-center justify-between gap-3 border-t border-slate-100 bg-slate-50 px-5 py-4">
+            {/* Footer Form */}
+            <div className="flex items-center justify-between gap-3 border-t border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900 px-5 py-3.5">
               <div className="text-[10px] font-bold text-slate-400">
-                {editingChecklist ? `${editingChecklist.code} · ${STATUS_CONFIG[editingChecklist.status]?.label || editingChecklist.status}` : 'Gửi duyệt hồ sơ mới'}
+                {editingChecklist ? `${editingChecklist.code} · ${STATUS_CONFIG[editingChecklist.status]?.label || editingChecklist.status}` : 'Lưu nháp hoặc gửi duyệt đến Room Chất lượng'}
               </div>
               <div className="flex gap-2">
-                <button onClick={closeForm} className="rounded-lg px-4 py-2 text-xs font-black text-slate-500 hover:bg-white">
+                <button onClick={closeForm} className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800 shadow-xs transition">
                   Đóng
                 </button>
                 {!readonlyForm && (
@@ -1694,18 +2001,18 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId }
                     <button
                       onClick={handleSaveDraft}
                       disabled={saving || uploadingPhotos || uploadingFiles}
-                      className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-black text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+                      className="inline-flex items-center gap-1.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 text-xs font-black shadow-xs transition disabled:opacity-50"
                     >
-                      {saving ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />}
+                      {saving ? <Loader2 size={13} className="animate-spin" /> : <FileText size={13} />}
                       Lưu nháp
                     </button>
                     {qualityCapabilities.canSubmit && (
                       <button
                         onClick={handlePrepareFormSubmit}
                         disabled={saving || uploadingPhotos || uploadingFiles}
-                        className="inline-flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-xs font-black text-white hover:bg-amber-600 disabled:opacity-50"
+                        className="inline-flex items-center gap-1.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white px-5 py-2 text-xs font-black shadow-md shadow-teal-600/20 transition disabled:opacity-50"
                       >
-                        {saving ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                        {saving ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
                         Gửi duyệt
                       </button>
                     )}
@@ -1717,6 +2024,7 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId }
         </div>
       )}
 
+      {/* DIALOGS */}
       {submittingFormDraft && (
         <ProjectRoomSubmissionDialog
           title="Gửi duyệt hồ sơ nghiệm thu"

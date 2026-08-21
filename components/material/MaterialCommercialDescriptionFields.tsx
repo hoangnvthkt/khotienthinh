@@ -15,26 +15,27 @@ const MaterialCommercialDescriptionFields: React.FC<MaterialCommercialDescriptio
     className = '',
     onNameChange,
 }) => (
-    <div className={`space-y-2 ${className}`.trim()}>
-        <label className="block">
-            <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Mã vật tư</span>
+    <div className={`space-y-1 ${className}`.trim()}>
+        <div className="flex items-center gap-2">
+            <span className="sr-only">Mã vật tư</span>
             <input
                 value={sku || 'CHƯA MÃ'}
                 readOnly
                 aria-readonly="true"
-                className="w-full cursor-default rounded-lg border border-border bg-muted px-3 py-2 font-mono text-sm font-bold text-muted-foreground outline-none"
+                title="Mã vật tư"
+                className="w-28 shrink-0 rounded-lg border border-slate-200 bg-slate-100 px-2 py-1 font-mono text-xs font-black text-slate-600 outline-none select-all"
             />
-        </label>
-        <label className="block">
-            <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Tên vật tư</span>
-            <input
-                value={name}
-                disabled={disabled}
-                onChange={event => onNameChange(event.target.value)}
-                placeholder="Nhập tên vật tư dùng trên chứng từ"
-                className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm font-semibold text-foreground outline-none focus:ring-2 focus:ring-accent/30 disabled:cursor-not-allowed disabled:bg-muted"
-            />
-        </label>
+            <div className="relative flex-1 min-w-0">
+                <span className="sr-only">Tên vật tư</span>
+                <input
+                    value={name}
+                    disabled={disabled}
+                    onChange={event => onNameChange(event.target.value)}
+                    placeholder="Tên vật tư dùng trên chứng từ..."
+                    className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-800 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 disabled:cursor-not-allowed disabled:bg-slate-100"
+                />
+            </div>
+        </div>
     </div>
 );
 
