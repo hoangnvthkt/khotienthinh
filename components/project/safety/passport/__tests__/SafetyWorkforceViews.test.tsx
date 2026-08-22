@@ -19,6 +19,7 @@ vi.mock('../../../../../hooks/useSafetyWorkforce', () => ({
 }));
 
 import SafetyPassportPanel from '../../SafetyPassportPanel';
+import SafetyPassportWorkerDetailModal from '../../SafetyPassportWorkerDetailModal';
 import { SafetyPassportDashboardContent } from '../SafetyPassportDashboardView';
 import { SafetyWorkerRosterContent } from '../SafetyWorkerRosterView';
 import { SafetyActiveWorkforceContent } from '../SafetyActiveWorkforceView';
@@ -33,6 +34,15 @@ import {
   selectableAssignmentCandidates,
   validateSafetyAssignmentEnd,
 } from '../SafetyWorkerAssignmentDialog';
+import {
+  canIssueSafetyCard,
+  isFutureSafetyCardExpiry,
+  SafetyWorkerCardSection,
+} from '../SafetyWorkerCardSection';
+import {
+  currentMembershipHistory,
+  SafetyWorkerHistory,
+} from '../SafetyWorkerHistory';
 
 const capabilities = {
   canViewBasic: true,
@@ -254,5 +264,89 @@ describe('Safety Workforce scoped views', () => {
     expect(assignMarkup).toContain('CCCD');
     expect(endMarkup).toContain('Kết thúc làm việc');
     expect(endMarkup).toContain('Lý do');
+  });
+
+  it('allows card issue only for an active eligible assignment and future expiry', () => {
+    expect(canIssueSafetyCard(null)).toBe(false);
+    expect(canIssueSafetyCard({ assignmentStatus: 'active', eligibilityStatus: 'missing_profile' } as any)).toBe(false);
+    expect(canIssueSafetyCard({ assignmentStatus: 'active', eligibilityStatus: 'eligible' } as any)).toBe(true);
+    expect(isFutureSafetyCardExpiry('2000-01-01', new Date('2026-08-22T00:00:00Z'))).toBe(false);
+    expect(isFutureSafetyCardExpiry('2026-09-01', new Date('2026-08-22T00:00:00Z'))).toBe(true);
+  });
+
+  it('keeps card controls inside worker detail states', () => {
+    const detail = {
+      rosterItem: rosterPage.items[0],
+      profile: { ...rosterPage.items[0].worker, photoAttachment: null, dateOfBirth: null, roleName: null },
+      documents: [],
+      certificates: [],
+      assignments: [],
+      cards: [],
+      capabilities,
+      sensitiveLoaded: false,
+    } as any;
+    const markup = renderToStaticMarkup(
+      <SafetyWorkerCardSection
+        scope={{ userId: 'user-1', projectId: 'project-1', constructionSiteId: 'site-1' }}
+        detail={detail}
+        onChanged={() => undefined}
+      />,
+    );
+
+    expect(markup).toContain('Thẻ an toàn');
+    expect(markup).toContain('Không có phân công đang hoạt động');
+  });
+
+  it('renders history for the current membership only and orders newest first', () => {
+    const assignments = [
+      { id: 'old', membershipId: 'membership-1', startedAt: '2026-01-01T00:00:00Z', assignmentStatus: 'ended' },
+      { id: 'foreign', membershipId: 'membership-2', startedAt: '2027-01-01T00:00:00Z', assignmentStatus: 'ended' },
+      { id: 'new', membershipId: 'membership-1', startedAt: '2026-08-01T00:00:00Z', assignmentStatus: 'active' },
+    ] as any;
+    expect(currentMembershipHistory('membership-1', assignments).map(item => item.id)).toEqual(['new', 'old']);
+
+    const markup = renderToStaticMarkup(
+      <SafetyWorkerHistory membershipId="membership-1" assignments={assignments} cards={[]} />,
+    );
+    expect(markup.indexOf('01/08/2026')).toBeLessThan(markup.indexOf('01/01/2026'));
+    expect(markup).not.toContain('2027');
+  });
+
+  it('renders basic profile without exposing sensitive data to an unauthorized actor', () => {
+    hookMocks.detail.mockImplementation((_scope, membershipId, includeSensitive) => ({
+      data: membershipId && !includeSensitive ? {
+        rosterItem: rosterPage.items[0],
+        profile: {
+          ...rosterPage.items[0].worker,
+          photoAttachment: null,
+          dateOfBirth: null,
+          roleName: null,
+          identityNumber: '001234567890',
+        },
+        documents: [],
+        certificates: [],
+        assignments: [],
+        cards: [],
+        capabilities: { canViewBasic: true, canManageWorker: false, canVerifyDocuments: false },
+        sensitiveLoaded: false,
+      } : null,
+      loading: false,
+      error: null,
+      reload: vi.fn(),
+    }));
+
+    const markup = renderToStaticMarkup(
+      <SafetyPassportWorkerDetailModal
+        scope={{ userId: 'user-1', projectId: 'project-1', constructionSiteId: 'site-1' }}
+        membershipId="membership-1"
+        onClose={() => undefined}
+      />,
+    );
+
+    expect(markup).toContain('Nguyễn Văn An');
+    expect(markup).toContain('********1234');
+    expect(markup).not.toContain('001234567890');
+    expect(markup).not.toContain('Giấy tờ &amp; chứng chỉ');
+    expect(hookMocks.detail).toHaveBeenCalledWith(expect.anything(), null, true);
   });
 });

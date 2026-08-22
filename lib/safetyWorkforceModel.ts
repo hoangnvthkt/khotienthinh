@@ -137,6 +137,7 @@ const parseAssignment = (value: unknown): SafetyProjectAssignment => {
     constructionSiteId: nullableString(row.constructionSiteId),
     contractorId: nullableString(row.contractorId),
     subcontractorId: nullableString(row.subcontractorId),
+    subcontractorName: nullableString(row.subcontractorName),
     teamId: nullableString(row.teamId),
     teamName: nullableString(row.teamName),
     roleName: nullableString(row.roleName),

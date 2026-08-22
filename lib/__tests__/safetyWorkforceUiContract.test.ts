@@ -16,6 +16,8 @@ const assignmentPath = resolve(process.cwd(), 'components/project/safety/passpor
 const assignmentSource = existsSync(assignmentPath) ? readFileSync(assignmentPath, 'utf8') : '';
 const activePath = resolve(process.cwd(), 'components/project/safety/passport/SafetyActiveWorkforceView.tsx');
 const activeSource = existsSync(activePath) ? readFileSync(activePath, 'utf8') : '';
+const cardSectionPath = resolve(process.cwd(), 'components/project/safety/passport/SafetyWorkerCardSection.tsx');
+const cardSectionSource = existsSync(cardSectionPath) ? readFileSync(cardSectionPath, 'utf8') : '';
 
 describe('Safety Workforce UI resource contract', () => {
   it('uses the module-ready scoped API and guards against stale requests', () => {
@@ -80,5 +82,23 @@ describe('Safety Workforce UI resource contract', () => {
     expect(assignmentSource).toContain('safetyWorkforceApi.transfer');
     expect(assignmentSource).toContain('SAFETY_WORKER_ACTIVE_ELSEWHERE');
     expect(activeSource).toContain("assignmentStatus: 'active'");
+  });
+
+  it('lazy-loads sensitive detail only after permission and embeds cards without global lists', () => {
+    expect(detailSource).toContain('useSafetyWorkerDetail(scope, membershipId, false)');
+    expect(detailSource).toContain('useSafetyWorkerDetail(scope, sensitiveMembershipId, true)');
+    expect(detailSource).toContain('canManageWorker || basicDetail.capabilities.canVerifyDocuments');
+    expect(detailSource).toContain('Giấy tờ & chứng chỉ');
+    expect(cardSectionSource).toContain('safetyWorkforceApi.issueCard');
+    expect(cardSectionSource).toContain('safetyWorkforceApi.renewCard');
+    expect(cardSectionSource).toContain('safetyWorkforceApi.revokeCard');
+    expect(cardSectionSource).not.toContain('listCards');
+  });
+
+  it('logs the print before opening the browser print dialog', () => {
+    const logIndex = cardSectionSource.indexOf('await safetyWorkforceApi.logCardPrint');
+    const printIndex = cardSectionSource.indexOf('window.print()');
+    expect(logIndex).toBeGreaterThan(-1);
+    expect(printIndex).toBeGreaterThan(logIndex);
   });
 });

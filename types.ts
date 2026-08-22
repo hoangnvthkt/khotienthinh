@@ -6182,6 +6182,7 @@ export interface SafetyProjectAssignment {
   constructionSiteId?: string | null;
   contractorId?: string | null;
   subcontractorId: string | null;
+  subcontractorName?: string | null;
   teamId: string | null;
   contractor?: SafetyPassportContractor | null;
   teamName?: string | null;

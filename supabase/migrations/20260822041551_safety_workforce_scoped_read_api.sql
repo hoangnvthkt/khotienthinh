@@ -84,8 +84,17 @@ as $$
     'constructionSiteId', (p_assignment).construction_site_id,
     'contractorId', (p_assignment).contractor_id,
     'subcontractorId', (p_assignment).subcontractor_id,
+    'subcontractorName', (
+      select subcontractor.name
+      from public.safety_subcontractors subcontractor
+      where subcontractor.id = (p_assignment).subcontractor_id
+    ),
     'teamId', (p_assignment).team_id,
-    'teamName', (p_assignment).team_name,
+    'teamName', coalesce((p_assignment).team_name, (
+      select team.name
+      from public.safety_teams team
+      where team.id = (p_assignment).team_id
+    )),
     'roleName', (p_assignment).role_name,
     'workType', (p_assignment).work_type,
     'siteAccessCardCode', (p_assignment).site_access_card_code,
