@@ -12,6 +12,10 @@ const formPath = resolve(process.cwd(), 'components/project/safety/passport/Safe
 const formSource = existsSync(formPath) ? readFileSync(formPath, 'utf8') : '';
 const detailPath = resolve(process.cwd(), 'components/project/safety/SafetyPassportWorkerDetailModal.tsx');
 const detailSource = existsSync(detailPath) ? readFileSync(detailPath, 'utf8') : '';
+const assignmentPath = resolve(process.cwd(), 'components/project/safety/passport/SafetyWorkerAssignmentDialog.tsx');
+const assignmentSource = existsSync(assignmentPath) ? readFileSync(assignmentPath, 'utf8') : '';
+const activePath = resolve(process.cwd(), 'components/project/safety/passport/SafetyActiveWorkforceView.tsx');
+const activeSource = existsSync(activePath) ? readFileSync(activePath, 'utf8') : '';
 
 describe('Safety Workforce UI resource contract', () => {
   it('uses the module-ready scoped API and guards against stale requests', () => {
@@ -65,5 +69,16 @@ describe('Safety Workforce UI resource contract', () => {
     expect(detailSource).toContain('useSafetyWorkerDetail(scope, membershipId, false)');
     expect(detailSource).not.toContain('safetyPassportService');
     expect(detailSource).not.toContain('listWorkers()');
+  });
+
+  it('keeps assignment, ending and transfer decisions in scoped commands', () => {
+    expect(assignmentSource).toContain("membershipStatus: 'candidate'");
+    expect(assignmentSource).toContain("membershipStatus: 'inactive'");
+    expect(assignmentSource).toContain('safetyWorkforceApi.lookupExact');
+    expect(assignmentSource).toContain('safetyWorkforceApi.assign');
+    expect(assignmentSource).toContain('safetyWorkforceApi.endAssignment');
+    expect(assignmentSource).toContain('safetyWorkforceApi.transfer');
+    expect(assignmentSource).toContain('SAFETY_WORKER_ACTIVE_ELSEWHERE');
+    expect(activeSource).toContain("assignmentStatus: 'active'");
   });
 });

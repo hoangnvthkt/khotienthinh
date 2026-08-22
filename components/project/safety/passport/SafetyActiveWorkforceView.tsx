@@ -1,8 +1,17 @@
-import React from 'react';
-import { AlertTriangle, RefreshCw, Users } from 'lucide-react';
-import type { SafetyWorkerRosterPage, User } from '../../../../types';
+import React, { useEffect, useMemo, useState } from 'react';
+import { AlertTriangle, Plus, RefreshCw, Search } from 'lucide-react';
+import type {
+  SafetyPassportAssignmentStatus,
+  SafetyRosterFilters,
+  SafetyWorkerRosterItem,
+  SafetyWorkerRosterPage,
+  User,
+} from '../../../../types';
 import type { SafetyWorkforceRequestScope } from '../../../../lib/safetyWorkforceApi';
 import { useSafetyActiveWorkforce } from '../../../../hooks/useSafetyWorkforce';
+import SafetyPassportWorkerTable from '../SafetyPassportWorkerTable';
+import SafetyPassportWorkerDetailModal from '../SafetyPassportWorkerDetailModal';
+import SafetyWorkerAssignmentDialog from './SafetyWorkerAssignmentDialog';
 
 interface ScopedViewProps {
   scope: SafetyWorkforceRequestScope;
@@ -14,92 +23,121 @@ interface ActiveWorkforceContentProps {
   loading: boolean;
   error: { message: string } | null;
   onRetry: () => void;
+  search?: string;
+  eligibilityStatus?: SafetyPassportAssignmentStatus | '';
+  documentStatus?: '' | 'missing' | 'expired';
+  onSearchChange?: (value: string) => void;
+  onEligibilityStatusChange?: (value: SafetyPassportAssignmentStatus | '') => void;
+  onDocumentStatusChange?: (value: '' | 'missing' | 'expired') => void;
+  onAssign?: () => void;
+  onOpenDetail?: (item: SafetyWorkerRosterItem) => void;
+  onEnd?: (item: SafetyWorkerRosterItem) => void;
+  onIssueCard?: (item: SafetyWorkerRosterItem) => void;
 }
-
-const eligibilityLabel = (status?: string): string => {
-  if (status === 'eligible') return 'Đủ điều kiện';
-  if (status === 'suspended') return 'Tạm khóa';
-  return 'Cần bổ sung';
-};
 
 export const SafetyActiveWorkforceContent: React.FC<ActiveWorkforceContentProps> = ({
   page,
   loading,
   error,
   onRetry,
+  search = '',
+  eligibilityStatus = '',
+  documentStatus = '',
+  onSearchChange,
+  onEligibilityStatusChange,
+  onDocumentStatusChange,
+  onAssign,
+  onOpenDetail,
+  onEnd,
+  onIssueCard,
 }) => (
   <section className="space-y-4">
-    <div>
-      <h2 className="text-base font-black text-slate-900 dark:text-slate-100">Nhân công công trường</h2>
-      <p className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-400">Chỉ hiển thị nhân công đang được gán vào công trường này.</p>
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div>
+        <h2 className="text-base font-black text-slate-900 dark:text-slate-100">Nhân công công trường</h2>
+        <p className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-400">Chỉ hiển thị nhân công đang được gán vào công trường này.</p>
+      </div>
+      {page?.capabilities.canManageWorker && onAssign && <button type="button" onClick={onAssign} className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-slate-900 px-3 text-xs font-black text-white dark:bg-slate-100 dark:text-slate-900"><Plus size={14} /> Gán nhân công</button>}
     </div>
+
+    {(onSearchChange || onEligibilityStatusChange || onDocumentStatusChange) && (
+      <div className="grid gap-2 rounded-xl border border-slate-200 bg-white p-3 md:grid-cols-[minmax(0,1fr)_190px_170px] dark:border-slate-800 dark:bg-slate-900">
+        <label className="relative block"><span className="sr-only">Tìm nhân công đang làm việc</span><Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} /><input value={search} onChange={event => onSearchChange?.(event.target.value)} className="min-h-10 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-xs font-semibold outline-none focus:border-orange-400 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100" placeholder="Tìm mã, tên, điện thoại" /></label>
+        <select value={eligibilityStatus} onChange={event => onEligibilityStatusChange?.(event.target.value as SafetyPassportAssignmentStatus | '')} className="min-h-10 rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"><option value="">Tất cả điều kiện</option><option value="eligible">Đủ điều kiện</option><option value="missing_profile">Thiếu hồ sơ</option><option value="missing_certificate">Thiếu chứng chỉ</option><option value="expired_certificate">Chứng chỉ hết hạn</option><option value="missing_site_requirement">Thiếu yêu cầu công trường</option><option value="suspended">Tạm khóa</option></select>
+        <select value={documentStatus} onChange={event => onDocumentStatusChange?.(event.target.value as '' | 'missing' | 'expired')} className="min-h-10 rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"><option value="">Tất cả hồ sơ</option><option value="missing">Thiếu hồ sơ</option><option value="expired">Hồ sơ hết hạn</option></select>
+      </div>
+    )}
 
     {error && (
       <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4 dark:border-red-900/60 dark:bg-red-950/20">
         <AlertTriangle className="mt-0.5 text-red-600" size={17} />
-        <div className="min-w-0 flex-1">
-          <div className="text-xs font-black text-red-900 dark:text-red-200">Không tải được nhân công công trường</div>
-          <p className="mt-1 text-xs text-red-700 dark:text-red-300">{error.message}</p>
-        </div>
-        <button type="button" onClick={onRetry} className="inline-flex items-center gap-1.5 rounded-lg border border-red-300 bg-white px-3 py-2 text-xs font-black text-red-700 active:translate-y-px dark:bg-slate-950">
-          <RefreshCw size={13} /> Thử lại
-        </button>
+        <div className="min-w-0 flex-1"><div className="text-xs font-black text-red-900 dark:text-red-200">Không tải được nhân công công trường</div><p className="mt-1 text-xs text-red-700 dark:text-red-300">{error.message}</p></div>
+        <button type="button" onClick={onRetry} className="inline-flex items-center gap-1.5 rounded-lg border border-red-300 bg-white px-3 py-2 text-xs font-black text-red-700 dark:bg-slate-950"><RefreshCw size={13} /> Thử lại</button>
       </div>
     )}
 
     {loading && !page ? (
-      <div className="space-y-2" aria-label="Đang tải nhân công công trường">
-        {Array.from({ length: 5 }, (_, index) => (
-          <div key={index} className="h-16 animate-pulse rounded-xl border border-slate-200 bg-slate-100 dark:border-slate-800 dark:bg-slate-800" />
-        ))}
-      </div>
-    ) : !error && (page?.items.length || 0) === 0 ? (
-      <div className="rounded-xl border border-dashed border-slate-300 bg-white px-5 py-10 text-center dark:border-slate-700 dark:bg-slate-900">
-        <Users className="mx-auto text-slate-400" size={22} />
-        <h3 className="mt-3 text-sm font-black text-slate-800 dark:text-slate-100">Chưa có nhân công đang làm việc</h3>
-        <p className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-400">Gán hồ sơ nhân công vào công trường để bắt đầu theo dõi.</p>
-      </div>
+      <div className="space-y-2" aria-label="Đang tải nhân công công trường">{Array.from({ length: 5 }, (_, index) => <div key={index} className="h-16 animate-pulse rounded-xl border border-slate-200 bg-slate-100 dark:border-slate-800 dark:bg-slate-800" />)}</div>
     ) : !error && page ? (
-      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
-        <table className="w-full min-w-[760px] text-left text-xs">
-          <thead className="border-b border-slate-200 bg-slate-50 text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
-            <tr>
-              <th className="px-4 py-3 font-black">Nhân công</th>
-              <th className="px-4 py-3 font-black">Nhà thầu / Tổ đội</th>
-              <th className="px-4 py-3 font-black">Ngày vào</th>
-              <th className="px-4 py-3 font-black">Điều kiện</th>
-              <th className="px-4 py-3 font-black">Thẻ an toàn</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-            {page.items.map(item => (
-              <tr key={item.membership.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
-                <td className="px-4 py-3">
-                  <div className="font-black text-slate-800 dark:text-slate-100">{item.worker.fullName}</div>
-                  <div className="mt-0.5 font-mono text-[11px] font-bold text-orange-700 dark:text-orange-300">{item.worker.workerCode}</div>
-                </td>
-                <td className="px-4 py-3 font-medium text-slate-600 dark:text-slate-300">{item.team?.name || item.subcontractor?.name || 'Cán bộ công ty'}</td>
-                <td className="px-4 py-3 font-mono text-slate-600 dark:text-slate-300">{item.activeAssignment?.startDate || '-'}</td>
-                <td className="px-4 py-3"><span className="rounded-md bg-slate-100 px-2 py-1 font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-200">{eligibilityLabel(item.activeAssignment?.eligibilityStatus)}</span></td>
-                <td className="px-4 py-3 font-bold text-slate-600 dark:text-slate-300">{item.activeCard?.cardCode || 'Chưa cấp'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <SafetyPassportWorkerTable
+        items={page.items}
+        loading={loading}
+        canManage={page.capabilities.canManageWorker}
+        onCreateAssignment={onAssign || (() => undefined)}
+        onOpenDetail={onOpenDetail || (() => undefined)}
+        onEnd={onEnd || (() => undefined)}
+        onIssueCard={onIssueCard || (() => undefined)}
+      />
     ) : null}
   </section>
 );
 
 const SafetyActiveWorkforceView: React.FC<ScopedViewProps> = ({ scope }) => {
-  const state = useSafetyActiveWorkforce(scope, { limit: 50 });
+  const [searchDraft, setSearchDraft] = useState('');
+  const [search, setSearch] = useState('');
+  const [eligibilityStatus, setEligibilityStatus] = useState<SafetyPassportAssignmentStatus | ''>('');
+  const [documentStatus, setDocumentStatus] = useState<'' | 'missing' | 'expired'>('');
+  const [assignOpen, setAssignOpen] = useState(false);
+  const [endItem, setEndItem] = useState<SafetyWorkerRosterItem | null>(null);
+  const [detailMembershipId, setDetailMembershipId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setSearch(searchDraft.trim()), 250);
+    return () => clearTimeout(timer);
+  }, [searchDraft]);
+
+  const filters = useMemo<SafetyRosterFilters>(() => ({
+    limit: 50,
+    assignmentStatus: 'active',
+    ...(search ? { search } : {}),
+    ...(eligibilityStatus ? { eligibilityStatus } : {}),
+    ...(documentStatus ? { documentStatus } : {}),
+  }), [documentStatus, eligibilityStatus, search]);
+  const state = useSafetyActiveWorkforce(scope, filters);
+
+  const completed = (): void => { void state.reload(); };
   return (
-    <SafetyActiveWorkforceContent
-      page={state.data}
-      loading={state.loading}
-      error={state.error}
-      onRetry={() => { void state.reload(); }}
-    />
+    <>
+      <SafetyActiveWorkforceContent
+        page={state.data}
+        loading={state.loading}
+        error={state.error}
+        search={searchDraft}
+        eligibilityStatus={eligibilityStatus}
+        documentStatus={documentStatus}
+        onSearchChange={setSearchDraft}
+        onEligibilityStatusChange={setEligibilityStatus}
+        onDocumentStatusChange={setDocumentStatus}
+        onAssign={() => setAssignOpen(true)}
+        onOpenDetail={item => setDetailMembershipId(item.membership.id)}
+        onEnd={setEndItem}
+        onIssueCard={item => setDetailMembershipId(item.membership.id)}
+        onRetry={() => { void state.reload(); }}
+      />
+      {assignOpen && <SafetyWorkerAssignmentDialog scope={scope} mode="assign" onClose={() => setAssignOpen(false)} onCompleted={completed} />}
+      {endItem && <SafetyWorkerAssignmentDialog scope={scope} mode="end" item={endItem} onClose={() => setEndItem(null)} onCompleted={completed} />}
+      {detailMembershipId && <SafetyPassportWorkerDetailModal scope={scope} membershipId={detailMembershipId} onClose={() => setDetailMembershipId(null)} />}
+    </>
   );
 };
 

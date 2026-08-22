@@ -27,6 +27,12 @@ import {
   SafetyWorkerProfileForm,
   validateSafetyWorkerProfileInput,
 } from '../SafetyWorkerProfileForm';
+import {
+  canOfferSafetyTransfer,
+  SafetyWorkerAssignmentDialog,
+  selectableAssignmentCandidates,
+  validateSafetyAssignmentEnd,
+} from '../SafetyWorkerAssignmentDialog';
 
 const capabilities = {
   canViewBasic: true,
@@ -192,5 +198,61 @@ describe('Safety Workforce scoped views', () => {
     expect(markup).toContain('Nhân công nhà thầu');
     expect(markup).toContain('Nhà thầu phụ A');
     expect(markup).not.toContain('Tổ A');
+  });
+
+  it('selects only candidate or inactive memberships for a new assignment', () => {
+    const active = {
+      ...rosterPage.items[0],
+      membership: { ...rosterPage.items[0].membership, id: 'membership-active', status: 'active' as const },
+      activeAssignment: { id: 'assignment-active', assignmentStatus: 'active' as const },
+    } as any;
+    const candidate = {
+      ...rosterPage.items[0],
+      membership: { ...rosterPage.items[0].membership, id: 'membership-candidate', status: 'candidate' as const },
+    };
+    const inactive = {
+      ...rosterPage.items[0],
+      membership: { ...rosterPage.items[0].membership, id: 'membership-inactive', status: 'inactive' as const },
+    };
+
+    expect(selectableAssignmentCandidates([active, candidate, inactive]).map(item => item.membership.id)).toEqual([
+      'membership-candidate',
+      'membership-inactive',
+    ]);
+  });
+
+  it('validates end date and reason and exposes transfer only from RPC capability', () => {
+    expect(validateSafetyAssignmentEnd('2026-08-22T08:00:00Z', '2026-08-22T07:00:00Z', '')).toEqual({
+      endedAt: expect.any(String),
+      reason: expect.any(String),
+    });
+    expect(canOfferSafetyTransfer({ canTransfer: true, activeAssignmentId: 'assignment-1' } as any)).toBe(true);
+    expect(canOfferSafetyTransfer({ canTransfer: false, activeAssignmentId: 'assignment-1' } as any)).toBe(false);
+  });
+
+  it('renders assign and end modes with actionable guidance', () => {
+    const assignMarkup = renderToStaticMarkup(
+      <SafetyWorkerAssignmentDialog
+        scope={{ userId: 'user-1', projectId: 'project-1', constructionSiteId: 'site-1' }}
+        mode="assign"
+        onClose={() => undefined}
+        onCompleted={() => undefined}
+      />,
+    );
+    const endMarkup = renderToStaticMarkup(
+      <SafetyWorkerAssignmentDialog
+        scope={{ userId: 'user-1', projectId: 'project-1', constructionSiteId: 'site-1' }}
+        mode="end"
+        item={rosterPage.items[0] as any}
+        onClose={() => undefined}
+        onCompleted={() => undefined}
+      />,
+    );
+
+    expect(assignMarkup).toContain('Gán nhân công');
+    expect(assignMarkup).toContain('Mã nhân công');
+    expect(assignMarkup).toContain('CCCD');
+    expect(endMarkup).toContain('Kết thúc làm việc');
+    expect(endMarkup).toContain('Lý do');
   });
 });

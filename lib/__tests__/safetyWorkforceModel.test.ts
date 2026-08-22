@@ -171,6 +171,29 @@ describe('safetyWorkforceModel', () => {
     });
   });
 
+  it('parses the minimal source scope needed for an authorized transfer', async () => {
+    const model = await loadModel();
+    expect(model).not.toBeNull();
+
+    expect(model!.parseSafetyWorkerLookupResult({
+      workerId: 'worker-1',
+      workerCode: 'SW-001',
+      fullName: 'Nguyễn Văn A',
+      workerKind: 'contractor_worker',
+      identityNumberMasked: '********7890',
+      targetMembershipId: null,
+      activeAssignmentId: 'assignment-1',
+      activeProjectId: 'project-source',
+      activeConstructionSiteId: 'site-source',
+      activeSiteName: 'Công trường nguồn',
+      canTransfer: true,
+    })).toMatchObject({
+      workerKind: 'contractor_worker',
+      activeProjectId: 'project-source',
+      activeConstructionSiteId: 'site-source',
+    });
+  });
+
   it('extracts stable business codes from Supabase message or detail', async () => {
     const model = await loadModel();
     expect(model).not.toBeNull();

@@ -408,9 +408,12 @@ export const parseSafetyWorkerLookupResult = (value: unknown): SafetyWorkerLooku
     workerId: requiredString(row.workerId),
     workerCode: requiredString(row.workerCode),
     fullName: requiredString(row.fullName),
+    workerKind: enumValue<SafetyWorkerKind>(row.workerKind, ['company_staff', 'contractor_worker']),
     identityNumberMasked: requiredString(row.identityNumberMasked),
     targetMembershipId: nullableString(row.targetMembershipId),
     activeAssignmentId: nullableString(row.activeAssignmentId),
+    activeProjectId: nullableString(row.activeProjectId),
+    activeConstructionSiteId: nullableString(row.activeConstructionSiteId),
     activeSiteName: nullableString(row.activeSiteName),
     canTransfer: requiredBoolean(row.canTransfer),
   };

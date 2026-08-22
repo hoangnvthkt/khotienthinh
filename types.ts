@@ -6390,9 +6390,12 @@ export interface SafetyWorkerLookupResult {
   workerId: string;
   workerCode: string;
   fullName: string;
+  workerKind: SafetyWorkerKind;
   identityNumberMasked: string;
   targetMembershipId: string | null;
   activeAssignmentId: string | null;
+  activeProjectId: string | null;
+  activeConstructionSiteId: string | null;
   activeSiteName: string | null;
   canTransfer: boolean;
 }

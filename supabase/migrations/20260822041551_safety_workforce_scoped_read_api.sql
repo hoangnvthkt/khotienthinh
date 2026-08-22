@@ -752,9 +752,12 @@ begin
     'workerId', v_worker.id,
     'workerCode', v_worker.worker_code,
     'fullName', v_worker.full_name,
+    'workerKind', v_worker.worker_kind,
     'identityNumberMasked', coalesce(app_private.safety_workforce_mask_identity(v_worker.id), '-'),
     'targetMembershipId', v_membership.id,
     'activeAssignmentId', v_assignment.id,
+    'activeProjectId', v_assignment.project_id,
+    'activeConstructionSiteId', v_assignment.construction_site_id,
     'activeSiteName', v_active_site_name,
     'canTransfer', case
       when v_assignment.id is null then false
