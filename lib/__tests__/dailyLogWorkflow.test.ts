@@ -8,6 +8,8 @@ import {
   DAILY_SUMMARY_SOURCE_TYPE,
   getDefaultDailyLogSummaryApprover,
   getDailyLogSourceReviewState,
+  getMissingDailyLogSummarySourceIds,
+  getDailyLogTargetPermission,
   getDailyLogSummarySourceLogs,
   resolveDailyLogSummaryDetails,
   withDailyLogSummaryDetails,
@@ -48,6 +50,28 @@ const summaryLog = (patch: Partial<DailyLog> = {}): DailyLog => ({
 });
 
 describe('daily log source workflow', () => {
+  it('keeps a returned member-contribution summary on the approver route', () => {
+    expect(getDailyLogTargetPermission(summaryLog({
+      status: 'rejected',
+      submittedToPermission: 'edit',
+    }))).toBe('approve');
+  });
+
+  it('routes a returned detail log back to a verifier', () => {
+    expect(getDailyLogTargetPermission(sourceLog({
+      status: 'rejected',
+      submittedToPermission: 'edit',
+    }))).toBe('verify');
+  });
+
+  it('reports a linked source that was deleted after the summary was saved', () => {
+    expect(getMissingDailyLogSummarySourceIds(summaryLog({
+      summarySourceMetadata: {
+        legacyDailyLogIds: ['source-1', 'deleted-source'],
+      },
+    }), [sourceLog()])).toEqual(['deleted-source']);
+  });
+
   it('allows KTT to return a submitted source when the linked summary is editable', () => {
     expect(canReturnDailyLogSource({
       sourceLog: sourceLog(),

@@ -19,10 +19,13 @@ import {
   ShieldCheck,
   Trash2,
   Truck,
+  User as UserIcon,
   WalletCards,
   X,
+  AlertCircle,
 } from 'lucide-react';
 import { StatusBadge, type ErpStatusTone } from '../erp';
+import { useApp } from '../../context/AppContext';
 import {
   InventoryItem,
   MaterialRequestFulfillmentBatch,
@@ -156,15 +159,15 @@ const actionIcon = (action: PurchaseOrderUiAction) => {
 const actionClass = (action: PurchaseOrderUiAction, primary = false) => {
   if (action.disabled) return 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed';
   if (action.intent === 'danger') return primary
-    ? 'border-rose-600 bg-rose-600 text-white hover:bg-rose-700'
+    ? 'border-rose-600 bg-rose-600 text-white hover:bg-rose-700 shadow-md shadow-rose-600/20'
     : 'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-300';
   if (action.intent === 'success') return primary
-    ? 'border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700'
+    ? 'border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700 shadow-md shadow-emerald-600/20'
     : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-300';
   if (action.intent === 'warning') return primary
-    ? 'border-amber-500 bg-amber-500 text-white hover:bg-amber-600'
+    ? 'border-amber-500 bg-amber-500 text-white hover:bg-amber-600 shadow-md shadow-amber-500/20'
     : 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300';
-  if (action.intent === 'primary' || primary) return 'border-blue-600 bg-blue-600 text-white hover:bg-blue-700';
+  if (action.intent === 'primary' || primary) return 'border-blue-600 bg-blue-600 text-white hover:bg-blue-700 shadow-md shadow-blue-600/20';
   return 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-900';
 };
 
@@ -202,6 +205,41 @@ const getHeaderLabel = (key: string, items: PurchaseOrderItem[]) => {
     if (spec?.label) return spec.label + (spec.unit ? ` (${spec.unit})` : '');
   }
   return key;
+};
+
+// Component Avatar Nhân Sự
+const UserAvatar: React.FC<{
+  name?: string | null;
+  avatar?: string | null;
+  size?: 'xs' | 'sm' | 'md';
+  className?: string;
+}> = ({ name, avatar, size = 'sm', className = '' }) => {
+  const displayName = name || 'User';
+  const sizeClasses = {
+    xs: 'h-6 w-6 text-[10px]',
+    sm: 'h-8 w-8 text-xs',
+    md: 'h-10 w-10 text-sm',
+  }[size];
+
+  if (avatar) {
+    return (
+      <img
+        src={avatar}
+        alt={displayName}
+        className={`${sizeClasses} rounded-full object-cover ring-2 ring-white dark:ring-slate-800 shrink-0 ${className}`}
+      />
+    );
+  }
+
+  const initial = (displayName.trim().split(' ').pop() || displayName).charAt(0).toUpperCase() || 'U';
+  return (
+    <div
+      className={`${sizeClasses} rounded-full bg-gradient-to-br from-teal-500 to-indigo-600 text-white font-black flex items-center justify-center ring-2 ring-white dark:ring-slate-800 shrink-0 shadow-xs ${className}`}
+      title={displayName}
+    >
+      {initial}
+    </div>
+  );
 };
 
 const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
@@ -250,6 +288,7 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
   onRemoveFailedDeliveryGroup,
   onClose,
 }) => {
+  const { users = [], employees = [] } = useApp();
   const [activeTab, setActiveTab] = useState<DetailTabKey>('overview');
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -257,6 +296,34 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
     setActiveTab('overview');
     setMenuOpen(false);
   }, [po.id]);
+
+  // Helper resolve user avatar & name (an toàn tuyệt đối, không match nhầm khi undefined)
+  const getUserInfo = (userIdOrName?: string | null) => {
+    if (!userIdOrName || typeof userIdOrName !== 'string') return null;
+    const clean = userIdOrName.trim();
+    if (!clean) return null;
+
+    const u = (users || []).find(
+      user => (user.id && user.id === clean) ||
+              (user.name && user.name.toLowerCase() === clean.toLowerCase()) ||
+              (user.email && user.email.toLowerCase() === clean.toLowerCase()) ||
+              (user.username && user.username.toLowerCase() === clean.toLowerCase())
+    );
+
+    const emp = (employees || []).find(
+      e => (u?.id && e.userId && e.userId === u.id) ||
+           (e.id && e.id === clean) ||
+           (e.fullName && e.fullName.toLowerCase() === clean.toLowerCase()) ||
+           (e.email && e.email.toLowerCase() === clean.toLowerCase())
+    );
+
+    if (!u && !emp) return null;
+
+    const name = emp?.fullName || u?.name || clean;
+    const avatar = emp?.avatarUrl || u?.avatar || null;
+    const role = emp?.title || u?.role || '';
+    return { id: u?.id || emp?.id || clean, name, avatar, role };
+  };
 
   const receiptPercent = receiptStats.orderedQty > 0
     ? Math.min(100, Math.round((receiptStats.receivedQty / receiptStats.orderedQty) * 100))
@@ -357,49 +424,176 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
   const hasReceivedDelivery = deliveryTimelineGroups.some(group => normalizeDeliveryTimelineStatus(group.status) === 'received') || receiptStats.receivedQty > 0;
   const hasDelivery = deliveryTimelineGroups.length > 0;
 
-  const stepper = isPackageV2
+  // Resolve actors for the stepper (Chỉ gán người cho bước Tạo và bước Duyệt)
+  const creatorUser = getUserInfo(po.createdById) || (po.lastActionBy ? getUserInfo(po.lastActionBy) : null);
+  const isApproved = !['draft', 'sent'].includes(po.status);
+  const approverUser = isApproved
+    ? getUserInfo(po.lastActionBy) || getUserInfo(po.submittedToName) || getUserInfo(po.submittedToUserId)
+    : getUserInfo(po.submittedToName) || getUserInfo(po.submittedToUserId) || getUserInfo(po.workflowStepActorUserId);
+
+  const stepperWithAvatars = isPackageV2
     ? [
-      { key: 'created', label: 'Tạo gói', done: true, current: po.status === 'draft' },
-      { key: 'approved', label: 'Duyệt gói', done: !['draft', 'sent'].includes(po.status), current: po.status === 'sent' },
-      { key: 'delivery', label: 'Đợt giao', done: hasDelivery || ['partial', 'delivered', 'closed'].includes(po.status), current: ['confirmed', 'in_transit'].includes(po.status) && !hasReceivedDelivery },
-      { key: 'receipt', label: 'SL/CL', done: hasReceivedDelivery, current: hasWmsPending || po.status === 'partial' },
-      { key: 'closed', label: 'Hoàn tất', done: ['delivered', 'closed'].includes(po.status), current: po.status === 'partial' },
+      {
+        key: 'created',
+        stepNo: 1,
+        title: 'Tạo gói',
+        done: true,
+        current: po.status === 'draft',
+        user: creatorUser,
+        icon: <UserIcon size={15} />,
+        mainLabel: creatorUser?.name || 'Người tạo gói',
+        roleLabel: 'Người tạo đơn',
+        dateLabel: formatDate(po.orderDate || po.createdAt),
+        statusBadge: 'Đã tạo',
+        tone: 'emerald',
+      },
+      {
+        key: 'approved',
+        stepNo: 2,
+        title: 'Duyệt gói',
+        done: isApproved,
+        current: po.status === 'sent',
+        user: approverUser,
+        icon: <ShieldCheck size={15} />,
+        mainLabel: isApproved
+          ? (approverUser?.name ? approverUser.name : 'Đã duyệt gói')
+          : (approverUser?.name ? `Chờ: ${approverUser.name}` : 'Chờ phê duyệt'),
+        roleLabel: isApproved ? 'Người phê duyệt' : po.submittedToPermission ? `Quyền ${po.submittedToPermission}` : 'Chờ duyệt',
+        dateLabel: isApproved ? formatDate(po.lastActionAt || po.orderDate) : 'Đang chờ xử lý',
+        statusBadge: isApproved ? 'Đã duyệt' : po.status === 'sent' ? 'Chờ duyệt' : 'Chưa gửi',
+        tone: isApproved ? 'emerald' : po.status === 'sent' ? 'amber' : 'slate',
+      },
+      {
+        key: 'delivery',
+        stepNo: 3,
+        title: 'Đợt giao',
+        done: hasDelivery || ['partial', 'delivered', 'closed'].includes(po.status),
+        current: ['confirmed', 'in_transit'].includes(po.status) && !hasReceivedDelivery,
+        user: null,
+        icon: <Truck size={15} className="text-blue-600 dark:text-blue-400" />,
+        mainLabel: isApproved ? (hasDelivery ? `${deliveryTimelineGroups.length} đợt giao` : 'Đang giao hàng') : 'Kế hoạch giao',
+        roleLabel: targetWarehouseName ? `Kho ${targetWarehouseName}` : 'Kho nhận hàng',
+        dateLabel: deliveryTimelineGroups.length > 0 ? `${deliveryTimelineGroups.length} đợt` : 'Theo tiến độ',
+        statusBadge: hasDelivery ? `${deliveryTimelineGroups.length} đợt` : isApproved ? 'Đang giao' : 'Chưa có đợt',
+        tone: hasDelivery ? 'emerald' : isApproved ? 'blue' : 'slate',
+      },
+      {
+        key: 'receipt',
+        stepNo: 4,
+        title: 'SL / CL (KCS)',
+        done: hasReceivedDelivery,
+        current: hasWmsPending || po.status === 'partial',
+        user: null,
+        icon: <ShieldCheck size={15} className="text-amber-600 dark:text-amber-400" />,
+        mainLabel: hasReceivedDelivery ? 'Đã nhận hàng' : hasWmsPending ? 'Chờ kho duyệt' : 'Kiểm nhận KCS',
+        roleLabel: 'Kiểm nhận & KCS',
+        dateLabel: `Nhận ${fmtQty(receiptStats.receivedQty)}/${fmtQty(receiptStats.orderedQty)}`,
+        statusBadge: hasReceivedDelivery ? 'Đã nhận hàng' : hasWmsPending ? 'Chờ kho duyệt' : 'Chờ giao',
+        tone: hasReceivedDelivery ? 'emerald' : hasWmsPending ? 'amber' : 'slate',
+      },
+      {
+        key: 'closed',
+        stepNo: 5,
+        title: 'Hoàn tất',
+        done: ['delivered', 'closed'].includes(po.status),
+        current: po.status === 'partial',
+        user: null,
+        icon: <CheckCircle2 size={15} className="text-emerald-600 dark:text-emerald-400" />,
+        mainLabel: ['delivered', 'closed'].includes(po.status) ? 'Đã hoàn tất' : 'Đóng gói PO',
+        roleLabel: 'Đóng gói mua sắm',
+        dateLabel: ['delivered', 'closed'].includes(po.status) ? 'Hoàn thành' : 'Theo dõi',
+        statusBadge: ['delivered', 'closed'].includes(po.status) ? 'Hoàn tất' : 'Chưa hoàn tất',
+        tone: ['delivered', 'closed'].includes(po.status) ? 'emerald' : 'slate',
+      },
     ]
     : [
-      { key: 'created', label: 'Tạo PO', done: true, current: po.status === 'draft' },
-      { key: 'approved', label: 'Duyệt PO', done: !['draft', 'sent'].includes(po.status), current: po.status === 'sent' },
-      { key: 'delivery', label: 'Giao hàng', done: hasDelivery || ['partial', 'delivered', 'closed'].includes(po.status), current: ['confirmed', 'in_transit'].includes(po.status) && !hasReceivedDelivery },
-      { key: 'receipt', label: 'Nhập kho', done: hasReceivedDelivery, current: hasWmsPending || po.status === 'partial' },
-      { key: 'payable', label: 'Công nợ NCC', done: supplierPayableDocuments.length > 0, current: hasReceivedDelivery && supplierPayableDocuments.length === 0 },
-      { key: 'payment', label: 'Thanh toán', done: payableStatus === 'paid', current: supplierPayableDocuments.length > 0 && payableOutstanding > 0 },
+      {
+        key: 'created',
+        stepNo: 1,
+        title: 'Tạo PO',
+        done: true,
+        current: po.status === 'draft',
+        user: creatorUser,
+        icon: <UserIcon size={15} />,
+        mainLabel: creatorUser?.name || 'Người tạo đơn',
+        roleLabel: 'Người tạo đơn',
+        dateLabel: formatDate(po.orderDate || po.createdAt),
+        statusBadge: 'Đã tạo',
+        tone: 'emerald',
+      },
+      {
+        key: 'approved',
+        stepNo: 2,
+        title: 'Duyệt PO',
+        done: isApproved,
+        current: po.status === 'sent',
+        user: approverUser,
+        icon: <ShieldCheck size={15} />,
+        mainLabel: isApproved
+          ? (approverUser?.name ? approverUser.name : 'Đã duyệt PO')
+          : (approverUser?.name ? `Chờ: ${approverUser.name}` : 'Chờ phê duyệt'),
+        roleLabel: isApproved ? 'Người phê duyệt' : po.submittedToPermission ? `Quyền ${po.submittedToPermission}` : 'Chờ duyệt',
+        dateLabel: isApproved ? formatDate(po.lastActionAt || po.orderDate) : 'Đang chờ xử lý',
+        statusBadge: isApproved ? 'Đã duyệt' : po.status === 'sent' ? 'Chờ duyệt' : 'Chưa gửi',
+        tone: isApproved ? 'emerald' : po.status === 'sent' ? 'amber' : 'slate',
+      },
+      {
+        key: 'delivery',
+        stepNo: 3,
+        title: 'Giao hàng',
+        done: hasDelivery || ['partial', 'delivered', 'closed'].includes(po.status),
+        current: ['confirmed', 'in_transit'].includes(po.status) && !hasReceivedDelivery,
+        user: null,
+        icon: <Truck size={15} className="text-blue-600 dark:text-blue-400" />,
+        mainLabel: isApproved ? (hasDelivery ? `${deliveryTimelineGroups.length} đợt giao` : 'Đang giao hàng') : 'Kế hoạch giao',
+        roleLabel: targetWarehouseName ? `Kho ${targetWarehouseName}` : 'Kho nhận hàng',
+        dateLabel: deliveryTimelineGroups.length > 0 ? `${deliveryTimelineGroups.length} đợt` : 'Theo tiến độ',
+        statusBadge: hasDelivery ? `${deliveryTimelineGroups.length} đợt` : isApproved ? 'Đang giao' : 'Chưa có đợt',
+        tone: hasDelivery ? 'emerald' : isApproved ? 'blue' : 'slate',
+      },
+      {
+        key: 'receipt',
+        stepNo: 4,
+        title: 'Nhập kho',
+        done: hasReceivedDelivery,
+        current: hasWmsPending || po.status === 'partial',
+        user: null,
+        icon: <ShieldCheck size={15} className="text-amber-600 dark:text-amber-400" />,
+        mainLabel: hasReceivedDelivery ? 'Đã nhập kho' : hasWmsPending ? 'Chờ kho duyệt' : 'Chờ nhận hàng',
+        roleLabel: 'Kiểm nhận WMS',
+        dateLabel: `Nhận ${fmtQty(receiptStats.receivedQty)}/${fmtQty(receiptStats.orderedQty)}`,
+        statusBadge: hasReceivedDelivery ? 'Đã nhập kho' : hasWmsPending ? 'Chờ kho duyệt' : 'Chờ giao',
+        tone: hasReceivedDelivery ? 'emerald' : hasWmsPending ? 'amber' : 'slate',
+      },
+      {
+        key: 'payable',
+        stepNo: 5,
+        title: 'Công nợ NCC',
+        done: supplierPayableDocuments.length > 0,
+        current: hasReceivedDelivery && supplierPayableDocuments.length === 0,
+        user: null,
+        icon: <WalletCards size={15} className="text-indigo-600 dark:text-indigo-400" />,
+        mainLabel: supplierPayableDocuments.length > 0 ? payableView.label : 'Công nợ NCC',
+        roleLabel: 'Hạch toán AP',
+        dateLabel: payableView.label,
+        statusBadge: supplierPayableDocuments.length > 0 ? 'Có AP' : 'Chưa tạo AP',
+        tone: supplierPayableDocuments.length > 0 ? 'emerald' : 'slate',
+      },
+      {
+        key: 'payment',
+        stepNo: 6,
+        title: 'Thanh toán',
+        done: payableStatus === 'paid',
+        current: supplierPayableDocuments.length > 0 && payableOutstanding > 0,
+        user: null,
+        icon: <CheckCircle2 size={15} className="text-emerald-600 dark:text-emerald-400" />,
+        mainLabel: payableStatus === 'paid' ? 'Đã thanh toán' : payableOutstanding > 0 ? 'Còn phải trả' : 'Thanh toán',
+        roleLabel: 'Chi trả NCC',
+        dateLabel: payableOutstanding > 0 ? `Còn ${fmtMoney(payableOutstanding)} đ` : 'Hoàn tất',
+        statusBadge: payableStatus === 'paid' ? 'Đã chi' : 'Chưa trả hết',
+        tone: payableStatus === 'paid' ? 'emerald' : 'slate',
+      },
     ];
-
-  const statusCards = isPackageV2 ? [
-    { label: 'Giá trị chủ trương', value: `${fmtMoney(packageSummary.referenceGross)} đ`, tone: 'blue', note: `${fmtQty(packageSummary.referenceQty)} nhu cầu gốc` },
-    { label: 'Tổng các đợt', value: `${fmtMoney(packageSummary.releasedGross)} đ`, tone: packageSummary.releasedGrossVariance > 0.5 ? 'amber' : 'slate', note: packageSummary.releasedGrossVariance > 0.5 ? 'Vượt mốc tham chiếu' : `${fmtQty(packageSummary.releasedQty)} đã lập đợt` },
-    { label: 'Đã nhận gồm VAT', value: `${fmtMoney(packageSummary.receivedGross)} đ`, tone: packageSummary.receivedNetQty > 0 ? 'emerald' : 'slate', note: `${fmtQty(packageSummary.receivedNetQty)} thực nhận ròng` },
-    { label: 'Nhu cầu còn lại', value: fmtQty(packageSummary.remainingNeedQty), tone: packageSummary.remainingNeedQty > 0 ? 'amber' : 'emerald', note: packageSummary.uiStatus },
-  ] : [
-    { label: 'Trạng thái PO', value: statusLabel, tone: 'blue', note: sourceLabel },
-    {
-      label: 'Trạng thái đợt giao',
-      value: deliveryTimelineGroups.length === 0 ? 'Chưa có đợt' : `${deliveryTimelineGroups.length} đợt`,
-      tone: hasWmsPending ? 'amber' : hasReceivedDelivery ? 'emerald' : 'blue',
-      note: hasWmsPending ? 'Có đợt chờ kho duyệt' : hasReceivedDelivery ? 'Đã có nhập kho' : 'Theo kế hoạch giao',
-    },
-    {
-      label: 'Trạng thái WMS',
-      value: hasWmsPending ? 'Chờ kho duyệt' : hasReceivedDelivery ? 'Đã nhập hàng' : 'Chưa phát sinh',
-      tone: hasWmsPending ? 'amber' : hasReceivedDelivery ? 'emerald' : 'slate',
-      note: hasWmsPending ? 'Mở phiếu WMS để xử lý' : 'Theo phiếu kho liên quan',
-    },
-    {
-      label: 'Công nợ / thanh toán',
-      value: payableView.label,
-      tone: payableOutstanding > 0 ? 'rose' : payableStatus === 'paid' ? 'emerald' : 'slate',
-      note: payableOutstanding > 0 ? `${fmtMoney(payableOutstanding)} đ còn phải trả` : supplierPayableDocuments.length ? 'Đã có chứng từ AP' : 'Chưa tạo chứng từ AP',
-    },
-  ];
 
   const renderActionButton = (action: PurchaseOrderUiAction, primary = false, className = '') => (
     <button
@@ -408,7 +602,7 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
       disabled={action.disabled}
       title={action.disabledReason || action.label}
       onClick={() => void onRunAction(action)}
-      className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs font-black transition active:scale-[0.98] disabled:opacity-60 ${actionClass(action, primary)} ${className}`}
+      className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-xs font-black transition active:scale-[0.98] disabled:opacity-60 ${actionClass(action, primary)} ${className}`}
     >
       {actionIcon(action)}
       {action.label}
@@ -416,17 +610,19 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
   );
 
   return (
-    <div className="fixed inset-0 z-[1000] flex justify-end bg-slate-950/45 backdrop-blur-sm" onClick={onClose}>
-      {/* max-w-[min(1320px,calc(100vw-24px))] */}
+    <div className="fixed inset-0 z-[1000] flex justify-end bg-slate-950/45 backdrop-blur-xs animate-in fade-in duration-150" onClick={onClose}>
       <aside
-        className="flex h-full w-full max-w-[min(1760px,calc(100vw-48px))] flex-col overflow-hidden border-l border-slate-200 bg-slate-50 shadow-2xl dark:border-slate-800 dark:bg-slate-950"
+        className="flex h-full w-full max-w-[min(1760px,calc(100vw-48px))] max-w-[min(1320px,calc(100vw-24px))] flex-col overflow-hidden border-l border-slate-200 bg-slate-50/70 shadow-2xl dark:border-slate-800 dark:bg-slate-950"
         onClick={event => event.stopPropagation()}
       >
-        <div className="sticky top-0 z-30 shrink-0 border-b border-slate-200 bg-white/95 px-5 py-4 shadow-sm backdrop-blur dark:border-slate-800 dark:bg-slate-950/95 sm:px-6">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        {/* HEADER TOP BAR */}
+        <div className="sticky top-0 z-30 shrink-0 border-b border-slate-200/90 bg-white/95 px-5 py-4 shadow-xs backdrop-blur dark:border-slate-800 dark:bg-slate-950/95 sm:px-6">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="rounded-lg bg-blue-50 px-2.5 py-1 font-mono text-sm font-black uppercase tracking-wide text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">{po.poNumber}</span>
+                <span className="rounded-lg bg-blue-50 dark:bg-blue-950/40 px-2.5 py-1 font-mono text-sm font-black uppercase tracking-wide text-blue-700 dark:text-blue-300 border border-blue-200/60">
+                  {po.poNumber}
+                </span>
                 <StatusBadge status={po.status} label={statusLabel} tone={statusTone} showDot={false} size="md" />
                 {uiPolicy.alerts.slice(0, 2).map(alert => (
                   <span
@@ -437,31 +633,38 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
                   </span>
                 ))}
               </div>
-              <h3 className="mt-2 truncate text-xl font-black text-slate-900 dark:text-slate-100">{requestTitle}</h3>
-              <div className="mt-1 flex flex-wrap gap-x-5 gap-y-1 text-xs font-bold text-slate-500 dark:text-slate-400">
-                <span>MR/Vật tư: <strong className="text-slate-800 dark:text-slate-200">{materialSummary}</strong></span>
+              <h3 className="mt-1.5 truncate text-lg sm:text-xl font-black text-slate-900 dark:text-slate-100">
+                {requestTitle}
+              </h3>
+              <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
                 <span>NCC: <strong className="text-slate-800 dark:text-slate-200">{po.vendorName || '—'}</strong></span>
                 <span>Kho nhận: <strong className="text-slate-800 dark:text-slate-200">{targetWarehouseName || '—'}</strong></span>
                 {groupLabel && <span>{groupLabel}</span>}
               </div>
             </div>
+
+            {/* Quick Actions & Close */}
             <div className="flex shrink-0 items-center justify-between gap-3 lg:justify-end">
-              <div className="text-right">
-                <div className="text-xs font-black uppercase tracking-wider text-slate-400">{isPackageV2 ? 'Giá trị chủ trương' : 'Tổng thanh toán'}</div>
-                <div className="text-2xl font-black text-emerald-700 dark:text-emerald-300">{fmtMoney(isPackageV2 ? packageSummary.referenceGross : paymentTotal)} đ</div>
-                <div className="text-xs font-bold text-slate-400">Trước VAT {fmtMoney(displayAmount)} đ</div>
+              <div className="text-right bg-emerald-50/60 dark:bg-emerald-950/30 px-3.5 py-1.5 rounded-xl border border-emerald-200/60 dark:border-emerald-900/40">
+                <div className="text-[10px] font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+                  {isPackageV2 ? 'Giá trị chủ trương gồm VAT' : 'Tổng thanh toán gồm VAT'}
+                </div>
+                <div className="text-xl sm:text-2xl font-black text-emerald-700 dark:text-emerald-300">
+                  {fmtMoney(isPackageV2 ? packageSummary.referenceGross : paymentTotal)} đ
+                </div>
               </div>
+
               <div className="relative">
                 <button
                   type="button"
                   onClick={() => setMenuOpen(prev => !prev)}
-                  className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 hover:text-slate-800 dark:border-slate-700 dark:bg-slate-950 dark:hover:bg-slate-900"
+                  className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 hover:text-slate-800 dark:border-slate-700 dark:bg-slate-950 shadow-xs"
                   title="Hành động phụ"
                 >
                   <MoreVertical size={17} />
                 </button>
                 {menuOpen && (
-                  <div className="absolute right-0 top-11 z-40 w-64 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-950">
+                  <div className="absolute right-0 top-11 z-40 w-64 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-950 animate-in fade-in">
                     {uiPolicy.menuActions.map(action => (
                       <button
                         key={action.id}
@@ -472,7 +675,7 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
                           setMenuOpen(false);
                           void onRunAction(action);
                         }}
-                        className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-black transition disabled:pointer-events-auto disabled:opacity-60 ${actionClass(action, false)}`}
+                        className={`flex w-full items-center gap-2 px-3.5 py-2.5 text-left text-xs font-black transition disabled:pointer-events-auto disabled:opacity-60 ${actionClass(action, false)}`}
                       >
                         {actionIcon(action)}
                         {action.label}
@@ -481,10 +684,11 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
                   </div>
                 )}
               </div>
+
               <button
                 type="button"
                 onClick={onClose}
-                className="flex h-10 w-10 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-900 dark:hover:text-slate-200"
+                className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:border-slate-700 dark:bg-slate-950 shadow-xs"
                 title="Đóng chi tiết PO"
               >
                 <X size={19} />
@@ -493,287 +697,392 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
           </div>
         </div>
 
+        {/* BODY CONTAINER */}
         <div className="flex-1 overflow-y-auto">
-          <div className="grid min-h-full gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_360px] lg:p-6">
-            <main className="min-w-0 space-y-5">
-              {/* STEPPER */}
-              <section className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm dark:border-slate-800 dark:bg-slate-950">
-                <div className="grid gap-3 md:grid-cols-6">
-                  {stepper.map((step, index) => {
-                    const stateClass = step.done
-                      ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                      : step.current
-                        ? 'border-blue-200 bg-blue-50 text-blue-700 ring-2 ring-blue-100'
-                        : 'border-slate-200 bg-slate-50 text-slate-400';
+          <div className="grid min-h-full gap-5 p-4 sm:p-5 lg:grid-cols-[minmax(0,1fr)_360px] lg:p-6">
+            {/* MAIN COLUMN: TIẾN TRÌNH NHÂN SỰ + TIỀN + BẢNG HÀNG HÓA */}
+            <main className="min-w-0 space-y-4">
+              {/* STEPPER NHÂN SỰ VÀ TIẾN TRÌNH VỚI AVATAR */}
+              <section className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900">
+                <div className="mb-2.5 flex items-center justify-between text-[11px] font-black uppercase text-slate-400">
+                  <span>Tiến trình xử lý & Nhân sự phụ trách</span>
+                  <span className="text-teal-600 font-bold">{stepperWithAvatars.length} Giai đoạn PO</span>
+                </div>
+
+                <div className={`grid gap-2.5 sm:grid-cols-2 md:grid-cols-3 ${stepperWithAvatars.length > 5 ? 'xl:grid-cols-6' : 'xl:grid-cols-5'}`}>
+                  {stepperWithAvatars.map(step => {
+                    const isDone = step.done;
+                    const isCurrent = step.current;
+                    const containerClass = isDone
+                      ? 'border-emerald-200/80 bg-emerald-50/40 text-emerald-900 dark:border-emerald-900/50 dark:bg-emerald-950/20'
+                      : isCurrent
+                        ? 'border-teal-400 bg-teal-50/50 text-teal-900 ring-2 ring-teal-400/20 shadow-xs dark:border-teal-700 dark:bg-teal-950/30'
+                        : 'border-slate-200/80 bg-slate-50/60 text-slate-400 dark:border-slate-800 dark:bg-slate-900/40';
+
                     return (
-                      <div key={step.key} className={`relative rounded-lg border px-3 py-2 ${stateClass}`}>
-                        <div className="text-[10px] font-black uppercase tracking-wider">Bước {index + 1}</div>
-                        <div className="mt-1 text-xs font-black">{step.label}</div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </section>
+                      <div
+                        key={step.key}
+                        className={`relative rounded-xl border p-3 flex flex-col justify-between space-y-2 transition ${containerClass}`}
+                      >
+                        <div className="flex items-center justify-between gap-1.5">
+                          <span className="text-[10px] font-black uppercase tracking-wider opacity-75">
+                            Bước {step.stepNo}: {step.title}
+                          </span>
+                          {isDone ? (
+                            <CheckCircle2 size={15} className="text-emerald-600 shrink-0" />
+                          ) : isCurrent ? (
+                            <Clock size={15} className="text-teal-600 animate-pulse shrink-0" />
+                          ) : (
+                            <span className="h-2 w-2 rounded-full bg-slate-300 dark:bg-slate-700 shrink-0" />
+                          )}
+                        </div>
 
-              {/* KHU VỰC 1: THÔNG TIN TỔNG QUAN ĐƠN HÀNG (CHUYỂN CỤM THÔNG TIN CHÍNH + BASELINE GÓI LÊN TRÊN CÙNG) */}
-              <section className="space-y-4">
-                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                  {statusCards.map(card => {
-                    const toneClass = {
-                      blue: 'border-blue-100 bg-blue-50/80 text-blue-700',
-                      emerald: 'border-emerald-100 bg-emerald-50/80 text-emerald-700',
-                      amber: 'border-amber-100 bg-amber-50/80 text-amber-700',
-                      rose: 'border-rose-100 bg-rose-50/80 text-rose-700',
-                      slate: 'border-slate-200 bg-slate-50 text-slate-600',
-                    }[card.tone];
-                    return (
-                      <div key={card.label} className={`rounded-xl border p-4 ${toneClass}`}>
-                        <div className="text-xs font-black uppercase tracking-wider opacity-75">{card.label}</div>
-                        <div className="mt-2 text-base font-black">{card.value}</div>
-                        <div className="mt-1 text-xs font-bold opacity-85">{card.note}</div>
-                      </div>
-                    );
-                  })}
-                </div>
+                        {/* Person Avatar or Step Icon */}
+                        <div className="flex items-center gap-2 min-w-0 pt-0.5">
+                          {step.user ? (
+                            <UserAvatar
+                              name={step.user.name}
+                              avatar={step.user.avatar}
+                              size="sm"
+                              className={isCurrent ? 'ring-2 ring-teal-500 ring-offset-1' : ''}
+                            />
+                          ) : (
+                            <div className={`h-8 w-8 rounded-xl flex items-center justify-center shrink-0 ${
+                              isDone ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300' :
+                              isCurrent ? 'bg-teal-100 text-teal-700 dark:bg-teal-950 dark:text-teal-300' :
+                              'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
+                            }`}>
+                              {step.icon || <UserIcon size={14} />}
+                            </div>
+                          )}
 
-                <div className="grid gap-4 xl:grid-cols-3">
-                  <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950 xl:col-span-2">
-                    <h4 className="text-xs font-black uppercase tracking-wider text-slate-500">Thông tin chính</h4>
-                    <div className="mt-4 grid gap-4 text-xs sm:grid-cols-2 lg:grid-cols-3">
-                      <div><span className="block text-slate-400 font-bold">Nguồn PO</span><strong className="text-sm font-black text-slate-800 dark:text-slate-100">{sourceLabel}</strong></div>
-                      <div><span className="block text-slate-400 font-bold">Ngày đặt</span><strong className="text-sm font-black text-slate-800 dark:text-slate-100">{formatDate(po.orderDate)}</strong></div>
-                      <div><span className="block text-slate-400 font-bold">Ngày cần giao</span><strong className="text-sm font-black text-slate-800 dark:text-slate-100">{formatDate(po.expectedDeliveryDate)}</strong></div>
-                      <div><span className="block text-slate-400 font-bold">Số dòng hàng</span><strong className="text-sm font-black text-slate-800 dark:text-slate-100">{po.items.length} dòng</strong></div>
-                      <div><span className="block text-slate-400 font-bold">Đợt giao</span><strong className="text-sm font-black text-slate-800 dark:text-slate-100">{deliveryTimelineGroups.length} đợt</strong></div>
-                      <div><span className="block text-slate-400 font-bold">Kho nhận</span><strong className="text-sm font-black text-slate-800 dark:text-slate-100">{targetWarehouseName || '—'}</strong></div>
-                    </div>
-                    {po.note && (
-                      <div className="mt-4 rounded-xl border border-amber-100 bg-amber-50/70 p-3.5 text-xs font-bold leading-6 text-amber-900">
-                        <span className="block text-xs font-black uppercase tracking-wider text-amber-700">Ghi chú</span>
-                        {po.note}
-                      </div>
-                    )}
-                  </div>
-                  <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">
-                    <h4 className="text-xs font-black uppercase tracking-wider text-slate-500">{isPackageV2 ? 'Baseline gói' : 'Giá trị'}</h4>
-                    <div className="mt-4 space-y-3 text-xs font-semibold">
-                      <div className="flex justify-between"><span className="text-slate-500 font-bold">Trước VAT</span><strong className="text-sm font-black text-slate-800">{fmtMoney(displayAmount)} đ</strong></div>
-                      <div className="flex justify-between"><span className="text-slate-500 font-bold">VAT {vatRate.toLocaleString('vi-VN')}%</span><strong className="text-sm font-black text-slate-800">{fmtMoney(vatAmount)} đ</strong></div>
-                      <div className="flex justify-between border-t border-slate-100 pt-3 text-sm"><span className="font-black text-slate-800">{isPackageV2 ? 'Chủ trương gồm VAT' : 'Tổng thanh toán'}</span><strong className="text-base font-black text-emerald-700">{fmtMoney(isPackageV2 ? packageSummary.referenceGross : paymentTotal)} đ</strong></div>
-                    </div>
-                  </div>
-                </div>
-              </section>
-
-              {/* KHU VỰC 2: HÀNG HÓA + ĐỢT GIAO GỘP THÀNH 1 KHU VỰC */}
-              <section className="space-y-5 rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">
-                {/* Hàng hóa */}
-                <div>
-                  <div className="mb-3 flex items-center justify-between gap-3 border-b border-slate-100 pb-3 dark:border-slate-800">
-                    <div>
-                      <h4 className="text-base font-black text-slate-800 dark:text-slate-100">Hàng hóa</h4>
-                      <p className="text-xs font-bold text-slate-400">Đã nhận {fmtQty(receiptStats.receivedQty)}/{fmtQty(receiptStats.orderedQty)} • Còn thiếu {fmtQty(receiptStats.remainingQty)}</p>
-                    </div>
-                  </div>
-                  <div id={`po-items-table-${po.id}`} className="overflow-x-auto">
-                    <table className="w-full min-w-[980px] text-left text-sm">
-                      <thead className="bg-slate-50 text-xs font-black uppercase tracking-wide text-slate-500 dark:bg-slate-900 dark:text-slate-400">
-                        <tr>
-                          <th className="px-4 py-3">Tên vật tư</th>
-                          {uniqueSpecKeys.map(key => <th key={key} className="px-3 py-3 text-center">{getHeaderLabel(key, po.items)}</th>)}
-                          <th className="px-3 py-3 text-right">SL đặt</th>
-                          <th className="px-3 py-3 text-right">Đã nhận</th>
-                          <th className="px-3 py-3 text-right">Còn thiếu</th>
-                          <th className="px-3 py-3 text-right">Đơn giá</th>
-                          <th className="px-3 py-3 text-right">Thành tiền</th>
-                          <th className="px-4 py-3">Trạng thái</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                        {po.items.map((item, index) => {
-                          const inventory = inventoryItems.find(row => row.id === item.itemId);
-                          const stockUnit = getPoLineStockUnit(item, inventory);
-                          const lineKey = item.lineId || item.itemId;
-                          const demandQty = getPurchaseOrderLineDemandQty(po, lineKey, poRequestLinks, inventoryItems);
-                          const completedReturnQty = Math.max(
-                            Number(item.returnedQty || 0),
-                            supplierReturns
-                              .filter(returnDoc => returnDoc.status === 'completed')
-                              .reduce((sum, returnDoc) => sum + returnDoc.lines
-                                .filter(line => line.purchaseOrderLineId === lineKey)
-                                .reduce((lineSum, line) => lineSum + Number(line.returnQty || 0), 0), 0),
-                          );
-                          const netReceivedQty = Math.max(0, Number(item.receivedQty || 0) - completedReturnQty);
-                          const remainingQty = Math.max(0, demandQty - netReceivedQty);
-                          const lineAmount = getPurchaseOrderDisplayLineAmount(po, item, deliveryBatches);
-                          const lineStatus = remainingQty <= 0
-                            ? { label: 'Đã đủ', tone: 'success' as ErpStatusTone }
-                            : netReceivedQty > 0
-                              ? { label: 'Nhận một phần', tone: 'attention' as ErpStatusTone }
-                              : { label: 'Chờ nhận', tone: 'warning' as ErpStatusTone };
-                          return (
-                            <tr key={`${lineKey}:${index}`} className="hover:bg-blue-50/30 dark:hover:bg-slate-900/50">
-                              <td className="px-4 py-3.5 align-top">
-                                <div className="text-sm font-black text-slate-800 dark:text-slate-100">{item.name}</div>
-                                <div className="mt-1 flex flex-wrap gap-1.5 text-xs font-bold text-slate-400">
-                                  {item.sku && <span className="font-mono">{item.sku}</span>}
-                                  {item.requestCode && <span className="rounded border border-amber-100 bg-amber-50 px-1.5 py-0.5 text-amber-700">YC {item.requestCode}</span>}
-                                  {item.materialBudgetItemName && <span className="rounded border border-emerald-100 bg-emerald-50 px-1.5 py-0.5 text-emerald-700">{item.materialBudgetItemName}</span>}
-                                  {item.workBoqItemName && <span className="rounded border border-blue-100 bg-blue-50 px-1.5 py-0.5 text-blue-700">{item.workBoqItemName}</span>}
-                                </div>
-                                {(item.neededDate || item.note || item.pricingMode) && (
-                                  <div className="mt-1 text-xs font-semibold text-slate-500">
-                                    {item.neededDate ? `Ngày cần: ${item.neededDate}` : ''}
-                                    {item.note ? ` ${item.note}` : ''}
-                                    {item.pricingMode && item.pricingMode !== 'standard' ? ` ${formatPricingFormula(item)}` : ''}
-                                  </div>
-                                )}
-                              </td>
-                              {uniqueSpecKeys.map(key => (
-                                <td key={key} className="px-3 py-3.5 text-center font-bold text-slate-600 dark:text-slate-300">
-                                  {item.specs?.[key]?.value ?? '—'}
-                                </td>
-                              ))}
-                              <td className="px-3 py-3.5 text-right font-black text-slate-800 dark:text-slate-100">{fmtQty(demandQty)} {stockUnit || item.unit}</td>
-                              <td className="px-3 py-3.5 text-right font-black text-emerald-700">{fmtQty(netReceivedQty)}</td>
-                              <td className={`px-3 py-3.5 text-right font-black ${remainingQty > 0 ? 'text-amber-700' : 'text-emerald-700'}`}>{fmtQty(remainingQty)}</td>
-                              <td className="px-3 py-3.5 text-right font-bold text-slate-700">{fmtUnitPrice(lineAmount.unitPrice)}</td>
-                              <td className="px-3 py-3.5 text-right font-black text-slate-900 dark:text-slate-100">{fmtMoney(lineAmount.totalAmount)} đ</td>
-                              <td className="px-4 py-3.5"><StatusBadge status={lineStatus.label} label={lineStatus.label} tone={lineStatus.tone} showDot={false} /></td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                {/* Đợt giao */}
-                <div className="border-t border-slate-100 pt-5 dark:border-slate-800">
-                  <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <h4 className="text-base font-black text-slate-800 dark:text-slate-100">Đợt giao</h4>
-                      <p className="text-xs font-bold text-slate-400">Một PO, mỗi đợt giao có luồng WMS/QR riêng.</p>
-                    </div>
-                    {isLoadingDeliveryPrintGroups && (
-                      <span className="inline-flex items-center gap-1.5 text-xs font-black text-slate-400">
-                        <Loader2 size={14} className="animate-spin" /> Đang tải WMS
-                      </span>
-                    )}
-                  </div>
-                  {deliveryTimelineGroups.length === 0 ? (
-                    <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-sm font-bold text-slate-400">Chưa có đợt giao.</div>
-                  ) : (
-                    <div className="space-y-4">
-                      {deliveryTimelineGroups.map(group => {
-                        const status = deliveryStatusView(group.status);
-                        const batch = group.scheduleBatch;
-                        const printGroup = group.printGroup;
-                        const printPoKey = `${po.id}:${printGroup.key}:purchase_order`;
-                        const printApprovalKey = `${po.id}:${printGroup.key}:approval_request`;
-                        const normalizedStatus = normalizeDeliveryTimelineStatus(group.status);
-                        const canEditPlannedBatch = !isPackageV2 && !!batch && canMutatePoDocument && ['planned', 'supplemental_pending'].includes(batch.status) && !poHasStockImpact;
-                        const isDeletingBatch = batch
-                          ? deletingDeliveryKey === `batch:${batch.id}`
-                          : deletingDeliveryKey === `group:${printGroup.key}`;
-                        const wmsTransactionId = group.wmsTransactionId;
-                        return (
-                          <div key={group.key} className="relative rounded-xl border border-slate-200 bg-gradient-to-r from-white to-slate-50 p-4.5 shadow-sm dark:border-slate-800 dark:from-slate-950 dark:to-slate-900">
-                            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto]">
-                              <div className="min-w-0">
-                                <div className="flex flex-wrap items-center gap-2.5">
-                                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-600 text-sm font-black text-white">{group.marker}</div>
-                                  <div>
-                                    <div className="text-base font-black text-slate-800 dark:text-slate-100">{group.label}</div>
-                                    <div className="text-xs font-bold text-slate-400">{formatDate(group.plannedDate)} • Kho {group.targetWarehouse}</div>
-                                  </div>
-                                  <span className={`rounded-full border px-2.5 py-0.5 text-xs font-black ${status.className}`}>{status.label}</span>
-                                </div>
-                                <div className="mt-3.5 grid gap-3 text-xs sm:grid-cols-3">
-                                  <div className="rounded-lg bg-white/80 p-2.5 dark:bg-slate-950/60"><span className="block text-xs font-black uppercase text-slate-400">Số dòng</span><strong className="text-sm font-black">{group.lineCount} dòng</strong></div>
-                                  <div className="rounded-lg bg-white/80 p-2.5 dark:bg-slate-950/60"><span className="block text-xs font-black uppercase text-slate-400">Tổng khối lượng</span><strong className="text-sm font-black">{fmtQty(group.totalQty)}</strong></div>
-                                  <div className="rounded-lg bg-white/80 p-2.5 dark:bg-slate-950/60"><span className="block text-xs font-black uppercase text-slate-400">Giá trị đợt</span><strong className="text-sm font-black">{fmtMoney(group.totalAmount)} đ</strong></div>
-                                </div>
-                              </div>
-                              <div className="flex flex-wrap items-start justify-end gap-2 lg:max-w-[380px]">
-                                {printGroup.lines.length > 0 && (
-                                  <>
-                                    <button
-                                      type="button"
-                                      onClick={() => void onPrintDeliveryGroup(printGroup, 'purchase_order')}
-                                      disabled={printingPoId === printPoKey}
-                                      className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3.5 text-xs font-black text-blue-700 hover:bg-blue-100 disabled:opacity-60"
-                                    >
-                                      {printingPoId === printPoKey ? <Loader2 size={14} className="animate-spin" /> : <Printer size={14} />}
-                                      In đơn
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => void onPrintDeliveryGroup(printGroup, 'approval_request')}
-                                      disabled={printingPoId === printApprovalKey}
-                                      className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3.5 text-xs font-black text-rose-700 hover:bg-rose-100 disabled:opacity-60"
-                                    >
-                                      {printingPoId === printApprovalKey ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />}
-                                      In đề nghị
-                                    </button>
-                                  </>
-                                )}
-                                {canEditPlannedBatch && (
-                                  <>
-                                    <button type="button" onClick={onEditSchedule} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3.5 text-xs font-black text-slate-600 hover:bg-slate-50">
-                                      <Edit2 size={14} /> Sửa
-                                    </button>
-                                    <button type="button" onClick={() => batch && void onRemovePlannedBatch(batch)} disabled={isDeletingBatch} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3.5 text-xs font-black text-red-700 hover:bg-red-100 disabled:opacity-60">
-                                      {isDeletingBatch ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />} Xóa
-                                    </button>
-                                  </>
-                                )}
-                                {isPackageV2 && batch && (batch.qrToken || wmsTransactionId) && (
-                                  <button type="button" onClick={() => void onRunAction({ id: 'open_delivery_qr', label: 'Mở QR', intent: 'primary', deliveryBatchId: batch.id, transactionId: wmsTransactionId || undefined, qrToken: batch.qrToken || null })} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-blue-600 px-3.5 text-xs font-black text-white hover:bg-blue-700">
-                                    <QrCode size={14} /> Mở QR
-                                  </button>
-                                )}
-                                {isPackageV2 && batch && canConfirmPo && po.purchaseMode === 'multiple' && (
-                                  <button type="button" onClick={() => void onRunAction({ id: 'clone_delivery', label: 'Clone đợt', intent: 'neutral', deliveryBatchId: batch.id })} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3.5 text-xs font-black text-slate-600 hover:bg-slate-50">
-                                    <RefreshCcw size={14} /> Clone
-                                  </button>
-                                )}
-                                {isPackageV2 && batch && canConfirmPo && po.purchaseMode === 'multiple' && ['planned', 'wms_pending', 'receiving'].includes(batch.status) && (
-                                  <button type="button" onClick={() => void onRunAction({ id: 'cancel_delivery', label: 'Hủy đợt giao', intent: 'danger', deliveryBatchId: batch.id })} disabled={isDeletingBatch} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3.5 text-xs font-black text-red-700 hover:bg-red-100 disabled:opacity-60">
-                                    {isDeletingBatch ? <Loader2 size={14} className="animate-spin" /> : <Ban size={14} />} Hủy
-                                  </button>
-                                )}
-                                {!isPackageV2 && batch && canConfirmPo && ['confirmed', 'in_transit'].includes(po.status) && batch.status === 'planned' && (
-                                  <button type="button" onClick={() => void onCreateDeliveryReceipt(batch)} disabled={creatingDeliveryBatchId === batch.id} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-indigo-600 px-3.5 text-xs font-black text-white hover:bg-indigo-700 disabled:opacity-60">
-                                    {creatingDeliveryBatchId === batch.id ? <Loader2 size={14} className="animate-spin" /> : <QrCode size={14} />} Tạo WMS
-                                  </button>
-                                )}
-                                {normalizedStatus === 'wms_pending' && wmsTransactionId && (
-                                  <button type="button" onClick={() => void onRunAction({ id: 'open_wms_transaction', label: 'Mở WMS', intent: 'primary', transactionId: wmsTransactionId })} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-blue-600 px-3.5 text-xs font-black text-white hover:bg-blue-700">
-                                    <ShieldCheck size={14} /> Mở WMS
-                                  </button>
-                                )}
-                                {canConfirmPo && normalizedStatus === 'cancelled' && (
-                                  <button type="button" onClick={() => batch ? void onRemoveFailedDeliveryBatch(batch) : void onRemoveFailedDeliveryGroup(printGroup)} disabled={isDeletingBatch} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3.5 text-xs font-black text-red-700 hover:bg-red-100 disabled:opacity-60">
-                                    {isDeletingBatch ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />} Xóa đợt bị từ chối
-                                  </button>
-                                )}
-                              </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="font-black text-xs text-slate-800 dark:text-white truncate" title={step.mainLabel}>
+                              {step.mainLabel}
+                            </div>
+                            <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 truncate">
+                              {step.roleLabel}
                             </div>
                           </div>
-                        );
-                      })}
-                    </div>
-                  )}
+                        </div>
+
+                        {/* Date / Status Tag */}
+                        <div className="pt-1.5 border-t border-slate-200/50 dark:border-slate-800 flex items-center justify-between text-[10px] font-bold">
+                          <span className="opacity-80">{step.dateLabel}</span>
+                          <span className={`px-1.5 py-0.2 rounded font-black ${isDone ? 'bg-emerald-100 text-emerald-800' : isCurrent ? 'bg-teal-100 text-teal-800' : 'bg-slate-200/80 text-slate-600'}`}>
+                            {step.statusBadge}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </section>
 
-              {/* KHU VỰC 3: LỊCH SỬ + CÔNG NỢ NCC (ĐƯA XUỐNG CUỐI CÙNG) */}
+              {/* KHU VỰC TIỀN VÀ BASELINE (MONEY FOCUS BAR) */}
+              <section className="rounded-2xl border border-slate-200/90 bg-gradient-to-br from-white via-slate-50/50 to-emerald-50/20 p-4 sm:p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900">
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 items-center">
+                  <div className="p-3 rounded-xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-xs">
+                    <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400">Tiền hàng trước VAT</span>
+                    <strong className="text-base sm:text-lg font-black text-slate-800 dark:text-white mt-0.5 block">
+                      {fmtMoney(displayAmount)} đ
+                    </strong>
+                  </div>
+
+                  <div className="p-3 rounded-xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-xs">
+                    <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400">Thuế VAT ({vatRate}%)</span>
+                    <strong className="text-base sm:text-lg font-black text-slate-800 dark:text-white mt-0.5 block">
+                      {fmtMoney(vatAmount)} đ
+                    </strong>
+                  </div>
+
+                  <div className="p-3 rounded-xl border border-emerald-200 bg-emerald-50/50 dark:border-emerald-900/50 dark:bg-emerald-950/30 shadow-xs">
+                    <span className="block text-[10px] font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
+                      {isPackageV2 ? 'Chủ trương gồm VAT' : 'Tổng thanh toán gồm VAT'}
+                    </span>
+                    <strong className="text-lg sm:text-xl font-black text-emerald-700 dark:text-emerald-300 mt-0.5 block">
+                      {fmtMoney(isPackageV2 ? packageSummary.referenceGross : paymentTotal)} đ
+                    </strong>
+                  </div>
+
+                  <div className="p-3 rounded-xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-xs">
+                    <div className="flex items-center justify-between text-[10px] font-black uppercase text-slate-400 mb-1">
+                      <span>Tiến độ nhận hàng</span>
+                      <span className="text-teal-600 font-mono">{receiptPercent}%</span>
+                    </div>
+                    <div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                      <div className="h-full rounded-full bg-gradient-to-r from-teal-500 to-emerald-500 transition-all duration-300" style={{ width: `${receiptPercent}%` }} />
+                    </div>
+                    <span className="mt-1 block text-[10px] font-bold text-slate-400 truncate">
+                      Đã nhận {fmtQty(receiptStats.receivedQty)}/{fmtQty(receiptStats.orderedQty)} • Còn {fmtQty(receiptStats.remainingQty)}
+                    </span>
+                  </div>
+                </div>
+              </section>
+
+              {/* KHU VỰC HÀNG HÓA VÀ VẬT TƯ (PRIMARY FOCUS) */}
+              <section className="rounded-2xl border border-slate-200/90 bg-white p-4 sm:p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900 space-y-4">
+                <div className="flex items-center justify-between gap-3 border-b border-slate-100 pb-3 dark:border-slate-800">
+                  <div className="flex items-center gap-2">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-teal-50 text-teal-600 dark:bg-teal-950/40 dark:text-teal-400">
+                      <Package size={16} />
+                    </div>
+                    <div>
+                      <h4 className="text-base font-black text-slate-800 dark:text-slate-100">
+                        Danh mục Hàng hóa & Vật tư ({po.items.length} mặt hàng)
+                      </h4>
+                      <p className="text-xs font-semibold text-slate-400">
+                        Đã nhận {fmtQty(receiptStats.receivedQty)}/{fmtQty(receiptStats.orderedQty)} • Còn thiếu {fmtQty(receiptStats.remainingQty)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div id={`po-items-table-${po.id}`} className="overflow-x-auto">
+                  <table className="w-full min-w-[980px] text-left text-sm">
+                    <thead className="bg-slate-100/90 text-slate-600 dark:bg-slate-800/90 dark:text-slate-300 text-xs font-black uppercase tracking-wide border-b border-slate-200 dark:border-slate-700">
+                      <tr>
+                        <th className="px-4 py-3">Tên vật tư</th>
+                        {uniqueSpecKeys.map(key => <th key={key} className="px-3 py-3 text-center">{getHeaderLabel(key, po.items)}</th>)}
+                        <th className="px-3 py-3 text-right">SL đặt</th>
+                        <th className="px-3 py-3 text-right">Đã nhận</th>
+                        <th className="px-3 py-3 text-right">Còn thiếu</th>
+                        <th className="px-3 py-3 text-right">Đơn giá</th>
+                        <th className="px-3 py-3 text-right">Thành tiền</th>
+                        <th className="px-4 py-3 text-center">Trạng thái</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                      {po.items.map((item, index) => {
+                        const inventory = inventoryItems.find(row => row.id === item.itemId);
+                        const stockUnit = getPoLineStockUnit(item, inventory);
+                        const lineKey = item.lineId || item.itemId;
+                        const demandQty = getPurchaseOrderLineDemandQty(po, lineKey, poRequestLinks, inventoryItems);
+                        const completedReturnQty = Math.max(
+                          Number(item.returnedQty || 0),
+                          supplierReturns
+                            .filter(returnDoc => returnDoc.status === 'completed')
+                            .reduce((sum, returnDoc) => sum + returnDoc.lines
+                              .filter(line => line.purchaseOrderLineId === lineKey)
+                              .reduce((lineSum, line) => lineSum + Number(line.returnQty || 0), 0), 0),
+                        );
+                        const netReceivedQty = Math.max(0, Number(item.receivedQty || 0) - completedReturnQty);
+                        const remainingQty = Math.max(0, demandQty - netReceivedQty);
+                        const lineAmount = getPurchaseOrderDisplayLineAmount(po, item, deliveryBatches);
+                        const lineStatus = remainingQty <= 0
+                          ? { label: 'Đã đủ', tone: 'success' as ErpStatusTone }
+                          : netReceivedQty > 0
+                            ? { label: 'Nhận một phần', tone: 'attention' as ErpStatusTone }
+                            : { label: 'Chờ nhận', tone: 'warning' as ErpStatusTone };
+                        return (
+                          <tr key={`${lineKey}:${index}`} className="hover:bg-teal-50/20 dark:hover:bg-slate-900/50 transition">
+                            <td className="px-4 py-3.5 align-top">
+                              <div className="text-sm font-black text-slate-800 dark:text-slate-100">{item.name}</div>
+                              <div className="mt-1 flex flex-wrap gap-1.5 text-xs font-bold text-slate-400">
+                                {item.sku && <span className="font-mono bg-slate-100 dark:bg-slate-800 px-1.5 py-0.2 rounded text-[11px]">{item.sku}</span>}
+                                {item.requestCode && <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-amber-700 text-[10px]">YC {item.requestCode}</span>}
+                                {item.materialBudgetItemName && <span className="rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-emerald-700 text-[10px]">{item.materialBudgetItemName}</span>}
+                                {item.workBoqItemName && <span className="rounded border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-blue-700 text-[10px]">{item.workBoqItemName}</span>}
+                              </div>
+                              {(item.neededDate || item.note || item.pricingMode) && (
+                                <div className="mt-1 text-xs font-semibold text-slate-500">
+                                  {item.neededDate ? `Ngày cần: ${item.neededDate}` : ''}
+                                  {item.note ? ` ${item.note}` : ''}
+                                  {item.pricingMode && item.pricingMode !== 'standard' ? ` ${formatPricingFormula(item)}` : ''}
+                                </div>
+                              )}
+                            </td>
+                            {uniqueSpecKeys.map(key => (
+                              <td key={key} className="px-3 py-3.5 text-center font-bold text-slate-600 dark:text-slate-300">
+                                {item.specs?.[key]?.value ?? '—'}
+                              </td>
+                            ))}
+                            <td className="px-3 py-3.5 text-right font-black text-slate-800 dark:text-slate-100">
+                              {fmtQty(demandQty)} <span className="text-xs text-slate-500 font-semibold">{stockUnit || item.unit}</span>
+                            </td>
+                            <td className="px-3 py-3.5 text-right font-black text-emerald-700">{fmtQty(netReceivedQty)}</td>
+                            <td className={`px-3 py-3.5 text-right font-black ${remainingQty > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>{fmtQty(remainingQty)}</td>
+                            <td className="px-3 py-3.5 text-right font-bold text-slate-700 dark:text-slate-300">{fmtUnitPrice(lineAmount.unitPrice)}</td>
+                            <td className="px-3 py-3.5 text-right font-black text-slate-900 dark:text-slate-100">{fmtMoney(lineAmount.totalAmount)} đ</td>
+                            <td className="px-4 py-3.5 text-center"><StatusBadge status={lineStatus.label} label={lineStatus.label} tone={lineStatus.tone} showDot={false} /></td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+
+              {/* KHU VỰC ĐỢT GIAO HÀNG */}
+              <section className="rounded-2xl border border-slate-200/90 bg-white p-4 sm:p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900 space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3 dark:border-slate-800">
+                  <div className="flex items-center gap-2">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400">
+                      <Truck size={16} />
+                    </div>
+                    <div>
+                      <h4 className="text-base font-black text-slate-800 dark:text-slate-100">Kế hoạch Đợt giao hàng</h4>
+                      <p className="text-xs font-semibold text-slate-400">Mỗi PO có thể chia nhiều đợt giao kèm luồng WMS & mã QR kiểm nhận.</p>
+                    </div>
+                  </div>
+                  {isLoadingDeliveryPrintGroups && (
+                    <span className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-400">
+                      <Loader2 size={14} className="animate-spin" /> Đang tải WMS
+                    </span>
+                  )}
+                </div>
+
+                {deliveryTimelineGroups.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/50 p-6 text-center text-sm font-bold text-slate-400">
+                    Chưa có đợt giao hàng nào được lập.
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {deliveryTimelineGroups.map(group => {
+                      const status = deliveryStatusView(group.status);
+                      const batch = group.scheduleBatch;
+                      const printGroup = group.printGroup;
+                      const printPoKey = `${po.id}:${printGroup.key}:purchase_order`;
+                      const printApprovalKey = `${po.id}:${printGroup.key}:approval_request`;
+                      const normalizedStatus = normalizeDeliveryTimelineStatus(group.status);
+                      const canEditPlannedBatch = !isPackageV2 && !!batch && canMutatePoDocument && ['planned', 'supplemental_pending'].includes(batch.status) && !poHasStockImpact;
+                      const isDeletingBatch = batch
+                        ? deletingDeliveryKey === `batch:${batch.id}`
+                        : deletingDeliveryKey === `group:${printGroup.key}`;
+                      const wmsTransactionId = group.wmsTransactionId;
+
+                      return (
+                        <div key={group.key} className="relative rounded-2xl border border-slate-200/90 bg-white p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900 transition hover:border-blue-400">
+                          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto]">
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-2.5">
+                                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-600 text-xs font-black text-white shadow-xs">
+                                  {group.marker}
+                                </div>
+                                <div>
+                                  <div className="text-sm font-black text-slate-800 dark:text-slate-100">{group.label}</div>
+                                  <div className="text-[11px] font-semibold text-slate-400">{formatDate(group.plannedDate)} • Kho: {group.targetWarehouse}</div>
+                                </div>
+                                <span className={`rounded-full border px-2.5 py-0.5 text-xs font-black ${status.className}`}>{status.label}</span>
+                              </div>
+                              <div className="mt-3 grid gap-2 text-xs sm:grid-cols-3">
+                                <div className="rounded-xl bg-slate-50 dark:bg-slate-800/60 p-2.5"><span className="block text-[10px] font-black uppercase text-slate-400">Số dòng</span><strong className="text-xs font-black">{group.lineCount} dòng</strong></div>
+                                <div className="rounded-xl bg-slate-50 dark:bg-slate-800/60 p-2.5"><span className="block text-[10px] font-black uppercase text-slate-400">Tổng KL</span><strong className="text-xs font-black">{fmtQty(group.totalQty)}</strong></div>
+                                <div className="rounded-xl bg-slate-50 dark:bg-slate-800/60 p-2.5"><span className="block text-[10px] font-black uppercase text-slate-400">Giá trị đợt</span><strong className="text-xs font-black text-emerald-700">{fmtMoney(group.totalAmount)} đ</strong></div>
+                              </div>
+                            </div>
+                            <div className="flex flex-wrap items-start justify-end gap-1.5 lg:max-w-[360px]">
+                              {printGroup.lines.length > 0 && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => void onPrintDeliveryGroup(printGroup, 'purchase_order')}
+                                    disabled={printingPoId === printPoKey}
+                                    className="inline-flex h-8.5 items-center justify-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 px-3 text-xs font-bold text-blue-700 hover:bg-blue-100 shadow-xs transition"
+                                  >
+                                    {printingPoId === printPoKey ? <Loader2 size={13} className="animate-spin" /> : <Printer size={13} />}
+                                    In đơn
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => void onPrintDeliveryGroup(printGroup, 'approval_request')}
+                                    disabled={printingPoId === printApprovalKey}
+                                    className="inline-flex h-8.5 items-center justify-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3 text-xs font-bold text-rose-700 hover:bg-rose-100 shadow-xs transition"
+                                  >
+                                    {printingPoId === printApprovalKey ? <Loader2 size={13} className="animate-spin" /> : <FileText size={13} />}
+                                    In đề nghị
+                                  </button>
+                                </>
+                              )}
+                              {canEditPlannedBatch && (
+                                <>
+                                  <button type="button" onClick={onEditSchedule} className="inline-flex h-8.5 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 hover:bg-slate-50 shadow-xs transition">
+                                    <Edit2 size={13} /> Sửa
+                                  </button>
+                                  <button type="button" onClick={() => batch && void onRemovePlannedBatch(batch)} disabled={isDeletingBatch} className="inline-flex h-8.5 items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 text-xs font-bold text-red-700 hover:bg-red-100 disabled:opacity-60 shadow-xs transition">
+                                    {isDeletingBatch ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />} Xóa
+                                  </button>
+                                </>
+                              )}
+                              {isPackageV2 && batch && (batch.qrToken || wmsTransactionId) && (
+                                <button type="button" onClick={() => void onRunAction({ id: 'open_delivery_qr', label: 'Mở QR', intent: 'primary', deliveryBatchId: batch.id, transactionId: wmsTransactionId || undefined, qrToken: batch.qrToken || null })} className="inline-flex h-8.5 items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 text-xs font-black text-white hover:bg-blue-700 shadow-xs transition">
+                                  <QrCode size={13} /> Mở QR
+                                </button>
+                              )}
+                              {isPackageV2 && batch && canConfirmPo && po.purchaseMode === 'multiple' && (
+                                <button type="button" onClick={() => void onRunAction({ id: 'clone_delivery', label: 'Clone đợt', intent: 'neutral', deliveryBatchId: batch.id })} className="inline-flex h-8.5 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 hover:bg-slate-50 shadow-xs transition">
+                                  <RefreshCcw size={13} /> Clone
+                                </button>
+                              )}
+                              {isPackageV2 && batch && canConfirmPo && po.purchaseMode === 'multiple' && ['planned', 'wms_pending', 'receiving'].includes(batch.status) && (
+                                <button type="button" onClick={() => void onRunAction({ id: 'cancel_delivery', label: 'Hủy đợt giao', intent: 'danger', deliveryBatchId: batch.id })} disabled={isDeletingBatch} className="inline-flex h-8.5 items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 text-xs font-bold text-red-700 hover:bg-red-100 disabled:opacity-60 shadow-xs transition">
+                                  {isDeletingBatch ? <Loader2 size={13} className="animate-spin" /> : <Ban size={13} />} Hủy
+                                </button>
+                              )}
+                              {!isPackageV2 && batch && canConfirmPo && ['confirmed', 'in_transit'].includes(po.status) && batch.status === 'planned' && (
+                                <button type="button" onClick={() => void onCreateDeliveryReceipt(batch)} disabled={creatingDeliveryBatchId === batch.id} className="inline-flex h-8.5 items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 text-xs font-black text-white hover:bg-indigo-700 disabled:opacity-60 shadow-xs transition">
+                                  {creatingDeliveryBatchId === batch.id ? <Loader2 size={13} className="animate-spin" /> : <QrCode size={13} />} Tạo WMS
+                                </button>
+                              )}
+                              {normalizedStatus === 'wms_pending' && wmsTransactionId && (
+                                <button type="button" onClick={() => void onRunAction({ id: 'open_wms_transaction', label: 'Mở WMS', intent: 'primary', transactionId: wmsTransactionId })} className="inline-flex h-8.5 items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 text-xs font-black text-white hover:bg-blue-700 shadow-xs transition">
+                                  <ShieldCheck size={13} /> Mở WMS
+                                </button>
+                              )}
+                              {canConfirmPo && normalizedStatus === 'cancelled' && (
+                                <button type="button" onClick={() => batch ? void onRemoveFailedDeliveryBatch(batch) : void onRemoveFailedDeliveryGroup(printGroup)} disabled={isDeletingBatch} className="inline-flex h-8.5 items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 text-xs font-bold text-red-700 hover:bg-red-100 disabled:opacity-60 shadow-xs transition">
+                                  {isDeletingBatch ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />} Xóa đợt bị từ chối
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+
+              {/* THÔNG TIN CHÍNH VÀ GHI CHÚ GỌN GÀNG */}
+              <section className="rounded-2xl border border-slate-200/90 bg-white p-4 sm:p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900 space-y-3">
+                <h4 className="text-xs font-black uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                  <FileText size={14} className="text-teal-600" /> Thông tin chính đơn hàng
+                </h4>
+                <div className="grid gap-3 text-xs sm:grid-cols-2 lg:grid-cols-4 pt-1">
+                  <div className="rounded-xl border border-slate-100 dark:border-slate-800 p-2.5 bg-slate-50/50">
+                    <span className="block text-slate-400 font-bold text-[10px] uppercase">Nguồn PO</span>
+                    <strong className="text-xs font-black text-slate-800 dark:text-slate-100">{sourceLabel}</strong>
+                  </div>
+                  <div className="rounded-xl border border-slate-100 dark:border-slate-800 p-2.5 bg-slate-50/50">
+                    <span className="block text-slate-400 font-bold text-[10px] uppercase">Ngày đặt hàng</span>
+                    <strong className="text-xs font-black text-slate-800 dark:text-slate-100">{formatDate(po.orderDate)}</strong>
+                  </div>
+                  <div className="rounded-xl border border-slate-100 dark:border-slate-800 p-2.5 bg-slate-50/50">
+                    <span className="block text-slate-400 font-bold text-[10px] uppercase">Hạn cần giao</span>
+                    <strong className="text-xs font-black text-slate-800 dark:text-slate-100">{formatDate(po.expectedDeliveryDate)}</strong>
+                  </div>
+                  <div className="rounded-xl border border-slate-100 dark:border-slate-800 p-2.5 bg-slate-50/50">
+                    <span className="block text-slate-400 font-bold text-[10px] uppercase">Kho nhận hàng</span>
+                    <strong className="text-xs font-black text-slate-800 dark:text-slate-100">{targetWarehouseName || '—'}</strong>
+                  </div>
+                </div>
+
+                {po.note && (
+                  <div className="rounded-xl border border-amber-200/60 bg-amber-50/60 p-3 text-xs font-bold leading-relaxed text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
+                    <span className="block text-[10px] font-black uppercase tracking-wider text-amber-700 dark:text-amber-400">Ghi chú</span>
+                    {po.note}
+                  </div>
+                )}
+              </section>
+
+              {/* LỊCH SỬ VÀ CÔNG NỢ NCC */}
               <section className="grid gap-4 xl:grid-cols-2">
                 {/* Lịch sử */}
-                <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">
-                  <h4 className="text-base font-black text-slate-800 dark:text-slate-100">Lịch sử</h4>
-                  <div className="mt-4 space-y-3.5">
+                <div className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900">
+                  <h4 className="text-xs font-black uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                    <History size={14} className="text-teal-600" /> Lịch sử sự kiện
+                  </h4>
+                  <div className="mt-3 space-y-2.5">
                     {[
                       { title: 'Tạo PO', desc: `${po.poNumber} được tạo ngày ${formatDate(po.createdAt)}`, tone: 'blue' },
                       { title: 'Trạng thái hiện tại', desc: statusLabel, tone: 'emerald' },
@@ -781,11 +1090,11 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
                       ...supplierReturns.map(item => ({ title: `Trả hàng NCC ${item.returnNo}`, desc: `${item.status} • ${fmtQty(item.lines.reduce((sum, line) => sum + Number(line.returnQty || 0), 0))}`, tone: 'rose' })),
                       ...supplierPayableDocuments.map(document => ({ title: `Công nợ ${document.code || document.documentNo}`, desc: `${payableStatusView(document.status).label} • còn ${fmtMoney(document.outstandingAmount)} đ`, tone: 'amber' })),
                     ].map((event, index) => (
-                      <div key={`${event.title}:${index}`} className="flex gap-3">
-                        <div className={`mt-1 h-3.5 w-3.5 rounded-full ${event.tone === 'rose' ? 'bg-rose-500' : event.tone === 'amber' ? 'bg-amber-500' : event.tone === 'emerald' ? 'bg-emerald-500' : 'bg-blue-500'}`} />
+                      <div key={`${event.title}:${index}`} className="flex gap-2.5 items-start">
+                        <div className={`mt-1 h-2.5 w-2.5 rounded-full shrink-0 ${event.tone === 'rose' ? 'bg-rose-500' : event.tone === 'amber' ? 'bg-amber-500' : event.tone === 'emerald' ? 'bg-emerald-500' : 'bg-blue-500'}`} />
                         <div className="min-w-0">
-                          <div className="text-sm font-black text-slate-800 dark:text-slate-100">{event.title}</div>
-                          <div className="text-xs font-bold text-slate-500">{event.desc}</div>
+                          <div className="text-xs font-black text-slate-800 dark:text-slate-100">{event.title}</div>
+                          <div className="text-[11px] font-semibold text-slate-400">{event.desc}</div>
                         </div>
                       </div>
                     ))}
@@ -793,24 +1102,28 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
                 </div>
 
                 {/* Công nợ NCC */}
-                <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">
+                <div className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900">
                   <div className="flex items-center justify-between gap-3">
-                    <h4 className="text-base font-black text-slate-800 dark:text-slate-100">Công nợ NCC</h4>
-                    {supplierPayableLoading && <Loader2 size={16} className="animate-spin text-slate-400" />}
+                    <h4 className="text-xs font-black uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                      <WalletCards size={14} className="text-teal-600" /> Công nợ Nhà cung cấp
+                    </h4>
+                    {supplierPayableLoading && <Loader2 size={14} className="animate-spin text-slate-400" />}
                   </div>
                   {supplierPayableError ? (
-                    <div className="mt-3.5 rounded-xl border border-rose-100 bg-rose-50 p-3.5 text-xs font-bold text-rose-700">{supplierPayableError}</div>
+                    <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-bold text-rose-700">{supplierPayableError}</div>
                   ) : supplierPayableDocuments.length === 0 ? (
-                    <div className="mt-3.5 rounded-xl border border-dashed border-slate-200 bg-slate-50 p-5 text-xs font-bold text-slate-400">Chưa có chứng từ công nợ NCC cho PO này.</div>
+                    <div className="mt-3 rounded-xl border border-dashed border-slate-200 bg-slate-50/50 p-4 text-xs font-bold text-slate-400 text-center">
+                      Chưa có chứng từ công nợ NCC cho PO này.
+                    </div>
                   ) : (
-                    <div className="mt-3.5 space-y-2.5">
+                    <div className="mt-3 space-y-2">
                       {supplierPayableDocuments.map(document => (
-                        <div key={document.id} className="rounded-xl border border-slate-100 bg-slate-50 p-3.5 text-xs font-semibold">
+                        <div key={document.id} className="rounded-xl border border-slate-100 bg-slate-50/70 p-3 text-xs font-semibold">
                           <div className="flex items-center justify-between gap-3">
-                            <div className="text-sm font-black text-slate-800">{document.code || document.documentNo}</div>
-                            <span className={`rounded-full border px-2.5 py-0.5 text-xs font-black ${payableStatusView(document.status).className}`}>{payableStatusView(document.status).label}</span>
+                            <div className="text-xs font-black text-slate-800">{document.code || document.documentNo}</div>
+                            <span className={`rounded-full border px-2 py-0.2 text-[10px] font-black ${payableStatusView(document.status).className}`}>{payableStatusView(document.status).label}</span>
                           </div>
-                          <div className="mt-2.5 grid gap-2 sm:grid-cols-3 text-xs">
+                          <div className="mt-2 grid gap-1 sm:grid-cols-3 text-[11px]">
                             <span>Ghi nhận: <strong className="font-black text-slate-800">{fmtMoney(document.recognizedAmount)} đ</strong></span>
                             <span>Đã trả: <strong className="font-black text-slate-800">{fmtMoney(document.paidAmount)} đ</strong></span>
                             <span>Còn lại: <strong className="font-black text-emerald-700">{fmtMoney(document.outstandingAmount)} đ</strong></span>
@@ -823,63 +1136,70 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
               </section>
             </main>
 
-            <aside className="space-y-3 lg:sticky lg:top-4 lg:self-start">
-              <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">{isPackageV2 ? 'Giá trị chủ trương' : 'Tổng thanh toán'}</div>
-                    <div className="mt-1 text-2xl font-black text-slate-900 dark:text-slate-100">{fmtMoney(isPackageV2 ? packageSummary.referenceGross : paymentTotal)} đ</div>
-                  </div>
-                  <WalletCards className="text-emerald-600" size={22} />
+            {/* RIGHT SIDEBAR: APPROVAL & WORKFLOW ACTION CENTER */}
+            <aside className="space-y-4 lg:sticky lg:top-4 lg:self-start">
+              {/* TRUNG TÂM DUYỆT ĐƠN & VIỆC CẦN LÀM */}
+              <section className="rounded-2xl border border-teal-200/90 bg-gradient-to-br from-teal-50/40 via-white to-emerald-50/40 p-4 sm:p-5 shadow-sm dark:border-teal-900/40 dark:from-slate-900 dark:to-slate-900 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-teal-700 dark:text-teal-400 flex items-center gap-1">
+                    <ShieldCheck size={14} /> Việc cần làm
+                  </span>
+                  <StatusBadge status={po.status} label={statusLabel} tone={statusTone} showDot={false} size="sm" />
                 </div>
-                <div className="mt-4">
-                  <div className="mb-1 flex items-center justify-between text-[11px] font-black text-slate-500">
-                    <span>Tiến độ nhận hàng</span>
-                    <span>{receiptPercent}%</span>
-                  </div>
-                  <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-                    <div className="h-full rounded-full bg-gradient-to-r from-blue-500 to-emerald-500" style={{ width: `${receiptPercent}%` }} />
-                  </div>
-                  <div className="mt-1 text-[11px] font-bold text-slate-400">{fmtQty(receiptStats.receivedQty)}/{fmtQty(receiptStats.orderedQty)} • còn thiếu {fmtQty(receiptStats.remainingQty)}</div>
-                </div>
-              </section>
 
-              <section className="rounded-lg border border-blue-100 bg-gradient-to-br from-blue-50 to-emerald-50 p-4 shadow-sm dark:border-blue-900/40 dark:from-blue-950/30 dark:to-emerald-950/20">
-                <div className="text-[10px] font-black uppercase tracking-wider text-blue-600">Việc cần làm</div>
-                <p className="mt-2 text-sm font-black leading-5 text-slate-900 dark:text-slate-100">{uiPolicy.nextStep}</p>
+                <p className="text-xs sm:text-sm font-black leading-snug text-slate-900 dark:text-slate-100">
+                  {uiPolicy.nextStep}
+                </p>
+
                 {uiPolicy.primaryAction ? (
-                  <div className="mt-4">{renderActionButton(uiPolicy.primaryAction, true, 'w-full')}</div>
+                  <div className="pt-2">{renderActionButton(uiPolicy.primaryAction, true, 'w-full')}</div>
                 ) : (
-                  <div className="mt-4 rounded-lg border border-slate-200 bg-white/80 px-3 py-2 text-center text-xs font-black text-slate-500">Không có thao tác chính</div>
+                  <div className="rounded-xl border border-slate-200 bg-white/80 dark:bg-slate-800 px-3 py-2 text-center text-xs font-bold text-slate-400">
+                    Không có thao tác chờ
+                  </div>
                 )}
+
                 {uiPolicy.secondaryActions.length > 0 && (
-                  <div className="mt-2 grid gap-2">
+                  <div className="grid gap-2 pt-1">
                     {uiPolicy.secondaryActions.map(action => renderActionButton(action, false, 'w-full'))}
                   </div>
                 )}
               </section>
 
-              <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950">
-                <h4 className="text-xs font-black uppercase tracking-wider text-slate-500">Trạng thái hiện tại</h4>
-                <div className="mt-3 space-y-2">
-                  {statusCards.map(card => (
-                    <div key={card.label} className="rounded-lg border border-slate-100 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900/40">
-                      <div className="text-[10px] font-black uppercase text-slate-400">{card.label}</div>
-                      <div className="mt-1 text-xs font-black text-slate-800 dark:text-slate-100">{card.value}</div>
-                      <div className="mt-0.5 text-[10px] font-bold text-slate-500">{card.note}</div>
-                    </div>
-                  ))}
+              {/* TÓM TẮT ĐỐI TÁC & KHO NHẬN */}
+              <section className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900 space-y-3">
+                <h4 className="text-xs font-black uppercase tracking-wider text-slate-400">Thông tin giao nhận</h4>
+                <div className="space-y-2 text-xs">
+                  <div className="flex justify-between items-start pb-2 border-b border-slate-100 dark:border-slate-800">
+                    <span className="text-slate-400 font-semibold">Nhà cung cấp:</span>
+                    <strong className="text-slate-800 dark:text-slate-100 text-right font-black max-w-[180px]">{po.vendorName || '—'}</strong>
+                  </div>
+                  <div className="flex justify-between items-start pb-2 border-b border-slate-100 dark:border-slate-800">
+                    <span className="text-slate-400 font-semibold">Kho nhận:</span>
+                    <strong className="text-slate-800 dark:text-slate-100 text-right font-black">{targetWarehouseName || '—'}</strong>
+                  </div>
+                  <div className="flex justify-between items-start pb-2 border-b border-slate-100 dark:border-slate-800">
+                    <span className="text-slate-400 font-semibold">Số dòng hàng:</span>
+                    <strong className="text-slate-800 dark:text-slate-100 font-black">{po.items.length} dòng</strong>
+                  </div>
+                  <div className="flex justify-between items-start">
+                    <span className="text-slate-400 font-semibold">Hạn giao hàng:</span>
+                    <strong className="text-slate-800 dark:text-slate-100 font-black">{formatDate(po.expectedDeliveryDate)}</strong>
+                  </div>
                 </div>
               </section>
 
+              {/* TRẢ HÀNG NCC (NẾU CÓ) */}
               {supplierReturns.length > 0 && (
-                <section className="rounded-lg border border-rose-100 bg-rose-50/60 p-4 text-xs shadow-sm">
-                  <div className="font-black uppercase tracking-wider text-rose-700">Trả hàng NCC</div>
-                  <div className="mt-2 grid grid-cols-2 gap-2 font-bold text-rose-800">
-                    <span>Đã nhận {fmtQty(totalReceivedQty)}</span>
-                    <span>Đã hoàn {fmtQty(completedReturnQty)}</span>
-                    <span>Chờ hoàn {fmtQty(pendingReturnQty)}</span>
-                    <span>Có thể trả {fmtQty(supplierReturnableQty)}</span>
+                <section className="rounded-2xl border border-rose-200 bg-rose-50/50 p-4 text-xs shadow-xs dark:border-rose-900/40 dark:bg-rose-950/20 space-y-2">
+                  <div className="font-black uppercase tracking-wider text-rose-700 flex items-center gap-1">
+                    <PackageX size={14} /> Trả hàng Nhà cung cấp
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 font-bold text-rose-800 dark:text-rose-300 pt-1">
+                    <span>Đã nhận: <strong>{fmtQty(totalReceivedQty)}</strong></span>
+                    <span>Đã hoàn: <strong>{fmtQty(completedReturnQty)}</strong></span>
+                    <span>Chờ hoàn: <strong>{fmtQty(pendingReturnQty)}</strong></span>
+                    <span>Có thể trả: <strong>{fmtQty(supplierReturnableQty)}</strong></span>
                   </div>
                 </section>
               )}

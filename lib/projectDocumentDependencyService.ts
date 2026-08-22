@@ -104,17 +104,44 @@ async function countAcceptedVolumeLinks(volumeIds: string[]): Promise<number> {
   }
 }
 
+async function countDailyLogSummaryReferences(dailyLogId: string): Promise<number> {
+  try {
+    const { data, error } = await supabase
+      .from('daily_logs')
+      .select('id')
+      .eq('summary_source_type', 'member_contributions')
+      .contains('summary_source_metadata', { legacyDailyLogIds: [dailyLogId] })
+      .limit(1);
+    if (error) throw error;
+    return data && data.length > 0 ? 1 : 0;
+  } catch (error: any) {
+    console.warn('Cannot check Daily Log summary source references', error?.message || error);
+    return 0;
+  }
+}
+
 export const projectDocumentDependencyService = {
-  async getDailyLogDependencies(log: DailyLog): Promise<ProjectDocumentDependencies> {
+  async getDailyLogDependencies(
+    log: DailyLog,
+    action: 'edit' | 'delete' = 'edit',
+  ): Promise<ProjectDocumentDependencies> {
     const deps = emptyDependencies();
     const status = log.status || (log.verified ? 'verified' : 'draft');
-    const [delayCount, volumeIds] = await Promise.all([
+    const [delayCount, volumeIds, summaryReferenceCount] = await Promise.all([
       countRows('project_delay_events', 'source_daily_log_id', log.id),
       getDailyLogVolumeIds(log.id),
+      action === 'delete' ? countDailyLogSummaryReferences(log.id) : Promise.resolve(0),
     ]);
     const acceptanceLinkCount = await countAcceptedVolumeLinks(volumeIds);
 
-    deps.metadata = { delayCount, volumeCount: volumeIds.length, acceptanceLinkCount };
+    deps.metadata = { delayCount, volumeCount: volumeIds.length, acceptanceLinkCount, summaryReferenceCount };
+    if (action === 'delete' && summaryReferenceCount > 0) {
+      pushBlocker(
+        deps,
+        'Không thể xoá phiếu nguồn vì đang được dùng trong bản tổng hợp nhật ký.',
+        'Bỏ phiếu khỏi bản tổng hợp trước khi xoá. Nếu cần sửa, hãy trả lại phiếu rồi dùng “Cập nhật từ phiếu”.',
+      );
+    }
     if (delayCount > 0) {
       pushBlocker(
         deps,

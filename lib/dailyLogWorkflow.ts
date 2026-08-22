@@ -14,6 +14,9 @@ export const getDailyLogWorkflowStatus = (log: DailyLog) => (
 export const isDailyLogSummaryRow = (log: DailyLog): boolean =>
   log.summarySourceType === DAILY_SUMMARY_SOURCE_TYPE;
 
+export const getDailyLogTargetPermission = (log: DailyLog): 'verify' | 'approve' =>
+  isDailyLogSummaryRow(log) || log.submittedToPermission === 'approve' ? 'approve' : 'verify';
+
 export const isDailyLogSummaryEditable = (log?: DailyLog | null): boolean =>
   !!log && isDailyLogSummaryRow(log) && ['draft', 'rejected'].includes(getDailyLogWorkflowStatus(log));
 
@@ -86,6 +89,19 @@ export const getDailyLogSummarySourceSnapshots = (
     if (snapshot) acc[sourceLogId] = snapshot;
     return acc;
   }, {});
+};
+
+export const getMissingDailyLogSummarySourceIds = (
+  summaryLog: DailyLog,
+  allLogs: DailyLog[],
+): string[] => {
+  const linkedIds = Array.isArray(summaryLog.summarySourceMetadata?.legacyDailyLogIds)
+    ? summaryLog.summarySourceMetadata.legacyDailyLogIds.filter(
+      (value): value is string => typeof value === 'string' && value.length > 0,
+    )
+    : [];
+  const availableIds = new Set(allLogs.map(log => log.id));
+  return linkedIds.filter(id => !availableIds.has(id));
 };
 
 export const getDailyLogSourceReviewState = ({

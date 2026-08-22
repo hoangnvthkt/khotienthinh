@@ -32,6 +32,8 @@ import {
     canReturnDailyLogSource,
     getDailyLogSummarySourceLogs,
     getDailyLogSourceReviewState,
+    getMissingDailyLogSummarySourceIds,
+    getDailyLogTargetPermission,
     getDailyLogSummarySourceSnapshots,
     isDailyLogSummaryEditable,
     resolveDailyLogSummaryDetails,
@@ -1325,9 +1327,10 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         setSummaryDate(date);
         setSummaryLogId(id);
         setSummaryApprovers(approvers);
+        const previousApproverUserId = existingSummary?.requestedVerifierId || existingSummary?.submittedToUserId;
         setSummaryApproverUserId(
-            existingSummary?.submittedToUserId && approvers.some(staff => staff.userId === existingSummary.submittedToUserId)
-                ? existingSummary.submittedToUserId
+            previousApproverUserId && approvers.some(staff => staff.userId === previousApproverUserId)
+                ? previousApproverUserId
                 : approvers.length === 1
                     ? approvers[0].userId
                     : '',
@@ -1362,17 +1365,22 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
 
     const includeLegacyLogInSummary = (log: DailyLog) => {
         const prefix = getLegacyDailyLogSourceName(log);
-        setSummaryDescription(prev => `${prev ? `${prev.trim()}\n` : ''}- ${prefix}: ${log.description}`.trim());
-        if (log.issues?.trim()) {
-            setSummaryIssues(prev => `${prev ? `${prev.trim()}\n` : ''}- ${prefix}: ${log.issues}`.trim());
-        }
-        if (log.nextDayPlan?.trim()) {
-            setSummaryNextPlan(prev => `${prev ? `${prev.trim()}\n` : ''}- ${prefix}: ${log.nextDayPlan}`.trim());
+        const alreadyIncluded = selectedSummaryLegacyLogIds.includes(log.id);
+        if (!alreadyIncluded) {
+            setSummaryDescription(prev => `${prev ? `${prev.trim()}\n` : ''}- ${prefix}: ${log.description}`.trim());
+            if (log.issues?.trim()) {
+                setSummaryIssues(prev => `${prev ? `${prev.trim()}\n` : ''}- ${prefix}: ${log.issues}`.trim());
+            }
+            if (log.nextDayPlan?.trim()) {
+                setSummaryNextPlan(prev => `${prev ? `${prev.trim()}\n` : ''}- ${prefix}: ${log.nextDayPlan}`.trim());
+            }
         }
         const sourcePhotos = getLegacyDailyLogSourcePhotos(log);
         setSummaryPhotos(prev => {
-            const knownUrls = new Set(prev.map(photo => photo.url));
-            return [...prev, ...sourcePhotos.filter(photo => !knownUrls.has(photo.url))];
+            const sourceContributionId = `legacy-daily-log:${log.id}`;
+            const retained = prev.filter(photo => photo.sourceContributionId !== sourceContributionId);
+            const knownUrls = new Set(retained.map(photo => photo.url));
+            return [...retained, ...sourcePhotos.filter(photo => !knownUrls.has(photo.url))];
         });
         setSelectedSummaryLegacyLogIds(prev => prev.includes(log.id) ? prev : [...prev, log.id]);
         setSummarySourceSnapshots(prev => ({
@@ -1433,14 +1441,25 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         setSummarySaving(true);
         try {
             const existing = logs.find(log => log.id === summaryLogId);
-            const summaryDetails = buildDailyLogSummaryDetails(selectedLegacyLogs);
-            const sourceSnapshots = selectedLegacyLogs.reduce<Record<string, DailyLogSummarySourceSnapshot>>((acc, log) => {
-                acc[log.id] = buildDailyLogSourceSnapshot(log);
+            const selectedSourceIds = [...new Set(selectedSummaryLegacyLogIds)];
+            const missingSourceIds = existing
+                ? getMissingDailyLogSummarySourceIds(existing, logs).filter(id => selectedSourceIds.includes(id))
+                : [];
+            const summaryDetails = existing && missingSourceIds.length > 0
+                ? resolveDailyLogSummaryDetails(existing, logs).details
+                : buildDailyLogSummaryDetails(selectedLegacyLogs);
+            const sourceLogById = new Map(selectedLegacyLogs.map(log => [log.id, log]));
+            const sourceSnapshots = selectedSourceIds.reduce<Record<string, DailyLogSummarySourceSnapshot>>((acc, sourceId) => {
+                const sourceLog = sourceLogById.get(sourceId);
+                const snapshot = sourceLog
+                    ? buildDailyLogSourceSnapshot(sourceLog)
+                    : summarySourceSnapshots[sourceId];
+                if (snapshot) acc[sourceId] = snapshot;
                 return acc;
             }, {});
             const summarySourceMetadata = {
                 aggregationVersion: 2,
-                legacyDailyLogIds: selectedLegacyLogs.map(log => log.id),
+                legacyDailyLogIds: selectedSourceIds,
                 sourceSnapshots,
             };
             const baseItem: DailyLog = existing ? {
@@ -1452,7 +1471,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                 nextDayPlan: summaryNextPlan.trim() || undefined,
                 photos: summaryPhotos,
                 summarySourceType: DAILY_SUMMARY_SOURCE_TYPE,
-                summaryContributionCount: selectedLegacyLogs.length,
+                summaryContributionCount: selectedSourceIds.length,
                 summarySourceMetadata,
                 summarizedById: user?.id || null,
                 summarizedByName: user?.name || user?.username || user?.id || null,
@@ -1473,7 +1492,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                 status: 'draft',
                 submittedToPermission: 'approve',
                 summarySourceType: DAILY_SUMMARY_SOURCE_TYPE,
-                summaryContributionCount: selectedLegacyLogs.length,
+                summaryContributionCount: selectedSourceIds.length,
                 summarySourceMetadata,
                 summarizedById: user?.id || null,
                 summarizedByName: user?.name || user?.username || user?.id || null,
@@ -1517,6 +1536,12 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
             }
             await reloadDailyLogRecords();
             toast.success(submitNow ? 'Đã gửi CHT duyệt' : 'Đã lưu bản tổng hợp');
+            if (missingSourceIds.length > 0) {
+                toast.warning(
+                    'Đã giữ nguyên số liệu chi tiết',
+                    `${missingSourceIds.length} phiếu nguồn cũ không còn tồn tại; hệ thống không ghi đè nhân công/khối lượng đã lưu.`,
+                );
+            }
             closeSummary(true);
         } catch (err: any) {
             toast.error('Không lưu được bản tổng hợp', err?.message || 'Vui lòng thử lại.');
@@ -1784,6 +1809,8 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
             await dailyLogService.updateStatus({
                 logId: log.id,
                 status,
+                requestedVerifierId: status === 'submitted' ? responsibilityTarget?.userId : undefined,
+                requestedVerifierName: status === 'submitted' ? responsibilityTarget?.name : undefined,
                 rejectionReason: status === 'rejected' ? rejectionReason : undefined,
                 actorUserId: user?.id,
             });
@@ -1890,6 +1917,11 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
             toast.error('Phiếu đã khoá', 'Chỉ người lập có quyền submit được gửi nhật ký nháp hoặc bị trả lại.');
             return;
         }
+        if (getDailyLogTargetPermission(log) === 'approve' && isSummaryDailyLog(log)) {
+            setViewLogId(null);
+            await openSummaryForDate(log.date);
+            return;
+        }
         if (!(await subjectAuthorizationService.canAct('daily_log', log.id, 'submit'))) {
             toast.error('Không thể gửi nhật ký', 'Bạn không có quyền hoặc điều kiện workflow hợp lệ để gửi nhật ký này.');
             return;
@@ -1931,7 +1963,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
             toast.error('Không thể xoá nhật ký', 'Chỉ nhật ký nháp/bị trả lại và đúng quyền xoá owner/all mới được xoá.');
             return;
         }
-        const deps = await projectDocumentDependencyService.getDailyLogDependencies(log);
+        const deps = await projectDocumentDependencyService.getDailyLogDependencies(log, 'delete');
         const status = getLogStatus(log);
         const policy = getProjectDocumentPolicy({
             action: 'delete',
@@ -2187,9 +2219,22 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         () => logs.filter(log => selectedSummaryLegacyLogIds.includes(log.id)),
         [logs, selectedSummaryLegacyLogIds],
     );
+    const activeSummaryLog = useMemo(
+        () => logs.find(log => log.id === summaryLogId && isSummaryDailyLog(log)) || null,
+        [logs, summaryLogId],
+    );
+    const activeMissingSummarySourceIds = useMemo(
+        () => activeSummaryLog
+            ? getMissingDailyLogSummarySourceIds(activeSummaryLog, logs)
+                .filter(id => selectedSummaryLegacyLogIds.includes(id))
+            : [],
+        [activeSummaryLog, logs, selectedSummaryLegacyLogIds],
+    );
     const activeSummaryDetails = useMemo(
-        () => buildDailyLogSummaryDetails(selectedSummarySourceLogs),
-        [selectedSummarySourceLogs],
+        () => activeSummaryLog && activeMissingSummarySourceIds.length > 0
+            ? resolveDailyLogSummaryDetails(activeSummaryLog, logs).details
+            : buildDailyLogSummaryDetails(selectedSummarySourceLogs),
+        [activeMissingSummarySourceIds.length, activeSummaryLog, logs, selectedSummarySourceLogs],
     );
     const activeSummaryLaborHours = activeSummaryDetails.laborDetails.reduce((sum, row) => sum + Number(row.hours || 0), 0);
     const activeSummaryMachineShifts = activeSummaryDetails.machines.reduce((sum, row) => sum + Number(row.shifts || 0), 0);
@@ -2633,6 +2678,11 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                     <div className="text-xs font-black uppercase text-muted-foreground">Phiếu nhật ký nguồn</div>
                                     <span className="rounded-full bg-blue-50 px-2 py-1 text-[10px] font-black text-blue-700">{activeSummarySourceCount}</span>
                                 </div>
+                                {activeMissingSummarySourceIds.length > 0 && (
+                                    <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-[11px] font-bold text-amber-800">
+                                        {activeMissingSummarySourceIds.length} phiếu nguồn cũ không còn tồn tại. Hệ thống đang giữ nguyên số liệu nhân công, khối lượng và máy đã lưu trong bản tổng hợp.
+                                    </div>
+                                )}
                                 <div className="space-y-3">
                                     {activeSummarySourceCount === 0 ? (
                                         <div className="rounded-xl border border-dashed border-border p-6 text-center text-xs font-bold text-muted-foreground">
@@ -2985,7 +3035,11 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                     }}
                     onEdit={() => {
                         setViewLogId(null);
-                        openEdit(viewingLog);
+                        if (isSummaryDailyLog(viewingLog)) {
+                            openSummaryForDate(viewingLog.date);
+                        } else {
+                            openEdit(viewingLog);
+                        }
                     }}
                     onRollback={async () => {
                         const reason = await reasonConfirm({
