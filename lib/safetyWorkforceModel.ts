@@ -12,6 +12,7 @@ import type {
   SafetyWorkerDetailProfile,
   SafetyWorkerDocument,
   SafetyWorkerKind,
+  SafetyWorkerLookupResult,
   SafetyWorkerRosterItem,
   SafetyWorkerRosterPage,
   SafetyWorkerSiteMembership,
@@ -170,7 +171,7 @@ const parseAssignment = (value: unknown): SafetyProjectAssignment => {
   };
 };
 
-const parseCard = (value: unknown): SafetyCard => {
+export const parseSafetyCard = (value: unknown): SafetyCard => {
   const row = asRecord(value);
   return {
     id: requiredString(row.id),
@@ -246,7 +247,7 @@ const parseRosterItem = (value: unknown): SafetyWorkerRosterItem => {
     activeAssignment: row.activeAssignment === null || row.activeAssignment === undefined
       ? null
       : parseAssignment(row.activeAssignment),
-    activeCard: row.activeCard === null || row.activeCard === undefined ? null : parseCard(row.activeCard),
+    activeCard: row.activeCard === null || row.activeCard === undefined ? null : parseSafetyCard(row.activeCard),
     identityNumberMasked: requiredString(row.identityNumberMasked),
     profileStatus: parseReadiness(row.profileStatus),
     healthStatus: parseReadiness(row.healthStatus),
@@ -377,7 +378,7 @@ export const parseSafetyWorkerDetailPayload = (value: unknown): SafetyWorkerDeta
     documents: parseArray(row.documents, parseDocument),
     certificates: parseArray(row.certificates, parseCertificate),
     assignments: parseArray(row.assignments, parseAssignment),
-    cards: parseArray(row.cards, parseCard),
+    cards: parseArray(row.cards, parseSafetyCard),
     capabilities: parseCapabilities(row.capabilities),
     sensitiveLoaded: row.sensitiveLoaded === undefined ? false : requiredBoolean(row.sensitiveLoaded),
   };
@@ -397,6 +398,21 @@ export const parseSafetySiteWorkforceOptions = (value: unknown): SafetySiteWorkf
       const source = asRecord(item);
       return { ...parsed, subcontractorId: nullableString(source.subcontractorId) };
     }),
+  };
+};
+
+export const parseSafetyWorkerLookupResult = (value: unknown): SafetyWorkerLookupResult | null => {
+  if (value === null || value === undefined) return null;
+  const row = asRecord(value);
+  return {
+    workerId: requiredString(row.workerId),
+    workerCode: requiredString(row.workerCode),
+    fullName: requiredString(row.fullName),
+    identityNumberMasked: requiredString(row.identityNumberMasked),
+    targetMembershipId: nullableString(row.targetMembershipId),
+    activeAssignmentId: nullableString(row.activeAssignmentId),
+    activeSiteName: nullableString(row.activeSiteName),
+    canTransfer: requiredBoolean(row.canTransfer),
   };
 };
 

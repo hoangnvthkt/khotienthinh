@@ -6,6 +6,7 @@ import {
   getSafetyCertificateStatus,
   getSafetyWorkerDocumentReadiness,
   maskSafetyIdentityNumber,
+  safeSafetyStorageFileName,
 } from '../safetyPassportService';
 
 describe('safetyPassportService helpers', () => {
@@ -30,6 +31,11 @@ describe('safetyPassportService helpers', () => {
 
   it('builds the internal QR route for safety cards', () => {
     expect(buildSafetyCardQrPath('abc123')).toBe('/safety-card/abc123');
+  });
+
+  it('normalizes safety attachment names for private storage paths', () => {
+    expect(safeSafetyStorageFileName('CCCD mặt trước.jpg')).toBe('CCCD-mat-truoc.jpg');
+    expect(safeSafetyStorageFileName('  ')).toBe('safety-passport-file');
   });
 
   it('masks sensitive identity numbers for list views', () => {

@@ -100,7 +100,7 @@ export const buildSafetyCardQrUrl = (qrToken: string): string => {
   return `${base}#${buildSafetyCardQrPath(qrToken)}`;
 };
 
-const safeStorageFileName = (name: string): string => {
+export const safeSafetyStorageFileName = (name: string): string => {
   const safe = name.normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-zA-Z0-9._-]+/g, '-')
@@ -311,7 +311,7 @@ export const safetyPassportService = {
     const storagePath = [
       owner,
       params.category,
-      `${Date.now()}-${safeStorageFileName(params.file.name)}`,
+      `${Date.now()}-${safeSafetyStorageFileName(params.file.name)}`,
     ].join('/');
     const { error } = await supabase.storage.from(BUCKET).upload(storagePath, params.file, {
       cacheControl: '3600',
