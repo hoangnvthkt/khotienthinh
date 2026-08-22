@@ -3,6 +3,7 @@ import type {
   SafetyCard,
   SafetyPassportAssignmentStatus,
   SafetyPassportCardStatus,
+  SafetyPassportContractor,
   SafetyPassportDocumentReadiness,
   SafetyPassportWorkerStatus,
   SafetyProjectAssignment,
@@ -15,6 +16,7 @@ import type {
   SafetyWorkerLookupResult,
   SafetyWorkerRosterItem,
   SafetyWorkerRosterPage,
+  SafetyWorkerProfile,
   SafetyWorkerSiteMembership,
   SafetyWorkforceCapabilities,
   SafetyWorkforceCursor,
@@ -174,7 +176,7 @@ const parseAssignment = (value: unknown): SafetyProjectAssignment => {
 
 export const parseSafetyCard = (value: unknown): SafetyCard => {
   const row = asRecord(value);
-  return {
+  const card: SafetyCard = {
     id: requiredString(row.id),
     assignmentId: requiredString(row.assignmentId),
     workerId: requiredString(row.workerId),
@@ -193,6 +195,35 @@ export const parseSafetyCard = (value: unknown): SafetyCard => {
     createdAt: optionalString(row.createdAt),
     updatedAt: optionalString(row.updatedAt),
   };
+  if (row.worker !== undefined && row.worker !== null) {
+    const worker = asRecord(row.worker);
+    card.worker = {
+      id: requiredString(worker.id),
+      workerCode: requiredString(worker.workerCode),
+      fullName: requiredString(worker.fullName),
+      workerKind: enumValue<SafetyWorkerKind>(worker.workerKind, ['company_staff', 'contractor_worker']),
+      phone: nullableString(worker.phone),
+      status: enumValue<SafetyPassportWorkerStatus>(worker.status, ['active', 'suspended', 'inactive']),
+      identityType: 'other',
+      identityAttachments: [],
+      photoAttachment: worker.photoAttachment === null || worker.photoAttachment === undefined
+        ? null
+        : parseAttachment(worker.photoAttachment),
+    } satisfies SafetyWorkerProfile;
+  }
+  if (row.assignment !== undefined && row.assignment !== null) card.assignment = parseAssignment(row.assignment);
+  if (row.contractor !== undefined && row.contractor !== null) {
+    const contractor = asRecord(row.contractor);
+    const sourceStatus = requiredString(contractor.status);
+    card.contractor = {
+      id: requiredString(contractor.id),
+      contractorType: 'subcontractor',
+      code: nullableString(contractor.code),
+      name: requiredString(contractor.name),
+      status: sourceStatus === 'active' || sourceStatus === 'suspended' ? sourceStatus : 'inactive',
+    } satisfies SafetyPassportContractor;
+  }
+  return card;
 };
 
 const parseScopedSubcontractor = (value: unknown) => {

@@ -72,7 +72,11 @@ const SafetyTab: React.FC<SafetyTabProps> = ({ projectId, constructionSiteId, ca
   const confirm = useConfirm();
   const location = useLocation();
 
-  const [view, setView] = useState<SafetyView>('overview');
+  const [view, setView] = useState<SafetyView>(() => {
+    const params = new URLSearchParams(location.search);
+    const requestedView = params.get('safetyView') as SafetyView | null;
+    return requestedView && VIEW_CONFIG[requestedView] ? requestedView : 'overview';
+  });
   const [summary, setSummary] = useState<SafetyDashboardSummary | null>(null);
   const [issues, setIssues] = useState<SafetyIssue[]>([]);
   const [issueCount, setIssueCount] = useState(0);
@@ -81,7 +85,7 @@ const SafetyTab: React.FC<SafetyTabProps> = ({ projectId, constructionSiteId, ca
   const [contractors, setContractors] = useState<SafetySubcontractor[]>([]);
   const [teams, setTeams] = useState<SafetyTeam[]>([]);
   const [equipment, setEquipment] = useState<SafetyEquipment[]>([]);
-  const [loadingSummary, setLoadingSummary] = useState(true);
+  const [loadingSummary, setLoadingSummary] = useState(view === 'overview');
   const [loadingView, setLoadingView] = useState(false);
   const [issueFilters, setIssueFilters] = useState(defaultIssueFilters);
   const [showIssueForm, setShowIssueForm] = useState(false);
@@ -187,8 +191,8 @@ const SafetyTab: React.FC<SafetyTabProps> = ({ projectId, constructionSiteId, ca
   }, [loadContractors, loadEquipment, loadInspections, loadIssues, loadTeams, view]);
 
   useEffect(() => {
-    void loadSummary();
-  }, [loadSummary]);
+    if (view === 'overview') void loadSummary();
+  }, [loadSummary, view]);
 
   useEffect(() => {
     void refreshCurrentView();
@@ -212,7 +216,11 @@ const SafetyTab: React.FC<SafetyTabProps> = ({ projectId, constructionSiteId, ca
   }, [constructionSiteId, location.search, projectId]);
 
   const refreshAll = async () => {
-    await Promise.all([loadSummary(), refreshCurrentView()]);
+    if (view === 'overview') {
+      await Promise.all([loadSummary(), refreshCurrentView()]);
+      return;
+    }
+    await refreshCurrentView();
   };
 
   const openAction = (sourceType: string, id: string) => {

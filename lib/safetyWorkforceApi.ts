@@ -430,7 +430,19 @@ export const safetyWorkforceApi = {
     const cacheScope = { userId, projectId: 'qr', constructionSiteId: 'qr' };
     return cachedRead(cacheScope, 'card_lookup', { qrToken }, async () => {
       const value = await rpc('get_safety_card_by_qr', { p_qr_token: qrToken.trim() });
-      return value === null ? null : parseSafetyCard(value);
+      if (value === null) return null;
+      const card = parseSafetyCard(value);
+      const photo = card.worker?.photoAttachment;
+      const path = attachmentPath(photo);
+      if (!photo || !path || !card.worker) return card;
+      const signed = await createSignedUrlMap([path]);
+      return {
+        ...card,
+        worker: {
+          ...card.worker,
+          photoAttachment: signAttachment(photo, signed),
+        },
+      };
     });
   },
 

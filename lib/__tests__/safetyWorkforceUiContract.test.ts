@@ -18,6 +18,13 @@ const activePath = resolve(process.cwd(), 'components/project/safety/passport/Sa
 const activeSource = existsSync(activePath) ? readFileSync(activePath, 'utf8') : '';
 const cardSectionPath = resolve(process.cwd(), 'components/project/safety/passport/SafetyWorkerCardSection.tsx');
 const cardSectionSource = existsSync(cardSectionPath) ? readFileSync(cardSectionPath, 'utf8') : '';
+const safetyTabPath = resolve(process.cwd(), 'pages/project/SafetyTab.tsx');
+const safetyTabSource = existsSync(safetyTabPath) ? readFileSync(safetyTabPath, 'utf8') : '';
+const cardLookupPath = resolve(process.cwd(), 'pages/SafetyCardLookup.tsx');
+const cardLookupSource = existsSync(cardLookupPath) ? readFileSync(cardLookupPath, 'utf8') : '';
+const legacyHookPath = resolve(process.cwd(), 'hooks/useSafetyPassport.ts');
+const legacyServicePath = resolve(process.cwd(), 'lib/safetyPassportService.ts');
+const legacyServiceSource = existsSync(legacyServicePath) ? readFileSync(legacyServicePath, 'utf8') : '';
 
 describe('Safety Workforce UI resource contract', () => {
   it('uses the module-ready scoped API and guards against stale requests', () => {
@@ -100,5 +107,23 @@ describe('Safety Workforce UI resource contract', () => {
     const printIndex = cardSectionSource.indexOf('window.print()');
     expect(logIndex).toBeGreaterThan(-1);
     expect(printIndex).toBeGreaterThan(logIndex);
+  });
+
+  it('cuts over project navigation without loading overview for a direct workforce view', () => {
+    expect(safetyTabSource).not.toContain("passportCards: { label: 'Thẻ an toàn'");
+    expect(safetyTabSource).not.toContain('mode="passportCards"');
+    expect(panelSource).not.toContain("'passportCards'");
+    expect(safetyTabSource).toContain("if (view === 'overview') void loadSummary()");
+    expect(safetyTabSource).toContain("params.get('safetyView')");
+  });
+
+  it('uses the authenticated card RPC and removes global passport loaders', () => {
+    expect(cardLookupSource).toContain('safetyWorkforceApi.lookupCard');
+    expect(cardLookupSource).not.toContain('getCardByQrToken');
+    expect(existsSync(legacyHookPath)).toBe(false);
+    expect(legacyServiceSource).not.toContain('async listWorkers(');
+    expect(legacyServiceSource).not.toContain('async listProjectWorkerRows(');
+    expect(legacyServiceSource).not.toContain('async listCards(');
+    expect(legacyServiceSource).not.toContain('async saveWorkerDetail(');
   });
 });
