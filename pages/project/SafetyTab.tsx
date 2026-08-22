@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { AlertTriangle, BadgeCheck, ClipboardCheck, HardHat, IdCard, Plus, RefreshCw, ShieldCheck, Truck, UserRound, Users } from 'lucide-react';
+import { AlertTriangle, BadgeCheck, ClipboardCheck, HardHat, Plus, RefreshCw, ShieldCheck, Truck, UserRound, Users } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
@@ -38,14 +38,13 @@ interface SafetyTabProps {
   canManageTab?: boolean;
 }
 
-type SafetyView = 'overview' | 'passport' | 'passportWorkers' | 'passportAssignments' | 'passportCards' | 'issues' | 'inspections' | 'contractors' | 'teams' | 'equipment';
+type SafetyView = 'overview' | 'passport' | 'passportWorkers' | 'passportAssignments' | 'issues' | 'inspections' | 'contractors' | 'teams' | 'equipment';
 
 const VIEW_CONFIG: Record<SafetyView, { label: string; icon: React.ReactNode }> = {
   overview: { label: 'Tổng quan', icon: <ShieldCheck size={14} /> },
   passport: { label: 'Passport', icon: <BadgeCheck size={14} /> },
   passportWorkers: { label: 'Hồ sơ nhân công', icon: <UserRound size={14} /> },
   passportAssignments: { label: 'Nhân công CT', icon: <Users size={14} /> },
-  passportCards: { label: 'Thẻ an toàn', icon: <IdCard size={14} /> },
   issues: { label: 'Sự cố / nguy cơ', icon: <AlertTriangle size={14} /> },
   inspections: { label: 'Kiểm tra hiện trường', icon: <ClipboardCheck size={14} /> },
   contractors: { label: 'Nhà thầu phụ CT', icon: <HardHat size={14} /> },
@@ -55,7 +54,7 @@ const VIEW_CONFIG: Record<SafetyView, { label: string; icon: React.ReactNode }> 
 
 const VIEW_GROUPS: Array<{ label: string; views: SafetyView[] }> = [
   { label: 'Tổng quan', views: ['overview'] },
-  { label: 'Safety Passport', views: ['passport', 'passportWorkers', 'passportAssignments', 'passportCards', 'contractors', 'teams'] },
+  { label: 'Safety Passport', views: ['passport', 'passportWorkers', 'passportAssignments', 'contractors', 'teams'] },
   { label: 'Hiện trường', views: ['issues', 'inspections'] },
   { label: 'Thiết bị', views: ['equipment'] },
 ];
@@ -564,16 +563,6 @@ const SafetyTab: React.FC<SafetyTabProps> = ({ projectId, constructionSiteId, ca
       {view === 'passportAssignments' && (
         <SafetyPassportPanel
           mode="passportAssignments"
-          projectId={projectId}
-          constructionSiteId={constructionSiteId}
-          currentUser={user}
-          canManage={canManageTab}
-        />
-      )}
-
-      {view === 'passportCards' && (
-        <SafetyPassportPanel
-          mode="passportCards"
           projectId={projectId}
           constructionSiteId={constructionSiteId}
           currentUser={user}

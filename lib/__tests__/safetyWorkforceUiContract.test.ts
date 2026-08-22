@@ -4,6 +4,8 @@ import { describe, expect, it } from 'vitest';
 
 const hookPath = resolve(process.cwd(), 'hooks/useSafetyWorkforce.ts');
 const source = existsSync(hookPath) ? readFileSync(hookPath, 'utf8') : '';
+const panelPath = resolve(process.cwd(), 'components/project/safety/SafetyPassportPanel.tsx');
+const panelSource = existsSync(panelPath) ? readFileSync(panelPath, 'utf8') : '';
 
 describe('Safety Workforce UI resource contract', () => {
   it('uses the module-ready scoped API and guards against stale requests', () => {
@@ -23,5 +25,14 @@ describe('Safety Workforce UI resource contract', () => {
     expect(source).toContain('export function useSafetyWorkerDetail');
     expect(source).toContain('export function useSafetyWorkforceOptions');
     expect(source).toContain("assignmentStatus: 'active'");
+  });
+
+  it('mounts exactly the selected scoped passport view', () => {
+    expect(panelSource).toContain("mode === 'passport'");
+    expect(panelSource).toContain('<SafetyPassportDashboardView');
+    expect(panelSource).toContain('<SafetyWorkerRosterView');
+    expect(panelSource).toContain('<SafetyActiveWorkforceView');
+    expect(panelSource).not.toContain('useSafetyCards(');
+    expect(panelSource).not.toContain('reloadAll');
   });
 });
