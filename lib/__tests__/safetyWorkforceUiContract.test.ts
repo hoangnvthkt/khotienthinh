@@ -6,6 +6,12 @@ const hookPath = resolve(process.cwd(), 'hooks/useSafetyWorkforce.ts');
 const source = existsSync(hookPath) ? readFileSync(hookPath, 'utf8') : '';
 const panelPath = resolve(process.cwd(), 'components/project/safety/SafetyPassportPanel.tsx');
 const panelSource = existsSync(panelPath) ? readFileSync(panelPath, 'utf8') : '';
+const rosterPath = resolve(process.cwd(), 'components/project/safety/passport/SafetyWorkerRosterView.tsx');
+const rosterSource = existsSync(rosterPath) ? readFileSync(rosterPath, 'utf8') : '';
+const formPath = resolve(process.cwd(), 'components/project/safety/passport/SafetyWorkerProfileForm.tsx');
+const formSource = existsSync(formPath) ? readFileSync(formPath, 'utf8') : '';
+const detailPath = resolve(process.cwd(), 'components/project/safety/SafetyPassportWorkerDetailModal.tsx');
+const detailSource = existsSync(detailPath) ? readFileSync(detailPath, 'utf8') : '';
 
 describe('Safety Workforce UI resource contract', () => {
   it('uses the module-ready scoped API and guards against stale requests', () => {
@@ -34,5 +40,30 @@ describe('Safety Workforce UI resource contract', () => {
     expect(panelSource).toContain('<SafetyActiveWorkforceView');
     expect(panelSource).not.toContain('useSafetyCards(');
     expect(panelSource).not.toContain('reloadAll');
+  });
+
+  it('uses debounced server-side roster filters and lazy form options', () => {
+    expect(rosterSource).toContain('setTimeout');
+    expect(rosterSource).toContain('250');
+    expect(rosterSource).toContain('useSafetyRoster(scope, filters)');
+    expect(rosterSource).toContain('useSafetyWorkforceOptions(scope, createOpen)');
+    expect(rosterSource).not.toMatch(/page\.items\.filter\(/);
+    expect(rosterSource).not.toContain('listWorkers()');
+  });
+
+  it('creates the profile before uploading worker attachments', () => {
+    expect(formSource).toContain('safetyWorkforceApi.createProfile');
+    expect(formSource).toContain('safetyWorkforceApi.uploadWorkerAttachment');
+    expect(formSource).toContain('created = await safetyWorkforceApi.createProfile');
+    expect(formSource).toContain('const completed = await uploadDocuments(created)');
+    expect(formSource).toContain('safetyWorkforceApi.lookupExact');
+    expect(formSource).toContain('Hồ sơ đã tạo, còn file chưa tải xong');
+    expect(formSource).not.toContain('safetyPassportService');
+  });
+
+  it('reads worker detail through the scoped domain hook', () => {
+    expect(detailSource).toContain('useSafetyWorkerDetail(scope, membershipId, false)');
+    expect(detailSource).not.toContain('safetyPassportService');
+    expect(detailSource).not.toContain('listWorkers()');
   });
 });

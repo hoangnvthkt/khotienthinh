@@ -6,18 +6,27 @@ const hookMocks = vi.hoisted(() => ({
   dashboard: vi.fn(),
   roster: vi.fn(),
   active: vi.fn(),
+  options: vi.fn(),
+  detail: vi.fn(),
 }));
 
 vi.mock('../../../../../hooks/useSafetyWorkforce', () => ({
   useSafetyDashboard: hookMocks.dashboard,
   useSafetyRoster: hookMocks.roster,
   useSafetyActiveWorkforce: hookMocks.active,
+  useSafetyWorkforceOptions: hookMocks.options,
+  useSafetyWorkerDetail: hookMocks.detail,
 }));
 
 import SafetyPassportPanel from '../../SafetyPassportPanel';
 import { SafetyPassportDashboardContent } from '../SafetyPassportDashboardView';
 import { SafetyWorkerRosterContent } from '../SafetyWorkerRosterView';
 import { SafetyActiveWorkforceContent } from '../SafetyActiveWorkforceView';
+import {
+  filterSafetyTeamsBySubcontractor,
+  SafetyWorkerProfileForm,
+  validateSafetyWorkerProfileInput,
+} from '../SafetyWorkerProfileForm';
 
 const capabilities = {
   canViewBasic: true,
@@ -136,5 +145,52 @@ describe('Safety Workforce scoped views', () => {
     expect(hookMocks.dashboard).not.toHaveBeenCalled();
     expect(hookMocks.roster).not.toHaveBeenCalled();
     expect(hookMocks.active).not.toHaveBeenCalled();
+  });
+
+  it('requires a subcontractor for contractor workers and clears it for company staff', () => {
+    expect(validateSafetyWorkerProfileInput({
+      workerKind: 'contractor_worker',
+      fullName: 'Nguyễn Văn Bình',
+      subcontractorId: '',
+    })).toMatchObject({ subcontractorId: expect.any(String) });
+    expect(validateSafetyWorkerProfileInput({
+      workerKind: 'company_staff',
+      fullName: 'Nguyễn Văn Bình',
+      subcontractorId: '',
+    })).toEqual({});
+  });
+
+  it('limits teams to the selected subcontractor', () => {
+    const options = {
+      subcontractors: [],
+      teams: [
+        { id: 'team-a', name: 'Tổ A', code: 'A', status: 'active' as const, subcontractorId: 'sub-a' },
+        { id: 'team-b', name: 'Tổ B', code: 'B', status: 'active' as const, subcontractorId: 'sub-b' },
+      ],
+    };
+
+    expect(filterSafetyTeamsBySubcontractor(options, 'sub-a').map(item => item.id)).toEqual(['team-a']);
+    expect(filterSafetyTeamsBySubcontractor(options, '')).toEqual([]);
+  });
+
+  it('renders both worker kinds and the site-scoped subcontractor source', () => {
+    const markup = renderToStaticMarkup(
+      <SafetyWorkerProfileForm
+        scope={{ userId: 'user-1', projectId: 'project-1', constructionSiteId: 'site-1' }}
+        options={{
+          subcontractors: [{ id: 'sub-a', name: 'Nhà thầu phụ A', code: 'NTP-A', status: 'active' }],
+          teams: [{ id: 'team-a', name: 'Tổ A', code: 'A', status: 'active', subcontractorId: 'sub-a' }],
+        }}
+        optionsLoading={false}
+        initialValue={{ workerKind: 'contractor_worker' }}
+        onClose={() => undefined}
+        onCreated={() => undefined}
+      />,
+    );
+
+    expect(markup).toContain('Cán bộ công ty');
+    expect(markup).toContain('Nhân công nhà thầu');
+    expect(markup).toContain('Nhà thầu phụ A');
+    expect(markup).not.toContain('Tổ A');
   });
 });
