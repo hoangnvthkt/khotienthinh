@@ -29,6 +29,9 @@ export const buildPurchaseOrderRequestTitle = (
   po: PurchaseOrder,
   materialRequests: Pick<MaterialRequest, 'id' | 'code' | 'title'>[] = [],
 ): string => {
+  const approvalTitle = cleanText(po.approvalRequestTitle);
+  if (approvalTitle) return approvalTitle;
+
   const requestsById = new Map(materialRequests.map(request => [request.id, request]));
   const linkedRequestIds = uniqueTexts((po.items || []).map(item => cleanText(item.requestId)));
   const linkedRequests = linkedRequestIds
@@ -45,9 +48,6 @@ export const buildPurchaseOrderRequestTitle = (
     if (labels.length === 1) return labels[0];
     if (labels.length > 1) return `${labels[0]} +${labels.length - 1} đề xuất`;
   }
-
-  const approvalTitle = cleanText(po.approvalRequestTitle);
-  if (approvalTitle) return approvalTitle;
 
   const requestCodes = uniqueTexts((po.items || []).map(item => cleanText(item.requestCode)));
   if (requestCodes.length === 1) return requestCodes[0];

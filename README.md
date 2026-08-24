@@ -1,37 +1,62 @@
-# KhoViet - Hệ thống Quản Lý Kho Doanh Nghiệp
+# Vioo
 
-## 1. Phân tích nghiệp vụ
-Hệ thống được thiết kế để giải quyết bài toán quản lý dòng vật tư cho doanh nghiệp xây dựng/sản xuất, nơi có đặc thù:
-- Nhiều kho bãi (Kho tổng, kho công trình).
-- Vật tư đa dạng (Nguyên vật liệu, CCDC, Thành phẩm).
-- Quy trình chặt chẽ: Yêu cầu -> Duyệt -> Xuất.
+Vioo is an internal operations platform for construction and enterprise teams. It brings together inventory, procurement, project execution, workforce, finance, quality, and operational workflows in one web application.
 
-### Các thực thể chính:
-- **Product (Vật tư)**: Định danh bằng SKU & Barcode/QR.
-- **Warehouse (Kho)**: Nơi lưu trữ.
-- **Transaction (Giao dịch)**: Ghi nhận mọi biến động (Nhập/Xuất/Chuyển/Kiểm kê).
-- **User (Người dùng)**: Phân quyền RBAC (Admin, Thủ kho, Kế toán).
+This repository is proprietary. See [LICENSE](LICENSE).
 
-## 2. Kiến trúc hệ thống
-Mô hình Client-Server hiện đại:
-- **Frontend**: React (SPA), Tailwind CSS.
-- **Backend (Giả lập)**: RESTful API design pattern.
-- **Database (Giả lập)**: Quan hệ (Relational) - Users, Products, Transactions, Warehouses.
+## Technology
 
-## 3. Quy trình (Flow)
-1. **Nhập kho**: Tạo phiếu -> Scan vật tư -> Nhập số lượng -> Lưu nháp/Hoàn thành.
-2. **Xuất kho**: Chọn kho xuất -> Chọn vật tư -> Kiểm tra tồn kho (Validation) -> Tạo phiếu.
-3. **Kiểm kê**: Scan thực tế -> So sánh tồn lý thuyết -> Tạo phiếu điều chỉnh (Adjustment).
+- React 18, TypeScript, Vite and Vitest
+- Supabase Cloud: Auth, Postgres, Row Level Security, Storage and Edge Functions
+- Vercel for SPA hosting
 
-## 4. Công nghệ sử dụng trong Demo
-- **React 18**: Core framework.
-- **TypeScript**: Type safety.
-- **Tailwind CSS**: Styling nhanh, mobile-first.
-- **Recharts**: Biểu đồ báo cáo.
-- **Context API**: Quản lý trạng thái toàn cục (thay thế Redux cho scope vừa phải).
-- **Lucide React**: Icons.
+## Repository map
 
-## 5. Lộ trình phát triển (Roadmap)
-1. **Phase 1 (MVP - Current)**: Quản lý danh mục, Nhập/Xuất cơ bản, Scan QR giả lập, Dashboard.
-2. **Phase 2**: Backend thực tế (Node.js/Go), Auth (JWT), Real-time QR scanner (Zxing/Html5-qrcode).
-3. **Phase 3**: Mobile App (React Native), Tích hợp ERP/Kế toán, AI dự báo tồn kho.
+| Path | Purpose |
+| --- | --- |
+| `components/`, `pages/`, `context/`, `hooks/`, `lib/` | Browser application and domain logic |
+| `supabase/migrations/` | Versioned database schema, RLS policies and database logic |
+| `supabase/functions/` | Supabase Edge Functions |
+| `supabase/tests/` | SQL smoke tests |
+| `docs/` | Product, operational and design documentation |
+
+Further details are in [ARCHITECTURE.md](ARCHITECTURE.md).
+
+## Local setup
+
+### Prerequisites
+
+- Node.js 24.13.1 (see `.nvmrc`)
+- npm 11+
+- A Supabase Cloud project to run connected database smoke tests
+
+Install dependencies and start the application:
+
+```bash
+npm ci
+cp .env.example .env.local
+npm run dev
+```
+
+The browser application needs only public Supabase settings. Do not put service-role, AI-provider, VAPID private, or other privileged secrets in browser environment files.
+
+## Validation
+
+```bash
+npm run lint
+npm test
+npm run build
+npm run qa:pwa
+```
+
+Database smoke tests use the linked **Supabase Cloud** project and can mutate test data. Read the relevant SQL file and use an isolated audit/test project before running them.
+
+## Security and audits
+
+- Read [SECURITY.md](SECURITY.md) before reporting a vulnerability.
+- Use [AUDIT_SCOPE.md](AUDIT_SCOPE.md) to freeze the reviewed revision and agree access boundaries.
+- Never commit `.env` files, private keys, Supabase service-role keys, or production data.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the expected workflow and checks.

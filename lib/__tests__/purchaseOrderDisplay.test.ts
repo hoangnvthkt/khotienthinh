@@ -64,6 +64,14 @@ describe('purchaseOrderDisplay', () => {
     expect(summary.materialSummary).toBe('Bien bao chu A, Ni long trang');
   });
 
+  it('prefers the custom approval title over the linked material request title', () => {
+    const summary = buildPurchaseOrderListSummary(makePo({
+      approvalRequestTitle: 'Mua thép buộc cho công trường',
+    }), [makeRequest()]);
+
+    expect(summary.requestTitle).toBe('Mua thép buộc cho công trường');
+  });
+
   it('falls back to approval title and compact material names when linked request is not loaded', () => {
     const po = makePo({
       approvalRequestTitle: 'Mua vat tu phu tro cong truong',
