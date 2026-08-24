@@ -6059,6 +6059,18 @@ export type SafetyPassportCardStatus = 'draft' | 'active' | 'expired' | 'revoked
 export type SafetyPassportInductionType = 'site_rules' | 'toolbox' | 'commitment' | 'ppe';
 export type SafetyWorkerDocumentType = 'identity_front' | 'identity_back' | 'health_check' | 'insurance' | 'safety_card' | 'identity' | 'other';
 export type SafetyPassportDocumentReadiness = 'missing' | 'valid' | 'expired' | 'rejected';
+export type SafetyWorkerKind = 'company_staff' | 'contractor_worker';
+export type SafetyMembershipStatus = 'candidate' | 'active' | 'inactive';
+export type SafetyAssignmentLifecycleStatus = 'active' | 'ended' | 'suspended' | 'cancelled';
+export type SafetyWorkforceErrorCode =
+  | 'SAFETY_SCOPE_REQUIRED'
+  | 'SAFETY_SCOPE_MISMATCH'
+  | 'SAFETY_WORKER_ACTIVE_ELSEWHERE'
+  | 'SAFETY_CONTRACTOR_SCOPE_MISMATCH'
+  | 'SAFETY_TEAM_SCOPE_MISMATCH'
+  | 'SAFETY_ASSIGNMENT_NOT_ELIGIBLE'
+  | 'SAFETY_ACTIVE_CARD_EXISTS'
+  | 'SAFETY_TRANSFER_PERMISSION_REQUIRED';
 
 export interface SafetyAttachment extends Attachment {
   storagePath?: string;
@@ -6084,9 +6096,11 @@ export interface SafetyWorkerProfile {
   id: string;
   workerCode: string;
   fullName: string;
+  workerKind: SafetyWorkerKind;
   photoAttachment?: SafetyAttachment | null;
   identityType: 'cccd' | 'passport' | 'other';
   identityNumber?: string | null;
+  identityNumberNormalized?: string | null;
   identityIssueDate?: string | null;
   identityIssuePlace?: string | null;
   dateOfBirth?: string | null;
@@ -6162,10 +6176,14 @@ export interface SafetyWorkerCertificate {
 export interface SafetyProjectAssignment {
   id: string;
   workerId: string;
+  membershipId: string;
   worker?: SafetyWorkerProfile | null;
   projectId?: string | null;
   constructionSiteId?: string | null;
   contractorId?: string | null;
+  subcontractorId: string | null;
+  subcontractorName?: string | null;
+  teamId: string | null;
   contractor?: SafetyPassportContractor | null;
   teamName?: string | null;
   roleName?: string | null;
@@ -6173,6 +6191,12 @@ export interface SafetyProjectAssignment {
   siteAccessCardCode?: string | null;
   startDate: string;
   endDate?: string | null;
+  assignmentStatus: SafetyAssignmentLifecycleStatus;
+  startedAt: string;
+  endedAt: string | null;
+  endedBy: string | null;
+  endedReason: string | null;
+  source: 'manual' | 'legacy' | 'transfer' | 'son_mien_bac_backfill_v1';
   siteTrainingStatus: SafetyPassportRequirementStatus;
   commitmentStatus: SafetyPassportCommitmentStatus;
   ppeStatus: SafetyPassportPpeStatus;
@@ -6255,6 +6279,173 @@ export interface SafetyProjectWorkerRow {
   healthStatus: SafetyPassportDocumentReadiness;
   insuranceStatus: SafetyPassportDocumentReadiness;
   profileStatus: SafetyPassportDocumentReadiness;
+}
+
+export interface SafetyWorkforceCursor {
+  createdAt: string;
+  id: string;
+}
+
+export interface SafetyWorkforceCapabilities {
+  canViewBasic: boolean;
+  canManageWorker: boolean;
+  canVerifyDocuments: boolean;
+}
+
+export interface SafetyRosterFilters {
+  search?: string;
+  membershipStatus?: SafetyMembershipStatus;
+  assignmentStatus?: SafetyAssignmentLifecycleStatus;
+  eligibilityStatus?: SafetyPassportAssignmentStatus;
+  documentStatus?: 'missing' | 'expired';
+  cursor?: SafetyWorkforceCursor;
+  limit: number;
+}
+
+export interface SafetyWorkerSiteMembership {
+  id: string;
+  workerId: string;
+  projectId: string;
+  constructionSiteId: string;
+  defaultSubcontractorId: string | null;
+  defaultTeamId: string | null;
+  status: SafetyMembershipStatus;
+  firstJoinedAt: string;
+  lastLeftAt: string | null;
+  source: 'manual' | 'transfer' | 'son_mien_bac_backfill_v1';
+}
+
+export interface SafetyWorkerRosterItem {
+  membership: SafetyWorkerSiteMembership;
+  worker: Pick<SafetyWorkerProfile, 'id' | 'workerCode' | 'fullName' | 'phone' | 'status'> & {
+    workerKind: SafetyWorkerKind;
+    photoStoragePath: string | null;
+    photoUrl?: string | null;
+  };
+  subcontractor: Pick<SafetySubcontractor, 'id' | 'name' | 'code' | 'status'> | null;
+  team: Pick<SafetyTeam, 'id' | 'name' | 'code' | 'status'> | null;
+  activeAssignment: SafetyProjectAssignment | null;
+  activeCard: SafetyCard | null;
+  identityNumberMasked: string;
+  profileStatus: SafetyPassportDocumentReadiness;
+  healthStatus: SafetyPassportDocumentReadiness;
+  insuranceStatus: SafetyPassportDocumentReadiness;
+}
+
+export interface SafetyWorkerRosterPage {
+  items: SafetyWorkerRosterItem[];
+  nextCursor: SafetyWorkforceCursor | null;
+  capabilities: SafetyWorkforceCapabilities;
+}
+
+export interface SafetySiteWorkforceOptions {
+  subcontractors: Array<Pick<SafetySubcontractor, 'id' | 'name' | 'code' | 'status'>>;
+  teams: Array<Pick<SafetyTeam, 'id' | 'name' | 'code' | 'status' | 'subcontractorId'>>;
+}
+
+export interface SafetyWorkforceDashboard {
+  totalWorkers: number;
+  activeAssignments: number;
+  eligibleAssignments: number;
+  missingProfile: number;
+  missingCertificate: number;
+  expiredCertificate: number;
+  missingSiteRequirement: number;
+  suspendedAssignments: number;
+  expiringCertificates7Days: number;
+  expiringCertificates30Days: number;
+  expiredCertificates: number;
+  expiringCards30Days: number;
+  problematicSubcontractors: Array<{ id: string; name: string; issueCount: number }>;
+}
+
+export interface SafetyWorkerDetailProfile {
+  id: string;
+  workerCode: string;
+  fullName: string;
+  workerKind: SafetyWorkerKind;
+  phone: string | null;
+  dateOfBirth: string | null;
+  roleName: string | null;
+  status: SafetyPassportWorkerStatus;
+  photoAttachment: SafetyAttachment | null;
+  identityType?: 'cccd' | 'passport' | 'other';
+  identityNumber?: string | null;
+  identityIssueDate?: string | null;
+  identityIssuePlace?: string | null;
+  permanentAddress?: string | null;
+}
+
+export interface SafetyWorkerDetailPayload {
+  rosterItem: SafetyWorkerRosterItem;
+  profile: SafetyWorkerDetailProfile;
+  documents: SafetyWorkerDocument[];
+  certificates: SafetyWorkerCertificate[];
+  assignments: SafetyProjectAssignment[];
+  cards: SafetyCard[];
+  capabilities: SafetyWorkforceCapabilities;
+  sensitiveLoaded: boolean;
+}
+
+export interface SafetyWorkerLookupResult {
+  workerId: string;
+  workerCode: string;
+  fullName: string;
+  workerKind: SafetyWorkerKind;
+  identityNumberMasked: string;
+  targetMembershipId: string | null;
+  activeAssignmentId: string | null;
+  activeProjectId: string | null;
+  activeConstructionSiteId: string | null;
+  activeSiteName: string | null;
+  canTransfer: boolean;
+}
+
+export interface SafetyCreateWorkerForSiteInput {
+  workerKind: SafetyWorkerKind;
+  profile: {
+    workerCode?: string;
+    fullName: string;
+    phone?: string | null;
+    dateOfBirth?: string | null;
+    identityType: 'cccd' | 'passport' | 'other';
+    identityNumber?: string | null;
+    identityIssueDate?: string | null;
+    identityIssuePlace?: string | null;
+    permanentAddress?: string | null;
+    roleName?: string | null;
+  };
+  subcontractorId: string | null;
+  teamId: string | null;
+}
+
+export type SafetyWorkerProfilePatch = Partial<SafetyCreateWorkerForSiteInput['profile']> & {
+  photoAttachment?: SafetyAttachment | null;
+};
+
+export type SafetyWorkerDocumentPatch = Pick<SafetyWorkerDocument,
+  'documentType' | 'name' | 'issueDate' | 'expiryDate' | 'attachments' | 'status' | 'isRequired'> & {
+  id?: string;
+};
+
+export interface SafetyAssignWorkerInput {
+  membershipId: string;
+  startedAt: string;
+  subcontractorId: string | null;
+  teamId: string | null;
+  roleName?: string | null;
+  workType?: string | null;
+}
+
+export interface SafetyTransferWorkerInput {
+  assignmentId: string;
+  sourceProjectId: string;
+  sourceConstructionSiteId: string;
+  targetProjectId: string;
+  targetConstructionSiteId: string;
+  startedAt: string;
+  subcontractorId: string | null;
+  teamId: string | null;
 }
 
 export interface SafetyWorkerDetailSaveInput {

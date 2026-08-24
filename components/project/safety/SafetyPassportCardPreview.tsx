@@ -1,6 +1,6 @@
 import React from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { SafetyCard } from '../../../types';
+import type { SafetyCard } from '../../../types';
 import { buildSafetyCardQrUrl } from '../../../lib/safetyPassportService';
 
 const formatDate = (value?: string | null) => {
@@ -10,11 +10,29 @@ const formatDate = (value?: string | null) => {
   return date.toLocaleDateString('vi-VN');
 };
 
-const SafetyPassportCardPreview: React.FC<{ card: SafetyCard; compact?: boolean }> = ({ card, compact }) => {
+interface Props {
+  card: SafetyCard;
+  compact?: boolean;
+  workerName?: string;
+  workerCode?: string;
+  photoUrl?: string | null;
+  organizationName?: string | null;
+  roleName?: string | null;
+}
+
+const SafetyPassportCardPreview: React.FC<Props> = ({
+  card,
+  compact,
+  workerName,
+  workerCode,
+  photoUrl,
+  organizationName,
+  roleName,
+}) => {
   const worker = card.worker;
   const contractor = card.contractor || card.assignment?.contractor || worker?.contractor;
   const qrUrl = buildSafetyCardQrUrl(card.qrToken);
-  const photo = worker?.photoAttachment?.previewUrl || worker?.photoAttachment?.url;
+  const photo = photoUrl || worker?.photoAttachment?.previewUrl || worker?.photoAttachment?.url;
 
   return (
     <div className={`overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm ${compact ? 'w-[320px]' : 'w-full max-w-md'}`}>
@@ -31,11 +49,11 @@ const SafetyPassportCardPreview: React.FC<{ card: SafetyCard; compact?: boolean 
           )}
         </div>
         <div className="min-w-0">
-          <h3 className="break-words text-base font-black text-slate-900">{worker?.fullName || 'Chưa có tên'}</h3>
-          <div className="mt-1 font-mono text-[11px] font-black text-orange-600">{worker?.workerCode || '-'}</div>
+          <h3 className="break-words text-base font-black text-slate-900">{workerName || worker?.fullName || 'Chưa có tên'}</h3>
+          <div className="mt-1 font-mono text-[11px] font-black text-orange-600">{workerCode || worker?.workerCode || '-'}</div>
           <div className="mt-2 space-y-1 text-xs font-bold text-slate-500">
-            <div>Tổ đội/NTP: {contractor?.name || worker?.teamName || '-'}</div>
-            <div>Vai trò: {card.assignment?.roleName || worker?.roleName || '-'}</div>
+            <div>Tổ đội/NTP: {organizationName || contractor?.name || worker?.teamName || '-'}</div>
+            <div>Vai trò: {roleName || card.assignment?.roleName || worker?.roleName || '-'}</div>
             <div>Ngày cấp: {formatDate(card.issuedAt)}</div>
             <div>Hết hạn: {formatDate(card.expiresAt)}</div>
           </div>

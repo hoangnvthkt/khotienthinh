@@ -1,0 +1,129 @@
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { describe, expect, it } from 'vitest';
+
+const hookPath = resolve(process.cwd(), 'hooks/useSafetyWorkforce.ts');
+const source = existsSync(hookPath) ? readFileSync(hookPath, 'utf8') : '';
+const panelPath = resolve(process.cwd(), 'components/project/safety/SafetyPassportPanel.tsx');
+const panelSource = existsSync(panelPath) ? readFileSync(panelPath, 'utf8') : '';
+const rosterPath = resolve(process.cwd(), 'components/project/safety/passport/SafetyWorkerRosterView.tsx');
+const rosterSource = existsSync(rosterPath) ? readFileSync(rosterPath, 'utf8') : '';
+const formPath = resolve(process.cwd(), 'components/project/safety/passport/SafetyWorkerProfileForm.tsx');
+const formSource = existsSync(formPath) ? readFileSync(formPath, 'utf8') : '';
+const detailPath = resolve(process.cwd(), 'components/project/safety/SafetyPassportWorkerDetailModal.tsx');
+const detailSource = existsSync(detailPath) ? readFileSync(detailPath, 'utf8') : '';
+const assignmentPath = resolve(process.cwd(), 'components/project/safety/passport/SafetyWorkerAssignmentDialog.tsx');
+const assignmentSource = existsSync(assignmentPath) ? readFileSync(assignmentPath, 'utf8') : '';
+const activePath = resolve(process.cwd(), 'components/project/safety/passport/SafetyActiveWorkforceView.tsx');
+const activeSource = existsSync(activePath) ? readFileSync(activePath, 'utf8') : '';
+const cardSectionPath = resolve(process.cwd(), 'components/project/safety/passport/SafetyWorkerCardSection.tsx');
+const cardSectionSource = existsSync(cardSectionPath) ? readFileSync(cardSectionPath, 'utf8') : '';
+const safetyTabPath = resolve(process.cwd(), 'pages/project/SafetyTab.tsx');
+const safetyTabSource = existsSync(safetyTabPath) ? readFileSync(safetyTabPath, 'utf8') : '';
+const cardLookupPath = resolve(process.cwd(), 'pages/SafetyCardLookup.tsx');
+const cardLookupSource = existsSync(cardLookupPath) ? readFileSync(cardLookupPath, 'utf8') : '';
+const legacyHookPath = resolve(process.cwd(), 'hooks/useSafetyPassport.ts');
+const legacyServicePath = resolve(process.cwd(), 'lib/safetyPassportService.ts');
+const legacyServiceSource = existsSync(legacyServicePath) ? readFileSync(legacyServicePath, 'utf8') : '';
+
+describe('Safety Workforce UI resource contract', () => {
+  it('uses the module-ready scoped API and guards against stale requests', () => {
+    expect(source).toContain("from '../lib/safetyWorkforceApi'");
+    expect(source).toContain('requestVersionRef');
+    expect(source).toContain('setData(null)');
+    expect(source).toContain('version === requestVersionRef.current');
+    expect(source).toContain('enabled');
+    expect(source).not.toContain('listWorkers()');
+    expect(source).not.toContain('safetyPassportService');
+  });
+
+  it('exposes dashboard, roster, active, detail and lazy options resources', () => {
+    expect(source).toContain('export function useSafetyDashboard');
+    expect(source).toContain('export function useSafetyRoster');
+    expect(source).toContain('export function useSafetyActiveWorkforce');
+    expect(source).toContain('export function useSafetyWorkerDetail');
+    expect(source).toContain('export function useSafetyWorkforceOptions');
+    expect(source).toContain("assignmentStatus: 'active'");
+  });
+
+  it('mounts exactly the selected scoped passport view', () => {
+    expect(panelSource).toContain("mode === 'passport'");
+    expect(panelSource).toContain('<SafetyPassportDashboardView');
+    expect(panelSource).toContain('<SafetyWorkerRosterView');
+    expect(panelSource).toContain('<SafetyActiveWorkforceView');
+    expect(panelSource).not.toContain('useSafetyCards(');
+    expect(panelSource).not.toContain('reloadAll');
+  });
+
+  it('uses debounced server-side roster filters and lazy form options', () => {
+    expect(rosterSource).toContain('setTimeout');
+    expect(rosterSource).toContain('250');
+    expect(rosterSource).toContain('useSafetyRoster(scope, filters)');
+    expect(rosterSource).toContain('useSafetyWorkforceOptions(scope, createOpen)');
+    expect(rosterSource).not.toMatch(/page\.items\.filter\(/);
+    expect(rosterSource).not.toContain('listWorkers()');
+  });
+
+  it('creates the profile before uploading worker attachments', () => {
+    expect(formSource).toContain('safetyWorkforceApi.createProfile');
+    expect(formSource).toContain('safetyWorkforceApi.uploadWorkerAttachment');
+    expect(formSource).toContain('created = await safetyWorkforceApi.createProfile');
+    expect(formSource).toContain('const completed = await uploadDocuments(created)');
+    expect(formSource).toContain('safetyWorkforceApi.lookupExact');
+    expect(formSource).toContain('Hồ sơ đã tạo, còn file chưa tải xong');
+    expect(formSource).not.toContain('safetyPassportService');
+  });
+
+  it('reads worker detail through the scoped domain hook', () => {
+    expect(detailSource).toContain('useSafetyWorkerDetail(scope, membershipId, false)');
+    expect(detailSource).not.toContain('safetyPassportService');
+    expect(detailSource).not.toContain('listWorkers()');
+  });
+
+  it('keeps assignment, ending and transfer decisions in scoped commands', () => {
+    expect(assignmentSource).toContain("membershipStatus: 'candidate'");
+    expect(assignmentSource).toContain("membershipStatus: 'inactive'");
+    expect(assignmentSource).toContain('safetyWorkforceApi.lookupExact');
+    expect(assignmentSource).toContain('safetyWorkforceApi.assign');
+    expect(assignmentSource).toContain('safetyWorkforceApi.endAssignment');
+    expect(assignmentSource).toContain('safetyWorkforceApi.transfer');
+    expect(assignmentSource).toContain('SAFETY_WORKER_ACTIVE_ELSEWHERE');
+    expect(activeSource).toContain("assignmentStatus: 'active'");
+  });
+
+  it('lazy-loads sensitive detail only after permission and embeds cards without global lists', () => {
+    expect(detailSource).toContain('useSafetyWorkerDetail(scope, membershipId, false)');
+    expect(detailSource).toContain('useSafetyWorkerDetail(scope, sensitiveMembershipId, true)');
+    expect(detailSource).toContain('canManageWorker || basicDetail.capabilities.canVerifyDocuments');
+    expect(detailSource).toContain('Giấy tờ & chứng chỉ');
+    expect(cardSectionSource).toContain('safetyWorkforceApi.issueCard');
+    expect(cardSectionSource).toContain('safetyWorkforceApi.renewCard');
+    expect(cardSectionSource).toContain('safetyWorkforceApi.revokeCard');
+    expect(cardSectionSource).not.toContain('listCards');
+  });
+
+  it('logs the print before opening the browser print dialog', () => {
+    const logIndex = cardSectionSource.indexOf('await safetyWorkforceApi.logCardPrint');
+    const printIndex = cardSectionSource.indexOf('window.print()');
+    expect(logIndex).toBeGreaterThan(-1);
+    expect(printIndex).toBeGreaterThan(logIndex);
+  });
+
+  it('cuts over project navigation without loading overview for a direct workforce view', () => {
+    expect(safetyTabSource).not.toContain("passportCards: { label: 'Thẻ an toàn'");
+    expect(safetyTabSource).not.toContain('mode="passportCards"');
+    expect(panelSource).not.toContain("'passportCards'");
+    expect(safetyTabSource).toContain("if (view === 'overview') void loadSummary()");
+    expect(safetyTabSource).toContain("params.get('safetyView')");
+  });
+
+  it('uses the authenticated card RPC and removes global passport loaders', () => {
+    expect(cardLookupSource).toContain('safetyWorkforceApi.lookupCard');
+    expect(cardLookupSource).not.toContain('getCardByQrToken');
+    expect(existsSync(legacyHookPath)).toBe(false);
+    expect(legacyServiceSource).not.toContain('async listWorkers(');
+    expect(legacyServiceSource).not.toContain('async listProjectWorkerRows(');
+    expect(legacyServiceSource).not.toContain('async listCards(');
+    expect(legacyServiceSource).not.toContain('async saveWorkerDetail(');
+  });
+});

@@ -1,13 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { AlertTriangle, ShieldCheck } from 'lucide-react';
-import { safetyPassportService } from '../lib/safetyPassportService';
-import { SafetyCard } from '../types';
+import { safetyWorkforceApi } from '../lib/safetyWorkforceApi';
+import type { SafetyCard } from '../types';
 import SafetyPassportCardPreview from '../components/project/safety/SafetyPassportCardPreview';
 import LoadingSpinner from '../components/LoadingSpinner';
+import { useApp } from '../context/AppContext';
 
 const SafetyCardLookup: React.FC = () => {
   const { qrToken } = useParams();
+  const { user } = useApp();
   const [card, setCard] = useState<SafetyCard | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -15,7 +17,7 @@ const SafetyCardLookup: React.FC = () => {
   useEffect(() => {
     let mounted = true;
     setLoading(true);
-    safetyPassportService.getCardByQrToken(qrToken || '')
+    safetyWorkforceApi.lookupCard(qrToken || '', user.id)
       .then(result => {
         if (!mounted) return;
         setCard(result);
@@ -27,7 +29,7 @@ const SafetyCardLookup: React.FC = () => {
       })
       .finally(() => mounted && setLoading(false));
     return () => { mounted = false; };
-  }, [qrToken]);
+  }, [qrToken, user.id]);
 
   if (loading) return <LoadingSpinner />;
 
@@ -56,7 +58,7 @@ const SafetyCardLookup: React.FC = () => {
               <div className="mt-3 space-y-2 text-sm font-bold text-slate-600">
                 <div>Nhân công: <span className="text-slate-900">{card.worker?.fullName || '-'}</span></div>
                 <div>Mã nhân công: <span className="font-mono text-slate-900">{card.worker?.workerCode || '-'}</span></div>
-                <div>Nhà thầu/Tổ đội: <span className="text-slate-900">{card.contractor?.name || card.assignment?.contractor?.name || '-'}</span></div>
+                <div>Nhà thầu/Tổ đội: <span className="text-slate-900">{card.contractor?.name || card.assignment?.subcontractorName || card.assignment?.teamName || '-'}</span></div>
                 <div>Trạng thái thẻ: <span className={card.status === 'active' ? 'text-emerald-600' : 'text-red-600'}>{card.status === 'active' ? 'Hiệu lực' : card.status}</span></div>
                 <div>Trạng thái vào công trường: <span className={card.assignment?.eligibilityStatus === 'eligible' ? 'text-emerald-600' : 'text-orange-600'}>{card.assignment?.eligibilityStatus || '-'}</span></div>
               </div>
