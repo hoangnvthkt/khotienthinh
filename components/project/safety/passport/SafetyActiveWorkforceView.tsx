@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Plus, RefreshCw, Search } from 'lucide-react';
+import { AlertTriangle, ChevronRight, Plus, RefreshCw, Search } from 'lucide-react';
 import type {
   SafetyPassportAssignmentStatus,
   SafetyRosterFilters,
@@ -33,6 +33,7 @@ interface ActiveWorkforceContentProps {
   onOpenDetail?: (item: SafetyWorkerRosterItem) => void;
   onEnd?: (item: SafetyWorkerRosterItem) => void;
   onIssueCard?: (item: SafetyWorkerRosterItem) => void;
+  onLoadMore?: () => void;
 }
 
 export const SafetyActiveWorkforceContent: React.FC<ActiveWorkforceContentProps> = ({
@@ -50,6 +51,7 @@ export const SafetyActiveWorkforceContent: React.FC<ActiveWorkforceContentProps>
   onOpenDetail,
   onEnd,
   onIssueCard,
+  onLoadMore,
 }) => (
   <section className="space-y-4">
     <div className="flex flex-wrap items-start justify-between gap-3">
@@ -79,15 +81,24 @@ export const SafetyActiveWorkforceContent: React.FC<ActiveWorkforceContentProps>
     {loading && !page ? (
       <div className="space-y-2" aria-label="Đang tải nhân công công trường">{Array.from({ length: 5 }, (_, index) => <div key={index} className="h-16 animate-pulse rounded-xl border border-slate-200 bg-slate-100 dark:border-slate-800 dark:bg-slate-800" />)}</div>
     ) : !error && page ? (
-      <SafetyPassportWorkerTable
-        items={page.items}
-        loading={loading}
-        canManage={page.capabilities.canManageWorker}
-        onCreateAssignment={onAssign || (() => undefined)}
-        onOpenDetail={onOpenDetail || (() => undefined)}
-        onEnd={onEnd || (() => undefined)}
-        onIssueCard={onIssueCard || (() => undefined)}
-      />
+      <div className="space-y-3">
+        <SafetyPassportWorkerTable
+          items={page.items}
+          loading={loading}
+          canManage={page.capabilities.canManageWorker}
+          onCreateAssignment={onAssign || (() => undefined)}
+          onOpenDetail={onOpenDetail || (() => undefined)}
+          onEnd={onEnd || (() => undefined)}
+          onIssueCard={onIssueCard || (() => undefined)}
+        />
+        {page.nextCursor && onLoadMore && (
+          <div className="flex justify-center">
+            <button type="button" disabled={loading} onClick={onLoadMore} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg px-3 text-xs font-black text-slate-600 hover:bg-slate-100 disabled:opacity-50 dark:text-slate-300 dark:hover:bg-slate-800">
+              Xem thêm <ChevronRight size={14} />
+            </button>
+          </div>
+        )}
+      </div>
     ) : null}
   </section>
 );
@@ -97,6 +108,8 @@ const SafetyActiveWorkforceView: React.FC<ScopedViewProps> = ({ scope }) => {
   const [search, setSearch] = useState('');
   const [eligibilityStatus, setEligibilityStatus] = useState<SafetyPassportAssignmentStatus | ''>('');
   const [documentStatus, setDocumentStatus] = useState<'' | 'missing' | 'expired'>('');
+  const [cursor, setCursor] = useState<SafetyWorkerRosterPage['nextCursor']>(null);
+  const [accumulatedPage, setAccumulatedPage] = useState<SafetyWorkerRosterPage | null>(null);
   const [assignOpen, setAssignOpen] = useState(false);
   const [endItem, setEndItem] = useState<SafetyWorkerRosterItem | null>(null);
   const [detailMembershipId, setDetailMembershipId] = useState<string | null>(null);
@@ -106,20 +119,39 @@ const SafetyActiveWorkforceView: React.FC<ScopedViewProps> = ({ scope }) => {
     return () => clearTimeout(timer);
   }, [searchDraft]);
 
+  const baseKey = `${scope.userId}|${scope.projectId}|${scope.constructionSiteId}|${search}|${eligibilityStatus}|${documentStatus}`;
+  useEffect(() => {
+    setCursor(null);
+    setAccumulatedPage(null);
+  }, [baseKey]);
+
   const filters = useMemo<SafetyRosterFilters>(() => ({
     limit: 50,
     assignmentStatus: 'active',
     ...(search ? { search } : {}),
     ...(eligibilityStatus ? { eligibilityStatus } : {}),
     ...(documentStatus ? { documentStatus } : {}),
-  }), [documentStatus, eligibilityStatus, search]);
+    ...(cursor ? { cursor } : {}),
+  }), [cursor, documentStatus, eligibilityStatus, search]);
   const state = useSafetyActiveWorkforce(scope, filters);
+
+  useEffect(() => {
+    if (!state.data) return;
+    setAccumulatedPage(current => {
+      if (!cursor || !current) return state.data;
+      const existingIds = new Set(current.items.map(item => item.membership.id));
+      return {
+        ...state.data,
+        items: [...current.items, ...state.data.items.filter(item => !existingIds.has(item.membership.id))],
+      };
+    });
+  }, [cursor, state.data]);
 
   const completed = (): void => { void state.reload(); };
   return (
     <>
       <SafetyActiveWorkforceContent
-        page={state.data}
+        page={accumulatedPage || state.data}
         loading={state.loading}
         error={state.error}
         search={searchDraft}
@@ -132,6 +164,7 @@ const SafetyActiveWorkforceView: React.FC<ScopedViewProps> = ({ scope }) => {
         onOpenDetail={item => setDetailMembershipId(item.membership.id)}
         onEnd={setEndItem}
         onIssueCard={item => setDetailMembershipId(item.membership.id)}
+        onLoadMore={() => setCursor((accumulatedPage || state.data)?.nextCursor || null)}
         onRetry={() => { void state.reload(); }}
       />
       {assignOpen && <SafetyWorkerAssignmentDialog scope={scope} mode="assign" onClose={() => setAssignOpen(false)} onCompleted={completed} />}

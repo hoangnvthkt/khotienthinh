@@ -147,6 +147,26 @@ describe('Safety Workforce scoped views', () => {
     expect(activeMarkup).toContain('SW-001');
   });
 
+  it('offers the next active-workforce page when the scoped API returns a cursor', () => {
+    const activeMarkup = renderToStaticMarkup(
+      <SafetyActiveWorkforceContent
+        page={{
+          ...rosterPage,
+          nextCursor: {
+            createdAt: '2026-08-22T00:00:00Z',
+            id: 'membership-1',
+          },
+        }}
+        loading={false}
+        error={null}
+        onRetry={() => undefined}
+        onLoadMore={() => undefined}
+      />,
+    );
+
+    expect(activeMarkup).toContain('Xem thêm');
+  });
+
   it('does not mount any data view when construction site scope is missing', () => {
     const markup = renderToStaticMarkup(
       <SafetyPassportPanel
