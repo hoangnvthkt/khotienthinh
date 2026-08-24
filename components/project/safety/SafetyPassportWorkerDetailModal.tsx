@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { AlertTriangle, ChevronDown, FileUp, Loader2, Pencil, RefreshCw, Save, UserRound, X } from 'lucide-react';
 import type {
+  SafetyAttachment,
   SafetyWorkerDetailPayload,
   SafetyWorkerDocument,
   SafetyWorkerDocumentPatch,
@@ -11,6 +12,7 @@ import {
   type SafetyWorkforceRequestScope,
 } from '../../../lib/safetyWorkforceApi';
 import { useSafetyWorkerDetail } from '../../../hooks/useSafetyWorkforce';
+import SafetyAttachmentPreviewModal from './SafetyAttachmentPreviewModal';
 import SafetyWorkerCardSection from './passport/SafetyWorkerCardSection';
 import SafetyWorkerHistory from './passport/SafetyWorkerHistory';
 
@@ -73,6 +75,8 @@ const SafetyPassportWorkerDetailModal: React.FC<Props> = ({ scope, membershipId,
   const [phone, setPhone] = useState('');
   const [roleName, setRoleName] = useState('');
   const [dateOfBirth, setDateOfBirth] = useState('');
+  const [previewAttachments, setPreviewAttachments] = useState<SafetyAttachment[] | null>(null);
+  const [previewLoadingKey, setPreviewLoadingKey] = useState<string | null>(null);
 
   const operationalDetail = commandDetail || basicDetail;
   const detail = sensitiveOpen && sensitiveState.data ? sensitiveState.data : operationalDetail;
@@ -144,6 +148,19 @@ const SafetyPassportWorkerDetailModal: React.FC<Props> = ({ scope, membershipId,
     if (!canLoadSensitive) return;
     setSensitiveNotice(null);
     setSensitiveOpen(value => !value);
+  };
+
+  const previewAttachment = async (attachment: SafetyAttachment, key: string): Promise<void> => {
+    setPreviewLoadingKey(key);
+    setSensitiveNotice(null);
+    try {
+      const refreshed = await safetyWorkforceApi.refreshAttachmentPreview(scope, attachment);
+      setPreviewAttachments([refreshed]);
+    } catch {
+      setSensitiveNotice('Không thể tạo link xem file mới. Vui lòng thử lại.');
+    } finally {
+      setPreviewLoadingKey(null);
+    }
   };
 
   return (
@@ -225,7 +242,7 @@ const SafetyPassportWorkerDetailModal: React.FC<Props> = ({ scope, membershipId,
                           <div className="grid gap-3 sm:grid-cols-2">
                             {(['identity_front', 'identity_back', 'health_check', 'insurance'] as SafetyWorkerDocumentType[]).map(documentType => {
                               const document = sensitiveState.data?.documents.find(entry => entry.documentType === documentType);
-                              return <div key={documentType} className="rounded-lg border border-slate-200 p-3 dark:border-slate-700"><div className="text-xs font-black text-slate-700 dark:text-slate-200">{documentLabels[documentType]}</div><div className="mt-1 text-[11px] font-medium text-slate-500">{document?.status || 'missing'}{document?.expiryDate ? ` | Hết hạn ${document.expiryDate}` : ''}</div><div className="mt-2 flex flex-wrap gap-2">{document?.attachments.map((attachment, index) => <a key={`${attachment.url}-${index}`} href={attachment.previewUrl || attachment.url} target="_blank" rel="noreferrer" className="rounded-md border border-slate-200 px-2 py-1 text-[11px] font-bold text-blue-700 dark:border-slate-700 dark:text-blue-300">Xem file</a>)}{detail.capabilities.canManageWorker && <label className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-[11px] font-black text-slate-600 dark:border-slate-700 dark:text-slate-300"><FileUp size={12} /> Tải file<input type="file" className="sr-only" disabled={saving} onChange={event => { const file = event.target.files?.[0]; if (file) void replaceDocument(documentType, file); }} /></label>}</div></div>;
+                              return <div key={documentType} className="rounded-lg border border-slate-200 p-3 dark:border-slate-700"><div className="text-xs font-black text-slate-700 dark:text-slate-200">{documentLabels[documentType]}</div><div className="mt-1 text-[11px] font-medium text-slate-500">{document?.status || 'missing'}{document?.expiryDate ? ` | Hết hạn ${document.expiryDate}` : ''}</div><div className="mt-2 flex flex-wrap gap-2">{document?.attachments.map((attachment, index) => { const key = `${documentType}-${attachment.storagePath || attachment.url}-${index}`; return <button key={key} type="button" onClick={() => { void previewAttachment(attachment, key); }} disabled={previewLoadingKey === key} className="inline-flex min-h-7 items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-[11px] font-bold text-blue-700 disabled:opacity-50 dark:border-slate-700 dark:text-blue-300">{previewLoadingKey === key ? <Loader2 className="animate-spin" size={12} /> : null} Xem file</button>; })}{detail.capabilities.canManageWorker && <label className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-[11px] font-black text-slate-600 dark:border-slate-700 dark:text-slate-300"><FileUp size={12} /> Tải file<input type="file" className="sr-only" disabled={saving} onChange={event => { const file = event.target.files?.[0]; if (file) void replaceDocument(documentType, file); }} /></label>}</div></div>;
                             })}
                           </div>
                           <div><h4 className="text-xs font-black text-slate-700 dark:text-slate-200">Chứng chỉ</h4>{sensitiveState.data.certificates.length === 0 ? <p className="mt-2 text-xs font-medium text-slate-500">Chưa có chứng chỉ.</p> : <div className="mt-2 space-y-2">{sensitiveState.data.certificates.map(certificate => <div key={certificate.id} className="rounded-lg border border-slate-200 p-3 text-xs dark:border-slate-700"><span className="font-black text-slate-700 dark:text-slate-200">{certificate.certificateNo || 'Chứng chỉ'}</span><span className="ml-2 font-bold text-slate-500">{certificate.computedStatus}</span></div>)}</div>}</div>
@@ -241,6 +258,7 @@ const SafetyPassportWorkerDetailModal: React.FC<Props> = ({ scope, membershipId,
 
         <footer className="flex justify-end border-t border-slate-200 px-5 py-4 dark:border-slate-800"><button type="button" onClick={onClose} className="min-h-10 rounded-lg bg-slate-900 px-4 text-xs font-black text-white dark:bg-slate-100 dark:text-slate-900">Đóng</button></footer>
       </div>
+      {previewAttachments && <SafetyAttachmentPreviewModal attachments={previewAttachments} currentIndex={0} onClose={() => setPreviewAttachments(null)} onIndexChange={() => undefined} />}
     </div>
   );
 };

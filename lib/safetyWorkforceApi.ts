@@ -252,6 +252,26 @@ export const safetyWorkforceApi = {
     ));
   },
 
+  async refreshAttachmentPreview(
+    scope: SafetyWorkforceRequestScope,
+    attachment: SafetyAttachment,
+  ): Promise<SafetyAttachment> {
+    prepareScope(scope);
+    const path = attachmentPath(attachment);
+    if (!path) return attachment;
+
+    const signed = await createSignedUrlMap([path]);
+    const signedUrl = signed.get(path);
+    if (!signedUrl) throw new Error('SAFETY_ATTACHMENT_PREVIEW_UNAVAILABLE');
+
+    return {
+      ...attachment,
+      storagePath: path,
+      url: signedUrl,
+      previewUrl: signedUrl,
+    };
+  },
+
   async lookupExact(
     scope: SafetyWorkforceRequestScope,
     input: { workerCode?: string; identityType?: string; identityNumber?: string },

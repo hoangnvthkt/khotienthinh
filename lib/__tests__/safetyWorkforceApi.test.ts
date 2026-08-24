@@ -218,6 +218,34 @@ describe('safetyWorkforceApi', () => {
     expect(result.documents[0].attachments[0].previewUrl).toBe('https://signed.test/front');
   });
 
+  it('refreshes a worker document preview URL on demand instead of reusing an expired link', async () => {
+    supabaseMocks.createSignedUrls.mockResolvedValueOnce({
+      data: [{ path: 'worker-1/identity/front.pdf', signedUrl: 'https://signed.test/fresh-front' }],
+      error: null,
+    });
+
+    const refreshAttachmentPreview = (safetyWorkforceApi as unknown as {
+      refreshAttachmentPreview?: (requestScope: typeof scope, attachment: {
+        name: string;
+        url: string;
+        storagePath: string;
+      }) => Promise<{ url: string; previewUrl?: string }>;
+    }).refreshAttachmentPreview;
+
+    expect(refreshAttachmentPreview).toBeTypeOf('function');
+
+    const result = await refreshAttachmentPreview!(scope, {
+      name: 'CCCD mặt trước',
+      url: 'https://expired.test/front',
+      storagePath: 'worker-1/identity/front.pdf',
+    });
+
+    expect(supabaseMocks.createSignedUrls).toHaveBeenCalledWith(['worker-1/identity/front.pdf'], 300);
+    expect(cacheMocks.getCached).not.toHaveBeenCalled();
+    expect(result.url).toBe('https://signed.test/fresh-front');
+    expect(result.previewUrl).toBe('https://signed.test/fresh-front');
+  });
+
   it('uses scoped command RPCs and invalidates the correct resource groups', async () => {
     supabaseMocks.rpc.mockResolvedValue({ data: detailPayload(), error: null });
 
