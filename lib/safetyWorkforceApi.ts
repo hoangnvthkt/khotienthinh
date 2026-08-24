@@ -260,15 +260,18 @@ export const safetyWorkforceApi = {
     const path = attachmentPath(attachment);
     if (!path) return attachment;
 
-    const signed = await createSignedUrlMap([path]);
-    const signedUrl = signed.get(path);
-    if (!signedUrl) throw new Error('SAFETY_ATTACHMENT_PREVIEW_UNAVAILABLE');
+    const { data, error } = await supabase.storage
+      .from(SAFETY_WORKFORCE_ATTACHMENT_BUCKET)
+      .download(path);
+    if (error || !data) throw new Error('SAFETY_ATTACHMENT_PREVIEW_UNAVAILABLE');
+
+    const previewUrl = URL.createObjectURL(data);
 
     return {
       ...attachment,
       storagePath: path,
-      url: signedUrl,
-      previewUrl: signedUrl,
+      url: previewUrl,
+      previewUrl,
     };
   },
 

@@ -4,6 +4,7 @@ const supabaseMocks = vi.hoisted(() => ({
   rpc: vi.fn(),
   storageFrom: vi.fn(),
   createSignedUrls: vi.fn(),
+  download: vi.fn(),
   upload: vi.fn(),
 }));
 
@@ -134,6 +135,7 @@ describe('safetyWorkforceApi', () => {
     cacheMocks.getCached.mockImplementation((_: string, __: number, loader: () => Promise<unknown>) => loader());
     supabaseMocks.storageFrom.mockReturnValue({
       createSignedUrls: supabaseMocks.createSignedUrls,
+      download: supabaseMocks.download,
       upload: supabaseMocks.upload,
     });
     supabaseMocks.createSignedUrls.mockResolvedValue({ data: [], error: null });
@@ -218,11 +220,10 @@ describe('safetyWorkforceApi', () => {
     expect(result.documents[0].attachments[0].previewUrl).toBe('https://signed.test/front');
   });
 
-  it('refreshes a worker document preview URL on demand instead of reusing an expired link', async () => {
-    supabaseMocks.createSignedUrls.mockResolvedValueOnce({
-      data: [{ path: 'worker-1/identity/front.pdf', signedUrl: 'https://signed.test/fresh-front' }],
-      error: null,
-    });
+  it('downloads a worker document through the authenticated client for inline preview', async () => {
+    const source = new Blob(['JPEG'], { type: 'image/jpeg' });
+    const createObjectURL = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:worker-document-preview');
+    supabaseMocks.download.mockResolvedValueOnce({ data: source, error: null });
 
     const refreshAttachmentPreview = (safetyWorkforceApi as unknown as {
       refreshAttachmentPreview?: (requestScope: typeof scope, attachment: {
@@ -240,10 +241,12 @@ describe('safetyWorkforceApi', () => {
       storagePath: 'worker-1/identity/front.pdf',
     });
 
-    expect(supabaseMocks.createSignedUrls).toHaveBeenCalledWith(['worker-1/identity/front.pdf'], 300);
+    expect(supabaseMocks.download).toHaveBeenCalledWith('worker-1/identity/front.pdf');
+    expect(createObjectURL).toHaveBeenCalledWith(source);
+    expect(supabaseMocks.createSignedUrls).not.toHaveBeenCalled();
     expect(cacheMocks.getCached).not.toHaveBeenCalled();
-    expect(result.url).toBe('https://signed.test/fresh-front');
-    expect(result.previewUrl).toBe('https://signed.test/fresh-front');
+    expect(result.url).toBe('blob:worker-document-preview');
+    expect(result.previewUrl).toBe('blob:worker-document-preview');
   });
 
   it('uses scoped command RPCs and invalidates the correct resource groups', async () => {
