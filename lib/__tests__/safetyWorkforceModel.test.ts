@@ -161,6 +161,62 @@ describe('safetyWorkforceModel', () => {
     expect(detail.sensitiveLoaded).toBe(false);
   });
 
+  it('normalizes legacy snake_case attachment metadata so the storage object can be read again', async () => {
+    const model = await loadModel();
+    expect(model).not.toBeNull();
+
+    const detail = model!.parseSafetyWorkerDetailPayload({
+      rosterItem,
+      profile: {
+        id: 'worker-1',
+        workerCode: 'W-001',
+        fullName: 'Nguyễn Văn A',
+        workerKind: 'contractor_worker',
+        phone: null,
+        dateOfBirth: null,
+        roleName: null,
+        status: 'active',
+        photoAttachment: null,
+      },
+      documents: [{
+        id: 'document-1',
+        workerId: 'worker-1',
+        documentType: 'identity_front',
+        name: 'CCCD mặt trước',
+        issueDate: null,
+        expiryDate: null,
+        attachments: [{
+          id: 'attachment-1',
+          name: 'CCCD cũ',
+          file_name: 'cccd-cu.jpg',
+          file_type: 'image/jpeg',
+          file_size: 28743,
+          storage_path: 'draft/identity_front/cccd-cu.jpg',
+          url: 'https://expired.test/cccd-cu.jpg',
+          preview_url: 'https://expired.test/cccd-cu.jpg',
+          uploaded_at: '2026-06-30T02:07:23.169Z',
+          uploaded_by: 'Nguyễn Văn Thanh',
+        }],
+        status: 'submitted',
+        isRequired: true,
+        note: null,
+        createdBy: null,
+      }],
+      capabilities: { canViewBasic: true, canManageWorker: true, canVerifyDocuments: true },
+      sensitiveLoaded: true,
+    });
+
+    expect(detail.documents[0].attachments[0]).toMatchObject({
+      fileName: 'cccd-cu.jpg',
+      fileType: 'image/jpeg',
+      fileSize: 28743,
+      storagePath: 'draft/identity_front/cccd-cu.jpg',
+      previewUrl: 'https://expired.test/cccd-cu.jpg',
+      uploadedAt: '2026-06-30T02:07:23.169Z',
+      uploadedBy: 'Nguyễn Văn Thanh',
+    });
+  });
+
   it('defaults omitted site master arrays without inventing options', async () => {
     const model = await loadModel();
     expect(model).not.toBeNull();

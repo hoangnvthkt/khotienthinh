@@ -78,22 +78,24 @@ const enumValue = <T extends string>(value: unknown, allowed: readonly T[]): T =
 
 const parseAttachment = (value: unknown): SafetyAttachment => {
   const row = asRecord(value);
-  const storagePath = optionalString(row.storagePath);
+  const storagePath = optionalString(row.storagePath ?? row.storage_path);
   const url = optionalString(row.url) || storagePath;
   if (!url) invalidPayload();
 
   return {
     id: optionalString(row.id),
     name: typeof row.name === 'string' && row.name.trim() ? row.name : url.split('/').pop() || 'attachment',
-    fileName: optionalString(row.fileName),
+    fileName: optionalString(row.fileName ?? row.file_name),
     url,
-    fileType: optionalString(row.fileType),
-    fileSize: row.fileSize === undefined ? undefined : requiredNumber(row.fileSize),
+    fileType: optionalString(row.fileType ?? row.file_type),
+    fileSize: row.fileSize === undefined && row.file_size === undefined
+      ? undefined
+      : requiredNumber(row.fileSize ?? row.file_size),
     category: optionalString(row.category),
-    uploadedAt: optionalString(row.uploadedAt),
-    uploadedBy: optionalString(row.uploadedBy),
+    uploadedAt: optionalString(row.uploadedAt ?? row.uploaded_at),
+    uploadedBy: optionalString(row.uploadedBy ?? row.uploaded_by),
     storagePath,
-    previewUrl: optionalString(row.previewUrl),
+    previewUrl: optionalString(row.previewUrl ?? row.preview_url),
   };
 };
 
