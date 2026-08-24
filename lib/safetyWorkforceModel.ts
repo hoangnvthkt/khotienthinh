@@ -1,6 +1,7 @@
 import type {
   SafetyAttachment,
   SafetyCard,
+  SafetyCertificateType,
   SafetyPassportAssignmentStatus,
   SafetyPassportCardStatus,
   SafetyPassportContractor,
@@ -105,6 +106,20 @@ const parseAttachments = (value: unknown): SafetyAttachment[] =>
     : Array.isArray(value)
       ? value.map(parseAttachment)
       : invalidPayload();
+
+const parseCertificateType = (value: unknown): SafetyCertificateType => {
+  const row = asRecord(value);
+  return {
+    id: requiredString(row.id),
+    code: requiredString(row.code),
+    name: requiredString(row.name),
+    isRequiredDefault: requiredBoolean(row.isRequiredDefault),
+    validityDays: row.validityDays === undefined || row.validityDays === null ? null : requiredNumber(row.validityDays),
+    appliesToRoles: parseArray(row.appliesToRoles, requiredString),
+    isActive: requiredBoolean(row.isActive),
+    sortOrder: requiredNumber(row.sortOrder),
+  };
+};
 
 const parseCapabilities = (value: unknown): SafetyWorkforceCapabilities => {
   const row = asRecord(value);
@@ -432,6 +447,7 @@ export const parseSafetySiteWorkforceOptions = (value: unknown): SafetySiteWorkf
       const source = asRecord(item);
       return { ...parsed, subcontractorId: nullableString(source.subcontractorId) };
     }),
+    certificateTypes: parseArray(row.certificateTypes, parseCertificateType),
   };
 };
 

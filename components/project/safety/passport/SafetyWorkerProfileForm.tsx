@@ -163,7 +163,7 @@ export const SafetyWorkerProfileForm: React.FC<Props> = ({
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'error' | 'warning'; text: string } | null>(null);
 
-  const safeOptions = options || { subcontractors: [], teams: [] };
+  const safeOptions = options || { subcontractors: [], teams: [], certificateTypes: [] };
   const availableTeams = useMemo(
     () => filterSafetyTeamsBySubcontractor(safeOptions, draft.subcontractorId),
     [draft.subcontractorId, safeOptions],

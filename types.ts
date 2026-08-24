@@ -6341,6 +6341,7 @@ export interface SafetyWorkerRosterPage {
 export interface SafetySiteWorkforceOptions {
   subcontractors: Array<Pick<SafetySubcontractor, 'id' | 'name' | 'code' | 'status'>>;
   teams: Array<Pick<SafetyTeam, 'id' | 'name' | 'code' | 'status' | 'subcontractorId'>>;
+  certificateTypes: SafetyCertificateType[];
 }
 
 export interface SafetyWorkforceDashboard {
@@ -6427,6 +6428,19 @@ export type SafetyWorkerDocumentPatch = Pick<SafetyWorkerDocument,
   'documentType' | 'name' | 'issueDate' | 'expiryDate' | 'attachments' | 'status' | 'isRequired'> & {
   id?: string;
 };
+
+export interface SafetyCertificateUpsertInput {
+  id?: string;
+  certificateTypeId: string;
+  certificateNo?: string | null;
+  issueDate?: string | null;
+  expiryDate?: string | null;
+  attachments: SafetyAttachment[];
+  note?: string | null;
+}
+
+export type SafetyAssignmentReadinessPatch = Pick<SafetyProjectAssignment,
+  'siteTrainingStatus' | 'commitmentStatus' | 'ppeStatus' | 'toolboxStatus'>;
 
 export interface SafetyAssignWorkerInput {
   membershipId: string;

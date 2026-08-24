@@ -286,6 +286,31 @@ describe('safetyWorkforceApi', () => {
     expect(cacheMocks.invalidate).toHaveBeenCalledWith(scope, ['roster', 'active', 'detail', 'dashboard']);
   });
 
+  it('saves a manager-confirmed certificate and scoped site readiness', async () => {
+    supabaseMocks.rpc.mockResolvedValue({ data: detailPayload(), error: null });
+    const certificate = await (safetyWorkforceApi as any).saveCertificate(scope, 'membership-1', {
+      certificateTypeId: 'certificate-type-1',
+      certificateNo: 'AT-001',
+      issueDate: '2026-08-24',
+      expiryDate: '2027-08-24',
+      attachments: [{ name: 'certificate.jpg', url: 'worker-1/certificate/certificate.jpg', storagePath: 'worker-1/certificate/certificate.jpg' }],
+    });
+    expect(supabaseMocks.rpc).toHaveBeenLastCalledWith('upsert_safety_worker_certificate_for_site', {
+      p_membership_id: 'membership-1',
+      p_certificate: expect.objectContaining({ certificateTypeId: 'certificate-type-1', certificateNo: 'AT-001' }),
+    });
+    expect(certificate.profile.id).toBe('worker-1');
+
+    await (safetyWorkforceApi as any).updateAssignmentReadiness(scope, 'assignment-1', {
+      siteTrainingStatus: 'completed', commitmentStatus: 'signed', ppeStatus: 'complete', toolboxStatus: 'completed',
+    });
+    expect(supabaseMocks.rpc).toHaveBeenLastCalledWith('update_safety_worker_assignment', {
+      p_assignment_id: 'assignment-1',
+      p_patch: { siteTrainingStatus: 'completed', commitmentStatus: 'signed', ppeStatus: 'complete', toolboxStatus: 'completed' },
+    });
+    expect(cacheMocks.invalidate).toHaveBeenCalledWith(scope, ['roster', 'active', 'detail', 'dashboard']);
+  });
+
   it('invalidates both source and destination scopes after an atomic transfer', async () => {
     supabaseMocks.rpc.mockResolvedValueOnce({ data: detailPayload(), error: null });
     const sourceScope = {

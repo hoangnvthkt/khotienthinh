@@ -43,6 +43,9 @@ import {
   currentMembershipHistory,
   SafetyWorkerHistory,
 } from '../SafetyWorkerHistory';
+import SafetyWorkerCertificateSection from '../SafetyWorkerCertificateSection';
+import SafetyWorkerReadinessChecklist from '../SafetyWorkerReadinessChecklist';
+import SafetyWorkerSiteReadinessSection from '../SafetyWorkerSiteReadinessSection';
 
 const capabilities = {
   canViewBasic: true,
@@ -203,6 +206,7 @@ describe('Safety Workforce scoped views', () => {
         { id: 'team-a', name: 'Tổ A', code: 'A', status: 'active' as const, subcontractorId: 'sub-a' },
         { id: 'team-b', name: 'Tổ B', code: 'B', status: 'active' as const, subcontractorId: 'sub-b' },
       ],
+      certificateTypes: [],
     };
 
     expect(filterSafetyTeamsBySubcontractor(options, 'sub-a').map(item => item.id)).toEqual(['team-a']);
@@ -216,6 +220,7 @@ describe('Safety Workforce scoped views', () => {
         options={{
           subcontractors: [{ id: 'sub-a', name: 'Nhà thầu phụ A', code: 'NTP-A', status: 'active' }],
           teams: [{ id: 'team-a', name: 'Tổ A', code: 'A', status: 'active', subcontractorId: 'sub-a' }],
+          certificateTypes: [],
         }}
         optionsLoading={false}
         initialValue={{ workerKind: 'contractor_worker' }}
@@ -315,6 +320,71 @@ describe('Safety Workforce scoped views', () => {
 
     expect(markup).toContain('Thẻ an toàn');
     expect(markup).toContain('Không có phân công đang hoạt động');
+  });
+
+  it('renders certificate upload, readiness checklist, and site safety controls in the worker profile', () => {
+    const detail = {
+      rosterItem: {
+        ...rosterPage.items[0],
+        profileStatus: 'valid',
+        healthStatus: 'valid',
+        insuranceStatus: 'valid',
+        activeAssignment: {
+          id: 'assignment-1',
+          assignmentStatus: 'active',
+          siteTrainingStatus: 'pending',
+          commitmentStatus: 'pending',
+          ppeStatus: 'missing',
+          toolboxStatus: 'pending',
+          eligibilityStatus: 'missing_certificate',
+        },
+      },
+      profile: { ...rosterPage.items[0].worker, photoAttachment: null, dateOfBirth: null, roleName: 'Thợ xây' },
+      documents: [],
+      certificates: [],
+      assignments: [{
+        id: 'assignment-1',
+        assignmentStatus: 'active',
+        siteTrainingStatus: 'pending',
+        commitmentStatus: 'pending',
+        ppeStatus: 'missing',
+        toolboxStatus: 'pending',
+        eligibilityStatus: 'missing_certificate',
+      }],
+      cards: [],
+      capabilities,
+      sensitiveLoaded: true,
+    } as any;
+    const scope = { userId: 'user-1', projectId: 'project-1', constructionSiteId: 'site-1' };
+    const certificateTypes = [{
+      id: 'certificate-type-1', code: 'SAFETY_ORIENTATION', name: 'Huấn luyện an toàn cơ bản',
+      isRequiredDefault: true, validityDays: 365, appliesToRoles: [], isActive: true, sortOrder: 1,
+    }];
+
+    const certificateMarkup = renderToStaticMarkup(
+      <SafetyWorkerCertificateSection
+        scope={scope}
+        membershipId="membership-1"
+        workerId="worker-1"
+        certificates={[]}
+        certificateTypes={certificateTypes}
+        canManage
+        onChanged={() => undefined}
+      />,
+    );
+    const checklistMarkup = renderToStaticMarkup(
+      <SafetyWorkerReadinessChecklist detail={detail} certificateTypes={certificateTypes} />,
+    );
+    const siteMarkup = renderToStaticMarkup(
+      <SafetyWorkerSiteReadinessSection scope={scope} assignment={detail.assignments[0]} canManage onChanged={() => undefined} />,
+    );
+
+    expect(certificateMarkup).toContain('Tải chứng chỉ');
+    expect(certificateMarkup).toContain('Huấn luyện an toàn cơ bản');
+    expect(checklistMarkup).toContain('Điều kiện cấp thẻ');
+    expect(checklistMarkup).toContain('Chứng chỉ bắt buộc');
+    expect(siteMarkup).toContain('Yêu cầu an toàn công trường');
+    expect(siteMarkup).toContain('Đã huấn luyện tại công trường');
   });
 
   it('renders history for the current membership only and orders newest first', () => {

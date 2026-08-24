@@ -11,10 +11,13 @@ import {
   safetyWorkforceApi,
   type SafetyWorkforceRequestScope,
 } from '../../../lib/safetyWorkforceApi';
-import { useSafetyWorkerDetail } from '../../../hooks/useSafetyWorkforce';
+import { useSafetyWorkerDetail, useSafetyWorkforceOptions } from '../../../hooks/useSafetyWorkforce';
 import SafetyAttachmentPreviewModal from './SafetyAttachmentPreviewModal';
 import SafetyWorkerCardSection from './passport/SafetyWorkerCardSection';
+import SafetyWorkerCertificateSection from './passport/SafetyWorkerCertificateSection';
 import SafetyWorkerHistory from './passport/SafetyWorkerHistory';
+import SafetyWorkerReadinessChecklist from './passport/SafetyWorkerReadinessChecklist';
+import SafetyWorkerSiteReadinessSection from './passport/SafetyWorkerSiteReadinessSection';
 
 interface Props {
   scope: SafetyWorkforceRequestScope;
@@ -64,6 +67,7 @@ const SafetyPassportWorkerDetailModal: React.FC<Props> = ({ scope, membershipId,
   const canLoadSensitive = Boolean(basicDetail && (
     basicDetail.capabilities.canManageWorker || basicDetail.capabilities.canVerifyDocuments
   ));
+  const optionsState = useSafetyWorkforceOptions(scope, canLoadSensitive);
   const [sensitiveOpen, setSensitiveOpen] = useState(false);
   const sensitiveMembershipId = sensitiveOpen && canLoadSensitive ? membershipId : null;
   const sensitiveState = useSafetyWorkerDetail(scope, sensitiveMembershipId, true);
@@ -79,7 +83,7 @@ const SafetyPassportWorkerDetailModal: React.FC<Props> = ({ scope, membershipId,
   const [previewLoadingKey, setPreviewLoadingKey] = useState<string | null>(null);
 
   const operationalDetail = commandDetail || basicDetail;
-  const detail = sensitiveOpen && sensitiveState.data ? sensitiveState.data : operationalDetail;
+  const detail = commandDetail || (sensitiveOpen && sensitiveState.data ? sensitiveState.data : operationalDetail);
   const item = detail?.rosterItem;
 
   useEffect(() => {
@@ -163,6 +167,11 @@ const SafetyPassportWorkerDetailModal: React.FC<Props> = ({ scope, membershipId,
     }
   };
 
+  const handleDetailChanged = (updated: SafetyWorkerDetailPayload): void => {
+    setCommandDetail(updated);
+    if (sensitiveOpen) void sensitiveState.reload();
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 px-3 py-5" role="dialog" aria-modal="true" aria-labelledby="safety-worker-detail-title">
       <div className="flex max-h-[94vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl dark:bg-slate-900">
@@ -224,7 +233,8 @@ const SafetyPassportWorkerDetailModal: React.FC<Props> = ({ scope, membershipId,
                 )}
               </section>
 
-              <SafetyWorkerCardSection scope={scope} detail={operationalDetail || detail} onChanged={setCommandDetail} />
+              <SafetyWorkerReadinessChecklist detail={detail} certificateTypes={optionsState?.data?.certificateTypes || []} certificateTypesLoaded={Boolean(optionsState?.data)} />
+              <SafetyWorkerCardSection scope={scope} detail={operationalDetail || detail} onChanged={handleDetailChanged} />
               <SafetyWorkerHistory membershipId={item.membership.id} assignments={(operationalDetail || detail).assignments} cards={(operationalDetail || detail).cards} />
 
               {canLoadSensitive && (
@@ -245,7 +255,21 @@ const SafetyPassportWorkerDetailModal: React.FC<Props> = ({ scope, membershipId,
                               return <div key={documentType} className="rounded-lg border border-slate-200 p-3 dark:border-slate-700"><div className="text-xs font-black text-slate-700 dark:text-slate-200">{documentLabels[documentType]}</div><div className="mt-1 text-[11px] font-medium text-slate-500">{document?.status || 'missing'}{document?.expiryDate ? ` | Hết hạn ${document.expiryDate}` : ''}</div><div className="mt-2 flex flex-wrap gap-2">{document?.attachments.map((attachment, index) => { const key = `${documentType}-${attachment.storagePath || attachment.url}-${index}`; return <button key={key} type="button" onClick={() => { void previewAttachment(attachment, key); }} disabled={previewLoadingKey === key} className="inline-flex min-h-7 items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-[11px] font-bold text-blue-700 disabled:opacity-50 dark:border-slate-700 dark:text-blue-300">{previewLoadingKey === key ? <Loader2 className="animate-spin" size={12} /> : null} Xem file</button>; })}{detail.capabilities.canManageWorker && <label className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-[11px] font-black text-slate-600 dark:border-slate-700 dark:text-slate-300"><FileUp size={12} /> Tải file<input type="file" className="sr-only" disabled={saving} onChange={event => { const file = event.target.files?.[0]; if (file) void replaceDocument(documentType, file); }} /></label>}</div></div>;
                             })}
                           </div>
-                          <div><h4 className="text-xs font-black text-slate-700 dark:text-slate-200">Chứng chỉ</h4>{sensitiveState.data.certificates.length === 0 ? <p className="mt-2 text-xs font-medium text-slate-500">Chưa có chứng chỉ.</p> : <div className="mt-2 space-y-2">{sensitiveState.data.certificates.map(certificate => <div key={certificate.id} className="rounded-lg border border-slate-200 p-3 text-xs dark:border-slate-700"><span className="font-black text-slate-700 dark:text-slate-200">{certificate.certificateNo || 'Chứng chỉ'}</span><span className="ml-2 font-bold text-slate-500">{certificate.computedStatus}</span></div>)}</div>}</div>
+                          <SafetyWorkerCertificateSection
+                            scope={scope}
+                            membershipId={membershipId}
+                            workerId={sensitiveState.data.profile.id}
+                            certificates={sensitiveState.data.certificates}
+                            certificateTypes={optionsState?.data?.certificateTypes || []}
+                            canManage={detail.capabilities.canManageWorker}
+                            onChanged={handleDetailChanged}
+                          />
+                          <SafetyWorkerSiteReadinessSection
+                            scope={scope}
+                            assignment={sensitiveState.data.assignments.find(assignment => assignment.assignmentStatus === 'active') || sensitiveState.data.rosterItem.activeAssignment}
+                            canManage={detail.capabilities.canManageWorker}
+                            onChanged={handleDetailChanged}
+                          />
                         </div>
                       ) : null}
                     </div>

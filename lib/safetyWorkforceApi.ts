@@ -1,6 +1,8 @@
 import type {
   SafetyAssignWorkerInput,
+  SafetyAssignmentReadinessPatch,
   SafetyAttachment,
+  SafetyCertificateUpsertInput,
   SafetyCard,
   SafetyCreateWorkerForSiteInput,
   SafetyRosterFilters,
@@ -336,6 +338,36 @@ export const safetyWorkforceApi = {
       p_documents: documents,
     });
     invalidate(scope, INVALIDATION.profile);
+    return detail;
+  },
+
+  async saveCertificate(
+    scope: SafetyWorkforceRequestScope,
+    membershipId: string,
+    input: SafetyCertificateUpsertInput,
+  ): Promise<SafetyWorkerDetailPayload> {
+    if (!membershipId.trim() || !input.certificateTypeId.trim() || input.attachments.length === 0) {
+      throw new Error('SAFETY_INVALID_RPC_PAYLOAD');
+    }
+    const detail = await commandDetail(scope, 'upsert_safety_worker_certificate_for_site', {
+      p_membership_id: membershipId,
+      p_certificate: input,
+    });
+    invalidate(scope, INVALIDATION.assignment);
+    return detail;
+  },
+
+  async updateAssignmentReadiness(
+    scope: SafetyWorkforceRequestScope,
+    assignmentId: string,
+    patch: SafetyAssignmentReadinessPatch,
+  ): Promise<SafetyWorkerDetailPayload> {
+    if (!assignmentId.trim()) throw new Error('SAFETY_SCOPE_REQUIRED');
+    const detail = await commandDetail(scope, 'update_safety_worker_assignment', {
+      p_assignment_id: assignmentId,
+      p_patch: patch,
+    });
+    invalidate(scope, INVALIDATION.assignment);
     return detail;
   },
 

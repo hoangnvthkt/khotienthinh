@@ -95,7 +95,7 @@ export const SafetyWorkerAssignmentDialog: React.FC<Props> = ({
   const [search, setSearch] = useState('');
   const [candidates, setCandidates] = useState<SafetyWorkerRosterItem[]>([]);
   const [selected, setSelected] = useState<SafetyWorkerRosterItem | null>(null);
-  const [options, setOptions] = useState<SafetySiteWorkforceOptions>({ subcontractors: [], teams: [] });
+  const [options, setOptions] = useState<SafetySiteWorkforceOptions>({ subcontractors: [], teams: [], certificateTypes: [] });
   const [loading, setLoading] = useState(mode === 'assign');
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);

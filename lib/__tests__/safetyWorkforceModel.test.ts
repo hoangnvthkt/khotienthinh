@@ -224,7 +224,23 @@ describe('safetyWorkforceModel', () => {
     expect(model!.parseSafetySiteWorkforceOptions({})).toEqual({
       subcontractors: [],
       teams: [],
+      certificateTypes: [],
     });
+  });
+
+  it('parses active certificate types returned with scoped site options', async () => {
+    const model = await loadModel();
+    expect(model).not.toBeNull();
+
+    expect(model!.parseSafetySiteWorkforceOptions({
+      certificateTypes: [{
+        id: 'certificate-type-1', code: 'SAFETY_ORIENTATION', name: 'Huấn luyện an toàn cơ bản',
+        isRequiredDefault: true, validityDays: null, appliesToRoles: [], isActive: true, sortOrder: 0,
+      }],
+    }).certificateTypes).toEqual([{
+      id: 'certificate-type-1', code: 'SAFETY_ORIENTATION', name: 'Huấn luyện an toàn cơ bản',
+      isRequiredDefault: true, validityDays: null, appliesToRoles: [], isActive: true, sortOrder: 0,
+    }]);
   });
 
   it('parses the minimal source scope needed for an authorized transfer', async () => {
