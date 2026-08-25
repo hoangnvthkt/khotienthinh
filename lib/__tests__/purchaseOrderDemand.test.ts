@@ -73,4 +73,28 @@ describe('purchaseOrderDemand', () => {
 
     expect(stats).toEqual({ orderedQty: 1187, receivedQty: 600, remainingQty: 587 });
   });
+
+  it('recovers a legacy v3 parent line missing its demand snapshot from the MR link', () => {
+    const incompleteV3Po: PurchaseOrder = {
+      ...po,
+      procurementFlowVersion: 3,
+      purchaseMode: 'single',
+      items: [{
+        ...po.items[0],
+        qty: 21176,
+        unit: 'Kg',
+        requestedQtySnapshot: undefined,
+        receivedQty: 0,
+      }],
+    };
+
+    const stats = getPurchaseOrderDemandStats(incompleteV3Po, [{
+      ...requestLink,
+      requestedQtySnapshot: 1187,
+      requestedQty: 1187,
+      unit: 'Cay',
+    }]);
+
+    expect(stats).toEqual({ orderedQty: 1187, receivedQty: 0, remainingQty: 1187 });
+  });
 });

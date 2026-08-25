@@ -16,11 +16,20 @@ export const getPurchaseOrderLineDemandQty = (
   const line = po.items.find(item => (item.lineId || item.itemId) === lineKey);
   if (!line) return 0;
 
-  // Multiple-delivery MR POs keep their parent line in the MR unit.  The
-  // commercial unit belongs only to a delivery batch and must never be used to
-  // inflate the demand/progress shown to the site.
+  const linkedRequestDemandQty = links
+    .filter(link => link.purchaseOrderId === po.id && link.purchaseOrderLineId === lineKey)
+    .reduce((sum, link) => sum + toNumber(link.requestedQtySnapshot ?? link.requestedQty), 0);
+
+  // Flow v3 keeps the parent line in the MR unit. The commercial unit belongs
+  // only to a delivery batch and must never be used to inflate demand/progress.
+  // A short-lived migration window created a few v3 single POs without the
+  // parent snapshot; use their MR link (then the saved parent quantity) so a
+  // missing snapshot can never turn an outstanding demand into zero.
   if (isPurchaseOrderFlowV3(po)) {
-    return toNumber(line.requestedQtySnapshot);
+    const hasParentSnapshot = line.requestedQtySnapshot !== undefined
+      && line.requestedQtySnapshot !== null;
+    if (hasParentSnapshot) return toNumber(line.requestedQtySnapshot);
+    return linkedRequestDemandQty || toNumber(line.qty);
   }
 
   const inventory = inventoryItems.find(item => item.id === line.itemId);
