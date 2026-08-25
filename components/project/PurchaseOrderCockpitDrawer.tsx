@@ -381,6 +381,12 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
   const payableView = payableStatusView(payableStatus);
   const isPackageV2 = po.procurementFlowVersion === 3;
   const packageSummary = useMemo(() => getPurchasePackageSummary(po, deliveryBatches), [deliveryBatches, po]);
+  const packageNetAmount = useMemo(() => deliveryBatches
+    .filter(batch => batch.status !== 'cancelled')
+    .reduce((sum, batch) => sum + (batch.lines || []).reduce((lineSum, line) => (
+      lineSum + Number(line.plannedQty || 0) * Number(line.deliveryUnitPrice || 0)
+    ), 0), 0), [deliveryBatches]);
+  const packageVatAmount = Math.max(0, packageSummary.releasedGross - packageNetAmount);
   const uniqueSpecKeys = useMemo(() => Array.from(
     new Set(
       po.items.flatMap(item =>
@@ -405,13 +411,15 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
       const printGroup = getPrintGroupForBatch(batch);
       const targetWarehouse = warehouses.find(row => row.id === (batch as any).targetWarehouseId)?.name || targetWarehouseName || '—';
       const totalQty = batch.lines.reduce((sum, line) => sum + Number(line.stockPlannedQty ?? line.plannedQty ?? 0), 0);
-      const totalAmount = batch.lines.reduce((sum, line) => (
+      const netAmount = batch.lines.reduce((sum, line) => (
         sum + Number(line.plannedQty || 0) * getPurchaseOrderScheduleLineUnitPrice({
           po,
           item: itemByLineId.get(line.purchaseOrderLineId),
           line,
         })
       ), 0);
+      const batchVatRate = Number(batch.vatRate || 0);
+      const batchVatAmount = Math.round(netAmount * batchVatRate / 100);
       return {
         key: `schedule:${batch.id}`,
         source: 'schedule' as const,
@@ -422,7 +430,10 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
         targetWarehouse,
         lineCount: batch.lines.length,
         totalQty,
-        totalAmount,
+        vatRate: batchVatRate,
+        netAmount,
+        vatAmount: batchVatAmount,
+        totalAmount: netAmount + batchVatAmount,
         printGroup,
         scheduleBatch: batch,
         wmsTransactionId: getWmsTransactionIdForBatch?.(batch) || null,
@@ -452,7 +463,10 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
           targetWarehouse,
           lineCount: group.lines.length,
           totalQty,
-          totalAmount,
+          vatRate: Number(po.vatRate || 0),
+          netAmount: totalAmount,
+          vatAmount: Math.round(totalAmount * Number(po.vatRate || 0) / 100),
+          totalAmount: totalAmount + Math.round(totalAmount * Number(po.vatRate || 0) / 100),
           printGroup: group,
           scheduleBatch: null,
           wmsTransactionId: firstPendingBatch?.transactionId || group.batches[0]?.transactionId || null,
@@ -882,14 +896,14 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
                   <div className="p-3 rounded-xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-xs">
                     <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400">Tiền hàng trước VAT</span>
                     <strong className="text-base sm:text-lg font-black text-slate-800 dark:text-white mt-0.5 block">
-                      {fmtMoney(displayAmount)} đ
+                      {fmtMoney(isPackageV2 ? packageNetAmount : displayAmount)} đ
                     </strong>
                   </div>
 
                   <div className="p-3 rounded-xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-xs">
-                    <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400">Thuế VAT ({vatRate}%)</span>
+                    <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400">{isPackageV2 ? 'Thuế VAT theo từng đợt' : `Thuế VAT (${vatRate}%)`}</span>
                     <strong className="text-base sm:text-lg font-black text-slate-800 dark:text-white mt-0.5 block">
-                      {fmtMoney(vatAmount)} đ
+                      {fmtMoney(isPackageV2 ? packageVatAmount : vatAmount)} đ
                     </strong>
                   </div>
 
@@ -1096,11 +1110,12 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
                                   <div className="text-[11px] font-semibold text-slate-400">{formatDate(group.plannedDate)} • Kho: {group.targetWarehouse}</div>
                                 </div>
                                 <span className={`rounded-full border px-2.5 py-0.5 text-xs font-black ${status.className}`}>{status.label}</span>
+                                <span className="rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-[10px] font-black text-blue-700">VAT {Number(group.vatRate || 0).toLocaleString('vi-VN')}%</span>
                               </div>
                               <div className="mt-3 grid gap-2 text-xs sm:grid-cols-3">
                                 <div className="rounded-xl bg-slate-50 dark:bg-slate-800/60 p-2.5"><span className="block text-[10px] font-black uppercase text-slate-400">Số dòng</span><strong className="text-xs font-black">{group.lineCount} dòng</strong></div>
                                 <div className="rounded-xl bg-slate-50 dark:bg-slate-800/60 p-2.5"><span className="block text-[10px] font-black uppercase text-slate-400">Tổng KL</span><strong className="text-xs font-black">{fmtQty(group.totalQty)}</strong></div>
-                                <div className="rounded-xl bg-slate-50 dark:bg-slate-800/60 p-2.5"><span className="block text-[10px] font-black uppercase text-slate-400">Giá trị đợt</span><strong className="text-xs font-black text-emerald-700">{fmtMoney(group.totalAmount)} đ</strong></div>
+                                <div className="rounded-xl bg-slate-50 dark:bg-slate-800/60 p-2.5"><span className="block text-[10px] font-black uppercase text-slate-400">Giá trị đợt gồm VAT</span><strong className="text-xs font-black text-emerald-700">{fmtMoney(group.totalAmount)} đ</strong></div>
                               </div>
                               {batch && (receiptsByBatch[batch.id] || []).length > 0 && (
                                 <div className="mt-3 space-y-1.5 rounded-xl border border-slate-100 bg-slate-50/70 p-2.5">

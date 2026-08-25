@@ -481,6 +481,7 @@ type PurchaseOrderDeliveryFormLine = PurchaseOrderDeliveryLine & {
     deliveryUnitPriceInput?: string;
 };
 type PurchaseOrderDeliveryFormBatch = Omit<PurchaseOrderDeliveryBatch, 'lines'> & {
+    vatRateInput?: string;
     lines: PurchaseOrderDeliveryFormLine[];
 };
 type PoDeliveryPrintLine = MaterialRequestFulfillmentLine & {
@@ -2408,7 +2409,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         plannedDate = pExpDate,
         purchaseOrderId = editingPo?.id || '',
         sourceMode: PurchaseOrderSourceMode = pSourceMode,
-    ): PurchaseOrderDeliveryBatch[] => {
+    ): PurchaseOrderDeliveryFormBatch[] => {
         const batchId = crypto.randomUUID();
         const activeItems = items.map(item => normalizePoItem(item, inventoryItems)).filter(item => item.itemId && Number(item.qty || 0) > 0);
         return [{
@@ -2418,6 +2419,8 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             constructionSiteId: constructionSiteId || null,
             deliveryNo: 1,
             plannedDeliveryDate: plannedDate || null,
+            vatRate: normalizeVatRate(pVatRate),
+            vatRateInput: formatLocaleDecimalInput(normalizeVatRate(pVatRate), 3),
             status: 'planned',
             fulfillmentBatchIds: [],
             note: null,
@@ -2474,7 +2477,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         sourceMode: PurchaseOrderSourceMode = pSourceMode,
         isEditing = Boolean(editingPo),
         scheduleMode: PoDeliveryScheduleMode = pDeliveryScheduleMode,
-    ): PurchaseOrderDeliveryBatch[] => {
+    ): PurchaseOrderDeliveryFormBatch[] => {
         if (currentBatches.length > 0) return currentBatches;
         // A multiple-delivery PO created from MR is a demand package.  Do not
         // silently turn the whole MR into its first commercial delivery.
@@ -2641,6 +2644,8 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 constructionSiteId: constructionSiteId || null,
                 deliveryNo: base.length + 1,
                 plannedDeliveryDate: pExpDate || null,
+                vatRate: normalizeVatRate(pVatRate),
+                vatRateInput: formatLocaleDecimalInput(normalizeVatRate(pVatRate), 3),
                 status: 'planned',
                 fulfillmentBatchIds: [],
                 note: null,
@@ -2669,7 +2674,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             },
         ]);
     };
-    const updatePoDeliveryBatch = (batchId: string, patch: Partial<PurchaseOrderDeliveryBatch>) => {
+    const updatePoDeliveryBatch = (batchId: string, patch: Partial<PurchaseOrderDeliveryFormBatch>) => {
         setPDeliveryBatches(prev => prev.map(batch => batch.id === batchId ? { ...batch, ...patch } : batch));
     };
     const getEditablePoDeliveryBatches = (currentBatches: PurchaseOrderDeliveryFormBatch[], renderedBatchId: string): PurchaseOrderDeliveryFormBatch[] => {
@@ -3739,6 +3744,13 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             Boolean(editingPo),
             pDeliveryScheduleMode,
         );
+        const invalidVatBatch = pricingBatches.find(batch => (
+            parseNonNegativeLocaleNumber(batch.vatRateInput ?? batch.vatRate ?? pVatRate) > 100
+        ));
+        if (invalidVatBatch) {
+            toast.warning('VAT đợt không hợp lệ', `VAT của đợt ${invalidVatBatch.deliveryNo} phải nằm trong khoảng 0-100%.`);
+            return;
+        }
         const validItems = resolvePurchaseOrderItemsForScheduledPricing({
             items: preparedItems,
             batches: pricingBatches,
@@ -9562,6 +9574,13 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                             const batchHasRequestOverage = isIndependentMultipleDelivery && activeItems.some(item =>
                                                 getPoDeliveryRemainingQty(displayBatches, item.lineId || item.itemId, Number(item.requestedQtySnapshot ?? item.qty ?? 0), batchIndex) < -0.000001,
                                             );
+                                            const batchNetAmount = batch.lines.reduce((sum, line) => (
+                                                sum + Number(line.plannedQty || 0) * Number(line.deliveryUnitPrice || 0)
+                                            ), 0);
+                                            const batchVatRate = normalizeVatRate(batch.vatRateInput ?? batch.vatRate ?? pVatRate);
+                                            const batchVatIsValid = parseNonNegativeLocaleNumber(batch.vatRateInput ?? batch.vatRate ?? pVatRate) <= 100;
+                                            const batchVatAmount = calculateVatAmount(batchNetAmount, batchVatRate);
+                                            const batchPaymentTotal = batchNetAmount + batchVatAmount;
                                             return (
                                                 <div key={batch.id} className="rounded-xl border border-slate-200 bg-white p-3">
                                                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -9573,6 +9592,23 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                             </div>
                                                         </div>
                                                         <div className="flex items-center gap-2">
+                                                            <label className="flex items-center gap-1.5 text-[10px] font-black uppercase text-slate-500">
+                                                                VAT đợt (%)
+                                                                <input
+                                                                    type="text"
+                                                                    inputMode="decimal"
+                                                                    value={batch.vatRateInput ?? formatLocaleDecimalInput(batch.vatRate ?? normalizeVatRate(pVatRate), 3)}
+                                                                    onChange={e => {
+                                                                        const vatRateInput = formatViLiveInput(e.target.value);
+                                                                        updatePoDeliveryBatch(batch.id, {
+                                                                            vatRateInput,
+                                                                            vatRate: normalizeVatRate(vatRateInput),
+                                                                        });
+                                                                    }}
+                                                                    className={`w-20 rounded-lg border px-2.5 py-1.5 text-right text-xs font-bold text-slate-800 ${batchVatIsValid ? 'border-slate-200' : 'border-red-300 bg-red-50'}`}
+                                                                    placeholder="0"
+                                                                />
+                                                            </label>
                                                             <input
                                                                 type="date"
                                                                 value={batch.plannedDeliveryDate || ''}
@@ -9700,6 +9736,11 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                                 })}
                                                             </tbody>
                                                         </table>
+                                                    </div>
+                                                    <div className="mt-3 flex flex-wrap justify-end gap-2 text-[11px] font-bold">
+                                                        <span className="rounded-lg bg-slate-50 px-3 py-2 text-slate-600">Trước VAT: <b className="text-slate-900">{fmtMoney(batchNetAmount)} đ</b></span>
+                                                        <span className="rounded-lg bg-blue-50 px-3 py-2 text-blue-700">VAT {batchVatRate.toLocaleString('vi-VN')}%: <b>{fmtMoney(batchVatAmount)} đ</b></span>
+                                                        <span className="rounded-lg bg-emerald-50 px-3 py-2 text-emerald-700">Tổng gồm VAT: <b>{fmtMoney(batchPaymentTotal)} đ</b></span>
                                                     </div>
                                                     {batchHasRequestOverage && (
                                                         <div className="mt-3">
@@ -9894,6 +9935,10 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     details={[
                         { label: 'Nhà cung cấp', value: submittingDeliveryBatch.po.vendorName || '-' },
                         { label: 'Chế độ', value: submittingDeliveryBatch.po.purchaseMode === 'single' ? 'Giao một lần' : 'Chia nhiều đợt' },
+                        {
+                            label: 'VAT đợt',
+                            value: `${Number((poDeliveryBatchesByPo[submittingDeliveryBatch.po.id] || []).find(batch => batch.id === submittingDeliveryBatch.deliveryBatchId)?.vatRate || 0).toLocaleString('vi-VN')}%`,
+                        },
                     ]}
                     onCancel={() => setSubmittingDeliveryBatch(null)}
                     onConfirm={async target => {

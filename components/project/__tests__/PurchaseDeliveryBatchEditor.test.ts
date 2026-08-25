@@ -37,6 +37,14 @@ describe('PurchaseDeliveryBatchEditor UI contract', () => {
     expect(supplyChainSource).not.toContain('{!isPurchasePackageV2Form && (');
   });
 
+  it('allows VAT to be entered and summarized independently for every delivery batch', () => {
+    expect(supplyChainSource).toContain('VAT đợt (%)');
+    expect(supplyChainSource).toContain('batchVatAmount');
+    expect(supplyChainSource).toContain('Tổng gồm VAT');
+    expect(editorSource).toContain('VAT đợt (%)');
+    expect(editorSource).toContain('Tổng gồm VAT');
+  });
+
   it('creates new MR purchase orders as flow v3 single-delivery demand snapshots', () => {
     expect(supplyChainSource).toContain("setPPurchaseMode('single');");
     expect(supplyChainSource).toContain('procurementFlowVersion: isV2Package ? 3');

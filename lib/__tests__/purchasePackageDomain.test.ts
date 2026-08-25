@@ -117,6 +117,19 @@ describe('getPurchasePackageSummary', () => {
     expect(summary.releasedGross).toBe(21176 * 15072);
   });
 
+  it('applies the VAT rate saved on each batch instead of the PO parent VAT', () => {
+    const po = {
+      ...makePackage({ qty: 100, unitPrice: 0, vatRate: 0 }),
+      procurementFlowVersion: 3 as const,
+      purchaseMode: 'multiple' as const,
+    };
+    const first = makeBatch({ id: 'batch-1', plannedQty: 40, acceptedQty: 0, unitPrice: 100_000, vatRate: 8 });
+    const second = makeBatch({ id: 'batch-2', plannedQty: 60, acceptedQty: 0, unitPrice: 100_000, vatRate: 10 });
+
+    expect(getPurchasePackageSummary(po, [first, second]).releasedGross)
+      .toBe(4_000_000 * 1.08 + 6_000_000 * 1.1);
+  });
+
   it('does not infer flow v3 from a requested snapshot on a legacy v2 PO', () => {
     const legacyPo: PurchaseOrder = {
       ...makePackage({ qty: 21_176, unitPrice: 15_072, vatRate: 0 }),

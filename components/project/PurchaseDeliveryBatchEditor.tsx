@@ -7,6 +7,7 @@ import {
   getSelectedPurchaseDeliveryLinesForSave,
 } from '../../lib/purchaseDeliveryBatchEditorModel';
 import { purchasePackageService } from '../../lib/purchasePackageService';
+import { formatViLiveInput, parseNonNegativeLocaleNumber } from '../../lib/localeNumberInput';
 
 interface PurchaseDeliveryBatchEditorProps {
   purchaseOrder: PurchaseOrder;
@@ -51,12 +52,17 @@ export default function PurchaseDeliveryBatchEditor({
     () => getSelectedPurchaseDeliveryLinesForSave(lineDrafts),
     [lineDrafts],
   );
+  const parsedVatRate = parseNonNegativeLocaleNumber(vatRate);
+  const vatIsValid = parsedVatRate <= 100;
+  const vatAmount = Math.round(summary.draftAmount * parsedVatRate / 100);
+  const paymentTotal = summary.draftAmount + vatAmount;
 
   const canSave = useMemo(() => (
     purchaseOrder.vendorId
     && targetWarehouseId
+    && vatIsValid
     && selectedLines.some(line => numberValue(line.purchaseQty) > 0 && numberValue(line.stockQty) > 0 && numberValue(line.purchaseUnitPrice) >= 0)
-  ), [purchaseOrder.vendorId, selectedLines, targetWarehouseId]);
+  ), [purchaseOrder.vendorId, selectedLines, targetWarehouseId, vatIsValid]);
 
   const updateLine = (purchaseOrderLineId: string, patch: Partial<typeof lineDrafts[number]>) => {
     setLineDrafts(prev => prev.map(line => line.purchaseOrderLineId === purchaseOrderLineId ? { ...line, ...patch } : line));
@@ -69,7 +75,7 @@ export default function PurchaseDeliveryBatchEditor({
       const result = await purchasePackageService.saveDeliveryBatchDraft({
         purchaseOrderId: purchaseOrder.id,
         deliveryBatchId: null,
-        vatRate: numberValue(vatRate),
+        vatRate: parsedVatRate,
         plannedDeliveryDate: plannedDeliveryDate || null,
         varianceReason: summary.varianceQty > 0 ? varianceReason.trim() || null : null,
         note: note.trim() || null,
@@ -103,12 +109,13 @@ export default function PurchaseDeliveryBatchEditor({
           <input type="date" value={plannedDeliveryDate} onChange={event => setPlannedDeliveryDate(event.target.value)} className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm font-bold text-slate-900" />
         </label>
         <label className="space-y-1 text-xs font-bold text-slate-600">
-          <span className="block text-[10px] font-black uppercase text-slate-400">VAT (%)</span>
-          <input value={vatRate} inputMode="decimal" onChange={event => setVatRate(event.target.value)} className="h-10 w-full rounded-md border border-slate-200 px-3 text-right text-sm font-bold text-slate-900" placeholder="0" />
+          <span className="block text-[10px] font-black uppercase text-slate-400">VAT đợt (%)</span>
+          <input value={vatRate} inputMode="decimal" onChange={event => setVatRate(formatViLiveInput(event.target.value))} className={`h-10 w-full rounded-md border px-3 text-right text-sm font-bold text-slate-900 ${vatIsValid ? 'border-slate-200' : 'border-red-300 bg-red-50'}`} placeholder="0" />
+          {!vatIsValid && <span className="block text-[10px] font-bold text-red-600">VAT phải từ 0 đến 100%.</span>}
         </label>
       </div>
 
-      <div className="grid gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs sm:grid-cols-5">
+      <div className="grid gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs sm:grid-cols-2 lg:grid-cols-7">
         <div>
           <div className="text-[10px] font-black uppercase text-slate-400">Gốc PO</div>
           <div className="mt-0.5 font-black text-slate-800">{summary.orderedQty.toLocaleString('vi-VN')}</div>
@@ -126,8 +133,16 @@ export default function PurchaseDeliveryBatchEditor({
           <div className={`mt-0.5 font-black ${summary.varianceQty > 0 ? 'text-amber-700' : 'text-emerald-700'}`}>{summary.nextReleasedQty.toLocaleString('vi-VN')}</div>
         </div>
         <div>
-          <div className="flex items-center gap-1 text-[10px] font-black uppercase text-slate-400"><Calculator size={12} /> Giá trị đợt</div>
+          <div className="flex items-center gap-1 text-[10px] font-black uppercase text-slate-400"><Calculator size={12} /> Tiền hàng</div>
           <div className="mt-0.5 font-black text-slate-800">{summary.draftAmount.toLocaleString('vi-VN')} đ</div>
+        </div>
+        <div>
+          <div className="text-[10px] font-black uppercase text-slate-400">VAT {parsedVatRate.toLocaleString('vi-VN')}%</div>
+          <div className="mt-0.5 font-black text-blue-700">{vatAmount.toLocaleString('vi-VN')} đ</div>
+        </div>
+        <div>
+          <div className="text-[10px] font-black uppercase text-slate-400">Tổng gồm VAT</div>
+          <div className="mt-0.5 font-black text-emerald-700">{paymentTotal.toLocaleString('vi-VN')} đ</div>
         </div>
       </div>
       {summary.varianceQty > 0 && (
