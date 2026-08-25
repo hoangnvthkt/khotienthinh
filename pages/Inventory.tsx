@@ -181,12 +181,19 @@ const Inventory: React.FC = () => {
           toast.warning('Sai kho nhận', 'Tài khoản của bạn không được phân công kho nhận của đợt giao này.');
           return;
         }
-        if (!lookup.deliveryBatch.wmsTransactionId) {
+        const isFlowV3Delivery = lookup.purchaseOrder.procurementFlowVersion === 3;
+        if (isFlowV3Delivery && lookup.deliveryBatch.approvalStatus !== 'approved') {
+          toast.warning('Đợt đặt hàng chưa được duyệt', 'QR chỉ được sử dụng sau khi đợt đặt hàng đã duyệt.');
+          return;
+        }
+        if (!isFlowV3Delivery && !lookup.deliveryBatch.wmsTransactionId) {
           toast.warning('Đợt giao chưa có WMS', 'Vui lòng kiểm tra lại đợt giao trong Cung ứng dự án.');
           return;
         }
-        let transaction = transactions.find(item => item.id === lookup.deliveryBatch.wmsTransactionId) || null;
-        if (!transaction) {
+        let transaction = lookup.deliveryBatch.wmsTransactionId
+          ? transactions.find(item => item.id === lookup.deliveryBatch.wmsTransactionId) || null
+          : null;
+        if (!isFlowV3Delivery && !transaction && lookup.deliveryBatch.wmsTransactionId) {
           transaction = await purchasePackageService.getWmsTransactionById(lookup.deliveryBatch.wmsTransactionId);
           if (!transaction) {
             toast.warning('Chưa tải phiếu WMS', 'Đợt giao tồn tại nhưng phiếu WMS chưa có trong dữ liệu hiện tại. Vui lòng tải lại dữ liệu WMS.');

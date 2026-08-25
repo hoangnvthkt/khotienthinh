@@ -1,11 +1,10 @@
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { AlertTriangle, Calculator, Loader2, Save } from 'lucide-react';
-import { MaterialRequestFulfillmentMode, type PurchaseOrder, type PurchaseOrderDeliveryBatch } from '../../types';
+import type { PurchaseOrder, PurchaseOrderDeliveryBatch } from '../../types';
 import {
   buildPurchaseDeliveryLineDrafts,
   getPurchaseDeliveryDraftSummary,
   getSelectedPurchaseDeliveryLinesForSave,
-  getStockQtyForPurchaseDeliveryLine,
 } from '../../lib/purchaseDeliveryBatchEditorModel';
 import { purchasePackageService } from '../../lib/purchasePackageService';
 
@@ -33,13 +32,11 @@ export default function PurchaseDeliveryBatchEditor({
   cloneFromBatch = null,
   existingBatches = [],
 }: PurchaseDeliveryBatchEditorProps) {
-  const idempotencyKeyRef = useRef(crypto.randomUUID());
   const [saving, setSaving] = useState(false);
-  const [supplierId, setSupplierId] = useState(purchaseOrder.vendorId || '');
-  const [supplierName, setSupplierName] = useState(purchaseOrder.vendorName || '');
   const [vatRate, setVatRate] = useState(String(cloneFromBatch?.vatRate ?? purchaseOrder.vatRate ?? 0));
   const [plannedDeliveryDate, setPlannedDeliveryDate] = useState(cloneFromBatch?.plannedDeliveryDate || purchaseOrder.expectedDeliveryDate || '');
   const [note, setNote] = useState(cloneFromBatch?.note || '');
+  const [varianceReason, setVarianceReason] = useState(cloneFromBatch?.varianceReason || '');
   const [lineDrafts, setLineDrafts] = useState(() => buildPurchaseDeliveryLineDrafts({
     purchaseOrder,
     existingBatches,
@@ -56,10 +53,10 @@ export default function PurchaseDeliveryBatchEditor({
   );
 
   const canSave = useMemo(() => (
-    supplierName.trim()
+    purchaseOrder.vendorId
     && targetWarehouseId
-    && selectedLines.some(line => numberValue(line.purchaseQty) > 0 && numberValue(line.purchaseUnitPrice) >= 0)
-  ), [selectedLines, supplierName, targetWarehouseId]);
+    && selectedLines.some(line => numberValue(line.purchaseQty) > 0 && numberValue(line.stockQty) > 0 && numberValue(line.purchaseUnitPrice) >= 0)
+  ), [purchaseOrder.vendorId, selectedLines, targetWarehouseId]);
 
   const updateLine = (purchaseOrderLineId: string, patch: Partial<typeof lineDrafts[number]>) => {
     setLineDrafts(prev => prev.map(line => line.purchaseOrderLineId === purchaseOrderLineId ? { ...line, ...patch } : line));
@@ -69,27 +66,23 @@ export default function PurchaseDeliveryBatchEditor({
     if (!canSave || saving) return;
     setSaving(true);
     try {
-      const result = await purchasePackageService.createDelivery({
+      const result = await purchasePackageService.saveDeliveryBatchDraft({
         purchaseOrderId: purchaseOrder.id,
-        idempotencyKey: idempotencyKeyRef.current,
-        supplierId,
-        supplierNameSnapshot: supplierName.trim(),
-        fulfillmentMode: purchaseOrder.fulfillmentMode || MaterialRequestFulfillmentMode.RECEIVE_TO_STOCK,
+        deliveryBatchId: null,
         vatRate: numberValue(vatRate),
-        targetWarehouseId,
         plannedDeliveryDate: plannedDeliveryDate || null,
+        varianceReason: summary.varianceQty > 0 ? varianceReason.trim() || null : null,
         note: note.trim() || null,
         actorUserId,
         lines: selectedLines
           .map(line => ({
             purchaseOrderLineId: line.purchaseOrderLineId,
             itemId: line.itemId,
+            requestQty: numberValue(line.stockQty),
+            requestUnit: line.stockUnit || '',
             purchaseQty: numberValue(line.purchaseQty),
             purchaseUnit: line.purchaseUnit || '',
-            stockQty: numberValue(line.stockQty || line.purchaseQty),
-            stockUnit: line.stockUnit || line.purchaseUnit || '',
             purchaseUnitPrice: numberValue(line.purchaseUnitPrice),
-            stockUnitPrice: numberValue(line.stockUnitPrice || line.purchaseUnitPrice),
           })),
       });
       onSaved?.(result);
@@ -100,15 +93,11 @@ export default function PurchaseDeliveryBatchEditor({
 
   return (
     <div className="space-y-4 rounded-lg border border-slate-200 bg-white p-4">
-      <div className="grid gap-3 sm:grid-cols-4">
-        <label className="space-y-1 text-xs font-bold text-slate-600">
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div className="space-y-1 text-xs font-bold text-slate-600">
           <span className="block text-[10px] font-black uppercase text-slate-400">Nhà cung cấp</span>
-          <input value={supplierName} onChange={event => setSupplierName(event.target.value)} className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm font-bold text-slate-900" placeholder="Tên NCC" />
-        </label>
-        <label className="space-y-1 text-xs font-bold text-slate-600">
-          <span className="block text-[10px] font-black uppercase text-slate-400">Mã NCC</span>
-          <input value={supplierId} onChange={event => setSupplierId(event.target.value)} className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm font-bold text-slate-900" placeholder="vendor-id" />
-        </label>
+          <div className="flex h-10 items-center rounded-md border border-slate-200 bg-slate-50 px-3 text-sm font-black text-slate-800">{purchaseOrder.vendorName || purchaseOrder.vendorId}</div>
+        </div>
         <label className="space-y-1 text-xs font-bold text-slate-600">
           <span className="block text-[10px] font-black uppercase text-slate-400">Ngày dự kiến giao</span>
           <input type="date" value={plannedDeliveryDate} onChange={event => setPlannedDeliveryDate(event.target.value)} className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm font-bold text-slate-900" />
@@ -142,9 +131,12 @@ export default function PurchaseDeliveryBatchEditor({
         </div>
       </div>
       {summary.varianceQty > 0 && (
-        <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">
-          <AlertTriangle size={15} className="mt-0.5 shrink-0" />
-          <span>Đợt này làm tổng số lượng giao vượt PO gốc {summary.varianceQty.toLocaleString('vi-VN')}. Hệ thống cho lưu nhưng sẽ ghi nhận chênh lệch.</span>
+        <div className="space-y-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-800">
+          <div className="flex items-start gap-2">
+            <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+            <span>Vượt nhu cầu MR {summary.varianceQty.toLocaleString('vi-VN')}. Có thể lưu nháp; khi gửi duyệt bắt buộc có lý do.</span>
+          </div>
+          <input value={varianceReason} onChange={event => setVarianceReason(event.target.value)} className="h-9 w-full rounded-md border border-red-200 bg-white px-3 text-sm font-bold text-slate-900" placeholder="Lý do vượt nhu cầu MR" />
         </div>
       )}
 
@@ -156,8 +148,8 @@ export default function PurchaseDeliveryBatchEditor({
               <th className="px-3 py-2">Vật tư</th>
               <th className="px-3 py-2 text-right">Đã lập đợt</th>
               <th className="px-3 py-2 text-right">Còn lại</th>
-              <th className="px-3 py-2 text-right">SL giao</th>
-              <th className="px-3 py-2 text-right">SL quy đổi</th>
+              <th className="px-3 py-2 text-right">SL đáp ứng nhu cầu</th>
+              <th className="px-3 py-2 text-right">SL mua</th>
               <th className="px-3 py-2 text-right">Đơn giá mua</th>
               <th className="px-3 py-2 text-right">Thành tiền</th>
             </tr>
@@ -176,26 +168,21 @@ export default function PurchaseDeliveryBatchEditor({
                 </td>
                 <td className="px-3 py-2">
                   <div className={`font-black ${line.included ? 'text-slate-800' : 'text-slate-400'}`}>{line.itemName}</div>
-                  <div className="mt-0.5 text-[10px] font-bold text-slate-400">PO: {line.orderedQty.toLocaleString('vi-VN')} {line.purchaseUnit}</div>
+                  <div className="mt-0.5 text-[10px] font-bold text-slate-400">Nhu cầu: {line.orderedQty.toLocaleString('vi-VN')} {line.stockUnit}</div>
+                  {line.purchaseUnit !== line.stockUnit && <div className="mt-0.5 text-[10px] font-bold text-cyan-600">Tham khảo: 1 {line.purchaseUnit} ≈ {line.conversionFactor.toLocaleString('vi-VN')} {line.stockUnit}</div>}
                 </td>
                 <td className="px-3 py-2 text-right font-bold text-slate-600">{line.alreadyReleasedQty.toLocaleString('vi-VN')}</td>
                 <td className="px-3 py-2 text-right font-bold text-slate-600">{line.remainingQty.toLocaleString('vi-VN')}</td>
                 <td className="px-3 py-2">
                   <div className="flex items-center justify-end gap-1">
-                    <input value={line.purchaseQty} disabled={!line.included} inputMode="decimal" onChange={event => {
-                      const purchaseQty = numberValue(event.target.value);
-                      updateLine(line.purchaseOrderLineId, {
-                        purchaseQty,
-                        stockQty: getStockQtyForPurchaseDeliveryLine(line, purchaseQty),
-                      });
-                    }} className="h-9 w-28 rounded-md border border-slate-200 px-2 text-right font-black text-slate-900 disabled:bg-slate-100 disabled:text-slate-400" />
-                    <span className="w-10 text-[10px] font-bold text-slate-400">{line.purchaseUnit}</span>
+                    <input value={line.stockQty} disabled={!line.included} inputMode="decimal" onChange={event => updateLine(line.purchaseOrderLineId, { stockQty: numberValue(event.target.value) })} className="h-9 w-28 rounded-md border border-slate-200 px-2 text-right font-black text-slate-900 disabled:bg-slate-100 disabled:text-slate-400" />
+                    <span className="w-10 text-[10px] font-bold text-slate-400">{line.stockUnit}</span>
                   </div>
                 </td>
                 <td className="px-3 py-2">
                   <div className="flex items-center justify-end gap-1">
-                    <input value={line.stockQty} disabled={!line.included} inputMode="decimal" onChange={event => updateLine(line.purchaseOrderLineId, { stockQty: numberValue(event.target.value) })} className="h-9 w-28 rounded-md border border-slate-200 px-2 text-right font-black text-slate-900 disabled:bg-slate-100 disabled:text-slate-400" />
-                    <span className="w-10 text-[10px] font-bold text-slate-400">{line.stockUnit}</span>
+                    <input value={line.purchaseQty} disabled={!line.included} inputMode="decimal" onChange={event => updateLine(line.purchaseOrderLineId, { purchaseQty: numberValue(event.target.value) })} className="h-9 w-28 rounded-md border border-slate-200 px-2 text-right font-black text-slate-900 disabled:bg-slate-100 disabled:text-slate-400" />
+                    <span className="w-10 text-[10px] font-bold text-slate-400">{line.purchaseUnit}</span>
                   </div>
                 </td>
                 <td className="px-3 py-2">
@@ -216,7 +203,7 @@ export default function PurchaseDeliveryBatchEditor({
         {onCancel && <button type="button" onClick={onCancel} className="rounded-md px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-100">Hủy</button>}
         <button type="button" disabled={!canSave || saving} onClick={save} className="inline-flex items-center gap-2 rounded-md bg-slate-900 px-4 py-2 text-sm font-black text-white disabled:opacity-50">
           {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-          Lưu đợt giao
+          Lưu nháp đợt
         </button>
       </div>
     </div>

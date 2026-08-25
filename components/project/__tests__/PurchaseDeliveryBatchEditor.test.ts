@@ -11,11 +11,11 @@ const supplyChainSource = readFileSync(
 );
 
 describe('PurchaseDeliveryBatchEditor UI contract', () => {
-  it('keeps warehouse receipt quantity out of the delivery planning editor', () => {
-    expect(editorSource).not.toContain('SL nhập kho');
-    expect(editorSource).toContain('SL quy đổi');
+  it('keeps request and purchase quantities independent in the delivery planning editor', () => {
+    expect(editorSource).toContain('SL đáp ứng nhu cầu');
+    expect(editorSource).toContain('SL mua');
     expect(editorSource).toContain('value={line.stockQty}');
-    expect(editorSource).toContain('getStockQtyForPurchaseDeliveryLine(line, purchaseQty)');
+    expect(editorSource).not.toContain('getStockQtyForPurchaseDeliveryLine(line, purchaseQty)');
   });
 
   it('opens package delivery editing in a wider modal for multi-line purchase orders', () => {
@@ -32,16 +32,16 @@ describe('PurchaseDeliveryBatchEditor UI contract', () => {
   });
 
   it('shows the delivery schedule editor directly in request package PO drafts', () => {
-    expect(supplyChainSource).toContain('Lịch giao dự kiến');
-    expect(supplyChainSource).toContain('Gói mua hàng giữ tổng duyệt');
+    expect(supplyChainSource).toContain('Các đợt đặt hàng');
+    expect(supplyChainSource).toContain('PO tổng chỉ giữ nhu cầu MR');
     expect(supplyChainSource).not.toContain('{!isPurchasePackageV2Form && (');
   });
 
-  it('lets request package PO lines edit the purchase quantity used for pricing', () => {
-    expect(supplyChainSource).toContain('SL MUA');
-    expect(supplyChainSource).toContain('placeholder="SL"');
-    expect(supplyChainSource).toContain("onChange={e => updatePoItem(i, { qtyInput: formatViLiveInput(e.target.value) })}");
-    expect(supplyChainSource).not.toContain('SL gốc');
+  it('creates new MR purchase orders as flow v3 single-delivery demand snapshots', () => {
+    expect(supplyChainSource).toContain("setPPurchaseMode('single');");
+    expect(supplyChainSource).toContain('procurementFlowVersion: isV2Package ? 3');
+    expect(supplyChainSource).toContain('purchasePackageService.saveDeliveryBatchDraft');
+    expect(supplyChainSource).toContain('SL YÊU CẦU');
   });
 
   it('keeps PO line price fields clear of compact action buttons on wide screens', () => {
