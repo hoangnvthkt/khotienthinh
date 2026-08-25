@@ -45,6 +45,11 @@ describe('PurchaseDeliveryBatchEditor UI contract', () => {
     expect(editorSource).toContain('Tổng gồm VAT');
   });
 
+  it('calculates remaining MR demand from request quantity for both single and multiple flow v3 POs', () => {
+    expect(supplyChainSource).toContain('const usesRequestedQty = isFlowV3Form();');
+    expect(supplyChainSource).toContain('Number(line?.stockPlannedQty || 0)');
+  });
+
   it('creates new MR purchase orders as flow v3 single-delivery demand snapshots', () => {
     expect(supplyChainSource).toContain("setPPurchaseMode('single');");
     expect(supplyChainSource).toContain('procurementFlowVersion: isV2Package ? 3');

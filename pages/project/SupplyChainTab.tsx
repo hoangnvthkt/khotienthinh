@@ -2621,7 +2621,10 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         orderedQty: number,
         throughBatchIndex = batches.length - 1,
     ): number => {
-        const usesRequestedQty = pSourceMode === 'from_request' && pPurchaseMode === 'multiple';
+        // Flow v3 always measures MR progress in the requested/stock unit.
+        // Commercial purchase quantity is deliberately independent and must
+        // never drive the "Còn lại YC" calculation, including single delivery.
+        const usesRequestedQty = isFlowV3Form();
         const scheduledQty = batches.slice(0, throughBatchIndex + 1).reduce((sum, batch) => {
             const line = batch.lines.find(row => row.purchaseOrderLineId === lineKey);
             return sum + (usesRequestedQty
