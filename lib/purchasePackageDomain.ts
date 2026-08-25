@@ -1,5 +1,6 @@
 import type { PurchaseMode, PurchaseOrder, PurchaseOrderDeliveryBatch } from '../types';
 import { getPurchaseOrderScheduleLineUnitPrice } from './purchaseOrderSchedulePricing';
+import { isPurchaseOrderFlowV3 } from './purchaseOrderFlow';
 
 export type { PurchaseMode };
 
@@ -50,6 +51,9 @@ const gross = (qty: number, price: number, vatRate: number) =>
 const activeBatch = (batch: PurchaseOrderDeliveryBatch) =>
   batch.status !== 'cancelled';
 
+const isIndependentMultipleDelivery = (po: PurchaseOrder) =>
+  isPurchaseOrderFlowV3(po);
+
 const hasReferencePackageAmount = (po: PurchaseOrder, referenceQty: number) =>
   po.sourceMode === 'from_request'
   && (po.purchaseMode === 'single' || po.purchaseMode === 'multiple')
@@ -94,13 +98,14 @@ export const getPurchasePackageSummary = (
   const active = batches.filter(activeBatch);
   const activeLines = active.flatMap(batch => batch.lines || []);
   const itemByLineId = new Map((po.items || []).map(item => [item.lineId || item.itemId, item]));
-  const referenceQty = po.items.reduce((sum, line) => sum + numberValue(line.qty), 0);
-  const releasedQty = activeLines.reduce((sum, line) => sum + numberValue(line.plannedQty), 0);
-  const acceptedQty = activeLines.reduce((sum, line) => sum + numberValue(line.acceptedQty), 0);
+  const usesMrUnit = isIndependentMultipleDelivery(po);
+  const referenceQty = po.items.reduce((sum, line) => sum + numberValue(usesMrUnit ? line.requestedQtySnapshot : line.qty), 0);
+  const releasedQty = activeLines.reduce((sum, line) => sum + numberValue(usesMrUnit ? line.stockPlannedQty : line.plannedQty), 0);
+  const acceptedQty = activeLines.reduce((sum, line) => sum + numberValue(usesMrUnit ? line.acceptedStockQty ?? line.acceptedQty : line.acceptedQty), 0);
   const returnedQty = activeLines.reduce((sum, line) => sum + numberValue(line.returnedQty), 0);
   const receivedNetQty = Math.max(0, acceptedQty - returnedQty);
   const closedNeedQty = numberValue(po.closedNeedQty);
-  const referenceGross = numberValue(po.referenceGrossAmount)
+  const referenceGross = usesMrUnit ? 0 : numberValue(po.referenceGrossAmount)
     || po.items.reduce(
       (sum, line) => sum + gross(numberValue(line.qty), numberValue(line.unitPrice), numberValue(po.vatRate)),
       0,
@@ -127,8 +132,8 @@ export const getPurchasePackageSummary = (
     ),
     0,
   );
-  const referenceReleasedGross = allocatedReferenceGross(po, referenceQty, releasedQty);
-  const referenceReceivedGross = allocatedReferenceGross(po, referenceQty, receivedNetQty);
+  const referenceReleasedGross = usesMrUnit ? null : allocatedReferenceGross(po, referenceQty, releasedQty);
+  const referenceReceivedGross = usesMrUnit ? null : allocatedReferenceGross(po, referenceQty, receivedNetQty);
   const releasedGross = referenceReleasedGross == null
     ? scheduleReleasedGross
     : Math.max(scheduleReleasedGross, referenceReleasedGross);

@@ -93,6 +93,24 @@ describe('purchaseOrderUiPolicy', () => {
     expect(policy.primaryAction?.id).toBe('request_approval');
   });
 
+  it('approves an independent multiple-delivery PO by batch, never by its parent package', () => {
+    const independentPo = makePo({
+      status: 'draft',
+      procurementFlowVersion: 3,
+      purchaseMode: 'multiple',
+      items: [{ ...makePo().items[0], unit: 'Cay', qty: 1187, requestedQtySnapshot: 1187, requestedUnitSnapshot: 'Cay', purchaseUnitSnapshot: 'Kg', unitPrice: 0 }],
+    });
+    const draftPolicy = getPurchaseOrderUiPolicy(baseInput({ po: independentPo, deliveryBatches: [plannedBatch()] }));
+    expect(draftPolicy.primaryAction?.deliveryBatchId).toBeUndefined();
+
+    const pendingPolicy = getPurchaseOrderUiPolicy(baseInput({
+      po: { ...independentPo, status: 'in_transit' },
+      deliveryBatches: [plannedBatch({ approvalStatus: 'pending_approval' })],
+    }));
+    expect(pendingPolicy.primaryAction?.deliveryBatchId).toBeUndefined();
+    expect(packageActions({ po: independentPo, deliveryBatches: [plannedBatch()] } as any)).not.toContain('submit_package');
+  });
+
   it('maps sent purchase orders to approve primary action without exposing a rejected status action', () => {
     const policy = getPurchaseOrderUiPolicy(baseInput({ po: makePo({ status: 'sent' }) }));
     const allActionIds = [

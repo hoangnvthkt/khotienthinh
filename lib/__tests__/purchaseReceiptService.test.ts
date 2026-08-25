@@ -103,4 +103,40 @@ describe('purchaseReceiptService', () => {
       attachments: [],
     })).rejects.toThrow('không khớp Đợt giao hoặc phiếu WMS');
   });
+
+  it('records an independent flow v3 receipt and lets the RPC create its WMS', async () => {
+    supabaseMocks.rpc.mockResolvedValue({
+      data: {
+        receiptId: 'receipt-1', deliveryBatchId: 'batch-1', receiptNo: 1,
+        wmsTransactionId: 'tx-receipt-1', financeStatus: 'posted',
+        batchStatus: 'receiving', idempotentReplay: false,
+      },
+      error: null,
+    });
+
+    const result = await purchaseReceiptService.recordReceiptV3({
+      deliveryBatchId: 'batch-1',
+      idempotencyKey: '11111111-1111-4111-8111-111111111111',
+      actorUserId: 'keeper-1', qualityResult: 'passed', isFinal: false,
+      varianceReason: null, attachments: [],
+      lines: [{
+        deliveryLineId: 'delivery-line-1', itemId: 'item-1',
+        deliveredPurchaseQty: 10.8, acceptedPurchaseQty: 10.8,
+        deliveredStockQty: 600, acceptedStockQty: 600,
+      }],
+    });
+
+    expect(supabaseMocks.rpc).toHaveBeenCalledWith('record_purchase_order_receipt_v3', {
+      p_delivery_batch_id: 'batch-1',
+      p_idempotency_key: '11111111-1111-4111-8111-111111111111',
+      p_actor_user_id: 'keeper-1', p_quality_result: 'passed', p_is_final: false,
+      p_variance_reason: null, p_attachments: [],
+      p_lines: [{
+        deliveryLineId: 'delivery-line-1', itemId: 'item-1',
+        deliveredPurchaseQty: 10.8, acceptedPurchaseQty: 10.8,
+        deliveredStockQty: 600, acceptedStockQty: 600,
+      }],
+    });
+    expect(result.wmsTransactionId).toBe('tx-receipt-1');
+  });
 });

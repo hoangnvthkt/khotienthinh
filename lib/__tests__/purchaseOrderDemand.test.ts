@@ -50,4 +50,27 @@ describe('purchaseOrderDemand', () => {
     expect(stats.receivedQty).toBe(10);
     expect(stats.remainingQty).toBe(6);
   });
+
+  it('keeps an independent multiple-delivery PO in the MR unit without conversion', () => {
+    const multiplePo: PurchaseOrder = {
+      ...po,
+      procurementFlowVersion: 3,
+      purchaseMode: 'multiple',
+      items: [{
+        ...po.items[0],
+        qty: 1187,
+        unit: 'Cay',
+        requestedQtySnapshot: 1187,
+        requestedUnitSnapshot: 'Cay',
+        purchaseUnitSnapshot: 'Kg',
+        receivedQty: 600,
+      }],
+    };
+
+    const stats = getPurchaseOrderDemandStats(multiplePo, [{ ...requestLink, requestedQtySnapshot: 1187, requestedQty: 1187 }], [{
+      id: 'item-1', name: 'Thep D16', code: 'VT000111', unit: 'Cay', purchaseUnit: 'Kg', purchaseConversionFactor: 0.054095,
+    } as any]);
+
+    expect(stats).toEqual({ orderedQty: 1187, receivedQty: 600, remainingQty: 587 });
+  });
 });

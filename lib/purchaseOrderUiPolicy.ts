@@ -4,10 +4,15 @@ import type {
   PurchaseOrderDeliveryBatch,
 } from '../types';
 import { canClonePurchaseOrder } from './purchaseOrderClone';
+import { isLegacyRequestPurchasePackage, isPurchaseOrderFlowV3 } from './purchaseOrderFlow';
 
 export type PurchaseOrderUiActionId =
   | 'submit_package'
   | 'approve_package'
+  | 'submit_delivery_batch'
+  | 'approve_delivery_batch'
+  | 'request_delivery_revision'
+  | 'reject_delivery_batch'
   | 'clone_po'
   | 'add_delivery'
   | 'clone_delivery'
@@ -103,7 +108,10 @@ const firstPlannedBatch = (deliveryBatches: PurchaseOrderDeliveryBatch[]) =>
   deliveryBatches.find(batch => batch.status === 'planned');
 
 const isPurchasePackageV2 = (po: PurchaseOrder) =>
-  po.sourceMode === 'from_request' && (po.purchaseMode === 'single' || po.purchaseMode === 'multiple');
+  isLegacyRequestPurchasePackage(po);
+
+const isIndependentMultipleDelivery = (po: PurchaseOrder) =>
+  isPurchaseOrderFlowV3(po);
 
 const firstOpenPackageBatch = (deliveryBatches: PurchaseOrderDeliveryBatch[]) =>
   deliveryBatches.find(batch => !['cancelled'].includes(batch.status));
@@ -149,6 +157,7 @@ export const getPurchaseOrderUiPolicy = ({
 }: PurchaseOrderUiPolicyInput): PurchaseOrderUiPolicy => {
   const isCompanyConsolidatedPo = po.sourceMode === 'company_consolidated';
   const isPackageV2 = isPurchasePackageV2(po);
+  const isIndependentMultiple = isIndependentMultipleDelivery(po);
   const mayApprovePo = canApprovePoDocument;
   const maySubmitPo = canSubmitPoDocument;
   const mayReceivePo = canConfirmPo;
@@ -182,7 +191,18 @@ export const getPurchaseOrderUiPolicy = ({
     alerts.push({ id: 'rejected_before_receipt', label: 'Đợt giao bị từ chối', tone: 'danger' });
   }
 
-  if (isPackageV2) {
+  if (isIndependentMultiple) {
+    const draftBatch = deliveryBatches.find(batch => ['draft', 'revision_requested', 'rejected'].includes(batch.approvalStatus || 'draft') && batch.status === 'planned');
+    const pendingBatch = deliveryBatches.find(batch => batch.approvalStatus === 'pending_approval');
+    const approvedBatch = deliveryBatches.find(batch => batch.approvalStatus === 'approved' && (batch.qrToken || batch.wmsTransactionId));
+    if (po.purchaseMode === 'multiple' && mayReceivePo) {
+      primaryAction = { id: 'add_delivery', label: 'Thêm đợt giao', intent: 'primary' };
+    }
+    if (pendingBatch && mayApprovePo) nextStep = 'Có đợt đang chờ duyệt; xử lý ngay trên đúng card đợt đặt hàng.';
+    else if (draftBatch && maySubmitPo) nextStep = 'Có đợt nháp; gửi duyệt ngay trên card của đợt đó.';
+    else if (approvedBatch) nextStep = 'Đợt đã duyệt đang chờ kho quét QR và ghi nhận từng lần nhập.';
+    else nextStep = 'PO gốc chỉ ghi nhận nhu cầu MR; lập đợt đặt hàng khi có số lượng và giá.';
+  } else if (isPackageV2) {
     const openBatch = firstOpenPackageBatch(deliveryBatches);
     const canOpenDeliveryQr = Boolean(openBatch?.qrToken || openBatch?.wmsTransactionId);
     if (po.status === 'draft' && maySubmitPo) {

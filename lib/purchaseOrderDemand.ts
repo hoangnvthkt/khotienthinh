@@ -1,5 +1,6 @@
 import type { InventoryItem, PurchaseOrder, PurchaseOrderRequestLineLink } from '../types';
 import { poLineStockToPurchaseQty } from './materialUnitConversion';
+import { isPurchaseOrderFlowV3 } from './purchaseOrderFlow';
 
 const toNumber = (value: unknown) => {
   const num = Number(value);
@@ -14,6 +15,13 @@ export const getPurchaseOrderLineDemandQty = (
 ): number => {
   const line = po.items.find(item => (item.lineId || item.itemId) === lineKey);
   if (!line) return 0;
+
+  // Multiple-delivery MR POs keep their parent line in the MR unit.  The
+  // commercial unit belongs only to a delivery batch and must never be used to
+  // inflate the demand/progress shown to the site.
+  if (isPurchaseOrderFlowV3(po)) {
+    return toNumber(line.requestedQtySnapshot);
+  }
 
   const inventory = inventoryItems.find(item => item.id === line.itemId);
   const linkedDemandQty = links

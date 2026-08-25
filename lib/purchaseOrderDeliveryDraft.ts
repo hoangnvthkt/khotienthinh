@@ -107,8 +107,14 @@ export const getPoDeliveryScheduleUnitPriceForSave = ({
   purchaseMode?: PurchaseMode | null;
   existingDeliveryUnitPrice?: number | null;
 }) => {
-  if (sourceMode === 'from_request' && (purchaseMode === 'single' || purchaseMode === 'multiple')) {
+  if (sourceMode === 'from_request' && purchaseMode === 'single') {
     return toNumber(item.unitPrice);
+  }
+
+  // A multiple-delivery MR PO has no commercial price on its parent line.
+  // Preserve the price entered on the delivery itself.
+  if (sourceMode === 'from_request' && purchaseMode === 'multiple') {
+    return toNumber(existingDeliveryUnitPrice);
   }
 
   return toNumber(existingDeliveryUnitPrice ?? item.unitPrice);

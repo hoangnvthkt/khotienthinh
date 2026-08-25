@@ -3,6 +3,7 @@ import type {
   PurchaseOrderDeliveryLine,
   PurchaseOrderItem,
 } from '../types';
+import { isLegacyRequestPurchasePackage } from './purchaseOrderFlow';
 
 const numberValue = (value: unknown) => {
   const parsed = Number(value);
@@ -10,10 +11,9 @@ const numberValue = (value: unknown) => {
 };
 
 export const isRequestPackagePurchaseOrder = (
-  po?: Pick<PurchaseOrder, 'sourceMode' | 'purchaseMode' | 'referenceGrossAmount'> | null,
+  po?: Pick<PurchaseOrder, 'sourceMode' | 'purchaseMode' | 'procurementFlowVersion' | 'referenceGrossAmount' | 'items'> | null,
 ) =>
-  po?.sourceMode === 'from_request'
-  && (po.purchaseMode === 'single' || po.purchaseMode === 'multiple')
+  isLegacyRequestPurchasePackage(po)
   && numberValue(po.referenceGrossAmount) > 0;
 
 export const getPurchaseOrderScheduleLineUnitPrice = ({
@@ -22,7 +22,7 @@ export const getPurchaseOrderScheduleLineUnitPrice = ({
   line,
   deliveryUnitPrice,
 }: {
-  po?: Pick<PurchaseOrder, 'sourceMode' | 'purchaseMode' | 'referenceGrossAmount'> | null;
+  po?: Pick<PurchaseOrder, 'sourceMode' | 'purchaseMode' | 'procurementFlowVersion' | 'referenceGrossAmount' | 'items'> | null;
   item?: Pick<PurchaseOrderItem, 'unitPrice'> | null;
   line?: Pick<PurchaseOrderDeliveryLine, 'deliveryUnitPrice'> | null;
   deliveryUnitPrice?: number | null;

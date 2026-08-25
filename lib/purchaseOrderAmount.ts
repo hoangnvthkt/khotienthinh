@@ -1,6 +1,7 @@
 import type { PurchaseOrder, PurchaseOrderDeliveryBatch, PurchaseOrderItem } from '../types';
 import { calculateLineTotal } from './poSpecsUtils';
 import { getPurchaseOrderScheduleLineUnitPrice } from './purchaseOrderSchedulePricing';
+import { isLegacyRequestPurchasePackage } from './purchaseOrderFlow';
 
 const toNumber = (value: unknown) => {
   const num = Number(value);
@@ -8,8 +9,7 @@ const toNumber = (value: unknown) => {
 };
 
 const isPackageV2RequestPo = (po: PurchaseOrder) =>
-  po.sourceMode === 'from_request'
-  && (po.purchaseMode === 'single' || po.purchaseMode === 'multiple')
+  isLegacyRequestPurchasePackage(po)
   && toNumber(po.referenceGrossAmount) > 0;
 
 const getPackageReferencePrintAmount = (po: PurchaseOrder) => {

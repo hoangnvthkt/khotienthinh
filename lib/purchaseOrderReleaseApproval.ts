@@ -5,6 +5,7 @@ import type {
   PurchaseOrderItem,
 } from '../types';
 import { getPurchaseOrderScheduleLineUnitPrice } from './purchaseOrderSchedulePricing';
+import { isPurchaseOrderFlowV3 } from './purchaseOrderFlow';
 
 const EPSILON = 0.000001;
 
@@ -16,6 +17,19 @@ const toNumber = (value: unknown) => {
 const money = (value: number) => Math.round(toNumber(value));
 
 const getLineKey = (item: PurchaseOrderItem) => item.lineId || item.itemId;
+
+export const isIndependentMultipleDeliveryPo = (po: PurchaseOrder) =>
+  isPurchaseOrderFlowV3(po);
+
+const getRequestedQty = (item: PurchaseOrderItem) =>
+  toNumber(item.requestedQtySnapshot ?? item.qty);
+
+const getReleasedQty = (
+  po: PurchaseOrder,
+  line: PurchaseOrderDeliveryBatch['lines'][number],
+) => isIndependentMultipleDeliveryPo(po)
+  ? toNumber(line.stockPlannedQty ?? line.plannedQty)
+  : toNumber(line.plannedQty);
 
 const getActiveBatches = (batches: PurchaseOrderDeliveryBatch[] = []) =>
   batches.filter(batch => batch.status !== 'cancelled');
@@ -71,7 +85,7 @@ export const getPurchaseOrderReleaseSummary = (
     (batch.lines || []).forEach(line => {
       releasedQtyByLine.set(
         line.purchaseOrderLineId,
-        toNumber(releasedQtyByLine.get(line.purchaseOrderLineId)) + toNumber(line.plannedQty),
+        toNumber(releasedQtyByLine.get(line.purchaseOrderLineId)) + getReleasedQty(po, line),
       );
     });
   });
@@ -87,7 +101,7 @@ export const getPurchaseOrderReleaseSummary = (
     overAmount: Math.max(0, actualPlannedAmount - approvedTotalAmount),
     lineSummaries: (po.items || []).map(item => {
       const lineKey = getLineKey(item);
-      const orderedQty = toNumber(item.qty);
+      const orderedQty = isIndependentMultipleDeliveryPo(po) ? getRequestedQty(item) : toNumber(item.qty);
       const releasedQty = toNumber(releasedQtyByLine.get(lineKey));
       return {
         lineKey,
@@ -99,6 +113,27 @@ export const getPurchaseOrderReleaseSummary = (
       };
     }),
   };
+};
+
+export const getMultipleDeliveryOverageReason = (
+  po: PurchaseOrder,
+  batches: PurchaseOrderDeliveryBatch[] = [],
+): string | null => {
+  if (!isIndependentMultipleDeliveryPo(po)) return null;
+  const releasedByLine = new Map<string, number>();
+  const itemByLine = new Map((po.items || []).map(item => [getLineKey(item), item]));
+
+  for (const batch of getActiveBatches(batches)) {
+    for (const line of batch.lines || []) {
+      const nextReleased = toNumber(releasedByLine.get(line.purchaseOrderLineId)) + getReleasedQty(po, line);
+      releasedByLine.set(line.purchaseOrderLineId, nextReleased);
+      const item = itemByLine.get(line.purchaseOrderLineId);
+      if (!item || nextReleased <= getRequestedQty(item) + EPSILON) continue;
+      if (String(batch.varianceReason || '').trim()) continue;
+      return `${item.name || item.sku || item.itemId} vượt nhu cầu MR ${Math.abs(nextReleased - getRequestedQty(item)).toLocaleString('vi-VN')}; phải nhập lý do vượt nhu cầu.`;
+    }
+  }
+  return null;
 };
 
 export const getPurchaseOrderScheduleQuantityBlockReason = (

@@ -1,4 +1,14 @@
-import type { MaterialRequestFulfillmentMode, PurchaseMode, PurchaseOrder, PurchaseOrderDeliveryBatch, PurchaseOrderDeliveryLine, Transaction } from '../types';
+import type {
+  MaterialRequestFulfillmentMode,
+  PurchaseMode,
+  PurchaseOrder,
+  PurchaseOrderDeliveryBatch,
+  PurchaseOrderDeliveryLine,
+  PurchaseOrderMasterEstimate,
+  PurchaseOrderMasterEstimateLine,
+  PurchaseOrderMasterEstimateVersion,
+  Transaction,
+} from '../types';
 import { fromDb } from './dbMapping';
 import { supabase } from './supabase';
 
@@ -31,6 +41,32 @@ export interface PurchaseDeliveryCommandResult {
   deliveryCode: string;
   wmsTransactionId: string;
   qrToken: string;
+}
+
+export interface PurchaseDeliveryBatchApprovalResult {
+  deliveryBatchId: string;
+  approvalStatus: 'pending_approval' | 'revision_requested' | 'rejected' | 'approved';
+  wmsTransactionId?: string;
+  qrToken?: string;
+}
+
+export interface SavePurchaseDeliveryBatchDraftInput {
+  purchaseOrderId: string;
+  deliveryBatchId?: string | null;
+  plannedDeliveryDate?: string | null;
+  vatRate: number;
+  varianceReason?: string | null;
+  note?: string | null;
+  actorUserId: string;
+  lines: Array<{
+    purchaseOrderLineId: string;
+    itemId: string;
+    requestQty: number;
+    requestUnit: string;
+    purchaseQty: number;
+    purchaseUnit: string;
+    purchaseUnitPrice: number;
+  }>;
 }
 
 export interface ApprovePurchasePackageResult {
@@ -121,6 +157,20 @@ const assertApproveResult = (data: unknown): ApprovePurchasePackageResult => {
   };
 };
 
+const assertBatchApprovalResult = (data: unknown): PurchaseDeliveryBatchApprovalResult => {
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row || typeof row !== 'object') throw new Error('Lệnh duyệt đợt không trả về kết quả.');
+  const value = row as Record<string, unknown>;
+  const deliveryBatchId = String(readField(value, 'deliveryBatchId', 'delivery_batch_id') || '');
+  const approvalStatus = String(readField(value, 'approvalStatus', 'approval_status') || 'approved') as PurchaseDeliveryBatchApprovalResult['approvalStatus'];
+  const wmsTransactionId = String(readField(value, 'wmsTransactionId', 'wms_transaction_id') || '');
+  const qrToken = String(readField(value, 'qrToken', 'qr_token') || '');
+  if (!deliveryBatchId || !['pending_approval', 'revision_requested', 'rejected', 'approved'].includes(approvalStatus)) {
+    throw new Error('Kết quả duyệt đợt không hợp lệ.');
+  }
+  return { deliveryBatchId, approvalStatus, ...(wmsTransactionId ? { wmsTransactionId } : {}), ...(qrToken ? { qrToken } : {}) };
+};
+
 export const purchasePackageService = {
   async getDeliveryByQrToken(token: string): Promise<PurchaseDeliveryQrLookup | null> {
     const { data: batchRow, error: batchError } = await supabase
@@ -165,6 +215,12 @@ export const purchasePackageService = {
         supplierNameSnapshot: batchRow.supplier_name_snapshot || null,
         deliveryNo: Number(batchRow.delivery_no || 1),
         status: batchRow.status || 'planned',
+        approvalStatus: batchRow.approval_status || 'draft',
+        approvalRequestedBy: batchRow.approval_requested_by || null,
+        approvalRequestedAt: batchRow.approval_requested_at || null,
+        approvalDecidedBy: batchRow.approval_decided_by || null,
+        approvalDecidedAt: batchRow.approval_decided_at || null,
+        approvalDecisionNote: batchRow.approval_decision_note || null,
         vatRate: Number(batchRow.vat_rate || 0),
         qrToken: batchRow.qr_token || null,
         idempotencyKey: batchRow.idempotency_key || null,
@@ -199,6 +255,127 @@ export const purchasePackageService = {
     });
     if (error) throw error;
     return assertApproveResult(data);
+  },
+
+  async submitDeliveryBatchApproval(input: {
+    deliveryBatchId: string;
+    actorUserId: string;
+    approverUserId?: string | null;
+  }) {
+    const { data, error } = await supabase.rpc('submit_purchase_order_delivery_batch_approval_v2', {
+      p_delivery_batch_id: input.deliveryBatchId,
+      p_approver_user_id: input.approverUserId || null,
+      p_actor_user_id: input.actorUserId,
+    });
+    if (error) throw error;
+    return assertBatchApprovalResult(data);
+  },
+
+  async decideDeliveryBatchApproval(input: {
+    deliveryBatchId: string;
+    decision: 'revision_requested' | 'rejected';
+    note?: string | null;
+    actorUserId: string;
+  }) {
+    const { data, error } = await supabase.rpc('decide_purchase_order_delivery_batch_approval_v2', {
+      p_delivery_batch_id: input.deliveryBatchId,
+      p_decision: input.decision,
+      p_note: input.note || null,
+      p_actor_user_id: input.actorUserId,
+    });
+    if (error) throw error;
+    return assertBatchApprovalResult(data);
+  },
+
+  async approveDeliveryBatch(input: { deliveryBatchId: string; actorUserId: string }) {
+    const { data, error } = await supabase.rpc('approve_purchase_order_delivery_batch_v2', {
+      p_delivery_batch_id: input.deliveryBatchId,
+      p_actor_user_id: input.actorUserId,
+    });
+    if (error) throw error;
+    const result = assertBatchApprovalResult(data);
+    if (result.approvalStatus !== 'approved' || !result.qrToken) {
+      throw new Error('Đợt đã duyệt nhưng QR chưa được tạo đầy đủ.');
+    }
+    return result;
+  },
+
+  async saveDeliveryBatchDraft(input: SavePurchaseDeliveryBatchDraftInput) {
+    const { data, error } = await supabase.rpc('save_purchase_order_delivery_batch_draft_v2', {
+      p_purchase_order_id: input.purchaseOrderId,
+      p_delivery_batch_id: input.deliveryBatchId || null,
+      p_planned_delivery_date: input.plannedDeliveryDate || null,
+      p_vat_rate: input.vatRate,
+      p_variance_reason: input.varianceReason || null,
+      p_note: input.note || null,
+      p_actor_user_id: input.actorUserId,
+      p_lines: input.lines,
+    });
+    if (error) throw error;
+    return data as {
+      deliveryBatchId: string;
+      deliveryNo: number;
+      approvalStatus: 'draft';
+      lineCount: number;
+    };
+  },
+
+  async deleteDeliveryBatchDraft(input: { deliveryBatchId: string; actorUserId: string }) {
+    const { data, error } = await supabase.rpc('delete_purchase_order_delivery_batch_draft_v2', {
+      p_delivery_batch_id: input.deliveryBatchId,
+      p_actor_user_id: input.actorUserId,
+    });
+    if (error) throw error;
+    return data as { deliveryBatchId: string; deleted: boolean };
+  },
+
+  async saveMasterEstimate(input: {
+    purchaseOrderId: string;
+    isEnabled: boolean;
+    estimateLines: PurchaseOrderMasterEstimateLine[];
+    plannedPeriod?: string | null;
+    note?: string | null;
+    actorUserId: string;
+  }): Promise<PurchaseOrderMasterEstimate> {
+    const { data, error } = await supabase.rpc('save_purchase_order_master_estimate_v1', {
+      p_purchase_order_id: input.purchaseOrderId,
+      p_is_enabled: input.isEnabled,
+      p_estimate_lines: input.estimateLines,
+      p_planned_period: input.plannedPeriod || null,
+      p_note: input.note || null,
+      p_actor_user_id: input.actorUserId,
+    });
+    if (error) throw error;
+    return fromDb(data) as PurchaseOrderMasterEstimate;
+  },
+
+  async issueMasterEstimate(input: { purchaseOrderId: string; actorUserId: string }): Promise<PurchaseOrderMasterEstimateVersion> {
+    const { data, error } = await supabase.rpc('issue_purchase_order_master_estimate_v1', {
+      p_purchase_order_id: input.purchaseOrderId,
+      p_actor_user_id: input.actorUserId,
+    });
+    if (error) throw error;
+    return fromDb(data) as PurchaseOrderMasterEstimateVersion;
+  },
+
+  async getMasterEstimate(purchaseOrderId: string): Promise<PurchaseOrderMasterEstimate | null> {
+    const { data, error } = await supabase
+      .from('purchase_order_master_estimates')
+      .select('*')
+      .eq('purchase_order_id', purchaseOrderId)
+      .maybeSingle();
+    if (error) throw error;
+    return data ? fromDb(data) as PurchaseOrderMasterEstimate : null;
+  },
+
+  async listMasterEstimateVersions(purchaseOrderId: string): Promise<PurchaseOrderMasterEstimateVersion[]> {
+    const { data, error } = await supabase
+      .from('purchase_order_master_estimate_versions')
+      .select('*')
+      .eq('purchase_order_id', purchaseOrderId)
+      .order('version_no', { ascending: false });
+    if (error) throw error;
+    return (data || []).map(row => fromDb(row) as PurchaseOrderMasterEstimateVersion);
   },
 
   createDelivery(input: CreatePurchaseDeliveryInput) {

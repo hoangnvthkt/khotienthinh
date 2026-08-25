@@ -157,6 +157,26 @@ describe('purchaseOrderRequestCart', () => {
     });
   });
 
+  it('keeps the requested quantity and unit when building a multiple-delivery PO item', () => {
+    const item = buildPurchaseOrderItemFromRequestCartRow({
+      row: cartRow('mr-b', 'line-b'),
+      inventory,
+      budget,
+      supplierPatch: { vendorId: 'vendor-po', vendorName: 'NCC PO' },
+      lineId: 'po-line-multiple',
+      quantityMode: 'request',
+    });
+
+    expect(item).toMatchObject({
+      qty: 10,
+      unit: 'Cai',
+      requestedQtySnapshot: 10,
+      requestedUnitSnapshot: 'Cai',
+      purchaseUnitSnapshot: 'Hop',
+      unitPrice: 0,
+    });
+  });
+
   it('does not auto-fill the PO line note from the source request', () => {
     const item = buildPurchaseOrderItemFromRequestCartRow({
       row: cartRow('mr-b', 'line-b'),

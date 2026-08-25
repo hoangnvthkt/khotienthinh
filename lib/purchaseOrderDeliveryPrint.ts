@@ -5,6 +5,7 @@ export type PurchaseOrderDeliveryPrintLineLike = {
   poLineId?: string | null;
   itemId?: string | null;
   issuedQty?: number | string | null;
+  stockPlannedQty?: number | string | null;
   deliveryUnitPrice?: number | string | null;
   deliveryUnit?: string | null;
   unit?: string | null;
@@ -13,15 +14,18 @@ export type PurchaseOrderDeliveryPrintLineLike = {
 export type PurchaseOrderDeliveryPrintGroupLike = {
   label?: string | number | null;
   plannedDate?: string | null;
+  varianceReason?: string | null;
   lines: PurchaseOrderDeliveryPrintLineLike[];
 };
 
 export type PurchaseOrderApprovalDeliveryBatch = {
   deliveryNo?: string | number | null;
   plannedDeliveryDate?: string | null;
+  varianceReason?: string | null;
   lines: Array<{
     purchaseOrderLineId: string;
     plannedQty: number;
+    stockPlannedQty?: number;
     unitPrice?: number | null;
   }>;
 };
@@ -64,11 +68,16 @@ export const buildPurchaseOrderApprovalDeliveryBatches = (
   .map((group, index) => ({
     deliveryNo: group.label || index + 1,
     plannedDeliveryDate: group.plannedDate || null,
-    lines: group.lines.map(line => ({
-      purchaseOrderLineId: getPrintLineKey(line),
-      plannedQty: numberValue(line.issuedQty),
-      unitPrice: getPurchaseOrderDeliveryPrintLineUnitPrice(po, line),
-    })).filter(line => line.purchaseOrderLineId && line.plannedQty > 0),
+    varianceReason: group.varianceReason || null,
+    lines: group.lines.map(line => {
+      const stockPlannedQty = Number(line.stockPlannedQty);
+      return {
+        purchaseOrderLineId: getPrintLineKey(line),
+        plannedQty: numberValue(line.issuedQty),
+        ...(Number.isFinite(stockPlannedQty) && stockPlannedQty > 0 ? { stockPlannedQty } : {}),
+        unitPrice: getPurchaseOrderDeliveryPrintLineUnitPrice(po, line),
+      };
+    }).filter(line => line.purchaseOrderLineId && line.plannedQty > 0),
   }))
   .filter(batch => batch.lines.length > 0);
 

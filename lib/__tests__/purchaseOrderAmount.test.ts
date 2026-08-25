@@ -316,6 +316,32 @@ describe('purchaseOrderAmount', () => {
     expect(printLine.unitPrice).toBeCloseTo(2_783_932.34672, 5);
   });
 
+  it('uses delivery commercial amounts, not a parent reference amount, for independent multiple deliveries', () => {
+    const multiplePo: PurchaseOrder = {
+      ...po,
+      id: 'po-multiple',
+      procurementFlowVersion: 3,
+      purchaseMode: 'multiple',
+      sourceMode: 'from_request',
+      referenceGrossAmount: 999_999_999,
+      items: [{
+        lineId: 'd16', itemId: 'item-d16', sku: 'D16', name: 'Thep D16', unit: 'Cay', qty: 1187,
+        requestedQtySnapshot: 1187, requestedUnitSnapshot: 'Cay', purchaseUnitSnapshot: 'Kg', unitPrice: 0,
+      }],
+    };
+    const batch: PurchaseOrderDeliveryBatch = {
+      id: 'batch-multiple', purchaseOrderId: multiplePo.id, deliveryNo: 1, status: 'planned',
+      lines: [{
+        id: 'line-multiple', deliveryBatchId: 'batch-multiple', purchaseOrderId: multiplePo.id,
+        purchaseOrderLineId: 'd16', itemId: 'item-d16', plannedQty: 21176, stockPlannedQty: 1187,
+        unit: 'Kg', stockUnit: 'Cay', deliveryUnitPrice: 15072,
+      }],
+    };
+
+    expect(getPurchaseOrderDisplayAmount(multiplePo, [batch])).toBe(21176 * 15072);
+    expect(getPurchaseOrderPrintAmount(multiplePo, [batch])).toBe(21176 * 15072);
+  });
+
   it('shows each request package item at the edited PO price when schedule line prices are zero', () => {
     const packagePo: PurchaseOrder = {
       ...po,

@@ -184,6 +184,68 @@ describe('purchasePackageService', () => {
     expect(result.delivery).toBeUndefined();
   });
 
+  it('approves a flow v3 batch with QR but without a pre-created WMS', async () => {
+    supabaseMocks.rpc.mockResolvedValue({
+      data: { deliveryBatchId: 'batch-1', approvalStatus: 'approved', qrToken: 'pod_v3_batch_1' },
+      error: null,
+    });
+
+    const result = await purchasePackageService.approveDeliveryBatch({
+      deliveryBatchId: 'batch-1',
+      actorUserId: 'approver-1',
+    });
+
+    expect(supabaseMocks.rpc).toHaveBeenCalledWith('approve_purchase_order_delivery_batch_v2', {
+      p_delivery_batch_id: 'batch-1',
+      p_actor_user_id: 'approver-1',
+    });
+    expect(result).toEqual({
+      deliveryBatchId: 'batch-1', approvalStatus: 'approved', qrToken: 'pod_v3_batch_1',
+    });
+  });
+
+  it('sends the first selected approver with a flow v3 batch submission', async () => {
+    supabaseMocks.rpc.mockResolvedValue({
+      data: { deliveryBatchId: 'batch-1', approvalStatus: 'pending_approval' },
+      error: null,
+    });
+
+    await purchasePackageService.submitDeliveryBatchApproval({
+      deliveryBatchId: 'batch-1', actorUserId: 'buyer-1', approverUserId: 'approver-1',
+    });
+
+    expect(supabaseMocks.rpc).toHaveBeenCalledWith('submit_purchase_order_delivery_batch_approval_v2', {
+      p_delivery_batch_id: 'batch-1',
+      p_approver_user_id: 'approver-1',
+      p_actor_user_id: 'buyer-1',
+    });
+  });
+
+  it('saves independent request and purchase quantities in a draft batch', async () => {
+    supabaseMocks.rpc.mockResolvedValue({
+      data: { deliveryBatchId: 'batch-1', deliveryNo: 1, approvalStatus: 'draft', lineCount: 1 },
+      error: null,
+    });
+
+    await purchasePackageService.saveDeliveryBatchDraft({
+      purchaseOrderId: 'po-1', deliveryBatchId: null, plannedDeliveryDate: null,
+      vatRate: 0, varianceReason: null, note: null, actorUserId: 'buyer-1',
+      lines: [{
+        purchaseOrderLineId: 'po-line-1', itemId: 'item-1', requestQty: 1187,
+        requestUnit: 'Cây', purchaseQty: 21176, purchaseUnit: 'Kg', purchaseUnitPrice: 15072,
+      }],
+    });
+
+    expect(supabaseMocks.rpc).toHaveBeenCalledWith('save_purchase_order_delivery_batch_draft_v2', {
+      p_purchase_order_id: 'po-1', p_delivery_batch_id: null, p_planned_delivery_date: null,
+      p_vat_rate: 0, p_variance_reason: null, p_note: null, p_actor_user_id: 'buyer-1',
+      p_lines: [{
+        purchaseOrderLineId: 'po-line-1', itemId: 'item-1', requestQty: 1187,
+        requestUnit: 'Cây', purchaseQty: 21176, purchaseUnit: 'Kg', purchaseUnitPrice: 15072,
+      }],
+    });
+  });
+
   it('cancels an unreceived delivery with its actor and reason', async () => {
     supabaseMocks.rpc.mockResolvedValue({ data: null, error: null });
 

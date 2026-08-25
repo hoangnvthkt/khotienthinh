@@ -35,6 +35,7 @@ export type PurchaseOrderRequestCartGroup<T extends PurchaseOrderRequestCartRow 
 export type PurchaseOrderRequestCartGroupSelectionState = 'none' | 'partial' | 'all';
 
 type SupplierPatch = Pick<PurchaseOrderItem, 'vendorId' | 'vendorName'>;
+type PurchaseOrderRequestQuantityMode = 'purchase' | 'request';
 
 const newId = () =>
   globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -115,6 +116,7 @@ export const buildPurchaseOrderItemFromRequestCartRow = ({
   work,
   supplierPatch,
   lineId = newId(),
+  quantityMode = 'purchase',
 }: {
   row: PurchaseOrderRequestCartRow;
   inventory?: InventoryItem;
@@ -122,6 +124,7 @@ export const buildPurchaseOrderItemFromRequestCartRow = ({
   work?: ProjectWorkBoqItem;
   supplierPatch: SupplierPatch;
   lineId?: string;
+  quantityMode?: PurchaseOrderRequestQuantityMode;
 }): PurchaseOrderItem => {
   const unitSnapshot = inventory?.unit || row.line.unitSnapshot || budget?.unit || '';
   const unitPatch = buildPoUnitSnapshot(inventory);
@@ -142,12 +145,18 @@ export const buildPurchaseOrderItemFromRequestCartRow = ({
   } as PurchaseOrderItem;
 
   const stockUnitPrice = toNumber(inventory?.priceIn || budget?.budgetUnitPrice || 0);
+  const requestedQty = toNumber(row.remainingQty);
+  const requestedUnit = unitSnapshot;
+  const useRequestedQuantity = quantityMode === 'request';
 
   return {
     ...conversionLine,
     ...supplierPatch,
-    qty: poLineStockToPurchaseQty(conversionLine, row.remainingQty, inventory),
-    unitPrice: stockUnitPriceToPurchaseUnitPrice(stockUnitPrice, inventory),
+    qty: useRequestedQuantity ? requestedQty : poLineStockToPurchaseQty(conversionLine, requestedQty, inventory),
+    unit: useRequestedQuantity ? requestedUnit : purchaseUnitSnapshot,
+    unitPrice: useRequestedQuantity ? 0 : stockUnitPriceToPurchaseUnitPrice(stockUnitPrice, inventory),
+    requestedQtySnapshot: requestedQty,
+    requestedUnitSnapshot: requestedUnit,
     receivedQty: 0,
     neededDate: row.line.neededDate || '',
     workBoqItemId: row.line.workBoqItemId || null,
