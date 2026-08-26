@@ -43,7 +43,13 @@ create temp table practical_po_smoke_ids (
   po_number text not null,
   po_line_id text not null,
   batch_id uuid not null,
-  delivery_line_id uuid not null
+  delivery_line_id uuid not null,
+  second_batch_id uuid not null,
+  second_delivery_line_id uuid not null,
+  single_item_id text not null,
+  single_po_id text not null,
+  single_po_number text not null,
+  single_po_line_id text not null
 ) on commit drop;
 
 grant select on table practical_po_smoke_ids to authenticated;
@@ -66,7 +72,13 @@ values (
   'PO-' || (1000000000 + floor(random() * 899999999)::bigint)::text,
   'practical-po-line-' || gen_random_uuid()::text,
   gen_random_uuid(),
-  gen_random_uuid()
+  gen_random_uuid(),
+  gen_random_uuid(),
+  gen_random_uuid(),
+  'practical-po-single-item-' || gen_random_uuid()::text,
+  'practical-po-single-' || gen_random_uuid()::text,
+  'PO-' || (1000000000 + floor(random() * 899999999)::bigint)::text,
+  'practical-po-single-line-' || gen_random_uuid()::text
 );
 
 insert into public.users (
@@ -114,6 +126,14 @@ insert into public.items (
   price_in, price_out, min_stock
 )
 select item_id, 'PPO-' || substring(md5(item_id), 1, 12), 'Practical PO Item',
+       'Smoke', 'Kg', 'Kg', 1, 10000, 10000, 0
+from practical_po_smoke_ids;
+
+insert into public.items (
+  id, sku, name, category, unit, purchase_unit, purchase_conversion_factor,
+  price_in, price_out, min_stock
+)
+select single_item_id, 'PPS-' || substring(md5(single_item_id), 1, 12), 'Practical Single PO Item',
        'Smoke', 'Kg', 'Kg', 1, 10000, 10000, 0
 from practical_po_smoke_ids;
 
@@ -175,6 +195,10 @@ insert into app_private.purchase_order_number_registry(po_number)
 select po_number from practical_po_smoke_ids
 on conflict (po_number) do nothing;
 
+insert into app_private.purchase_order_number_registry(po_number)
+select single_po_number from practical_po_smoke_ids
+on conflict (po_number) do nothing;
+
 insert into public.purchase_orders (
   id, project_id, construction_site_id, vendor_id, vendor_name, po_number, items,
   total_amount, approved_total_amount, vat_rate, purchase_mode, fulfillment_mode,
@@ -202,6 +226,33 @@ select
   current_date::text, 'confirmed', 'from_request', warehouse_id, actor_id::text, now()
 from practical_po_smoke_ids;
 
+insert into public.purchase_orders (
+  id, project_id, construction_site_id, vendor_id, vendor_name, po_number, items,
+  total_amount, approved_total_amount, vat_rate, purchase_mode, fulfillment_mode,
+  reference_gross_amount, order_date, status, source_mode, target_warehouse_id,
+  created_by_id, created_at
+)
+select
+  single_po_id, project_id, site_id, supplier_id, 'Practical PO Supplier', single_po_number,
+  jsonb_build_array(jsonb_build_object(
+    'lineId', single_po_line_id,
+    'itemId', single_item_id,
+    'sku', 'PPS-SMOKE',
+    'name', 'Practical Single PO Item',
+    'unit', 'Kg',
+    'unitSnapshot', 'Kg',
+    'purchaseUnitSnapshot', 'Kg',
+    'stockUnitSnapshot', 'Kg',
+    'purchaseConversionFactor', 1,
+    'requestedQtySnapshot', 100,
+    'qty', 100,
+    'unitPrice', 10000,
+    'receivedQty', 0
+  )),
+  1000000, 1000000, 10, 'single', 'RECEIVE_TO_STOCK', 1100000,
+  current_date::text, 'sent', 'from_request', warehouse_id, actor_id::text, now()
+from practical_po_smoke_ids;
+
 insert into public.purchase_order_delivery_batches (
   id, purchase_order_id, project_id, construction_site_id, supplier_id,
   supplier_name_snapshot, delivery_no, planned_delivery_date, status,
@@ -212,12 +263,30 @@ select batch_id, po_id, project_id, site_id, supplier_id,
        'RECEIVE_TO_STOCK', 10, 'draft', actor_id, 'Practical PO smoke batch'
 from practical_po_smoke_ids;
 
+insert into public.purchase_order_delivery_batches (
+  id, purchase_order_id, project_id, construction_site_id, supplier_id,
+  supplier_name_snapshot, delivery_no, planned_delivery_date, status,
+  fulfillment_mode, vat_rate, approval_status, variance_reason, created_by, note
+)
+select second_batch_id, po_id, project_id, site_id, supplier_id,
+       'Practical PO Supplier', 2, current_date + 1, 'planned',
+       'RECEIVE_TO_STOCK', 5, 'draft', 'Dat vuot nhu cau de du phong hao hut', actor_id, 'Second practical PO smoke batch'
+from practical_po_smoke_ids;
+
 insert into public.purchase_order_delivery_lines (
   id, delivery_batch_id, purchase_order_id, purchase_order_line_id, item_id,
   planned_qty, unit, delivery_unit_price, stock_planned_qty, stock_unit
 )
 select delivery_line_id, batch_id, po_id, po_line_id, item_id,
        100, 'Kg', 10000, 100, 'Kg'
+from practical_po_smoke_ids;
+
+insert into public.purchase_order_delivery_lines (
+  id, delivery_batch_id, purchase_order_id, purchase_order_line_id, item_id,
+  planned_qty, unit, delivery_unit_price, stock_planned_qty, stock_unit
+)
+select second_delivery_line_id, second_batch_id, po_id, po_line_id, item_id,
+       50, 'Kg', 12000, 50, 'Kg'
 from practical_po_smoke_ids;
 
 set role authenticated;
@@ -242,6 +311,7 @@ do $$
 declare
   v_ids practical_po_smoke_ids%rowtype := (select ids from practical_po_smoke_ids ids);
   v_submit_result jsonb;
+  v_second_submit_result jsonb;
 begin
   v_submit_result := public.submit_material_po_batch(
     v_ids.batch_id,
@@ -250,6 +320,14 @@ begin
   );
   if v_submit_result ->> 'approvalStatus' <> 'pending_approval' then
     raise exception 'Batch submit failed: %', v_submit_result;
+  end if;
+  v_second_submit_result := public.submit_material_po_batch(
+    v_ids.second_batch_id,
+    v_ids.approver_id,
+    v_ids.actor_id
+  );
+  if v_second_submit_result ->> 'approvalStatus' <> 'pending_approval' then
+    raise exception 'Second batch submit failed: %', v_second_submit_result;
   end if;
 end $$;
 
@@ -261,6 +339,7 @@ declare
   v_ids practical_po_smoke_ids%rowtype := (select ids from practical_po_smoke_ids ids);
   v_first_result jsonb;
   v_replayed_result jsonb;
+  v_second_result jsonb;
   v_first_wms_id text;
   v_replayed_wms_id text;
 begin
@@ -271,6 +350,22 @@ begin
 
   if v_first_wms_id is null or v_first_wms_id <> v_replayed_wms_id then
     raise exception 'Batch approval is not idempotent: %, %', v_first_result, v_replayed_result;
+  end if;
+
+  v_second_result := public.approve_material_po_batch(v_ids.second_batch_id, v_ids.approver_id);
+  if nullif(v_second_result ->> 'wmsTransactionId', '') is null then
+    raise exception 'Second batch approval did not create WMS: %', v_second_result;
+  end if;
+  if not exists (
+    select 1
+    from public.purchase_order_delivery_batches batch
+    join public.purchase_order_delivery_lines line on line.delivery_batch_id = batch.id
+    where batch.id = v_ids.second_batch_id
+      and batch.vat_rate = 5
+      and line.planned_qty = 50
+      and line.delivery_unit_price = 12000
+  ) then
+    raise exception 'Second batch did not preserve its own quantity, price and VAT.';
   end if;
 end $$;
 
@@ -284,6 +379,7 @@ declare
   v_stock_qty numeric;
   v_finalize_result jsonb;
   v_finalize_replay jsonb;
+  v_second_wms_id text;
 begin
   select wms_transaction_id into v_wms_id
   from public.purchase_order_delivery_batches
@@ -360,6 +456,132 @@ begin
   where item.id = v_ids.item_id;
   if v_stock_qty <> 101 then
     raise exception 'Receipt replay changed stock a second time: %', v_stock_qty;
+  end if;
+
+  select wms_transaction_id into v_second_wms_id
+  from public.purchase_order_delivery_batches
+  where id = v_ids.second_batch_id;
+
+  perform public.approve_material_po_quality(
+    v_ids.second_batch_id,
+    v_second_wms_id,
+    v_ids.actor_id,
+    'partial',
+    jsonb_build_array(jsonb_build_object(
+      'deliveryLineId', v_ids.second_delivery_line_id,
+      'itemId', v_ids.item_id,
+      'deliveredPurchaseQty', 48,
+      'acceptedPurchaseQty', 47,
+      'deliveredStockQty', 48,
+      'acceptedStockQty', 47,
+      'varianceReason', 'Giao thieu 2 va loai 1 don vi khong dat'
+    )),
+    '[]'::jsonb
+  );
+
+  select coalesce((coalesce(item.stock_by_warehouse, '{}'::jsonb) ->> v_ids.warehouse_id)::numeric, 0)
+  into v_stock_qty
+  from public.items item
+  where item.id = v_ids.item_id;
+  if v_stock_qty <> 101 then
+    raise exception 'Second quality approval changed stock before finalization: %', v_stock_qty;
+  end if;
+
+  perform public.finalize_material_po_receipt(
+    v_ids.second_batch_id,
+    v_second_wms_id,
+    v_ids.actor_id
+  );
+  select coalesce((coalesce(item.stock_by_warehouse, '{}'::jsonb) ->> v_ids.warehouse_id)::numeric, 0)
+  into v_stock_qty
+  from public.items item
+  where item.id = v_ids.item_id;
+  if v_stock_qty <> 148 then
+    raise exception 'Two multiple-delivery receipts should aggregate to 148 stock units: %', v_stock_qty;
+  end if;
+end $$;
+
+select pg_temp.practical_po_set_user(approver_id)
+from practical_po_smoke_ids;
+
+do $$
+declare
+  v_ids practical_po_smoke_ids%rowtype := (select ids from practical_po_smoke_ids ids);
+  v_approval jsonb;
+  v_replay jsonb;
+begin
+  v_approval := public.approve_single_material_po(
+    v_ids.single_po_id,
+    v_ids.approver_id,
+    v_ids.second_batch_id
+  );
+  v_replay := public.approve_single_material_po(
+    v_ids.single_po_id,
+    v_ids.approver_id,
+    v_ids.second_batch_id
+  );
+  if v_approval ->> 'status' <> 'confirmed'
+     or v_approval #>> '{delivery,wmsTransactionId}' is null
+     or v_approval #>> '{delivery,wmsTransactionId}' <> v_replay #>> '{delivery,wmsTransactionId}' then
+    raise exception 'Single-order approval is not complete and idempotent: %, %', v_approval, v_replay;
+  end if;
+end $$;
+
+select pg_temp.practical_po_set_user(actor_id)
+from practical_po_smoke_ids;
+
+do $$
+declare
+  v_ids practical_po_smoke_ids%rowtype := (select ids from practical_po_smoke_ids ids);
+  v_batch public.purchase_order_delivery_batches%rowtype;
+  v_line public.purchase_order_delivery_lines%rowtype;
+  v_stock_qty numeric;
+  v_finalize jsonb;
+begin
+  select * into v_batch
+  from public.purchase_order_delivery_batches
+  where purchase_order_id = v_ids.single_po_id
+    and status <> 'cancelled'
+  order by delivery_no
+  limit 1;
+  select * into v_line
+  from public.purchase_order_delivery_lines
+  where delivery_batch_id = v_batch.id
+  limit 1;
+
+  perform public.approve_material_po_quality(
+    v_batch.id,
+    v_batch.wms_transaction_id,
+    v_ids.actor_id,
+    'partial',
+    jsonb_build_array(jsonb_build_object(
+      'deliveryLineId', v_line.id,
+      'itemId', v_ids.single_item_id,
+      'deliveredPurchaseQty', 95,
+      'acceptedPurchaseQty', 90,
+      'deliveredStockQty', 95,
+      'acceptedStockQty', 90,
+      'varianceReason', 'Nha cung cap giao thieu va co hang khong dat'
+    )),
+    '[]'::jsonb
+  );
+
+  select coalesce((coalesce(item.stock_by_warehouse, '{}'::jsonb) ->> v_ids.warehouse_id)::numeric, 0)
+  into v_stock_qty
+  from public.items item
+  where item.id = v_ids.single_item_id;
+  if v_stock_qty <> 0 then
+    raise exception 'Single-order quality approval changed stock: %', v_stock_qty;
+  end if;
+
+  v_finalize := public.finalize_material_po_receipt(v_batch.id, v_batch.wms_transaction_id, v_ids.actor_id);
+  select coalesce((coalesce(item.stock_by_warehouse, '{}'::jsonb) ->> v_ids.warehouse_id)::numeric, 0)
+  into v_stock_qty
+  from public.items item
+  where item.id = v_ids.single_item_id;
+  if v_stock_qty <> 90
+     or not exists (select 1 from public.purchase_orders where id = v_ids.single_po_id and status = 'delivered') then
+    raise exception 'Single short receipt should add 90 and complete the order: %, %', v_stock_qty, v_finalize;
   end if;
 end $$;
 
