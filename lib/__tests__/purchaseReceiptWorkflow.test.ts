@@ -57,14 +57,18 @@ describe('purchase receipt workflow', () => {
       {
         deliveryLineId: 'delivery-line-1',
         itemId: 'item-1',
+        deliveredPurchaseQty: 8,
         acceptedPurchaseQty: 8,
+        deliveredStockQty: 16,
         acceptedStockQty: 16,
         varianceReason: 'Thiếu hàng',
       },
       {
         deliveryLineId: 'delivery-line-2',
         itemId: 'item-2',
+        deliveredPurchaseQty: 5,
         acceptedPurchaseQty: 5,
+        deliveredStockQty: 5,
         acceptedStockQty: 5,
         varianceReason: null,
       },

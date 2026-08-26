@@ -55,6 +55,61 @@ describe('purchasePackageService', () => {
     supabaseMocks.from.mockReset();
   });
 
+  it('submits one multiple-delivery batch to its selected approver', async () => {
+    supabaseMocks.rpc.mockResolvedValue({
+      data: { deliveryBatchId: 'batch-1', approvalStatus: 'pending_approval' },
+      error: null,
+    });
+
+    await purchasePackageService.submitBatch({
+      deliveryBatchId: 'batch-1',
+      approverUserId: 'approver-1',
+      actorUserId: 'buyer-1',
+    });
+
+    expect(supabaseMocks.rpc).toHaveBeenCalledWith('submit_material_po_batch', {
+      p_delivery_batch_id: 'batch-1',
+      p_approver_user_id: 'approver-1',
+      p_actor_user_id: 'buyer-1',
+    });
+  });
+
+  it('returns a pending batch for revision through the neutral decision command', async () => {
+    supabaseMocks.rpc.mockResolvedValue({
+      data: { deliveryBatchId: 'batch-1', approvalStatus: 'revision_requested' },
+      error: null,
+    });
+
+    await purchasePackageService.decideBatch({
+      deliveryBatchId: 'batch-1',
+      decision: 'revision_requested',
+      note: 'Bổ sung báo giá',
+      actorUserId: 'approver-1',
+    });
+
+    expect(supabaseMocks.rpc).toHaveBeenCalledWith('decide_material_po_batch', {
+      p_delivery_batch_id: 'batch-1',
+      p_decision: 'revision_requested',
+      p_note: 'Bổ sung báo giá',
+      p_actor_user_id: 'approver-1',
+    });
+  });
+
+  it('approves one batch and returns its idempotent WMS/QR result', async () => {
+    supabaseMocks.rpc.mockResolvedValue({ data: commandResult, error: null });
+
+    const result = await purchasePackageService.approveBatch({
+      deliveryBatchId: 'batch-1',
+      actorUserId: 'approver-1',
+    });
+
+    expect(supabaseMocks.rpc).toHaveBeenCalledWith('approve_material_po_batch', {
+      p_delivery_batch_id: 'batch-1',
+      p_actor_user_id: 'approver-1',
+    });
+    expect(result).toEqual(commandResult);
+  });
+
   it('sends one create command containing delivery, WMS, and QR data', async () => {
     supabaseMocks.rpc.mockResolvedValue({ data: commandResult, error: null });
 
@@ -151,37 +206,18 @@ describe('purchasePackageService', () => {
       error: null,
     });
 
-    const result = await purchasePackageService.approvePackage({
+    const result = await purchasePackageService.approveSingle({
       purchaseOrderId: 'po-1',
       actorUserId: 'leader-1',
       idempotencyKey: '11111111-1111-4111-8111-111111111111',
     });
 
-    expect(supabaseMocks.rpc).toHaveBeenCalledWith('approve_purchase_package_and_prepare_single_batch_v2', {
+    expect(supabaseMocks.rpc).toHaveBeenCalledWith('approve_single_material_po', {
       p_purchase_order_id: 'po-1',
       p_actor_user_id: 'leader-1',
       p_idempotency_key: '11111111-1111-4111-8111-111111111111',
     });
     expect(result.delivery?.deliveryCode).toBe('PO01-01');
-  });
-
-  it('does not expect a delivery for a multiple package approval', async () => {
-    supabaseMocks.rpc.mockResolvedValue({
-      data: {
-        purchaseOrderId: 'po-2',
-        status: 'confirmed',
-        purchaseMode: 'multiple',
-      },
-      error: null,
-    });
-
-    const result = await purchasePackageService.approvePackage({
-      purchaseOrderId: 'po-2',
-      actorUserId: 'leader-1',
-      idempotencyKey: '22222222-2222-4222-8222-222222222222',
-    });
-
-    expect(result.delivery).toBeUndefined();
   });
 
   it('cancels an unreceived delivery with its actor and reason', async () => {

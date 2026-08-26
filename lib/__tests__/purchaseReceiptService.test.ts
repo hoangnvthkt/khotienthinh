@@ -37,14 +37,16 @@ describe('purchaseReceiptService', () => {
       lines: [{
         deliveryLineId: 'delivery-line-1',
         itemId: 'item-1',
-        acceptedPurchaseQty: 9.5,
-        acceptedStockQty: 68.4,
-        varianceReason: 'NCC giao thiếu',
+        deliveredPurchaseQty: 103,
+        acceptedPurchaseQty: 101,
+        deliveredStockQty: 103,
+        acceptedStockQty: 101,
+        varianceReason: 'Cân thực tế',
       }],
       attachments: [],
     });
 
-    expect(supabaseMocks.rpc).toHaveBeenCalledWith('approve_receipt_quality_v2', {
+    expect(supabaseMocks.rpc).toHaveBeenCalledWith('approve_material_po_quality', {
       p_delivery_batch_id: 'batch-1',
       p_wms_transaction_id: 'tx-1',
       p_actor_user_id: 'keeper-1',
@@ -52,9 +54,11 @@ describe('purchaseReceiptService', () => {
       p_lines: [{
         deliveryLineId: 'delivery-line-1',
         itemId: 'item-1',
-        acceptedPurchaseQty: 9.5,
-        acceptedStockQty: 68.4,
-        varianceReason: 'NCC giao thiếu',
+        deliveredPurchaseQty: 103,
+        acceptedPurchaseQty: 101,
+        deliveredStockQty: 103,
+        acceptedStockQty: 101,
+        varianceReason: 'Cân thực tế',
       }],
       p_attachments: [],
     });
@@ -71,13 +75,13 @@ describe('purchaseReceiptService', () => {
       error: null,
     });
 
-    const result = await purchaseReceiptService.finalize({
+    const result = await purchaseReceiptService.finalizeReceipt({
       deliveryBatchId: 'batch-1',
       wmsTransactionId: 'tx-1',
       actorUserId: 'keeper-1',
     });
 
-    expect(supabaseMocks.rpc).toHaveBeenCalledWith('finalize_purchase_receipt_v2', {
+    expect(supabaseMocks.rpc).toHaveBeenCalledWith('finalize_material_po_receipt', {
       p_delivery_batch_id: 'batch-1',
       p_wms_transaction_id: 'tx-1',
       p_actor_user_id: 'keeper-1',

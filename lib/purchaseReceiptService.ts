@@ -2,20 +2,24 @@ import { TransactionStatus, type WmsTransactionAttachment } from '../types';
 import type { PurchaseDeliveryUiStatus } from './purchasePackageDomain';
 import { supabase } from './supabase';
 
-export interface ReceiptQualityLineInput {
+export interface MaterialPoQualityLineInput {
   deliveryLineId: string;
   itemId: string;
+  deliveredPurchaseQty: number;
   acceptedPurchaseQty: number;
+  deliveredStockQty: number;
   acceptedStockQty: number;
   varianceReason?: string | null;
 }
+
+export type ReceiptQualityLineInput = MaterialPoQualityLineInput;
 
 export interface ApproveReceiptQualityInput {
   deliveryBatchId: string;
   wmsTransactionId: string;
   actorUserId: string;
   qualityResult: 'passed' | 'partial' | 'rejected';
-  lines: ReceiptQualityLineInput[];
+  lines: MaterialPoQualityLineInput[];
   attachments: WmsTransactionAttachment[];
 }
 
@@ -77,7 +81,7 @@ const assertReceiptCommandResult = (
 
 export const purchaseReceiptService = {
   async approveQuality(input: ApproveReceiptQualityInput): Promise<ReceiptCommandResult> {
-    const { data, error } = await supabase.rpc('approve_receipt_quality_v2', {
+    const { data, error } = await supabase.rpc('approve_material_po_quality', {
       p_delivery_batch_id: input.deliveryBatchId,
       p_wms_transaction_id: input.wmsTransactionId,
       p_actor_user_id: input.actorUserId,
@@ -89,17 +93,25 @@ export const purchaseReceiptService = {
     return assertReceiptCommandResult(data, input);
   },
 
-  async finalize(input: {
+  async finalizeReceipt(input: {
     deliveryBatchId: string;
     wmsTransactionId: string;
     actorUserId: string;
   }): Promise<ReceiptCommandResult> {
-    const { data, error } = await supabase.rpc('finalize_purchase_receipt_v2', {
+    const { data, error } = await supabase.rpc('finalize_material_po_receipt', {
       p_delivery_batch_id: input.deliveryBatchId,
       p_wms_transaction_id: input.wmsTransactionId,
       p_actor_user_id: input.actorUserId,
     });
     if (error) throw error;
     return assertReceiptCommandResult(data, input);
+  },
+
+  async finalize(input: {
+    deliveryBatchId: string;
+    wmsTransactionId: string;
+    actorUserId: string;
+  }): Promise<ReceiptCommandResult> {
+    return this.finalizeReceipt(input);
   },
 };

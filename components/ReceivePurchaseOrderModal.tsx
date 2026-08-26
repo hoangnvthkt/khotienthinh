@@ -190,7 +190,9 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
             return {
               deliveryLineId: line.deliveryLineId || '',
               itemId: line.itemId,
+              deliveredPurchaseQty: acceptedPurchaseQty,
               acceptedPurchaseQty,
+              deliveredStockQty: acceptedStockQty,
               acceptedStockQty,
               varianceReason: (varianceReasons[line.key] || '').trim() || null,
             };

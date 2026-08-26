@@ -1,5 +1,5 @@
 import { TransactionStatus, type Transaction } from '../types';
-import type { ReceiptQualityLineInput } from './purchaseReceiptService';
+import type { MaterialPoQualityLineInput } from './purchaseReceiptService';
 
 export type PurchaseReceiptStep = 'quality' | 'confirm' | 'completed';
 
@@ -21,7 +21,7 @@ export interface PurchaseReceiptQuantityLine {
 
 export interface PurchaseReceiptQualityPayload {
   qualityResult: 'passed' | 'partial' | 'rejected';
-  lines: ReceiptQualityLineInput[];
+  lines: MaterialPoQualityLineInput[];
 }
 
 export const buildPurchaseReceiptQualityPayloadFromTransaction = (
@@ -29,7 +29,7 @@ export const buildPurchaseReceiptQualityPayloadFromTransaction = (
   quantityLines: PurchaseReceiptQuantityLine[],
 ): PurchaseReceiptQualityPayload => {
   const lineByIndex = new Map(quantityLines.map(line => [line.index, line]));
-  const lines = transaction.items.map((item, index): ReceiptQualityLineInput => {
+  const lines = transaction.items.map((item, index): MaterialPoQualityLineInput => {
     const draft = lineByIndex.get(index);
     const acceptedStockQty = Number(draft?.quantity ?? item.quantity ?? 0);
     const stockBaselineQty = Number(item.quantity || 0);
@@ -40,7 +40,9 @@ export const buildPurchaseReceiptQualityPayloadFromTransaction = (
     return {
       deliveryLineId: item.purchaseOrderDeliveryLineId || '',
       itemId: item.itemId,
+      deliveredPurchaseQty: acceptedPurchaseQty,
       acceptedPurchaseQty,
+      deliveredStockQty: acceptedStockQty,
       acceptedStockQty,
       varianceReason: draft?.reason.trim() || null,
     };

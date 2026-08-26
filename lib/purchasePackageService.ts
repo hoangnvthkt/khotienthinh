@@ -40,6 +40,11 @@ export interface ApprovePurchasePackageResult {
   delivery?: PurchaseDeliveryCommandResult;
 }
 
+export interface MaterialPoBatchDecisionResult {
+  deliveryBatchId: string;
+  approvalStatus: 'pending_approval' | 'approved' | 'revision_requested' | 'rejected';
+}
+
 export interface PurchaseDeliveryQrLookup {
   purchaseOrder: PurchaseOrder;
   deliveryBatch: PurchaseOrderDeliveryBatch;
@@ -147,7 +152,9 @@ export const purchasePackageService = {
     const lines = (lineRows || []).map(row => ({
       ...(fromDb(row) as PurchaseOrderDeliveryLine),
       plannedQty: Number(row.planned_qty || 0),
+      deliveredQty: Number(row.delivered_qty ?? row.accepted_qty ?? 0),
       acceptedQty: Number(row.accepted_qty || 0),
+      deliveredStockQty: Number(row.delivered_stock_qty ?? row.accepted_stock_qty ?? 0),
       acceptedStockQty: Number(row.accepted_stock_qty || 0),
       returnedQty: Number(row.returned_qty || 0),
       deliveryUnitPrice: Number(row.delivery_unit_price || 0),
@@ -192,7 +199,55 @@ export const purchasePackageService = {
     actorUserId: string;
     idempotencyKey: string;
   }): Promise<ApprovePurchasePackageResult> {
-    const { data, error } = await supabase.rpc('approve_purchase_package_and_prepare_single_batch_v2', {
+    return this.approveSingle(input);
+  },
+
+  async submitBatch(input: {
+    deliveryBatchId: string;
+    approverUserId: string;
+    actorUserId: string;
+  }): Promise<MaterialPoBatchDecisionResult> {
+    const { data, error } = await supabase.rpc('submit_material_po_batch', {
+      p_delivery_batch_id: input.deliveryBatchId,
+      p_approver_user_id: input.approverUserId,
+      p_actor_user_id: input.actorUserId,
+    });
+    if (error) throw error;
+    return data as MaterialPoBatchDecisionResult;
+  },
+
+  async decideBatch(input: {
+    deliveryBatchId: string;
+    decision: 'revision_requested' | 'rejected';
+    note?: string | null;
+    actorUserId: string;
+  }): Promise<MaterialPoBatchDecisionResult> {
+    const { data, error } = await supabase.rpc('decide_material_po_batch', {
+      p_delivery_batch_id: input.deliveryBatchId,
+      p_decision: input.decision,
+      p_note: input.note ?? null,
+      p_actor_user_id: input.actorUserId,
+    });
+    if (error) throw error;
+    return data as MaterialPoBatchDecisionResult;
+  },
+
+  async approveBatch(input: {
+    deliveryBatchId: string;
+    actorUserId: string;
+  }): Promise<PurchaseDeliveryCommandResult> {
+    return runDeliveryCommand('approve_material_po_batch', {
+      p_delivery_batch_id: input.deliveryBatchId,
+      p_actor_user_id: input.actorUserId,
+    });
+  },
+
+  async approveSingle(input: {
+    purchaseOrderId: string;
+    actorUserId: string;
+    idempotencyKey: string;
+  }): Promise<ApprovePurchasePackageResult> {
+    const { data, error } = await supabase.rpc('approve_single_material_po', {
       p_purchase_order_id: input.purchaseOrderId,
       p_actor_user_id: input.actorUserId,
       p_idempotency_key: input.idempotencyKey,
