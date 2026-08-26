@@ -2786,7 +2786,9 @@ export interface PurchaseOrderDeliveryLine {
   purchaseOrderLineId: string;
   itemId: string;
   plannedQty: number;
+  deliveredQty?: number;
   acceptedQty?: number;
+  deliveredStockQty?: number;
   acceptedStockQty?: number;
   returnedQty?: number;
   unit?: string | null;
