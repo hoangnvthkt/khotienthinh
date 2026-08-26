@@ -1,339 +1,329 @@
-# Thiết kế đơn giản hóa MR → PO → đợt đặt hàng → nhập kho
+# Thiết kế tối giản MR -> PO -> đợt mua -> nhập kho
 
-**Ngày:** 2026-08-25  
-**Trạng thái:** Đã thống nhất nghiệp vụ, chờ duyệt đặc tả trước khi lập kế hoạch triển khai
+**Ngày:** 2026-08-26
+**Trạng thái:** Đã thống nhất nghiệp vụ, chờ xác nhận bản ghi trước khi triển khai
 
 ## 1. Mục tiêu
 
-Thiết kế một luồng mua hàng thống nhất cho hai trường hợp:
+Chuẩn hóa luồng mua hàng hiện tại theo cách vận hành thực tế:
 
-- mua một lần, là trường hợp phổ biến;
-- mua chia nhiều đợt, chủ yếu áp dụng cho sắt thép hoặc vật tư có khối lượng, giá và thời điểm giao thay đổi.
+- mua một lần là luồng mặc định và không hiển thị khái niệm đợt;
+- mua nhiều lần dùng một PO tổng để quản lý, mỗi đợt là một quyết định mua mới;
+- mỗi đợt được giao đủ trong một chuyến và kho chỉ nhận đúng một lần;
+- một PO chỉ thuộc một nhà cung cấp;
+- một QR ổn định ở cấp PO được dùng xuyên suốt các đợt;
+- giao diện nhập liệu chỉ giữ các trường cần cho quyết định mua và nhận kho.
 
-Luồng phải giữ MR làm nhu cầu gốc, cho phép mua thiếu hoặc mua vượt có kiểm soát, không dùng hệ số quy đổi để tự sinh số lượng và ghi nhận chính xác số lượng thực nhập. Trường hợp mua một lần phải có ít thao tác nhất; trường hợp nhiều đợt vẫn phải theo dõi được tổng nhu cầu trên cùng một PO gốc.
+Luồng chính:
 
-Phạm vi nghiệp vụ:
+`MR -> PO -> duyệt mua -> kho xác nhận số lượng/chất lượng -> nhập kho`
 
-`BOQ kế hoạch → MR → PO gốc → đợt đặt hàng → lần nhập kho → báo cáo nhập/xuất/tồn so với BOQ`
+Với PO nhiều lần:
 
-Phần xuất kho giữ nguyên luồng hiện tại và không liên kết với MR hoặc từng dòng BOQ.
+`MR -> PO tổng -> đợt mua 01/02/... -> duyệt từng đợt -> nhận một lần từng đợt`
 
-## 2. Nguyên tắc nguồn dữ liệu
+Không sử dụng khái niệm hợp đồng khung hoặc đề nghị duyệt chủ trương tổng.
 
-### 2.1. BOQ
+## 2. Các chứng từ và vai trò
 
-BOQ là kế hoạch tổng theo công trình và vật tư. BOQ không giới hạn cứng số lượng đề xuất, mua, nhập hoặc xuất.
+### 2.1. MR
 
-### 2.2. MR
-
-MR là nhu cầu thực tế của công trường. Nhu cầu có thể khác BOQ. Sau khi MR được duyệt, mỗi dòng MR cung cấp snapshot bất biến gồm:
+MR là nhu cầu gốc đã được duyệt. Mỗi dòng PO phải giữ snapshot bất biến của:
 
 - mã và tên vật tư;
-- số lượng yêu cầu;
-- đơn vị yêu cầu;
+- số lượng yêu cầu và đơn vị yêu cầu;
 - công trình, kho nhận, ngày cần và ghi chú;
-- tham chiếu BOQ nếu có.
+- tham chiếu dòng MR và BOQ nếu có.
 
-PO tạo từ MR phải sao chép đúng số lượng và đơn vị yêu cầu. Không chuyển số lượng MR sang đơn vị mua bằng hệ số danh mục.
+PO không tự chuyển số lượng MR sang đơn vị mua bằng hệ số danh mục.
 
-### 2.3. PO gốc
+### 2.2. PO
 
-PO gốc là hồ sơ quản lý nhu cầu mua với một nhà cung cấp. PO gốc giữ:
+PO là hồ sơ quản lý mua hàng với một nhà cung cấp. PO giữ:
 
-- MR nguồn và snapshot các dòng nhu cầu;
+- mã PO duy nhất, ví dụ `PO-01`;
+- MR nguồn và snapshot nhu cầu;
 - công trình và kho nhận;
 - nhà cung cấp;
-- chế độ giao một lần hoặc nhiều đợt;
-- đề nghị duyệt chủ trương tổng tùy chọn;
-- danh sách các đợt đặt hàng;
-- các số tổng hợp về đặt hàng, giao nhận và giá trị.
+- chế độ mua một lần hoặc nhiều đợt;
+- QR ổn định của PO;
+- số tổng hợp đã đặt, đã nhận, còn thiếu hoặc vượt.
 
-PO gốc không phải nguồn số lượng thương mại hoặc giá trị thực tế. Một MR có thể sinh nhiều PO nếu mua từ nhiều nhà cung cấp; mỗi PO chỉ có một nhà cung cấp và các đợt không được đổi nhà cung cấp.
+Một MR có thể tạo nhiều PO nếu mua từ nhiều nhà cung cấp. Hệ thống tự nhóm các dòng theo nhà cung cấp khi người dùng tạo nhiều PO trong một thao tác.
 
-### 2.4. Đợt đặt hàng
+### 2.3. Đợt mua
 
-Đợt đặt hàng là cam kết mua thực tế và là đơn vị được duyệt. Mỗi dòng đợt lưu độc lập:
+Đợt mua chỉ hiển thị với PO nhiều lần. Mỗi đợt là một quyết định mua mới, có:
 
-- số lượng đáp ứng nhu cầu và đơn vị MR;
-- số lượng mua thương mại và đơn vị mua;
-- đơn giá theo đơn vị mua;
-- VAT;
-- ngày dự kiến giao, có thể chưa xác định;
-- lý do vượt MR nếu có;
-- snapshot hệ số quy đổi chỉ để giải thích/tham khảo, nếu cần.
+- số đợt trong PO, ví dụ `01`, `02`;
+- mã tham chiếu nội bộ, ví dụ `PO-01-L01`;
+- số lượng phân bổ cho nhu cầu MR;
+- số lượng mua và đơn vị mua;
+- đơn giá, VAT và thành tiền;
+- ngày giao;
+- lý do vượt nhu cầu nếu có;
+- trạng thái duyệt và trạng thái nhận.
 
-Thành tiền đợt được tính từ số lượng mua thương mại và đơn giá của chính đợt. Số lượng đáp ứng nhu cầu và số lượng mua thương mại không tự tính lại lẫn nhau.
+Mỗi đợt có giá, số lượng, VAT và lần duyệt riêng. Đợt không được đổi nhà cung cấp của PO.
 
-### 2.5. Lần nhập kho
+### 2.4. Lần nhận kho
 
-Một đợt đặt hàng đã duyệt được phép có nhiều lần nhập kho. Mỗi lần nhập là một chứng từ WMS độc lập và lưu:
+Mỗi đợt chỉ có đúng một lần nhận kho. Kho ghi nhận:
 
-- số lượng thương mại thực giao;
-- số lượng lưu kho thực tế;
-- số lượng đạt, không đạt hoặc bị từ chối;
+- số lượng thực giao theo đơn vị mua;
+- số lượng đạt;
+- số lượng không đạt;
+- số lượng nhập kho theo đơn vị kho;
 - kết quả chất lượng;
-- ghi chú, ảnh và chứng từ giao hàng nếu có.
+- lý do chênh lệch và tệp/hình ảnh nếu có.
 
-Tồn kho chỉ tăng từ số lượng lưu kho thực tế được chấp nhận. Công nợ sử dụng số lượng mua thực nhận đủ điều kiện nhân với đơn giá của đợt.
+Kho xác nhận thực tế giao nhận, không duyệt lại quyết định mua. Tồn kho chỉ tăng khi kho hoàn tất xác nhận lần nhận.
+Phiếu WMS được tạo và hoàn tất trong cùng lệnh xác nhận nhận hàng; việc duyệt mua không tạo trước phiếu WMS.
 
-## 3. Hai trải nghiệm mua hàng, một mô hình dữ liệu
+## 3. Mua một lần
 
-### 3.1. Điểm bắt đầu chung
+### 3.1. Trải nghiệm người dùng
 
-Tại MR đã duyệt, người mua bấm `Tạo đơn đặt hàng`. Hệ thống tự mang toàn bộ thông tin MR sang. Người mua chỉ chọn nhà cung cấp, cách giao hàng và nhập các điều khoản thương mại.
+Người dùng mở MR đã duyệt và chọn `Tạo đơn đặt hàng`. Form mặc định là `Mua một lần` và chỉ gồm:
 
-Chế độ mặc định là `Giao một lần` vì đây là trường hợp phổ biến.
+- nhà cung cấp;
+- bảng vật tư;
+- số lượng mua;
+- đơn vị mua;
+- đơn giá;
+- VAT;
+- ngày giao;
+- ghi chú nếu cần.
 
-### 3.2. Giao một lần
+Nếu đơn vị MR và đơn vị mua giống nhau, giao diện chỉ hiển thị một ô số lượng. Nếu khác nhau, giao diện hiển thị thêm `SL phân bổ cho MR` theo đơn vị MR.
 
-Người dùng thấy một form PO thông thường và không phải thao tác với khái niệm đợt. Khi lưu, hệ thống tự tạo PO gốc và Đợt 1 ở phía sau.
+Hai hành động chính:
 
-Nếu đơn vị MR và đơn vị mua giống nhau, giao diện chỉ hiển thị một ô số lượng đặt mua; dữ liệu nội bộ sử dụng cùng giá trị cho số lượng đáp ứng nhu cầu và số lượng thương mại.
+- `Lưu nháp`;
+- `Lưu & gửi duyệt`.
 
-Nếu hai đơn vị khác nhau, giao diện hiển thị hai ô độc lập:
+Không hiển thị `Đợt 1`, danh sách đợt, chủ trương tổng, tổng đã duyệt, phần vượt tổng hoặc duyệt bổ sung.
 
-- `SL đáp ứng nhu cầu (<ĐVT MR>)`;
-- `SL mua (<ĐVT mua>)`.
+### 3.2. Xử lý hệ thống
 
-Các trường còn lại gồm ngày dự kiến giao, đơn giá, VAT và ghi chú. Hai hành động chính là `Lưu & gửi duyệt` và `Lưu nháp`.
+Hệ thống có thể duy trì một bản ghi đợt kỹ thuật phía sau để dùng chung mô hình dữ liệu, nhưng người dùng không nhìn thấy hoặc thao tác với bản ghi này.
 
-### 3.3. Chia nhiều đợt
+PO mua một lần:
 
-Sau khi chọn `Chia nhiều đợt`, form mua đầu tiên được trình bày thành `Đợt đặt hàng 1`. Người dùng chỉ tạo các đợt đã biết, không phải khai báo trước tổng số đợt và không tạo đợt rỗng.
+- có một lần duyệt;
+- có một QR cấp PO;
+- có đúng một lần nhận kho;
+- hoàn thành ngay sau khi kho xác nhận nhận hàng.
 
-Sau khi có PO gốc, người dùng thêm đợt tiếp theo bằng `+ Thêm đợt đặt hàng`. Mỗi đợt dùng cùng một form và có trạng thái, bản in, giá, VAT, ngày giao và luồng duyệt riêng.
+## 4. Mua nhiều đợt
 
-PO gốc hiển thị các chỉ tiêu:
+### 4.1. PO tổng
+
+PO tổng dùng để quản lý chung nhu cầu và lịch sử mua. PO tổng không có duyệt chủ trương hoặc hạn mức giá trị tổng.
+
+PO tổng hiển thị:
 
 - nhu cầu MR;
-- đã gửi duyệt;
 - đã duyệt đặt;
-- đã nhập đạt;
-- còn cần mua hoặc số vượt nhu cầu;
-- giá trị dự kiến, cam kết và thực nhận ở khu vực tài chính riêng.
+- đã nhận đạt;
+- còn cần mua hoặc số vượt;
+- tổng giá trị các đợt thực tế.
 
-## 4. Hệ số quy đổi
+### 4.2. Tạo và duyệt đợt
 
-Hệ số quy đổi giữa đơn vị mua và đơn vị lưu kho chỉ là thông tin tham khảo.
+Người dùng tạo từng đợt khi đã biết số lượng, giá và ngày giao. Không khai báo trước số đợt và không tạo đợt rỗng.
 
-Ví dụ:
+Mỗi đợt có hai hành động:
 
-> Danh mục tham khảo: 1 Cây ≈ 17,84 Kg. Không dùng để tự tính số lượng.
+- `Lưu nháp`;
+- `Lưu & gửi duyệt`.
 
-Hệ thống có thể hiển thị số quy đổi tham khảo nhưng không được:
+Mỗi đợt được duyệt độc lập. Một đợt đã duyệt và đang chờ nhận phải được hoàn thành hoặc hủy trước khi đợt tiếp theo chuyển sang trạng thái chờ nhận. Người dùng vẫn được lập nháp đợt tiếp theo trước đó.
 
-- tự điền số lượng mua;
-- tự sửa số lượng đáp ứng nhu cầu;
-- cập nhật chứng từ cũ khi hệ số danh mục thay đổi;
-- dùng hệ số tham khảo để tính tiến độ MR, tồn kho hoặc công nợ.
+Không có kiểm tra vượt giá trị PO tổng, duyệt bổ sung hoặc khóa WMS/QR vì vượt tổng.
 
-Quy đổi chính xác cùng đại lượng, ví dụ Tấn ↔ Kg, được phép dùng để chuẩn hóa hiển thị và báo cáo. Quy đổi khác bản chất, ví dụ Cây ↔ Kg, không được dùng làm số liệu thật.
+### 4.3. Mã hiển thị
 
-## 5. Đề nghị duyệt chủ trương tổng tùy chọn
+Mã quản lý chính luôn là mã PO, ví dụ `PO-01`. Trên màn hình hoặc bản in đợt có thể hiển thị:
 
-Tùy chọn này chỉ xuất hiện khi PO chọn `Chia nhiều đợt`:
+```text
+Mã PO: PO-01
+Đợt mua: 02
+```
 
-`□ Lập đề nghị duyệt chủ trương tổng`
+Mã `PO-01-L02` là tham chiếu nội bộ phục vụ truy vết, không thay thế mã PO chính.
 
-Khi bật, giao diện mở khối `Dự toán tổng để trình duyệt`, gồm:
+## 5. QR cấp PO
 
-- nhu cầu MR chỉ đọc;
-- số lượng dự kiến mua và đơn vị mua;
-- giá và VAT dự kiến;
-- tổng giá trị dự kiến;
-- thời gian mua/giao dự kiến;
-- ghi chú;
-- thao tác lưu nháp và in.
+PO sử dụng một QR ổn định. QR chứa định danh an toàn của PO, không chứa quyền thực hiện nghiệp vụ.
 
-Đề nghị tổng là snapshot dự toán phục vụ in trình duyệt. Nó không:
+Khi quét QR:
 
-- tạo WMS hoặc QR;
-- ghi nhận số lượng đã đặt;
-- làm giảm số lượng còn cần mua;
-- tạo công nợ;
-- khóa số lượng hoặc giá của các đợt;
-- thay thế duyệt từng đợt;
-- tạo hạn mức cứng cho các đợt sau.
+1. Hệ thống mở PO.
+2. Tìm đợt đã duyệt và chưa nhận.
+3. Nếu có đúng một đợt, mở thẳng màn hình nhận hàng.
+4. Nếu không có đợt chờ nhận, thông báo trạng thái và không cho tạo phiếu kho.
+5. Nếu dữ liệu lịch sử có nhiều đợt cùng chờ nhận, hiển thị danh sách để kho chọn thay vì tự đoán.
 
-Mỗi lần phát hành/in phải lưu snapshot có phiên bản để tái hiện đúng chứng từ cũ. Sau khi có dữ liệu, người dùng dùng `Thu gọn/Mở rộng` để ẩn hoặc hiện nội dung. Tắt tùy chọn mang nghĩa xóa bản dự toán và phải xác nhận nếu đã có dữ liệu.
+QR được tạo hoặc kích hoạt khi PO có lần mua đầu tiên được duyệt. Các đợt sau tiếp tục sử dụng cùng QR đó.
 
-## 6. Duyệt và trạng thái đợt
+## 6. Số lượng và đơn vị
 
-Trạng thái duyệt và trạng thái giao nhận phải được tách riêng.
+Mỗi dòng lưu riêng:
+
+1. `SL yêu cầu MR`: snapshot nhu cầu gốc theo đơn vị MR.
+2. `SL phân bổ cho MR`: phần đợt mua dự kiến đáp ứng theo đơn vị MR.
+3. `SL mua`: số lượng thương mại theo đơn vị mua.
+4. `SL nhập kho`: số lượng thực tế theo đơn vị kho.
+
+Hệ số quy đổi danh mục chỉ dùng tham khảo và không tự sửa các số lượng. Snapshot hệ số có thể được lưu để giải thích chứng từ cũ.
+
+Các chỉ tiêu PO:
+
+```text
+Đã duyệt đặt
+= tổng SL phân bổ của các lần mua đã duyệt và còn hiệu lực
+
+Còn lại chưa đặt
+= SL yêu cầu MR - Đã duyệt đặt
+
+Đã nhận đạt
+= tổng SL đạt của lần nhận đã hoàn thành
+
+Còn lại chưa nhận
+= SL yêu cầu MR - Đã nhận đạt
+```
+
+Đợt nháp, bị từ chối hoặc bị hủy không chiếm nhu cầu MR. Kết quả âm hiển thị thành `Vượt`, không che bằng số 0.
+
+## 7. Duyệt và trạng thái
 
 Trạng thái duyệt:
 
-`Nháp → Chờ duyệt → Đã duyệt | Yêu cầu sửa | Từ chối`
+`Nháp -> Chờ duyệt -> Đã duyệt | Yêu cầu sửa | Từ chối`
 
-Trạng thái giao nhận:
+Trạng thái nhận:
 
-`Chưa giao → Đang giao → Đã hoàn tất`
+`Chưa nhận -> Hoàn thành | Hoàn thành có chênh lệch`
 
 Quy tắc:
 
-- Tạo đợt chỉ tạo bản nháp, chưa có WMS hoặc tác động tồn kho.
-- Gửi duyệt sinh chứng từ `PO-xxx / Đợt n`.
-- Duyệt đợt khóa snapshot số lượng, giá và VAT; sinh quyền nhận hàng và QR ổn định cho đợt.
-- QR đại diện cho đợt và được dùng để mở nhiều lần nhập; mỗi lần nhập mới sinh chứng từ WMS riêng.
-- Yêu cầu sửa hoặc từ chối không tác động kho.
-- Đợt đã duyệt không được sửa trực tiếp; thay đổi phải qua luồng điều chỉnh có lịch sử.
+- trước khi duyệt, đợt không cho phép kho nhận;
+- duyệt khóa snapshot số lượng, giá, VAT và ngày giao;
+- chứng từ đã duyệt không sửa đè; nếu sai thì hủy và tạo đợt thay thế;
+- mỗi đợt chỉ được hoàn tất nhận một lần;
+- thao tác lặp lại phải idempotent, không sinh trùng tồn kho hoặc phiếu WMS.
 
-Mỗi thẻ đợt hiển thị hành động theo trạng thái thay vì dùng một nút chung cho toàn PO.
+## 8. Chênh lệch và chất lượng
 
-## 7. Mua thiếu, mua vượt và ngoại lệ giao nhận
+Luồng thường ngày giả định nhà cung cấp giao đủ trong một chuyến. Hệ thống vẫn giữ ngoại lệ tối thiểu:
 
-### 7.1. So với MR
+- kho ghi đúng số thực giao, số đạt và số không đạt;
+- nếu số thực nhận hoặc số đạt khác đợt đã duyệt, bắt buộc nhập lý do;
+- kho nhập số đạt và đóng đợt ở trạng thái `Hoàn thành có chênh lệch`;
+- không mở lại đợt để nhận bổ sung;
+- nếu cần mua bù, mua hàng tạo đợt mới.
 
-Mua thiếu được phép và chỉ hiển thị số còn thiếu. Mua vượt được phép nhưng khi gửi duyệt bắt buộc nhập lý do ngắn. Lưu nháp không bị chặn.
+Mua vượt MR được phép lưu nháp. Khi gửi duyệt, người dùng bắt buộc nhập lý do vượt. Không có kiểm tra vượt giá trị tổng PO.
 
-Số lượng còn cần đặt theo đơn vị MR:
+## 9. Công nợ
 
-`MR − tổng SL đáp ứng nhu cầu của các đợt đã duyệt`
+PO và đợt mua không trực tiếp tạo công nợ. Công nợ phát sinh từ hóa đơn nhà cung cấp được đối chiếu với PO, đợt mua và lần nhận kho đã hoàn thành.
 
-Kết quả âm phải hiển thị thành `Vượt ...`, không che bằng số 0.
+Trong phạm vi thay đổi này, hệ thống chỉ cung cấp số lượng thực nhận đủ điều kiện và giá/VAT của đúng đợt để luồng hóa đơn sử dụng. Không tạo quy tắc một chứng từ công nợ cho mỗi PO hoặc mỗi đợt.
 
-### 7.2. So với đợt đã duyệt
+## 10. Tối giản giao diện
 
-Kho luôn ghi nhận đúng thực tế:
+### 10.1. Màn hình tạo PO
 
-- giao thiếu: đợt tiếp tục mở hoặc được người có quyền kết thúc thiếu;
-- giao vượt: kho vẫn ghi đúng số nhận, bắt buộc ghi chú và đánh dấu ngoại lệ;
-- phần vượt cần được mua hàng xác nhận trước khi chốt công nợ;
-- tồn kho vẫn phản ánh số lượng thực tế đã được kiểm tra và chấp nhận.
+Thứ tự nhập liệu:
 
-Kho có hai thao tác kết thúc lần nhận:
+1. Chọn `Mua một lần` hoặc `Mua nhiều đợt`, mặc định `Mua một lần`.
+2. Chọn nhà cung cấp.
+3. Nhập trực tiếp trong một bảng vật tư.
+4. Chọn ngày giao chung; chỉ mở ngày riêng theo dòng khi người dùng yêu cầu.
+5. Lưu nháp hoặc gửi duyệt.
 
-- `Xác nhận lần nhập` để đợt tiếp tục nhận;
-- `Xác nhận & kết thúc đợt` khi nhà cung cấp không giao tiếp.
+Các thông tin snapshot MR, công trình và kho nhận hiển thị dạng tóm tắt chỉ đọc. Thông tin quy đổi và ghi chú nâng cao được đặt trong phần mở rộng, không chiếm diện tích mặc định.
 
-## 8. Tính toán số lượng và giá trị
+### 10.2. Màn hình PO nhiều đợt
 
-Các mốc số lượng không ghi đè lẫn nhau:
+Đầu trang chỉ hiển thị số tổng hợp cần điều hành. Mỗi đợt là một hàng/thẻ gọn gồm:
 
-| Mốc | Nguồn sự thật |
-|---|---|
-| BOQ kế hoạch | BOQ công trình |
-| MR yêu cầu | Snapshot dòng MR đã duyệt |
-| Đã duyệt đặt | Tổng SL đáp ứng nhu cầu của các đợt đã duyệt |
-| SL mua cam kết | Tổng SL thương mại của các đợt đã duyệt |
-| Đã nhận đạt | Tổng SL lưu kho đạt của các lần nhập |
-| SL mua thực nhận | Tổng SL thương mại đạt của các lần nhập |
-| Đã xuất kho | Các giao dịch xuất kho hiện tại |
+- số đợt và trạng thái;
+- ngày giao;
+- số lượng;
+- giá trị;
+- hành động đúng theo trạng thái.
 
-Giá trị cũng được tách:
+Chỉ mở form chi tiết khi tạo hoặc sửa đợt nháp. Không lặp lại bảng nhu cầu MR ở mọi đợt.
 
-- giá trị chủ trương dự kiến: chỉ tham khảo;
-- giá trị đợt đã duyệt: cam kết mua;
-- giá trị nhận đạt: số lượng mua thực nhận đạt × đơn giá đợt;
-- công nợ: giá trị nhận đạt đủ điều kiện sau khi xử lý ngoại lệ và VAT.
+### 10.3. Màn hình nhận hàng
 
-Không dùng số lượng hoặc giá của đề nghị tổng để tính công nợ.
+Sau khi quét QR, kho chỉ thấy:
 
-## 9. Nhập kho và xuất kho
+- mã PO và đợt đang nhận;
+- NCC, công trình và kho;
+- số được duyệt;
+- các ô số thực giao, số đạt, số không đạt;
+- kết quả chất lượng và ghi chú chênh lệch;
+- nút `Xác nhận nhập kho`.
 
-### 9.1. Nhập kho
+Không hiển thị lịch sử nhiều lần nhận, nút nhận tiếp hoặc nút kết thúc thiếu.
 
-Kho mở đợt bằng QR hoặc danh sách chờ nhận. Màn hình hiển thị số lượng đợt đã duyệt, đã nhận trước đó, còn chờ giao và lịch sử các lần nhập.
+## 11. Tính toàn vẹn và tương thích
 
-Thao tác thường ngày:
+- PO và đợt đã duyệt/đã nhận không được xóa cứng.
+- Snapshot MR, đợt duyệt và lần nhận không phụ thuộc danh mục thay đổi sau đó.
+- Nhà cung cấp của đợt phải khớp PO.
+- Mỗi đợt có tối đa một lần nhận hoàn thành và một tác động tồn kho.
+- Mỗi PO có tối đa một đợt đã duyệt đang chờ nhận trong luồng mới.
+- Dữ liệu cũ có nhiều lần nhận vẫn được hiển thị chỉ đọc; không xóa hoặc gộp lịch sử.
+- Dữ liệu cũ có QR theo đợt tiếp tục tra cứu được và điều hướng về PO tương ứng.
+- Luồng mới chỉ phát hành QR cấp PO.
 
-`Quét QR → nhập SL/CL thực tế → xác nhận`
+## 12. Ngoài phạm vi
 
-Kho không cần biết PO là giao một lần hay nhiều đợt.
+- Hợp đồng khung hoặc call-off PO.
+- Đề nghị duyệt chủ trương tổng.
+- Tổng hạn mức đã duyệt và duyệt bổ sung.
+- Nhiều chuyến hoặc nhiều lần nhận cho một đợt mới.
+- Mở lại đợt đã nhận để nhập bổ sung.
+- Tự động quy đổi giữa các đơn vị khác bản chất như Cây và Kg.
+- Thay đổi luồng xuất kho hiện tại.
+- Hoàn thiện phân hệ hóa đơn và thanh toán.
 
-### 9.2. Xuất kho
+## 13. Tiêu chí nghiệm thu
 
-Luồng xuất kho giữ nguyên hiện trạng:
+### PO mua một lần
 
-- còn tồn khả dụng thì được xuất;
-- không chọn hoặc kiểm tra MR;
-- không chọn hoặc kiểm tra dòng BOQ;
-- không chặn theo nhu cầu hay kế hoạch;
-- chỉ tuân thủ các kiểm soát tồn kho hiện có.
+- Mặc định là mua một lần và chỉ hiển thị một form đặt hàng.
+- Không hiển thị `Đợt 1`, chủ trương tổng hoặc số tổng duyệt.
+- Lưu và gửi duyệt tạo đúng một cam kết mua phía sau.
+- QR PO mở đúng lần mua đang chờ nhận.
+- Kho xác nhận đúng một lần và PO chuyển hoàn thành.
 
-Sau khi hàng nhập, vật tư trở thành tồn kho chung của công trình. Thiết kế này không bổ sung truy vết phiếu xuất về MR hoặc đợt mua.
+### PO mua nhiều đợt
 
-## 10. Báo cáo BOQ tổng
+- Một PO chỉ có một NCC và nhiều đợt mua độc lập.
+- Mỗi đợt có số lượng, giá, VAT, ngày giao và phê duyệt riêng.
+- Không tạo đợt rỗng hoặc yêu cầu khai báo trước số đợt.
+- Không cho hai đợt mới cùng ở trạng thái đã duyệt chờ nhận.
+- Hoàn thành đợt trước mới kích hoạt nhận đợt tiếp theo.
+- Không kiểm tra vượt giá trị tổng hoặc tạo duyệt bổ sung.
 
-BOQ chỉ được so sánh tổng hợp theo `Công trình + Vật tư`. Báo cáo hiển thị:
+### Nhận hàng
 
-- BOQ kế hoạch;
-- lũy kế nhập kho;
-- lũy kế xuất kho;
-- tồn hiện tại;
-- chênh lệch nhập so với BOQ;
-- chênh lệch xuất so với BOQ.
+- Một đợt mới chỉ có một lần nhận và một tác động tồn kho.
+- Quét cùng QR hoặc gửi lại lệnh xác nhận không sinh trùng phiếu kho.
+- Chênh lệch bắt buộc có lý do và kết thúc đợt ngay trong lần nhận.
+- Mua bù được tạo thành đợt mới, không nhận tiếp vào đợt cũ.
+- Dữ liệu lịch sử nhiều lần nhận vẫn xem được mà không bị thay đổi.
 
-Các số phải được đưa về cùng đơn vị bằng quy đổi chính xác cùng đại lượng. Nếu BOQ và tồn kho dùng hai đơn vị khác bản chất thì báo cáo hiển thị riêng, không dùng hệ số tham khảo để ép so sánh.
+### Số lượng và giao diện
 
-MR không tham gia kiểm soát xuất kho và không phải khóa liên kết cho báo cáo BOQ tổng.
-
-## 11. Tính toàn vẹn và khả năng phục hồi
-
-- Các lệnh gửi duyệt, duyệt đợt và xác nhận nhập phải có tính idempotent để thao tác lại không sinh trùng chứng từ.
-- Duyệt đợt chỉ sinh quyền nhận/QR một lần; mỗi lần nhận sinh đúng một giao dịch WMS sau khi xác nhận.
-- Chứng từ đã duyệt hoặc đã nhận không được xóa cứng; sử dụng điều chỉnh, hủy hoặc đảo nghiệp vụ có lịch sử.
-- Snapshot MR, đề nghị tổng, đợt đã duyệt và lần nhập không phụ thuộc dữ liệu danh mục thay đổi sau đó.
-- Nhà cung cấp của đợt phải luôn khớp nhà cung cấp PO gốc.
-- Các phép tổng hợp phải lọc đúng trạng thái; nháp, từ chối và đã hủy không được tính là cam kết mua.
-
-## 12. Tương thích dữ liệu hiện có
-
-- PO giao một lần cũ tiếp tục hoạt động; giao diện mới có thể trình bày nó như PO thông thường trong khi dữ liệu nội bộ dùng Đợt 1.
-- PO nhiều đợt đã duyệt hoặc đã nhận giữ nguyên số lượng và lịch sử chứng từ; không tính lại bằng hệ số hiện tại.
-- PO nhiều đợt đang mở phải lấy lại baseline MR từ liên kết nguồn, không quy đổi baseline sang đơn vị mua.
-- PO-408 phải giữ baseline D16 là `1.187 Cây`; Đợt 1 giữ độc lập `1.187 Cây`, `21.176 Kg` và giá hiện có.
-- PO nhiều đợt cũ không mặc nhiên có đề nghị duyệt chủ trương tổng; người có quyền có thể lập mới nếu nghiệp vụ còn mở.
-
-## 13. Ngoài phạm vi
-
-- Quản lý xuất kho theo MR hoặc dòng BOQ.
-- Phân bổ vật tư xuất cho từng hạng mục BOQ.
-- Tự động quy đổi Cây ↔ Kg hoặc các đơn vị khác bản chất.
-- Cho phép đổi nhà cung cấp ở cấp đợt.
-- Dùng đề nghị chủ trương tổng làm hạn mức cứng.
-- Tự tạo trước các đợt chưa biết ngày, số lượng hoặc giá.
-
-## 14. Tiêu chí nghiệm thu
-
-### Tạo PO
-
-- Tạo PO từ MR sao chép đúng số lượng và đơn vị MR, không tự quy đổi.
-- Chế độ mặc định là giao một lần.
-- Giao một lần chỉ cần một form; hệ thống tự tạo cấu trúc Đợt 1 bên dưới.
-- Một PO chỉ có một nhà cung cấp; cùng MR có thể tạo PO khác cho nhà cung cấp khác.
-
-### Đơn vị và số lượng
-
-- Đơn vị giống nhau chỉ cần một ô số lượng trên giao diện.
-- Đơn vị khác nhau hiển thị hai ô độc lập và hệ số tham khảo.
-- Thay đổi hệ số danh mục không thay đổi PO, đợt, bản in hoặc lần nhập đã lưu.
-- Mua vượt MR chỉ gửi duyệt được khi có lý do; lưu nháp vẫn được.
-
-### Đề nghị chủ trương tổng
-
-- Chỉ xuất hiện cho PO nhiều đợt và là tùy chọn.
-- Bản in lưu được snapshot/phiên bản và tái hiện đúng nội dung cũ.
-- Lập, sửa hoặc in đề nghị tổng không thay đổi số lượng đã đặt, tồn kho, WMS hoặc công nợ.
-- Các đợt sau được phép có số lượng và giá khác dự toán tổng.
-
-### Duyệt và nhận hàng
-
-- Mỗi đợt có luồng duyệt và bản in riêng.
-- Không có WMS hoặc tác động kho trước khi đợt được duyệt và hàng được xác nhận nhận.
-- Một QR đợt có thể tạo nhiều lần nhập độc lập mà không sinh trùng.
-- Giao thiếu, giao vượt, hàng không đạt và kết thúc thiếu được ghi nhận rõ.
-- Công nợ dùng số lượng mua thực nhận đủ điều kiện và giá/VAT của đúng đợt.
-
-### Kho và BOQ
-
-- Xuất kho hiện tại không phát sinh thêm trường hoặc kiểm soát MR/BOQ.
-- Báo cáo theo công trình và vật tư hiển thị BOQ, nhập, xuất, tồn và chênh lệch.
-- Báo cáo chỉ tự chuẩn hóa các đơn vị có quy đổi chính xác cùng đại lượng.
-
-### Hồi quy và dữ liệu cũ
-
-- PO một lần, PO chủ động và PO đã nhận hàng tiếp tục hoạt động.
-- Dữ liệu lịch sử không bị tính lại hoặc thay đổi vì hệ số danh mục.
-- PO-408 hiển thị đúng baseline MR và dữ liệu riêng của Đợt 1.
-
+- MR giữ nguyên số lượng và đơn vị gốc.
+- Đơn vị giống nhau chỉ hiển thị một ô số lượng.
+- Đơn vị khác nhau hiển thị riêng SL phân bổ MR và SL mua.
+- Còn lại nhu cầu chỉ tính các đợt đã duyệt còn hiệu lực.
+- Form mặc định không hiển thị các trường kỹ thuật, quy đổi hoặc tài chính tổng hợp không cần nhập.
