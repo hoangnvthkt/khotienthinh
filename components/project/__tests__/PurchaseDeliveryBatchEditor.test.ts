@@ -18,6 +18,12 @@ describe('PurchaseDeliveryBatchEditor UI contract', () => {
     expect(editorSource).toContain('getStockQtyForPurchaseDeliveryLine(line, purchaseQty)');
   });
 
+  it('uses practical draft wording for a purchase batch', () => {
+    expect(editorSource).toContain('Nhu cầu MR');
+    expect(editorSource).toContain('Ghi chú đợt mua');
+    expect(editorSource).toContain('Lưu nháp đợt mua');
+  });
+
   it('opens package delivery editing in a wider modal for multi-line purchase orders', () => {
     expect(supplyChainSource).toContain('max-w-7xl');
   });

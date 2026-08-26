@@ -126,7 +126,7 @@ export default function PurchaseDeliveryBatchEditor({
 
       <div className="grid gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs sm:grid-cols-5">
         <div>
-          <div className="text-[10px] font-black uppercase text-slate-400">Gốc PO</div>
+          <div className="text-[10px] font-black uppercase text-slate-400">Nhu cầu MR</div>
           <div className="mt-0.5 font-black text-slate-800">{summary.orderedQty.toLocaleString('vi-VN')}</div>
         </div>
         <div>
@@ -222,14 +222,14 @@ export default function PurchaseDeliveryBatchEditor({
       </div>
 
       <label className="block space-y-1 text-xs font-bold text-slate-600">
-        <span className="block text-[10px] font-black uppercase text-slate-400">Ghi chú đợt giao</span>
+        <span className="block text-[10px] font-black uppercase text-slate-400">Ghi chú đợt mua</span>
         <textarea value={note} onChange={event => setNote(event.target.value)} rows={2} className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm font-bold text-slate-900" placeholder="Ví dụ: giao buổi sáng, xe 5 tấn..." />
       </label>
       <div className="sticky bottom-0 -mx-4 -mb-4 flex justify-end gap-2 border-t border-slate-100 bg-white px-4 py-3">
         {onCancel && <button type="button" onClick={onCancel} className="rounded-md px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-100">Hủy</button>}
         <button type="button" disabled={!canSave || saving} onClick={save} className="inline-flex items-center gap-2 rounded-md bg-slate-900 px-4 py-2 text-sm font-black text-white disabled:opacity-50">
           {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-          Lưu đợt giao
+          Lưu nháp đợt mua
         </button>
       </div>
     </div>

@@ -172,19 +172,25 @@ const actionClass = (action: PurchaseOrderUiAction, primary = false) => {
 };
 
 const normalizeDeliveryTimelineStatus = (status?: string | null): PurchaseOrderDeliveryBatch['status'] => {
-  if (status === 'received') return 'received';
+  if (['received', 'received_short', 'received_over'].includes(status || '')) return 'received';
+  if (status === 'quality_approved') return 'quality_approved';
   if (status === 'supplemental_pending') return 'supplemental_pending';
-  if (status === 'wms_pending' || status === 'issued' || status === 'variance_pending') return 'wms_pending';
+  if (status === 'wms_pending' || status === 'waiting_delivery' || status === 'receiving' || status === 'issued' || status === 'variance_pending') return 'wms_pending';
   if (status === 'cancelled' || status === 'returned') return 'cancelled';
   return 'planned';
 };
 
-const deliveryStatusView = (status?: string | null) => {
+const deliveryStatusView = (status?: string | null, approvalStatus?: PurchaseOrderDeliveryBatch['approvalStatus']) => {
   const normalizedStatus = normalizeDeliveryTimelineStatus(status);
   if (normalizedStatus === 'received') return { label: 'Đã nhập kho', className: 'border-emerald-200 bg-emerald-50 text-emerald-700' };
+  if (normalizedStatus === 'quality_approved') return { label: 'Đã duyệt SL/CL', className: 'border-cyan-200 bg-cyan-50 text-cyan-700' };
   if (normalizedStatus === 'supplemental_pending') return { label: 'Chờ duyệt bổ sung', className: 'border-amber-200 bg-amber-50 text-amber-700' };
   if (normalizedStatus === 'wms_pending') return { label: 'Chờ kho duyệt', className: 'border-amber-200 bg-amber-50 text-amber-700' };
   if (normalizedStatus === 'cancelled') return { label: 'Từ chối', className: 'border-rose-200 bg-rose-50 text-rose-700' };
+  if (approvalStatus === 'pending_approval') return { label: 'Chờ duyệt đơn', className: 'border-amber-200 bg-amber-50 text-amber-700' };
+  if (approvalStatus === 'approved') return { label: 'Đã duyệt đơn', className: 'border-emerald-200 bg-emerald-50 text-emerald-700' };
+  if (approvalStatus === 'revision_requested') return { label: 'Cần chỉnh sửa', className: 'border-amber-200 bg-amber-50 text-amber-700' };
+  if (approvalStatus === 'rejected') return { label: 'Từ chối', className: 'border-rose-200 bg-rose-50 text-rose-700' };
   return { label: 'Kế hoạch', className: 'border-blue-200 bg-blue-50 text-blue-700' };
 };
 
@@ -335,6 +341,28 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
   const payableView = payableStatusView(payableStatus);
   const isPackageV2 = (po.purchaseMode === 'single' || po.purchaseMode === 'multiple') && po.sourceMode === 'from_request';
   const packageSummary = useMemo(() => getPurchasePackageSummary(po, deliveryBatches), [deliveryBatches, po]);
+  const practicalQuantitySummary = useMemo(() => {
+    const demandQty = po.items.reduce((sum, item) => sum + getPurchaseOrderLineDemandQty(
+      po,
+      item.lineId || item.itemId,
+      poRequestLinks,
+      inventoryItems,
+    ), 0);
+    const approvedBatches = deliveryBatches.filter(batch => (
+      batch.status !== 'cancelled' && batch.approvalStatus === 'approved'
+    ));
+    const approvedQty = approvedBatches.reduce(
+      (sum, batch) => sum + batch.lines.reduce((lineSum, line) => lineSum + Number(line.plannedQty || 0), 0),
+      0,
+    );
+    const receivedQty = approvedBatches
+      .filter(batch => ['received', 'received_short', 'received_over'].includes(batch.status))
+      .reduce(
+        (sum, batch) => sum + batch.lines.reduce((lineSum, line) => lineSum + Number(line.acceptedStockQty || 0), 0),
+        0,
+      );
+    return { demandQty, approvedQty, receivedQty, remainingQty: demandQty - receivedQty };
+  }, [deliveryBatches, inventoryItems, po, poRequestLinks]);
   const uniqueSpecKeys = useMemo(() => Array.from(
     new Set(
       po.items.flatMap(item =>
@@ -369,7 +397,9 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
       return {
         key: `schedule:${batch.id}`,
         source: 'schedule' as const,
-        label: `Đợt ${batch.deliveryNo}`,
+        label: po.purchaseMode === 'single'
+          ? 'Đơn mua hàng'
+          : `Đợt ${String(batch.deliveryNo).padStart(2, '0')}`,
         marker: String(batch.deliveryNo),
         plannedDate: batch.plannedDeliveryDate || null,
         status: batch.status,
@@ -436,12 +466,12 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
       {
         key: 'created',
         stepNo: 1,
-        title: 'Tạo gói',
+        title: 'Tạo đơn',
         done: true,
         current: po.status === 'draft',
         user: creatorUser,
         icon: <UserIcon size={15} />,
-        mainLabel: creatorUser?.name || 'Người tạo gói',
+        mainLabel: creatorUser?.name || 'Người tạo đơn',
         roleLabel: 'Người tạo đơn',
         dateLabel: formatDate(po.orderDate || po.createdAt),
         statusBadge: 'Đã tạo',
@@ -450,13 +480,13 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
       {
         key: 'approved',
         stepNo: 2,
-        title: 'Duyệt gói',
+        title: 'Duyệt đơn',
         done: isApproved,
         current: po.status === 'sent',
         user: approverUser,
         icon: <ShieldCheck size={15} />,
         mainLabel: isApproved
-          ? (approverUser?.name ? approverUser.name : 'Đã duyệt gói')
+          ? (approverUser?.name ? approverUser.name : 'Đã duyệt đơn')
           : (approverUser?.name ? `Chờ: ${approverUser.name}` : 'Chờ phê duyệt'),
         roleLabel: isApproved ? 'Người phê duyệt' : po.submittedToPermission ? `Quyền ${po.submittedToPermission}` : 'Chờ duyệt',
         dateLabel: isApproved ? formatDate(po.lastActionAt || po.orderDate) : 'Đang chờ xử lý',
@@ -466,7 +496,7 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
       {
         key: 'delivery',
         stepNo: 3,
-        title: 'Đợt giao',
+        title: po.purchaseMode === 'single' ? 'Giao hàng' : 'Các đợt mua',
         done: hasDelivery || ['partial', 'delivered', 'closed'].includes(po.status),
         current: ['confirmed', 'in_transit'].includes(po.status) && !hasReceivedDelivery,
         user: null,
@@ -499,8 +529,8 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
         current: po.status === 'partial',
         user: null,
         icon: <CheckCircle2 size={15} className="text-emerald-600 dark:text-emerald-400" />,
-        mainLabel: ['delivered', 'closed'].includes(po.status) ? 'Đã hoàn tất' : 'Đóng gói PO',
-        roleLabel: 'Đóng gói mua sắm',
+        mainLabel: ['delivered', 'closed'].includes(po.status) ? 'Đã hoàn tất' : 'Chờ hoàn tất đơn',
+        roleLabel: 'Theo dõi đơn mua',
         dateLabel: ['delivered', 'closed'].includes(po.status) ? 'Hoàn thành' : 'Theo dõi',
         statusBadge: ['delivered', 'closed'].includes(po.status) ? 'Hoàn tất' : 'Chưa hoàn tất',
         tone: ['delivered', 'closed'].includes(po.status) ? 'emerald' : 'slate',
@@ -779,6 +809,33 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
                 </div>
               </section>
 
+              {isPackageV2 && (
+                <section className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900">
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+                      <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400">Nhu cầu MR</span>
+                      <strong className="mt-1 block text-lg font-black text-slate-800">{fmtQty(practicalQuantitySummary.demandQty)}</strong>
+                    </div>
+                    <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-3">
+                      <span className="block text-[10px] font-black uppercase tracking-wider text-blue-500">Đã duyệt đặt</span>
+                      <strong className="mt-1 block text-lg font-black text-blue-700">{fmtQty(practicalQuantitySummary.approvedQty)}</strong>
+                    </div>
+                    <div className="rounded-xl border border-emerald-100 bg-emerald-50/60 p-3">
+                      <span className="block text-[10px] font-black uppercase tracking-wider text-emerald-600">Đã thực nhập</span>
+                      <strong className="mt-1 block text-lg font-black text-emerald-700">{fmtQty(practicalQuantitySummary.receivedQty)}</strong>
+                    </div>
+                    <div className="rounded-xl border border-amber-100 bg-amber-50/60 p-3">
+                      <span className="block text-[10px] font-black uppercase tracking-wider text-amber-600">Còn lại / Vượt</span>
+                      <strong className={`mt-1 block text-lg font-black ${practicalQuantitySummary.remainingQty < 0 ? 'text-rose-700' : 'text-amber-700'}`}>
+                        {practicalQuantitySummary.remainingQty < 0
+                          ? `Vượt ${fmtQty(Math.abs(practicalQuantitySummary.remainingQty))}`
+                          : fmtQty(practicalQuantitySummary.remainingQty)}
+                      </strong>
+                    </div>
+                  </div>
+                </section>
+              )}
+
               {/* KHU VỰC TIỀN VÀ BASELINE (MONEY FOCUS BAR) */}
               <section className="rounded-2xl border border-slate-200/90 bg-gradient-to-br from-white via-slate-50/50 to-emerald-50/20 p-4 sm:p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900">
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 items-center">
@@ -798,7 +855,7 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
 
                   <div className="p-3 rounded-xl border border-emerald-200 bg-emerald-50/50 dark:border-emerald-900/50 dark:bg-emerald-950/30 shadow-xs">
                     <span className="block text-[10px] font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
-                      {isPackageV2 ? 'Chủ trương gồm VAT' : 'Tổng thanh toán gồm VAT'}
+                      {isPackageV2 ? 'Tổng tham chiếu gồm VAT' : 'Tổng thanh toán gồm VAT'}
                     </span>
                     <strong className="text-lg sm:text-xl font-black text-emerald-700 dark:text-emerald-300 mt-0.5 block">
                       {fmtMoney(isPackageV2 ? packageSummary.referenceGross : paymentTotal)} đ
@@ -921,8 +978,14 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
                       <Truck size={16} />
                     </div>
                     <div>
-                      <h4 className="text-base font-black text-slate-800 dark:text-slate-100">Kế hoạch Đợt giao hàng</h4>
-                      <p className="text-xs font-semibold text-slate-400">Mỗi PO có thể chia nhiều đợt giao kèm luồng WMS & mã QR kiểm nhận.</p>
+                      <h4 className="text-base font-black text-slate-800 dark:text-slate-100">
+                        {isPackageV2 ? (po.purchaseMode === 'single' ? 'Đơn mua hàng' : 'Các đợt mua') : 'Kế hoạch giao hàng'}
+                      </h4>
+                      <p className="text-xs font-semibold text-slate-400">
+                        {po.purchaseMode === 'single'
+                          ? 'Một đơn, một lần giao, duyệt SL/CL rồi nhập kho.'
+                          : 'Mỗi đợt có số lượng, giá và VAT riêng theo thực tế.'}
+                      </p>
                     </div>
                   </div>
                   {isLoadingDeliveryPrintGroups && (
@@ -939,13 +1002,16 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
                 ) : (
                   <div className="space-y-3">
                     {deliveryTimelineGroups.map(group => {
-                      const status = deliveryStatusView(group.status);
                       const batch = group.scheduleBatch;
+                      const status = deliveryStatusView(group.status, batch?.approvalStatus);
                       const printGroup = group.printGroup;
                       const printPoKey = `${po.id}:${printGroup.key}:purchase_order`;
                       const printApprovalKey = `${po.id}:${printGroup.key}:approval_request`;
                       const normalizedStatus = normalizeDeliveryTimelineStatus(group.status);
-                      const canEditPlannedBatch = !isPackageV2 && !!batch && canMutatePoDocument && ['planned', 'supplemental_pending'].includes(batch.status) && !poHasStockImpact;
+                      const canEditPlannedBatch = !!batch && canMutatePoDocument
+                        && ['planned', 'supplemental_pending'].includes(batch.status)
+                        && (!isPackageV2 || ['draft', 'revision_requested', 'rejected'].includes(batch.approvalStatus || 'draft'))
+                        && !poHasStockImpact;
                       const isDeletingBatch = batch
                         ? deletingDeliveryKey === `batch:${batch.id}`
                         : deletingDeliveryKey === `group:${printGroup.key}`;
@@ -1004,6 +1070,16 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
                                   </button>
                                 </>
                               )}
+                              {isPackageV2 && batch && po.purchaseMode === 'multiple' && ['draft', 'revision_requested', 'rejected'].includes(batch.approvalStatus || 'draft') && (
+                                <button type="button" onClick={() => void onRunAction({ id: 'submit_delivery_batch', label: 'Gửi duyệt đợt giao', intent: 'warning', deliveryBatchId: batch.id })} className="inline-flex h-8.5 items-center gap-1.5 rounded-xl bg-amber-500 px-3 text-xs font-black text-white hover:bg-amber-600 shadow-xs transition">
+                                  <Send size={13} /> Gửi duyệt
+                                </button>
+                              )}
+                              {isPackageV2 && batch && po.purchaseMode === 'multiple' && batch.approvalStatus === 'pending_approval' && canConfirmPo && (
+                                <button type="button" onClick={() => void onRunAction({ id: 'approve_delivery_batch', label: 'Duyệt đợt giao', intent: 'success', deliveryBatchId: batch.id })} className="inline-flex h-8.5 items-center gap-1.5 rounded-xl bg-emerald-600 px-3 text-xs font-black text-white hover:bg-emerald-700 shadow-xs transition">
+                                  <CheckCircle2 size={13} /> Duyệt đợt
+                                </button>
+                              )}
                               {isPackageV2 && batch && (batch.qrToken || wmsTransactionId) && (
                                 <button type="button" onClick={() => void onRunAction({ id: 'open_delivery_qr', label: 'Mở QR', intent: 'primary', deliveryBatchId: batch.id, transactionId: wmsTransactionId || undefined, qrToken: batch.qrToken || null })} className="inline-flex h-8.5 items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 text-xs font-black text-white hover:bg-blue-700 shadow-xs transition">
                                   <QrCode size={13} /> Mở QR
@@ -1024,7 +1100,7 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
                                   {creatingDeliveryBatchId === batch.id ? <Loader2 size={13} className="animate-spin" /> : <QrCode size={13} />} Tạo WMS
                                 </button>
                               )}
-                              {normalizedStatus === 'wms_pending' && wmsTransactionId && (
+                              {['wms_pending', 'quality_approved'].includes(normalizedStatus) && wmsTransactionId && (
                                 <button type="button" onClick={() => void onRunAction({ id: 'open_wms_transaction', label: 'Mở WMS', intent: 'primary', transactionId: wmsTransactionId })} className="inline-flex h-8.5 items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 text-xs font-black text-white hover:bg-blue-700 shadow-xs transition">
                                   <ShieldCheck size={13} /> Mở WMS
                                 </button>
