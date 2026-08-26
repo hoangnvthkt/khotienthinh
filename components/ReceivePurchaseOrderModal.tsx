@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { X, PackageCheck, Loader2, AlertTriangle, Building2 } from 'lucide-react';
-import { PurchaseOrder, PurchaseOrderDeliveryBatch, Transaction, Role } from '../types';
+import { PurchaseOrder, PurchaseOrderDeliveryBatch, Transaction, TransactionStatus, Role } from '../types';
 import { useApp } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import { materialRequestFulfillmentService } from '../lib/materialRequestFulfillmentService';
@@ -14,6 +14,10 @@ import {
   hasPurchaseUnitConversion,
   poLinePurchaseToStockQty,
 } from '../lib/materialUnitConversion';
+import {
+  assertMaterialPoPhysicalQuantities,
+  requiresMaterialPoVarianceReason,
+} from '../lib/materialPoPracticalFlow';
 
 interface ReceivePurchaseOrderModalProps {
   isOpen: boolean;
@@ -21,7 +25,7 @@ interface ReceivePurchaseOrderModalProps {
   deliveryBatch?: PurchaseOrderDeliveryBatch | null;
   transaction?: Transaction | null;
   onClose: () => void;
-  onReceived?: (po: PurchaseOrder) => void;
+  onReceived?: (po: PurchaseOrder) => void | Promise<void>;
 }
 
 const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
@@ -36,6 +40,10 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
   const { canManage } = usePermission();
   const toast = useToast();
   const [quantities, setQuantities] = useState<Record<string, string>>({});
+  const [deliveredPurchaseQuantities, setDeliveredPurchaseQuantities] = useState<Record<string, string>>({});
+  const [acceptedPurchaseQuantities, setAcceptedPurchaseQuantities] = useState<Record<string, string>>({});
+  const [deliveredStockQuantities, setDeliveredStockQuantities] = useState<Record<string, string>>({});
+  const [acceptedStockQuantities, setAcceptedStockQuantities] = useState<Record<string, string>>({});
   const [varianceReasons, setVarianceReasons] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
 
@@ -99,10 +107,31 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
   useEffect(() => {
     if (!po || !isOpen) return;
     const defaults: Record<string, string> = {};
+    const deliveredPurchaseDefaults: Record<string, string> = {};
+    const acceptedPurchaseDefaults: Record<string, string> = {};
+    const deliveredStockDefaults: Record<string, string> = {};
+    const acceptedStockDefaults: Record<string, string> = {};
     if (deliveryBatch) {
       deliveryBatch.lines.forEach(line => {
         const remainingQty = Math.max((Number(line.plannedQty) || 0) - (Number(line.acceptedQty) || 0), 0);
         defaults[line.id] = String(remainingQty);
+        const isPendingQuality = transaction?.status === TransactionStatus.PENDING;
+        const deliveredPurchaseQty = isPendingQuality
+          ? Number(line.plannedQty || 0)
+          : Number(line.deliveredQty ?? line.acceptedQty ?? 0);
+        const acceptedPurchaseQty = isPendingQuality
+          ? deliveredPurchaseQty
+          : Number(line.acceptedQty ?? deliveredPurchaseQty);
+        const deliveredStockQty = isPendingQuality
+          ? Number(line.stockPlannedQty ?? line.plannedQty ?? 0)
+          : Number(line.deliveredStockQty ?? line.acceptedStockQty ?? 0);
+        const acceptedStockQty = isPendingQuality
+          ? deliveredStockQty
+          : Number(line.acceptedStockQty ?? deliveredStockQty);
+        deliveredPurchaseDefaults[line.id] = String(deliveredPurchaseQty);
+        acceptedPurchaseDefaults[line.id] = String(acceptedPurchaseQty);
+        deliveredStockDefaults[line.id] = String(deliveredStockQty);
+        acceptedStockDefaults[line.id] = String(acceptedStockQty);
       });
     } else {
       po.items.forEach((item, index) => {
@@ -111,15 +140,22 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
       });
     }
     setQuantities(defaults);
+    setDeliveredPurchaseQuantities(deliveredPurchaseDefaults);
+    setAcceptedPurchaseQuantities(acceptedPurchaseDefaults);
+    setDeliveredStockQuantities(deliveredStockDefaults);
+    setAcceptedStockQuantities(acceptedStockDefaults);
     setVarianceReasons({});
-  }, [deliveryBatch, po, isOpen]);
+  }, [deliveryBatch, po, isOpen, transaction]);
 
   if (!isOpen || !po) return null;
 
   const isDeliveryReceipt = !!deliveryBatch && !!transaction;
+  const isQualityPending = isDeliveryReceipt && transaction.status === TransactionStatus.PENDING;
+  const isStockPending = isDeliveryReceipt && transaction.status === TransactionStatus.APPROVED;
+  const isReceiptCompleted = isDeliveryReceipt && transaction.status === TransactionStatus.COMPLETED;
   const totalRemaining = lines.reduce((sum, line) => sum + line.remainingQty, 0);
-  const hasReceivableLine = totalRemaining > 0;
-  const hasInvalidQty = lines.some(line => {
+  const hasReceivableLine = isDeliveryReceipt ? lines.length > 0 : totalRemaining > 0;
+  const hasInvalidLegacyQty = lines.some(line => {
     const qty = parseQuantityInput(quantities[line.key]);
     const reason = (varianceReasons[line.key] || '').trim();
     if (line.remainingQty <= 0) return false;
@@ -127,6 +163,40 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
     if (isDeliveryReceipt && qty === 0) return !reason;
     return line.remainingQty > 0 && (qty <= 0 || (qty !== line.remainingQty && !reason));
   });
+  const qualityLines = isDeliveryReceipt ? lines.map(line => {
+    const deliveredPurchaseQty = parseQuantityInput(deliveredPurchaseQuantities[line.key]);
+    const acceptedPurchaseQty = parseQuantityInput(acceptedPurchaseQuantities[line.key]);
+    const deliveredStockQty = parseQuantityInput(deliveredStockQuantities[line.key]);
+    const acceptedStockQty = parseQuantityInput(acceptedStockQuantities[line.key]);
+    const varianceReason = (varianceReasons[line.key] || '').trim() || null;
+    const quantitiesInput = {
+      orderedQty: Number(line.orderedQty || 0),
+      deliveredQty: deliveredPurchaseQty,
+      acceptedQty: acceptedPurchaseQty,
+      deliveredStockQty,
+      acceptedStockQty,
+    };
+    let invalid = false;
+    try {
+      assertMaterialPoPhysicalQuantities(quantitiesInput);
+    } catch {
+      invalid = true;
+    }
+    if (requiresMaterialPoVarianceReason(quantitiesInput) && !varianceReason) invalid = true;
+    return {
+      deliveryLineId: line.deliveryLineId || '',
+      itemId: line.itemId,
+      deliveredPurchaseQty,
+      acceptedPurchaseQty,
+      deliveredStockQty,
+      acceptedStockQty,
+      varianceReason,
+      invalid,
+    };
+  }) : [];
+  const hasInvalidQty = isQualityPending
+    ? qualityLines.some(line => line.invalid)
+    : (!isDeliveryReceipt && hasInvalidLegacyQty);
   const receiptLines = lines
     .map(line => ({
       itemId: line.itemId,
@@ -137,7 +207,7 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
     }))
     .filter(line => line.quantity > 0);
   const submittedItemIds = isDeliveryReceipt ? lines.map(line => line.itemId) : receiptLines.map(line => line.itemId);
-  const hasSubmittedQuantity = isDeliveryReceipt ? lines.length > 0 : receiptLines.length > 0;
+  const hasSubmittedQuantity = isDeliveryReceipt ? qualityLines.length > 0 : receiptLines.length > 0;
   const unlinkedReceiptLines = submittedItemIds.filter(itemId => !items.some(item => item.id === itemId));
 
   const updateReceiptQuantity = (lineKey: string, rawValue: string) => {
@@ -149,19 +219,28 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
     }));
   };
 
+  const updateActualQuantity = (
+    setter: React.Dispatch<React.SetStateAction<Record<string, string>>>,
+    lineKey: string,
+    rawValue: string,
+  ) => setter(prev => ({
+    ...prev,
+    [lineKey]: sanitizeQuantityInput(rawValue, { previousValue: prev[lineKey] ?? '0' }),
+  }));
+
   const handleConfirm = async () => {
     if (saving || !po.targetWarehouseId) return;
     if (!canReceive) {
       toast.error('Không có quyền nhận hàng', 'Tài khoản của bạn không được phân công kho nhận của PO này.');
       return;
     }
-    if (!hasReceivableLine) {
+    if (!hasReceivableLine && !isStockPending && !isReceiptCompleted) {
       toast.warning('PO đã nhận đủ', 'Không còn khối lượng cần nhập kho.');
       return;
     }
-    if (hasInvalidQty || !hasSubmittedQuantity) {
+    if (isQualityPending && (hasInvalidQty || !hasSubmittedQuantity)) {
       toast.warning('Kiểm tra số lượng', isDeliveryReceipt
-        ? 'Số thực nhận không được âm; nếu lệch hoặc bằng 0, cần nhập lý do.'
+        ? 'Số lượng phải không âm, số đạt không vượt số giao và mọi chênh lệch phải có lý do.'
         : 'Số thực nhận phải lớn hơn 0; nếu lệch phần còn lại, cần nhập lý do.');
       return;
     }
@@ -173,39 +252,45 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
     setSaving(true);
     try {
       if (deliveryBatch && transaction) {
-        const acceptedLines = lines.map(line => parseQuantityInput(quantities[line.key]) || 0);
-        const qualityResult = acceptedLines.every(qty => qty === 0)
-          ? 'rejected'
-          : lines.every((line, index) => acceptedLines[index] === line.remainingQty) ? 'passed' : 'partial';
-        const result = await purchaseReceiptService.approveQuality({
-          deliveryBatchId: deliveryBatch.id,
-          wmsTransactionId: transaction.id,
-          actorUserId: user.id,
-          qualityResult,
-          lines: lines.map(line => {
-            const acceptedPurchaseQty = parseQuantityInput(quantities[line.key]) || 0;
-            const acceptedStockQty = line.plannedStockQty && line.orderedQty > 0
-              ? acceptedPurchaseQty * (Number(line.plannedStockQty) / Number(line.orderedQty))
-              : poLinePurchaseToStockQty(line, acceptedPurchaseQty, line.inventoryItem);
-            return {
-              deliveryLineId: line.deliveryLineId || '',
-              itemId: line.itemId,
-              deliveredPurchaseQty: acceptedPurchaseQty,
-              acceptedPurchaseQty,
-              deliveredStockQty: acceptedStockQty,
-              acceptedStockQty,
-              varianceReason: (varianceReasons[line.key] || '').trim() || null,
-            };
-          }),
-          attachments: [],
-        });
-        await refreshWmsRecords({
-          itemIds: lines.map(line => line.itemId),
-          transactionIds: [result.wmsTransactionId],
-        });
-        toast.success('Đã duyệt SL/CL', 'Số liệu đã khóa. Mở phiếu WMS để xác nhận nhập kho.');
-        onReceived?.(po);
-        onClose();
+        if (transaction.status === TransactionStatus.PENDING) {
+          const qualityResult = qualityLines.every(line => line.acceptedPurchaseQty === 0)
+            ? 'rejected'
+            : qualityLines.every((line, index) => (
+              line.deliveredPurchaseQty === line.acceptedPurchaseQty
+              && line.deliveredStockQty === line.acceptedStockQty
+              && line.deliveredPurchaseQty === Number(lines[index]?.orderedQty || 0)
+            )) ? 'passed' : 'partial';
+          const result = await purchaseReceiptService.approveQuality({
+            deliveryBatchId: deliveryBatch.id,
+            wmsTransactionId: transaction.id,
+            actorUserId: user.id,
+            qualityResult,
+            lines: qualityLines.map(({ invalid: _invalid, ...line }) => line),
+            attachments: [],
+          });
+          await refreshWmsRecords({
+            itemIds: lines.map(line => line.itemId),
+            transactionIds: [result.wmsTransactionId],
+          });
+          toast.success('Đã duyệt SL/CL', 'Số liệu đã khóa. Bước Nhập kho đã sẵn sàng trên cùng phiếu.');
+          await onReceived?.(po);
+          return;
+        }
+        if (transaction.status === TransactionStatus.APPROVED) {
+          const result = await purchaseReceiptService.finalizeReceipt({
+            deliveryBatchId: deliveryBatch.id,
+            wmsTransactionId: transaction.id,
+            actorUserId: user.id,
+          });
+          await refreshWmsRecords({
+            itemIds: lines.map(line => line.itemId),
+            transactionIds: [result.wmsTransactionId],
+          });
+          toast.success('Đã nhập kho', 'Tồn kho đã tăng theo đúng số lượng thực nhập được duyệt.');
+          await onReceived?.(po);
+          onClose();
+          return;
+        }
         return;
       }
 
@@ -222,7 +307,7 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
         'Đã ghi nhận thực nhận',
         `${po.poNumber} đã cập nhật ${result.transactionIds.length} phiếu chờ Duyệt SL/CL. PO và tồn kho chưa được kết thúc.`,
       );
-      onReceived?.(po);
+      await onReceived?.(po);
       onClose();
     } catch (error: any) {
       logApiError('receivePurchaseOrder.confirm', error);
@@ -248,7 +333,7 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
         <div className="p-6 overflow-y-auto space-y-5">
           <div className="p-3 rounded-xl border border-blue-200 bg-blue-50 text-blue-700 text-sm font-bold flex items-start gap-2">
             <AlertTriangle size={18} className="shrink-0 mt-0.5" />
-            Xác nhận QR chỉ ghi nhận số lượng thực nhận. Phiếu vẫn phải qua Duyệt SL/CL và xác nhận nhận lần cuối trước khi cộng tồn, kết thúc đợt cấp và PO.
+            Duyệt SL/CL ghi nhận số thực giao và số đạt. Chỉ bước Nhập kho kế tiếp mới cộng số thực nhập vào tồn kho thực tế.
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -293,7 +378,7 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
                     <th className="p-4 text-right">Đặt</th>
                     <th className="p-4 text-right">Đã nhận</th>
                     <th className="p-4 text-right">Còn lại</th>
-                    <th className="p-4 text-center w-40">Thực nhận</th>
+                    <th className="p-4 text-center min-w-[330px]">Số lượng thực tế</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -304,6 +389,14 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
                     const canRejectLine = isDeliveryReceipt && qty === 0 && !!reason;
                     const invalid = qty < 0 || ((qty <= 0 && line.remainingQty > 0) && !canRejectLine) || (hasVariance && !reason);
                     const stockQty = poLinePurchaseToStockQty(line, qty, line.inventoryItem);
+                    const qualityLine = qualityLines.find(item => item.deliveryLineId === line.deliveryLineId);
+                    const qualityHasVariance = qualityLine ? requiresMaterialPoVarianceReason({
+                      orderedQty: line.orderedQty,
+                      deliveredQty: qualityLine.deliveredPurchaseQty,
+                      acceptedQty: qualityLine.acceptedPurchaseQty,
+                      deliveredStockQty: qualityLine.deliveredStockQty,
+                      acceptedStockQty: qualityLine.acceptedStockQty,
+                    }) : false;
                     return (
                       <tr key={line.key} className={line.remainingQty <= 0 ? 'bg-slate-50/60 opacity-70' : ''}>
                         <td className="p-4">
@@ -319,29 +412,74 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
                         <td className="p-4 text-right font-bold text-slate-500">{line.receivedQty.toLocaleString()} {line.purchaseUnit || line.unit}</td>
                         <td className="p-4 text-right font-black text-emerald-600">{line.remainingQty.toLocaleString()} {line.purchaseUnit || line.unit}</td>
                         <td className="p-4">
-                          <input
-                            type="text"
-                            inputMode="decimal"
-                            disabled={line.remainingQty <= 0 || saving}
-                            value={quantities[line.key] ?? '0'}
-                            onChange={(event) => updateReceiptQuantity(line.key, event.target.value)}
-                            className={`w-full px-3 py-2 rounded-xl border text-center font-black outline-none focus:ring-2 ${
-                              invalid ? 'border-red-300 bg-red-50 text-red-600 focus:ring-red-200' : 'border-slate-200 focus:ring-emerald-200'
-                            }`}
-                          />
-                          {line.hasUnitConversion && (
-                            <div className="mt-1 text-[10px] font-bold text-cyan-700 text-center">
-                              Nhập kho: {stockQty.toLocaleString('vi-VN', { maximumFractionDigits: 6 })} {line.stockUnit}
+                          {isDeliveryReceipt ? (
+                            <div className="space-y-2">
+                              <div className="grid grid-cols-2 gap-2">
+                                {[
+                                  ['SL thực giao', deliveredPurchaseQuantities, setDeliveredPurchaseQuantities, line.purchaseUnit],
+                                  ['SL đạt chất lượng', acceptedPurchaseQuantities, setAcceptedPurchaseQuantities, line.purchaseUnit],
+                                  ['SL giao theo đơn vị kho', deliveredStockQuantities, setDeliveredStockQuantities, line.stockUnit],
+                                  ['SL thực nhập kho', acceptedStockQuantities, setAcceptedStockQuantities, line.stockUnit],
+                                ].map(([label, values, setter, unit]) => (
+                                  <label key={label as string} className="block text-[9px] font-black uppercase text-slate-500">
+                                    {label as string}
+                                    <div className="mt-1 flex items-center gap-1">
+                                      <input
+                                        aria-label={label as string}
+                                        type="text"
+                                        inputMode="decimal"
+                                        disabled={!isQualityPending || saving}
+                                        value={(values as Record<string, string>)[line.key] ?? '0'}
+                                        onChange={(event) => updateActualQuantity(
+                                          setter as React.Dispatch<React.SetStateAction<Record<string, string>>>,
+                                          line.key,
+                                          event.target.value,
+                                        )}
+                                        className={`min-w-0 w-full px-2 py-2 rounded-lg border text-right font-black outline-none ${qualityLine?.invalid ? 'border-red-300 bg-red-50' : 'border-slate-200 bg-white'}`}
+                                      />
+                                      <span className="text-[9px] text-slate-400 normal-case">{unit as string}</span>
+                                    </div>
+                                  </label>
+                                ))}
+                              </div>
+                              {qualityHasVariance && (
+                                <input
+                                  type="text"
+                                  disabled={!isQualityPending || saving}
+                                  value={varianceReasons[line.key] || ''}
+                                  onChange={(event) => setVarianceReasons(prev => ({ ...prev, [line.key]: event.target.value }))}
+                                  placeholder="Lý do chênh lệch"
+                                  className="w-full rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-[10px] font-semibold text-amber-900 outline-none disabled:opacity-70"
+                                />
+                              )}
                             </div>
-                          )}
-                          {hasVariance && (qty > 0 || isDeliveryReceipt) && (
-                            <input
-                              type="text"
-                              value={varianceReasons[line.key] || ''}
-                              onChange={(event) => setVarianceReasons(prev => ({ ...prev, [line.key]: event.target.value }))}
-                              placeholder="Lý do lệch số lượng"
-                              className="mt-2 w-full rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-[10px] font-semibold text-amber-900 outline-none focus:border-amber-400"
-                            />
+                          ) : (
+                            <>
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                disabled={line.remainingQty <= 0 || saving}
+                                value={quantities[line.key] ?? '0'}
+                                onChange={(event) => updateReceiptQuantity(line.key, event.target.value)}
+                                className={`w-full px-3 py-2 rounded-xl border text-center font-black outline-none focus:ring-2 ${
+                                  invalid ? 'border-red-300 bg-red-50 text-red-600 focus:ring-red-200' : 'border-slate-200 focus:ring-emerald-200'
+                                }`}
+                              />
+                              {line.hasUnitConversion && (
+                                <div className="mt-1 text-[10px] font-bold text-cyan-700 text-center">
+                                  Nhập kho: {stockQty.toLocaleString('vi-VN', { maximumFractionDigits: 6 })} {line.stockUnit}
+                                </div>
+                              )}
+                              {hasVariance && qty > 0 && (
+                                <input
+                                  type="text"
+                                  value={varianceReasons[line.key] || ''}
+                                  onChange={(event) => setVarianceReasons(prev => ({ ...prev, [line.key]: event.target.value }))}
+                                  placeholder="Lý do lệch số lượng"
+                                  className="mt-2 w-full rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-[10px] font-semibold text-amber-900 outline-none focus:border-amber-400"
+                                />
+                              )}
+                            </>
                           )}
                         </td>
                       </tr>
@@ -360,6 +498,14 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
                 const canRejectLine = isDeliveryReceipt && qty === 0 && !!reason;
                 const invalid = qty < 0 || ((qty <= 0 && line.remainingQty > 0) && !canRejectLine) || (hasVariance && !reason);
                 const stockQty = poLinePurchaseToStockQty(line, qty, line.inventoryItem);
+                const qualityLine = qualityLines.find(item => item.deliveryLineId === line.deliveryLineId);
+                const qualityHasVariance = qualityLine ? requiresMaterialPoVarianceReason({
+                  orderedQty: line.orderedQty,
+                  deliveredQty: qualityLine.deliveredPurchaseQty,
+                  acceptedQty: qualityLine.acceptedPurchaseQty,
+                  deliveredStockQty: qualityLine.deliveredStockQty,
+                  acceptedStockQty: qualityLine.acceptedStockQty,
+                }) : false;
                 return (
                   <div key={line.key} className={`p-4 space-y-3 ${line.remainingQty <= 0 ? 'bg-slate-50/60 opacity-70' : ''}`}>
                     <div>
@@ -387,35 +533,78 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between gap-3 pt-1">
-                      <div className="text-xs font-black text-slate-500 uppercase tracking-wider">Thực nhận:</div>
-                      <div className="w-32 shrink-0">
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          disabled={line.remainingQty <= 0 || saving}
-                          value={quantities[line.key] ?? '0'}
-                          onChange={(event) => updateReceiptQuantity(line.key, event.target.value)}
-                          className={`w-full px-3 py-2 rounded-xl border text-center font-black outline-none focus:ring-2 ${
-                            invalid ? 'border-red-300 bg-red-50 text-red-600 focus:ring-red-200' : 'border-slate-200 focus:ring-emerald-200'
-                          }`}
-                        />
-                        {line.hasUnitConversion && (
-                          <div className="mt-1 text-[10px] font-bold text-cyan-700 text-right">
-                            Nhập kho: {stockQty.toLocaleString('vi-VN', { maximumFractionDigits: 6 })} {line.stockUnit}
-                          </div>
-                        )}
-                        {hasVariance && (qty > 0 || isDeliveryReceipt) && (
+                    {isDeliveryReceipt ? (
+                      <div className="space-y-2 pt-1">
+                        <div className="grid grid-cols-2 gap-2">
+                          {[
+                            ['SL thực giao', deliveredPurchaseQuantities, setDeliveredPurchaseQuantities, line.purchaseUnit],
+                            ['SL đạt chất lượng', acceptedPurchaseQuantities, setAcceptedPurchaseQuantities, line.purchaseUnit],
+                            ['SL giao theo đơn vị kho', deliveredStockQuantities, setDeliveredStockQuantities, line.stockUnit],
+                            ['SL thực nhập kho', acceptedStockQuantities, setAcceptedStockQuantities, line.stockUnit],
+                          ].map(([label, values, setter, unit]) => (
+                            <label key={label as string} className="block text-[9px] font-black uppercase text-slate-500">
+                              {label as string}
+                              <div className="mt-1 flex items-center gap-1">
+                                <input
+                                  aria-label={label as string}
+                                  type="text"
+                                  inputMode="decimal"
+                                  disabled={!isQualityPending || saving}
+                                  value={(values as Record<string, string>)[line.key] ?? '0'}
+                                  onChange={(event) => updateActualQuantity(
+                                    setter as React.Dispatch<React.SetStateAction<Record<string, string>>>,
+                                    line.key,
+                                    event.target.value,
+                                  )}
+                                  className={`min-w-0 w-full px-2 py-2 rounded-lg border text-right font-black outline-none ${qualityLine?.invalid ? 'border-red-300 bg-red-50' : 'border-slate-200 bg-white'}`}
+                                />
+                                <span className="text-[9px] text-slate-400 normal-case">{unit as string}</span>
+                              </div>
+                            </label>
+                          ))}
+                        </div>
+                        {qualityHasVariance && (
                           <input
                             type="text"
+                            disabled={!isQualityPending || saving}
                             value={varianceReasons[line.key] || ''}
                             onChange={(event) => setVarianceReasons(prev => ({ ...prev, [line.key]: event.target.value }))}
-                            placeholder="Lý do lệch số lượng"
-                            className="mt-2 w-full rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-[10px] font-semibold text-amber-900 outline-none focus:border-amber-400"
+                            placeholder="Lý do chênh lệch"
+                            className="w-full rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-[10px] font-semibold text-amber-900 outline-none disabled:opacity-70"
                           />
                         )}
                       </div>
-                    </div>
+                    ) : (
+                      <div className="flex items-center justify-between gap-3 pt-1">
+                        <div className="text-xs font-black text-slate-500 uppercase tracking-wider">Thực nhận:</div>
+                        <div className="w-32 shrink-0">
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            disabled={line.remainingQty <= 0 || saving}
+                            value={quantities[line.key] ?? '0'}
+                            onChange={(event) => updateReceiptQuantity(line.key, event.target.value)}
+                            className={`w-full px-3 py-2 rounded-xl border text-center font-black outline-none focus:ring-2 ${
+                              invalid ? 'border-red-300 bg-red-50 text-red-600 focus:ring-red-200' : 'border-slate-200 focus:ring-emerald-200'
+                            }`}
+                          />
+                          {line.hasUnitConversion && (
+                            <div className="mt-1 text-[10px] font-bold text-cyan-700 text-right">
+                              Nhập kho: {stockQty.toLocaleString('vi-VN', { maximumFractionDigits: 6 })} {line.stockUnit}
+                            </div>
+                          )}
+                          {hasVariance && qty > 0 && (
+                            <input
+                              type="text"
+                              value={varianceReasons[line.key] || ''}
+                              onChange={(event) => setVarianceReasons(prev => ({ ...prev, [line.key]: event.target.value }))}
+                              placeholder="Lý do lệch số lượng"
+                              className="mt-2 w-full rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-[10px] font-semibold text-amber-900 outline-none focus:border-amber-400"
+                            />
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -428,14 +617,25 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
           <button onClick={onClose} disabled={saving} className="px-5 py-2.5 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-200 disabled:opacity-50">
             Đóng
           </button>
-          <button
-            onClick={handleConfirm}
-            disabled={saving || !canReceive || !hasReceivableLine || hasInvalidQty || !hasSubmittedQuantity}
-            className="px-6 py-2.5 rounded-xl text-sm font-black text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-          >
-            {saving ? <Loader2 size={16} className="animate-spin" /> : <PackageCheck size={16} />}
-            {saving ? 'Đang ghi nhận...' : 'Ghi nhận thực nhận'}
-          </button>
+          {isReceiptCompleted ? (
+            <button
+              type="button"
+              disabled
+              className="px-6 py-2.5 rounded-xl text-sm font-black text-white bg-slate-400 opacity-70 flex items-center justify-center gap-2"
+            >
+              <PackageCheck size={16} />
+              Đã nhập kho
+            </button>
+          ) : (
+            <button
+              onClick={handleConfirm}
+              disabled={saving || !canReceive || !hasReceivableLine || hasInvalidQty || !hasSubmittedQuantity}
+              className="px-6 py-2.5 rounded-xl text-sm font-black text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              {saving ? <Loader2 size={16} className="animate-spin" /> : <PackageCheck size={16} />}
+              {saving ? 'Đang xử lý...' : isQualityPending ? 'Duyệt SL/CL' : isStockPending ? 'Nhập kho' : 'Ghi nhận thực nhận'}
+            </button>
+          )}
         </div>
       </div>
     </div>

@@ -74,4 +74,43 @@ describe('purchase receipt workflow', () => {
       },
     ]);
   });
+
+  it('preserves separately entered delivered and accepted quantities in both units', () => {
+    const transaction: Transaction = {
+      id: 'tx-2',
+      type: TransactionType.IMPORT,
+      date: '2026-08-26T00:00:00.000Z',
+      requesterId: 'user-1',
+      status: TransactionStatus.PENDING,
+      sourceType: 'po_delivery_batch',
+      sourceId: 'delivery-2',
+      items: [{
+        itemId: 'item-1',
+        quantity: 100,
+        orderedQty: 100,
+        accountingQty: 100,
+        purchaseOrderDeliveryLineId: 'delivery-line-1',
+      }],
+    };
+
+    const payload = buildPurchaseReceiptQualityPayloadFromTransaction(transaction, [{
+      index: 0,
+      quantity: 101,
+      deliveredPurchaseQty: 103,
+      acceptedPurchaseQty: 101,
+      deliveredStockQty: 103,
+      acceptedStockQty: 101,
+      reason: 'Cân thực tế khác phiếu giao',
+    }]);
+
+    expect(payload.lines[0]).toEqual({
+      deliveryLineId: 'delivery-line-1',
+      itemId: 'item-1',
+      deliveredPurchaseQty: 103,
+      acceptedPurchaseQty: 101,
+      deliveredStockQty: 103,
+      acceptedStockQty: 101,
+      varianceReason: 'Cân thực tế khác phiếu giao',
+    });
+  });
 });

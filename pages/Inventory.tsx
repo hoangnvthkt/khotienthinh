@@ -710,7 +710,19 @@ const Inventory: React.FC = () => {
           setReceivingDelivery(null);
           setReceivingTransaction(null);
         }}
-        onReceived={(po) => setReceivingPo(po)}
+        onReceived={async (po) => {
+          setReceivingPo(po);
+          if (!receivingTransaction) return;
+          const [lookup, latestTransaction] = await Promise.all([
+            purchasePackageService.getDeliveryByWmsTransactionId(receivingTransaction.id),
+            purchasePackageService.getWmsTransactionById(receivingTransaction.id),
+          ]);
+          if (lookup) {
+            setReceivingPo(lookup.purchaseOrder);
+            setReceivingDelivery(lookup.deliveryBatch);
+          }
+          if (latestTransaction) setReceivingTransaction(latestTransaction);
+        }}
       />
       <ReceiveFulfillmentBatchModal
         isOpen={!!receivingFulfillmentBatch}

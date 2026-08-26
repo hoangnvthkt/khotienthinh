@@ -3,7 +3,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
-import { TransactionType, Transaction, TransactionStatus, TransactionItem, InventoryItem, Role, BusinessPartner, SupplierContract } from '../types';
+import { TransactionType, Transaction, TransactionStatus, TransactionItem, InventoryItem, Role, BusinessPartner, SupplierContract, PurchaseOrder, PurchaseOrderDeliveryBatch } from '../types';
 import {
   Plus, Trash2, ArrowRight, Save, Send, Clock,
   CheckCircle, XCircle, FileText, User, History,
@@ -15,6 +15,7 @@ import ItemSelectionModal from '../components/ItemSelectionModal';
 import WarningModal from '../components/WarningModal';
 import ConfirmTransferModal from '../components/ConfirmTransferModal';
 import TransactionDetailModal from '../components/TransactionDetailModal';
+import ReceivePurchaseOrderModal from '../components/ReceivePurchaseOrderModal';
 import MasterDataConfirmModal from '../components/MasterDataConfirmModal';
 import Pagination from '../components/Pagination';
 import SearchableSelect from '../components/common/SearchableSelect';
@@ -32,6 +33,7 @@ import { supplierContractService } from '../lib/hdService';
 import { buildWmsImportSupplySource, type WmsImportSupplySourceSelection } from '../lib/wmsSupplySource';
 import { dateInputToTransactionTimestamp } from '../lib/transactionVoucherDates';
 import { parseNonNegativeLocaleNumber } from '../lib/localeNumberInput';
+import { purchasePackageService } from '../lib/purchasePackageService';
 
 const ScannerModal = React.lazy(() => import('../components/ScannerModal'));
 
@@ -117,7 +119,7 @@ const Operations: React.FC = () => {
     } else {
       setOpsSubTab('approvals');
     }
-    setViewingHistoryTx(tx);
+    void openTransactionDetails(tx);
   }, [location.state, transactions]);
   const [isScannerOpen, setScannerOpen] = useState(false);
   const [isItemSelectOpen, setItemSelectOpen] = useState(false);
@@ -128,6 +130,38 @@ const Operations: React.FC = () => {
 
   const [showConfirmTransfer, setShowConfirmTransfer] = useState(false);
   const [viewingHistoryTx, setViewingHistoryTx] = useState<Transaction | null>(null);
+  const [receivingPo, setReceivingPo] = useState<PurchaseOrder | null>(null);
+  const [receivingDelivery, setReceivingDelivery] = useState<PurchaseOrderDeliveryBatch | null>(null);
+  const [receivingTransaction, setReceivingTransaction] = useState<Transaction | null>(null);
+
+  async function openTransactionDetails(tx: Transaction) {
+    if (tx.sourceType !== 'po_delivery_batch') {
+      setViewingHistoryTx(tx);
+      return;
+    }
+    try {
+      const lookup = await purchasePackageService.getDeliveryByWmsTransactionId(tx.id);
+      if (!lookup) {
+        toast.warning('Không tìm thấy đợt giao', 'Phiếu kho chưa liên kết được với đợt giao của PO.');
+        return;
+      }
+      if (
+        user.assignedWarehouseId
+        && lookup.purchaseOrder.targetWarehouseId
+        && user.assignedWarehouseId !== lookup.purchaseOrder.targetWarehouseId
+      ) {
+        toast.warning('Sai kho nhận', 'Tài khoản của bạn không được phân công kho nhận của đợt giao này.');
+        return;
+      }
+      setViewingHistoryTx(null);
+      setReceivingPo(lookup.purchaseOrder);
+      setReceivingDelivery(lookup.deliveryBatch);
+      setReceivingTransaction(tx);
+    } catch (error) {
+      logApiError('operations.openPurchaseDelivery', error);
+      toast.error('Không thể mở phiếu PO', getApiErrorMessage(error, 'Không thể tải dữ liệu đợt giao.'));
+    }
+  }
 
   const hasAssignedWh = !!user.assignedWarehouseId;
   const isAdmin = user.role === Role.ADMIN;
@@ -867,6 +901,31 @@ const Operations: React.FC = () => {
         isLoading={submittingTx}
       />
 
+      <ReceivePurchaseOrderModal
+        isOpen={!!receivingPo}
+        po={receivingPo}
+        deliveryBatch={receivingDelivery}
+        transaction={receivingTransaction}
+        onClose={() => {
+          setReceivingPo(null);
+          setReceivingDelivery(null);
+          setReceivingTransaction(null);
+        }}
+        onReceived={async (po) => {
+          setReceivingPo(po);
+          if (!receivingTransaction) return;
+          const [lookup, latestTransaction] = await Promise.all([
+            purchasePackageService.getDeliveryByWmsTransactionId(receivingTransaction.id),
+            purchasePackageService.getWmsTransactionById(receivingTransaction.id),
+          ]);
+          if (lookup) {
+            setReceivingPo(lookup.purchaseOrder);
+            setReceivingDelivery(lookup.deliveryBatch);
+          }
+          if (latestTransaction) setReceivingTransaction(latestTransaction);
+        }}
+      />
+
       <TransactionDetailModal
         isOpen={!!viewingHistoryTx}
         onClose={() => setViewingHistoryTx(null)}
@@ -1155,7 +1214,7 @@ const Operations: React.FC = () => {
                             return (
                               <div
                                 key={tx.id}
-                                onClick={() => setViewingHistoryTx(tx)}
+                                onClick={() => void openTransactionDetails(tx)}
                                 className={`bg-white border rounded-2xl p-4 hover:border-orange-200 transition-all cursor-pointer group shadow-sm ${
                                   hasStockConflict ? 'border-amber-200 bg-amber-50/30' : 'border-slate-200/80'
                                 }`}
@@ -1217,7 +1276,7 @@ const Operations: React.FC = () => {
                                   </div>
                                   {canApproveWmsTransaction(user, tx) && (
                                     <div className="flex md:flex-col gap-2 min-w-[140px] pt-4 md:pt-0 border-t md:border-t-0 md:border-l border-slate-100 md:pl-4" onClick={(e) => e.stopPropagation()}>
-                                      <button onClick={() => (tx.type === TransactionType.IMPORT || tx.type === TransactionType.TRANSFER) ? setViewingHistoryTx(tx) : triggerApproval(tx.id, 'APPROVE')} className="flex-1 py-2 bg-slate-800 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-700 transition">
+                                      <button onClick={() => (tx.type === TransactionType.IMPORT || tx.type === TransactionType.TRANSFER) ? void openTransactionDetails(tx) : triggerApproval(tx.id, 'APPROVE')} className="flex-1 py-2 bg-slate-800 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-700 transition">
                                         {isFulfillmentTx ? 'Duyệt SL/CL' : 'Duyệt Phiếu'}
                                       </button>
                                       <button onClick={() => triggerApproval(tx.id, 'CANCEL')} className="flex-1 py-2 bg-white border border-red-200 text-red-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-50 transition">
@@ -1262,7 +1321,7 @@ const Operations: React.FC = () => {
                             return (
                               <div
                                 key={tx.id}
-                                onClick={() => setViewingHistoryTx(tx)}
+                                onClick={() => void openTransactionDetails(tx)}
                                 className={`bg-white border rounded-2xl p-4 transition-all cursor-pointer group shadow-sm ${
                                   isMyWarehouse ? 'border-blue-200 bg-blue-50/5 shadow-md shadow-blue-500/5 hover:border-blue-400' : 'border-slate-200/80 hover:border-accent'
                                 }`}
@@ -1288,7 +1347,7 @@ const Operations: React.FC = () => {
                                   </div>
                                   {canReceiveWmsTransaction(user, tx) && (
                                     <div className="flex md:flex-col gap-2 min-w-[160px] pt-4 md:pt-0 border-t md:border-t-0 md:border-l border-slate-100 md:pl-4" onClick={(e) => e.stopPropagation()}>
-                                      <button onClick={() => (tx.type === TransactionType.IMPORT || tx.type === TransactionType.TRANSFER) ? setViewingHistoryTx(tx) : triggerApproval(tx.id, 'RECEIVE')} className="flex-1 py-3 bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-700 shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 transition">
+                                      <button onClick={() => (tx.type === TransactionType.IMPORT || tx.type === TransactionType.TRANSFER) ? void openTransactionDetails(tx) : triggerApproval(tx.id, 'RECEIVE')} className="flex-1 py-3 bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-700 shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 transition">
                                         <CheckCircle size={14} /> XÁC NHẬN NHẬN
                                       </button>
                                       {isAdmin && <div className="text-[9px] text-slate-400 text-center italic mt-1 font-bold">Chờ kho đích bấm nhận</div>}
@@ -1589,7 +1648,7 @@ const Operations: React.FC = () => {
                               return (
                                 <tr
                                   key={tx.id}
-                                  onClick={() => setViewingHistoryTx(tx)}
+                                  onClick={() => void openTransactionDetails(tx)}
                                   className="hover:bg-indigo-50/30 transition-colors cursor-pointer group"
                                 >
                                   {/* Mã & Ngày lập */}
@@ -1695,7 +1754,7 @@ const Operations: React.FC = () => {
                                     <div className="inline-flex items-center gap-1.5 justify-end">
                                       <button
                                         type="button"
-                                        onClick={() => setViewingHistoryTx(tx)}
+                                        onClick={() => void openTransactionDetails(tx)}
                                         title="Xem chi tiết"
                                         className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600 transition shadow-xs"
                                       >
@@ -1763,7 +1822,7 @@ const Operations: React.FC = () => {
                                 return (
                                   <div
                                     key={tx.id}
-                                    onClick={() => setViewingHistoryTx(tx)}
+                                    onClick={() => void openTransactionDetails(tx)}
                                     className="group rounded-2xl border border-white bg-white p-3 shadow-sm transition-all hover:border-accent hover:shadow-md cursor-pointer"
                                   >
                                     <div className="flex items-start justify-between gap-2">

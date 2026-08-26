@@ -106,61 +106,73 @@ const assertApproveResult = (data: unknown): ApprovePurchasePackageResult => {
   };
 };
 
+const getDeliveryLookupBy = async (
+  field: 'qr_token' | 'wms_transaction_id',
+  value: string,
+): Promise<PurchaseDeliveryQrLookup | null> => {
+  if (!value) return null;
+  const { data: batchRow, error: batchError } = await supabase
+    .from('purchase_order_delivery_batches')
+    .select('*')
+    .eq(field, value)
+    .maybeSingle();
+  if (batchError) throw batchError;
+  if (!batchRow) return null;
+
+  const { data: lineRows, error: lineError } = await supabase
+    .from('purchase_order_delivery_lines')
+    .select('*')
+    .eq('delivery_batch_id', batchRow.id);
+  if (lineError) throw lineError;
+
+  const { data: poRow, error: poError } = await supabase
+    .from('purchase_orders')
+    .select('*')
+    .eq('id', batchRow.purchase_order_id)
+    .single();
+  if (poError) throw poError;
+
+  const lines = (lineRows || []).map(row => ({
+    ...(fromDb(row) as PurchaseOrderDeliveryLine),
+    plannedQty: Number(row.planned_qty || 0),
+    deliveredQty: Number(row.delivered_qty ?? row.accepted_qty ?? 0),
+    acceptedQty: Number(row.accepted_qty || 0),
+    deliveredStockQty: Number(row.delivered_stock_qty ?? row.accepted_stock_qty ?? 0),
+    acceptedStockQty: Number(row.accepted_stock_qty || 0),
+    returnedQty: Number(row.returned_qty || 0),
+    deliveryUnitPrice: Number(row.delivery_unit_price || 0),
+    stockPlannedQty: Number(row.stock_planned_qty || 0),
+  }));
+
+  return {
+    purchaseOrder: fromDb(poRow) as PurchaseOrder,
+    deliveryBatch: {
+      ...(fromDb(batchRow) as PurchaseOrderDeliveryBatch),
+      fulfillmentBatchIds: batchRow.fulfillment_batch_ids || [],
+      wmsTransactionId: batchRow.wms_transaction_id || null,
+      supplementalApprovalId: batchRow.supplemental_approval_id || null,
+      supplierId: batchRow.supplier_id || null,
+      supplierNameSnapshot: batchRow.supplier_name_snapshot || null,
+      deliveryNo: Number(batchRow.delivery_no || 1),
+      status: batchRow.status || 'planned',
+      vatRate: Number(batchRow.vat_rate || 0),
+      qrToken: batchRow.qr_token || null,
+      idempotencyKey: batchRow.idempotency_key || null,
+      qualityResult: batchRow.quality_result || null,
+      varianceReason: batchRow.variance_reason || null,
+      acceptedGrossAmount: Number(batchRow.accepted_gross_amount || 0),
+      lines,
+    },
+  };
+};
+
 export const purchasePackageService = {
   async getDeliveryByQrToken(token: string): Promise<PurchaseDeliveryQrLookup | null> {
-    const { data: batchRow, error: batchError } = await supabase
-      .from('purchase_order_delivery_batches')
-      .select('*')
-      .eq('qr_token', token)
-      .maybeSingle();
-    if (batchError) throw batchError;
-    if (!batchRow) return null;
+    return getDeliveryLookupBy('qr_token', token);
+  },
 
-    const { data: lineRows, error: lineError } = await supabase
-      .from('purchase_order_delivery_lines')
-      .select('*')
-      .eq('delivery_batch_id', batchRow.id);
-    if (lineError) throw lineError;
-
-    const { data: poRow, error: poError } = await supabase
-      .from('purchase_orders')
-      .select('*')
-      .eq('id', batchRow.purchase_order_id)
-      .single();
-    if (poError) throw poError;
-
-    const lines = (lineRows || []).map(row => ({
-      ...(fromDb(row) as PurchaseOrderDeliveryLine),
-      plannedQty: Number(row.planned_qty || 0),
-      deliveredQty: Number(row.delivered_qty ?? row.accepted_qty ?? 0),
-      acceptedQty: Number(row.accepted_qty || 0),
-      deliveredStockQty: Number(row.delivered_stock_qty ?? row.accepted_stock_qty ?? 0),
-      acceptedStockQty: Number(row.accepted_stock_qty || 0),
-      returnedQty: Number(row.returned_qty || 0),
-      deliveryUnitPrice: Number(row.delivery_unit_price || 0),
-      stockPlannedQty: Number(row.stock_planned_qty || 0),
-    }));
-
-    return {
-      purchaseOrder: fromDb(poRow) as PurchaseOrder,
-      deliveryBatch: {
-        ...(fromDb(batchRow) as PurchaseOrderDeliveryBatch),
-        fulfillmentBatchIds: batchRow.fulfillment_batch_ids || [],
-        wmsTransactionId: batchRow.wms_transaction_id || null,
-        supplementalApprovalId: batchRow.supplemental_approval_id || null,
-        supplierId: batchRow.supplier_id || null,
-        supplierNameSnapshot: batchRow.supplier_name_snapshot || null,
-        deliveryNo: Number(batchRow.delivery_no || 1),
-        status: batchRow.status || 'planned',
-        vatRate: Number(batchRow.vat_rate || 0),
-        qrToken: batchRow.qr_token || null,
-        idempotencyKey: batchRow.idempotency_key || null,
-        qualityResult: batchRow.quality_result || null,
-        varianceReason: batchRow.variance_reason || null,
-        acceptedGrossAmount: Number(batchRow.accepted_gross_amount || 0),
-        lines,
-      },
-    };
+  async getDeliveryByWmsTransactionId(transactionId: string): Promise<PurchaseDeliveryQrLookup | null> {
+    return getDeliveryLookupBy('wms_transaction_id', transactionId);
   },
 
   async getWmsTransactionById(transactionId: string): Promise<Transaction | null> {
