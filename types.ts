@@ -2809,6 +2809,12 @@ export interface PurchaseOrderDeliveryBatch {
   deliveryNo: number;
   plannedDeliveryDate?: string | null;
   status: PurchaseOrderDeliveryBatchStatus;
+  approvalStatus?: 'draft' | 'pending_approval' | 'approved' | 'revision_requested' | 'rejected';
+  approvalRequestedBy?: string | null;
+  approvalRequestedAt?: string | null;
+  approvalDecidedBy?: string | null;
+  approvalDecidedAt?: string | null;
+  approvalDecisionNote?: string | null;
   fulfillmentMode?: MaterialRequestFulfillmentMode;
   vatRate?: number;
   qrToken?: string | null;

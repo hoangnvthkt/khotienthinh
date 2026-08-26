@@ -6,6 +6,9 @@ begin
   if to_regprocedure('public.submit_material_po_batch(uuid,uuid,uuid)') is null then
     raise exception 'Missing submit_material_po_batch RPC';
   end if;
+  if to_regprocedure('public.save_material_po_batch_draft(text,uuid,date,numeric,text,text,jsonb,uuid)') is null then
+    raise exception 'Missing save_material_po_batch_draft RPC';
+  end if;
   if to_regprocedure('public.decide_material_po_batch(uuid,text,text,uuid)') is null then
     raise exception 'Missing decide_material_po_batch RPC';
   end if;

@@ -46,7 +46,7 @@ export default function PurchasePackageSummary({
       </div>
       {hasVariance && (
         <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] font-bold text-amber-800">
-          Đợt giao đang lệch baseline Gói mua hàng. Hệ thống chỉ cảnh báo để đối soát, không khóa lưu/gửi duyệt.
+          Đợt giao đang lệch nhu cầu tham chiếu. Hệ thống chỉ cảnh báo để đối soát, không khóa lưu/gửi duyệt.
         </div>
       )}
     </div>

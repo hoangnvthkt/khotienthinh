@@ -1,6 +1,6 @@
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { AlertTriangle, Calculator, Loader2, Save } from 'lucide-react';
-import { MaterialRequestFulfillmentMode, type PurchaseOrder, type PurchaseOrderDeliveryBatch } from '../../types';
+import type { PurchaseOrder, PurchaseOrderDeliveryBatch } from '../../types';
 import {
   buildPurchaseDeliveryLineDrafts,
   getPurchaseDeliveryDraftSummary,
@@ -33,13 +33,13 @@ export default function PurchaseDeliveryBatchEditor({
   cloneFromBatch = null,
   existingBatches = [],
 }: PurchaseDeliveryBatchEditorProps) {
-  const idempotencyKeyRef = useRef(crypto.randomUUID());
   const [saving, setSaving] = useState(false);
-  const [supplierId, setSupplierId] = useState(purchaseOrder.vendorId || '');
-  const [supplierName, setSupplierName] = useState(purchaseOrder.vendorName || '');
+  const supplierId = purchaseOrder.vendorId || '';
+  const supplierName = purchaseOrder.vendorName || '';
   const [vatRate, setVatRate] = useState(String(cloneFromBatch?.vatRate ?? purchaseOrder.vatRate ?? 0));
   const [plannedDeliveryDate, setPlannedDeliveryDate] = useState(cloneFromBatch?.plannedDeliveryDate || purchaseOrder.expectedDeliveryDate || '');
   const [note, setNote] = useState(cloneFromBatch?.note || '');
+  const [varianceReason, setVarianceReason] = useState(cloneFromBatch?.varianceReason || '');
   const [lineDrafts, setLineDrafts] = useState(() => buildPurchaseDeliveryLineDrafts({
     purchaseOrder,
     existingBatches,
@@ -56,10 +56,18 @@ export default function PurchaseDeliveryBatchEditor({
   );
 
   const canSave = useMemo(() => (
-    supplierName.trim()
+    supplierId === purchaseOrder.vendorId
+    && supplierName.trim() === (purchaseOrder.vendorName || '').trim()
     && targetWarehouseId
-    && selectedLines.some(line => numberValue(line.purchaseQty) > 0 && numberValue(line.purchaseUnitPrice) >= 0)
-  ), [selectedLines, supplierName, targetWarehouseId]);
+    && numberValue(vatRate) <= 100
+    && selectedLines.length > 0
+    && selectedLines.every(line => (
+      numberValue(line.purchaseQty) > 0
+      && numberValue(line.stockQty) > 0
+      && numberValue(line.purchaseUnitPrice) >= 0
+    ))
+    && (summary.varianceQty <= 0 || Boolean(varianceReason.trim()))
+  ), [purchaseOrder.vendorId, purchaseOrder.vendorName, selectedLines, supplierId, supplierName, summary.varianceQty, targetWarehouseId, varianceReason, vatRate]);
 
   const updateLine = (purchaseOrderLineId: string, patch: Partial<typeof lineDrafts[number]>) => {
     setLineDrafts(prev => prev.map(line => line.purchaseOrderLineId === purchaseOrderLineId ? { ...line, ...patch } : line));
@@ -69,14 +77,11 @@ export default function PurchaseDeliveryBatchEditor({
     if (!canSave || saving) return;
     setSaving(true);
     try {
-      const result = await purchasePackageService.createDelivery({
+      const result = await purchasePackageService.saveBatchDraft({
         purchaseOrderId: purchaseOrder.id,
-        idempotencyKey: idempotencyKeyRef.current,
-        supplierId,
-        supplierNameSnapshot: supplierName.trim(),
-        fulfillmentMode: purchaseOrder.fulfillmentMode || MaterialRequestFulfillmentMode.RECEIVE_TO_STOCK,
+        deliveryBatchId: null,
         vatRate: numberValue(vatRate),
-        targetWarehouseId,
+        varianceReason: varianceReason.trim() || null,
         plannedDeliveryDate: plannedDeliveryDate || null,
         note: note.trim() || null,
         actorUserId,
@@ -103,11 +108,11 @@ export default function PurchaseDeliveryBatchEditor({
       <div className="grid gap-3 sm:grid-cols-4">
         <label className="space-y-1 text-xs font-bold text-slate-600">
           <span className="block text-[10px] font-black uppercase text-slate-400">Nhà cung cấp</span>
-          <input value={supplierName} onChange={event => setSupplierName(event.target.value)} className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm font-bold text-slate-900" placeholder="Tên NCC" />
+          <input value={supplierName} readOnly className="h-10 w-full rounded-md border border-slate-200 bg-slate-50 px-3 text-sm font-bold text-slate-700" placeholder="Tên NCC" />
         </label>
         <label className="space-y-1 text-xs font-bold text-slate-600">
           <span className="block text-[10px] font-black uppercase text-slate-400">Mã NCC</span>
-          <input value={supplierId} onChange={event => setSupplierId(event.target.value)} className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm font-bold text-slate-900" placeholder="vendor-id" />
+          <input value={supplierId} readOnly className="h-10 w-full rounded-md border border-slate-200 bg-slate-50 px-3 text-sm font-bold text-slate-700" placeholder="vendor-id" />
         </label>
         <label className="space-y-1 text-xs font-bold text-slate-600">
           <span className="block text-[10px] font-black uppercase text-slate-400">Ngày dự kiến giao</span>
@@ -142,9 +147,17 @@ export default function PurchaseDeliveryBatchEditor({
         </div>
       </div>
       {summary.varianceQty > 0 && (
-        <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">
-          <AlertTriangle size={15} className="mt-0.5 shrink-0" />
-          <span>Đợt này làm tổng số lượng giao vượt PO gốc {summary.varianceQty.toLocaleString('vi-VN')}. Hệ thống cho lưu nhưng sẽ ghi nhận chênh lệch.</span>
+        <div className="space-y-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">
+          <div className="flex items-start gap-2">
+            <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+            <span>Đợt này làm tổng số lượng giao vượt nhu cầu tham chiếu {summary.varianceQty.toLocaleString('vi-VN')}. Vẫn được phép đặt nhưng cần nêu lý do thực tế.</span>
+          </div>
+          <input
+            value={varianceReason}
+            onChange={event => setVarianceReason(event.target.value)}
+            className="h-9 w-full rounded-md border border-amber-200 bg-white px-3 text-xs font-bold text-slate-800"
+            placeholder="Lý do đặt vượt nhu cầu tham chiếu"
+          />
         </div>
       )}
 

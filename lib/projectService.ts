@@ -783,6 +783,12 @@ const poDeliveryBatchToDb = (batch: PurchaseOrderDeliveryBatch): any => {
         deliveryNo: Number(batch.deliveryNo || 1),
         plannedDeliveryDate: batch.plannedDeliveryDate || null,
         status: batch.status || 'planned',
+        approvalStatus: batch.approvalStatus || 'draft',
+        approvalRequestedBy: batch.approvalRequestedBy || null,
+        approvalRequestedAt: batch.approvalRequestedAt || null,
+        approvalDecidedBy: batch.approvalDecidedBy || null,
+        approvalDecidedAt: batch.approvalDecidedAt || null,
+        approvalDecisionNote: batch.approvalDecisionNote || null,
         fulfillmentMode: batch.fulfillmentMode || null,
         vatRate: Number(batch.vatRate || 0),
         qrToken: batch.qrToken || null,
@@ -814,7 +820,9 @@ const poDeliveryLineToDb = (line: PurchaseOrderDeliveryLine): any => {
         purchaseOrderLineId: line.purchaseOrderLineId,
         itemId: line.itemId,
         plannedQty: Number(line.plannedQty || 0),
+        deliveredQty: Number(line.deliveredQty ?? line.acceptedQty ?? 0),
         acceptedQty: Number(line.acceptedQty || 0),
+        deliveredStockQty: Number(line.deliveredStockQty ?? line.acceptedStockQty ?? 0),
         acceptedStockQty: Number(line.acceptedStockQty || 0),
         returnedQty: Number(line.returnedQty || 0),
         unit: line.unit || null,
@@ -836,6 +844,12 @@ const poDeliveryBatchFromRows = (batch: any, lineRows: any[]): PurchaseOrderDeli
     supplierNameSnapshot: batch.supplier_name_snapshot || null,
     deliveryNo: Number(batch.delivery_no || 1),
     status: (batch.status || 'planned') as PurchaseOrderDeliveryBatch['status'],
+    approvalStatus: batch.approval_status || 'draft',
+    approvalRequestedBy: batch.approval_requested_by || null,
+    approvalRequestedAt: batch.approval_requested_at || null,
+    approvalDecidedBy: batch.approval_decided_by || null,
+    approvalDecidedAt: batch.approval_decided_at || null,
+    approvalDecisionNote: batch.approval_decision_note || null,
     vatRate: Number(batch.vat_rate || 0),
     qrToken: batch.qr_token || null,
     idempotencyKey: batch.idempotency_key || null,
@@ -845,7 +859,9 @@ const poDeliveryBatchFromRows = (batch: any, lineRows: any[]): PurchaseOrderDeli
     lines: lineRows.map(row => ({
         ...(fromDb(row) as PurchaseOrderDeliveryLine),
         plannedQty: Number(row.planned_qty || 0),
+        deliveredQty: Number(row.delivered_qty ?? row.accepted_qty ?? 0),
         acceptedQty: Number(row.accepted_qty || 0),
+        deliveredStockQty: Number(row.delivered_stock_qty ?? row.accepted_stock_qty ?? 0),
         acceptedStockQty: Number(row.accepted_stock_qty || 0),
         returnedQty: Number(row.returned_qty || 0),
         deliveryUnitPrice: Number(row.delivery_unit_price || 0),
@@ -1143,7 +1159,7 @@ export const poService = {
             ) {
                 const actorUserId = String(patch.lastActionBy || '').trim();
                 if (!actorUserId) throw new Error('Thiếu người thao tác duyệt Gói mua hàng.');
-                return purchasePackageService.approvePackage({
+                return purchasePackageService.approveSingle({
                     purchaseOrderId: id,
                     actorUserId,
                     idempotencyKey: purchasePackageApprovalIdempotencyKey(id),

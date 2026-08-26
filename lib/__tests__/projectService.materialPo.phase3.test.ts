@@ -71,7 +71,7 @@ describe('poService Phase 3.3 workflow transitions', () => {
     expect(supabaseMock.from).not.toHaveBeenCalledWith('purchase_orders');
   });
 
-  it('routes V2 from-request package approval through the purchase package command', async () => {
+  it('routes a single-delivery request PO through the neutral approval command', async () => {
     const maybeSingle = vi.fn().mockResolvedValue({
       data: {
         id: 'po-1',
@@ -87,7 +87,14 @@ describe('poService Phase 3.3 workflow transitions', () => {
       data: {
         purchaseOrderId: 'po-1',
         status: 'confirmed',
-        purchaseMode: 'multiple',
+        purchaseMode: 'single',
+        delivery: {
+          deliveryBatchId: 'batch-1',
+          deliveryNo: 1,
+          deliveryCode: 'PO-001-01',
+          wmsTransactionId: 'tx-1',
+          qrToken: 'pod_batch_1',
+        },
       },
       error: null,
     });
@@ -101,11 +108,17 @@ describe('poService Phase 3.3 workflow transitions', () => {
     expect(result).toEqual({
       purchaseOrderId: 'po-1',
       status: 'confirmed',
-      purchaseMode: 'multiple',
-      delivery: undefined,
+      purchaseMode: 'single',
+      delivery: {
+        deliveryBatchId: 'batch-1',
+        deliveryNo: 1,
+        deliveryCode: 'PO-001-01',
+        wmsTransactionId: 'tx-1',
+        qrToken: 'pod_batch_1',
+      },
     });
     expect(supabaseMock.rpc).toHaveBeenCalledWith(
-      'approve_purchase_package_and_prepare_single_batch_v2',
+      'approve_single_material_po',
       expect.objectContaining({
         p_purchase_order_id: 'po-1',
         p_actor_user_id: 'leader-1',

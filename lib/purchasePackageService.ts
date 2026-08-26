@@ -1,28 +1,16 @@
-import type { MaterialRequestFulfillmentMode, PurchaseMode, PurchaseOrder, PurchaseOrderDeliveryBatch, PurchaseOrderDeliveryLine, Transaction } from '../types';
+import type { PurchaseMode, PurchaseOrder, PurchaseOrderDeliveryBatch, PurchaseOrderDeliveryLine, Transaction } from '../types';
 import { fromDb } from './dbMapping';
 import { supabase } from './supabase';
 
-export interface CreatePurchaseDeliveryInput {
-  purchaseOrderId: string;
-  idempotencyKey: string;
-  supplierId: string;
-  supplierNameSnapshot: string;
-  fulfillmentMode: MaterialRequestFulfillmentMode;
-  vatRate: number;
-  targetWarehouseId: string;
-  plannedDeliveryDate?: string | null;
-  note?: string | null;
-  actorUserId: string;
-  lines: Array<{
-    purchaseOrderLineId: string;
-    itemId: string;
-    purchaseQty: number;
-    purchaseUnit: string;
-    stockQty: number;
-    stockUnit: string;
-    purchaseUnitPrice: number;
-    stockUnitPrice: number;
-  }>;
+export interface MaterialPoBatchDraftLineInput {
+  purchaseOrderLineId: string;
+  itemId: string;
+  purchaseQty: number;
+  purchaseUnit: string;
+  stockQty: number;
+  stockUnit: string;
+  purchaseUnitPrice: number;
+  stockUnitPrice: number;
 }
 
 export interface PurchaseDeliveryCommandResult {
@@ -45,15 +33,21 @@ export interface MaterialPoBatchDecisionResult {
   approvalStatus: 'pending_approval' | 'approved' | 'revision_requested' | 'rejected';
 }
 
+export interface SaveMaterialPoBatchDraftInput {
+  purchaseOrderId: string;
+  deliveryBatchId?: string | null;
+  plannedDeliveryDate?: string | null;
+  vatRate: number;
+  varianceReason?: string | null;
+  note?: string | null;
+  actorUserId: string;
+  lines: MaterialPoBatchDraftLineInput[];
+}
+
 export interface PurchaseDeliveryQrLookup {
   purchaseOrder: PurchaseOrder;
   deliveryBatch: PurchaseOrderDeliveryBatch;
 }
-
-type UpdatePurchaseDeliveryInput = CreatePurchaseDeliveryInput & {
-  deliveryBatchId: string;
-  wmsTransactionId: string;
-};
 
 const readField = (value: Record<string, unknown>, camelKey: string, snakeKey: string) =>
   value[camelKey] ?? value[snakeKey];
@@ -77,20 +71,6 @@ export const assertCommandResult = (data: unknown): PurchaseDeliveryCommandResul
 
   return result;
 };
-
-const deliveryPayload = (input: CreatePurchaseDeliveryInput) => ({
-  p_purchase_order_id: input.purchaseOrderId,
-  p_idempotency_key: input.idempotencyKey,
-  p_supplier_id: input.supplierId,
-  p_supplier_name: input.supplierNameSnapshot,
-  p_fulfillment_mode: input.fulfillmentMode,
-  p_vat_rate: input.vatRate,
-  p_target_warehouse_id: input.targetWarehouseId,
-  p_planned_delivery_date: input.plannedDeliveryDate ?? null,
-  p_note: input.note ?? null,
-  p_actor_user_id: input.actorUserId,
-  p_lines: input.lines,
-});
 
 const runDeliveryCommand = async (
   rpcName: string,
@@ -194,14 +174,6 @@ export const purchasePackageService = {
     return data ? (fromDb(data) as Transaction) : null;
   },
 
-  async approvePackage(input: {
-    purchaseOrderId: string;
-    actorUserId: string;
-    idempotencyKey: string;
-  }): Promise<ApprovePurchasePackageResult> {
-    return this.approveSingle(input);
-  },
-
   async submitBatch(input: {
     deliveryBatchId: string;
     approverUserId: string;
@@ -211,6 +183,21 @@ export const purchasePackageService = {
       p_delivery_batch_id: input.deliveryBatchId,
       p_approver_user_id: input.approverUserId,
       p_actor_user_id: input.actorUserId,
+    });
+    if (error) throw error;
+    return data as MaterialPoBatchDecisionResult;
+  },
+
+  async saveBatchDraft(input: SaveMaterialPoBatchDraftInput): Promise<MaterialPoBatchDecisionResult> {
+    const { data, error } = await supabase.rpc('save_material_po_batch_draft', {
+      p_purchase_order_id: input.purchaseOrderId,
+      p_delivery_batch_id: input.deliveryBatchId ?? null,
+      p_planned_delivery_date: input.plannedDeliveryDate ?? null,
+      p_vat_rate: input.vatRate,
+      p_variance_reason: input.varianceReason ?? null,
+      p_note: input.note ?? null,
+      p_actor_user_id: input.actorUserId,
+      p_lines: input.lines,
     });
     if (error) throw error;
     return data as MaterialPoBatchDecisionResult;
@@ -254,18 +241,6 @@ export const purchasePackageService = {
     });
     if (error) throw error;
     return assertApproveResult(data);
-  },
-
-  createDelivery(input: CreatePurchaseDeliveryInput) {
-    return runDeliveryCommand('create_delivery_batch_with_wms_qr_v2', deliveryPayload(input));
-  },
-
-  updateUnreceivedDelivery(input: UpdatePurchaseDeliveryInput) {
-    return runDeliveryCommand('update_unreceived_delivery_batch_v2', {
-      ...deliveryPayload(input),
-      p_delivery_batch_id: input.deliveryBatchId,
-      p_wms_transaction_id: input.wmsTransactionId,
-    });
   },
 
   async cancelUnreceivedDelivery(input: {

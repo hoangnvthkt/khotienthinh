@@ -8,6 +8,8 @@ import { canClonePurchaseOrder } from './purchaseOrderClone';
 export type PurchaseOrderUiActionId =
   | 'submit_package'
   | 'approve_package'
+  | 'submit_delivery_batch'
+  | 'approve_delivery_batch'
   | 'clone_po'
   | 'add_delivery'
   | 'clone_delivery'
@@ -108,9 +110,6 @@ const isPurchasePackageV2 = (po: PurchaseOrder) =>
 const firstOpenPackageBatch = (deliveryBatches: PurchaseOrderDeliveryBatch[]) =>
   deliveryBatches.find(batch => !['cancelled'].includes(batch.status));
 
-const hasRejectedPackageBatch = (deliveryBatches: PurchaseOrderDeliveryBatch[]) =>
-  deliveryBatches.some(batch => batch.status === 'cancelled');
-
 const hasSupplementalPendingBatch = (deliveryBatches: PurchaseOrderDeliveryBatch[]) =>
   deliveryBatches.some(batch => batch.status === 'supplemental_pending');
 
@@ -184,50 +183,81 @@ export const getPurchaseOrderUiPolicy = ({
 
   if (isPackageV2) {
     const openBatch = firstOpenPackageBatch(deliveryBatches);
-    const canOpenDeliveryQr = Boolean(openBatch?.qrToken || openBatch?.wmsTransactionId);
-    if (po.status === 'draft' && maySubmitPo) {
-      primaryAction = { id: 'submit_package', label: 'Gửi duyệt gói', intent: 'warning' };
-      nextStep = 'Gửi Gói mua hàng vào luồng duyệt.';
-    } else if (po.status === 'sent' && mayApprovePo) {
-      primaryAction = { id: 'approve_package', label: 'Duyệt gói', intent: 'success' };
-      secondaryActions.push({ id: 'request_revision', label: 'Yêu cầu chỉnh sửa', intent: 'neutral' });
-      nextStep = po.purchaseMode === 'single'
-        ? 'Duyệt Gói mua hàng và tạo sẵn đợt giao đầu tiên.'
-        : 'Duyệt Gói mua hàng, sau đó thêm từng đợt giao khi có lịch.';
-    } else if (['confirmed', 'in_transit', 'partial'].includes(po.status)) {
-      if (canOpenDeliveryQr && openBatch) {
+    const draftBatch = deliveryBatches.find(batch => (
+      batch.status === 'planned'
+      && ['draft', 'revision_requested', 'rejected'].includes(batch.approvalStatus || 'draft')
+    ));
+    const pendingBatch = deliveryBatches.find(batch => (
+      batch.status === 'planned' && batch.approvalStatus === 'pending_approval'
+    ));
+    const approvedWmsBatch = deliveryBatches.find(batch => (
+      batch.approvalStatus === 'approved'
+      && Boolean(batch.qrToken || batch.wmsTransactionId)
+      && !['cancelled', 'received', 'received_short', 'received_over'].includes(batch.status)
+    ));
+
+    if (po.purchaseMode === 'single') {
+      if (po.status === 'draft' && maySubmitPo) {
+        primaryAction = { id: 'submit_package', label: 'Gửi duyệt đơn', intent: 'warning' };
+        nextStep = 'Gửi đơn mua hàng một lần vào luồng duyệt.';
+      } else if (po.status === 'sent' && mayApprovePo) {
+        primaryAction = { id: 'approve_package', label: 'Duyệt đơn', intent: 'success' };
+        secondaryActions.push({ id: 'request_revision', label: 'Yêu cầu chỉnh sửa', intent: 'neutral' });
+        nextStep = 'Duyệt đơn và tạo phiếu giao hàng chờ kho kiểm tra SL/CL.';
+      } else if (approvedWmsBatch) {
         primaryAction = {
           id: 'open_delivery_qr',
-          label: 'Mở QR đợt giao',
+          label: 'Mở phiếu giao hàng',
           intent: 'primary',
-          deliveryBatchId: openBatch.id,
-          transactionId: openBatch.wmsTransactionId || undefined,
-          qrToken: openBatch.qrToken || null,
+          deliveryBatchId: approvedWmsBatch.id,
+          transactionId: approvedWmsBatch.wmsTransactionId || undefined,
+          qrToken: approvedWmsBatch.qrToken || null,
         };
-        nextStep = 'Theo dõi đợt giao hiện tại qua QR/WMS.';
-      } else if (mayReceivePo) {
-        const isRecreateAfterRejectedSingleBatch = po.purchaseMode === 'single' && hasRejectedPackageBatch(deliveryBatches);
+        nextStep = 'Theo dõi giao hàng, duyệt SL/CL rồi xác nhận nhập kho.';
+      }
+    } else {
+      if (draftBatch && maySubmitPo) {
         primaryAction = {
-          id: 'add_delivery',
-          label: isRecreateAfterRejectedSingleBatch ? 'Tạo lại đợt giao' : 'Thêm đợt giao',
-          intent: 'primary',
+          id: 'submit_delivery_batch',
+          label: 'Gửi duyệt đợt giao',
+          intent: 'warning',
+          deliveryBatchId: draftBatch.id,
         };
-        nextStep = isRecreateAfterRejectedSingleBatch
-          ? 'Đợt giao trước đã bị từ chối. Tạo lại đợt giao để gửi Kho xử lý WMS/QR.'
-          : 'Tạo đợt giao để nhà cung cấp giao hàng và kho xử lý QR/WMS.';
+        nextStep = 'Gửi riêng số lượng, giá và VAT của đợt này để duyệt.';
+      } else if (pendingBatch && mayApprovePo) {
+        primaryAction = {
+          id: 'approve_delivery_batch',
+          label: 'Duyệt đợt giao',
+          intent: 'success',
+          deliveryBatchId: pendingBatch.id,
+        };
+        nextStep = 'Duyệt đợt giao để tạo một phiếu WMS/QR riêng.';
+      } else if (approvedWmsBatch) {
+        primaryAction = {
+          id: 'open_delivery_qr',
+          label: 'Mở phiếu giao hàng',
+          intent: 'primary',
+          deliveryBatchId: approvedWmsBatch.id,
+          transactionId: approvedWmsBatch.wmsTransactionId || undefined,
+          qrToken: approvedWmsBatch.qrToken || null,
+        };
+        nextStep = 'Đợt đã duyệt đang chờ kho kiểm tra SL/CL và nhập kho.';
+      } else if (mayEditPo || maySubmitPo || mayReceivePo) {
+        primaryAction = { id: 'add_delivery', label: 'Tạo đợt giao', intent: 'primary' };
+        nextStep = 'Lập đợt giao thực tế với số lượng, giá và VAT riêng.';
       }
 
-      if (mayReceivePo && po.purchaseMode === 'multiple' && primaryAction?.id !== 'add_delivery') {
-        secondaryActions.push({ id: 'add_delivery', label: 'Thêm đợt giao', intent: 'primary' });
+      if ((mayEditPo || maySubmitPo || mayReceivePo) && primaryAction?.id !== 'add_delivery') {
+        secondaryActions.push({ id: 'add_delivery', label: 'Tạo thêm đợt', intent: 'primary' });
       }
-      if (mayReceivePo && po.purchaseMode === 'multiple' && openBatch) {
+      if ((mayEditPo || maySubmitPo) && openBatch) {
         secondaryActions.push({
           id: 'clone_delivery',
           label: 'Clone đợt',
           intent: 'neutral',
           deliveryBatchId: openBatch.id,
         });
-        if (['planned', 'wms_pending'].includes(openBatch.status)) {
+        if (openBatch.status === 'planned' && (openBatch.approvalStatus || 'draft') !== 'approved') {
           secondaryActions.push({
             id: 'cancel_delivery',
             label: 'Hủy đợt giao',
@@ -239,9 +269,11 @@ export const getPurchaseOrderUiPolicy = ({
       if (mayReceivePo && hasOpenReceiptNeed(receiptStats) && !openBatch) {
         secondaryActions.push({ id: 'close_short', label: 'Kết thúc thiếu', intent: 'warning' });
       }
-    } else if (po.status === 'closed') {
+    }
+
+    if (po.status === 'closed') {
       primaryAction = { id: 'print_purchase_order', label: 'In chứng từ', intent: 'neutral' };
-      nextStep = 'Gói mua hàng đã đóng, chỉ còn tra cứu và in chứng từ.';
+      nextStep = 'Đơn mua hàng đã đóng, chỉ còn tra cứu và in chứng từ.';
     }
   } else if (!isCompanyConsolidatedPo) {
     if (hasPendingSupplemental && mayApprovePo && pendingSupplementalApprovalId) {

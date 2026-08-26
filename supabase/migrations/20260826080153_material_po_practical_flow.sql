@@ -304,6 +304,215 @@ $$;
 revoke all on function app_private.ensure_material_po_batch_wms(uuid, uuid)
   from public, anon, authenticated;
 
+create or replace function app_private.save_material_po_batch_draft(
+  p_purchase_order_id text,
+  p_delivery_batch_id uuid,
+  p_planned_delivery_date date,
+  p_vat_rate numeric,
+  p_variance_reason text,
+  p_note text,
+  p_lines jsonb,
+  p_actor_user_id uuid
+) returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_po public.purchase_orders%rowtype;
+  v_batch public.purchase_order_delivery_batches%rowtype;
+  v_line jsonb;
+  v_line_key text;
+  v_item_id text;
+  v_stock_qty numeric;
+  v_purchase_qty numeric;
+  v_price numeric;
+  v_delivery_no integer;
+  v_line_count integer := 0;
+begin
+  if p_actor_user_id is null
+     or public.current_app_user_id() is null
+     or p_actor_user_id <> public.current_app_user_id() then
+    raise exception 'Người thực hiện lệnh không hợp lệ.' using errcode = '42501';
+  end if;
+  if jsonb_typeof(coalesce(p_lines, '[]'::jsonb)) <> 'array'
+     or jsonb_array_length(coalesce(p_lines, '[]'::jsonb)) = 0 then
+    raise exception 'Đợt giao phải có ít nhất một dòng vật tư.' using errcode = '22023';
+  end if;
+  if coalesce(p_vat_rate, 0) < 0 or coalesce(p_vat_rate, 0) > 100 then
+    raise exception 'Thuế VAT phải trong khoảng 0 đến 100.' using errcode = '22023';
+  end if;
+
+  select * into v_po
+  from public.purchase_orders po
+  where po.id = p_purchase_order_id
+  for update;
+  if not found then
+    raise exception 'Không tìm thấy PO.' using errcode = '22023';
+  end if;
+  if v_po.source_mode <> 'from_request' or v_po.purchase_mode <> 'multiple' then
+    raise exception 'Chỉ lập đợt riêng cho PO vật tư giao nhiều lần.' using errcode = '22023';
+  end if;
+  if v_po.status in ('cancelled', 'closed', 'delivered') then
+    raise exception 'PO đã kết thúc nên không thể lập thêm đợt giao.' using errcode = '22023';
+  end if;
+  perform app_private.assert_project_permission_room_action(
+    v_po.project_id,
+    v_po.construction_site_id,
+    'material_po',
+    'edit',
+    p_actor_user_id
+  );
+
+  if p_delivery_batch_id is null then
+    select coalesce(max(batch.delivery_no), 0) + 1
+    into v_delivery_no
+    from public.purchase_order_delivery_batches batch
+    where batch.purchase_order_id = v_po.id;
+
+    insert into public.purchase_order_delivery_batches (
+      purchase_order_id, project_id, construction_site_id,
+      supplier_id, supplier_name_snapshot, delivery_no,
+      planned_delivery_date, status, approval_status,
+      fulfillment_mode, vat_rate, variance_reason, note, created_by
+    ) values (
+      v_po.id, v_po.project_id, v_po.construction_site_id,
+      v_po.vendor_id, v_po.vendor_name, v_delivery_no,
+      p_planned_delivery_date, 'planned', 'draft',
+      v_po.fulfillment_mode, coalesce(p_vat_rate, 0),
+      nullif(trim(coalesce(p_variance_reason, '')), ''),
+      nullif(trim(coalesce(p_note, '')), ''),
+      p_actor_user_id
+    ) returning * into v_batch;
+  else
+    select * into v_batch
+    from public.purchase_order_delivery_batches batch
+    where batch.id = p_delivery_batch_id
+      and batch.purchase_order_id = v_po.id
+    for update;
+    if not found then
+      raise exception 'Không tìm thấy đợt giao cần sửa.' using errcode = '22023';
+    end if;
+    if coalesce(v_batch.approval_status, 'draft') not in ('draft', 'revision_requested', 'rejected')
+       or v_batch.wms_transaction_id is not null
+       or v_batch.status <> 'planned' then
+      raise exception 'Đợt đã gửi duyệt hoặc đã tạo WMS nên không thể sửa.' using errcode = '22023';
+    end if;
+
+    update public.purchase_order_delivery_batches
+    set supplier_id = v_po.vendor_id,
+        supplier_name_snapshot = v_po.vendor_name,
+        planned_delivery_date = p_planned_delivery_date,
+        vat_rate = coalesce(p_vat_rate, 0),
+        variance_reason = nullif(trim(coalesce(p_variance_reason, '')), ''),
+        note = nullif(trim(coalesce(p_note, '')), ''),
+        approval_status = 'draft',
+        approval_decided_by = null,
+        approval_decided_at = null,
+        approval_decision_note = null,
+        updated_at = now()
+    where id = v_batch.id
+    returning * into v_batch;
+
+    delete from public.purchase_order_delivery_lines
+    where delivery_batch_id = v_batch.id;
+  end if;
+
+  for v_line in
+    select value from jsonb_array_elements(p_lines) line(value)
+  loop
+    v_line_key := nullif(coalesce(
+      v_line ->> 'purchaseOrderLineId', v_line ->> 'purchase_order_line_id'
+    ), '');
+    v_item_id := nullif(coalesce(v_line ->> 'itemId', v_line ->> 'item_id'), '');
+    v_stock_qty := coalesce(nullif(coalesce(
+      v_line ->> 'stockQty', v_line ->> 'requestQty', v_line ->> 'stock_planned_qty'
+    ), '')::numeric, 0);
+    v_purchase_qty := coalesce(nullif(coalesce(
+      v_line ->> 'purchaseQty', v_line ->> 'planned_qty'
+    ), '')::numeric, 0);
+    v_price := coalesce(nullif(coalesce(
+      v_line ->> 'purchaseUnitPrice', v_line ->> 'delivery_unit_price'
+    ), '')::numeric, 0);
+
+    if v_line_key is null
+       or v_item_id is null
+       or v_stock_qty <= 0
+       or v_purchase_qty <= 0
+       or v_price < 0 then
+      raise exception 'Dòng đợt giao thiếu hoặc sai số lượng/đơn giá.' using errcode = '22023';
+    end if;
+    if not exists (
+      select 1
+      from jsonb_array_elements(coalesce(v_po.items, '[]'::jsonb)) item(value)
+      where coalesce(item.value ->> 'lineId', item.value ->> 'itemId') = v_line_key
+        and item.value ->> 'itemId' = v_item_id
+    ) then
+      raise exception 'Dòng đợt giao không thuộc PO.' using errcode = '22023';
+    end if;
+
+    insert into public.purchase_order_delivery_lines (
+      delivery_batch_id, purchase_order_id, purchase_order_line_id,
+      item_id, planned_qty, unit, stock_planned_qty, stock_unit,
+      delivery_unit_price
+    ) values (
+      v_batch.id, v_po.id, v_line_key,
+      v_item_id, v_purchase_qty,
+      nullif(coalesce(v_line ->> 'purchaseUnit', v_line ->> 'unit'), ''),
+      v_stock_qty,
+      nullif(coalesce(v_line ->> 'stockUnit', v_line ->> 'requestUnit', v_line ->> 'stock_unit'), ''),
+      v_price
+    );
+    v_line_count := v_line_count + 1;
+  end loop;
+
+  return jsonb_build_object(
+    'deliveryBatchId', v_batch.id,
+    'deliveryNo', v_batch.delivery_no,
+    'approvalStatus', 'draft',
+    'lineCount', v_line_count
+  );
+end;
+$$;
+
+revoke all on function app_private.save_material_po_batch_draft(text, uuid, date, numeric, text, text, jsonb, uuid)
+  from public, anon;
+grant execute on function app_private.save_material_po_batch_draft(text, uuid, date, numeric, text, text, jsonb, uuid)
+  to authenticated;
+
+create or replace function public.save_material_po_batch_draft(
+  p_purchase_order_id text,
+  p_delivery_batch_id uuid default null,
+  p_planned_delivery_date date default null,
+  p_vat_rate numeric default 0,
+  p_variance_reason text default null,
+  p_note text default null,
+  p_lines jsonb default '[]'::jsonb,
+  p_actor_user_id uuid default null
+) returns jsonb
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  v_actor uuid := coalesce(p_actor_user_id, public.current_app_user_id());
+begin
+  if public.current_app_user_id() is null or v_actor <> public.current_app_user_id() then
+    raise exception 'Người thực hiện lệnh không hợp lệ.' using errcode = '42501';
+  end if;
+  return app_private.save_material_po_batch_draft(
+    p_purchase_order_id,
+    p_delivery_batch_id,
+    p_planned_delivery_date,
+    p_vat_rate,
+    p_variance_reason,
+    p_note,
+    p_lines,
+    v_actor
+  );
+end;
+$$;
+
 create or replace function app_private.submit_material_po_batch(
   p_delivery_batch_id uuid,
   p_approver_user_id uuid,
@@ -949,6 +1158,7 @@ end;
 $$;
 
 revoke all on function public.submit_material_po_batch(uuid, uuid, uuid) from public, anon;
+revoke all on function public.save_material_po_batch_draft(text, uuid, date, numeric, text, text, jsonb, uuid) from public, anon;
 revoke all on function public.decide_material_po_batch(uuid, text, text, uuid) from public, anon;
 revoke all on function public.approve_material_po_batch(uuid, uuid) from public, anon;
 revoke all on function public.approve_single_material_po(text, uuid, uuid) from public, anon;
@@ -956,6 +1166,7 @@ revoke all on function public.approve_material_po_quality(uuid, text, uuid, text
 revoke all on function public.finalize_material_po_receipt(uuid, text, uuid) from public, anon;
 
 grant execute on function public.submit_material_po_batch(uuid, uuid, uuid) to authenticated;
+grant execute on function public.save_material_po_batch_draft(text, uuid, date, numeric, text, text, jsonb, uuid) to authenticated;
 grant execute on function public.decide_material_po_batch(uuid, text, text, uuid) to authenticated;
 grant execute on function public.approve_material_po_batch(uuid, uuid) to authenticated;
 grant execute on function public.approve_single_material_po(text, uuid, uuid) to authenticated;

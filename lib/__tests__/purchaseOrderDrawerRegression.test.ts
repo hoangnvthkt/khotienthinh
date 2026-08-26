@@ -71,9 +71,11 @@ describe('purchase order drawer regression guard', () => {
     expect(cockpitSource).not.toContain("po.sourceMode === 'from_request' &&");
   });
 
-  it('routes purchase package approval and delivery save through the V2 command contract', () => {
+  it('routes practical PO approval and delivery drafts through neutral commands', () => {
     expect(source).toContain("case 'approve_package':");
-    expect(source).toContain('purchasePackageService.approvePackage');
+    expect(source).toContain('purchasePackageService.approveSingle');
+    expect(source).toContain('purchasePackageService.submitBatch');
+    expect(source).toContain('purchasePackageService.approveBatch');
     expect(source).toContain('result?.delivery?.wmsTransactionId');
     expect(source).toContain('refreshWmsRecords({ transactionIds: [result.delivery.wmsTransactionId] })');
     expect(source).toContain('existingBatches={poDeliveryBatchesByPo[packageDeliveryEditor.po.id] || []}');

@@ -33,7 +33,7 @@ describe('PurchaseDeliveryBatchEditor UI contract', () => {
 
   it('shows the delivery schedule editor directly in request package PO drafts', () => {
     expect(supplyChainSource).toContain('Lịch giao dự kiến');
-    expect(supplyChainSource).toContain('Gói mua hàng giữ tổng duyệt');
+    expect(supplyChainSource).toContain('Đơn giao nhiều lần: từng đợt có số lượng, giá và VAT riêng');
     expect(supplyChainSource).not.toContain('{!isPurchasePackageV2Form && (');
   });
 

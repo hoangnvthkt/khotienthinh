@@ -1181,6 +1181,10 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     const [poImportMode, setPoImportMode] = useState<ExcelImportMode>('create');
     const [poImportPreview, setPoImportPreview] = useState<ExcelImportPreview<PurchaseOrderItem> | null>(null);
     const [submittingPo, setSubmittingPo] = useState<PurchaseOrder | null>(null);
+    const [submittingPoBatch, setSubmittingPoBatch] = useState<{
+        po: PurchaseOrder;
+        batch: PurchaseOrderDeliveryBatch;
+    } | null>(null);
     const [submittingDirectPurchase, setSubmittingDirectPurchase] = useState<SiteDirectPurchase | null>(null);
     const [pendingPoSupplementalSubmission, setPendingPoSupplementalSubmission] = useState<PendingPoSupplementalSubmission | null>(null);
     const [printingPoId, setPrintingPoId] = useState<string | null>(null);
@@ -3761,8 +3765,8 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     confirmText: groupEntries.length > 1 ? 'Bạn có chắc chắn muốn tạo các PO theo từng NCC' : 'Bạn có chắc chắn muốn tạo đơn hàng PO',
                     subtitle: `${validItems.length} dòng vật tư • ${groupEntries.length} NCC • Tổng ${fmtMoney(totalAmount)} đ`,
                     warningText: groupEntries.length > 1
-                        ? 'Mỗi NCC sẽ có một PO riêng, một mã QR riêng và cùng chung mã nhóm mua hàng.'
-                        : 'PO sẽ được lưu vào hệ thống và dùng để in QR nhận hàng từ nhà cung cấp.',
+                        ? 'Mỗi NCC sẽ có một PO riêng và cùng chung mã nhóm mua hàng.'
+                        : 'PO sẽ được lưu làm căn cứ đặt hàng và đối chiếu giao nhận thực tế.',
                     intent: 'success',
                     actionLabel: 'Xác nhận tạo',
                     cancelLabel: 'Kiểm tra lại',
@@ -3805,7 +3809,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     orderDate: pDate,
                     expectedDeliveryDate: pExpDate || undefined,
                     targetWarehouseId: pTargetWarehouseId || undefined,
-                    qrToken: editingPo.qrToken || createPoQrToken(),
+                    qrToken: isV2Package ? undefined : (editingPo.qrToken || createPoQrToken()),
                     sourceMode: pSourceMode,
                     approvalRequestTitle: approvalRequestTitle || null,
                     projectId: scopedProjectId,
@@ -3876,7 +3880,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                         sourceMode: pSourceMode,
                         approvalRequestTitle: approvalRequestTitle || null,
                         targetWarehouseId: pTargetWarehouseId || undefined,
-                        qrToken: createPoQrToken(),
+                        qrToken: isV2Package ? undefined : createPoQrToken(),
                         receivedTransactionIds: [],
                         note: pNote || undefined,
                         createdById: user?.id || null,
@@ -5533,9 +5537,9 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         if (action.id === 'remove_po') return <Trash2 size={13} />;
         if (action.id === 'supplier_return') return <PackageX size={13} />;
         if (action.id === 'view_history') return <FileText size={13} />;
-        if (action.id === 'approve_po' || action.id === 'approve_package' || action.id === 'approve_supplemental' || action.id === 'close_partial' || action.id === 'close_short' || action.id === 'close_po') return <CheckCircle2 size={13} />;
+        if (action.id === 'approve_po' || action.id === 'approve_package' || action.id === 'approve_delivery_batch' || action.id === 'approve_supplemental' || action.id === 'close_partial' || action.id === 'close_short' || action.id === 'close_po') return <CheckCircle2 size={13} />;
         if (action.id === 'reject_supplemental') return <Ban size={13} />;
-        if (action.id === 'request_approval' || action.id === 'submit_package') return <Send size={13} />;
+        if (action.id === 'request_approval' || action.id === 'submit_package' || action.id === 'submit_delivery_batch') return <Send size={13} />;
         if (action.id === 'request_revision') return <RefreshCcw size={13} />;
         if (action.id === 'create_delivery' || action.id === 'create_supplemental_delivery' || action.id === 'add_delivery' || action.id === 'clone_delivery' || action.id === 'cancel_delivery') return <Truck size={13} />;
         if (action.id === 'create_receipt' || action.id === 'open_delivery_qr') return <QrCode size={13} />;
@@ -5565,7 +5569,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             case 'approve_package': {
                 if (!ensureCanApprovePo(po, 'duyệt gói mua hàng')) return;
                 try {
-                    const result = await purchasePackageService.approvePackage({
+                    const result = await purchasePackageService.approveSingle({
                         purchaseOrderId: po.id,
                         actorUserId: user?.id || '',
                         idempotencyKey: crypto.randomUUID(),
@@ -5577,12 +5581,42 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     await loadSupplyData();
                     await loadPoDeliveryPrintGroups(approvedPo, true);
                     toast.success(
-                        'Đã duyệt gói mua hàng',
-                        result.delivery ? 'Đợt giao đầu tiên đã có WMS/QR.' : 'Gói mua hàng đã sẵn sàng để thêm từng đợt giao.',
+                        'Đã duyệt đơn mua hàng',
+                        result.delivery ? 'Phiếu giao hàng đã được tạo và đang chờ kho.' : undefined,
                     );
                 } catch (error: any) {
-                    logApiError('supplyChain.approvePackage', error);
-                    toast.error('Không thể duyệt gói mua hàng', getApiErrorMessage(error, 'Vui lòng kiểm tra lại quyền duyệt và dữ liệu gói.'));
+                    logApiError('supplyChain.approveSingle', error);
+                    toast.error('Không thể duyệt đơn mua hàng', getApiErrorMessage(error, 'Vui lòng kiểm tra lại quyền duyệt và dữ liệu đơn.'));
+                }
+                return;
+            }
+            case 'submit_delivery_batch': {
+                const batch = (poDeliveryBatchesByPo[po.id] || []).find(item => item.id === action.deliveryBatchId);
+                if (!batch) {
+                    toast.warning('Thiếu đợt giao', 'Không tìm thấy đợt giao cần gửi duyệt.');
+                    return;
+                }
+                setSubmittingPoBatch({ po, batch });
+                return;
+            }
+            case 'approve_delivery_batch': {
+                if (!ensureCanApprovePo(po, 'duyệt đợt giao')) return;
+                if (!action.deliveryBatchId) {
+                    toast.warning('Thiếu đợt giao', 'Không tìm thấy đợt giao cần duyệt.');
+                    return;
+                }
+                try {
+                    const result = await purchasePackageService.approveBatch({
+                        deliveryBatchId: action.deliveryBatchId,
+                        actorUserId: user?.id || '',
+                    });
+                    await refreshWmsRecords({ transactionIds: [result.wmsTransactionId] });
+                    await loadSupplyData();
+                    await loadPoDeliveryPrintGroups(po, true);
+                    toast.success('Đã duyệt đợt giao', 'Phiếu WMS/QR riêng của đợt đã được tạo.');
+                } catch (error: any) {
+                    logApiError('supplyChain.approveDeliveryBatch', error);
+                    toast.error('Không thể duyệt đợt giao', getApiErrorMessage(error, 'Vui lòng kiểm tra quyền duyệt và dữ liệu đợt.'));
                 }
                 return;
             }
@@ -5636,11 +5670,13 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 return;
             }
             case 'cancel_delivery': {
-                if (!ensureCanConfirmPo('hủy đợt giao')) return;
                 if (!action.deliveryBatchId) {
                     toast.warning('Thiếu đợt giao', 'Không tìm thấy đợt giao cần hủy.');
                     return;
                 }
+                const batch = (poDeliveryBatchesByPo[po.id] || []).find(item => item.id === action.deliveryBatchId);
+                const isDraftBatch = Boolean(batch && !batch.wmsTransactionId && batch.status === 'planned');
+                if (isDraftBatch ? !ensureCanEditPo('xóa đợt giao nháp') : !ensureCanConfirmPo('hủy đợt giao')) return;
                 const reason = await reasonConfirm({
                     title: 'Hủy đợt giao',
                     targetName: po.poNumber,
@@ -5651,11 +5687,15 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 });
                 if (!reason) return;
                 try {
-                    await purchasePackageService.cancelUnreceivedDelivery({
-                        deliveryBatchId: action.deliveryBatchId,
-                        actorUserId: user?.id || '',
-                        reason,
-                    });
+                    if (isDraftBatch) {
+                        await poDeliveryScheduleService.removePlannedBatch(action.deliveryBatchId);
+                    } else {
+                        await purchasePackageService.cancelUnreceivedDelivery({
+                            deliveryBatchId: action.deliveryBatchId,
+                            actorUserId: user?.id || '',
+                            reason,
+                        });
+                    }
                     await loadSupplyData();
                     await loadPoDeliveryPrintGroups(po, true);
                     toast.success('Đã hủy đợt giao');
@@ -5698,7 +5738,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 if (!ensureCanConfirmPo('kết thúc thiếu gói mua hàng')) return;
                 const demandStats = getPurchaseOrderDemandStats(po, poRequestLinks, inventoryItems);
                 if (Number(demandStats.remainingQty || 0) <= 0) {
-                    toast.info('Không còn nhu cầu thiếu', 'Gói mua hàng này không còn khối lượng cần kết thúc thiếu.');
+                    toast.info('Không còn nhu cầu thiếu', 'Đơn mua hàng này không còn khối lượng cần kết thúc thiếu.');
                     return;
                 }
                 const reason = await reasonConfirm({
@@ -8673,7 +8713,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                         </div>
                                         {isPurchasePackageV2Form && (
                                             <div>
-                                                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Gói mua hàng</label>
+                                                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Hình thức giao</label>
                                                 <PurchaseModeControl
                                                     value={pPurchaseMode}
                                                     disabled={savingPo}
@@ -9167,7 +9207,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                             </div>
                                             <div className="text-[10px] font-bold text-slate-400">
                                                 {isPurchasePackageV2Form
-                                                    ? 'Gói mua hàng giữ tổng duyệt; từng đợt bên dưới có số lượng và giá riêng để nhập kho thực tế.'
+                                                    ? 'Đơn giao nhiều lần: từng đợt có số lượng, giá và VAT riêng để duyệt theo thực tế.'
                                                     : 'PO giữ tổng đã duyệt; từng đợt có số lượng và giá riêng.'}
                                             </div>
                                         </div>
@@ -9549,6 +9589,54 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     ]}
                     onCancel={() => setSubmittingPo(null)}
                     onConfirm={target => updatePoStatus(submittingPo.id, 'sent', target)}
+                />
+            )}
+            {submittingPoBatch && (
+                <ProjectRoomSubmissionDialog
+                    title="Gửi duyệt đợt giao"
+                    actionLabel="Gửi duyệt đợt"
+                    documentLabel="Đợt giao vật tư"
+                    documentName={`${submittingPoBatch.po.poNumber} • Đợt ${submittingPoBatch.batch.deliveryNo}`}
+                    documentSubtitle="Mỗi đợt được duyệt độc lập theo số lượng, giá và VAT thực tế."
+                    projectId={submittingPoBatch.po.projectId || projectId}
+                    constructionSiteId={submittingPoBatch.po.constructionSiteId || constructionSiteId}
+                    recipientRoomCode="material_po"
+                    recipientAction="approve"
+                    recipientHint="Chọn người thuộc Room Đơn hàng PO có quyền duyệt đợt giao."
+                    details={[
+                        { label: 'Nhà cung cấp', value: submittingPoBatch.po.vendorName || '-' },
+                        { label: 'Ngày dự kiến giao', value: submittingPoBatch.batch.plannedDeliveryDate || '-' },
+                        { label: 'VAT', value: `${Number(submittingPoBatch.batch.vatRate || 0).toLocaleString('vi-VN')}%` },
+                        { label: 'Số dòng', value: `${submittingPoBatch.batch.lines.length} dòng vật tư` },
+                    ]}
+                    onCancel={() => setSubmittingPoBatch(null)}
+                    onConfirm={async target => {
+                        const { po, batch } = submittingPoBatch;
+                        await purchasePackageService.submitBatch({
+                            deliveryBatchId: batch.id,
+                            approverUserId: target.userId,
+                            actorUserId: user?.id || '',
+                        });
+                        await projectSubmissionService.notifyTarget({
+                            target,
+                            actorId: user?.id,
+                            category: 'material',
+                            title: `${po.poNumber} • Đợt ${batch.deliveryNo} chờ duyệt`,
+                            message: `Đợt giao của ${po.vendorName || 'nhà cung cấp'} đang chờ duyệt số lượng, giá và VAT.`,
+                            sourceType: 'purchase_order_delivery_batch',
+                            sourceId: batch.id,
+                            constructionSiteId: po.constructionSiteId || constructionSiteId,
+                            link: '/da',
+                            metadata: {
+                                projectId: po.projectId || projectId,
+                                purchaseOrderId: po.id,
+                                deliveryBatchId: batch.id,
+                            },
+                        }).catch(error => console.warn('Cannot notify PO batch approver', error));
+                        setSubmittingPoBatch(null);
+                        await loadSupplyData();
+                        toast.success('Đã gửi duyệt đợt giao');
+                    }}
                 />
             )}
             {submittingDirectPurchase && (
