@@ -1,4 +1,10 @@
 import type { PurchaseOrder, PurchaseOrderItem } from '../types';
+import {
+  getPoLinePurchaseUnit,
+  getPoLineStockUnit,
+  hasPurchaseUnitConversion,
+  poLinePurchaseToStockQty,
+} from './materialUnitConversion';
 import { getPurchaseOrderScheduleLineUnitPrice } from './purchaseOrderSchedulePricing';
 
 export type PurchaseOrderDeliveryPrintLineLike = {
@@ -8,6 +14,7 @@ export type PurchaseOrderDeliveryPrintLineLike = {
   deliveryUnitPrice?: number | string | null;
   deliveryUnit?: string | null;
   unit?: string | null;
+  stockPlannedQty?: number | string | null;
 };
 
 export type PurchaseOrderDeliveryPrintGroupLike = {
@@ -22,6 +29,7 @@ export type PurchaseOrderApprovalDeliveryBatch = {
   lines: Array<{
     purchaseOrderLineId: string;
     plannedQty: number;
+    stockPlannedQty?: number | null;
     unitPrice?: number | null;
   }>;
 };
@@ -45,6 +53,31 @@ const getItemByLineId = (po: PurchaseOrder) => {
 const getPrintLineKey = (line: PurchaseOrderDeliveryPrintLineLike) =>
   line.poLineId || line.itemId || '';
 
+export const getPurchaseOrderApprovalPrintQuantities = (
+  item: PurchaseOrderItem,
+  plannedQty: number,
+  stockPlannedQty?: number | null,
+) => {
+  const stockUnit = getPoLineStockUnit(item);
+  const purchaseUnit = getPoLinePurchaseUnit(item);
+  const hasConversion = hasPurchaseUnitConversion({
+    unit: stockUnit,
+    purchaseUnit,
+    purchaseConversionFactor: item.purchaseConversionFactor ?? 1,
+  });
+  const enteredStockQty = Number(stockPlannedQty);
+  const stockQty = stockPlannedQty != null && Number.isFinite(enteredStockQty)
+    ? enteredStockQty
+    : poLinePurchaseToStockQty(item, plannedQty);
+  return {
+    stockUnit: hasConversion ? stockUnit : purchaseUnit,
+    stockQty: hasConversion ? stockQty : plannedQty,
+    purchaseUnit: hasConversion ? purchaseUnit : '—',
+    purchaseQty: hasConversion ? plannedQty : null,
+    hasConversion,
+  };
+};
+
 export const getPurchaseOrderDeliveryPrintLineUnitPrice = (
   po: PurchaseOrder,
   line: PurchaseOrderDeliveryPrintLineLike,
@@ -67,6 +100,7 @@ export const buildPurchaseOrderApprovalDeliveryBatches = (
     lines: group.lines.map(line => ({
       purchaseOrderLineId: getPrintLineKey(line),
       plannedQty: numberValue(line.issuedQty),
+      ...(line.stockPlannedQty == null ? {} : { stockPlannedQty: numberValue(line.stockPlannedQty) }),
       unitPrice: getPurchaseOrderDeliveryPrintLineUnitPrice(po, line),
     })).filter(line => line.purchaseOrderLineId && line.plannedQty > 0),
   }))

@@ -44,7 +44,7 @@ import {
   formatPricingFormula,
 } from '../../lib/poSpecsUtils';
 import {
-  getPoLineStockUnit,
+  getPoLinePurchaseUnit,
 } from '../../lib/materialUnitConversion';
 import { getPurchaseOrderDisplayLineAmount } from '../../lib/purchaseOrderAmount';
 import { getPurchaseOrderLineDemandQty } from '../../lib/purchaseOrderDemand';
@@ -102,6 +102,7 @@ export type PurchaseOrderCockpitDrawerProps = {
   pendingReturnQty: number;
   canMutatePoDocument: boolean;
   canConfirmPo: boolean;
+  canApprovePendingDeliveryBatch: boolean;
   poHasStockImpact: boolean;
   creatingDeliveryBatchId?: string | null;
   deletingDeliveryKey?: string | null;
@@ -142,8 +143,9 @@ const formatDate = (value?: string | null) => {
 
 const actionIcon = (action: PurchaseOrderUiAction) => {
   if (action.id === 'request_approval' || action.id === 'submit_package') return <Send size={14} />;
-  if (action.id === 'approve_po' || action.id === 'approve_package' || action.id === 'approve_supplemental' || action.id === 'close_short') return <CheckCircle2 size={14} />;
-  if (action.id === 'request_revision' || action.id === 'reject_supplemental') return <RefreshCcw size={14} />;
+  if (action.id === 'approve_po' || action.id === 'approve_package' || action.id === 'approve_delivery_batch' || action.id === 'approve_supplemental' || action.id === 'close_short') return <CheckCircle2 size={14} />;
+  if (action.id === 'request_revision' || action.id === 'request_delivery_batch_revision') return <RefreshCcw size={14} />;
+  if (action.id === 'reject_supplemental' || action.id === 'reject_delivery_batch') return <Ban size={14} />;
   if (action.id === 'create_delivery' || action.id === 'create_supplemental_delivery' || action.id === 'add_delivery' || action.id === 'clone_delivery' || action.id === 'cancel_delivery') return <Truck size={14} />;
   if (action.id === 'create_receipt' || action.id === 'open_delivery_qr') return <QrCode size={14} />;
   if (action.id === 'open_wms_transaction') return <ShieldCheck size={14} />;
@@ -279,6 +281,7 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
   pendingReturnQty,
   canMutatePoDocument,
   canConfirmPo,
+  canApprovePendingDeliveryBatch,
   poHasStockImpact,
   creatingDeliveryBatchId,
   deletingDeliveryKey,
@@ -342,6 +345,22 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
   const payableView = payableStatusView(payableStatus);
   const isPackageV2 = (po.purchaseMode === 'single' || po.purchaseMode === 'multiple') && po.sourceMode === 'from_request';
   const isMultipleDeliveryPackage = isPackageV2 && po.purchaseMode === 'multiple';
+  // With a multiple-delivery PO, approval belongs to each delivery batch.  The PO
+  // record deliberately remains a draft container until all of its work is done;
+  // surface the active batch state instead of misleading the approver with “Nháp”.
+  const pendingBatchApproval = isMultipleDeliveryPackage
+    ? deliveryBatches.find(batch => batch.status === 'planned' && batch.approvalStatus === 'pending_approval')
+    : undefined;
+  const effectiveStatusLabel = pendingBatchApproval ? 'Đã gửi duyệt đợt' : statusLabel;
+  const effectiveStatusTone: ErpStatusTone = pendingBatchApproval ? 'warning' : statusTone;
+  const pendingBatchApprovalAction: PurchaseOrderUiAction | undefined = pendingBatchApproval && canApprovePendingDeliveryBatch
+    ? {
+      id: 'approve_delivery_batch',
+      label: `Duyệt đợt ${String(pendingBatchApproval.deliveryNo).padStart(2, '0')}`,
+      intent: 'success',
+      deliveryBatchId: pendingBatchApproval.id,
+    }
+    : undefined;
   const practicalQuantitySummary = useMemo(() => {
     const demandQty = po.items.reduce((sum, item) => sum + getPurchaseOrderLineDemandQty(
       po,
@@ -395,6 +414,8 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
           line,
         })
       ), 0);
+      const vatRate = Number(batch.vatRate ?? po.vatRate ?? 0) || 0;
+      const vatAmount = Math.round(totalAmount * vatRate / 100);
       return {
         key: `schedule:${batch.id}`,
         source: 'schedule' as const,
@@ -408,6 +429,9 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
         lineCount: batch.lines.length,
         totalQty,
         totalAmount,
+        vatRate,
+        vatAmount,
+        totalAmountWithVat: totalAmount + vatAmount,
         printGroup,
         scheduleBatch: batch,
         wmsTransactionId: getWmsTransactionIdForBatch?.(batch) || null,
@@ -426,6 +450,8 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
         const targetWarehouse = warehouses.find(row => row.id === group.targetWarehouseId)?.name || targetWarehouseName || '—';
         const totalQty = group.lines.reduce((sum, line) => sum + Number(line.issuedQty || line.receivedQty || 0), 0);
         const totalAmount = group.lines.reduce((sum, line) => sum + Number(line.issuedQty || 0) * Number(line.deliveryUnitPrice || 0), 0);
+        const vatRate = Number(group.scheduleBatch?.vatRate ?? po.vatRate ?? 0) || 0;
+        const vatAmount = Math.round(totalAmount * vatRate / 100);
         const firstPendingBatch = group.batches.find(batch => ['issued', 'variance_pending'].includes(String(batch.status || '').toLowerCase()));
         return {
           key: `print-group:${group.key}`,
@@ -438,6 +464,9 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
           lineCount: group.lines.length,
           totalQty,
           totalAmount,
+          vatRate,
+          vatAmount,
+          totalAmountWithVat: totalAmount + vatAmount,
           printGroup: group,
           scheduleBatch: null,
           wmsTransactionId: firstPendingBatch?.transactionId || group.batches[0]?.transactionId || null,
@@ -457,7 +486,10 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
 
   // Resolve actors for the stepper (Chỉ gán người cho bước Tạo và bước Duyệt)
   const creatorUser = getUserInfo(po.createdById) || (po.lastActionBy ? getUserInfo(po.lastActionBy) : null);
-  const isApproved = !['draft', 'sent'].includes(po.status);
+  const isApproved = isMultipleDeliveryPackage
+    ? deliveryBatches.some(batch => batch.approvalStatus === 'approved')
+    : !['draft', 'sent'].includes(po.status);
+  const isApprovalSubmitted = po.status === 'sent' || Boolean(pendingBatchApproval);
   const approverUser = isApproved
     ? getUserInfo(po.lastActionBy) || getUserInfo(po.submittedToName) || getUserInfo(po.submittedToUserId)
     : getUserInfo(po.submittedToName) || getUserInfo(po.submittedToUserId) || getUserInfo(po.workflowStepActorUserId);
@@ -483,7 +515,7 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
         stepNo: 2,
         title: 'Duyệt đơn',
         done: isApproved,
-        current: po.status === 'sent',
+        current: isApprovalSubmitted && !isApproved,
         user: approverUser,
         icon: <ShieldCheck size={15} />,
         mainLabel: isApproved
@@ -491,8 +523,8 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
           : (approverUser?.name ? `Chờ: ${approverUser.name}` : 'Chờ phê duyệt'),
         roleLabel: isApproved ? 'Người phê duyệt' : po.submittedToPermission ? `Quyền ${po.submittedToPermission}` : 'Chờ duyệt',
         dateLabel: isApproved ? formatDate(po.lastActionAt || po.orderDate) : 'Đang chờ xử lý',
-        statusBadge: isApproved ? 'Đã duyệt' : po.status === 'sent' ? 'Chờ duyệt' : 'Chưa gửi',
-        tone: isApproved ? 'emerald' : po.status === 'sent' ? 'amber' : 'slate',
+        statusBadge: isApproved ? 'Đã duyệt' : isApprovalSubmitted ? 'Đã gửi duyệt' : 'Chưa gửi',
+        tone: isApproved ? 'emerald' : isApprovalSubmitted ? 'amber' : 'slate',
       },
       {
         key: 'delivery',
@@ -654,7 +686,7 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
                 <span className="rounded-lg bg-blue-50 dark:bg-blue-950/40 px-2.5 py-1 font-mono text-sm font-black uppercase tracking-wide text-blue-700 dark:text-blue-300 border border-blue-200/60">
                   {po.poNumber}
                 </span>
-                <StatusBadge status={po.status} label={statusLabel} tone={statusTone} showDot={false} size="md" />
+                <StatusBadge status={pendingBatchApproval ? 'sent' : po.status} label={effectiveStatusLabel} tone={effectiveStatusTone} showDot={false} size="md" />
                 {uiPolicy.alerts.slice(0, 2).map(alert => (
                   <span
                     key={alert.id}
@@ -915,7 +947,7 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                       {po.items.map((item, index) => {
                         const inventory = inventoryItems.find(row => row.id === item.itemId);
-                        const stockUnit = getPoLineStockUnit(item, inventory);
+                        const purchaseUnit = getPoLinePurchaseUnit(item, inventory);
                         const lineKey = item.lineId || item.itemId;
                         const demandQty = getPurchaseOrderLineDemandQty(po, lineKey, poRequestLinks, inventoryItems);
                         const completedReturnQty = Math.max(
@@ -958,7 +990,7 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
                               </td>
                             ))}
                             <td className="px-3 py-3.5 text-right font-black text-slate-800 dark:text-slate-100">
-                              {fmtQty(demandQty)} <span className="text-xs text-slate-500 font-semibold">{stockUnit || item.unit}</span>
+                              {fmtQty(demandQty)} <span className="text-xs text-slate-500 font-semibold">{purchaseUnit || item.unit}</span>
                             </td>
                             <td className="px-3 py-3.5 text-right font-black text-emerald-700">{fmtQty(netReceivedQty)}</td>
                             <td className={`px-3 py-3.5 text-right font-black ${remainingQty > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>{fmtQty(remainingQty)}</td>
@@ -1037,7 +1069,11 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
                               <div className="mt-3 grid gap-2 text-xs sm:grid-cols-3">
                                 <div className="rounded-xl bg-slate-50 dark:bg-slate-800/60 p-2.5"><span className="block text-[10px] font-black uppercase text-slate-400">Số dòng</span><strong className="text-xs font-black">{group.lineCount} dòng</strong></div>
                                 <div className="rounded-xl bg-slate-50 dark:bg-slate-800/60 p-2.5"><span className="block text-[10px] font-black uppercase text-slate-400">Tổng KL</span><strong className="text-xs font-black">{fmtQty(group.totalQty)}</strong></div>
-                                <div className="rounded-xl bg-slate-50 dark:bg-slate-800/60 p-2.5"><span className="block text-[10px] font-black uppercase text-slate-400">Giá trị đợt</span><strong className="text-xs font-black text-emerald-700">{fmtMoney(group.totalAmount)} đ</strong></div>
+                                <div className="rounded-xl bg-slate-50 dark:bg-slate-800/60 p-2.5">
+                                  <span className="block text-[10px] font-black uppercase text-slate-400">Giá trị đợt gồm VAT</span>
+                                  <strong className="text-xs font-black text-emerald-700">{fmtMoney(group.totalAmountWithVat)} đ</strong>
+                                  <span className="mt-0.5 block text-[10px] font-bold text-slate-400">VAT {fmtQty(group.vatRate)}%: {fmtMoney(group.vatAmount)} đ</span>
+                                </div>
                               </div>
                             </div>
                             <div className="flex flex-wrap items-start justify-end gap-1.5 lg:max-w-[360px]">
@@ -1078,7 +1114,7 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
                                   <Send size={13} /> Gửi duyệt
                                 </button>
                               )}
-                              {isPackageV2 && batch && po.purchaseMode === 'multiple' && batch.approvalStatus === 'pending_approval' && canConfirmPo && (
+                              {isPackageV2 && batch && po.purchaseMode === 'multiple' && batch.approvalStatus === 'pending_approval' && canApprovePendingDeliveryBatch && (
                                 <button type="button" onClick={() => void onRunAction({ id: 'approve_delivery_batch', label: 'Duyệt đợt giao', intent: 'success', deliveryBatchId: batch.id })} className="inline-flex h-8.5 items-center gap-1.5 rounded-xl bg-emerald-600 px-3 text-xs font-black text-white hover:bg-emerald-700 shadow-xs transition">
                                   <CheckCircle2 size={13} /> Duyệt đợt
                                 </button>
@@ -1164,7 +1200,7 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
                   <div className="mt-3 space-y-2.5">
                     {[
                       { title: 'Tạo PO', desc: `${po.poNumber} được tạo ngày ${formatDate(po.createdAt)}`, tone: 'blue' },
-                      { title: 'Trạng thái hiện tại', desc: statusLabel, tone: 'emerald' },
+                      { title: 'Trạng thái hiện tại', desc: effectiveStatusLabel, tone: pendingBatchApproval ? 'amber' : 'emerald' },
                       ...deliveryTimelineGroups.map(group => ({ title: group.label, desc: `${formatDate(group.plannedDate)} • ${deliveryStatusView(group.status).label}`, tone: normalizeDeliveryTimelineStatus(group.status) === 'cancelled' ? 'rose' : 'blue' })),
                       ...supplierReturns.map(item => ({ title: `Trả hàng NCC ${item.returnNo}`, desc: `${item.status} • ${fmtQty(item.lines.reduce((sum, line) => sum + Number(line.returnQty || 0), 0))}`, tone: 'rose' })),
                       ...supplierPayableDocuments.map(document => ({ title: `Công nợ ${document.code || document.documentNo}`, desc: `${payableStatusView(document.status).label} • còn ${fmtMoney(document.outstandingAmount)} đ`, tone: 'amber' })),
@@ -1223,15 +1259,17 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
                   <span className="text-[10px] font-black uppercase tracking-wider text-teal-700 dark:text-teal-400 flex items-center gap-1">
                     <ShieldCheck size={14} /> Việc cần làm
                   </span>
-                  <StatusBadge status={po.status} label={statusLabel} tone={statusTone} showDot={false} size="sm" />
+                  <StatusBadge status={pendingBatchApproval ? 'sent' : po.status} label={effectiveStatusLabel} tone={effectiveStatusTone} showDot={false} size="sm" />
                 </div>
 
                 <p className="text-xs sm:text-sm font-black leading-snug text-slate-900 dark:text-slate-100">
-                  {uiPolicy.nextStep}
+                  {pendingBatchApprovalAction
+                    ? `Duyệt đợt ${String(pendingBatchApproval?.deliveryNo).padStart(2, '0')} để tạo phiếu WMS/QR riêng.`
+                    : uiPolicy.nextStep}
                 </p>
 
-                {uiPolicy.primaryAction ? (
-                  <div className="pt-2">{renderActionButton(uiPolicy.primaryAction, true, 'w-full')}</div>
+                {pendingBatchApprovalAction || uiPolicy.primaryAction ? (
+                  <div className="pt-2">{renderActionButton(pendingBatchApprovalAction || uiPolicy.primaryAction!, true, 'w-full')}</div>
                 ) : (
                   <div className="rounded-xl border border-slate-200 bg-white/80 dark:bg-slate-800 px-3 py-2 text-center text-xs font-bold text-slate-400">
                     Không có thao tác chờ

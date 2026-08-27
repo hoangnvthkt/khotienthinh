@@ -10,6 +10,8 @@ export type PurchaseOrderUiActionId =
   | 'approve_package'
   | 'submit_delivery_batch'
   | 'approve_delivery_batch'
+  | 'request_delivery_batch_revision'
+  | 'reject_delivery_batch'
   | 'clone_po'
   | 'add_delivery'
   | 'clone_delivery'
@@ -231,6 +233,20 @@ export const getPurchaseOrderUiPolicy = ({
           intent: 'success',
           deliveryBatchId: pendingBatch.id,
         };
+        secondaryActions.push(
+          {
+            id: 'request_delivery_batch_revision',
+            label: 'Trả lại để sửa',
+            intent: 'neutral',
+            deliveryBatchId: pendingBatch.id,
+          },
+          {
+            id: 'reject_delivery_batch',
+            label: 'Từ chối đợt giao',
+            intent: 'danger',
+            deliveryBatchId: pendingBatch.id,
+          },
+        );
         nextStep = 'Duyệt đợt giao để tạo một phiếu WMS/QR riêng.';
       } else if (approvedWmsBatch) {
         primaryAction = {

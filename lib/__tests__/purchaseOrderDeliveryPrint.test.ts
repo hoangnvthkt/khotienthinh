@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import type { PurchaseOrder } from '../../types';
 import {
   buildPurchaseOrderApprovalDeliveryBatches,
+  getPurchaseOrderApprovalPrintQuantities,
   getPurchaseOrderDeliveryPrintGroupSummary,
+  type PurchaseOrderDeliveryPrintGroupLike,
 } from '../purchaseOrderDeliveryPrint';
 
 const packagePo: PurchaseOrder = {
@@ -153,5 +155,69 @@ describe('purchaseOrderDeliveryPrint', () => {
         deliveryUnit: 'Kg',
       }],
     })).toMatchObject({ totalAmount: 31_542_000 });
+  });
+
+  it('preserves the explicitly entered stock quantity when building approval batches', () => {
+    const po429Line: PurchaseOrder = {
+      ...packagePo,
+      poNumber: 'PO-429',
+      purchaseMode: 'multiple',
+      items: [{
+        lineId: 'd16',
+        itemId: 'item-d16',
+        sku: 'VT0000828',
+        name: 'Thep XD D16',
+        unit: 'Kg',
+        qty: 21_942.882,
+        unitPrice: 15_072,
+        stockUnitSnapshot: 'Cây',
+        purchaseUnitSnapshot: 'Kg',
+        purchaseConversionFactor: 0.054094990804,
+      }],
+    };
+    const groupWithEnteredStockQty: PurchaseOrderDeliveryPrintGroupLike = {
+      label: 'Đợt 1',
+      plannedDate: '2026-08-16',
+      lines: [{
+        poLineId: 'd16',
+        itemId: 'item-d16',
+        issuedQty: 21_176,
+        stockPlannedQty: 1_187,
+        deliveryUnitPrice: 14_630,
+        deliveryUnit: 'Kg',
+      }],
+    };
+
+    const [batch] = buildPurchaseOrderApprovalDeliveryBatches(po429Line, [groupWithEnteredStockQty]);
+
+    expect(batch.lines).toEqual([{
+      purchaseOrderLineId: 'd16',
+      plannedQty: 21_176,
+      stockPlannedQty: 1_187,
+      unitPrice: 14_630,
+    }]);
+  });
+
+  it('prints the entered stock quantity instead of recalculating it from the master quantity', () => {
+    const po429D16 = {
+      lineId: 'd16',
+      itemId: 'item-d16',
+      sku: 'VT0000828',
+      name: 'Thep XD D16',
+      unit: 'Kg',
+      qty: 21_942.882,
+      unitPrice: 15_072,
+      stockUnitSnapshot: 'Cây',
+      purchaseUnitSnapshot: 'Kg',
+      purchaseConversionFactor: 0.054094990804,
+    };
+
+    expect(getPurchaseOrderApprovalPrintQuantities(po429D16, 21_176, 1_187)).toEqual({
+      stockUnit: 'Cây',
+      stockQty: 1_187,
+      purchaseUnit: 'Kg',
+      purchaseQty: 21_176,
+      hasConversion: true,
+    });
   });
 });

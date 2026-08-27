@@ -96,6 +96,9 @@ describe('purchaseOrderUiPolicy', () => {
     expect(singleSent.primaryAction?.id).toBe('approve_package');
     expect(multipleWithDraftBatch.primaryAction?.id).toBe('submit_delivery_batch');
     expect(multipleWithPendingBatch.primaryAction?.id).toBe('approve_delivery_batch');
+    expect(multipleWithPendingBatch.secondaryActions.map(action => action.id)).toEqual(
+      expect.arrayContaining(['request_delivery_batch_revision', 'reject_delivery_batch']),
+    );
   });
 
   it('does not expose rejected implementation terminology in practical PO actions', () => {

@@ -200,6 +200,20 @@ export const purchasePackageService = {
     return data as MaterialPoBatchDecisionResult;
   },
 
+  async setBatchVarianceReason(input: {
+    deliveryBatchId: string;
+    varianceReason?: string | null;
+    actorUserId: string;
+  }): Promise<{ deliveryBatchId: string; varianceReason: string | null }> {
+    const { data, error } = await supabase.rpc('set_material_po_batch_variance_reason', {
+      p_delivery_batch_id: input.deliveryBatchId,
+      p_variance_reason: input.varianceReason ?? null,
+      p_actor_user_id: input.actorUserId,
+    });
+    if (error) throw error;
+    return data as { deliveryBatchId: string; varianceReason: string | null };
+  },
+
   async saveBatchDraft(input: SaveMaterialPoBatchDraftInput): Promise<MaterialPoBatchDecisionResult> {
     const { data, error } = await supabase.rpc('save_material_po_batch_draft', {
       p_purchase_order_id: input.purchaseOrderId,

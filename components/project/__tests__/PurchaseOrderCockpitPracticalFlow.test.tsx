@@ -34,4 +34,19 @@ describe('PurchaseOrderCockpit practical material flow', () => {
     expect(source).toContain('{!isMultipleDeliveryPackage && (');
     expect(source).not.toContain('packageSummary.referenceGross');
   });
+
+  it('keeps the purchase unit on ordered quantities and makes a pending batch actionable from the task panel', () => {
+    expect(source).toContain('getPoLinePurchaseUnit');
+    expect(source).toContain('{purchaseUnit || item.unit}');
+    expect(source).toContain("const effectiveStatusLabel = pendingBatchApproval ? 'Đã gửi duyệt đợt' : statusLabel;");
+    expect(source).toContain('const pendingBatchApprovalAction: PurchaseOrderUiAction');
+    expect(source).toContain('pendingBatchApprovalAction || uiPolicy.primaryAction');
+    expect(source).toContain('canApprovePendingDeliveryBatch');
+  });
+
+  it('shows each delivery batch as its VAT-inclusive commercial value', () => {
+    expect(source).toContain('totalAmountWithVat: totalAmount + vatAmount');
+    expect(source).toContain('Giá trị đợt gồm VAT');
+    expect(source).toContain('VAT {fmtQty(group.vatRate)}%: {fmtMoney(group.vatAmount)} đ');
+  });
 });

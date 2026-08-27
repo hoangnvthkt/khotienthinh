@@ -164,6 +164,7 @@ import {
 } from '../../lib/purchaseOrderAmount';
 import {
     buildPurchaseOrderApprovalDeliveryBatches,
+    getPurchaseOrderApprovalPrintQuantities,
     getPurchaseOrderDeliveryPrintGroupSummary,
     getPurchaseOrderDeliveryPrintLineUnitPrice,
     type PurchaseOrderApprovalDeliveryBatch,
@@ -492,7 +493,10 @@ type PoDeliveryPrintGroup = {
     source?: 'schedule' | 'fulfillment';
     scheduleBatch?: PurchaseOrderDeliveryBatch | null;
     batches: MaterialRequestFulfillmentBatch[];
-    lines: MaterialRequestFulfillmentLine[];
+    lines: Array<MaterialRequestFulfillmentLine & {
+        stockPlannedQty?: number;
+        stockUnit?: string | null;
+    }>;
 };
 
 type PurchaseOrderFormItem = PurchaseOrderItem & {
@@ -915,9 +919,21 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     const isPoApprovalAssignee = (po: PurchaseOrder) => isAdmin(user)
         || Boolean(po.submittedToUserId && [user.id, user.authId].filter(Boolean).includes(po.submittedToUserId));
 
+    const isDeliveryBatchApprovalAssignee = (batch: PurchaseOrderDeliveryBatch) => isAdmin(user)
+        || Boolean(
+            batch.approvalAssigneeUserId
+            && [user.id, user.authId].filter(Boolean).includes(batch.approvalAssigneeUserId),
+        );
+
     const ensureCanApprovePo = (po: PurchaseOrder, action: string) => {
         if (effectivePoCapabilities.canApprovePo && isPoApprovalAssignee(po)) return true;
         toast.warning('Không có quyền thao tác PO', `Bạn cần quyền Duyệt và phải là người được giao xử lý PO để ${action}.`);
+        return false;
+    };
+
+    const ensureCanApproveDeliveryBatch = (batch: PurchaseOrderDeliveryBatch, action: string) => {
+        if (effectivePoCapabilities.canApprovePo && isDeliveryBatchApprovalAssignee(batch)) return true;
+        toast.warning('Không có quyền duyệt đợt giao', `Bạn cần quyền Duyệt và phải là người được giao xử lý đợt giao để ${action}.`);
         return false;
     };
 
@@ -1187,6 +1203,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         po: PurchaseOrder;
         batch: PurchaseOrderDeliveryBatch;
     } | null>(null);
+    const [batchSubmissionVarianceReason, setBatchSubmissionVarianceReason] = useState('');
     const [submittingDirectPurchase, setSubmittingDirectPurchase] = useState<SiteDirectPurchase | null>(null);
     const [pendingPoSupplementalSubmission, setPendingPoSupplementalSubmission] = useState<PendingPoSupplementalSubmission | null>(null);
 
@@ -4662,16 +4679,25 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
 
     const buildPrintablePoApprovalDeliveryBatch = (
         printablePo: PurchaseOrder,
-        group?: Pick<PoDeliveryPrintGroup, 'label' | 'plannedDate'>,
+        group?: Pick<PoDeliveryPrintGroup, 'label' | 'plannedDate' | 'lines' | 'scheduleBatch'>,
     ): PurchaseOrderApprovalDeliveryBatch[] => [{
         deliveryNo: group?.label || printablePo.poNumber,
         plannedDeliveryDate: group?.plannedDate || printablePo.expectedDeliveryDate || null,
         lines: printablePo.items
-            .map(item => ({
-                purchaseOrderLineId: item.lineId || item.itemId,
-                plannedQty: Number(item.qty || 0),
-                unitPrice: Number(item.unitPrice || 0),
-            }))
+            .map((item, index) => {
+                const sourcePrintLine = group?.lines[index];
+                const scheduleLine = group?.scheduleBatch?.lines.find(line => (
+                    line.purchaseOrderLineId === sourcePrintLine?.poLineId
+                    || line.itemId === item.itemId
+                ));
+                const stockPlannedQty = Number(scheduleLine?.stockPlannedQty ?? sourcePrintLine?.stockPlannedQty);
+                return {
+                    purchaseOrderLineId: item.lineId || item.itemId,
+                    plannedQty: Number(item.qty || 0),
+                    ...(Number.isFinite(stockPlannedQty) && stockPlannedQty > 0 ? { stockPlannedQty } : {}),
+                    unitPrice: Number(item.unitPrice || 0),
+                };
+            })
             .filter(line => line.purchaseOrderLineId && line.plannedQty > 0),
     }].filter(batch => batch.lines.length > 0);
 
@@ -4731,20 +4757,20 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         const approvalQrHtml = qrSvg
             ? `<div class="approval-qr-wrap"><div class="approval-qr-box">${qrSvg}<span>QR nhận hàng</span></div></div>`
             : '';
-        const buildItemRow = (item: PurchaseOrderItem, index: number, qty: number, unitPriceOverride?: number | null) => {
-            const stockUnit = getPoLineStockUnit(item);
-            const purchaseUnit = getPoLinePurchaseUnit(item);
-            const conversionSource = {
-                unit: stockUnit,
-                purchaseUnit: purchaseUnit,
-                purchaseConversionFactor: item.purchaseConversionFactor ?? 1,
-            };
-            const itemHasConversion = hasPurchaseUnitConversion(conversionSource);
-
-            const displayStockUnit = itemHasConversion ? stockUnit : purchaseUnit;
-            const displayStockQty = itemHasConversion ? poLinePurchaseToStockQty(item, Number(qty || 0)) : qty;
-            const displayPurchaseUnit = itemHasConversion ? purchaseUnit : '—';
-            const displayPurchaseQty = itemHasConversion ? Number(qty || 0).toLocaleString('vi-VN') : '—';
+        const buildItemRow = (
+            item: PurchaseOrderItem,
+            index: number,
+            qty: number,
+            unitPriceOverride?: number | null,
+            stockQtyOverride?: number | null,
+        ) => {
+            const printQuantities = getPurchaseOrderApprovalPrintQuantities(item, Number(qty || 0), stockQtyOverride);
+            const displayStockUnit = printQuantities.stockUnit;
+            const displayStockQty = printQuantities.stockQty;
+            const displayPurchaseUnit = printQuantities.purchaseUnit;
+            const displayPurchaseQty = printQuantities.hasConversion
+                ? Number(printQuantities.purchaseQty || 0).toLocaleString('vi-VN')
+                : '—';
             const lineDetailsHtml = formatPoApprovalLineDetails(item)
                 .map(line => `<div class="approval-muted">${escapeHtml(line)}</div>`)
                 .join('');
@@ -4776,6 +4802,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 </tr>
             `;
         };
+        let materialPrintIndex = 0;
         const rowsHtml = deliveryBatches.length > 0
             ? deliveryBatches.map((batch, batchIndex) => {
                 const batchLabel = batch.plannedDeliveryDate
@@ -4784,12 +4811,19 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 const lineRows = batch.lines
                     .map(line => {
                         const item = itemByLineId.get(line.purchaseOrderLineId);
-                        return item ? buildItemRow(item, batchIndex + 1, Number(line.plannedQty || 0), line.unitPrice) : '';
+                        if (!item) return '';
+                        return buildItemRow(
+                            item,
+                            materialPrintIndex++,
+                            Number(line.plannedQty || 0),
+                            line.unitPrice,
+                            line.stockPlannedQty,
+                        );
                     })
                     .join('');
                 return `
                     <tr class="approval-delivery-row">
-                        <td class="approval-center"><strong>${batchIndex + 1}</strong></td>
+                        <td class="approval-center"></td>
                         <td colspan="${poHasConversion ? 8 : 6}"><strong>${escapeHtml(batchLabel)}</strong></td>
                     </tr>
                     ${lineRows}
@@ -5236,8 +5270,12 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 requestedQtySnapshot: purchaseQty,
                 committedQtySnapshot: purchaseQty,
                 issuedQty: purchaseQty,
+                ...(Number(line.stockPlannedQty || 0) > 0
+                    ? { stockPlannedQty: Number(line.stockPlannedQty) }
+                    : {}),
                 receivedQty: 0,
                 unit: purchaseUnit,
+                stockUnit: line.stockUnit || (sourceItem ? getPoLineStockUnit(sourceItem, inventory) : null),
                 deliveryUnit: purchaseUnit,
                 deliveryUnitPrice: purchaseUnitPrice,
                 varianceReason: null,
@@ -5702,15 +5740,21 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     toast.warning('Thiếu đợt giao', 'Không tìm thấy đợt giao cần gửi duyệt.');
                     return;
                 }
+                setBatchSubmissionVarianceReason(batch.varianceReason || '');
                 setSubmittingPoBatch({ po, batch });
                 return;
             }
             case 'approve_delivery_batch': {
-                if (!ensureCanApprovePo(po, 'duyệt đợt giao')) return;
                 if (!action.deliveryBatchId) {
                     toast.warning('Thiếu đợt giao', 'Không tìm thấy đợt giao cần duyệt.');
                     return;
                 }
+                const batch = (poDeliveryBatchesByPo[po.id] || []).find(item => item.id === action.deliveryBatchId);
+                if (!batch) {
+                    toast.warning('Thiếu đợt giao', 'Không tìm thấy đợt giao cần duyệt.');
+                    return;
+                }
+                if (!ensureCanApproveDeliveryBatch(batch, 'duyệt đợt giao')) return;
                 try {
                     const result = await purchasePackageService.approveBatch({
                         deliveryBatchId: action.deliveryBatchId,
@@ -5723,6 +5767,65 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 } catch (error: any) {
                     logApiError('supplyChain.approveDeliveryBatch', error);
                     toast.error('Không thể duyệt đợt giao', getApiErrorMessage(error, 'Vui lòng kiểm tra quyền duyệt và dữ liệu đợt.'));
+                }
+                return;
+            }
+            case 'request_delivery_batch_revision':
+            case 'reject_delivery_batch': {
+                if (!action.deliveryBatchId) {
+                    toast.warning('Thiếu đợt giao', 'Không tìm thấy đợt giao cần xử lý.');
+                    return;
+                }
+                const batch = (poDeliveryBatchesByPo[po.id] || []).find(item => item.id === action.deliveryBatchId);
+                if (!batch) {
+                    toast.warning('Thiếu đợt giao', 'Không tìm thấy đợt giao cần xử lý.');
+                    return;
+                }
+                const isRevision = action.id === 'request_delivery_batch_revision';
+                if (!ensureCanApproveDeliveryBatch(batch, isRevision ? 'trả lại đợt giao' : 'từ chối đợt giao')) return;
+                const note = await reasonConfirm({
+                    title: isRevision ? 'Trả lại đợt giao để sửa' : 'Từ chối đợt giao',
+                    targetName: `${po.poNumber} • Đợt ${batch.deliveryNo}`,
+                    reasonLabel: isRevision ? 'Nội dung cần chỉnh sửa' : 'Lý do từ chối',
+                    reasonPlaceholder: isRevision
+                        ? 'VD: Cần cập nhật lại số lượng, đơn giá hoặc VAT...'
+                        : 'VD: Đợt giao không còn phù hợp với nhu cầu thực tế...',
+                    actionLabel: isRevision ? 'Trả lại để sửa' : 'Từ chối đợt giao',
+                    intent: isRevision ? 'warning' : 'danger',
+                });
+                if (!note) return;
+                try {
+                    await purchasePackageService.decideBatch({
+                        deliveryBatchId: batch.id,
+                        decision: isRevision ? 'revision_requested' : 'rejected',
+                        note,
+                        actorUserId: user?.id || '',
+                    });
+                    if (batch.approvalRequestedBy) {
+                        await projectSubmissionService.notifyTarget({
+                            target: { userId: batch.approvalRequestedBy, name: 'Người đề nghị' },
+                            actorId: user?.id,
+                            category: 'material',
+                            title: `${po.poNumber} • Đợt ${batch.deliveryNo} ${isRevision ? 'cần chỉnh sửa' : 'bị từ chối'}`,
+                            message: note,
+                            sourceType: 'purchase_order_delivery_batch',
+                            sourceId: batch.id,
+                            constructionSiteId: po.constructionSiteId || constructionSiteId,
+                            link: '/da',
+                            metadata: {
+                                projectId: po.projectId || projectId,
+                                purchaseOrderId: po.id,
+                                deliveryBatchId: batch.id,
+                                decision: isRevision ? 'revision_requested' : 'rejected',
+                            },
+                        });
+                    }
+                    await loadSupplyData();
+                    await loadPoDeliveryPrintGroups(po, true);
+                    toast.success(isRevision ? 'Đã trả lại đợt giao để sửa' : 'Đã từ chối đợt giao');
+                } catch (error: any) {
+                    logApiError('supplyChain.decideDeliveryBatch', error);
+                    toast.error('Không thể xử lý đợt giao', getApiErrorMessage(error, 'Vui lòng kiểm tra quyền duyệt và trạng thái đợt.'));
                 }
                 return;
             }
@@ -7127,8 +7230,18 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                 );
                                 const canApprovePoDocument = Boolean(
                                     effectivePoCapabilities.canApprovePo
-                                    && isPoApprovalAssignee(po)
-                                    && po.status === 'sent',
+                                    && (
+                                        (po.status === 'sent' && isPoApprovalAssignee(po))
+                                        || (
+                                            po.sourceMode === 'from_request'
+                                            && po.purchaseMode === 'multiple'
+                                            && deliveryBatches.some(batch => (
+                                                batch.status === 'planned'
+                                                && batch.approvalStatus === 'pending_approval'
+                                                && isDeliveryBatchApprovalAssignee(batch)
+                                            ))
+                                        )
+                                    ),
                                 );
                                 const canDeletePoDocument = canUserRemovePurchaseOrder(po, user, effectivePoCapabilities);
                                 const poHasStockImpact = hasPoStockImpactHint(po, supplierReturns);
@@ -7283,8 +7396,18 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 );
                 const canApprovePoDocument = Boolean(
                     effectivePoCapabilities.canApprovePo
-                    && isPoApprovalAssignee(po)
-                    && po.status === 'sent',
+                    && (
+                        (po.status === 'sent' && isPoApprovalAssignee(po))
+                        || (
+                            po.sourceMode === 'from_request'
+                            && po.purchaseMode === 'multiple'
+                            && deliveryBatches.some(batch => (
+                                batch.status === 'planned'
+                                && batch.approvalStatus === 'pending_approval'
+                                && isDeliveryBatchApprovalAssignee(batch)
+                            ))
+                        )
+                    ),
                 );
                 const canDeletePoDocument = canUserRemovePurchaseOrder(po, user, effectivePoCapabilities);
                 const poHasStockImpact = hasPoStockImpactHint(po, supplierReturns);
@@ -7367,6 +7490,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                         pendingReturnQty={pendingReturnQty}
                         canMutatePoDocument={canMutatePoDocument}
                         canConfirmPo={effectivePoCapabilities.canConfirmPo}
+                        canApprovePendingDeliveryBatch={canApprovePoDocument}
                         poHasStockImpact={poHasStockImpact}
                         creatingDeliveryBatchId={creatingDeliveryBatchId}
                         deletingDeliveryKey={deletingDeliveryKey}
@@ -9871,9 +9995,37 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                         { label: 'VAT', value: `${Number(submittingPoBatch.batch.vatRate || 0).toLocaleString('vi-VN')}%` },
                         { label: 'Số dòng', value: `${submittingPoBatch.batch.lines.length} dòng vật tư` },
                     ]}
-                    onCancel={() => setSubmittingPoBatch(null)}
+                    extraContent={
+                        <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+                            <label className="block text-[10px] font-black uppercase text-amber-800">
+                                Lý do vượt nhu cầu MR
+                            </label>
+                            <p className="mt-1 text-[11px] font-medium text-amber-700">
+                                Chỉ bắt buộc khi tổng các đợt đang duyệt/đã duyệt vượt nhu cầu của phiếu đề xuất. Lý do này thuộc riêng đợt giao đang gửi.
+                            </p>
+                            <textarea
+                                rows={3}
+                                value={batchSubmissionVarianceReason}
+                                onChange={event => setBatchSubmissionVarianceReason(event.target.value)}
+                                placeholder="VD: Khối lượng thực tế phát sinh, cần giao bù hao hụt..."
+                                className="mt-2 w-full resize-none rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-amber-300"
+                            />
+                        </div>
+                    }
+                    onCancel={() => {
+                        setSubmittingPoBatch(null);
+                        setBatchSubmissionVarianceReason('');
+                    }}
                     onConfirm={async target => {
                         const { po, batch } = submittingPoBatch;
+                        const varianceReason = batchSubmissionVarianceReason.trim();
+                        if (varianceReason !== (batch.varianceReason || '').trim()) {
+                            await purchasePackageService.setBatchVarianceReason({
+                                deliveryBatchId: batch.id,
+                                varianceReason: varianceReason || null,
+                                actorUserId: user?.id || '',
+                            });
+                        }
                         await purchasePackageService.submitBatch({
                             deliveryBatchId: batch.id,
                             approverUserId: target.userId,
@@ -9896,6 +10048,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                             },
                         }).catch(error => console.warn('Cannot notify PO batch approver', error));
                         setSubmittingPoBatch(null);
+                        setBatchSubmissionVarianceReason('');
                         await loadSupplyData();
                         toast.success('Đã gửi duyệt đợt giao');
                     }}
