@@ -76,6 +76,50 @@ const baseInput = (patch: Parameters<typeof getPurchaseOrderUiPolicy>[0]) => ({
 });
 
 describe('purchaseOrderUiPolicy', () => {
+  it('uses ordinary order approval for single delivery and batch approval for multiple delivery', () => {
+    const singleDraft = getPurchaseOrderUiPolicy(baseInput({
+      po: packagePo({ status: 'draft', purchaseMode: 'single' }),
+    }));
+    const singleSent = getPurchaseOrderUiPolicy(baseInput({
+      po: packagePo({ status: 'sent', purchaseMode: 'single' }),
+    }));
+    const multipleWithDraftBatch = getPurchaseOrderUiPolicy(baseInput({
+      po: packagePo({ status: 'confirmed', purchaseMode: 'multiple' }),
+      deliveryBatches: [plannedBatch({ approvalStatus: 'draft' } as any)],
+    }));
+    const multipleWithPendingBatch = getPurchaseOrderUiPolicy(baseInput({
+      po: packagePo({ status: 'confirmed', purchaseMode: 'multiple' }),
+      deliveryBatches: [plannedBatch({ approvalStatus: 'pending_approval' } as any)],
+    }));
+
+    expect(singleDraft.primaryAction?.id).toBe('submit_package');
+    expect(singleSent.primaryAction?.id).toBe('approve_package');
+    expect(multipleWithDraftBatch.primaryAction?.id).toBe('submit_delivery_batch');
+    expect(multipleWithPendingBatch.primaryAction?.id).toBe('approve_delivery_batch');
+  });
+
+  it('does not expose rejected implementation terminology in practical PO actions', () => {
+    const practicalPolicies = [
+      getPurchaseOrderUiPolicy(baseInput({
+        po: packagePo({ status: 'draft', purchaseMode: 'single' }),
+      })),
+      getPurchaseOrderUiPolicy(baseInput({
+        po: packagePo({ status: 'sent', purchaseMode: 'single' }),
+      })),
+      getPurchaseOrderUiPolicy(baseInput({
+        po: packagePo({ status: 'confirmed', purchaseMode: 'multiple' }),
+        deliveryBatches: [plannedBatch({ approvalStatus: 'draft' } as any)],
+      })),
+    ];
+    const labels = practicalPolicies.flatMap(policy => [
+      policy.primaryAction?.label,
+      ...policy.secondaryActions.map(action => action.label),
+      ...policy.menuActions.map(action => action.label),
+    ]).filter(Boolean).join(' | ');
+
+    expect(labels).not.toMatch(/Duyệt gói|Duyệt bổ sung|QR cấp PO|V3|V4/i);
+  });
+
   it('maps draft purchase orders to a request approval primary action', () => {
     const policy = getPurchaseOrderUiPolicy(baseInput({ po: makePo({ status: 'draft' }) }));
 
@@ -91,24 +135,6 @@ describe('purchaseOrderUiPolicy', () => {
     }));
 
     expect(policy.primaryAction?.id).toBe('request_approval');
-  });
-
-  it('approves an independent multiple-delivery PO by batch, never by its parent package', () => {
-    const independentPo = makePo({
-      status: 'draft',
-      procurementFlowVersion: 3,
-      purchaseMode: 'multiple',
-      items: [{ ...makePo().items[0], unit: 'Cay', qty: 1187, requestedQtySnapshot: 1187, requestedUnitSnapshot: 'Cay', purchaseUnitSnapshot: 'Kg', unitPrice: 0 }],
-    });
-    const draftPolicy = getPurchaseOrderUiPolicy(baseInput({ po: independentPo, deliveryBatches: [plannedBatch()] }));
-    expect(draftPolicy.primaryAction?.deliveryBatchId).toBeUndefined();
-
-    const pendingPolicy = getPurchaseOrderUiPolicy(baseInput({
-      po: { ...independentPo, status: 'in_transit' },
-      deliveryBatches: [plannedBatch({ approvalStatus: 'pending_approval' })],
-    }));
-    expect(pendingPolicy.primaryAction?.deliveryBatchId).toBeUndefined();
-    expect(packageActions({ po: independentPo, deliveryBatches: [plannedBatch()] } as any)).not.toContain('submit_package');
   });
 
   it('maps sent purchase orders to approve primary action without exposing a rejected status action', () => {
@@ -298,10 +324,15 @@ describe('purchaseOrderUiPolicy', () => {
     expect(stockPolicy.menuActions.map(action => action.id)).not.toContain('clone_po');
   });
 
-  it('uses V2 package actions for approved package flows', () => {
+  it('uses practical actions for approved request-backed PO flows', () => {
     expect(packageActions({
       po: packagePo({ purchaseMode: 'single' }),
-      deliveryBatches: [plannedBatch({ qrToken: 'qr-1', wmsTransactionId: 'tx-1' })],
+      deliveryBatches: [plannedBatch({
+        status: 'receiving',
+        approvalStatus: 'approved',
+        qrToken: 'qr-1',
+        wmsTransactionId: 'tx-1',
+      })],
     })).toEqual(['open_delivery_qr', 'print_purchase_order', 'print_approval_request', 'view_history', 'edit_po', 'remove_po']);
 
     expect(packageActions({
@@ -324,24 +355,20 @@ describe('purchaseOrderUiPolicy', () => {
     })).not.toContain('create_supplier_payable');
 
     expect(packageActions({
-      po: packagePo({ status: 'partial' }),
+      po: packagePo({ status: 'partial', purchaseMode: 'multiple' }),
       receiptStats: { orderedQty: 100, receivedQty: 70, remainingQty: 30 },
       deliveryBatches: [],
     })).toContain('close_short');
   });
 
-  it('offers a recreate delivery action after a single-delivery package batch is rejected', () => {
+  it('does not create a second delivery for a single-delivery order', () => {
     const policy = getPurchaseOrderUiPolicy(baseInput({
       po: packagePo({ purchaseMode: 'single' }),
       deliveryBatches: [plannedBatch({ status: 'cancelled' })],
       receiptStats: { orderedQty: 100, receivedQty: 0, remainingQty: 100 },
     }));
 
-    expect(policy.primaryAction).toEqual(expect.objectContaining({
-      id: 'add_delivery',
-      label: 'Tạo lại đợt giao',
-      intent: 'primary',
-    }));
-    expect(policy.nextStep).toBe('Đợt giao trước đã bị từ chối. Tạo lại đợt giao để gửi Kho xử lý WMS/QR.');
+    expect(policy.primaryAction?.id).not.toBe('add_delivery');
+    expect(policy.secondaryActions.map(action => action.id)).not.toContain('add_delivery');
   });
 });

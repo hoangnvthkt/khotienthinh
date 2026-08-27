@@ -33,10 +33,7 @@ import {
   PurchaseOrder,
   PurchaseOrderDeliveryBatch,
   PurchaseOrderItem,
-  PurchaseOrderMasterEstimate,
-  PurchaseOrderMasterEstimateVersion,
   PurchaseOrderRequestLineLink,
-  PurchaseOrderReceipt,
   PurchaseOrderSupplierReturn,
   SupplierPayableDocument,
   Warehouse,
@@ -51,11 +48,7 @@ import {
 } from '../../lib/materialUnitConversion';
 import { getPurchaseOrderDisplayLineAmount } from '../../lib/purchaseOrderAmount';
 import { getPurchaseOrderLineDemandQty } from '../../lib/purchaseOrderDemand';
-import { getPurchasePackageSummary } from '../../lib/purchasePackageDomain';
 import { getPurchaseOrderScheduleLineUnitPrice } from '../../lib/purchaseOrderSchedulePricing';
-import { purchasePackageService } from '../../lib/purchasePackageService';
-import { purchaseReceiptService } from '../../lib/purchaseReceiptService';
-import { useToast } from '../../context/ToastContext';
 import type {
   PurchaseOrderReceiptStats,
   PurchaseOrderUiAction,
@@ -93,6 +86,7 @@ export type PurchaseOrderCockpitDrawerProps = {
   vatRate: number;
   vatAmount: number;
   paymentTotal: number;
+  vatLabel?: string;
   inventoryItems: InventoryItem[];
   warehouses: Warehouse[];
   poRequestLinks: PurchaseOrderRequestLineLink[];
@@ -178,19 +172,25 @@ const actionClass = (action: PurchaseOrderUiAction, primary = false) => {
 };
 
 const normalizeDeliveryTimelineStatus = (status?: string | null): PurchaseOrderDeliveryBatch['status'] => {
-  if (status === 'received') return 'received';
+  if (['received', 'received_short', 'received_over'].includes(status || '')) return 'received';
+  if (status === 'quality_approved') return 'quality_approved';
   if (status === 'supplemental_pending') return 'supplemental_pending';
-  if (status === 'wms_pending' || status === 'issued' || status === 'variance_pending') return 'wms_pending';
+  if (status === 'wms_pending' || status === 'waiting_delivery' || status === 'receiving' || status === 'issued' || status === 'variance_pending') return 'wms_pending';
   if (status === 'cancelled' || status === 'returned') return 'cancelled';
   return 'planned';
 };
 
-const deliveryStatusView = (status?: string | null) => {
+const deliveryStatusView = (status?: string | null, approvalStatus?: PurchaseOrderDeliveryBatch['approvalStatus']) => {
   const normalizedStatus = normalizeDeliveryTimelineStatus(status);
   if (normalizedStatus === 'received') return { label: 'Đã nhập kho', className: 'border-emerald-200 bg-emerald-50 text-emerald-700' };
+  if (normalizedStatus === 'quality_approved') return { label: 'Đã duyệt SL/CL', className: 'border-cyan-200 bg-cyan-50 text-cyan-700' };
   if (normalizedStatus === 'supplemental_pending') return { label: 'Chờ duyệt bổ sung', className: 'border-amber-200 bg-amber-50 text-amber-700' };
   if (normalizedStatus === 'wms_pending') return { label: 'Chờ kho duyệt', className: 'border-amber-200 bg-amber-50 text-amber-700' };
   if (normalizedStatus === 'cancelled') return { label: 'Từ chối', className: 'border-rose-200 bg-rose-50 text-rose-700' };
+  if (approvalStatus === 'pending_approval') return { label: 'Chờ duyệt đơn', className: 'border-amber-200 bg-amber-50 text-amber-700' };
+  if (approvalStatus === 'approved') return { label: 'Đã duyệt đơn', className: 'border-emerald-200 bg-emerald-50 text-emerald-700' };
+  if (approvalStatus === 'revision_requested') return { label: 'Cần chỉnh sửa', className: 'border-amber-200 bg-amber-50 text-amber-700' };
+  if (approvalStatus === 'rejected') return { label: 'Từ chối', className: 'border-rose-200 bg-rose-50 text-rose-700' };
   return { label: 'Kế hoạch', className: 'border-blue-200 bg-blue-50 text-blue-700' };
 };
 
@@ -263,6 +263,7 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
   vatRate,
   vatAmount,
   paymentTotal,
+  vatLabel,
   inventoryItems,
   warehouses,
   poRequestLinks,
@@ -294,54 +295,14 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
   onRemoveFailedDeliveryGroup,
   onClose,
 }) => {
-  const { users = [], employees = [], user } = useApp();
-  const toast = useToast();
+  const { users = [], employees = [] } = useApp();
   const [activeTab, setActiveTab] = useState<DetailTabKey>('overview');
   const [menuOpen, setMenuOpen] = useState(false);
-  const [masterEstimate, setMasterEstimate] = useState<PurchaseOrderMasterEstimate | null>(null);
-  const [masterEstimateVersions, setMasterEstimateVersions] = useState<PurchaseOrderMasterEstimateVersion[]>([]);
-  const [issuingMasterEstimate, setIssuingMasterEstimate] = useState(false);
-  const [receiptsByBatch, setReceiptsByBatch] = useState<Record<string, PurchaseOrderReceipt[]>>({});
 
   useEffect(() => {
     setActiveTab('overview');
     setMenuOpen(false);
   }, [po.id]);
-
-  useEffect(() => {
-    if (po.procurementFlowVersion !== 3 || po.purchaseMode !== 'multiple') {
-      setMasterEstimate(null);
-      setMasterEstimateVersions([]);
-      return;
-    }
-    let active = true;
-    Promise.all([
-      purchasePackageService.getMasterEstimate(po.id),
-      purchasePackageService.listMasterEstimateVersions(po.id),
-    ]).then(([estimate, versions]) => {
-      if (!active) return;
-      setMasterEstimate(estimate);
-      setMasterEstimateVersions(versions);
-    }).catch(() => {
-      if (active) setMasterEstimateVersions([]);
-    });
-    return () => { active = false; };
-  }, [po.id, po.procurementFlowVersion, po.purchaseMode]);
-
-  useEffect(() => {
-    if (po.procurementFlowVersion !== 3 || deliveryBatches.length === 0) {
-      setReceiptsByBatch({});
-      return;
-    }
-    let active = true;
-    Promise.all(deliveryBatches.map(async batch => {
-      const receipts = await purchaseReceiptService.listReceipts(batch.id);
-      return [batch.id, receipts] as const;
-    })).then(entries => {
-      if (active) setReceiptsByBatch(Object.fromEntries(entries));
-    }).catch(() => { if (active) setReceiptsByBatch({}); });
-    return () => { active = false; };
-  }, [deliveryBatches, po.procurementFlowVersion]);
 
   // Helper resolve user avatar & name (an toàn tuyệt đối, không match nhầm khi undefined)
   const getUserInfo = (userIdOrName?: string | null) => {
@@ -379,14 +340,30 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
   const payableOutstanding = supplierPayableDocuments.reduce((sum, document) => sum + Number(document.outstandingAmount || 0), 0);
   const payableStatus = supplierPayableDocuments[0]?.status || 'none';
   const payableView = payableStatusView(payableStatus);
-  const isPackageV2 = po.procurementFlowVersion === 3;
-  const packageSummary = useMemo(() => getPurchasePackageSummary(po, deliveryBatches), [deliveryBatches, po]);
-  const packageNetAmount = useMemo(() => deliveryBatches
-    .filter(batch => batch.status !== 'cancelled')
-    .reduce((sum, batch) => sum + (batch.lines || []).reduce((lineSum, line) => (
-      lineSum + Number(line.plannedQty || 0) * Number(line.deliveryUnitPrice || 0)
-    ), 0), 0), [deliveryBatches]);
-  const packageVatAmount = Math.max(0, packageSummary.releasedGross - packageNetAmount);
+  const isPackageV2 = (po.purchaseMode === 'single' || po.purchaseMode === 'multiple') && po.sourceMode === 'from_request';
+  const isMultipleDeliveryPackage = isPackageV2 && po.purchaseMode === 'multiple';
+  const practicalQuantitySummary = useMemo(() => {
+    const demandQty = po.items.reduce((sum, item) => sum + getPurchaseOrderLineDemandQty(
+      po,
+      item.lineId || item.itemId,
+      poRequestLinks,
+      inventoryItems,
+    ), 0);
+    const approvedBatches = deliveryBatches.filter(batch => (
+      batch.status !== 'cancelled' && batch.approvalStatus === 'approved'
+    ));
+    const approvedQty = approvedBatches.reduce(
+      (sum, batch) => sum + batch.lines.reduce((lineSum, line) => lineSum + Number(line.plannedQty || 0), 0),
+      0,
+    );
+    const receivedQty = approvedBatches
+      .filter(batch => ['received', 'received_short', 'received_over'].includes(batch.status))
+      .reduce(
+        (sum, batch) => sum + batch.lines.reduce((lineSum, line) => lineSum + Number(line.acceptedStockQty || 0), 0),
+        0,
+      );
+    return { demandQty, approvedQty, receivedQty, remainingQty: demandQty - receivedQty };
+  }, [deliveryBatches, inventoryItems, po, poRequestLinks]);
   const uniqueSpecKeys = useMemo(() => Array.from(
     new Set(
       po.items.flatMap(item =>
@@ -411,29 +388,26 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
       const printGroup = getPrintGroupForBatch(batch);
       const targetWarehouse = warehouses.find(row => row.id === (batch as any).targetWarehouseId)?.name || targetWarehouseName || '—';
       const totalQty = batch.lines.reduce((sum, line) => sum + Number(line.stockPlannedQty ?? line.plannedQty ?? 0), 0);
-      const netAmount = batch.lines.reduce((sum, line) => (
+      const totalAmount = batch.lines.reduce((sum, line) => (
         sum + Number(line.plannedQty || 0) * getPurchaseOrderScheduleLineUnitPrice({
           po,
           item: itemByLineId.get(line.purchaseOrderLineId),
           line,
         })
       ), 0);
-      const batchVatRate = Number(batch.vatRate || 0);
-      const batchVatAmount = Math.round(netAmount * batchVatRate / 100);
       return {
         key: `schedule:${batch.id}`,
         source: 'schedule' as const,
-        label: `Đợt ${batch.deliveryNo}`,
+        label: po.purchaseMode === 'single'
+          ? 'Đơn mua hàng'
+          : `Đợt ${String(batch.deliveryNo).padStart(2, '0')}`,
         marker: String(batch.deliveryNo),
         plannedDate: batch.plannedDeliveryDate || null,
         status: batch.status,
         targetWarehouse,
         lineCount: batch.lines.length,
         totalQty,
-        vatRate: batchVatRate,
-        netAmount,
-        vatAmount: batchVatAmount,
-        totalAmount: netAmount + batchVatAmount,
+        totalAmount,
         printGroup,
         scheduleBatch: batch,
         wmsTransactionId: getWmsTransactionIdForBatch?.(batch) || null,
@@ -463,10 +437,7 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
           targetWarehouse,
           lineCount: group.lines.length,
           totalQty,
-          vatRate: Number(po.vatRate || 0),
-          netAmount: totalAmount,
-          vatAmount: Math.round(totalAmount * Number(po.vatRate || 0) / 100),
-          totalAmount: totalAmount + Math.round(totalAmount * Number(po.vatRate || 0) / 100),
+          totalAmount,
           printGroup: group,
           scheduleBatch: null,
           wmsTransactionId: firstPendingBatch?.transactionId || group.batches[0]?.transactionId || null,
@@ -486,9 +457,7 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
 
   // Resolve actors for the stepper (Chỉ gán người cho bước Tạo và bước Duyệt)
   const creatorUser = getUserInfo(po.createdById) || (po.lastActionBy ? getUserInfo(po.lastActionBy) : null);
-  const approvedBatchCount = deliveryBatches.filter(batch => batch.approvalStatus === 'approved').length;
-  const pendingApprovalBatchCount = deliveryBatches.filter(batch => batch.approvalStatus === 'pending_approval').length;
-  const isApproved = isPackageV2 ? approvedBatchCount > 0 : !['draft', 'sent'].includes(po.status);
+  const isApproved = !['draft', 'sent'].includes(po.status);
   const approverUser = isApproved
     ? getUserInfo(po.lastActionBy) || getUserInfo(po.submittedToName) || getUserInfo(po.submittedToUserId)
     : getUserInfo(po.submittedToName) || getUserInfo(po.submittedToUserId) || getUserInfo(po.workflowStepActorUserId);
@@ -498,12 +467,12 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
       {
         key: 'created',
         stepNo: 1,
-        title: 'Tạo PO gốc',
+        title: 'Tạo đơn',
         done: true,
         current: po.status === 'draft',
         user: creatorUser,
         icon: <UserIcon size={15} />,
-        mainLabel: creatorUser?.name || 'Người tạo PO',
+        mainLabel: creatorUser?.name || 'Người tạo đơn',
         roleLabel: 'Người tạo đơn',
         dateLabel: formatDate(po.orderDate || po.createdAt),
         statusBadge: 'Đã tạo',
@@ -512,23 +481,23 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
       {
         key: 'approved',
         stepNo: 2,
-        title: 'Duyệt từng đợt',
+        title: 'Duyệt đơn',
         done: isApproved,
-        current: pendingApprovalBatchCount > 0,
+        current: po.status === 'sent',
         user: approverUser,
         icon: <ShieldCheck size={15} />,
         mainLabel: isApproved
-          ? (approverUser?.name ? approverUser.name : `${approvedBatchCount} đợt đã duyệt`)
+          ? (approverUser?.name ? approverUser.name : 'Đã duyệt đơn')
           : (approverUser?.name ? `Chờ: ${approverUser.name}` : 'Chờ phê duyệt'),
         roleLabel: isApproved ? 'Người phê duyệt' : po.submittedToPermission ? `Quyền ${po.submittedToPermission}` : 'Chờ duyệt',
-        dateLabel: isApproved ? `${approvedBatchCount}/${deliveryBatches.length} đợt` : 'Đang chờ xử lý',
-        statusBadge: pendingApprovalBatchCount > 0 ? 'Chờ duyệt' : isApproved ? 'Đã có đợt duyệt' : 'Chưa gửi',
-        tone: isApproved ? 'emerald' : pendingApprovalBatchCount > 0 ? 'amber' : 'slate',
+        dateLabel: isApproved ? formatDate(po.lastActionAt || po.orderDate) : 'Đang chờ xử lý',
+        statusBadge: isApproved ? 'Đã duyệt' : po.status === 'sent' ? 'Chờ duyệt' : 'Chưa gửi',
+        tone: isApproved ? 'emerald' : po.status === 'sent' ? 'amber' : 'slate',
       },
       {
         key: 'delivery',
         stepNo: 3,
-        title: 'Đợt giao',
+        title: po.purchaseMode === 'single' ? 'Giao hàng' : 'Các đợt mua',
         done: hasDelivery || ['partial', 'delivered', 'closed'].includes(po.status),
         current: ['confirmed', 'in_transit'].includes(po.status) && !hasReceivedDelivery,
         user: null,
@@ -561,8 +530,8 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
         current: po.status === 'partial',
         user: null,
         icon: <CheckCircle2 size={15} className="text-emerald-600 dark:text-emerald-400" />,
-        mainLabel: ['delivered', 'closed'].includes(po.status) ? 'Đã hoàn tất' : 'Đóng gói PO',
-        roleLabel: 'Đóng gói mua sắm',
+        mainLabel: ['delivered', 'closed'].includes(po.status) ? 'Đã hoàn tất' : 'Chờ hoàn tất đơn',
+        roleLabel: 'Theo dõi đơn mua',
         dateLabel: ['delivered', 'closed'].includes(po.status) ? 'Hoàn thành' : 'Theo dõi',
         statusBadge: ['delivered', 'closed'].includes(po.status) ? 'Hoàn tất' : 'Chưa hoàn tất',
         tone: ['delivered', 'closed'].includes(po.status) ? 'emerald' : 'slate',
@@ -671,55 +640,6 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
     </button>
   );
 
-  const printMasterEstimateVersion = (version: PurchaseOrderMasterEstimateVersion) => {
-    const snapshot = version.snapshot || {};
-    const estimateLines = Array.isArray(snapshot.estimateLines) ? snapshot.estimateLines as Array<Record<string, unknown>> : [];
-    const requestItems = Array.isArray(snapshot.requestItems) ? snapshot.requestItems as Array<Record<string, unknown>> : [];
-    const itemByLine = new Map(requestItems.map(item => [String(item.lineId || item.itemId || ''), item]));
-    const escapeHtml = (value: unknown) => String(value ?? '').replace(/[&<>"']/g, character => ({
-      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;',
-    }[character] || character));
-    const total = estimateLines.reduce((sum, line) => sum + Number(line.purchaseQty || 0) * Number(line.purchaseUnitPrice || 0), 0);
-    const rows = estimateLines.map((line, index) => {
-      const item = itemByLine.get(String(line.purchaseOrderLineId || '')) || {};
-      return `<tr><td>${index + 1}</td><td>${escapeHtml(item.sku || line.itemId)}</td><td>${escapeHtml(item.name || '')}</td><td class="num">${fmtQty(Number(line.requestQty || 0))} ${escapeHtml(line.requestUnit)}</td><td class="num">${fmtQty(Number(line.purchaseQty || 0))} ${escapeHtml(line.purchaseUnit)}</td><td class="num">${fmtMoney(Number(line.purchaseUnitPrice || 0))}</td><td class="num">${fmtMoney(Number(line.purchaseQty || 0) * Number(line.purchaseUnitPrice || 0))}</td></tr>`;
-    }).join('');
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) return;
-    printWindow.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(po.poNumber)} - Chủ trương v${version.versionNo}</title><style>body{font-family:Arial,sans-serif;color:#111;padding:28px}h1{text-align:center;font-size:20px;margin:0}.sub{text-align:center;font-weight:700;margin:8px 0 24px;color:#555}table{width:100%;border-collapse:collapse;font-size:12px}th,td{border:1px solid #bbb;padding:8px}th{background:#f2f2f2;text-transform:uppercase}.num{text-align:right}.total{margin-top:14px;text-align:right;font-size:15px;font-weight:800}.note{margin-top:18px;font-size:11px;color:#666}@media print{body{padding:0}}</style></head><body><h1>ĐỀ NGHỊ DUYỆT CHỦ TRƯƠNG TỔNG — DỰ KIẾN</h1><div class="sub">${escapeHtml(po.poNumber)} • Phiên bản ${version.versionNo} • ${escapeHtml(po.vendorName || '')}</div><table><thead><tr><th>STT</th><th>Mã</th><th>Vật tư</th><th>Nhu cầu MR</th><th>SL mua dự kiến</th><th>Đơn giá dự kiến</th><th>Thành tiền</th></tr></thead><tbody>${rows}</tbody></table><div class="total">Tổng dự kiến: ${fmtMoney(total)} đ</div><div class="note">Chứng từ dự kiến phục vụ duyệt chủ trương; không ghi nhận số đã đặt, tồn kho hoặc công nợ.</div><script>window.onload=()=>window.print()</script></body></html>`);
-    printWindow.document.close();
-  };
-
-  const issueAndPrintMasterEstimate = async () => {
-    if (!masterEstimate?.isEnabled || issuingMasterEstimate) return;
-    setIssuingMasterEstimate(true);
-    try {
-      const version = await purchasePackageService.issueMasterEstimate({ purchaseOrderId: po.id, actorUserId: user.id });
-      setMasterEstimateVersions(previous => [version, ...previous]);
-      printMasterEstimateVersion(version);
-      toast.success('Đã phát hành bản chủ trương', `Phiên bản ${version.versionNo} đã được chụp bất biến để in lại.`);
-    } catch (error: any) {
-      toast.error('Không thể phát hành bản chủ trương', error?.message || 'Vui lòng thử lại.');
-    } finally {
-      setIssuingMasterEstimate(false);
-    }
-  };
-
-  const confirmReceiptVariance = async (receipt: PurchaseOrderReceipt) => {
-    const note = window.prompt('Nhập nội dung mua hàng xác nhận phần nhận vượt để ghi công nợ:')?.trim();
-    if (!note) return;
-    try {
-      await purchaseReceiptService.confirmVariance({ receiptId: receipt.id, note, actorUserId: user.id });
-      setReceiptsByBatch(previous => ({
-        ...previous,
-        [receipt.deliveryBatchId]: (previous[receipt.deliveryBatchId] || []).map(row => row.id === receipt.id ? { ...row, financeStatus: 'posted' } : row),
-      }));
-      toast.success('Đã xác nhận chênh lệch', 'Phần nhận vượt đã được ghi nhận vào công nợ của đợt.');
-    } catch (error: any) {
-      toast.error('Không thể xác nhận chênh lệch', error?.message || 'Vui lòng thử lại.');
-    }
-  };
-
   return (
     <div className="fixed inset-0 z-[1000] flex justify-end bg-slate-950/45 backdrop-blur-xs animate-in fade-in duration-150" onClick={onClose}>
       <aside
@@ -756,14 +676,16 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
 
             {/* Quick Actions & Close */}
             <div className="flex shrink-0 items-center justify-between gap-3 lg:justify-end">
-              <div className="text-right bg-emerald-50/60 dark:bg-emerald-950/30 px-3.5 py-1.5 rounded-xl border border-emerald-200/60 dark:border-emerald-900/40">
-                <div className="text-[10px] font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
-                  {isPackageV2 ? 'Giá trị các đợt gồm VAT' : 'Tổng thanh toán gồm VAT'}
+              {!isMultipleDeliveryPackage && (
+                <div className="text-right bg-emerald-50/60 dark:bg-emerald-950/30 px-3.5 py-1.5 rounded-xl border border-emerald-200/60 dark:border-emerald-900/40">
+                  <div className="text-[10px] font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+                    Tổng thanh toán gồm VAT
+                  </div>
+                  <div className="text-xl sm:text-2xl font-black text-emerald-700 dark:text-emerald-300">
+                    {fmtMoney(paymentTotal)} đ
+                  </div>
                 </div>
-                <div className="text-xl sm:text-2xl font-black text-emerald-700 dark:text-emerald-300">
-                  {fmtMoney(isPackageV2 ? packageSummary.releasedGross : paymentTotal)} đ
-                </div>
-              </div>
+              )}
 
               <div className="relative">
                 <button
@@ -890,29 +812,56 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
                 </div>
               </section>
 
+              {isPackageV2 && (
+                <section className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900">
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+                      <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400">Nhu cầu MR</span>
+                      <strong className="mt-1 block text-lg font-black text-slate-800">{fmtQty(practicalQuantitySummary.demandQty)}</strong>
+                    </div>
+                    <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-3">
+                      <span className="block text-[10px] font-black uppercase tracking-wider text-blue-500">Đã duyệt đặt</span>
+                      <strong className="mt-1 block text-lg font-black text-blue-700">{fmtQty(practicalQuantitySummary.approvedQty)}</strong>
+                    </div>
+                    <div className="rounded-xl border border-emerald-100 bg-emerald-50/60 p-3">
+                      <span className="block text-[10px] font-black uppercase tracking-wider text-emerald-600">Đã thực nhập</span>
+                      <strong className="mt-1 block text-lg font-black text-emerald-700">{fmtQty(practicalQuantitySummary.receivedQty)}</strong>
+                    </div>
+                    <div className="rounded-xl border border-amber-100 bg-amber-50/60 p-3">
+                      <span className="block text-[10px] font-black uppercase tracking-wider text-amber-600">Còn lại / Vượt</span>
+                      <strong className={`mt-1 block text-lg font-black ${practicalQuantitySummary.remainingQty < 0 ? 'text-rose-700' : 'text-amber-700'}`}>
+                        {practicalQuantitySummary.remainingQty < 0
+                          ? `Vượt ${fmtQty(Math.abs(practicalQuantitySummary.remainingQty))}`
+                          : fmtQty(practicalQuantitySummary.remainingQty)}
+                      </strong>
+                    </div>
+                  </div>
+                </section>
+              )}
+
               {/* KHU VỰC TIỀN VÀ BASELINE (MONEY FOCUS BAR) */}
               <section className="rounded-2xl border border-slate-200/90 bg-gradient-to-br from-white via-slate-50/50 to-emerald-50/20 p-4 sm:p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900">
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 items-center">
                   <div className="p-3 rounded-xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-xs">
                     <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400">Tiền hàng trước VAT</span>
                     <strong className="text-base sm:text-lg font-black text-slate-800 dark:text-white mt-0.5 block">
-                      {fmtMoney(isPackageV2 ? packageNetAmount : displayAmount)} đ
+                      {fmtMoney(displayAmount)} đ
                     </strong>
                   </div>
 
                   <div className="p-3 rounded-xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-xs">
-                    <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400">{isPackageV2 ? 'Thuế VAT theo từng đợt' : `Thuế VAT (${vatRate}%)`}</span>
+                    <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400">{vatLabel || `Thuế VAT (${vatRate}%)`}</span>
                     <strong className="text-base sm:text-lg font-black text-slate-800 dark:text-white mt-0.5 block">
-                      {fmtMoney(isPackageV2 ? packageVatAmount : vatAmount)} đ
+                      {fmtMoney(vatAmount)} đ
                     </strong>
                   </div>
 
                   <div className="p-3 rounded-xl border border-emerald-200 bg-emerald-50/50 dark:border-emerald-900/50 dark:bg-emerald-950/30 shadow-xs">
                     <span className="block text-[10px] font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
-                      {isPackageV2 ? 'Các đợt gồm VAT' : 'Tổng thanh toán gồm VAT'}
+                      {isMultipleDeliveryPackage ? 'Tổng giá trị các đợt gồm VAT' : 'Tổng thanh toán gồm VAT'}
                     </span>
                     <strong className="text-lg sm:text-xl font-black text-emerald-700 dark:text-emerald-300 mt-0.5 block">
-                      {fmtMoney(isPackageV2 ? packageSummary.releasedGross : paymentTotal)} đ
+                      {fmtMoney(paymentTotal)} đ
                     </strong>
                   </div>
 
@@ -1024,41 +973,6 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
                 </div>
               </section>
 
-              {po.procurementFlowVersion === 3 && po.purchaseMode === 'multiple' && (
-                <section id="po-section-documents" className="rounded-2xl border border-violet-200 bg-violet-50/30 p-4 sm:p-5 shadow-xs space-y-4">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <h4 className="text-base font-black text-violet-900">Đề nghị duyệt chủ trương tổng</h4>
-                      <p className="text-xs font-semibold text-violet-600">Bản dự kiến độc lập với các đợt đặt hàng, WMS và công nợ.</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => void issueAndPrintMasterEstimate()}
-                      disabled={!masterEstimate?.isEnabled || issuingMasterEstimate}
-                      className="inline-flex items-center gap-2 rounded-xl bg-violet-600 px-4 py-2.5 text-xs font-black text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {issuingMasterEstimate ? <Loader2 size={14} className="animate-spin" /> : <Printer size={14} />}
-                      Phát hành &amp; in bản mới
-                    </button>
-                  </div>
-                  {!masterEstimate?.isEnabled ? (
-                    <div className="rounded-xl border border-dashed border-violet-200 bg-white/70 p-4 text-center text-xs font-bold text-violet-500">
-                      Chưa bật đề nghị chủ trương trong form PO.
-                    </div>
-                  ) : (
-                    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                      {masterEstimateVersions.map(version => (
-                        <button key={version.id} type="button" onClick={() => printMasterEstimateVersion(version)} className="flex items-center justify-between rounded-xl border border-violet-100 bg-white px-3 py-2 text-left text-xs font-bold text-slate-700 hover:border-violet-300">
-                          <span>Phiên bản {version.versionNo}<small className="block font-semibold text-slate-400">{formatDate(version.issuedAt)}</small></span>
-                          <Printer size={14} className="text-violet-600" />
-                        </button>
-                      ))}
-                      {masterEstimateVersions.length === 0 && <span className="text-xs font-bold text-violet-500">Chưa phát hành phiên bản nào.</span>}
-                    </div>
-                  )}
-                </section>
-              )}
-
               {/* KHU VỰC ĐỢT GIAO HÀNG */}
               <section className="rounded-2xl border border-slate-200/90 bg-white p-4 sm:p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900 space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3 dark:border-slate-800">
@@ -1067,8 +981,14 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
                       <Truck size={16} />
                     </div>
                     <div>
-                      <h4 className="text-base font-black text-slate-800 dark:text-slate-100">Kế hoạch Đợt giao hàng</h4>
-                      <p className="text-xs font-semibold text-slate-400">Mỗi PO có thể chia nhiều đợt giao kèm luồng WMS & mã QR kiểm nhận.</p>
+                      <h4 className="text-base font-black text-slate-800 dark:text-slate-100">
+                        {isPackageV2 ? (po.purchaseMode === 'single' ? 'Đơn mua hàng' : 'Các đợt mua') : 'Kế hoạch giao hàng'}
+                      </h4>
+                      <p className="text-xs font-semibold text-slate-400">
+                        {po.purchaseMode === 'single'
+                          ? 'Một đơn, một lần giao, duyệt SL/CL rồi nhập kho.'
+                          : 'Mỗi đợt có số lượng, giá và VAT riêng theo thực tế.'}
+                      </p>
                     </div>
                   </div>
                   {isLoadingDeliveryPrintGroups && (
@@ -1085,13 +1005,16 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
                 ) : (
                   <div className="space-y-3">
                     {deliveryTimelineGroups.map(group => {
-                      const status = deliveryStatusView(group.status);
                       const batch = group.scheduleBatch;
+                      const status = deliveryStatusView(group.status, batch?.approvalStatus);
                       const printGroup = group.printGroup;
                       const printPoKey = `${po.id}:${printGroup.key}:purchase_order`;
                       const printApprovalKey = `${po.id}:${printGroup.key}:approval_request`;
                       const normalizedStatus = normalizeDeliveryTimelineStatus(group.status);
-                      const canEditPlannedBatch = !isPackageV2 && !!batch && canMutatePoDocument && ['planned', 'supplemental_pending'].includes(batch.status) && !poHasStockImpact;
+                      const canEditPlannedBatch = !!batch && canMutatePoDocument
+                        && ['planned', 'supplemental_pending'].includes(batch.status)
+                        && (!isPackageV2 || ['draft', 'revision_requested', 'rejected'].includes(batch.approvalStatus || 'draft'))
+                        && !poHasStockImpact;
                       const isDeletingBatch = batch
                         ? deletingDeliveryKey === `batch:${batch.id}`
                         : deletingDeliveryKey === `group:${printGroup.key}`;
@@ -1110,43 +1033,14 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
                                   <div className="text-[11px] font-semibold text-slate-400">{formatDate(group.plannedDate)} • Kho: {group.targetWarehouse}</div>
                                 </div>
                                 <span className={`rounded-full border px-2.5 py-0.5 text-xs font-black ${status.className}`}>{status.label}</span>
-                                <span className="rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-[10px] font-black text-blue-700">VAT {Number(group.vatRate || 0).toLocaleString('vi-VN')}%</span>
                               </div>
                               <div className="mt-3 grid gap-2 text-xs sm:grid-cols-3">
                                 <div className="rounded-xl bg-slate-50 dark:bg-slate-800/60 p-2.5"><span className="block text-[10px] font-black uppercase text-slate-400">Số dòng</span><strong className="text-xs font-black">{group.lineCount} dòng</strong></div>
                                 <div className="rounded-xl bg-slate-50 dark:bg-slate-800/60 p-2.5"><span className="block text-[10px] font-black uppercase text-slate-400">Tổng KL</span><strong className="text-xs font-black">{fmtQty(group.totalQty)}</strong></div>
-                                <div className="rounded-xl bg-slate-50 dark:bg-slate-800/60 p-2.5"><span className="block text-[10px] font-black uppercase text-slate-400">Giá trị đợt gồm VAT</span><strong className="text-xs font-black text-emerald-700">{fmtMoney(group.totalAmount)} đ</strong></div>
+                                <div className="rounded-xl bg-slate-50 dark:bg-slate-800/60 p-2.5"><span className="block text-[10px] font-black uppercase text-slate-400">Giá trị đợt</span><strong className="text-xs font-black text-emerald-700">{fmtMoney(group.totalAmount)} đ</strong></div>
                               </div>
-                              {batch && (receiptsByBatch[batch.id] || []).length > 0 && (
-                                <div className="mt-3 space-y-1.5 rounded-xl border border-slate-100 bg-slate-50/70 p-2.5">
-                                  <div className="text-[10px] font-black uppercase text-slate-400">Lịch sử nhập hàng</div>
-                                  {(receiptsByBatch[batch.id] || []).map(receipt => (
-                                    <div key={receipt.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white px-2.5 py-2 text-[11px] font-bold text-slate-600">
-                                      <span>Lần {receipt.receiptNo} • {formatDate(receipt.receivedAt)} • {fmtMoney(receipt.acceptedGrossAmount)} đ</span>
-                                      <span className="flex items-center gap-1.5">
-                                        {receipt.wmsTransactionId && <button type="button" onClick={() => void onRunAction({ id: 'open_wms_transaction', label: 'Mở WMS', intent: 'neutral', transactionId: receipt.wmsTransactionId })} className="rounded border border-blue-200 px-2 py-1 text-blue-700">WMS</button>}
-                                        {receipt.financeStatus === 'variance_pending' ? (
-                                          <button type="button" onClick={() => void confirmReceiptVariance(receipt)} className="rounded border border-amber-200 bg-amber-50 px-2 py-1 text-amber-700">Xác nhận công nợ vượt</button>
-                                        ) : <span className="rounded bg-emerald-50 px-2 py-1 text-emerald-700">Đã ghi công nợ</span>}
-                                      </span>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
                             </div>
                             <div className="flex flex-wrap items-start justify-end gap-1.5 lg:max-w-[360px]">
-                              {isPackageV2 && batch && ['draft', 'revision_requested', 'rejected'].includes(batch.approvalStatus || 'draft') && (
-                                <button type="button" onClick={() => void onRunAction({ id: 'submit_delivery_batch', label: 'Gửi duyệt đợt', intent: 'warning', deliveryBatchId: batch.id })} className="inline-flex h-8.5 items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3 text-xs font-black text-amber-700 hover:bg-amber-100">
-                                  <Send size={13} /> Gửi duyệt
-                                </button>
-                              )}
-                              {isPackageV2 && batch?.approvalStatus === 'pending_approval' && canConfirmPo && (
-                                <>
-                                  <button type="button" onClick={() => void onRunAction({ id: 'approve_delivery_batch', label: 'Duyệt đợt', intent: 'success', deliveryBatchId: batch.id })} className="inline-flex h-8.5 items-center gap-1.5 rounded-xl bg-emerald-600 px-3 text-xs font-black text-white hover:bg-emerald-700"><CheckCircle2 size={13} /> Duyệt</button>
-                                  <button type="button" onClick={() => void onRunAction({ id: 'request_delivery_revision', label: 'Trả sửa', intent: 'warning', deliveryBatchId: batch.id })} className="inline-flex h-8.5 items-center gap-1.5 rounded-xl border border-amber-200 bg-white px-3 text-xs font-bold text-amber-700"><RefreshCcw size={13} /> Trả sửa</button>
-                                  <button type="button" onClick={() => void onRunAction({ id: 'reject_delivery_batch', label: 'Từ chối', intent: 'danger', deliveryBatchId: batch.id })} className="inline-flex h-8.5 items-center gap-1.5 rounded-xl border border-rose-200 bg-white px-3 text-xs font-bold text-rose-700"><Ban size={13} /> Từ chối</button>
-                                </>
-                              )}
                               {printGroup.lines.length > 0 && (
                                 <>
                                   <button
@@ -1179,6 +1073,16 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
                                   </button>
                                 </>
                               )}
+                              {isPackageV2 && batch && po.purchaseMode === 'multiple' && ['draft', 'revision_requested', 'rejected'].includes(batch.approvalStatus || 'draft') && (
+                                <button type="button" onClick={() => void onRunAction({ id: 'submit_delivery_batch', label: 'Gửi duyệt đợt giao', intent: 'warning', deliveryBatchId: batch.id })} className="inline-flex h-8.5 items-center gap-1.5 rounded-xl bg-amber-500 px-3 text-xs font-black text-white hover:bg-amber-600 shadow-xs transition">
+                                  <Send size={13} /> Gửi duyệt
+                                </button>
+                              )}
+                              {isPackageV2 && batch && po.purchaseMode === 'multiple' && batch.approvalStatus === 'pending_approval' && canConfirmPo && (
+                                <button type="button" onClick={() => void onRunAction({ id: 'approve_delivery_batch', label: 'Duyệt đợt giao', intent: 'success', deliveryBatchId: batch.id })} className="inline-flex h-8.5 items-center gap-1.5 rounded-xl bg-emerald-600 px-3 text-xs font-black text-white hover:bg-emerald-700 shadow-xs transition">
+                                  <CheckCircle2 size={13} /> Duyệt đợt
+                                </button>
+                              )}
                               {isPackageV2 && batch && (batch.qrToken || wmsTransactionId) && (
                                 <button type="button" onClick={() => void onRunAction({ id: 'open_delivery_qr', label: 'Mở QR', intent: 'primary', deliveryBatchId: batch.id, transactionId: wmsTransactionId || undefined, qrToken: batch.qrToken || null })} className="inline-flex h-8.5 items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 text-xs font-black text-white hover:bg-blue-700 shadow-xs transition">
                                   <QrCode size={13} /> Mở QR
@@ -1199,7 +1103,7 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
                                   {creatingDeliveryBatchId === batch.id ? <Loader2 size={13} className="animate-spin" /> : <QrCode size={13} />} Tạo WMS
                                 </button>
                               )}
-                              {normalizedStatus === 'wms_pending' && wmsTransactionId && (
+                              {['wms_pending', 'quality_approved'].includes(normalizedStatus) && wmsTransactionId && (
                                 <button type="button" onClick={() => void onRunAction({ id: 'open_wms_transaction', label: 'Mở WMS', intent: 'primary', transactionId: wmsTransactionId })} className="inline-flex h-8.5 items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 text-xs font-black text-white hover:bg-blue-700 shadow-xs transition">
                                   <ShieldCheck size={13} /> Mở WMS
                                 </button>

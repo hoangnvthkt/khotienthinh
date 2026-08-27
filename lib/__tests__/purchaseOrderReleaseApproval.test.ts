@@ -2,10 +2,10 @@ import { describe, expect, it } from 'vitest';
 import type { PurchaseOrder, PurchaseOrderDeliveryBatch } from '../../types';
 import {
   applyPurchaseOrderSupplementalState,
+  getPurchaseOrderScheduleValueComparison,
   getVarianceSeverity,
   getPurchaseOrderReleaseSummary,
   getPurchaseOrderScheduleQuantityBlockReason,
-  getMultipleDeliveryOverageReason,
 } from '../purchaseOrderReleaseApproval';
 
 const makePo = (patch: Partial<PurchaseOrder> = {}): PurchaseOrder => ({
@@ -59,6 +59,15 @@ const batch = (
 });
 
 describe('purchaseOrderReleaseApproval', () => {
+  it('compares practical delivery values with a reference without approval semantics', () => {
+    expect(getPurchaseOrderScheduleValueComparison(330_723_118, 330_725_060)).toEqual({
+      referenceAmount: 330_723_118,
+      scheduledAmount: 330_725_060,
+      varianceAmount: 1_942,
+    });
+    expect(getPurchaseOrderScheduleValueComparison(100_000, 92_000).varianceAmount).toBe(-8_000);
+  });
+
   it('tracks released and remaining quantities under a master PO', () => {
     const summary = getPurchaseOrderReleaseSummary(makePo(), [
       batch('batch-1', 1, 300, 100),
@@ -120,35 +129,6 @@ describe('purchaseOrderReleaseApproval', () => {
     })).toBeNull();
     expect(getVarianceSeverity(10)).toBe('warning');
     expect(getVarianceSeverity(0)).toBe('none');
-  });
-
-  it('tracks multiple-delivery allocations in the MR unit and requires a reason for an overage', () => {
-    const multiplePo = makePo({
-      procurementFlowVersion: 3,
-      purchaseMode: 'multiple',
-      items: [{
-        lineId: 'line-1',
-        itemId: 'item-1',
-        sku: 'VT001',
-        name: 'Thep D16',
-        unit: 'Cay',
-        qty: 10,
-        requestedQtySnapshot: 10,
-        requestedUnitSnapshot: 'Cay',
-        purchaseUnitSnapshot: 'Kg',
-        unitPrice: 0,
-      }],
-    });
-    const overBatch = batch('batch-1', 1, 180, 15_000);
-    overBatch.lines[0].stockPlannedQty = 12;
-
-    expect(getPurchaseOrderReleaseSummary(multiplePo, [overBatch]).lineSummaries[0])
-      .toMatchObject({ orderedQty: 10, releasedQty: 12, remainingQty: -2 });
-    expect(getMultipleDeliveryOverageReason(multiplePo, [overBatch]))
-      .toContain('phải nhập lý do vượt nhu cầu');
-
-    overBatch.varianceReason = 'Nhà thầu cần bù hao hụt thực tế.';
-    expect(getMultipleDeliveryOverageReason(multiplePo, [overBatch])).toBeNull();
   });
 
   it('marks the first release that exceeds the approved master amount as supplemental pending', () => {

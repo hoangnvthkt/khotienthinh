@@ -8,12 +8,13 @@ import AddInventoryModal from '../components/AddInventoryModal';
 import InventoryDetailModal from '../components/InventoryDetailModal';
 import DeleteInventoryModal from '../components/DeleteInventoryModal';
 import ReceivePurchaseOrderModal from '../components/ReceivePurchaseOrderModal';
+import TransactionDetailModal from '../components/TransactionDetailModal';
 import ReceiveFulfillmentBatchModal from '../components/ReceiveFulfillmentBatchModal';
 import ExcelImportReviewModal from '../components/ExcelImportReviewModal';
 import Pagination from '../components/Pagination';
 import { usePagination } from '../hooks/usePagination';
 import { loadXlsx } from '../lib/loadXlsx';
-import { InventoryItem, Transaction, TransactionType, TransactionStatus, PurchaseOrder, PurchaseOrderDeliveryBatch, MaterialRequest, MaterialRequestFulfillmentBatch } from '../types';
+import { InventoryItem, Transaction, TransactionType, TransactionStatus, PurchaseOrder, MaterialRequest, MaterialRequestFulfillmentBatch } from '../types';
 import { usePermission } from '../hooks/usePermission';
 import { useModuleData } from '../hooks/useModuleData';
 import { matchesSearchQueryMultiple } from '../lib/searchUtils';
@@ -101,8 +102,7 @@ const Inventory: React.FC = () => {
   const [importPreview, setImportPreview] = useState<ExcelImportPreview<InventoryExcelRecord> | null>(null);
   const [deletingItem, setDeletingItem] = useState(false);
   const [receivingPo, setReceivingPo] = useState<PurchaseOrder | null>(null);
-  const [receivingDelivery, setReceivingDelivery] = useState<PurchaseOrderDeliveryBatch | null>(null);
-  const [receivingTransaction, setReceivingTransaction] = useState<Transaction | null>(null);
+  const [viewingPurchaseReceiptTx, setViewingPurchaseReceiptTx] = useState<Transaction | null>(null);
   const [receivingFulfillmentBatch, setReceivingFulfillmentBatch] = useState<MaterialRequestFulfillmentBatch | null>(null);
   const [receivingFulfillmentRequest, setReceivingFulfillmentRequest] = useState<MaterialRequest | null>(null);
   const [loadingQr, setLoadingQr] = useState(false);
@@ -181,19 +181,12 @@ const Inventory: React.FC = () => {
           toast.warning('Sai kho nhận', 'Tài khoản của bạn không được phân công kho nhận của đợt giao này.');
           return;
         }
-        const isFlowV3Delivery = lookup.purchaseOrder.procurementFlowVersion === 3;
-        if (isFlowV3Delivery && lookup.deliveryBatch.approvalStatus !== 'approved') {
-          toast.warning('Đợt đặt hàng chưa được duyệt', 'QR chỉ được sử dụng sau khi đợt đặt hàng đã duyệt.');
-          return;
-        }
-        if (!isFlowV3Delivery && !lookup.deliveryBatch.wmsTransactionId) {
+        if (!lookup.deliveryBatch.wmsTransactionId) {
           toast.warning('Đợt giao chưa có WMS', 'Vui lòng kiểm tra lại đợt giao trong Cung ứng dự án.');
           return;
         }
-        let transaction = lookup.deliveryBatch.wmsTransactionId
-          ? transactions.find(item => item.id === lookup.deliveryBatch.wmsTransactionId) || null
-          : null;
-        if (!isFlowV3Delivery && !transaction && lookup.deliveryBatch.wmsTransactionId) {
+        let transaction = transactions.find(item => item.id === lookup.deliveryBatch.wmsTransactionId) || null;
+        if (!transaction) {
           transaction = await purchasePackageService.getWmsTransactionById(lookup.deliveryBatch.wmsTransactionId);
           if (!transaction) {
             toast.warning('Chưa tải phiếu WMS', 'Đợt giao tồn tại nhưng phiếu WMS chưa có trong dữ liệu hiện tại. Vui lòng tải lại dữ liệu WMS.');
@@ -201,9 +194,7 @@ const Inventory: React.FC = () => {
           }
           await refreshWmsRecords({ transactionIds: [transaction.id] });
         }
-        setReceivingPo(lookup.purchaseOrder);
-        setReceivingDelivery(lookup.deliveryBatch);
-        setReceivingTransaction(transaction);
+        setViewingPurchaseReceiptTx(transaction);
         return;
       }
 
@@ -238,8 +229,6 @@ const Inventory: React.FC = () => {
           return;
         }
         setReceivingPo(po);
-        setReceivingDelivery(null);
-        setReceivingTransaction(null);
       }
     } catch (err: any) {
       logApiError('inventory.loadDocumentQr', err);
@@ -710,14 +699,14 @@ const Inventory: React.FC = () => {
       <ReceivePurchaseOrderModal
         isOpen={!!receivingPo}
         po={receivingPo}
-        deliveryBatch={receivingDelivery}
-        transaction={receivingTransaction}
-        onClose={() => {
-          setReceivingPo(null);
-          setReceivingDelivery(null);
-          setReceivingTransaction(null);
-        }}
-        onReceived={(po) => setReceivingPo(po)}
+        onClose={() => setReceivingPo(null)}
+        onReceived={setReceivingPo}
+      />
+      <TransactionDetailModal
+        isOpen={!!viewingPurchaseReceiptTx}
+        transaction={viewingPurchaseReceiptTx}
+        onClose={() => setViewingPurchaseReceiptTx(null)}
+        onUpdated={setViewingPurchaseReceiptTx}
       />
       <ReceiveFulfillmentBatchModal
         isOpen={!!receivingFulfillmentBatch}

@@ -739,7 +739,9 @@ const buildV2ReceiptQualityLines = (
     return {
       deliveryLineId: deliveryLine.id,
       itemId: deliveryLine.itemId,
+      deliveredPurchaseQty: snapshot.acceptedPurchaseQty,
       acceptedPurchaseQty: snapshot.acceptedPurchaseQty,
+      deliveredStockQty: snapshot.acceptedStockQty,
       acceptedStockQty: snapshot.acceptedStockQty,
       varianceReason: receiptLine?.varianceReason || null,
     };

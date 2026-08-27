@@ -44,6 +44,7 @@ import {
   type ContractAttachmentDraft,
 } from '../../lib/contractAttachmentService';
 import { parseNonNegativeLocaleNumber } from '../../lib/localeNumberInput';
+import { removeSupplierContractDeepLink } from '../../lib/projectContractAggregation';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 const formatCurrency = (v: number, currency = 'VND') =>
@@ -189,6 +190,14 @@ const SupplierContracts: React.FC = () => {
     const target = contracts.find(contract => contract.id === targetId);
     if (target) setSelectedContract(target);
   }, [contracts, location.search, selectedContract?.id]);
+
+  const closeContractDetails = () => {
+    setSelectedContract(null);
+    const params = new URLSearchParams(location.search);
+    if (!params.has('supplierContractId')) return;
+    const nextSearch = removeSupplierContractDeepLink(params).toString();
+    navigate(`${location.pathname}${nextSearch ? `?${nextSearch}` : ''}`, { replace: true });
+  };
 
   const loadSupplierContractLedger = useCallback(async (contract: SupplierContract) => {
     setLoadingContractLedger(true);
@@ -361,7 +370,7 @@ const SupplierContracts: React.FC = () => {
     try {
       if (isSupabaseConfigured) await supabase.from('supplier_contracts').delete().eq('id', id);
       await fetchContracts();
-      if (selectedContract?.id === id) setSelectedContract(null);
+      if (selectedContract?.id === id) closeContractDetails();
       toast.success('Xoá thành công');
     } catch (e: any) {
       toast.error('Lỗi xoá', e?.message);
@@ -725,7 +734,7 @@ const SupplierContracts: React.FC = () => {
                 <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${STATUS_CONFIG[selectedContract.status]?.color}`}>
                   {STATUS_CONFIG[selectedContract.status]?.label}
                 </span>
-                <button onClick={() => setSelectedContract(null)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors">
+                <button onClick={closeContractDetails} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors">
                   <X size={20} />
                 </button>
               </div>

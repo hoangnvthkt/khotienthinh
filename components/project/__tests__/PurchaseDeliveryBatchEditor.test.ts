@@ -11,11 +11,17 @@ const supplyChainSource = readFileSync(
 );
 
 describe('PurchaseDeliveryBatchEditor UI contract', () => {
-  it('keeps request and purchase quantities independent in the delivery planning editor', () => {
-    expect(editorSource).toContain('SL đáp ứng nhu cầu');
-    expect(editorSource).toContain('SL mua');
+  it('keeps warehouse receipt quantity out of the delivery planning editor', () => {
+    expect(editorSource).not.toContain('SL nhập kho');
+    expect(editorSource).toContain('SL quy đổi');
     expect(editorSource).toContain('value={line.stockQty}');
-    expect(editorSource).not.toContain('getStockQtyForPurchaseDeliveryLine(line, purchaseQty)');
+    expect(editorSource).toContain('getStockQtyForPurchaseDeliveryLine(line, purchaseQty)');
+  });
+
+  it('uses practical draft wording for a purchase batch', () => {
+    expect(editorSource).toContain('Nhu cầu MR');
+    expect(editorSource).toContain('Ghi chú đợt mua');
+    expect(editorSource).toContain('Lưu nháp đợt mua');
   });
 
   it('opens package delivery editing in a wider modal for multi-line purchase orders', () => {
@@ -32,29 +38,16 @@ describe('PurchaseDeliveryBatchEditor UI contract', () => {
   });
 
   it('shows the delivery schedule editor directly in request package PO drafts', () => {
-    expect(supplyChainSource).toContain('Các đợt đặt hàng');
-    expect(supplyChainSource).toContain('PO tổng chỉ giữ nhu cầu MR');
+    expect(supplyChainSource).toContain('Lịch giao dự kiến');
+    expect(supplyChainSource).toContain('Đơn giao nhiều lần: từng đợt có số lượng, giá và VAT riêng');
     expect(supplyChainSource).not.toContain('{!isPurchasePackageV2Form && (');
   });
 
-  it('allows VAT to be entered and summarized independently for every delivery batch', () => {
-    expect(supplyChainSource).toContain('VAT đợt (%)');
-    expect(supplyChainSource).toContain('batchVatAmount');
-    expect(supplyChainSource).toContain('Tổng gồm VAT');
-    expect(editorSource).toContain('VAT đợt (%)');
-    expect(editorSource).toContain('Tổng gồm VAT');
-  });
-
-  it('calculates remaining MR demand from request quantity for both single and multiple flow v3 POs', () => {
-    expect(supplyChainSource).toContain('const usesRequestedQty = isFlowV3Form();');
-    expect(supplyChainSource).toContain('Number(line?.stockPlannedQty || 0)');
-  });
-
-  it('creates new MR purchase orders as flow v3 single-delivery demand snapshots', () => {
-    expect(supplyChainSource).toContain("setPPurchaseMode('single');");
-    expect(supplyChainSource).toContain('procurementFlowVersion: isV2Package ? 3');
-    expect(supplyChainSource).toContain('purchasePackageService.saveDeliveryBatchDraft');
-    expect(supplyChainSource).toContain('SL YÊU CẦU');
+  it('lets request package PO lines edit the purchase quantity used for pricing', () => {
+    expect(supplyChainSource).toContain('SL MUA');
+    expect(supplyChainSource).toContain('placeholder="SL"');
+    expect(supplyChainSource).toContain("onChange={e => updatePoItem(i, { qtyInput: formatViLiveInput(e.target.value) })}");
+    expect(supplyChainSource).not.toContain('SL gốc');
   });
 
   it('keeps PO line price fields clear of compact action buttons on wide screens', () => {

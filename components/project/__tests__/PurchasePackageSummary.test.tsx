@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { PurchaseOrder, PurchaseOrderDeliveryBatch } from '../../../types';
 import PurchasePackageSummary from '../PurchasePackageSummary';
 
-const VARIANCE_WARNING = 'Đợt giao đang lệch baseline Gói mua hàng';
+const VARIANCE_WARNING = 'Đợt giao đang lệch nhu cầu tham chiếu';
 
 const makePackage = (patch: Partial<PurchaseOrder> = {}): PurchaseOrder => ({
   id: 'po-1',

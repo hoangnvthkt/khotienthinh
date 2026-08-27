@@ -4,6 +4,7 @@ import {
   buildPurchaseOrderPrintLineAmounts,
   getPurchaseOrderDisplayAmount,
   getPurchaseOrderDisplayLineAmount,
+  getPurchaseOrderFinancialSummary,
   getPurchaseOrderPrintAmount,
 } from '../purchaseOrderAmount';
 
@@ -316,30 +317,103 @@ describe('purchaseOrderAmount', () => {
     expect(printLine.unitPrice).toBeCloseTo(2_783_932.34672, 5);
   });
 
-  it('uses delivery commercial amounts, not a parent reference amount, for independent multiple deliveries', () => {
-    const multiplePo: PurchaseOrder = {
+  it('displays and prints a multi-delivery PO from batch prices instead of the reference amount', () => {
+    const multiDeliveryPo: PurchaseOrder = {
       ...po,
-      id: 'po-multiple',
-      procurementFlowVersion: 3,
+      id: 'po-423',
+      poNumber: 'PO-423',
       purchaseMode: 'multiple',
       sourceMode: 'from_request',
-      referenceGrossAmount: 999_999_999,
       items: [{
-        lineId: 'd16', itemId: 'item-d16', sku: 'D16', name: 'Thep D16', unit: 'Cay', qty: 1187,
-        requestedQtySnapshot: 1187, requestedUnitSnapshot: 'Cay', purchaseUnitSnapshot: 'Kg', unitPrice: 0,
+        lineId: 'd16',
+        itemId: 'item-d16',
+        sku: 'VT0000828',
+        name: 'Thep XD D16',
+        unit: 'Kg',
+        qty: 21_942.882,
+        unitPrice: 0,
       }],
+      totalAmount: 0,
+      referenceGrossAmount: 330_723_118,
     };
-    const batch: PurchaseOrderDeliveryBatch = {
-      id: 'batch-multiple', purchaseOrderId: multiplePo.id, deliveryNo: 1, status: 'planned',
-      lines: [{
-        id: 'line-multiple', deliveryBatchId: 'batch-multiple', purchaseOrderId: multiplePo.id,
-        purchaseOrderLineId: 'd16', itemId: 'item-d16', plannedQty: 21176, stockPlannedQty: 1187,
-        unit: 'Kg', stockUnit: 'Cay', deliveryUnitPrice: 15072,
-      }],
-    };
+    const schedule = [
+      {
+        ...deliveryBatch('batch-423', 21_000, 1_502),
+        purchaseOrderId: multiDeliveryPo.id,
+        lines: [{
+          id: 'batch-423-d16',
+          deliveryBatchId: 'batch-423',
+          purchaseOrderId: multiDeliveryPo.id,
+          purchaseOrderLineId: 'd16',
+          itemId: 'item-d16',
+          plannedQty: 21_000,
+          deliveryUnitPrice: 1_502,
+        }],
+      },
+    ];
 
-    expect(getPurchaseOrderDisplayAmount(multiplePo, [batch])).toBe(21176 * 15072);
-    expect(getPurchaseOrderPrintAmount(multiplePo, [batch])).toBe(21176 * 15072);
+    expect(getPurchaseOrderDisplayAmount(multiDeliveryPo, schedule)).toBe(31_542_000);
+    expect(getPurchaseOrderPrintAmount(multiDeliveryPo, schedule)).toBe(31_542_000);
+  });
+
+  it('aggregates a multiple-delivery PO from each batch price and VAT, never from the master PO VAT', () => {
+    const multiplePo: PurchaseOrder = {
+      ...po,
+      id: 'po-multiple-finance',
+      purchaseMode: 'multiple',
+      sourceMode: 'from_request',
+      vatRate: 10,
+      totalAmount: 1_699_825,
+      items: [{
+        lineId: 'line-1',
+        itemId: 'item-1',
+        sku: 'VT0000829',
+        name: 'Thep XD D18',
+        unit: 'Kg',
+        qty: 112.400005,
+        unitPrice: 15_123,
+      }],
+    };
+    const schedule: PurchaseOrderDeliveryBatch[] = [
+      {
+        ...deliveryBatch('batch-finance-1', 100, 15_123),
+        purchaseOrderId: multiplePo.id,
+        vatRate: 10,
+        lines: [{
+          id: 'batch-finance-1-line',
+          deliveryBatchId: 'batch-finance-1',
+          purchaseOrderId: multiplePo.id,
+          purchaseOrderLineId: 'line-1',
+          itemId: 'item-1',
+          plannedQty: 100,
+          deliveryUnitPrice: 15_123,
+        }],
+      },
+      {
+        ...deliveryBatch('batch-finance-2', 12.400005, 150_000),
+        purchaseOrderId: multiplePo.id,
+        vatRate: 8,
+        lines: [{
+          id: 'batch-finance-2-line',
+          deliveryBatchId: 'batch-finance-2',
+          purchaseOrderId: multiplePo.id,
+          purchaseOrderLineId: 'line-1',
+          itemId: 'item-1',
+          plannedQty: 12.400005,
+          deliveryUnitPrice: 150_000,
+        }],
+      },
+    ];
+
+    expect(getPurchaseOrderFinancialSummary(multiplePo, schedule)).toEqual({
+      netAmount: 3_372_300.75,
+      vatAmount: 300_030,
+      paymentTotal: 3_672_330.75,
+      vatBreakdown: [
+        { vatRate: 8, amount: 148_800 },
+        { vatRate: 10, amount: 151_230 },
+      ],
+    });
   });
 
   it('shows each request package item at the edited PO price when schedule line prices are zero', () => {

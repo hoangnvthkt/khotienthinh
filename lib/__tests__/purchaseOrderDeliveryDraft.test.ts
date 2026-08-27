@@ -446,12 +446,12 @@ describe('purchaseOrderDeliveryDraft', () => {
     })).toBe(2_783_932.347);
   });
 
-  it('preserves a delivery commercial price for independent multiple-delivery PO', () => {
+  it('keeps the batch price for a multi-delivery request PO when the reference price is blank', () => {
     expect(getPoDeliveryScheduleUnitPriceForSave({
-      item: { ...poItem, unitPrice: 0, requestedQtySnapshot: 1187, requestedUnitSnapshot: 'Cay' },
+      item: { ...poItem, unitPrice: 0 },
       sourceMode: 'from_request',
       purchaseMode: 'multiple',
-      existingDeliveryUnitPrice: 15_072,
-    })).toBe(15_072);
+      existingDeliveryUnitPrice: 1_502,
+    })).toBe(1_502);
   });
 });

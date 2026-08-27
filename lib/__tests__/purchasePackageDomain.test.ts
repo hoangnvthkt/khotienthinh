@@ -97,59 +97,6 @@ describe('getPurchasePackageSummary', () => {
     expect(summary.receivedNetQty).toBe(0);
   });
 
-  it('summarizes an independent multiple-delivery package in the MR unit while valuing the commercial quantity', () => {
-    const multiplePo: PurchaseOrder = {
-      ...makePackage({ qty: 1187, unitPrice: 0, vatRate: 0 }),
-      procurementFlowVersion: 3,
-      purchaseMode: 'multiple',
-      items: [{
-        ...makePackage({ qty: 1187, unitPrice: 0, vatRate: 0 }).items[0],
-        unit: 'Cay', requestedQtySnapshot: 1187, requestedUnitSnapshot: 'Cay', purchaseUnitSnapshot: 'Kg',
-      }],
-      referenceGrossAmount: 0,
-    };
-    const batch = makeBatch({ id: 'batch-1', plannedQty: 21176, acceptedQty: 0, unitPrice: 15072, vatRate: 0 });
-    batch.lines[0].stockPlannedQty = 1187;
-
-    const summary = getPurchasePackageSummary(multiplePo, [batch]);
-    expect(summary.referenceQty).toBe(1187);
-    expect(summary.releasedQty).toBe(1187);
-    expect(summary.releasedGross).toBe(21176 * 15072);
-  });
-
-  it('applies the VAT rate saved on each batch instead of the PO parent VAT', () => {
-    const po = {
-      ...makePackage({ qty: 100, unitPrice: 0, vatRate: 0 }),
-      procurementFlowVersion: 3 as const,
-      purchaseMode: 'multiple' as const,
-    };
-    const first = makeBatch({ id: 'batch-1', plannedQty: 40, acceptedQty: 0, unitPrice: 100_000, vatRate: 8 });
-    const second = makeBatch({ id: 'batch-2', plannedQty: 60, acceptedQty: 0, unitPrice: 100_000, vatRate: 10 });
-
-    expect(getPurchasePackageSummary(po, [first, second]).releasedGross)
-      .toBe(4_000_000 * 1.08 + 6_000_000 * 1.1);
-  });
-
-  it('does not infer flow v3 from a requested snapshot on a legacy v2 PO', () => {
-    const legacyPo: PurchaseOrder = {
-      ...makePackage({ qty: 21_176, unitPrice: 15_072, vatRate: 0 }),
-      procurementFlowVersion: 2,
-      purchaseMode: 'multiple',
-      items: [{
-        ...makePackage({ qty: 21_176, unitPrice: 15_072, vatRate: 0 }).items[0],
-        requestedQtySnapshot: 1_187,
-        requestedUnitSnapshot: 'Cây',
-      }],
-    };
-    const batch = makeBatch({ id: 'batch-1', plannedQty: 21_176, acceptedQty: 0, unitPrice: 15_072, vatRate: 0 });
-    batch.lines[0].stockPlannedQty = 1_187;
-
-    const summary = getPurchasePackageSummary(legacyPo, [batch]);
-
-    expect(summary.referenceQty).toBe(21_176);
-    expect(summary.releasedQty).toBe(21_176);
-  });
-
   it('recognizes only 90 accepted from a 100 delivery', () => {
     const summary = getPurchasePackageSummary(
       makePackage({ qty: 100, unitPrice: 10_000, vatRate: 10 }),

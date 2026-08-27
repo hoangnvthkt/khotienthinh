@@ -105,32 +105,6 @@ describe('purchase delivery batch editor model', () => {
     });
   });
 
-  it('keeps request and purchase quantities independent for flow v3 steel', () => {
-    const [draft] = buildPurchaseDeliveryLineDrafts({
-      purchaseOrder: {
-        ...makePo(),
-        procurementFlowVersion: 3,
-        items: [{
-          ...(makePo().items?.[0] || {}),
-          lineId: 'd16-line', itemId: 'd16', sku: 'VT0000828', name: 'Thép XD D16',
-          qty: 1187, unit: 'Cây', unitPrice: 0, requestedQtySnapshot: 1187,
-          requestedUnitSnapshot: 'Cây', stockUnitSnapshot: 'Cây',
-          purchaseUnitSnapshot: 'Kg', purchaseConversionFactor: 17.84,
-        }],
-      },
-      existingBatches: [],
-    });
-
-    expect(draft).toMatchObject({
-      orderedQty: 1187,
-      remainingQty: 1187,
-      stockQty: 1187,
-      stockUnit: 'Cây',
-      purchaseQty: 0,
-      purchaseUnit: 'Kg',
-    });
-  });
-
   it('keeps clone quantities and prices from the source delivery batch', () => {
     const sourceBatch = makeBatch({
       lines: [{

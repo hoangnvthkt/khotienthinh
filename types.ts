@@ -2711,7 +2711,6 @@ export interface PurchaseOrder extends ProjectSubmissionFields {
   actualDeliveryDate?: string;
   status: POStatus;
   sourceMode?: PurchaseOrderSourceMode;
-  procurementFlowVersion?: PurchaseOrderFlowVersion;
   purchaseMode?: PurchaseMode;
   referenceGrossAmount?: number;
   closedNeedQty?: number;
@@ -2738,8 +2737,6 @@ export interface PurchaseOrderRemovalResult {
   poNumber: string;
 }
 
-export type PurchaseOrderFlowVersion = 2 | 3;
-
 export interface PurchaseOrderDeliveryRemovalResult {
   action: 'deleted';
   id: string;
@@ -2758,15 +2755,6 @@ export type PurchaseOrderDeliveryBatchStatus =
   | 'received_short'
   | 'received_over'
   | 'cancelled';
-
-/** Financial/document approval of one delivery.  It is intentionally separate
- * from `status`, which is the warehouse/receipt lifecycle. */
-export type PurchaseOrderDeliveryApprovalStatus =
-  | 'draft'
-  | 'pending_approval'
-  | 'approved'
-  | 'revision_requested'
-  | 'rejected';
 
 export type PurchaseOrderSupplementalApprovalStatus = 'pending' | 'approved' | 'rejected';
 
@@ -2798,7 +2786,9 @@ export interface PurchaseOrderDeliveryLine {
   purchaseOrderLineId: string;
   itemId: string;
   plannedQty: number;
+  deliveredQty?: number;
   acceptedQty?: number;
+  deliveredStockQty?: number;
   acceptedStockQty?: number;
   returnedQty?: number;
   unit?: string | null;
@@ -2819,7 +2809,7 @@ export interface PurchaseOrderDeliveryBatch {
   deliveryNo: number;
   plannedDeliveryDate?: string | null;
   status: PurchaseOrderDeliveryBatchStatus;
-  approvalStatus?: PurchaseOrderDeliveryApprovalStatus;
+  approvalStatus?: 'draft' | 'pending_approval' | 'approved' | 'revision_requested' | 'rejected';
   approvalRequestedBy?: string | null;
   approvalRequestedAt?: string | null;
   approvalDecidedBy?: string | null;
@@ -2844,90 +2834,6 @@ export interface PurchaseOrderDeliveryBatch {
   createdAt?: string;
   updatedAt?: string;
   lines: PurchaseOrderDeliveryLine[];
-}
-
-export interface PurchaseOrderMasterEstimateLine {
-  purchaseOrderLineId: string;
-  itemId: string;
-  requestQty: number;
-  requestUnit: string;
-  purchaseQty: number;
-  purchaseUnit: string;
-  purchaseUnitPrice: number;
-  vatRate: number;
-  note?: string | null;
-}
-
-export interface PurchaseOrderMasterEstimate {
-  id: string;
-  purchaseOrderId: string;
-  projectId?: string | null;
-  constructionSiteId?: string | null;
-  isEnabled: boolean;
-  estimateLines: PurchaseOrderMasterEstimateLine[];
-  plannedPeriod?: string | null;
-  note?: string | null;
-  createdBy?: string | null;
-  updatedBy?: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface PurchaseOrderMasterEstimateVersion {
-  id: string;
-  purchaseOrderId: string;
-  masterEstimateId?: string | null;
-  versionNo: number;
-  snapshot: Record<string, unknown>;
-  issuedBy?: string | null;
-  issuedAt: string;
-}
-
-export type PurchaseOrderReceiptStatus = 'completed' | 'cancelled';
-export type PurchaseOrderReceiptFinanceStatus = 'ready' | 'variance_pending' | 'posted';
-
-export interface PurchaseOrderReceiptLine {
-  id: string;
-  receiptId: string;
-  deliveryBatchId: string;
-  deliveryLineId: string;
-  purchaseOrderId: string;
-  purchaseOrderLineId: string;
-  itemId: string;
-  purchaseUnit?: string | null;
-  stockUnit?: string | null;
-  deliveredPurchaseQty: number;
-  acceptedPurchaseQty: number;
-  deliveredStockQty: number;
-  acceptedStockQty: number;
-  purchaseUnitPrice: number;
-  varianceReason?: string | null;
-  createdAt: string;
-}
-
-export interface PurchaseOrderReceipt {
-  id: string;
-  deliveryBatchId: string;
-  purchaseOrderId: string;
-  projectId?: string | null;
-  constructionSiteId?: string | null;
-  receiptNo: number;
-  status: PurchaseOrderReceiptStatus;
-  financeStatus: PurchaseOrderReceiptFinanceStatus;
-  qualityResult: 'passed' | 'partial' | 'rejected';
-  isFinal: boolean;
-  varianceReason?: string | null;
-  attachments: unknown[];
-  acceptedGrossAmount: number;
-  wmsTransactionId: string;
-  idempotencyKey: string;
-  receivedBy?: string | null;
-  receivedAt: string;
-  financeConfirmedBy?: string | null;
-  financeConfirmedAt?: string | null;
-  createdAt: string;
-  updatedAt: string;
-  lines: PurchaseOrderReceiptLine[];
 }
 
 export interface PurchaseOrderItem {
@@ -2968,10 +2874,6 @@ export interface PurchaseOrderItem {
   stockUnitSnapshot?: string;
   purchaseUnitSnapshot?: string;
   purchaseConversionFactor?: number;
-  requestedQtySnapshot?: number;
-  requestedUnitSnapshot?: string;
-  // Chỉ dùng cho bản in theo đợt giao; giữ nguyên KL kho đã chốt trên dòng đợt giao.
-  deliveryStockQtySnapshot?: number;
   specification?: string;
   manualReason?: string;
   note?: string;

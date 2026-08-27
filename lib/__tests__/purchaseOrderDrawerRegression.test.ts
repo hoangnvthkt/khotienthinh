@@ -71,9 +71,11 @@ describe('purchase order drawer regression guard', () => {
     expect(cockpitSource).not.toContain("po.sourceMode === 'from_request' &&");
   });
 
-  it('routes purchase package approval and delivery save through the V2 command contract', () => {
+  it('routes practical PO approval and delivery drafts through neutral commands', () => {
     expect(source).toContain("case 'approve_package':");
-    expect(source).toContain('purchasePackageService.approvePackage');
+    expect(source).toContain('purchasePackageService.approveSingle');
+    expect(source).toContain('purchasePackageService.submitBatch');
+    expect(source).toContain('purchasePackageService.approveBatch');
     expect(source).toContain('result?.delivery?.wmsTransactionId');
     expect(source).toContain('refreshWmsRecords({ transactionIds: [result.delivery.wmsTransactionId] })');
     expect(source).toContain('existingBatches={poDeliveryBatchesByPo[packageDeliveryEditor.po.id] || []}');
@@ -89,7 +91,9 @@ describe('purchase order drawer regression guard', () => {
   it('prints delivery approval requests with the delivery batch amount instead of the package total', () => {
     expect(source).toContain('totalAmountOverride: getDeliveryPrintGroupSummary(po, group).totalAmount');
     expect(source).toContain('buildPurchaseOrderApprovalDeliveryBatches(printablePo, approvalGroups)');
-    expect(source).toContain('vatRateOverride: group.scheduleBatch?.vatRate ?? printablePo.vatRate');
+    expect(source).toContain('const latestSchedules = await poDeliveryScheduleService.listByPurchaseOrderIds([po.id]);');
+    expect(source).toContain('const approvalGroups = await loadPoDeliveryPrintGroups(po, true);');
+    expect(source).toContain('vatRateOverride: normalizeVatRate(group.scheduleBatch?.vatRate ?? po.vatRate)');
     expect(source).toContain('ĐỀ NGHỊ DUYỆT ĐỢT GIAO');
   });
 });

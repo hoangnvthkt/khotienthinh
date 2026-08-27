@@ -1,7 +1,6 @@
 import type { PurchaseOrder, PurchaseOrderDeliveryBatch, PurchaseOrderItem } from '../types';
 import { calculateLineTotal } from './poSpecsUtils';
 import { getPurchaseOrderScheduleLineUnitPrice } from './purchaseOrderSchedulePricing';
-import { isLegacyRequestPurchasePackage } from './purchaseOrderFlow';
 
 const toNumber = (value: unknown) => {
   const num = Number(value);
@@ -9,7 +8,8 @@ const toNumber = (value: unknown) => {
 };
 
 const isPackageV2RequestPo = (po: PurchaseOrder) =>
-  isLegacyRequestPurchasePackage(po)
+  po.sourceMode === 'from_request'
+  && po.purchaseMode === 'single'
   && toNumber(po.referenceGrossAmount) > 0;
 
 const getPackageReferencePrintAmount = (po: PurchaseOrder) => {
@@ -174,3 +174,70 @@ export const getPurchaseOrderPrintAmount = (
 ): number =>
   buildPurchaseOrderPrintLineAmounts(po, deliveryBatches)
     .reduce((sum, line) => sum + line.totalAmount, 0);
+
+export type PurchaseOrderFinancialSummary = {
+  netAmount: number;
+  vatAmount: number;
+  paymentTotal: number;
+  vatBreakdown: Array<{ vatRate: number; amount: number }>;
+};
+
+const roundMoney = (value: number) => Math.round(toNumber(value) * 100) / 100;
+
+/**
+ * Multiple-delivery POs are commercialised by delivery batch, not by the
+ * reference quantity/price kept on the PO lines. A batch owns one VAT rate,
+ * so VAT must be calculated per batch before it is aggregated for the PO.
+ */
+export const getPurchaseOrderDeliveryFinancialSummary = (
+  po: PurchaseOrder,
+  deliveryBatches: PurchaseOrderDeliveryBatch[] = [],
+): PurchaseOrderFinancialSummary => {
+  const itemByLineId = new Map((po.items || []).map(item => [item.lineId || item.itemId, item]));
+  const vatByRate = new Map<number, number>();
+  let netAmount = 0;
+  let vatAmount = 0;
+
+  deliveryBatches
+    .filter(batch => batch.status !== 'cancelled')
+    .forEach(batch => {
+      const batchNetAmount = roundMoney((batch.lines || []).reduce((sum, line) => {
+        const item = itemByLineId.get(line.purchaseOrderLineId);
+        return sum + toNumber(line.plannedQty) * getPurchaseOrderScheduleLineUnitPrice({ po, item, line });
+      }, 0));
+      const vatRate = toNumber(batch.vatRate);
+      const batchVatAmount = Math.round(batchNetAmount * vatRate / 100);
+
+      netAmount += batchNetAmount;
+      vatAmount += batchVatAmount;
+      vatByRate.set(vatRate, (vatByRate.get(vatRate) || 0) + batchVatAmount);
+    });
+
+  return {
+    netAmount: roundMoney(netAmount),
+    vatAmount: roundMoney(vatAmount),
+    paymentTotal: roundMoney(netAmount + vatAmount),
+    vatBreakdown: [...vatByRate.entries()]
+      .sort(([firstRate], [secondRate]) => firstRate - secondRate)
+      .map(([vatRate, amount]) => ({ vatRate, amount: roundMoney(amount) })),
+  };
+};
+
+export const getPurchaseOrderFinancialSummary = (
+  po: PurchaseOrder,
+  deliveryBatches: PurchaseOrderDeliveryBatch[] = [],
+): PurchaseOrderFinancialSummary => {
+  if (po.sourceMode === 'from_request' && po.purchaseMode === 'multiple') {
+    return getPurchaseOrderDeliveryFinancialSummary(po, deliveryBatches);
+  }
+
+  const netAmount = getPurchaseOrderDisplayAmount(po, deliveryBatches);
+  const vatRate = toNumber(po.vatRate);
+  const vatAmount = Math.round(netAmount * vatRate / 100);
+  return {
+    netAmount,
+    vatAmount,
+    paymentTotal: roundMoney(netAmount + vatAmount),
+    vatBreakdown: [{ vatRate, amount: vatAmount }],
+  };
+};

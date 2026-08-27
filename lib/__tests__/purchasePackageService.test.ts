@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { MaterialRequestFulfillmentMode } from '../../types';
 
 const supabaseMocks = vi.hoisted(() => ({
   rpc: vi.fn(),
@@ -15,7 +14,7 @@ vi.mock('../supabase', () => ({
 
 import {
   purchasePackageService,
-  type CreatePurchaseDeliveryInput,
+  type MaterialPoBatchDraftLineInput,
 } from '../purchasePackageService';
 
 const commandResult = {
@@ -26,18 +25,7 @@ const commandResult = {
   qrToken: 'pod_batch_1',
 };
 
-const input: CreatePurchaseDeliveryInput = {
-  purchaseOrderId: 'po-1',
-  idempotencyKey: '11111111-1111-4111-8111-111111111111',
-  supplierId: 'vendor-1',
-  supplierNameSnapshot: 'NCC 1',
-  fulfillmentMode: MaterialRequestFulfillmentMode.RECEIVE_TO_STOCK,
-  vatRate: 10,
-  targetWarehouseId: 'warehouse-1',
-  plannedDeliveryDate: null,
-  note: null,
-  actorUserId: 'user-1',
-  lines: [{
+const lines: MaterialPoBatchDraftLineInput[] = [{
     purchaseOrderLineId: 'po-line-1',
     itemId: 'item-1',
     purchaseQty: 2,
@@ -46,8 +34,7 @@ const input: CreatePurchaseDeliveryInput = {
     stockUnit: 'kg',
     purchaseUnitPrice: 100,
     stockUnitPrice: 100,
-  }],
-};
+  }];
 
 describe('purchasePackageService', () => {
   beforeEach(() => {
@@ -55,23 +42,86 @@ describe('purchasePackageService', () => {
     supabaseMocks.from.mockReset();
   });
 
-  it('sends one create command containing delivery, WMS, and QR data', async () => {
+  it('submits one multiple-delivery batch to its selected approver', async () => {
+    supabaseMocks.rpc.mockResolvedValue({
+      data: { deliveryBatchId: 'batch-1', approvalStatus: 'pending_approval' },
+      error: null,
+    });
+
+    await purchasePackageService.submitBatch({
+      deliveryBatchId: 'batch-1',
+      approverUserId: 'approver-1',
+      actorUserId: 'buyer-1',
+    });
+
+    expect(supabaseMocks.rpc).toHaveBeenCalledWith('submit_material_po_batch', {
+      p_delivery_batch_id: 'batch-1',
+      p_approver_user_id: 'approver-1',
+      p_actor_user_id: 'buyer-1',
+    });
+  });
+
+  it('saves a multiple-delivery draft without creating WMS', async () => {
+    supabaseMocks.rpc.mockResolvedValue({
+      data: { deliveryBatchId: 'batch-1', deliveryNo: 1, approvalStatus: 'draft', lineCount: 1 },
+      error: null,
+    });
+
+    await purchasePackageService.saveBatchDraft({
+      purchaseOrderId: 'po-1',
+      deliveryBatchId: null,
+      plannedDeliveryDate: '2026-08-27',
+      vatRate: 8,
+      varianceReason: null,
+      note: 'Giao buổi sáng',
+      actorUserId: 'buyer-1',
+      lines,
+    });
+
+    expect(supabaseMocks.rpc).toHaveBeenCalledWith('save_material_po_batch_draft', {
+      p_purchase_order_id: 'po-1',
+      p_delivery_batch_id: null,
+      p_planned_delivery_date: '2026-08-27',
+      p_vat_rate: 8,
+      p_variance_reason: null,
+      p_note: 'Giao buổi sáng',
+      p_actor_user_id: 'buyer-1',
+      p_lines: lines,
+    });
+  });
+
+  it('returns a pending batch for revision through the neutral decision command', async () => {
+    supabaseMocks.rpc.mockResolvedValue({
+      data: { deliveryBatchId: 'batch-1', approvalStatus: 'revision_requested' },
+      error: null,
+    });
+
+    await purchasePackageService.decideBatch({
+      deliveryBatchId: 'batch-1',
+      decision: 'revision_requested',
+      note: 'Bổ sung báo giá',
+      actorUserId: 'approver-1',
+    });
+
+    expect(supabaseMocks.rpc).toHaveBeenCalledWith('decide_material_po_batch', {
+      p_delivery_batch_id: 'batch-1',
+      p_decision: 'revision_requested',
+      p_note: 'Bổ sung báo giá',
+      p_actor_user_id: 'approver-1',
+    });
+  });
+
+  it('approves one batch and returns its idempotent WMS/QR result', async () => {
     supabaseMocks.rpc.mockResolvedValue({ data: commandResult, error: null });
 
-    const result = await purchasePackageService.createDelivery(input);
+    const result = await purchasePackageService.approveBatch({
+      deliveryBatchId: 'batch-1',
+      actorUserId: 'approver-1',
+    });
 
-    expect(supabaseMocks.rpc).toHaveBeenCalledWith('create_delivery_batch_with_wms_qr_v2', {
-      p_purchase_order_id: 'po-1',
-      p_idempotency_key: input.idempotencyKey,
-      p_supplier_id: 'vendor-1',
-      p_supplier_name: 'NCC 1',
-      p_fulfillment_mode: 'RECEIVE_TO_STOCK',
-      p_vat_rate: 10,
-      p_target_warehouse_id: 'warehouse-1',
-      p_planned_delivery_date: null,
-      p_note: null,
-      p_actor_user_id: 'user-1',
-      p_lines: input.lines,
+    expect(supabaseMocks.rpc).toHaveBeenCalledWith('approve_material_po_batch', {
+      p_delivery_batch_id: 'batch-1',
+      p_actor_user_id: 'approver-1',
     });
     expect(result).toEqual(commandResult);
   });
@@ -88,7 +138,10 @@ describe('purchasePackageService', () => {
       error: null,
     });
 
-    const result = await purchasePackageService.createDelivery(input);
+    const result = await purchasePackageService.approveBatch({
+      deliveryBatchId: 'batch-1',
+      actorUserId: 'approver-1',
+    });
 
     expect(result).toEqual(commandResult);
   });
@@ -118,28 +171,6 @@ describe('purchasePackageService', () => {
     expect(result?.sourceId).toBe('batch-1');
   });
 
-  it('updates the same unreceived delivery and WMS', async () => {
-    supabaseMocks.rpc.mockResolvedValue({ data: [commandResult], error: null });
-
-    await purchasePackageService.updateUnreceivedDelivery({
-      ...input,
-      vatRate: 8,
-      deliveryBatchId: 'batch-1',
-      wmsTransactionId: 'tx-1',
-    });
-
-    expect(supabaseMocks.rpc).toHaveBeenCalledWith(
-      'update_unreceived_delivery_batch_v2',
-      expect.objectContaining({
-        p_delivery_batch_id: 'batch-1',
-        p_wms_transaction_id: 'tx-1',
-        p_purchase_order_id: 'po-1',
-        p_idempotency_key: input.idempotencyKey,
-        p_vat_rate: 8,
-      }),
-    );
-  });
-
   it('returns the auto-created first delivery for a single package approval', async () => {
     supabaseMocks.rpc.mockResolvedValue({
       data: {
@@ -151,99 +182,18 @@ describe('purchasePackageService', () => {
       error: null,
     });
 
-    const result = await purchasePackageService.approvePackage({
+    const result = await purchasePackageService.approveSingle({
       purchaseOrderId: 'po-1',
       actorUserId: 'leader-1',
       idempotencyKey: '11111111-1111-4111-8111-111111111111',
     });
 
-    expect(supabaseMocks.rpc).toHaveBeenCalledWith('approve_purchase_package_and_prepare_single_batch_v2', {
+    expect(supabaseMocks.rpc).toHaveBeenCalledWith('approve_single_material_po', {
       p_purchase_order_id: 'po-1',
       p_actor_user_id: 'leader-1',
       p_idempotency_key: '11111111-1111-4111-8111-111111111111',
     });
     expect(result.delivery?.deliveryCode).toBe('PO01-01');
-  });
-
-  it('does not expect a delivery for a multiple package approval', async () => {
-    supabaseMocks.rpc.mockResolvedValue({
-      data: {
-        purchaseOrderId: 'po-2',
-        status: 'confirmed',
-        purchaseMode: 'multiple',
-      },
-      error: null,
-    });
-
-    const result = await purchasePackageService.approvePackage({
-      purchaseOrderId: 'po-2',
-      actorUserId: 'leader-1',
-      idempotencyKey: '22222222-2222-4222-8222-222222222222',
-    });
-
-    expect(result.delivery).toBeUndefined();
-  });
-
-  it('approves a flow v3 batch with QR but without a pre-created WMS', async () => {
-    supabaseMocks.rpc.mockResolvedValue({
-      data: { deliveryBatchId: 'batch-1', approvalStatus: 'approved', qrToken: 'pod_v3_batch_1' },
-      error: null,
-    });
-
-    const result = await purchasePackageService.approveDeliveryBatch({
-      deliveryBatchId: 'batch-1',
-      actorUserId: 'approver-1',
-    });
-
-    expect(supabaseMocks.rpc).toHaveBeenCalledWith('approve_purchase_order_delivery_batch_v2', {
-      p_delivery_batch_id: 'batch-1',
-      p_actor_user_id: 'approver-1',
-    });
-    expect(result).toEqual({
-      deliveryBatchId: 'batch-1', approvalStatus: 'approved', qrToken: 'pod_v3_batch_1',
-    });
-  });
-
-  it('sends the first selected approver with a flow v3 batch submission', async () => {
-    supabaseMocks.rpc.mockResolvedValue({
-      data: { deliveryBatchId: 'batch-1', approvalStatus: 'pending_approval' },
-      error: null,
-    });
-
-    await purchasePackageService.submitDeliveryBatchApproval({
-      deliveryBatchId: 'batch-1', actorUserId: 'buyer-1', approverUserId: 'approver-1',
-    });
-
-    expect(supabaseMocks.rpc).toHaveBeenCalledWith('submit_purchase_order_delivery_batch_approval_v2', {
-      p_delivery_batch_id: 'batch-1',
-      p_approver_user_id: 'approver-1',
-      p_actor_user_id: 'buyer-1',
-    });
-  });
-
-  it('saves independent request and purchase quantities in a draft batch', async () => {
-    supabaseMocks.rpc.mockResolvedValue({
-      data: { deliveryBatchId: 'batch-1', deliveryNo: 1, approvalStatus: 'draft', lineCount: 1 },
-      error: null,
-    });
-
-    await purchasePackageService.saveDeliveryBatchDraft({
-      purchaseOrderId: 'po-1', deliveryBatchId: null, plannedDeliveryDate: null,
-      vatRate: 0, varianceReason: null, note: null, actorUserId: 'buyer-1',
-      lines: [{
-        purchaseOrderLineId: 'po-line-1', itemId: 'item-1', requestQty: 1187,
-        requestUnit: 'Cây', purchaseQty: 21176, purchaseUnit: 'Kg', purchaseUnitPrice: 15072,
-      }],
-    });
-
-    expect(supabaseMocks.rpc).toHaveBeenCalledWith('save_purchase_order_delivery_batch_draft_v2', {
-      p_purchase_order_id: 'po-1', p_delivery_batch_id: null, p_planned_delivery_date: null,
-      p_vat_rate: 0, p_variance_reason: null, p_note: null, p_actor_user_id: 'buyer-1',
-      p_lines: [{
-        purchaseOrderLineId: 'po-line-1', itemId: 'item-1', requestQty: 1187,
-        requestUnit: 'Cây', purchaseQty: 21176, purchaseUnit: 'Kg', purchaseUnitPrice: 15072,
-      }],
-    });
   });
 
   it('cancels an unreceived delivery with its actor and reason', async () => {
@@ -297,7 +247,10 @@ describe('purchasePackageService', () => {
       error: null,
     });
 
-    await expect(purchasePackageService.createDelivery(input))
+    await expect(purchasePackageService.approveBatch({
+      deliveryBatchId: 'batch-1',
+      actorUserId: 'approver-1',
+    }))
       .rejects.toThrow('Đợt giao, WMS hoặc QR chưa được tạo đầy đủ.');
   });
 });

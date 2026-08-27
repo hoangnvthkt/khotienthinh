@@ -6,7 +6,6 @@ import {
   purchaseToStockQty,
 } from './materialUnitConversion';
 import { getPurchaseOrderScheduleLineUnitPrice } from './purchaseOrderSchedulePricing';
-import { isPurchaseOrderFlowV3 } from './purchaseOrderFlow';
 
 export interface PurchaseDeliveryLineDraft {
   included: boolean;
@@ -46,12 +45,11 @@ const isReleasedBatch = (batch: PurchaseOrderDeliveryBatch) => batch.status !== 
 const getReleasedQtyForLine = (
   purchaseOrderLineId: string,
   existingBatches: PurchaseOrderDeliveryBatch[],
-  useRequestQty = false,
 ) => existingBatches
   .filter(isReleasedBatch)
   .flatMap(batch => batch.lines || [])
   .filter(line => line.purchaseOrderLineId === purchaseOrderLineId)
-  .reduce((sum, line) => sum + numberValue(useRequestQty ? line.stockPlannedQty : line.plannedQty), 0);
+  .reduce((sum, line) => sum + numberValue(line.plannedQty), 0);
 
 export const buildPurchaseDeliveryLineDrafts = ({
   purchaseOrder,
@@ -63,16 +61,11 @@ export const buildPurchaseDeliveryLineDrafts = ({
   cloneFromBatch?: PurchaseOrderDeliveryBatch | null;
 }): PurchaseDeliveryLineDraft[] => (purchaseOrder.items || []).map(item => {
   const purchaseOrderLineId = getPoLineId(item);
-  const flowV3 = isPurchaseOrderFlowV3(purchaseOrder);
   const cloneLine = cloneFromBatch?.lines?.find(line => line.purchaseOrderLineId === purchaseOrderLineId);
-  const orderedQty = numberValue(flowV3 ? item.requestedQtySnapshot ?? item.qty : item.qty);
-  const alreadyReleasedQty = getReleasedQtyForLine(purchaseOrderLineId, existingBatches, flowV3);
+  const orderedQty = numberValue(item.qty);
+  const alreadyReleasedQty = getReleasedQtyForLine(purchaseOrderLineId, existingBatches);
   const remainingQty = Math.max(orderedQty - alreadyReleasedQty, 0);
-  const purchaseQty = cloneLine
-    ? numberValue(cloneLine.plannedQty)
-    : flowV3 && (item.purchaseUnitSnapshot || item.unit) !== (item.requestedUnitSnapshot || item.unit)
-      ? 0
-      : remainingQty;
+  const purchaseQty = cloneLine ? numberValue(cloneLine.plannedQty) : remainingQty;
   const purchaseUnit = cloneLine?.unit || getPoLinePurchaseUnit(item) || item.unit;
   const stockUnit = cloneLine?.stockUnit || getPoLineStockUnit(item) || item.unit;
   const conversionFactor = getPurchaseConversionFactor({
@@ -82,9 +75,7 @@ export const buildPurchaseDeliveryLineDrafts = ({
   });
   const stockQty = cloneLine
     ? numberValue(cloneLine.stockPlannedQty || cloneLine.plannedQty)
-    : flowV3
-      ? remainingQty
-      : purchaseToStockQty(purchaseQty, { unit: stockUnit, purchaseUnit, purchaseConversionFactor: conversionFactor });
+    : purchaseToStockQty(purchaseQty, { unit: stockUnit, purchaseUnit, purchaseConversionFactor: conversionFactor });
   const purchaseUnitPrice = getPurchaseOrderScheduleLineUnitPrice({
     po: purchaseOrder,
     item,
@@ -119,17 +110,13 @@ export const getPurchaseDeliveryDraftSummary = ({
   existingBatches?: PurchaseOrderDeliveryBatch[];
   draftLines: PurchaseDeliveryLineDraft[];
 }): PurchaseDeliveryDraftSummary => {
-  const flowV3 = isPurchaseOrderFlowV3(purchaseOrder);
-  const orderedQty = (purchaseOrder.items || []).reduce(
-    (sum, item) => sum + numberValue(flowV3 ? item.requestedQtySnapshot ?? item.qty : item.qty),
-    0,
-  );
+  const orderedQty = (purchaseOrder.items || []).reduce((sum, item) => sum + numberValue(item.qty), 0);
   const alreadyReleasedQty = (purchaseOrder.items || []).reduce(
-    (sum, item) => sum + getReleasedQtyForLine(getPoLineId(item), existingBatches, flowV3),
+    (sum, item) => sum + getReleasedQtyForLine(getPoLineId(item), existingBatches),
     0,
   );
   const selectedLines = getSelectedPurchaseDeliveryLinesForSave(draftLines);
-  const draftQty = selectedLines.reduce((sum, line) => sum + numberValue(flowV3 ? line.stockQty : line.purchaseQty), 0);
+  const draftQty = selectedLines.reduce((sum, line) => sum + numberValue(line.purchaseQty), 0);
   const draftAmount = selectedLines.reduce(
     (sum, line) => sum + numberValue(line.purchaseQty) * numberValue(line.purchaseUnitPrice),
     0,

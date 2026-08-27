@@ -107,7 +107,7 @@ describe('actual PO receipt contract', () => {
     });
 
     expect(supabaseMocks.from).not.toHaveBeenCalled();
-    expect(supabaseMocks.rpc).toHaveBeenCalledWith('approve_receipt_quality_v2', {
+    expect(supabaseMocks.rpc).toHaveBeenCalledWith('approve_material_po_quality', {
       p_delivery_batch_id: 'batch-1',
       p_wms_transaction_id: 'tx-1',
       p_actor_user_id: 'keeper-1',
@@ -115,7 +115,9 @@ describe('actual PO receipt contract', () => {
       p_lines: [{
         deliveryLineId: 'delivery-line-1',
         itemId: 'item-1',
+        deliveredPurchaseQty: 9.5,
         acceptedPurchaseQty: 9.5,
+        deliveredStockQty: 68.4,
         acceptedStockQty: 68.4,
         varianceReason: 'NCC giao thiếu',
       }],

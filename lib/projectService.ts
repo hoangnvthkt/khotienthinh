@@ -820,7 +820,9 @@ const poDeliveryLineToDb = (line: PurchaseOrderDeliveryLine): any => {
         purchaseOrderLineId: line.purchaseOrderLineId,
         itemId: line.itemId,
         plannedQty: Number(line.plannedQty || 0),
+        deliveredQty: Number(line.deliveredQty ?? line.acceptedQty ?? 0),
         acceptedQty: Number(line.acceptedQty || 0),
+        deliveredStockQty: Number(line.deliveredStockQty ?? line.acceptedStockQty ?? 0),
         acceptedStockQty: Number(line.acceptedStockQty || 0),
         returnedQty: Number(line.returnedQty || 0),
         unit: line.unit || null,
@@ -857,7 +859,9 @@ const poDeliveryBatchFromRows = (batch: any, lineRows: any[]): PurchaseOrderDeli
     lines: lineRows.map(row => ({
         ...(fromDb(row) as PurchaseOrderDeliveryLine),
         plannedQty: Number(row.planned_qty || 0),
+        deliveredQty: Number(row.delivered_qty ?? row.accepted_qty ?? 0),
         acceptedQty: Number(row.accepted_qty || 0),
+        deliveredStockQty: Number(row.delivered_stock_qty ?? row.accepted_stock_qty ?? 0),
         acceptedStockQty: Number(row.accepted_stock_qty || 0),
         returnedQty: Number(row.returned_qty || 0),
         deliveryUnitPrice: Number(row.delivery_unit_price || 0),
@@ -1155,7 +1159,7 @@ export const poService = {
             ) {
                 const actorUserId = String(patch.lastActionBy || '').trim();
                 if (!actorUserId) throw new Error('Thiếu người thao tác duyệt Gói mua hàng.');
-                return purchasePackageService.approvePackage({
+                return purchasePackageService.approveSingle({
                     purchaseOrderId: id,
                     actorUserId,
                     idempotencyKey: purchasePackageApprovalIdempotencyKey(id),
