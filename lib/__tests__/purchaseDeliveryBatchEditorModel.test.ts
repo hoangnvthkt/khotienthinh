@@ -266,4 +266,34 @@ describe('purchase delivery batch editor model', () => {
     expect(summary.draftAmount).toBe(8_400_000);
     expect(getSelectedPurchaseDeliveryLinesForSave(draftLines)).toEqual([draftLines[0]]);
   });
+
+  it('excludes the batch being edited from alreadyReleasedQty calculation and pre-fills its quantities', () => {
+    const batch1 = makeBatch({ id: 'batch-1', lines: [{ id: 'l1', deliveryBatchId: 'batch-1', purchaseOrderId: 'po-1', purchaseOrderLineId: 'line-1', itemId: 'item-1', plannedQty: 3000, unit: 'Kg', deliveryUnitPrice: 5600 }] });
+    const batch2 = makeBatch({ id: 'batch-2', lines: [{ id: 'l2', deliveryBatchId: 'batch-2', purchaseOrderId: 'po-1', purchaseOrderLineId: 'line-1', itemId: 'item-1', plannedQty: 2000, unit: 'Kg', deliveryUnitPrice: 5800 }] });
+
+    const drafts = buildPurchaseDeliveryLineDrafts({
+      purchaseOrder: makePo(), // qty: 7000
+      existingBatches: [batch1, batch2],
+      editBatch: batch1,
+    });
+
+    // When editing batch1, alreadyReleasedQty should only count batch2 (2000), leaving remaining = 5000
+    // And draft purchaseQty should be initialized to batch1's quantity (3000)
+    expect(drafts[0].alreadyReleasedQty).toBe(2000);
+    expect(drafts[0].purchaseQty).toBe(3000);
+    expect(drafts[0].purchaseUnitPrice).toBe(5600);
+    expect(drafts[0].included).toBe(true);
+
+    const summary = getPurchaseDeliveryDraftSummary({
+      purchaseOrder: makePo(),
+      existingBatches: [batch1, batch2],
+      draftLines: drafts,
+      excludeBatchId: batch1.id,
+    });
+
+    expect(summary.alreadyReleasedQty).toBe(2000);
+    expect(summary.draftQty).toBe(3000);
+    expect(summary.nextReleasedQty).toBe(5000);
+    expect(summary.varianceQty).toBe(-2000);
+  });
 });

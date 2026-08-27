@@ -1107,6 +1107,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     const [packageDeliveryEditor, setPackageDeliveryEditor] = useState<{
         po: PurchaseOrder;
         cloneFromBatch?: PurchaseOrderDeliveryBatch | null;
+        editBatch?: PurchaseOrderDeliveryBatch | null;
     } | null>(null);
     const [purchaseDeliveryQrPreview, setPurchaseDeliveryQrPreview] = useState<{
         title: string;
@@ -7505,6 +7506,11 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                         onCreateDeliveryReceipt={batch => handleCreatePoDeliveryReceipt(po, batch)}
                         onRemoveFailedDeliveryBatch={batch => handleRemoveFailedDeliveryBatch(po, batch)}
                         onRemoveFailedDeliveryGroup={group => handleRemoveFailedDeliveryGroup(po, group)}
+                        onBatchSaved={async () => {
+                            await loadSupplyData();
+                            await loadPoDeliveryPrintGroups(po, true);
+                            toast.success('Đã lưu đợt mua');
+                        }}
                         onClose={closePoDetail}
                     />
                 );
@@ -9868,7 +9874,9 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                         <div className="shrink-0 flex items-center justify-between border-b border-slate-100 px-5 py-3">
                             <div>
                                 <div className="text-sm font-black text-slate-800">
-                                    {packageDeliveryEditor.cloneFromBatch ? 'Clone đợt giao' : 'Thêm đợt giao'}
+                                    {packageDeliveryEditor.editBatch
+                                        ? `Sửa đợt mua (Đợt ${String(packageDeliveryEditor.editBatch.deliveryNo).padStart(2, '0')})`
+                                        : packageDeliveryEditor.cloneFromBatch ? 'Clone đợt giao' : 'Thêm đợt giao'}
                                 </div>
                                 <div className="text-[11px] font-bold text-slate-400">
                                     {packageDeliveryEditor.po.poNumber} • {packageDeliveryEditor.po.vendorName || 'Nhà cung cấp'}
@@ -9889,6 +9897,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                 actorUserId={user?.id || ''}
                                 targetWarehouseId={packageDeliveryEditor.po.targetWarehouseId || ''}
                                 cloneFromBatch={packageDeliveryEditor.cloneFromBatch || null}
+                                editBatch={packageDeliveryEditor.editBatch || null}
                                 existingBatches={poDeliveryBatchesByPo[packageDeliveryEditor.po.id] || []}
                                 onCancel={() => setPackageDeliveryEditor(null)}
                                 onSaved={async (result) => {

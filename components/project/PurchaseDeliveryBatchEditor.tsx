@@ -16,6 +16,7 @@ interface PurchaseDeliveryBatchEditorProps {
   onSaved?(result: unknown): void;
   onCancel?(): void;
   cloneFromBatch?: PurchaseOrderDeliveryBatch | null;
+  editBatch?: PurchaseOrderDeliveryBatch | null;
   existingBatches?: PurchaseOrderDeliveryBatch[];
 }
 
@@ -31,25 +32,29 @@ export default function PurchaseDeliveryBatchEditor({
   onSaved,
   onCancel,
   cloneFromBatch = null,
+  editBatch = null,
   existingBatches = [],
 }: PurchaseDeliveryBatchEditorProps) {
   const [saving, setSaving] = useState(false);
+  const isEditing = Boolean(editBatch);
   const supplierId = purchaseOrder.vendorId || '';
   const supplierName = purchaseOrder.vendorName || '';
-  const [vatRate, setVatRate] = useState(String(cloneFromBatch?.vatRate ?? purchaseOrder.vatRate ?? 0));
-  const [plannedDeliveryDate, setPlannedDeliveryDate] = useState(cloneFromBatch?.plannedDeliveryDate || purchaseOrder.expectedDeliveryDate || '');
-  const [note, setNote] = useState(cloneFromBatch?.note || '');
-  const [varianceReason, setVarianceReason] = useState(cloneFromBatch?.varianceReason || '');
+  const [vatRate, setVatRate] = useState(String(editBatch?.vatRate ?? cloneFromBatch?.vatRate ?? purchaseOrder.vatRate ?? 0));
+  const [plannedDeliveryDate, setPlannedDeliveryDate] = useState(editBatch?.plannedDeliveryDate || cloneFromBatch?.plannedDeliveryDate || purchaseOrder.expectedDeliveryDate || '');
+  const [note, setNote] = useState(editBatch?.note || cloneFromBatch?.note || '');
+  const [varianceReason, setVarianceReason] = useState(editBatch?.varianceReason || cloneFromBatch?.varianceReason || '');
   const [lineDrafts, setLineDrafts] = useState(() => buildPurchaseDeliveryLineDrafts({
     purchaseOrder,
     existingBatches,
     cloneFromBatch,
+    editBatch,
   }));
   const summary = useMemo(() => getPurchaseDeliveryDraftSummary({
     purchaseOrder,
     existingBatches,
     draftLines: lineDrafts,
-  }), [existingBatches, lineDrafts, purchaseOrder]);
+    excludeBatchId: editBatch?.id,
+  }), [editBatch?.id, existingBatches, lineDrafts, purchaseOrder]);
   const selectedLines = useMemo(
     () => getSelectedPurchaseDeliveryLinesForSave(lineDrafts),
     [lineDrafts],
@@ -79,7 +84,7 @@ export default function PurchaseDeliveryBatchEditor({
     try {
       const result = await purchasePackageService.saveBatchDraft({
         purchaseOrderId: purchaseOrder.id,
-        deliveryBatchId: null,
+        deliveryBatchId: editBatch?.id ?? null,
         vatRate: numberValue(vatRate),
         varianceReason: varianceReason.trim() || null,
         plannedDeliveryDate: plannedDeliveryDate || null,
@@ -229,7 +234,7 @@ export default function PurchaseDeliveryBatchEditor({
         {onCancel && <button type="button" onClick={onCancel} className="rounded-md px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-100">Hủy</button>}
         <button type="button" disabled={!canSave || saving} onClick={save} className="inline-flex items-center gap-2 rounded-md bg-slate-900 px-4 py-2 text-sm font-black text-white disabled:opacity-50">
           {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-          Lưu nháp đợt mua
+          {isEditing ? 'Lưu thay đổi đợt mua' : 'Lưu nháp đợt mua'}
         </button>
       </div>
     </div>

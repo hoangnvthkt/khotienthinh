@@ -54,6 +54,7 @@ import type {
   PurchaseOrderUiAction,
   PurchaseOrderUiPolicy,
 } from '../../lib/purchaseOrderUiPolicy';
+import PurchaseDeliveryBatchEditor from './PurchaseDeliveryBatchEditor';
 
 type PrintTemplateKey = 'purchase_order' | 'approval_request';
 type DetailTabKey = 'overview' | 'items' | 'deliveries' | 'documents' | 'history';
@@ -117,6 +118,7 @@ export type PurchaseOrderCockpitDrawerProps = {
   onCreateDeliveryReceipt: (batch: PurchaseOrderDeliveryBatch) => void | Promise<void>;
   onRemoveFailedDeliveryBatch: (batch: PurchaseOrderDeliveryBatch) => void | Promise<void>;
   onRemoveFailedDeliveryGroup: (group: PurchaseOrderDeliveryPrintGroupView) => void | Promise<void>;
+  onBatchSaved?: (batchId?: string) => void | Promise<void>;
   onClose: () => void;
 };
 
@@ -296,15 +298,22 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
   onCreateDeliveryReceipt,
   onRemoveFailedDeliveryBatch,
   onRemoveFailedDeliveryGroup,
+  onBatchSaved,
   onClose,
 }) => {
-  const { users = [], employees = [] } = useApp();
+  const { user, users = [], employees = [] } = useApp();
   const [activeTab, setActiveTab] = useState<DetailTabKey>('overview');
   const [menuOpen, setMenuOpen] = useState(false);
+  const [isItemsExpanded, setIsItemsExpanded] = useState(false);
+  const [expandedBatchKey, setExpandedBatchKey] = useState<string | null>(null);
+  const [editingBatchId, setEditingBatchId] = useState<string | null>(null);
 
   useEffect(() => {
     setActiveTab('overview');
     setMenuOpen(false);
+    setIsItemsExpanded(false);
+    setExpandedBatchKey(null);
+    setEditingBatchId(null);
   }, [po.id]);
 
   // Helper resolve user avatar & name (an toàn tuyệt đối, không match nhầm khi undefined)
@@ -873,139 +882,174 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
 
               {/* KHU VỰC TIỀN VÀ BASELINE (MONEY FOCUS BAR) */}
               <section className="rounded-2xl border border-slate-200/90 bg-gradient-to-br from-white via-slate-50/50 to-emerald-50/20 p-4 sm:p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900">
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 items-center">
-                  <div className="p-3 rounded-xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-xs">
-                    <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400">Tiền hàng trước VAT</span>
-                    <strong className="text-base sm:text-lg font-black text-slate-800 dark:text-white mt-0.5 block">
-                      {fmtMoney(displayAmount)} đ
-                    </strong>
-                  </div>
-
-                  <div className="p-3 rounded-xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-xs">
-                    <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400">{vatLabel || `Thuế VAT (${vatRate}%)`}</span>
-                    <strong className="text-base sm:text-lg font-black text-slate-800 dark:text-white mt-0.5 block">
-                      {fmtMoney(vatAmount)} đ
-                    </strong>
-                  </div>
-
-                  <div className="p-3 rounded-xl border border-emerald-200 bg-emerald-50/50 dark:border-emerald-900/50 dark:bg-emerald-950/30 shadow-xs">
-                    <span className="block text-[10px] font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
-                      {isMultipleDeliveryPackage ? 'Tổng giá trị các đợt gồm VAT' : 'Tổng thanh toán gồm VAT'}
-                    </span>
-                    <strong className="text-lg sm:text-xl font-black text-emerald-700 dark:text-emerald-300 mt-0.5 block">
-                      {fmtMoney(paymentTotal)} đ
-                    </strong>
-                  </div>
-
-                  <div className="p-3 rounded-xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-xs">
-                    <div className="flex items-center justify-between text-[10px] font-black uppercase text-slate-400 mb-1">
-                      <span>Tiến độ nhận hàng</span>
-                      <span className="text-teal-600 font-mono">{receiptPercent}%</span>
+                <div className="grid gap-3.5 lg:grid-cols-12 items-stretch">
+                  {/* Ô HERO: TỔNG GIÁ TRỊ CÁC ĐỢT GỒM VAT (LỚN NHẤT & NỔI BẬT NHẤT) */}
+                  <div className="lg:col-span-5 rounded-2xl border-2 border-emerald-500/40 bg-gradient-to-br from-emerald-50 via-teal-50/40 to-white p-4 sm:p-5 shadow-sm dark:border-emerald-500/30 dark:from-emerald-950/40 dark:via-slate-900 dark:to-slate-900 flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[11px] font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
+                          {isMultipleDeliveryPackage ? 'Tổng giá trị các đợt gồm VAT' : 'Tổng thanh toán gồm VAT'}
+                        </span>
+                        <span className="rounded-full bg-emerald-100 dark:bg-emerald-900/60 px-2 py-0.5 text-[10px] font-black text-emerald-800 dark:text-emerald-200">
+                          Gồm VAT
+                        </span>
+                      </div>
+                      <strong className="mt-2 block text-2xl sm:text-3xl font-black tracking-tight text-emerald-700 dark:text-emerald-300">
+                        {fmtMoney(paymentTotal)} <span className="text-base sm:text-lg font-bold">đ</span>
+                      </strong>
                     </div>
-                    <div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-                      <div className="h-full rounded-full bg-gradient-to-r from-teal-500 to-emerald-500 transition-all duration-300" style={{ width: `${receiptPercent}%` }} />
+                    <div className="mt-2 text-[11px] font-semibold text-emerald-600/80 dark:text-emerald-400/80">
+                      Tổng thanh toán đã gồm tiền hàng & thuế
                     </div>
-                    <span className="mt-1 block text-[10px] font-bold text-slate-400 truncate">
-                      Đã nhận {fmtQty(receiptStats.receivedQty)}/{fmtQty(receiptStats.orderedQty)} • Còn {fmtQty(receiptStats.remainingQty)}
-                    </span>
+                  </div>
+
+                  {/* 3 Ô PHỤ (NHỎ HƠN & GỌN GÀNG) */}
+                  <div className="lg:col-span-7 grid gap-3 sm:grid-cols-3">
+                    <div className="p-3.5 rounded-xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-xs flex flex-col justify-between">
+                      <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400">Tiền hàng trước VAT</span>
+                      <strong className="text-sm sm:text-base font-black text-slate-800 dark:text-white mt-1 block">
+                        {fmtMoney(displayAmount)} đ
+                      </strong>
+                      <span className="mt-1 text-[10px] font-semibold text-slate-400">Chưa gồm thuế</span>
+                    </div>
+
+                    <div className="p-3.5 rounded-xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-xs flex flex-col justify-between">
+                      <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400">{vatLabel || `Thuế VAT (${vatRate}%)`}</span>
+                      <strong className="text-sm sm:text-base font-black text-slate-800 dark:text-white mt-1 block">
+                        {fmtMoney(vatAmount)} đ
+                      </strong>
+                      <span className="mt-1 text-[10px] font-semibold text-slate-400">{vatRate > 0 ? `Thuế suất ${vatRate}%` : 'Miễn thuế / 0%'}</span>
+                    </div>
+
+                    <div className="p-3.5 rounded-xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-xs flex flex-col justify-between">
+                      <div>
+                        <div className="flex items-center justify-between text-[10px] font-black uppercase text-slate-400 mb-1">
+                          <span>Tiến độ nhận hàng</span>
+                          <span className="text-teal-600 font-mono font-bold">{receiptPercent}%</span>
+                        </div>
+                        <div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                          <div className="h-full rounded-full bg-gradient-to-r from-teal-500 to-emerald-500 transition-all duration-300" style={{ width: `${receiptPercent}%` }} />
+                        </div>
+                      </div>
+                      <span className="mt-1 block text-[10px] font-bold text-slate-400 truncate">
+                        Đã nhận {fmtQty(receiptStats.receivedQty)}/{fmtQty(receiptStats.orderedQty)} • Còn {fmtQty(receiptStats.remainingQty)}
+                      </span>
+                    </div>
                   </div>
                 </div>
               </section>
 
-              {/* KHU VỰC HÀNG HÓA VÀ VẬT TƯ (PRIMARY FOCUS) */}
-              <section className="rounded-2xl border border-slate-200/90 bg-white p-4 sm:p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900 space-y-4">
-                <div className="flex items-center justify-between gap-3 border-b border-slate-100 pb-3 dark:border-slate-800">
-                  <div className="flex items-center gap-2">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-teal-50 text-teal-600 dark:bg-teal-950/40 dark:text-teal-400">
+              {/* KHU VỰC HÀNG HÓA VÀ VẬT TƯ (ACCORDION) */}
+              <section className="rounded-2xl border border-slate-200/90 bg-white shadow-xs dark:border-slate-800 dark:bg-slate-900 transition overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setIsItemsExpanded(prev => !prev)}
+                  className="w-full flex items-center justify-between gap-3 p-4 sm:p-5 text-left transition hover:bg-slate-50/70 dark:hover:bg-slate-800/40"
+                  aria-expanded={isItemsExpanded}
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-teal-50 text-teal-600 dark:bg-teal-950/40 dark:text-teal-400 shrink-0">
                       <Package size={16} />
                     </div>
-                    <div>
-                      <h4 className="text-base font-black text-slate-800 dark:text-slate-100">
+                    <div className="min-w-0">
+                      <h4 className="text-base font-black text-slate-800 dark:text-slate-100 truncate">
                         Danh mục Hàng hóa & Vật tư ({po.items.length} mặt hàng)
                       </h4>
-                      <p className="text-xs font-semibold text-slate-400">
+                      <p className="text-xs font-semibold text-slate-400 truncate">
                         Đã nhận {fmtQty(receiptStats.receivedQty)}/{fmtQty(receiptStats.orderedQty)} • Còn thiếu {fmtQty(receiptStats.remainingQty)}
                       </p>
                     </div>
                   </div>
-                </div>
+                  <div className="flex items-center gap-2 text-slate-400 shrink-0">
+                    <span className="text-xs font-bold text-slate-400 hidden sm:inline">
+                      {isItemsExpanded ? 'Thu gọn' : 'Xem danh mục'}
+                    </span>
+                    <div className={`flex h-7 w-7 items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 transition-transform duration-200 ${isItemsExpanded ? 'rotate-180' : ''}`}>
+                      <ChevronDown size={15} />
+                    </div>
+                  </div>
+                </button>
 
-                <div id={`po-items-table-${po.id}`} className="overflow-x-auto">
-                  <table className="w-full min-w-[980px] text-left text-sm">
-                    <thead className="bg-slate-100/90 text-slate-600 dark:bg-slate-800/90 dark:text-slate-300 text-xs font-black uppercase tracking-wide border-b border-slate-200 dark:border-slate-700">
-                      <tr>
-                        <th className="px-4 py-3">Tên vật tư</th>
-                        {uniqueSpecKeys.map(key => <th key={key} className="px-3 py-3 text-center">{getHeaderLabel(key, po.items)}</th>)}
-                        <th className="px-3 py-3 text-right">SL đặt</th>
-                        <th className="px-3 py-3 text-right">Đã nhận</th>
-                        <th className="px-3 py-3 text-right">Còn thiếu</th>
-                        <th className="px-3 py-3 text-right">Đơn giá</th>
-                        <th className="px-3 py-3 text-right">Thành tiền</th>
-                        <th className="px-4 py-3 text-center">Trạng thái</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                      {po.items.map((item, index) => {
-                        const inventory = inventoryItems.find(row => row.id === item.itemId);
-                        const purchaseUnit = getPoLinePurchaseUnit(item, inventory);
-                        const lineKey = item.lineId || item.itemId;
-                        const demandQty = getPurchaseOrderLineDemandQty(po, lineKey, poRequestLinks, inventoryItems);
-                        const completedReturnQty = Math.max(
-                          Number(item.returnedQty || 0),
-                          supplierReturns
-                            .filter(returnDoc => returnDoc.status === 'completed')
-                            .reduce((sum, returnDoc) => sum + returnDoc.lines
-                              .filter(line => line.purchaseOrderLineId === lineKey)
-                              .reduce((lineSum, line) => lineSum + Number(line.returnQty || 0), 0), 0),
-                        );
-                        const netReceivedQty = Math.max(0, Number(item.receivedQty || 0) - completedReturnQty);
-                        const remainingQty = Math.max(0, demandQty - netReceivedQty);
-                        const lineAmount = getPurchaseOrderDisplayLineAmount(po, item, deliveryBatches);
-                        const lineStatus = remainingQty <= 0
-                          ? { label: 'Đã đủ', tone: 'success' as ErpStatusTone }
-                          : netReceivedQty > 0
-                            ? { label: 'Nhận một phần', tone: 'attention' as ErpStatusTone }
-                            : { label: 'Chờ nhận', tone: 'warning' as ErpStatusTone };
-                        return (
-                          <tr key={`${lineKey}:${index}`} className="hover:bg-teal-50/20 dark:hover:bg-slate-900/50 transition">
-                            <td className="px-4 py-3.5 align-top">
-                              <div className="text-sm font-black text-slate-800 dark:text-slate-100">{item.name}</div>
-                              <div className="mt-1 flex flex-wrap gap-1.5 text-xs font-bold text-slate-400">
-                                {item.sku && <span className="font-mono bg-slate-100 dark:bg-slate-800 px-1.5 py-0.2 rounded text-[11px]">{item.sku}</span>}
-                                {item.requestCode && <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-amber-700 text-[10px]">YC {item.requestCode}</span>}
-                                {item.materialBudgetItemName && <span className="rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-emerald-700 text-[10px]">{item.materialBudgetItemName}</span>}
-                                {item.workBoqItemName && <span className="rounded border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-blue-700 text-[10px]">{item.workBoqItemName}</span>}
-                              </div>
-                              {(item.neededDate || item.note || item.pricingMode) && (
-                                <div className="mt-1 text-xs font-semibold text-slate-500">
-                                  {item.neededDate ? `Ngày cần: ${item.neededDate}` : ''}
-                                  {item.note ? ` ${item.note}` : ''}
-                                  {item.pricingMode && item.pricingMode !== 'standard' ? ` ${formatPricingFormula(item)}` : ''}
-                                </div>
-                              )}
-                            </td>
-                            {uniqueSpecKeys.map(key => (
-                              <td key={key} className="px-3 py-3.5 text-center font-bold text-slate-600 dark:text-slate-300">
-                                {item.specs?.[key]?.value ?? '—'}
-                              </td>
-                            ))}
-                            <td className="px-3 py-3.5 text-right font-black text-slate-800 dark:text-slate-100">
-                              {fmtQty(demandQty)} <span className="text-xs text-slate-500 font-semibold">{purchaseUnit || item.unit}</span>
-                            </td>
-                            <td className="px-3 py-3.5 text-right font-black text-emerald-700">{fmtQty(netReceivedQty)}</td>
-                            <td className={`px-3 py-3.5 text-right font-black ${remainingQty > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>{fmtQty(remainingQty)}</td>
-                            <td className="px-3 py-3.5 text-right font-bold text-slate-700 dark:text-slate-300">{fmtUnitPrice(lineAmount.unitPrice)}</td>
-                            <td className="px-3 py-3.5 text-right font-black text-slate-900 dark:text-slate-100">{fmtMoney(lineAmount.totalAmount)} đ</td>
-                            <td className="px-4 py-3.5 text-center"><StatusBadge status={lineStatus.label} label={lineStatus.label} tone={lineStatus.tone} showDot={false} /></td>
+                {isItemsExpanded && (
+                  <div className="px-4 pb-4 sm:px-5 sm:pb-5 pt-1 border-t border-slate-100 dark:border-slate-800">
+                    <div id={`po-items-table-${po.id}`} className="overflow-x-auto">
+                      <table className="w-full min-w-[980px] text-left text-sm">
+                        <thead className="bg-slate-100/90 text-slate-600 dark:bg-slate-800/90 dark:text-slate-300 text-xs font-black uppercase tracking-wide border-b border-slate-200 dark:border-slate-700">
+                          <tr>
+                            <th className="px-4 py-3">Tên vật tư</th>
+                            {uniqueSpecKeys.map(key => <th key={key} className="px-3 py-3 text-center">{getHeaderLabel(key, po.items)}</th>)}
+                            <th className="px-3 py-3 text-right">SL đặt</th>
+                            <th className="px-3 py-3 text-right">Đã nhận</th>
+                            <th className="px-3 py-3 text-right">Còn thiếu</th>
+                            <th className="px-3 py-3 text-right">Đơn giá</th>
+                            <th className="px-3 py-3 text-right">Thành tiền</th>
+                            <th className="px-4 py-3 text-center">Trạng thái</th>
                           </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                          {po.items.map((item, index) => {
+                            const inventory = inventoryItems.find(row => row.id === item.itemId);
+                            const purchaseUnit = getPoLinePurchaseUnit(item, inventory);
+                            const lineKey = item.lineId || item.itemId;
+                            const demandQty = getPurchaseOrderLineDemandQty(po, lineKey, poRequestLinks, inventoryItems);
+                            const completedReturnQty = Math.max(
+                              Number(item.returnedQty || 0),
+                              supplierReturns
+                                .filter(returnDoc => returnDoc.status === 'completed')
+                                .reduce((sum, returnDoc) => sum + returnDoc.lines
+                                  .filter(line => line.purchaseOrderLineId === lineKey)
+                                  .reduce((lineSum, line) => lineSum + Number(line.returnQty || 0), 0), 0),
+                            );
+                            const netReceivedQty = Math.max(0, Number(item.receivedQty || 0) - completedReturnQty);
+                            const remainingQty = Math.max(0, demandQty - netReceivedQty);
+                            const lineAmount = getPurchaseOrderDisplayLineAmount(po, item, deliveryBatches);
+                            const lineStatus = remainingQty <= 0
+                              ? { label: 'Đã đủ', tone: 'success' as ErpStatusTone }
+                              : netReceivedQty > 0
+                                ? { label: 'Nhận một phần', tone: 'attention' as ErpStatusTone }
+                                : { label: 'Chờ nhận', tone: 'warning' as ErpStatusTone };
+                            return (
+                              <tr key={`${lineKey}:${index}`} className="hover:bg-teal-50/20 dark:hover:bg-slate-900/50 transition">
+                                <td className="px-4 py-3.5 align-top">
+                                  <div className="text-sm font-black text-slate-800 dark:text-slate-100">{item.name}</div>
+                                  <div className="mt-1 flex flex-wrap gap-1.5 text-xs font-bold text-slate-400">
+                                    {item.sku && <span className="font-mono bg-slate-100 dark:bg-slate-800 px-1.5 py-0.2 rounded text-[11px]">{item.sku}</span>}
+                                    {item.requestCode && <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-amber-700 text-[10px]">YC {item.requestCode}</span>}
+                                    {item.materialBudgetItemName && <span className="rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-emerald-700 text-[10px]">{item.materialBudgetItemName}</span>}
+                                    {item.workBoqItemName && <span className="rounded border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-blue-700 text-[10px]">{item.workBoqItemName}</span>}
+                                  </div>
+                                  {(item.neededDate || item.note || item.pricingMode) && (
+                                    <div className="mt-1 text-xs font-semibold text-slate-500">
+                                      {item.neededDate ? `Ngày cần: ${item.neededDate}` : ''}
+                                      {item.note ? ` ${item.note}` : ''}
+                                      {item.pricingMode && item.pricingMode !== 'standard' ? ` ${formatPricingFormula(item)}` : ''}
+                                    </div>
+                                  )}
+                                </td>
+                                {uniqueSpecKeys.map(key => (
+                                  <td key={key} className="px-3 py-3.5 text-center font-bold text-slate-600 dark:text-slate-300">
+                                    {item.specs?.[key]?.value ?? '—'}
+                                  </td>
+                                ))}
+                                <td className="px-3 py-3.5 text-right font-black text-slate-800 dark:text-slate-100">
+                                  {fmtQty(demandQty)} <span className="text-xs text-slate-500 font-semibold">{purchaseUnit || item.unit}</span>
+                                </td>
+                                <td className="px-3 py-3.5 text-right font-black text-emerald-700">{fmtQty(netReceivedQty)}</td>
+                                <td className={`px-3 py-3.5 text-right font-black ${remainingQty > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>{fmtQty(remainingQty)}</td>
+                                <td className="px-3 py-3.5 text-right font-bold text-slate-700 dark:text-slate-300">{fmtUnitPrice(lineAmount.unitPrice)}</td>
+                                <td className="px-3 py-3.5 text-right font-black text-slate-900 dark:text-slate-100">{fmtMoney(lineAmount.totalAmount)} đ</td>
+                                <td className="px-4 py-3.5 text-center"><StatusBadge status={lineStatus.label} label={lineStatus.label} tone={lineStatus.tone} showDot={false} /></td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
               </section>
 
-              {/* KHU VỰC ĐỢT GIAO HÀNG */}
+              {/* KHU VỰC ĐỢT GIAO HÀNG (ACCORDION & INLINE EDITING) */}
               <section className="rounded-2xl border border-slate-200/90 bg-white p-4 sm:p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900 space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3 dark:border-slate-800">
                   <div className="flex items-center gap-2">
@@ -1051,106 +1095,358 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
                         ? deletingDeliveryKey === `batch:${batch.id}`
                         : deletingDeliveryKey === `group:${printGroup.key}`;
                       const wmsTransactionId = group.wmsTransactionId;
+                      const isExpanded = expandedBatchKey === group.key;
+                      const isEditingThisBatch = editingBatchId === batch?.id;
 
                       return (
-                        <div key={group.key} className="relative rounded-2xl border border-slate-200/90 bg-white p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900 transition hover:border-blue-400">
-                          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto]">
-                            <div className="min-w-0">
-                              <div className="flex flex-wrap items-center gap-2.5">
-                                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-600 text-xs font-black text-white shadow-xs">
-                                  {group.marker}
+                        <div
+                          key={group.key}
+                          className={`relative rounded-2xl border transition overflow-hidden ${
+                            isExpanded
+                              ? 'border-blue-400 bg-white shadow-md dark:border-blue-500 dark:bg-slate-900 ring-1 ring-blue-400/20'
+                              : 'border-slate-200/90 bg-white p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900 hover:border-blue-300'
+                          }`}
+                        >
+                          {/* CARD HEADER - CLICK TO EXPAND / COLLAPSE */}
+                          <div
+                            onClick={() => {
+                              if (!isEditingThisBatch) {
+                                setExpandedBatchKey(isExpanded ? null : group.key);
+                              }
+                            }}
+                            className={`cursor-pointer select-none ${isExpanded ? 'p-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30' : ''}`}
+                          >
+                            <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto]">
+                              <div className="min-w-0">
+                                <div className="flex flex-wrap items-center gap-2.5">
+                                  <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-600 text-xs font-black text-white shadow-xs shrink-0">
+                                    {group.marker}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-sm font-black text-slate-800 dark:text-slate-100">{group.label}</span>
+                                      <div className={`flex h-5 w-5 items-center justify-center rounded text-slate-400 transition-transform duration-200 ${isExpanded ? 'rotate-180 text-blue-600' : ''}`}>
+                                        <ChevronDown size={14} />
+                                      </div>
+                                    </div>
+                                    <div className="text-[11px] font-semibold text-slate-400">
+                                      {formatDate(group.plannedDate)} • Kho: {group.targetWarehouse}
+                                    </div>
+                                  </div>
+                                  <span className={`rounded-full border px-2.5 py-0.5 text-xs font-black ${status.className}`}>
+                                    {status.label}
+                                  </span>
                                 </div>
-                                <div>
-                                  <div className="text-sm font-black text-slate-800 dark:text-slate-100">{group.label}</div>
-                                  <div className="text-[11px] font-semibold text-slate-400">{formatDate(group.plannedDate)} • Kho: {group.targetWarehouse}</div>
+
+                                <div className="mt-3 grid gap-2 text-xs sm:grid-cols-3">
+                                  <div className="rounded-xl bg-slate-50 dark:bg-slate-800/60 p-2.5">
+                                    <span className="block text-[10px] font-black uppercase text-slate-400">Số dòng</span>
+                                    <strong className="text-xs font-black">{group.lineCount} dòng</strong>
+                                  </div>
+                                  <div className="rounded-xl bg-slate-50 dark:bg-slate-800/60 p-2.5">
+                                    <span className="block text-[10px] font-black uppercase text-slate-400">Tổng KL</span>
+                                    <strong className="text-xs font-black">{fmtQty(group.totalQty)}</strong>
+                                  </div>
+                                  <div className="rounded-xl bg-slate-50 dark:bg-slate-800/60 p-2.5">
+                                    <span className="block text-[10px] font-black uppercase text-slate-400">Giá trị đợt gồm VAT</span>
+                                    <strong className="text-xs font-black text-emerald-700">{fmtMoney(group.totalAmountWithVat)} đ</strong>
+                                    <span className="mt-0.5 block text-[10px] font-bold text-slate-400">
+                                      VAT {fmtQty(group.vatRate)}%: {fmtMoney(group.vatAmount)} đ
+                                    </span>
+                                  </div>
                                 </div>
-                                <span className={`rounded-full border px-2.5 py-0.5 text-xs font-black ${status.className}`}>{status.label}</span>
                               </div>
-                              <div className="mt-3 grid gap-2 text-xs sm:grid-cols-3">
-                                <div className="rounded-xl bg-slate-50 dark:bg-slate-800/60 p-2.5"><span className="block text-[10px] font-black uppercase text-slate-400">Số dòng</span><strong className="text-xs font-black">{group.lineCount} dòng</strong></div>
-                                <div className="rounded-xl bg-slate-50 dark:bg-slate-800/60 p-2.5"><span className="block text-[10px] font-black uppercase text-slate-400">Tổng KL</span><strong className="text-xs font-black">{fmtQty(group.totalQty)}</strong></div>
-                                <div className="rounded-xl bg-slate-50 dark:bg-slate-800/60 p-2.5">
-                                  <span className="block text-[10px] font-black uppercase text-slate-400">Giá trị đợt gồm VAT</span>
-                                  <strong className="text-xs font-black text-emerald-700">{fmtMoney(group.totalAmountWithVat)} đ</strong>
-                                  <span className="mt-0.5 block text-[10px] font-bold text-slate-400">VAT {fmtQty(group.vatRate)}%: {fmtMoney(group.vatAmount)} đ</span>
-                                </div>
-                              </div>
-                            </div>
-                            <div className="flex flex-wrap items-start justify-end gap-1.5 lg:max-w-[360px]">
-                              {printGroup.lines.length > 0 && (
-                                <>
+
+                              <div
+                                className="flex flex-wrap items-start justify-end gap-1.5 lg:max-w-[360px]"
+                                onClick={e => e.stopPropagation()}
+                              >
+                                {printGroup.lines.length > 0 && (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => void onPrintDeliveryGroup(printGroup, 'purchase_order')}
+                                      disabled={printingPoId === printPoKey}
+                                      className="inline-flex h-8.5 items-center justify-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 px-3 text-xs font-bold text-blue-700 hover:bg-blue-100 shadow-xs transition"
+                                    >
+                                      {printingPoId === printPoKey ? <Loader2 size={13} className="animate-spin" /> : <Printer size={13} />}
+                                      In đơn
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => void onPrintDeliveryGroup(printGroup, 'approval_request')}
+                                      disabled={printingPoId === printApprovalKey}
+                                      className="inline-flex h-8.5 items-center justify-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3 text-xs font-bold text-rose-700 hover:bg-rose-100 shadow-xs transition"
+                                    >
+                                      {printingPoId === printApprovalKey ? <Loader2 size={13} className="animate-spin" /> : <FileText size={13} />}
+                                      In đề nghị
+                                    </button>
+                                  </>
+                                )}
+                                {canEditPlannedBatch && (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setExpandedBatchKey(group.key);
+                                        setEditingBatchId(batch.id);
+                                      }}
+                                      className="inline-flex h-8.5 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 hover:bg-slate-50 shadow-xs transition"
+                                    >
+                                      <Edit2 size={13} /> Sửa
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => batch && void onRemovePlannedBatch(batch)}
+                                      disabled={isDeletingBatch}
+                                      className="inline-flex h-8.5 items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 text-xs font-bold text-red-700 hover:bg-red-100 disabled:opacity-60 shadow-xs transition"
+                                    >
+                                      {isDeletingBatch ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />} Xóa
+                                    </button>
+                                  </>
+                                )}
+                                {isPackageV2 && batch && po.purchaseMode === 'multiple' && ['draft', 'revision_requested', 'rejected'].includes(batch.approvalStatus || 'draft') && (
                                   <button
                                     type="button"
-                                    onClick={() => void onPrintDeliveryGroup(printGroup, 'purchase_order')}
-                                    disabled={printingPoId === printPoKey}
-                                    className="inline-flex h-8.5 items-center justify-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 px-3 text-xs font-bold text-blue-700 hover:bg-blue-100 shadow-xs transition"
+                                    onClick={() => void onRunAction({ id: 'submit_delivery_batch', label: 'Gửi duyệt đợt giao', intent: 'warning', deliveryBatchId: batch.id })}
+                                    className="inline-flex h-8.5 items-center gap-1.5 rounded-xl bg-amber-500 px-3 text-xs font-black text-white hover:bg-amber-600 shadow-xs transition"
                                   >
-                                    {printingPoId === printPoKey ? <Loader2 size={13} className="animate-spin" /> : <Printer size={13} />}
-                                    In đơn
+                                    <Send size={13} /> Gửi duyệt
                                   </button>
+                                )}
+                                {isPackageV2 && batch && po.purchaseMode === 'multiple' && batch.approvalStatus === 'pending_approval' && canApprovePendingDeliveryBatch && (
                                   <button
                                     type="button"
-                                    onClick={() => void onPrintDeliveryGroup(printGroup, 'approval_request')}
-                                    disabled={printingPoId === printApprovalKey}
-                                    className="inline-flex h-8.5 items-center justify-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3 text-xs font-bold text-rose-700 hover:bg-rose-100 shadow-xs transition"
+                                    onClick={() => void onRunAction({ id: 'approve_delivery_batch', label: 'Duyệt đợt giao', intent: 'success', deliveryBatchId: batch.id })}
+                                    className="inline-flex h-8.5 items-center gap-1.5 rounded-xl bg-emerald-600 px-3 text-xs font-black text-white hover:bg-emerald-700 shadow-xs transition"
                                   >
-                                    {printingPoId === printApprovalKey ? <Loader2 size={13} className="animate-spin" /> : <FileText size={13} />}
-                                    In đề nghị
+                                    <CheckCircle2 size={13} /> Duyệt đợt
                                   </button>
-                                </>
-                              )}
-                              {canEditPlannedBatch && (
-                                <>
-                                  <button type="button" onClick={onEditSchedule} className="inline-flex h-8.5 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 hover:bg-slate-50 shadow-xs transition">
-                                    <Edit2 size={13} /> Sửa
+                                )}
+                                {isPackageV2 && batch && (batch.qrToken || wmsTransactionId) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => void onRunAction({ id: 'open_delivery_qr', label: 'Mở QR', intent: 'primary', deliveryBatchId: batch.id, transactionId: wmsTransactionId || undefined, qrToken: batch.qrToken || null })}
+                                    className="inline-flex h-8.5 items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 text-xs font-black text-white hover:bg-blue-700 shadow-xs transition"
+                                  >
+                                    <QrCode size={13} /> Mở QR
                                   </button>
-                                  <button type="button" onClick={() => batch && void onRemovePlannedBatch(batch)} disabled={isDeletingBatch} className="inline-flex h-8.5 items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 text-xs font-bold text-red-700 hover:bg-red-100 disabled:opacity-60 shadow-xs transition">
-                                    {isDeletingBatch ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />} Xóa
+                                )}
+                                {isPackageV2 && batch && canConfirmPo && po.purchaseMode === 'multiple' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => void onRunAction({ id: 'clone_delivery', label: 'Clone đợt', intent: 'neutral', deliveryBatchId: batch.id })}
+                                    className="inline-flex h-8.5 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 hover:bg-slate-50 shadow-xs transition"
+                                  >
+                                    <RefreshCcw size={13} /> Clone
                                   </button>
-                                </>
-                              )}
-                              {isPackageV2 && batch && po.purchaseMode === 'multiple' && ['draft', 'revision_requested', 'rejected'].includes(batch.approvalStatus || 'draft') && (
-                                <button type="button" onClick={() => void onRunAction({ id: 'submit_delivery_batch', label: 'Gửi duyệt đợt giao', intent: 'warning', deliveryBatchId: batch.id })} className="inline-flex h-8.5 items-center gap-1.5 rounded-xl bg-amber-500 px-3 text-xs font-black text-white hover:bg-amber-600 shadow-xs transition">
-                                  <Send size={13} /> Gửi duyệt
-                                </button>
-                              )}
-                              {isPackageV2 && batch && po.purchaseMode === 'multiple' && batch.approvalStatus === 'pending_approval' && canApprovePendingDeliveryBatch && (
-                                <button type="button" onClick={() => void onRunAction({ id: 'approve_delivery_batch', label: 'Duyệt đợt giao', intent: 'success', deliveryBatchId: batch.id })} className="inline-flex h-8.5 items-center gap-1.5 rounded-xl bg-emerald-600 px-3 text-xs font-black text-white hover:bg-emerald-700 shadow-xs transition">
-                                  <CheckCircle2 size={13} /> Duyệt đợt
-                                </button>
-                              )}
-                              {isPackageV2 && batch && (batch.qrToken || wmsTransactionId) && (
-                                <button type="button" onClick={() => void onRunAction({ id: 'open_delivery_qr', label: 'Mở QR', intent: 'primary', deliveryBatchId: batch.id, transactionId: wmsTransactionId || undefined, qrToken: batch.qrToken || null })} className="inline-flex h-8.5 items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 text-xs font-black text-white hover:bg-blue-700 shadow-xs transition">
-                                  <QrCode size={13} /> Mở QR
-                                </button>
-                              )}
-                              {isPackageV2 && batch && canConfirmPo && po.purchaseMode === 'multiple' && (
-                                <button type="button" onClick={() => void onRunAction({ id: 'clone_delivery', label: 'Clone đợt', intent: 'neutral', deliveryBatchId: batch.id })} className="inline-flex h-8.5 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 hover:bg-slate-50 shadow-xs transition">
-                                  <RefreshCcw size={13} /> Clone
-                                </button>
-                              )}
-                              {isPackageV2 && batch && canConfirmPo && po.purchaseMode === 'multiple' && ['planned', 'wms_pending', 'receiving'].includes(batch.status) && (
-                                <button type="button" onClick={() => void onRunAction({ id: 'cancel_delivery', label: 'Hủy đợt giao', intent: 'danger', deliveryBatchId: batch.id })} disabled={isDeletingBatch} className="inline-flex h-8.5 items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 text-xs font-bold text-red-700 hover:bg-red-100 disabled:opacity-60 shadow-xs transition">
-                                  {isDeletingBatch ? <Loader2 size={13} className="animate-spin" /> : <Ban size={13} />} Hủy
-                                </button>
-                              )}
-                              {!isPackageV2 && batch && canConfirmPo && ['confirmed', 'in_transit'].includes(po.status) && batch.status === 'planned' && (
-                                <button type="button" onClick={() => void onCreateDeliveryReceipt(batch)} disabled={creatingDeliveryBatchId === batch.id} className="inline-flex h-8.5 items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 text-xs font-black text-white hover:bg-indigo-700 disabled:opacity-60 shadow-xs transition">
-                                  {creatingDeliveryBatchId === batch.id ? <Loader2 size={13} className="animate-spin" /> : <QrCode size={13} />} Tạo WMS
-                                </button>
-                              )}
-                              {['wms_pending', 'quality_approved'].includes(normalizedStatus) && wmsTransactionId && (
-                                <button type="button" onClick={() => void onRunAction({ id: 'open_wms_transaction', label: 'Mở WMS', intent: 'primary', transactionId: wmsTransactionId })} className="inline-flex h-8.5 items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 text-xs font-black text-white hover:bg-blue-700 shadow-xs transition">
-                                  <ShieldCheck size={13} /> Mở WMS
-                                </button>
-                              )}
-                              {canConfirmPo && normalizedStatus === 'cancelled' && (
-                                <button type="button" onClick={() => batch ? void onRemoveFailedDeliveryBatch(batch) : void onRemoveFailedDeliveryGroup(printGroup)} disabled={isDeletingBatch} className="inline-flex h-8.5 items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 text-xs font-bold text-red-700 hover:bg-red-100 disabled:opacity-60 shadow-xs transition">
-                                  {isDeletingBatch ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />} Xóa đợt bị từ chối
-                                </button>
-                              )}
+                                )}
+                                {isPackageV2 && batch && canConfirmPo && po.purchaseMode === 'multiple' && ['planned', 'wms_pending', 'receiving'].includes(batch.status) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => void onRunAction({ id: 'cancel_delivery', label: 'Hủy đợt giao', intent: 'danger', deliveryBatchId: batch.id })}
+                                    disabled={isDeletingBatch}
+                                    className="inline-flex h-8.5 items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 text-xs font-bold text-red-700 hover:bg-red-100 disabled:opacity-60 shadow-xs transition"
+                                  >
+                                    {isDeletingBatch ? <Loader2 size={13} className="animate-spin" /> : <Ban size={13} />} Hủy
+                                  </button>
+                                )}
+                                {!isPackageV2 && batch && canConfirmPo && ['confirmed', 'in_transit'].includes(po.status) && batch.status === 'planned' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => void onCreateDeliveryReceipt(batch)}
+                                    disabled={creatingDeliveryBatchId === batch.id}
+                                    className="inline-flex h-8.5 items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 text-xs font-black text-white hover:bg-indigo-700 disabled:opacity-60 shadow-xs transition"
+                                  >
+                                    {creatingDeliveryBatchId === batch.id ? <Loader2 size={13} className="animate-spin" /> : <QrCode size={13} />} Tạo WMS
+                                  </button>
+                                )}
+                                {['wms_pending', 'quality_approved'].includes(normalizedStatus) && wmsTransactionId && (
+                                  <button
+                                    type="button"
+                                    onClick={() => void onRunAction({ id: 'open_wms_transaction', label: 'Mở WMS', intent: 'primary', transactionId: wmsTransactionId })}
+                                    className="inline-flex h-8.5 items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 text-xs font-black text-white hover:bg-blue-700 shadow-xs transition"
+                                  >
+                                    <ShieldCheck size={13} /> Mở WMS
+                                  </button>
+                                )}
+                                {canConfirmPo && normalizedStatus === 'cancelled' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => batch ? void onRemoveFailedDeliveryBatch(batch) : void onRemoveFailedDeliveryGroup(printGroup)}
+                                    disabled={isDeletingBatch}
+                                    className="inline-flex h-8.5 items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 text-xs font-bold text-red-700 hover:bg-red-100 disabled:opacity-60 shadow-xs transition"
+                                  >
+                                    {isDeletingBatch ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />} Xóa đợt bị từ chối
+                                  </button>
+                                )}
+                              </div>
                             </div>
                           </div>
+
+                          {/* EXPANDED SECTION: INLINE EDITING OR DETAIL BREAKDOWN */}
+                          {isExpanded && (
+                            <div className="p-4 sm:p-5 space-y-4">
+                              {isEditingThisBatch && batch ? (
+                                <div className="space-y-3">
+                                  <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
+                                    <span className="text-xs font-black uppercase tracking-wider text-blue-600 dark:text-blue-400 flex items-center gap-1.5">
+                                      <Edit2 size={14} /> Chỉnh sửa {group.label}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => setEditingBatchId(null)}
+                                      className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
+                                      title="Đóng chỉnh sửa"
+                                    >
+                                      <X size={16} />
+                                    </button>
+                                  </div>
+                                  <PurchaseDeliveryBatchEditor
+                                    purchaseOrder={po}
+                                    actorUserId={user?.id || ''}
+                                    targetWarehouseId={(batch as any).targetWarehouseId || po.targetWarehouseId || ''}
+                                    editBatch={batch}
+                                    existingBatches={deliveryBatches}
+                                    onCancel={() => setEditingBatchId(null)}
+                                    onSaved={async () => {
+                                      setEditingBatchId(null);
+                                      if (onBatchSaved) {
+                                        await onBatchSaved(batch.id);
+                                      }
+                                    }}
+                                  />
+                                </div>
+                              ) : (
+                                <div className="space-y-3">
+                                  {/* Batch metadata cards */}
+                                  <div className="grid gap-2 text-xs sm:grid-cols-2 lg:grid-cols-4">
+                                    <div className="rounded-xl border border-slate-100 dark:border-slate-800 p-2.5 bg-slate-50/50">
+                                      <span className="block text-slate-400 font-bold text-[10px] uppercase">Ngày dự kiến giao</span>
+                                      <strong className="text-xs font-black text-slate-800 dark:text-slate-100">{formatDate(group.plannedDate)}</strong>
+                                    </div>
+                                    <div className="rounded-xl border border-slate-100 dark:border-slate-800 p-2.5 bg-slate-50/50">
+                                      <span className="block text-slate-400 font-bold text-[10px] uppercase">Kho nhận hàng</span>
+                                      <strong className="text-xs font-black text-slate-800 dark:text-slate-100">{group.targetWarehouse}</strong>
+                                    </div>
+                                    <div className="rounded-xl border border-slate-100 dark:border-slate-800 p-2.5 bg-slate-50/50">
+                                      <span className="block text-slate-400 font-bold text-[10px] uppercase">Thuế VAT ({group.vatRate}%)</span>
+                                      <strong className="text-xs font-black text-slate-800 dark:text-slate-100">{fmtMoney(group.vatAmount)} đ</strong>
+                                    </div>
+                                    <div className="rounded-xl border border-slate-100 dark:border-slate-800 p-2.5 bg-slate-50/50">
+                                      <span className="block text-slate-400 font-bold text-[10px] uppercase">Tổng tiền đợt</span>
+                                      <strong className="text-xs font-black text-emerald-700">{fmtMoney(group.totalAmountWithVat)} đ</strong>
+                                    </div>
+                                  </div>
+
+                                  {batch?.varianceReason && (
+                                    <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-2.5 text-xs font-bold text-amber-800">
+                                      <span className="block text-[10px] font-black uppercase text-amber-600">Lý do vượt nhu cầu</span>
+                                      {batch.varianceReason}
+                                    </div>
+                                  )}
+
+                                  {batch?.note && (
+                                    <div className="rounded-xl border border-slate-100 bg-slate-50/60 p-2.5 text-xs font-bold text-slate-700">
+                                      <span className="block text-[10px] font-black uppercase text-slate-400">Ghi chú đợt</span>
+                                      {batch.note}
+                                    </div>
+                                  )}
+
+                                  {batch?.approvalDecisionNote && (
+                                    <div className="rounded-xl border border-rose-200 bg-rose-50/70 p-2.5 text-xs font-bold text-rose-800">
+                                      <span className="block text-[10px] font-black uppercase text-rose-600">Ý kiến xét duyệt</span>
+                                      {batch.approvalDecisionNote}
+                                    </div>
+                                  )}
+
+                                  {/* Batch items table */}
+                                  <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
+                                    <table className="w-full text-left text-xs">
+                                      <thead className="bg-slate-50 text-slate-500 dark:bg-slate-800/80 dark:text-slate-300 text-[11px] font-black uppercase tracking-wide border-b border-slate-200 dark:border-slate-700">
+                                        <tr>
+                                          <th className="px-3 py-2.5">Tên vật tư</th>
+                                          <th className="px-3 py-2.5 text-right">SL đợt này</th>
+                                          <th className="px-3 py-2.5 text-right">SL quy đổi</th>
+                                          <th className="px-3 py-2.5 text-right">Đơn giá</th>
+                                          <th className="px-3 py-2.5 text-right">Thành tiền</th>
+                                          <th className="px-3 py-2.5 text-right">Đã nhận</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900">
+                                        {batch ? (
+                                          batch.lines.map((line, lIdx) => {
+                                            const sourceItem = po.items.find(i => (i.lineId || i.itemId) === line.purchaseOrderLineId || i.itemId === line.itemId);
+                                            const unitPrice = line.deliveryUnitPrice ?? sourceItem?.unitPrice ?? 0;
+                                            const lineTotal = Number(line.plannedQty || 0) * Number(unitPrice);
+                                            const unit = line.unit || sourceItem?.unit || '';
+                                            const stockUnit = line.stockUnit || sourceItem?.stockUnitSnapshot || unit;
+                                            const hasConversion = stockUnit && stockUnit !== unit;
+                                            return (
+                                              <tr key={line.id || lIdx} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40">
+                                                <td className="px-3 py-2.5">
+                                                  <div className="font-black text-slate-800 dark:text-slate-100">
+                                                    {sourceItem?.name || line.itemId}
+                                                  </div>
+                                                  {sourceItem?.sku && (
+                                                    <div className="font-mono text-[10px] text-slate-400">{sourceItem.sku}</div>
+                                                  )}
+                                                </td>
+                                                <td className="px-3 py-2.5 text-right font-black text-slate-800 dark:text-slate-100">
+                                                  {fmtQty(line.plannedQty)} <span className="text-[10px] font-semibold text-slate-400">{unit}</span>
+                                                </td>
+                                                <td className="px-3 py-2.5 text-right font-bold text-slate-600 dark:text-slate-300">
+                                                  {hasConversion && line.stockPlannedQty ? `${fmtQty(line.stockPlannedQty)} ${stockUnit}` : '—'}
+                                                </td>
+                                                <td className="px-3 py-2.5 text-right font-bold text-slate-700 dark:text-slate-300">
+                                                  {fmtUnitPrice(unitPrice)}
+                                                </td>
+                                                <td className="px-3 py-2.5 text-right font-black text-slate-900 dark:text-slate-100">
+                                                  {fmtMoney(lineTotal)} đ
+                                                </td>
+                                                <td className="px-3 py-2.5 text-right font-black text-emerald-700">
+                                                  {Number(line.acceptedStockQty || line.deliveredQty || 0) > 0 ? fmtQty(line.acceptedStockQty || line.deliveredQty || 0) : '0'}
+                                                </td>
+                                              </tr>
+                                            );
+                                          })
+                                        ) : (
+                                          printGroup.lines.map((line, lIdx) => (
+                                            <tr key={line.id || lIdx} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40">
+                                              <td className="px-3 py-2.5 font-black text-slate-800 dark:text-slate-100">
+                                                {line.itemId}
+                                              </td>
+                                              <td className="px-3 py-2.5 text-right font-black text-slate-800 dark:text-slate-100">
+                                                {fmtQty(line.issuedQty || 0)} <span className="text-[10px] font-semibold text-slate-400">{line.deliveryUnit || line.unit}</span>
+                                              </td>
+                                              <td className="px-3 py-2.5 text-right font-bold text-slate-400">—</td>
+                                              <td className="px-3 py-2.5 text-right font-bold text-slate-700 dark:text-slate-300">—</td>
+                                              <td className="px-3 py-2.5 text-right font-black text-slate-900 dark:text-slate-100">—</td>
+                                              <td className="px-3 py-2.5 text-right font-black text-emerald-700">
+                                                {fmtQty(line.receivedQty || 0)}
+                                              </td>
+                                            </tr>
+                                          ))
+                                        )}
+                                      </tbody>
+                                    </table>
+                                  </div>
+
+                                  {canEditPlannedBatch && (
+                                    <div className="flex justify-end pt-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => setEditingBatchId(batch.id)}
+                                        className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-3.5 py-2 text-xs font-black text-white hover:bg-slate-800 shadow-xs transition"
+                                      >
+                                        <Edit2 size={13} /> Sửa đợt mua này
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
                       );
                     })}
