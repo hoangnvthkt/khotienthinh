@@ -3,7 +3,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
-import { TransactionType, Transaction, TransactionStatus, TransactionItem, InventoryItem, Role, BusinessPartner, SupplierContract, PurchaseOrder, PurchaseOrderDeliveryBatch } from '../types';
+import { TransactionType, Transaction, TransactionStatus, TransactionItem, InventoryItem, Role, BusinessPartner, SupplierContract } from '../types';
 import {
   Plus, Trash2, ArrowRight, Save, Send, Clock,
   CheckCircle, XCircle, FileText, User, History,
@@ -15,7 +15,6 @@ import ItemSelectionModal from '../components/ItemSelectionModal';
 import WarningModal from '../components/WarningModal';
 import ConfirmTransferModal from '../components/ConfirmTransferModal';
 import TransactionDetailModal from '../components/TransactionDetailModal';
-import ReceivePurchaseOrderModal from '../components/ReceivePurchaseOrderModal';
 import MasterDataConfirmModal from '../components/MasterDataConfirmModal';
 import Pagination from '../components/Pagination';
 import SearchableSelect from '../components/common/SearchableSelect';
@@ -130,9 +129,6 @@ const Operations: React.FC = () => {
 
   const [showConfirmTransfer, setShowConfirmTransfer] = useState(false);
   const [viewingHistoryTx, setViewingHistoryTx] = useState<Transaction | null>(null);
-  const [receivingPo, setReceivingPo] = useState<PurchaseOrder | null>(null);
-  const [receivingDelivery, setReceivingDelivery] = useState<PurchaseOrderDeliveryBatch | null>(null);
-  const [receivingTransaction, setReceivingTransaction] = useState<Transaction | null>(null);
 
   async function openTransactionDetails(tx: Transaction) {
     if (tx.sourceType !== 'po_delivery_batch') {
@@ -153,10 +149,7 @@ const Operations: React.FC = () => {
         toast.warning('Sai kho nhận', 'Tài khoản của bạn không được phân công kho nhận của đợt giao này.');
         return;
       }
-      setViewingHistoryTx(null);
-      setReceivingPo(lookup.purchaseOrder);
-      setReceivingDelivery(lookup.deliveryBatch);
-      setReceivingTransaction(tx);
+      setViewingHistoryTx(tx);
     } catch (error) {
       logApiError('operations.openPurchaseDelivery', error);
       toast.error('Không thể mở phiếu PO', getApiErrorMessage(error, 'Không thể tải dữ liệu đợt giao.'));
@@ -899,31 +892,6 @@ const Operations: React.FC = () => {
         sourceWarehouse={warehouses.find(w => w.id === selectedWarehouseId)} targetWarehouse={warehouses.find(w => w.id === targetWarehouseId)}
         items={txItems.map(ti => ({ product: items.find(i => i.id === ti.itemId)!, quantity: ti.quantity }))}
         isLoading={submittingTx}
-      />
-
-      <ReceivePurchaseOrderModal
-        isOpen={!!receivingPo}
-        po={receivingPo}
-        deliveryBatch={receivingDelivery}
-        transaction={receivingTransaction}
-        onClose={() => {
-          setReceivingPo(null);
-          setReceivingDelivery(null);
-          setReceivingTransaction(null);
-        }}
-        onReceived={async (po) => {
-          setReceivingPo(po);
-          if (!receivingTransaction) return;
-          const [lookup, latestTransaction] = await Promise.all([
-            purchasePackageService.getDeliveryByWmsTransactionId(receivingTransaction.id),
-            purchasePackageService.getWmsTransactionById(receivingTransaction.id),
-          ]);
-          if (lookup) {
-            setReceivingPo(lookup.purchaseOrder);
-            setReceivingDelivery(lookup.deliveryBatch);
-          }
-          if (latestTransaction) setReceivingTransaction(latestTransaction);
-        }}
       />
 
       <TransactionDetailModal

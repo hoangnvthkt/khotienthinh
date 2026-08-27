@@ -8,12 +8,13 @@ import AddInventoryModal from '../components/AddInventoryModal';
 import InventoryDetailModal from '../components/InventoryDetailModal';
 import DeleteInventoryModal from '../components/DeleteInventoryModal';
 import ReceivePurchaseOrderModal from '../components/ReceivePurchaseOrderModal';
+import TransactionDetailModal from '../components/TransactionDetailModal';
 import ReceiveFulfillmentBatchModal from '../components/ReceiveFulfillmentBatchModal';
 import ExcelImportReviewModal from '../components/ExcelImportReviewModal';
 import Pagination from '../components/Pagination';
 import { usePagination } from '../hooks/usePagination';
 import { loadXlsx } from '../lib/loadXlsx';
-import { InventoryItem, Transaction, TransactionType, TransactionStatus, PurchaseOrder, PurchaseOrderDeliveryBatch, MaterialRequest, MaterialRequestFulfillmentBatch } from '../types';
+import { InventoryItem, Transaction, TransactionType, TransactionStatus, PurchaseOrder, MaterialRequest, MaterialRequestFulfillmentBatch } from '../types';
 import { usePermission } from '../hooks/usePermission';
 import { useModuleData } from '../hooks/useModuleData';
 import { matchesSearchQueryMultiple } from '../lib/searchUtils';
@@ -101,8 +102,7 @@ const Inventory: React.FC = () => {
   const [importPreview, setImportPreview] = useState<ExcelImportPreview<InventoryExcelRecord> | null>(null);
   const [deletingItem, setDeletingItem] = useState(false);
   const [receivingPo, setReceivingPo] = useState<PurchaseOrder | null>(null);
-  const [receivingDelivery, setReceivingDelivery] = useState<PurchaseOrderDeliveryBatch | null>(null);
-  const [receivingTransaction, setReceivingTransaction] = useState<Transaction | null>(null);
+  const [viewingPurchaseReceiptTx, setViewingPurchaseReceiptTx] = useState<Transaction | null>(null);
   const [receivingFulfillmentBatch, setReceivingFulfillmentBatch] = useState<MaterialRequestFulfillmentBatch | null>(null);
   const [receivingFulfillmentRequest, setReceivingFulfillmentRequest] = useState<MaterialRequest | null>(null);
   const [loadingQr, setLoadingQr] = useState(false);
@@ -194,9 +194,7 @@ const Inventory: React.FC = () => {
           }
           await refreshWmsRecords({ transactionIds: [transaction.id] });
         }
-        setReceivingPo(lookup.purchaseOrder);
-        setReceivingDelivery(lookup.deliveryBatch);
-        setReceivingTransaction(transaction);
+        setViewingPurchaseReceiptTx(transaction);
         return;
       }
 
@@ -231,8 +229,6 @@ const Inventory: React.FC = () => {
           return;
         }
         setReceivingPo(po);
-        setReceivingDelivery(null);
-        setReceivingTransaction(null);
       }
     } catch (err: any) {
       logApiError('inventory.loadDocumentQr', err);
@@ -703,26 +699,14 @@ const Inventory: React.FC = () => {
       <ReceivePurchaseOrderModal
         isOpen={!!receivingPo}
         po={receivingPo}
-        deliveryBatch={receivingDelivery}
-        transaction={receivingTransaction}
-        onClose={() => {
-          setReceivingPo(null);
-          setReceivingDelivery(null);
-          setReceivingTransaction(null);
-        }}
-        onReceived={async (po) => {
-          setReceivingPo(po);
-          if (!receivingTransaction) return;
-          const [lookup, latestTransaction] = await Promise.all([
-            purchasePackageService.getDeliveryByWmsTransactionId(receivingTransaction.id),
-            purchasePackageService.getWmsTransactionById(receivingTransaction.id),
-          ]);
-          if (lookup) {
-            setReceivingPo(lookup.purchaseOrder);
-            setReceivingDelivery(lookup.deliveryBatch);
-          }
-          if (latestTransaction) setReceivingTransaction(latestTransaction);
-        }}
+        onClose={() => setReceivingPo(null)}
+        onReceived={setReceivingPo}
+      />
+      <TransactionDetailModal
+        isOpen={!!viewingPurchaseReceiptTx}
+        transaction={viewingPurchaseReceiptTx}
+        onClose={() => setViewingPurchaseReceiptTx(null)}
+        onUpdated={setViewingPurchaseReceiptTx}
       />
       <ReceiveFulfillmentBatchModal
         isOpen={!!receivingFulfillmentBatch}

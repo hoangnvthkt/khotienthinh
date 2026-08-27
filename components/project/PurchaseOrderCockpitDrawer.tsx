@@ -48,7 +48,6 @@ import {
 } from '../../lib/materialUnitConversion';
 import { getPurchaseOrderDisplayLineAmount } from '../../lib/purchaseOrderAmount';
 import { getPurchaseOrderLineDemandQty } from '../../lib/purchaseOrderDemand';
-import { getPurchasePackageSummary } from '../../lib/purchasePackageDomain';
 import { getPurchaseOrderScheduleLineUnitPrice } from '../../lib/purchaseOrderSchedulePricing';
 import type {
   PurchaseOrderReceiptStats,
@@ -340,7 +339,7 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
   const payableStatus = supplierPayableDocuments[0]?.status || 'none';
   const payableView = payableStatusView(payableStatus);
   const isPackageV2 = (po.purchaseMode === 'single' || po.purchaseMode === 'multiple') && po.sourceMode === 'from_request';
-  const packageSummary = useMemo(() => getPurchasePackageSummary(po, deliveryBatches), [deliveryBatches, po]);
+  const isMultipleDeliveryPackage = isPackageV2 && po.purchaseMode === 'multiple';
   const practicalQuantitySummary = useMemo(() => {
     const demandQty = po.items.reduce((sum, item) => sum + getPurchaseOrderLineDemandQty(
       po,
@@ -675,14 +674,16 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
 
             {/* Quick Actions & Close */}
             <div className="flex shrink-0 items-center justify-between gap-3 lg:justify-end">
-              <div className="text-right bg-emerald-50/60 dark:bg-emerald-950/30 px-3.5 py-1.5 rounded-xl border border-emerald-200/60 dark:border-emerald-900/40">
-                <div className="text-[10px] font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
-                  {isPackageV2 ? 'Giá trị chủ trương gồm VAT' : 'Tổng thanh toán gồm VAT'}
+              {!isMultipleDeliveryPackage && (
+                <div className="text-right bg-emerald-50/60 dark:bg-emerald-950/30 px-3.5 py-1.5 rounded-xl border border-emerald-200/60 dark:border-emerald-900/40">
+                  <div className="text-[10px] font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+                    Tổng thanh toán gồm VAT
+                  </div>
+                  <div className="text-xl sm:text-2xl font-black text-emerald-700 dark:text-emerald-300">
+                    {fmtMoney(paymentTotal)} đ
+                  </div>
                 </div>
-                <div className="text-xl sm:text-2xl font-black text-emerald-700 dark:text-emerald-300">
-                  {fmtMoney(isPackageV2 ? packageSummary.referenceGross : paymentTotal)} đ
-                </div>
-              </div>
+              )}
 
               <div className="relative">
                 <button
@@ -855,10 +856,10 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
 
                   <div className="p-3 rounded-xl border border-emerald-200 bg-emerald-50/50 dark:border-emerald-900/50 dark:bg-emerald-950/30 shadow-xs">
                     <span className="block text-[10px] font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
-                      {isPackageV2 ? 'Tổng tham chiếu gồm VAT' : 'Tổng thanh toán gồm VAT'}
+                      {isMultipleDeliveryPackage ? 'Tổng giá trị các đợt gồm VAT' : 'Tổng thanh toán gồm VAT'}
                     </span>
                     <strong className="text-lg sm:text-xl font-black text-emerald-700 dark:text-emerald-300 mt-0.5 block">
-                      {fmtMoney(isPackageV2 ? packageSummary.referenceGross : paymentTotal)} đ
+                      {fmtMoney(paymentTotal)} đ
                     </strong>
                   </div>
 

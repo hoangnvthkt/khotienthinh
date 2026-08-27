@@ -13,7 +13,7 @@ export const isRequestPackagePurchaseOrder = (
   po?: Pick<PurchaseOrder, 'sourceMode' | 'purchaseMode' | 'referenceGrossAmount'> | null,
 ) =>
   po?.sourceMode === 'from_request'
-  && (po.purchaseMode === 'single' || po.purchaseMode === 'multiple')
+  && po.purchaseMode === 'single'
   && numberValue(po.referenceGrossAmount) > 0;
 
 export const getPurchaseOrderScheduleLineUnitPrice = ({

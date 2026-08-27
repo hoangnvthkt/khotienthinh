@@ -9,7 +9,7 @@ const toNumber = (value: unknown) => {
 
 const isPackageV2RequestPo = (po: PurchaseOrder) =>
   po.sourceMode === 'from_request'
-  && (po.purchaseMode === 'single' || po.purchaseMode === 'multiple')
+  && po.purchaseMode === 'single'
   && toNumber(po.referenceGrossAmount) > 0;
 
 const getPackageReferencePrintAmount = (po: PurchaseOrder) => {

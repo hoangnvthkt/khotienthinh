@@ -33,9 +33,10 @@ describe('ReceivePurchaseOrderModal practical flow', () => {
     expect(qualityBranch).not.toContain('onClose();');
   });
 
-  it('routes PO delivery WMS vouchers from both inventory screens through this modal', () => {
-    expect(inventorySource).toContain('<ReceivePurchaseOrderModal');
-    expect(operationsSource).toContain('<ReceivePurchaseOrderModal');
-    expect(operationsSource).toContain('getDeliveryByWmsTransactionId');
+  it('routes existing PO delivery WMS vouchers through the shared transaction detail', () => {
+    expect(operationsSource).not.toContain('<ReceivePurchaseOrderModal');
+    expect(operationsSource).toContain('setViewingHistoryTx(tx)');
+    expect(inventorySource).toContain('setViewingPurchaseReceiptTx(transaction)');
+    expect(inventorySource).toContain('<TransactionDetailModal');
   });
 });

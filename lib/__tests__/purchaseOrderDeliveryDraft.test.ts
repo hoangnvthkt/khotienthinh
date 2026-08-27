@@ -445,4 +445,13 @@ describe('purchaseOrderDeliveryDraft', () => {
       existingDeliveryUnitPrice: 2_567_000,
     })).toBe(2_783_932.347);
   });
+
+  it('keeps the batch price for a multi-delivery request PO when the reference price is blank', () => {
+    expect(getPoDeliveryScheduleUnitPriceForSave({
+      item: { ...poItem, unitPrice: 0 },
+      sourceMode: 'from_request',
+      purchaseMode: 'multiple',
+      existingDeliveryUnitPrice: 1_502,
+    })).toBe(1_502);
+  });
 });

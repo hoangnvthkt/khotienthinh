@@ -12,6 +12,10 @@ import { Project, CustomerContract, SubcontractorContract, SupplierContract } fr
 import { projectMasterService } from '../../lib/projectMasterService';
 import { customerContractService, subcontractorContractService, supplierContractService } from '../../lib/hdService';
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
+import {
+  contractMatchesProjectFilter,
+  filterContractOverviewGroups,
+} from '../../lib/projectContractAggregation';
 
 interface ContractPaymentSummary {
   totalValue: number;
@@ -44,6 +48,7 @@ const ContractOverview: React.FC = () => {
   
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [projectFilter, setProjectFilter] = useState('all');
   const [filterProjectWithNoContracts, setFilterProjectWithNoContracts] = useState(true);
   const [expandedProjects, setExpandedProjects] = useState<Record<string, boolean>>({});
 
@@ -228,19 +233,19 @@ const ContractOverview: React.FC = () => {
     let costVal = 0;
     let costPaid = 0;
 
-    customerContracts.forEach(c => {
+    customerContracts.filter(c => contractMatchesProjectFilter(c.projectId, projectFilter)).forEach(c => {
       const sum = getContractSummary(c.id, c.value);
       revenueVal += sum.totalValue;
       revenuePaid += sum.totalPaid;
     });
 
-    subcontractorContracts.forEach(c => {
+    subcontractorContracts.filter(c => contractMatchesProjectFilter(c.projectId, projectFilter)).forEach(c => {
       const sum = getContractSummary(c.id, c.value);
       costVal += sum.totalValue;
       costPaid += sum.totalPaid;
     });
 
-    supplierContracts.forEach(c => {
+    supplierContracts.filter(c => contractMatchesProjectFilter(c.projectId, projectFilter)).forEach(c => {
       const sum = getContractSummary(c.id, c.value);
       costVal += sum.totalValue;
       costPaid += sum.totalPaid;
@@ -264,11 +269,11 @@ const ContractOverview: React.FC = () => {
       marginPercent,
       netMarginValue: revenueVal - costVal
     };
-  }, [customerContracts, subcontractorContracts, supplierContracts, contractPaymentMap]);
+  }, [customerContracts, subcontractorContracts, supplierContracts, contractPaymentMap, projectFilter]);
 
   // Filter and Search results
   const filteredGroups = useMemo(() => {
-    return projectGroups.filter(g => {
+    return filterContractOverviewGroups(projectGroups, projectFilter).filter(g => {
       const matchSearch = !searchTerm.trim() ||
         matchesSearchQueryMultiple([
           g.project.name,
@@ -282,7 +287,7 @@ const ContractOverview: React.FC = () => {
 
       return matchSearch && matchNoContractsFilter;
     });
-  }, [projectGroups, searchTerm, filterProjectWithNoContracts]);
+  }, [projectGroups, projectFilter, searchTerm, filterProjectWithNoContracts]);
 
   const toggleExpandProject = (id: string) => {
     setExpandedProjects(prev => ({ ...prev, [id]: !prev[id] }));
@@ -410,6 +415,22 @@ const ContractOverview: React.FC = () => {
 
       {/* ─── Search and Controls ─── */}
       <div className="flex flex-wrap items-center justify-between gap-4 bg-white dark:bg-slate-900 p-4 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm">
+        <select
+          aria-label="Lọc hợp đồng theo dự án"
+          value={projectFilter}
+          onChange={event => setProjectFilter(event.target.value)}
+          className="min-w-[240px] px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-850 text-sm font-bold text-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/30"
+        >
+          <option value="all">Tất cả dự án</option>
+          {projectGroups.map(group => (
+            <option key={group.project.id} value={group.project.id}>
+              {group.project.id === 'unassigned'
+                ? 'Chưa phân dự án'
+                : `${group.project.code} - ${group.project.name}`}
+            </option>
+          ))}
+        </select>
+
         <div className="relative flex-1 min-w-[280px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
           <input

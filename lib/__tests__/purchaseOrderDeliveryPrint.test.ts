@@ -110,4 +110,48 @@ describe('purchaseOrderDeliveryPrint', () => {
       },
     ]);
   });
+
+  it('uses each delivery batch price for a multi-delivery PO even when the master reference price exists', () => {
+    const multiDeliveryPo: PurchaseOrder = {
+      ...packagePo,
+      purchaseMode: 'multiple',
+      items: [{
+        lineId: 'd16',
+        itemId: 'item-d16',
+        sku: 'VT0000828',
+        name: 'Thep XD D16',
+        unit: 'Kg',
+        qty: 21_942.882,
+        unitPrice: 0,
+      }],
+      referenceGrossAmount: 330_723_118,
+    };
+
+    const [batch] = buildPurchaseOrderApprovalDeliveryBatches(multiDeliveryPo, [{
+      label: 'Đợt 1',
+      plannedDate: '2026-08-27',
+      lines: [{
+        poLineId: 'd16',
+        itemId: 'item-d16',
+        issuedQty: 21_000,
+        deliveryUnitPrice: 1_502,
+        deliveryUnit: 'Kg',
+      }],
+    }]);
+
+    expect(batch.lines).toEqual([{
+      purchaseOrderLineId: 'd16',
+      plannedQty: 21_000,
+      unitPrice: 1_502,
+    }]);
+    expect(getPurchaseOrderDeliveryPrintGroupSummary(multiDeliveryPo, {
+      lines: [{
+        poLineId: 'd16',
+        itemId: 'item-d16',
+        issuedQty: 21_000,
+        deliveryUnitPrice: 1_502,
+        deliveryUnit: 'Kg',
+      }],
+    })).toMatchObject({ totalAmount: 31_542_000 });
+  });
 });

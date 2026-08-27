@@ -316,6 +316,45 @@ describe('purchaseOrderAmount', () => {
     expect(printLine.unitPrice).toBeCloseTo(2_783_932.34672, 5);
   });
 
+  it('displays and prints a multi-delivery PO from batch prices instead of the reference amount', () => {
+    const multiDeliveryPo: PurchaseOrder = {
+      ...po,
+      id: 'po-423',
+      poNumber: 'PO-423',
+      purchaseMode: 'multiple',
+      sourceMode: 'from_request',
+      items: [{
+        lineId: 'd16',
+        itemId: 'item-d16',
+        sku: 'VT0000828',
+        name: 'Thep XD D16',
+        unit: 'Kg',
+        qty: 21_942.882,
+        unitPrice: 0,
+      }],
+      totalAmount: 0,
+      referenceGrossAmount: 330_723_118,
+    };
+    const schedule = [
+      {
+        ...deliveryBatch('batch-423', 21_000, 1_502),
+        purchaseOrderId: multiDeliveryPo.id,
+        lines: [{
+          id: 'batch-423-d16',
+          deliveryBatchId: 'batch-423',
+          purchaseOrderId: multiDeliveryPo.id,
+          purchaseOrderLineId: 'd16',
+          itemId: 'item-d16',
+          plannedQty: 21_000,
+          deliveryUnitPrice: 1_502,
+        }],
+      },
+    ];
+
+    expect(getPurchaseOrderDisplayAmount(multiDeliveryPo, schedule)).toBe(31_542_000);
+    expect(getPurchaseOrderPrintAmount(multiDeliveryPo, schedule)).toBe(31_542_000);
+  });
+
   it('shows each request package item at the edited PO price when schedule line prices are zero', () => {
     const packagePo: PurchaseOrder = {
       ...po,

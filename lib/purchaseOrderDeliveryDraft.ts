@@ -107,7 +107,7 @@ export const getPoDeliveryScheduleUnitPriceForSave = ({
   purchaseMode?: PurchaseMode | null;
   existingDeliveryUnitPrice?: number | null;
 }) => {
-  if (sourceMode === 'from_request' && (purchaseMode === 'single' || purchaseMode === 'multiple')) {
+  if (sourceMode === 'from_request' && purchaseMode === 'single') {
     return toNumber(item.unitPrice);
   }
 

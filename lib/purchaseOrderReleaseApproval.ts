@@ -58,6 +58,25 @@ export type PurchaseOrderSupplementalDraft = {
 
 export type PurchaseOrderVarianceSeverity = 'none' | 'warning';
 
+export type PurchaseOrderScheduleValueComparison = {
+  referenceAmount: number;
+  scheduledAmount: number;
+  varianceAmount: number;
+};
+
+export const getPurchaseOrderScheduleValueComparison = (
+  referenceAmount: number,
+  scheduledAmount: number,
+): PurchaseOrderScheduleValueComparison => {
+  const normalizedReferenceAmount = money(referenceAmount);
+  const normalizedScheduledAmount = money(scheduledAmount);
+  return {
+    referenceAmount: normalizedReferenceAmount,
+    scheduledAmount: normalizedScheduledAmount,
+    varianceAmount: normalizedScheduledAmount - normalizedReferenceAmount,
+  };
+};
+
 export const getPurchaseOrderApprovedTotalAmount = (po: PurchaseOrder) =>
   money(po.approvedTotalAmount ?? po.totalAmount ?? 0);
 

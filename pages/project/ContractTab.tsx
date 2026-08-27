@@ -5,9 +5,16 @@ import {
     Plus, Edit2, Trash2, X, Save, FileText,
     CheckCircle2, AlertCircle, Clock, Ban, Package, CreditCard, List, FilePlus2, ClipboardCheck, DollarSign, ShieldCheck, TrendingUp
 } from 'lucide-react';
-import { CustomerContract, SubcontractorContract, HdContractStatus, ContractItemType } from '../../types';
-import { customerContractService, subcontractorContractService } from '../../lib/hdService';
+import { CustomerContract, SubcontractorContract, SupplierContract, HdContractStatus } from '../../types';
+import { customerContractService, subcontractorContractService, supplierContractService } from '../../lib/hdService';
 import { projectDocumentDependencyService } from '../../lib/projectDocumentDependencyService';
+import {
+    buildProjectContractViews,
+    filterProjectContractViews,
+    summarizeProjectContracts,
+    type ProjectContractType,
+    type ProjectContractTypeFilter,
+} from '../../lib/projectContractAggregation';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import ContractItemTable from '../../components/project/ContractItemTable';
@@ -32,20 +39,6 @@ const fmt = (n: number) => {
     return n.toLocaleString('vi-VN') + ' đ';
 };
 
-// Hợp nhất CustomerContract + SubcontractorContract thành view thống nhất
-interface ContractView {
-    id: string;
-    code: string;
-    partyName: string;
-    type: 'customer' | 'subcontractor';
-    value: number;
-    signedDate?: string;
-    effectiveDate?: string;
-    endDate?: string;
-    status: HdContractStatus;
-    note?: string;
-}
-
 const STATUS_CFG: Record<HdContractStatus, { label: string; color: string; bg: string; icon: React.ReactNode }> = {
     draft:       { label: 'Nháp',          color: 'text-slate-600',  bg: 'bg-slate-50 border-slate-200',   icon: <Clock size={12} /> },
     negotiating: { label: 'Đàm phán',      color: 'text-amber-600',  bg: 'bg-amber-50 border-amber-200',   icon: <AlertCircle size={12} /> },
@@ -57,9 +50,10 @@ const STATUS_CFG: Record<HdContractStatus, { label: string; color: string; bg: s
 };
 
 const TYPE_CFG = {
-    customer:      { label: 'HĐ Khách hàng', icon: '📋', color: 'text-blue-600 bg-blue-50 border-blue-200' },
+    customer:      { label: 'HĐ Nhận thầu', icon: '📋', color: 'text-blue-600 bg-blue-50 border-blue-200' },
+    supplier:      { label: 'HĐ Nhà cung cấp', icon: '📦', color: 'text-indigo-600 bg-indigo-50 border-indigo-200' },
     subcontractor: { label: 'Thầu phụ',       icon: '🏗️', color: 'text-orange-600 bg-orange-50 border-orange-200' },
-};
+} satisfies Record<ProjectContractType, { label: string; icon: string; color: string }>;
 
 const ContractTab: React.FC<ContractTabProps> = ({ constructionSiteId, projectId, canManageTab = true }) => {
     const toast = useToast();
@@ -81,17 +75,20 @@ const ContractTab: React.FC<ContractTabProps> = ({ constructionSiteId, projectId
     const effectiveId = projectId || constructionSiteId || '';
     const hasSiteLink = Boolean(constructionSiteId);
     const [customerContracts, setCustomerContracts] = useState<CustomerContract[]>([]);
+    const [supplierContracts, setSupplierContracts] = useState<SupplierContract[]>([]);
     const [subContracts, setSubContracts] = useState<SubcontractorContract[]>([]);
     const [loading, setLoading] = useState(true);
 
     const loadContracts = async () => {
         setLoading(true);
         try {
-            const [cust, sub] = await Promise.all([
+            const [cust, supplier, sub] = await Promise.all([
                 customerContractService.listBySite(effectiveId, constructionSiteId || null),
+                supplierContractService.listBySite(effectiveId, constructionSiteId || null),
                 subcontractorContractService.listBySite(effectiveId, constructionSiteId || null),
             ]);
             setCustomerContracts(cust);
+            setSupplierContracts(supplier);
             setSubContracts(sub);
         } catch (e) { console.error(e); }
         finally { setLoading(false); }
@@ -111,40 +108,22 @@ const ContractTab: React.FC<ContractTabProps> = ({ constructionSiteId, projectId
         return false;
     };
 
-    // Unified view
-    const contracts: ContractView[] = useMemo(() => [
-        ...customerContracts.map(c => ({
-            id: c.id, code: c.code, partyName: c.customerName,
-            type: 'customer' as const, value: c.value,
-            signedDate: c.signedDate, effectiveDate: c.effectiveDate,
-            endDate: c.endDate, status: c.status, note: c.note,
-        })),
-        ...subContracts.map(c => ({
-            id: c.id, code: c.code, partyName: c.subcontractorName,
-            type: 'subcontractor' as const, value: c.value,
-            signedDate: c.signedDate, effectiveDate: c.effectiveDate,
-            endDate: c.completionDate, status: c.status, note: c.note,
-        })),
-    ].sort((a, b) => (b.signedDate || '').localeCompare(a.signedDate || '')), [customerContracts, subContracts]);
+    const contracts = useMemo(() => buildProjectContractViews({
+        customerContracts,
+        supplierContracts,
+        subcontractorContracts: subContracts,
+    }), [customerContracts, supplierContracts, subContracts]);
 
-    const [filterType, setFilterType] = useState<'all' | 'customer' | 'subcontractor'>('all');
+    const [filterType, setFilterType] = useState<ProjectContractTypeFilter>('all');
     const [expandedId, setExpandedId] = useState<string | null>(null);
     const [activeSubTab, setActiveSubTab] = useState<'info' | 'pipeline' | 'boq' | 'variation' | 'acceptance' | 'payment' | 'advance' | 'retention'>('pipeline');
 
     useEffect(() => {
         if (targetContractId) setExpandedId(targetContractId);
     }, [targetContractId]);
-    const filtered = useMemo(() => {
-        if (filterType === 'all') return contracts;
-        return contracts.filter(c => c.type === filterType);
-    }, [contracts, filterType]);
+    const filtered = useMemo(() => filterProjectContractViews(contracts, filterType), [contracts, filterType]);
 
-    const stats = useMemo(() => ({
-        total: contracts.length,
-        custValue: customerContracts.reduce((s, c) => s + c.value, 0),
-        subValue: subContracts.reduce((s, c) => s + c.value, 0),
-        active: contracts.filter(c => c.status === 'active' || c.status === 'signed').length,
-    }), [contracts, customerContracts, subContracts]);
+    const stats = useMemo(() => summarizeProjectContracts(contracts), [contracts]);
 
     const handleDelete = async (id: string, type: 'customer' | 'subcontractor') => {
         if (!ensureCanManage('xoá hợp đồng khỏi dự án')) return;
@@ -186,18 +165,16 @@ const ContractTab: React.FC<ContractTabProps> = ({ constructionSiteId, projectId
                     <div className="text-[10px] text-emerald-500 font-bold mt-1">{stats.active} hiệu lực</div>
                 </div>
                 <div className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-100 dark:border-slate-700 shadow-sm">
-                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">📋 HĐ Khách hàng</div>
-                    <div className="text-xl font-black text-blue-600">{fmt(stats.custValue)}</div>
+                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">📋 HĐ Nhận thầu</div>
+                    <div className="text-xl font-black text-blue-600">{fmt(stats.customerValue)}</div>
                 </div>
                 <div className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-100 dark:border-slate-700 shadow-sm">
-                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">🏗️ Thầu phụ</div>
-                    <div className="text-xl font-black text-orange-600">{fmt(stats.subValue)}</div>
+                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">📦 HĐ Nhà cung cấp</div>
+                    <div className="text-xl font-black text-indigo-600">{fmt(stats.supplierValue)}</div>
                 </div>
                 <div className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-100 dark:border-slate-700 shadow-sm">
-                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Chênh lệch</div>
-                    <div className={`text-xl font-black ${stats.custValue - stats.subValue >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                        {fmt(stats.custValue - stats.subValue)}
-                    </div>
+                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">🏗️ HĐ Thầu phụ</div>
+                    <div className="text-xl font-black text-orange-600">{fmt(stats.subcontractorValue)}</div>
                 </div>
             </div>
 
@@ -208,15 +185,16 @@ const ContractTab: React.FC<ContractTabProps> = ({ constructionSiteId, projectId
                         <FileText size={16} className="text-blue-500" /> Danh sách hợp đồng
                     </h3>
                     <div className="flex items-center gap-2">
-                        <select value={filterType} onChange={e => setFilterType(e.target.value as any)}
+                        <select value={filterType} onChange={e => setFilterType(e.target.value as ProjectContractTypeFilter)}
                             className="text-xs font-bold text-slate-600 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 outline-none">
                             <option value="all">Tất cả</option>
-                            <option value="customer">📋 HĐ Khách hàng</option>
+                            <option value="customer">📋 HĐ Nhận thầu</option>
+                            <option value="supplier">📦 HĐ Nhà cung cấp</option>
                             <option value="subcontractor">🏗️ Thầu phụ</option>
                         </select>
-                        <a href="#/hd/customer"
+                        <a href="#/hd/overview"
                             className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-blue-600 bg-blue-50 border border-blue-200 hover:bg-blue-100 transition-all">
-                            <Plus size={12} /> Thêm HĐ
+                            <Plus size={12} /> Module HĐ
                         </a>
                     </div>
                 </div>
@@ -237,7 +215,9 @@ const ContractTab: React.FC<ContractTabProps> = ({ constructionSiteId, projectId
                             const isExpanded = expandedId === c.id;
                             const sourceContract = c.type === 'customer'
                                 ? customerContracts.find(item => item.id === c.id)
-                                : subContracts.find(item => item.id === c.id);
+                                : c.type === 'supplier'
+                                    ? supplierContracts.find(item => item.id === c.id)
+                                    : subContracts.find(item => item.id === c.id);
                             return (
                                 <div key={c.id}>
                                     <div className="flex items-center justify-between px-5 py-3.5 hover:bg-slate-50/50 dark:hover:bg-slate-700/50 transition-colors group cursor-pointer"
@@ -259,10 +239,13 @@ const ContractTab: React.FC<ContractTabProps> = ({ constructionSiteId, projectId
                                                 <div className="text-sm font-black text-slate-800 dark:text-white">{fmt(c.value)}</div>
                                                 <div className="text-[10px] text-slate-400">{c.signedDate ? new Date(c.signedDate).toLocaleDateString('vi-VN') : '—'}</div>
                                             </div>
-                                            {canManageTab && (
+                                            {canManageTab && c.type !== 'supplier' && (
                                                 <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                                     <button
-                                                        onClick={e => { e.stopPropagation(); handleDelete(c.id, c.type); }}
+                                                        onClick={e => {
+                                                            e.stopPropagation();
+                                                            handleDelete(c.id, c.type === 'customer' ? 'customer' : 'subcontractor');
+                                                        }}
                                                         className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 hover:text-red-500 hover:bg-red-50">
                                                         <Trash2 size={13} />
                                                     </button>
@@ -273,13 +256,39 @@ const ContractTab: React.FC<ContractTabProps> = ({ constructionSiteId, projectId
                                     {isExpanded && (
                                         <div className="px-5 py-4 bg-slate-50/50 dark:bg-slate-700/30 border-t border-slate-100 dark:border-slate-700">
                                             {sourceContract ? (
-                                                <ContractWorkspace
-                                                    contract={sourceContract}
-                                                    contractType={c.type as ContractItemType}
-                                                    embedded
-                                                    canManageTab={canManageTab}
-                                                    initialTab={targetContractId === c.id && targetWorkspaceTab ? targetWorkspaceTab : undefined}
-                                                />
+                                                c.type === 'supplier' ? (
+                                                    <div className="rounded-2xl border border-indigo-100 bg-white p-5 dark:border-indigo-900/50 dark:bg-slate-900">
+                                                        <div className="flex flex-wrap items-start justify-between gap-4">
+                                                            <div className="space-y-2">
+                                                                <div>
+                                                                    <div className="text-xs font-bold uppercase tracking-wider text-indigo-500">Hợp đồng nhà cung cấp</div>
+                                                                    <div className="mt-1 text-base font-black text-slate-800 dark:text-white">{c.name}</div>
+                                                                    <div className="text-sm text-slate-500 dark:text-slate-400">{c.partyName}</div>
+                                                                </div>
+                                                                <div className="flex flex-wrap gap-x-6 gap-y-2 text-xs text-slate-500 dark:text-slate-400">
+                                                                    <span>Hiệu lực: <strong className="text-slate-700 dark:text-slate-200">{c.effectiveDate ? new Date(c.effectiveDate).toLocaleDateString('vi-VN') : '—'}</strong></span>
+                                                                    <span>Hết hạn: <strong className="text-slate-700 dark:text-slate-200">{c.endDate ? new Date(c.endDate).toLocaleDateString('vi-VN') : '—'}</strong></span>
+                                                                    <span>Giá trị: <strong className="text-indigo-600">{fmt(c.value)}</strong></span>
+                                                                </div>
+                                                                {c.note && <p className="max-w-3xl text-xs text-slate-500 dark:text-slate-400">{c.note}</p>}
+                                                            </div>
+                                                            <a
+                                                                href={`#${c.sourcePath}`}
+                                                                className="rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2 text-xs font-bold text-indigo-700 transition-colors hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-950/30 dark:text-indigo-300"
+                                                            >
+                                                                Mở hồ sơ HĐ NCC
+                                                            </a>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <ContractWorkspace
+                                                        contract={sourceContract as CustomerContract | SubcontractorContract}
+                                                        contractType={c.type}
+                                                        embedded
+                                                        canManageTab={canManageTab}
+                                                        initialTab={targetContractId === c.id && targetWorkspaceTab ? targetWorkspaceTab : undefined}
+                                                    />
+                                                )
                                             ) : (
                                                 <div className="py-6 text-center text-xs font-bold text-slate-400">Không tìm thấy dữ liệu hợp đồng nguồn.</div>
                                             )}

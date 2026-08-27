@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { PurchaseOrder, PurchaseOrderDeliveryBatch } from '../../types';
 import {
   applyPurchaseOrderSupplementalState,
+  getPurchaseOrderScheduleValueComparison,
   getVarianceSeverity,
   getPurchaseOrderReleaseSummary,
   getPurchaseOrderScheduleQuantityBlockReason,
@@ -58,6 +59,15 @@ const batch = (
 });
 
 describe('purchaseOrderReleaseApproval', () => {
+  it('compares practical delivery values with a reference without approval semantics', () => {
+    expect(getPurchaseOrderScheduleValueComparison(330_723_118, 330_725_060)).toEqual({
+      referenceAmount: 330_723_118,
+      scheduledAmount: 330_725_060,
+      varianceAmount: 1_942,
+    });
+    expect(getPurchaseOrderScheduleValueComparison(100_000, 92_000).varianceAmount).toBe(-8_000);
+  });
+
   it('tracks released and remaining quantities under a master PO', () => {
     const summary = getPurchaseOrderReleaseSummary(makePo(), [
       batch('batch-1', 1, 300, 100),
