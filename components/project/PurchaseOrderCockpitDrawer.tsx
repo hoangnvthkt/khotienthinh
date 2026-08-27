@@ -127,7 +127,7 @@ const PO_DETAIL_TABS: Array<{ key: DetailTabKey; label: string; icon: React.Reac
   { key: 'overview', label: 'Tổng quan', icon: <ShieldCheck size={14} />, targetId: 'po-section-overview' },
 ];
 
-{/* role="tab" */}
+{/* role="tab" */ }
 
 const fmtMoney = (n: number) => Number(n || 0).toLocaleString('vi-VN', { maximumFractionDigits: 0 });
 const fmtUnitPrice = (n: number) => Number(n || 0).toLocaleString('vi-VN', { maximumFractionDigits: 3 });
@@ -312,16 +312,16 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
 
     const u = (users || []).find(
       user => (user.id && user.id === clean) ||
-              (user.name && user.name.toLowerCase() === clean.toLowerCase()) ||
-              (user.email && user.email.toLowerCase() === clean.toLowerCase()) ||
-              (user.username && user.username.toLowerCase() === clean.toLowerCase())
+        (user.name && user.name.toLowerCase() === clean.toLowerCase()) ||
+        (user.email && user.email.toLowerCase() === clean.toLowerCase()) ||
+        (user.username && user.username.toLowerCase() === clean.toLowerCase())
     );
 
     const emp = (employees || []).find(
       e => (u?.id && e.userId && e.userId === u.id) ||
-           (e.id && e.id === clean) ||
-           (e.fullName && e.fullName.toLowerCase() === clean.toLowerCase()) ||
-           (e.email && e.email.toLowerCase() === clean.toLowerCase())
+        (e.id && e.id === clean) ||
+        (e.fullName && e.fullName.toLowerCase() === clean.toLowerCase()) ||
+        (e.email && e.email.toLowerCase() === clean.toLowerCase())
     );
 
     if (!u && !emp) return null;
@@ -511,13 +511,13 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
       {
         key: 'receipt',
         stepNo: 4,
-        title: 'SL / CL (KCS)',
+        title: 'Kiểm nhận SL/CL',
         done: hasReceivedDelivery,
         current: hasWmsPending || po.status === 'partial',
         user: null,
         icon: <ShieldCheck size={15} className="text-amber-600 dark:text-amber-400" />,
-        mainLabel: hasReceivedDelivery ? 'Đã nhận hàng' : hasWmsPending ? 'Chờ kho duyệt' : 'Kiểm nhận KCS',
-        roleLabel: 'Kiểm nhận & KCS',
+        mainLabel: hasReceivedDelivery ? 'Đã nhận hàng' : hasWmsPending ? 'Chờ kho duyệt' : 'Kiểm nhận SL/CL',
+        roleLabel: 'Kiểm nhận',
         dateLabel: `Nhận ${fmtQty(receiptStats.receivedQty)}/${fmtQty(receiptStats.orderedQty)}`,
         statusBadge: hasReceivedDelivery ? 'Đã nhận hàng' : hasWmsPending ? 'Chờ kho duyệt' : 'Chờ giao',
         tone: hasReceivedDelivery ? 'emerald' : hasWmsPending ? 'amber' : 'slate',
@@ -780,11 +780,10 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
                               className={isCurrent ? 'ring-2 ring-teal-500 ring-offset-1' : ''}
                             />
                           ) : (
-                            <div className={`h-8 w-8 rounded-xl flex items-center justify-center shrink-0 ${
-                              isDone ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300' :
+                            <div className={`h-8 w-8 rounded-xl flex items-center justify-center shrink-0 ${isDone ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300' :
                               isCurrent ? 'bg-teal-100 text-teal-700 dark:bg-teal-950 dark:text-teal-300' :
-                              'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
-                            }`}>
+                                'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
+                              }`}>
                               {step.icon || <UserIcon size={14} />}
                             </div>
                           )}
@@ -816,7 +815,7 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
                 <section className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900">
                   <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                     <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
-                      <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400">Nhu cầu MR</span>
+                      <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400">Nhu cầu Công trường</span>
                       <strong className="mt-1 block text-lg font-black text-slate-800">{fmtQty(practicalQuantitySummary.demandQty)}</strong>
                     </div>
                     <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-3">
