@@ -14,7 +14,13 @@ describe('practical material PO form flow', () => {
   it('routes single PO approval and multiple batch approval through neutral commands', () => {
     expect(supplyChainSource).toContain('purchasePackageService.approveSingle');
     expect(supplyChainSource).toContain('purchasePackageService.submitBatch');
+    expect(supplyChainSource).toContain('purchasePackageService.setBatchVarianceReason');
     expect(supplyChainSource).toContain('purchasePackageService.approveBatch');
+  });
+
+  it('collects the batch-specific MR overage reason in the approval submission window', () => {
+    expect(supplyChainSource).toContain('Lý do vượt nhu cầu MR');
+    expect(supplyChainSource).toContain('batchSubmissionVarianceReason');
   });
 
   it('saves a multiple-delivery draft without creating WMS or QR', () => {

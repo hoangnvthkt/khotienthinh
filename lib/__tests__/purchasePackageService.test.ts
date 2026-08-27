@@ -61,6 +61,25 @@ describe('purchasePackageService', () => {
     });
   });
 
+  it('records the batch-specific MR overage reason before submission', async () => {
+    supabaseMocks.rpc.mockResolvedValue({
+      data: { deliveryBatchId: 'batch-1', varianceReason: 'Giao bù hao hụt thực tế' },
+      error: null,
+    });
+
+    await purchasePackageService.setBatchVarianceReason({
+      deliveryBatchId: 'batch-1',
+      varianceReason: 'Giao bù hao hụt thực tế',
+      actorUserId: 'buyer-1',
+    });
+
+    expect(supabaseMocks.rpc).toHaveBeenCalledWith('set_material_po_batch_variance_reason', {
+      p_delivery_batch_id: 'batch-1',
+      p_variance_reason: 'Giao bù hao hụt thực tế',
+      p_actor_user_id: 'buyer-1',
+    });
+  });
+
   it('saves a multiple-delivery draft without creating WMS', async () => {
     supabaseMocks.rpc.mockResolvedValue({
       data: { deliveryBatchId: 'batch-1', deliveryNo: 1, approvalStatus: 'draft', lineCount: 1 },

@@ -2810,6 +2810,7 @@ export interface PurchaseOrderDeliveryBatch {
   plannedDeliveryDate?: string | null;
   status: PurchaseOrderDeliveryBatchStatus;
   approvalStatus?: 'draft' | 'pending_approval' | 'approved' | 'revision_requested' | 'rejected';
+  approvalAssigneeUserId?: string | null;
   approvalRequestedBy?: string | null;
   approvalRequestedAt?: string | null;
   approvalDecidedBy?: string | null;
