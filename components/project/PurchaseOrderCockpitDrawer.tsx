@@ -86,6 +86,7 @@ export type PurchaseOrderCockpitDrawerProps = {
   vatRate: number;
   vatAmount: number;
   paymentTotal: number;
+  vatLabel?: string;
   inventoryItems: InventoryItem[];
   warehouses: Warehouse[];
   poRequestLinks: PurchaseOrderRequestLineLink[];
@@ -262,6 +263,7 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
   vatRate,
   vatAmount,
   paymentTotal,
+  vatLabel,
   inventoryItems,
   warehouses,
   poRequestLinks,
@@ -848,7 +850,7 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
                   </div>
 
                   <div className="p-3 rounded-xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-xs">
-                    <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400">Thuế VAT ({vatRate}%)</span>
+                    <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400">{vatLabel || `Thuế VAT (${vatRate}%)`}</span>
                     <strong className="text-base sm:text-lg font-black text-slate-800 dark:text-white mt-0.5 block">
                       {fmtMoney(vatAmount)} đ
                     </strong>

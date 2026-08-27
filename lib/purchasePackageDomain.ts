@@ -52,7 +52,9 @@ const activeBatch = (batch: PurchaseOrderDeliveryBatch) =>
 
 const hasReferencePackageAmount = (po: PurchaseOrder, referenceQty: number) =>
   po.sourceMode === 'from_request'
-  && (po.purchaseMode === 'single' || po.purchaseMode === 'multiple')
+  // A multiple-delivery PO is priced by each delivery batch. Its PO-line
+  // price is only the initial reference and must never override batch totals.
+  && po.purchaseMode === 'single'
   && referenceQty > 0
   && numberValue(po.referenceGrossAmount) > 0;
 

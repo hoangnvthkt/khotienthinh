@@ -93,7 +93,7 @@ describe('purchase order drawer regression guard', () => {
     expect(source).toContain('buildPurchaseOrderApprovalDeliveryBatches(printablePo, approvalGroups)');
     expect(source).toContain('const latestSchedules = await poDeliveryScheduleService.listByPurchaseOrderIds([po.id]);');
     expect(source).toContain('const approvalGroups = await loadPoDeliveryPrintGroups(po, true);');
-    expect(source).toContain('vatRateOverride: normalizeVatRate(po.vatRate)');
+    expect(source).toContain('vatRateOverride: normalizeVatRate(group.scheduleBatch?.vatRate ?? po.vatRate)');
     expect(source).toContain('ĐỀ NGHỊ DUYỆT ĐỢT GIAO');
   });
 });

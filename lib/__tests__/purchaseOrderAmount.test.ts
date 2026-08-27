@@ -4,6 +4,7 @@ import {
   buildPurchaseOrderPrintLineAmounts,
   getPurchaseOrderDisplayAmount,
   getPurchaseOrderDisplayLineAmount,
+  getPurchaseOrderFinancialSummary,
   getPurchaseOrderPrintAmount,
 } from '../purchaseOrderAmount';
 
@@ -353,6 +354,66 @@ describe('purchaseOrderAmount', () => {
 
     expect(getPurchaseOrderDisplayAmount(multiDeliveryPo, schedule)).toBe(31_542_000);
     expect(getPurchaseOrderPrintAmount(multiDeliveryPo, schedule)).toBe(31_542_000);
+  });
+
+  it('aggregates a multiple-delivery PO from each batch price and VAT, never from the master PO VAT', () => {
+    const multiplePo: PurchaseOrder = {
+      ...po,
+      id: 'po-multiple-finance',
+      purchaseMode: 'multiple',
+      sourceMode: 'from_request',
+      vatRate: 10,
+      totalAmount: 1_699_825,
+      items: [{
+        lineId: 'line-1',
+        itemId: 'item-1',
+        sku: 'VT0000829',
+        name: 'Thep XD D18',
+        unit: 'Kg',
+        qty: 112.400005,
+        unitPrice: 15_123,
+      }],
+    };
+    const schedule: PurchaseOrderDeliveryBatch[] = [
+      {
+        ...deliveryBatch('batch-finance-1', 100, 15_123),
+        purchaseOrderId: multiplePo.id,
+        vatRate: 10,
+        lines: [{
+          id: 'batch-finance-1-line',
+          deliveryBatchId: 'batch-finance-1',
+          purchaseOrderId: multiplePo.id,
+          purchaseOrderLineId: 'line-1',
+          itemId: 'item-1',
+          plannedQty: 100,
+          deliveryUnitPrice: 15_123,
+        }],
+      },
+      {
+        ...deliveryBatch('batch-finance-2', 12.400005, 150_000),
+        purchaseOrderId: multiplePo.id,
+        vatRate: 8,
+        lines: [{
+          id: 'batch-finance-2-line',
+          deliveryBatchId: 'batch-finance-2',
+          purchaseOrderId: multiplePo.id,
+          purchaseOrderLineId: 'line-1',
+          itemId: 'item-1',
+          plannedQty: 12.400005,
+          deliveryUnitPrice: 150_000,
+        }],
+      },
+    ];
+
+    expect(getPurchaseOrderFinancialSummary(multiplePo, schedule)).toEqual({
+      netAmount: 3_372_300.75,
+      vatAmount: 300_030,
+      paymentTotal: 3_672_330.75,
+      vatBreakdown: [
+        { vatRate: 8, amount: 148_800 },
+        { vatRate: 10, amount: 151_230 },
+      ],
+    });
   });
 
   it('shows each request package item at the edited PO price when schedule line prices are zero', () => {

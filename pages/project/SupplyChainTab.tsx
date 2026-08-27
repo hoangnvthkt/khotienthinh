@@ -160,7 +160,7 @@ import {
 import {
     buildPurchaseOrderPrintLineAmounts,
     getPurchaseOrderDisplayAmount,
-    getPurchaseOrderPrintAmount,
+    getPurchaseOrderFinancialSummary,
 } from '../../lib/purchaseOrderAmount';
 import {
     buildPurchaseOrderApprovalDeliveryBatches,
@@ -1167,6 +1167,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     const [pExpDate, setPExpDate] = useState('');
     const [pVatRate, setPVatRate] = useState('0');
     const [pPurchaseMode, setPPurchaseMode] = useState<PurchaseMode>('multiple');
+    const [isMultipleDeliveryItemsExpanded, setIsMultipleDeliveryItemsExpanded] = useState(false);
     const [pItems, setRawPItems] = useState<PurchaseOrderFormItem[]>([createEmptyPoItem()]);
     const setPItems = useCallback((action: React.SetStateAction<PurchaseOrderFormItem[]>) => {
         setRawPItems(previous => {
@@ -1188,6 +1189,10 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     } | null>(null);
     const [submittingDirectPurchase, setSubmittingDirectPurchase] = useState<SiteDirectPurchase | null>(null);
     const [pendingPoSupplementalSubmission, setPendingPoSupplementalSubmission] = useState<PendingPoSupplementalSubmission | null>(null);
+
+    useEffect(() => {
+        if (pPurchaseMode === 'multiple') setIsMultipleDeliveryItemsExpanded(false);
+    }, [pPurchaseMode]);
     const [printingPoId, setPrintingPoId] = useState<string | null>(null);
     const directPurchaseFileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -2411,6 +2416,9 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             deliveryNo: 1,
             plannedDeliveryDate: plannedDate || null,
             status: 'planned',
+            // PO VAT is only the initial default. Each batch keeps its own
+            // VAT afterwards and is independently commercialised.
+            vatRate: normalizeVatRate(pVatRate),
             fulfillmentBatchIds: [],
             note: null,
             createdBy: user?.id || null,
@@ -2491,6 +2499,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 deliveryNo: index + 1,
                 plannedDeliveryDate: batch.plannedDeliveryDate || po.expectedDeliveryDate || pExpDate || null,
                 status: batch.status || 'planned',
+                vatRate: batch.vatRate == null ? normalizeVatRate(po.vatRate) : normalizeVatRate(batch.vatRate),
                 fulfillmentBatchIds: batch.fulfillmentBatchIds || [],
                 lines,
             };
@@ -2547,6 +2556,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         setPDeliveryScheduleMode(base.length > 0 ? 'multiple_batches' : 'first_batch');
         const batchId = crypto.randomUUID();
         const activeItems = pItems.map(item => normalizePoItem(item, inventoryItems)).filter(item => item.itemId && Number(item.qty || 0) > 0);
+        const previousBatch = base[base.length - 1];
         setPDeliveryBatches([
             ...base,
             {
@@ -2557,23 +2567,34 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 deliveryNo: base.length + 1,
                 plannedDeliveryDate: pExpDate || null,
                 status: 'planned',
+                vatRate: normalizeVatRate(previousBatch?.vatRate ?? pVatRate),
                 fulfillmentBatchIds: [],
                 note: null,
                 createdBy: user?.id || null,
+                // Copy every PO line into the next batch, but prefill only
+                // the quantity that remains after all earlier batches. The
+                // previous batch's price is a convenient editable default.
                 lines: activeItems.map(item => {
                     const lineKey = item.lineId || item.itemId;
                     const remainingQty = Math.max(0, getPoDeliveryRemainingQty(base, lineKey, Number(item.qty || 0)));
+                    const previousLine = [...base]
+                        .reverse()
+                        .flatMap(batch => batch.lines || [])
+                        .find(line => line.purchaseOrderLineId === lineKey);
                     const lineInitialValues = getPoDeliveryScheduleLineInitialValues({
                         remainingQty,
-                        unitPrice: Number(item.unitPrice || 0),
+                        unitPrice: Number(previousLine?.deliveryUnitPrice ?? item.unitPrice ?? 0),
                         sourceMode: pSourceMode,
                     });
+                    const isPracticalMultipleDelivery = isPurchasePackageV2FormEnabled() && pPurchaseMode === 'multiple';
                     return makePoDeliveryLineDraft(
                         batchId,
                         editingPo?.id || '',
                         item,
-                        lineInitialValues.plannedQty,
-                        lineInitialValues.deliveryUnitPrice,
+                        isPracticalMultipleDelivery ? remainingQty : lineInitialValues.plannedQty,
+                        isPracticalMultipleDelivery
+                            ? Number(previousLine?.deliveryUnitPrice ?? item.unitPrice ?? 0)
+                            : lineInitialValues.deliveryUnitPrice,
                     );
                 }),
             },
@@ -2711,6 +2732,33 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     : line),
             };
         }));
+    };
+    const addPoDeliveryLineToBatch = (batchId: string, purchaseOrderLineId: string) => {
+        const sourceItem = pItems
+            .map(item => normalizePoItem(item, inventoryItems))
+            .find(item => (item.lineId || item.itemId) === purchaseOrderLineId);
+        if (!sourceItem) return;
+        setPDeliveryBatches(prev => prev.map(batch => {
+            if (batch.id !== batchId || batch.lines.some(line => line.purchaseOrderLineId === purchaseOrderLineId)) return batch;
+            return {
+                ...batch,
+                lines: [
+                    ...batch.lines,
+                    makePoDeliveryLineDraft(
+                        batch.id,
+                        editingPo?.id || '',
+                        sourceItem,
+                        0,
+                        pSourceMode === 'from_request' ? 0 : undefined,
+                    ),
+                ],
+            };
+        }));
+    };
+    const removePoDeliveryLineFromBatch = (batchId: string, purchaseOrderLineId: string) => {
+        setPDeliveryBatches(prev => prev.map(batch => batch.id === batchId
+            ? { ...batch, lines: batch.lines.filter(line => line.purchaseOrderLineId !== purchaseOrderLineId) }
+            : batch));
     };
     const removePoDeliveryBatch = (batchId: string) => {
         setPDeliveryBatches(prev => {
@@ -3820,7 +3868,17 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     note: pNote || undefined,
                 };
                 const { batches, supplementalRequests } = preparePoDeliveryScheduleForSave(poItem, groupItems);
-                const poItemForSave = { ...poItem, supplementalApprovalStatus: supplementalRequests.length > 0 ? 'pending' as const : 'none' as const };
+                const scheduledTotalAmount = isV2Package && pPurchaseMode === 'multiple'
+                    ? getPurchaseOrderFinancialSummary(poItem, batches).netAmount
+                    : groupTotalAmount;
+                const poItemForSave = {
+                    ...poItem,
+                    totalAmount: scheduledTotalAmount,
+                    approvedTotalAmount: isV2Package && pPurchaseMode === 'multiple'
+                        ? scheduledTotalAmount
+                        : poItem.approvedTotalAmount,
+                    supplementalApprovalStatus: supplementalRequests.length > 0 ? 'pending' as const : 'none' as const,
+                };
                 await poService.update(poItemForSave);
                 await poService.replaceRequestLineLinks(poItemForSave.id, buildLinks(poItemForSave, groupItems));
                 await poDeliveryScheduleService.replaceForPurchaseOrder(poItemForSave, batches);
@@ -3888,7 +3946,17 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                         createdAt: new Date().toISOString(),
                     };
                     const { batches, supplementalRequests } = preparePoDeliveryScheduleForSave(poItem, groupItems);
-                    const poItemForSave = { ...poItem, supplementalApprovalStatus: supplementalRequests.length > 0 ? 'pending' as const : 'none' as const };
+                    const scheduledTotalAmount = isV2Package && pPurchaseMode === 'multiple'
+                        ? getPurchaseOrderFinancialSummary(poItem, batches).netAmount
+                        : groupTotalAmount;
+                    const poItemForSave = {
+                        ...poItem,
+                        totalAmount: scheduledTotalAmount,
+                        approvedTotalAmount: isV2Package && pPurchaseMode === 'multiple'
+                            ? scheduledTotalAmount
+                            : poItem.approvedTotalAmount,
+                        supplementalApprovalStatus: supplementalRequests.length > 0 ? 'pending' as const : 'none' as const,
+                    };
                     await poService.upsert(poItemForSave);
                     await poService.replaceRequestLineLinks(poItemForSave.id, buildLinks(poItemForSave, groupItems));
                     await poDeliveryScheduleService.replaceForPurchaseOrder(poItemForSave, batches);
@@ -4617,6 +4685,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             intro?: string;
             totalAmountOverride?: number | null;
             vatRateOverride?: number | null;
+            financialDeliveryBatches?: PurchaseOrderDeliveryBatch[];
         } = {},
     ) => {
         const poHasConversion = po.items.some(item => {
@@ -4641,12 +4710,24 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 return batchSum + Number(line.plannedQty || 0) * unitPrice;
             }, 0), 0)
             : po.items.reduce((sum, item) => sum + calculateLineTotal(item), 0);
+        const scheduleFinancialSummary = options.financialDeliveryBatches
+            ? getPurchaseOrderFinancialSummary(po, options.financialDeliveryBatches)
+            : null;
         const totalAmount = Math.round(options.totalAmountOverride == null
-            ? calculatedTotalAmount
+            ? (scheduleFinancialSummary?.netAmount ?? calculatedTotalAmount)
             : Number(options.totalAmountOverride || 0));
         const vatRate = normalizeVatRate(options.vatRateOverride ?? po.vatRate);
-        const vatAmount = calculateVatAmount(totalAmount, vatRate);
-        const paymentTotal = totalAmount + vatAmount;
+        const vatAmount = scheduleFinancialSummary && options.totalAmountOverride == null && options.vatRateOverride == null
+            ? scheduleFinancialSummary.vatAmount
+            : calculateVatAmount(totalAmount, vatRate);
+        const paymentTotal = scheduleFinancialSummary && options.totalAmountOverride == null && options.vatRateOverride == null
+            ? scheduleFinancialSummary.paymentTotal
+            : totalAmount + vatAmount;
+        const vatLabel = scheduleFinancialSummary && po.sourceMode === 'from_request' && po.purchaseMode === 'multiple'
+            ? `VAT các đợt${scheduleFinancialSummary.vatBreakdown.length > 1
+                ? ` (${scheduleFinancialSummary.vatBreakdown.map(item => `${item.vatRate.toLocaleString('vi-VN')}%`).join(', ')})`
+                : ''}`
+            : `VAT (${vatRate.toLocaleString('vi-VN')}%)`;
         const approvalQrHtml = qrSvg
             ? `<div class="approval-qr-wrap"><div class="approval-qr-box">${qrSvg}<span>QR nhận hàng</span></div></div>`
             : '';
@@ -4776,7 +4857,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                             <td class="approval-right"><strong>${totalAmount.toLocaleString('vi-VN')} đ</strong></td>
                         </tr>
                         <tr>
-                            <td colspan="${poHasConversion ? 8 : 6}" class="approval-right"><strong>VAT (${vatRate.toLocaleString('vi-VN')}%)</strong></td>
+                            <td colspan="${poHasConversion ? 8 : 6}" class="approval-right"><strong>${vatLabel}</strong></td>
                             <td class="approval-right"><strong>${vatAmount.toLocaleString('vi-VN')} đ</strong></td>
                         </tr>
                         <tr>
@@ -4927,10 +5008,15 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             `;
         }).join('');
 
-        const totalAmount = getPurchaseOrderPrintAmount(printablePo, deliveryBatches);
-        const vatRate = normalizeVatRate(printablePo.vatRate);
-        const vatAmount = calculateVatAmount(totalAmount, vatRate);
-        const paymentTotal = totalAmount + vatAmount;
+        const financialSummary = getPurchaseOrderFinancialSummary(printablePo, deliveryBatches);
+        const totalAmount = financialSummary.netAmount;
+        const vatAmount = financialSummary.vatAmount;
+        const paymentTotal = financialSummary.paymentTotal;
+        const vatLabel = printablePo.sourceMode === 'from_request' && printablePo.purchaseMode === 'multiple'
+            ? `VAT các đợt${financialSummary.vatBreakdown.length > 1
+                ? ` (${financialSummary.vatBreakdown.map(item => `${item.vatRate.toLocaleString('vi-VN')}%`).join(', ')})`
+                : ''}`
+            : `VAT (${normalizeVatRate(printablePo.vatRate).toLocaleString('vi-VN')}%)`;
         const totalLabelColspan = 6 + uniqueSpecKeys.length + (poHasConversion ? 2 : 0);
 
         return `
@@ -4963,7 +5049,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                             <td class="right" style="color: #0f172a; font-size: 13px; font-weight: bold; text-decoration: underline; text-underline-offset: 4px;">${totalAmount.toLocaleString('vi-VN')} đ</td>
                         </tr>
                         <tr style="font-weight: bold; background: #f8fafc;">
-                            <td colspan="${totalLabelColspan}" class="center">VAT (${vatRate.toLocaleString('vi-VN')}%):</td>
+                            <td colspan="${totalLabelColspan}" class="center">${vatLabel}:</td>
                             <td class="right" style="color: #0f172a; font-size: 13px; font-weight: bold;">${vatAmount.toLocaleString('vi-VN')} đ</td>
                         </tr>
                         <tr style="font-weight: bold; background: #ecfdf5;">
@@ -5409,7 +5495,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                             title: 'ĐỀ NGHỊ DUYỆT ĐỢT GIAO',
                             intro: 'Đề nghị BGD duyệt đợt giao:',
                             totalAmountOverride: getDeliveryPrintGroupSummary(po, group).totalAmount,
-                            vatRateOverride: normalizeVatRate(po.vatRate),
+                            vatRateOverride: normalizeVatRate(group.scheduleBatch?.vatRate ?? po.vatRate),
                         },
                     ),
                 );
@@ -5418,7 +5504,15 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 if (!po.qrToken) setPos(prev => prev.map(item => item.id === po.id ? poWithQr : item));
                 const receiveUrl = buildPoReceiveUrl(poWithQr.qrToken!);
                 const qrSvg = renderToStaticMarkup(<QRCodeSVG value={receiveUrl} size={90} level="H" includeMargin />);
-                html = buildPoPrintHtml(printablePo.poNumber, buildPoPrintSection({ ...printablePo, qrToken: poWithQr.qrToken }, qrSvg));
+                html = buildPoPrintHtml(
+                    printablePo.poNumber,
+                    buildPoPrintSection(
+                        { ...printablePo, qrToken: poWithQr.qrToken },
+                        qrSvg,
+                        false,
+                        group.scheduleBatch ? [group.scheduleBatch] : [],
+                    ),
+                );
             }
             writePoPrintWindow(printWindow, html);
         } catch (e: any) {
@@ -5448,7 +5542,9 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 const qrSvg = renderToStaticMarkup(<QRCodeSVG value={receiveUrl} size={90} level="H" includeMargin />);
                 html = buildPoPrintHtml(
                     `Đề nghị duyệt đơn hàng ${printablePo.poNumber}`,
-                    buildPoApprovalRequestSection(printablePo, false, approvalDeliveryBatches, qrSvg),
+                    buildPoApprovalRequestSection(printablePo, false, approvalDeliveryBatches, qrSvg, {
+                        financialDeliveryBatches: poDeliveryBatchesByPo[po.id] || [],
+                    }),
                 );
             } else {
                 const printablePo = await poService.ensureQrToken(po);
@@ -5501,6 +5597,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                         index > 0,
                         buildPurchaseOrderApprovalDeliveryBatches(po, deliveryGroupsByPoId.get(po.id) || []),
                         qrSvg,
+                        { financialDeliveryBatches: poDeliveryBatchesByPo[po.id] || [] },
                     );
                 }).join('');
                 html = buildPoPrintHtml(`Đề nghị duyệt nhóm ${printableOrders[0].procurementGroupNo || 'PO'}`, sections);
@@ -5969,8 +6066,35 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         return map;
     }, [supplierDeliveryStatements]);
     const poVatRateCalc = normalizeVatRate(pVatRate);
-    const poVatAmountCalc = calculateVatAmount(poTotalCalc, poVatRateCalc);
-    const poPaymentTotalCalc = poTotalCalc + poVatAmountCalc;
+    const poFormFinancialSummary = useMemo(() => getPurchaseOrderFinancialSummary({
+        id: editingPo?.id || '__form_preview__',
+        vendorId: pVendorId || '',
+        poNumber: pNum || '',
+        items: scheduledPItems,
+        totalAmount: poTotalCalc,
+        vatRate: poVatRateCalc,
+        orderDate: pDate,
+        status: editingPo?.status || 'draft',
+        sourceMode: pSourceMode,
+        purchaseMode: pPurchaseMode,
+        createdAt: editingPo?.createdAt || new Date().toISOString(),
+    }, poDeliveryBatchesForForm), [
+        editingPo?.createdAt,
+        editingPo?.id,
+        editingPo?.status,
+        pDate,
+        pNum,
+        pPurchaseMode,
+        pSourceMode,
+        pVendorId,
+        poDeliveryBatchesForForm,
+        poTotalCalc,
+        poVatRateCalc,
+        scheduledPItems,
+    ]);
+    const poAmountBeforeVatCalc = poFormFinancialSummary.netAmount;
+    const poVatAmountCalc = poFormFinancialSummary.vatAmount;
+    const poPaymentTotalCalc = poFormFinancialSummary.paymentTotal;
     const purchasePackagePreviewPo = useMemo<PurchaseOrder>(() => ({
         ...(editingPo || {}),
         id: editingPo?.id || '__package_preview__',
@@ -5980,8 +6104,8 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         vendorName: supplierById.get(pVendorId)?.name || '',
         poNumber: pNum || '',
         items: scheduledPItems,
-        totalAmount: poTotalCalc,
-        approvedTotalAmount: getApprovedTotalAmountForPoSave(editingPo, poTotalCalc),
+        totalAmount: poAmountBeforeVatCalc,
+        approvedTotalAmount: getApprovedTotalAmountForPoSave(editingPo, poAmountBeforeVatCalc),
         referenceGrossAmount: poPaymentTotalCalc,
         closedNeedQty: editingPo?.closedNeedQty || 0,
         vatRate: poVatRateCalc,
@@ -6002,7 +6126,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         pSourceMode,
         pVendorId,
         poPaymentTotalCalc,
-        poTotalCalc,
+        poAmountBeforeVatCalc,
         poVatRateCalc,
         projectId,
         scheduledPItems,
@@ -7034,10 +7158,6 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                     supplementalOverAmount: pendingSupplementalApproval?.overAmount || 0,
                                 });
                                 const isPrintMenuOpen = poPrintMenuId === po.id;
-                                const poVatRate = normalizeVatRate(po.vatRate);
-                                const poDisplayAmount = getPurchaseOrderDisplayAmount(po, deliveryBatches);
-                                const poVatAmount = calculateVatAmount(poDisplayAmount, poVatRate);
-                                const poPaymentTotal = poDisplayAmount + poVatAmount;
                                 const receiptProgressLabel = receiptStats.orderedQty > 0
                                     ? `${fmtQty(receiptStats.receivedQty)}/${fmtQty(receiptStats.orderedQty)}`
                                     : '0/0';
@@ -7172,9 +7292,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     ? 'PO công ty cần sửa tại màn Mua hàng công ty.'
                     : poEditBlockReason || (poHasStockImpact ? 'PO đã phát sinh nhập kho/hoàn kho nên không thể sửa.' : null);
                 const poVatRate = normalizeVatRate(po.vatRate);
-                const poDisplayAmount = getPurchaseOrderDisplayAmount(po, deliveryBatches);
-                const poVatAmount = calculateVatAmount(poDisplayAmount, poVatRate);
-                const poPaymentTotal = poDisplayAmount + poVatAmount;
+                const poFinancialSummary = getPurchaseOrderFinancialSummary(po, deliveryBatches);
                 const payableDocuments = poPayableDocumentsByPoId[po.id] || [];
                 const supplierPayableStatus = payableDocuments[0]?.status || 'none';
                 const recognizedPayableAmount = payableDocuments.length > 0
@@ -7227,10 +7345,13 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                         statusTone={PO_STATUS_TONE[po.status]}
                         uiPolicy={poUiPolicy}
                         receiptStats={receiptStats}
-                        displayAmount={poDisplayAmount}
+                        displayAmount={poFinancialSummary.netAmount}
                         vatRate={poVatRate}
-                        vatAmount={poVatAmount}
-                        paymentTotal={poPaymentTotal}
+                        vatAmount={poFinancialSummary.vatAmount}
+                        paymentTotal={poFinancialSummary.paymentTotal}
+                        vatLabel={po.sourceMode === 'from_request' && po.purchaseMode === 'multiple'
+                            ? `Thuế VAT các đợt${poFinancialSummary.vatBreakdown.length > 1 ? ` (${poFinancialSummary.vatBreakdown.map(item => `${item.vatRate.toLocaleString('vi-VN')}%`).join(', ')})` : ''}`
+                            : undefined}
                         inventoryItems={inventoryItems}
                         warehouses={warehouses}
                         poRequestLinks={poRequestLinks}
@@ -8757,6 +8878,17 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                         <ShoppingCart size={14} className="text-blue-600" /> Danh sách vật tư ({pItems.length})
                                     </span>
                                     <div className="flex flex-wrap items-center gap-2 text-xs">
+                                        {isPurchasePackageV2Form && pPurchaseMode === 'multiple' && (
+                                            <button
+                                                type="button"
+                                                onClick={() => setIsMultipleDeliveryItemsExpanded(prev => !prev)}
+                                                aria-expanded={isMultipleDeliveryItemsExpanded}
+                                                className="px-2.5 py-1 rounded-lg border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 text-[11px] font-black flex items-center gap-1"
+                                            >
+                                                {isMultipleDeliveryItemsExpanded ? 'Thu gọn vật tư' : `Xem chi tiết ${pItems.length} dòng`}
+                                                <ChevronDown size={13} className={`transition-transform ${isMultipleDeliveryItemsExpanded ? 'rotate-180' : ''}`} />
+                                            </button>
+                                        )}
                                         <button onClick={handleDownloadPoTemplate} type="button"
                                             className="px-2.5 py-1 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 text-[11px] font-bold flex items-center gap-1">
                                             <FileSpreadsheet size={12} /> Mẫu Excel
@@ -8782,6 +8914,37 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                     </div>
                                 </div>
 
+                                {isPurchasePackageV2Form && pPurchaseMode === 'multiple' && !isMultipleDeliveryItemsExpanded ? (
+                                    <div className="rounded-xl border border-indigo-100 bg-indigo-50/40 px-3 py-3">
+                                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                            <div>
+                                                <div className="text-xs font-black text-slate-700">Đã gom {pItems.length} dòng vật tư</div>
+                                                <div className="mt-0.5 text-[10px] font-bold text-slate-500">
+                                                    Số lượng/đơn giá ở đây là tham khảo; khai báo thực tế theo từng đợt giao bên dưới.
+                                                </div>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => setIsMultipleDeliveryItemsExpanded(true)}
+                                                className="shrink-0 rounded-lg bg-indigo-600 px-3 py-1.5 text-[11px] font-black text-white hover:bg-indigo-700"
+                                            >
+                                                Mở chi tiết
+                                            </button>
+                                        </div>
+                                        <div className="mt-3 flex flex-wrap gap-1.5">
+                                            {pItems.map((item, index) => {
+                                                const inventory = inventoryItems.find(entry => entry.id === item.itemId);
+                                                const label = item.sku || inventory?.sku || `Dòng ${index + 1}`;
+                                                const name = item.itemNameSnapshot || item.name || inventory?.name || '';
+                                                return (
+                                                    <span key={item.lineId || `${item.itemId}-${index}`} className="max-w-full rounded-md border border-indigo-100 bg-white px-2 py-1 text-[10px] font-bold text-slate-600">
+                                                        <span className="font-mono text-indigo-600">{label}</span>{name ? ` · ${name}` : ''}
+                                                    </span>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                ) : (
                                 <div className="space-y-3">
                                     {pItems.map((item, i) => {
                                         const normalizedLine = normalizePoItem(item, inventoryItems);
@@ -9191,6 +9354,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                         );
                                     })}
                                 </div>
+                                )}
                             </div>
                             {isPurchasePackageV2Form && (
                                 <div className="space-y-2">
@@ -9261,7 +9425,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                     <div className="grid gap-2 text-[11px] font-bold text-slate-500 sm:grid-cols-4">
                                         <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
                                             <span className="block text-[9px] font-black uppercase text-slate-400">
-                                                {isPurchasePackageV2Form ? 'Giá trị PO dự kiến' : 'Tổng đã duyệt'}
+                                                {isPurchasePackageV2Form ? 'Khai báo ban đầu (tham khảo)' : 'Tổng đã duyệt'}
                                             </span>
                                             <strong className="text-slate-800">
                                                 {fmtMoney(isPurchasePackageV2Form ? poScheduleValuePreview.referenceAmount : poReleaseSummaryPreview.approvedTotalAmount)} đ
@@ -9269,7 +9433,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                         </div>
                                         <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
                                             <span className="block text-[9px] font-black uppercase text-slate-400">
-                                                {isPurchasePackageV2Form ? 'Tổng giá trị các đợt' : 'Giá trị đợt'}
+                                                {isPurchasePackageV2Form ? 'Tổng tiền các đợt trước VAT' : 'Giá trị đợt'}
                                             </span>
                                             <strong className="text-blue-700">
                                                 {fmtMoney(isPurchasePackageV2Form ? poScheduleValuePreview.scheduledAmount : poReleaseSummaryPreview.actualPlannedAmount)} đ
@@ -9277,7 +9441,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                         </div>
                                         <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
                                             <span className="block text-[9px] font-black uppercase text-slate-400">
-                                                {isPurchasePackageV2Form ? 'Chênh lệch dự kiến' : 'Phần vượt duyệt'}
+                                                {isPurchasePackageV2Form ? 'Chênh lệch so với khai báo' : 'Phần vượt duyệt'}
                                             </span>
                                             <strong className={isPurchasePackageV2Form
                                                 ? (poScheduleValuePreview.varianceAmount === 0 ? 'text-slate-700' : 'text-blue-700')
@@ -9311,6 +9475,12 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                         )}
                                         {poDeliveryBatchesForForm.map((batch, batchIndex, displayBatches) => {
                                             const activeItems = pItems.map(item => normalizePoItem(item, inventoryItems)).filter(item => item.itemId && Number(item.qty || 0) > 0);
+                                            const canCustomizeDeliveryLines = isPurchasePackageV2Form && pPurchaseMode === 'multiple';
+                                            const selectedLineKeys = new Set(batch.lines.map(line => line.purchaseOrderLineId));
+                                            const batchItems = canCustomizeDeliveryLines
+                                                ? activeItems.filter(item => selectedLineKeys.has(item.lineId || item.itemId))
+                                                : activeItems;
+                                            const availableItemsToAdd = activeItems.filter(item => !selectedLineKeys.has(item.lineId || item.itemId));
                                             const showPurchaseColumns = activeItems.some(item => {
                                                 const inventory = inventoryItems.find(inv => inv.id === item.itemId);
                                                 return hasPurchaseUnitConversion({
@@ -9326,10 +9496,45 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                             <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-50 text-xs font-black text-indigo-700">{batchIndex + 1}</span>
                                                             <div>
                                                                 <div className="text-xs font-black text-slate-700">Đợt giao {batchIndex + 1}</div>
-                                                                <div className="text-[10px] font-bold text-slate-400">{batch.lines.filter(line => Number(line.plannedQty || 0) > 0).length} dòng có số lượng</div>
+                                                                <div className="text-[10px] font-bold text-slate-400">
+                                                                    {canCustomizeDeliveryLines
+                                                                        ? `${batch.lines.length} dòng đã chọn`
+                                                                        : `${batch.lines.filter(line => Number(line.plannedQty || 0) > 0).length} dòng có số lượng`}
+                                                                </div>
                                                             </div>
                                                         </div>
                                                         <div className="flex items-center gap-2">
+                                                            {canCustomizeDeliveryLines && availableItemsToAdd.length > 0 && (
+                                                                <select
+                                                                    value=""
+                                                                    onChange={e => {
+                                                                        if (e.target.value) addPoDeliveryLineToBatch(batch.id, e.target.value);
+                                                                    }}
+                                                                    className="max-w-44 rounded-lg border border-blue-200 bg-blue-50 px-2 py-1.5 text-[10px] font-black text-blue-700"
+                                                                    aria-label={`Thêm vật tư vào đợt giao ${batchIndex + 1}`}
+                                                                >
+                                                                    <option value="">+ Thêm vật tư</option>
+                                                                    {availableItemsToAdd.map(item => (
+                                                                        <option key={item.lineId || item.itemId} value={item.lineId || item.itemId}>
+                                                                            {item.sku || item.name || item.itemId}
+                                                                        </option>
+                                                                    ))}
+                                                                </select>
+                                                            )}
+                                                            {isPurchasePackageV2Form && pPurchaseMode === 'multiple' && (
+                                                                <label className="flex items-center gap-1.5 text-[10px] font-black uppercase text-slate-400">
+                                                                    VAT đợt
+                                                                    <input
+                                                                        type="text"
+                                                                        inputMode="decimal"
+                                                                        value={formatNumberInputValue(batch.vatRate ?? poVatRateCalc, 2)}
+                                                                        onChange={e => updatePoDeliveryBatch(batch.id, { vatRate: normalizeVatRate(e.target.value) })}
+                                                                        className="w-16 rounded-lg border border-slate-200 px-2 py-1.5 text-right text-xs font-bold text-slate-700"
+                                                                        aria-label={`VAT đợt giao ${batchIndex + 1}`}
+                                                                    />
+                                                                    <span>%</span>
+                                                                </label>
+                                                            )}
                                                             <input
                                                                 type="date"
                                                                 value={batch.plannedDeliveryDate || ''}
@@ -9364,10 +9569,11 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                                     <th className="px-2 py-2 text-right">Giá đợt</th>
                                                                     <th className="px-2 py-2 text-right">{showPurchaseColumns ? 'Còn lại(m)' : 'Còn lại'}</th>
                                                                     <th className="px-2 py-2 text-right">Thành tiền</th>
+                                                                    {canCustomizeDeliveryLines && <th className="w-10 px-2 py-2 text-center">Bỏ</th>}
                                                                 </tr>
                                                             </thead>
                                                             <tbody className="divide-y divide-slate-100">
-                                                                {activeItems.map(item => {
+                                                                {batchItems.map(item => {
                                                                     const lineKey = item.lineId || item.itemId;
                                                                     const currentLine = batch.lines.find(line => line.purchaseOrderLineId === lineKey) as PurchaseOrderDeliveryFormLine | undefined;
                                                                     const deliveryInventory = inventoryItems.find(inv => inv.id === item.itemId);
@@ -9450,9 +9656,32 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                                             <td className="px-2 py-2 text-right font-bold text-blue-600">
                                                                                 {fmtQty(Number(currentLine?.deliveryUnitPrice ?? 0) * Number(currentLine?.plannedQty ?? 0))}
                                                                             </td>
+                                                                            {canCustomizeDeliveryLines && (
+                                                                                <td className="px-2 py-2 text-center">
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        onClick={() => removePoDeliveryLineFromBatch(batch.id, lineKey)}
+                                                                                        className="rounded-md p-1 text-slate-300 hover:bg-red-50 hover:text-red-600"
+                                                                                        title="Bỏ vật tư khỏi đợt này"
+                                                                                        aria-label={`Bỏ ${item.name || item.sku || 'vật tư'} khỏi đợt giao ${batchIndex + 1}`}
+                                                                                    >
+                                                                                        <X size={14} />
+                                                                                    </button>
+                                                                                </td>
+                                                                            )}
                                                                         </tr>
                                                                     );
                                                                 })}
+                                                                {batchItems.length === 0 && (
+                                                                    <tr>
+                                                                        <td
+                                                                            colSpan={(showPurchaseColumns ? 8 : 6) + (canCustomizeDeliveryLines ? 1 : 0)}
+                                                                            className="px-3 py-4 text-center text-xs font-bold text-slate-400"
+                                                                        >
+                                                                            Chưa chọn vật tư cho đợt này. Dùng “+ Thêm vật tư” để bổ sung dòng.
+                                                                        </td>
+                                                                    </tr>
+                                                                )}
                                                             </tbody>
                                                         </table>
                                                     </div>
@@ -9476,14 +9705,16 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                     />
                                 </div>
 
-                                {poTotalCalc > 0 && (
+                                {poAmountBeforeVatCalc > 0 && (
                                     <div className="rounded-2xl border border-blue-100 bg-gradient-to-br from-blue-50/80 to-indigo-50/50 p-3.5 space-y-1.5 text-xs shadow-sm">
                                         <div className="flex items-center justify-between text-slate-600">
                                             <span>Tổng tiền hàng (trước thuế):</span>
-                                            <span className="font-bold text-slate-800">{fmtMoney(poTotalCalc)} đ</span>
+                                            <span className="font-bold text-slate-800">{fmtMoney(poAmountBeforeVatCalc)} đ</span>
                                         </div>
                                         <div className="flex items-center justify-between text-slate-600">
-                                            <span>Thuế VAT ({poVatRateCalc.toLocaleString('vi-VN')}%):</span>
+                                            <span>{isPurchasePackageV2Form && pPurchaseMode === 'multiple'
+                                                ? `Thuế VAT các đợt${poFormFinancialSummary.vatBreakdown.length > 1 ? ` (${poFormFinancialSummary.vatBreakdown.map(item => `${item.vatRate.toLocaleString('vi-VN')}%`).join(', ')})` : ''}:`
+                                                : `Thuế VAT (${poVatRateCalc.toLocaleString('vi-VN')}%):`}</span>
                                             <span className="font-bold text-slate-800">{fmtMoney(poVatAmountCalc)} đ</span>
                                         </div>
                                         <div className="flex items-center justify-between border-t border-blue-200/60 pt-2 mt-1">
